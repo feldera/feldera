@@ -24,6 +24,7 @@ use std::str::FromStr;
 use std::{collections::BTreeMap, fmt::Debug, hash::Hash};
 use thiserror::Error;
 
+/// Represents a Sql value with a VARIANT type.
 #[derive(
     Debug,
     Default,
@@ -41,8 +42,10 @@ use thiserror::Error;
 #[archive(bound(serialize = "__S: rkyv::ser::ScratchSpace + rkyv::ser::Serializer"))]
 #[archive_attr(derive(Eq, Ord, PartialEq, PartialOrd))]
 pub enum Variant {
+    /// A Variant with a `NULL` SQL value.
     #[default]
     SqlNull,
+    /// A Variant with a Variant `null` value.
     VariantNull,
     Boolean(bool),
     TinyInt(i8),
@@ -196,16 +199,20 @@ impl<'de> DeserializeWithContext<'de, SqlSerdeConfig> for Variant {
     }
 }
 
+#[doc(hidden)]
 struct KeyClassifier;
 
+#[doc(hidden)]
 enum KeyClass {
     Map(String),
     Number,
 }
 
+#[doc(hidden)]
 impl<'de> DeserializeSeed<'de> for KeyClassifier {
     type Value = KeyClass;
 
+    #[doc(hidden)]
     fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
     where
         D: serde::Deserializer<'de>,
@@ -215,15 +222,19 @@ impl<'de> DeserializeSeed<'de> for KeyClassifier {
 }
 
 // This is defined in serde_json, but not exported.
+#[doc(hidden)]
 const DECIMAL_KEY_TOKEN: &str = "$serde_json::private::Number";
 
+#[doc(hidden)]
 impl<'de> Visitor<'de> for KeyClassifier {
     type Value = KeyClass;
 
+    #[doc(hidden)]
     fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
         formatter.write_str("a string key")
     }
 
+    #[doc(hidden)]
     fn visit_str<E>(self, s: &str) -> Result<Self::Value, E>
     where
         E: de::Error,
@@ -234,6 +245,7 @@ impl<'de> Visitor<'de> for KeyClassifier {
         }
     }
 
+    #[doc(hidden)]
     fn visit_string<E>(self, s: String) -> Result<Self::Value, E>
     where
         E: de::Error,
@@ -245,11 +257,14 @@ impl<'de> Visitor<'de> for KeyClassifier {
     }
 }
 
+#[doc(hidden)]
 pub struct NumberFromString {
     pub value: Decimal,
 }
 
+#[doc(hidden)]
 impl<'de> de::Deserialize<'de> for NumberFromString {
+    #[doc(hidden)]
     fn deserialize<D>(deserializer: D) -> Result<NumberFromString, D::Error>
     where
         D: de::Deserializer<'de>,
@@ -332,6 +347,7 @@ impl SerializeWithContext<SqlSerdeConfig> for Variant {
 }
 
 impl Variant {
+    /// Get the runtime type of a Variant value
     fn get_type_string(&self) -> &'static str {
         match self {
             Variant::SqlNull => "NULL",
@@ -357,6 +373,7 @@ impl Variant {
         }
     }
 
+    #[doc(hidden)]
     pub fn index_string<I: AsRef<str>>(&self, index: I) -> Variant {
         match self {
             Variant::Map(value) => match value.get(&Variant::String(index.as_ref().to_string())) {
@@ -367,6 +384,7 @@ impl Variant {
         }
     }
 
+    #[doc(hidden)]
     pub fn index(&self, index: Variant) -> Option<Variant> {
         match self {
             Variant::Array(value) => {
@@ -388,6 +406,8 @@ impl Variant {
         }
     }
 
+    /// Convert a Variant to a String representing a JSON encoding of
+    /// the Variant value.
     pub fn to_json_string(&self) -> Result<String, Box<dyn std::error::Error>> {
         Ok(serde_json::to_string(self)?)
     }
@@ -396,13 +416,17 @@ impl Variant {
 // A macro for From<T> for Variant
 macro_rules! from {
     ($variant:ident, $type:ty) => {
+        #[doc(hidden)]
         impl From<$type> for Variant {
+            #[doc(hidden)]
             fn from(value: $type) -> Self {
                 Variant::$variant(value)
             }
         }
 
+        #[doc(hidden)]
         impl From<Option<$type>> for Variant {
+            #[doc(hidden)]
             fn from(value: Option<$type>) -> Self {
                 match value {
                     None => Variant::SqlNull,
@@ -434,6 +458,7 @@ impl<T> From<Vec<T>> for Variant
 where
     Variant: From<T>,
 {
+    #[doc(hidden)]
     fn from(vec: Vec<T>) -> Self {
         Variant::Array(vec.into_iter().map(Variant::from).collect())
     }
@@ -443,6 +468,7 @@ impl<T> From<Option<Vec<T>>> for Variant
 where
     Variant: From<T>,
 {
+    #[doc(hidden)]
     fn from(vec: Option<Vec<T>>) -> Self {
         match vec {
             None => Variant::SqlNull,
@@ -457,6 +483,7 @@ where
     K: Clone + Ord,
     V: Clone,
 {
+    #[doc(hidden)]
     fn from(map: BTreeMap<K, V>) -> Self {
         let mut result = BTreeMap::<Variant, Variant>::new();
         for (key, value) in map.iter() {
@@ -472,6 +499,7 @@ where
     K: Clone + Ord,
     V: Clone,
 {
+    #[doc(hidden)]
     fn from(map: Option<BTreeMap<K, V>>) -> Self {
         match map {
             None => Variant::SqlNull,
@@ -482,6 +510,8 @@ where
 
 //////////////////// Reverse conversions Variant -> T
 
+/// Error that may be reported when converting Variant
+/// values to other values.
 #[derive(Error, Debug)]
 pub enum ConversionError {
     #[error("{0}")]
@@ -489,10 +519,12 @@ pub enum ConversionError {
 }
 
 impl ConversionError {
+    /// Create a Boxed ConversionError from a message string
     pub fn from_string(message: String) -> Box<Self> {
         Box::new(ConversionError::CustomError(message))
     }
 
+    /// Create a Boxed ConversionError from a message slice
     pub fn from_strng(message: &str) -> Box<Self> {
         Box::new(ConversionError::CustomError(message.to_string()))
     }
@@ -500,9 +532,11 @@ impl ConversionError {
 
 macro_rules! into {
     ($variant:ident, $type:ty) => {
+        #[doc(hidden)]
         impl TryFrom<Variant> for $type {
             type Error = Box<dyn Error>;
 
+            #[doc(hidden)]
             fn try_from(value: Variant) -> Result<Self, Self::Error> {
                 match value {
                     Variant::$variant(x) => Ok(x),
@@ -514,9 +548,11 @@ macro_rules! into {
             }
         }
 
+        #[doc(hidden)]
         impl TryFrom<Variant> for Option<$type> {
             type Error = Box<dyn Error>;
 
+            #[doc(hidden)]
             fn try_from(value: Variant) -> Result<Self, Self::Error> {
                 match value {
                     Variant::SqlNull => Ok(None),
@@ -543,10 +579,12 @@ into!(Binary, ByteArray);
 
 macro_rules! into_numeric {
     ($type:ty, $type_name: ident) => {
+        #[doc(hidden)]
         impl TryFrom<Variant> for $type {
             type Error = Box<dyn Error>;
 
             ::paste::paste! {
+                #[doc(hidden)]
                 fn try_from(value: Variant) -> Result<Self, Self::Error> {
                     match value {
                         Variant::TinyInt(x) => Ok([< cast_to_ $type_name _i8>](x)),
@@ -562,9 +600,11 @@ macro_rules! into_numeric {
             }
         }
 
+        #[doc(hidden)]
         impl TryFrom<Variant> for Option<$type> {
             type Error = Box<dyn Error>;
 
+            #[doc(hidden)]
             fn try_from(value: Variant) -> Result<Self, Self::Error> {
                 match value {
                     Variant::VariantNull => Ok(None),
@@ -586,9 +626,11 @@ into_numeric!(i64, i64);
 into_numeric!(F32, f);
 into_numeric!(F64, d);
 
+#[doc(hidden)]
 impl TryFrom<Variant> for Decimal {
     type Error = Box<dyn Error>;
 
+    #[doc(hidden)]
     fn try_from(value: Variant) -> Result<Self, Self::Error> {
         match value {
             Variant::TinyInt(x) => {
@@ -618,9 +660,11 @@ impl TryFrom<Variant> for Decimal {
     }
 }
 
+#[doc(hidden)]
 impl TryFrom<Variant> for Option<Decimal> {
     type Error = Box<dyn Error>;
 
+    #[doc(hidden)]
     fn try_from(value: Variant) -> Result<Self, Self::Error> {
         match value {
             Variant::VariantNull => Ok(None),
@@ -633,6 +677,7 @@ impl TryFrom<Variant> for Option<Decimal> {
     }
 }
 
+#[doc(hidden)]
 impl<T> TryFrom<Variant> for Vec<T>
 where
     T: TryFrom<Variant>,
@@ -640,6 +685,7 @@ where
 {
     type Error = Box<dyn Error>;
 
+    #[doc(hidden)]
     fn try_from(value: Variant) -> Result<Self, Self::Error> {
         match value {
             Variant::Array(a) => {
@@ -660,6 +706,7 @@ where
     }
 }
 
+#[doc(hidden)]
 impl<T> TryFrom<Variant> for Option<Vec<T>>
 where
     T: TryFrom<Variant>,
@@ -667,6 +714,7 @@ where
 {
     type Error = Box<dyn Error>;
 
+    #[doc(hidden)]
     fn try_from(value: Variant) -> Result<Self, Self::Error> {
         match value {
             Variant::VariantNull => Ok(None),
@@ -679,6 +727,7 @@ where
     }
 }
 
+#[doc(hidden)]
 impl<K, V> TryFrom<Variant> for BTreeMap<K, V>
 where
     K: TryFrom<Variant> + Ord,
@@ -688,6 +737,7 @@ where
 {
     type Error = Box<dyn Error>;
 
+    #[doc(hidden)]
     fn try_from(value: Variant) -> Result<Self, Self::Error> {
         match value {
             Variant::Map(map) => {
@@ -714,6 +764,7 @@ where
     }
 }
 
+#[doc(hidden)]
 impl<K, V> TryFrom<Variant> for Option<BTreeMap<K, V>>
 where
     K: TryFrom<Variant> + Ord,
@@ -723,6 +774,7 @@ where
 {
     type Error = Box<dyn Error>;
 
+    #[doc(hidden)]
     fn try_from(value: Variant) -> Result<Self, Self::Error> {
         match value {
             Variant::VariantNull => Ok(None),
@@ -735,10 +787,12 @@ where
     }
 }
 
+#[doc(hidden)]
 pub fn typeof_(value: Variant) -> String {
     value.get_type_string().to_string()
 }
 
+#[doc(hidden)]
 pub fn typeofN(value: Option<Variant>) -> String {
     match value {
         None => "NULL".to_string(),
@@ -746,6 +800,7 @@ pub fn typeofN(value: Option<Variant>) -> String {
     }
 }
 
+#[doc(hidden)]
 pub fn variantnull() -> Variant {
     Variant::VariantNull
 }

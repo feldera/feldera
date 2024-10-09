@@ -1,3 +1,2 @@
-This module contains Rust definitions for functions needed to
-implement various SQL operations and built-in functions.
-
+This crate contains Rust types and functions used by the Feldera SQL
+runtime.  See https://github.com/feldera/feldera

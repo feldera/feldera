@@ -1,3 +1,7 @@
+//! Wrappers around floating point values.  Rust floating point values
+//! do not implement Ord, which is needed by any data that must be
+//! stored in a database.
+
 use crate::algebra::{HasOne, HasZero};
 use feldera_types::{deserialize_without_context, serialize_without_context};
 use ordered_float::OrderedFloat;
@@ -17,7 +21,7 @@ macro_rules! float {
     ($($outer:ident($inner:ident)),* $(,)?) => {
         $(
             paste!{
-            #[doc = concat!("A wrapper around [`", stringify!($inner), "`] that allows using it in a DBSP stream.")]
+            #[doc = concat!("A wrapper around [`", stringify!($inner), "`] that provides additional useful traits, such as [Ord].")]
             #[derive(Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, SizeOf, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
             #[repr(transparent)]
             #[size_of(skip_all)]

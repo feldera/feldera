@@ -1,10 +1,5 @@
 //! Support for SQL interval types.
 //! Intervals are differences between dates and/or times
-//! There are two interval types:
-//! - Short intervals, representing differences between times. These are
-//!   represented as milliseconds (positive or negative).
-//! - Long intervals, representing differences between months. These are
-//!   represented as days.
 
 use crate::{
     operators::{eq, gt, gte, lt, lte, neq},
@@ -19,6 +14,15 @@ use serde::{de::Error as _, ser::Error as _, Deserialize, Serialize};
 use size_of::SizeOf;
 use std::{fmt::Debug, ops::Mul};
 
+#[cfg(doc)]
+use crate::{Date, Time, Timestamp};
+
+/// A ShortInterval can express a difference between two [Time]
+/// values, two [Date] values, or two [Timestamp] values.  The
+/// representation is a (positive or negative) number of milliseconds.
+/// While there are functions that can extract nanosecond-precision
+/// values from a ShortInterval, the precision is always limited to
+/// milliseconds.
 #[derive(
     Debug,
     Default,
@@ -44,49 +48,76 @@ pub struct ShortInterval {
 }
 
 impl ShortInterval {
+    /// Create a ShortInterval with a length specified in milliseconds.
     pub const fn new(milliseconds: i64) -> Self {
         Self { milliseconds }
     }
 
+    /// Extract the length of the interval in milliseconds.  The
+    /// result can be negative.
     pub fn milliseconds(&self) -> i64 {
         self.milliseconds
     }
 
+    /// Extract the length of the interval in nanoseconds.  The result
+    /// can be negative.  The granularity of the representation is
+    /// actually milliseconds, so this function will always return a
+    /// number that is a multiple of 1 million.
     pub fn nanoseconds(&self) -> i64 {
         self.milliseconds * 1_000_000_i64
     }
 }
 
+#[doc(hidden)]
+/// This function is used in rolling window computations, which require all
+/// values to be expressed using unsigned types.
 pub fn to_bound_ShortInterval_Date_u128(value: &ShortInterval) -> u128 {
     // express value in days
     (value.milliseconds / 1000 / 86400) as u128
 }
 
+#[doc(hidden)]
+/// This function is used in rolling window computations, which require all
+/// values to be expressed using unsigned types.
 pub fn to_bound_ShortInterval_Date_u64(value: &ShortInterval) -> u64 {
     // express value in days
     (value.milliseconds / 1000 / 86400) as u64
 }
 
+#[doc(hidden)]
+/// This function is used in rolling window computations, which require all
+/// values to be expressed using unsigned types.
 pub fn to_bound_ShortInterval_Timestamp_u128(value: &ShortInterval) -> u128 {
     // express value in milliseconds
     value.milliseconds as u128
 }
 
+#[doc(hidden)]
+/// This function is used in rolling window computations, which require all
+/// values to be expressed using unsigned types.
 pub fn to_bound_ShortInterval_Timestamp_u64(value: &ShortInterval) -> u64 {
     // express value in milliseconds
     value.milliseconds as u64
 }
 
+#[doc(hidden)]
+/// This function is used in rolling window computations, which require all
+/// values to be expressed using unsigned types.
 pub fn to_bound_ShortInterval_Time_u128(value: &ShortInterval) -> u128 {
     // express value in nanoseconds
     (value.milliseconds * 1_000_000) as u128
 }
 
+#[doc(hidden)]
+/// This function is used in rolling window computations, which require all
+/// values to be expressed using unsigned types.
 pub fn to_bound_ShortInterval_Time_u64(value: &ShortInterval) -> u64 {
     // express value in nanoseconds
     (value.milliseconds * 1_000_000) as u64
 }
 
+/// Multiply a `ShortInterval` by a numeric value, producing a
+/// `ShortInterval`.
 impl<T> Mul<T> for ShortInterval
 where
     T: PrimInt,
@@ -101,6 +132,8 @@ where
     }
 }
 
+/// Create a `ShortInterval` from a numeric value that is interpreted as
+/// a number of milliseconds.
 impl<T> From<T> for ShortInterval
 where
     i64: From<T>,
@@ -113,6 +146,8 @@ where
     }
 }
 
+/// Serialize a `ShortInterval` with context.  See
+/// [`SerializeWithContext`].
 impl SerializeWithContext<SqlSerdeConfig> for ShortInterval {
     fn serialize_with_context<S>(
         &self,
@@ -128,6 +163,8 @@ impl SerializeWithContext<SqlSerdeConfig> for ShortInterval {
     }
 }
 
+/// Deserialize a `ShortInterval` with context.  See
+/// [`DeserializeWithContext`].
 impl<'de> DeserializeWithContext<'de, SqlSerdeConfig> for ShortInterval {
     fn deserialize_with_context<D>(
         _deserializer: D,
@@ -151,6 +188,12 @@ some_operator!(lte, ShortInterval, ShortInterval, bool);
 
 /////////////////////////
 
+/// A difference between two [Date]s expressed as a (positive or
+/// negative) number of months.  The value of a LongInterval is not
+/// absolute, but it is relative to the date the interval is applied
+/// to.  For example, an interval of 3 months starting from March 1st
+/// has size of 92 days, but starting from April 1st it has a size of
+/// 91 days.
 #[derive(
     Debug,
     Default,
@@ -176,10 +219,12 @@ pub struct LongInterval {
 }
 
 impl LongInterval {
+    /// Create a new LongInterval from a number of months.
     pub const fn new(months: i32) -> Self {
         Self { months }
     }
 
+    /// Retrieve the number of months in the long interval.
     pub fn months(&self) -> i32 {
         self.months
     }
@@ -192,6 +237,7 @@ where
 {
     type Output = Self;
 
+    /// Multiply a long interval by an integer.
     fn mul(self, rhs: T) -> Self {
         Self {
             months: self.months * rhs,
@@ -204,6 +250,8 @@ where
     i32: From<T>,
     T: PrimInt,
 {
+    /// Convert a integer expressing a number of months into a
+    /// [LongInterval]
     fn from(value: T) -> Self {
         Self {
             months: i32::from(value),

@@ -7,6 +7,30 @@ import org.junit.Test;
 // https://github.com/apache/calcite/blob/main/core/src/test/resources/sql/agg.iq
 public class AggScottTests extends ScottBaseTests {
     @Test
+    public void testPairs() {
+        this.qs("""
+                select comm, (comm, comm) in ((500, 500), (300, 300), (0, 0)) from emp;
+                 comm | in
+                -----------
+                 0    | true
+                 300  | true
+                 500  | true
+                 1400 | false
+                      |
+                      |
+                      |
+                      |
+                      |
+                      |
+                      |
+                      |
+                      |
+                      |
+                -----------
+                (14 rows)""");
+    }
+
+    @Test
     public void testGrouping() {
         this.qs("""
                 -- GROUPING in SELECT clause of CUBE query

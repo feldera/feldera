@@ -5,6 +5,7 @@ use std::collections::{BTreeMap, HashSet};
 use std::hash::Hash;
 use std::ops::Index;
 
+#[doc(hidden)]
 pub fn array_map__<T, S, F>(vec: Vec<T>, f: F) -> Vec<S>
 where
     F: Fn(&T) -> S,
@@ -12,6 +13,7 @@ where
     vec.iter().map(f).collect()
 }
 
+#[doc(hidden)]
 pub fn array_mapN_<T, S, F>(vec: Option<Vec<T>>, f: F) -> Option<Vec<S>>
 where
     F: Fn(&T) -> S,
@@ -20,6 +22,7 @@ where
     Some(array_map__(vec, f))
 }
 
+#[doc(hidden)]
 pub fn element__<T>(array: Vec<T>) -> Option<T>
 where
     T: Clone,
@@ -33,6 +36,7 @@ where
     }
 }
 
+#[doc(hidden)]
 pub fn elementN_<T>(array: Option<Vec<T>>) -> Option<T>
 where
     T: Clone,
@@ -41,6 +45,7 @@ where
     element__(array)
 }
 
+#[doc(hidden)]
 pub fn element_N<T>(array: Vec<Option<T>>) -> Option<T>
 where
     T: Clone,
@@ -54,6 +59,7 @@ where
     }
 }
 
+#[doc(hidden)]
 pub fn elementNN<T>(array: Option<Vec<Option<T>>>) -> Option<T>
 where
     T: Clone,
@@ -62,10 +68,12 @@ where
     element_N(array)
 }
 
+#[doc(hidden)]
 pub fn cardinality<T>(value: Vec<T>) -> i32 {
     value.len() as i32
 }
 
+#[doc(hidden)]
 pub fn cardinalityN<T>(value: Option<Vec<T>>) -> Option<i32> {
     let value = value?;
     Some(value.len() as i32)
@@ -76,6 +84,7 @@ pub fn cardinalityN<T>(value: Option<Vec<T>>) -> Option<i32> {
 // nullability of vector element
 // nullability of index
 
+#[doc(hidden)]
 pub fn index___<T>(value: Vec<T>, index: isize) -> Option<T>
 where
     T: Clone,
@@ -91,6 +100,7 @@ where
     }
 }
 
+#[doc(hidden)]
 pub fn index__N<T>(value: Vec<T>, index: Option<isize>) -> Option<T>
 where
     T: Clone,
@@ -99,6 +109,7 @@ where
     index___(value, index)
 }
 
+#[doc(hidden)]
 pub fn index_N_<T>(value: Vec<Option<T>>, index: isize) -> Option<T>
 where
     T: Clone,
@@ -114,6 +125,7 @@ where
     }
 }
 
+#[doc(hidden)]
 pub fn index_NN<T>(value: Vec<Option<T>>, index: Option<isize>) -> Option<T>
 where
     T: Clone,
@@ -130,6 +142,7 @@ where
     }
 }
 
+#[doc(hidden)]
 pub fn indexN__<T>(value: Option<Vec<T>>, index: isize) -> Option<T>
 where
     T: Clone,
@@ -140,6 +153,7 @@ where
     }
 }
 
+#[doc(hidden)]
 pub fn indexN_N<T>(value: Option<Vec<T>>, index: Option<isize>) -> Option<T>
 where
     T: Clone,
@@ -151,6 +165,7 @@ where
     }
 }
 
+#[doc(hidden)]
 pub fn indexNN_<T>(value: Option<Vec<Option<T>>>, index: isize) -> Option<T>
 where
     T: Clone,
@@ -161,6 +176,7 @@ where
     }
 }
 
+#[doc(hidden)]
 pub fn indexNNN<T>(value: Option<Vec<Option<T>>>, index: Option<isize>) -> Option<T>
 where
     T: Clone,
@@ -172,10 +188,12 @@ where
     }
 }
 
+#[doc(hidden)]
 pub fn array<T>() -> Vec<T> {
     vec![]
 }
 
+#[doc(hidden)]
 pub fn limit<T>(vector: &[T], limit: usize) -> Vec<T>
 where
     T: Clone,
@@ -183,6 +201,7 @@ where
     vector[0..limit].to_vec()
 }
 
+#[doc(hidden)]
 pub fn map<T, S, F>(vector: &[T], func: F) -> Vec<S>
 where
     F: FnMut(&T) -> S,
@@ -190,15 +209,18 @@ where
     vector.iter().map(func).collect()
 }
 
+#[doc(hidden)]
 pub fn array_append<T>(mut vector: Vec<T>, value: T) -> Vec<T> {
     vector.push(value);
     vector
 }
 
+#[doc(hidden)]
 pub fn array_appendN<T>(vector: Option<Vec<T>>, value: T) -> Option<Vec<T>> {
     Some(array_append(vector?, value))
 }
 
+#[doc(hidden)]
 pub fn array_repeat__<T>(element: T, count: i32) -> Vec<T>
 where
     T: Clone,
@@ -208,6 +230,7 @@ where
         .collect()
 }
 
+#[doc(hidden)]
 pub fn array_repeatN_<T>(element: Option<T>, count: i32) -> Option<Vec<Option<T>>>
 where
     T: Clone,
@@ -215,6 +238,7 @@ where
     Some(array_repeat__(element, count))
 }
 
+#[doc(hidden)]
 pub fn array_repeat_N<T>(element: T, count: Option<i32>) -> Option<Vec<T>>
 where
     T: Clone,
@@ -222,6 +246,7 @@ where
     Some(array_repeat__(element, count?))
 }
 
+#[doc(hidden)]
 pub fn array_repeatNN<T>(element: Option<T>, count: Option<i32>) -> Option<Vec<Option<T>>>
 where
     T: Clone,
@@ -229,6 +254,7 @@ where
     Some(array_repeat__(element, count?))
 }
 
+#[doc(hidden)]
 pub fn array_remove__<T>(mut vector: Vec<T>, element: T) -> Vec<T>
 where
     T: Eq,
@@ -239,6 +265,7 @@ where
 
 some_generic_function2!(array_remove, T, Vec<T>, T, Eq, Vec<T>);
 
+#[doc(hidden)]
 pub fn array_position__<T>(vector: Vec<T>, element: T) -> i64
 where
     T: Eq,
@@ -252,14 +279,17 @@ where
 
 some_generic_function2!(array_position, T, Vec<T>, T, Eq, i64);
 
+#[doc(hidden)]
 pub fn array_reverse_<T>(vector: Vec<T>) -> Vec<T> {
     vector.into_iter().rev().collect()
 }
 
+#[doc(hidden)]
 pub fn array_reverseN<T>(vector: Option<Vec<T>>) -> Option<Vec<T>> {
     Some(array_reverse_(vector?))
 }
 
+#[doc(hidden)]
 pub fn sort_array<T>(mut vector: Vec<T>, ascending: bool) -> Vec<T>
 where
     T: Ord,
@@ -273,6 +303,7 @@ where
     vector
 }
 
+#[doc(hidden)]
 pub fn sort_arrayN<T>(vector: Option<Vec<T>>, ascending: bool) -> Option<Vec<T>>
 where
     T: Ord,
@@ -280,6 +311,7 @@ where
     Some(sort_array(vector?, ascending))
 }
 
+#[doc(hidden)]
 pub fn array_max__<T>(vector: Vec<T>) -> Option<T>
 where
     T: Ord,
@@ -287,6 +319,7 @@ where
     vector.into_iter().max()
 }
 
+#[doc(hidden)]
 pub fn array_maxN_<T>(vector: Option<Vec<T>>) -> Option<T>
 where
     T: Ord,
@@ -294,6 +327,7 @@ where
     array_max__(vector?)
 }
 
+#[doc(hidden)]
 pub fn array_max_N<T>(vector: Vec<Option<T>>) -> Option<T>
 where
     T: Ord,
@@ -301,6 +335,7 @@ where
     vector.into_iter().flatten().max()
 }
 
+#[doc(hidden)]
 pub fn array_maxNN<T>(vector: Option<Vec<Option<T>>>) -> Option<T>
 where
     T: Ord,
@@ -308,6 +343,7 @@ where
     array_max_N(vector?)
 }
 
+#[doc(hidden)]
 pub fn array_min__<T>(vector: Vec<T>) -> Option<T>
 where
     T: Ord,
@@ -315,6 +351,7 @@ where
     vector.into_iter().min()
 }
 
+#[doc(hidden)]
 pub fn array_minN_<T>(vector: Option<Vec<T>>) -> Option<T>
 where
     T: Ord,
@@ -322,6 +359,7 @@ where
     array_min__(vector?)
 }
 
+#[doc(hidden)]
 pub fn array_min_N<T>(vector: Vec<Option<T>>) -> Option<T>
 where
     T: Ord,
@@ -329,6 +367,7 @@ where
     vector.into_iter().flatten().min()
 }
 
+#[doc(hidden)]
 pub fn array_minNN<T>(vector: Option<Vec<Option<T>>>) -> Option<T>
 where
     T: Ord,
@@ -336,23 +375,28 @@ where
     array_min_N(vector?)
 }
 
+#[doc(hidden)]
 pub fn array_compact_<T>(vector: Vec<Option<T>>) -> Vec<T> {
     vector.into_iter().flatten().collect()
 }
 
+#[doc(hidden)]
 pub fn array_compact_N<T>(vector: Option<Vec<Option<T>>>) -> Option<Vec<T>> {
     Some(array_compact_(vector?))
 }
 
+#[doc(hidden)]
 pub fn array_prepend<T>(mut vector: Vec<T>, value: T) -> Vec<T> {
     vector.insert(0, value);
     vector
 }
 
+#[doc(hidden)]
 pub fn array_prependN<T>(vector: Option<Vec<T>>, value: T) -> Option<Vec<T>> {
     Some(array_prepend(vector?, value))
 }
 
+#[doc(hidden)]
 pub fn array_contains__<T>(vector: Vec<T>, element: T) -> bool
 where
     T: Eq,
@@ -362,6 +406,7 @@ where
 
 some_generic_function2!(array_contains, T, Vec<T>, T, Eq, bool);
 
+#[doc(hidden)]
 pub fn array_distinct<T>(mut vector: Vec<T>) -> Vec<T>
 where
     T: Eq + Hash + Clone,
@@ -371,6 +416,7 @@ where
     vector
 }
 
+#[doc(hidden)]
 pub fn array_distinctN<T>(vector: Option<Vec<T>>) -> Option<Vec<T>>
 where
     T: Eq + Hash + Clone,
@@ -378,6 +424,7 @@ where
     Some(array_distinct(vector?))
 }
 
+#[doc(hidden)]
 pub fn sequence__(start: i32, end: i32) -> Vec<i32> {
     (start..=end).collect()
 }
@@ -385,6 +432,7 @@ pub fn sequence__(start: i32, end: i32) -> Vec<i32> {
 some_function2!(sequence, i32, i32, Vec<i32>);
 
 // translated from the Calcite implementation to match the behavior
+#[doc(hidden)]
 pub fn arrays_overlapNvec_Nvec_<T>(first: Vec<Option<T>>, second: Vec<Option<T>>) -> Option<bool>
 where
     T: Eq + Hash,
@@ -415,6 +463,7 @@ where
     }
 }
 
+#[doc(hidden)]
 pub fn arrays_overlapNvec_NvecN<T>(
     first: Vec<Option<T>>,
     second: Option<Vec<Option<T>>>,
@@ -425,6 +474,7 @@ where
     arrays_overlapNvec_Nvec_(first, second?)
 }
 
+#[doc(hidden)]
 pub fn arrays_overlapNvecNNvecN<T>(
     first: Option<Vec<Option<T>>>,
     second: Option<Vec<Option<T>>>,
@@ -435,6 +485,7 @@ where
     arrays_overlapNvec_Nvec_(first?, second?)
 }
 
+#[doc(hidden)]
 pub fn arrays_overlapNvecNNvec_<T>(
     first: Option<Vec<Option<T>>>,
     second: Vec<Option<T>>,
@@ -445,6 +496,7 @@ where
     arrays_overlapNvec_Nvec_(first?, second)
 }
 
+#[doc(hidden)]
 pub fn arrays_overlap_vec__vec_<T>(first: Vec<T>, second: Vec<T>) -> bool
 where
     T: Eq + Hash,
@@ -455,6 +507,7 @@ where
     first.intersection(&second).count() != 0
 }
 
+#[doc(hidden)]
 pub fn arrays_overlap_vecN_vecN<T>(first: Option<Vec<T>>, second: Option<Vec<T>>) -> Option<bool>
 where
     T: Eq + Hash,
@@ -462,6 +515,7 @@ where
     Some(arrays_overlap_vec__vec_(first?, second?))
 }
 
+#[doc(hidden)]
 pub fn arrays_overlap_vec__vecN<T>(first: Vec<T>, second: Option<Vec<T>>) -> Option<bool>
 where
     T: Eq + Hash,
@@ -469,6 +523,7 @@ where
     Some(arrays_overlap_vec__vec_(first, second?))
 }
 
+#[doc(hidden)]
 pub fn arrays_overlap_vecN_vec_<T>(first: Option<Vec<T>>, second: Vec<T>) -> Option<bool>
 where
     T: Eq + Hash,
@@ -476,6 +531,7 @@ where
     Some(arrays_overlap_vec__vec_(first?, second))
 }
 
+#[doc(hidden)]
 pub fn array_agg<T>(
     accumulator: &mut Vec<T>,
     value: T,
@@ -499,6 +555,7 @@ where
     accumulator.to_vec()
 }
 
+#[doc(hidden)]
 pub fn array_aggN<T>(
     accumulator: &mut Option<Vec<T>>,
     value: T,
@@ -514,6 +571,7 @@ where
         .map(|accumulator| array_agg(accumulator, value, weight, distinct, keep))
 }
 
+#[doc(hidden)]
 pub fn array_agg_opt<T>(
     accumulator: &mut Vec<Option<T>>,
     value: Option<T>,
@@ -532,6 +590,7 @@ where
     }
 }
 
+#[doc(hidden)]
 pub fn array_agg_optN<T>(
     accumulator: &mut Option<Vec<Option<T>>>,
     value: Option<T>,
@@ -555,6 +614,7 @@ where
 // nullability of map value
 // nullability of index
 
+#[doc(hidden)]
 pub fn map_index___<I, T>(value: BTreeMap<I, T>, map_index: I) -> Option<T>
 where
     I: Ord,
@@ -563,6 +623,7 @@ where
     value.get(&map_index).cloned()
 }
 
+#[doc(hidden)]
 pub fn map_index__N<I, T>(value: BTreeMap<I, T>, map_index: Option<I>) -> Option<T>
 where
     I: Ord,
@@ -572,6 +633,7 @@ where
     map_index___(value, map_index)
 }
 
+#[doc(hidden)]
 pub fn map_index_N_<I, T>(value: BTreeMap<I, Option<T>>, map_index: I) -> Option<T>
 where
     I: Ord,
@@ -583,6 +645,7 @@ where
     }
 }
 
+#[doc(hidden)]
 pub fn map_index_NN<I, T>(value: BTreeMap<I, Option<T>>, map_index: Option<I>) -> Option<T>
 where
     I: Ord,
@@ -592,6 +655,7 @@ where
     map_index_N_(value, map_index)
 }
 
+#[doc(hidden)]
 pub fn map_indexN__<I, T>(value: Option<BTreeMap<I, T>>, map_index: I) -> Option<T>
 where
     I: Ord,
@@ -603,6 +667,7 @@ where
     }
 }
 
+#[doc(hidden)]
 pub fn map_indexN_N<I, T>(value: Option<BTreeMap<I, T>>, map_index: Option<I>) -> Option<T>
 where
     I: Ord,
@@ -615,6 +680,7 @@ where
     }
 }
 
+#[doc(hidden)]
 pub fn map_indexNN_<I, T>(value: Option<BTreeMap<I, Option<T>>>, map_index: I) -> Option<T>
 where
     I: Ord,
@@ -626,6 +692,7 @@ where
     }
 }
 
+#[doc(hidden)]
 pub fn map_indexNNN<I, T>(value: Option<BTreeMap<I, Option<T>>>, map_index: Option<I>) -> Option<T>
 where
     I: Ord,
@@ -641,6 +708,7 @@ where
 /////////////// Variant index
 
 // Return type is always Option<Variant>, but result is never None, always a Variant
+#[doc(hidden)]
 pub fn indexV__<T>(value: Variant, index: T) -> Option<Variant>
 where
     T: Into<Variant>,
@@ -648,6 +716,7 @@ where
     value.index(index.into())
 }
 
+#[doc(hidden)]
 pub fn indexV_N<T>(value: Variant, index: Option<T>) -> Option<Variant>
 where
     T: Into<Variant>,
@@ -656,6 +725,7 @@ where
     indexV__(value, index)
 }
 
+#[doc(hidden)]
 pub fn indexVN_<T>(value: Option<Variant>, index: T) -> Option<Variant>
 where
     T: Into<Variant>,
@@ -664,6 +734,7 @@ where
     indexV__(value, index)
 }
 
+#[doc(hidden)]
 pub fn indexVNN<T>(value: Option<Variant>, index: Option<T>) -> Option<Variant>
 where
     T: Into<Variant>,
