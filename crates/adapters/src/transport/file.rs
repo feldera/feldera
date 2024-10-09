@@ -129,7 +129,7 @@ impl FileInputReader {
                         }
                         consumer.extended(
                             total,
-                            serde_json::to_value(Metadata {
+                            rmpv::ext::to_value(Metadata {
                                 offsets: range.unwrap_or_else(|| {
                                     let ofs = splitter.position();
                                     ofs..ofs
@@ -138,13 +138,13 @@ impl FileInputReader {
                         );
                     }
                     InputReaderCommand::Seek(metadata) => {
-                        let Metadata { offsets } = serde_json::from_value(metadata)?;
+                        let Metadata { offsets } = rmpv::ext::from_value(metadata)?;
                         let offset = offsets.end;
                         file.seek(SeekFrom::Start(offset))?;
                         splitter.seek(offset);
                     }
                     InputReaderCommand::Replay(metadata) => {
-                        let Metadata { offsets } = serde_json::from_value(metadata)?;
+                        let Metadata { offsets } = rmpv::ext::from_value(metadata)?;
                         file.seek(SeekFrom::Start(offsets.start))?;
                         splitter.seek(offsets.start);
                         let mut remainder = (offsets.end - offsets.start) as usize;
