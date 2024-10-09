@@ -23,12 +23,10 @@ use crate::transport::input_transport_config_is_fault_tolerant;
 use crate::transport::InputReader;
 use crate::transport::Step;
 use crate::transport::{input_transport_config_to_endpoint, output_transport_config_to_endpoint};
-use crate::util::write_file_atomically;
 use crate::InputBuffer;
 use crate::{
-    catalog::SerBatch, Catalog, CircuitCatalog, Encoder, InputConsumer, InputFormat,
-    OutputConsumer, OutputEndpoint, OutputFormat, ParseError, PipelineState,
-    TransportInputEndpoint,
+    catalog::SerBatch, CircuitCatalog, Encoder, InputConsumer, InputFormat, OutputConsumer,
+    OutputEndpoint, OutputFormat, ParseError, PipelineState, TransportInputEndpoint,
 };
 use anyhow::Error as AnyError;
 use arrow::datatypes::Schema;
@@ -38,6 +36,7 @@ use crossbeam::{
     sync::{Parker, ShardedLock, Unparker},
 };
 use datafusion::prelude::*;
+use dbsp::circuit::checkpointer::CheckpointMetadata;
 use dbsp::{
     circuit::{CircuitConfig, Layout, StorageConfig},
     profile::GraphProfile,
@@ -45,7 +44,8 @@ use dbsp::{
 };
 use log::{debug, error, info, trace};
 use metadata::Checkpoint;
-use metadata::{ReadResult, StepMetadata, StepReader, StepWriter};
+use metadata::StepMetadata;
+use metadata::StepRw;
 use metrics::set_global_recorder;
 use metrics_exporter_prometheus::{PrometheusBuilder, PrometheusHandle};
 use metrics_util::{
@@ -55,13 +55,12 @@ use metrics_util::{
 use rmpv::Value as RmpValue;
 use stats::StepProgress;
 use std::borrow::Cow;
+use std::cmp::min;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::fs;
-use std::sync::mpsc::channel;
-use std::sync::mpsc::sync_channel;
-use std::sync::mpsc::SyncSender;
-use std::sync::mpsc::{Receiver, Sender};
+use std::path::PathBuf;
+use std::sync::mpsc::{channel, sync_channel, Receiver, Sender};
 use std::{
     collections::{BTreeMap, BTreeSet},
     io::Error as IoError,
@@ -75,6 +74,7 @@ use std::{
     time::{Duration, Instant},
 };
 use tokio::sync::{oneshot::Sender as OneshotSender, Mutex as TokioMutex};
+use uuid::Uuid;
 
 mod error;
 mod metadata;
@@ -166,21 +166,6 @@ impl Controller {
             + Send
             + 'static,
     {
-        let circuit_thread_parker = Parker::new();
-        let circuit_thread_unparker = circuit_thread_parker.unparker().clone();
-
-        let backpressure_thread_parker = Parker::new();
-        let backpressure_thread_unparker = backpressure_thread_parker.unparker().clone();
-
-        let (command_sender, command_receiver) = channel();
-        let inner = ControllerInner::new(
-            config,
-            circuit_thread_unparker,
-            backpressure_thread_unparker,
-            error_cb,
-            command_sender,
-        );
-
         let (circuit_thread_handle, inner) = {
             // A channel to communicate circuit initialization status.
             // The `circuit_factory` closure must be invoked in the context of
@@ -190,16 +175,20 @@ impl Controller {
             // thread adds a catalog to `inner`, and returns it wrapped in an `Arc`.
             let (init_status_sender, init_status_receiver) =
                 sync_channel::<Result<Arc<ControllerInner>, ControllerError>>(0);
-            let handle = spawn(move || {
-                Self::circuit_thread(
-                    circuit_factory,
-                    inner,
-                    circuit_thread_parker,
-                    backpressure_thread_parker,
-                    init_status_sender,
-                    command_receiver,
-                )
-            });
+            let config = config.clone();
+            let handle =
+                spawn(
+                    move || match CircuitThread::new(circuit_factory, config, error_cb) {
+                        Err(error) => {
+                            let _ = init_status_sender.send(Err(error));
+                            Ok(())
+                        }
+                        Ok(circuit_thread) => {
+                            let _ = init_status_sender.send(Ok(circuit_thread.controller.clone()));
+                            circuit_thread.run()
+                        }
+                    },
+                );
             // If `recv` fails, it indicates that the circuit thread panicked
             // during initialization.
             let inner = init_status_receiver
@@ -457,108 +446,672 @@ impl Controller {
         self.inner.status.pipeline_complete()
     }
 
+    pub(crate) fn metrics(&self) -> PrometheusHandle {
+        self.inner.prometheus_handle.clone()
+    }
+
+    pub fn checkpoint(&self) -> Result<Checkpoint, ControllerError> {
+        self.inner.checkpoint()
+    }
+}
+
+struct CircuitThread {
+    controller: Arc<ControllerInner>,
+    step: Step,
+    circuit: DBSPHandle,
+    command_receiver: Receiver<Command>,
+    state_path: Option<PathBuf>,
+    step_rw: Option<StepRw>,
+    backpressure_thread: BackpressureThread,
+    parker: Parker,
+}
+
+impl CircuitThread {
     /// Circuit thread function: holds the handle to the circuit, calls `step`
     /// on it whenever input data is available, pushes output batches
     /// produced by the circuit to output pipelines.
-    fn circuit_thread<F>(
+    fn new<F>(
         circuit_factory: F,
-        mut controller: ControllerInner,
-        parker: Parker,
-        backpressure_thread_parker: Parker,
-        init_status_sender: SyncSender<Result<Arc<ControllerInner>, ControllerError>>,
-        command_receiver: Receiver<Command>,
-    ) -> Result<(), ControllerError>
+        config: PipelineConfig,
+        error_cb: Box<dyn Fn(ControllerError) + Send + Sync>,
+    ) -> Result<Self, ControllerError>
     where
         F: FnOnce(CircuitConfig) -> Result<(DBSPHandle, Box<dyn CircuitCatalog>), ControllerError>,
     {
-        let mut start: Option<Instant> = None;
-        let mut backpressure_thread_parker = Some(backpressure_thread_parker);
+        let ControllerInit {
+            step,
+            pipeline_config,
+            circuit_config,
+            state_path,
+            step_rw,
+        } = ControllerInit::new(config)?;
+        let (circuit, catalog) = circuit_factory(circuit_config)?;
+        let (parker, backpressure_thread, command_receiver, controller) =
+            ControllerInner::new(pipeline_config, catalog, error_cb)?;
 
-        let min_storage_bytes = if controller.status.pipeline_config.global.storage {
-            // This reduces the files stored on disk to a reasonable number.
-            controller
-                .status
-                .pipeline_config
-                .global
-                .min_storage_bytes
-                .unwrap_or(1024 * 1024)
-        } else {
-            usize::MAX
-        };
+        Ok(Self {
+            controller,
+            step,
+            circuit,
+            command_receiver,
+            state_path,
+            step_rw,
+            backpressure_thread,
+            parker,
+        })
+    }
 
-        // Check whether all of the configured inputs are fault-tolerant.
-        let mut inputs_are_fault_tolerant = true;
-        for (_name, config) in controller.status.pipeline_config.inputs.iter() {
-            if !input_transport_config_is_fault_tolerant(&config.connector_config.transport) {
-                inputs_are_fault_tolerant = false;
-                break;
-            }
+    /// Main loop of the circuit thread.
+    fn run(mut self) -> Result<(), ControllerError> {
+        let config = &self.controller.status.pipeline_config;
+        let mut trigger = StepTrigger::new(self.controller.clone());
+        if config.global.cpu_profiler {
+            self.circuit.enable_cpu_profiler().unwrap_or_else(|e| {
+                error!("Failed to enable CPU profiler: {e}");
+            });
         }
 
-        // Read the checkpoint and input steps, if any.
-        let mut checkpoint = Checkpoint::default();
-        let mut step_reader = None;
-        let mut step_writer = None;
-        let storage_path = controller
-            .status
-            .pipeline_config
-            .storage_config
-            .as_ref()
-            .map(|storage| storage.path());
-        let state_path = match storage_path.as_ref() {
-            Some(path) => {
-                fn startup_io_error(error: IoError) -> ControllerError {
-                    ControllerError::io_error(String::from("controller startup"), error)
+        self.seek_to_initial_step()?;
+        let mut replaying = self.replay_step()?;
+
+        if !replaying {
+            self.backpressure_thread.start();
+        }
+
+        loop {
+            self.run_commands();
+            let running = match self.controller.state() {
+                PipelineState::Running => true,
+                PipelineState::Paused => false,
+                PipelineState::Terminated => break,
+            };
+
+            // Backpressure in the output pipeline: wait for room in output buffers to
+            // become available.
+            if self.controller.output_buffers_full() {
+                debug!("circuit thread: park waiting for output buffer space");
+                self.parker.park();
+                debug!("circuit thread: unparked");
+                continue;
+            }
+
+            if let Some(wait) = trigger.trigger(replaying, running) {
+                wait.park(&self.parker);
+                continue;
+            }
+
+            let Ok(FlushedInput {
+                total_consumed,
+                notifications,
+                step_metadata,
+            }) = self.flush_input_to_circuit(replaying)
+            else {
+                break;
+            };
+            if !replaying {
+                self.write_step(step_metadata)?;
+            }
+
+            // Wake up the backpressure thread to unpause endpoints blocked due to
+            // backpressure.
+            self.controller.unpark_backpressure();
+            self.step();
+
+            let processed_records = self.processed_records(total_consumed, notifications);
+
+            // Update `trace_snapshot` to the latest traces
+            self.update_snapshot();
+
+            // Push output batches to output pipelines.
+            if !replaying {
+                self.sync_step()?;
+            }
+            self.push_output(processed_records);
+
+            self.step += 1;
+            if replaying {
+                replaying = self.replay_step()?;
+                if !replaying && running {
+                    info!("starting pipeline");
+                    self.backpressure_thread.start();
                 }
-                fs::create_dir_all(path).map_err(startup_io_error)?;
+            }
+            self.controller.unpark_backpressure();
+        }
+        self.flush_commands();
+        self.circuit
+            .kill()
+            .map_err(|_| ControllerError::dbsp_panic())
+    }
 
-                if inputs_are_fault_tolerant {
-                    info!("enabling fault tolerance");
+    // Update `trace_snapshot` to the latest traces.
+    //
+    // This updates what ad hoc snapshots query.
+    fn update_snapshot(&mut self) {
+        let mut consistent_snapshot = self.controller.trace_snapshot.blocking_lock();
+        for (name, clh) in self.controller.catalog.output_iter() {
+            if let Some(ih) = &clh.integrate_handle {
+                consistent_snapshot.insert(name.clone(), ih.take_from_all());
+            }
+        }
+    }
 
-                    let state_path = path.join("state.json");
-                    if fs::exists(&state_path).map_err(startup_io_error)? {
-                        info!("{}: reading checkpoint metadata", state_path.display());
-                        checkpoint = serde_json::from_slice(
-                            &fs::read(&state_path).map_err(startup_io_error)?,
-                        )
-                        .map_err(|e| {
-                            ControllerError::CheckpointParseError {
-                                error: e.to_string(),
-                            }
-                        })?;
-                    }
-
-                    let steps_path = path.join("steps.bin");
-                    if fs::exists(&steps_path).map_err(startup_io_error)? || checkpoint.step > 0 {
-                        info!("{}: opening to read input steps", steps_path.display());
-                        step_reader = Some(StepReader::open(&steps_path)?);
+    /// Reads and executes all the commands pending from
+    /// `self.command_receiver`.
+    fn run_commands(&mut self) {
+        for command in self.command_receiver.try_iter() {
+            match command {
+                Command::GraphProfile(reply_callback) => reply_callback(
+                    self.circuit
+                        .graph_profile()
+                        .map_err(ControllerError::dbsp_error),
+                ),
+                Command::Checkpoint(reply_sender) => {
+                    let result = if let Some(state_path) = self.state_path.as_ref() {
+                        self.circuit
+                            .commit()
+                            .map_err(ControllerError::from)
+                            .and_then(|circuit| {
+                                let checkpoint = Checkpoint {
+                                    circuit,
+                                    step: self.step,
+                                    config: self.controller.status.pipeline_config.clone(),
+                                };
+                                checkpoint.write(state_path).map(|()| checkpoint)
+                            })
                     } else {
-                        info!("{}: opening to write input steps", steps_path.display());
-                        step_writer = Some(StepWriter::create(&steps_path)?);
+                        Err(ControllerError::NotSupported {
+                            error: String::from(
+                                "cannot checkpoint circuit because storage is not configured",
+                            ),
+                        })
                     };
-                    Some(state_path)
-                } else {
-                    info!("disabling fault tolerance because this circuit has at least one non-fault-tolerant input");
-                    None
+                    let _ = reply_sender.send(result);
                 }
             }
-            None => {
-                info!("disabling fault tolerance because this storage is not enabled");
-                None
-            }
-        };
-        info!(
-            "starting from step {} in checkpoint {}",
-            checkpoint.step, checkpoint.circuit.uuid
-        );
+        }
+    }
 
-        let config = CircuitConfig {
-            layout: Layout::new_solo(controller.status.pipeline_config.global.workers as usize),
+    /// Reads and replies to all of the commands pending from
+    /// `self.command_receiver` without executing them.
+    fn flush_commands(&mut self) {
+        for command in self.command_receiver.try_iter() {
+            match command {
+                Command::GraphProfile(callback) => callback(Err(ControllerError::ControllerExit)),
+                Command::Checkpoint(_) => (),
+            }
+        }
+    }
+
+    /// Tries to seek `self.step_rw` (if any) to the initial step indicated in
+    /// `self.step`.
+    fn seek_to_initial_step(&mut self) -> Result<(), ControllerError> {
+        if self.step > 0 {
+            let (new_step_rw, prev_step_metadata) = self
+                .step_rw
+                .take()
+                .unwrap()
+                .into_reader()
+                .unwrap()
+                .seek(self.step - 1)?;
+            self.step_rw = Some(StepRw::Reader(new_step_rw));
+            for (endpoint_name, metadata) in prev_step_metadata.input_endpoints {
+                let endpoint_id = self.controller.input_endpoint_id_by_name(&endpoint_name)?;
+                self.controller.inputs.lock().unwrap()[&endpoint_id]
+                    .reader
+                    .seek(metadata);
+            }
+        }
+        Ok(())
+    }
+
+    /// Tries to start replaying the current step `self.step` by reading its
+    /// metadata from `self.step_rw` and passing it to all of the input
+    /// endpoints.  Return true if replaying was initiated or false if we've
+    /// completed all the replaying for this pipeline.
+    fn replay_step(&mut self) -> Result<bool, ControllerError> {
+        // Read a step.
+        let Some(rw) = self.step_rw.take() else {
+            // There's no step reader/writer, so we're not replaying.
+            return Ok(false);
+        };
+        let (metadata, rw) = rw.read()?;
+        self.step_rw = Some(rw);
+
+        let Some(metadata) = metadata else {
+            // No more steps to replay.
+            return Ok(false);
+        };
+
+        // There's a step to replay.
+        if metadata.step != self.step {
+            return Err(ControllerError::UnexpectedStep {
+                actual: metadata.step,
+                expected: self.step,
+            });
+        }
+        info!("replaying input step {}", self.step);
+        for (endpoint_name, metadata) in metadata.input_endpoints {
+            let endpoint_id = self.controller.input_endpoint_id_by_name(&endpoint_name)?;
+            self.controller.inputs.lock().unwrap()[&endpoint_id]
+                .reader
+                .replay(metadata);
+            *self.controller.status.inputs.read().unwrap()[&endpoint_id]
+                .progress
+                .lock()
+                .unwrap() = StepProgress::Started;
+        }
+        Ok(true)
+    }
+
+    /// Requests all of the input adapters to flush their input to the circuit,
+    /// and waits for them to finish doing it.
+    ///
+    /// Returns the total number of records consumed, a vector of notifications
+    /// to send when the records have been processed, and the corresponding
+    /// steps log entries.
+    fn flush_input_to_circuit(&mut self, replaying: bool) -> Result<FlushedInput, ()> {
+        loop {
+            // Collect inputs that need [InputReader::queue] to be called. Then,
+            // separately, call it on each of them. We don't do it in a single
+            // step because that causes a deadlock due to nesting locks.
+            //
+            // We don't just start all of the inputs in a single pass because
+            // inputs can be added or removed (particularly HTTP inputs) when we
+            // drop the lock.
+            let mut all_complete = true;
+            let mut need_start = Vec::new();
+            for (endpoint_id, status) in self.controller.status.input_status().iter() {
+                let mut progress = status.progress.lock().unwrap();
+                match *progress {
+                    StepProgress::NotStarted => {
+                        assert!(!replaying);
+                        need_start.push(*endpoint_id);
+                        all_complete = false;
+                        *progress = StepProgress::Started;
+                    }
+                    StepProgress::Started => all_complete = false,
+                    StepProgress::Complete { .. } => (),
+                }
+            }
+            if !need_start.is_empty() {
+                let inputs = self.controller.inputs.lock().unwrap();
+                for endpoint_id in need_start {
+                    if let Some(descr) = inputs.get(&endpoint_id) {
+                        descr.reader.queue();
+                    }
+                }
+            }
+            if all_complete {
+                let mut total_consumed = 0;
+                let mut step_metadata = HashMap::new();
+                for (id, status) in self.controller.status.input_status().iter() {
+                    match mem::replace(
+                        &mut *status.progress.lock().unwrap(),
+                        StepProgress::NotStarted,
+                    ) {
+                        StepProgress::Complete {
+                            num_records,
+                            metadata,
+                        } => {
+                            total_consumed += num_records;
+                            if let Some(metadata) = metadata {
+                                step_metadata.insert(status.endpoint_name.clone(), metadata);
+                            }
+                        }
+                        StepProgress::NotStarted => {
+                            info!("race adding endpoint {id}");
+                        }
+                        StepProgress::Started => unreachable!(),
+                    }
+                }
+                let input_queue = mem::take(&mut *self.controller.input_queue.lock().unwrap());
+                let notifications = input_queue
+                    .into_iter()
+                    .map(|(mut buffer, notification)| {
+                        total_consumed += buffer.flush_all() as u64;
+                        notification
+                    })
+                    .collect::<Vec<_>>();
+
+                return Ok(FlushedInput {
+                    total_consumed,
+                    notifications,
+                    step_metadata,
+                });
+            }
+
+            self.parker.park();
+            if self.controller.state() == PipelineState::Terminated {
+                return Err(());
+            }
+        }
+    }
+
+    /// Reports that `total_consumed` records have been consumed and calls all
+    /// of the `notifications` to let them know that they're done.
+    ///
+    /// Returns the total number of records processed by the pipeline *before*
+    /// this step.
+    fn processed_records(
+        &mut self,
+        total_consumed: u64,
+        notifications: Vec<OneshotSender<()>>,
+    ) -> u64 {
+        let processed_records = self
+            .controller
+            .status
+            .global_metrics
+            .processed_records(total_consumed);
+        for notification in notifications {
+            let _ = notification.send(());
+        }
+        processed_records
+    }
+
+    /// Writes `step_metadata` to the step writer.
+    fn write_step(
+        &mut self,
+        step_metadata: HashMap<String, RmpValue>,
+    ) -> Result<(), ControllerError> {
+        if let Some(step_writer) = self.step_rw.as_mut().and_then(|rw| rw.as_writer()) {
+            step_writer.write(&StepMetadata {
+                step: self.step,
+                input_endpoints: step_metadata,
+            })?;
+        }
+        Ok(())
+    }
+
+    /// Waits for the step writer to commit the step (written by
+    /// [Self::write_step]) to stable storage.
+    fn sync_step(&mut self) -> Result<(), ControllerError> {
+        if let Some(step_writer) = self.step_rw.as_mut().and_then(|rw| rw.as_writer()) {
+            step_writer.wait()?;
+        }
+        Ok(())
+    }
+
+    /// Pushes all of the records to the output.
+    ///
+    /// `processed_records` is the total number of records processed by the
+    /// pipeline *before* this step.
+    fn push_output(&mut self, processed_records: u64) {
+        let outputs = self.controller.outputs.read().unwrap();
+        for (_stream, (output_handles, endpoints)) in outputs.iter_by_stream() {
+            let delta_batch = output_handles.delta_handle.as_ref().take_from_all();
+            let num_delta_records = delta_batch.iter().map(|b| b.len()).sum();
+
+            let mut delta_batch = Some(delta_batch);
+
+            for (i, endpoint_id) in endpoints.iter().enumerate() {
+                let endpoint = outputs.lookup_by_id(endpoint_id).unwrap();
+
+                self.controller
+                    .status
+                    .enqueue_batch(*endpoint_id, num_delta_records);
+
+                let batch = if i == endpoints.len() - 1 {
+                    delta_batch.take().unwrap()
+                } else {
+                    delta_batch.as_ref().unwrap().clone()
+                };
+
+                endpoint.queue.push((self.step, batch, processed_records));
+
+                // Wake up the output thread.  We're not trying to be smart here and
+                // wake up the thread conditionally if it was previously idle, as I
+                // don't expect this to make any real difference.
+                endpoint.unparker.unpark();
+            }
+        }
+        drop(outputs);
+    }
+
+    /// Executes a step in the circuit.
+    fn step(&mut self) {
+        debug!("circuit thread: calling 'circuit.step'");
+        self.circuit
+            .step()
+            .unwrap_or_else(|e| self.controller.error(e.into()));
+        debug!("circuit thread: 'circuit.step' returned");
+    }
+}
+
+struct FlushedInput {
+    /// Number of records consumed by the circuit.
+    total_consumed: u64,
+
+    /// Notifications to emit when the records have been processed.
+    notifications: Vec<OneshotSender<()>>,
+
+    /// Metadata to write to the steps log.
+    step_metadata: HashMap<String, RmpValue>,
+}
+
+/// Decides when to trigger a step.
+struct StepTrigger {
+    /// Time when `clock_resolution` expires.
+    tick: Option<Instant>,
+
+    /// Time when `max_buffering_delay` expires.
+    buffer_timeout: Option<Instant>,
+
+    controller: Arc<ControllerInner>,
+
+    /// Maximum time to wait before stepping after receiving at least one record
+    /// but fewer than `min_batch_size_records`.
+    max_buffering_delay: Duration,
+
+    /// Minimum number of records to receive before unconditionally triggering a
+    /// step.
+    min_batch_size_records: u64,
+
+    /// Time between clock ticks.
+    clock_resolution: Option<Duration>,
+}
+
+/// When the next step will definitely trigger (if not before).
+enum Wait {
+    /// At time `.0`.
+    Time(Instant),
+
+    /// No step is scheduled.
+    Forever,
+}
+
+impl Wait {
+    // Park until the next step will trigger (or until we're unparked).
+    fn park(self, parker: &Parker) {
+        match self {
+            Wait::Time(t) => parker.park_deadline(t),
+            Wait::Forever => parker.park(),
+        }
+    }
+}
+
+impl StepTrigger {
+    /// Returns a new [StepTrigger].
+    fn new(controller: Arc<ControllerInner>) -> Self {
+        let config = &controller.status.pipeline_config;
+        let max_buffering_delay = Duration::from_micros(config.global.max_buffering_delay_usecs);
+        let min_batch_size_records = config.global.min_batch_size_records;
+        let clock_resolution = config
+            .global
+            .clock_resolution_usecs
+            .map(Duration::from_micros);
+        Self {
+            controller,
+            tick: clock_resolution.map(|delay| Instant::now() + delay),
+            buffer_timeout: None,
+            max_buffering_delay,
+            min_batch_size_records,
+            clock_resolution,
+        }
+    }
+
+    /// Determines when to trigger the next step, given whether we're currently
+    /// `replaying` and whether the pipeline is currently `running`.  Returns
+    /// `None` to trigger a step right away, and otherwise how long to wait.
+    fn trigger(&mut self, replaying: bool, running: bool) -> Option<Wait> {
+        let buffered_records = self.controller.status.num_buffered_input_records();
+
+        // `self.tick` but `None` if we're not running.
+        let tick = running.then_some(self.tick).flatten();
+
+        if replaying
+            || self.controller.status.unset_step_requested()
+            || buffered_records > self.min_batch_size_records
+            || tick.map_or(false, |t| Instant::now() >= t)
+            || self.buffer_timeout.map_or(false, |t| Instant::now() >= t)
+        {
+            self.tick = self.clock_resolution.map(|delay| Instant::now() + delay);
+            self.buffer_timeout = None;
+            None
+        } else {
+            if buffered_records > 0 && self.buffer_timeout.is_none() {
+                self.buffer_timeout = Some(Instant::now() + self.max_buffering_delay);
+            }
+            match (tick, self.buffer_timeout) {
+                (Some(t1), Some(t2)) => Some(Wait::Time(min(t1, t2))),
+                (Some(t), None) | (None, Some(t)) => Some(Wait::Time(t)),
+                (None, None) => Some(Wait::Forever),
+            }
+        }
+    }
+}
+
+/// Controller initialization.
+///
+/// When we start a controller, we do one of:
+///
+/// - Start from an existing checkpoint.
+///
+/// - Start a new pipeline while a new initial checkpoint.
+///
+/// - Start a new pipeline without any checkpoint support.
+///
+/// This structure handles all these cases.
+struct ControllerInit {
+    /// The first step that the circuit will execute.
+    step: Step,
+
+    /// The pipeline configuration.
+    ///
+    /// This will differ from the one passed into [ControllerInit::new] if a
+    /// checkpoint is read, because a checkpoint includes the pipeline
+    /// configuration.
+    pipeline_config: PipelineConfig,
+
+    /// The circuit configuration.
+    circuit_config: CircuitConfig,
+
+    /// The path to the `state.json` checkpoint file, if fault tolerance is
+    /// enabled.
+    state_path: Option<PathBuf>,
+
+    /// The step reader/writer, if fault tolerance is enabled.
+    step_rw: Option<StepRw>,
+}
+
+impl ControllerInit {
+    fn new(config: PipelineConfig) -> Result<Self, ControllerError> {
+        let Some(path) = config.storage_config.as_ref().map(|storage| storage.path()) else {
+            info!("disabling fault tolerance because storage is not enabled");
+            return Self::without_checkpoint(config);
+        };
+
+        fn startup_io_error(error: IoError) -> ControllerError {
+            ControllerError::io_error(String::from("controller startup"), error)
+        }
+        let state_path = path.join("state.json");
+        let steps_path = path.join("steps.bin");
+        if fs::exists(&state_path).map_err(startup_io_error)? {
+            // Open the existing checkpoint.
+            info!(
+                "{}: initializing fault tolerance from saved state",
+                state_path.display()
+            );
+            let checkpoint = Checkpoint::read(&state_path)?;
+
+            // There might be a steps file already (there must be, if
+            // we're not at step 0). Open it, if so; otherwise, create a
+            // new one.
+            let step_rw =
+                if fs::exists(&steps_path).map_err(startup_io_error)? || checkpoint.step > 0 {
+                    info!(
+                        "{}: opening to start from step {}",
+                        steps_path.display(),
+                        checkpoint.step
+                    );
+                    StepRw::open(&steps_path)?
+                } else {
+                    info!("{}: creating", steps_path.display());
+                    StepRw::create(&steps_path)?
+                };
+            Self::with_checkpoint(checkpoint, state_path, step_rw)
+        } else if config.inputs.values().all(|config| {
+            input_transport_config_is_fault_tolerant(&config.connector_config.transport)
+        }) {
+            // We don't have an existing checkpoint but this pipeline
+            // can be fault tolerant, so start one and create a new
+            // steps file for it.
+            info!(
+                "{}: creating new fault tolerant pipeline",
+                state_path.display()
+            );
+            let checkpoint = Checkpoint {
+                circuit: CheckpointMetadata::default(),
+                step: 0,
+                config: config.clone(),
+            };
+            fs::create_dir_all(path).map_err(startup_io_error)?;
+            checkpoint.write(&state_path)?;
+
+            info!("{}: creating", steps_path.display());
+            let step_rw = StepRw::create(&steps_path)?;
+            Self::with_checkpoint(checkpoint, state_path, step_rw)
+        } else {
+            // We don't have an existing check point and this pipeline
+            // cannot be fault-tolerant.
+            info!("{}: disabling fault tolerance (saved state file does not exist and circuit has at least one non-fault-tolerant input)", path.display());
+            Self::without_checkpoint(config)
+        }
+    }
+    fn without_checkpoint(pipeline_config: PipelineConfig) -> Result<Self, ControllerError> {
+        let circuit_config =
+            Self::circuit_config(&pipeline_config, CheckpointMetadata::default().uuid)?;
+        Ok(Self {
+            step: 0,
+            pipeline_config,
+            circuit_config,
+            state_path: None,
+            step_rw: None,
+        })
+    }
+    fn with_checkpoint(
+        checkpoint: Checkpoint,
+        state_path: PathBuf,
+        step_rw: StepRw,
+    ) -> Result<Self, ControllerError> {
+        let circuit_config = Self::circuit_config(&checkpoint.config, checkpoint.circuit.uuid)?;
+        Ok(Self {
+            step: checkpoint.step,
+            pipeline_config: checkpoint.config,
+            circuit_config,
+            state_path: Some(state_path),
+            step_rw: Some(step_rw),
+        })
+    }
+    fn circuit_config(
+        pipeline_config: &PipelineConfig,
+        init_checkpoint: Uuid,
+    ) -> Result<CircuitConfig, ControllerError> {
+        Ok(CircuitConfig {
+            layout: Layout::new_solo(pipeline_config.global.workers as usize),
             // Put the circuit's checkpoints in a `circuit` subdirectory of the
             // storage directory.
-            storage: controller
-                .status
-                .pipeline_config
+            storage: pipeline_config
                 .storage_config
                 .as_ref()
                 .map(|storage| {
@@ -582,350 +1135,52 @@ impl Controller {
                         error,
                     )
                 })?,
-            min_storage_bytes,
-            init_checkpoint: checkpoint.circuit.uuid,
-        };
-        let (mut circuit, catalog) = match circuit_factory(config) {
-            Ok(retval) => retval,
-            Err(e) => {
-                let _ = init_status_sender.send(Err(e));
-                return Ok(());
-            }
-        };
-
-        controller.catalog = Arc::new(catalog);
-        let controller = Arc::new(controller);
-        controller.initialize_adhoc_queries();
-        for (input_name, input_config) in controller.status.pipeline_config.inputs.iter() {
-            controller.connect_input(input_name, input_config)?;
-        }
-        for (output_name, output_config) in controller.status.pipeline_config.outputs.iter() {
-            controller.connect_output(output_name, output_config)?;
-        }
-
-        // Send back confirmation only after having completed the
-        // initializations above, to avoid races.
-        let _ = init_status_sender.send(Ok(controller.clone()));
-
-        if controller.status.pipeline_config.global.cpu_profiler {
-            circuit.enable_cpu_profiler().unwrap_or_else(|e| {
-                error!("Failed to enable CPU profiler: {e}");
-            });
-        }
-
-        let max_buffering_delay = Duration::from_micros(
-            controller
-                .status
-                .pipeline_config
-                .global
-                .max_buffering_delay_usecs,
-        );
-        let min_batch_size_records = controller
-            .status
-            .pipeline_config
-            .global
-            .min_batch_size_records;
-
-        let mut step = checkpoint.step;
-        if step > 0 {
-            let (new_step_reader, prev_step_metadata) =
-                step_reader.take().unwrap().seek(step - 1)?;
-            step_reader = Some(new_step_reader);
-            for (endpoint_name, metadata) in prev_step_metadata.input_endpoints {
-                let endpoint_id = controller.input_endpoint_id_by_name(&endpoint_name)?;
-                controller.inputs.lock().unwrap()[&endpoint_id]
-                    .reader
-                    .seek(metadata);
-            }
-        }
-        let (mut replaying, mut step_reader, mut step_writer) =
-            controller.replay_step(step_reader, step_writer, step)?;
-        let mut _backpressure_thread = if !replaying {
-            Some(BackpressureThread::new(
-                controller.clone(),
-                backpressure_thread_parker.take().unwrap(),
-            ))
-        } else {
-            None
-        };
-
-        let clock_resolution = controller
-            .status
-            .pipeline_config
-            .global
-            .clock_resolution_usecs
-            .map(Duration::from_micros);
-
-        // Time when the last step was started. Used to force the pipeline to make a step
-        // periodically to update the now() value.
-        let mut last_step: Option<Instant> = None;
-        loop {
-            for command in command_receiver.try_iter() {
-                match command {
-                    Command::GraphProfile(reply_callback) => {
-                        reply_callback(circuit.graph_profile().map_err(ControllerError::dbsp_error))
-                    }
-                    Command::Checkpoint(reply_sender) => {
-                        let result = if let Some(state_path) = state_path.as_ref() {
-                            circuit
-                                .commit()
-                                .map_err(ControllerError::from)
-                                .and_then(|cp| {
-                                    let checkpoint = Checkpoint { circuit: cp, step };
-                                    match write_file_atomically(
-                                        state_path,
-                                        &serde_json::to_vec(&checkpoint).unwrap(),
-                                    ) {
-                                        Ok(()) => Ok(checkpoint),
-                                        Err(error) => Err(ControllerError::io_error(
-                                            format!(
-                                                "{}: failed to write checkpoint state",
-                                                state_path.display()
-                                            ),
-                                            error,
-                                        )),
-                                    }
-                                })
-                        } else {
-                            Err(ControllerError::NotSupported {
-                                error: String::from(
-                                    "cannot checkpoint circuit because storage is not configured",
-                                ),
-                            })
-                        };
-                        let _ = reply_sender.send(result);
-                    }
-                }
-            }
-            match controller.state() {
-                state @ (PipelineState::Running | PipelineState::Paused) => {
-                    // Backpressure in the output pipeline: wait for room in output buffers to
-                    // become available.
-                    if controller.output_buffers_full() {
-                        debug!("circuit thread: park waiting for output buffer space");
-                        parker.park();
-                        debug!("circuit thread: unparked");
-                        continue;
-                    }
-
-                    let buffered_records = controller.status.num_buffered_input_records();
-
-                    // Trigger a step if it's been longer than `clock_resolution` since the last step
-                    // and the pipeline isn't paused.
-                    let tick = if replaying || state != PipelineState::Running {
-                        false
-                    } else if let Some(clock_resolution) = clock_resolution {
-                        last_step.map_or(true, |last_step| last_step.elapsed() > clock_resolution)
-                    } else {
-                        false
-                    };
-
-                    // We have sufficient buffered inputs or the buffering delay has expired or
-                    // the client explicitly requested the circuit to run -- kick the circuit to
-                    // consume buffered data.
-                    // Use strict inequality in case `min_batch_size_records` is 0.
-                    if controller.status.unset_step_requested()
-                        || tick
-                        || buffered_records > min_batch_size_records
-                        || start
-                            .map(|start| start.elapsed() >= max_buffering_delay)
-                            .unwrap_or(false)
-                        || replaying
-                    {
-                        // Begin countdown from the start of the step.
-                        last_step = Some(Instant::now());
-
-                        if controller.complete_step(replaying, &parker).is_err() {
-                            break;
-                        }
-
-                        let mut total_consumed = 0;
-                        let mut step_metadata = HashMap::new();
-                        for (id, status) in controller.status.input_status().iter() {
-                            match mem::replace(
-                                &mut *status.progress.lock().unwrap(),
-                                StepProgress::NotStarted,
-                            ) {
-                                StepProgress::Complete {
-                                    num_records,
-                                    metadata,
-                                } => {
-                                    total_consumed += num_records;
-                                    if let Some(metadata) = metadata {
-                                        step_metadata
-                                            .insert(status.endpoint_name.clone(), metadata);
-                                    }
-                                }
-                                StepProgress::NotStarted => {
-                                    info!("race adding endpoint {id}");
-                                }
-                                StepProgress::Started => unreachable!(),
-                            }
-                        }
-                        if !replaying {
-                            if let Some(step_writer) = step_writer.as_mut() {
-                                step_writer.write(&StepMetadata {
-                                    step,
-                                    input_endpoints: step_metadata,
-                                })?;
-                            }
-                        }
-
-                        start = None;
-                        let input_queue = mem::take(&mut *controller.input_queue.lock().unwrap());
-                        let notifications = input_queue
-                            .into_iter()
-                            .map(|(mut buffer, notification)| {
-                                let num_records = buffer.flush_all() as u64;
-                                controller
-                                    .status
-                                    .global_metrics
-                                    .consume_buffered_inputs(num_records);
-                                notification
-                            })
-                            .collect::<Vec<_>>();
-
-                        // Wake up the backpressure thread to unpause endpoints blocked due to
-                        // backpressure.
-                        controller.unpark_backpressure();
-                        debug!("circuit thread: calling 'circuit.step'");
-                        circuit
-                            .step()
-                            .unwrap_or_else(|e| controller.error(e.into()));
-                        debug!("circuit thread: 'circuit.step' returned");
-
-                        let processed_records = controller
-                            .status
-                            .global_metrics
-                            .processed_records(total_consumed);
-                        for notification in notifications {
-                            let _ = notification.send(());
-                        }
-
-                        // Update `trace_snapshot` to the latest traces
-                        let mut consistent_snapshot = controller.trace_snapshot.blocking_lock();
-                        for (name, clh) in controller.catalog.output_iter() {
-                            if let Some(ih) = &clh.integrate_handle {
-                                consistent_snapshot.insert(name.clone(), ih.take_from_all());
-                            }
-                        }
-                        drop(consistent_snapshot);
-
-                        // Push output batches to output pipelines.
-                        if !replaying {
-                            if let Some(step_writer) = step_writer.as_mut() {
-                                step_writer.wait()?;
-                            }
-                        }
-                        let outputs = controller.outputs.read().unwrap();
-                        for (_stream, (output_handles, endpoints)) in outputs.iter_by_stream() {
-                            let delta_batch = output_handles.delta_handle.as_ref().take_from_all();
-                            let num_delta_records = delta_batch.iter().map(|b| b.len()).sum();
-
-                            let mut delta_batch = Some(delta_batch);
-
-                            for (i, endpoint_id) in endpoints.iter().enumerate() {
-                                let endpoint = outputs.lookup_by_id(endpoint_id).unwrap();
-
-                                controller
-                                    .status
-                                    .enqueue_batch(*endpoint_id, num_delta_records);
-
-                                let batch = if i == endpoints.len() - 1 {
-                                    delta_batch.take().unwrap()
-                                } else {
-                                    delta_batch.as_ref().unwrap().clone()
-                                };
-
-                                endpoint.queue.push((step, batch, processed_records));
-
-                                // Wake up the output thread.  We're not trying to be smart here and
-                                // wake up the thread conditionally if it was previously idle, as I
-                                // don't expect this to make any real difference.
-                                endpoint.unparker.unpark();
-                            }
-                        }
-
-                        step += 1;
-                        if replaying {
-                            (replaying, step_reader, step_writer) = controller.replay_step(
-                                step_reader.take(),
-                                step_writer.take(),
-                                step,
-                            )?;
-                            if !replaying && state == PipelineState::Running {
-                                info!("starting pipeline");
-                                _backpressure_thread = Some(BackpressureThread::new(
-                                    controller.clone(),
-                                    backpressure_thread_parker.take().unwrap(),
-                                ));
-                            }
-                        }
-                        controller.unpark_backpressure();
-                    } else if buffered_records > 0 {
-                        // We have some buffered data, but less than `min_batch_size_records` --
-                        // wait up to `max_buffering_delay` for more data to
-                        // arrive.
-                        if start.is_none() {
-                            start = Some(Instant::now());
-                        }
-                        parker.park_timeout(Duration::from_millis(1));
-                    } else {
-                        debug!("circuit thread: park: input buffers empty");
-                        // If periodic clock tick is enabled, park at most till the next
-                        // clock tick is due.
-                        if state == PipelineState::Running && clock_resolution.is_some() {
-                            let sleep_for = if let Some(last_step) = last_step {
-                                clock_resolution
-                                    .unwrap()
-                                    .saturating_sub(last_step.elapsed())
-                            } else {
-                                clock_resolution.unwrap()
-                            };
-                            parker.park_timeout(sleep_for);
-                        } else {
-                            parker.park()
-                        }
-                        debug!("circuit thread: unparked");
-                    }
-                }
-                PipelineState::Terminated => break,
-            }
-        }
-        circuit.kill().map_err(|_| ControllerError::dbsp_panic())?;
-        for command in command_receiver.try_iter() {
-            match command {
-                Command::GraphProfile(callback) => callback(Err(ControllerError::ControllerExit)),
-                Command::Checkpoint(_) => (),
-            }
-        }
-        Ok(())
-    }
-
-    pub(crate) fn metrics(&self) -> PrometheusHandle {
-        self.inner.prometheus_handle.clone()
-    }
-
-    pub fn checkpoint(&self) -> Result<Checkpoint, ControllerError> {
-        self.inner.checkpoint()
+            min_storage_bytes: if pipeline_config.global.storage {
+                // This reduces the files stored on disk to a reasonable number.
+                pipeline_config
+                    .global
+                    .min_storage_bytes
+                    .unwrap_or(1024 * 1024)
+            } else {
+                usize::MAX
+            },
+            init_checkpoint,
+        })
     }
 }
 
 struct BackpressureThread {
     exit: Arc<AtomicBool>,
     join_handle: Option<JoinHandle<()>>,
+    controller: Arc<ControllerInner>,
+    parker: Option<Parker>,
     unparker: Unparker,
 }
 
 impl BackpressureThread {
+    /// Prepares to start a backpressure thread, but doesn't start it yet.
     fn new(controller: Arc<ControllerInner>, parker: Parker) -> Self {
         let exit = Arc::new(AtomicBool::new(false));
+        let unparker = parker.unparker().clone();
         Self {
             exit: exit.clone(),
-            unparker: parker.unparker().clone(),
-            join_handle: Some(spawn(move || {
+            controller,
+            parker: Some(parker),
+            unparker,
+            join_handle: None,
+        }
+    }
+
+    /// Starts the backpressure thread.
+    ///
+    /// This only has an effect once.
+    fn start(&mut self) {
+        if let Some(parker) = self.parker.take() {
+            let exit = self.exit.clone();
+            let controller = self.controller.clone();
+            self.join_handle = Some(spawn(move || {
                 Self::backpressure_thread(controller, parker, exit)
-            })),
+            }));
         }
     }
 
@@ -1209,12 +1464,10 @@ pub struct ControllerInner {
 
 impl ControllerInner {
     fn new(
-        config: &PipelineConfig,
-        circuit_thread_unparker: Unparker,
-        backpressure_thread_unparker: Unparker,
+        config: PipelineConfig,
+        catalog: Box<dyn CircuitCatalog>,
         error_cb: Box<dyn Fn(ControllerError) + Send + Sync>,
-        command_sender: Sender<Command>,
-    ) -> Self {
+    ) -> Result<(Parker, BackpressureThread, Receiver<Command>, Arc<Self>), ControllerError> {
         let pipeline_name = config
             .name
             .as_ref()
@@ -1222,25 +1475,42 @@ impl ControllerInner {
         let status = Arc::new(ControllerStatus::new(config));
         let (metrics_snapshotter, prometheus_handle) =
             Self::install_metrics_recorder(pipeline_name);
-
-        Self {
+        let circuit_thread_parker = Parker::new();
+        let backpressure_thread_parker = Parker::new();
+        let (command_sender, command_receiver) = channel();
+        let controller = Arc::new(Self {
             status,
             num_api_connections: AtomicU64::new(0),
             command_sender,
-            catalog: Arc::new(Box::new(Catalog::new())),
+            catalog: Arc::new(catalog),
             trace_snapshot: Arc::new(TokioMutex::new(BTreeMap::new())),
             inputs: Mutex::new(BTreeMap::new()),
             next_input_id: Atomic::new(0),
             outputs: ShardedLock::new(OutputEndpoints::new()),
             next_output_id: Atomic::new(0),
-            circuit_thread_unparker,
-            backpressure_thread_unparker,
+            circuit_thread_unparker: circuit_thread_parker.unparker().clone(),
+            backpressure_thread_unparker: backpressure_thread_parker.unparker().clone(),
             error_cb,
             metrics_snapshotter,
             prometheus_handle,
             session_ctxt: SessionContext::new(),
             input_queue: Mutex::new(Vec::new()),
+        });
+        controller.initialize_adhoc_queries();
+        for (input_name, input_config) in controller.status.pipeline_config.inputs.iter() {
+            controller.connect_input(input_name, input_config)?;
         }
+        for (output_name, output_config) in controller.status.pipeline_config.outputs.iter() {
+            controller.connect_output(output_name, output_config)?;
+        }
+        let backpressure_thread =
+            BackpressureThread::new(controller.clone(), backpressure_thread_parker);
+        Ok((
+            circuit_thread_parker,
+            backpressure_thread,
+            command_receiver,
+            controller,
+        ))
     }
 
     fn input_endpoint_id_by_name(
@@ -1766,55 +2036,6 @@ impl ControllerInner {
         }
     }
 
-    /// Request all of the inputs to complete this step, and then wait for the
-    /// completions. Returns `Ok` if successful, `Err` if the pipeline was
-    /// terminated while we waited.
-    fn complete_step(&self, replaying: bool, parker: &Parker) -> Result<(), ()> {
-        // Request all of the inputs to complete this step, and
-        // then wait for the completions.
-        loop {
-            // Collect inputs that need [InputReader::queue] to
-            // be called. Then, separately, call it on each of
-            // them. We don't do it in a single step because
-            // that causes a deadlock due to nesting locks.
-            //
-            // We don't just start all of the inputs in a single
-            // pass because inputs can be added or removed
-            // (particularly HTTP inputs) when we drop the lock.
-            let mut all_complete = true;
-            let mut need_start = Vec::new();
-            for (endpoint_id, status) in self.status.input_status().iter() {
-                let mut progress = status.progress.lock().unwrap();
-                match *progress {
-                    StepProgress::NotStarted => {
-                        assert!(!replaying);
-                        need_start.push(*endpoint_id);
-                        all_complete = false;
-                        *progress = StepProgress::Started;
-                    }
-                    StepProgress::Started => all_complete = false,
-                    StepProgress::Complete { .. } => (),
-                }
-            }
-            if !need_start.is_empty() {
-                let inputs = self.inputs.lock().unwrap();
-                for endpoint_id in need_start {
-                    if let Some(descr) = inputs.get(&endpoint_id) {
-                        descr.reader.queue();
-                    }
-                }
-            }
-            if all_complete {
-                return Ok(());
-            }
-
-            parker.park();
-            if self.state() == PipelineState::Terminated {
-                return Err(());
-            }
-        }
-    }
-
     fn state(&self) -> PipelineState {
         self.status.state()
     }
@@ -1965,44 +2186,6 @@ impl ControllerInner {
 
     fn output_buffers_full(&self) -> bool {
         self.status.output_buffers_full()
-    }
-
-    fn replay_step(
-        &self,
-        reader: Option<StepReader>,
-        writer: Option<StepWriter>,
-        step: Step,
-    ) -> Result<(bool, Option<StepReader>, Option<StepWriter>), ControllerError> {
-        if let Some(reader) = reader {
-            match reader.read()? {
-                ReadResult::Step { reader, metadata } => {
-                    if metadata.step != step {
-                        return Err(ControllerError::UnexpectedStep {
-                            actual: metadata.step,
-                            expected: step,
-                        });
-                    }
-                    info!("replaying input step {step}");
-                    for (endpoint_name, metadata) in metadata.input_endpoints {
-                        let endpoint_id = self.input_endpoint_id_by_name(&endpoint_name)?;
-                        self.inputs.lock().unwrap()[&endpoint_id]
-                            .reader
-                            .replay(metadata);
-                        *self.status.inputs.read().unwrap()[&endpoint_id]
-                            .progress
-                            .lock()
-                            .unwrap() = StepProgress::Started;
-                    }
-                    Ok((true, Some(reader), None))
-                }
-                ReadResult::Writer(writer) => {
-                    info!("finished replaying all input steps");
-                    Ok((false, None, Some(writer)))
-                }
-            }
-        } else {
-            Ok((false, reader, writer))
-        }
     }
 
     fn checkpoint(&self) -> Result<Checkpoint, ControllerError> {
