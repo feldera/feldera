@@ -204,9 +204,8 @@ export const extractProgramErrors =
           rustCompilerMessages.map(extractRustCompilerError(pipeline.name, source, getReport)),
           (e) => e?.cause.tag !== 'unrecognizedProgramError'
         )
-        rustCompilerErrors.push(
-          ...(recognizedErrors.length ? recognizedErrors : unrecognizedErrors)
-        )
+        rustCompilerErrors.push(...recognizedErrors)
+        rustCompilerErrors.push(...unrecognizedErrors)
         return rustCompilerErrors
       })
       .with(
