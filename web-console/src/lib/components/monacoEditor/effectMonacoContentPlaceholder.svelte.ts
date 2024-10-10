@@ -1,5 +1,5 @@
 import type { editor } from 'monaco-editor/esm/vs/editor/editor.api'
-import { MonacoPlaceholderContentWidget } from './MonacoPlaceholderContentWidget'
+import { MonacoPlaceholderContentWidget } from '$lib/components/monacoEditor/ContentPlaceholderWidget'
 
 export const effectMonacoContentPlaceholder = (
   editorRef: editor.IStandaloneCodeEditor,

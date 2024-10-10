@@ -1,4 +1,4 @@
-<script lang="ts" context="module">
+<script lang="ts" module>
   export function deleteDialogProps<Args extends unknown[]>(
     actionName: string,
     itemName: string | ((...args: Args) => string),
