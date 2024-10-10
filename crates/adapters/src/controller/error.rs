@@ -1,4 +1,4 @@
-use crate::{format::ParseError, DetailedError};
+use crate::{format::ParseError, transport::Step, DetailedError};
 use anyhow::Error as AnyError;
 use dbsp::Error as DbspError;
 use serde::{ser::SerializeStruct, Serialize, Serializer};
@@ -492,6 +492,9 @@ pub enum ControllerError {
     /// Error in steps metadata.
     StepError(StepError),
 
+    /// Unexpected step number.
+    UnexpectedStep { actual: Step, expected: Step },
+
     /// Feature is not supported.
     NotSupported { error: String },
 
@@ -637,6 +640,7 @@ impl DetailedError for ControllerError {
             Self::SchemaValidationError { .. } => Cow::from("SchemaParseError"),
             Self::CheckpointParseError { .. } => Cow::from("CheckpointParseError"),
             Self::StepError { .. } => Cow::from("StepError"),
+            Self::UnexpectedStep { .. } => Cow::from("UnexpectedStep"),
             Self::IrParseError { .. } => Cow::from("IrParseError"),
             Self::CliArgsError { .. } => Cow::from("ControllerCliArgsError"),
             Self::Config { config_error } => {
@@ -679,6 +683,9 @@ impl Display for ControllerError {
                 write!(f, "Error parsing checkpoint file: {error}")
             }
             Self::StepError(error) => write!(f, "Error with persistent input steps: {error}"),
+            Self::UnexpectedStep { actual, expected } => {
+                write!(f, "Read step {actual}, expected {expected}")
+            }
             Self::IrParseError { error } => {
                 write!(f, "Error parsing program IR: {error}")
             }
