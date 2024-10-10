@@ -26,18 +26,6 @@ export class DecoupledStateProxy<T extends string | number | boolean> {
   // @ts-ignore:next-line
   protected timeout: NodeJS.Timeout
 
-  handleUpstreamUpdate() {
-    const eq = isEqual(this._upstream.current, this.baseline)
-    if (eq && this._upstreamChanged) {
-      this._upstreamChanged = false
-      return
-    }
-    if (eq) {
-      return
-    }
-    this._upstreamChanged = true
-  }
-
   constructor(
     upstream: { current: T },
     downstream: { current: T },
@@ -69,7 +57,21 @@ export class DecoupledStateProxy<T extends string | number | boolean> {
   }
 
   fetch() {
-    this.handleUpstreamUpdate()
+    const eq = isEqual(this._upstream.current, this.baseline)
+    if (eq && this._upstreamChanged) {
+      this._upstreamChanged = false
+      return
+    }
+    if (eq) {
+      return
+    }
+    if (isEqual(this._upstream.current, this.downstream.current)) {
+      // Avoid prompting conflict resolution if local changes match new upstream value
+      this.baseline = this._upstream.current
+      this._downstreamChanged = false
+      return
+    }
+    this._upstreamChanged = true
   }
 
   pull() {
