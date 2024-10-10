@@ -127,6 +127,10 @@ watermark.  Given a `WATERMARK` annotation with value W, an input row
 with a value X for a watermarked column will be "held up" until an
 input row with a value X + W has been received.  The program will
 behave as if the row with value X has only just been received.
+Similar to `LATENESS`, the effect of the `WATERMARK` is visible in the
+*next* circuit step; an event that changes the watermark in step 2 of
+the circuit will only make "visible" the eligible events inserted up
+to step 1.
 
 If a table has multiple columns annotated with `WATERMARK` values, a
 row is released only when *all* the delays have been exceeded.
