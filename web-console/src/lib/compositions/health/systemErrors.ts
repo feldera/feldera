@@ -1,5 +1,5 @@
 import { base } from '$app/paths'
-import { groupBy } from '$lib/functions/common/array'
+import { groupBy, partition } from '$lib/functions/common/array'
 import { nonNull } from '$lib/functions/common/function'
 import { defaultGithubReportSections, type ReportDetails } from '$lib/services/githubReport'
 import type { ErrorResponse } from '$lib/services/manager'
@@ -114,7 +114,7 @@ export const extractRustCompilerError =
     source: string,
     getReport: (pipelineName: string, message: string) => Report
   ) =>
-  (stderr: string): SystemError<any, Report> | null => {
+  (stderr: string): SystemError<any, Report> => {
     const warning = /^warning:/.test(stderr)
 
     const matchFileError = (fileName: string, fileRegex: RegExp, lineOffset: number) => {
@@ -161,7 +161,17 @@ export const extractRustCompilerError =
       return err
     }
 
-    return null
+    return {
+      name: `Error compiling ${pipelineName}`,
+      message: stderr,
+      cause: {
+        entityName: pipelineName,
+        tag: 'unrecognizedProgramError',
+        source,
+        report: getReport(pipelineName, stderr),
+        body: stderr
+      }
+    }
   }
 
 /**
@@ -183,16 +193,21 @@ export const extractProgramErrors =
       .returnType<SystemError<any, Report>[]>()
       .with({ RustError: P.any }, (e) => {
         const rustCompilerErrorRegex =
-          /((warning:|error:|error\[[\w]+\]:)[\s\S]+?)\n(\n|(?=( +Compiling|warning:|error:|error\[[\w]+\]:)))/g
+          /((warning:|^error:|error\[[\w]+\]:)[\s\S]+?)\n(\n|(?=( +Compiling|warning:|error:|error\[[\w]+\]:)))/gm
         const rustCompilerMessages: string[] =
           Array.from(e.RustError.matchAll(rustCompilerErrorRegex)).map((match) => match[1]) ?? []
         const rustCompilerErrors = [
           extractInternalCompilationError(e.RustError, pipeline.name, source, getReport)
-        ]
-        rustCompilerErrors.push(
-          ...rustCompilerMessages.map(extractRustCompilerError(pipeline.name, source, getReport))
+        ].filter(nonNull)
+        console.log('rustCompilerErrors', rustCompilerErrors)
+        const [recognizedErrors, unrecognizedErrors] = partition(
+          rustCompilerMessages.map(extractRustCompilerError(pipeline.name, source, getReport)),
+          (e) => e?.cause.tag !== 'unrecognizedProgramError'
         )
-        return rustCompilerErrors.filter(nonNull)
+        rustCompilerErrors.push(
+          ...(recognizedErrors.length ? recognizedErrors : unrecognizedErrors)
+        )
+        return rustCompilerErrors
       })
       .with(
         {
