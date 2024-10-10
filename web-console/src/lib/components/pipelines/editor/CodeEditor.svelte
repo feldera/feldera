@@ -312,7 +312,7 @@
     <PipelineEditorStatusBar
       {autoSavePipeline}
       downstreamChanged={openFiles[filePath].sync.downstreamChanged}
-      saveCode={openFiles[filePath].sync.push}
+      saveCode={() => openFiles[filePath].sync.push()}
     ></PipelineEditorStatusBar>
     {@render statusBarCenter?.()}
   </div>
