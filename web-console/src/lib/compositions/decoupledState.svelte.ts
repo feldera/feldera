@@ -1,3 +1,12 @@
+const isEqual = <T>(a: T, b: T) => {
+  const isComparable =
+    typeof a === 'string' ||
+    typeof a === 'boolean' ||
+    typeof a === 'number' ||
+    typeof a === 'bigint'
+  return isComparable ? a === b : false
+}
+
 /**
  * Upstream and downstream changes do not immediately affect each other.
  *
@@ -6,19 +15,38 @@
  * On `.pull()` upstream is applied to downstream.
  * On `.push()` downstream is applied to upstream.
  */
-export class DecoupledState<T extends string | number | boolean> {
-  downstream: { current: T } = $state({ current: undefined! })
-  upstream: { current: T }
-  _upstreamChanged = $state(false)
-  _downstreamChanged = $state(false)
-  wait: () => number | 'decoupled'
-  debounceSet: () => void
+export class DecoupledStateProxy<T extends string | number | boolean> {
+  protected downstream: { current: T } = $state({ current: undefined! })
+  protected baseline: T
+  protected _upstream: { current: T } = $state({ current: undefined! })
+  protected _upstreamChanged = $state(false)
+  protected _downstreamChanged = $state(false)
+  protected wait: () => number | 'decoupled'
+  protected debounceSet: () => void
   // @ts-ignore:next-line
-  timeout: NodeJS.Timeout
+  protected timeout: NodeJS.Timeout
 
-  constructor(upstream: { current: T }, wait: () => number | 'decoupled') {
-    this.downstream.current = upstream.current
-    this.upstream = upstream
+  handleUpstreamUpdate() {
+    const eq = isEqual(this._upstream.current, this.baseline)
+    if (eq && this._upstreamChanged) {
+      this._upstreamChanged = false
+      return
+    }
+    if (eq) {
+      return
+    }
+    this._upstreamChanged = true
+  }
+
+  constructor(
+    upstream: { current: T },
+    downstream: { current: T },
+    wait: () => number | 'decoupled'
+  ) {
+    this.downstream = downstream
+    // this.downstream.current = upstream.current
+    this.baseline = upstream.current
+    this._upstream = upstream
     this.wait = wait
     this.debounceSet = () => {
       const periodMs = wait()
@@ -33,21 +61,90 @@ export class DecoupledState<T extends string | number | boolean> {
         this.push()
       }, periodMs)
     }
+  }
 
-    $effect(() => {
-      upstream.current
-      setTimeout(() => {
-        const eq = this.upstream.current === this.downstream.current
-        if (eq && this._upstreamChanged) {
-          this._upstreamChanged = false
+  touch() {
+    this._downstreamChanged = !isEqual(this.baseline, this.downstream.current)
+    this.debounceSet()
+  }
+
+  fetch() {
+    this.handleUpstreamUpdate()
+  }
+
+  pull() {
+    clearTimeout(this.timeout)
+    this.timeout = undefined!
+    this.baseline = this.downstream.current = this._upstream.current
+    this._upstreamChanged = false
+    this._downstreamChanged = false
+  }
+  push() {
+    if (!this._downstreamChanged && !this.upstreamChanged) {
+      return
+    }
+    this.baseline = this._upstream.current = this.downstream.current
+    this._upstreamChanged = false
+    this._downstreamChanged = false
+  }
+  get upstreamChanged() {
+    return this._upstreamChanged
+  }
+  get downstreamChanged() {
+    return this._downstreamChanged
+  }
+}
+
+/**
+ * Upstream and downstream changes do not immediately affect each other.
+ *
+ * Downstream changes are debounced for `wait` milliseconds before setting `upstream` unless `wait` is 'decoupled'.
+ *
+ * On `.pull()` upstream is applied to downstream.
+ * On `.push()` downstream is applied to upstream.
+ */
+export class DecoupledState<T extends string | number | boolean> {
+  protected downstream: { current: T } = $state({ current: undefined! })
+  protected _upstream: { current: T } = $state({ current: undefined! })
+  protected _upstreamChanged = $state(false)
+  protected _downstreamChanged = $state(false)
+  protected wait: () => number | 'decoupled'
+  protected debounceSet: () => void
+  // @ts-ignore:next-line
+  protected timeout: NodeJS.Timeout
+
+  handleUpstreamUpdate() {
+    const eq = isEqual(this._upstream.current, this.downstream.current)
+    if (eq && this._upstreamChanged) {
+      this._upstreamChanged = false
+      return
+    }
+    if (eq) {
+      return
+    }
+    if (!eq && this._downstreamChanged) {
+      return
+    }
+    this._upstreamChanged = true
+  }
+
+  constructor(upstream: { current: T }, wait: () => number | 'decoupled') {
+    this.downstream.current = upstream.current
+    this._upstream = upstream
+    this.wait = wait
+    this.debounceSet = () => {
+      const periodMs = wait()
+      if (periodMs === 'decoupled') {
+        return
+      }
+      clearTimeout(this.timeout)
+      this.timeout = setTimeout(() => {
+        if (wait() === 'decoupled') {
           return
         }
-        if (eq) {
-          return
-        }
-        this._upstreamChanged = true
-      })
-    })
+        this.push()
+      }, periodMs)
+    }
   }
 
   get current() {
@@ -55,20 +152,17 @@ export class DecoupledState<T extends string | number | boolean> {
   }
   set current(value: T) {
     this.downstream.current = value
-
-    const isComparable =
-      typeof value === 'string' ||
-      typeof value === 'boolean' ||
-      typeof value === 'number' ||
-      typeof value === 'bigint'
-    this._downstreamChanged = isComparable ? this.upstream.current !== value : true
+    this._downstreamChanged = !isEqual(this._upstream.current, value)
     this.debounceSet()
+  }
+  fetch() {
+    this.handleUpstreamUpdate()
   }
 
   pull() {
     clearTimeout(this.timeout)
     this.timeout = undefined!
-    this.downstream.current = this.upstream.current
+    this.downstream.current = this._upstream.current
     this._upstreamChanged = false
     this._downstreamChanged = false
   }
@@ -76,7 +170,7 @@ export class DecoupledState<T extends string | number | boolean> {
     if (!this._downstreamChanged) {
       return
     }
-    this.upstream.current = this.downstream.current
+    this._upstream.current = this.downstream.current
     this._upstreamChanged = false
     this._downstreamChanged = false
   }
@@ -137,7 +231,7 @@ export const useDecoupledState = <T extends string | number | boolean>(
   $effect(() => {
     upstream.current
     setTimeout(() => {
-      const eq = upstream.current === downstream.current
+      const eq = isEqual(upstream.current, downstream.current)
       if (eq && upstreamChanged) {
         upstreamChanged = false
         return
@@ -154,12 +248,7 @@ export const useDecoupledState = <T extends string | number | boolean>(
     },
     set current(value: T) {
       downstream.current = value
-      const isComparable =
-        typeof value === 'string' ||
-        typeof value === 'boolean' ||
-        typeof value === 'number' ||
-        typeof value === 'bigint'
-      downstreamChanged = isComparable ? upstream.current !== value : true
+      downstreamChanged = !isEqual(upstream.current, value)
       debounceSet()
     },
     pull() {

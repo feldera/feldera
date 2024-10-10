@@ -87,7 +87,8 @@
         markers: ((errors) =>
           errors ? { [felderaCompilerMarkerSource]: extractErrorMarkers(errors) } : undefined)(
           programErrors['stubs.rs']
-        )
+        ),
+        behaviorOnConflict: 'auto-pull' as const
       },
       {
         name: `udf.rs`,

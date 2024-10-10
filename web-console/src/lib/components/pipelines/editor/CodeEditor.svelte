@@ -2,7 +2,7 @@
   let openFiles: Record<
     string,
     {
-      sync: DecoupledState<string>
+      sync: DecoupledStateProxy<string>
       model: editor.ITextModel
       view: editor.ICodeEditorViewState | null
     }
@@ -10,19 +10,21 @@
 </script>
 
 <script lang="ts">
-  import type { Snippet } from 'svelte'
+  import { type Snippet } from 'svelte'
   import { useLocalStorage } from '$lib/compositions/localStore.svelte'
-  import { DecoupledState } from '$lib/compositions/decoupledState.svelte'
+  import { DecoupledStateProxy } from '$lib/compositions/decoupledState.svelte'
   import { useDarkMode } from '$lib/compositions/useDarkMode.svelte'
   import MonacoEditor, { isMonacoEditorDisabled } from '$lib/functions/common/monacoEditor'
   import * as MonacoImports from 'monaco-editor'
-  import { editor } from 'monaco-editor/esm/vs/editor/editor.api'
+  import { editor, KeyCode, KeyMod } from 'monaco-editor/esm/vs/editor/editor.api'
   import type { EditorLanguage } from 'monaco-editor/esm/metadata'
   import PipelineEditorStatusBar from '$lib/components/layout/pipelines/PipelineEditorStatusBar.svelte'
   import { page } from '$app/stores'
   import { useSkeletonTheme } from '$lib/compositions/useSkeletonTheme.svelte'
   import { pipelineFileNameRegex } from '$lib/compositions/health/systemErrors'
   import { effectMonacoContentPlaceholder } from '$lib/components/monacoEditor/effectMonacoContentPlaceholder.svelte'
+  import { GenericOverlayWidget } from '$lib/components/monacoEditor/GenericOverlayWidget'
+
   void MonacoImports // Explicitly import all monaco-editor esm modules
 
   let {
@@ -40,6 +42,7 @@
       access: { current: string }
       language?: EditorLanguage
       markers?: Record<string, editor.IMarkerData[]>
+      behaviorOnConflict?: 'auto-pull' | 'auto-push' | 'promt'
       placeholder?: string
     }[]
     currentFileName: string
@@ -51,6 +54,7 @@
 
   let editorRef: editor.IStandaloneCodeEditor = $state()!
   const autoSavePipeline = useLocalStorage('layout/pipelines/autosave', true)
+  const showCodeEditorMinimap = useLocalStorage('layout/pipelines/editor/minimap', true)
 
   let wait = $derived(autoSavePipeline.value ? 2000 : ('decoupled' as const))
   let file = $derived(files.find((f) => f.name === currentFileName)!)
@@ -62,29 +66,67 @@
 
   let filePath = $derived(path + '/' + file.name)
   let previousFilePath = $state<string | undefined>(undefined)
-  {
-    // TODO: handle remote update of the program code that conflicts with currently edited version
-    $effect.pre(() => {
-      if (openFiles[filePath]) {
+  $effect.pre(() => {
+    if (openFiles[filePath]) {
+      return
+    }
+    const access = file.access
+    const modelUri = MonacoImports.Uri.file(filePath)
+    const model =
+      editor.getModel(modelUri) ?? editor.createModel(access.current, file.language, modelUri)
+    const sync = new DecoupledStateProxy(
+      access,
+      {
+        get current() {
+          return model.getValue()
+        },
+        set current(v: string) {
+          model.setValue(v)
+        }
+      },
+      () => wait
+    )
+    model.onDidChangeContent((e) => {
+      sync.touch()
+    })
+    openFiles[filePath] = {
+      sync,
+      model,
+      view: null
+    }
+  })
+  $effect.pre(() => {
+    file.access.current
+    queueMicrotask(() => {
+      openFiles[filePath].sync.fetch()
+    })
+  })
+  $effect(() => {
+    if (!openFiles[filePath].sync.upstreamChanged) {
+      return
+    }
+    if (file.behaviorOnConflict === 'promt' || file.behaviorOnConflict === undefined) {
+      if (!openFiles[filePath].sync.downstreamChanged) {
+        openFiles[filePath].sync.pull()
         return
       }
-      const access = file.access
-      const model = editor.createModel(
-        access.current,
-        file.language,
-        MonacoImports.Uri.file(filePath)
-      )
-      const sync = new DecoupledState(access, () => wait)
-      model.onDidChangeContent((e) => {
-        sync.current = editorRef.getValue()
+      const widget = new GenericOverlayWidget(editorRef, conflictWidgetRef, {
+        id: 'editor.widget.upstreamUpdateConflict',
+        position: editor.OverlayWidgetPositionPreference.BOTTOM_RIGHT_CORNER
       })
-      openFiles[filePath] = {
-        sync,
-        model,
-        view: null
+      return () => {
+        widget.dispose()
       }
-    })
-  }
+    }
+    if (file.behaviorOnConflict === 'auto-pull') {
+      openFiles[filePath].sync.pull()
+      return
+    }
+    if (file.behaviorOnConflict === 'auto-push') {
+      openFiles[filePath].sync.push()
+      return
+    }
+  })
   let currentModel: editor.ITextModel = $state(undefined!)
   $effect.pre(() => {
     currentModel = openFiles[filePath].model
@@ -138,9 +180,34 @@
     return effectMonacoContentPlaceholder(editorRef, placeholderContent, { opacity: '70%' })
   })
 
+  let conflictWidgetRef: HTMLElement = $state(undefined!)
   const mode = useDarkMode()
   const theme = useSkeletonTheme()
 </script>
+
+<div class="hidden" bind:this={conflictWidgetRef}>
+  <div class="relative flex flex-col gap-4 p-4 bg-surface-50-950">
+    <div>
+      <span class="fd fd-warning_amber text-[24px] text-warning-500"> </span>
+      The pipeline code was changed outside this window since you started editing.<br />
+      Please resolve the conflict to save your changes.
+    </div>
+    <div class="flex flex-nowrap justify-end gap-4">
+      <button
+        class=" !rounded-0 px-2 py-1 bg-surface-100-900 hover:preset-outlined-primary-500"
+        onclick={() => openFiles[filePath].sync.pull()}
+      >
+        Accept Remote
+      </button>
+      <button
+        class=" !rounded-0 px-2 py-1 bg-surface-100-900 hover:preset-outlined-primary-500"
+        onclick={() => openFiles[filePath].sync.push()}
+      >
+        Accept Local
+      </button>
+    </div>
+  </div>
+</div>
 
 {@render textEditor(x)}
 {#snippet x()}
@@ -159,12 +226,18 @@
       <div class="absolute h-full w-full" class:opacity-70={editDisabled}>
         <MonacoEditor
           markers={file.markers}
-          onready={(editor) => {
-            editor.onKeyDown((e) => {
-              if (e.code === 'KeyS' && (e.ctrlKey || e.metaKey)) {
-                openFiles[filePath].sync.push()
-                e.preventDefault()
-              }
+          onready={(editorRef) => {
+            editorRef.addCommand(KeyMod.CtrlCmd | KeyCode.KeyS, () => {
+              openFiles[filePath].sync.push()
+            })
+            editorRef.addCommand(KeyMod.CtrlCmd | KeyCode.KeyM, () => {
+              const minimapOptions = editorRef.getOption(editor.EditorOption.minimap)
+              showCodeEditorMinimap.value = !minimapOptions.enabled
+              editorRef.updateOptions({
+                minimap: {
+                  enabled: !minimapOptions.enabled
+                }
+              })
             })
           }}
           bind:editor={editorRef}
@@ -182,12 +255,12 @@
             overviewRulerBorder: false,
             scrollbar: {
               vertical: 'visible'
+            },
+            minimap: {
+              enabled: showCodeEditorMinimap.value
             }
-            // language: file.language
           }}
         />
-        <!-- <MonacoEditorContentPlaceholder {editorRef} placeholder={file.placeholder}
-        ></MonacoEditorContentPlaceholder> -->
       </div>
     </div>
   </div>

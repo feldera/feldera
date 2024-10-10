@@ -1,4 +1,4 @@
-<script lang="ts" context="module">
+<script lang="ts" module>
   type RelationInfo = {
     pipelineName: string
     relationName: string
