@@ -726,10 +726,9 @@ inherits = "release"
                                 })?;
 
                             let stub_path = config.udf_stub_path(pipeline_id);
-                            let stubs = fs::read_to_string(&stub_path).await
-                                .map_err(|e| {
-                                    ManagerError::io_error(format!("reading '{}'", stub_path.display()), e)
-                                })?;
+
+                            // stubs.rs may be missing in an old pipeline compiled without UDF support.
+                            let stubs = fs::read_to_string(&stub_path).await.unwrap_or_default();
 
                             let schema: ProgramSchema = serde_json::from_str(&schema_json)
                                 .map_err(|e| { ManagerError::invalid_program_schema(e.to_string()) })?;
