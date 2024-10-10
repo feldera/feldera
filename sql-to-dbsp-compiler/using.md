@@ -59,11 +59,17 @@ Usage: sql-to-dbsp [options] Input file to compile
       Lenient SQL validation.  If true it allows duplicate column names in a
       view
       Default: false
+    --no-restrict-io
+      Do not restrict the types of columns allowed in tables and views
+      Default: false
     --nowstream
       Implement NOW as a stream (true) or as an internal operator (false)
       Default: false
     --outputsAreSets
       Ensure that outputs never contain duplicates
+      Default: false
+    --plan
+      Emit the Calcite plan of the optimized program instead of Rust
       Default: false
     --streaming
       Compiling a streaming program, where only inserts are allowed
@@ -72,9 +78,6 @@ Usage: sql-to-dbsp [options] Input file to compile
       How unquoted identifiers are treated.  Choices are: 'upper', 'lower',
       'unchanged'
       Default: lower
-    --no-restrict-io
-      Do not restrict the types of columns allowed in tables and views
-      Default: false
     -O
       Optimization level (0, 1, or 2)
       Default: 2
@@ -146,6 +149,9 @@ Here is a description of the non-obvious command-line options:
      `CREATE VIEW V AS SELECT T.COL2 AS TCOL2, S.COL2 AS SCOL2 from T, S`
 
      Using the `--lenient` flag will only emit warnings, but compile such programs.
+
+--plan: Generates a JSON structure for each view compiled, representing the Calcite
+     optimized plan for computing the view
 
 --outputsAreSets: SQL queries can produce outputs that contain duplicates, but
      such outputs are rarely useful in practice.  Using this flag will ensure that
