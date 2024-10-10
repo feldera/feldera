@@ -19,7 +19,7 @@ class TestPipeline(unittest.TestCase):
 
     def test_create_pipeline(self, name: str = "blah", delete=False):
         sql = """
-        CREATE TABLE tbl(id INT);
+        CREATE TABLE tbl(id INT) WITH ('append_only' = 'true');
         CREATE VIEW V AS SELECT * FROM tbl;
         """
         pipeline = Pipeline(name, sql, "", "", {}, {})

@@ -64,13 +64,13 @@ public class ParserTests {
         Assert.assertNotNull(node);
         Assert.assertTrue(node instanceof SqlCreateTable);
         SqlCreateTable table = (SqlCreateTable) node;
-        Assert.assertNull(table.connectorProperties);
+        Assert.assertNull(table.tableProperties);
 
         node = calcite.parse(ddl1);
         Assert.assertNotNull(node);
         Assert.assertTrue(node instanceof SqlCreateView);
         SqlCreateView clv = (SqlCreateView) node;
-        Assert.assertNull(clv.connectorProperties);
+        Assert.assertNull(clv.viewProperties);
 
         node = calcite.parse(ddl2);
         Assert.assertNotNull(node);
@@ -108,15 +108,15 @@ public class ParserTests {
         Assert.assertNotNull(node);
         Assert.assertTrue(node instanceof SqlCreateTable);
         SqlCreateTable tbl = (SqlCreateTable) node;
-        Assert.assertNotNull(tbl.connectorProperties);
-        Assert.assertEquals(4, tbl.connectorProperties.size());
+        Assert.assertNotNull(tbl.tableProperties);
+        Assert.assertEquals(4, tbl.tableProperties.size());
 
         node = calcite.parse(view);
         Assert.assertNotNull(node);
         Assert.assertTrue(node instanceof SqlCreateView);
         SqlCreateView v = (SqlCreateView) node;
-        Assert.assertNotNull(v.connectorProperties);
-        Assert.assertEquals(6, v.connectorProperties.size());
+        Assert.assertNotNull(v.viewProperties);
+        Assert.assertEquals(6, v.viewProperties.size());
     }
 
     @Test
