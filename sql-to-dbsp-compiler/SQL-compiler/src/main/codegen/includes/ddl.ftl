@@ -284,15 +284,15 @@ SqlCreate SqlCreateExtendedTable(Span s, boolean replace) :
     final boolean ifNotExists;
     final SqlIdentifier id;
     SqlNodeList tableElementList;
-    SqlNodeList connector = null;
+    SqlNodeList properties = null;
 }
 {
     <TABLE> ifNotExists = IfNotExistsOpt() id = CompoundIdentifier()
     tableElementList = ExtendedTableElementList()
-    [ <WITH> connector = KeyValueList() ]
+    [ <WITH> properties = KeyValueList() ]
     {
         return new SqlCreateTable(s.end(this), replace, ifNotExists, id,
-            tableElementList, connector);
+            tableElementList, properties);
     }
 }
 
@@ -302,16 +302,16 @@ SqlCreate SqlCreateView(Span s, boolean replace) :
     SqlNodeList columnList = null;
     final SqlNode query;
     SqlCreateView.ViewKind kind = SqlCreateView.ViewKind.STANDARD;
-    SqlNodeList connector = null;
+    SqlNodeList properties = null;
 }
 {
     [ <LOCAL> { kind = SqlCreateView.ViewKind.LOCAL; }
     | <MATERIALIZED> { kind = SqlCreateView.ViewKind.MATERIALIZED; } ]
     <VIEW> id = CompoundIdentifier()
     [ columnList = ParenthesizedSimpleIdentifierList() ]
-    [ <WITH> connector = KeyValueList() ]
+    [ <WITH> properties = KeyValueList() ]
     <AS> query = OrderedQueryOrExpr(ExprContext.ACCEPT_QUERY) {
-        return new SqlCreateView(s.end(this), replace, kind, id, columnList, connector, query);
+        return new SqlCreateView(s.end(this), replace, kind, id, columnList, properties, query);
     }
 }
 

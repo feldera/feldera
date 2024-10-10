@@ -22,32 +22,32 @@ public class SqlCreateTable extends SqlCreate {
     /** The column list can also contain foreign key declarations */
     public final SqlNodeList columnsOrForeignKeys;
     /** Key-value list of string literals */
-    public final @Nullable SqlNodeList connectorProperties;
+    public final @Nullable SqlNodeList tableProperties;
 
     private static final SqlOperator OPERATOR =
             new SqlSpecialOperator("CREATE TABLE", SqlKind.CREATE_TABLE);
 
     public SqlCreateTable(SqlParserPos pos, boolean replace, boolean ifNotExists,
                           SqlIdentifier name, SqlNodeList columnsOrForeignKeys,
-                          @Nullable SqlNodeList connectorProperties) {
+                          @Nullable SqlNodeList tableProperties) {
         super(OPERATOR, pos, replace, ifNotExists);
         this.name = Objects.requireNonNull(name, "name");
         this.columnsOrForeignKeys = columnsOrForeignKeys;
-        this.connectorProperties = connectorProperties;
-        assert connectorProperties == null || connectorProperties.size() % 2 == 0;
+        this.tableProperties = tableProperties;
+        assert tableProperties == null || tableProperties.size() % 2 == 0;
     }
 
     @SuppressWarnings("nullness")
     @Override public List<SqlNode> getOperandList() {
-        return ImmutableNullableList.of(name, columnsOrForeignKeys, connectorProperties);
+        return ImmutableNullableList.of(name, columnsOrForeignKeys, tableProperties);
     }
 
-    public static void writeProperties(SqlWriter writer, @Nullable SqlNodeList connectorProperties) {
-        if (connectorProperties != null) {
+    public static void writeProperties(SqlWriter writer, @Nullable SqlNodeList properties) {
+        if (properties != null) {
             writer.keyword("WITH");
             SqlWriter.Frame frame = writer.startList("(", ")");
             boolean even = true;
-            for (SqlNode c : connectorProperties) {
+            for (SqlNode c : properties) {
                 if (even) {
                     writer.sep(",");
                 } else {
@@ -76,7 +76,7 @@ public class SqlCreateTable extends SqlCreate {
             }
             writer.endList(frame);
         }
-        writeProperties(writer, this.connectorProperties);
+        writeProperties(writer, this.tableProperties);
     }
 }
 

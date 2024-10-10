@@ -186,7 +186,7 @@ public class StreamingTests extends StreamingTestBase {
                    url  VARCHAR,
                    date_time TIMESTAMP(3) NOT NULL LATENESS INTERVAL 4 minutes,
                    extra  VARCHAR
-                ) WITH ('connectors' = '{bid}');
+                ) WITH ('connectors' = '[{"name": "bid"}]');
                 CREATE VIEW Q16 AS
                 SELECT
                     count(distinct auction) filter (where price >= 10000 and price < 1000000) AS rank2_auctions,

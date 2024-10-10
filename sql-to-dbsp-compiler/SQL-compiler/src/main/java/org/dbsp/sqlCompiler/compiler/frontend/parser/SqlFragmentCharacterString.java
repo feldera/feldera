@@ -1,7 +1,7 @@
 package org.dbsp.sqlCompiler.compiler.frontend.parser;
 
 import org.apache.calcite.sql.SqlCharStringLiteral;
-import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
+import org.apache.calcite.sql.parser.SqlParserPos;
 
 import java.util.Objects;
 
@@ -20,7 +20,7 @@ public class SqlFragmentCharacterString implements SqlFragment {
     }
 
     @Override
-    public SourcePositionRange getSourcePosition() {
-        return new SourcePositionRange(this.node.getParserPosition());
+    public SqlParserPos getParserPosition() {
+        return this.node.getParserPosition();
     }
 }

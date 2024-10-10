@@ -23,6 +23,8 @@
 
 package org.dbsp.sqlCompiler.compiler;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -54,6 +56,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.CalciteToDBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.TableContents;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CustomFunctions;
+import org.dbsp.sqlCompiler.compiler.frontend.parser.PropertyList;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlFragment;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateFunctionStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateTableStatement;
@@ -374,6 +377,59 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         }
     }
 
+    void validateViewProperty(SqlFragment key, SqlFragment value) {
+        CalciteObject node = CalciteObject.create(key.getParserPosition());
+        String keyString = key.getString();
+        //noinspection SwitchStatementWithTooFewBranches
+        switch (keyString) {
+            case "connectors":
+                this.validateConnectorsProperty(node, key, value);
+                break;
+            default:
+                throw new CompilationError("Unknown property " + Utilities.singleQuote(keyString), node);
+        }
+    }
+
+    void validateBooleanProperty(CalciteObject node, SqlFragment key, SqlFragment value) {
+        String vs = value.getString();
+        if (vs.equalsIgnoreCase("true") || vs.equalsIgnoreCase("false"))
+            return;
+        throw new CompilationError("Expected a boolean value for property " +
+                Utilities.singleQuote(key.getString()), node);
+    }
+
+    void validateConnectorsProperty(CalciteObject node, SqlFragment key, SqlFragment value) {
+        String keyString = key.getString();
+        try {
+            JsonNode connectors = Utilities.deterministicObjectMapper().readTree(value.getString());
+            if (!connectors.isArray()) {
+                throw new CompilationError(
+                        "Expected an array for " + Utilities.singleQuote(keyString) + "\n" +
+                                node);
+            }
+        } catch (JsonProcessingException ex) {
+            throw new CompilationError(
+                    "Invalid JSON for property " + Utilities.singleQuote(keyString) + "\n" +
+                            ex.getMessage(), node);
+        }
+    }
+
+    void validateTableProperty(SqlFragment key, SqlFragment value) {
+        CalciteObject node = CalciteObject.create(key.getParserPosition());
+        String keyString = key.getString();
+        switch (key.getString()) {
+            case "materialized":
+            case "append_only":
+                this.validateBooleanProperty(node, key, value);
+                break;
+            case "connectors":
+                this.validateConnectorsProperty(node, key, value);
+                break;
+            default:
+                throw new CompilationError("Unknown property " + Utilities.singleQuote(keyString), node);
+        }
+    }
+
     void runAllCompilerStages() {
         CreateViewStatement currentView = null;
         try {
@@ -468,10 +524,16 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
                     continue;
                 if (fe.is(CreateViewStatement.class)) {
                     CreateViewStatement cv = fe.to(CreateViewStatement.class);
+                    PropertyList properties = cv.getProperties();
+                    if (properties != null)
+                        properties.checkKnownProperties(this::validateViewProperty);
                     currentView = cv;
                     this.views.put(cv.getName(), cv);
                 } else if (fe.is(CreateTableStatement.class)) {
                     CreateTableStatement ct = fe.to(CreateTableStatement.class);
+                    PropertyList properties = ct.getProperties();
+                    if (properties != null)
+                        properties.checkKnownProperties(this::validateTableProperty);
                     foreignKeys.addAll(ct.foreignKeys);
                 }
                 this.midend.compile(fe);

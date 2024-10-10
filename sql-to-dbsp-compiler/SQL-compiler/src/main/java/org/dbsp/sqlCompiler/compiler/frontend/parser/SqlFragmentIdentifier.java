@@ -1,7 +1,7 @@
 package org.dbsp.sqlCompiler.compiler.frontend.parser;
 
 import org.apache.calcite.sql.SqlIdentifier;
-import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
+import org.apache.calcite.sql.parser.SqlParserPos;
 
 /** A fragment that contains a SqlIdentifier */
 public class SqlFragmentIdentifier implements SqlFragment {
@@ -17,8 +17,8 @@ public class SqlFragmentIdentifier implements SqlFragment {
     }
 
     @Override
-    public SourcePositionRange getSourcePosition() {
-        return new SourcePositionRange(this.identifier.getParserPosition());
+    public SqlParserPos getParserPosition() {
+        return this.identifier.getParserPosition();
     }
 
     @Override
