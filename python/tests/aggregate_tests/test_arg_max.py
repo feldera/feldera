@@ -101,13 +101,35 @@ class aggtst_int_arg_max_gby_diff(TstView):
 class aggtst_int_arg_max_gby_diff1(TstView):
     def __init__(self):
         # checked manually
-        self.data = [{'id': 0, 'c1': 7, 'c2': -3, 'c3': 1, 'c4': 2, 'c5': 30, 'c6': 1, 'c7': 6, 'c8': 0},
-                     {'id': 1, 'c1': 7, 'c2': -1, 'c3': 4, 'c4': 2, 'c5': 6, 'c6': 1, 'c7': 6, 'c8': -2}]
-        self.sql = '''CREATE MATERIALIZED VIEW int_arg_gby_max_diff1 AS SELECT
+        self.data = [
+            {
+                "id": 0,
+                "c1": 7,
+                "c2": -3,
+                "c3": 1,
+                "c4": 2,
+                "c5": 30,
+                "c6": 1,
+                "c7": 6,
+                "c8": 0,
+            },
+            {
+                "id": 1,
+                "c1": 7,
+                "c2": -1,
+                "c3": 4,
+                "c4": 2,
+                "c5": 6,
+                "c6": 1,
+                "c7": 6,
+                "c8": -2,
+            },
+        ]
+        self.sql = """CREATE MATERIALIZED VIEW int_arg_gby_max_diff1 AS SELECT
                       id, ARG_MAX(c1+c2, c2-c1) AS c1, ARG_MAX(c2-c1, c1+c2) AS c2, ARG_MAX(c3%c4, c4%c3) AS c3, ARG_MAX(c4%c3, c3%c4) AS c4, ARG_MAX(c5*c6, c6/c5) AS c5, ARG_MAX(c6/c5, c5*c6) AS c6, ARG_MAX(c7+c8, c8-c7) AS c7, ARG_MAX(c8-c7, c7+c8) AS c8
                       FROM int0_tbl
-                      GROUP BY id'''
-                      
+                      GROUP BY id"""
+
 
 class aggtst_int_arg_max_distinct(TstView):
     def __init__(self):
@@ -278,20 +300,32 @@ class aggtst_int_arg_max_where_gby(TstView):
                       FROM int0_tbl
                       GROUP BY id"""
 
+
 class aggtst_int_arg_max_where_diff1(TstView):
     def __init__(self):
         # checked manually
-        self.data = [{'f_c1': 7, 'f_c2': -3, 'f_c3': 1, 'f_c4': 2, 'f_c5': 30, 'f_c6': 1, 'f_c7': 6, 'f_c8': 0}]
-        self.sql = '''CREATE MATERIALIZED VIEW int_arg_max_where_diff1 AS SELECT
-                      ARG_MAX(c1+c2, c2-c1) FILTER(WHERE c8>2) AS f_c1, 
-                      ARG_MAX(c2-c1, c1+c2) FILTER(WHERE c8>2) AS f_c2, 
-                      ARG_MAX(c3%c4, c4%c3) FILTER(WHERE c8>2) AS f_c3, 
-                      ARG_MAX(c4%c3, c3%c4) FILTER(WHERE c8>2) AS f_c4, 
-                      ARG_MAX(c5*c6, c6/c5) FILTER(WHERE c8>2) AS f_c5, 
-                      ARG_MAX(c6/c5, c5*c6) FILTER(WHERE c8>2) AS f_c6, 
-                      ARG_MAX(c7+c8, c8-c7) FILTER(WHERE c8>2) AS f_c7, 
+        self.data = [
+            {
+                "f_c1": 7,
+                "f_c2": -3,
+                "f_c3": 1,
+                "f_c4": 2,
+                "f_c5": 30,
+                "f_c6": 1,
+                "f_c7": 6,
+                "f_c8": 0,
+            }
+        ]
+        self.sql = """CREATE MATERIALIZED VIEW int_arg_max_where_diff1 AS SELECT
+                      ARG_MAX(c1+c2, c2-c1) FILTER(WHERE c8>2) AS f_c1,
+                      ARG_MAX(c2-c1, c1+c2) FILTER(WHERE c8>2) AS f_c2,
+                      ARG_MAX(c3%c4, c4%c3) FILTER(WHERE c8>2) AS f_c3,
+                      ARG_MAX(c4%c3, c3%c4) FILTER(WHERE c8>2) AS f_c4,
+                      ARG_MAX(c5*c6, c6/c5) FILTER(WHERE c8>2) AS f_c5,
+                      ARG_MAX(c6/c5, c5*c6) FILTER(WHERE c8>2) AS f_c6,
+                      ARG_MAX(c7+c8, c8-c7) FILTER(WHERE c8>2) AS f_c7,
                       ARG_MAX(c8-c7, c7+c8) FILTER(WHERE c8>2) AS f_c8
-                      FROM int0_tbl'''
+                      FROM int0_tbl"""
 
 
 class aggtst_int_arg_max_where_diff_gby(TstView):
