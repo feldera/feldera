@@ -44,17 +44,21 @@ import java.util.List;
 /** Tests about table and view metadata */
 public class MetadataTests extends BaseSQLTests {
     @Test
-    public void connectorPropertiesTest() {
+    public void propertiesTest() {
         String ddl = """
                CREATE TABLE T (
                   COL1 INT
                ) WITH (
-                  'connector' = 'kafka',
-                  'url' = 'localhost'
+                  'connectors' = '[{
+                    "name": "kafka",
+                    "url": "localhost"
+                  }]'
                );
                CREATE VIEW V WITH (
-                  'connector' = 'file',
-                  'path' = '/tmp/x'
+                  'connectors' = '[{
+                     "name": "file_input",
+                     "path": "/tmp/x"
+                  }]'
                ) AS SELECT * FROM T;""";
         DBSPCompiler compiler = this.testCompiler();
         compiler.compileStatements(ddl);
@@ -68,34 +72,19 @@ public class MetadataTests extends BaseSQLTests {
         String str = c.toPrettyString();
         Assert.assertEquals("""
                 {
-                  "connector" : {
-                    "value" : "kafka",
+                  "connectors" : {
+                    "value" : "[{\\n     \\"name\\": \\"kafka\\",\\n     \\"url\\": \\"localhost\\"\\n   }]",
                     "key_position" : {
                       "start_line_number" : 4,
                       "start_column" : 4,
                       "end_line_number" : 4,
-                      "end_column" : 14
+                      "end_column" : 15
                     },
                     "value_position" : {
                       "start_line_number" : 4,
-                      "start_column" : 18,
-                      "end_line_number" : 4,
-                      "end_column" : 24
-                    }
-                  },
-                  "url" : {
-                    "value" : "localhost",
-                    "key_position" : {
-                      "start_line_number" : 5,
-                      "start_column" : 4,
-                      "end_line_number" : 5,
-                      "end_column" : 8
-                    },
-                    "value_position" : {
-                      "start_line_number" : 5,
-                      "start_column" : 12,
-                      "end_line_number" : 5,
-                      "end_column" : 22
+                      "start_column" : 19,
+                      "end_line_number" : 7,
+                      "end_column" : 6
                     }
                   }
                 }""", str);
@@ -108,41 +97,26 @@ public class MetadataTests extends BaseSQLTests {
         str = c.toPrettyString();
         Assert.assertEquals("""
                 {
-                  "connector" : {
-                    "value" : "file",
+                  "connectors" : {
+                    "value" : "[{\\n      \\"name\\": \\"file_input\\",\\n      \\"path\\": \\"/tmp/x\\"\\n   }]",
                     "key_position" : {
-                      "start_line_number" : 8,
+                      "start_line_number" : 10,
                       "start_column" : 4,
-                      "end_line_number" : 8,
-                      "end_column" : 14
+                      "end_line_number" : 10,
+                      "end_column" : 15
                     },
                     "value_position" : {
-                      "start_line_number" : 8,
-                      "start_column" : 18,
-                      "end_line_number" : 8,
-                      "end_column" : 23
-                    }
-                  },
-                  "path" : {
-                    "value" : "/tmp/x",
-                    "key_position" : {
-                      "start_line_number" : 9,
-                      "start_column" : 4,
-                      "end_line_number" : 9,
-                      "end_column" : 9
-                    },
-                    "value_position" : {
-                      "start_line_number" : 9,
-                      "start_column" : 13,
-                      "end_line_number" : 9,
-                      "end_column" : 20
+                      "start_line_number" : 10,
+                      "start_column" : 19,
+                      "end_line_number" : 13,
+                      "end_column" : 6
                     }
                   }
                 }""", str);
     }
 
     @Test
-    public void illegalConnectorPropertiesTest() {
+    public void illegalPropertiesTest() {
         String ddl = """
                CREATE TABLE T (
                   COL1 INT
@@ -162,6 +136,7 @@ public class MetadataTests extends BaseSQLTests {
     public void materializedProperty() {
         String ddl = "CREATE VIEW V WITH ('materialized' = 'true') AS SELECT 5;";
         DBSPCompiler compiler = this.testCompiler();
+        compiler.options.languageOptions.throwOnError = false;
         compiler.options.ioOptions.quiet = false;
         compiler.compileStatements(ddl);
         TestUtil.assertMessagesContain(compiler, "please use 'CREATE MATERIALIZED VIEW' instead");

@@ -32,25 +32,25 @@ public class SqlCreateView extends SqlCreate {
     public final ViewKind viewKind;
     public final @Nullable SqlNodeList columnList;
     public final SqlNode query;
-    @Nullable public final SqlNodeList connectorProperties;
+    @Nullable public final SqlNodeList viewProperties;
 
     private static final SqlOperator OPERATOR =
             new SqlSpecialOperator("CREATE VIEW", SqlKind.CREATE_VIEW);
 
     public SqlCreateView(SqlParserPos pos, boolean replace, ViewKind viewKind, SqlIdentifier name,
-                         @Nullable SqlNodeList columnList, @Nullable SqlNodeList connectorProperties,
+                         @Nullable SqlNodeList columnList, @Nullable SqlNodeList viewProperties,
                          SqlNode query) {
         super(OPERATOR, pos, replace, false);
         this.name = Objects.requireNonNull(name, "name");
         this.columnList = columnList; // may be null
         this.query = Objects.requireNonNull(query, "query");
         this.viewKind = viewKind;
-        this.connectorProperties = connectorProperties;
+        this.viewProperties = viewProperties;
     }
 
     @SuppressWarnings("nullness")
     @Override public List<SqlNode> getOperandList() {
-        return ImmutableNullableList.of(name, columnList, connectorProperties, query);
+        return ImmutableNullableList.of(name, columnList, viewProperties, query);
     }
 
     @Override public void unparse(SqlWriter writer, int leftPrec, int rightPrec) {
@@ -79,7 +79,7 @@ public class SqlCreateView extends SqlCreate {
             }
             writer.endList(frame);
         }
-        SqlCreateTable.writeProperties(writer, this.connectorProperties);
+        SqlCreateTable.writeProperties(writer, this.viewProperties);
         writer.keyword("AS");
         writer.newlineAndIndent();
         query.unparse(writer, 0, 0);
