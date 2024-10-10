@@ -327,15 +327,6 @@ fn parse_named_connectors(
     relation: SqlIdentifier,
     properties: &BTreeMap<String, PropertyValue>,
 ) -> Result<(Vec<NamedConnector>, Option<PropertyValue>), ConnectorGenerationError> {
-    for (key, value) in properties.iter() {
-        if key != "connectors" && key != "materialized" {
-            return Err(ConnectorGenerationError::PropertyDoesNotExist {
-                position: value.key_position,
-                relation: relation.sql_name(),
-                key: key.to_string(),
-            });
-        }
-    }
     match properties.get("connectors") {
         Some(value) => {
             let connectors =

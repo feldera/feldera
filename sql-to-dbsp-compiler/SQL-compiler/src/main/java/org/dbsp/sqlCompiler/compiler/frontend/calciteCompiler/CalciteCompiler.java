@@ -604,7 +604,7 @@ public class CalciteCompiler implements IWritesLogs {
         return result;
     }
 
-    @Nullable PropertyList createConnectorProperties(@Nullable SqlNodeList list) {
+    @Nullable PropertyList createProperties(@Nullable SqlNodeList list) {
         if (list == null)
             return null;
         PropertyList result = new PropertyList();
@@ -999,7 +999,7 @@ public class CalciteCompiler implements IWritesLogs {
                 String tableName = ct.name.getSimple();
                 List<RelColumnMetadata> cols = this.createTableColumnsMetadata(
                         Objects.requireNonNull(ct.columnsOrForeignKeys), ct.name);
-                @Nullable PropertyList properties = this.createConnectorProperties(ct.connectorProperties);
+                @Nullable PropertyList properties = this.createProperties(ct.tableProperties);
                 if (properties != null)
                     properties.checkDuplicates(this.errorReporter);
                 List<ForeignKey> fk = this.createForeignKeys(ct);
@@ -1043,10 +1043,10 @@ public class CalciteCompiler implements IWritesLogs {
                 RelRoot relRoot = converter.convertQuery(query, true, true);
                 List<RelColumnMetadata> columns = this.createViewColumnsMetadata(CalciteObject.create(node),
                         cv.name, relRoot, cv.columnList, cv.viewKind);
-                @Nullable PropertyList connectorProperties = this.createConnectorProperties(cv.connectorProperties);
-                if (connectorProperties != null) {
-                    connectorProperties.checkDuplicates(this.errorReporter);
-                    SqlFragment materialized = connectorProperties.getPropertyValue("materialized");
+                @Nullable PropertyList viewProperties = this.createProperties(cv.viewProperties);
+                if (viewProperties != null) {
+                    viewProperties.checkDuplicates(this.errorReporter);
+                    SqlFragment materialized = viewProperties.getPropertyValue("materialized");
                     if (materialized != null) {
                         this.errorReporter.reportWarning(materialized.getSourcePosition(),
                                 "Materialized property not used",
@@ -1060,7 +1060,7 @@ public class CalciteCompiler implements IWritesLogs {
                 CreateViewStatement view = new CreateViewStatement(
                         cv, sqlStatement,
                         cv.name.getSimple(), Utilities.identifierIsQuoted(cv.name),
-                        columns, cv, relRoot, connectorProperties);
+                        columns, cv, relRoot, viewProperties);
                 // From Calcite's point of view we treat this view just as another table.
                 boolean success = this.calciteCatalog.addTable(viewName, view.getEmulatedTable(), this.errorReporter, view);
                 if (!success)

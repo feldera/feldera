@@ -17,8 +17,6 @@ fi
 
 cd "${SQL_COMPILER_DIR}" && ./build.sh
 
-WORKING_DIR="${1:-${HOME}/.dbsp}"
-
 DEFAULT_BIND_ADDRESS="127.0.0.1"
 BIND_ADDRESS="${2:-$DEFAULT_BIND_ADDRESS}"
 

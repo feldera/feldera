@@ -42,7 +42,7 @@ public class NegativeParserTests extends BaseSQLTests {
     }
 
     @Test
-    public void testConnectorProperties() {
+    public void testTableProperties() {
         String ddl = "CREATE TABLE T(T INT) WITH ( 5 )";
         this.statementsFailingInCompilation(ddl, "Error parsing SQL: Encountered \"5\" at");
 
