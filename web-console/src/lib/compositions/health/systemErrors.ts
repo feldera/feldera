@@ -199,13 +199,9 @@ export const extractProgramErrors =
         const rustCompilerErrors = [
           extractInternalCompilationError(e.RustError, pipeline.name, source, getReport)
         ].filter(nonNull)
-        console.log('rustCompilerErrors', rustCompilerErrors)
-        const [recognizedErrors, unrecognizedErrors] = partition(
-          rustCompilerMessages.map(extractRustCompilerError(pipeline.name, source, getReport)),
-          (e) => e?.cause.tag !== 'unrecognizedProgramError'
+        rustCompilerErrors.push(
+          ...rustCompilerMessages.map(extractRustCompilerError(pipeline.name, source, getReport))
         )
-        rustCompilerErrors.push(...recognizedErrors)
-        rustCompilerErrors.push(...unrecognizedErrors)
         return rustCompilerErrors
       })
       .with(
