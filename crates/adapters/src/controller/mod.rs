@@ -1976,7 +1976,10 @@ impl ControllerInner {
             match reader.read()? {
                 ReadResult::Step { reader, metadata } => {
                     if metadata.step != step {
-                        todo!()
+                        return Err(ControllerError::UnexpectedStep {
+                            actual: metadata.step,
+                            expected: step,
+                        });
                     }
                     info!("replaying input step {step}");
                     for (endpoint_name, metadata) in metadata.input_endpoints {
