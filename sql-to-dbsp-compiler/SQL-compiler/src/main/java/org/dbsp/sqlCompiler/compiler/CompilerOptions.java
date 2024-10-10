@@ -162,6 +162,8 @@ public class CompilerOptions implements IDiff<CompilerOptions> {
         public boolean emitJpeg = false;
         @Parameter(names = "-png", description = "Emit a png image of the circuit instead of Rust")
         public boolean emitPng = false;
+        @Parameter(names = "--plan", description = "Emit the Calcite plan of the optimized program instead of Rust")
+        public boolean emitPlan = false;
         @Parameter(names = "-je", description = "Emit error messages as a JSON array to stderr")
         public boolean emitJsonErrors = false;
         @Parameter(names = "-js",
@@ -197,9 +199,10 @@ public class CompilerOptions implements IDiff<CompilerOptions> {
             return "IO{" +
                     "outputFile=" + Utilities.singleQuote(this.outputFile) +
                     ", metadataSource=" + this.metadataSource +
-                    ", emitJpeg=" + this.emitJpeg +
                     ", emitHandles=" + this.emitHandles +
+                    ", emitJpeg=" + this.emitJpeg +
                     ", emitPng=" + this.emitPng +
+                    ", emitPlan=" + this.emitPlan +
                     ", emitJsonErrors=" + this.emitJsonErrors +
                     ", emitJsonSchema=" + Utilities.singleQuote(this.emitJsonSchema) +
                     ", inputFile=" + Utilities.singleQuote(this.inputFile) +

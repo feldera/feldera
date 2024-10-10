@@ -27,9 +27,11 @@ import org.junit.Assert;
 import org.junit.Test;
 
 import javax.sql.DataSource;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.io.PrintStream;
 import java.io.PrintWriter;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -193,18 +195,12 @@ public class MetadataTests extends BaseSQLTests {
     // Test the --unquotedCasing command-line parameter
     @Test
     public void casing() throws IOException, InterruptedException, SQLException {
-        String[] statements = new String[]{
-                "CREATE TABLE \"T\" (\n" +
-                        "COL1 INT NOT NULL" +
-                        ")",
-                "CREATE TABLE \"t\" (\n" +
-                        "COL1 INT NOT NULL" +
-                        ", COL2 DOUBLE NOT NULL" +
-                        ")",
+        String sql = """
+                CREATE TABLE "T" (COL1 INT NOT NULL);
+                CREATE TABLE "t" (COL1 INT NOT NULL, COL2 DOUBLE NOT NULL);
                 // lowercase 'rlike' only works if we lookup function names case-insensitively
-                "CREATE VIEW V AS SELECT COL1, rlike(COL2, 'asf') FROM \"t\""
-        };
-        File file = createInputScript(statements);
+                CREATE VIEW V AS SELECT COL1, rlike(COL2, 'asf') FROM "t";""";
+        File file = createInputScript(sql);
         CompilerMessages messages = CompilerMain.execute("--unquotedCasing", "lower",
                 "-q", "-o", BaseSQLTests.testFilePath, file.getPath());
         System.out.println(messages);
@@ -215,16 +211,10 @@ public class MetadataTests extends BaseSQLTests {
     // Test illegal values for the --unquotedCasing command-line parameter
     @Test
     public void illegalCasing() throws IOException, SQLException {
-        String[] statements = new String[] {
-                """
-                CREATE TABLE T (
-                COL1 INT NOT NULL
-                , COL2 DOUBLE NOT NULL
-
-                )""",
-                "CREATE VIEW V AS SELECT COL1 FROM T"
-        };
-        File file = createInputScript(statements);
+        String sql = """
+                CREATE TABLE T (COL1 INT NOT NULL, COL2 DOUBLE NOT NULL);
+                CREATE VIEW V AS SELECT COL1 FROM T;""";
+        File file = createInputScript(sql);
         CompilerMessages messages = CompilerMain.execute("--unquotedCasing", "to_lower",
                 "-o", BaseSQLTests.testFilePath, file.getPath());
         Assert.assertTrue(messages.errorCount() > 0);
@@ -293,8 +283,9 @@ public class MetadataTests extends BaseSQLTests {
 
     @Test
     public void testUDFTypeError() throws IOException, SQLException {
-        File file = createInputScript("CREATE FUNCTION myfunction(d DATE, i INTEGER) RETURNS VARCHAR NOT NULL",
-                "CREATE VIEW V AS SELECT myfunction(DATE '2023-10-20', '5')");
+        File file = createInputScript("""
+                CREATE FUNCTION myfunction(d DATE, i INTEGER) RETURNS VARCHAR NOT NULL;
+                CREATE VIEW V AS SELECT myfunction(DATE '2023-10-20', '5');""");
         CompilerMessages messages = CompilerMain.execute("-o", BaseSQLTests.testFilePath, file.getPath());
         Assert.assertEquals(1, messages.errorCount());
         Assert.assertTrue(messages.toString().contains(
@@ -304,11 +295,11 @@ public class MetadataTests extends BaseSQLTests {
 
     @Test
     public void testUDF() throws IOException, InterruptedException, SQLException {
-        File file = createInputScript(
-                "CREATE FUNCTION contains_number(str VARCHAR NOT NULL, value INTEGER) RETURNS BOOLEAN NOT NULL",
-                "CREATE VIEW V0 AS SELECT contains_number(CAST('YES: 10 NO:5 MAYBE: 2' AS VARCHAR), 5)",
-                "CREATE FUNCTION \"EMPTY\"() RETURNS VARCHAR",
-                "CREATE VIEW V1 AS SELECT \"empty\"()");
+        File file = createInputScript("""
+                CREATE FUNCTION contains_number(str VARCHAR NOT NULL, value INTEGER) RETURNS BOOLEAN NOT NULL;
+                CREATE VIEW V0 AS SELECT contains_number(CAST('YES: 10 NO:5 MAYBE: 2' AS VARCHAR), 5);
+                CREATE FUNCTION "EMPTY"() RETURNS VARCHAR;
+                CREATE VIEW V1 AS SELECT "empty"();""");
 
         File udf = Paths.get(rustDirectory, "udf.rs").toFile();
         PrintWriter script = new PrintWriter(udf, StandardCharsets.UTF_8);
@@ -395,16 +386,10 @@ public class MetadataTests extends BaseSQLTests {
 
     @Test
     public void testDefaultColumnValueCompiler() throws IOException, InterruptedException, SQLException {
-        String[] statements = new String[]{
-                """
-                CREATE TABLE T (
-                COL1 INT NOT NULL DEFAULT 0
-                , COL2 DOUBLE DEFAULT 0.0
-                , COL3 VARCHAR DEFAULT NULL
-                )""",
-                "CREATE VIEW V AS SELECT COL1 FROM T"
-        };
-        File file = createInputScript(statements);
+        String sql = """
+                CREATE TABLE T (COL1 INT NOT NULL DEFAULT 0, COL2 DOUBLE DEFAULT 0.0, COL3 VARCHAR DEFAULT NULL);
+                CREATE VIEW V AS SELECT COL1 FROM T;""";
+        File file = createInputScript(sql);
         CompilerMessages messages = CompilerMain.execute("-o", BaseSQLTests.testFilePath, file.getPath());
         System.err.println(messages);
         Assert.assertEquals(0, messages.errorCount());
@@ -412,26 +397,208 @@ public class MetadataTests extends BaseSQLTests {
     }
 
     @Test
+    public void testHelpMessage() throws SQLException {
+        // If this test fails you should update sql-to-dbsp-compiler/using.md
+        PrintStream save = System.out;
+        ByteArrayOutputStream capture = new ByteArrayOutputStream();
+        System.setOut(new PrintStream(capture));
+        CompilerMain.execute("-h");
+        System.setOut(save);
+        String captured = capture.toString();
+        Assert.assertEquals("""
+                Usage: sql-to-dbsp [options] Input file to compile
+                  Options:
+                    --alltables
+                      Generate an input for each CREATE TABLE, even if the table is not used\s
+                      by any view
+                      Default: false
+                    --handles
+                      Use handles (true) or Catalog (false) in the emitted Rust code
+                      Default: false
+                    -h, --help, -?
+                      Show this message and exit
+                    --ignoreOrder
+                      Ignore ORDER BY clauses at the end
+                      Default: false
+                    --jdbcSource
+                      Connection string to a database that contains table metadata
+                      Default: <empty string>
+                    --lenient
+                      Lenient SQL validation.  If true it allows duplicate column names in a\s
+                      view\s
+                      Default: false
+                    --no-restrict-io
+                      Do not restrict the types of columns allowed in tables and views
+                      Default: false
+                    --nowstream
+                      Implement NOW as a stream (true) or as an internal operator (false)
+                      Default: false
+                    --outputsAreSets
+                      Ensure that outputs never contain duplicates
+                      Default: false
+                    --plan
+                      Emit the Calcite plan of the optimized program instead of Rust
+                      Default: false
+                    --streaming
+                      Compiling a streaming program, where only inserts are allowed
+                      Default: false
+                    --unquotedCasing
+                      How unquoted identifiers are treated.  Choices are: 'upper', 'lower',\s
+                      'unchanged'\s
+                      Default: lower
+                    -O
+                      Optimization level (0, 1, or 2)
+                      Default: 2
+                    -T
+                      Specify logging level for a class (can be repeated)
+                      Syntax: -Tkey=value
+                      Default: {}
+                    -d
+                      SQL syntax dialect used
+                      Default: ORACLE
+                      Possible Values: [BIG_QUERY, ORACLE, MYSQL, MYSQL_ANSI, SQL_SERVER, JAVA]
+                    -f
+                      Name of function to generate
+                      Default: circuit
+                    -i
+                      Generate an incremental circuit
+                      Default: false
+                    -je
+                      Emit error messages as a JSON array to stderr
+                      Default: false
+                    -jpg
+                      Emit a jpg image of the circuit instead of Rust
+                      Default: false
+                    -js
+                      Emit a JSON file containing the schema of all views and tables involved
+                    -o
+                      Output file; stdout if null
+                      Default: <empty string>
+                    -png
+                      Emit a png image of the circuit instead of Rust
+                      Default: false
+                    -q
+                      Quiet: do not print warnings
+                      Default: false
+                    -v
+                      Output verbosity
+                      Default: 0
+                
+                """, captured);
+    }
+
+    @Test
+    public void generatePlanTest() throws IOException, SQLException {
+        String sql = """
+            CREATE TABLE T (COL1 INT NOT NULL, COL2 DOUBLE NOT NULL);
+            CREATE VIEW V1 AS SELECT COL1 FROM T;
+            CREATE VIEW V2 AS SELECT SUM(COL1) FROM T;""";
+        File file = createInputScript(sql);
+        File json = File.createTempFile("out", ".json", new File("."));
+        json.deleteOnExit();
+        CompilerMain.execute("--plan", "-o", json.getPath(), file.getPath());
+        String jsonContents = Utilities.readFile(json.toPath());
+        Assert.assertEquals("""
+                {"v1":{
+                  "rels": [
+                    {
+                      "id": "0",
+                      "relOp": "LogicalTableScan",
+                      "table": [
+                        "schema",
+                        "t"
+                      ],
+                      "inputs": []
+                    },
+                    {
+                      "id": "1",
+                      "relOp": "LogicalProject",
+                      "fields": [
+                        "col1"
+                      ],
+                      "exprs": [
+                        {
+                          "input": 0,
+                          "name": "$0"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                "v2":{
+                  "rels": [
+                    {
+                      "id": "0",
+                      "relOp": "LogicalTableScan",
+                      "table": [
+                        "schema",
+                        "t"
+                      ],
+                      "inputs": []
+                    },
+                    {
+                      "id": "1",
+                      "relOp": "LogicalProject",
+                      "fields": [
+                        "col1"
+                      ],
+                      "exprs": [
+                        {
+                          "input": 0,
+                          "name": "$0"
+                        }
+                      ]
+                    },
+                    {
+                      "id": "2",
+                      "relOp": "LogicalAggregate",
+                      "group": [],
+                      "aggs": [
+                        {
+                          "agg": {
+                            "name": "SUM",
+                            "kind": "SUM",
+                            "syntax": "FUNCTION"
+                          },
+                          "type": {
+                            "type": "INTEGER",
+                            "nullable": true
+                          },
+                          "distinct": false,
+                          "operands": [
+                            0
+                          ],
+                          "name": "EXPR$0"
+                        }
+                      ]
+                    }
+                  ]
+                }
+                }""", jsonContents);
+        ObjectMapper mapper = Utilities.deterministicObjectMapper();
+        JsonNode parsed = mapper.readTree(json);
+        Assert.assertNotNull(parsed);
+    }
+
+    @Test
     public void testSchema() throws IOException, SQLException {
-        String[] statements = new String[]{
-                """
+        String sql = """
                 CREATE TABLE T (
                 COL1 INT NOT NULL
                 , COL2 DOUBLE NOT NULL FOREIGN KEY REFERENCES S(COL0)
                 , COL3 VARCHAR(3) NOT NULL PRIMARY KEY
                 , COL4 VARCHAR(3) ARRAY
                 , COL5 MAP<INT, INT>
-                )""",
-                "CREATE VIEW V AS SELECT COL1 AS \"xCol\" FROM T",
-                "CREATE VIEW V1 (\"yCol\") AS SELECT COL1 FROM T"
-        };
-        File file = createInputScript(statements);
+                );
+                CREATE VIEW V AS SELECT COL1 AS "xCol" FROM T;
+                CREATE VIEW V1 ("yCol") AS SELECT COL1 FROM T;""";
+        File file = createInputScript(sql);
         File json = File.createTempFile("out", ".json", new File("."));
         json.deleteOnExit();
-        File tmp = File.createTempFile("out", ".rs", new File("."));
-        tmp.deleteOnExit();
+        File tmp = File.createTempFile("out", ".rs", new File(rustDirectory));
         CompilerMessages message = CompilerMain.execute(
                 "-js", json.getPath(), "-o", tmp.getPath(), file.getPath());
+        boolean success = tmp.delete();
         if (message.exitCode != 0)
             System.err.println(message);
         Assert.assertEquals(message.exitCode, 0);
@@ -440,7 +607,7 @@ public class MetadataTests extends BaseSQLTests {
         ObjectMapper mapper = Utilities.deterministicObjectMapper();
         JsonNode parsed = mapper.readTree(json);
         Assert.assertNotNull(parsed);
-        String jsonContents  = Utilities.readFile(json.toPath());
+        String jsonContents = Utilities.readFile(json.toPath());
         Assert.assertEquals("""
                 {
                   "inputs" : [ {
@@ -534,10 +701,7 @@ public class MetadataTests extends BaseSQLTests {
 
     @Test
     public void jsonErrorTest() throws IOException, SQLException {
-        String[] statements = new String[] {
-                "CREATE VIEW V AS SELECT * FROM T"
-        };
-        File file = createInputScript(statements);
+        File file = createInputScript("CREATE VIEW V AS SELECT * FROM T;");
         CompilerMessages messages = CompilerMain.execute("-je", file.getPath());
         Assert.assertEquals(messages.exitCode, 1);
         Assert.assertEquals(messages.errorCount(), 1);
