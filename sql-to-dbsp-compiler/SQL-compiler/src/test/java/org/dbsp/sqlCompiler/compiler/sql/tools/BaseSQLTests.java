@@ -211,17 +211,17 @@ public class BaseSQLTests {
         testsToRun.clear();
     }
 
-    public static File createInputFile(File file, String separator, String... contents) throws IOException {
+    public static File createInputFile(File file, String contents) throws IOException {
         file.deleteOnExit();
         PrintWriter script = new PrintWriter(file, StandardCharsets.UTF_8);
-        script.println(String.join(separator, contents));
+        script.println(contents);
         script.close();
         return file;
     }
 
-    public static File createInputScript(String... contents) throws IOException {
+    public static File createInputScript(String contents) throws IOException {
         File result = File.createTempFile("script", ".sql", new File(rustDirectory));
-        return createInputFile(result, ";" + System.lineSeparator(), contents);
+        return createInputFile(result, contents);
     }
 
     DBSPCompiler noThrowCompiler() {

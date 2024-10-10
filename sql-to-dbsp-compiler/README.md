@@ -86,8 +86,7 @@ views                                           V
 
 ## Using the compiler
 
-See the documentation in `docs/contributors/compiler.md` in this repo,
-or [online](/contributors/compiler).
+See the documentation in [using.md](using.md).
 
 ## Compiler architecture
 

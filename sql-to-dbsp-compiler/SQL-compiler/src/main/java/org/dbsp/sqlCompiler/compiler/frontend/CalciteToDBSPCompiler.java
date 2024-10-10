@@ -2437,7 +2437,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
     DBSPNode compileCreateView(CreateViewStatement view) {
         RelNode rel = view.getRelNode();
         Logger.INSTANCE.belowLevel(this, 2)
-                .append(CalciteCompiler.getPlan(rel))
+                .append(CalciteCompiler.getPlan(rel, false))
                 .newline();
         this.go(rel);
         DBSPOperator op = this.getOperator(rel);

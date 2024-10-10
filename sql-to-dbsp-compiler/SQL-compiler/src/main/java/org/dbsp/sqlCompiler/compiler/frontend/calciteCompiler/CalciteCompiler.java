@@ -406,9 +406,9 @@ public class CalciteCompiler implements IWritesLogs {
         return false;
     }
 
-    public static String getPlan(RelNode rel) {
+    public static String getPlan(RelNode rel, boolean json) {
         return RelOptUtil.dumpPlan("[Logical plan]", rel,
-                SqlExplainFormat.TEXT,
+                json ? SqlExplainFormat.JSON : SqlExplainFormat.TEXT,
                 SqlExplainLevel.NON_COST_ATTRIBUTES);
     }
 
@@ -486,7 +486,7 @@ public class CalciteCompiler implements IWritesLogs {
         Logger.INSTANCE.belowLevel(this, level)
                 .append("Before optimizer")
                 .increase()
-                .append(getPlan(rel))
+                .append(getPlan(rel, false))
                 .decrease()
                 .newline();
 
@@ -498,7 +498,7 @@ public class CalciteCompiler implements IWritesLogs {
         Logger.INSTANCE.belowLevel(this, level)
                 .append("After optimizer ")
                 .increase()
-                .append(getPlan(rel))
+                .append(getPlan(rel, false))
                 .decrease()
                 .newline();
         return rel;

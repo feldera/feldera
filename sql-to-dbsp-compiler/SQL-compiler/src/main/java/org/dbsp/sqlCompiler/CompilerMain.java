@@ -184,6 +184,24 @@ public class CompilerMain {
                 return compiler.messages;
             }
         }
+        if (this.options.ioOptions.emitPlan) {
+            if (this.options.ioOptions.outputFile.isEmpty()) {
+                compiler.reportError(SourcePositionRange.INVALID, "Invalid output",
+                        "Must specify an output file when outputting the plan");
+                return compiler.messages;
+            }
+            try {
+                PrintStream outputStream = new PrintStream(
+                        Files.newOutputStream(Paths.get(this.options.ioOptions.outputFile)));
+                String plan = compiler.getPlans();
+                outputStream.println(plan);
+                outputStream.close();
+            } catch (IOException e) {
+                compiler.reportError(SourcePositionRange.INVALID,
+                        "Error writing to file", e.getMessage());
+            }
+            return compiler.messages;
+        }
 
         String dotFormat = (this.options.ioOptions.emitJpeg ? "jpg"
                             : this.options.ioOptions.emitPng ? "png"

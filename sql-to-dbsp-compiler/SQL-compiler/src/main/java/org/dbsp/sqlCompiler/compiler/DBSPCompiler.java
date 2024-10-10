@@ -26,6 +26,7 @@ package org.dbsp.sqlCompiler.compiler;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.runtime.CalciteContextException;
 import org.apache.calcite.schema.Schema;
 import org.apache.calcite.sql.SqlFunction;
@@ -158,6 +159,24 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         this.weightVar = new DBSPTypeUser(CalciteObject.EMPTY, DBSPTypeCode.USER, "Weight", false)
                 .var();
         this.start();
+    }
+
+    public String getPlans() {
+        StringBuilder jsonPlan = new StringBuilder();
+        jsonPlan.append("{");
+        boolean first = true;
+        for (var e: this.views.entrySet()) {
+            if (!first) {
+                jsonPlan.append(",").append(System.lineSeparator());
+            }
+            first = false;
+            jsonPlan.append("\"").append(Utilities.escapeDoubleQuotes(e.getKey())).append("\"");
+            jsonPlan.append(":");
+            String json = CalciteCompiler.getPlan(e.getValue().getRelNode(), true);
+            jsonPlan.append(json);
+        }
+        jsonPlan.append(System.lineSeparator()).append("}");
+        return jsonPlan.toString();
     }
 
     // Steps executed before the actual compilation.
@@ -377,7 +396,6 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
                 if (this.hasErrors())
                     return;
             }
-            this.toCompile.clear();
 
             // All UDFs which have no bodies in SQL
             final List<SqlFunction> rustFunctions = new ArrayList<>();
@@ -494,6 +512,8 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
                 this.printMessages(currentView);
                 throw e;
             }
+        } finally {
+            this.toCompile.clear();
         }
     }
 

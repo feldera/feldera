@@ -168,14 +168,10 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
     public void loggingParameter() throws IOException, InterruptedException, SQLException {
         StringBuilder builder = new StringBuilder();
         Appendable save = Logger.INSTANCE.setDebugStream(builder);
-        String[] statements = new String[]{
-                "CREATE TABLE T (\n" +
-                        "COL1 INT NOT NULL" +
-                        ", COL2 DOUBLE NOT NULL" +
-                        ")",
-                "CREATE VIEW V AS SELECT COL1 FROM T"
-        };
-        File file = createInputScript(statements);
+        String sql = """
+                CREATE TABLE T (COL1 INT NOT NULL, COL2 DOUBLE NOT NULL);
+                CREATE VIEW V AS SELECT COL1 FROM T;""";
+        File file = createInputScript(sql);
         CompilerMain.execute("-TCalciteCompiler=2", "-TPasses=2",
                 "-o", BaseSQLTests.testFilePath, file.getPath());
         Utilities.compileAndTestRust(BaseSQLTests.rustDirectory, true);
@@ -388,14 +384,10 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
 
     @Test
     public void testNoOutput() throws IOException, SQLException {
-        String[] statements = new String[]{
-                "CREATE TABLE T (\n" +
-                        "COL1 INT NOT NULL" +
-                        ", COL2 DOUBLE NOT NULL" +
-                        ")",
-                "CREATE VIEW V AS SELECT COL1 FROM T"
-        };
-        File file = createInputScript(statements);
+        String sql = """
+                 CREATE TABLE T (COL1 INT NOT NULL COL2 DOUBLE NOT NULL);
+                 CREATE VIEW V AS SELECT COL1 FROM T""";
+        File file = createInputScript(sql);
         // Redirect error stream
         ByteArrayOutputStream os = new ByteArrayOutputStream();
         PrintStream ps = new PrintStream(os);
@@ -409,14 +401,10 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
 
     @Test
     public void testRustCompiler() throws IOException, InterruptedException, SQLException {
-        String[] statements = new String[]{
-                "CREATE TABLE T (\n" +
-                        "COL1 INT NOT NULL" +
-                        ", COL2 DOUBLE NOT NULL" +
-                        ")",
-                "CREATE VIEW V AS SELECT COL1 FROM T"
-        };
-        File file = createInputScript(statements);
+        String sql = """
+                CREATE TABLE T (COL1 INT NOT NULL, COL2 DOUBLE NOT NULL);
+                CREATE VIEW V AS SELECT COL1 FROM T;""";
+        File file = createInputScript(sql);
         CompilerMessages messages = CompilerMain.execute("-o", BaseSQLTests.testFilePath, file.getPath());
         System.err.println(messages);
         Assert.assertEquals(0, messages.exitCode);
@@ -425,7 +413,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
 
     @Test
     public void testCompilerExample() throws IOException, InterruptedException, SQLException {
-        // The example in docs/contributors/compiler.md
+        // The example in sql-to-dbsp-compiler/using.md
         String sql = """
                 -- define Person table
                 CREATE TABLE Person
@@ -522,14 +510,10 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
     public void testCompilerToPng() throws IOException, SQLException {
         if (!Utilities.isDotInstalled())
             return;
-        String[] statements = new String[]{
-                "CREATE TABLE T (\n" +
-                        "COL1 INT NOT NULL" +
-                        ", COL2 DOUBLE NOT NULL" +
-                        ")",
-                "CREATE VIEW V AS SELECT COL1 FROM T WHERE COL1 > 5"
-        };
-        File file = createInputScript(statements);
+        String sql ="""
+                 CREATE TABLE T (COL1 INT NOT NULL, COL2 DOUBLE NOT NULL);
+                 CREATE VIEW V AS SELECT COL1 FROM T WHERE COL1 > 5;""";
+        File file = createInputScript(sql);
         File png = File.createTempFile("out", ".png", new File("."));
         png.deleteOnExit();
         CompilerMessages message = CompilerMain.execute("-png", "-o", png.getPath(), file.getPath());
