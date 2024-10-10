@@ -1312,11 +1312,20 @@ public class StreamingTests extends StreamingTestBase {
                 );
                 CREATE VIEW V AS
                 SELECT AVG(distance), CAST(pickup AS DATE) FROM series GROUP BY CAST(pickup AS DATE);""";
-        DBSPCompiler compiler = testCompiler();
-        compiler.compileStatements(ddl);
-        Assert.assertFalse(compiler.hasErrors());
-        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
+        var ccs = this.getCCS(ddl);
         this.addRustTestCase(ccs);
+    }
+
+    @Test
+    public void watermarkTest0() {
+        // Test for the example in the documentation
+        String sql = """
+                CREATE TABLE order_pickup (
+                   pickup_time TIMESTAMP NOT NULL WATERMARK INTERVAL '1:00' HOURS TO MINUTES,
+                   location VARCHAR
+                );
+                """;
+        this.getCCS(sql);
     }
 
     @Test

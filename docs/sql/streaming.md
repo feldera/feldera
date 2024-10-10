@@ -96,6 +96,12 @@ annotated columns is too late.
 
 ## `WATERMARK` expressions
 
+:::warning
+
+The `WATERMARK` feature is still experimental.
+
+:::
+
 `WATERMARK` is an annotation on the data in a column of a table that
 is relevant for the case of stream processing.  `WATERMARK` is
 described by an expression that evaluates to a constant value.  The
@@ -108,7 +114,7 @@ be annotated in the `CREATE TABLE` statement.  For example:
 
 ```sql
 CREATE TABLE order_pickup (
-   when TIMESTAMP NOT NULL WATERMARK INTERVAL '1:00' HOURS TO MINUTES,
+   pickup_time TIMESTAMP NOT NULL WATERMARK INTERVAL '1:00' HOURS TO MINUTES,
    location VARCHAR
 );
 ```
@@ -124,3 +130,10 @@ behave as if the row with value X has only just been received.
 
 If a table has multiple columns annotated with `WATERMARK` values, a
 row is released only when *all* the delays have been exceeded.
+
+:::warning
+
+The current version of the compiler does not support multiple
+`WATERMARK` columns in a single table.
+
+:::
