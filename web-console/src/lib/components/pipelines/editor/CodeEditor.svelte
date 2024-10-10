@@ -7,6 +7,42 @@
       view: editor.ICodeEditorViewState | null
     }
   > = {}
+
+  MonacoImports.editor.defineTheme('feldera-light', {
+    base: 'vs',
+    inherit: true,
+    rules: [{ token: 'string.sql', foreground: '#7a3d00' }],
+    colors: {
+      'editor.background': '#ffffff'
+    }
+  })
+
+  MonacoImports.editor.defineTheme('feldera-dark', {
+    base: 'vs-dark',
+    inherit: true,
+    rules: [{ token: 'string.sql', foreground: '#d9731a' }],
+    colors: {
+      'editor.background': '#000000'
+    }
+  })
+
+  MonacoImports.editor.defineTheme('feldera-light-disabled', {
+    base: 'vs',
+    inherit: true,
+    rules: [{ token: 'string.sql', foreground: '#7a3d00' }],
+    colors: {
+      'editor.background': '#f2f2f2'
+    }
+  })
+
+  MonacoImports.editor.defineTheme('feldera-dark-disabled', {
+    base: 'vs-dark',
+    inherit: true,
+    rules: [{ token: 'string.sql', foreground: '#d9731a' }],
+    colors: {
+      'editor.background': '#212121'
+    }
+  })
 </script>
 
 <script lang="ts">
@@ -223,7 +259,7 @@
       {/each}
     </div>
     <div class="relative flex-1">
-      <div class="absolute h-full w-full" class:opacity-70={editDisabled}>
+      <div class="absolute h-full w-full">
         <MonacoEditor
           markers={file.markers}
           onready={(editorRef) => {
@@ -245,7 +281,12 @@
           options={{
             fontFamily: theme.config.monospaceFontFamily,
             fontSize: 16,
-            theme: mode.darkMode.value === 'light' ? 'vs' : 'vs-dark',
+            theme: [
+              'feldera-dark-disabled',
+              'feldera-dark',
+              'feldera-light-disabled',
+              'feldera-light'
+            ][+(mode.darkMode.value === 'light') * 2 + +!editDisabled],
             automaticLayout: true,
             lineNumbersMinChars: 3,
             ...isMonacoEditorDisabled(isReadonly),
