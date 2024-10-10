@@ -3,11 +3,11 @@
 #![allow(clippy::type_complexity)]
 
 use crate::{
-    controller::InputEndpointConfig, transport::InputReader, Catalog, CircuitCatalog,
-    DbspCircuitHandle, FormatConfig, InputFormat,
+    controller::InputEndpointConfig, format::InputBuffer, transport::InputReader, Catalog,
+    CircuitCatalog, FormatConfig, InputFormat,
 };
 use anyhow::Result as AnyResult;
-use dbsp::{DBData, OrdZSet, Runtime};
+use dbsp::{DBData, DBSPHandle, OrdZSet, Runtime};
 use env_logger::Env;
 use feldera_types::serde_with_context::{
     DeserializeWithContext, SerializeWithContext, SqlSerdeConfig,
@@ -163,7 +163,6 @@ where
     let reader = endpoint.open(
         Box::new(consumer.clone()),
         Box::new(parser.clone()),
-        0,
         relation,
     )?;
 
@@ -177,7 +176,7 @@ where
 pub fn test_circuit<T>(
     config: CircuitConfig,
     schema: &[Field],
-) -> (Box<dyn DbspCircuitHandle>, Box<dyn CircuitCatalog>)
+) -> (DBSPHandle, Box<dyn CircuitCatalog>)
 where
     T: DBData
         + SerializeWithContext<SqlSerdeConfig>
@@ -211,7 +210,7 @@ where
         Ok(catalog)
     })
     .unwrap();
-    (Box::new(circuit), Box::new(catalog))
+    (circuit, Box::new(catalog))
 }
 
 pub fn list_files_recursive(dir: &Path, extension: &OsStr) -> Result<Vec<PathBuf>, std::io::Error> {
@@ -253,8 +252,8 @@ where
 
     let mut bytes = Vec::new();
     file.read_to_end(&mut bytes).unwrap();
-    let errors = parser.input_chunk(&bytes);
-    parser.flush_all();
+    let (mut parsed_buffers, errors) = parser.parse(&bytes);
+    parsed_buffers.flush_all();
 
     // Use assert_eq, so errors are printed in case of a failure.
     assert_eq!(errors, vec![]);

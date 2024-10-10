@@ -8,7 +8,7 @@ pub struct UrlInputConfig {
     /// URL.
     pub path: String,
 
-    /// Timeout before disconnection when paused.
+    /// Timeout before disconnection when paused, in seconds.
     ///
     /// If the pipeline is paused, or if the input adapter reads data faster
     /// than the pipeline can process it, then the controller will pause the

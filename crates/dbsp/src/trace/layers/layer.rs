@@ -302,7 +302,12 @@ where
     type Item<'a> = (&'a mut K, L::Item<'a>);
     type ItemRef<'a> = (&'a K, L::ItemRef<'a>);
     type Factories = LayerFactories<K, L::Factories>;
-    type Cursor<'s> = LayerCursor<'s, K, L, O> where K: 's, O: 's, L: 's;
+    type Cursor<'s>
+        = LayerCursor<'s, K, L, O>
+    where
+        K: 's,
+        O: 's,
+        L: 's;
     type MergeBuilder = LayerBuilder<K, L::MergeBuilder, O>;
     type TupleBuilder = LayerBuilder<K, L::TupleBuilder, O>;
 
@@ -1308,7 +1313,8 @@ where
 {
     type Key = K;
 
-    type Item<'k> = &'k K
+    type Item<'k>
+        = &'k K
     where
         Self: 'k;
 

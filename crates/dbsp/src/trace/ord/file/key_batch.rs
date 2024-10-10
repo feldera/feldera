@@ -823,7 +823,8 @@ where
     T: Timestamp,
     R: WeightTrait + ?Sized,
 {
-    type TimeDiffCursor<'a> = FileKeyTimeDiffCursor<'a, K, T, R>
+    type TimeDiffCursor<'a>
+        = FileKeyTimeDiffCursor<'a, K, T, R>
     where
         Self: 'a;
 

@@ -1,15 +1,17 @@
-use crate::{format::ParseError, DetailedError};
+use crate::{format::ParseError, transport::Step, DetailedError};
 use anyhow::Error as AnyError;
-use dbsp::Error as DBSPError;
+use dbsp::Error as DbspError;
 use serde::{ser::SerializeStruct, Serialize, Serializer};
 use std::{
     backtrace::Backtrace,
     borrow::Cow,
     error::Error as StdError,
     fmt::{Display, Error as FmtError, Formatter},
-    io::Error as IOError,
+    io::Error as IoError,
     string::ToString,
 };
+
+use super::metadata::StepError;
 
 /// Controller configuration error.
 #[derive(Debug, Serialize)]
@@ -474,7 +476,7 @@ pub enum ControllerError {
     IoError {
         /// Describes the context where the error occurred.
         context: String,
-        io_error: IOError,
+        io_error: IoError,
         backtrace: Backtrace,
     },
 
@@ -483,6 +485,15 @@ pub enum ControllerError {
 
     /// Error validating program schema.
     SchemaValidationError { error: String },
+
+    /// Error parsing the checkpoint.
+    CheckpointParseError { error: String },
+
+    /// Error in steps metadata.
+    StepError(StepError),
+
+    /// Unexpected step number.
+    UnexpectedStep { actual: Step, expected: Step },
 
     /// Feature is not supported.
     NotSupported { error: String },
@@ -537,7 +548,7 @@ pub enum ControllerError {
     },
 
     /// Error evaluating the DBSP circuit.
-    DbspError { error: DBSPError },
+    DbspError { error: DbspError },
 
     /// Error inside the Prometheus module.
     PrometheusError { error: String },
@@ -549,20 +560,20 @@ pub enum ControllerError {
     /// Panic inside the DBSP controller.
     ControllerPanic,
 
-    /// Controller terminated before profile ran.
+    /// Controller terminated before command could be executed.
     ControllerExit,
 }
 
 fn serialize_io_error<S>(
     context: &String,
-    io_error: &IOError,
+    io_error: &IoError,
     backtrace: &Backtrace,
     serializer: S,
 ) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
 {
-    let mut ser = serializer.serialize_struct("IOError", 4)?;
+    let mut ser = serializer.serialize_struct("IoError", 4)?;
     ser.serialize_field("context", context)?;
     ser.serialize_field("kind", &io_error.kind().to_string())?;
     ser.serialize_field("os_error", &io_error.raw_os_error())?;
@@ -623,10 +634,13 @@ impl DetailedError for ControllerError {
     // TODO: attempts to cast `AnyError` to `DetailedError`.
     fn error_code(&self) -> Cow<'static, str> {
         match self {
-            Self::IoError { .. } => Cow::from("ControllerIOError"),
+            Self::IoError { .. } => Cow::from("ControllerIoError"),
             Self::NotSupported { .. } => Cow::from("NotSupported"),
             Self::SchemaParseError { .. } => Cow::from("SchemaParseError"),
             Self::SchemaValidationError { .. } => Cow::from("SchemaParseError"),
+            Self::CheckpointParseError { .. } => Cow::from("CheckpointParseError"),
+            Self::StepError { .. } => Cow::from("StepsError"),
+            Self::UnexpectedStep { .. } => Cow::from("UnexpectedStep"),
             Self::IrParseError { .. } => Cow::from("IrParseError"),
             Self::CliArgsError { .. } => Cow::from("ControllerCliArgsError"),
             Self::Config { config_error } => {
@@ -664,6 +678,13 @@ impl Display for ControllerError {
             }
             Self::SchemaValidationError { error } => {
                 write!(f, "Error validating program schema: {error}")
+            }
+            Self::CheckpointParseError { error } => {
+                write!(f, "Error parsing checkpoint file: {error}")
+            }
+            Self::StepError(error) => write!(f, "Error with persistent input steps: {error}"),
+            Self::UnexpectedStep { actual, expected } => {
+                write!(f, "Read step {actual}, expected {expected}")
             }
             Self::IrParseError { error } => {
                 write!(f, "Error parsing program IR: {error}")
@@ -730,14 +751,14 @@ impl Display for ControllerError {
                 write!(f, "Panic inside the DBSP controller")
             }
             ControllerError::ControllerExit => {
-                write!(f, "Controller exited without running profile")
+                write!(f, "Controller exited before command could be executed")
             }
         }
     }
 }
 
 impl ControllerError {
-    pub fn io_error(context: String, io_error: IOError) -> Self {
+    pub fn io_error(context: String, io_error: IoError) -> Self {
         Self::IoError {
             context,
             io_error,
@@ -958,7 +979,7 @@ impl ControllerError {
         }
     }
 
-    pub fn dbsp_error(error: DBSPError) -> Self {
+    pub fn dbsp_error(error: DbspError) -> Self {
         Self::DbspError { error }
     }
 
@@ -974,5 +995,11 @@ impl ControllerError {
 impl From<ConfigError> for ControllerError {
     fn from(config_error: ConfigError) -> Self {
         Self::Config { config_error }
+    }
+}
+
+impl From<DbspError> for ControllerError {
+    fn from(error: DbspError) -> Self {
+        Self::DbspError { error }
     }
 }
