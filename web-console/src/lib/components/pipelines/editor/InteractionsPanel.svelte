@@ -1,9 +1,10 @@
-<script lang="ts" context="module">
+<script lang="ts" module>
   const pipelineActionCallbacks = usePipelineActionCallbacks()
 </script>
 
 <script lang="ts">
   import { useLocalStorage } from '$lib/compositions/localStore.svelte'
+  import PanelAdHocQuery from '$lib/components/pipelines/editor/TabAdHocQuery.svelte'
   import PanelChangeStream from '$lib/components/pipelines/editor/TabChangeStream.svelte'
   import PanelPerformance from '$lib/components/pipelines/editor/TabPerformance.svelte'
   import PanelPipelineErrors from '$lib/components/pipelines/editor/TabPipelineErrors.svelte'
@@ -23,8 +24,8 @@
 
   const tabs = [
     tuple('Errors' as const, TabPipelineErrors, PanelPipelineErrors),
-    // tuple('ad-hoc query', TabQueryData),
     tuple('Performance' as const, undefined, PanelPerformance),
+    tuple('Ad-hoc query' as const, undefined, PanelAdHocQuery),
     // tuple('query plan', TabDBSPGraph),
     tuple('Change stream' as const, TabControlChangeStream, PanelChangeStream),
     tuple('Logs' as const, undefined, PanelLogs)
@@ -67,39 +68,41 @@
   <span class="hidden sm:inline"> Change stream </span>
 {/snippet}
 
-{#snippet tabList()}
-  {#each tabs as [tabName, tabControl]}
-    <Tabs.Control
-      bind:group={currentTab.value}
-      name={tabName}
-      contentClasses="group-hover:!bg-inherit"
-    >
-      {#if tabControl}
-        {@render tabControl(pipeline.current)}
-      {:else}
-        <span>{tabName}</span>
-      {/if}
-    </Tabs.Control>
-  {/each}
-{/snippet}
-
-{#snippet tabPanels()}
-  {#each tabs as [tabName,, TabComponent]}
-    <Tabs.Panel
-      bind:group={currentTab.value}
-      value={tabName}
-      classes="h-full overflow-y-auto relative"
-    >
-      <div class="absolute h-full w-full">
-        <TabComponent {pipeline} {metrics}></TabComponent>
-      </div>
-    </Tabs.Panel>
-  {/each}
-{/snippet}
-
 <Tabs
-  list={tabList}
-  panels={tabPanels}
-  panelsClasses="flex-1"
+  bind:value={currentTab.value}
+  listMargin=""
+  contentClasses="h-full"
   classes="flex flex-col flex-1 !space-y-0"
-></Tabs>
+>
+  {#snippet list()}
+    <div class=" w-full">
+      {#each tabs as [tabName, tabControl]}
+        <Tabs.Control
+          value={tabName}
+          classes="btn rounded-none"
+          labelBase=""
+          translateX=""
+          stateInactive="[&:not(:hover)]:text-surface-700-300"
+          ,
+          stateActive="bg-white-black"
+        >
+          {#if tabControl}
+            {@render tabControl(pipeline.current)}
+          {:else}
+            <span>{tabName}</span>
+          {/if}
+        </Tabs.Control>
+      {/each}
+    </div>
+  {/snippet}
+
+  {#snippet content()}
+    {#each tabs as [tabName, , TabComponent]}
+      <Tabs.Panel value={tabName} classes="h-full overflow-y-auto relative">
+        <div class="absolute h-full w-full">
+          <TabComponent {pipeline} {metrics}></TabComponent>
+        </div>
+      </Tabs.Panel>
+    {/each}
+  {/snippet}
+</Tabs>

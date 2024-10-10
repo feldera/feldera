@@ -1,4 +1,4 @@
-<script lang="ts" context="module">
+<script lang="ts" module>
   type RelationInfo = {
     pipelineName: string
     relationName: string
@@ -31,16 +31,19 @@
     )
   }
   const startReadingStream = (pipelineName: string, relationName: string) => {
-    const handle = relationEggressStream(pipelineName, relationName).then((stream) => {
+    const handle = relationEgressStream(pipelineName, relationName).then((stream) => {
       if ('message' in stream) {
         return undefined
       }
       const { cancel } = parseUTF8JSON(
         stream,
-        pushChanges(pipelineName, relationName),
-        (skippedBytes) => {
-          pushChanges(pipelineName, relationName)([{ skippedBytes }])
-          changeStream[pipelineName].totalSkippedBytes += skippedBytes
+        {
+          pushChanges: pushChanges(pipelineName, relationName),
+          onBytesSkipped: (skippedBytes) => {
+            pushChanges(pipelineName, relationName)([{ skippedBytes }])
+            changeStream[pipelineName].totalSkippedBytes += skippedBytes
+          },
+          onParseEnded: undefined
         },
         {
           paths: ['$.json_data.*'],
@@ -86,7 +89,7 @@
 
   import { getCaseIndependentName } from '$lib/functions/felderaRelation'
   import {
-    relationEggressStream,
+    relationEgressStream,
     relationIngress,
     type ExtendedPipeline,
     type XgressEntry

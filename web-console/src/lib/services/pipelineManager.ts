@@ -21,7 +21,8 @@ import {
   httpOutput,
   getConfig as _getConfig,
   getConfigDemos,
-  httpInput
+  httpInput,
+  type Field
 } from '$lib/services/manager'
 export type {
   // PipelineDescr,
@@ -41,6 +42,8 @@ const { OidcClient } = AxaOidc
 import { client, createClient } from '@hey-api/client-fetch'
 import JSONbig from 'true-json-bigint'
 import { felderaEndpoint } from '$lib/functions/configs/felderaEndpoint'
+import type { SQLValueJS } from '$lib/functions/sqlValue'
+import invariant from 'tiny-invariant'
 
 const unauthenticatedClient = createClient({
   bodySerializer: JSONbig.stringify,
@@ -319,7 +322,7 @@ export const postApiKey = (name: string) => handled(_postApiKey)({ body: { name 
 export const deleteApiKey = (name: string) =>
   handled(_deleteApiKey)({ path: { api_key_name: name } })
 
-const makeAuthorizedFetch = () => {
+const getAuthenticatedFetch = () => {
   try {
     const oidcClient = OidcClient.get()
     return oidcClient.fetchWithTokens(globalThis.fetch)
@@ -328,9 +331,9 @@ const makeAuthorizedFetch = () => {
   }
 }
 
-export const relationEggressStream = async (pipelineName: string, relationName: string) => {
+export const relationEgressStream = async (pipelineName: string, relationName: string) => {
   // const result = await httpOutput({path: {pipeline_name: pipelineName, table_name: relationName}, query: {'format': 'json', 'mode': 'watch', 'array': false, 'query': 'table'}})
-  const fetch = makeAuthorizedFetch()
+  const fetch = getAuthenticatedFetch()
   const result = await fetch(
     `${felderaEndpoint}/v0/pipelines/${pipelineName}/egress/${relationName}?format=json&array=false`,
     {
@@ -339,13 +342,46 @@ export const relationEggressStream = async (pipelineName: string, relationName: 
   )
   return result.status === 200 && result.body ? result.body : (result.json() as Promise<Error>)
 }
-
 export const pipelineLogsStream = async (pipelineName: string) => {
-  const fetch = makeAuthorizedFetch()
+  const fetch = getAuthenticatedFetch()
   const result = await fetch(`${felderaEndpoint}/v0/pipelines/${pipelineName}/logs`, {
     method: 'GET'
   })
   return result.status === 200 && result.body ? result.body : (result.json() as Promise<Error>)
+}
+
+export const adHocQuery = async (pipelineName: string, query: string) => {
+  const fetch = getAuthenticatedFetch()
+  const result = await fetch(
+    `http://localhost:8080/v0/pipelines/${pipelineName}/query?sql=${query}&format=json`
+  )
+  if (result.status !== 200) {
+    const json = await result.json()
+    return new ReadableStream<Uint8Array>({
+      start(controller) {
+        const encodedString = new TextEncoder().encode(
+          JSON.stringify({ error: json.details.error ?? json.message })
+        )
+        controller.enqueue(encodedString)
+        controller.close()
+      }
+    })
+  }
+  invariant(result.body !== null)
+  return result.body
+
+  // const text = await result.text()
+  // const entries = text
+  //   .split('\n')
+  //   .slice(0, -1)
+  //   .map((v) => JSONbig.parse(v) as Record<string, SQLValueJS>)
+  // const columns = entries.length
+  //   ? Object.keys(entries[0]).map(
+  //       (key) =>
+  //         ({ name: key, case_sensitive: false, columntype: { nullable: true } }) satisfies Field
+  //     )
+  //   : []
+  // return { rows: entries.map(Object.values), columns }
 }
 
 export type XgressEntry = { insert: XgressRecord } | { delete: XgressRecord }
