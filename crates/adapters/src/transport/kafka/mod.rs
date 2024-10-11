@@ -10,7 +10,10 @@ use rdkafka::{
     error::KafkaError,
     types::RDKafkaErrorCode,
 };
+use sha2::Digest;
 use std::cmp::min;
+use std::io::Write;
+use std::path::PathBuf;
 #[cfg(test)]
 use std::sync::Mutex;
 use std::thread::sleep;
@@ -71,6 +74,56 @@ where
             }
         }
         None | Some(_) => (false, AnyError::from(e)),
+    }
+}
+
+/// Saves the PEM file to `current_dir()/[FILE-HASH-suffix].pem`
+fn save_pem_file(pem: &str, suffix: &str) -> AnyResult<PathBuf> {
+    let mut path = std::env::current_dir()?;
+
+    // hash the pem key for file name
+    let hash = sha2::Sha256::new().chain_update(pem).finalize();
+    let s = format!("{hash:x}-{suffix}");
+
+    path.push(&s);
+    path.set_extension("pem");
+
+    let file = std::fs::File::create(&path)?;
+    let mut buf = std::io::BufWriter::new(file);
+
+    // write the pem keys to the file
+    buf.write_all(pem.as_bytes())?;
+    buf.flush()?;
+
+    Ok(path)
+}
+
+/// A workaround against https://github.com/confluentinc/librdkafka/issues/3225
+pub(crate) trait PemToLocation {
+    fn pem_to_location(&mut self, endpoint_name: &str) -> AnyResult<()>;
+}
+
+impl PemToLocation for rdkafka::ClientConfig {
+    fn pem_to_location(&mut self, endpoint_name: &str) -> AnyResult<()> {
+        const KEY: &str = "ssl.certificate.pem";
+
+        let Some(ssl_cert_pem) = self.get(KEY) else {
+            return Ok(());
+        };
+
+        let file = save_pem_file(ssl_cert_pem, endpoint_name)?;
+        self.remove(KEY);
+
+        self.set(
+            "ssl.certificate.location",
+            file.to_str().expect(
+                "failed to convert file name to str while saving \
+ssl.certificate.pem to file, this should not happen, \
+please create an issue at: https://github.com/feldera/feldera/issues",
+            ),
+        );
+
+        Ok(())
     }
 }
 

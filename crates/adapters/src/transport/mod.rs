@@ -83,12 +83,16 @@ pub type AtomicStep = AtomicU64;
 /// Returns `None` if the transport configuration variant is incompatible with an input endpoint.
 pub fn input_transport_config_to_endpoint(
     config: TransportConfig,
+    endpoint_name: &str,
 ) -> AnyResult<Option<Box<dyn TransportInputEndpoint>>> {
     match config {
         TransportConfig::FileInput(config) => Ok(Some(Box::new(FileInputEndpoint::new(config)))),
         #[cfg(feature = "with-kafka")]
         TransportConfig::KafkaInput(config) => match config.fault_tolerance {
-            None => Ok(Some(Box::new(KafkaInputEndpoint::new(config)?))),
+            None => Ok(Some(Box::new(KafkaInputEndpoint::new(
+                config,
+                endpoint_name,
+            )?))),
             Some(_) => Ok(Some(Box::new(KafkaFtInputEndpoint::new(config)?))),
         },
         #[cfg(not(feature = "with-kafka"))]
@@ -125,12 +129,16 @@ pub fn input_transport_config_to_endpoint(
 /// Returns `None` if the transport configuration variant is incompatible with an output endpoint.
 pub fn output_transport_config_to_endpoint(
     config: TransportConfig,
+    endpoint_name: &str,
 ) -> AnyResult<Option<Box<dyn OutputEndpoint>>> {
     match config {
         TransportConfig::FileOutput(config) => Ok(Some(Box::new(FileOutputEndpoint::new(config)?))),
         #[cfg(feature = "with-kafka")]
         TransportConfig::KafkaOutput(config) => match config.fault_tolerance {
-            None => Ok(Some(Box::new(KafkaOutputEndpoint::new(config)?))),
+            None => Ok(Some(Box::new(KafkaOutputEndpoint::new(
+                config,
+                endpoint_name,
+            )?))),
             Some(_) => Ok(Some(Box::new(KafkaFtOutputEndpoint::new(config)?))),
         },
         _ => Ok(None),

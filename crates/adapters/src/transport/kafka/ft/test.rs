@@ -268,9 +268,10 @@ config:
 "#
     );
 
-    let endpoint = input_transport_config_to_endpoint(serde_yaml::from_str(&config_str).unwrap())
-        .unwrap()
-        .unwrap();
+    let endpoint =
+        input_transport_config_to_endpoint(serde_yaml::from_str(&config_str).unwrap(), "")
+            .unwrap()
+            .unwrap();
     assert!(endpoint.is_fault_tolerant());
 
     info!("checking initial steps");
@@ -351,9 +352,10 @@ config:
 "#
     );
 
-    let endpoint = input_transport_config_to_endpoint(serde_yaml::from_str(&config_str).unwrap())
-        .unwrap()
-        .unwrap();
+    let endpoint =
+        input_transport_config_to_endpoint(serde_yaml::from_str(&config_str).unwrap(), "")
+            .unwrap()
+            .unwrap();
     assert!(endpoint.is_fault_tolerant());
 
     info!("checking initial steps");
@@ -635,7 +637,7 @@ config:
     );
 
     let mut endpoint =
-        output_transport_config_to_endpoint(serde_yaml::from_str(&config_str).unwrap())
+        output_transport_config_to_endpoint(serde_yaml::from_str(&config_str).unwrap(), "")
             .unwrap()
             .unwrap();
     assert!(endpoint.is_fault_tolerant());
@@ -660,7 +662,7 @@ config:
 "#;
 
     let mut endpoint =
-        output_transport_config_to_endpoint(serde_yaml::from_str(config_str).unwrap())
+        output_transport_config_to_endpoint(serde_yaml::from_str(config_str).unwrap(), "")
             .unwrap()
             .unwrap();
     assert!(endpoint.is_fault_tolerant());

@@ -106,6 +106,7 @@ google-cloud-gax = { version = "0.19.1", optional = true}
 tokio-util = "0.7.11"
 home = "0.5.9"
 datafusion = { version = "41" }
+sha2 = "0.10.8"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 jemalloc_pprof = "0.1.0"

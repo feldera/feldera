@@ -120,6 +120,61 @@ uses `SASL_SSL` with SASL mechanism `PLAIN` (see
 [their tutorial](https://developer.confluent.io/get-started/c/#kafka-setup),
 select Kafka Location: Confluent Cloud, and then go to the Configuration tab).
 
+#### SSL with PEM keys
+
+```json
+"config": {
+    "bootstrap.servers": "example.com:9092",
+    "auto.offset.reset": "earliest",
+    "topics": ["book-fair-sales"],
+    "security.protocol": "SSL",
+    "ssl.ca.pem": "-----BEGIN CERTIFICATE-----TOPSECRET0\n-----END CERTIFICATE-----\n",
+    "ssl.key.pem": "-----BEGIN CERTIFICATE-----TOPSECRET1\n-----END CERTIFICATE-----\n",
+    "ssl.certificate.pem": "-----BEGIN CERTIFICATE-----TOPSECRET2\n-----END CERTIFICATE-----\n",
+}
+```
+
+PEM-encoded certificates can be passed directly in the configuration using
+`ssl.*.pem` keys.
+
+During development, we encountered an issue with `librdkafka` where the SSL
+handshake fails if the certificate PEM string contain more than one certificate.
+
+Feldera circumvents this issue as follows:
+
+###### Issue with librdkafka
+
+librdkafka only accepts multiple certificates when provided via
+`ssl.certificate.location` keys (file paths) rather than directly
+with `ssl.certificate.pem`.
+
+This is documented in
+[librdkafka issue #3225](https://github.com/confluentinc/librdkafka/issues/3225).
+
+##### Feldera's Approach
+
+To work around this limitation, Feldera handles PEM-encoded certificates and
+keys by:
+
+1. Storing the value passed to `ssl.certificate.pem` into a file.
+2. Naming the file using the SHA256 hash of the data.
+3. Replacing the `ssl.certificate.pem` configuration option with
+   `ssl.certificate.location` option that points to the newly saved file.
+
+**Example:**
+
+The updated configuration would look like:
+
+```json
+"config": {
+    ...,
+    "ssl.certificate.location": "path/to/certificate.pem"
+}
+```
+
+> :warning: If both `ssl.certificate.pem` and `ssl.certificate.location` are set
+the latter will be overwritten.
+
 ### Using Kafka as a Debezium transport
 
 The Kafka connector can be used to ingest data from a source via

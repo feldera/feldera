@@ -1,4 +1,6 @@
-use crate::transport::kafka::{build_headers, kafka_send, rdkafka_loglevel_from, DeferredLogging};
+use crate::transport::kafka::{
+    build_headers, kafka_send, rdkafka_loglevel_from, DeferredLogging, PemToLocation,
+};
 use crate::transport::secret_resolver::MaybeSecret;
 use crate::{AsyncErrorCallback, OutputEndpoint};
 use anyhow::{anyhow, bail, Error as AnyError, Result as AnyResult};
@@ -83,7 +85,7 @@ pub struct KafkaOutputEndpoint {
 }
 
 impl KafkaOutputEndpoint {
-    pub fn new(mut config: KafkaOutputConfig) -> AnyResult<Self> {
+    pub fn new(mut config: KafkaOutputConfig, endpoint_name: &str) -> AnyResult<Self> {
         // Create Kafka producer configuration.
         config.validate()?;
         debug!("Starting Kafka output endpoint: {config:?}");
@@ -103,6 +105,8 @@ impl KafkaOutputEndpoint {
                 }
             }
         }
+
+        client_config.pem_to_location(endpoint_name)?;
 
         let headers = build_headers(&config.headers);
 

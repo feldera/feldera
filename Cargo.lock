@@ -3680,6 +3680,7 @@ dependencies = [
  "serde_urlencoded",
  "serde_yaml",
  "serial_test 2.0.0",
+ "sha2",
  "tempfile",
  "test_bin",
  "tokio",
