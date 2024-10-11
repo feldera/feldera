@@ -103,7 +103,7 @@ class View(SqlObject):
         expected = [{k: v for k, v in d.items() if v is not None} for d in expected]
 
         tc = unittest.TestCase()
-        tc.assertCountEqual(data, expected)
+        tc.assertCountEqual(data, expected, f"\nASSERTION ERROR: failed view: {self.name}")
 
 
 class TstAccumulator:
