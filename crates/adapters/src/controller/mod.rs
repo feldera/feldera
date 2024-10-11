@@ -1125,9 +1125,11 @@ impl ControllerInner {
         endpoint_name: &str,
         endpoint_config: &InputEndpointConfig,
     ) -> Result<EndpointId, ControllerError> {
-        let endpoint =
-            input_transport_config_to_endpoint(endpoint_config.connector_config.transport.clone())
-                .map_err(|e| ControllerError::input_transport_error(endpoint_name, true, e))?;
+        let endpoint = input_transport_config_to_endpoint(
+            endpoint_config.connector_config.transport.clone(),
+            endpoint_name,
+        )
+        .map_err(|e| ControllerError::input_transport_error(endpoint_name, true, e))?;
 
         // If `endpoint` is `None`, it means that the endpoint config specifies an integrated
         // input connector.  Such endpoints are instantiated inside `add_input_endpoint`.
@@ -1294,9 +1296,11 @@ impl ControllerInner {
         endpoint_name: &str,
         endpoint_config: &OutputEndpointConfig,
     ) -> Result<EndpointId, ControllerError> {
-        let endpoint =
-            output_transport_config_to_endpoint(endpoint_config.connector_config.transport.clone())
-                .map_err(|e| ControllerError::output_transport_error(endpoint_name, true, e))?;
+        let endpoint = output_transport_config_to_endpoint(
+            endpoint_config.connector_config.transport.clone(),
+            endpoint_name,
+        )
+        .map_err(|e| ControllerError::output_transport_error(endpoint_name, true, e))?;
 
         // If `endpoint` is `None`, it means that the endpoint config specifies an integrated
         // output connector.  Such endpoints are instantiated inside `add_output_endpoint`.

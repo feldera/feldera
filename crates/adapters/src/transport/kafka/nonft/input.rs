@@ -1,3 +1,4 @@
+use crate::transport::kafka::PemToLocation;
 use crate::transport::{InputEndpoint, InputQueue};
 use crate::Parser;
 use crate::{
@@ -41,13 +42,15 @@ const ERROR_BUFFER_SIZE: usize = 1000;
 
 pub struct KafkaInputEndpoint {
     config: Arc<KafkaInputConfig>,
+    name: String,
 }
 
 impl KafkaInputEndpoint {
-    pub fn new(mut config: KafkaInputConfig) -> AnyResult<KafkaInputEndpoint> {
+    pub fn new(mut config: KafkaInputConfig, name: &str) -> AnyResult<KafkaInputEndpoint> {
         config.validate()?;
         Ok(KafkaInputEndpoint {
             config: Arc::new(config),
+            name: name.to_owned(),
         })
     }
 }
@@ -213,6 +216,7 @@ impl KafkaInputReader {
         config: &Arc<KafkaInputConfig>,
         consumer: Box<dyn InputConsumer>,
         mut parser: Box<dyn Parser>,
+        endpoint_name: &str,
     ) -> AnyResult<Self> {
         // Create Kafka consumer configuration.
         debug!("Starting Kafka input endpoint: {:?}", config);
@@ -232,6 +236,8 @@ impl KafkaInputReader {
                 }
             }
         }
+
+        client_config.pem_to_location(endpoint_name)?;
 
         if let Some(log_level) = config.log_level {
             client_config.set_log_level(rdkafka_loglevel_from(log_level));
@@ -521,6 +527,7 @@ impl TransportInputEndpoint for KafkaInputEndpoint {
             &self.config,
             consumer,
             parser,
+            &self.name,
         )?))
     }
 }
