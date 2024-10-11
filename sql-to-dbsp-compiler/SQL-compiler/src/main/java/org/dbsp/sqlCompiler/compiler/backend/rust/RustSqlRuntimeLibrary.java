@@ -92,6 +92,7 @@ public class RustSqlRuntimeLibrary {
         this.dateFunctions.put("is_distinct", DBSPOpcode.IS_DISTINCT);
         this.dateFunctions.put("agg_max", DBSPOpcode.AGG_MAX);
         this.dateFunctions.put("agg_min", DBSPOpcode.AGG_MIN);
+        this.dateFunctions.put("agg_lte", DBSPOpcode.AGG_LTE);
         this.dateFunctions.put("agg_gte", DBSPOpcode.AGG_GTE);
         this.dateFunctions.put("gte_left", DBSPOpcode.GTE_LEFT);
         this.dateFunctions.put("min", DBSPOpcode.MIN);

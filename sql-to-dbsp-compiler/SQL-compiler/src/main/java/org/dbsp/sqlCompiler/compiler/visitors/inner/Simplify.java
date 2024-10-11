@@ -442,6 +442,14 @@ public class Simplify extends InnerRewriteVisitor {
                     result = cast.source;
                 }
             }
+        } else if (expression.operation == DBSPOpcode.NOT) {
+            if (source.is(DBSPBoolLiteral.class)) {
+                DBSPBoolLiteral b = source.to(DBSPBoolLiteral.class);
+                if (b.value == null)
+                    result = b;
+                else
+                    result = new DBSPBoolLiteral(expression.getNode(), expression.getType(), !b.value);
+            }
         }
         this.map(expression, result.cast(expression.getType()));
         return VisitDecision.STOP;
