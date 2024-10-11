@@ -91,8 +91,15 @@ public abstract class DBSPExpression
 
     /** Unwrap an expression with a nullable type */
     public DBSPExpression unwrap() {
-        assert this.type.mayBeNull;
+        assert this.type.mayBeNull : "Unwrapping non-nullable type";
         return new DBSPUnwrapExpression(this);
+    }
+
+    /** Unwrap an expression if the type is nullable */
+    public DBSPExpression unwrapIfNullable() {
+        if (this.type.mayBeNull)
+            return this.unwrap();
+        return this;
     }
 
     public DBSPExpressionStatement toStatement() {

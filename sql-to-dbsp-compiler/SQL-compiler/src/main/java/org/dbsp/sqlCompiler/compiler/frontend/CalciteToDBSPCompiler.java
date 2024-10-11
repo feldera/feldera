@@ -30,6 +30,7 @@ import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.RelRoot;
 import org.apache.calcite.rel.RelVisitor;
 import org.apache.calcite.rel.core.AggregateCall;
+import org.apache.calcite.rel.core.Collect;
 import org.apache.calcite.rel.core.Join;
 import org.apache.calcite.rel.core.JoinRelType;
 import org.apache.calcite.rel.core.Project;
@@ -434,11 +435,20 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPTypeTuple inputRowType = this.convertType(input.getRowType(), false).to(DBSPTypeTuple.class);
         DBSPOperator opInput = this.getInputAs(input, true);
         // This is the same as a LogicalProject which adds two columns
+        // If the timestamps are nullable, filter away null timestamps
+        List<RexNode> operands = call.getOperands();
+        int timestampIndex = this.getDescriptor(operands.get(0));
+        DBSPType tsType = inputRowType.getFieldType(timestampIndex);
+        if (tsType.mayBeNull) {
+            DBSPVariablePath row = inputRowType.ref().var();
+            DBSPExpression filter = row.deref().field(timestampIndex).is_null().not();
+            opInput = new DBSPFilterOperator(node, filter.closure(row.asParameter()), opInput);
+            this.circuit.addOperator(opInput);
+        }
+
         DBSPVariablePath row = inputRowType.ref().var();
         ExpressionCompiler expressionCompiler = new ExpressionCompiler(scan, row, this.compiler);
-        List<RexNode> operands = call.getOperands();
         assert call.operandCount() == 2 || call.operandCount() == 3;
-        int timestampIndex = this.getDescriptor(operands.get(0));
         DBSPExpression interval = expressionCompiler.compile(operands.get(1));
         Simplify simplify = new Simplify(this.compiler.compiler());
         interval = simplify.apply(interval).to(DBSPExpression.class);
@@ -469,7 +479,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         int nextIndex = inputRowType.size();
 
         List<DBSPExpression> tumbleArguments = new ArrayList<>();
-        tumbleArguments.add(row.deref().field(timestampIndex));
+        tumbleArguments.add(row.deref().field(timestampIndex).unwrapIfNullable());
         tumbleArguments.add(interval);
         if (start != null)
             tumbleArguments.add(start);
@@ -1414,6 +1424,17 @@ public class CalciteToDBSPCompiler extends RelVisitor
 
         result = new DBSPIntegrateOperator(node, result);
         this.assignOperator(join, Objects.requireNonNull(result));
+    }
+
+    private void visitCollect(Collect collect) {
+        CalciteObject node = CalciteObject.create(collect);
+        switch (collect.getCollectionType()) {
+            case ARRAY:
+            case MAP:
+            case MULTISET:
+            default:
+                throw new UnimplementedException(node);
+        }
     }
 
     @Nullable
@@ -2401,7 +2422,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 this.visitIfMatches(node, LogicalSort.class, this::visitSort) ||
                 this.visitIfMatches(node, Uncollect.class, this::visitUncollect) ||
                 this.visitIfMatches(node, LogicalTableFunctionScan.class, this::visitTableFunction) ||
-                this.visitIfMatches(node, LogicalAsofJoin.class, this::visitAsofJoin);
+                this.visitIfMatches(node, LogicalAsofJoin.class, this::visitAsofJoin) ||
+                this.visitIfMatches(node, Collect.class, this::visitCollect);
         if (!success)
             throw new UnimplementedException(CalciteObject.create(node));
     }

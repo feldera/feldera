@@ -7,7 +7,6 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateWith
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWaterlineOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
-import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.StderrErrorReporter;
 import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
 import org.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests;
@@ -503,10 +502,49 @@ public class StreamingTests extends StreamingTestBase {
     }
 
     @Test
+    public void testDelayedOutput() {
+        String sql = """
+                CREATE TABLE t (
+                    ts TIMESTAMP NOT NULL WATERMARK INTERVAL 1 MINUTE LATENESS INTERVAL 1 MINUTE
+                );
+                CREATE VIEW test as
+                SELECT SUM(YEAR(TS)), TIMESTAMP_TRUNC(ts, MINUTE) FROM t
+                WHERE TIMESTAMP_TRUNC(TS, MINUTE) < TIMESTAMP_TRUNC(NOW(), MINUTE) - INTERVAL 1 MINUTE
+                GROUP BY TIMESTAMP_TRUNC(ts, MINUTE);""";
+        var ccs = this.getCCS(sql);
+        ccs.step("""
+                 INSERT INTO T VALUES ('0001-01-01 00:00:00');
+                 INSERT INTO now VALUES ('0001-01-01 00:00:00');""",
+                """
+                  sum | timestamp | weight
+                 --------------------------""");
+        ccs.step("""
+                 INSERT INTO T VALUES ('0001-01-01 00:00:10');
+                 INSERT INTO now VALUES ('0001-01-01 00:00:10');""",
+                """
+                  sum | timestamp           | weight
+                 ------------------------------------""");
+        ccs.step("""
+                 INSERT INTO T VALUES ('0001-01-01 00:01:00');
+                 INSERT INTO now VALUES ('0001-01-01 00:01:00');""",
+                """
+                  sum | timestamp           | weight
+                 ------------------------------------""");
+        ccs.step("""
+                 INSERT INTO T VALUES ('0001-01-01 00:02:01');
+                 INSERT INTO now VALUES ('0001-01-01 00:02:01');""",
+                """
+                  sum | timestamp           | weight
+                 ------------------------------------
+                    2 | 0001-01-01 00:00:00 | 1""");
+        this.addRustTestCase(ccs);
+    }
+
+    @Test
     public void testNow() {
         String sql = """
                 CREATE VIEW V AS SELECT 1, NOW() < TIMESTAMP '2025-12-12 00:00:00';""";
-           CompilerCircuitStream ccs = this.getCCS(sql);
+        CompilerCircuitStream ccs = this.getCCS(sql);
         ccs.step("INSERT INTO now VALUES ('2024-12-12 00:00:00')",
                 """
                          c | compare | weight
@@ -520,7 +558,7 @@ public class StreamingTests extends StreamingTestBase {
         String sql = """
                 CREATE TABLE T(value INT);
                 CREATE VIEW V AS SELECT *, NOW() FROM T;""";
-           CompilerCircuitStream ccs = this.getCCS(sql);
+        CompilerCircuitStream ccs = this.getCCS(sql);
         ccs.step("""
                  INSERT INTO T VALUES (2), (3);
                  INSERT INTO now VALUES ('2024-12-12 00:00:00');
@@ -557,7 +595,7 @@ public class StreamingTests extends StreamingTestBase {
         String sql = """
                 CREATE TABLE T(value INT);
                 CREATE VIEW V AS SELECT SUM(value) + MINUTE(NOW()) FROM T;""";
-           CompilerCircuitStream ccs = this.getCCS(sql);
+        CompilerCircuitStream ccs = this.getCCS(sql);
         ccs.step("""
                         INSERT INTO T VALUES (2), (3);
                         INSERT INTO now VALUES ('2024-12-12 00:00:00');
@@ -602,7 +640,7 @@ public class StreamingTests extends StreamingTestBase {
                 FROM transactions
                 WHERE ts >= now() - INTERVAL 1 DAY
                 GROUP BY users""";
-           CompilerCircuitStream ccs = this.getCCS(sql);
+        CompilerCircuitStream ccs = this.getCCS(sql);
         CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
             int window = 0;
             int waterline = 0;
@@ -639,7 +677,7 @@ public class StreamingTests extends StreamingTestBase {
                 SELECT *
                 FROM transactions
                 WHERE ts BETWEEN now() - INTERVAL 1 DAY AND now() + INTERVAL 1 DAY""";
-           CompilerCircuitStream ccs = this.getCCS(sql);
+        CompilerCircuitStream ccs = this.getCCS(sql);
         CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
             int window = 0;
             int waterline = 0;
@@ -696,7 +734,7 @@ public class StreamingTests extends StreamingTestBase {
                 SELECT *
                 FROM transactions
                 WHERE ts >= year(now()) + 10""";
-           CompilerCircuitStream ccs = this.getCCS(sql);
+        CompilerCircuitStream ccs = this.getCCS(sql);
         CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
             int window = 0;
             int waterline = 0;
@@ -846,7 +884,7 @@ public class StreamingTests extends StreamingTestBase {
                 CREATE VIEW event_duration AS SELECT DISTINCT end
                 FROM event
                 WHERE end > start;""";
-           CompilerCircuitStream ccs = this.getCCS(sql);
+        CompilerCircuitStream ccs = this.getCCS(sql);
         this.addRustTestCase(ccs);
         CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
             int integrate_trace = 0;
@@ -930,7 +968,7 @@ public class StreamingTests extends StreamingTestBase {
                     DESCRIPTOR(pickup),
                     INTERVAL '2' MINUTE,
                     INTERVAL '5' MINUTE));""";
-           CompilerCircuitStream ccs = this.getCCS(sql);
+        CompilerCircuitStream ccs = this.getCCS(sql);
         this.addRustTestCase(ccs);
     }
 
@@ -1019,7 +1057,7 @@ public class StreamingTests extends StreamingTestBase {
                    ORDER BY  t
                    RANGE BETWEEN INTERVAL 1 HOUR PRECEDING AND INTERVAL 1 MINUTE PRECEDING ) AS c
                 FROM tripdata;""";
-           CompilerCircuitStream ccs = this.getCCS(sql);
+        CompilerCircuitStream ccs = this.getCCS(sql);
         this.addRustTestCase(ccs);
         CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
             int rolling_waterline = 0;
@@ -1089,7 +1127,7 @@ public class StreamingTests extends StreamingTestBase {
                 CREATE VIEW V AS SELECT DISTINCT * FROM
                 ((SELECT * FROM series) UNION ALL
                  (SELECT pickup + INTERVAL 5 MINUTES FROM series));""";
-           CompilerCircuitStream ccs = this.getCCS(sql);
+        CompilerCircuitStream ccs = this.getCCS(sql);
         this.addRustTestCase(ccs);
         CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
             int count = 0;
@@ -1120,7 +1158,7 @@ public class StreamingTests extends StreamingTestBase {
                     DESCRIPTOR(pickup),
                     INTERVAL '2' MINUTE,
                     INTERVAL '5' MINUTE));""";
-           CompilerCircuitStream ccs = this.getCCS(sql);
+        CompilerCircuitStream ccs = this.getCCS(sql);
         this.addRustTestCase(ccs);
     }
 
@@ -1188,8 +1226,7 @@ public class StreamingTests extends StreamingTestBase {
                FROM series
                GROUP BY TUMBLE(pickup, INTERVAL 30 MINUTES, TIME '00:12:00');""";
 
-           CompilerCircuitStream ccs = this.getCCS(sql);
-
+        CompilerCircuitStream ccs = this.getCCS(sql);
         ccs.step("INSERT INTO series VALUES('2024-02-08 10:00:00')",
                 """
                  start               | end                 | weight
@@ -1330,16 +1367,14 @@ public class StreamingTests extends StreamingTestBase {
 
     @Test
     public void watermarkTest() {
-        String ddl = """
+        String sql = """
                 CREATE TABLE series (
                         distance DOUBLE,
                         pickup TIMESTAMP NOT NULL WATERMARK INTERVAL '1:00' HOURS TO MINUTES
                 );
                 CREATE VIEW V AS
                 SELECT AVG(distance), CAST(pickup AS DATE) FROM series GROUP BY CAST(pickup AS DATE)""";
-        DBSPCompiler compiler = testCompiler();
-        compiler.compileStatements(ddl);
-        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
+        CompilerCircuitStream ccs = this.getCCS(sql);
         ccs.step("INSERT INTO series VALUES(10, '2023-12-30 10:00:00');",
                 """
                          avg  | date       | weight
@@ -1379,16 +1414,14 @@ public class StreamingTests extends StreamingTestBase {
 
     @Test
     public void latenessTest() {
-        String ddl = """
+        String sql = """
                 CREATE TABLE series (
                         distance DOUBLE,
                         pickup TIMESTAMP NOT NULL LATENESS INTERVAL '1:00' HOURS TO MINUTES
                 );
                 CREATE VIEW V AS
                 SELECT AVG(distance), CAST(pickup AS DATE) FROM series GROUP BY CAST(pickup AS DATE);""";
-        DBSPCompiler compiler = testCompiler();
-        compiler.compileStatements(ddl);
-        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
+        CompilerCircuitStream ccs = this.getCCS(sql);
         ccs.step("INSERT INTO series VALUES(10, '2023-12-30 10:00:00');",
                 """
                          avg  | date       | weight
@@ -1682,7 +1715,7 @@ public class StreamingTests extends StreamingTestBase {
     @Test
     public void testJoinTwoColumns() {
         // One joined column is monotone, the other one isn't.
-        String script = """
+        String sql = """
             CREATE TABLE series (
                     metadata VARCHAR NOT NULL,
                     event_time TIMESTAMP NOT NULL LATENESS INTERVAL '1:00' HOURS TO MINUTES
@@ -1697,9 +1730,7 @@ public class StreamingTests extends StreamingTestBase {
             (SELECT * FROM series JOIN shift
              ON series.metadata = shift.person AND CAST(series.event_time AS DATE) = shift.on_call);
             """;
-        DBSPCompiler compiler = testCompiler();
-        compiler.compileStatements(script);
-        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
+        CompilerCircuitStream ccs = this.getCCS(sql);
         this.addRustTestCase(ccs);
         CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
             int count = 0;

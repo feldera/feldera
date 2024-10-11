@@ -2,6 +2,7 @@ package org.dbsp.sqlCompiler.compiler.sql.simple;
 
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
+import org.junit.Ignore;
 import org.junit.Test;
 
 public class AggregateTests extends SqlIoTest {
@@ -73,6 +74,78 @@ public class AggregateTests extends SqlIoTest {
                 SELECT
                   id,
                   (SELECT ARRAY_AGG(id) FROM (
+                    SELECT id FROM warehouse WHERE parentId = warehouse.id
+                    ORDER BY id LIMIT 2
+                  )) AS first_children
+                FROM warehouse;
+                 id |  array
+                ---------------
+                 1  | { 3, 5 }
+                 3  | { 3, 5 }
+                 5  | { 3, 5 }
+                 10 | { 3, 5 }
+                 20 | { 3, 5 }
+                 30 | { 3, 5 }
+                (2 rows)""");
+    }
+
+    @Test
+    public void nullTumble() {
+        this.compileRustTestCase("""
+                create table PRICE (ts TIMESTAMP);
+                create view x AS
+                SELECT *
+                FROM TABLE(
+                  TUMBLE(
+                    DATA => TABLE price,
+                    TIMECOL => DESCRIPTOR(ts),
+                    SIZE => INTERVAL '1' HOUR));""");
+    }
+
+    @Test
+    public void aggTimestamp() {
+        var ccs = this.getCCS("""
+                create table data (
+                    price DOUBLE,
+                    ts TIMESTAMP
+                );
+                
+                create view v AS
+                SELECT
+                     window_start,
+                     window_end,
+                     ARG_MIN(price, ts),
+                     MAX(price),
+                     MIN(price),
+                     ARG_MAX(price, ts)
+                FROM TABLE(
+                  TUMBLE(
+                    DATA => TABLE data,
+                    TIMECOL => DESCRIPTOR(ts),
+                    SIZE => INTERVAL '1' HOUR))
+                GROUP BY
+                  window_start, window_end;""");
+        ccs.step("""
+                INSERT INTO data VALUES(1.0, '2024-01-01 00:00:00');
+                INSERT INTO DATA VALUES(2.0, '2024-01-01 00:00:10');
+                INSERT INTO DATA VALUES(3.0, '2024-01-01 00:00:20');
+                INSERT INTO DATA VALUES(7.0, NULL);
+                INSERT INTO DATA VALUES(4.0, '2024-01-01 00:00:30');
+                INSERT INTO DATA VALUES(6.0, '2024-01-01 02:00:00');
+                INSERT INTO DATA VALUES(5.0, '2024-01-01 02:00:10');""", """
+                  ws                 | we                  | f   | max | min | last | weight
+                ----------------------------------------------------------------------------
+                 2024-01-01 00:00:00 | 2024-01-01 01:00:00 | 1.0 | 4.0 | 1.0 | 4.0  | 1
+                 2024-01-01 02:00:00 | 2024-01-01 03:00:00 | 6.0 | 6.0 | 5.0 | 5.0  | 1""");
+        this.addRustTestCase(ccs);
+    }
+
+    @Test @Ignore("Under construction")
+    public void testArrayConstructor() {
+        this.qs("""
+                SELECT
+                  id,
+                  (SELECT ARRAY(
                     SELECT id FROM warehouse WHERE parentId = warehouse.id
                     ORDER BY id LIMIT 2
                   )) AS first_children
