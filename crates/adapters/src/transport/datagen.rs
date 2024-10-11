@@ -1092,8 +1092,8 @@ impl RecordGenerator {
                 }
                 (DatagenStrategy::Uniform, None) => {
                     let dist = Uniform::from(min..max);
-                    let dt = DateTime::from_timestamp_millis(min).unwrap_or(DateTime::UNIX_EPOCH)
-                        + Duration::milliseconds(rng.sample(dist) * scale);
+                    let dt = DateTime::from_timestamp_millis(rng.sample(dist) * scale)
+                        .unwrap_or(DateTime::UNIX_EPOCH);
                     *obj = Value::String(dt.to_rfc3339());
                 }
                 (DatagenStrategy::Uniform, Some(values)) => {
@@ -2390,6 +2390,40 @@ transport:
     }
 
     #[test]
+    fn test_uniform_dates_times_timestamps() {
+        let config_str = r#"
+stream: test_input
+transport:
+    name: datagen
+    config:
+        plan: [ { limit: 100, fields: { "ts": { "strategy": "uniform", "range": ["2024-10-11T11:04:00Z", "2024-10-11T11:05:02Z"] }, "dt": { "strategy": "uniform", "range": [19963, 19965] }, "t": { "strategy": "uniform", "range": [5, 7] } } } ]
+"#;
+        let (endpoint, consumer, zset) =
+            mk_pipeline::<TimeStuff, TimeStuff>(config_str, TimeStuff::schema()).unwrap();
+
+        while !consumer.state().eoi {
+            thread::sleep(Duration::from_millis(20));
+        }
+        thread::sleep(Duration::from_millis(20));
+        endpoint.flush_all();
+
+        let zst = zset.state();
+        for record in zst.flushed.iter() {
+            let record = record.unwrap_insert();
+            assert!(
+                record.field >= Timestamp::from_dateTime("2024-10-11T11:04:00Z".parse().unwrap())
+            );
+            assert!(
+                record.field < Timestamp::from_dateTime("2024-10-11T11:05:02Z".parse().unwrap())
+            );
+            assert!(record.field_1 >= Date::new(19963));
+            assert!(record.field_1 < Date::new(19965));
+            assert!(record.field_2 >= Time::new(5000000));
+            assert!(record.field_2 < Time::new(7000000));
+        }
+    }
+
+    #[test]
     fn test_invalid_configs() {
         let config_str = r#"
 stream: test_input
@@ -2533,13 +2567,12 @@ stream: test_input
 transport:
     name: datagen
     config:
-        plan: [ {{ limit: {size}, fields: {{}} }} ]
+        plan: [ {{ limit: {size}, fields: {{ ts: {{ range: ['1970-01-01T00:00:00Z', '1980-01-01T00:00:00Z'] }} }} }} ]
         workers: {workers}
 "
         );
         let (_endpoint, consumer, _zset) =
-            mk_pipeline::<TestStruct2, TestStruct2>(config_str.as_str(), TestStruct2::schema())
-                .unwrap();
+            mk_pipeline::<TimeStuff, TimeStuff>(config_str.as_str(), TimeStuff::schema()).unwrap();
 
         let start = std::time::Instant::now();
         while !consumer.state().eoi {
