@@ -474,6 +474,7 @@ where
         .service(metadata)
         .service(heap_profile)
         .service(dump_profile)
+        .service(checkpoint)
         .service(input_endpoint)
         .service(output_endpoint)
         .service(pause_input_endpoint)
@@ -604,6 +605,23 @@ async fn dump_profile(state: WebData<ServerState>) -> impl Responder {
         .insert_header(header::ContentType("application/zip".parse().unwrap()))
         .insert_header(header::ContentDisposition::attachment("profile.zip"))
         .body(profile.as_zip()))
+}
+
+#[post("/checkpoint")]
+async fn checkpoint(state: WebData<ServerState>) -> impl Responder {
+    let (sender, receiver) = oneshot::channel();
+    match &*state.controller.lock().unwrap() {
+        None => return Err(missing_controller_error(&state)),
+        Some(controller) => {
+            controller.start_checkpoint(Box::new(move |checkpoint| {
+                if sender.send(checkpoint.map(|_| ())).is_err() {
+                    error!("`/checkpoint` result could not be sent");
+                }
+            }));
+        }
+    };
+    receiver.await.unwrap()?;
+    Ok(HttpResponse::Ok())
 }
 
 #[get("/shutdown")]

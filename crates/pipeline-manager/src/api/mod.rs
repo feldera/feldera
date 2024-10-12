@@ -106,6 +106,7 @@ The program version is used internally by the compiler to know when to recompile
         pipeline::get_pipeline_circuit_profile,
         pipeline::get_pipeline_heap_profile,
         pipeline::pipeline_adhoc_sql,
+        pipeline::checkpoint_pipeline,
 
         // HTTP input/output
         http_io::http_input,
@@ -263,6 +264,7 @@ fn api_scope() -> Scope {
         .service(pipeline::get_pipeline_circuit_profile)
         .service(pipeline::get_pipeline_heap_profile)
         .service(pipeline::pipeline_adhoc_sql)
+        .service(pipeline::checkpoint_pipeline)
         // API keys endpoints
         .service(api_key::list_api_keys)
         .service(api_key::get_api_key)

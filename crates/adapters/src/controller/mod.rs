@@ -73,6 +73,7 @@ use std::{
     thread::{spawn, JoinHandle},
     time::{Duration, Instant},
 };
+use tokio::sync::oneshot;
 use tokio::sync::{oneshot::Sender as OneshotSender, Mutex as TokioMutex};
 use uuid::Uuid;
 
@@ -114,16 +115,19 @@ pub struct Controller {
     circuit_thread_handle: JoinHandle<Result<(), ControllerError>>,
 }
 
-/// Type of the callback argumen to [`Controller::start_graph_profile`].
+/// Type of the callback argument to [`Controller::start_graph_profile`].
 pub type GraphProfileCallbackFn = Box<dyn FnOnce(Result<GraphProfile, ControllerError>) + Send>;
+
+/// Type of the callback argument to [`Controller::start_checkpoint`].
+pub type CheckpointCallbackFn = Box<dyn FnOnce(Result<Checkpoint, ControllerError>) + Send>;
 
 /// A command that [Controller] can send to [Controller::circuit_thread].
 ///
 /// There is no type for a command reply.  Instead, the command implementation
-/// uses a callback or [Sender] embedded in the command to reply.
+/// uses a callback embedded in the command to reply.
 enum Command {
     GraphProfile(GraphProfileCallbackFn),
-    Checkpoint(Sender<Result<Checkpoint, ControllerError>>),
+    Checkpoint(CheckpointCallbackFn),
 }
 
 impl Controller {
@@ -411,6 +415,20 @@ impl Controller {
         self.inner.graph_profile(cb)
     }
 
+    /// Triggers a checkpoint operation. `cb` will be called when it completes.
+    ///
+    /// The callback-based nature of this function makes it useful in
+    /// asynchronous contexts.
+    pub fn start_checkpoint(&self, cb: CheckpointCallbackFn) {
+        self.inner.checkpoint(cb)
+    }
+
+    pub fn checkpoint(&self) -> Result<Checkpoint, ControllerError> {
+        let (sender, receiver) = oneshot::channel();
+        self.start_checkpoint(Box::new(move |result| sender.send(result).unwrap()));
+        receiver.blocking_recv().unwrap()
+    }
+
     /// Initiate controller termination, but don't block waiting for it to finish.
     /// Can be used inside callbacks invoked by the controller without risking a deadlock.
     pub fn initiate_stop(&self) {
@@ -448,10 +466,6 @@ impl Controller {
 
     pub(crate) fn metrics(&self) -> PrometheusHandle {
         self.inner.prometheus_handle.clone()
-    }
-
-    pub fn checkpoint(&self) -> Result<Checkpoint, ControllerError> {
-        self.inner.checkpoint()
     }
 }
 
@@ -596,38 +610,37 @@ impl CircuitThread {
         }
     }
 
+    fn checkpoint(&mut self) -> Result<Checkpoint, ControllerError> {
+        let Some(state_path) = self.state_path.as_ref() else {
+            return Err(ControllerError::NotSupported {
+                error: String::from("cannot checkpoint circuit because storage is not configured"),
+            });
+        };
+
+        self.circuit
+            .commit()
+            .map_err(ControllerError::from)
+            .and_then(|circuit| {
+                let checkpoint = Checkpoint {
+                    circuit,
+                    step: self.step,
+                    config: self.controller.status.pipeline_config.clone(),
+                };
+                checkpoint.write(state_path).map(|()| checkpoint)
+            })
+    }
+
     /// Reads and executes all the commands pending from
     /// `self.command_receiver`.
     fn run_commands(&mut self) {
-        for command in self.command_receiver.try_iter() {
+        while let Ok(command) = self.command_receiver.try_recv() {
             match command {
                 Command::GraphProfile(reply_callback) => reply_callback(
                     self.circuit
                         .graph_profile()
                         .map_err(ControllerError::dbsp_error),
                 ),
-                Command::Checkpoint(reply_sender) => {
-                    let result = if let Some(state_path) = self.state_path.as_ref() {
-                        self.circuit
-                            .commit()
-                            .map_err(ControllerError::from)
-                            .and_then(|circuit| {
-                                let checkpoint = Checkpoint {
-                                    circuit,
-                                    step: self.step,
-                                    config: self.controller.status.pipeline_config.clone(),
-                                };
-                                checkpoint.write(state_path).map(|()| checkpoint)
-                            })
-                    } else {
-                        Err(ControllerError::NotSupported {
-                            error: String::from(
-                                "cannot checkpoint circuit because storage is not configured",
-                            ),
-                        })
-                    };
-                    let _ = reply_sender.send(result);
-                }
+                Command::Checkpoint(reply_callback) => reply_callback(self.checkpoint()),
             }
         }
     }
@@ -2087,6 +2100,11 @@ impl ControllerInner {
         self.unpark_circuit();
     }
 
+    fn checkpoint(&self, cb: CheckpointCallbackFn) {
+        self.command_sender.send(Command::Checkpoint(cb)).unwrap();
+        self.unpark_circuit();
+    }
+
     fn error(&self, error: ControllerError) {
         (self.error_cb)(error);
     }
@@ -2186,17 +2204,6 @@ impl ControllerInner {
 
     fn output_buffers_full(&self) -> bool {
         self.status.output_buffers_full()
-    }
-
-    fn checkpoint(&self) -> Result<Checkpoint, ControllerError> {
-        let (sender, receiver) = channel();
-        self.command_sender
-            .send(Command::Checkpoint(sender))
-            .map_err(|_| ControllerError::ControllerExit)?;
-        self.unpark_circuit();
-        receiver
-            .recv()
-            .map_err(|_| ControllerError::ControllerExit)?
     }
 }
 
