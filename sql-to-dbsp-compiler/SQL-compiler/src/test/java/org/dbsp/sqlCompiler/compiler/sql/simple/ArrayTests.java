@@ -34,6 +34,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPNullLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVecLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
@@ -375,7 +376,6 @@ public class ArrayTests extends BaseSQLTests {
     @Test
     public void testArrayAppendNullable() {
         String ddl = "CREATE TABLE ARR_TBL(val INTEGER ARRAY)";
-
         DBSPZSetLiteral input = new DBSPZSetLiteral(
                 new DBSPTupleExpression(
                         new DBSPVecLiteral(true,
@@ -414,7 +414,6 @@ public class ArrayTests extends BaseSQLTests {
     @Test
     public void testArrayAppendInnerNullable() {
         String ddl = "CREATE TABLE ARR_TBL(val INTEGER ARRAY NULL)";
-
         DBSPZSetLiteral input = new DBSPZSetLiteral(
                 new DBSPTupleExpression(
                         new DBSPVecLiteral(true,
@@ -457,7 +456,6 @@ public class ArrayTests extends BaseSQLTests {
     @Test
     public void testArrayMaxNullable() {
         String ddl = "CREATE TABLE ARR_TBL(val INTEGER ARRAY)";
-
         DBSPZSetLiteral input = new DBSPZSetLiteral(
                 new DBSPTupleExpression(
                         new DBSPVecLiteral(true,
@@ -482,6 +480,26 @@ public class ArrayTests extends BaseSQLTests {
         );
 
         this.testQuery(ddl, "SELECT ARRAY_MAX(val) FROM ARR_TBL",
+                new InputOutputChangeStream().addPair(new Change(input), new Change(result)));
+    }
+
+    @Test
+    public void testArraySubquery() {
+        String ddl = "CREATE TABLE PAIRS(x INT NOT NULL, s VARCHAR NOT NULL);";
+        DBSPZSetLiteral input = new DBSPZSetLiteral(
+                new DBSPTupleExpression(
+                        new DBSPI32Literal(10), new DBSPStringLiteral("hello")),
+                new DBSPTupleExpression(
+                        new DBSPI32Literal(5), new DBSPStringLiteral("there")));
+        DBSPZSetLiteral result = new DBSPZSetLiteral(
+                new DBSPTupleExpression(
+                    new DBSPVecLiteral(
+                        new DBSPTupleExpression(
+                            new DBSPI32Literal(5), new DBSPStringLiteral("there")),
+                        new DBSPTupleExpression(
+                            new DBSPI32Literal(10), new DBSPStringLiteral("hello"))
+                    )));
+        this.testQuery(ddl, "SELECT ARRAY(SELECT * FROM PAIRS)",
                 new InputOutputChangeStream().addPair(new Change(input), new Change(result)));
     }
 

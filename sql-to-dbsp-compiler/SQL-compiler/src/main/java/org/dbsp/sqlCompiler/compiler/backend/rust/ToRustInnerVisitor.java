@@ -1074,7 +1074,9 @@ public class ToRustInnerVisitor extends InnerVisitor {
     @Override
     public VisitDecision preorder(DBSPApplyExpression expression) {
         expression.function.accept(this);
-        this.builder.append("(").increase();
+        this.builder.append("(");
+        if (expression.arguments.length > 1)
+            this.builder.increase();
         boolean first = true;
         for (DBSPExpression arg: expression.arguments) {
             if (!first)
@@ -1082,7 +1084,9 @@ public class ToRustInnerVisitor extends InnerVisitor {
             first = false;
             arg.accept(this);
         }
-        this.builder.decrease().append(")");
+        if (expression.arguments.length > 1)
+            this.builder.decrease();
+        this.builder.append(")");
         return VisitDecision.STOP;
     }
 
@@ -1091,7 +1095,9 @@ public class ToRustInnerVisitor extends InnerVisitor {
         expression.self.accept(this);
         this.builder.append(".");
         expression.function.accept(this);
-        this.builder.append("(").increase();
+        this.builder.append("(");
+        if (expression.arguments.length > 1)
+            this.builder.increase();
         boolean first = true;
         for (DBSPExpression arg: expression.arguments) {
             if (!first)
@@ -1099,7 +1105,9 @@ public class ToRustInnerVisitor extends InnerVisitor {
             first = false;
             arg.accept(this);
         }
-        this.builder.decrease().append(")");
+        if (expression.arguments.length > 1)
+            this.builder.decrease();
+        this.builder.append(")");
         return VisitDecision.STOP;
     }
 

@@ -517,7 +517,7 @@ public class AggregateCompiler implements ICompilerComponent {
         // error otherwise.  We approximate this behavior by returning the last value seen.
         DBSPExpression increment = aggregatedValue;
         if (!increment.getType().mayBeNull)
-            increment = increment.some();
+            increment = increment.applyCloneIfNeeded().some();
         DBSPType semigroup = new DBSPTypeUser(CalciteObject.EMPTY, SEMIGROUP, "UnimplementedSemigroup",
                 false, accumulator.getType());
         this.setResult(new NonLinearAggregate(

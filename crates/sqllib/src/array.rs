@@ -1,7 +1,7 @@
 // Array operations
 
 use crate::{some_function2, some_generic_function2, Variant, Weight};
-use std::collections::{BTreeMap, HashSet};
+use std::collections::HashSet;
 use std::hash::Hash;
 use std::ops::Index;
 
@@ -605,104 +605,6 @@ where
     accumulator
         .as_mut()
         .map(|accumulator| array_agg_opt(accumulator, value, weight, distinct, keep, ignore_nulls))
-}
-
-/////////////////////////////////////////
-
-// 8 versions of map_index, depending on
-// nullability of map
-// nullability of map value
-// nullability of index
-
-#[doc(hidden)]
-pub fn map_index___<I, T>(value: BTreeMap<I, T>, map_index: I) -> Option<T>
-where
-    I: Ord,
-    T: Clone,
-{
-    value.get(&map_index).cloned()
-}
-
-#[doc(hidden)]
-pub fn map_index__N<I, T>(value: BTreeMap<I, T>, map_index: Option<I>) -> Option<T>
-where
-    I: Ord,
-    T: Clone,
-{
-    let map_index = map_index?;
-    map_index___(value, map_index)
-}
-
-#[doc(hidden)]
-pub fn map_index_N_<I, T>(value: BTreeMap<I, Option<T>>, map_index: I) -> Option<T>
-where
-    I: Ord,
-    T: Clone,
-{
-    match value.get(&map_index) {
-        None => None,
-        Some(result) => result.clone(),
-    }
-}
-
-#[doc(hidden)]
-pub fn map_index_NN<I, T>(value: BTreeMap<I, Option<T>>, map_index: Option<I>) -> Option<T>
-where
-    I: Ord,
-    T: Clone,
-{
-    let map_index = map_index?;
-    map_index_N_(value, map_index)
-}
-
-#[doc(hidden)]
-pub fn map_indexN__<I, T>(value: Option<BTreeMap<I, T>>, map_index: I) -> Option<T>
-where
-    I: Ord,
-    T: Clone,
-{
-    match value {
-        None => None,
-        Some(value) => map_index___(value, map_index),
-    }
-}
-
-#[doc(hidden)]
-pub fn map_indexN_N<I, T>(value: Option<BTreeMap<I, T>>, map_index: Option<I>) -> Option<T>
-where
-    I: Ord,
-    T: Clone,
-{
-    let map_index = map_index?;
-    match value {
-        None => None,
-        Some(value) => map_index___(value, map_index),
-    }
-}
-
-#[doc(hidden)]
-pub fn map_indexNN_<I, T>(value: Option<BTreeMap<I, Option<T>>>, map_index: I) -> Option<T>
-where
-    I: Ord,
-    T: Clone,
-{
-    match value {
-        None => None,
-        Some(value) => map_index_N_(value, map_index),
-    }
-}
-
-#[doc(hidden)]
-pub fn map_indexNNN<I, T>(value: Option<BTreeMap<I, Option<T>>>, map_index: Option<I>) -> Option<T>
-where
-    I: Ord,
-    T: Clone,
-{
-    let map_index = map_index?;
-    match value {
-        None => None,
-        Some(value) => map_index_N_(value, map_index),
-    }
 }
 
 /////////////// Variant index
