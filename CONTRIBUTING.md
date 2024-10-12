@@ -15,23 +15,23 @@ Our team develops and tests using Linux and MacOS. Windows Subsystem for Linux w
 The Feldera container images and CI workflows use Linux. You can see our setup in
 our [Dockerfile](deploy/Dockerfile) and [Earthfile](Earthfile).
 
-Our known dependencies are:
+Our dependencies are:
 
 - Runtime
     - a Rust tool chain (install rustup and the default toolchain)
         - this will need a C and C++ compiler installed (e.g., gcc, gcc++)
-        - cmake
-        - libdev-ssl
+    - cmake
+    - libssl-dev
 - SQL Compiler
     - a Java Virtual Machine (at least Java 19)
-        - maven
+    - maven
     - graphviz
 - Cloud
     - Python 3
     - Redpanda or Kafka
     - Earthly (https://earthly.dev/get-earthly)
 - Web Console
-    - Bun
+    - Bun (https://bun.sh/docs/installation)
 
 Additional dependencies are automatically installed by the Rust,
 maven, Python, and TypeScript build tools.
