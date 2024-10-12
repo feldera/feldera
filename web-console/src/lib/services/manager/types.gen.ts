@@ -1949,6 +1949,19 @@ export type PatchPipelineResponse = ExtendedPipelineDescr
 
 export type PatchPipelineError = ErrorResponse
 
+export type CheckpointPipelineData = {
+  path: {
+    /**
+     * Unique pipeline name
+     */
+    pipeline_name: string
+  }
+}
+
+export type CheckpointPipelineResponse = unknown
+
+export type CheckpointPipelineError = ErrorResponse
+
 export type GetPipelineCircuitProfileData = {
   path: {
     /**
@@ -2335,6 +2348,25 @@ export type $OpenApiTs = {
          * Cannot rename pipeline as the name already exists
          */
         '409': ErrorResponse
+      }
+    }
+  }
+  '/v0/pipelines/{pipeline_name}/checkpoint': {
+    post: {
+      req: CheckpointPipelineData
+      res: {
+        /**
+         * Checkpoint completed.
+         */
+        '200': unknown
+        /**
+         * Pipeline is not running or paused
+         */
+        '400': ErrorResponse
+        /**
+         * Pipeline with that name does not exist
+         */
+        '404': ErrorResponse
       }
     }
   }

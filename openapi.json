@@ -1087,6 +1087,71 @@
         ]
       }
     },
+    "/v0/pipelines/{pipeline_name}/checkpoint": {
+      "post": {
+        "tags": [
+          "Pipelines"
+        ],
+        "summary": "Checkpoint a running or paused pipeline.",
+        "operationId": "checkpoint_pipeline",
+        "parameters": [
+          {
+            "name": "pipeline_name",
+            "in": "path",
+            "description": "Unique pipeline name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Checkpoint completed."
+          },
+          "400": {
+            "description": "Pipeline is not running or paused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "details": {
+                    "pipeline_id": "2e79afe1-ff4d-44d3-af5f-9397de7746c0",
+                    "pipeline_name": "example"
+                  },
+                  "error_code": "PipelineNotRunningOrPaused",
+                  "message": "Pipeline example (2e79afe1-ff4d-44d3-af5f-9397de7746c0) is not currently running or paused."
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Pipeline with that name does not exist",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "details": {
+                    "pipeline_id": "2e79afe1-ff4d-44d3-af5f-9397de7746c0"
+                  },
+                  "error_code": "UnknownPipeline",
+                  "message": "Unknown pipeline id '2e79afe1-ff4d-44d3-af5f-9397de7746c0'"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JSON web token (JWT) or API key": []
+          }
+        ]
+      }
+    },
     "/v0/pipelines/{pipeline_name}/circuit_profile": {
       "get": {
         "tags": [

@@ -122,7 +122,7 @@ impl From<StepError> for ControllerError {
 }
 
 /// Checkpoint for a pipeline.
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Checkpoint {
     #[serde(flatten)]
     pub circuit: CheckpointMetadata,
