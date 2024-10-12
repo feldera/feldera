@@ -297,7 +297,11 @@ impl S3InputReader {
                                         _ => consumer.error(false, e)
                                     }
                                 }
-                                None => break // Channel is closed, exit.
+                                None => {
+                                    // Channel is closed, exit.
+                                    consumer.eoi();
+                                    break
+                                 }
                             }
                         }
                     }
