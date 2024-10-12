@@ -74,6 +74,7 @@ import org.apache.calcite.sql.type.SqlTypeName;
 import org.apache.calcite.util.ImmutableBitSet;
 import org.dbsp.sqlCompiler.circuit.DBSPPartialCircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAsofJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
 import org.dbsp.sqlCompiler.circuit.DBSPDeclaration;
@@ -132,6 +133,7 @@ import org.dbsp.sqlCompiler.ir.DBSPFunction;
 import org.dbsp.sqlCompiler.ir.DBSPNode;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.aggregate.LinearAggregate;
+import org.dbsp.sqlCompiler.ir.aggregate.NonLinearAggregate;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyMethodExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
@@ -158,6 +160,8 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntervalMillisLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPMapLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVecLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
 import org.dbsp.sqlCompiler.ir.path.DBSPPath;
 import org.dbsp.sqlCompiler.ir.path.DBSPSimplePathSegment;
@@ -185,6 +189,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeUSize;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVoid;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeMap;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeUser;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeVec;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeWithCustomOrd;
@@ -207,6 +212,7 @@ import java.util.Objects;
 import java.util.function.Consumer;
 
 import static org.dbsp.sqlCompiler.circuit.operator.DBSPIndexedTopKOperator.TopKNumbering.*;
+import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.SEMIGROUP;
 import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.USER;
 
 /**
@@ -1428,13 +1434,87 @@ public class CalciteToDBSPCompiler extends RelVisitor
 
     private void visitCollect(Collect collect) {
         CalciteObject node = CalciteObject.create(collect);
+        DBSPTypeTuple type = this.convertType(collect.getRowType(), false).to(DBSPTypeTuple.class);
+        assert collect.getInputs().size() == 1;
+        assert type.size() == 1;
+        RelNode input = collect.getInput(0);
+        DBSPTypeTuple inputRowType = this.convertType(input.getRowType(), false).to(DBSPTypeTuple.class);
+        DBSPOperator opInput = this.getInputAs(input, true);
+        DBSPVariablePath row = inputRowType.ref().var();
+        AggregateBase agg;
+
+        // Index by the empty tuple
+        DBSPExpression indexingFunction = new DBSPRawTupleExpression(
+                new DBSPTupleExpression(),
+                        new DBSPTupleExpression(DBSPTypeTuple.flatten(row.deref()), false));
+        DBSPOperator index = new DBSPMapIndexOperator(node, indexingFunction.closure(row.asParameter()),
+                new DBSPTypeIndexedZSet(node, new DBSPTypeTuple(), inputRowType), opInput);
+        this.circuit.addOperator(index);
+
         switch (collect.getCollectionType()) {
-            case ARRAY:
-            case MAP:
-            case MULTISET:
+            case ARRAY: {
+                // specialized version of ARRAY_AGG
+                boolean flatten = inputRowType.size() == 1;
+                assert type.getFieldType(0).is(DBSPTypeVec.class);
+                DBSPTypeVec vecType = type.getFieldType(0).to(DBSPTypeVec.class);
+                DBSPType elementType = vecType.getElementType();
+                assert elementType.sameType(flatten ? inputRowType.getFieldType(0) : inputRowType);
+
+                row = inputRowType.ref().var();
+                DBSPExpression zero = DBSPVecLiteral.emptyWithElementType(elementType, type.mayBeNull);
+                DBSPVariablePath accumulator = vecType.var();
+                String functionName;
+                DBSPExpression[] arguments;
+                functionName = "array_agg" + vecType.nullableSuffix();
+                arguments = new DBSPExpression[5];
+                arguments[0] = accumulator.borrow(true);
+                arguments[1] = flatten ? row.deref().field(0) : row.deref().applyCloneIfNeeded();
+                arguments[2] = this.compiler.weightVar;
+                arguments[3] = new DBSPBoolLiteral(false);
+                arguments[4] = new DBSPBoolLiteral(true);
+                DBSPExpression increment = new DBSPApplyExpression(node, functionName, vecType, arguments);
+                DBSPType semigroup = new DBSPTypeUser(node, SEMIGROUP, "ConcatSemigroup", false, accumulator.getType());
+                agg = new NonLinearAggregate(
+                        node, zero, increment.closure(accumulator.asParameter(), row.asParameter(), this.compiler.weightVar.asParameter()),
+                        zero, semigroup);
+                break;
+            }
+            case MAP: {
+                assert type.getFieldType(0).is(DBSPTypeMap.class);
+                DBSPTypeMap mapType = type.getFieldType(0).to(DBSPTypeMap.class);
+                DBSPType keyType = mapType.getKeyType();
+                DBSPType valueType = mapType.getValueType();
+                assert inputRowType.size() == 2;
+                assert keyType.sameType(inputRowType.getFieldType(0));
+                assert valueType.sameType(inputRowType.getFieldType(1));
+
+                row = inputRowType.ref().var();
+                DBSPExpression zero = new DBSPMapLiteral(mapType, Linq.list());
+                DBSPVariablePath accumulator = mapType.var();
+                String functionName;
+                DBSPExpression[] arguments;
+                functionName = "map_agg" + mapType.nullableSuffix();
+                arguments = new DBSPExpression[3];
+                arguments[0] = accumulator.borrow(true);
+                arguments[1] = row.deref().applyCloneIfNeeded();
+                arguments[2] = this.compiler.weightVar;
+                DBSPExpression increment = new DBSPApplyExpression(node, functionName, mapType, arguments);
+                DBSPType semigroup = new DBSPTypeUser(node, SEMIGROUP, "ConcatSemigroup", false, accumulator.getType());
+                agg = new NonLinearAggregate(
+                        node, zero, increment.closure(accumulator.asParameter(), row.asParameter(), this.compiler.weightVar.asParameter()),
+                        zero, semigroup);
+                break;
+            }
             default:
                 throw new UnimplementedException(node);
         }
+        DBSPAggregate aggregate = new DBSPAggregate(node, row, Linq.list(agg));
+        DBSPOperator aggregateOperator = new DBSPAggregateOperator(
+                node, new DBSPTypeIndexedZSet(node, new DBSPTypeTuple(), type), null, aggregate, index);
+        this.circuit.addOperator(aggregateOperator);
+
+        DBSPOperator deindex = new DBSPDeindexOperator(node, aggregateOperator);
+        this.assignOperator(collect, deindex);
     }
 
     @Nullable

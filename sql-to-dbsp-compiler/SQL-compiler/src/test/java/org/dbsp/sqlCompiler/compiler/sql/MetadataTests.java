@@ -316,8 +316,7 @@ public class MetadataTests extends BaseSQLTests {
                         value)
                 }
                 pub fn EMPTY() -> Result<Option<String>, Box<dyn std::error::Error>> {
-                    udf::EMPTY(
-                    )
+                    udf::EMPTY()
                 }""", String.join(System.lineSeparator(), str));
         boolean success = protos.toFile().delete();
         Assert.assertTrue(success);

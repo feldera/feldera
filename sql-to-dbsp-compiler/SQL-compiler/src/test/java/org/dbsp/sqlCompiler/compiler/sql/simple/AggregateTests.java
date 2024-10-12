@@ -2,7 +2,6 @@ package org.dbsp.sqlCompiler.compiler.sql.simple;
 
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
-import org.junit.Ignore;
 import org.junit.Test;
 
 public class AggregateTests extends SqlIoTest {
@@ -140,25 +139,25 @@ public class AggregateTests extends SqlIoTest {
         this.addRustTestCase(ccs);
     }
 
-    @Test @Ignore("Under construction")
+    @Test
     public void testArrayConstructor() {
         this.qs("""
                 SELECT
                   id,
                   (SELECT ARRAY(
                     SELECT id FROM warehouse WHERE parentId = warehouse.id
-                    ORDER BY id LIMIT 2
+                    -- ORDER BY id LIMIT 2
                   )) AS first_children
                 FROM warehouse;
                  id |  array
                 ---------------
-                 1  | { 3, 5 }
-                 3  | { 3, 5 }
-                 5  | { 3, 5 }
-                 10 | { 3, 5 }
-                 20 | { 3, 5 }
-                 30 | { 3, 5 }
-                (2 rows)""");
+                 1  | { 3, 5, 20 }
+                 3  | { 3, 5, 20 }
+                 5  | { 3, 5, 20 }
+                 10 | { 3, 5, 20 }
+                 20 | { 3, 5, 20 }
+                 30 | { 3, 5, 20 }
+                (6 rows)""");
     }
 
     @Test

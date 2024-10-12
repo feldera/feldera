@@ -147,6 +147,7 @@ public class RustFileWriter {
                     geopoint::*,
                     timestamp::*,
                     interval::*,
+                    map::*,
                     string::*,
                     operators::*,
                     aggregates::*,

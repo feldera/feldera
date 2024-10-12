@@ -132,6 +132,25 @@ SELECT
 FROM TABLE
 ```
 
+In addition, the following two constructors act as aggregates:
+
+<table>
+  <tr>
+    <th>Constructor</th>
+    <th>Description</th>
+    <th>Example</td>
+  </tr>
+  <tr>
+    <td>ARRAY(sub-query)</td>
+    <td>Creates an array from the result of a sub-query.  If the subquery returns a tuple, the array will be an array of tuples.</td>
+    <td><code>SELECT ARRAY(SELECT empno FROM emp)</code> or <code>SELECT ARRAY(SELECT empno, dept FROM emp)</code>
+  </tr>
+    <td>MAP (sub-query)</td>
+    <td>Creates a map from the result of a sub-query that returns two columns.  If multiple entries have the same key, the largest value wins.</td>
+    <td>SELECT MAP(SELECT empno, deptno FROM emp)</td>
+  </tr>
+</table>
+
 ## Window aggregate functions
 
 A `SELECT` expression in the [SQL grammar](grammar.md) can also

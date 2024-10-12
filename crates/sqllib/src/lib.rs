@@ -11,6 +11,8 @@ pub mod casts;
 pub mod geopoint;
 pub mod interval;
 #[doc(hidden)]
+pub mod map;
+#[doc(hidden)]
 pub mod operators;
 #[doc(hidden)]
 pub mod source;
@@ -30,6 +32,8 @@ pub use num_traits::Float;
 pub use source::{SourcePosition, SourcePositionRange};
 pub use timestamp::{Date, Time, Timestamp};
 pub use variant::Variant;
+
+use std::collections::BTreeMap;
 
 // Re-export these types, so they can be used in UDFs without having to import the dbsp crate directly.
 // Perhaps they should be defined in sqllib in the first place?
@@ -824,6 +828,58 @@ where
             (None, _) => right.clone(),
             (_, None) => left.clone(),
             (Some(left), Some(right)) => Some(left.iter().merge(right).cloned().collect()),
+        }
+    }
+}
+
+#[doc(hidden)]
+fn insert_or_keep_largest<K, V>(map: &mut BTreeMap<K, V>, key: &K, value: &V)
+where
+    K: Ord + Clone,
+    V: Ord + Clone,
+{
+    map.entry(key.clone())
+        .and_modify(|e| {
+            if value > e {
+                *e = value.clone();
+            }
+        })
+        .or_insert(value.clone());
+}
+
+#[doc(hidden)]
+impl<K, V> Semigroup<BTreeMap<K, V>> for ConcatSemigroup<BTreeMap<K, V>>
+where
+    K: Clone + Ord,
+    V: Clone + Ord,
+{
+    #[doc(hidden)]
+    fn combine(left: &BTreeMap<K, V>, right: &BTreeMap<K, V>) -> BTreeMap<K, V> {
+        let mut result = left.clone();
+        for (k, v) in right {
+            insert_or_keep_largest(&mut result, k, v);
+        }
+        result
+    }
+}
+
+#[doc(hidden)]
+impl<K, V> Semigroup<Option<BTreeMap<K, V>>> for ConcatSemigroup<Option<BTreeMap<K, V>>>
+where
+    K: Clone + Ord,
+    V: Clone + Ord,
+{
+    #[doc(hidden)]
+    fn combine(
+        left: &Option<BTreeMap<K, V>>,
+        right: &Option<BTreeMap<K, V>>,
+    ) -> Option<BTreeMap<K, V>> {
+        match (left, right) {
+            (None, _) => right.clone(),
+            (_, None) => left.clone(),
+            (Some(left), Some(right)) => {
+                Some(ConcatSemigroup::<BTreeMap<K, V>>::combine(left, right))
+            }
         }
     }
 }

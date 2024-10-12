@@ -68,4 +68,32 @@ public class MapTests extends BaseSQLTests {
                         new DBSPI32Literal(2, true),
                         new DBSPI32Literal())));
     }
+
+    @Test
+    public void testMapSubquery() {
+        String ddl = "CREATE TABLE T(v varchar, x int)";
+        String query = "SELECT MAP(SELECT * FROM T)";
+        DBSPZSetLiteral input = new DBSPZSetLiteral(
+                new DBSPTupleExpression(
+                        new DBSPStringLiteral("hello", true),
+                        new DBSPI32Literal(10, true)),
+                new DBSPTupleExpression(
+                        new DBSPStringLiteral("there", true),
+                        new DBSPI32Literal(5, true)));
+        DBSPTypeMap mapType = new DBSPTypeMap(
+                DBSPTypeString.varchar(true),
+                new DBSPTypeInteger(CalciteObject.EMPTY, 32, true ,true), false);
+        DBSPZSetLiteral result = new DBSPZSetLiteral(
+                new DBSPTupleExpression(
+                        new DBSPMapLiteral(
+                                mapType,
+                                Linq.list(
+                                        new DBSPStringLiteral("there", true),
+                                        new DBSPI32Literal(5, true),
+                                        new DBSPStringLiteral("hello", true),
+                                        new DBSPI32Literal(10, true))
+                        )));
+        this.testQuery(ddl, query,
+                new InputOutputChangeStream().addPair(new Change(input), new Change(result)));
+    }
 }
