@@ -682,6 +682,47 @@ pub(crate) async fn get_pipeline_circuit_profile(
         .await
 }
 
+/// Checkpoint a running or paused pipeline.
+#[utoipa::path(
+    context_path = "/v0",
+    security(("JSON web token (JWT) or API key" = [])),
+    params(
+        ("pipeline_name" = String, Path, description = "Unique pipeline name"),
+    ),
+    responses(
+        (status = OK
+            , description = "Checkpoint completed."),
+        (status = NOT_FOUND
+            , description = "Pipeline with that name does not exist"
+            , body = ErrorResponse
+            , example = json!(examples::error_unknown_pipeline())),
+        (status = BAD_REQUEST
+            , description = "Pipeline is not running or paused"
+            , body = ErrorResponse
+            , example = json!(examples::error_pipeline_not_running_or_paused()))
+    ),
+    tag = "Pipelines"
+)]
+#[post("/pipelines/{pipeline_name}/checkpoint")]
+pub(crate) async fn checkpoint_pipeline(
+    state: WebData<ServerState>,
+    tenant_id: ReqData<TenantId>,
+    request: HttpRequest,
+) -> Result<HttpResponse, ManagerError> {
+    let pipeline_name = parse_string_param(&request, "pipeline_name")?;
+    state
+        .runner
+        .forward_http_request_to_pipeline_by_name(
+            *tenant_id,
+            &pipeline_name,
+            Method::POST,
+            "checkpoint",
+            request.query_string(),
+            Some(Duration::from_secs(120)),
+        )
+        .await
+}
+
 /// Retrieve the heap profile of a running or paused pipeline.
 #[utoipa::path(
     context_path = "/v0",
