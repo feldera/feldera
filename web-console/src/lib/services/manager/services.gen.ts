@@ -39,6 +39,9 @@ import type {
   PatchPipelineData,
   PatchPipelineError,
   PatchPipelineResponse,
+  CheckpointPipelineData,
+  CheckpointPipelineError,
+  CheckpointPipelineResponse,
   GetPipelineCircuitProfileData,
   GetPipelineCircuitProfileError,
   GetPipelineCircuitProfileResponse,
@@ -212,6 +215,16 @@ export const patchPipeline = (options: Options<PatchPipelineData>) => {
   return (options?.client ?? client).patch<PatchPipelineResponse, PatchPipelineError>({
     ...options,
     url: '/v0/pipelines/{pipeline_name}'
+  })
+}
+
+/**
+ * Checkpoint a running or paused pipeline.
+ */
+export const checkpointPipeline = (options: Options<CheckpointPipelineData>) => {
+  return (options?.client ?? client).post<CheckpointPipelineResponse, CheckpointPipelineError>({
+    ...options,
+    url: '/v0/pipelines/{pipeline_name}/checkpoint'
   })
 }
 
