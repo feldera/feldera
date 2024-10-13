@@ -823,10 +823,13 @@ where
             input_trace_cursor.seek_key(delta_cursor.key());
             tree_cursor.seek_key(delta_cursor.key());
 
-            if input_trace_cursor.key_valid() && input_trace_cursor.key() == delta_cursor.key() {
-                debug_assert!(tree_cursor.key_valid());
-                debug_assert_eq!(tree_cursor.key(), delta_cursor.key());
-
+            if input_trace_cursor.key_valid()
+                && input_trace_cursor.key() == delta_cursor.key()
+                // It's possible that the key is in the input trace with weight 0, but it's no longer in the tree, which
+                // caused `test_empty_tree()` to fail without this check.
+                && tree_cursor.key_valid()
+                && tree_cursor.key() == delta_cursor.key()
+            {
                 let mut tree_partition_cursor = PartitionCursor::new(&mut tree_cursor);
                 let mut input_range_cursor =
                     RangeCursor::new(PartitionCursor::new(&mut input_trace_cursor), ranges);
@@ -1203,6 +1206,21 @@ mod test {
             Tup2(1, Tup2(Tup2(3000, 100), 1)),
         ]);
         circuit.step().unwrap();
+
+        circuit.kill().unwrap();
+    }
+
+    #[test]
+    fn test_empty_tree() {
+        let (mut circuit, input) = partition_rolling_aggregate_circuit(u64::MAX, None);
+
+        for _ in 0..1000 {
+            input.append(&mut vec![Tup2(0u64, Tup2(Tup2(1u64, 100i64), 1))]);
+            circuit.step().unwrap();
+
+            input.append(&mut vec![Tup2(0u64, Tup2(Tup2(1u64, 100i64), -1))]);
+            circuit.step().unwrap();
+        }
 
         circuit.kill().unwrap();
     }
