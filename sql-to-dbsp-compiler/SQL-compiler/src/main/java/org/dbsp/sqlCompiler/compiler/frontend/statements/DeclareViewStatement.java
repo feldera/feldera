@@ -7,7 +7,7 @@ import java.util.List;
 
 public class DeclareViewStatement extends CreateRelationStatement {
     public DeclareViewStatement(SqlNode node, String statement, String relationName,
-                                   boolean nameIsQuoted, List<RelColumnMetadata> columns) {
+                                boolean nameIsQuoted, List<RelColumnMetadata> columns) {
         super(node, statement, relationName, nameIsQuoted, columns, null);
     }
 

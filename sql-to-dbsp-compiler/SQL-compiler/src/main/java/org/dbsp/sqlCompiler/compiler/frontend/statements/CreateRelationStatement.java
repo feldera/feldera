@@ -23,12 +23,15 @@
 
 package org.dbsp.sqlCompiler.compiler.frontend.statements;
 
+import org.apache.calcite.rel.type.RelDataType;
+import org.apache.calcite.rel.type.RelRecordType;
 import org.apache.calcite.schema.impl.AbstractTable;
 import org.apache.calcite.sql.SqlNode;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.RelColumnMetadata;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.PropertyList;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlFragment;
+import org.dbsp.util.Linq;
 
 import javax.annotation.Nullable;
 import java.util.List;
@@ -85,10 +88,14 @@ public abstract class CreateRelationStatement
             builder.append(",");
         }
 
-        return "CreateRelationStatement{" +
+        return this.getClass().getSimpleName() + "{" +
                 "tableName='" + this.relationName + '\'' +
                 ", columns=" + builder +
                 '}';
+    }
+
+    public RelDataType getRowType() {
+        return new RelRecordType(Linq.map(this.columns, c -> c.field));
     }
 
     @Override

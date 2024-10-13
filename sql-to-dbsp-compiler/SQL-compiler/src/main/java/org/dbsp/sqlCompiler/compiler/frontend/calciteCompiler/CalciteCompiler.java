@@ -59,6 +59,7 @@ import org.apache.calcite.runtime.MapEntry;
 import org.apache.calcite.schema.Function;
 import org.apache.calcite.schema.Schema;
 import org.apache.calcite.schema.SchemaPlus;
+import org.apache.calcite.sql.SqlBasicCall;
 import org.apache.calcite.sql.SqlBasicTypeNameSpec;
 import org.apache.calcite.sql.SqlCall;
 import org.apache.calcite.sql.SqlCharStringLiteral;
@@ -190,7 +191,9 @@ public class CalciteCompiler implements IWritesLogs {
     private final CustomFunctions customFunctions;
     /** User-defined types */
     private final HashMap<String, RelStruct> udt;
-    private final Set<String> declaredViews;
+    private final HashMap<String, DeclareViewStatement> declaredViews;
+    /** Recursive views which have been referred */
+    private final Set<String> usedViews;
 
     /** Create a copy of the 'source' compiler which can be used to compile
      * some generated SQL without affecting its data structures */
@@ -205,10 +208,11 @@ public class CalciteCompiler implements IWritesLogs {
         this.customFunctions = new CustomFunctions(source.customFunctions);
         this.calciteCatalog = new Catalog(source.calciteCatalog);
         this.udt = new HashMap<>(source.udt);
-        this.declaredViews = new HashSet<>(source.declaredViews);
+        this.declaredViews = new HashMap<>(source.declaredViews);
         this.rootSchema = CalciteSchema.createRootSchema(false, false).plus();
         this.copySchema(source.rootSchema);
         this.rootSchema.add(this.calciteCatalog.schemaName, this.calciteCatalog);
+        this.usedViews = new HashSet<>(source.usedViews);
         this.addOperatorTable(Objects.requireNonNull(source.validator).getOperatorTable());
     }
 
@@ -246,6 +250,17 @@ public class CalciteCompiler implements IWritesLogs {
         @Override
         public boolean shouldConvertRaggedUnionTypesToVarying() { return true; }
     };
+
+    /** Invoked when compilation is finished, to do additional validation */
+    public void endCompilation(IErrorReporter reporter) {
+        for (var declared: this.declaredViews.keySet()) {
+            if (this.usedViews.contains(declared))
+                continue;
+            DeclareViewStatement dv = this.declaredViews.get(declared);
+            reporter.reportWarning(dv.getPosition(), "Unused view declaration",
+                    "Declared recursive view " + Utilities.singleQuote(declared) + " not used");
+        }
+    }
 
     /** Additional validation tests on top of Calcite.
      * We need to do these before conversion to Rel, because Rel
@@ -349,7 +364,8 @@ public class CalciteCompiler implements IWritesLogs {
         this.validator = null;
         this.validateTypes = null;
         this.converter = null;
-        this.declaredViews = new HashSet<>();
+        this.usedViews = new HashSet<>();
+        this.declaredViews = new HashMap<>();
 
         SqlOperatorTable operatorTable = this.createOperatorTable();
         this.addOperatorTable(operatorTable);
@@ -651,7 +667,7 @@ public class CalciteCompiler implements IWritesLogs {
                     this.errorReporter.reportError(new SourcePositionRange(col.getParserPosition()),
                             "Duplicate key", "PRIMARY KEY already declared");
                     this.errorReporter.reportError(new SourcePositionRange(key.getParserPosition()),
-                            "Duplicate key", "Previous declaration");
+                            "Duplicate key", "Previous declaration", true);
                     break;
                 }
                 key = (SqlKeyConstraint) col;
@@ -673,7 +689,7 @@ public class CalciteCompiler implements IWritesLogs {
                                 "Duplicate key column", "Column " + Utilities.singleQuote(name) +
                                 " already declared as key");
                         this.errorReporter.reportError(new SourcePositionRange(primaryKeys.get(name).getParserPosition()),
-                                "Duplicate key column", "Previous declaration");
+                                "Duplicate key column", "Previous declaration", true);
                     }
                     primaryKeys.put(name, identifier);
                 }
@@ -700,7 +716,7 @@ public class CalciteCompiler implements IWritesLogs {
                             "Column " + Utilities.singleQuote(name.getSimple()) +
                                     " declared PRIMARY KEY in table with another PRIMARY KEY constraint");
                     this.errorReporter.reportError(new SourcePositionRange(key.getParserPosition()),
-                            "Duplicate key", "PRIMARY KEYS declared as constraint");
+                            "Duplicate key", "PRIMARY KEYS declared as constraint", true);
                 }
                 boolean declaredPrimary = primaryKeys.containsKey(name.getSimple());
                 isPrimaryKey = cd.primaryKey || declaredPrimary;
@@ -737,7 +753,7 @@ public class CalciteCompiler implements IWritesLogs {
                                 Utilities.singleQuote(colName) + " already defined");
                 this.errorReporter.reportError(new SourcePositionRange(previousColumn.getParserPosition()),
                         "Duplicate name",
-                        "Previous definition");
+                        "Previous definition", true);
             } else {
                 columnDefinition.put(colName, col);
             }
@@ -747,7 +763,7 @@ public class CalciteCompiler implements IWritesLogs {
                 if (type.isNullable()) {
                     // This is either an error or a warning, depending on the value of the 'lenient' flag
                     this.errorReporter.reportProblem(position,
-                            this.options.languageOptions.lenient,
+                            this.options.languageOptions.lenient, false,
                             "PRIMARY KEY cannot be nullable",
                             "PRIMARY KEY column " + Utilities.singleQuote(name.getSimple()) +
                                     " has type " + type + ", which is nullable");
@@ -963,44 +979,84 @@ public class CalciteCompiler implements IWritesLogs {
 
     /** Replaces references to a recursive view's name by references to another view */
     static class ReplaceRecursiveViews extends SqlShuttle {
-        final Set<String> declaredViews;
-        final java.util.function.Function<String, String> inputName;
-        List<SqlCall> stack = new ArrayList<>();
-        int childIndex;
+        Set<String> usedViews = new HashSet<>();
 
-        ReplaceRecursiveViews(Set<String> declaredViews, java.util.function.Function<String, String> inputName) {
-            this.declaredViews = declaredViews;
-            this.inputName = inputName;
+        static class CallAndChild {
+            SqlCall call;
+            int childIndex;
+
+            public CallAndChild(SqlCall call) {
+                this.call = call;
+                this.childIndex = 0;
+            }
+
+            void nextChild() {
+                ++this.childIndex;
+            }
+
+            boolean hasNextChild() {
+                return this.childIndex < call.operandCount();
+            }
+
+            SqlNode getChild() {
+                return call.operand(this.childIndex);
+            }
+
+            SqlKind getKind() {
+                return this.call.getKind();
+            }
         }
 
-        SqlKind last() {
-            return Utilities.last(this.stack).getKind();
+        final Map<String, DeclareViewStatement> declaredViews;
+        final java.util.function.Function<String, String> getInputName;
+        List<CallAndChild> stack = new ArrayList<>();
+
+        ReplaceRecursiveViews(HashMap<String, DeclareViewStatement> declaredViews, java.util.function.Function<String, String> getInputName) {
+            this.declaredViews = declaredViews;
+            this.getInputName = getInputName;
         }
 
         @Override
         public @org.checkerframework.checker.nullness.qual.Nullable SqlNode visit(SqlCall call) {
-            this.stack.add(call);
+            CallAndChild cc = new CallAndChild(call);
+            this.stack.add(cc);
             CallCopyingArgHandler argHandler = new CallCopyingArgHandler(call, false);
-            List<SqlNode> operands = call.getOperandList();
-            for (childIndex = 0; childIndex < operands.size(); ++childIndex) {
-                argHandler.visitChild(this, call, childIndex, operands.get(childIndex));
+            for (; cc.hasNextChild(); cc.nextChild()) {
+                argHandler.visitChild(this, call, cc.childIndex, cc.getChild());
             }
             Utilities.removeLast(this.stack);
             return argHandler.result();
         }
 
+        boolean inSelectFrom() {
+            for (int i = 0; i < this.stack.size(); i++) {
+                int index = this.stack.size() - i - 1;
+                CallAndChild call = this.stack.get(index);
+                if (call.call instanceof SqlBasicCall)
+                    continue;
+                if (call.getKind() == SqlKind.SELECT) {
+                    return call.childIndex == SqlSelect.FROM_OPERAND;
+                }
+            }
+            return false;
+        }
+
         @Override
          public @org.checkerframework.checker.nullness.qual.Nullable SqlNode visit(SqlIdentifier id) {
-            boolean inFrom = last() == SqlKind.SELECT && this.childIndex == SqlSelect.FROM_OPERAND;
+            boolean inFrom = inSelectFrom();
             if (id.isSimple()) {
-                if (inFrom && this.declaredViews.contains(id.getSimple())) {
-                    id = id.setName(0, this.inputName.apply(id.getSimple()));
+                String simple = id.getSimple();
+                if (inFrom && this.declaredViews.containsKey(simple)) {
+                    this.usedViews.add(simple);
+                    id = id.setName(0, this.getInputName.apply(simple));
                 }
                 return id;
             } else {
                 SqlIdentifier component = id.getComponent(0);
-                if (this.declaredViews.contains(component.getSimple())) {
-                    id = id.setName(0, this.inputName.apply(component.getSimple()));
+                String simple = component.getSimple();
+                if (this.declaredViews.containsKey(simple)) {
+                    this.usedViews.add(simple);
+                    id = id.setName(0, this.getInputName.apply(simple));
                 }
                 return id;
             }
@@ -1012,6 +1068,7 @@ public class CalciteCompiler implements IWritesLogs {
             return query;
         ReplaceRecursiveViews rr = new ReplaceRecursiveViews(
                 this.declaredViews, DeclareViewStatement::inputViewName);
+        this.usedViews.addAll(rr.usedViews);
         query = rr.visitNode(query);
         return Objects.requireNonNull(query);
     }
@@ -1035,200 +1092,251 @@ public class CalciteCompiler implements IWritesLogs {
                 line, col, endLine, endCol);
     }
 
+    private DropTableStatement compileDropTable(String sqlStatement, SqlNode node) {
+        SqlDropTable dt = (SqlDropTable) node;
+        String tableName = dt.name.getSimple();
+        this.calciteCatalog.dropTable(tableName);
+        return new DropTableStatement(node, sqlStatement, tableName);
+    }
+
+    @Nullable
+    private CreateTableStatement compileCreateTable(String sqlStatement, SqlNode node) {
+        CalciteObject object = CalciteObject.create(node);
+        SqlCreateTable ct = (SqlCreateTable) node;
+        if (ct.ifNotExists)
+            throw new UnsupportedException("IF NOT EXISTS not supported", object);
+        String tableName = ct.name.getSimple();
+        List<RelColumnMetadata> cols = this.createTableColumnsMetadata(
+                Objects.requireNonNull(ct.columnsOrForeignKeys), ct.name);
+        @Nullable PropertyList properties = this.createProperties(ct.tableProperties);
+        if (properties != null)
+            properties.checkDuplicates(this.errorReporter);
+        List<ForeignKey> fk = this.createForeignKeys(ct);
+        CreateTableStatement table = new CreateTableStatement(
+                node, sqlStatement, tableName, Utilities.identifierIsQuoted(ct.name), cols, fk, properties);
+        boolean success = this.calciteCatalog.addTable(table, this.errorReporter);
+        if (!success)
+            return null;
+        return table;
+    }
+
+    private CreateFunctionStatement compileCreateFunction(
+            String sqlStatement, SqlNode node, SourceFileContents sources) {
+        SqlCreateFunctionDeclaration decl = (SqlCreateFunctionDeclaration) node;
+        List<Map.Entry<String, RelDataType>> parameters = Linq.map(
+                decl.getParameters(), param -> {
+                    SqlAttributeDefinition attr = (SqlAttributeDefinition) param;
+                    String name = attr.name.getSimple();
+                    RelDataType type = this.specToRel(attr.dataType, false);
+                    return new MapEntry<>(name, type);
+                });
+        RelDataType structType = this.typeFactory.createStructType(parameters);
+        SqlDataTypeSpec retType = decl.getReturnType();
+        RelDataType returnType = this.specToRel(retType, false);
+        Boolean nullableResult = retType.getNullable();
+        if (nullableResult != null && nullableResult)
+            returnType = this.createNullableType(returnType);
+        RexNode bodyExp = this.createFunction(decl, sources);
+        ExternalFunction function = this.customFunctions.createUDF(
+                CalciteObject.create(node), decl.getName(), structType, returnType, bodyExp);
+        return new CreateFunctionStatement(node, sqlStatement, function);
+    }
+
+    @Nullable
+    private CreateViewStatement compileCreateView(String sqlStatement, SqlNode node) {
+        CalciteObject object = CalciteObject.create(node);
+        SqlToRelConverter converter = this.getConverter();
+        SqlCreateView cv = (SqlCreateView) node;
+        SqlNode query = cv.query;
+        if (cv.getReplace())
+            throw new UnsupportedException("OR REPLACE not supported", object);
+        Logger.INSTANCE.belowLevel(this, 2)
+                .append(query.toString())
+                .newline();
+        query = this.replaceRecursiveViews(query);
+        RelRoot relRoot = converter.convertQuery(query, true, true);
+        List<RelColumnMetadata> columns = this.createViewColumnsMetadata(CalciteObject.create(node),
+                cv.name, relRoot, cv.columnList, cv.viewKind);
+        @Nullable PropertyList viewProperties = this.createProperties(cv.viewProperties);
+        if (viewProperties != null) {
+            viewProperties.checkDuplicates(this.errorReporter);
+            SqlFragment materialized = viewProperties.getPropertyValue("materialized");
+            if (materialized != null) {
+                this.errorReporter.reportWarning(materialized.getSourcePosition(),
+                        "Materialized property not used",
+                        "The 'materialized' property for views is not used, " +
+                                "please use 'CREATE MATERIALIZED VIEW' instead");
+            }
+        }
+        RelNode optimized = this.optimize(relRoot.rel);
+        relRoot = relRoot.withRel(optimized);
+        CreateViewStatement view = new CreateViewStatement(
+                cv, sqlStatement,
+                cv.name.getSimple(), Utilities.identifierIsQuoted(cv.name),
+                columns, cv, relRoot, viewProperties);
+        // From Calcite's point of view we treat this view just as another table.
+        boolean success = this.calciteCatalog.addTable(view, this.errorReporter);
+        if (!success)
+            return null;
+
+        // If there is a corresponding DeclareViewStatement, validate the types
+        if (this.declaredViews.containsKey(view.relationName)) {
+            DeclareViewStatement dv = this.declaredViews.get(view.relationName);
+            RelDataType viewType = view.getRowType();
+            RelDataType declaredType = dv.getRowType();
+            if (!viewType.equals(declaredType)) {
+               this.errorReporter.reportError(view.getPosition(), "Type mismatch",
+                        "Type inferred for view " + Utilities.singleQuote(view.relationName) +
+                        " is " + viewType.getFullTypeString());
+                this.errorReporter.reportError(dv.getPosition(), "Type mismatch",
+                        "does not match the declared type " + declaredType.getFullTypeString() + ":",
+                        true);
+            }
+        }
+
+        return view;
+    }
+
     /** Compile a SQL statement.
      * @param node         Compiled version of the SQL statement.
-     * @param sqlStatement SQL statement as a string to compile. */
+     * @param sqlStatement SQL statement as a string to compile.
+     * @param sources      Contents of the source files, for error reporting. */
     @Nullable
-    public FrontEndStatement compile(
-            String sqlStatement,
-            SqlNode node,
-            SourceFileContents sources) {
-        CalciteObject object = CalciteObject.create(node);
+    public FrontEndStatement compile(String sqlStatement, SqlNode node, SourceFileContents sources) {
         Logger.INSTANCE.belowLevel(this, 3)
                 .append("Compiling ")
                 .append(sqlStatement)
                 .newline();
         SqlKind kind = node.getKind();
         switch (kind) {
-            case DROP_TABLE: {
-                SqlDropTable dt = (SqlDropTable) node;
-                String tableName = dt.name.getSimple();
-                this.calciteCatalog.dropTable(tableName);
-                return new DropTableStatement(node, sqlStatement, tableName);
-            }
-            case CREATE_TABLE: {
-                SqlCreateTable ct = (SqlCreateTable) node;
-                if (ct.ifNotExists)
-                    throw new UnsupportedException("IF NOT EXISTS not supported", object);
-                String tableName = ct.name.getSimple();
-                List<RelColumnMetadata> cols = this.createTableColumnsMetadata(
-                        Objects.requireNonNull(ct.columnsOrForeignKeys), ct.name);
-                @Nullable PropertyList properties = this.createProperties(ct.tableProperties);
-                if (properties != null)
-                    properties.checkDuplicates(this.errorReporter);
-                List<ForeignKey> fk = this.createForeignKeys(ct);
-                CreateTableStatement table = new CreateTableStatement(
-                        node, sqlStatement, tableName, Utilities.identifierIsQuoted(ct.name), cols, fk, properties);
-                boolean success = this.calciteCatalog.addTable(table, this.errorReporter);
-                if (!success)
-                    return null;
-                return table;
-            }
-            case CREATE_FUNCTION: {
-                SqlCreateFunctionDeclaration decl = (SqlCreateFunctionDeclaration) node;
-                List<Map.Entry<String, RelDataType>> parameters = Linq.map(
-                        decl.getParameters(), param -> {
-                            SqlAttributeDefinition attr = (SqlAttributeDefinition) param;
-                            String name = attr.name.getSimple();
-                            RelDataType type = this.specToRel(attr.dataType, false);
-                            return new MapEntry<>(name, type);
-                        });
-                RelDataType structType = this.typeFactory.createStructType(parameters);
-                SqlDataTypeSpec retType = decl.getReturnType();
-                RelDataType returnType = this.specToRel(retType, false);
-                Boolean nullableResult = retType.getNullable();
-                if (nullableResult != null && nullableResult)
-                    returnType = this.createNullableType(returnType);
-                RexNode bodyExp = this.createFunction(decl, sources);
-                ExternalFunction function = this.customFunctions.createUDF(
-                        CalciteObject.create(node), decl.getName(), structType, returnType, bodyExp);
-                return new CreateFunctionStatement(node, sqlStatement, function);
-            }
-            case CREATE_VIEW: {
-                SqlToRelConverter converter = this.getConverter();
-                SqlCreateView cv = (SqlCreateView) node;
-                SqlNode query = cv.query;
-                if (cv.getReplace())
-                    throw new UnsupportedException("OR REPLACE not supported", object);
-                Logger.INSTANCE.belowLevel(this, 2)
-                        .append(query.toString())
-                        .newline();
-                query = this.replaceRecursiveViews(query);
-                RelRoot relRoot = converter.convertQuery(query, true, true);
-                List<RelColumnMetadata> columns = this.createViewColumnsMetadata(CalciteObject.create(node),
-                        cv.name, relRoot, cv.columnList, cv.viewKind);
-                @Nullable PropertyList viewProperties = this.createProperties(cv.viewProperties);
-                if (viewProperties != null) {
-                    viewProperties.checkDuplicates(this.errorReporter);
-                    SqlFragment materialized = viewProperties.getPropertyValue("materialized");
-                    if (materialized != null) {
-                        this.errorReporter.reportWarning(materialized.getSourcePosition(),
-                                "Materialized property not used",
-                                "The 'materialized' property for views is not used, " +
-                                        "please use 'CREATE MATERIALIZED VIEW' instead");
-                    }
-                }
-                RelNode optimized = this.optimize(relRoot.rel);
-                relRoot = relRoot.withRel(optimized);
-                CreateViewStatement view = new CreateViewStatement(
-                        cv, sqlStatement,
-                        cv.name.getSimple(), Utilities.identifierIsQuoted(cv.name),
-                        columns, cv, relRoot, viewProperties);
-                // From Calcite's point of view we treat this view just as another table.
-                boolean success = this.calciteCatalog.addTable(view, this.errorReporter);
-                if (!success)
-                    return null;
-                return view;
-            }
-            case CREATE_TYPE: {
-                SqlCreateType ct = (SqlCreateType) node;
-                RelProtoDataType proto = typeFactory -> {
-                    if (ct.dataType != null) {
-                        return this.specToRel(ct.dataType, false);
-                    } else {
-                        String name = ct.name.getSimple();
-                        if (CalciteCompiler.this.udt.containsKey(name))
-                            return CalciteCompiler.this.udt.get(name);
-                        final RelDataTypeFactory.Builder builder = typeFactory.builder();
-                        for (SqlNode def : Objects.requireNonNull(ct.attributeDefs)) {
-                            final SqlAttributeDefinition attributeDef =
-                                    (SqlAttributeDefinition) def;
-                            final SqlDataTypeSpec typeSpec = attributeDef.dataType;
-                            RelDataType type = this.specToRel(typeSpec, false);
-                            if (typeSpec.getNullable() != null && typeSpec.getNullable()) {
-                                // This is tricky, because it is not using the typeFactory that is
-                                // the lambda argument above, but hopefully it should be the same
-                                assert typeFactory == this.typeFactory;
-                                type = this.createNullableType(type);
-                            }
-                            builder.add(attributeDef.name.getSimple(), type);
-                        }
-                        RelDataType result = builder.build();
-                        RelStruct retval = new RelStruct(ct.name, result.getFieldList(), result.isNullable());
-                        Utilities.putNew(CalciteCompiler.this.udt, name, retval);
-                        return retval;
-                    }
-                };
-
-                String typeName = ct.name.getSimple();
-                this.rootSchema.add(typeName, proto);
-                RelDataType relDataType = proto.apply(this.typeFactory);
-                FrontEndStatement result = new CreateTypeStatement(node, sqlStatement, ct, typeName, relDataType);
-                boolean success = this.calciteCatalog.addType(typeName, this.errorReporter, result);
-                if (!success)
-                    return null;
-                return result;
-            }
-            case INSERT: {
-                SqlToRelConverter converter = this.getConverter();
-                SqlInsert insert = (SqlInsert) node;
-                SqlNode table = insert.getTargetTable();
-                if (!(table instanceof SqlIdentifier id))
-                    throw new UnimplementedException(CalciteObject.create(table));
-                TableModifyStatement stat = new TableModifyStatement(node, true, sqlStatement, id.toString(), insert.getSource());
-                RelRoot values = converter.convertQuery(stat.data, true, true);
-                values = values.withRel(this.optimize(values.rel));
-                stat.setTranslation(values.rel);
-                return stat;
-            }
-            case DELETE: {
+            case DROP_TABLE:
+                return this.compileDropTable(sqlStatement, node);
+            case CREATE_TABLE:
+                return this.compileCreateTable(sqlStatement, node);
+            case CREATE_FUNCTION:
+                return this.compileCreateFunction(sqlStatement, node, sources);
+            case CREATE_VIEW:
+                return compileCreateView(sqlStatement, node);
+            case CREATE_TYPE:
+                return compileCreateType(sqlStatement, node);
+            case INSERT:
+                return compileInsert(sqlStatement, node);
+            case DELETE:
                 // We expect this to be a REMOVE statement
-                SqlToRelConverter converter = this.getConverter();
-                if (node instanceof SqlRemove insert) {
-                    SqlNode table = insert.getTargetTable();
-                    if (!(table instanceof SqlIdentifier id))
-                        throw new UnimplementedException(CalciteObject.create(table));
-                    TableModifyStatement stat = new TableModifyStatement(node, false, sqlStatement, id.toString(), insert.getSource());
-                    RelRoot values = converter.convertQuery(stat.data, true, true);
-                    values = values.withRel(this.optimize(values.rel));
-                    stat.setTranslation(values.rel);
-                    return stat;
-                }
+                if (node instanceof SqlRemove)
+                    return compileRemove(sqlStatement, node);
                 break;
-            }
-            case SELECT: {
+            case SELECT:
                 throw new UnsupportedException(
                         "Raw 'SELECT' statements are not supported; did you forget to CREATE VIEW?",
                         CalciteObject.create(node));
-            }
-            case OTHER: {
+            case OTHER:
                 if (node instanceof SqlLateness lateness) {
-                    RexNode expr = this.getConverter().convertExpression(lateness.getLateness());
-                    return new LatenessStatement(lateness, sqlStatement,
-                            lateness.getView(), lateness.getColumn(), expr);
+                    return this.compileLateness(sqlStatement, lateness);
                 } else if (node instanceof SqlDeclareView cv) {
-                    List<RelColumnMetadata> columns = new ArrayList<>();
-                    int index = 0;
-                    for (SqlNode n: cv.columns) {
-                        SqlColumnDeclaration cd = (SqlColumnDeclaration) n;
-                        String name = cd.name.getSimple();
-                        RelDataType type = this.specToRel(cd.dataType, false);
-                        RelDataTypeField field = new RelDataTypeFieldImpl(name, index++, type);
-                        var meta = new RelColumnMetadata(CalciteObject.create(n), field, false,
-                                Utilities.identifierIsQuoted(cd.name), null, null, null);
-                        columns.add(meta);
-                    }
-                    var result = new DeclareViewStatement(cv, sqlStatement, cv.name.getSimple(),
-                            Utilities.identifierIsQuoted(cv.name), columns);
-                    this.declaredViews.add(cv.name.getSimple());
-                    boolean success = this.calciteCatalog.addTable(result, this.errorReporter);
-                    if (!success)
-                        return null;
-                    return result;
+                    return this.compileDeclareView(sqlStatement, cv);
                 }
                 break;
-            }
+            default:
+                break;
         }
         throw new UnimplementedException(CalciteObject.create(node));
+    }
+
+    @Nullable
+    private DeclareViewStatement compileDeclareView(String sqlStatement, SqlDeclareView cv) {
+        List<RelColumnMetadata> columns = new ArrayList<>();
+        int index = 0;
+        for (SqlNode n: cv.columns) {
+            SqlColumnDeclaration cd = (SqlColumnDeclaration) n;
+            String name = cd.name.getSimple();
+            RelDataType type = this.specToRel(cd.dataType, false);
+            RelDataTypeField field = new RelDataTypeFieldImpl(name, index++, type);
+            var meta = new RelColumnMetadata(CalciteObject.create(n), field, false,
+                    Utilities.identifierIsQuoted(cd.name), null, null, null);
+            columns.add(meta);
+        }
+        var result = new DeclareViewStatement(cv, sqlStatement, cv.name.getSimple(),
+                Utilities.identifierIsQuoted(cv.name), columns);
+        Utilities.putNew(this.declaredViews, cv.name.getSimple(), result);
+        boolean success = this.calciteCatalog.addTable(result, this.errorReporter);
+        if (!success)
+            return null;
+        return result;
+    }
+
+    private LatenessStatement compileLateness(String sqlStatement, SqlLateness lateness) {
+        RexNode expr = this.getConverter().convertExpression(lateness.getLateness());
+        return new LatenessStatement(lateness, sqlStatement,
+                lateness.getView(), lateness.getColumn(), expr);
+    }
+
+    private TableModifyStatement compileRemove(
+            String sqlStatement, SqlNode node) {
+        SqlRemove remove = (SqlRemove) node;
+        SqlToRelConverter converter = this.getConverter();
+        SqlNode table = remove.getTargetTable();
+        if (!(table instanceof SqlIdentifier id))
+            throw new UnimplementedException(CalciteObject.create(table));
+        TableModifyStatement stat = new TableModifyStatement(
+                node, false, sqlStatement, id.toString(), remove.getSource());
+        RelRoot values = converter.convertQuery(stat.data, true, true);
+        values = values.withRel(this.optimize(values.rel));
+        stat.setTranslation(values.rel);
+        return stat;
+    }
+
+    private TableModifyStatement compileInsert(String sqlStatement, SqlNode node) {
+        SqlToRelConverter converter = this.getConverter();
+        SqlInsert insert = (SqlInsert) node;
+        SqlNode table = insert.getTargetTable();
+        if (!(table instanceof SqlIdentifier id))
+            throw new UnimplementedException(CalciteObject.create(table));
+        TableModifyStatement stat = new TableModifyStatement(node, true, sqlStatement, id.toString(), insert.getSource());
+        RelRoot values = converter.convertQuery(stat.data, true, true);
+        values = values.withRel(this.optimize(values.rel));
+        stat.setTranslation(values.rel);
+        return stat;
+    }
+
+    @Nullable
+    private CreateTypeStatement compileCreateType(String sqlStatement, SqlNode node) {
+        SqlCreateType ct = (SqlCreateType) node;
+        RelProtoDataType proto = typeFactory -> {
+            if (ct.dataType != null) {
+                return this.specToRel(ct.dataType, false);
+            } else {
+                String name = ct.name.getSimple();
+                if (CalciteCompiler.this.udt.containsKey(name))
+                    return CalciteCompiler.this.udt.get(name);
+                final RelDataTypeFactory.Builder builder = typeFactory.builder();
+                for (SqlNode def : Objects.requireNonNull(ct.attributeDefs)) {
+                    final SqlAttributeDefinition attributeDef =
+                            (SqlAttributeDefinition) def;
+                    final SqlDataTypeSpec typeSpec = attributeDef.dataType;
+                    RelDataType type = this.specToRel(typeSpec, false);
+                    if (typeSpec.getNullable() != null && typeSpec.getNullable()) {
+                        // This is tricky, because it is not using the typeFactory that is
+                        // the lambda argument above, but hopefully it should be the same
+                        assert typeFactory == this.typeFactory;
+                        type = this.createNullableType(type);
+                    }
+                    builder.add(attributeDef.name.getSimple(), type);
+                }
+                RelDataType result = builder.build();
+                RelStruct retval = new RelStruct(ct.name, result.getFieldList(), result.isNullable());
+                Utilities.putNew(CalciteCompiler.this.udt, name, retval);
+                return retval;
+            }
+        };
+
+        String typeName = ct.name.getSimple();
+        this.rootSchema.add(typeName, proto);
+        RelDataType relDataType = proto.apply(this.typeFactory);
+        CreateTypeStatement result = new CreateTypeStatement(node, sqlStatement, ct, typeName, relDataType);
+        boolean success = this.calciteCatalog.addType(typeName, this.errorReporter, result);
+        if (!success)
+            return null;
+        return result;
     }
 }
