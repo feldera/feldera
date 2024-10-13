@@ -5,7 +5,7 @@
 
 use log::{debug, warn};
 use std::fs::{File, OpenOptions};
-use std::io::{self, Error as IoError, ErrorKind, Read, Write};
+use std::io::{self, Error as IoError, ErrorKind, Read, Seek, SeekFrom, Write};
 use std::os::fd::AsRawFd;
 use std::path::{Path, PathBuf};
 use sysinfo::{Pid, System};
@@ -110,7 +110,9 @@ impl LockedDirectory {
                     // The process doesn't exist, so we can safely overwrite the pidfile.
                     log::debug!("Found stale pidfile: {}", pid_file.display());
                 }
-            } else {
+                guard.0.set_len(0)?;
+                guard.0.seek(SeekFrom::Start(0))?;
+            } else if !contents.is_empty() {
                 // If the pidfile is corrupt, we won't take ownership of the storage dir until
                 // the user fixes it.
                 log::error!(
