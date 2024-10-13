@@ -261,7 +261,8 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
         } catch (Throwable ex) {
             throw new UnimplementedException(node, ex);
         }
-        throw new UnimplementedException(node);
+        throw new UnimplementedException(
+                "Support for literals of type " + literal.getType() + " not yet implemented", node);
     }
 
     /**
@@ -334,14 +335,14 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
             }
             // DECIMAL op DECIMAL does not convert to a common type.
         }
-        throw new UnimplementedException("Cast from " + right + " to " + left);
+        throw new UnimplementedException("Cast from " + right + " to " + left, left.getNode());
     }
 
     // Like makeBinaryExpression, but accepts multiple operands.
     private static DBSPExpression makeBinaryExpressions(
             CalciteObject node, DBSPType type, DBSPOpcode opcode, List<DBSPExpression> operands) {
-        if (operands.size() < 2)
-            throw new UnimplementedException(node);
+        assert operands.size() >= 2 :
+            "Expected at least two operands for binary expression " + opcode;
         DBSPExpression accumulator = operands.get(0);
         for (int i = 1; i < operands.size(); i++)
             accumulator = makeBinaryExpression(node, type, opcode, accumulator, operands.get(i));
@@ -367,8 +368,8 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
             throw new InternalCompilerError("Expected 2 operands, got " + operands.size(), node);
         DBSPExpression left = operands.get(0);
         DBSPExpression right = operands.get(1);
-        if (left == null || right == null)
-            throw new UnimplementedException(node);
+        assert left != null && right != null :
+            "Null operand for binary expression " + opcode + ": " + left + ", " + right;
         return makeBinaryExpression(node, type, opcode, left, right);
     }
 
@@ -478,7 +479,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
             throw new InternalCompilerError("Expected 1 operands, got " + operands.size(), node);
         DBSPExpression operand = operands.get(0);
         if (operand == null)
-            throw new UnimplementedException("Found unimplemented expression in " + node);
+            throw new UnimplementedException("Found unimplemented expression in " + node, node);
         DBSPType resultType = operand.getType();
         if (op.toString().startsWith("is_"))
             // these do not produce nullable results
@@ -497,7 +498,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
         return expression;
     }
 
-    static void validateArgCount(CalciteObject node, int argCount, Integer... expectedArgCount) {
+    static void validateArgCount(CalciteObject node, String name, int argCount, Integer... expectedArgCount) {
         boolean legal = false;
         for (int e: expectedArgCount) {
             if (e == argCount) {
@@ -505,8 +506,9 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 break;
             }
         }
-        if (!legal)
-            throw new UnimplementedException(node);
+        if (!legal) {
+            throw operandCountError(node, name, argCount);
+        }
     }
 
     static String getCallName(RexCall call) {
@@ -515,7 +517,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
 
     public static DBSPExpression compilePolymorphicFunction(String opName, CalciteObject node, DBSPType resultType,
                                                             List<DBSPExpression> ops, Integer... expectedArgCount) {
-        validateArgCount(node, ops.size(), expectedArgCount);
+        validateArgCount(node, opName, ops.size(), expectedArgCount);
         StringBuilder functionName = new StringBuilder(opName);
         DBSPExpression[] operands = ops.toArray(new DBSPExpression[0]);
         for (DBSPExpression op: ops) {
@@ -565,9 +567,9 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
      * @param expectedArgCount A list containing all known possible argument counts.
      */
     static DBSPExpression compileFunction(String baseName, CalciteObject node,
-                                   DBSPType resultType, List<DBSPExpression> ops, Integer... expectedArgCount) {
+                                          DBSPType resultType, List<DBSPExpression> ops, Integer... expectedArgCount) {
         StringBuilder builder = new StringBuilder(baseName);
-        validateArgCount(node, ops.size(), expectedArgCount);
+        validateArgCount(node, baseName, ops.size(), expectedArgCount);
         DBSPExpression[] operands = ops.toArray(new DBSPExpression[0]);
         if (expectedArgCount.length > 1)
             // If the function can have a variable number of arguments, postfix with the argument count
@@ -608,12 +610,12 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
             RexCall call, CalciteObject node, @Nullable String functionName,
             DBSPType resultType, List<DBSPExpression> ops,
             int keywordIndex, Integer... expectedArgCount) {
-        validateArgCount(node, ops.size(), expectedArgCount);
-        if (ops.size() <= keywordIndex)
-            throw new UnimplementedException(node);
-        DBSPKeywordLiteral keyword = ops.get(keywordIndex).to(DBSPKeywordLiteral.class);
+       DBSPKeywordLiteral keyword = ops.get(keywordIndex).to(DBSPKeywordLiteral.class);
         StringBuilder name = new StringBuilder();
         String baseName = functionName != null ? functionName : getCallName(call);
+        validateArgCount(node, baseName, ops.size(), expectedArgCount);
+        if (ops.size() <= keywordIndex)
+            throw operandCountError(node, baseName,  ops.size());
         name.append(baseName)
                 .append("_")
                 .append(keyword);
@@ -713,6 +715,12 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
         return new DBSPFieldExpression(node, source, dataField.getIndex());
     }
 
+    static CompilationError operandCountError(CalciteObject node, String name, int operandCount) {
+        return new CompilationError(
+                "Function " + Utilities.singleQuote(name) + " with " +
+                        operandCount + " arguments is unknown", node);
+    }
+
     @Override
     public DBSPExpression visitCall(RexCall call) {
         CalciteObject node = CalciteObject.create(this.context, call);
@@ -732,6 +740,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
             call = (RexCall)RexUtil.expandSearch(this.rexBuilder, null, call);
         }
         List<DBSPExpression> ops = Linq.map(call.operands, e -> e.accept(this));
+        String operationName = call.op.kind.sql;
         switch (call.op.kind) {
             case TIMES:
                 return makeBinaryExpression(node, type, DBSPOpcode.MUL, ops);
@@ -864,7 +873,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 // even if all arguments are not nullable.  So we can't
                 // just use compilePolymorphicFunction.
                 if (ops.size() != 2)
-                    throw new UnimplementedException("Expected only 2 operands", node);
+                    throw operandCountError(node, operationName, ops.size());
                 DBSPExpression left = ops.get(0);
                 DBSPExpression right = ops.get(1);
                 String functionName = "make_geopoint" +
@@ -882,11 +891,9 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                         DBSPExpression right;
 
                         if (call.operands.isEmpty())
-                            throw new UnimplementedException(node);
-
+                            throw operandCountError(node, operationName, call.operandCount());
                         DBSPExpression left = ops.get(0);
-
-                        if (call.operands.size() == 1)
+                        if (call.operandCount() == 1)
                             right = new DBSPI32Literal(0);
                         else
                             right = ops.get(1);
@@ -1055,9 +1062,8 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                         return compileFunction(call, node, type, ops, 1);
                     }
                     case "cardinality": {
-                        validateArgCount(node, ops.size(), 1);
-                        String name = "cardinality";
-
+                        validateArgCount(node, opName, ops.size(), 1);
+                        String name = opName;
                         nullLiteralToNullArray(ops, 0);
                         if (ops.get(0).getType().mayBeNull)
                             name += "N";
@@ -1083,7 +1089,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                     }
                     case "substring": {
                         if (ops.isEmpty())
-                            throw new UnimplementedException(node);
+                            throw  operandCountError(node, operationName, call.operandCount());
                         String module_prefix;
                         if (ops.get(0).type.is(DBSPTypeBinary.class)) {
                             module_prefix = "binary::";
@@ -1124,8 +1130,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
             }
             case ARRAYS_OVERLAP: {
                 if (ops.size() != 2)
-                    throw new UnimplementedException(node);
-
+                    throw operandCountError(node, operationName, call.operandCount());
                 DBSPExpression arg0 = ops.get(0);
                 DBSPTypeVec arg0Vec = arg0.getType().to(DBSPTypeVec.class);
                 DBSPType arg0ElemType = arg0Vec.getElementType();
@@ -1162,13 +1167,15 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
 
                 return compileFunction(call, node, type, ops, 2);
             }
-            case OTHER:
+            case OTHER: {
                 String opName = call.op.getName().toLowerCase();
                 //noinspection SwitchStatementWithTooFewBranches
                 return switch (opName) {
                     case "||" -> makeBinaryExpression(node, type, DBSPOpcode.CONCAT, ops);
-                    default -> throw new UnimplementedException(node);
+                    default -> throw new UnimplementedException("Support for operation/function " +
+                            Utilities.singleQuote(opName) + " not yet implemented", node);
                 };
+            }
             case EXTRACT: {
                 // This is also hit for "date_part", which is an alias for "extract".
                 return compileKeywordFunction(call, node, "extract", type, ops, 0, 2);
@@ -1216,7 +1223,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                     }
                     return compilePolymorphicFunction(call, node, type, ops, 1);
                 } else {
-                    throw new UnimplementedException(node);
+                    throw operandCountError(node, operationName, call.operandCount());
                 }
             }
             case ARRAY_VALUE_CONSTRUCTOR: {
@@ -1235,7 +1242,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
             }
             case ITEM: {
                 if (call.operands.size() != 2)
-                    throw new UnimplementedException(node);
+                    throw operandCountError(node, operationName, call.operandCount());
                 DBSPType collectionType = ops.get(0).getType();
                 DBSPExpression index = ops.get(1);
                 DBSPOpcode opcode = DBSPOpcode.SQL_INDEX;
@@ -1269,7 +1276,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
             case ARRAY_LENGTH:
             case ARRAY_SIZE: {
                 if (call.operands.size() != 1)
-                    throw new UnimplementedException(node);
+                    throw operandCountError(node, operationName, call.operandCount());
 
                 // same as "cardinality"
                 String name = "cardinality";
@@ -1284,7 +1291,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
             case ARRAY_PREPEND:
             case ARRAY_APPEND: {
                 if (call.operands.size() != 2)
-                    throw new UnimplementedException(node);
+                    throw operandCountError(node, operationName, call.operandCount());
 
                 DBSPTypeVec vec = type.to(DBSPTypeVec.class);
                 DBSPType elemType = vec.getElementType();
@@ -1318,11 +1325,10 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
             case ARRAY_MIN:
             {
                 if (call.operands.size() != 1)
-                    throw new UnimplementedException(node);
+                    throw operandCountError(node, operationName, call.operandCount());
 
                 DBSPExpression arg0 = ops.get(0);
                 String method = getArrayCallNameWithElemNullability(call, arg0);
-
                 return new DBSPApplyExpression(node, method, type, arg0);
             }
             case ARRAY_CONTAINS:
@@ -1330,7 +1336,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
             case ARRAY_POSITION:
             {
                 if (call.operands.size() != 2)
-                    throw new UnimplementedException(node);
+                    throw operandCountError(node, operationName, call.operandCount());
 
                 DBSPExpression arg0 = ops.get(0);
                 DBSPExpression arg1 = ops.get(1);
@@ -1384,7 +1390,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
             case ARRAY_REVERSE:
             {
                 if (call.operands.size() != 1)
-                    throw new UnimplementedException(node);
+                    throw operandCountError(node, operationName, call.operandCount());
 
                 DBSPExpression arg0 = ops.get(0);
                 String method = getArrayCallName(call, arg0);
@@ -1393,7 +1399,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
             }
             case ARRAY_COMPACT: {
                 if (call.operands.size() != 1)
-                    throw new UnimplementedException(node);
+                    throw operandCountError(node, operationName, call.operandCount());
 
                 DBSPExpression arg0 = ops.get(0);
                 DBSPTypeVec vecType = arg0.getType().to(DBSPTypeVec.class);
@@ -1417,7 +1423,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
             }
             case ARRAY_REPEAT: {
                 if (call.operands.size() != 2)
-                    throw new UnimplementedException(node);
+                    throw operandCountError(node, operationName, call.operandCount());
                 DBSPExpression op1 = ops.get(1)
                         .cast(new DBSPTypeInteger(node, 32, true, ops.get(1).getType().mayBeNull));
                 String method = getArrayCallName(call, ops.get(0), op1);
@@ -1428,7 +1434,8 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
             }
             case DOT:
             default:
-                throw new UnimplementedException(node);
+                throw new UnimplementedException("Function " + Utilities.singleQuote(operationName)
+                        + " not yet implemented", node);
         }
     }
 
@@ -1439,6 +1446,8 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 new DBSPU32Literal(pos.line), new DBSPU32Literal(pos.column));
     }
 
+    // We expect this will be used at some point for error handling
+    @SuppressWarnings("unused")
     static DBSPExpression toPosition(SourcePositionRange range) {
         return new DBSPConstructorExpression(
                 new DBSPPath("SourcePositionRange", "new").toExpression(),
@@ -1489,7 +1498,8 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 .newline();
         DBSPExpression result = expression.accept(this);
         if (result == null)
-            throw new UnimplementedException(CalciteObject.create(this.context, expression));
+            throw new InternalCompilerError("Unexpected Calcite expression " + expression,
+                    CalciteObject.create(this.context, expression));
         return result;
     }
 

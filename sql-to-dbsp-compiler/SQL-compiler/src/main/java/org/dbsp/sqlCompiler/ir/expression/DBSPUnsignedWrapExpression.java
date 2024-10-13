@@ -1,7 +1,6 @@
 package org.dbsp.sqlCompiler.ir.expression;
 
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
-import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
@@ -44,7 +43,7 @@ public final class DBSPUnsignedWrapExpression extends DBSPExpression {
                 case INT8, INT16, INT32, INT64 -> sourceType.setMayBeNull(false).to(DBSPTypeInteger.class);
                 case DATE -> new DBSPTypeInteger(sourceType.getNode(), 32, true, false);
                 case TIMESTAMP, TIME -> new DBSPTypeInteger(sourceType.getNode(), 64, true, false);
-                default -> throw new UnimplementedException(sourceType.getNode());
+                default -> throw new InternalCompilerError("Not yet supported wrappers for " + sourceType, sourceType.getNode());
             };
         }
     }

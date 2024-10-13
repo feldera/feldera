@@ -34,6 +34,7 @@ import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.IHasColumnsMetadata;
 import org.dbsp.sqlCompiler.compiler.IHasLateness;
 import org.dbsp.sqlCompiler.compiler.IHasWatermark;
+import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.ExpressionCompiler;
@@ -963,7 +964,8 @@ public class InsertLimiters extends CircuitCloneVisitor {
             }
             return new DBSPTupleExpression(CalciteObject.EMPTY, fields);
         }
-        throw new UnimplementedException(left.getNode());
+        throw new InternalCompilerError("Not yet handlex: max of type " + leftProjection,
+                left.getNode());
     }
 
     /** Utility function for Apply operators that are introduced by the {@link InsertLimiters}
@@ -1142,7 +1144,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
             }
             return result;
         } else {
-            throw new UnimplementedException(type);
+            throw new InternalCompilerError("Not handled equality of type " + type.asSqlString(), type);
         }
     }
 
@@ -1347,7 +1349,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
             }
             return new DBSPTupleExpression(source.getNode(), fields);
         }
-        throw new UnimplementedException(source.getNode());
+        throw new InternalCompilerError("Not yet handled " + destinationProjection, source.getNode());
     }
 
     /** Apply MIN pointwise to two expressions */
@@ -1365,7 +1367,8 @@ public class InsertLimiters extends CircuitCloneVisitor {
             }
             return lt.makeTuple(mins);
         }
-        throw new UnimplementedException(left.getNode());
+        throw new InternalCompilerError("MIN of expressions of type " + left.getType() + " not yet supported",
+                left.getNode());
     }
 
     /**

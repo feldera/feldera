@@ -717,7 +717,7 @@ public class CalciteCompiler implements IWritesLogs {
                        col instanceof SqlForeignKey) {
                 continue;
             } else {
-                throw new UnimplementedException(CalciteObject.create(col));
+                throw new UnimplementedException("Column constraint not yet implemented", CalciteObject.create(col));
             }
 
             String colName = name.getSimple();
@@ -885,8 +885,9 @@ public class CalciteCompiler implements IWritesLogs {
                     this.visitIfMatches(node, LogicalTableScan.class, this::visitScan) ||
                     this.visitIfMatches(node, LogicalProject.class, this::visitProject);
             if (!success)
-                // Anything else is an exception
-                throw new UnimplementedException("Function too complex", CalciteObject.create(node));
+                // Anything else is an exception.  This can happen if e.g., someone uses queries in a UDF,
+                // the grammar allows that.
+                throw new UnimplementedException("User-defined function too complex", CalciteObject.create(node));
         }
     }
 
@@ -1111,7 +1112,7 @@ public class CalciteCompiler implements IWritesLogs {
                 SqlInsert insert = (SqlInsert) node;
                 SqlNode table = insert.getTargetTable();
                 if (!(table instanceof SqlIdentifier id))
-                    throw new UnimplementedException(CalciteObject.create(table));
+                    throw new UnimplementedException("INSERT statement expected a table name", CalciteObject.create(table));
                 TableModifyStatement stat = new TableModifyStatement(node, true, sqlStatement, id.toString(), insert.getSource());
                 RelRoot values = converter.convertQuery(stat.data, true, true);
                 values = values.withRel(this.optimize(values.rel));
@@ -1124,7 +1125,7 @@ public class CalciteCompiler implements IWritesLogs {
                 if (node instanceof SqlRemove insert) {
                     SqlNode table = insert.getTargetTable();
                     if (!(table instanceof SqlIdentifier id))
-                        throw new UnimplementedException(CalciteObject.create(table));
+                        throw new UnimplementedException("REMOVE statement expected a table name", CalciteObject.create(table));
                     TableModifyStatement stat = new TableModifyStatement(node, false, sqlStatement, id.toString(), insert.getSource());
                     RelRoot values = converter.convertQuery(stat.data, true, true);
                     values = values.withRel(this.optimize(values.rel));
@@ -1147,6 +1148,6 @@ public class CalciteCompiler implements IWritesLogs {
                 break;
             }
         }
-        throw new UnimplementedException(CalciteObject.create(node));
+        throw new UnimplementedException("SQL statement not yet implemented", CalciteObject.create(node));
     }
 }

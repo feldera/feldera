@@ -111,6 +111,6 @@ public class AvroSchemaWrapper implements IHasSchema {
                 return this.typeFactory.createTypeWithNullability(fields.get(0), true);
             }
         }
-        throw new UnimplementedException("Avro type '" + sType + "' not supported");
+        throw new UnimplementedException("Avro type '" + sType + "' not yet implemented");
     }
 }
