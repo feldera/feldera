@@ -239,6 +239,6 @@ public class ExternalFunction extends SqlFunction {
             // TODO: the function should return Result
             return new DBSPFunction(this.getName(), Linq.list(param), returnType, body, Linq.list());
         }
-        throw new UnimplementedException();
+        throw new InternalCompilerError("Cannot generate implementation for " + this, this.node);
     }
 }

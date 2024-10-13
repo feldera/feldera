@@ -66,7 +66,7 @@ public final class DBSPIndexedZSetLiteral extends DBSPLiteral implements IDBSPCo
 
     @Override
     public IDBSPContainer add(DBSPExpression expression) {
-        throw new UnimplementedException(expression);
+        throw new UnimplementedException("Not yet implemented: IndexedZSet literals", expression);
     }
 
     @Override

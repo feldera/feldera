@@ -35,9 +35,14 @@ public final class InternalCompilerError extends BaseCompilerException {
     @Nullable
     public final IDBSPNode dbspNode;
 
+    static String makeMessage(String message) {
+        return message + System.lineSeparator() +
+                "We would appreciate if you could report an issue at https://github.com/feldera/feldera/issues";
+    }
+
     InternalCompilerError(String message, CalciteObject node,
                           @Nullable IDBSPNode dbspNode) {
-        super(message, node);
+        super(makeMessage(message), node);
         this.dbspNode = dbspNode;
     }
 

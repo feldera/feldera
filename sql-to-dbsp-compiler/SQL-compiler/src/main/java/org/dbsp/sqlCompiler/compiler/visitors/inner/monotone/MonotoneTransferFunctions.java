@@ -2,7 +2,7 @@ package org.dbsp.sqlCompiler.compiler.visitors.inner.monotone;
 
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
-import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
+import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -194,7 +194,7 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
     public VisitDecision preorder(DBSPClosureExpression expression) {
         if (!this.context.isEmpty())
             // This means that we are analyzing a closure within another closure.
-            throw new UnimplementedException(expression);
+            throw new InternalCompilerError("Didn't expect nested closures", expression);
 
         // Must be the outermost call of the visitor.
         DBSPType[] projectedTypes = Linq.map(
@@ -233,7 +233,7 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
                 break;
             }
             default: {
-                throw new UnimplementedException();
+                throw new InternalCompilerError("Unreachable");
             }
         }
 
@@ -319,7 +319,7 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
                     break;
                 }
                 default: {
-                    throw new UnimplementedException();
+                    throw new InternalCompilerError("unreachable");
                 }
             }
             DBSPClosureExpression closure = applyBody.closure(applyParameters);

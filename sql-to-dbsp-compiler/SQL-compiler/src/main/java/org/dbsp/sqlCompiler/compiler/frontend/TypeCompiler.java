@@ -59,6 +59,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTime;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
 import org.dbsp.util.FreshName;
+import org.dbsp.util.Utilities;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -242,7 +243,8 @@ public class TypeCompiler implements ICompilerComponent {
                 case SARG:
                 case TIME_WITH_LOCAL_TIME_ZONE:
                 case TIMESTAMP_WITH_LOCAL_TIME_ZONE:
-                    throw new UnimplementedException(node);
+                    throw new UnimplementedException("Support for SQL type " + Utilities.singleQuote(tn.getName())
+                            + " not yet implemented", node);
                 case INTERVAL_YEAR:
                 case INTERVAL_YEAR_MONTH:
                 case INTERVAL_MONTH:
@@ -272,7 +274,8 @@ public class TypeCompiler implements ICompilerComponent {
                     break;
             }
         }
-        throw new UnimplementedException(node);
+        throw new UnimplementedException("Support for SQL type " + Utilities.singleQuote(dt.getFullTypeString())
+                + " not yet implemented", node);
     }
 
     @Override

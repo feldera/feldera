@@ -143,7 +143,8 @@ public class NegativeParserTests extends BaseSQLTests {
     public void testTypeErrorMessage() {
         // TODO: this test may become invalid once we add support for ROW types
         this.statementsFailingInCompilation("CREATE VIEW V AS SELECT ROW(2, 2);",
-                "error: Not yet implemented: ROW");
+                "error: Not yet implemented: Function 'ROW' not yet implemented\n" +
+                        "This is tracked by issue");
     }
 
     @Test
@@ -185,7 +186,8 @@ public class NegativeParserTests extends BaseSQLTests {
         Assert.assertEquals(messages.errorCount(), 1);
         msg = messages.getError(0);
         Assert.assertFalse(msg.warning);
-        Assert.assertEquals(msg.message, "cannot convert GEOMETRY literal to class org.locationtech.jts.geom.Point\n" +
+        TestUtil.assertMessagesContain(messages,
+                "cannot convert GEOMETRY literal to class org.locationtech.jts.geom.Point\n" +
                 "LINESTRING (0 0, 0 0):GEOMETRY");
     }
 

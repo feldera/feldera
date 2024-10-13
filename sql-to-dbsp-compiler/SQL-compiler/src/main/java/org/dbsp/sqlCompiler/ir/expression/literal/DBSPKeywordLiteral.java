@@ -75,10 +75,7 @@ public final class DBSPKeywordLiteral extends DBSPLiteral {
             case "trailing":
                 break;
             default:
-                if (node.isEmpty())
-                    throw new UnimplementedException(keyword);
-                else
-                    throw new UnimplementedException(node);
+                throw new UnimplementedException("Not yet implemented support for Calcite construct " + keyword, node);
         }
     }
 

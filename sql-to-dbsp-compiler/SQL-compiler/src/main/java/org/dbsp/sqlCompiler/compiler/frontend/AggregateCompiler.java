@@ -173,7 +173,7 @@ public class AggregateCompiler implements ICompilerComponent {
             case BIT_OR -> DBSPOpcode.AGG_OR;
             case BIT_AND -> DBSPOpcode.AGG_AND;
             case BIT_XOR -> DBSPOpcode.AGG_XOR;
-            default -> throw new UnimplementedException(node);
+            default -> throw new UnimplementedException("Aggregation function not yet implemented", node);
         };
 
         // TODO: some of these are linear, but we cannot implement them with the existing APIs
@@ -189,7 +189,7 @@ public class AggregateCompiler implements ICompilerComponent {
         CalciteObject node = CalciteObject.create(function);
         DBSPExpression zero = this.nullableResultType.to(IsNumericType.class).getZero();
         if (this.filterArgument() != null) {
-            throw new UnimplementedException(node);
+            throw new UnimplementedException("GROUPING with FILTER not implemented", node);
         }
 
         long result = 0;
@@ -323,7 +323,7 @@ public class AggregateCompiler implements ICompilerComponent {
         DBSPOpcode compareOpcode = switch (kind) {
             case ARG_MAX -> DBSPOpcode.AGG_GTE;
             case ARG_MIN -> DBSPOpcode.AGG_LTE;
-            default -> throw new UnimplementedException(node);
+            default -> throw new UnimplementedException("Aggregate function not yet implemented", node);
         };
 
         DBSPType currentType = tuple.fields[1].getType().setMayBeNull(true);
@@ -393,7 +393,7 @@ public class AggregateCompiler implements ICompilerComponent {
                 call = DBSPOpcode.AGG_MAX;
                 yield "MaxSemigroup";
             }
-            default -> throw new UnimplementedException(node);
+            default -> throw new UnimplementedException("Aggregate function not yet implemented", node);
         };
         DBSPExpression aggregatedValue = this.getAggregatedValue();
         DBSPVariablePath accumulator = this.nullableResultType.var();
@@ -510,7 +510,7 @@ public class AggregateCompiler implements ICompilerComponent {
         DBSPExpression zero = DBSPLiteral.none(this.nullableResultType);
         DBSPExpression aggregatedValue = this.getAggregatedValue();
         if (this.filterArgument >= 0) {
-            throw new UnimplementedException(node);
+            throw new UnimplementedException("SINGLE aggregation function with FILTER not yet implemented", node);
         }
         DBSPVariablePath accumulator = this.nullableResultType.var();
         // Single is supposed to be applied to a single value, and should return a runtime
@@ -713,7 +713,7 @@ public class AggregateCompiler implements ICompilerComponent {
         AggregateBase implementation = switch (function.getKind()) {
             case AVG -> this.doAverage(function);
             case STDDEV_POP, STDDEV_SAMP -> this.doStddev(function);
-            default -> throw new UnimplementedException(node);
+            default -> throw new UnimplementedException("Statistical aggregate function not yet implemented", 172, node);
         };
         this.setResult(implementation);
     }
@@ -730,7 +730,8 @@ public class AggregateCompiler implements ICompilerComponent {
                 this.process(this.aggFunction, SqlSingleValueAggFunction.class, this::processSingle) ||
                 this.process(this.aggFunction, SqlAbstractGroupFunction.class, this::processGrouping);
         if (!success || this.result == null)
-            throw new UnimplementedException(CalciteObject.create(this.aggFunction));
+            throw new UnimplementedException("Aggregate function " + this.aggFunction + " not yet implemented", 172,
+                    CalciteObject.create(this.aggFunction));
         return this.result;
     }
 
