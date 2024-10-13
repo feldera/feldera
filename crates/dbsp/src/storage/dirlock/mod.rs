@@ -79,7 +79,7 @@ impl LockedDirectory {
     const LOCKFILE_NAME: &'static str = "feldera.pidlock";
 
     fn with_pid<P: AsRef<Path>>(base_path: P, pid: Pid) -> Result<LockedDirectory, StorageError> {
-        let pid_str = pid.to_string();
+        let pid_str = format!("{pid}\n");
         let pid_file = base_path.as_ref().join(LockedDirectory::LOCKFILE_NAME);
         let mut guard = if pid_file.exists() {
             // we set create(true) for both branches, to avoid concurrency issues when two

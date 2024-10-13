@@ -14,7 +14,7 @@ fn test_pidlock_lifecycle() {
     let mut file = File::open(&pidfile_path).unwrap();
     let mut contents = String::new();
     file.read_to_string(&mut contents).unwrap();
-    assert_eq!(contents, format!("{}", std::process::id()));
+    assert_eq!(contents, format!("{}\n", std::process::id()));
 
     drop(pidfile);
     assert!(!pidfile_path.exists());
