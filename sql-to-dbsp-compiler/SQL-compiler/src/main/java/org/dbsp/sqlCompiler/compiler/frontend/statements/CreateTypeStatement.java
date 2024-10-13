@@ -12,9 +12,9 @@ public class CreateTypeStatement extends FrontEndStatement {
     // from the createType field.
     public final RelDataType relDataType;
 
-    public CreateTypeStatement(CalciteCompiler.ParsedStatement node, String statement,
+    public CreateTypeStatement(CalciteCompiler.ParsedStatement node,
                                SqlCreateType createType, String typeName, RelDataType relDataType) {
-        super(node, statement);
+        super(node);
         this.createType = createType;
         this.typeName = typeName;
         this.relDataType = relDataType;

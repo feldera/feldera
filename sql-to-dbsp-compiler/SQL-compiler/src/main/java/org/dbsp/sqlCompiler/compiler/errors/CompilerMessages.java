@@ -19,25 +19,28 @@ public class CompilerMessages {
     public class Error implements IHasSourcePositionRange {
         public final SourcePositionRange range;
         public final boolean warning;
+        public final boolean continued;
         public final String errorType;
         public final String message;
 
-        protected Error(IHasSourcePositionRange range, boolean warning, String errorType, String message) {
+        protected Error(IHasSourcePositionRange range, boolean warning, boolean continuation,
+                        String errorType, String message) {
             this.range = range.getPositionRange();
             this.warning = warning;
             this.errorType = errorType;
             this.message = message;
+            this.continued = continuation;
         }
 
         Error(SqlParseException e) {
-            this(new SourcePositionRange(e.getPos()), false, "Error parsing SQL", e.getMessage());
+            this(new SourcePositionRange(e.getPos()), false, false, "Error parsing SQL", e.getMessage());
         }
 
         Error(CalciteContextException e) {
             this(new SourcePositionRange(
                     new SourcePosition(e.getPosLine(), e.getPosColumn()),
                     new SourcePosition(e.getEndPosLine(), e.getEndPosColumn())),
-            false, "Error in SQL statement",
+            false, false, "Error in SQL statement",
                 (e.getCause() != null) ? e.getCause().getMessage() :
                         (e.getMessage() != null) ? e.getMessage() : "");
         }
@@ -50,35 +53,39 @@ public class CompilerMessages {
         }
 
         Error(Throwable e) {
-            this(SourcePositionRange.INVALID, false,
+            this(SourcePositionRange.INVALID, false, false,
                     "This is a bug in the compiler (please report it to the developers)",
                     e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName());
         }
 
         Error(BaseCompilerException e) {
-            this(e.getPositionRange(), false, e.getErrorKind(), e.getMessage());
+            this(e.getPositionRange(), false, false, e.getErrorKind(), e.getMessage());
         }
 
         public void format(SourceFileContents contents, StringBuilder output) {
             if (this.range.isValid()) {
                 String sourceFile = contents.getSourceFileName(this.range.start);
-                output.append(sourceFile)
-                        .append(": ")
-                        .append(this.errorType)
-                        .append(SourceFileContents.newline());
+                if (!this.continued) {
+                    output.append(sourceFile)
+                            .append(": ")
+                            .append(this.errorType)
+                            .append(SourceFileContents.newline());
+                }
                 output.append(sourceFile)
                         .append(":")
                         .append(this.range.start)
                         .append(": ");
             }
-            if (this.warning)
-                output.append("warning:");
-            else
-                output.append("error:");
-            output.append(" ")
-                    .append(this.errorType)
-                    .append(": ")
-                    .append(this.message)
+            if (!this.continued) {
+                if (this.warning)
+                    output.append("warning:");
+                else
+                    output.append("error:");
+                output.append(" ")
+                        .append(this.errorType)
+                        .append(": ");
+            }
+            output.append(this.message)
                     .append(SourceFileContents.newline());
             output.append(contents.getFragment(this.range, true));
         }
@@ -131,9 +138,9 @@ public class CompilerMessages {
         }
     }
 
-    public void reportProblem(IHasSourcePositionRange range, boolean warning,
+    public void reportProblem(IHasSourcePositionRange range, boolean warning, boolean continuation,
                               String errorType, String message) {
-        Error msg = new Error(range, warning, errorType, message);
+        Error msg = new Error(range, warning, continuation, errorType, message);
         this.reportError(msg);
     }
 

@@ -127,7 +127,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
                     let s1: stream<WSet<Tup1<b>>> = s0.map((|t_1: &Tup6<i32, d, b, s, i32?, d?>| Tup1::new(((*t_1).2), )));
                     // CREATE VIEW `v` AS
                     // SELECT `t`.`col3`
-                    // FROM `t`
+                    // FROM `schema`.`t` AS `t`
                     let s2: stream<WSet<Tup1<b>>> = s1;
                 }
                 """;

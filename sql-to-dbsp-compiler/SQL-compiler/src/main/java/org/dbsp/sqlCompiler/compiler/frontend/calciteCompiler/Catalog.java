@@ -68,7 +68,7 @@ public class Catalog extends AbstractSchema {
                     Utilities.singleQuote(name) + " already defined");
             FrontEndStatement previous = this.definition.get(name);
             reporter.reportError(previous.getPosition(), "Duplicate declaration",
-                    "Location of previous definition");
+                    "Location of previous definition", true);
             return false;
         }
         this.definition.put(name, statement);

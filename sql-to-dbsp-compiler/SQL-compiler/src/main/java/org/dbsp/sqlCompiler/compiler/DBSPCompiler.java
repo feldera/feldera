@@ -221,15 +221,16 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
     /**
      * Report an error or warning during compilation.
      * @param range      Position in source where error is located.
+     * @param continuation  If true, this error message is the first part of a multi-line report.
      * @param warning    True if this is a warning.
      * @param errorType  A short string that categorizes the error type.
      * @param message    Error message.
      */
-    public void reportProblem(SourcePositionRange range, boolean warning,
+    public void reportProblem(SourcePositionRange range, boolean warning, boolean continuation,
                               String errorType, String message) {
         if (warning)
             this.hasWarnings = true;
-        this.messages.reportProblem(range, warning, errorType, message);
+        this.messages.reportProblem(range, warning, continuation, errorType, message);
         if (!warning && this.options.languageOptions.throwOnError) {
             System.err.println(this.messages);
             throw new CompilationError("Error during compilation");
@@ -524,6 +525,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
                 currentView = null;
             }
 
+            this.frontend.endCompilation(this.compiler());
             this.circuit = this.midend.getFinalCircuit().seal("parsed");
             if (this.getDebugLevel() > 2) {
                 ToDotVisitor.toDot(this, "initial.png",

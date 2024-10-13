@@ -50,10 +50,10 @@ public class CreateViewStatement extends CreateRelationStatement {
     public static final String EMIT_FINAL = "emit_final";
     public static final int NO_COLUMN = -1;
 
-    public CreateViewStatement(CalciteCompiler.ParsedStatement node, String statement, String tableName,
+    public CreateViewStatement(CalciteCompiler.ParsedStatement node, String tableName,
                                boolean nameIsQuoted, List<RelColumnMetadata> columns, SqlCreateView createView,
                                RelRoot compiled, @Nullable PropertyList properties) {
-        super(node, statement, tableName, nameIsQuoted, columns, properties);
+        super(node, tableName, nameIsQuoted, columns, properties);
         this.viewKind = createView.viewKind;
         this.createView = createView;
         this.compiled = compiled;

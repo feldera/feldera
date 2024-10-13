@@ -2911,7 +2911,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             this.compiler.reportError(stat.getPosition(), "Duplicate",
                     "Lateness for " + vcm.viewName + "." + vcm.columnName + " already declared");
             this.compiler.reportError(map.get(vcm.columnName).getNode().getPositionRange(), "Duplicate",
-                    "Location of the previous declaration");
+                    "Location of the previous declaration", true);
         } else {
             map.put(vcm.columnName, vcm);
         }

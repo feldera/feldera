@@ -23,12 +23,15 @@
 
 package org.dbsp.sqlCompiler.compiler.frontend.statements;
 
+import org.apache.calcite.rel.type.RelDataType;
+import org.apache.calcite.rel.type.RelRecordType;
 import org.apache.calcite.schema.impl.AbstractTable;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.RelColumnMetadata;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.PropertyList;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlFragment;
+import org.dbsp.util.Linq;
 
 import javax.annotation.Nullable;
 import java.util.List;
@@ -42,11 +45,11 @@ public abstract class CreateRelationStatement
     public final List<RelColumnMetadata> columns;
     @Nullable final PropertyList properties;
 
-    protected CreateRelationStatement(CalciteCompiler.ParsedStatement node, String statement, String relationName,
+    protected CreateRelationStatement(CalciteCompiler.ParsedStatement node, String relationName,
                                       boolean nameIsQuoted,
                                       List<RelColumnMetadata> columns,
                                       @Nullable PropertyList properties) {
-        super(node, statement);
+        super(node);
         this.nameIsQuoted = nameIsQuoted;
         this.relationName = relationName;
         this.columns = columns;
@@ -85,10 +88,14 @@ public abstract class CreateRelationStatement
             builder.append(",");
         }
 
-        return "CreateRelationStatement{" +
+        return this.getClass().getSimpleName() + "{" +
                 "tableName='" + this.relationName + '\'' +
                 ", columns=" + builder +
                 '}';
+    }
+
+    public RelDataType getRowType() {
+        return new RelRecordType(Linq.map(this.columns, c -> c.field));
     }
 
     @Override
