@@ -259,7 +259,9 @@ public class TableParser {
                 case 16 -> new DBSPI16Literal(Short.parseShort(trimmed), fieldType.mayBeNull);
                 case 32 -> new DBSPI32Literal(Integer.parseInt(trimmed), fieldType.mayBeNull);
                 case 64 -> new DBSPI64Literal(Long.parseLong(trimmed), fieldType.mayBeNull);
-                default -> throw new UnimplementedException(intType);
+                default -> throw new UnimplementedException(
+                        "Support for SQL integer type of size " + intType.getWidth() +
+                        " not yet implemented", intType);
             };
         } else if (fieldType.is(DBSPTypeMillisInterval.class)) {
             long value = shortIntervalToMilliseconds(trimmed);
@@ -320,7 +322,8 @@ public class TableParser {
                 result = new DBSPBinaryLiteral(CalciteObject.EMPTY, fieldType, bytes);
             }
         } else {
-            throw new UnimplementedException(fieldType);
+            throw new UnimplementedException("Support for parsing fields of type " + fieldType + " not yet implemented",
+                    fieldType);
         }
         return result;
     }

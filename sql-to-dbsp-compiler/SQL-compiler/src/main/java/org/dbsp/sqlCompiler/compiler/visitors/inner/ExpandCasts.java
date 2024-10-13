@@ -41,7 +41,7 @@ public class ExpandCasts extends InnerRewriteVisitor {
     }
 
     @Nullable DBSPExpression convertToVariant(DBSPExpression source, boolean mayBeNull) {
-        DBSPExpression expression = source;
+        DBSPExpression expression;
         if (source.type.is(DBSPTypeTuple.class)) {
             // Convert a tuple to a VARIANT MAP indexed by the field names
             DBSPTypeTuple tuple = source.getType().to(DBSPTypeTuple.class);

@@ -40,28 +40,32 @@ public class UnimplementedException
     @Nullable
     public final IDBSPNode dbspNode;
 
-    public static final String kind = "Not yet implemented";
+    public static final String KIND = "Not yet implemented";
+    public static final String SUGGEST = "You can suggest support for this feature by filing an issue at https://github.com/feldera/feldera/issues";
+
+    static String makeMessage(String message) {
+        if (!message.contains("feldera/issues"))
+            return message + "\n" + SUGGEST;
+        else return message;
+    }
 
     protected UnimplementedException(String message, @Nullable IDBSPNode node, CalciteObject object) {
-        super(message, object);
+        super(makeMessage(message), object);
         this.dbspNode = node;
     }
 
+    public UnimplementedException(String message, int issue, CalciteObject object) {
+        this(makeMessage(message + System.lineSeparator() +
+                "This is tracked by issue https://github.com/feldera/feldera/issues/" +
+                issue + System.lineSeparator()), object);
+    }
+
     public UnimplementedException() {
-        this(kind, null, CalciteObject.EMPTY);
+        this(KIND, null, CalciteObject.EMPTY);
     }
 
     public UnimplementedException(String message) {
         this(message, null, CalciteObject.EMPTY);
-    }
-
-    public UnimplementedException(IDBSPNode node) {
-        this(node.getClass().getSimpleName() + ":" + node,
-                node, CalciteObject.EMPTY);
-    }
-
-    public UnimplementedException(CalciteObject object) {
-        this(object.toString(), null, object);
     }
 
     public UnimplementedException(String message, IDBSPNode node) {
@@ -75,18 +79,18 @@ public class UnimplementedException
     }
 
     public UnimplementedException(IDBSPNode node, Throwable cause) {
-        super(cause.getMessage()
+        super(makeMessage(cause.getMessage()
                         + System.lineSeparator()
-                        + node
-                , CalciteObject.EMPTY, cause);
+                        + node)
+                , node.getNode(), cause);
         this.dbspNode = node;
     }
 
     public UnimplementedException(CalciteObject node, Throwable cause) {
-        super(cause.getMessage()
+        super(makeMessage(cause.getMessage()
                         + System.lineSeparator()
-                        + node
-                , CalciteObject.EMPTY, cause);
+                        + node)
+                , node, cause);
         this.dbspNode = null;
     }
 
@@ -99,6 +103,6 @@ public class UnimplementedException
 
     @Override
     public String getErrorKind() {
-        return kind;
+        return KIND;
     }
 }

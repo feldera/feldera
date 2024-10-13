@@ -23,7 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.expression.literal;
 
-import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
+import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -64,7 +64,7 @@ public abstract class DBSPLiteral extends DBSPExpression implements ISameValue {
         if (type.is(DBSPTypeInteger.class)) {
             DBSPTypeInteger it = type.to(DBSPTypeInteger.class);
             if (!it.signed)
-                throw new UnimplementedException("Null of type ", type);
+                throw new InternalCompilerError("Null of unsigned type ", type);
             switch (it.getWidth()) {
                 case 8:
                     return new DBSPI8Literal();
@@ -110,7 +110,7 @@ public abstract class DBSPLiteral extends DBSPExpression implements ISameValue {
         } else if (type.is(DBSPTypeVariant.class)) {
             return new DBSPVariantLiteral(null, type);
         }
-        throw new UnimplementedException(type);
+        throw new InternalCompilerError("Unexpected type for NULL literal", type);
     }
 
     public String wrapSome(String value) {

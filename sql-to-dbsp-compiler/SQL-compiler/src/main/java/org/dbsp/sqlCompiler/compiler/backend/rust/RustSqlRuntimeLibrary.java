@@ -241,13 +241,15 @@ public class RustSqlRuntimeLibrary {
             tsuffixr = (rtype == null) ? "" : rtype.to(DBSPTypeBaseType.class).shortName();
         }
         if (map == null)
-            throw new UnimplementedException(opcode.toString());
+            throw new UnimplementedException("Rust implementation for " +
+                    Utilities.singleQuote(opcode.toString()) + " not found", node);
         for (String k: map.keySet()) {
             DBSPOpcode inMap = map.get(k);
             if (opcode.equals(inMap)) {
                 return k + "_" + tsuffixl + suffixl + "_" + tsuffixr + suffixr + suffixReturn;
             }
         }
-        throw new UnimplementedException("Could not find `" + opcode + "` for type " + ltype);
+        throw new UnimplementedException("Rust implementation for " +
+                Utilities.singleQuote(opcode.toString()) + "/" + ltype + " not found", node);
     }
 }

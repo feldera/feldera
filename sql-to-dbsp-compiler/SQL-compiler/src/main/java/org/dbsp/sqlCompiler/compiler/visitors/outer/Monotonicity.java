@@ -663,7 +663,8 @@ public class Monotonicity extends CircuitVisitor {
         } else if (type.is(DBSPTypeRef.class)) {
             return makeNoExpression(type.ref()).borrow();
         } else {
-            throw new UnimplementedException(type.getNode());
+            throw new InternalCompilerError("Monotonicity information for type " + type.asSqlString(),
+                    type.getNode());
         }
     }
 

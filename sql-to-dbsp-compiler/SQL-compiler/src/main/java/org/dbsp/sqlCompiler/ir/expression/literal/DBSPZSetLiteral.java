@@ -148,7 +148,7 @@ public final class DBSPZSetLiteral extends DBSPLiteral
             }
             return tuple.makeTuple(fields);
         } else {
-            throw new UnimplementedException();
+            throw new InternalCompilerError("Casting expressions of type " + type);
         }
     }
 

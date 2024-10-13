@@ -346,6 +346,11 @@ public class CalciteToDBSPCompiler extends RelVisitor
         return new DBSPAggregate(obj, rowVar, implementations);
     }
 
+    UnimplementedException decorrelateError(CalciteObject node) {
+        return new UnimplementedException(
+                "It looks like the compiler could not decorrelate this query.", 2555, node);
+    }
+
     void visitCorrelate(LogicalCorrelate correlate) {
         // We decorrelate queries using Calcite's optimizer.
         // So we assume that the only correlated queries we receive
@@ -371,7 +376,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
         CalciteObject node = CalciteObject.create(correlate);
         DBSPTypeTuple type = this.convertType(correlate.getRowType(), false).to(DBSPTypeTuple.class);
         if (correlate.getJoinType().isOuterJoin())
-            throw new UnimplementedException(node);
+            throw this.decorrelateError(node);
+
         this.visit(correlate.getLeft(), 0, correlate);
         DBSPOperator left = this.getInputAs(correlate.getLeft(), true);
         DBSPTypeTuple leftElementType = left.getOutputZSetElementType().to(DBSPTypeTuple.class);
@@ -383,13 +389,13 @@ public class CalciteToDBSPCompiler extends RelVisitor
             correlateRight = rightProject.getInput(0);
         }
         if (!(correlateRight instanceof Uncollect uncollect))
-            throw new UnimplementedException(node);
+            throw this.decorrelateError(node);
         CalciteObject uncollectNode = CalciteObject.create(uncollect);
         RelNode uncollectInput = uncollect.getInput();
         if (!(uncollectInput instanceof LogicalProject project))
-            throw new UnimplementedException(node);
+            throw this.decorrelateError(node);
         if (project.getProjects().size() != 1)
-            throw new UnimplementedException(node);
+            throw this.decorrelateError(node);
         RexNode projection = project.getProjects().get(0);
         DBSPVariablePath dataVar = new DBSPVariablePath(leftElementType.ref());
         ExpressionCompiler eComp = new ExpressionCompiler(correlate, dataVar, this.compiler);
@@ -534,22 +540,22 @@ public class CalciteToDBSPCompiler extends RelVisitor
         this.assignOperator(scan, hop);
     }
 
-    void visitTableFunction(LogicalTableFunctionScan scan) {
-        CalciteObject node = CalciteObject.create(scan);
-        RexNode operation = scan.getCall();
+    void visitTableFunction(LogicalTableFunctionScan tf) {
+        CalciteObject node = CalciteObject.create(tf);
+        RexNode operation = tf.getCall();
         assert operation instanceof RexCall;
         RexCall call = (RexCall) operation;
         switch (call.getOperator().getName()) {
             case "HOP":
-                this.compileHop(scan, call);
+                this.compileHop(tf, call);
                 return;
             case "TUMBLE":
-                this.compileTumble(scan, call);
+                this.compileTumble(tf, call);
                 return;
             default:
                 break;
         }
-        throw new UnimplementedException(node);
+        throw new UnimplementedException("Table function " + tf + " not yet implemented", node);
     }
 
     void visitUncollect(Uncollect uncollect) {
@@ -999,7 +1005,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         CalciteObject node = CalciteObject.create(join);
         JoinRelType joinType = join.getJoinType();
         if (joinType == JoinRelType.ANTI || joinType == JoinRelType.SEMI)
-            throw new UnimplementedException(node);
+            throw new UnimplementedException("JOIN of type " + joinType + " not yet implemented", node);
 
         DBSPTypeTuple resultType = this.convertType(join.getRowType(), false).to(DBSPTypeTuple.class);
         if (join.getInputs().size() != 2)
@@ -1260,9 +1266,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
         // This shares a lot of code with the LogicalJoin
         CalciteObject node = CalciteObject.create(join);
         JoinRelType joinType = join.getJoinType();
-        if (// joinType != JoinRelType.ASOF &&  // TODO
-                joinType != JoinRelType.LEFT_ASOF)
-            throw new UnimplementedException(node);
+        if (joinType != JoinRelType.LEFT_ASOF)
+            throw new UnimplementedException("Currently only LEFT ASOF joins are supported.", 2212, node);
 
         DBSPTypeTuple resultType = this.convertType(join.getRowType(), false).to(DBSPTypeTuple.class);
         if (join.getInputs().size() != 2)
@@ -1407,7 +1412,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         if (comparison != SqlKind.GREATER_THAN_OR_EQUAL) {
             // Not yet supported by DBSP
             throw new UnimplementedException(
-                    "Currently the only MATCH_CONDITION comparison supported is '>='", node);
+                    "Currently the only MATCH_CONDITION comparison supported by ASOF joins is '>='", 2212, node);
         }
         comparator = new DBSPDirectComparatorExpression(node, comparator, ascending);
 
@@ -1506,7 +1511,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 break;
             }
             default:
-                throw new UnimplementedException(node);
+                throw new UnimplementedException("Aggregation to " + collect.getCollectionType() +
+                        " not yet implemented", node);
         }
         DBSPAggregate aggregate = new DBSPAggregate(node, row, Linq.list(agg));
         DBSPOperator aggregateOperator = new DBSPAggregateOperator(
@@ -1653,14 +1659,17 @@ public class CalciteToDBSPCompiler extends RelVisitor
         return index;
     }
 
-    static DBSPComparatorExpression generateComparator(Window.Group group, DBSPComparatorExpression comparator) {
-        for (RelFieldCollation collation : group.orderKeys.getFieldCollations()) {
+    static DBSPComparatorExpression generateComparator(
+            CalciteObject node, List<RelFieldCollation> collations, DBSPType comparedFields) {
+        DBSPComparatorExpression comparator = new DBSPNoComparatorExpression(node, comparedFields);
+        for (RelFieldCollation collation : collations) {
             int field = collation.getFieldIndex();
             RelFieldCollation.Direction direction = collation.getDirection();
             boolean ascending = switch (direction) {
                 case ASCENDING -> true;
                 case DESCENDING -> false;
-                default -> throw new UnimplementedException(comparator.getNode());
+                default -> throw new UnimplementedException("Sort direction " + direction + " not yet implemented",
+                        comparator.getNode());
             };
             comparator = comparator.field(field, ascending);
         }
@@ -1673,7 +1682,9 @@ public class CalciteToDBSPCompiler extends RelVisitor
             case RANK -> RANK;
             case DENSE_RANK -> DENSE_RANK;
             case ROW_NUMBER -> ROW_NUMBER;
-            default -> throw new UnimplementedException("Ranking function " + kind + " not yet implemented", node);
+            default -> throw new UnimplementedException(
+                    "Ranking function " + kind + " not yet implemented in a WINDOW aggregate",
+                    node);
         };
 
         DBSPOperator index = this.indexWindow(window, group);
@@ -1681,8 +1692,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
         // Generate comparison function for sorting the vector
         RelNode input = window.getInput();
         DBSPType inputRowType = this.convertType(input.getRowType(), false);
-        DBSPComparatorExpression comparator = new DBSPNoComparatorExpression(node, inputRowType);
-        comparator = CalciteToDBSPCompiler.generateComparator(group, comparator);
+        DBSPComparatorExpression comparator = CalciteToDBSPCompiler.generateComparator(
+                node, group.orderKeys.getFieldCollations(), inputRowType);
 
         // The rank must be added at the end of the input tuple (that's how Calcite expects it).
         DBSPVariablePath left = new DBSPVariablePath(new DBSPTypeInteger(
@@ -1875,8 +1886,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
             DBSPVariablePath inputVar = inputRowType.ref().var();
             DBSPExpression row = DBSPTupleExpression.flatten(
                     inputVar.deepCopy().deref().applyClone());
-            DBSPComparatorExpression comparator = new DBSPNoComparatorExpression(node, row.getType());
-            comparator = CalciteToDBSPCompiler.generateComparator(group, comparator);
+            DBSPComparatorExpression comparator = CalciteToDBSPCompiler.generateComparator(
+                    node, group.orderKeys.getFieldCollations(), row.getType());
 
             // Lag argument calls
             List<Integer> operands = lastCall.getArgList();
@@ -1886,7 +1897,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                         amountIndex, window.getRowType().getFieldList().get(amountIndex).getType());
                 DBSPExpression amount = eComp.compile(ri);
                 if (!amount.is(DBSPI32Literal.class)) {
-                    throw new UnimplementedException("LAG/LEAD amount must be a compile-time constant", node);
+                    throw new UnimplementedException("Currently LAG/LEAD amount must be a compile-time constant", 457, node);
                 }
                 assert amount.is(DBSPI32Literal.class);
                 offset *= Objects.requireNonNull(amount.to(DBSPI32Literal.class).value);
@@ -1999,9 +2010,9 @@ public class CalciteToDBSPCompiler extends RelVisitor
             List<RelFieldCollation> orderKeys = this.group.orderKeys.getFieldCollations();
             if (orderKeys.isEmpty())
                 // TODO: this is only true if we have window bounds
-                throw new UnimplementedException("Missing ORDER BY in OVER", node);
+                throw new UnimplementedException("Missing ORDER BY in OVER", 457, node);
             if (orderKeys.size() > 1)
-                throw new UnimplementedException("ORDER BY in OVER requires exactly 1 column", node);
+                throw new UnimplementedException("ORDER BY in OVER requires exactly 1 column", 457, node);
 
             this.collation = orderKeys.get(0);
             this.orderColumnIndex = this.collation.getFieldIndex();
@@ -2015,7 +2026,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             IsNumericType numType = unsignedType.as(IsNumericType.class);
             if (numType == null) {
                 throw new UnimplementedException("Currently windows must use integer values, so "
-                        + unsignedType + " is not legal", node);
+                        + unsignedType + " is not legal", 457, node);
             }
             DBSPExpression numericBound;
             if (bound.isUnbounded())
@@ -2053,9 +2064,9 @@ public class CalciteToDBSPCompiler extends RelVisitor
             List<Integer> partitionKeys = this.group.keys.toList();
             if (orderKeys.isEmpty())
                 // TODO: this is only true if we have window bounds
-                throw new UnimplementedException("Missing ORDER BY in OVER", node);
+                throw new UnimplementedException("Missing ORDER BY in OVER", 457, node);
             if (orderKeys.size() > 1)
-                throw new UnimplementedException("ORDER BY in OVER requires exactly 1 column", node);
+                throw new UnimplementedException("ORDER BY in OVER requires exactly 1 column", 457, node);
 
             DBSPType sortType;
             DBSPType unsignedSortType;
@@ -2080,7 +2091,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                         !sortType.is(DBSPTypeDate.class) &&
                         !sortType.is(DBSPTypeTime.class))
                     throw new UnimplementedException("OVER currently cannot sort on columns with type "
-                            + Utilities.singleQuote(sortType.asSqlString()), node);
+                            + Utilities.singleQuote(sortType.asSqlString()), 457, node);
 
                 // This only works if the order field is unsigned.
                 DBSPExpression orderField = new DBSPUnsignedWrapExpression(
@@ -2266,7 +2277,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         List<GroupAndAggregates> result = new ArrayList<>();
         for (Window.Group group: window.groups) {
             if (group.isRows)
-                throw new UnimplementedException("WINDOW aggregate with ROWS not yet implemented",
+                throw new UnimplementedException("WINDOW aggregate with ROWS not yet implemented", 457,
                         CalciteObject.create(window));
             List<AggregateCall> calls = group.getAggregateCalls(window);
             GroupAndAggregates previous = null;
@@ -2351,7 +2362,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             return;
         }
         if (sort.offset != null)
-            throw new UnimplementedException(node);
+            throw new UnimplementedException("OFFSET in SORT not yet implemented", 172, node);
 
         DBSPExpression limit = null;
         if (sort.fetch != null) {
@@ -2373,8 +2384,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
         this.circuit.addOperator(index);
 
         // Generate comparison function for sorting the vector
-        DBSPComparatorExpression comparator = makeComparator(sort, node, inputRowType);
-
+        DBSPComparatorExpression comparator = generateComparator(
+                node, sort.getCollation().getFieldCollations(), inputRowType);
         if (sort.fetch != null) {
             // TopK operator.
             // Since TopK is always incremental we have to wrap it into a D-I pair
@@ -2447,22 +2458,6 @@ public class CalciteToDBSPCompiler extends RelVisitor
         this.assignOperator(sort, result);
     }
 
-    private static DBSPComparatorExpression makeComparator(
-            LogicalSort sort, CalciteObject node, DBSPType inputRowType) {
-        DBSPComparatorExpression comparator = new DBSPNoComparatorExpression(node, inputRowType);
-        for (RelFieldCollation collation : sort.getCollation().getFieldCollations()) {
-            int field = collation.getFieldIndex();
-            RelFieldCollation.Direction direction = collation.getDirection();
-            boolean ascending = switch (direction) {
-                case ASCENDING -> true;
-                case DESCENDING -> false;
-                default -> throw new UnimplementedException(node);
-            };
-            comparator = comparator.field(field, ascending);
-        }
-        return comparator;
-    }
-
     @Override
     public void visit(
             RelNode node, int ordinal,
@@ -2505,7 +2500,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 this.visitIfMatches(node, LogicalAsofJoin.class, this::visitAsofJoin) ||
                 this.visitIfMatches(node, Collect.class, this::visitCollect);
         if (!success)
-            throw new UnimplementedException(CalciteObject.create(node));
+            throw new UnimplementedException("Calcite operator not yet implemented", CalciteObject.create(node));
     }
 
     InputColumnMetadata convertMetadata(RelColumnMetadata metadata) {
@@ -2659,7 +2654,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
             // the case where all project expressions are "constants".
             result = this.compileConstantProject((LogicalProject) modify.rel);
         } else {
-            throw new UnimplementedException(modify.getCalciteObject());
+            throw new UnimplementedException("CREATE TABLE statement of this form not supported",
+                    modify.getCalciteObject());
         }
         if (!isInsert)
             result = result.negate();
@@ -2803,7 +2799,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             LatenessStatement stat = statement.to(LatenessStatement.class);
             return this.compileLateness(stat);
         }
-        throw new UnimplementedException(statement.getCalciteObject());
+        throw new UnsupportedException(statement.getCalciteObject());
     }
 
     private DBSPZSetLiteral compileConstantProject(LogicalProject project) {
