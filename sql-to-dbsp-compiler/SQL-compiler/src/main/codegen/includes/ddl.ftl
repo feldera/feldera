@@ -296,6 +296,43 @@ SqlCreate SqlCreateExtendedTable(Span s, boolean replace) :
     }
 }
 
+SqlCreate SqlDeclareView(Span s, boolean replace) :
+{
+    final SqlIdentifier id;
+    List<SqlNode> columns = new ArrayList<SqlNode>();
+    Span e;
+}
+{
+   <RECURSIVE> <VIEW> { e = span(); }
+   id = CompoundIdentifier() <LPAREN>
+   ColumnDeclaration(columns)
+   (
+       <COMMA> ColumnDeclaration(columns)
+   )*
+   <RPAREN> {
+        return new SqlDeclareView(s.end(this), replace, id, new SqlNodeList(columns, e.end(this)));
+   }
+}
+
+void ColumnDeclaration(List<SqlNode> list) :
+{
+    final SqlIdentifier id;
+    final SqlDataTypeSpec type;
+    final boolean nullable;
+    Span s;
+}
+{
+    { s = span(); }
+    id = SimpleIdentifier()
+    type = DataType()
+    nullable = NullableOptDefaultTrue()
+    {
+        list.add(SqlDdlNodes.column(s.add(id).end(this), id,
+            type.withNullable(nullable), null, null));
+    }
+}
+
+
 SqlCreate SqlCreateView(Span s, boolean replace) :
 {
     final SqlIdentifier id;
