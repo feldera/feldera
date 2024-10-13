@@ -399,19 +399,9 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
     }
 
     void validateConnectorsProperty(CalciteObject node, SqlFragment key, SqlFragment value) {
-        String keyString = key.getString();
-        try {
-            JsonNode connectors = Utilities.deterministicObjectMapper().readTree(value.getString());
-            if (!connectors.isArray()) {
-                throw new CompilationError(
-                        "Expected an array for " + Utilities.singleQuote(keyString) + "\n" +
-                                node);
-            }
-        } catch (JsonProcessingException ex) {
-            throw new CompilationError(
-                    "Invalid JSON for property " + Utilities.singleQuote(keyString) + "\n" +
-                            ex.getMessage(), node);
-        }
+        // Nothing right now.
+        // This is validated by the pipeline_manager, and it's relatively fast.
+        // Checking that this is legal JSON may make interactive editing of the SQL program annoying.
     }
 
     void validateTableProperty(SqlFragment key, SqlFragment value) {
