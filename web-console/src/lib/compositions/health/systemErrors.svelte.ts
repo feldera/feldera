@@ -12,12 +12,10 @@ import {
 } from './systemErrors'
 
 export const listPipelineErrors = (pipeline: ExtendedPipeline) => {
-  let programErrors = Object.values(
-    extractProgramErrors(() => pipeline)({
-      name: pipeline.name,
-      status: pipeline.programStatus
-    })
-  ).flat(1)
+  let programErrors = extractProgramErrors(() => pipeline)({
+    name: pipeline.name,
+    status: pipeline.programStatus
+  })
   let pipelineErrors = extractPipelineErrors(pipeline)
   return {
     programErrors,

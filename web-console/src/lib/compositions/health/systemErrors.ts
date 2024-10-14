@@ -108,55 +108,59 @@ export const extractInternalCompilationError = <Report>(
   }
 }
 
-export const extractRustCompilerError =
-  <Report>(
-    pipelineName: string,
-    source: string,
-    getReport: (pipelineName: string, message: string) => Report
-  ) =>
-  (stderr: string): SystemError<any, Report> => {
+export const extractRustCompilerError = <Report>(
+  pipelineName: string,
+  source: string,
+  getReport: (pipelineName: string, message: string) => Report
+) => {
+  const matchFileError = (
+    stderr: string,
+    warning: boolean,
+    fileName: string,
+    fileRegex: RegExp,
+    lineOffset: number
+  ) => {
+    const match = stderr.match(fileRegex)
+    if (!match) {
+      return undefined
+    }
+    const startLineNumber = parseInt(match[1]) + lineOffset
+    const startColumn = parseInt(match[2])
+    return {
+      name: `Error compiling ${pipelineName}`,
+      message: stderr, // 'Program compilation error. See details below:\n' + stderr
+      cause: {
+        entityName: pipelineName,
+        tag: 'programError',
+        source:
+          source +
+          `#${fileName}:` +
+          startLineNumber +
+          (startColumn > 0 ? ':' + startColumn.toString() : ''),
+        report: getReport(pipelineName, stderr),
+        body: {
+          startLineNumber: startLineNumber,
+          endLineNumber: startLineNumber,
+          startColumn: startColumn,
+          endColumn: startColumn + 10,
+          message: stderr
+        },
+        warning
+      }
+    }
+  }
+  return (stderr: string): SystemError<any, Report> => {
     const warning = /^warning:/.test(stderr)
-
-    const matchFileError = (fileName: string, fileRegex: RegExp, lineOffset: number) => {
-      const match = stderr.match(fileRegex)
-      if (!match) {
-        return undefined
-      }
-      const startLineNumber = parseInt(match[1]) + lineOffset
-      const startColumn = parseInt(match[2])
-      return {
-        name: `Error compiling ${pipelineName}`,
-        message: stderr, // 'Program compilation error. See details below:\n' + stderr
-        cause: {
-          entityName: pipelineName,
-          tag: 'programError',
-          source:
-            source +
-            `#${fileName}:` +
-            startLineNumber +
-            (startColumn > 0 ? ':' + startColumn.toString() : ''),
-          report: getReport(pipelineName, stderr),
-          body: {
-            startLineNumber: startLineNumber,
-            endLineNumber: startLineNumber,
-            startColumn: startColumn,
-            endColumn: startColumn + 10,
-            message: stderr
-          },
-          warning
-        }
-      }
-    }
     let err: SystemError<any, Report> | undefined
-    err = matchFileError('udf.toml', /\/Cargo\.toml:(\d+):(\d+)/, -10)
+    err = matchFileError(stderr, warning, 'udf.toml', /\/Cargo\.toml:(\d+):(\d+)/, -10)
     if (err) {
       return err
     }
-    err = matchFileError('udf.rs', /\/udf\.rs:(\d+):(\d+)/, 0)
+    err = matchFileError(stderr, warning, 'udf.rs', /\/udf\.rs:(\d+):(\d+)/, 0)
     if (err) {
       return err
     }
-    err = matchFileError('stubs.rs', /\/stubs\.rs:(\d+):(\d+)/, 0)
+    err = matchFileError(stderr, warning, 'stubs.rs', /\/stubs\.rs:(\d+):(\d+)/, 0)
     if (err) {
       return err
     }
@@ -169,10 +173,12 @@ export const extractRustCompilerError =
         tag: 'unrecognizedProgramError',
         source,
         report: getReport(pipelineName, stderr),
-        body: stderr
+        body: stderr,
+        warning
       }
     }
   }
+}
 
 /**
  * @returns Errors associated with source files
@@ -192,8 +198,7 @@ export const extractProgramErrors =
     const result = match(pipeline.status)
       .returnType<SystemError<any, Report>[]>()
       .with({ RustError: P.any }, (e) => {
-        const rustCompilerErrorRegex =
-          /((warning:|^error:|error\[[\w]+\]:)[\s\S]+?)\n(\n|(?=( +Compiling|warning:|error:|error\[[\w]+\]:)))/gm
+        const rustCompilerErrorRegex = /^((warning:(?! `)|error(\[[\w]+\])?:)([\s\S])+?)\n\n/gm
         const rustCompilerMessages: string[] =
           Array.from(e.RustError.matchAll(rustCompilerErrorRegex)).map((match) => match[1]) ?? []
         const rustCompilerErrors = [
@@ -245,14 +250,17 @@ export const extractProgramErrors =
           }))
       )
       .otherwise(() => [])
-    return Object.fromEntries(
-      groupBy(
-        result,
-        (item) =>
-          item.cause.source.match(new RegExp(`#(${pipelineFileNameRegex})`))?.[1] ?? 'program.sql'
-      )
-    )
+    return result
   }
+
+export const programErrorsPerFile = <Report>(errors: SystemError<any, Report>[]) =>
+  Object.fromEntries(
+    groupBy(
+      errors,
+      (item) =>
+        item.cause.source.match(new RegExp(`#(${pipelineFileNameRegex})`))?.[1] ?? 'program.sql'
+    )
+  )
 
 export const pipelineFileNameRegex = '[\\w-_\\.]+'
 
