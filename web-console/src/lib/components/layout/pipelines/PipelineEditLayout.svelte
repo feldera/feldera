@@ -7,7 +7,11 @@
   import InteractionsPanel from '$lib/components/pipelines/editor/InteractionsPanel.svelte'
   import DeploymentStatus from '$lib/components/pipelines/list/DeploymentStatus.svelte'
   import PipelineActions from '$lib/components/pipelines/list/Actions.svelte'
-  import { extractProgramErrors, programErrorReport } from '$lib/compositions/health/systemErrors'
+  import {
+    extractProgramErrors,
+    programErrorReport,
+    programErrorsPerFile
+  } from '$lib/compositions/health/systemErrors'
   import { extractErrorMarkers, felderaCompilerMarkerSource } from '$lib/functions/pipelines/monaco'
   import {
     postPipelineAction,
@@ -50,10 +54,12 @@
   }
 
   const programErrors = $derived(
-    extractProgramErrors(programErrorReport(pipeline.current))({
-      name: pipeline.current.name,
-      status: pipeline.current.programStatus
-    })
+    programErrorsPerFile(
+      extractProgramErrors(programErrorReport(pipeline.current))({
+        name: pipeline.current.name,
+        status: pipeline.current.programStatus
+      })
+    )
   )
 
   let metrics = useAggregatePipelineStats(pipeline, 1000, 61000)
