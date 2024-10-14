@@ -10,19 +10,16 @@ use crate::runner::error::RunnerError;
 use crate::runner::logs_buffer::LogsBuffer;
 use crate::runner::pipeline_executor::{LogMessage, PipelineExecutionDesc, PipelineExecutor};
 use async_trait::async_trait;
-use feldera_types::config::{StorageCacheConfig, StorageConfig};
+use feldera_types::config::{FtConfig, StorageCacheConfig, StorageConfig};
 use log::{debug, error};
 use std::process::Stdio;
 use std::time::Duration;
+use tokio::fs::{remove_dir_all, remove_file};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStderr, ChildStdout, Command};
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
-use tokio::{
-    fs,
-    fs::{create_dir_all, remove_dir_all},
-    select, spawn,
-};
+use tokio::{fs, fs::create_dir_all, select, spawn};
 
 /// Retrieve the binary executable using its URL.
 pub async fn fetch_binary_ref(
@@ -130,6 +127,7 @@ pub struct LocalRunner {
         oneshot::Sender<()>,
         JoinHandle<mpsc::Receiver<mpsc::Sender<LogMessage>>>,
     )>,
+    delete_pipeline_dir_on_shutdown: bool,
 }
 
 impl Drop for LocalRunner {
@@ -301,6 +299,7 @@ impl PipelineExecutor for LocalRunner {
                 log_reject_terminate_sender,
                 log_reject_join_handle,
             )),
+            delete_pipeline_dir_on_shutdown: false,
         }
     }
 
@@ -381,10 +380,21 @@ impl PipelineExecutor for LocalRunner {
 
         debug!("Pipeline config is '{:?}'", ped.deployment_config);
 
-        // Create pipeline directory (delete old directory if exists); write metadata
-        // and config files to it.
+        // Create pipeline directory and write metadata and config files to it.
         let pipeline_dir = self.config.pipeline_dir(pipeline_id);
-        let _ = remove_dir_all(&pipeline_dir).await;
+        let ft = ped.deployment_config.global.fault_tolerance;
+        match ft {
+            None | Some(FtConfig::InitialState) => {
+                let _ = remove_dir_all(&pipeline_dir).await;
+            }
+            Some(FtConfig::LatestCheckpoint) => {
+                // Delete the port file because otherwise an old one can make us
+                // think the new pipeline program is listening on an old port.
+                let port_file_path = self.config.port_file_path(self.pipeline_id);
+                let _ = remove_file(port_file_path).await;
+            }
+        };
+        self.delete_pipeline_dir_on_shutdown = ft.is_none();
         create_dir_all(&pipeline_dir).await.map_err(|e| {
             ManagerError::io_error(
                 format!("creating pipeline directory '{}'", pipeline_dir.display()),
@@ -498,14 +508,16 @@ impl PipelineExecutor for LocalRunner {
         self.kill_pipeline().await;
 
         // Remove the pipeline directory
-        match remove_dir_all(self.config.pipeline_dir(self.pipeline_id)).await {
-            Ok(_) => (),
-            Err(e) => {
-                log::warn!(
-                    "Failed to delete pipeline directory for pipeline {}: {}",
-                    self.pipeline_id,
-                    e
-                );
+        if self.delete_pipeline_dir_on_shutdown {
+            match remove_dir_all(self.config.pipeline_dir(self.pipeline_id)).await {
+                Ok(_) => (),
+                Err(e) => {
+                    log::warn!(
+                        "Failed to delete pipeline directory for pipeline {}: {}",
+                        self.pipeline_id,
+                        e
+                    );
+                }
             }
         }
 

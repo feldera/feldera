@@ -131,6 +131,9 @@ pub enum ConfigError {
         endpoint_name: String,
         error: String,
     },
+
+    FtRequiresStorage,
+    FtRequiresFtInput,
 }
 
 impl StdError for ConfigError {}
@@ -159,6 +162,8 @@ impl DetailedError for ConfigError {
             Self::InvalidParserConfig { .. } => Cow::from("InvalidParserConfig"),
             Self::InvalidTransportConfig { .. } => Cow::from("InvalidTransportConfig"),
             Self::InvalidOutputBufferConfig { .. } => Cow::from("InvalidOutputBufferConfig"),
+            Self::FtRequiresStorage => Cow::from("FtRequiresStorage"),
+            Self::FtRequiresFtInput => Cow::from("FtWithNonFtInput"),
         }
     }
 }
@@ -306,6 +311,8 @@ impl Display for ConfigError {
                     "invalid output buffer configuration for endpoint '{endpoint_name}': {error}"
                 )
             }
+            ConfigError::FtRequiresStorage => write!(f, "Fault tolerance is configured, which requires storage, but storage is not enabled"),
+            ConfigError::FtRequiresFtInput => write!(f, "Fault tolerance is configured, but it cannot be enabled because the pipeline has at least one non-fault-tolerant input adapter"),
         }
     }
 }
