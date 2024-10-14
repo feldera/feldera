@@ -15,6 +15,7 @@
   import { parseUTF8AsTextLines } from '$lib/functions/pipelines/changeStream'
   import { isPipelineIdle } from '$lib/functions/pipelines/status'
   import { pipelineLogsStream, type ExtendedPipeline } from '$lib/services/pipelineManager'
+  import { untrack } from 'svelte'
 
   let { pipeline }: { pipeline: { current: ExtendedPipeline } } = $props()
   let pipelineName = $derived(pipeline.current.name)
@@ -28,7 +29,8 @@
     }
   })
   $effect(() => {
-    queueMicrotask(() => {
+    pipelineName // Reactive dependency only needed when closing the previous stream when switching pipelines
+    untrack(() => {
       if ('open' in streams[pipelineName].stream) {
         return
       }
@@ -37,6 +39,16 @@
       }
       startStream(pipelineName)
     })
+    {
+      // Close log stream when leaving log tab, or switching to another pipeline
+      let oldPipelineName = pipelineName
+      return () => {
+        if ('open' in streams[oldPipelineName].stream) {
+          streams[oldPipelineName].stream.stop()
+          return
+        }
+      }
+    }
   })
 
   const startStream = (pipelineName: string) => {
@@ -74,25 +86,6 @@
     }
     startStream(pipelineName)
   }
-
-  // Start a stream unless one is already open
-  // const tryStartStream = (pipelineName: string) => {
-  //   if ('open' in streams[pipelineName].stream) {
-  //     return
-  //   }
-  //   streams[pipelineName] = {
-  //     stream: { closed: {} },
-  //     rows: streams[pipelineName].rows
-  //   }
-  //   startStream(pipelineName)
-  // }
-
-  // $effect(() => {
-  //   pipelineName
-  //   queueMicrotask(() => {
-  //     tryStartStream(pipelineName)
-  //   })
-  // })
 
   let previousStatus = $state(pipeline.current.status)
   $effect(() => {

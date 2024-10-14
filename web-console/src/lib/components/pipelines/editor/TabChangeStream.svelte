@@ -98,6 +98,7 @@
   import { parseUTF8JSON } from '$lib/functions/pipelines/changeStream'
   import JSONbig from 'true-json-bigint'
   import { groupBy } from '$lib/functions/common/array'
+  import { untrack } from 'svelte'
 
   let { pipeline }: { pipeline: { current: ExtendedPipeline } } = $props()
 
@@ -127,7 +128,7 @@
 
   $effect(() => {
     void pipeline.current
-    setTimeout(() => reloadSchema(pipelineName, pipeline.current))
+    untrack(() => reloadSchema(pipelineName, pipeline.current))
   })
 
   let inputs = $derived(
