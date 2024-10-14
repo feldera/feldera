@@ -42,6 +42,7 @@ use dbsp::{
     profile::GraphProfile,
     DBSPHandle,
 };
+use feldera_types::config::FtConfig;
 use log::{debug, error, info, trace};
 use metadata::Checkpoint;
 use metadata::StepMetadata;
@@ -1029,9 +1030,14 @@ struct ControllerInit {
 
 impl ControllerInit {
     fn new(config: PipelineConfig) -> Result<Self, ControllerError> {
-        let Some(path) = config.storage_config.as_ref().map(|storage| storage.path()) else {
-            info!("disabling fault tolerance because storage is not enabled");
+        let Some(ft) = config.global.fault_tolerance else {
+            info!("fault tolerance is disabled in configuration");
             return Self::without_checkpoint(config);
+        };
+        let Some(path) = config.storage_config.as_ref().map(|storage| storage.path()) else {
+            return Err(ControllerError::Config {
+                config_error: ConfigError::FtRequiresStorage,
+            });
         };
 
         fn startup_io_error(error: IoError) -> ControllerError {
@@ -1039,7 +1045,9 @@ impl ControllerInit {
         }
         let state_path = path.join("state.json");
         let steps_path = path.join("steps.bin");
-        if fs::exists(&state_path).map_err(startup_io_error)? {
+
+        // If we're allowed to resume from a checkpoint and one exists, use it.
+        if ft == FtConfig::LatestCheckpoint && fs::exists(&state_path).map_err(startup_io_error)? {
             // Open the existing checkpoint.
             info!(
                 "{}: initializing fault tolerance from saved state",
@@ -1066,9 +1074,8 @@ impl ControllerInit {
         } else if config.inputs.values().all(|config| {
             input_transport_config_is_fault_tolerant(&config.connector_config.transport)
         }) {
-            // We don't have an existing checkpoint but this pipeline
-            // can be fault tolerant, so start one and create a new
-            // steps file for it.
+            let _ = fs::remove_file(&state_path);
+            let _ = fs::remove_dir(&steps_path);
             info!(
                 "{}: creating new fault tolerant pipeline",
                 state_path.display()
@@ -1085,10 +1092,9 @@ impl ControllerInit {
             let step_rw = StepRw::create(&steps_path)?;
             Self::with_checkpoint(checkpoint, state_path, step_rw)
         } else {
-            // We don't have an existing check point and this pipeline
-            // cannot be fault-tolerant.
-            info!("{}: disabling fault tolerance (saved state file does not exist and circuit has at least one non-fault-tolerant input)", path.display());
-            Self::without_checkpoint(config)
+            Err(ControllerError::Config {
+                config_error: ConfigError::FtRequiresFtInput,
+            })
         }
     }
     fn without_checkpoint(pipeline_config: PipelineConfig) -> Result<Self, ControllerError> {
@@ -2529,6 +2535,7 @@ workers: 4
 storage_config:
     path: {storage_dir:?}
 storage: true
+fault_tolerance: latest_checkpoint
 clock_resolution_usecs: null
 inputs:
     test_input1:
