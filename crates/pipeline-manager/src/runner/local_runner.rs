@@ -9,20 +9,17 @@ use crate::runner::error::RunnerError;
 use crate::runner::logs_buffer::LogsBuffer;
 use crate::runner::pipeline_executor::{LogMessage, PipelineExecutor};
 use async_trait::async_trait;
-use feldera_types::config::{PipelineConfig, StorageCacheConfig, StorageConfig};
+use feldera_types::config::{FtConfig, PipelineConfig, StorageCacheConfig, StorageConfig};
 use log::{debug, error, info};
 use std::path::Path;
 use std::process::Stdio;
 use std::time::Duration;
+use tokio::fs::{remove_dir_all, remove_file};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStderr, ChildStdout, Command};
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
-use tokio::{
-    fs,
-    fs::{create_dir_all, remove_dir_all},
-    select, spawn,
-};
+use tokio::{fs, fs::create_dir_all, select, spawn};
 
 /// Retrieve the binary executable using its URL.
 pub async fn fetch_binary_ref(
@@ -130,6 +127,7 @@ pub struct LocalRunner {
         oneshot::Sender<()>,
         JoinHandle<mpsc::Receiver<mpsc::Sender<LogMessage>>>,
     )>,
+    delete_pipeline_dir_on_shutdown: bool,
 }
 
 impl Drop for LocalRunner {
@@ -305,6 +303,7 @@ impl PipelineExecutor for LocalRunner {
                 log_reject_terminate_sender,
                 log_reject_join_handle,
             )),
+            delete_pipeline_dir_on_shutdown: false,
         }
     }
 
@@ -354,7 +353,15 @@ impl PipelineExecutor for LocalRunner {
 
         // (Re-)create pipeline storage directory
         if let Some(storage_config) = &deployment_config.storage_config {
-            let _ = remove_dir_all(&storage_config.path).await;
+            let ft = &deployment_config.global.fault_tolerance;
+            match ft {
+                None | Some(FtConfig::InitialState) => {
+                    let _ = remove_dir_all(&storage_config.path).await;
+                }
+                Some(FtConfig::LatestCheckpoint) => (),
+            };
+            self.delete_pipeline_dir_on_shutdown = ft.is_none();
+
             create_dir_all(&storage_config.path).await.map_err(|e| {
                 ManagerError::io_error(
                     format!(
@@ -381,6 +388,10 @@ impl PipelineExecutor for LocalRunner {
                     e,
                 )
             })?;
+
+        // Delete port file (which will only exist if we are restarting from a
+        // checkpoint).
+        let _ = remove_file(&self.config.port_file_path(self.pipeline_id)).await;
 
         // Retrieve and store executable in pipeline working directory
         let fetched_executable = fetch_binary_ref(
@@ -515,14 +526,16 @@ impl PipelineExecutor for LocalRunner {
         }
 
         // Remove the pipeline working directory
-        match remove_dir_all(self.config.pipeline_dir(self.pipeline_id)).await {
-            Ok(_) => (),
-            Err(e) => {
-                log::warn!(
-                    "Failed to delete pipeline working directory for pipeline {}: {}",
-                    self.pipeline_id,
-                    e
-                );
+        if self.delete_pipeline_dir_on_shutdown {
+            match remove_dir_all(self.config.pipeline_dir(self.pipeline_id)).await {
+                Ok(_) => (),
+                Err(e) => {
+                    log::warn!(
+                        "Failed to delete pipeline working directory for pipeline {}: {}",
+                        self.pipeline_id,
+                        e
+                    );
+                }
             }
         }
 

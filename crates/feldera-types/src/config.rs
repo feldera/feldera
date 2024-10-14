@@ -138,17 +138,23 @@ pub struct RuntimeConfig {
     /// Number of DBSP worker threads.
     pub workers: u16,
 
-    /// Should persistent storage be enabled for this pipeline?
+    /// Should storage be enabled for this pipeline?
     ///
-    /// - If `false` (default), the pipeline's state is kept in in-memory data-structures.
-    ///   This is useful if the pipeline is ephemeral and does not need to be recovered
-    ///   after a restart. The pipeline will most likely run faster since it does not
-    ///   need to read from, or write to disk
+    /// - If `false` (default), the pipeline's state is kept in in-memory
+    ///   data-structures.  This is useful if the pipeline's state will fit in
+    ///   memory and if the pipeline is ephemeral and does not need to be
+    ///   recovered after a restart. The pipeline will most likely run faster
+    ///   since it does not need to access storage.
     ///
-    /// - If `true`, the pipeline state is stored in the specified location,
-    ///   is persisted across restarts, and can be checkpointed and recovered.
+    /// - If `true`, the pipeline's state is kept on storage.  This allows the
+    ///   pipeline to work with state that will not fit into memory. It also
+    ///   allows the state to be checkpointed and recovered across restarts.
     ///   This feature is currently experimental.
     pub storage: bool,
+
+    /// Configures fault tolerance with the specified start up behavior. Fault
+    /// tolerance is disabled if this is `None` or if `storage` is false.
+    pub fault_tolerance: Option<FtConfig>,
 
     /// Enable CPU profiler.
     ///
@@ -206,6 +212,7 @@ impl Default for RuntimeConfig {
         Self {
             workers: 8,
             storage: false,
+            fault_tolerance: None,
             cpu_profiler: true,
             tracing: {
                 // We discovered that the jaeger crate can use up gigabytes of RAM, so it's not harmless
@@ -233,6 +240,23 @@ impl RuntimeConfig {
     pub fn to_yaml(&self) -> String {
         serde_yaml::to_string(self).unwrap()
     }
+}
+
+/// Fault-tolerance configuration for runtime startup.
+#[derive(Debug, Copy, Clone, Default, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum FtConfig {
+    /// Start from the pipeline's initial state.
+    ///
+    /// If the pipeline already has a checkpoint, it will be discarded.
+    InitialState,
+
+    /// Start from the pipeline's most recent checkpoint.
+    ///
+    /// If the pipeline does not have a checkpoint, it will start from the
+    /// initial state.
+    #[default]
+    LatestCheckpoint,
 }
 
 /// Describes an input connector configuration

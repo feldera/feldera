@@ -45,15 +45,8 @@ pub(crate) fn pipeline_1() -> PipelineDescr {
         description: "Description of the pipeline example1".to_string(),
         runtime_config: RuntimeConfig {
             workers: 16,
-            storage: false,
-            cpu_profiler: false,
-            tracing: false,
             tracing_endpoint_jaeger: "".to_string(),
-            min_batch_size_records: 0,
-            max_buffering_delay_usecs: 0,
-            resources: Default::default(),
-            min_storage_bytes: None,
-            clock_resolution_usecs: Some(100_000),
+            ..RuntimeConfig::default()
         },
         program_code: "CREATE TABLE table1 ( col1 INT );".to_string(),
         udf_rust: "".to_string(),
@@ -73,15 +66,8 @@ pub(crate) fn extended_pipeline_1() -> ExtendedPipelineDescr {
         created_at: Default::default(),
         runtime_config: RuntimeConfig {
             workers: 16,
-            storage: false,
-            cpu_profiler: false,
-            tracing: false,
             tracing_endpoint_jaeger: "".to_string(),
-            min_batch_size_records: 0,
-            max_buffering_delay_usecs: 0,
-            resources: Default::default(),
-            min_storage_bytes: None,
-            clock_resolution_usecs: Some(100_000),
+            ..RuntimeConfig::default()
         },
         program_code: "CREATE TABLE table1 ( col1 INT );".to_string(),
         udf_rust: "".to_string(),
@@ -113,6 +99,7 @@ pub(crate) fn extended_pipeline_2() -> ExtendedPipelineDescr {
         runtime_config: RuntimeConfig {
             workers: 10,
             storage: true,
+            fault_tolerance: None,
             cpu_profiler: false,
             tracing: false,
             tracing_endpoint_jaeger: "".to_string(),

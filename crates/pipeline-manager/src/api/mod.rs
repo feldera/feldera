@@ -168,6 +168,7 @@ The program version is used internally by the compiler to know when to recompile
         feldera_types::config::StorageConfig,
         feldera_types::config::StorageCacheConfig,
         feldera_types::config::RuntimeConfig,
+        feldera_types::config::FtConfig,
         feldera_types::config::InputEndpointConfig,
         feldera_types::config::ConnectorConfig,
         feldera_types::config::OutputBufferConfig,
