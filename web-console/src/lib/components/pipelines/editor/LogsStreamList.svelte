@@ -1,7 +1,10 @@
 <script lang="ts">
   import { scale } from 'svelte/transition'
+  import { useSkeletonTheme } from '$lib/compositions/useSkeletonTheme.svelte'
 
   let { rows }: { rows: string[] } = $props()
+
+  const theme = useSkeletonTheme()
 
   let ref = $state<HTMLElement>(undefined!)
 
@@ -23,7 +26,8 @@
 <div class="relative h-full bg-white dark:bg-black">
   <div
     onscroll={(e) => (x = e.currentTarget.scrollTop)}
-    class="h-full -scale-y-100 gap-4 overflow-y-auto p-2 font-mono"
+    class="h-full -scale-y-100 gap-4 overflow-y-auto p-2"
+    style="font-family: {theme.config.monospaceFontFamily};"
     use:invertScrollY
     bind:this={ref}
   >

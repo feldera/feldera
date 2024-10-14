@@ -123,19 +123,25 @@ export const parseUTF8AsTextLines = (
   onValue: (value: string) => void,
   onDone?: () => void
 ) => {
+  let reader = stream.getReader()
   queueMicrotask(async () => {
-    for await (let line of makeUTF8LineIterator(stream, onDone)) {
+    for await (let line of makeUTF8LineIterator(reader, onDone)) {
       onValue(line)
     }
   })
   return {
-    cancel: () => stream.cancel()
+    cancel: () => {
+      reader.cancel()
+      stream.cancel()
+    }
   }
 }
 
-async function* makeUTF8LineIterator(stream: ReadableStream<Uint8Array>, onDone?: () => void) {
+async function* makeUTF8LineIterator(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  onDone?: () => void
+) {
   const utf8Decoder = new TextDecoder('utf-8')
-  let reader = stream.getReader()
   let readerDone = false
   let res = await reader.read()
   readerDone = res.done
