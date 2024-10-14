@@ -12,6 +12,7 @@
     useElementSize,
     useStickScrollToBottom
   } from '$lib/compositions/components/virtualList.svelte'
+  import WarningBanner from '$lib/components/pipelines/editor/WarningBanner.svelte'
 
   type Payload = XgressEntry | { skippedBytes: number }
   type Row = { relationName: string } & Payload
@@ -37,14 +38,11 @@
 
 <div class="relative flex flex-1 flex-col" bind:this={ref}>
   {#if changeStream.totalSkippedBytes}
-    <div class="flex gap-1 p-1 preset-tonal-warning">
-      <span class="fd fd-warning_amber text-[24px]"></span>
-      <span>
-        Receiving changes faster than can be displayed. Skipping some records to keep up, {humanSize(
-          changeStream.totalSkippedBytes
-        )} in total.
-      </span>
-    </div>
+    <WarningBanner>
+      Receiving changes faster than can be displayed. Skipping some records to keep up, {humanSize(
+        changeStream.totalSkippedBytes
+      )} in total.
+    </WarningBanner>
   {/if}
 
   <VirtualList
@@ -88,6 +86,7 @@
       transition:scale={{ duration: 200 }}
       class="fd fd-arrow_downward absolute bottom-4 right-4 rounded-full p-2 text-[24px] preset-filled-primary-500"
       onclick={scrollProps.scrolToBottom}
+      aria-label="Scroll to bottom"
     ></button>
   {/if}
 </div>

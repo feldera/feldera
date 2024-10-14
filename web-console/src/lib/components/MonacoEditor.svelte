@@ -1,4 +1,4 @@
-<script module lang="ts">
+<script lang="ts" module>
   loader.config({ monaco: monacoImport, 'vs/nls': { availableLanguages: { '*': 'en' } } })
 
   export const exportedThemes = Object.fromEntries(

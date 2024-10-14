@@ -248,10 +248,12 @@
 {@render textEditor(x)}
 {#snippet x()}
   <div class="flex h-full flex-col">
-    <div class="flex">
+    <div class="flex flex-wrap">
       {#each files as file}
         <button
-          class="py-1 pl-3 pr-8 {file.name === currentFileName ? 'bg-white-black' : ''}"
+          class="py-1 pl-3 pr-8 {file.name === currentFileName
+            ? 'bg-white-black'
+            : 'hover:!bg-opacity-50 hover:bg-surface-100-900'}"
           onclick={() => (currentFileName = file.name)}
         >
           {file.name}
@@ -307,7 +309,7 @@
   </div>
 {/snippet}
 
-<div class="flex flex-wrap items-center gap-x-8 gap-y-2 pr-2">
+<div class="flex flex-wrap items-center gap-x-8 border-y-[1px] pr-2 border-surface-100-900">
   <div class="flex h-9 flex-nowrap gap-2">
     <PipelineEditorStatusBar
       {autoSavePipeline}

@@ -79,8 +79,7 @@
       .exhaustive()
   )
 
-  const buttonClass =
-    'hover:brightness-90 dark:hover:brightness-110 hover:backdrop-brightness-100 text-[32px] w-9 h-9'
+  const buttonClass = 'hover:brightness-90 dark:hover:brightness-150 text-[32px] w-9 h-9'
 </script>
 
 {#snippet deleteDialog()}
@@ -101,18 +100,24 @@
 </div>
 
 {#snippet _delete()}
-  <button class="fd fd-delete {buttonClass}" onclick={() => (globalDialog.dialog = deleteDialog)}>
+  <button
+    class="{buttonClass} fd fd-delete bg-surface-50-950"
+    onclick={() => (globalDialog.dialog = deleteDialog)}
+  >
   </button>
 {/snippet}
 {#snippet start(action: PipelineAction, status: PipelineStatus)}
   <button
     class:disabled={unsavedChanges}
-    class="{buttonClass} fd fd-play_arrow text-[36px] bg-success-200-800"
-    onclick={async () => {
+    class="{buttonClass} fd fd-play_arrow text-[36px] !bg-success-200-800"
+    onclick={async (e) => {
       const success = await postPipelineAction(pipeline.current.name, action)
       pipeline.optimisticUpdate({ status })
+      if (e.ctrlKey || e.shiftKey || e.metaKey) {
+        return
+      }
       await success()
-      onActionSuccess?.('start_paused')
+      onActionSuccess?.(action)
     }}
   >
   </button>
@@ -152,7 +157,7 @@
 {/snippet}
 {#snippet _pause()}
   <button
-    class="fd fd-pause {buttonClass}"
+    class="{buttonClass} fd fd-pause bg-surface-50-950"
     onclick={() =>
       postPipelineAction(pipeline.current.name, 'pause').then(() => {
         onActionSuccess?.('pause')
@@ -163,7 +168,7 @@
 {/snippet}
 {#snippet _shutdown()}
   <button
-    class="fd fd-stop {buttonClass}"
+    class="{buttonClass} fd fd-stop bg-surface-50-950"
     onclick={() =>
       postPipelineAction(pipeline.current.name, 'shutdown').then(() => {
         onActionSuccess?.('shutdown')
@@ -193,7 +198,7 @@
   {/snippet}
   <button
     onclick={() => (globalDialog.dialog = pipelineResourcesDialog)}
-    class="fd fd-settings {buttonClass}"
+    class="{buttonClass} fd fd-settings bg-surface-50-950"
   >
   </button>
   {#if pipelineBusy}
