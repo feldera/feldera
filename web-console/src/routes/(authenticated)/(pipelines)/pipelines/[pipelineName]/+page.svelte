@@ -40,6 +40,11 @@
     () => data.preloadedPipeline,
     () => goto(`${base}/`)
   )
+
+  $effect(() => {
+    // TODO: fix https://github.com/feldera/feldera/issues/2740
+    return () => window.location.reload()
+  })
 </script>
 
 <PipelineEditLayout {pipeline}></PipelineEditLayout>
