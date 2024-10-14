@@ -306,14 +306,6 @@ impl Controller {
             .add_output_endpoint(endpoint_name, endpoint_config, Some(endpoint))
     }
 
-    /// Reports whether the circuit is fault tolerant.  A circuit is fault
-    /// tolerant if it computes a deterministic function and all of its inputs
-    /// and outputs are fault tolerant.  This function assumes that the circuit
-    /// is deterministic.
-    pub fn is_fault_tolerant(&self) -> bool {
-        self.inner.has_fault_tolerant_inputs() && self.inner.has_fault_tolerant_outputs()
-    }
-
     /// Increment the number of active API connections.
     ///
     /// API connections are created dynamically via the `ingress` and `egress`
@@ -501,9 +493,10 @@ impl CircuitThread {
             state_path,
             step_rw,
         } = ControllerInit::new(config)?;
+        let fault_tolerant = step_rw.is_some();
         let (circuit, catalog) = circuit_factory(circuit_config)?;
         let (parker, backpressure_thread, command_receiver, controller) =
-            ControllerInner::new(pipeline_config, catalog, error_cb)?;
+            ControllerInner::new(pipeline_config, catalog, error_cb, fault_tolerant)?;
 
         Ok(Self {
             controller,
@@ -1300,25 +1293,16 @@ struct OutputEndpointDescr {
 
     /// Unparker for the endpoint thread.
     unparker: Unparker,
-
-    /// Whether the output endpoint can discard duplicate output.
-    is_fault_tolerant: bool,
 }
 
 impl OutputEndpointDescr {
-    pub fn new(
-        endpoint_name: &str,
-        stream_name: &str,
-        unparker: Unparker,
-        is_fault_tolerant: bool,
-    ) -> Self {
+    pub fn new(endpoint_name: &str, stream_name: &str, unparker: Unparker) -> Self {
         Self {
             endpoint_name: endpoint_name.to_string(),
             stream_name: canonical_identifier(stream_name),
             queue: Arc::new(SegQueue::new()),
             disconnect_flag: Arc::new(AtomicBool::new(false)),
             unparker,
-            is_fault_tolerant,
         }
     }
 }
@@ -1497,12 +1481,13 @@ impl ControllerInner {
         config: PipelineConfig,
         catalog: Box<dyn CircuitCatalog>,
         error_cb: Box<dyn Fn(ControllerError) + Send + Sync>,
+        fault_tolerant: bool,
     ) -> Result<(Parker, BackpressureThread, Receiver<Command>, Arc<Self>), ControllerError> {
         let pipeline_name = config
             .name
             .as_ref()
             .map_or_else(|| "unnamed".to_string(), |n| n.clone());
-        let status = Arc::new(ControllerStatus::new(config));
+        let status = Arc::new(ControllerStatus::new(config, fault_tolerant));
         let (metrics_snapshotter, prometheus_handle) =
             Self::install_metrics_recorder(pipeline_name);
         let circuit_thread_parker = Parker::new();
@@ -1743,13 +1728,6 @@ impl ControllerInner {
         Ok(endpoint_id)
     }
 
-    fn has_fault_tolerant_inputs(&self) -> bool {
-        self.status
-            .input_status()
-            .values()
-            .all(|status| status.is_fault_tolerant)
-    }
-
     fn register_api_connection(&self) -> Result<(), u64> {
         let num_connections = self.num_api_connections.load(Ordering::Acquire);
 
@@ -1844,8 +1822,6 @@ impl ControllerInner {
 
         let self_weak = Arc::downgrade(self);
 
-        let is_fault_tolerant;
-
         endpoint_config
             .connector_config
             .output_buffer_config
@@ -1860,7 +1836,6 @@ impl ControllerInner {
                     }
                 }))
                 .map_err(|e| ControllerError::output_transport_error(endpoint_name, true, e))?;
-            is_fault_tolerant = endpoint.is_fault_tolerant();
 
             // Create probe.
             let probe = Box::new(OutputProbe::new(
@@ -1897,8 +1872,6 @@ impl ControllerInner {
                 self_weak,
             )?;
 
-            is_fault_tolerant = endpoint.is_fault_tolerant();
-
             endpoint.into_encoder()
         };
 
@@ -1907,7 +1880,6 @@ impl ControllerInner {
             endpoint_name,
             &endpoint_config.stream,
             parker.unparker().clone(),
-            is_fault_tolerant,
         );
         let queue = endpoint_descr.queue.clone();
         let disconnect_flag = endpoint_descr.disconnect_flag.clone();
@@ -1942,15 +1914,6 @@ impl ControllerInner {
             .add_output(&endpoint_id, endpoint_name, endpoint_config);
 
         Ok(endpoint_id)
-    }
-
-    fn has_fault_tolerant_outputs(&self) -> bool {
-        self.outputs
-            .read()
-            .unwrap()
-            .by_id
-            .values()
-            .all(|descr| descr.is_fault_tolerant)
     }
 
     fn merge_batches(mut data: Vec<Arc<dyn SerBatch>>) -> Arc<dyn SerBatch> {
@@ -2252,6 +2215,10 @@ impl InputProbe {
 impl InputConsumer for InputProbe {
     fn max_batch_size(&self) -> usize {
         self.max_batch_size
+    }
+
+    fn is_pipeline_fault_tolerant(&self) -> bool {
+        self.controller.status.global_metrics.fault_tolerant
     }
 
     fn parse_errors(&self, errors: Vec<ParseError>) {

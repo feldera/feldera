@@ -471,6 +471,10 @@ impl InputConsumer for DummyInputConsumer {
         usize::MAX
     }
 
+    fn is_pipeline_fault_tolerant(&self) -> bool {
+        true
+    }
+
     fn parse_errors(&self, errors: Vec<ParseError>) {
         if !errors.is_empty() {
             for error in errors {
