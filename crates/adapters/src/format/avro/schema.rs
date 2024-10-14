@@ -3,7 +3,10 @@
 use std::collections::BTreeMap;
 
 use apache_avro::{
-    schema::{DecimalSchema, Name, RecordField, RecordFieldOrder, RecordSchema, UnionSchema},
+    schema::{
+        ArraySchema, DecimalSchema, MapSchema, Name, RecordField, RecordFieldOrder, RecordSchema,
+        UnionSchema,
+    },
     Schema as AvroSchema,
 };
 use feldera_types::program_schema::{
@@ -92,14 +95,14 @@ fn validate_array_schema(
     avro_schema: &AvroSchema,
     component_schema: &ColumnType,
 ) -> Result<(), String> {
-    let AvroSchema::Array(element_schema) = avro_schema else {
+    let AvroSchema::Array(array_schema) = avro_schema else {
         return Err(format!(
             "expected schema of type 'array', but found {}",
             schema_json(avro_schema)
         ));
     };
 
-    validate_field_schema(element_schema, component_schema)
+    validate_field_schema(&array_schema.items, component_schema)
         .map_err(|e| format!("error validating array element schema: {e}"))?;
 
     Ok(())
@@ -108,14 +111,14 @@ fn validate_array_schema(
 /// Check that Avro schema can be deserialized into a map with
 /// specified value type (assumes that map keys are strings).
 fn validate_map_schema(avro_schema: &AvroSchema, value_schema: &ColumnType) -> Result<(), String> {
-    let AvroSchema::Map(element_schema) = avro_schema else {
+    let AvroSchema::Map(map_schema) = avro_schema else {
         return Err(format!(
             "expected schema of type 'map', but found {}",
             schema_json(avro_schema)
         ));
     };
 
-    validate_field_schema(element_schema, value_schema)
+    validate_field_schema(&map_schema.types, value_schema)
         .map_err(|e| format!("error validating map value schema: {e}"))?;
 
     Ok(())
@@ -448,7 +451,10 @@ impl AvroSchemaBuilder {
                     .component
                     .as_ref()
                     .ok_or("internal error: array type is missing array element type")?;
-                AvroSchema::Array(Box::new(self.column_type_to_avro_schema(component, false)?))
+                AvroSchema::Array(ArraySchema {
+                    items: Box::new(self.column_type_to_avro_schema(component, false)?),
+                    attributes: BTreeMap::new(),
+                })
             }
             SqlType::Struct => {
                 return Err("not implemented: Avro encoding for user-defined SQL types".to_string())
@@ -464,9 +470,10 @@ impl AvroSchemaBuilder {
                     ));
                 }
                 let value_type = column_type.value.as_ref().ok_or("internal error: relation schema contains a map field, with a missing value type")?;
-                AvroSchema::Map(Box::new(
-                    self.column_type_to_avro_schema(value_type, false)?,
-                ))
+                AvroSchema::Map(MapSchema {
+                    types: Box::new(self.column_type_to_avro_schema(value_type, false)?),
+                    attributes: BTreeMap::new(),
+                })
             }
             SqlType::Null => AvroSchema::Null,
         })
