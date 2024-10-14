@@ -1,19 +1,22 @@
 use crate::format::StreamSplitter;
-use crate::transport::{InputEndpoint, InputQueue, InputReaderCommand, NonFtInputReaderCommand};
+use crate::transport::{InputEndpoint, InputQueue, InputReaderCommand};
 use crate::{
     server::{PipelineError, MAX_REPORTED_PARSE_ERRORS},
     transport::InputReader,
-    ControllerError, InputConsumer, PipelineState, TransportConfig, TransportInputEndpoint,
+    ControllerError, InputConsumer, PipelineState, TransportInputEndpoint,
 };
-use crate::{ParseError, Parser};
+use crate::{InputBuffer, ParseError, Parser};
 use actix_web::{web::Payload, HttpResponse};
 use anyhow::{anyhow, Error as AnyError, Result as AnyResult};
 use atomic::Atomic;
 use circular_queue::CircularQueue;
 use feldera_types::program_schema::Relation;
+use feldera_types::transport::http::HttpInputConfig;
 use futures_util::StreamExt;
 use log::debug;
-use serde::Deserialize;
+use rmpv::Value as RmpValue;
+use serde::{Deserialize, Serialize};
+use serde_bytes::ByteBuf;
 use std::{
     sync::{atomic::Ordering, Arc, Mutex},
     time::Duration,
@@ -52,17 +55,13 @@ impl HttpInputTransport {
     // pub(crate) fn default_mode() -> HttpIngressMode {
     //    HttpIngressMode::Stream
     // }
-
-    pub(crate) fn config() -> TransportConfig {
-        TransportConfig::HttpInput
-    }
 }
 
 struct HttpInputEndpointDetails {
     consumer: Box<dyn InputConsumer>,
     parser: Box<dyn Parser>,
     splitter: StreamSplitter,
-    queue: InputQueue,
+    queue: InputQueue<Vec<u8>>,
 }
 
 struct HttpInputEndpointInner {
@@ -75,9 +74,10 @@ struct HttpInputEndpointInner {
 }
 
 impl HttpInputEndpointInner {
-    fn new(name: &str, force: bool) -> Self {
+    fn new(config: HttpInputConfig) -> Self {
+        let force = config.force;
         Self {
-            name: name.to_string(),
+            name: config.name,
             state: Atomic::new(if force {
                 PipelineState::Running
             } else {
@@ -97,9 +97,9 @@ pub(crate) struct HttpInputEndpoint {
 }
 
 impl HttpInputEndpoint {
-    pub(crate) fn new(name: &str, force: bool) -> Self {
+    pub(crate) fn new(config: HttpInputConfig) -> Self {
         Self {
-            inner: Arc::new(HttpInputEndpointInner::new(name, force)),
+            inner: Arc::new(HttpInputEndpointInner::new(config)),
         }
     }
 
@@ -124,9 +124,14 @@ impl HttpInputEndpoint {
         let mut total_errors = 0;
         while let Some(chunk) = details.splitter.next(bytes.is_none()) {
             let (buffer, new_errors) = details.parser.parse(chunk);
+            let aux = if details.consumer.is_pipeline_fault_tolerant() {
+                Vec::from(chunk)
+            } else {
+                Vec::new()
+            };
             details
                 .queue
-                .push((buffer, new_errors.clone()), chunk.len());
+                .push_with_aux((buffer, new_errors.clone()), chunk.len(), aux);
             total_errors += new_errors.len();
             for error in new_errors {
                 errors.push(error);
@@ -224,11 +229,16 @@ impl HttpInputEndpoint {
             Err(PipelineError::parse_errors(num_errors, errors.asc_iter()))
         }
     }
+
+    fn set_state(&self, state: PipelineState) {
+        self.inner.state.store(state, Ordering::Release);
+        self.notify();
+    }
 }
 
 impl InputEndpoint for HttpInputEndpoint {
     fn is_fault_tolerant(&self) -> bool {
-        false
+        true
     }
 }
 
@@ -253,18 +263,47 @@ impl TransportInputEndpoint for HttpInputEndpoint {
 
 impl InputReader for HttpInputEndpoint {
     fn request(&self, command: InputReaderCommand) {
-        match command.as_nonft().unwrap() {
-            NonFtInputReaderCommand::Queue => {
+        match command {
+            InputReaderCommand::Seek(_) => (),
+            InputReaderCommand::Replay(metadata) => {
+                let Metadata { chunks } = rmpv::ext::from_value(metadata).unwrap();
                 let mut guard = self.inner.details.lock().unwrap();
                 let details = guard.as_mut().unwrap();
-                details.queue.queue();
+                let mut num_records = 0;
+                for chunk in chunks {
+                    let (mut buffer, errors) = details.parser.parse(&chunk);
+                    details.consumer.buffered(buffer.len(), chunk.len());
+                    details.consumer.parse_errors(errors);
+                    num_records += buffer.flush_all();
+                }
+                details.consumer.replayed(num_records);
             }
-            NonFtInputReaderCommand::Transition(state) => {
-                if state != PipelineState::Paused || !self.inner.force {
-                    self.inner.state.store(state, Ordering::Release);
-                    self.notify();
+            InputReaderCommand::Extend => self.set_state(PipelineState::Running),
+            InputReaderCommand::Pause => {
+                if !self.inner.force {
+                    self.set_state(PipelineState::Paused)
                 }
             }
+            InputReaderCommand::Queue => {
+                let mut guard = self.inner.details.lock().unwrap();
+                let details = guard.as_mut().unwrap();
+                let (num_records, chunks) = details.queue.flush_with_aux();
+                let metadata = if details.consumer.is_pipeline_fault_tolerant() {
+                    rmpv::ext::to_value(Metadata {
+                        chunks: chunks.into_iter().map(ByteBuf::from).collect(),
+                    })
+                    .unwrap()
+                } else {
+                    RmpValue::Nil
+                };
+                details.consumer.extended(num_records, metadata);
+            }
+            InputReaderCommand::Disconnect => self.set_state(PipelineState::Terminated),
         }
     }
+}
+
+#[derive(Serialize, Deserialize)]
+struct Metadata {
+    chunks: Vec<ByteBuf>,
 }

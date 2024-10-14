@@ -22,7 +22,10 @@ use clap::Parser;
 use colored::Colorize;
 use dbsp::{circuit::CircuitConfig, DBSPHandle};
 use env_logger::Env;
-use feldera_types::config::default_max_batch_size;
+use feldera_types::{
+    config::{default_max_batch_size, TransportConfig},
+    transport::http::HttpInputConfig,
+};
 use feldera_types::{query::AdhocQueryArgs, transport::http::SERVER_PORT_FILE};
 use futures_util::FutureExt;
 use log::{debug, error, info, log, trace, warn, Level};
@@ -677,13 +680,17 @@ async fn input_endpoint(
     let endpoint_name = format!("api-ingress-{table_name}-{}", Uuid::new_v4());
 
     // Create HTTP endpoint.
-    let endpoint = HttpInputEndpoint::new(&endpoint_name, args.force);
+    let config = HttpInputConfig {
+        name: endpoint_name.clone(),
+        force: args.force,
+    };
+    let endpoint = HttpInputEndpoint::new(config.clone());
 
     // Create endpoint config.
     let config = InputEndpointConfig {
         stream: Cow::from(table_name),
         connector_config: ConnectorConfig {
-            transport: HttpInputTransport::config(),
+            transport: TransportConfig::HttpInput(config),
             format: Some(parser_config_from_http_request(
                 &endpoint_name,
                 &args.format,
