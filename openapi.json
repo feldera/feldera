@@ -379,7 +379,8 @@
                     "program_version": 2,
                     "runtime_config": {
                       "clock_resolution_usecs": 100000,
-                      "cpu_profiler": false,
+                      "cpu_profiler": true,
+                      "fault_tolerance": null,
                       "max_buffering_delay_usecs": 0,
                       "min_batch_size_records": 0,
                       "min_storage_bytes": null,
@@ -423,6 +424,7 @@
                     "runtime_config": {
                       "clock_resolution_usecs": 100000,
                       "cpu_profiler": false,
+                      "fault_tolerance": null,
                       "max_buffering_delay_usecs": 0,
                       "min_batch_size_records": 100000,
                       "min_storage_bytes": null,
@@ -485,7 +487,8 @@
                 },
                 "runtime_config": {
                   "clock_resolution_usecs": 100000,
-                  "cpu_profiler": false,
+                  "cpu_profiler": true,
+                  "fault_tolerance": null,
                   "max_buffering_delay_usecs": 0,
                   "min_batch_size_records": 0,
                   "min_storage_bytes": null,
@@ -539,7 +542,8 @@
                   "program_version": 2,
                   "runtime_config": {
                     "clock_resolution_usecs": 100000,
-                    "cpu_profiler": false,
+                    "cpu_profiler": true,
+                    "fault_tolerance": null,
                     "max_buffering_delay_usecs": 0,
                     "min_batch_size_records": 0,
                     "min_storage_bytes": null,
@@ -634,7 +638,8 @@
                   "program_version": 2,
                   "runtime_config": {
                     "clock_resolution_usecs": 100000,
-                    "cpu_profiler": false,
+                    "cpu_profiler": true,
+                    "fault_tolerance": null,
                     "max_buffering_delay_usecs": 0,
                     "min_batch_size_records": 0,
                     "min_storage_bytes": null,
@@ -714,7 +719,8 @@
                 },
                 "runtime_config": {
                   "clock_resolution_usecs": 100000,
-                  "cpu_profiler": false,
+                  "cpu_profiler": true,
+                  "fault_tolerance": null,
                   "max_buffering_delay_usecs": 0,
                   "min_batch_size_records": 0,
                   "min_storage_bytes": null,
@@ -768,7 +774,8 @@
                   "program_version": 2,
                   "runtime_config": {
                     "clock_resolution_usecs": 100000,
-                    "cpu_profiler": false,
+                    "cpu_profiler": true,
+                    "fault_tolerance": null,
                     "max_buffering_delay_usecs": 0,
                     "min_batch_size_records": 0,
                     "min_storage_bytes": null,
@@ -821,7 +828,8 @@
                   "program_version": 2,
                   "runtime_config": {
                     "clock_resolution_usecs": 100000,
-                    "cpu_profiler": false,
+                    "cpu_profiler": true,
+                    "fault_tolerance": null,
                     "max_buffering_delay_usecs": 0,
                     "min_batch_size_records": 0,
                     "min_storage_bytes": null,
@@ -1008,7 +1016,8 @@
                   "program_version": 2,
                   "runtime_config": {
                     "clock_resolution_usecs": 100000,
-                    "cpu_profiler": false,
+                    "cpu_profiler": true,
+                    "fault_tolerance": null,
                     "max_buffering_delay_usecs": 0,
                     "min_batch_size_records": 0,
                     "min_storage_bytes": null,
@@ -2757,6 +2766,14 @@
           }
         }
       },
+      "FtConfig": {
+        "type": "string",
+        "description": "Fault-tolerance configuration for runtime startup.",
+        "enum": [
+          "initial_state",
+          "latest_checkpoint"
+        ]
+      },
       "GenerationPlan": {
         "type": "object",
         "description": "A random generation plan for a table that generates either a limited amount of rows or runs continuously.",
@@ -3218,6 +3235,15 @@
                 "description": "Enable CPU profiler.\n\nThe default value is `true`.",
                 "default": true
               },
+              "fault_tolerance": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/FtConfig"
+                  }
+                ],
+                "default": null,
+                "nullable": true
+              },
               "max_buffering_delay_usecs": {
                 "type": "integer",
                 "format": "int64",
@@ -3256,7 +3282,7 @@
               },
               "storage": {
                 "type": "boolean",
-                "description": "Should persistent storage be enabled for this pipeline?\n\n- If `false` (default), the pipeline's state is kept in in-memory data-structures.\nThis is useful if the pipeline is ephemeral and does not need to be recovered\nafter a restart. The pipeline will most likely run faster since it does not\nneed to read from, or write to disk\n\n- If `true`, the pipeline state is stored in the specified location,\nis persisted across restarts, and can be checkpointed and recovered.\nThis feature is currently experimental.",
+                "description": "Should storage be enabled for this pipeline?\n\n- If `false` (default), the pipeline's state is kept in in-memory\ndata-structures.  This is useful if the pipeline's state will fit in\nmemory and if the pipeline is ephemeral and does not need to be\nrecovered after a restart. The pipeline will most likely run faster\nsince it does not need to access storage.\n\n- If `true`, the pipeline's state is kept on storage.  This allows the\npipeline to work with state that will not fit into memory. It also\nallows the state to be checkpointed and recovered across restarts.\nThis feature is currently experimental.",
                 "default": false
               },
               "tracing": {
@@ -3812,6 +3838,15 @@
             "description": "Enable CPU profiler.\n\nThe default value is `true`.",
             "default": true
           },
+          "fault_tolerance": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/FtConfig"
+              }
+            ],
+            "default": null,
+            "nullable": true
+          },
           "max_buffering_delay_usecs": {
             "type": "integer",
             "format": "int64",
@@ -3850,7 +3885,7 @@
           },
           "storage": {
             "type": "boolean",
-            "description": "Should persistent storage be enabled for this pipeline?\n\n- If `false` (default), the pipeline's state is kept in in-memory data-structures.\nThis is useful if the pipeline is ephemeral and does not need to be recovered\nafter a restart. The pipeline will most likely run faster since it does not\nneed to read from, or write to disk\n\n- If `true`, the pipeline state is stored in the specified location,\nis persisted across restarts, and can be checkpointed and recovered.\nThis feature is currently experimental.",
+            "description": "Should storage be enabled for this pipeline?\n\n- If `false` (default), the pipeline's state is kept in in-memory\ndata-structures.  This is useful if the pipeline's state will fit in\nmemory and if the pipeline is ephemeral and does not need to be\nrecovered after a restart. The pipeline will most likely run faster\nsince it does not need to access storage.\n\n- If `true`, the pipeline's state is kept on storage.  This allows the\npipeline to work with state that will not fit into memory. It also\nallows the state to be checkpointed and recovered across restarts.\nThis feature is currently experimental.",
             "default": false
           },
           "tracing": {

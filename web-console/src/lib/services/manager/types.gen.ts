@@ -618,6 +618,11 @@ export type FormatConfig = {
 }
 
 /**
+ * Fault-tolerance configuration for runtime startup.
+ */
+export type FtConfig = 'initial_state' | 'latest_checkpoint'
+
+/**
  * A random generation plan for a table that generates either a limited amount of rows or runs continuously.
  */
 export type GenerationPlan = {
@@ -1033,6 +1038,7 @@ export type PipelineConfig = {
    * The default value is `true`.
    */
   cpu_profiler?: boolean
+  fault_tolerance?: FtConfig | null
   /**
    * Maximal delay in microseconds to wait for `min_batch_size_records` to
    * get buffered by the controller, defaults to 0.
@@ -1061,15 +1067,17 @@ export type PipelineConfig = {
   min_storage_bytes?: number | null
   resources?: ResourceConfig
   /**
-   * Should persistent storage be enabled for this pipeline?
+   * Should storage be enabled for this pipeline?
    *
-   * - If `false` (default), the pipeline's state is kept in in-memory data-structures.
-   * This is useful if the pipeline is ephemeral and does not need to be recovered
-   * after a restart. The pipeline will most likely run faster since it does not
-   * need to read from, or write to disk
+   * - If `false` (default), the pipeline's state is kept in in-memory
+   * data-structures.  This is useful if the pipeline's state will fit in
+   * memory and if the pipeline is ephemeral and does not need to be
+   * recovered after a restart. The pipeline will most likely run faster
+   * since it does not need to access storage.
    *
-   * - If `true`, the pipeline state is stored in the specified location,
-   * is persisted across restarts, and can be checkpointed and recovered.
+   * - If `true`, the pipeline's state is kept on storage.  This allows the
+   * pipeline to work with state that will not fit into memory. It also
+   * allows the state to be checkpointed and recovered across restarts.
    * This feature is currently experimental.
    */
   storage?: boolean
@@ -1527,6 +1535,7 @@ export type RuntimeConfig = {
    * The default value is `true`.
    */
   cpu_profiler?: boolean
+  fault_tolerance?: FtConfig | null
   /**
    * Maximal delay in microseconds to wait for `min_batch_size_records` to
    * get buffered by the controller, defaults to 0.
@@ -1555,15 +1564,17 @@ export type RuntimeConfig = {
   min_storage_bytes?: number | null
   resources?: ResourceConfig
   /**
-   * Should persistent storage be enabled for this pipeline?
+   * Should storage be enabled for this pipeline?
    *
-   * - If `false` (default), the pipeline's state is kept in in-memory data-structures.
-   * This is useful if the pipeline is ephemeral and does not need to be recovered
-   * after a restart. The pipeline will most likely run faster since it does not
-   * need to read from, or write to disk
+   * - If `false` (default), the pipeline's state is kept in in-memory
+   * data-structures.  This is useful if the pipeline's state will fit in
+   * memory and if the pipeline is ephemeral and does not need to be
+   * recovered after a restart. The pipeline will most likely run faster
+   * since it does not need to access storage.
    *
-   * - If `true`, the pipeline state is stored in the specified location,
-   * is persisted across restarts, and can be checkpointed and recovered.
+   * - If `true`, the pipeline's state is kept on storage.  This allows the
+   * pipeline to work with state that will not fit into memory. It also
+   * allows the state to be checkpointed and recovered across restarts.
    * This feature is currently experimental.
    */
   storage?: boolean

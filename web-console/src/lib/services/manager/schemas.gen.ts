@@ -923,6 +923,12 @@ endpoint or to encode data sent to the endpoint.`,
   }
 } as const
 
+export const $FtConfig = {
+  type: 'string',
+  description: 'Fault-tolerance configuration for runtime startup.',
+  enum: ['initial_state', 'latest_checkpoint']
+} as const
+
 export const $GenerationPlan = {
   type: 'object',
   description:
@@ -1501,6 +1507,15 @@ Set to \`null\` to disable periodic clock updates.`,
 The default value is \`true\`.`,
           default: true
         },
+        fault_tolerance: {
+          allOf: [
+            {
+              $ref: '#/components/schemas/FtConfig'
+            }
+          ],
+          default: null,
+          nullable: true
+        },
         max_buffering_delay_usecs: {
           type: 'integer',
           format: 'int64',
@@ -1553,15 +1568,17 @@ storage.`,
         },
         storage: {
           type: 'boolean',
-          description: `Should persistent storage be enabled for this pipeline?
+          description: `Should storage be enabled for this pipeline?
 
-- If \`false\` (default), the pipeline's state is kept in in-memory data-structures.
-This is useful if the pipeline is ephemeral and does not need to be recovered
-after a restart. The pipeline will most likely run faster since it does not
-need to read from, or write to disk
+- If \`false\` (default), the pipeline's state is kept in in-memory
+data-structures.  This is useful if the pipeline's state will fit in
+memory and if the pipeline is ephemeral and does not need to be
+recovered after a restart. The pipeline will most likely run faster
+since it does not need to access storage.
 
-- If \`true\`, the pipeline state is stored in the specified location,
-is persisted across restarts, and can be checkpointed and recovered.
+- If \`true\`, the pipeline's state is kept on storage.  This allows the
+pipeline to work with state that will not fit into memory. It also
+allows the state to be checkpointed and recovered across restarts.
 This feature is currently experimental.`,
           default: false
         },
@@ -2250,6 +2267,15 @@ Set to \`null\` to disable periodic clock updates.`,
 The default value is \`true\`.`,
       default: true
     },
+    fault_tolerance: {
+      allOf: [
+        {
+          $ref: '#/components/schemas/FtConfig'
+        }
+      ],
+      default: null,
+      nullable: true
+    },
     max_buffering_delay_usecs: {
       type: 'integer',
       format: 'int64',
@@ -2302,15 +2328,17 @@ storage.`,
     },
     storage: {
       type: 'boolean',
-      description: `Should persistent storage be enabled for this pipeline?
+      description: `Should storage be enabled for this pipeline?
 
-- If \`false\` (default), the pipeline's state is kept in in-memory data-structures.
-This is useful if the pipeline is ephemeral and does not need to be recovered
-after a restart. The pipeline will most likely run faster since it does not
-need to read from, or write to disk
+- If \`false\` (default), the pipeline's state is kept in in-memory
+data-structures.  This is useful if the pipeline's state will fit in
+memory and if the pipeline is ephemeral and does not need to be
+recovered after a restart. The pipeline will most likely run faster
+since it does not need to access storage.
 
-- If \`true\`, the pipeline state is stored in the specified location,
-is persisted across restarts, and can be checkpointed and recovered.
+- If \`true\`, the pipeline's state is kept on storage.  This allows the
+pipeline to work with state that will not fit into memory. It also
+allows the state to be checkpointed and recovered across restarts.
 This feature is currently experimental.`,
       default: false
     },
