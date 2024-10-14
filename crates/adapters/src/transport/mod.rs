@@ -411,6 +411,12 @@ pub trait InputConsumer: Send + Sync + DynClone {
     /// example, if for the sake of lateness it needs to group more than this
     /// number of records together).
     fn max_batch_size(&self) -> usize;
+
+    /// Returns whether the input endpoint is running within a fault-tolerant
+    /// pipeline. If the endpoint is one where fault tolerance is expensive,
+    /// then a `false` return value can allow it to skip that expense.
+    fn is_pipeline_fault_tolerant(&self) -> bool;
+
     fn parse_errors(&self, errors: Vec<ParseError>);
     fn buffered(&self, num_records: usize, num_bytes: usize);
     fn replayed(&self, num_records: usize);

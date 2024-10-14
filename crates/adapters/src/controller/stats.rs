@@ -102,6 +102,10 @@ pub struct GlobalControllerMetrics {
     /// input buffers.
     #[serde(skip)]
     pub step_requested: AtomicBool,
+
+    /// Is this a fault-tolerant pipeline?
+    #[serde(skip)]
+    pub fault_tolerant: bool,
 }
 
 fn serialize_pipeline_state<S>(
@@ -115,7 +119,7 @@ where
 }
 
 impl GlobalControllerMetrics {
-    fn new() -> Self {
+    fn new(fault_tolerant: bool) -> Self {
         Self {
             state: Atomic::new(PipelineState::Paused),
             #[cfg(any(target_os = "macos", target_os = "linux"))]
@@ -126,6 +130,7 @@ impl GlobalControllerMetrics {
             total_processed_records: AtomicU64::new(0),
             pipeline_complete: AtomicBool::new(false),
             step_requested: AtomicBool::new(false),
+            fault_tolerant,
         }
     }
 
@@ -391,10 +396,10 @@ impl Serialize for ControllerMetric {
 }
 
 impl ControllerStatus {
-    pub fn new(pipeline_config: PipelineConfig) -> Self {
+    pub fn new(pipeline_config: PipelineConfig, fault_tolerant: bool) -> Self {
         Self {
             pipeline_config,
-            global_metrics: GlobalControllerMetrics::new(),
+            global_metrics: GlobalControllerMetrics::new(fault_tolerant),
             inputs: ShardedLock::new(BTreeMap::new()),
             outputs: ShardedLock::new(BTreeMap::new()),
             metrics: Mutex::new(Vec::new()),
