@@ -106,8 +106,6 @@ impl LockedDirectory {
             if let Ok(old_pid) = old_pid {
                 if process_exists(old_pid) {
                     return Err(StorageError::StorageLocked(old_pid, pid_file));
-                } else if old_pid == pid.as_u32() {
-                    // The pidfile is ours, just leave it as is.
                 } else {
                     // The process doesn't exist, so we can safely overwrite the pidfile.
                     log::debug!("Found stale pidfile: {}", pid_file.display());
