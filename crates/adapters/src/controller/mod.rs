@@ -43,6 +43,7 @@ use dbsp::{
     DBSPHandle,
 };
 use feldera_types::config::FtConfig;
+use log::warn;
 use log::{debug, error, info, trace};
 use metadata::Checkpoint;
 use metadata::StepMetadata;
@@ -725,6 +726,8 @@ impl CircuitThread {
     /// to send when the records have been processed, and the corresponding
     /// steps log entries.
     fn flush_input_to_circuit(&mut self, replaying: bool) -> Result<FlushedInput, ()> {
+        let start_time = Instant::now();
+        let mut warn_threshold = Duration::from_secs(10);
         loop {
             // Collect inputs that need [InputReader::queue] to be called. Then,
             // separately, call it on each of them. We don't do it in a single
@@ -733,7 +736,7 @@ impl CircuitThread {
             // We don't just start all of the inputs in a single pass because
             // inputs can be added or removed (particularly HTTP inputs) when we
             // drop the lock.
-            let mut all_complete = true;
+            let mut n_incomplete = 0;
             let mut need_start = Vec::new();
             for (endpoint_id, status) in self.controller.status.input_status().iter() {
                 let mut progress = status.progress.lock().unwrap();
@@ -741,10 +744,10 @@ impl CircuitThread {
                     StepProgress::NotStarted => {
                         assert!(!replaying);
                         need_start.push(*endpoint_id);
-                        all_complete = false;
+                        n_incomplete += 1;
                         *progress = StepProgress::Started;
                     }
-                    StepProgress::Started => all_complete = false,
+                    StepProgress::Started => n_incomplete += 1,
                     StepProgress::Complete { .. } => (),
                 }
             }
@@ -756,7 +759,7 @@ impl CircuitThread {
                     }
                 }
             }
-            if all_complete {
+            if n_incomplete == 0 {
                 let mut total_consumed = 0;
                 let mut step_metadata = HashMap::new();
                 for (id, status) in self.controller.status.input_status().iter() {
@@ -793,6 +796,14 @@ impl CircuitThread {
                     notifications,
                     step_metadata,
                 });
+            }
+
+            if start_time.elapsed() >= warn_threshold {
+                warn!(
+                    "still waiting to complete input step after {} seconds",
+                    warn_threshold.as_secs()
+                );
+                warn_threshold *= 2;
             }
 
             self.parker.park();
