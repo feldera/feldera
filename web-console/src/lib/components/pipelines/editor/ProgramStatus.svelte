@@ -30,7 +30,7 @@
   class="{match(programStatus)
     .with('CompilingRust', { RustError: P.any }, () => 'flex')
     .with('Success', 'Pending', 'CompilingSql', P.shape({}), undefined, () => 'hidden')
-    .exhaustive()} w-36 flex-nowrap justify-end gap-2 self-center whitespace-nowrap"
+    .exhaustive()} flex-nowrap gap-2 self-center whitespace-nowrap"
 >
   <span
     class={match(programStatus)
@@ -40,5 +40,5 @@
       .exhaustive()}
   >
   </span>
-  Rust compiler
+  Rust <span class="hidden sm:inline">compiler</span>
 </div>

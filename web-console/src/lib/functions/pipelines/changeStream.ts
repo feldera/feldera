@@ -1,142 +1,15 @@
 import BigNumber from 'bignumber.js'
-import { JSONParser, Tokenizer, TokenParser, type TokenParserOptions } from '@streamparser/json'
-import type { ParsedElementInfo } from '@streamparser/json/utils/types/parsedElementInfo.js'
-import { discreteDerivative } from '$lib/functions/common/math'
-import { tuple } from '$lib/functions/common/tuple'
-import { chunkIndices } from '$lib/functions/common/array'
-import { humanSize } from '$lib/functions/common/string'
+import {
+  JSONParser,
+  Tokenizer,
+  TokenParser,
+  type JSONParserOptions,
+  type TokenParserOptions
+} from '@streamparser/json'
 
 class BigNumberTokenizer extends Tokenizer {
   parseNumber = BigNumber as any
 }
-
-const mkParser = (
-  onValue: (parsedElementInfo: ParsedElementInfo) => void,
-  options?: TokenParserOptions
-): { write: JSONParser['write']; end: JSONParser['end']; isParserEnded: () => boolean } => {
-  const tokenizer = new BigNumberTokenizer()
-  const tokenParser = new TokenParser(options)
-  tokenizer.onToken = tokenParser.write.bind(tokenParser)
-  tokenParser.onValue = onValue
-  return Object.assign(tokenizer, {
-    isParserEnded() {
-      return tokenParser.isEnded
-    }
-  })
-}
-
-/**
- *
- * @param chunksToParse a list of batches (complete JSON objects), each split into a list of bytestring chunks.
- * It contains no empty bytestrings
- */
-const parseStreamOfUTF8JSON =
-  <T>(
-    pushChanges: (changes: T[]) => void,
-    onBytesSkipped?: (bytes: number) => void,
-    options?: TokenParserOptions & { bufferSize?: number }
-  ) =>
-  (chunksToParse: Uint8Array[][]) => {
-    let count = 0
-    let resultBuffer = [] as any[]
-
-    const onValue = ({ value }: ParsedElementInfo) => {
-      resultBuffer[count] = value
-      ++count
-    }
-
-    let parser = mkParser(onValue, options)
-    let isEnd = false
-    let done = true
-
-    const interrupt = async () => {
-      try {
-        parser.end()
-      } catch {
-        // We ignore the error because we just want to interrupt parsing and production of values
-      }
-      parser = mkParser(onValue, options)
-      chunksToParse = [[]]
-      while (!done) {
-        // Release thread to parse JSON
-        await new Promise((resolve) => setTimeout(resolve))
-      }
-    }
-
-    return {
-      start: async () => {
-        while (!isEnd) {
-          const value = chunksToParse[0]?.shift()
-          if (!value) {
-            if (chunksToParse.length > 1) {
-              // Keep atleast a single empty batch in chunksToParse
-              chunksToParse.shift()
-              parser = mkParser(onValue, options)
-            }
-            await new Promise((resolve) => setTimeout(resolve))
-            continue
-          }
-
-          // Parse JSON in subchunks of up to 200000 bytes to keep UI freezes to a minimum
-          // because during parsing JavaScript cannot handle UI updates
-          const positions = chunkIndices(0, value.length, 200000)
-          const pairs = discreteDerivative(positions, tuple)
-          for (const [n1, n0] of pairs) {
-            if (isEnd) {
-              break
-            }
-
-            {
-              // In each parse iteration we check if buffer is not too large
-              // If so, we drop oldest batches until buffer fits the threshold, or a single batch remains
-              const batchLengths = chunksToParse.map((batch) =>
-                batch.reduce((acc, cur) => acc + cur.length, 0)
-              )
-              const previousBufferSize = batchLengths.reduce((acc, cur) => acc + cur, 0)
-              let bufferSize = previousBufferSize
-              const tooLarge = () =>
-                chunksToParse.length > 1 && bufferSize > (options?.bufferSize ?? 0)
-              const restart = tooLarge()
-              while (tooLarge()) {
-                bufferSize -= batchLengths.shift()!
-                chunksToParse.shift()
-              }
-              if (restart) {
-                console.log(
-                  `Skipped ${humanSize(previousBufferSize - bufferSize)} of change stream. New buffer size is ${humanSize(bufferSize)}`
-                )
-                onBytesSkipped?.(previousBufferSize - bufferSize)
-                parser = mkParser(onValue, options)
-                break
-              }
-            }
-
-            count = 0
-            done = false
-            try {
-              parser.write(value.slice(n0, n1))
-            } catch (e) {
-              console.log('JSON parse error', e)
-              done = true
-              break
-            }
-
-            if (parser.isParserEnded()) {
-              parser = mkParser(onValue, options)
-            }
-
-            pushChanges(resultBuffer.slice(0, count))
-            done = true
-            await new Promise((resolve) => setTimeout(resolve))
-          }
-        }
-      },
-      stop() {
-        isEnd = true
-        interrupt()
-      }
-    }
-  }
 
 /**
  *
@@ -149,49 +22,100 @@ const parseStreamOfUTF8JSON =
  */
 export const parseUTF8JSON = <T>(
   stream: ReadableStream<Uint8Array>,
-  pushChanges: (changes: T[]) => void,
-  onBytesSkipped?: (bytes: number) => void,
+  cbs: {
+    pushChanges: (changes: T[]) => void
+    onBytesSkipped?: (bytes: number) => void
+    onParseEnded?: () => void
+  },
   options?: TokenParserOptions & { bufferSize?: number }
 ) => {
-  return processUTF8StreamByLine(
-    stream,
-    parseStreamOfUTF8JSON(pushChanges, onBytesSkipped, options)
-  )
-}
-
-export const processUTF8StreamByLine = (
-  stream: ReadableStream<Uint8Array>,
-  parser: (chunks: Uint8Array[][]) => { start: () => Promise<void>; stop: () => void }
-) => {
-  const reader = stream.getReader()
-  let chunksToParse = [[]] as Uint8Array[][]
-  const { start, stop } = parser(chunksToParse)
-
+  // let cancel = false
+  const maxChunkSize = 100000
+  const reader = stream
+    .pipeThrough(
+      splitStreamByMaxChunk(maxChunkSize, options?.bufferSize ?? 1000000, cbs.onBytesSkipped)
+    )
+    .pipeThrough(
+      new CustomJSONParserTransformStream<T>(
+        {
+          ...options
+        },
+        {},
+        {}
+      )
+    )
+    .getReader()
+  let resultBuffer = [] as T[]
   setTimeout(async () => {
-    start()
     while (true) {
       const { done, value } = await reader.read()
-      if (done || !value) {
-        stop()
+      if (done || !value /*|| cancel*/) {
         break
       }
-
-      splitByNewline(
-        (chunk) => chunksToParse.at(-1)!.push(chunk),
-        () => chunksToParse.push([]),
-        value
-      )
-
-      // Release thread to process UI
-      await new Promise((resolve) => setTimeout(resolve))
+      resultBuffer.push(value)
     }
+  })
+  setTimeout(async () => {
+    let closed = false
+    reader.closed.then(() => {
+      closed = true
+    })
+    while (true) {
+      if (resultBuffer.length) {
+        cbs.pushChanges?.(resultBuffer)
+        resultBuffer.length = 0
+      }
+      if (closed) {
+        break
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100))
+    }
+    cbs.onParseEnded?.()
   })
   return {
     cancel: () => {
+      // cancel = true
       reader.cancel()
-      stop()
     }
   }
+}
+
+/**
+ * Splits transform stream in chunks of size maxChunkBytes or less
+ * Each chunk is enqueued in a separate scope of synchronous execution
+ * @param maxChunkBytes
+ * @returns
+ */
+function splitStreamByMaxChunk(
+  maxChunkBytes: number,
+  maxChunkBufferSize: number,
+  onBytesSkipped?: (bytes: number) => void
+): TransformStream<Uint8Array, Uint8Array> {
+  return new TransformStream<Uint8Array, Uint8Array>(
+    {
+      async transform(chunk, controller) {
+        let start = 0
+        while (start < chunk.length) {
+          const end = Math.min(chunk.length, start + maxChunkBytes)
+          if (hasBackpressure(controller, maxChunkBytes)) {
+            break
+          }
+          controller.enqueue(chunk.subarray(start, end))
+
+          start = end
+        }
+        if (start < chunk.length) {
+          onBytesSkipped?.(chunk.length - start)
+        }
+      }
+    },
+    {},
+    { highWaterMark: maxChunkBufferSize, size: (c) => c.length }
+  )
+}
+
+const hasBackpressure = <T>(controller: TransformStreamDefaultController<T>, offset: number) => {
+  return controller.desiredSize !== null && controller.desiredSize - offset < 0
 }
 
 export const parseUTF8AsTextLines = (
@@ -243,45 +167,66 @@ async function* makeUTF8LineIterator(stream: ReadableStream<Uint8Array>, onDone?
   onDone?.()
 }
 
-/**
- * Split stream by newline character (LF, 0x0A), sending an empty chunk on each occurrence
- * Empty chunk is also sent when the upstream has ended
- */
-function splitByNewline(
-  onChunk: (chunk: Uint8Array) => void,
-  onBatch: () => void,
-  chunk: Uint8Array
-) {
-  let start = 0
-  while (start < chunk.length) {
-    const newlineIndex = chunk.indexOf(10, start)
-    const end = newlineIndex === -1 ? chunk.length : newlineIndex
+const mkTransformerParser = <T>(
+  controller: TransformStreamDefaultController<T>,
+  opts?: JSONParserOptions
+) => {
+  const tokenizer = new BigNumberTokenizer()
+  const tokenParser = new TokenParser(opts)
+  tokenizer.onToken = tokenParser.write.bind(tokenParser)
+  tokenParser.onValue = (value) => {
+    controller.enqueue(value.value as T)
+  }
 
-    onChunk(chunk.subarray(start, end))
-    if (end !== chunk.length) {
-      onBatch()
+  const parser = {
+    onToken: tokenizer.onToken.bind(tokenizer),
+    get isEnded() {
+      return tokenizer.isEnded
+    },
+    write: tokenizer.write.bind(tokenizer),
+    end: tokenizer.end.bind(tokenizer),
+    onError: tokenizer.onError.bind(tokenizer)
+  } as JSONParser
+  return parser
+}
+
+class JSONParserTransformer<T> implements Transformer<Uint8Array | string, T> {
+  // @ts-ignore Controller always defined during start
+  private controller: TransformStreamDefaultController<T>
+  // @ts-ignore Controller always defined during start
+  private parser: JSONParser
+  private opts?: JSONParserOptions
+
+  constructor(opts?: JSONParserOptions) {
+    this.opts = opts
+  }
+
+  start(controller: TransformStreamDefaultController<T>) {
+    this.controller = controller
+    this.parser = mkTransformerParser(this.controller, this.opts)
+  }
+
+  async transform(chunk: Uint8Array | string) {
+    try {
+      this.parser.write(chunk)
+    } catch (e) {
+      console.log('JSON parse error', e)
+      this.parser = mkTransformerParser(this.controller, this.opts)
     }
+  }
 
-    // Move start to after the newline character
-    start = end + 1
+  flush() {
+    this.parser.end()
   }
 }
 
-/**
- * Split stream by newline character (LF, 0x0A), sending an empty chunk on each occurrence
- * Empty chunk is also sent when the upstream has ended
- */
-function splitStreamByNewline(): TransformStream<Uint8Array, Uint8Array> {
-  return new TransformStream<Uint8Array, Uint8Array>({
-    transform(chunk, controller) {
-      splitByNewline(
-        controller.enqueue.bind(controller),
-        () => controller.enqueue(new Uint8Array()),
-        chunk
-      )
-    },
-    flush(controller) {
-      controller.enqueue(new Uint8Array())
-    }
-  })
+class CustomJSONParserTransformStream<T> extends TransformStream<Uint8Array | string, T> {
+  constructor(
+    opts?: JSONParserOptions,
+    writableStrategy?: QueuingStrategy<Uint8Array | string>,
+    readableStrategy?: QueuingStrategy<T>
+  ) {
+    const transformer = new JSONParserTransformer(opts)
+    super(transformer, writableStrategy, readableStrategy)
+  }
 }
