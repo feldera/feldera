@@ -688,7 +688,7 @@ impl<'a> Serializer for AvroSchemaSerializer<'a> {
     fn serialize_seq(self, len: Option<usize>) -> Result<Self::SerializeSeq, Self::Error> {
         match schema_unwrap_optional(self.schema) {
             (AvroSchema::Array(schema), location) => Ok(SeqSerializer::new(
-                schema,
+                &schema.items,
                 self.refs,
                 self.strict,
                 len,
@@ -725,7 +725,7 @@ impl<'a> Serializer for AvroSchemaSerializer<'a> {
     fn serialize_map(self, len: Option<usize>) -> Result<Self::SerializeMap, Self::Error> {
         match schema_unwrap_optional(self.schema) {
             (AvroSchema::Map(schema), optional) => Ok(MapSerializer::new(
-                schema,
+                &schema.types,
                 self.refs,
                 self.strict,
                 len,

@@ -11,9 +11,9 @@ use feldera_types::config::{ConnectorConfig, TransportConfig};
 use feldera_types::format::avro::{AvroEncoderConfig, AvroUpdateFormat, SubjectNameStrategy};
 use feldera_types::program_schema::{Relation, SqlIdentifier};
 use log::{debug, error};
-use schema_registry_converter::avro_common::get_supplied_schema;
 use schema_registry_converter::blocking::schema_registry::post_schema;
 use schema_registry_converter::blocking::schema_registry::SrSettings;
+use schema_registry_converter::schema_registry_common::{SchemaType, SuppliedSchema};
 use serde::Deserialize;
 use serde_urlencoded::Deserializer as UrlDeserializer;
 use std::borrow::Cow;
@@ -452,7 +452,13 @@ fn publish_schema(
     subject: &str,
     sr_settings: &SrSettings,
 ) -> Result<u32, ControllerError> {
-    let supplied_schema = get_supplied_schema(schema);
+    let supplied_schema = SuppliedSchema {
+        name: schema.name().map(|n| n.fullname(None)),
+        schema_type: SchemaType::Avro,
+        schema: serde_json::to_string(schema).unwrap(),
+        references: vec![],
+    };
+
     /*let name = supplied_schema
     .name
     .as_ref()
@@ -471,8 +477,9 @@ fn publish_schema(
             )
         })?;
     debug!(
-        "avro encoder {endpoint_name}: registered new avro schema '{subject}' with id {}",
-        registered_schema.id
+        "avro encoder {endpoint_name}: registered new avro schema '{subject}' with id {}, schema: {:?}",
+        registered_schema.id,
+        registered_schema
     );
     Ok(registered_schema.id)
 }
