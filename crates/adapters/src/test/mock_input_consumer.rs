@@ -94,6 +94,10 @@ impl InputConsumer for MockInputConsumer {
         usize::MAX
     }
 
+    fn is_pipeline_fault_tolerant(&self) -> bool {
+        true
+    }
+
     fn parse_errors(&self, _errors: Vec<ParseError>) {}
 
     fn buffered(&self, _num_records: usize, _num_bytes: usize) {}
