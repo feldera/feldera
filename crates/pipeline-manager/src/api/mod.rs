@@ -178,6 +178,7 @@ The program version is used internally by the compiler to know when to recompile
         feldera_types::config::ResourceConfig,
         feldera_types::transport::file::FileInputConfig,
         feldera_types::transport::file::FileOutputConfig,
+        feldera_types::transport::http::HttpInputConfig,
         feldera_types::transport::url::UrlInputConfig,
         feldera_types::transport::kafka::KafkaHeader,
         feldera_types::transport::kafka::KafkaHeaderValue,

@@ -1,11 +1,11 @@
 use dbsp::circuit::checkpointer::CheckpointMetadata;
-use feldera_types::config::PipelineConfig;
+use feldera_types::config::{InputEndpointConfig, PipelineConfig};
 use rmpv::Value as RmpValue;
 use serde::{ser::SerializeStruct, Deserialize, Serialize, Serializer};
 use std::{
     backtrace::Backtrace,
     cmp::Ordering,
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     fmt::{Display, Formatter, Result as FmtResult},
     fs::{self, File, OpenOptions},
     io::{BufReader, BufWriter, Error as IoError, ErrorKind, Seek, SeekFrom, Write},
@@ -225,6 +225,7 @@ pub struct StepReader {
     reader: BufReader<File>,
 }
 
+#[allow(clippy::large_enum_variant)]
 pub enum ReadResult {
     Step {
         reader: StepReader,
@@ -412,12 +413,14 @@ impl StepRw {
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub struct StepMetadata {
     pub step: Step,
-    pub input_endpoints: HashMap<String, RmpValue>,
+    pub remove_inputs: HashSet<String>,
+    pub add_inputs: HashMap<String, InputEndpointConfig>,
+    pub input_logs: HashMap<String, RmpValue>,
 }
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
+    use std::collections::{HashMap, HashSet};
 
     use tempfile::TempDir;
 
@@ -436,7 +439,9 @@ mod tests {
         let written_data = (0..10)
             .map(|step| StepMetadata {
                 step,
-                input_endpoints: HashMap::new(),
+                remove_inputs: HashSet::new(),
+                add_inputs: HashMap::new(),
+                input_logs: HashMap::new(),
             })
             .collect::<Vec<_>>();
 
@@ -471,7 +476,9 @@ mod tests {
         let written_data = (0..10)
             .map(|step| StepMetadata {
                 step,
-                input_endpoints: HashMap::new(),
+                remove_inputs: HashSet::new(),
+                add_inputs: HashMap::new(),
+                input_logs: HashMap::new(),
             })
             .collect::<Vec<_>>();
 
@@ -519,7 +526,9 @@ mod tests {
         let written_data = (0..10)
             .map(|step| StepMetadata {
                 step,
-                input_endpoints: HashMap::new(),
+                remove_inputs: HashSet::new(),
+                add_inputs: HashMap::new(),
+                input_logs: HashMap::new(),
             })
             .collect::<Vec<_>>();
 
