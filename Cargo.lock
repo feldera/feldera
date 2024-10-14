@@ -3694,6 +3694,7 @@ dependencies = [
  "schema_registry_converter",
  "serde",
  "serde_arrow",
+ "serde_bytes",
  "serde_json",
  "serde_urlencoded",
  "serde_yaml",

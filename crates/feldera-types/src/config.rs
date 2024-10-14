@@ -8,6 +8,7 @@
 use crate::transport::datagen::DatagenInputConfig;
 use crate::transport::delta_table::{DeltaTableReaderConfig, DeltaTableWriterConfig};
 use crate::transport::file::{FileInputConfig, FileOutputConfig};
+use crate::transport::http::HttpInputConfig;
 use crate::transport::kafka::{KafkaInputConfig, KafkaOutputConfig};
 use crate::transport::nexmark::NexmarkInputConfig;
 use crate::transport::pubsub::PubSubInputConfig;
@@ -439,7 +440,7 @@ pub enum TransportConfig {
     Datagen(DatagenInputConfig),
     Nexmark(NexmarkInputConfig),
     /// Direct HTTP input: cannot be instantiated through API
-    HttpInput,
+    HttpInput(HttpInputConfig),
     /// Direct HTTP output: cannot be instantiated through API
     HttpOutput,
 }
@@ -458,7 +459,7 @@ impl TransportConfig {
             TransportConfig::DeltaTableOutput(_) => "delta_table_output".to_string(),
             TransportConfig::Datagen(_) => "datagen".to_string(),
             TransportConfig::Nexmark(_) => "nexmark".to_string(),
-            TransportConfig::HttpInput => "http_input".to_string(),
+            TransportConfig::HttpInput(_) => "http_input".to_string(),
             TransportConfig::HttpOutput => "http_output".to_string(),
         }
     }

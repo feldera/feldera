@@ -23,6 +23,7 @@
 use crate::{InputBuffer, ParseError, Parser, PipelineState};
 use anyhow::{Error as AnyError, Result as AnyResult};
 use dyn_clone::DynClone;
+use http::HttpInputEndpoint;
 #[cfg(feature = "with-pubsub")]
 use pubsub::PubSubInputEndpoint;
 use rmpv::Value as RmpValue;
@@ -111,11 +112,11 @@ pub fn input_transport_config_to_endpoint(
         }
         #[cfg(not(feature = "with-nexmark"))]
         TransportConfig::Nexmark(_) => Ok(None),
+        TransportConfig::HttpInput(config) => Ok(Some(Box::new(HttpInputEndpoint::new(config)))),
         TransportConfig::FileOutput(_)
         | TransportConfig::KafkaOutput(_)
         | TransportConfig::DeltaTableInput(_)
         | TransportConfig::DeltaTableOutput(_)
-        | TransportConfig::HttpInput
         | TransportConfig::HttpOutput => Ok(None),
     }
 }
@@ -306,12 +307,12 @@ pub enum NonFtInputReaderCommand {
 ///
 /// Commonly used by `InputReader` implementations for staging buffers from
 /// worker threads.
-pub struct InputQueue {
-    pub queue: Mutex<VecDeque<Box<dyn InputBuffer>>>,
+pub struct InputQueue<A = ()> {
+    pub queue: Mutex<VecDeque<(Box<dyn InputBuffer>, A)>>,
     pub consumer: Box<dyn InputConsumer>,
 }
 
-impl InputQueue {
+impl<A> InputQueue<A> {
     pub fn new(consumer: Box<dyn InputConsumer>) -> Self {
         Self {
             queue: Mutex::new(VecDeque::new()),
@@ -319,13 +320,18 @@ impl InputQueue {
         }
     }
 
-    /// Appends `buffer`, if non-`None` to the queue.  Reports to the controller
-    /// that `num_bytes` have been received and at least partially parsed, and
-    /// that `errors` have occurred during parsing.
-    pub fn push(
+    /// Appends `buffer`, if nonempty, to the queue, and associates it with
+    /// `aux`.  Reports to the controller that `num_bytes` have been received
+    /// and at least partially parsed, and that `errors` have occurred during
+    /// parsing.
+    ///
+    /// If `buffer` has no records, then this discards `aux`, even if `buffer`
+    /// is non-`None`.
+    pub fn push_with_aux(
         &self,
         (buffer, errors): (Option<Box<dyn InputBuffer>>, Vec<ParseError>),
         num_bytes: usize,
+        aux: A,
     ) {
         self.consumer.parse_errors(errors);
         match buffer {
@@ -333,27 +339,32 @@ impl InputQueue {
                 let num_records = buffer.len();
 
                 let mut queue = self.queue.lock().unwrap();
-                queue.push_back(buffer);
+                queue.push_back((buffer, aux));
                 self.consumer.buffered(num_records, num_bytes);
             }
             _ => self.consumer.buffered(num_bytes, 0),
         }
     }
 
-    pub fn queue(&self) {
+    /// Flushes a batch of records to the circuit and returns the auxiliary data
+    /// that was associated with those records.
+    ///
+    /// This always flushes whole buffers to the circuit (with `flush_all`),
+    /// since auxiliary data is associated with a whole buffer rather than with
+    /// individual records. If the auxiliary data type `A` is `()`, then
+    /// [InputQueue<()>::flush] avoids that and so is a better choice.
+    pub fn flush_with_aux(&self) -> (usize, Vec<A>) {
         let mut total = 0;
         let n = self.consumer.max_batch_size();
+        let mut consumed_aux = Vec::new();
         while total < n {
-            let Some(mut buffer) = self.queue.lock().unwrap().pop_front() else {
+            let Some((mut buffer, aux)) = self.queue.lock().unwrap().pop_front() else {
                 break;
             };
-            total += buffer.flush(n - total);
-            if !buffer.is_empty() {
-                self.queue.lock().unwrap().push_front(buffer);
-                break;
-            }
+            total += buffer.flush_all();
+            consumed_aux.push(aux);
         }
-        self.consumer.extended(total, RmpValue::Nil);
+        (total, consumed_aux)
     }
 
     pub fn len(&self) -> usize {
@@ -362,6 +373,37 @@ impl InputQueue {
 
     pub fn is_empty(&self) -> bool {
         self.len() == 0
+    }
+}
+
+impl InputQueue<()> {
+    /// Appends `buffer`, if nonempty,` to the queue.  Reports to the controller
+    /// that `num_bytes` have been received and at least partially parsed, and
+    /// that `errors` have occurred during parsing.
+    pub fn push(
+        &self,
+        (buffer, errors): (Option<Box<dyn InputBuffer>>, Vec<ParseError>),
+        num_bytes: usize,
+    ) {
+        self.push_with_aux((buffer, errors), num_bytes, ())
+    }
+
+    /// Flushes a batch of records to the circuit and reports to the consumer
+    /// that it was done.
+    pub fn queue(&self) {
+        let mut total = 0;
+        let n = self.consumer.max_batch_size();
+        while total < n {
+            let Some((mut buffer, ())) = self.queue.lock().unwrap().pop_front() else {
+                break;
+            };
+            total += buffer.flush(n - total);
+            if !buffer.is_empty() {
+                self.queue.lock().unwrap().push_front((buffer, ()));
+                break;
+            }
+        }
+        self.consumer.extended(total, RmpValue::Nil);
     }
 }
 
