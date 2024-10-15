@@ -87,7 +87,9 @@
     {...deleteDialogProps(
       'Delete',
       (name) => `${name} pipeline`,
-      deletePipeline
+      (name: string) => {
+        deletePipeline(name)
+      }
     )(pipeline.current.name)}
     onClose={() => (globalDialog.dialog = null)}
   ></DeleteDialog>
