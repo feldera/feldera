@@ -32,7 +32,7 @@
     onDeletePipeline?: (pipelineName: string) => void
     pipelineBusy: boolean
     unsavedChanges: boolean
-    onActionSuccess?: (action: PipelineAction) => void
+    onActionSuccess?: (action: PipelineAction | 'start_paused_start') => void
     class?: string
   } = $props()
 
@@ -108,24 +108,29 @@
   >
   </button>
 {/snippet}
-{#snippet start(action: PipelineAction, status: PipelineStatus)}
+{#snippet start(
+  action: (alt: boolean) => PipelineAction | 'start_paused_start',
+  status: PipelineStatus
+)}
   <button
+    aria-label={action(false)}
     class:disabled={unsavedChanges}
     class="{buttonClass} fd fd-play_arrow text-[36px] !bg-success-200-800"
     onclick={async (e) => {
-      const success = await postPipelineAction(pipeline.current.name, action)
+      const _action = action(e.ctrlKey || e.shiftKey || e.metaKey)
+      const success = await postPipelineAction(
+        pipeline.current.name,
+        _action === 'start_paused_start' ? 'start_paused' : _action
+      )
       pipeline.optimisticUpdate({ status })
-      if (e.ctrlKey || e.shiftKey || e.metaKey) {
-        return
-      }
       await success()
-      onActionSuccess?.(action)
+      onActionSuccess?.(_action)
     }}
   >
   </button>
 {/snippet}
 {#snippet _start()}
-  {@render start('start', 'Resuming')}
+  {@render start(() => 'start', 'Resuming')}
   {#if unsavedChanges}
     <Tooltip class="z-20 bg-white text-surface-950-50 dark:bg-black" placement="top">
       Save the pipeline before running
@@ -133,7 +138,7 @@
   {/if}
 {/snippet}
 {#snippet _start_paused()}
-  {@render start('start_paused', 'Starting up')}
+  {@render start((alt) => (alt ? 'start_paused' : 'start_paused_start'), 'Starting up')}
   {#if unsavedChanges}
     <Tooltip class="z-20 bg-white text-surface-950-50 dark:bg-black" placement="top">
       Save the pipeline before running
