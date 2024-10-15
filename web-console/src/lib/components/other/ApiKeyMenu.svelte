@@ -6,6 +6,7 @@
   import DeleteDialog, { deleteDialogProps } from '$lib/components/dialogs/DeleteDialog.svelte'
 
   const apiKeys = asyncReadable([], getApiKeys)
+
   const globalDialog = useGlobalDialog()
   let thisDialog = globalDialog.dialog
 </script>
@@ -40,6 +41,7 @@
         </div>
         <button
           class="fd fd-delete btn-icon text-[24px]"
+          aria-label="Delete {key.name} API key"
           onclick={() => (globalDialog.dialog = deleteDialog)}
         ></button>
       </div>

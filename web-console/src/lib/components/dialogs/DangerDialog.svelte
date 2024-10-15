@@ -26,8 +26,8 @@
 <div class="px-4 py-3 bg-surface-100-900 sm:flex sm:flex-row-reverse sm:px-6">
   <button
     type="button"
-    onclick={() => {
-      content!.onSuccess.callback()
+    onclick={async () => {
+      await content!.onSuccess.callback()
       onClose?.()
     }}
     data-testid={content.onSuccess['data-testid']}

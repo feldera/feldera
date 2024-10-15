@@ -2,7 +2,7 @@
   export function deleteDialogProps<Args extends unknown[]>(
     actionName: string,
     itemName: string | ((...args: Args) => string),
-    onAction: (...args: Args) => void,
+    onAction: (...args: Args) => void | Promise<any>,
     description = 'Are you sure? This action is irreversible.'
   ) {
     return (...args: Args) => ({
@@ -28,7 +28,7 @@
   }: {
     actionName: string
     itemName: string | ((...args: Args) => string)
-    onAction: (...args: Args) => void
+    onAction: (...args: Args) => void | Promise<any>
     description?: string
     args: Args
     onClose: () => void

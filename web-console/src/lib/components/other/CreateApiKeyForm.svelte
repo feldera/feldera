@@ -1,6 +1,6 @@
 <script lang="ts">
   import { postApiKey } from '$lib/services/pipelineManager'
-  import { superForm } from 'sveltekit-superforms'
+  import { superForm, setError } from 'sveltekit-superforms'
   import { valibot } from 'sveltekit-superforms/adapters'
   import { Field, Label, FieldErrors, Control, Description, Fieldset, Legend } from 'formsnap'
   import { clipboard } from '@svelte-bin/clipboard'
@@ -21,18 +21,33 @@
         if (!form.valid) {
           return
         }
-        postApiKey(form.data.name).then((response) =>
-          lastGenerated.push({ name: response.name, key: response.api_key })
+        postApiKey(form.data.name).then(
+          (response) => lastGenerated.push({ name: response.name, key: response.api_key }),
+          (e) => {
+            if ('message' in e) {
+              setError(form, 'name', e.message)
+            }
+          }
         )
       }
     }
   )
-  const { form: formData, enhance } = form
+  const { form: formData, enhance, submit } = form
   let lastGenerated = $state<{ name: string; key: string }[]>([])
 </script>
 
 <div class="flex flex-col gap-4 p-4">
-  <form class="flex flex-col gap-4" use:enhance>
+  <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+  <form
+    class="flex flex-col gap-4"
+    use:enhance
+    onkeydown={(event) => {
+      if (event.key === 'Enter') {
+        event.preventDefault()
+        submit()
+      }
+    }}
+  >
     <div class="h5 font-normal">Generate a new API key</div>
     <div>
       You will be shown the generated API key only once.<br />
@@ -41,14 +56,38 @@
     </div>
 
     <Field {form} name="name">
-      <Control let:attrs>
-        <input placeholder="Name" class="input w-full" {...attrs} bind:value={$formData.name} />
+      <Control>
+        {#snippet children(attrs)}
+          <!-- svelte-ignore a11y_autofocus -->
+          <input
+            placeholder="Name"
+            class="input w-full"
+            {...attrs}
+            bind:value={$formData.name}
+            autofocus
+          />
+        {/snippet}
       </Control>
-      <FieldErrors />
+      <FieldErrors>
+        {#snippet children({ errors, errorProps })}
+          {#each errors as error}
+            <span class="text-error-500" {...errorProps}>{error}</span>
+          {/each}
+        {/snippet}
+      </FieldErrors>
     </Field>
     <div class="flex w-full justify-between">
-      <button class="btn preset-outlined-surface-500" onclick={onClose}>BACK</button>
-      <button class="btn preset-outlined-primary-500" type="submit">GENERATE</button>
+      <button
+        class="btn preset-outlined-surface-500"
+        onclick={onClose}
+        onkeydown={(event) => {
+          if (event.key === 'Enter') {
+            event.preventDefault()
+            onClose()
+          }
+        }}>BACK</button
+      >
+      <button class="btn preset-outlined-primary-500">GENERATE</button>
     </div>
   </form>
   <div class="">
