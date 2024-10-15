@@ -10,6 +10,10 @@ use std::{borrow::Cow, error::Error as StdError, fmt, fmt::Display, time::Durati
 #[serde(untagged)]
 pub enum RunnerError {
     // Pipeline information missing
+    PipelineMissingDeploymentConfig {
+        pipeline_id: PipelineId,
+        pipeline_name: String,
+    },
     PipelineMissingDeploymentLocation {
         pipeline_id: PipelineId,
         pipeline_name: String,
@@ -68,6 +72,9 @@ pub enum RunnerError {
         pipeline_id: PipelineId,
         timeout: Duration,
     },
+    PipelineAfterInitializationBecameRunning {
+        pipeline_id: PipelineId,
+    },
     PipelineShutdownTimeout {
         pipeline_id: PipelineId,
         timeout: Duration,
@@ -77,6 +84,10 @@ pub enum RunnerError {
         pipeline_id: PipelineId,
         // TODO: This should be IOError, so we can serialize the error code
         // similar to `DBSPError::IO`.
+        error: String,
+    },
+    PipelineDeploymentError {
+        pipeline_id: PipelineId,
         error: String,
     },
     PipelineShutdownError {
@@ -101,6 +112,9 @@ pub enum RunnerError {
 impl DetailedError for RunnerError {
     fn error_code(&self) -> Cow<'static, str> {
         match self {
+            Self::PipelineMissingDeploymentConfig { .. } => {
+                Cow::from("PipelineMissingDeploymentConfig")
+            }
             Self::PipelineMissingDeploymentLocation { .. } => {
                 Cow::from("PipelineMissingDeploymentLocation")
             }
@@ -127,9 +141,13 @@ impl DetailedError for RunnerError {
             }
             Self::PipelineProvisioningTimeout { .. } => Cow::from("PipelineProvisioningTimeout"),
             Self::PipelineInitializingTimeout { .. } => Cow::from("PipelineInitializingTimeout"),
+            Self::PipelineAfterInitializationBecameRunning { .. } => {
+                Cow::from("PipelineAfterInitializationBecameRunning")
+            }
             Self::PipelineShutdownTimeout { .. } => Cow::from("PipelineShutdownTimeout"),
             Self::PipelineStartupError { .. } => Cow::from("PipelineStartupError"),
             Self::PipelineShutdownError { .. } => Cow::from("PipelineShutdownError"),
+            Self::PipelineDeploymentError { .. } => Cow::from("PipelineDeploymentError"),
             Self::PortFileParseError { .. } => Cow::from("PortFileParseError"),
             Self::BinaryFetchError { .. } => Cow::from("BinaryFetchError"),
             Self::PipelineUnreachable { .. } => Cow::from("PipelineUnreachable"),
@@ -140,6 +158,15 @@ impl DetailedError for RunnerError {
 impl Display for RunnerError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::PipelineMissingDeploymentConfig {
+                pipeline_id,
+                pipeline_name,
+            } => {
+                write!(
+                    f,
+                    "Pipeline {pipeline_name} ({pipeline_id}) is missing its deployment configuration"
+                )
+            }
             Self::PipelineMissingDeploymentLocation {
                 pipeline_id,
                 pipeline_name,
@@ -272,6 +299,14 @@ impl Display for RunnerError {
                     "Waiting for initialization of pipeline {pipeline_id} timed out after {timeout:?}"
                 )
             }
+            Self::PipelineAfterInitializationBecameRunning {
+                pipeline_id
+            } => {
+                write!(
+                    f,
+                    "Pipeline {pipeline_id} immediately became running rather than paused after initialization"
+                )
+            }
             Self::PipelineShutdownTimeout {
                 pipeline_id,
                 timeout,
@@ -286,6 +321,9 @@ impl Display for RunnerError {
             }
             Self::PipelineShutdownError { pipeline_id, error } => {
                 write!(f, "Failed to shutdown pipeline {pipeline_id}: {error}")
+            }
+            Self::PipelineDeploymentError { pipeline_id, error } => {
+                write!(f, "Deployment of pipeline {pipeline_id} encountered a fatal error: {error}")
             }
             Self::PortFileParseError { pipeline_id, error } => {
                 write!(
@@ -317,6 +355,7 @@ impl StdError for RunnerError {}
 impl ResponseError for RunnerError {
     fn status_code(&self) -> StatusCode {
         match self {
+            Self::PipelineMissingDeploymentConfig { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::PipelineMissingDeploymentLocation { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::PipelineMissingProgramInfo { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::PipelineMissingProgramBinaryUrl { .. } => StatusCode::INTERNAL_SERVER_ERROR,
@@ -333,8 +372,12 @@ impl ResponseError for RunnerError {
             Self::PipelineEndpointInvalidResponse { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::PipelineProvisioningTimeout { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::PipelineInitializingTimeout { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::PipelineAfterInitializationBecameRunning { .. } => {
+                StatusCode::INTERNAL_SERVER_ERROR
+            }
             Self::PipelineStartupError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::PipelineShutdownError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::PipelineDeploymentError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::PipelineShutdownTimeout { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::PortFileParseError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::BinaryFetchError { .. } => StatusCode::INTERNAL_SERVER_ERROR,

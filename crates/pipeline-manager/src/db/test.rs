@@ -1218,6 +1218,7 @@ enum StorageAction {
     TransitDeploymentStatusToInitializing(TenantId, PipelineId, String),
     TransitDeploymentStatusToRunning(TenantId, PipelineId),
     TransitDeploymentStatusToPaused(TenantId, PipelineId),
+    TransitDeploymentStatusToUnavailable(TenantId, PipelineId),
     TransitDeploymentStatusToShuttingDown(TenantId, PipelineId),
     TransitDeploymentStatusToShutdown(TenantId, PipelineId),
     TransitDeploymentStatusToFailed(
@@ -1619,6 +1620,12 @@ fn db_impl_behaves_like_model() {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
                                 let model_response = model.transit_deployment_status_to_paused(tenant_id, pipeline_id).await;
                                 let impl_response = handle.db.transit_deployment_status_to_paused(tenant_id, pipeline_id).await;
+                                check_responses(i, model_response, impl_response);
+                            }
+                            StorageAction::TransitDeploymentStatusToUnavailable(tenant_id, pipeline_id) => {
+                                create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
+                                let model_response = model.transit_deployment_status_to_unavailable(tenant_id, pipeline_id).await;
+                                let impl_response = handle.db.transit_deployment_status_to_unavailable(tenant_id, pipeline_id).await;
                                 check_responses(i, model_response, impl_response);
                             }
                             StorageAction::TransitDeploymentStatusToShuttingDown(tenant_id, pipeline_id) => {
@@ -2430,6 +2437,24 @@ impl Storage for Mutex<DbModel> {
         pipeline_id: PipelineId,
     ) -> Result<(), DBError> {
         let new_status = PipelineStatus::Paused;
+        let mut pipeline = self
+            .help_transit_deployment_status(tenant_id, pipeline_id, &new_status)
+            .await?;
+        pipeline.deployment_status = new_status;
+        pipeline.deployment_status_since = Utc::now();
+        self.lock()
+            .await
+            .pipelines
+            .insert((tenant_id, pipeline.id), pipeline.clone());
+        Ok(())
+    }
+
+    async fn transit_deployment_status_to_unavailable(
+        &self,
+        tenant_id: TenantId,
+        pipeline_id: PipelineId,
+    ) -> Result<(), DBError> {
+        let new_status = PipelineStatus::Unavailable;
         let mut pipeline = self
             .help_transit_deployment_status(tenant_id, pipeline_id, &new_status)
             .await?;

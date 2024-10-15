@@ -3,15 +3,15 @@
 
 use crate::config::LocalRunnerConfig;
 use crate::db::types::common::Version;
-use crate::db::types::pipeline::{ExtendedPipelineDescr, PipelineId};
-use crate::db::types::program::generate_pipeline_config;
+use crate::db::types::pipeline::PipelineId;
 use crate::error::ManagerError;
 use crate::runner::error::RunnerError;
 use crate::runner::logs_buffer::LogsBuffer;
-use crate::runner::pipeline_executor::{LogMessage, PipelineExecutionDesc, PipelineExecutor};
+use crate::runner::pipeline_executor::{LogMessage, PipelineExecutor};
 use async_trait::async_trait;
-use feldera_types::config::{StorageCacheConfig, StorageConfig};
-use log::{debug, error};
+use feldera_types::config::{PipelineConfig, StorageCacheConfig, StorageConfig};
+use log::{debug, error, info};
+use std::path::Path;
 use std::process::Stdio;
 use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -154,13 +154,6 @@ impl Drop for LocalRunner {
 }
 
 impl LocalRunner {
-    async fn kill_pipeline(&mut self) {
-        if let Some(mut p) = self.process.take() {
-            let _ = p.kill().await;
-            let _ = p.wait().await;
-        }
-    }
-
     /// Sets up a thread which listens to log follow requests and new incoming lines
     /// from stdout/stderr. New followers are caught up and existing followers receive
     /// the new stdout/stderr lines as they come in.
@@ -221,6 +214,12 @@ impl LocalRunner {
                             Ok(line) => match line {
                                 None => {
                                     stdout_finished = true;
+                                    if stderr_finished {
+                                        let explanation = "stdout and stderr are finished";
+                                        Self::end_log_of_followers(&mut log_followers, LogMessage::End(format!("LOG STREAM END: {explanation}"))).await;
+                                        info!("Logs of pipeline {pipeline_id} ended: {explanation}");
+                                        break;
+                                    }
                                 }
                                 Some(line) => {
                                     println!("{line}"); // Also print it to manager's stdout
@@ -241,6 +240,12 @@ impl LocalRunner {
                             Ok(line) => match line {
                                 None => {
                                     stderr_finished = true;
+                                    if stdout_finished {
+                                        let explanation = "stdout and stderr are finished";
+                                        Self::end_log_of_followers(&mut log_followers, LogMessage::End(format!("LOG STREAM END: {explanation}"))).await;
+                                        info!("Logs of pipeline {pipeline_id} ended: {explanation}");
+                                        break;
+                                    }
                                 }
                                 Some(line) => {
                                     eprintln!("{line}"); // Also print it to manager's stderr
@@ -277,11 +282,10 @@ impl PipelineExecutor for LocalRunner {
 
     // Provisioning is over once the pipeline port file has been detected.
     const PROVISIONING_TIMEOUT: Duration = Duration::from_millis(10_000);
-    const PROVISIONING_POLL_PERIOD: Duration = Duration::from_millis(300);
+    const PROVISIONING_POLL_PERIOD: Duration = Duration::from_millis(250);
 
     // Shutdown is over once the process has exited.
-    const SHUTDOWN_TIMEOUT: Duration = Duration::from_millis(10_000);
-    const SHUTDOWN_POLL_PERIOD: Duration = Duration::from_millis(300);
+    const SHUTDOWN_POLL_PERIOD: Duration = Duration::from_millis(500);
 
     /// Creation steps:
     /// - Spawn a log rejection thread
@@ -304,130 +308,95 @@ impl PipelineExecutor for LocalRunner {
         }
     }
 
-    /// Converts a pipeline descriptor into a self-contained execution descriptor.
-    async fn to_execution_desc(
-        &self,
-        pipeline: &ExtendedPipelineDescr,
-    ) -> Result<PipelineExecutionDesc, ManagerError> {
-        // Handle optional fields
-        let (inputs, outputs) = match pipeline.program_info.clone() {
-            None => {
-                return Err(ManagerError::from(
-                    RunnerError::PipelineMissingProgramInfo {
-                        pipeline_name: pipeline.name.clone(),
-                        pipeline_id: pipeline.id,
-                    },
-                ))
-            }
-            Some(program_info) => (
-                program_info.input_connectors,
-                program_info.output_connectors,
-            ),
-        };
-        let program_binary_url = match pipeline.program_binary_url.clone() {
-            None => {
-                return Err(ManagerError::from(
-                    RunnerError::PipelineMissingProgramBinaryUrl {
-                        pipeline_name: pipeline.name.clone(),
-                        pipeline_id: pipeline.id,
-                    },
-                ))
-            }
-            Some(program_binary_url) => program_binary_url,
-        };
-
-        let mut deployment_config =
-            generate_pipeline_config(pipeline.id, &pipeline.runtime_config, &inputs, &outputs);
-
-        // The deployment configuration must be modified to fill in the details for storage,
-        // which varies for each pipeline executor
-        let pipeline_dir = self.config.pipeline_dir(pipeline.id);
-        let pipeline_data_dir = pipeline_dir.join("data");
-        deployment_config.storage_config = if deployment_config.global.storage {
-            Some(StorageConfig {
-                path: pipeline_data_dir.to_string_lossy().into(),
-                cache: StorageCacheConfig::default(),
-            })
-        } else {
-            None
-        };
-
-        Ok(PipelineExecutionDesc {
-            pipeline_id: pipeline.id,
-            pipeline_name: pipeline.name.clone(),
-            program_version: pipeline.program_version,
-            program_binary_url,
-            deployment_config,
-        })
-    }
-
-    /// At initialization of the runner, we cannot reconnect with an existing running
-    /// pipeline process because local processes are terminated upon pipeline manager exit.
-    /// For this reason, it is not possible to re-acquire the stdout/stderr and as such there is
-    /// nothing to implement for this local runner function.
-    async fn init(&mut self, _was_started: bool) {
+    /// It is not possible to re-acquire the stdout/stderr as the process
+    /// is killed upon runner exit and the handle is lost. As such, there
+    /// is nothing to implement for this local runner function.
+    async fn init(&mut self, _was_provisioned: bool) {
         // Nothing to implement
     }
 
-    /// Starting consists of the following steps:
-    /// 1. Create pipeline directory
-    /// 2. Write configuration file
-    /// 3. Fetch and copy over the binary executable
-    /// 4. Launch process running the binary executable
-    /// 5. Setup log following
-    async fn start(&mut self, ped: PipelineExecutionDesc) -> Result<(), ManagerError> {
-        let pipeline_id = ped.pipeline_id;
-        let program_version = ped.program_version;
+    /// Storage is located at:
+    /// `<working-directory>/pipelines/pipeline<pipeline_id>/storage`
+    async fn generate_storage_config(&self) -> StorageConfig {
+        let pipeline_dir = self.config.pipeline_dir(self.pipeline_id);
+        let pipeline_storage_dir = pipeline_dir.join("storage");
+        StorageConfig {
+            path: pipeline_storage_dir.to_string_lossy().into(),
+            cache: StorageCacheConfig::default(),
+        }
+    }
 
-        debug!("Pipeline config is '{:?}'", ped.deployment_config);
-
-        // Create pipeline directory (delete old directory if exists); write metadata
-        // and config files to it.
-        let pipeline_dir = self.config.pipeline_dir(pipeline_id);
+    /// Provisions the process deployment.
+    /// - Creates pipeline working directory
+    /// - Creates pipeline storage directory
+    /// - Writes config.yaml to pipeline working directory
+    /// - Retrieve and writes executable to pipeline working directory
+    /// - Runs executable as process in pipeline working directory
+    /// - Switches to operational logging following the stdout/stderr of the process
+    async fn provision(
+        &mut self,
+        deployment_config: &PipelineConfig,
+        program_binary_url: &str,
+        program_version: Version,
+    ) -> Result<(), ManagerError> {
+        // (Re-)create pipeline working directory (which will contain storage directory)
+        let pipeline_dir = self.config.pipeline_dir(self.pipeline_id);
         let _ = remove_dir_all(&pipeline_dir).await;
         create_dir_all(&pipeline_dir).await.map_err(|e| {
             ManagerError::io_error(
-                format!("creating pipeline directory '{}'", pipeline_dir.display()),
+                format!(
+                    "Unable to create pipeline working directory: {}",
+                    pipeline_dir.display()
+                ),
                 e,
             )
         })?;
-        if let Some(pipeline_data_dir) = ped
-            .deployment_config
-            .storage_config
-            .as_ref()
-            .map(|storage| &storage.path)
-        {
-            create_dir_all(&pipeline_data_dir).await.map_err(|e| {
+
+        // (Re-)create pipeline storage directory
+        if let Some(storage_config) = &deployment_config.storage_config {
+            let _ = remove_dir_all(&storage_config.path).await;
+            create_dir_all(&storage_config.path).await.map_err(|e| {
                 ManagerError::io_error(
-                    format!("creating pipeline data directory '{}'", pipeline_data_dir),
+                    format!(
+                        "Unable to create pipeline storage directory: {}",
+                        storage_config.path
+                    ),
                     e,
                 )
             })?;
         }
 
-        let config_file_path = self.config.config_file_path(pipeline_id);
-        let expanded_config = serde_yaml::to_string(&ped.deployment_config).unwrap(); // TODO: unwrap
+        // Write config.yaml
+        let config_file_path = self.config.config_file_path(self.pipeline_id);
+        let expanded_config = serde_yaml::to_string(&deployment_config)
+            .expect("Deployment configuration serialization failed");
         fs::write(&config_file_path, &expanded_config)
             .await
             .map_err(|e| {
                 ManagerError::io_error(
-                    format!("writing config file '{}'", config_file_path.display()),
+                    format!(
+                        "Unable to write config file '{}'",
+                        config_file_path.display()
+                    ),
                     e,
                 )
             })?;
 
+        // Retrieve and store executable in pipeline working directory
         let fetched_executable = fetch_binary_ref(
             &self.config,
-            &ped.program_binary_url,
-            pipeline_id,
+            program_binary_url,
+            self.pipeline_id,
             program_version,
         )
         .await?;
 
-        // Run executable, set current directory to pipeline directory, pass metadata
-        // file and config as arguments.
+        // Run executable:
+        // - Current directory: pipeline working directory
+        // - Configuration file: path to config.yaml
+        // - Stdout/stderr are piped to follow logs
         let mut process = Command::new(fetched_executable)
-            .current_dir(self.config.pipeline_dir(pipeline_id))
+            .current_dir(pipeline_dir)
             .arg("--config-file")
             .arg(&config_file_path)
             .stdin(Stdio::null())
@@ -435,11 +404,11 @@ impl PipelineExecutor for LocalRunner {
             .stderr(Stdio::piped())
             .spawn()
             .map_err(|e| RunnerError::PipelineStartupError {
-                pipeline_id,
+                pipeline_id: self.pipeline_id,
                 error: e.to_string(),
             })?;
 
-        // Setup log following
+        // Switch to operational logging
         let stdout = process
             .stdout
             .take()
@@ -469,16 +438,17 @@ impl PipelineExecutor for LocalRunner {
         Ok(())
     }
 
-    /// Pipeline location is determined by finding and reading its port file.
-    async fn get_location(&mut self) -> Result<Option<String>, ManagerError> {
+    /// Process deployment provisioning is completed when the port file is found and read.
+    async fn is_provisioned(&self) -> Result<Option<String>, ManagerError> {
         let port_file_path = self.config.port_file_path(self.pipeline_id);
-        let host = &self.config.pipeline_host;
-
         match fs::read_to_string(port_file_path).await {
             Ok(port) => {
                 let parse = port.trim().parse::<u16>();
                 match parse {
-                    Ok(port) => Ok(Some(format!("{host}:{port}"))),
+                    Ok(port) => {
+                        let host = &self.config.pipeline_host;
+                        Ok(Some(format!("{host}:{port}")))
+                    }
                     Err(e) => Err(ManagerError::from(RunnerError::PortFileParseError {
                         pipeline_id: self.pipeline_id,
                         error: e.to_string(),
@@ -489,27 +459,74 @@ impl PipelineExecutor for LocalRunner {
         }
     }
 
-    /// Shutdown steps:
-    /// - Kill the process
-    /// - Remove the pipeline directory
-    /// - Shutdown operational logging thread and start the rejection thread
+    /// Checks the process deployment is healthy.
+    /// - Pipeline working directory must exist
+    /// - Process status must be checkable and not be exited
+    async fn check(&mut self) -> Result<(), ManagerError> {
+        // Pipeline working directory must exist
+        let pipeline_dir = &self.config.pipeline_dir(self.pipeline_id);
+        if !Path::new(pipeline_dir).is_dir() {
+            return Err(ManagerError::from(RunnerError::PipelineDeploymentError {
+                pipeline_id: self.pipeline_id,
+                error: format!("Pipeline working directory {} no longer exists (it should only be deleted at shutdown)", pipeline_dir.to_string_lossy())
+            }));
+        }
+
+        // Pipeline process status must be checkable and not be exited
+        if let Some(p) = &mut self.process {
+            match p.try_wait() {
+                Ok(status) => {
+                    if let Some(status) = status {
+                        // If there is an exit status, the process has exited
+                        return Err(ManagerError::from(RunnerError::PipelineDeploymentError {
+                            pipeline_id: self.pipeline_id,
+                            error: format!("Pipeline process exited prematurely with {status}"),
+                        }));
+                    }
+                }
+                Err(e) => {
+                    // Unable to check if it has an exit status, which indicates something went wrong
+                    return Err(ManagerError::from(RunnerError::PipelineDeploymentError {
+                        pipeline_id: self.pipeline_id,
+                        error: format!("Pipeline process status could not be checked due to: {e}"),
+                    }));
+                }
+            }
+        } else {
+            // No process handle
+            return Err(ManagerError::from(RunnerError::PipelineDeploymentError {
+                pipeline_id: self.pipeline_id,
+                error: "Pipeline process is no longer owned by runner".to_string(),
+            }));
+        };
+
+        Ok(())
+    }
+
+    /// Shuts down the process deployment.
+    /// 1. Kill process
+    /// 2. Remove pipeline working directory
+    /// 3. Switch to rejection logging
     async fn shutdown(&mut self) -> Result<(), ManagerError> {
         // Kill pipeline process
-        self.kill_pipeline().await;
+        if let Some(mut p) = self.process.take() {
+            let _ = p.kill().await;
+            let _ = p.wait().await;
+        }
 
-        // Remove the pipeline directory
+        // Remove the pipeline working directory
         match remove_dir_all(self.config.pipeline_dir(self.pipeline_id)).await {
             Ok(_) => (),
             Err(e) => {
                 log::warn!(
-                    "Failed to delete pipeline directory for pipeline {}: {}",
+                    "Failed to delete pipeline working directory for pipeline {}: {}",
                     self.pipeline_id,
                     e
                 );
             }
         }
 
-        // Terminate the operational logging thread and start the rejection one
+        // Switch to rejection logging
         let (current_log_terminate_sender, current_log_join_handle) = self
             .log_terminate_sender_and_join_handle
             .take()
@@ -522,13 +539,5 @@ impl PipelineExecutor for LocalRunner {
             Some((new_log_terminate_sender, new_log_join_handle));
 
         Ok(())
-    }
-
-    /// A pipeline is shutdown when the process has exited.
-    async fn check_if_shutdown(&mut self) -> bool {
-        self.process
-            .as_mut()
-            .map(|p| p.try_wait().is_ok())
-            .unwrap_or(true)
     }
 }
