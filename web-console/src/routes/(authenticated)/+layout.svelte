@@ -72,7 +72,7 @@
         <!-- <HealthPopup></HealthPopup> -->
         <button
           onclick={toggleDarkMode}
-          class="btn-icon text-[24px] preset-tonal-surface
+          class="preset-grayout-surface btn-icon text-[24px]
             {darkMode.value === 'dark' ? 'fd fd-brightness_5' : 'fd fd-brightness_2'}"
         ></button>
         <AuthButton compactBreakpoint="xl:"></AuthButton>

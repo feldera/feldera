@@ -29,7 +29,7 @@ export type SystemError<T = any, Report = ReportDetails> = Error & {
 const limitMessage = (text: string | null | undefined, max: number, prefix: string) =>
   ((t) => (t.length > max ? prefix : '') + t.slice(Math.max(0, t.length - max)))(text || '')
 
-export const extractPipelineErrors = (pipeline: ExtendedPipeline) => {
+export const extractPipelineErrors = (pipeline: ExtendedPipeline): SystemError[] => {
   if (!(typeof pipeline.status === 'object' && 'PipelineError' in pipeline.status)) {
     return []
   }
