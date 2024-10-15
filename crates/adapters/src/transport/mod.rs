@@ -457,9 +457,26 @@ pub trait InputConsumer: Send + Sync + DynClone {
     /// then a `false` return value can allow it to skip that expense.
     fn is_pipeline_fault_tolerant(&self) -> bool;
 
+    /// Reports `errors` as parse errors.
     fn parse_errors(&self, errors: Vec<ParseError>);
+
+    /// Reports that the input adapter has internally buffered `num_records`
+    /// records comprising `num_bytes` bytes of input data.
+    ///
+    /// Fault-tolerant input adapters should report buffered data during replay
+    /// as well as in normal operation.
     fn buffered(&self, num_records: usize, num_bytes: usize);
+
+    /// Reports that the input adapter has completed flushing `num_records`
+    /// records to the circuit, in response to an [InputReaderCommand::Replay]
+    /// request.
+    ///
+    /// Only a fault-tolerant input adapter will invoke this.
     fn replayed(&self, num_records: usize);
+
+    /// Reports that the input adapter has completed flushing `num_records`
+    /// records to the circuit, in response to an [InputReaderCommand::Queue]
+    /// request.
     fn extended(&self, num_records: usize, metadata: RmpValue);
 
     /// Reports that the endpoint has reached end of input and that no more data
