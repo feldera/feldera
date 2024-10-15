@@ -53,6 +53,7 @@
     "autoprefixer": "^10.4.20",
     "bignumber.js": "^9.1.2",
     "boxicons": "^2.1.4",
+    "clsx": "^2.1.1",
     "d3-format": "^3.1.0",
     "echarts": "^5.5.1",
     "eslint": "^9.12.0",
