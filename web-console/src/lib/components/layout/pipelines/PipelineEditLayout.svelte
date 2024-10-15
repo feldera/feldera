@@ -64,16 +64,17 @@
 
   let metrics = useAggregatePipelineStats(pipeline, 1000, 61000)
   let files = $derived.by(() => {
-    const p = pipeline
+    const current = pipeline.current
+    const patch = pipeline.patch
     return [
       {
         name: `program.sql`,
         access: {
           get current() {
-            return p.current.programCode
+            return current.programCode
           },
           set current(programCode: string) {
-            p.patch({ programCode })
+            patch({ programCode })
           }
         },
         language: 'sql' as const,
@@ -86,7 +87,7 @@
         name: `stubs.rs`,
         access: {
           get current() {
-            return p.current.programInfo?.udf_stubs ?? ''
+            return current.programInfo?.udf_stubs ?? ''
           }
         },
         language: 'rust' as const,
@@ -100,10 +101,10 @@
         name: `udf.rs`,
         access: {
           get current() {
-            return p.current.programUdfRs
+            return current.programUdfRs
           },
           set current(programUdfRs: string) {
-            p.patch({ programUdfRs })
+            patch({ programUdfRs })
           }
         },
         language: 'rust' as const,
@@ -122,10 +123,10 @@ pub fn my_udf(input: String) -> Result<String, Box<dyn std::error::Error>> {
         name: `udf.toml`,
         access: {
           get current() {
-            return p.current.programUdfToml
+            return current.programUdfToml
           },
           set current(programUdfToml: string) {
-            p.patch({ programUdfToml })
+            patch({ programUdfToml })
           }
         },
         language: 'graphql' as const,

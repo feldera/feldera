@@ -18,7 +18,7 @@ const isEqual = <T>(a: T, b: T) => {
 export class DecoupledStateProxy<T extends string | number | boolean> {
   protected downstream: { current: T } = $state({ current: undefined! })
   protected baseline: T
-  protected _upstream: { current: T } = $state({ current: undefined! })
+  protected _upstream: { current: T } = { current: undefined! }
   protected _upstreamChanged = $state(false)
   protected _downstreamChanged = $state(false)
   protected wait: () => number | 'decoupled'
@@ -56,7 +56,10 @@ export class DecoupledStateProxy<T extends string | number | boolean> {
     this.debounceSet()
   }
 
-  fetch() {
+  fetch(newUpstream?: { current: T }) {
+    if (newUpstream) {
+      this._upstream = newUpstream
+    }
     const eq = isEqual(this._upstream.current, this.baseline)
     if (eq && this._upstreamChanged) {
       this._upstreamChanged = false

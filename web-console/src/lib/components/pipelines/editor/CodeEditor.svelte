@@ -46,7 +46,7 @@
 </script>
 
 <script lang="ts">
-  import { type Snippet } from 'svelte'
+  import { untrack, type Snippet } from 'svelte'
   import { useLocalStorage } from '$lib/compositions/localStore.svelte'
   import { DecoupledStateProxy } from '$lib/compositions/decoupledState.svelte'
   import { useDarkMode } from '$lib/compositions/useDarkMode.svelte'
@@ -102,16 +102,20 @@
 
   let filePath = $derived(path + '/' + file.name)
   let previousFilePath = $state<string | undefined>(undefined)
+
   $effect.pre(() => {
     if (openFiles[filePath]) {
       return
     }
-    const access = file.access
     const modelUri = MonacoImports.Uri.file(filePath)
-    const model =
-      editor.getModel(modelUri) ?? editor.createModel(access.current, file.language, modelUri)
+    const model = (() => {
+      return (
+        editor.getModel(modelUri) ??
+        editor.createModel(file.access.current, file.language, modelUri)
+      )
+    })()
     const sync = new DecoupledStateProxy(
-      access,
+      file.access,
       {
         get current() {
           return model.getValue()
@@ -133,8 +137,8 @@
   })
   $effect.pre(() => {
     file.access.current
-    queueMicrotask(() => {
-      openFiles[filePath].sync.fetch()
+    untrack(() => {
+      openFiles[filePath].sync.fetch(file.access)
     })
   })
   $effect(() => {

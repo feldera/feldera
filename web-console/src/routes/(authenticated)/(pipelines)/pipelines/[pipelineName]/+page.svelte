@@ -17,17 +17,6 @@
     pipelineName = decodeURIComponent($page.params.pipelineName)
   })
 
-  {
-    let openPipelines = useOpenPipelines()
-    const addOpenedTab = (pipelineName: string) => {
-      if (!openPipelines.value.find((p) => pipelineTabEq(p, { existing: pipelineName }))) {
-        openPipelines.value = [...openPipelines.value, { existing: pipelineName }]
-      }
-    }
-    $effect(() => {
-      addOpenedTab(pipelineName)
-    })
-  }
   let pipelineCache = $state({ current: data.preloadedPipeline })
   let set = (pipeline: ExtendedPipeline) => {
     pipelineCache.current = pipeline
@@ -40,11 +29,6 @@
     () => data.preloadedPipeline,
     () => goto(`${base}/`)
   )
-
-  $effect(() => {
-    // TODO: fix https://github.com/feldera/feldera/issues/2740
-    return () => window.location.reload()
-  })
 </script>
 
 <PipelineEditLayout {pipeline}></PipelineEditLayout>
