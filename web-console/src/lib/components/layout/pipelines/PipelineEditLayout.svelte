@@ -46,11 +46,18 @@
   const pipelineActionCallbacks = usePipelineActionCallbacks()
   const handleActionSuccess = async (pipelineName: string, action: PipelineAction) => {
     const cbs = pipelineActionCallbacks.getAll(pipelineName, action)
-    await Promise.allSettled(cbs.map((x) => x()))
+    await Promise.allSettled(cbs.map((x) => x(pipelineName)))
     if (action !== 'start_paused') {
       return
     }
     postPipelineAction(pipelineName, 'start')
+  }
+  const handleDeletePipeline = async (pipelineName: string) => {
+    updatePipelines((pipelines) => pipelines.filter((p) => p.name !== pipelineName))
+    const cbs = pipelineActionCallbacks
+      .getAll('', 'delete')
+      .concat(pipelineActionCallbacks.getAll(pipelineName, 'delete'))
+    cbs.map((x) => x(pipelineName))
   }
 
   const programErrors = $derived(
@@ -168,8 +175,7 @@ example = "1.0"`
           ></DeploymentStatus>
           <PipelineActions
             {pipeline}
-            onDeletePipeline={(pipelineName) =>
-              updatePipelines((pipelines) => pipelines.filter((p) => p.name !== pipelineName))}
+            onDeletePipeline={handleDeletePipeline}
             pipelineBusy={editDisabled}
             unsavedChanges={downstreamChanged}
             onActionSuccess={(action) => handleActionSuccess(pipeline.current.name, action)}

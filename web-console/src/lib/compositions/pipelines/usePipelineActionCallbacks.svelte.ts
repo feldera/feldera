@@ -1,10 +1,12 @@
 import type { PipelineAction } from '$lib/services/pipelineManager'
 
-type Cb = () => Promise<void>
+type Cb = (pipelineName: string) => Promise<void>
 
-const callbacks: Record<string, Partial<Record<PipelineAction, Cb[]>>> = $state({})
+type Action = PipelineAction | 'delete'
 
-const pop = (pipelineName: string, action: PipelineAction) => {
+const callbacks: Record<string, Partial<Record<Action, Cb[]>>> = $state({})
+
+const pop = (pipelineName: string, action: Action) => {
   callbacks[pipelineName] ??= {}
   callbacks[pipelineName][action] ??= []
   return callbacks[pipelineName][action].pop()
@@ -12,12 +14,12 @@ const pop = (pipelineName: string, action: PipelineAction) => {
 
 export function usePipelineActionCallbacks() {
   return {
-    add(pipelineName: string, action: PipelineAction, callback: Cb) {
+    add(pipelineName: string, action: Action, callback: Cb) {
       callbacks[pipelineName] ??= {}
       callbacks[pipelineName][action] ??= []
       callbacks[pipelineName][action].push(callback)
     },
-    remove(pipelineName: string, action: PipelineAction, callback: Cb) {
+    remove(pipelineName: string, action: Action, callback: Cb) {
       callbacks[pipelineName] ??= {}
       callbacks[pipelineName][action] ??= []
       const idx = callbacks[pipelineName][action].findIndex((cb) => cb === callback)
@@ -27,7 +29,7 @@ export function usePipelineActionCallbacks() {
       callbacks[pipelineName][action].splice(idx, 1)
     },
     pop,
-    popIterator: (pipelineName: string, action: PipelineAction) => ({
+    popIterator: (pipelineName: string, action: Action) => ({
       [Symbol.iterator](): Iterator<Cb> {
         return {
           next: (): IteratorResult<Cb> => {
@@ -41,12 +43,12 @@ export function usePipelineActionCallbacks() {
         }
       }
     }),
-    popAll(pipelineName: string, action: PipelineAction) {
+    popAll(pipelineName: string, action: Action) {
       callbacks[pipelineName] ??= {}
       callbacks[pipelineName][action] ??= []
       return callbacks[pipelineName][action]?.splice(0)
     },
-    getAll(pipelineName: string, action: PipelineAction) {
+    getAll(pipelineName: string, action: Action) {
       return callbacks[pipelineName]?.[action] ?? []
     }
   }

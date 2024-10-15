@@ -83,6 +83,10 @@
       }
     })
   }
+  const dropChangeStreamHistory = async (pipelineName: string) => {
+    delete pipelinesRelations[pipelineName]
+    delete changeStream[pipelineName]
+  }
 </script>
 
 <script lang="ts">
@@ -160,6 +164,12 @@
     update()
     return () => {
       clearInterval(handle)
+    }
+  })
+  $effect(() => {
+    untrack(() => pipelineActionCallbacks.add('', 'delete', dropChangeStreamHistory))
+    return () => {
+      pipelineActionCallbacks.remove('', 'delete', dropChangeStreamHistory)
     }
   })
 

@@ -40,6 +40,12 @@ export class LocalStore {
   deserialize(item) {
     return JSON.parse(item)
   }
+
+  remove() {
+    console.log('removing', this.key)
+    localStorage.removeItem(this.key)
+    delete stores[this.key]
+  }
 }
 
 /**

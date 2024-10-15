@@ -98,7 +98,7 @@
           if (e.key === 'Enter') {
             await createPipeline(e.currentTarget.value).then(
               () => {
-                e.currentTarget.blur()
+                e.currentTarget?.blur()
               },
               (e) => {
                 if ('message' in e) {
