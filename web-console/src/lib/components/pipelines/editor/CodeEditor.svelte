@@ -43,6 +43,21 @@
       'editor.background': '#212121'
     }
   })
+
+  const pipelineActionCallbacks = usePipelineActionCallbacks()
+  const dropOpenedFile = async (pipelineName: string) => {
+    const files = ['program.sql', 'stubs.rs', 'udf.rs', 'udf.toml'].map(
+      (file) => `${pipelineName}/${file}`
+    )
+    for (const file of files) {
+      if (!openFiles[file]) {
+        continue
+      }
+      openFiles[file].sync[Symbol.dispose]()
+      openFiles[file].model.dispose()
+      delete openFiles[file]
+    }
+  }
 </script>
 
 <script lang="ts">
@@ -60,6 +75,7 @@
   import { pipelineFileNameRegex } from '$lib/compositions/health/systemErrors'
   import { effectMonacoContentPlaceholder } from '$lib/components/monacoEditor/effectMonacoContentPlaceholder.svelte'
   import { GenericOverlayWidget } from '$lib/components/monacoEditor/GenericOverlayWidget'
+  import { usePipelineActionCallbacks } from '$lib/compositions/pipelines/usePipelineActionCallbacks.svelte'
 
   void MonacoImports // Explicitly import all monaco-editor esm modules
 
@@ -218,6 +234,13 @@
   let placeholderContent = $derived(file.placeholder)
   $effect(() => {
     return effectMonacoContentPlaceholder(editorRef, placeholderContent, { opacity: '70%' })
+  })
+
+  $effect(() => {
+    untrack(() => pipelineActionCallbacks.add('', 'delete', dropOpenedFile))
+    return () => {
+      pipelineActionCallbacks.remove('', 'delete', dropOpenedFile)
+    }
   })
 
   let conflictWidgetRef: HTMLElement = $state(undefined!)

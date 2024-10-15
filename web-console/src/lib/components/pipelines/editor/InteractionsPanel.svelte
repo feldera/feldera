@@ -16,6 +16,7 @@
   import type { PipelineMetrics } from '$lib/functions/pipelineMetrics'
   import { usePipelineActionCallbacks } from '$lib/compositions/pipelines/usePipelineActionCallbacks.svelte'
   import { count } from '$lib/functions/common/array'
+  import { untrack } from 'svelte'
 
   let {
     pipeline,
@@ -45,9 +46,16 @@
   }
   $effect(() => {
     pipelineName
-    setTimeout(() => pipelineActionCallbacks.add(pipelineName, 'start_paused', switchTo))
+    untrack(() => pipelineActionCallbacks.add(pipelineName, 'start_paused', switchTo))
     return () => {
       pipelineActionCallbacks.remove(pipelineName, 'start_paused', switchTo)
+    }
+  })
+  const forgetCurrentTab = async () => currentTab.remove()
+  $effect(() => {
+    untrack(() => pipelineActionCallbacks.add('', 'delete', forgetCurrentTab))
+    return () => {
+      pipelineActionCallbacks.remove('', 'start_paused', forgetCurrentTab)
     }
   })
 </script>

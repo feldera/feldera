@@ -78,8 +78,7 @@ export class DecoupledStateProxy<T extends string | number | boolean> {
   }
 
   pull() {
-    clearTimeout(this.timeout)
-    this.timeout = undefined!
+    this.cancelDebounce()
     this.baseline = this.downstream.current = this._upstream.current
     this._upstreamChanged = false
     this._downstreamChanged = false
@@ -97,6 +96,13 @@ export class DecoupledStateProxy<T extends string | number | boolean> {
   }
   get downstreamChanged() {
     return this._downstreamChanged
+  }
+  cancelDebounce = () => {
+    clearTimeout(this.timeout)
+    this.timeout = undefined!
+  };
+  [Symbol.dispose]() {
+    this.cancelDebounce()
   }
 }
 

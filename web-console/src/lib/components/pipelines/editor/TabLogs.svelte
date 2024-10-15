@@ -7,6 +7,13 @@
     }
   > = {}
   let getStreams = $state(() => streams)
+  const pipelineActionCallbacks = usePipelineActionCallbacks()
+  const dropLogHistory = async (pipelineName: string) => {
+    if ('open' in streams[pipelineName].stream) {
+      streams[pipelineName].stream.stop()
+    }
+    delete streams[pipelineName]
+  }
 </script>
 
 <script lang="ts">
@@ -15,6 +22,7 @@
   import { parseUTF8AsTextLines } from '$lib/functions/pipelines/changeStream'
   import { isPipelineIdle } from '$lib/functions/pipelines/status'
   import { pipelineLogsStream, type ExtendedPipeline } from '$lib/services/pipelineManager'
+  import { usePipelineActionCallbacks } from '$lib/compositions/pipelines/usePipelineActionCallbacks.svelte'
   import { untrack } from 'svelte'
 
   let { pipeline }: { pipeline: { current: ExtendedPipeline } } = $props()
@@ -119,6 +127,12 @@
   $effect(() => {
     const interval = setInterval(() => (getStreams = () => streams), 300)
     return () => clearInterval(interval)
+  })
+  $effect(() => {
+    untrack(() => pipelineActionCallbacks.add('', 'delete', dropLogHistory))
+    return () => {
+      pipelineActionCallbacks.remove('', 'delete', dropLogHistory)
+    }
   })
 </script>
 
