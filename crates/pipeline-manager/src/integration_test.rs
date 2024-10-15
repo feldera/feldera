@@ -2200,12 +2200,14 @@ async fn pipeline_logs() {
     // no longer available, as such any of these three endings is possible
     assert!(
         logs1.ends_with("LOG STREAM END: pipeline is being shutdown\n")
+            || logs1.ends_with("LOG STREAM END: stdout and stderr are finished\n")
             || logs1.ends_with("LOG STREAM END: no longer available, please try again later\n")
             || logs1.ends_with("LOG STREAM UNAVAILABLE: please try again later\n"),
         "Unexpected logs ending: {logs1}"
     );
     assert!(
         logs2.ends_with("LOG STREAM END: pipeline is being shutdown\n")
+            || logs2.ends_with("LOG STREAM END: stdout and stderr are finished\n")
             || logs2.ends_with("LOG STREAM END: no longer available, please try again later\n")
             || logs2.ends_with("LOG STREAM UNAVAILABLE: please try again later\n"),
         "Unexpected logs ending: {logs2}"

@@ -488,19 +488,15 @@ pub(crate) async fn set_deployment_status(
 
     // Deployment error is set when becoming...
     // - Failed: a value
-    // - Shutdown: NULL
+    // - ShuttingDown: NULL
     // - Otherwise: NULL
     let final_deployment_error = if new_deployment_status == PipelineStatus::Failed {
         assert!(new_deployment_error.is_some());
         new_deployment_error
-    } else if new_deployment_status == PipelineStatus::Shutdown {
+    } else if new_deployment_status == PipelineStatus::ShuttingDown {
         assert!(new_deployment_error.is_none());
         None
     } else {
-        // Failed can only transition to Shutdown, as such
-        // the current deployment status cannot be Failed
-        // and the current deployment error must be None
-        assert_ne!(current.deployment_status, PipelineStatus::Failed);
         assert!(current.deployment_error.is_none());
         assert!(new_deployment_error.is_none());
         None
@@ -508,11 +504,11 @@ pub(crate) async fn set_deployment_status(
 
     // Deployment configuration is set when becoming...
     // - Provisioning: a value
-    // - Shutdown: NULL
+    // - ShuttingDown: NULL
     // - Otherwise: current value
     let final_deployment_config = if new_deployment_status == PipelineStatus::Provisioning {
         new_deployment_config
-    } else if new_deployment_status == PipelineStatus::Shutdown {
+    } else if new_deployment_status == PipelineStatus::ShuttingDown {
         None
     } else {
         current.deployment_config
@@ -520,12 +516,12 @@ pub(crate) async fn set_deployment_status(
 
     // Deployment location is set when becoming...
     // - Initializing: a value
-    // - Shutdown: NULL
+    // - ShuttingDown: NULL
     // - Otherwise: current value
     let final_deployment_location = if new_deployment_status == PipelineStatus::Initializing {
         assert!(new_deployment_location.is_some());
         new_deployment_location
-    } else if new_deployment_status == PipelineStatus::Shutdown {
+    } else if new_deployment_status == PipelineStatus::ShuttingDown {
         assert!(new_deployment_location.is_none());
         None
     } else {

@@ -31,46 +31,39 @@ impl Display for PipelineId {
 ///
 /// ### The lifecycle of a pipeline
 ///
-/// The following automaton captures the lifecycle of the pipeline.  Individual
-/// states and transitions of the automaton are described below.
+/// The following automaton captures the lifecycle of the pipeline.
+/// Individual states and transitions of the automaton are described below.
 ///
-/// * In addition to the transitions shown in the diagram, all states have an
-///   implicit "forced shutdown" transition to the `Shutdown` state.  This
-///   transition is triggered when the pipeline runner is unable to communicate
-///   with the pipeline and thereby forces a shutdown.
-///
-/// * States labeled with the hourglass symbol (⌛) are **timed** states.  The
+/// * States labeled with the hourglass symbol (⌛) are **timed** states. The
 ///   automaton stays in timed state until the corresponding operation completes
-///   or until the runner performs a forced shutdown of the pipeline after a
-///   pre-defined timeout period.
+///   or until it transitions to become failed after the pre-defined timeout
+///   period expires.
 ///
 /// * State transitions labeled with API endpoint names (`/start`, `/pause`,
 ///   `/shutdown`) are triggered by invoking corresponding endpoint,
-///   e.g., `POST /v0/pipelines/{name}/start`.
+///   e.g., `POST /v0/pipelines/{name}/start`. Note that these only express
+///   desired state, and are applied asynchronously by the automata.
 ///
 /// ```text
-///                  Shutdown◄────┐
-///                     │         │
-///              /deploy│         │
-///                     │   ⌛ShuttingDown
-///                     ▼         ▲
-///             ⌛Provisioning     │
-///                     │         │
-///                     │         │
-///                     ▼         │/shutdown
-///             ⌛Initializing     │
-///                     │         │
-///            ┌────────┴─────────┴─┐
-///            │        ▼           │
-///            │      Paused        │
-///            │      │    ▲        │
-///            │/start│    │/pause  │
-///            │      ▼    │        │
-///            │     Running        │
-///            └──────────┬─────────┘
-///                       │
-///                       ▼
-///                     Failed
+///                Shutdown◄────────────────────┐
+///                    │                        │
+///    /start or /pause│                    ShuttingDown ◄────── Failed
+///                    │                        ▲                  ▲
+///                    ▼              /shutdown │                  │
+///             ⌛Provisioning ──────────────────┤        Shutdown, Provisioning,
+///                    │                        │        Initializing, Paused,
+///                    │                        │         Running, Unavailable
+///                    ▼                        │    (all states except ShuttingDown
+///             ⌛Initializing ──────────────────┤      can transition to Failed)
+///                    │                        │
+///          ┌─────────┼────────────────────────┴─┐
+///          │         ▼                          │
+///          │       Paused  ◄──────► Unavailable │
+///          │       │    ▲                ▲      │
+///          │ /start│    │/pause          │      │
+///          │       ▼    │                │      │
+///          │      Running ◄──────────────┘      │
+///          └────────────────────────────────────┘
 /// ```
 ///
 /// ### Desired and actual status
@@ -89,112 +82,127 @@ impl Display for PipelineId {
 /// in the diagram.
 ///
 /// The user can monitor the current state of the pipeline via the
-/// `GET /v0/pipelines/{name}` endpoint, which returns an object of type `ExtendedPipelineDescr`.
-/// In a typical scenario, the user first sets
-/// the desired state, e.g., by invoking the `/deploy` endpoint, and
-/// then polls the `GET /v0/pipelines/{name}` endpoint to monitor the actual status
-/// of the pipeline until its `deployment_status` attribute changes
-/// to "paused" indicating that the pipeline has been successfully
-/// initialized, or "failed", indicating an error.
+/// `GET /v0/pipelines/{name}` endpoint, which returns an object of type
+/// `ExtendedPipelineDescr`. In a typical scenario, the user first sets
+/// the desired state, e.g., by invoking the `/start` endpoint, and
+/// then polls the `GET /v0/pipelines/{name}` endpoint to monitor the
+/// actual status of the pipeline until its `deployment_status` attribute
+/// changes to "running" indicating that the pipeline has been successfully
+/// initialized and is processing data, or "failed", indicating an error.
 #[derive(Deserialize, Serialize, ToSchema, Eq, PartialEq, Debug, Clone, Copy)]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub enum PipelineStatus {
-    /// Pipeline has not been started or has been shut down.
+    /// Pipeline has not (yet) been started or has been shut down.
     ///
-    /// The pipeline remains in this state until the user triggers
-    /// a deployment by invoking the `/deploy` endpoint.
+    /// The pipeline remains in this state until:
+    ///
+    /// 1. The user triggers a deployment by invoking the `/start`
+    ///    or `/pause` endpoint, after which it transitions to the
+    ///    [`Provisioning`](`Self::Provisioning`) state.
+    ///
+    /// 2. An unexpected deployment error renders the pipeline
+    ///    [`Failed`](`Self::Failed`).
     Shutdown,
 
-    /// The runner triggered a deployment of the pipeline and is
-    /// waiting for the pipeline HTTP server to come up.
+    /// The runner is provisioning the resources needed for the
+    /// deployment of the pipeline (including storage).
     ///
-    /// In this state, the runner provisions a runtime for the pipeline
-    /// (e.g., a Kubernetes pod or a local process), starts the pipeline
-    /// within this runtime and waits for it to start accepting HTTP
-    /// requests.
+    /// The deployment is performed asynchronously, as such the user
+    /// is able to cancel. The pipeline remains in this state until:
     ///
-    /// The user is unable to communicate with the pipeline during this
-    /// time.  The pipeline remains in this state until:
-    ///
-    /// 1. Its HTTP server is up and running; the pipeline transitions to the
+    /// 1. Deployment check passed successfully, indicating all resources
+    ///    were provisioned. It proceeds to transition to the
     ///    [`Initializing`](`Self::Initializing`) state.
-    /// 2. A pre-defined timeout has passed.  The runner performs forced
-    ///    shutdown of the pipeline; returns to the
-    ///    [`Shutdown`](`Self::Shutdown`) state.
-    /// 3. The user cancels the pipeline by invoking the `/shutdown` endpoint.
-    ///    The manager performs forced shutdown of the pipeline, returns to the
-    ///    [`Shutdown`](`Self::Shutdown`) state.
+    /// 2. A pre-defined timeout has passed; after which it
+    ///    transitions to the [`Failed`](`Self::Failed`) state.
+    /// 3. The user cancels the pipeline by invoking the `/shutdown` endpoint,
+    ///    after which it transitions to the [`ShuttingDown`](`Self::ShuttingDown`) state.
+    /// 4. An unexpected deployment error renders the pipeline
+    ///    [`Failed`](`Self::Failed`).
     Provisioning,
 
     /// The pipeline is initializing its internal state and connectors.
     ///
-    /// This state is part of the pipeline's deployment process.  In this state,
-    /// the pipeline's HTTP server is up and running, but its query engine
-    /// and input and output connectors are still initializing.
+    /// In this state, the pipeline resources were provisioned, but the pipeline
+    /// is not yet ready to be able to process data (e.g., its query engine and
+    /// input and output connectors are still initializing).
     ///
     /// The pipeline remains in this state until:
     ///
-    /// 1. Initialization completes successfully; the pipeline transitions to the
-    ///    [`Paused`](`Self::Paused`) state.
-    /// 2. Initialization fails; transitions to the [`Failed`](`Self::Failed`)
-    ///    state.
-    /// 3. A pre-defined timeout has passed.  The runner performs forced
-    ///    shutdown of the pipeline; returns to the
-    ///    [`Shutdown`](`Self::Shutdown`) state.
-    /// 4. The user cancels the pipeline by invoking the `/shutdown` endpoint.
-    ///    The manager performs forced shutdown of the pipeline, returns to the
-    ///    [`Shutdown`](`Self::Shutdown`) state.
+    /// 1. Initialization completes successfully through a successful status check;
+    ///    the pipeline transitions to the [`Paused`](`Self::Paused`) state.
+    /// 2. A pre-defined timeout has passed; after which it
+    ///    transitions to the [`Failed`](`Self::Failed`) state.
+    /// 3. The user cancels the pipeline by invoking the `/shutdown` endpoint,
+    ///    after which it transitions to the [`ShuttingDown`](`Self::ShuttingDown`) state.
+    /// 4. An unexpected deployment or runtime error renders the pipeline
+    ///    [`Failed`](`Self::Failed`).
     Initializing,
 
-    /// The pipeline is fully initialized, but data processing has been paused.
+    /// The pipeline was at least once initialized, and in the most recent status check
+    /// reported its data processing is paused.
     ///
     /// The pipeline remains in this state until:
     ///
-    /// 1. The user starts the pipeline by invoking the `/start` endpoint. The
-    ///    manager passes the request to the pipeline; transitions to the
-    ///    [`Running`](`Self::Running`) state.
-    /// 2. The user cancels the pipeline by invoking the `/shutdown` endpoint.
-    ///    The manager passes the shutdown request to the pipeline to perform a
-    ///    graceful shutdown; transitions to the
-    ///    [`ShuttingDown`](`Self::ShuttingDown`) state.
-    /// 3. An unexpected runtime error renders the pipeline
+    /// 1. The user starts the pipeline by invoking the `/start` endpoint.
+    ///    The runner asynchronously passes the request to the pipeline;
+    ///    transitions to the [`Running`](`Self::Running`) state.
+    /// 2. The user cancels the pipeline by invoking the `/shutdown` endpoint,
+    ///    after which it transitions to the [`ShuttingDown`](`Self::ShuttingDown`) state.
+    /// 3. An unexpected deployment or runtime error renders the pipeline
     ///    [`Failed`](`Self::Failed`).
     Paused,
 
-    /// The pipeline is processing data.
+    /// The pipeline was at least once initialized, and in the most recent status check
+    /// reported to be processing data.
     ///
     /// The pipeline remains in this state until:
     ///
-    /// 1. The user pauses the pipeline by invoking the `/pause` endpoint. The
-    ///    manager passes the request to the pipeline; transitions to the
-    ///    [`Paused`](`Self::Paused`) state.
-    /// 2. The user cancels the pipeline by invoking the `/shutdown` endpoint.
-    ///    The runner passes the shutdown request to the pipeline to perform a
-    ///    graceful shutdown; transitions to the
-    ///    [`ShuttingDown`](`Self::ShuttingDown`) state.
-    /// 3. An unexpected runtime error renders the pipeline
+    /// 1. The user pauses the pipeline by invoking the `/pause` endpoint.
+    ///    The runner asynchronously passes the request to the pipeline;
+    ///    transitions to the [`Paused`](`Self::Paused`) state.
+    /// 2. The user cancels the pipeline by invoking the `/shutdown` endpoint,
+    ///    after which it transitions to the [`ShuttingDown`](`Self::ShuttingDown`) state.
+    /// 3. An unexpected deployment or runtime error renders the pipeline
     ///    [`Failed`](`Self::Failed`).
     Running,
 
-    /// Graceful shutdown in progress.
-    ///
-    /// In this state, the pipeline finishes any ongoing data processing,
-    /// produces final outputs, shuts down input/output connectors and
-    /// terminates.
+    /// The pipeline was at least once initialized, but in the most recent status check either
+    /// could not be reached or returned it is not yet ready.
     ///
     /// The pipeline remains in this state until:
     ///
-    /// 1. Shutdown completes successfully; transitions to the
-    ///    [`Shutdown`](`Self::Shutdown`) state.
-    /// 2. A pre-defined timeout has passed.  The manager performs forced
-    ///    shutdown of the pipeline; returns to the
-    ///    [`Shutdown`](`Self::Shutdown`) state.
-    ShuttingDown,
+    /// 1. A status check succeeds, in which case it transitions to either
+    ///    [`Paused`](`Self::Paused`) or [`Running`](`Self::Running`) state
+    ///    depending on the check outcome.
+    /// 2. The user cancels the pipeline by invoking the `/shutdown` endpoint,
+    ///    after which it transitions to the [`ShuttingDown`](`Self::ShuttingDown`) state.
+    /// 3. An unexpected deployment or runtime error renders the pipeline
+    ///    [`Failed`](`Self::Failed`).
+    ///
+    /// Note that calls to `/start` and `/pause` express desired state and
+    /// are applied asynchronously by the runner. While the pipeline is in
+    /// this state, the runner will not try to reach out to start/pause
+    /// until a status check has succeeded.
+    Unavailable,
 
-    /// The pipeline remains in this state until the users acknowledges the
-    /// error by issuing a `/shutdown` request; transitions to the
-    /// [`Shutdown`](`Self::Shutdown`) state.
+    /// A fatal error occurred for the pipeline.
+    /// This can be caused by either the pipeline itself or its resources.
+    /// The pipeline remains in this state until the user acknowledges the
+    /// error by issuing a `/shutdown` request, after which it transitions
+    /// to the [`ShuttingDown`](`Self::ShuttingDown`) state.
     Failed,
+
+    /// Shutdown in progress.
+    ///
+    /// The pipeline resources are being terminated and deleted.
+    /// The pipeline remains in this state until shutdown completes successfully,
+    /// after which it transitions to the [`Shutdown`](`Self::Shutdown`) state.
+    ///
+    /// Shutdown (i.e., cleanup) should always be within the ability of the runner,
+    /// as such it **cannot** transition to [`Failed`](`Self::Failed`) but instead
+    /// can only print errors to logs.
+    ShuttingDown,
 }
 
 impl TryFrom<String> for PipelineStatus {
@@ -206,6 +214,7 @@ impl TryFrom<String> for PipelineStatus {
             "initializing" => Ok(Self::Initializing),
             "paused" => Ok(Self::Paused),
             "running" => Ok(Self::Running),
+            "unavailable" => Ok(Self::Unavailable),
             "failed" => Ok(Self::Failed),
             "shutting_down" => Ok(Self::ShuttingDown),
             _ => Err(DBError::invalid_pipeline_status(value)),
@@ -221,6 +230,7 @@ impl From<PipelineStatus> for &'static str {
             PipelineStatus::Initializing => "initializing",
             PipelineStatus::Paused => "paused",
             PipelineStatus::Running => "running",
+            PipelineStatus::Unavailable => "unavailable",
             PipelineStatus::Failed => "failed",
             PipelineStatus::ShuttingDown => "shutting_down",
         }
@@ -287,14 +297,19 @@ pub fn validate_deployment_status_transition(
             | (PipelineStatus::Initializing, PipelineStatus::ShuttingDown)
             | (PipelineStatus::Initializing, PipelineStatus::Failed)
             | (PipelineStatus::Running, PipelineStatus::Paused)
+            | (PipelineStatus::Running, PipelineStatus::Unavailable)
             | (PipelineStatus::Running, PipelineStatus::ShuttingDown)
             | (PipelineStatus::Running, PipelineStatus::Failed)
             | (PipelineStatus::Paused, PipelineStatus::Running)
+            | (PipelineStatus::Paused, PipelineStatus::Unavailable)
             | (PipelineStatus::Paused, PipelineStatus::ShuttingDown)
             | (PipelineStatus::Paused, PipelineStatus::Failed)
+            | (PipelineStatus::Unavailable, PipelineStatus::Running)
+            | (PipelineStatus::Unavailable, PipelineStatus::Paused)
+            | (PipelineStatus::Unavailable, PipelineStatus::ShuttingDown)
+            | (PipelineStatus::Unavailable, PipelineStatus::Failed)
+            | (PipelineStatus::Failed, PipelineStatus::ShuttingDown)
             | (PipelineStatus::ShuttingDown, PipelineStatus::Shutdown)
-            | (PipelineStatus::ShuttingDown, PipelineStatus::Failed)
-            | (PipelineStatus::Failed, PipelineStatus::Shutdown)
     ) {
         Ok(())
     } else {
@@ -311,11 +326,14 @@ pub fn validate_deployment_desired_status_transition(
     current_desired_status: &PipelineDesiredStatus,
     new_desired_status: &PipelineDesiredStatus,
 ) -> Result<(), DBError> {
-    // Check that the desired status can be set
+    // Desired status of shutdown can always be set, as such only the cases
+    // where desired is to become Paused/Running needs to be checked
     if *new_desired_status == PipelineDesiredStatus::Paused
         || *new_desired_status == PipelineDesiredStatus::Running
     {
-        // Refuse to restart a pipeline that has not completed shutting down
+        // Refuse to restart a pipeline that has not completed shutting down.
+        // Occurs when the user calls /shutdown followed by either /start or /pause,
+        // but not waiting inbetween for it to have actually become Shutdown status.
         if *current_desired_status == PipelineDesiredStatus::Shutdown
             && *current_status != PipelineStatus::Shutdown
         {
@@ -327,13 +345,15 @@ pub fn validate_deployment_desired_status_transition(
             })?;
         };
 
-        // Refuse to restart a pipeline which is failed or shutting down until it's in the shutdown state
+        // Refuse to restart a pipeline which is failed.
+        // Occurs when the user issues /start or /pause while in Failed status.
+        // This check is not necessary for ShuttingDown status because it can only
+        // get in that state when the desired status is Shutdown.
         if *current_desired_status != PipelineDesiredStatus::Shutdown
-            && (*current_status == PipelineStatus::ShuttingDown
-                || *current_status == PipelineStatus::Failed)
+            && *current_status == PipelineStatus::Failed
         {
             Err(DBError::IllegalPipelineStateTransition {
-                hint: "Cannot restart a pipeline which is failed or shutting down. If it is failed, clear the error state first by invoking the '/shutdown' endpoint.".to_string(),
+                hint: "Cannot restart a pipeline which is failed. Clear the failed error state first by invoking the '/shutdown' endpoint.".to_string(),
                 status: *current_status,
                 desired_status: *current_desired_status,
                 requested_desired_status: *new_desired_status,
