@@ -519,8 +519,8 @@ impl CircuitThread {
             });
         }
 
-        self.seek_to_initial_step()?;
-        let mut replaying = self.replay_step()?;
+        let prev_step_metadata = self.seek_to_initial_step()?;
+        let (mut replaying, mut prev_step_metadata) = self.replay_step(prev_step_metadata)?;
 
         if !replaying {
             self.backpressure_thread.start();
@@ -539,7 +539,7 @@ impl CircuitThread {
             .collect();
 
         loop {
-            self.run_commands();
+            self.run_commands(&prev_step_metadata);
             let running = match self.controller.state() {
                 PipelineState::Running => true,
                 PipelineState::Paused => false,
@@ -569,7 +569,7 @@ impl CircuitThread {
                 break;
             };
             if !replaying {
-                self.write_step(step_metadata, &mut input_endpoints)?;
+                prev_step_metadata = self.write_step(step_metadata, &mut input_endpoints)?;
             }
 
             // Wake up the backpressure thread to unpause endpoints blocked due to
@@ -590,7 +590,7 @@ impl CircuitThread {
 
             self.step += 1;
             if replaying {
-                replaying = self.replay_step()?;
+                (replaying, prev_step_metadata) = self.replay_step(prev_step_metadata)?;
                 if !replaying && running {
                     info!("starting pipeline");
                     self.backpressure_thread.start();
@@ -616,7 +616,10 @@ impl CircuitThread {
         }
     }
 
-    fn checkpoint(&mut self) -> Result<Checkpoint, ControllerError> {
+    fn checkpoint(
+        &mut self,
+        prev_step_metadata: &Option<StepMetadata>,
+    ) -> Result<Checkpoint, ControllerError> {
         let Some(state_path) = self.state_path.as_ref() else {
             return Err(ControllerError::NotSupported {
                 error: String::from("cannot checkpoint circuit because storage is not configured"),
@@ -642,7 +645,8 @@ impl CircuitThread {
             ..self.controller.status.pipeline_config.clone()
         };
 
-        self.circuit
+        let checkpoint = self
+            .circuit
             .commit()
             .map_err(ControllerError::from)
             .and_then(|circuit| {
@@ -652,12 +656,14 @@ impl CircuitThread {
                     config,
                 };
                 checkpoint.write(state_path).map(|()| checkpoint)
-            })
+            })?;
+        self.step_rw = Some(self.step_rw.take().unwrap().truncate(prev_step_metadata)?);
+        Ok(checkpoint)
     }
 
     /// Reads and executes all the commands pending from
     /// `self.command_receiver`.
-    fn run_commands(&mut self) {
+    fn run_commands(&mut self, prev_step_metadata: &Option<StepMetadata>) {
         while let Ok(command) = self.command_receiver.try_recv() {
             match command {
                 Command::GraphProfile(reply_callback) => reply_callback(
@@ -665,7 +671,9 @@ impl CircuitThread {
                         .graph_profile()
                         .map_err(ControllerError::dbsp_error),
                 ),
-                Command::Checkpoint(reply_callback) => reply_callback(self.checkpoint()),
+                Command::Checkpoint(reply_callback) => {
+                    reply_callback(self.checkpoint(prev_step_metadata))
+                }
             }
         }
     }
@@ -683,7 +691,7 @@ impl CircuitThread {
 
     /// Tries to seek `self.step_rw` (if any) to the initial step indicated in
     /// `self.step`.
-    fn seek_to_initial_step(&mut self) -> Result<(), ControllerError> {
+    fn seek_to_initial_step(&mut self) -> Result<Option<StepMetadata>, ControllerError> {
         if self.step > 0 {
             let (new_step_rw, prev_step_metadata) = self
                 .step_rw
@@ -693,25 +701,30 @@ impl CircuitThread {
                 .unwrap()
                 .seek(self.step - 1)?;
             self.step_rw = Some(StepRw::Reader(new_step_rw));
-            for (endpoint_name, metadata) in prev_step_metadata.input_logs {
+            for (endpoint_name, metadata) in &prev_step_metadata.input_logs {
                 let endpoint_id = self.controller.input_endpoint_id_by_name(&endpoint_name)?;
                 self.controller.inputs.lock().unwrap()[&endpoint_id]
                     .reader
-                    .seek(metadata);
+                    .seek(metadata.clone());
             }
+            Ok(Some(prev_step_metadata))
+        } else {
+            Ok(None)
         }
-        Ok(())
     }
 
     /// Tries to start replaying the current step `self.step` by reading its
     /// metadata from `self.step_rw` and passing it to all of the input
     /// endpoints.  Return true if replaying was initiated or false if we've
     /// completed all the replaying for this pipeline.
-    fn replay_step(&mut self) -> Result<bool, ControllerError> {
+    fn replay_step(
+        &mut self,
+        prev_step_metadata: Option<StepMetadata>,
+    ) -> Result<(bool, Option<StepMetadata>), ControllerError> {
         // Read a step.
         let Some(rw) = self.step_rw.take() else {
             // There's no step reader/writer, so we're not replaying.
-            return Ok(false);
+            return Ok((false, None));
         };
         let (metadata, rw) = rw.read()?;
         self.step_rw = Some(rw);
@@ -719,7 +732,7 @@ impl CircuitThread {
         let Some(metadata) = metadata else {
             // No more steps to replay.
             info!("input replay complete");
-            return Ok(false);
+            return Ok((false, prev_step_metadata));
         };
 
         // There's a step to replay.
@@ -730,14 +743,14 @@ impl CircuitThread {
             });
         }
         info!("replaying input step {}", self.step);
-        for endpoint_name in metadata.remove_inputs {
+        for endpoint_name in &metadata.remove_inputs {
             let endpoint_id = self.controller.input_endpoint_id_by_name(&endpoint_name)?;
             self.controller.disconnect_input(&endpoint_id);
         }
-        for (endpoint_name, config) in metadata.add_inputs {
+        for (endpoint_name, config) in &metadata.add_inputs {
             self.controller.connect_input(&endpoint_name, &config)?;
         }
-        for (endpoint_name, metadata) in metadata.input_logs {
+        for (endpoint_name, metadata) in &metadata.input_logs {
             let endpoint_id = self.controller.input_endpoint_id_by_name(&endpoint_name)?;
             *self.controller.status.inputs.read().unwrap()[&endpoint_id]
                 .progress
@@ -745,9 +758,9 @@ impl CircuitThread {
                 .unwrap() = StepProgress::Started;
             self.controller.inputs.lock().unwrap()[&endpoint_id]
                 .reader
-                .replay(metadata);
+                .replay(metadata.clone());
         }
-        Ok(true)
+        Ok((true, Some(metadata)))
     }
 
     /// Requests all of the input adapters to flush their input to the circuit,
@@ -870,7 +883,7 @@ impl CircuitThread {
         &mut self,
         step_metadata: HashMap<String, RmpValue>,
         input_endpoints: &mut HashMap<EndpointId, String>,
-    ) -> Result<(), ControllerError> {
+    ) -> Result<Option<StepMetadata>, ControllerError> {
         if let Some(step_writer) = self.step_rw.as_mut().and_then(|rw| rw.as_writer()) {
             let mut remove_inputs = HashSet::new();
             let mut add_inputs = HashMap::new();
@@ -893,14 +906,17 @@ impl CircuitThread {
             }
             drop(inputs);
 
-            step_writer.write(&StepMetadata {
+            let step_metadata = StepMetadata {
                 step: self.step,
                 remove_inputs,
                 add_inputs,
                 input_logs: step_metadata,
-            })?;
+            };
+            step_writer.write(&step_metadata)?;
+            Ok(Some(step_metadata))
+        } else {
+            Ok(None)
         }
-        Ok(())
     }
 
     /// Waits for the step writer to commit the step (written by
