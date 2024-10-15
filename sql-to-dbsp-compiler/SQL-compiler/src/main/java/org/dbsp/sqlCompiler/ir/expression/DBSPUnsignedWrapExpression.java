@@ -27,6 +27,9 @@ public final class DBSPUnsignedWrapExpression extends DBSPExpression {
                         " must be signed, but it is " + this.dataConvertedType);
             } else {
                 int width = this.dataConvertedType.getWidth();
+                if (width > 64)
+                    // This may cause runtime overflows, but this is the best we can do
+                    width = 64;
                 this.intermediateType = new DBSPTypeInteger(dataType.getNode(), width * 2, true, false);
                 this.unsignedType = new DBSPTypeInteger(dataType.getNode(), width * 2, false, false);
             }
@@ -40,7 +43,7 @@ public final class DBSPUnsignedWrapExpression extends DBSPExpression {
         // How each SQL type that may be used in a sorting key is converted into a signed value
         static DBSPTypeInteger getInitialIntegerType(DBSPType sourceType) {
             return switch (sourceType.code) {
-                case INT8, INT16, INT32, INT64 -> sourceType.setMayBeNull(false).to(DBSPTypeInteger.class);
+                case INT8, INT16, INT32, INT64, INT128 -> sourceType.setMayBeNull(false).to(DBSPTypeInteger.class);
                 case DATE -> new DBSPTypeInteger(sourceType.getNode(), 32, true, false);
                 case TIMESTAMP, TIME -> new DBSPTypeInteger(sourceType.getNode(), 64, true, false);
                 default -> throw new InternalCompilerError("Not yet supported wrappers for " + sourceType, sourceType.getNode());

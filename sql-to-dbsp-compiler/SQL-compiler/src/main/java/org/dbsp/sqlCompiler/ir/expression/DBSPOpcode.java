@@ -46,6 +46,9 @@ public enum DBSPOpcode {
     // map index in a variant value
     VARIANT_INDEX("[]", false),
     RUST_INDEX("[]", false),
+    // Shift left a decimal number by a number of decimal digits.
+    // Shift amount may be negative
+    SHIFT_LEFT("shift_left", false),
 
     // Aggregate operations.  These operations
     // handle NULL values differently from standard

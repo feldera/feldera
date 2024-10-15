@@ -170,6 +170,7 @@ import org.dbsp.sqlCompiler.ir.statement.DBSPItem;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStructItem;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStructWithHelperItem;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeFunction;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
@@ -181,6 +182,7 @@ import org.dbsp.sqlCompiler.ir.IsNumericLiteral;
 import org.dbsp.sqlCompiler.ir.type.IsNumericType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDate;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMillisInterval;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMonthsInterval;
@@ -2068,7 +2070,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             if (orderKeys.size() > 1)
                 throw new UnimplementedException("ORDER BY in OVER requires exactly 1 column", 457, node);
 
-            DBSPType sortType;
+            DBSPType sortType, originalSortType;
             DBSPType unsignedSortType;
             DBSPOperator mapIndex;
             boolean ascending = collation.getDirection() == RelFieldCollation.Direction.ASCENDING;
@@ -2078,7 +2080,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             DBSPTypeTuple lastTupleType = lastOperator.getOutputZSetElementType().to(DBSPTypeTuple.class);
 
             {
-                // Index the input
+                // Index the input on the sort field
                 List<DBSPExpression> expressions = Linq.map(partitionKeys,
                         f -> this.inputRowRefVar.deepCopy().deref().field(f).applyCloneIfNeeded());
                 DBSPTupleExpression partition = new DBSPTupleExpression(node, expressions);
@@ -2086,6 +2088,27 @@ public class CalciteToDBSPCompiler extends RelVisitor
 
                 DBSPExpression originalOrderField = this.inputRowRefVar.deref().field(orderColumnIndex);
                 sortType = originalOrderField.getType();
+                originalSortType = sortType;
+                // Original scale if the sort field is a DECIMAL
+                if (sortType.is(DBSPTypeDecimal.class)) {
+                    // Scale decimal to make it an integer by multiplying with 10^scale
+                    DBSPTypeDecimal dec = sortType.to(DBSPTypeDecimal.class);
+
+                    DBSPTypeInteger intType;
+                    DBSPTypeCode code = DBSPTypeInteger.smallestInteger(dec.precision);
+                    if (code != null) {
+                        intType = DBSPTypeInteger.getType(node, code, dec.mayBeNull);
+                        DBSPTypeDecimal mulType = new DBSPTypeDecimal(
+                                node, dec.precision, 0, dec.mayBeNull);
+                        // directly build the expression, no casts are needed
+                        originalOrderField = new DBSPBinaryExpression(
+                                node, mulType, DBSPOpcode.SHIFT_LEFT, originalOrderField,
+                                new DBSPI32Literal(dec.scale));
+                        originalOrderField = originalOrderField.cast(intType);
+                        sortType = intType;
+                    }
+                }
+
                 if (!sortType.is(DBSPTypeInteger.class) &&
                         !sortType.is(DBSPTypeTimestamp.class) &&
                         !sortType.is(DBSPTypeDate.class) &&
@@ -2139,7 +2162,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
 
                 aggResultType = fd.getEmptySetResultType().to(DBSPTypeTuple.class);
                 finalResultType = makeIndexedZSet(
-                        new DBSPTypeTuple(partitionType, sortType), aggResultType);
+                        new DBSPTypeTuple(partitionType, originalSortType), aggResultType);
                 // Prepare a type that will make the operator following the window aggregate happy
                 // (that operator is a map_index).  Currently, the compiler cannot represent
                 // exactly the output type of the WindowAggregateOperator, so it lies about the actual type.
@@ -2173,8 +2196,16 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 DBSPExpression ixKey = var.deepCopy().field(0).deref().applyCloneIfNeeded();
                 DBSPExpression ts = var.deepCopy().field(1).deref().field(0);
                 DBSPExpression agg = var.deepCopy().field(1).deref().field(1).applyCloneIfNeeded();
-                DBSPUnsignedUnwrapExpression unwrap = new DBSPUnsignedUnwrapExpression(
+                DBSPExpression unwrap = new DBSPUnsignedUnwrapExpression(
                         node, ts, sortType, ascending, nullsLast);
+                if (originalSortType.is(DBSPTypeDecimal.class)) {
+                    DBSPTypeDecimal dec = originalSortType.to(DBSPTypeDecimal.class);
+                    // convert back to decimal and rescale
+                    var intermediateType = new DBSPTypeDecimal(node, dec.precision + dec.scale, 0, originalSortType.mayBeNull);
+                    unwrap = unwrap.cast(intermediateType);
+                    unwrap = new DBSPBinaryExpression(node, originalSortType,
+                            DBSPOpcode.SHIFT_LEFT, unwrap, new DBSPI32Literal(-dec.scale));
+                }
                 DBSPExpression body = new DBSPRawTupleExpression(
                         new DBSPTupleExpression(ixKey, unwrap),
                         new DBSPApplyMethodExpression(node, "unwrap_or_default", aggResultType, agg));

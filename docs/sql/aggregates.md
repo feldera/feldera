@@ -164,7 +164,8 @@ The following window aggregate functions are supported:
   </tr>
   <tr>
     <td><code>DENSE_RANK()</code></td>
-    <td>Returns the rank of the current row without gaps</td>
+    <td>Returns the rank of the current row without gaps.  `DENSE_RANK` is currently only supported if
+        the window is used to compute a TopK aggregate.</td>
   </tr>
   <tr>
     <td><code>LAG(</code><em>expression</em>, [<em>offset</em>, [ <em>default</em> ] ]<code>)</code></td>
@@ -190,17 +191,32 @@ The following window aggregate functions are supported:
   </tr>
   <tr>
     <td><code>RANK()</code></td>
-    <td>Returns the rank of the current row with gaps</td>
+    <td>Returns the rank of the current row with gaps.  `DENSE_RANK` is currently only supported if
+        the window is used to compute a TopK aggregate.</td>
   </tr>
   <tr>
     <td><code>ROW_NUMBER()</code></td>
-    <td>Returns the number of the current row within its partition, counting from 1</td>
+    <td>Returns the number of the current row within its partition, counting from 1.
+    `ROW_NUMBER` is currently only supported if the window is used to compute a TopK aggregate.</td>
   </tr>
   <tr>
     <td><code>SUM</code>(<em>numeric</em>)</td>
     <td>Returns the sum of <em>numeric</em> across all values in window</td>
   </tr>
 </table>
+
+Currently, the window aggregate functions `RANK`, `DENSE_RANK` and
+`ROW_NUMBER` are only supported if the compiler detects that they are
+being used to implement a TopK pattern.  This pattern is expressed in
+SQL with the following structure:
+
+```sql
+SELECT * FROM (
+   SELECT empno,
+          row_number() OVER (ORDER BY empno) rn
+   FROM empsalary) emp
+WHERE rn < 3
+```
 
 ## Pivots
 

@@ -2909,7 +2909,7 @@ select channel, item, return_ratio, return_rank, currency_rank from
  order by 1,4,5,2
  limit 100
  ;
- */
+*/
 
 /* sql_50.sql */
 CREATE VIEW sql_50 AS
@@ -4110,7 +4110,7 @@ select
   ,rank_within_parent
  limit 100
  ;
- */
+*/
 
 /* sql_71.sql */
 CREATE VIEW sql_71 AS
@@ -4906,7 +4906,7 @@ select
    rank_within_parent
  limit 100
  ;
- */
+*/
 
 /* sql_87.sql */
 CREATE VIEW sql_87 AS

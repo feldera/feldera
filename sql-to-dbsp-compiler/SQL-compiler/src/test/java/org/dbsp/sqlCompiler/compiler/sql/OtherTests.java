@@ -186,14 +186,14 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
     @Test
     public void toCsvTest() {
         DBSPCompiler compiler = testCompiler();
-        DBSPZSetLiteral s = new DBSPZSetLiteral(EndToEndTests.e0, EndToEndTests.e1);
+        DBSPZSetLiteral s = new DBSPZSetLiteral(EndToEndTests.E0, EndToEndTests.E1);
         StringBuilder builder = new StringBuilder();
         ToCsvVisitor visitor = new ToCsvVisitor(compiler, builder, () -> "");
         visitor.apply(s);
         String[] lines = builder.toString().split("\n");
         Arrays.sort(lines);
         Assert.assertEquals(
-                "10,1.0,false,\"Hi\",1,0.0,\n" +
+                "10,1.0,false,\"Hi\",1,0,\n" +
                         "10,12.0,true,\"Hi\",,,",
                 String.join("\n", lines));
     }
@@ -201,7 +201,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
     @Test
     public void rustCsvTest() throws IOException, InterruptedException {
         DBSPCompiler compiler = testCompiler();
-        DBSPZSetLiteral data = new DBSPZSetLiteral(EndToEndTests.e0, EndToEndTests.e1);
+        DBSPZSetLiteral data = new DBSPZSetLiteral(EndToEndTests.E0, EndToEndTests.E1);
         File file = File.createTempFile("test", ".csv", new File(BaseSQLTests.rustDirectory));
         file.deleteOnExit();
         ToCsvVisitor.toCsv(compiler, file, data);

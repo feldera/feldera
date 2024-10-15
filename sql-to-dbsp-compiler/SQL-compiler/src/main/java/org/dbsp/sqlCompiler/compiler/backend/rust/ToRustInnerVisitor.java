@@ -897,7 +897,8 @@ public class ToRustInnerVisitor extends InnerVisitor {
                 break;
             }
             case ARRAY_CONVERT:
-            case DIV_NULL: {
+            case DIV_NULL:
+            case SHIFT_LEFT: {
                 this.builder.append(expression.operation.toString())
                         .append(expression.left.getType().nullableUnderlineSuffix())
                         .append(expression.right.getType().nullableUnderlineSuffix())
