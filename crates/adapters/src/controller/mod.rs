@@ -464,12 +464,10 @@ impl Controller {
 
 struct CircuitThread {
     controller: Arc<ControllerInner>,
-    step: Step,
     circuit: DBSPHandle,
     command_receiver: Receiver<Command>,
-    state_path: Option<PathBuf>,
-    step_rw: Option<StepRw>,
     backpressure_thread: BackpressureThread,
+    ft: Option<FtState>,
     parker: Parker,
 }
 
@@ -486,24 +484,23 @@ impl CircuitThread {
         F: FnOnce(CircuitConfig) -> Result<(DBSPHandle, Box<dyn CircuitCatalog>), ControllerError>,
     {
         let ControllerInit {
-            step,
             pipeline_config,
             circuit_config,
-            state_path,
-            step_rw,
+            ft,
         } = ControllerInit::new(config)?;
-        let fault_tolerant = step_rw.is_some();
         let (circuit, catalog) = circuit_factory(circuit_config)?;
         let (parker, backpressure_thread, command_receiver, controller) =
-            ControllerInner::new(pipeline_config, catalog, error_cb, fault_tolerant)?;
+            ControllerInner::new(pipeline_config, catalog, error_cb, ft.is_some())?;
+
+        let ft = ft
+            .map(|ft| FtState::new(ft, controller.clone()))
+            .transpose()?;
 
         Ok(Self {
             controller,
-            step,
+            ft,
             circuit,
             command_receiver,
-            state_path,
-            step_rw,
             backpressure_thread,
             parker,
         })
@@ -519,10 +516,7 @@ impl CircuitThread {
             });
         }
 
-        let prev_step_metadata = self.seek_to_initial_step()?;
-        let (mut replaying, mut prev_step_metadata) = self.replay_step(prev_step_metadata)?;
-
-        if !replaying {
+        if !self.replaying() {
             self.backpressure_thread.start();
         }
 
@@ -539,7 +533,7 @@ impl CircuitThread {
             .collect();
 
         loop {
-            self.run_commands(&prev_step_metadata);
+            self.run_commands();
             let running = match self.controller.state() {
                 PipelineState::Running => true,
                 PipelineState::Paused => false,
@@ -555,7 +549,7 @@ impl CircuitThread {
                 continue;
             }
 
-            if let Some(wait) = trigger.trigger(replaying, running) {
+            if let Some(wait) = trigger.trigger(self.replaying(), running) {
                 wait.park(&self.parker);
                 continue;
             }
@@ -564,12 +558,12 @@ impl CircuitThread {
                 total_consumed,
                 notifications,
                 step_metadata,
-            }) = self.flush_input_to_circuit(replaying)
+            }) = self.flush_input_to_circuit()
             else {
                 break;
             };
-            if !replaying {
-                prev_step_metadata = self.write_step(step_metadata, &mut input_endpoints)?;
+            if let Some(ft) = self.ft.as_mut() {
+                ft.write_step(step_metadata, &mut input_endpoints)?;
             }
 
             // Wake up the backpressure thread to unpause endpoints blocked due to
@@ -583,16 +577,14 @@ impl CircuitThread {
             self.update_snapshot();
 
             // Push output batches to output pipelines.
-            if !replaying {
-                self.sync_step()?;
+            if let Some(ft) = self.ft.as_mut() {
+                ft.sync_step()?;
             }
             self.push_output(processed_records);
 
-            self.step += 1;
-            if replaying {
-                (replaying, prev_step_metadata) = self.replay_step(prev_step_metadata)?;
-                if !replaying && running {
-                    info!("starting pipeline");
+            if let Some(ft) = self.ft.as_mut() {
+                ft.next_step()?;
+                if !self.replaying() && running {
                     self.backpressure_thread.start();
                 }
             }
@@ -616,54 +608,9 @@ impl CircuitThread {
         }
     }
 
-    fn checkpoint(
-        &mut self,
-        prev_step_metadata: &Option<StepMetadata>,
-    ) -> Result<Checkpoint, ControllerError> {
-        let Some(state_path) = self.state_path.as_ref() else {
-            return Err(ControllerError::NotSupported {
-                error: String::from("cannot checkpoint circuit because storage is not configured"),
-            });
-        };
-
-        // Replace the input adapter configuration in the pipeline configuration
-        // by the current inputs. (HTTP input adapters might have been added or
-        // removed.)
-        let config = PipelineConfig {
-            inputs: self
-                .controller
-                .status
-                .input_status()
-                .iter()
-                .map(|(_id, status)| {
-                    (
-                        Cow::from(status.endpoint_name.clone()),
-                        status.config.clone(),
-                    )
-                })
-                .collect(),
-            ..self.controller.status.pipeline_config.clone()
-        };
-
-        let checkpoint = self
-            .circuit
-            .commit()
-            .map_err(ControllerError::from)
-            .and_then(|circuit| {
-                let checkpoint = Checkpoint {
-                    circuit,
-                    step: self.step,
-                    config,
-                };
-                checkpoint.write(state_path).map(|()| checkpoint)
-            })?;
-        self.step_rw = Some(self.step_rw.take().unwrap().truncate(prev_step_metadata)?);
-        Ok(checkpoint)
-    }
-
     /// Reads and executes all the commands pending from
     /// `self.command_receiver`.
-    fn run_commands(&mut self, prev_step_metadata: &Option<StepMetadata>) {
+    fn run_commands(&mut self) {
         while let Ok(command) = self.command_receiver.try_recv() {
             match command {
                 Command::GraphProfile(reply_callback) => reply_callback(
@@ -672,7 +619,16 @@ impl CircuitThread {
                         .map_err(ControllerError::dbsp_error),
                 ),
                 Command::Checkpoint(reply_callback) => {
-                    reply_callback(self.checkpoint(prev_step_metadata))
+                    let result = if let Some(ft) = self.ft.as_mut() {
+                        ft.checkpoint(&mut self.circuit)
+                    } else {
+                        Err(ControllerError::NotSupported {
+                            error: String::from(
+                                "cannot checkpoint circuit because fault tolerance  is not enabled",
+                            ),
+                        })
+                    };
+                    reply_callback(result);
                 }
             }
         }
@@ -689,87 +645,13 @@ impl CircuitThread {
         }
     }
 
-    /// Tries to seek `self.step_rw` (if any) to the initial step indicated in
-    /// `self.step`.
-    fn seek_to_initial_step(&mut self) -> Result<Option<StepMetadata>, ControllerError> {
-        if self.step > 0 {
-            let (new_step_rw, prev_step_metadata) = self
-                .step_rw
-                .take()
-                .unwrap()
-                .into_reader()
-                .unwrap()
-                .seek(self.step - 1)?;
-            self.step_rw = Some(StepRw::Reader(new_step_rw));
-            for (endpoint_name, metadata) in &prev_step_metadata.input_logs {
-                let endpoint_id = self.controller.input_endpoint_id_by_name(&endpoint_name)?;
-                self.controller.inputs.lock().unwrap()[&endpoint_id]
-                    .reader
-                    .seek(metadata.clone());
-            }
-            Ok(Some(prev_step_metadata))
-        } else {
-            Ok(None)
-        }
-    }
-
-    /// Tries to start replaying the current step `self.step` by reading its
-    /// metadata from `self.step_rw` and passing it to all of the input
-    /// endpoints.  Return true if replaying was initiated or false if we've
-    /// completed all the replaying for this pipeline.
-    fn replay_step(
-        &mut self,
-        prev_step_metadata: Option<StepMetadata>,
-    ) -> Result<(bool, Option<StepMetadata>), ControllerError> {
-        // Read a step.
-        let Some(rw) = self.step_rw.take() else {
-            // There's no step reader/writer, so we're not replaying.
-            return Ok((false, None));
-        };
-        let (metadata, rw) = rw.read()?;
-        self.step_rw = Some(rw);
-
-        let Some(metadata) = metadata else {
-            // No more steps to replay.
-            info!("input replay complete");
-            return Ok((false, prev_step_metadata));
-        };
-
-        // There's a step to replay.
-        if metadata.step != self.step {
-            return Err(ControllerError::UnexpectedStep {
-                actual: metadata.step,
-                expected: self.step,
-            });
-        }
-        info!("replaying input step {}", self.step);
-        for endpoint_name in &metadata.remove_inputs {
-            let endpoint_id = self.controller.input_endpoint_id_by_name(&endpoint_name)?;
-            self.controller.disconnect_input(&endpoint_id);
-        }
-        for (endpoint_name, config) in &metadata.add_inputs {
-            self.controller.connect_input(&endpoint_name, &config)?;
-        }
-        for (endpoint_name, metadata) in &metadata.input_logs {
-            let endpoint_id = self.controller.input_endpoint_id_by_name(&endpoint_name)?;
-            *self.controller.status.inputs.read().unwrap()[&endpoint_id]
-                .progress
-                .lock()
-                .unwrap() = StepProgress::Started;
-            self.controller.inputs.lock().unwrap()[&endpoint_id]
-                .reader
-                .replay(metadata.clone());
-        }
-        Ok((true, Some(metadata)))
-    }
-
     /// Requests all of the input adapters to flush their input to the circuit,
     /// and waits for them to finish doing it.
     ///
     /// Returns the total number of records consumed, a vector of notifications
     /// to send when the records have been processed, and the corresponding
     /// steps log entries.
-    fn flush_input_to_circuit(&mut self, replaying: bool) -> Result<FlushedInput, ()> {
+    fn flush_input_to_circuit(&mut self) -> Result<FlushedInput, ()> {
         let start_time = Instant::now();
         let mut warn_threshold = Duration::from_secs(10);
         loop {
@@ -786,7 +668,7 @@ impl CircuitThread {
                 let mut progress = status.progress.lock().unwrap();
                 match *progress {
                     StepProgress::NotStarted => {
-                        assert!(!replaying);
+                        assert!(!self.replaying());
                         need_start.push(*endpoint_id);
                         n_incomplete += 1;
                         *progress = StepProgress::Started;
@@ -878,12 +760,177 @@ impl CircuitThread {
         processed_records
     }
 
+    /// Pushes all of the records to the output.
+    ///
+    /// `processed_records` is the total number of records processed by the
+    /// pipeline *before* this step.
+    fn push_output(&mut self, processed_records: u64) {
+        let outputs = self.controller.outputs.read().unwrap();
+        for (_stream, (output_handles, endpoints)) in outputs.iter_by_stream() {
+            let delta_batch = output_handles.delta_handle.as_ref().take_from_all();
+            let num_delta_records = delta_batch.iter().map(|b| b.len()).sum();
+
+            let mut delta_batch = Some(delta_batch);
+
+            for (i, endpoint_id) in endpoints.iter().enumerate() {
+                let endpoint = outputs.lookup_by_id(endpoint_id).unwrap();
+
+                self.controller
+                    .status
+                    .enqueue_batch(*endpoint_id, num_delta_records);
+
+                let batch = if i == endpoints.len() - 1 {
+                    delta_batch.take().unwrap()
+                } else {
+                    delta_batch.as_ref().unwrap().clone()
+                };
+
+                endpoint.queue.push((
+                    self.ft.as_ref().map_or(0, |ft| ft.step),
+                    batch,
+                    processed_records,
+                ));
+
+                // Wake up the output thread.  We're not trying to be smart here and
+                // wake up the thread conditionally if it was previously idle, as I
+                // don't expect this to make any real difference.
+                endpoint.unparker.unpark();
+            }
+        }
+        drop(outputs);
+    }
+
+    /// Executes a step in the circuit.
+    fn step(&mut self) {
+        debug!("circuit thread: calling 'circuit.step'");
+        self.circuit
+            .step()
+            .unwrap_or_else(|e| self.controller.error(e.into()));
+        debug!("circuit thread: 'circuit.step' returned");
+    }
+
+    fn replaying(&self) -> bool {
+        self.ft.as_ref().map_or(false, |ft| ft.replaying)
+    }
+}
+
+struct FlushedInput {
+    /// Number of records consumed by the circuit.
+    total_consumed: u64,
+
+    /// Notifications to emit when the records have been processed.
+    notifications: Vec<OneshotSender<()>>,
+
+    /// Metadata to write to the steps log.
+    step_metadata: HashMap<String, RmpValue>,
+}
+
+/// Tracks fault-tolerant state in a controller [CircuitThread].
+struct FtState {
+    /// The controller.
+    controller: Arc<ControllerInner>,
+
+    /// The step currently running or replaying.
+    step: Step,
+
+    /// Path to `state.json`.
+    state_path: PathBuf,
+
+    /// The step reader/writer.
+    ///
+    /// This is always non-`None` unless a fatal error occurs.
+    step_rw: Option<StepRw>,
+
+    /// Whether we are currently replaying a previous step.
+    replaying: bool,
+
+    /// Metadata for the last step we read or wrote. This is only `None` if
+    /// `step` is 0.
+    prev_step_metadata: Option<StepMetadata>,
+}
+
+impl FtState {
+    /// Returns a new [FtState] for `ft` and `controller`.
+    fn new(ft: FtInit, controller: Arc<ControllerInner>) -> Result<Self, ControllerError> {
+        let FtInit {
+            step,
+            step_rw,
+            state_path,
+        } = ft;
+
+        let (step_rw, prev_step_metadata) = if step > 0 {
+            let (step_rw, prev_step_metadata) = step_rw.into_reader().unwrap().seek(step - 1)?;
+            for (endpoint_name, metadata) in &prev_step_metadata.input_logs {
+                let endpoint_id = controller.input_endpoint_id_by_name(endpoint_name)?;
+                controller.inputs.lock().unwrap()[&endpoint_id]
+                    .reader
+                    .seek(metadata.clone());
+            }
+            (StepRw::Reader(step_rw), Some(prev_step_metadata))
+        } else {
+            (step_rw, None)
+        };
+
+        let (step_rw, step_metadata) = Self::replay_step(step_rw, step, &controller)?;
+        let replaying = step_metadata.is_some();
+        Ok(Self {
+            controller,
+            step,
+            state_path,
+            step_rw: Some(step_rw),
+            replaying,
+            prev_step_metadata: step_metadata.or(prev_step_metadata),
+        })
+    }
+
+    fn replay_step(
+        step_rw: StepRw,
+        step: Step,
+        controller: &Arc<ControllerInner>,
+    ) -> Result<(StepRw, Option<StepMetadata>), ControllerError> {
+        // Read a step.
+        let (metadata, step_rw) = step_rw.read()?;
+
+        let Some(metadata) = metadata else {
+            // No more steps to replay.
+            info!("input replay complete");
+            return Ok((step_rw, None));
+        };
+
+        // There's a step to replay.
+        if metadata.step != step {
+            return Err(ControllerError::UnexpectedStep {
+                actual: metadata.step,
+                expected: step,
+            });
+        }
+        info!("replaying input step {}", step);
+        for endpoint_name in &metadata.remove_inputs {
+            let endpoint_id = controller.input_endpoint_id_by_name(endpoint_name)?;
+            controller.disconnect_input(&endpoint_id);
+        }
+        for (endpoint_name, config) in &metadata.add_inputs {
+            controller.connect_input(endpoint_name, config)?;
+        }
+        for (endpoint_name, metadata) in &metadata.input_logs {
+            let endpoint_id = controller.input_endpoint_id_by_name(endpoint_name)?;
+            *controller.status.inputs.read().unwrap()[&endpoint_id]
+                .progress
+                .lock()
+                .unwrap() = StepProgress::Started;
+            controller.inputs.lock().unwrap()[&endpoint_id]
+                .reader
+                .replay(metadata.clone());
+        }
+        Ok((step_rw, Some(metadata)))
+    }
+
     /// Writes `step_metadata` to the step writer.
     fn write_step(
         &mut self,
         step_metadata: HashMap<String, RmpValue>,
         input_endpoints: &mut HashMap<EndpointId, String>,
-    ) -> Result<Option<StepMetadata>, ControllerError> {
+    ) -> Result<(), ControllerError> {
         if let Some(step_writer) = self.step_rw.as_mut().and_then(|rw| rw.as_writer()) {
             let mut remove_inputs = HashSet::new();
             let mut add_inputs = HashMap::new();
@@ -913,10 +960,9 @@ impl CircuitThread {
                 input_logs: step_metadata,
             };
             step_writer.write(&step_metadata)?;
-            Ok(Some(step_metadata))
-        } else {
-            Ok(None)
+            self.prev_step_metadata = Some(step_metadata);
         }
+        Ok(())
     }
 
     /// Waits for the step writer to commit the step (written by
@@ -928,61 +974,65 @@ impl CircuitThread {
         Ok(())
     }
 
-    /// Pushes all of the records to the output.
+    /// Advances to the next step.
     ///
-    /// `processed_records` is the total number of records processed by the
-    /// pipeline *before* this step.
-    fn push_output(&mut self, processed_records: u64) {
-        let outputs = self.controller.outputs.read().unwrap();
-        for (_stream, (output_handles, endpoints)) in outputs.iter_by_stream() {
-            let delta_batch = output_handles.delta_handle.as_ref().take_from_all();
-            let num_delta_records = delta_batch.iter().map(|b| b.len()).sum();
-
-            let mut delta_batch = Some(delta_batch);
-
-            for (i, endpoint_id) in endpoints.iter().enumerate() {
-                let endpoint = outputs.lookup_by_id(endpoint_id).unwrap();
-
-                self.controller
-                    .status
-                    .enqueue_batch(*endpoint_id, num_delta_records);
-
-                let batch = if i == endpoints.len() - 1 {
-                    delta_batch.take().unwrap()
-                } else {
-                    delta_batch.as_ref().unwrap().clone()
-                };
-
-                endpoint.queue.push((self.step, batch, processed_records));
-
-                // Wake up the output thread.  We're not trying to be smart here and
-                // wake up the thread conditionally if it was previously idle, as I
-                // don't expect this to make any real difference.
-                endpoint.unparker.unpark();
+    /// If we were replaying before, this attempts to replay the next step too.
+    fn next_step(&mut self) -> Result<(), ControllerError> {
+        self.step += 1;
+        if self.replaying {
+            let (step_rw, step_metadata) =
+                Self::replay_step(self.step_rw.take().unwrap(), self.step, &self.controller)?;
+            self.step_rw = Some(step_rw);
+            self.replaying = step_metadata.is_some();
+            if self.replaying {
+                self.prev_step_metadata = step_metadata;
+            } else {
+                info!("replay complete, starting pipeline");
             }
         }
-        drop(outputs);
+        Ok(())
     }
 
-    /// Executes a step in the circuit.
-    fn step(&mut self) {
-        debug!("circuit thread: calling 'circuit.step'");
-        self.circuit
-            .step()
-            .unwrap_or_else(|e| self.controller.error(e.into()));
-        debug!("circuit thread: 'circuit.step' returned");
+    /// Writes out a checkpoint for `circuit`.
+    fn checkpoint(&mut self, circuit: &mut DBSPHandle) -> Result<Checkpoint, ControllerError> {
+        // Replace the input adapter configuration in the pipeline configuration
+        // by the current inputs. (HTTP input adapters might have been added or
+        // removed.)
+        let config = PipelineConfig {
+            inputs: self
+                .controller
+                .status
+                .input_status()
+                .iter()
+                .map(|(_id, status)| {
+                    (
+                        Cow::from(status.endpoint_name.clone()),
+                        status.config.clone(),
+                    )
+                })
+                .collect(),
+            ..self.controller.status.pipeline_config.clone()
+        };
+
+        let checkpoint = circuit
+            .commit()
+            .map_err(ControllerError::from)
+            .and_then(|circuit| {
+                let checkpoint = Checkpoint {
+                    circuit,
+                    step: self.step,
+                    config,
+                };
+                checkpoint.write(&self.state_path).map(|()| checkpoint)
+            })?;
+        self.step_rw = Some(
+            self.step_rw
+                .take()
+                .unwrap()
+                .truncate(&self.prev_step_metadata)?,
+        );
+        Ok(checkpoint)
     }
-}
-
-struct FlushedInput {
-    /// Number of records consumed by the circuit.
-    total_consumed: u64,
-
-    /// Notifications to emit when the records have been processed.
-    notifications: Vec<OneshotSender<()>>,
-
-    /// Metadata to write to the steps log.
-    step_metadata: HashMap<String, RmpValue>,
 }
 
 /// Decides when to trigger a step.
@@ -1089,9 +1139,6 @@ impl StepTrigger {
 ///
 /// This structure handles all these cases.
 struct ControllerInit {
-    /// The first step that the circuit will execute.
-    step: Step,
-
     /// The pipeline configuration.
     ///
     /// This will differ from the one passed into [ControllerInit::new] if a
@@ -1102,19 +1149,27 @@ struct ControllerInit {
     /// The circuit configuration.
     circuit_config: CircuitConfig,
 
+    /// Fault-tolerance initialization, if FT will be enabled.
+    ft: Option<FtInit>,
+}
+
+struct FtInit {
+    /// The first step that the circuit will execute.
+    step: Step,
+
     /// The path to the `state.json` checkpoint file, if fault tolerance is
     /// enabled.
-    state_path: Option<PathBuf>,
+    state_path: PathBuf,
 
     /// The step reader/writer, if fault tolerance is enabled.
-    step_rw: Option<StepRw>,
+    step_rw: StepRw,
 }
 
 impl ControllerInit {
     fn new(config: PipelineConfig) -> Result<Self, ControllerError> {
         let Some(ft) = config.global.fault_tolerance else {
             info!("fault tolerance is disabled in configuration");
-            return Self::without_checkpoint(config);
+            return Self::without_ft(config);
         };
         let Some(path) = config.storage_config.as_ref().map(|storage| storage.path()) else {
             return Err(ControllerError::Config {
@@ -1152,7 +1207,7 @@ impl ControllerInit {
                     info!("{}: creating", steps_path.display());
                     StepRw::create(&steps_path)?
                 };
-            Self::with_checkpoint(checkpoint, state_path, step_rw)
+            Self::with_ft(checkpoint, state_path, step_rw)
         } else if config.inputs.values().all(|config| {
             input_transport_config_is_fault_tolerant(&config.connector_config.transport)
         }) {
@@ -1172,36 +1227,36 @@ impl ControllerInit {
 
             info!("{}: creating", steps_path.display());
             let step_rw = StepRw::create(&steps_path)?;
-            Self::with_checkpoint(checkpoint, state_path, step_rw)
+            Self::with_ft(checkpoint, state_path, step_rw)
         } else {
             Err(ControllerError::Config {
                 config_error: ConfigError::FtRequiresFtInput,
             })
         }
     }
-    fn without_checkpoint(pipeline_config: PipelineConfig) -> Result<Self, ControllerError> {
+    fn without_ft(pipeline_config: PipelineConfig) -> Result<Self, ControllerError> {
         let circuit_config =
             Self::circuit_config(&pipeline_config, CheckpointMetadata::default().uuid)?;
         Ok(Self {
-            step: 0,
             pipeline_config,
             circuit_config,
-            state_path: None,
-            step_rw: None,
+            ft: None,
         })
     }
-    fn with_checkpoint(
+    fn with_ft(
         checkpoint: Checkpoint,
         state_path: PathBuf,
         step_rw: StepRw,
     ) -> Result<Self, ControllerError> {
         let circuit_config = Self::circuit_config(&checkpoint.config, checkpoint.circuit.uuid)?;
         Ok(Self {
-            step: checkpoint.step,
             pipeline_config: checkpoint.config,
             circuit_config,
-            state_path: Some(state_path),
-            step_rw: Some(step_rw),
+            ft: Some(FtInit {
+                step: checkpoint.step,
+                state_path,
+                step_rw,
+            }),
         })
     }
     fn circuit_config(
