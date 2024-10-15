@@ -577,6 +577,27 @@ impl Storage for StoragePostgres {
         Ok(())
     }
 
+    async fn transit_deployment_status_to_unavailable(
+        &self,
+        tenant_id: TenantId,
+        pipeline_id: PipelineId,
+    ) -> Result<(), DBError> {
+        let mut client = self.pool.get().await?;
+        let txn = client.transaction().await?;
+        operations::pipeline::set_deployment_status(
+            &txn,
+            tenant_id,
+            pipeline_id,
+            PipelineStatus::Unavailable,
+            None,
+            None,
+            None,
+        )
+        .await?;
+        txn.commit().await?;
+        Ok(())
+    }
+
     async fn transit_deployment_status_to_shutting_down(
         &self,
         tenant_id: TenantId,

@@ -251,7 +251,6 @@ async fn reconcile<E: PipelineExecutor + 'static>(
                                     pipeline_handle,
                                     E::PROVISIONING_TIMEOUT,
                                     E::PROVISIONING_POLL_PERIOD,
-                                    E::SHUTDOWN_TIMEOUT,
                                     E::SHUTDOWN_POLL_PERIOD,
                                 )
                                 .run(),
