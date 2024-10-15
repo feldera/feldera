@@ -334,6 +334,25 @@ impl StepWriter {
         Ok(Self::new(path, file))
     }
 
+    /// Creates a new writer for `path` to append to an existing file.
+    ///
+    /// This should not be used in the general case (and thus it is not `pub`),
+    /// because we cannot be sure that the file does not have trailing garbage
+    /// in it from a previous write that crashed midway.  But it is safe for
+    /// `StepRw::truncate` because in that case we know exactly what is in the
+    /// file.
+    fn append<P>(path: P) -> Result<Self, StepError>
+    where
+        P: AsRef<Path>,
+    {
+        let path = PathBuf::from(path.as_ref());
+        let file = File::options()
+            .append(true)
+            .open(&path)
+            .map_err(|io_error| StepError::io_error(&path, io_error))?;
+        Ok(Self::new(path, file))
+    }
+
     fn new(path: PathBuf, file: File) -> Self {
         let sync = BackgroundSync::new(&file);
         let writer = BufWriter::new(file);
@@ -364,6 +383,10 @@ impl StepWriter {
     }
 }
 
+/// A step reader or writer.
+///
+/// A step reader turns into a writer once we've read all of the entries, so it
+/// makes sense to encapsulate them.
 pub enum StepRw {
     Reader(StepReader),
     Writer(StepWriter),
@@ -378,6 +401,7 @@ impl StepRw {
         StepReader::open(path).map(Self::Reader)
     }
 
+    /// Creates a new write at `path`, which must not exist.
     pub fn create<P>(path: P) -> Result<Self, StepError>
     where
         P: AsRef<Path>,
@@ -385,6 +409,7 @@ impl StepRw {
         StepWriter::create(path).map(Self::Writer)
     }
 
+    /// Returns the inner [StepReader], or `None` if this isn't a reader.
     pub fn into_reader(self) -> Option<StepReader> {
         match self {
             Self::Reader(step_reader) => Some(step_reader),
@@ -392,6 +417,8 @@ impl StepRw {
         }
     }
 
+    /// Reads a step, if we're a reader, and returns it along with our
+    /// replacement reader (or writer).
     pub fn read(self) -> Result<(Option<StepMetadata>, StepRw), StepError> {
         match self {
             Self::Reader(reader) => match reader.read()? {
@@ -402,11 +429,39 @@ impl StepRw {
         }
     }
 
+    /// Returns a mutable reference to our inner writer, or `None` if we're a
+    /// reader.
     pub fn as_writer(&mut self) -> Option<&mut StepWriter> {
         match self {
             Self::Reader(_) => None,
             Self::Writer(step_writer) => Some(step_writer),
         }
+    }
+
+    /// Returns the log's path.
+    pub fn path(&self) -> &PathBuf {
+        match self {
+            Self::Reader(step_reader) => &step_reader.path,
+            Self::Writer(step_writer) => &step_writer.path,
+        }
+    }
+
+    /// Replaces this log by one that contains only `new_initial_step` (empty,
+    /// if `new_initial_step` is `None`) and returns it for further writing.
+    pub fn truncate(self, new_initial_step: &Option<StepMetadata>) -> Result<Self, StepError> {
+        let path = self.path();
+        let new_content = new_initial_step.as_ref().map_or_else(
+            || Ok(Vec::new()),
+            |step| {
+                rmp_serde::to_vec_named(step).map_err(|error| StepError::EncodeError {
+                    path: path.to_path_buf(),
+                    error,
+                })
+            },
+        )?;
+        write_file_atomically(path, &new_content)
+            .map_err(|io_error| StepError::io_error(path, io_error))?;
+        Ok(Self::Writer(StepWriter::append(path)?))
     }
 }
 
