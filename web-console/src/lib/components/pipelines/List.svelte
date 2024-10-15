@@ -80,6 +80,8 @@
       destroy: () => removeEventListener('scroll', handle)
     }
   }
+
+  let newPipelineError = $state<string>()
 </script>
 
 <div class="relative flex flex-col gap-2 overflow-y-auto pb-2" use:bindScrollY={{ scrollY }}>
@@ -89,18 +91,31 @@
         bind:this={createPipelineInputRef}
         onblur={(e) => {
           e.currentTarget.value = ''
+          newPipelineError = undefined
           stopAssisting()
         }}
         onkeydown={async (e) => {
           if (e.key === 'Enter') {
-            await createPipeline(e.currentTarget.value)
-            e.currentTarget.blur()
+            await createPipeline(e.currentTarget.value).then(
+              () => {
+                e.currentTarget.blur()
+              },
+              (e) => {
+                if ('message' in e) {
+                  newPipelineError = e.message
+                }
+              }
+            )
           }
         }}
         placeholder="New Pipeline Name"
         class="input placeholder-surface-800 outline-none transition-none duration-0 bg-surface-50-950 dark:placeholder-surface-200"
       />
-      <div class="-mb-2 pt-2 text-surface-600-400">Press Enter to create</div>
+      {#if newPipelineError}
+        <div class="-mb-2 pt-2 text-error-500">{newPipelineError}</div>
+      {:else}
+        <div class="-mb-2 pt-2 text-surface-600-400">Press Enter to create</div>
+      {/if}
     {:else}
       <div class="flex justify-center">
         <button

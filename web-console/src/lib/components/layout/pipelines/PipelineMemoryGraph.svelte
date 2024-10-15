@@ -57,7 +57,7 @@
     },
     xAxis: {
       type: 'time' as const,
-      min: Date.now() - keepMs,
+      min: Math.round(metrics.global.at(-1)?.timeMs ?? Date.now()) - keepMs,
       minInterval: 25000,
       maxInterval: 25000,
       axisLabel: {

@@ -15,6 +15,7 @@
   import { listPipelineErrors } from '$lib/compositions/health/systemErrors.svelte'
   import type { PipelineMetrics } from '$lib/functions/pipelineMetrics'
   import { usePipelineActionCallbacks } from '$lib/compositions/pipelines/usePipelineActionCallbacks.svelte'
+  import { count } from '$lib/functions/common/array'
 
   let {
     pipeline,
@@ -52,12 +53,19 @@
 </script>
 
 {#snippet TabPipelineErrors(pipeline: ExtendedPipeline)}
-  {@const errorCount = ((errors) => errors.programErrors.length + errors.pipelineErrors.length)(
-    listPipelineErrors(pipeline)
-  )}
-  Errors
+  {@const issues = listPipelineErrors(pipeline)}
+  {@const warningCount =
+    count(issues.programErrors, (w) => w.cause.warning) +
+    count(issues.pipelineErrors, (w) => w.cause.warning)}
+  {@const errorCount = issues.programErrors.length + issues.pipelineErrors.length - warningCount}
+  <span class="pr-1">Errors</span>
+  {#if warningCount !== 0}
+    <span class="inline-block min-w-6 rounded-full px-1 font-medium preset-filled-warning-200-800">
+      {warningCount}
+    </span>
+  {/if}
   {#if errorCount !== 0}
-    <span class="rounded-full px-2 pt-0.5 text-sm font-medium preset-filled-error-500">
+    <span class="inline-block min-w-6 rounded-full px-1 font-medium preset-filled-error-500">
       {errorCount}
     </span>
   {/if}
@@ -85,7 +93,7 @@
         <Tabs.Control
           value={tabName}
           base=""
-          classes="px-3 pt-1 rounded-none"
+          classes="px-3 pt-1.5 h-9 rounded-none"
           labelBase=""
           translateX=""
           stateInactive="hover:bg-surface-100-900 hover:!bg-opacity-50"
