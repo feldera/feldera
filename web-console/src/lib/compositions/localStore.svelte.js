@@ -42,7 +42,6 @@ export class LocalStore {
   }
 
   remove() {
-    console.log('removing', this.key)
     localStorage.removeItem(this.key)
     delete stores[this.key]
   }
