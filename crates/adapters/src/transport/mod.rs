@@ -21,6 +21,7 @@
 //! let reader = endpoint.open(consumer, 0);
 //! ```
 use crate::{InputBuffer, ParseError, Parser, PipelineState};
+use adhoc::AdHocInputEndpoint;
 use anyhow::{Error as AnyError, Result as AnyResult};
 use dyn_clone::DynClone;
 use http::HttpInputEndpoint;
@@ -30,6 +31,7 @@ use rmpv::Value as RmpValue;
 use std::collections::VecDeque;
 use std::sync::Mutex;
 
+pub mod adhoc;
 mod file;
 pub mod http;
 
@@ -113,6 +115,7 @@ pub fn input_transport_config_to_endpoint(
         #[cfg(not(feature = "with-nexmark"))]
         TransportConfig::Nexmark(_) => Ok(None),
         TransportConfig::HttpInput(config) => Ok(Some(Box::new(HttpInputEndpoint::new(config)))),
+        TransportConfig::AdHocInput(config) => Ok(Some(Box::new(AdHocInputEndpoint::new(config)))),
         TransportConfig::FileOutput(_)
         | TransportConfig::KafkaOutput(_)
         | TransportConfig::DeltaTableInput(_)
