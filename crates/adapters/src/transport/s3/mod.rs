@@ -1,23 +1,26 @@
-use std::sync::Arc;
+use std::{
+    collections::{BTreeMap, VecDeque},
+    sync::Arc,
+};
 
 use aws_sdk_s3::operation::{get_object::GetObjectOutput, list_objects_v2::ListObjectsV2Error};
-use log::error;
 use tokio::sync::mpsc::{self, unbounded_channel, UnboundedReceiver, UnboundedSender};
 
 use crate::{
-    format::StreamSplitter, InputConsumer, InputReader, Parser, PipelineState,
-    TransportInputEndpoint,
+    format::StreamSplitter, InputBuffer, InputConsumer, InputReader, Parser, TransportInputEndpoint,
 };
 use anyhow::{bail, Result as AnyResult};
 use dbsp::circuit::tokio::TOKIO;
 use feldera_types::program_schema::Relation;
+use log::error;
 #[cfg(test)]
 use mockall::automock;
 
 use crate::transport::InputEndpoint;
 use feldera_types::transport::s3::S3InputConfig;
+use serde::{Deserialize, Serialize};
 
-use super::{InputQueue, InputReaderCommand, NonFtInputReaderCommand};
+use super::InputReaderCommand;
 
 pub struct S3InputEndpoint {
     config: Arc<S3InputConfig>,
@@ -51,7 +54,7 @@ impl S3InputEndpoint {
 
 impl InputEndpoint for S3InputEndpoint {
     fn is_fault_tolerant(&self) -> bool {
-        false
+        true
     }
 }
 
@@ -83,6 +86,7 @@ impl S3Api for S3Client {
         &self,
         bucket: &str,
         prefix: &str,
+        start_after: Option<String>,
         continuation_token: Option<String>,
     ) -> anyhow::Result<(Vec<String>, Option<String>)> {
         let res: (Vec<String>, Option<String>) = self
@@ -90,6 +94,7 @@ impl S3Api for S3Client {
             .list_objects_v2()
             .bucket(bucket)
             .prefix(prefix)
+            .set_start_after(start_after)
             .set_continuation_token(continuation_token)
             .send()
             .await
@@ -111,12 +116,24 @@ impl S3Api for S3Client {
         Ok(res)
     }
 
-    async fn get_object(&self, bucket: &str, key: &str) -> anyhow::Result<GetObjectOutput> {
+    async fn get_object(
+        &self,
+        bucket: &str,
+        key: &str,
+        start: u64,
+        end: Option<u64>,
+    ) -> anyhow::Result<GetObjectOutput> {
         Ok(self
             .inner
             .get_object()
             .bucket(bucket)
             .key(key)
+            .set_range(match (start, end) {
+                (0, None) => None,
+                (0, Some(end)) => Some(format!("bytes=-{end}")),
+                (start, Some(end)) => Some(format!("bytes={start}-{end}")),
+                (start, None) => Some(format!("bytes={start}")),
+            })
             .send()
             .await?)
     }
@@ -129,20 +146,27 @@ trait S3Api: Send {
         &self,
         bucket: &str,
         prefix: &str,
+        start_after: Option<String>,
         continuation_token: Option<String>,
     ) -> anyhow::Result<(Vec<String>, Option<String>)>;
 
     /// Fetch an object by key within a bucket
-    async fn get_object(&self, bucket: &str, key: &str) -> anyhow::Result<GetObjectOutput>;
+    async fn get_object(
+        &self,
+        bucket: &str,
+        key: &str,
+        start: u64,
+        end: Option<u64>,
+    ) -> anyhow::Result<GetObjectOutput>;
 }
 
 struct S3InputReader {
-    sender: UnboundedSender<NonFtInputReaderCommand>,
+    sender: UnboundedSender<InputReaderCommand>,
 }
 
 impl InputReader for S3InputReader {
     fn request(&self, command: InputReaderCommand) {
-        let _ = self.sender.send(command.as_nonft().unwrap());
+        let _ = self.sender.send(command);
     }
 }
 
@@ -150,6 +174,13 @@ impl Drop for S3InputReader {
     fn drop(&mut self) {
         self.disconnect();
     }
+}
+
+struct QueuedBuffer {
+    key: String,
+    start_offset: u64,
+    end_offset: Option<u64>,
+    buffer: Box<dyn InputBuffer>,
 }
 
 impl S3InputReader {
@@ -189,24 +220,95 @@ impl S3InputReader {
         config: Arc<S3InputConfig>,
         consumer: Box<dyn InputConsumer>,
         mut parser: Box<dyn Parser>,
-        mut receiver: UnboundedReceiver<NonFtInputReaderCommand>,
+        command_receiver: UnboundedReceiver<InputReaderCommand>,
     ) -> anyhow::Result<()> {
+        let mut splitter = StreamSplitter::new(parser.splitter());
+
+        let mut command_receiver = BufferedReceiver::new(command_receiver);
+        let mut start_position = None;
+        match command_receiver.recv().await {
+            Some(InputReaderCommand::Seek(metadata)) => {
+                let metadata = rmpv::ext::from_value::<Metadata>(metadata)?;
+                if let Some((key, value)) = metadata.offsets.last_key_value() {
+                    start_position = Some((key.clone(), value.1));
+                }
+            }
+            None | Some(InputReaderCommand::Disconnect) => return Ok(()),
+            Some(other) => {
+                command_receiver.put_back(other);
+            }
+        };
+
+        // Then replay as many steps as requested.
+        loop {
+            match command_receiver.recv().await {
+                Some(InputReaderCommand::Seek(_)) => {
+                    unreachable!("Seek must be the first input reader command")
+                }
+                None | Some(InputReaderCommand::Disconnect) => return Ok(()),
+                Some(InputReaderCommand::Replay(metadata)) => {
+                    let metadata = rmpv::ext::from_value::<Metadata>(metadata)?;
+                    if let Some((key, value)) = metadata.offsets.last_key_value() {
+                        start_position = Some((key.clone(), value.1));
+                    }
+                    let mut num_records = 0;
+                    for (key, (start, end)) in metadata.offsets {
+                        let mut object = client
+                            .get_object(&config.bucket_name, &key, start, end)
+                            .await?;
+                        splitter.reset();
+                        let mut eoi = false;
+                        while !eoi {
+                            match object.body.next().await.transpose()? {
+                                Some(bytes) => splitter.append(&bytes),
+                                None => eoi = true,
+                            };
+                            while let Some(chunk) = splitter.next(eoi) {
+                                let (mut buffer, errors) = parser.parse(chunk);
+                                consumer.parse_errors(errors);
+                                consumer.buffered(buffer.len(), chunk.len());
+                                num_records += buffer.flush_all();
+                            }
+                        }
+                    }
+                    consumer.replayed(num_records);
+                }
+                Some(other) => {
+                    command_receiver.put_back(other);
+                    break;
+                }
+            }
+        }
+
         // The worker thread fetches objects in the background while already retrieved
         // objects are being fed to the InputConsumer. We use a bounded channel
         // to make it so that no more than 8 objects are fetched while waiting
         // for object processing.
         let (tx, mut rx) = mpsc::channel(8);
-        let queue = InputQueue::new(consumer.clone());
-        let mut splitter = config
-            .streaming
-            .then(|| StreamSplitter::new(parser.splitter()));
         tokio::spawn(async move {
+            let mut start_after = match start_position {
+                Some((key, Some(offset))) => {
+                    let result = client
+                        .get_object(&config.bucket_name, &key, offset, None)
+                        .await
+                        .map(|object| (key.clone(), object, offset));
+                    tx.send(result).await.expect("Enqueue failed");
+                    Some(key)
+                }
+                Some((key, None)) => Some(key),
+                None => None,
+            };
             let mut continuation_token = None;
             loop {
                 let (objects_to_fetch, next_token): (Vec<String>, Option<String>) =
                     if let Some(prefix) = &config.prefix {
                         let result = client
-                            .get_object_keys(&config.bucket_name, prefix, continuation_token.take())
+                            .get_object_keys(
+                                &config.bucket_name,
+                                prefix,
+                                start_after.take(),
+                                continuation_token.take(),
+                            )
                             .await;
                         match result {
                             Ok(ret) => ret,
@@ -222,8 +324,11 @@ impl S3InputReader {
                     };
                 continuation_token = next_token;
                 for key in &objects_to_fetch {
-                    let object = client.get_object(&config.bucket_name, key).await;
-                    tx.send(object).await.expect("Enqueue failed");
+                    let result = client
+                        .get_object(&config.bucket_name, key, 0, None)
+                        .await
+                        .map(|object| (key.clone(), object, 0));
+                    tx.send(result).await.expect("Enqueue failed");
                 }
                 if continuation_token.is_none() {
                     break;
@@ -231,43 +336,74 @@ impl S3InputReader {
             }
             drop(tx); // We're done. Close the channel.
         });
-        let mut state = PipelineState::Paused;
+
+        let mut running = false;
+        let mut queue = VecDeque::<QueuedBuffer>::new();
         loop {
             tokio::select! {
-                command = receiver.recv() => {
+                command = command_receiver.recv() => {
                     match command {
-                        Some(NonFtInputReaderCommand::Transition(new_state)) => {
-                            if new_state == PipelineState::Terminated {
-                                break;
+                        Some(command @ InputReaderCommand::Seek(_))
+                            | Some(command @ InputReaderCommand::Replay(_)) => {
+                                unreachable!("{command:?} must be at the beginning of the command stream")
                             }
-                            state = new_state;
-                        },
-                        Some(NonFtInputReaderCommand::Queue) => queue.queue(),
-                        None => break,
+                        Some(InputReaderCommand::Extend) => running = true,
+                        Some(InputReaderCommand::Pause) => running = false,
+                        Some(InputReaderCommand::Queue) => {
+                            let mut total = 0;
+                            let mut offsets = BTreeMap::<String, (u64, Option<u64>)>::new();
+                            while total < consumer.max_batch_size() {
+                                let Some(QueuedBuffer { key, start_offset, end_offset, mut buffer }) = queue.pop_front() else {
+                                    break
+                                };
+                                total += buffer.flush_all();
+                                offsets.entry(key)
+                                    .and_modify(|value| value.1 = end_offset)
+                                    .or_insert((start_offset, end_offset));
+                            }
+                            consumer
+                                .extended(total, rmpv::ext::to_value(&Metadata { offsets }).unwrap());
+                        }
+                        Some(InputReaderCommand::Disconnect) | None => {
+                            return Ok(())
+                        }
                     }
                 },
                 // Poll the object stream.
-                get_obj = rx.recv(), if state == PipelineState::Running => {
+                get_obj = rx.recv(), if running => {
                     match get_obj {
-                        Some(Ok(mut object)) => {
-                            if let Some(splitter) = splitter.as_mut() {
-                                match object.body.next().await {
-                                    Some(Ok(bytes)) => {
-                                        splitter.append(&bytes);
-                                        while let Some(chunk) = splitter.next(false) {
-                                            queue.push(parser.parse(chunk), chunk.len());
-                                        }
+                        Some(Ok((key, mut object, start_offset))) => {
+                            splitter.seek(start_offset);
+                            let mut eoi = false;
+                            let mut added_chunks = false;
+                            while !eoi {
+                                match object.body.next().await.transpose()? {
+                                    Some(bytes) => splitter.append(&bytes),
+                                    None => eoi = true,
+                                };
+                                loop {
+                                    let start_offset = splitter.position();
+                                    let Some(chunk) = splitter.next(eoi) else {
+                                        break
+                                    };
+                                    let (buffer, errors) = parser.parse(chunk);
+                                    consumer.buffered(buffer.len(), chunk.len());
+                                    let end_offset = splitter.position();
+
+                                    consumer.parse_errors(errors);
+                                    if !buffer.is_empty() {
+                                        queue.push_back(QueuedBuffer {
+                                            key: key.clone(),
+                                            start_offset,
+                                            end_offset: Some(end_offset),
+                                            buffer: buffer.unwrap(),
+                                        });
+                                        added_chunks = true;
                                     }
-                                    None => break,
-                                    Some(Err(e)) => consumer.error(false, e.into())
                                 }
-                            } else {
-                                    match object.body.collect().await.map(|c| c.into_bytes()) {
-                                        Ok(bytes) => {
-                                            queue.push(parser.parse(&bytes), bytes.len());
-                                        }
-                                        Err(e) => consumer.error(false, e.into())
-                                }
+                            }
+                            if added_chunks {
+                                queue.back_mut().unwrap().end_offset = None;
                             }
                         }
                         Some(Err(e)) => {
@@ -281,29 +417,46 @@ impl S3InputReader {
                         }
                         None => {
                             // End of input.
-                            if let Some(splitter) = splitter.as_mut() {
-                                while let Some(chunk) = splitter.next(true) {
-                                    queue.push(parser.parse(chunk), chunk.len());
-                                }
-                            }
                             consumer.eoi();
-                            while let Some(command) = receiver.recv().await {
-                                match command {
-                                    NonFtInputReaderCommand::Transition(new_state) => {
-                                        if new_state == PipelineState::Terminated {
-                                            break;
-                                        }
-                                    },
-                                    NonFtInputReaderCommand::Queue => queue.queue(),
-                                }
-                            }
-                            break;
+                            running = false;
                         }
                     }
                 }
             };
         }
-        Ok(())
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct Metadata {
+    offsets: BTreeMap<String, (u64, Option<u64>)>,
+}
+
+/// Wraps [UnboundedReceiver] with a one-message buffer, to allow received messages to be
+/// put back and received again later.
+struct BufferedReceiver<T> {
+    receiver: UnboundedReceiver<T>,
+    buffer: Option<T>,
+}
+
+impl<T> BufferedReceiver<T> {
+    fn new(receiver: UnboundedReceiver<T>) -> Self {
+        Self {
+            receiver,
+            buffer: None,
+        }
+    }
+
+    async fn recv(&mut self) -> Option<T> {
+        match self.buffer.take() {
+            Some(value) => Some(value),
+            None => self.receiver.recv().await,
+        }
+    }
+
+    fn put_back(&mut self, value: T) {
+        assert!(self.buffer.is_none());
+        self.buffer = Some(value);
     }
 }
 
@@ -442,11 +595,11 @@ format:
     fn single_key_read() {
         let mut mock = super::MockS3Client::default();
         mock.expect_get_object_keys()
-            .with(eq("test-bucket"), eq(""), eq(&None))
-            .return_once(|_, _, _| Ok((vec!["obj1".to_string()], None)));
+            .with(eq("test-bucket"), eq(""), eq(&None), eq(&None))
+            .return_once(|_, _, _, _| Ok((vec!["obj1".to_string()], None)));
         mock.expect_get_object()
-            .with(eq("test-bucket"), eq("obj1"))
-            .return_once(|_, _| {
+            .with(eq("test-bucket"), eq("obj1"), eq(0), eq(&None))
+            .return_once(|_, _, __, _| {
                 Ok(GetObjectOutput::builder()
                     .body(ByteStream::from(SdkBody::from("1\n2\n3\n")))
                     .build())
@@ -459,11 +612,11 @@ format:
     fn single_object_with_prefix_read() {
         let mut mock = super::MockS3Client::default();
         mock.expect_get_object_keys()
-            .with(eq("test-bucket"), eq(""), eq(&None))
-            .return_once(|_, _, _| Ok((vec!["obj1".to_string()], None)));
+            .with(eq("test-bucket"), eq(""), eq(&None), eq(&None))
+            .return_once(|_, _, _, _| Ok((vec!["obj1".to_string()], None)));
         mock.expect_get_object()
-            .with(eq("test-bucket"), eq("obj1"))
-            .return_once(|_, _| {
+            .with(eq("test-bucket"), eq("obj1"), eq(0), eq(&None))
+            .return_once(|_, _, _, _| {
                 Ok(GetObjectOutput::builder()
                     .body(ByteStream::from(SdkBody::from("1\n2\n3\n")))
                     .build())
@@ -476,25 +629,26 @@ format:
     fn multi_object_read_with_continuation() {
         let mut mock = super::MockS3Client::default();
         mock.expect_get_object_keys()
-            .with(eq("test-bucket"), eq(""), eq(&None))
-            .return_once(|_, _, _| Ok((vec!["obj1".to_string()], Some("next_token".to_string()))));
+            .with(eq("test-bucket"), eq(""), eq(&None), eq(&None))
+            .return_once(|_, _, _, _| Ok((vec!["obj1".to_string()], Some("next_token".to_string()))));
         mock.expect_get_object_keys()
             .with(
                 eq("test-bucket"),
                 eq(""),
+                eq(&None),
                 eq(Some("next_token".to_string())),
             )
-            .return_once(|_, _, _| Ok((vec!["obj2".to_string()], None)));
+            .return_once(|_, _, _, _| Ok((vec!["obj2".to_string()], None)));
         mock.expect_get_object()
-            .with(eq("test-bucket"), eq("obj1"))
-            .return_once(|_, _| {
+            .with(eq("test-bucket"), eq("obj1"), eq(0), eq(&None))
+            .return_once(|_, _, _, _| {
                 Ok(GetObjectOutput::builder()
                     .body(ByteStream::from(SdkBody::from("1\n2\n3\n")))
                     .build())
             });
         mock.expect_get_object()
-            .with(eq("test-bucket"), eq("obj2"))
-            .return_once(|_, _| {
+            .with(eq("test-bucket"), eq("obj2"), eq(0), eq(&None))
+            .return_once(|_, _, _, _| {
                 Ok(GetObjectOutput::builder()
                     .body(ByteStream::from(SdkBody::from("4\n5\n6\n")))
                     .build())
@@ -510,16 +664,16 @@ format:
         let objs: Vec<String> = (0..1000).map(|i| format!("obj{i}")).collect();
         for (i, key) in objs.iter().enumerate() {
             mock.expect_get_object()
-                .with(eq("test-bucket"), eq(key.clone()))
-                .return_once(move |_, _| {
+                .with(eq("test-bucket"), eq(key.clone()), eq(0), eq(&None))
+                .return_once(move |_, _, _, _| {
                     Ok(GetObjectOutput::builder()
                         .body(ByteStream::from(SdkBody::from(format!("{i}\n"))))
                         .build())
                 });
         }
         mock.expect_get_object_keys()
-            .with(eq("test-bucket"), eq(""), eq(&None))
-            .return_once(|_, _, _| Ok((objs, None)));
+            .with(eq("test-bucket"), eq(""), eq(&None), eq(&None))
+            .return_once(|_, _, _, _| Ok((objs, None)));
         let test_data: Vec<TestStruct> = (0..1000).map(|i| TestStruct { i }).collect();
         let (reader, _consumer, _parser, input_handle) = test_setup(MULTI_KEY_CONFIG_STR, mock);
         reader.extend();
@@ -542,8 +696,8 @@ format:
     fn list_object_read_error() {
         let mut mock = super::MockS3Client::default();
         mock.expect_get_object_keys()
-            .with(eq("test-bucket"), eq(""), eq(&None))
-            .return_once(|_, _, _| {
+            .with(eq("test-bucket"), eq(""), eq(&None), eq(&None))
+            .return_once(|_, _, _, _| {
                 Err(ListObjectsV2Error::NoSuchBucket(NoSuchBucketBuilder::default().build()).into())
             });
         let (reader, consumer, _parser, _) = test_setup(MULTI_KEY_CONFIG_STR, mock);
@@ -559,25 +713,26 @@ format:
     fn get_object_read_error() {
         let mut mock = super::MockS3Client::default();
         mock.expect_get_object_keys()
-            .with(eq("test-bucket"), eq(""), eq(&None))
-            .return_once(|_, _, _| Ok((vec!["obj1".to_string()], Some("next_token".to_string()))));
+            .with(eq("test-bucket"), eq(""), eq(&None), eq(&None))
+            .return_once(|_, _, _, _| Ok((vec!["obj1".to_string()], Some("next_token".to_string()))));
         mock.expect_get_object_keys()
             .with(
                 eq("test-bucket"),
                 eq(""),
+                eq(&None),
                 eq(Some("next_token".to_string())),
             )
-            .return_once(|_, _, _| Ok((vec!["obj2".to_string()], None)));
+            .return_once(|_, _, _, _| Ok((vec!["obj2".to_string()], None)));
         // Reading obj1 fails but then obj2 succeeds. We should still see
         // the contents of objects 4, 5 and 6 in there.
         mock.expect_get_object()
-            .with(eq("test-bucket"), eq("obj1"))
-            .return_once(|_, _| {
+            .with(eq("test-bucket"), eq("obj1"), eq(0), eq(&None))
+            .return_once(|_, _, _, _| {
                 Err(GetObjectError::NoSuchKey(NoSuchKeyBuilder::default().build()).into())
             });
         mock.expect_get_object()
-            .with(eq("test-bucket"), eq("obj2"))
-            .return_once(|_, _| {
+            .with(eq("test-bucket"), eq("obj2"), eq(0), eq(&None))
+            .return_once(|_, _, _, _| {
                 Ok(GetObjectOutput::builder()
                     .body(ByteStream::from(SdkBody::from("4\n5\n6\n")))
                     .build())

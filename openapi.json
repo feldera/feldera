@@ -3977,10 +3977,6 @@
           "region": {
             "type": "string",
             "description": "AWS region."
-          },
-          "streaming": {
-            "type": "boolean",
-            "description": "Determines how the connector ingests an individual S3 object. When `true`,\nthe connector pushes the object to the pipeline chunk-by-chunk, so that the\npipeline can parse and process initial chunks of the object before the entire\nobject has been retrieved. This mode is suitable for streaming formats such as\nnewline-delimited JSON. When `false`, the connector buffers the entire object\nin memory and pushes it to the pipeline as a single chunk.  Appropriate for\nformats like Parquet that cannot be streamed.\n\nThe default value is `false`."
           }
         }
       },
