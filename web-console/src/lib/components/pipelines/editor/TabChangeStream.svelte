@@ -47,8 +47,8 @@
         },
         {
           paths: ['$.json_data.*'],
-          bufferSize: 1 * 1024 * 1024,
-          separator: '\n'
+          bufferSize: 8 * 1024 * 1024,
+          separator: ''
         }
       )
       return () => {

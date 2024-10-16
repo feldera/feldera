@@ -82,8 +82,9 @@ export const parseUTF8JSON = <T>(
 
 /**
  * Splits transform stream in chunks of size maxChunkBytes or less
- * Each chunk is enqueued in a separate scope of synchronous execution
- * @param maxChunkBytes
+ * Includes basic backpressure relief: incoming chunks are dropped if backpressure is detected
+ * @param maxChunkBytes Maximum size of an output chunk
+ * @param maxChunkBufferSize When output buffer size grows close to this value backpressure occurs
  * @returns
  */
 function splitStreamByMaxChunk(
