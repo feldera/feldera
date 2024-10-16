@@ -104,6 +104,11 @@ public class LinearAggregate extends AggregateBase {
     }
 
     @Override
+    public boolean compatible(AggregateBase other) {
+        return other.is(LinearAggregate.class);
+    }
+
+    @Override
     public void accept(InnerVisitor visitor) {
         VisitDecision decision = visitor.preorder(this);
         if (decision.stop()) return;

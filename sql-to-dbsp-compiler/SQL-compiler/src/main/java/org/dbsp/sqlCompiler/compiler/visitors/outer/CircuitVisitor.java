@@ -53,7 +53,6 @@ public abstract class CircuitVisitor
     /** Circuit or operator currently being visited. */
     protected final List<IDBSPOuterNode> current;
 
-
     public CircuitVisitor(IErrorReporter errorReporter) {
         this.id = crtId++;
         this.errorReporter = errorReporter;
@@ -202,6 +201,10 @@ public abstract class CircuitVisitor
         return this.preorder(node.to(DBSPUnaryOperator.class));
     }
 
+    public VisitDecision preorder(DBSPMinOperator node) {
+        return this.preorder(node.to(DBSPUnaryOperator.class));
+    }
+
     public VisitDecision preorder(DBSPUpsertFeedbackOperator node) {
         return this.preorder(node.to(DBSPUnaryOperator.class));
     }
@@ -275,6 +278,14 @@ public abstract class CircuitVisitor
     }
 
     public VisitDecision preorder(DBSPJoinOperator node) {
+        return this.preorder(node.to(DBSPBinaryOperator.class));
+    }
+
+    public VisitDecision preorder(DBSPStreamJoinIndexOperator node) {
+        return this.preorder(node.to(DBSPBinaryOperator.class));
+    }
+
+    public VisitDecision preorder(DBSPJoinIndexOperator node) {
         return this.preorder(node.to(DBSPBinaryOperator.class));
     }
 
@@ -360,6 +371,14 @@ public abstract class CircuitVisitor
         this.postorder(node.to(DBSPBinaryOperator.class));
     }
 
+    public void postorder(DBSPStreamJoinIndexOperator node) {
+        this.postorder(node.to(DBSPBinaryOperator.class));
+    }
+
+    public void postorder(DBSPJoinIndexOperator node) {
+        this.postorder(node.to(DBSPBinaryOperator.class));
+    }
+
     public void postorder(DBSPAsofJoinOperator node) {
         this.postorder(node.to(DBSPBinaryOperator.class));
     }
@@ -425,6 +444,10 @@ public abstract class CircuitVisitor
     }
 
     public void postorder(DBSPIntegrateOperator node) {
+        this.postorder(node.to(DBSPUnaryOperator.class));
+    }
+
+    public void postorder(DBSPMinOperator node) {
         this.postorder(node.to(DBSPUnaryOperator.class));
     }
 

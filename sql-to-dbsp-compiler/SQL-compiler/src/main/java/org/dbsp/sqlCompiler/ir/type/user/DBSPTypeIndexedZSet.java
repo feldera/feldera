@@ -43,6 +43,11 @@ public class DBSPTypeIndexedZSet extends DBSPTypeUser {
         assert !elementType.is(DBSPTypeIndexedZSet.class);
     }
 
+    /** Build an IndexedZSet type from a tuple with 2 elements: key type, value type */
+    public DBSPTypeIndexedZSet(DBSPTypeRawTuple tuple) {
+        this(tuple.getNode(), tuple.getFieldType(0), tuple.getFieldType(1));
+    }
+
     public DBSPTypeRawTuple getKVRefType() {
         return new DBSPTypeRawTuple(this.keyType.ref(), this.elementType.ref());
     }

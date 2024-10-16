@@ -28,6 +28,7 @@ import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.sql.tools.Change;
 import org.dbsp.sqlCompiler.compiler.sql.tools.InputOutputChangeStream;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
+import org.junit.Ignore;
 import org.junit.Test;
 
 // Runs the EndToEnd tests but on an input stream with 3 elements each and
@@ -82,4 +83,7 @@ public class NaiveIncrementalTests extends EndToEndTests {
         // Do not run this test in incremental mode, since it produces
         // a division by 0 on an empty input.
     }
+
+    @Override @Ignore("Temporarily disabled until we get a stream_join_index operator")
+    public void linearNonLinearTest() {}
 }

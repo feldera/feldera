@@ -22,6 +22,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.OptimizeMaps;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
 import org.junit.Assert;
+import org.junit.Ignore;
 import org.junit.Test;
 
 import java.io.File;
@@ -42,6 +43,16 @@ public class StreamingTests extends StreamingTestBase {
         CompilerOptions options = super.testOptions(incremental, optimize);
         options.ioOptions.nowStream = true;
         return options;
+    }
+
+    @Test @Ignore("https://github.com/feldera/feldera/issues/69")
+    public void temporalAppendOnly() {
+        String sql = """
+                CREATE TABLE T(TS INT) WITH ('append_only' = 'true');
+                CREATE VIEW V AS
+                SELECT * FROM T WHERE TS < (SELECT MAX(TS) - 1 FROM T);""";
+        var ccs = this.getCCS(sql);
+        this.addRustTestCase(ccs);
     }
 
     @Test

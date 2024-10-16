@@ -82,6 +82,11 @@ public class NonLinearAggregate extends AggregateBase {
     }
 
     @Override
+    public boolean compatible(AggregateBase other) {
+        return other.is(NonLinearAggregate.class);
+    }
+
+    @Override
     public void validate() {
         // These validation rules actually don't apply for window-based aggregates.
         DBSPType emptyResultType = this.emptySetResult.getType();

@@ -20,8 +20,6 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.Set;
 
-import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.USER;
-
 /**
  * Helper class for the DbspJdbcExecutor.
  * Generate on demand the input functions.

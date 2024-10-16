@@ -29,7 +29,7 @@ public class CalciteTableDescription extends AbstractTable implements ScannableT
 
     @Override
     public Statistic getStatistic() {
-        Statistic result = new Statistic() {
+        return new Statistic() {
             @Override
             public @Nullable Double getRowCount() {
                 PropertyList properties = CalciteTableDescription.this.schema.getProperties();
@@ -61,7 +61,6 @@ public class CalciteTableDescription extends AbstractTable implements ScannableT
                 return ImmutableList.of(keys);
             }
         };
-        return result;
     }
 
     @Override
