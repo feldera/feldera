@@ -23,7 +23,6 @@ use crate::transport::input_transport_config_is_fault_tolerant;
 use crate::transport::InputReader;
 use crate::transport::Step;
 use crate::transport::{input_transport_config_to_endpoint, output_transport_config_to_endpoint};
-use crate::InputBuffer;
 use crate::{
     catalog::SerBatch, CircuitCatalog, Encoder, InputConsumer, InputFormat, OutputConsumer,
     OutputEndpoint, OutputFormat, ParseError, PipelineState, TransportInputEndpoint,
@@ -75,7 +74,7 @@ use std::{
     time::{Duration, Instant},
 };
 use tokio::sync::oneshot;
-use tokio::sync::{oneshot::Sender as OneshotSender, Mutex as TokioMutex};
+use tokio::sync::Mutex as TokioMutex;
 use uuid::Uuid;
 
 mod error;
@@ -552,7 +551,6 @@ impl CircuitThread {
 
             let Ok(FlushedInput {
                 total_consumed,
-                notifications,
                 step_metadata,
             }) = self.flush_input_to_circuit()
             else {
@@ -567,7 +565,7 @@ impl CircuitThread {
             self.controller.unpark_backpressure();
             self.step();
 
-            let processed_records = self.processed_records(total_consumed, notifications);
+            let processed_records = self.processed_records(total_consumed);
 
             // Update `trace_snapshot` to the latest traces
             self.update_snapshot();
@@ -704,18 +702,9 @@ impl CircuitThread {
                         StepProgress::Started => unreachable!(),
                     }
                 }
-                let input_queue = mem::take(&mut *self.controller.input_queue.lock().unwrap());
-                let notifications = input_queue
-                    .into_iter()
-                    .map(|(mut buffer, notification)| {
-                        total_consumed += buffer.flush_all() as u64;
-                        notification
-                    })
-                    .collect::<Vec<_>>();
 
                 return Ok(FlushedInput {
                     total_consumed,
-                    notifications,
                     step_metadata,
                 });
             }
@@ -735,25 +724,15 @@ impl CircuitThread {
         }
     }
 
-    /// Reports that `total_consumed` records have been consumed and calls all
-    /// of the `notifications` to let them know that they're done.
+    /// Reports that `total_consumed` records have been consumed.
     ///
     /// Returns the total number of records processed by the pipeline *before*
     /// this step.
-    fn processed_records(
-        &mut self,
-        total_consumed: u64,
-        notifications: Vec<OneshotSender<()>>,
-    ) -> u64 {
-        let processed_records = self
-            .controller
+    fn processed_records(&mut self, total_consumed: u64) -> u64 {
+        self.controller
             .status
             .global_metrics
-            .processed_records(total_consumed);
-        for notification in notifications {
-            let _ = notification.send(());
-        }
-        processed_records
+            .processed_records(total_consumed)
     }
 
     /// Pushes all of the records to the output.
@@ -813,9 +792,6 @@ impl CircuitThread {
 struct FlushedInput {
     /// Number of records consumed by the circuit.
     total_consumed: u64,
-
-    /// Notifications to emit when the records have been processed.
-    notifications: Vec<OneshotSender<()>>,
 
     /// Metadata to write to the steps log.
     step_metadata: HashMap<String, RmpValue>,
@@ -1601,8 +1577,6 @@ pub struct ControllerInner {
     metrics_snapshotter: Arc<Snapshotter>,
     prometheus_handle: PrometheusHandle,
     session_ctxt: SessionContext,
-    #[allow(clippy::type_complexity)]
-    input_queue: Mutex<Vec<(Box<dyn InputBuffer>, OneshotSender<()>)>>,
 }
 
 impl ControllerInner {
@@ -1638,7 +1612,6 @@ impl ControllerInner {
             metrics_snapshotter,
             prometheus_handle,
             session_ctxt: SessionContext::new(),
-            input_queue: Mutex::new(Vec::new()),
         });
         controller.initialize_adhoc_queries();
         for (input_name, input_config) in controller.status.pipeline_config.inputs.iter() {
@@ -2287,24 +2260,6 @@ impl ControllerInner {
                 &self.backpressure_thread_unparker,
             )
         }
-    }
-
-    /// Adds `buffer` to be processed by the circuit in the next step. When
-    /// processing is complete, `completion` will be notified.
-    ///
-    /// Ordinarily, an input adapter should deliver buffers to the circuit when
-    /// the controller asks it to with [InputReader::queue].  This method allows
-    /// code outside an input adapter to queue buffers to the circuit.
-    pub fn queue_buffer(&self, buffer: Box<dyn InputBuffer>, completion: OneshotSender<()>) {
-        let num_records = buffer.len();
-
-        // We intentionally keep the lock across the call to
-        // `input_batch_global` to avoid the race described on
-        // [InputConsumer::queued].
-        let mut input_queue = self.input_queue.lock().unwrap();
-        input_queue.push((buffer, completion));
-        self.status
-            .input_batch_global(num_records, &self.circuit_thread_unparker);
     }
 
     /// Update counters after receiving an end-of-input event on an input
