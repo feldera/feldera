@@ -1685,7 +1685,7 @@ impl ControllerInner {
                 clh.integrate_handle.is_some(),
                 Arc::downgrade(self),
                 input_handle,
-                clh.schema.name.clone(),
+                name.clone(),
                 Arc::new(Schema::new(arrow_fields)),
                 self.trace_snapshot.clone(),
             ));
@@ -1693,7 +1693,7 @@ impl ControllerInner {
             // This should never fail (we're not registering the same table twice).
             let r = self
                 .session_ctxt
-                .register_table(clh.schema.name.sql_name(), adhoc_tbl)
+                .register_table(name.sql_name(), adhoc_tbl)
                 .expect("table registration failed");
             assert!(r.is_none(), "table {name} already registered");
         }
