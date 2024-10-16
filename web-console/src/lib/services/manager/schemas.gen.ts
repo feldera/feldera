@@ -2438,18 +2438,6 @@ export const $S3InputConfig = {
     region: {
       type: 'string',
       description: 'AWS region.'
-    },
-    streaming: {
-      type: 'boolean',
-      description: `Determines how the connector ingests an individual S3 object. When \`true\`,
-the connector pushes the object to the pipeline chunk-by-chunk, so that the
-pipeline can parse and process initial chunks of the object before the entire
-object has been retrieved. This mode is suitable for streaming formats such as
-newline-delimited JSON. When \`false\`, the connector buffers the entire object
-in memory and pushes it to the pipeline as a single chunk.  Appropriate for
-formats like Parquet that cannot be streamed.
-
-The default value is \`false\`.`
     }
   }
 } as const
