@@ -5,6 +5,7 @@
 //! endpoint configs.  We represent these configs as opaque yaml values, so
 //! that the entire configuration tree can be deserialized from a yaml file.
 
+use crate::transport::adhoc::AdHocInputConfig;
 use crate::transport::datagen::DatagenInputConfig;
 use crate::transport::delta_table::{DeltaTableReaderConfig, DeltaTableWriterConfig};
 use crate::transport::file::{FileInputConfig, FileOutputConfig};
@@ -443,6 +444,8 @@ pub enum TransportConfig {
     HttpInput(HttpInputConfig),
     /// Direct HTTP output: cannot be instantiated through API
     HttpOutput,
+    /// Ad hoc input: cannot be instantiated through API
+    AdHocInput(AdHocInputConfig),
 }
 
 impl TransportConfig {
@@ -461,6 +464,7 @@ impl TransportConfig {
             TransportConfig::Nexmark(_) => "nexmark".to_string(),
             TransportConfig::HttpInput(_) => "http_input".to_string(),
             TransportConfig::HttpOutput => "http_output".to_string(),
+            TransportConfig::AdHocInput(_) => "adhoc_input".to_string(),
         }
     }
 }

@@ -176,6 +176,7 @@ The program version is used internally by the compiler to know when to recompile
         feldera_types::config::TransportConfig,
         feldera_types::config::FormatConfig,
         feldera_types::config::ResourceConfig,
+        feldera_types::transport::adhoc::AdHocInputConfig,
         feldera_types::transport::file::FileInputConfig,
         feldera_types::transport::file::FileOutputConfig,
         feldera_types::transport::http::HttpInputConfig,
