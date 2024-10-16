@@ -529,7 +529,7 @@ public class AggregateCompiler implements ICompilerComponent {
         CalciteObject node = CalciteObject.create(function);
         DBSPExpression postZero = DBSPLiteral.none(this.nullableResultType);
 
-        if (linearAllowed) {
+        if (this.linearAllowed) {
             DBSPClosureExpression map;
             DBSPClosureExpression post;
             // map = |v| {

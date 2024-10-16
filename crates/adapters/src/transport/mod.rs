@@ -81,6 +81,7 @@ pub type AtomicStep = AtomicU64;
 ///
 /// Returns an error if there is a invalid configuration for the endpoint.
 /// Returns `None` if the transport configuration variant is incompatible with an input endpoint.
+#[allow(unused_variables)]
 pub fn input_transport_config_to_endpoint(
     config: TransportConfig,
     endpoint_name: &str,
@@ -127,6 +128,7 @@ pub fn input_transport_config_to_endpoint(
 ///
 /// Returns an error if there is a invalid configuration for the endpoint.
 /// Returns `None` if the transport configuration variant is incompatible with an output endpoint.
+#[allow(unused_variables)]
 pub fn output_transport_config_to_endpoint(
     config: TransportConfig,
     endpoint_name: &str,

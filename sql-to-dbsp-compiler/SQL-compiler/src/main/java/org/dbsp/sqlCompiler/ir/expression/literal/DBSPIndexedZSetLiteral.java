@@ -47,6 +47,10 @@ public final class DBSPIndexedZSetLiteral extends DBSPLiteral implements IDBSPCo
         return this;
     }
 
+    public boolean isEmpty() {
+        return true;
+    }
+
     @SuppressWarnings("SameReturnValue")
     public int size() {
         return 0;

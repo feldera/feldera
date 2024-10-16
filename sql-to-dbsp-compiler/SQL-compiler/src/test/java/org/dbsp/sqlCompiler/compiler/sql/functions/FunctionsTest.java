@@ -2,10 +2,7 @@ package org.dbsp.sqlCompiler.compiler.sql.functions;
 
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
-import org.junit.Ignore;
 import org.junit.Test;
-
-import static java.lang.Double.NaN;
 
 public class FunctionsTest extends SqlIoTest {
     @Override
