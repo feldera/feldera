@@ -51,7 +51,7 @@
       // Close log stream when leaving log tab, or switching to another pipeline
       let oldPipelineName = pipelineName
       return () => {
-        if ('open' in streams[oldPipelineName].stream) {
+        if (streams[oldPipelineName] && 'open' in streams[oldPipelineName].stream) {
           streams[oldPipelineName].stream.stop()
           return
         }
