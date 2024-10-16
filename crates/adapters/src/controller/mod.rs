@@ -237,8 +237,6 @@ impl Controller {
     /// This method is asynchronous and may return before all endpoint
     /// threads have terminated.
     pub fn disconnect_input(&self, endpoint_id: &EndpointId) {
-        debug!("Disconnecting input endpoint {endpoint_id}");
-
         self.inner.disconnect_input(endpoint_id)
     }
 
@@ -264,8 +262,6 @@ impl Controller {
         endpoint_config: InputEndpointConfig,
         endpoint: Box<dyn TransportInputEndpoint>,
     ) -> Result<EndpointId, ControllerError> {
-        debug!("Adding input endpoint '{endpoint_name}'; config: {endpoint_config:?}");
-
         self.inner
             .add_input_endpoint(endpoint_name, endpoint_config, Some(endpoint))
     }
@@ -1741,7 +1737,9 @@ impl ControllerInner {
         self.add_input_endpoint(endpoint_name, endpoint_config.clone(), endpoint)
     }
 
-    fn disconnect_input(self: &Arc<Self>, endpoint_id: &EndpointId) {
+    pub fn disconnect_input(self: &Arc<Self>, endpoint_id: &EndpointId) {
+        debug!("Disconnecting input endpoint {endpoint_id}");
+
         let mut inputs = self.inputs.lock().unwrap();
 
         if let Some(ep) = inputs.remove(endpoint_id) {
@@ -1752,12 +1750,14 @@ impl ControllerInner {
         }
     }
 
-    fn add_input_endpoint(
+    pub fn add_input_endpoint(
         self: &Arc<Self>,
         endpoint_name: &str,
         endpoint_config: InputEndpointConfig,
         endpoint: Option<Box<dyn TransportInputEndpoint>>,
     ) -> Result<EndpointId, ControllerError> {
+        debug!("Adding input endpoint '{endpoint_name}'; config: {endpoint_config:?}");
+
         let mut inputs = self.inputs.lock().unwrap();
         let paused = endpoint_config.connector_config.paused;
 
