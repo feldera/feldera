@@ -1,8 +1,9 @@
+use crate::algebra::ZBatchReader;
 use crate::circuit::metrics::Gauge;
 use crate::{
     algebra::{
         IndexedZSet, IndexedZSetReader, Lattice, MulByRef, OrdIndexedZSet, OrdZSet, PartialOrder,
-        ZSet, ZTrace,
+        ZSet,
     },
     circuit::{
         metadata::{
@@ -930,7 +931,7 @@ impl JoinStats {
 pub struct JoinTrace<I, T, Z, Clk>
 where
     I: IndexedZSet,
-    T: ZTrace,
+    T: BatchReader,
     Z: IndexedZSet,
 {
     right_factories: T::Factories,
@@ -966,7 +967,7 @@ where
 impl<I, T, Z, Clk> JoinTrace<I, T, Z, Clk>
 where
     I: IndexedZSet,
-    T: ZTrace,
+    T: ZBatchReader,
     Z: IndexedZSet,
 {
     pub fn new(
@@ -1007,7 +1008,7 @@ where
 impl<I, T, Z, Clk> Operator for JoinTrace<I, T, Z, Clk>
 where
     I: IndexedZSet,
-    T: ZTrace,
+    T: ZBatchReader,
     Z: IndexedZSet,
     Clk: WithClock<Time = T::Time> + 'static,
 {
@@ -1175,7 +1176,7 @@ where
 impl<I, T, Z, Clk> BinaryOperator<I, T, Z> for JoinTrace<I, T, Z, Clk>
 where
     I: IndexedZSet,
-    T: ZTrace<Key = I::Key>,
+    T: ZBatchReader<Key = I::Key>,
     Z: IndexedZSet,
     Clk: WithClock<Time = T::Time> + 'static,
 {

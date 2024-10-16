@@ -19,7 +19,7 @@ use crate::{
 
 use crate::storage::file::to_bytes;
 use crate::storage::{checkpoint_path, write_commit_metadata};
-use crate::trace::spine_async::snapshot::SpineSnapshot;
+pub use crate::trace::spine_async::snapshot::SpineSnapshot;
 use crate::trace::spine_fueled::CommittedSpine;
 use crate::trace::Merger;
 use ouroboros::self_referencing;
@@ -187,7 +187,7 @@ where
         }
     }
 
-    /// Add `batches` as an (initially) loose batch, which will be merged when
+    /// Add `batch` as an (initially) loose batch, which will be merged when
     /// the merger thread has a chance (although it might not be awake).
     fn add_batch(&mut self, batch: Arc<B>) {
         debug_assert!(!batch.is_empty());

@@ -11,7 +11,7 @@ use crate::{
     },
     circuit_cache_key,
     dynamic::DataTrait,
-    trace::{Batch, BatchReader, Filter, Spine, Trace},
+    trace::{Batch, BatchReader, Filter, Spine, SpineSnapshot, Trace},
     Error, Timestamp,
 };
 use dyn_clone::clone_box;
@@ -582,20 +582,23 @@ pub trait TraceFeedback: Circuit {
 
 impl<C: Circuit> TraceFeedback for C {}
 
-impl<C, T> Stream<C, T>
+impl<C, B> Stream<C, Spine<B>>
 where
     C: Circuit,
-    T: Trace + 'static,
+    B: Batch,
 {
-    pub fn delay_trace(&self) -> Stream<C, T> {
+    pub fn delay_trace(&self) -> Stream<C, SpineSnapshot<B>> {
         // The delayed trace should be automatically created while the real trace is
         // created via `.trace()` or a similar function
         // FIXME: Create a trace if it doesn't exist
-        self.circuit()
+        let delayed_trace = self
+            .circuit()
             .cache_get_or_insert_with(DelayedTraceId::new(self.origin_node_id().clone()), || {
                 panic!("called `.delay_trace()` on a stream without a previously created trace")
             })
-            .clone()
+            .deref()
+            .clone();
+        delayed_trace.apply(|spine: &Spine<B>| spine.ro_snapshot())
     }
 }
 

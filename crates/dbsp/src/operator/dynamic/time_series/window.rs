@@ -1,7 +1,7 @@
 //! Operators to organize time series data into windows.
 
 use crate::{
-    algebra::{IndexedZSet, NegByRef},
+    algebra::{IndexedZSet, NegByRef, ZBatchReader},
     circuit::{
         operator_traits::{Operator, TernaryOperator},
         Circuit, OwnershipPreference, Scope, Stream,
@@ -12,7 +12,7 @@ use crate::{
     },
     operator::dynamic::trace::TraceBound,
     storage::{checkpoint_path, file::to_bytes, write_commit_metadata},
-    trace::{BatchFactories, BatchReader, BatchReaderFactories, Cursor, Serializer, Spine},
+    trace::{BatchFactories, BatchReaderFactories, Cursor, Serializer, SpineSnapshot},
     Error,
 };
 use minitrace::trace;
@@ -42,7 +42,7 @@ where
             .dyn_integrate_trace_with_bound(factories, bound, TraceBound::new())
             .delay_trace();
         self.circuit().add_ternary_operator(
-            <Window<B>>::new(factories, inclusive),
+            <Window<B, SpineSnapshot<B>>>::new(factories, inclusive),
             &trace,
             self,
             bounds,
@@ -56,8 +56,8 @@ struct CommittedWindow {
     window: Option<(Vec<u8>, Vec<u8>)>,
 }
 
-impl<B: IndexedZSet> From<&Window<B>> for CommittedWindow {
-    fn from(value: &Window<B>) -> Self {
+impl<B: IndexedZSet, T: ZBatchReader> From<&Window<B, T>> for CommittedWindow {
+    fn from(value: &Window<B, T>) -> Self {
         // Transform the window bounds into a serialized form and store it as a byte vector.
         // This is necessary because the key type is not sized.
         let window = value.window.as_ref().map(|(a, b)| {
@@ -75,9 +75,10 @@ impl<B: IndexedZSet> From<&Window<B>> for CommittedWindow {
     }
 }
 
-struct Window<B>
+struct Window<B, T>
 where
     B: IndexedZSet,
+    T: ZBatchReader,
 {
     factories: B::Factories,
     left_inclusive: bool,
@@ -85,12 +86,13 @@ where
     // `None` means we're at the start of a clock epoch, no inputs
     // have been received yet, and window boundaries haven't been set.
     window: Option<(Box<B::Key>, Box<B::Key>)>,
-    _phantom: PhantomData<B>,
+    _phantom: PhantomData<(B, T)>,
 }
 
-impl<B> Window<B>
+impl<B, T> Window<B, T>
 where
     B: IndexedZSet,
+    T: ZBatchReader,
 {
     pub fn new(factories: &B::Factories, (left_inclusive, right_inclusive): (bool, bool)) -> Self {
         Self {
@@ -115,9 +117,10 @@ where
     }
 }
 
-impl<B> Operator for Window<B>
+impl<B, T> Operator for Window<B, T>
 where
     B: IndexedZSet,
+    T: ZBatchReader,
 {
     fn name(&self) -> Cow<'static, str> {
         Cow::from("Window")
@@ -223,9 +226,10 @@ where
     }
 }
 
-impl<B> TernaryOperator<Spine<B>, B, (Box<B::Key>, Box<B::Key>), B> for Window<B>
+impl<B, T> TernaryOperator<T, B, (Box<B::Key>, Box<B::Key>), B> for Window<B, T>
 where
     B: IndexedZSet,
+    T: ZBatchReader<Key = B::Key, Val = B::Val, Time = ()> + Clone,
     Box<B::Key>: Clone,
 {
     /// * `batch` - input stream containing new time series data points indexed
@@ -240,7 +244,7 @@ where
     #[trace]
     fn eval(
         &mut self,
-        trace: Cow<'_, Spine<B>>,
+        trace: Cow<'_, T>,
         batch: Cow<'_, B>,
         bounds: Cow<'_, (Box<B::Key>, Box<B::Key>)>,
     ) -> B {

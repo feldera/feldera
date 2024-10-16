@@ -49,7 +49,7 @@ pub mod cursor;
 pub mod layers;
 pub mod ord;
 pub mod spine_async;
-pub use spine_async::Spine;
+pub use spine_async::{Spine, SpineSnapshot};
 
 mod spine_fueled;
 pub use spine_fueled::Spine as OldSpine;
