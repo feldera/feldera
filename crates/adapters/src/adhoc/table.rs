@@ -1,11 +1,13 @@
 use std::any::Any;
+use std::borrow::Cow;
 use std::fmt;
 use std::fmt::{Debug, Formatter};
 use std::sync::{Arc, Weak};
 
 use crate::catalog::SyncSerBatchReader;
 use crate::controller::{ConsistentSnapshots, ControllerInner};
-use crate::{DeCollectionHandle, RecordFormat};
+use crate::transport::adhoc::AdHocInputEndpoint;
+use crate::{DeCollectionHandle, RecordFormat, TransportInputEndpoint};
 use arrow::datatypes::{Schema, SchemaRef};
 use arrow::record_batch::RecordBatch;
 use async_trait::async_trait;
@@ -24,16 +26,19 @@ use datafusion::physical_plan::stream::{
 use datafusion::physical_plan::{
     DisplayAs, DisplayFormatType, ExecutionMode, ExecutionPlan, Partitioning, PlanProperties,
 };
+use feldera_types::config::{
+    default_max_batch_size, default_max_queued_records, ConnectorConfig, FormatConfig,
+    InputEndpointConfig, TransportConfig,
+};
 use feldera_types::program_schema::SqlIdentifier;
 use feldera_types::serde_with_context::serde_config::{DecimalFormat, VariantFormat};
 use feldera_types::serde_with_context::{DateFormat, SqlSerdeConfig, TimeFormat, TimestampFormat};
-use futures_util::StreamExt;
-use log::warn;
+use feldera_types::transport::adhoc::AdHocInputConfig;
 use serde_arrow::schema::SerdeArrowSchema;
 use serde_arrow::ArrayBuilder;
+use serde_yaml::Value as YamlValue;
 use tokio::sync::mpsc::Sender;
-use tokio::sync::oneshot;
-use tokio::time::{timeout, Duration};
+use uuid::Uuid;
 
 pub const fn datafusion_arrow_serde_config() -> &'static SqlSerdeConfig {
     &SqlSerdeConfig {
@@ -148,7 +153,11 @@ impl TableProvider for AdHocTable {
 
         match &self.input_handle {
             Some(ih) => {
-                let sink = Arc::new(AdHocTableSink::new(self.controller.clone(), ih.fork()));
+                let sink = Arc::new(AdHocTableSink::new(
+                    self.controller.clone(),
+                    self.name.clone(),
+                    self.schema.clone(),
+                    ih.fork()));
                 Ok(Arc::new(DataSinkExec::new(
                     input,
                     sink,
@@ -163,16 +172,22 @@ impl TableProvider for AdHocTable {
 
 struct AdHocTableSink {
     controller: Weak<ControllerInner>,
+    name: SqlIdentifier,
+    schema: Arc<Schema>,
     collection_handle: Box<dyn DeCollectionHandle>,
 }
 
 impl AdHocTableSink {
     fn new(
         controller: Weak<ControllerInner>,
+        name: SqlIdentifier,
+        schema: Arc<Schema>,
         collection_handle: Box<dyn DeCollectionHandle>,
     ) -> Self {
         Self {
             controller,
+            name,
+            schema,
             collection_handle,
         }
     }
@@ -206,45 +221,63 @@ impl DataSink for AdHocTableSink {
 
     async fn write_all(
         &self,
-        mut data: SendableRecordBatchStream,
+        data: SendableRecordBatchStream,
         _context: &Arc<TaskContext>,
     ) -> datafusion::common::Result<u64> {
-        let mut arrow_inserter = self
+        let Some(controller) = self.controller.upgrade() else {
+            return Ok(0);
+        };
+
+        // Generate endpoint name.
+        let endpoint_name = format!("adhoc-ingress-{}-{}", self.name.name(), Uuid::new_v4());
+
+        // Create HTTP endpoint.
+        let config = AdHocInputConfig {
+            name: endpoint_name.clone(),
+        };
+        let endpoint = AdHocInputEndpoint::new(config.clone());
+
+        // Create endpoint config.
+        let config = InputEndpointConfig {
+            stream: Cow::from(self.name.to_string()),
+            connector_config: ConnectorConfig {
+                transport: TransportConfig::AdHocInput(config),
+                format: Some(FormatConfig {
+                    name: Cow::from("parquet"),
+                    config: YamlValue::Null,
+                }),
+                output_buffer_config: Default::default(),
+                max_batch_size: default_max_batch_size(),
+                max_queued_records: default_max_queued_records(),
+                paused: false,
+            },
+        };
+
+        // Connect endpoint.
+        let endpoint_id = controller
+            .add_input_endpoint(
+                &endpoint_name,
+                config,
+                Some(Box::new(endpoint.clone()) as Box<dyn TransportInputEndpoint>),
+            )
+            .map_err(|e| DataFusionError::External(e.into()))?;
+
+        let arrow_inserter = self
             .collection_handle
             .configure_arrow_deserializer(datafusion_arrow_serde_config().clone())
             .map_err(|e| DataFusionError::External(e.into()))?;
 
-        while let Some(batch) = data.next().await.transpose()? {
-            arrow_inserter
-                .insert(&batch)
-                .map_err(|e| DataFusionError::External(e.into()))?;
-        }
-
-        let Some(controller) = self.controller.upgrade() else {
-            return Ok(0);
-        };
-        let Some(buffer) = arrow_inserter.take() else {
-            return Ok(0);
-        };
-
-        let row_count = buffer.len();
-        let (sender, receiver) = oneshot::channel();
-        controller.queue_buffer(buffer, sender);
-        controller.request_step();
-
-        let total_input = controller.status.num_total_input_records();
-        const WAIT_FOR_PROCESSING_TIMEOUT: Duration = Duration::from_secs(120);
-        if timeout(WAIT_FOR_PROCESSING_TIMEOUT, receiver)
+        // Call endpoint to complete request.
+        let result = endpoint
+            .complete_request(data, arrow_inserter, &self.schema)
             .await
-            .is_err()
-        {
-            // If we take more than 2min clearly something is wrong or extremely busy so we just return for now,
-            // we can't return an error since the insertion is still eventually going to "commit".
-            warn!("The submitted `INSERT INTO` statement took an unusual amount of time ({}s) waiting for the Feldera circuit to process it. \
-                   We return before confirming insertion completed, if you want to make sure the statement was fully processed monitor the `total_processed_records` metric and wait until it reaches '{}'.", WAIT_FOR_PROCESSING_TIMEOUT.as_secs(), total_input);
-        }
+            .map_err(|e| DataFusionError::External(e.into()));
+        drop(endpoint);
 
-        Ok(row_count as u64)
+        // Delete endpoint on completion/error.
+        controller.disconnect_input(&endpoint_id);
+
+        result
     }
 }
 
