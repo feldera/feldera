@@ -31,6 +31,8 @@ from tests.aggregate_tests.test_stddev_samp import *  # noqa: F403
 from tests.aggregate_tests.test_varchar_argmax import *  # noqa: F403
 from tests.aggregate_tests.test_varchar_argmin import *  # noqa: F403
 from tests.aggregate_tests.test_varchar_arr_agg import *  # noqa: F403
+from tests.aggregate_tests.test_varchar_count import *  # noqa: F403
+from tests.aggregate_tests.test_varchar_count_col import *  # noqa: F403
 from tests.aggregate_tests.test_varchar_max import *  # noqa: F403
 from tests.aggregate_tests.test_varchar_min import *  # noqa: F403
 from tests.aggregate_tests.test_varchar_table import *  # noqa: F403
