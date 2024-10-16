@@ -62,20 +62,14 @@ export const useRefreshPipeline = (
     set(preloaded())
   })
 
-  let interval: NodeJS.Timeout
-  $effect(() => {
-    pipelineName
-    restartInterval()
-  })
-  const restartInterval = () => {
-    clearInterval(interval)
-    interval = setInterval(reload, 2000)
-  }
-
-  $effect(() => {
-    queueMicrotask(reload)
+  const restartReload = () => {
+    const interval = setInterval(reload, 2000)
     return () => {
       clearInterval(interval)
     }
+  }
+  $effect.pre(() => {
+    pipelineName
+    return restartReload()
   })
 }
