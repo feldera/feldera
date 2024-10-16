@@ -61,7 +61,7 @@ public class DBSPTypeRawTuple extends DBSPTypeTupleBase {
     }
 
     @Override
-    public DBSPType makeType(List<DBSPType> fields) {
+    public DBSPTypeTupleBase makeType(List<DBSPType> fields) {
         return new DBSPTypeRawTuple(CalciteObject.EMPTY, fields);
     }
 

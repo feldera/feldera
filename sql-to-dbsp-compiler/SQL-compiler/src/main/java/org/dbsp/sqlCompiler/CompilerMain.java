@@ -43,7 +43,6 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Logger;
-import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import javax.sql.DataSource;

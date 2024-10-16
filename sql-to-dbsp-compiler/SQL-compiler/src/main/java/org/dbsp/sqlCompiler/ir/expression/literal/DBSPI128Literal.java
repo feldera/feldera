@@ -16,8 +16,8 @@ import java.math.BigInteger;
 import java.util.Objects;
 
 public final class DBSPI128Literal extends DBSPIntLiteral implements IsNumericLiteral {
-    static BigInteger min = BigInteger.ONE.shiftLeft(127).negate();
-    static BigInteger max = BigInteger.ONE.shiftLeft(127).subtract(BigInteger.ONE);
+    static final BigInteger min = BigInteger.ONE.shiftLeft(127).negate();
+    static final BigInteger max = BigInteger.ONE.shiftLeft(127).subtract(BigInteger.ONE);
 
     @Nullable
     public final BigInteger value;

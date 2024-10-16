@@ -1,6 +1,5 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
-import org.apache.commons.math3.util.Pair;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPBinaryOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDelayedIntegralOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDistinctOperator;

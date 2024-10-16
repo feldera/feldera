@@ -33,9 +33,11 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPControlledFilterOperator;
 import org.dbsp.sqlCompiler.circuit.DBSPDeclaration;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDistinctOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIndexedTopKOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPLagOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNowOperator;
@@ -56,6 +58,7 @@ import org.dbsp.sqlCompiler.compiler.InputColumnMetadata;
 import org.dbsp.sqlCompiler.compiler.TableMetadata;
 import org.dbsp.sqlCompiler.compiler.ProgramMetadata;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
+import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.IHasSchema;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -77,6 +80,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.DBSPWindowBoundExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPISizeLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIndexedZSetLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStrLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
 import org.dbsp.sqlCompiler.ir.statement.DBSPFunctionItem;
@@ -1029,6 +1033,41 @@ public class ToRustVisitor extends CircuitVisitor {
         return VisitDecision.STOP;
     }
 
+    VisitDecision processJoinIndexOperator(DBSPBinaryOperator operator) {
+        DBSPType streamType = new DBSPTypeStream(operator.outputType);
+        this.writeComments(operator)
+                .append("let ")
+                .append(operator.getOutputName())
+                .append(": ");
+        streamType.accept(this.innerVisitor);
+        this.builder.append(" = ")
+                .append(operator.left().getOutputName())
+                .append(".")
+                .append("join_index")
+                .append("(&")
+                .append(operator.right().getOutputName())
+                .append(", ")
+                .newline();
+        // The function signature does not correspond to
+        // the DBSP join_index operator; it must produce an iterator.
+        DBSPClosureExpression closure = operator.getClosureFunction();
+        closure = closure.body.some().closure(closure.parameters);
+        closure.accept(this.innerVisitor);
+        builder.append(");");
+        return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPJoinIndexOperator operator) {
+        return this.processJoinIndexOperator(operator);
+    }
+
+    public VisitDecision preorder(DBSPStreamJoinIndexOperator operator) {
+        if (this.options.languageOptions.incrementalize)
+            throw new UnimplementedException("Not yet implemented");
+        return this.processJoinIndexOperator(operator);
+    }
+
     @Override
     public VisitDecision preorder(DBSPLagOperator operator) {
         this.generateCmpFunc(operator.comparator);
@@ -1213,7 +1252,7 @@ public class ToRustVisitor extends CircuitVisitor {
 
     /** Collects all comparators that appear in a DBSPCustomOrderExpression */
     static class FindComparators extends InnerVisitor {
-        List<DBSPComparatorExpression> found = new ArrayList<>();
+        final List<DBSPComparatorExpression> found = new ArrayList<>();
 
         public FindComparators(IErrorReporter reporter) {
             super(reporter);
@@ -1233,9 +1272,14 @@ public class ToRustVisitor extends CircuitVisitor {
         this.builder.append("if Runtime::worker_index() == 0 {");
         operator.function.accept(this.innerVisitor);
         this.builder.append("} else {");
-        DBSPZSetLiteral empty = DBSPZSetLiteral.emptyWithElementType(
-                operator.getOutputZSetElementType());
-        empty.accept(this.innerVisitor);
+        if (operator.outputType.is(DBSPTypeZSet.class)) {
+            DBSPZSetLiteral empty = DBSPZSetLiteral.emptyWithElementType(
+                    operator.getOutputZSetElementType());
+            empty.accept(this.innerVisitor);
+        } else {
+            assert operator.function.to(DBSPIndexedZSetLiteral.class).isEmpty();
+            operator.function.accept(this.innerVisitor);
+        }
         this.builder.append("}));");
         return VisitDecision.STOP;
     }

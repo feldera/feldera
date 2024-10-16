@@ -21,4 +21,9 @@ public abstract class AggregateBase extends DBSPExpression implements IDBSPInner
     }
 
     public abstract boolean isLinear();
+
+    /** True if these two aggregates are "compatible", i.e. they
+     * can be implemented in a single operator.  For example, all linear
+     * aggregates are compatible with each other. */
+    public abstract boolean compatible(AggregateBase other);
 }
