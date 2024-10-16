@@ -2,10 +2,11 @@
   import { postApiKey } from '$lib/services/pipelineManager'
   import { superForm, setError } from 'sveltekit-superforms'
   import { valibot } from 'sveltekit-superforms/adapters'
-  import { Field, Label, FieldErrors, Control, Description, Fieldset, Legend } from 'formsnap'
+  import { Field, FieldErrors, Control } from 'formsnap'
   import { clipboard } from '@svelte-bin/clipboard'
 
   import * as va from 'valibot'
+  import { clickedClass } from '$lib/compositions/actions/clickedClass'
 
   let { onClose }: { onClose: () => void } = $props()
 
@@ -98,7 +99,15 @@
       <div class="flex w-full flex-nowrap items-center gap-2">
         <span>{name}:</span>
         <span class="w-full overflow-hidden overflow-ellipsis">{key}</span>
-        <button class=" fd fd-content_copy btn-icon flex-none" use:clipboard={key}></button>
+        <button
+          class="btn-icon flex-none"
+          use:clipboard={key}
+          use:clickedClass={{
+            base: 'fd fd-content_copy',
+            clicked: 'fd fd-check text-success-500 text-[20px]'
+          }}
+          aria-label="Copy to buffer"
+        ></button>
       </div>
     {/each}
   </div>
