@@ -652,6 +652,11 @@ impl StreamSplitter {
         self.fed = 0;
         self.splitter.clear();
     }
+
+    /// Resets the splitter's state as if it were newly created.
+    pub fn reset(&mut self) {
+        self.seek(0);
+    }
 }
 
 pub trait OutputFormat: Send + Sync {
