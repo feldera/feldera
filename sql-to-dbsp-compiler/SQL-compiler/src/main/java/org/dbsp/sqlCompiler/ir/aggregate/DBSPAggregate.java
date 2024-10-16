@@ -36,6 +36,7 @@ public final class DBSPAggregate extends DBSPNode
     public DBSPAggregate(CalciteObject node, DBSPVariablePath rowVar,
                          List<AggregateBase> aggregates) {
         super(node);
+        assert !aggregates.isEmpty();
         this.rowVar = rowVar;
         this.aggregates = aggregates;
         this.isLinear = Linq.all(aggregates, AggregateBase::isLinear);
@@ -123,7 +124,9 @@ public final class DBSPAggregate extends DBSPNode
 
     @Override
     public IIndentStream toString(IIndentStream builder) {
-        builder.append("Aggregate:").increase();
+        builder.append("Aggregate ")
+                .append(this.aggregates.size())
+                .append(":").increase();
         for (AggregateBase impl : this.aggregates) {
             builder.append(impl);
         }

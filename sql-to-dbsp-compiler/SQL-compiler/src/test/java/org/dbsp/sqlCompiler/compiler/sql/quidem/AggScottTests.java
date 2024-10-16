@@ -1517,4 +1517,217 @@ public class AggScottTests extends ScottBaseTests {
                    (1 row)""");
     }
 
+    @Test
+    public void testAgg3() {
+        this.qs("""
+                -- [CALCITE-4345] SUM(CASE WHEN b THEN 1) etc.
+                select
+                 sum(sal) as sum_sal,
+                 count(distinct case
+                       when job = 'CLERK'
+                       then deptno else null end) as count_distinct_clerk,
+                 sum(case when deptno = 10 then sal end) as sum_sal_d10,
+                 sum(case when deptno = 20 then sal else 0 end) as sum_sal_d20,
+                 sum(case when deptno = 30 then 1 else 0 end) as count_d30,
+                 count(case when deptno = 40 then 'x' end) as count_d40,
+                 sum(case when deptno = 45 then 1 end) as count_d45,
+                 sum(case when deptno = 50 then 1 else null end) as count_d50,
+                 sum(case when deptno = 60 then null end) as sum_null_d60,
+                 sum(case when deptno = 70 then null else 1 end) as sum_null_d70,
+                 count(case when deptno = 20 then 1 end) as count_d20
+                from emp;
+                +----------+----------------------+-------------+-------------+-----------+-----------+-----------+-----------+--------------+--------------+-----------+
+                | SUM_SAL  | COUNT_DISTINCT_CLERK | SUM_SAL_D10 | SUM_SAL_D20 | COUNT_D30 | COUNT_D40 | COUNT_D45 | COUNT_D50 | SUM_NULL_D60 | SUM_NULL_D70 | COUNT_D20 |
+                +----------+----------------------+-------------+-------------+-----------+-----------+-----------+-----------+--------------+--------------+-----------+
+                | 29025.00 |                    3 |     8750.00 |    10875.00 |         6 |         0 |           |           |              |           14 |         5 |
+                +----------+----------------------+-------------+-------------+-----------+-----------+-----------+-----------+--------------+--------------+-----------+
+                (1 row)
+                
+                -- Check that SUM produces NULL on empty set, COUNT produces 0.
+                select
+                 sum(sal) as sum_sal,
+                 count(distinct case
+                       when job = 'CLERK'
+                       then deptno else null end) as count_distinct_clerk,
+                 sum(case when deptno = 10 then sal end) as sum_sal_d10,
+                 sum(case when deptno = 20 then sal else 0 end) as sum_sal_d20,
+                 sum(case when deptno = 30 then 1 else 0 end) as count_d30,
+                 count(case when deptno = 40 then 'x' end) as count_d40,
+                 sum(case when deptno = 45 then 1 end) as count_d45,
+                 sum(case when deptno = 50 then 1 else null end) as count_d50,
+                 sum(case when deptno = 60 then null end) as sum_null_d60,
+                 sum(case when deptno = 70 then null else 1 end) as sum_null_d70,
+                 count(case when deptno = 20 then 1 end) as count_d20
+                from emp
+                where false;
+                +---------+----------------------+-------------+-------------+-----------+-----------+-----------+-----------+--------------+--------------+-----------+
+                | SUM_SAL | COUNT_DISTINCT_CLERK | SUM_SAL_D10 | SUM_SAL_D20 | COUNT_D30 | COUNT_D40 | COUNT_D45 | COUNT_D50 | SUM_NULL_D60 | SUM_NULL_D70 | COUNT_D20 |
+                +---------+----------------------+-------------+-------------+-----------+-----------+-----------+-----------+--------------+--------------+-----------+
+                |         |                    0 |             |             |           |         0 |           |           |              |              |         0 |
+                +---------+----------------------+-------------+-------------+-----------+-----------+-----------+-----------+--------------+--------------+-----------+
+                (1 row)
+                
+                -- [CALCITE-4609] AggregateRemoveRule throws while handling AVG
+                -- Note that the outer GROUP BY is a no-op, and therefore
+                -- AggregateRemoveRule kicks in.
+                SELECT job, AVG(avg_sal) AS avg_sal2
+                FROM (
+                    SELECT deptno, job, AVG(sal) AS avg_sal
+                    FROM emp
+                    GROUP BY deptno, job) AS EmpAnalytics
+                WHERE deptno = 30
+                GROUP BY job;
+                +----------+----------+
+                | JOB      | AVG_SAL2 |
+                +----------+----------+
+                | CLERK|   950.00     |
+                | MANAGER|  2850.00   |
+                | SALESMAN|  1400.00  |
+                +----------+----------+
+                (3 rows)
+                
+                -- Same, using WITH
+                WITH EmpAnalytics AS (
+                    SELECT deptno, job, AVG(sal) AS avg_sal
+                    FROM emp
+                    GROUP BY deptno, job)
+                SELECT job, AVG(avg_sal) AS avg_sal2
+                FROM EmpAnalytics
+                WHERE deptno = 30
+                GROUP BY job;
+                +----------+----------+
+                | JOB      | AVG_SAL2 |
+                +----------+----------+
+                | CLERK|       950.00 |
+                | MANAGER|    2850.00 |
+                | SALESMAN|   1400.00 |
+                +----------+----------+
+                (3 rows)""");
+    }
+
+    @Test
+    public void testAgg4() {
+        this.qs("""
+                -- [CALCITE-1930] AggregateExpandDistinctAggregateRules should handle multiple aggregate calls with same input ref
+                select count(distinct EMPNO), COUNT(SAL), MIN(SAL), MAX(SAL) from emp;
+                +--------+--------+--------+---------+
+                | EXPR$0 | EXPR$1 | EXPR$2 | EXPR$3  |
+                +--------+--------+--------+---------+
+                |     14 |     14 | 800.00 | 5000.00 |
+                +--------+--------+--------+---------+
+                (1 row)
+                
+                -- [CALCITE-1930] AggregateExpandDistinctAggregateRules should handle multiple aggregate calls with same input ref
+                select count(distinct DEPTNO), COUNT(JOB), MIN(SAL), MAX(SAL) from emp;
+                +--------+--------+--------+---------+
+                | EXPR$0 | EXPR$1 | EXPR$2 | EXPR$3  |
+                +--------+--------+--------+---------+
+                |      3 |     14 | 800.00 | 5000.00 |
+                +--------+--------+--------+---------+
+                (1 row)
+                
+                -- [CALCITE-1930] AggregateExpandDistinctAggregateRules should handle multiple aggregate calls with same input ref
+                select MGR, count(distinct DEPTNO), COUNT(JOB), MIN(SAL), MAX(SAL) from emp group by MGR;
+                +------+--------+--------+---------+---------+
+                | MGR  | EXPR$1 | EXPR$2 | EXPR$3  | EXPR$4  |
+                +------+--------+--------+---------+---------+
+                | 7566 |      1 |      2 | 3000.00 | 3000.00 |
+                | 7698 |      1 |      5 |  950.00 | 1600.00 |
+                | 7782 |      1 |      1 | 1300.00 | 1300.00 |
+                | 7788 |      1 |      1 | 1100.00 | 1100.00 |
+                | 7839 |      3 |      3 | 2450.00 | 2975.00 |
+                | 7902 |      1 |      1 |  800.00 |  800.00 |
+                |      |      1 |      1 | 5000.00 | 5000.00 |
+                +------+--------+--------+---------+---------+
+                (7 rows)
+                
+                -- [CALCITE-1930] AggregateExpandDistinctAggregateRules should handle multiple aggregate calls with same input ref
+                select MGR, count(distinct DEPTNO, JOB), MIN(SAL), MAX(SAL) from emp group by MGR;
+                +------+--------+---------+---------+
+                | MGR  | EXPR$1 | EXPR$2  | EXPR$3  |
+                +------+--------+---------+---------+
+                | 7566 |      1 | 3000.00 | 3000.00 |
+                | 7698 |      2 |  950.00 | 1600.00 |
+                | 7782 |      1 | 1300.00 | 1300.00 |
+                | 7788 |      1 | 1100.00 | 1100.00 |
+                | 7839 |      3 | 2450.00 | 2975.00 |
+                | 7902 |      1 |  800.00 |  800.00 |
+                |      |      1 | 5000.00 | 5000.00 |
+                +------+--------+---------+---------+
+                (7 rows)""");
+    }
+
+    @Test @Ignore("Several not-implemented aggregation functions")
+    public void testAnyValue() {
+        this.qs("""
+                -- [CALCITE-2366] Add support for ANY_VALUE function
+                -- Without GROUP BY clause
+                SELECT any_value(empno) as anyempno from emp;
+                +----------+
+                | ANYEMPNO |
+                +----------+
+                |     7934 |
+                +----------+
+                (1 row)
+                
+                -- [CALCITE-2366] Add support for ANY_VALUE function
+                -- With GROUP BY clause
+                SELECT any_value(empno) as anyempno from emp group by sal;
+                +----------+
+                | ANYEMPNO |
+                +----------+
+                |     7369 |
+                |     7499 |
+                |     7566 |
+                |     7654 |
+                |     7698 |
+                |     7782 |
+                |     7839 |
+                |     7844 |
+                |     7876 |
+                |     7900 |
+                |     7902 |
+                |     7934 |
+                +----------+
+                (12 rows)
+                
+                -- [CALCITE-1776, CALCITE-2402] REGR_COUNT
+                SELECT regr_count(COMM, SAL) as "REGR_COUNT(COMM, SAL)",
+                   regr_count(EMPNO, SAL) as "REGR_COUNT(EMPNO, SAL)"
+                from emp;
+                +-----------------------+------------------------+
+                | REGR_COUNT(COMM, SAL) | REGR_COUNT(EMPNO, SAL) |
+                +-----------------------+------------------------+
+                |                     4 |                     14 |
+                +-----------------------+------------------------+
+                (1 row)
+                
+                -- [CALCITE-1776, CALCITE-2402] REGR_SXX, REGR_SXY, REGR_SYY
+                SELECT
+                  regr_sxx(COMM, SAL) as "REGR_SXX(COMM, SAL)",
+                  regr_syy(COMM, SAL) as "REGR_SYY(COMM, SAL)",
+                  regr_sxx(SAL, COMM) as "REGR_SXX(SAL, COMM)",
+                  regr_syy(SAL, COMM) as "REGR_SYY(SAL, COMM)"
+                from emp;
+                +---------------------+---------------------+---------------------+---------------------+
+                | REGR_SXX(COMM, SAL) | REGR_SYY(COMM, SAL) | REGR_SXX(SAL, COMM) | REGR_SYY(SAL, COMM) |
+                +---------------------+---------------------+---------------------+---------------------+
+                |          95000.0000 |        1090000.0000 |        1090000.0000 |          95000.0000 |
+                +---------------------+---------------------+---------------------+---------------------+
+                (1 row)
+                
+                -- [CALCITE-1776, CALCITE-2402] COVAR_POP, COVAR_SAMP, VAR_SAMP, VAR_POP
+                SELECT
+                  covar_pop(COMM, COMM) as "COVAR_POP(COMM, COMM)",
+                  covar_samp(SAL, SAL) as "COVAR_SAMP(SAL, SAL)",
+                  var_pop(COMM) as "VAR_POP(COMM)",
+                  var_samp(SAL) as "VAR_SAMP(SAL)"
+                from emp;
+                +-----------------------+----------------------+---------------+-------------------+
+                | COVAR_POP(COMM, COMM) | COVAR_SAMP(SAL, SAL) | VAR_POP(COMM) | VAR_SAMP(SAL)     |
+                +-----------------------+----------------------+---------------+-------------------+
+                |           272500.0000 |    1398313.873626374 |   272500.0000 | 1398313.873626374 |
+                +-----------------------+----------------------+---------------+-------------------+
+                (1 row)""");
+    }
 }

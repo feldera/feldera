@@ -28,21 +28,22 @@ import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
-import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 
 import javax.annotation.Nullable;
 import java.util.List;
 import java.util.Objects;
 
-/** Corresponds to a DBSP join operator, which may include multiple integrators.
- * Output is always a ZSet.  There's an DBSPJoinIndexOperator which can produce IndexedZSets. */
-public final class DBSPJoinOperator extends DBSPBinaryOperator {
-    public DBSPJoinOperator(
-            CalciteObject node, DBSPTypeZSet outputType,
+/** A join that produces an IndexedZSet.
+ * Notice that, unlike the corresponding DBSP operator join_index,
+ * this operator has a function that produces a single value, and not an Iterator.
+ * The code generator has to wrap this value in a Some to be able to use the DBSP operator. */
+public final class DBSPJoinIndexOperator extends DBSPBinaryOperator {
+    public DBSPJoinIndexOperator(
+            CalciteObject node, DBSPTypeIndexedZSet outputType,
             DBSPExpression function, boolean isMultiset,
             DBSPOperator left, DBSPOperator right) {
-        super(node, "join", function, outputType, isMultiset, left, right);
-        this.checkResultType(function, this.getOutputZSetElementType());
+        super(node, "join_index", function, outputType, isMultiset, left, right);
         assert left.getOutputIndexedZSetType().keyType.sameType(right.getOutputIndexedZSetType().keyType);
     }
 
@@ -52,8 +53,8 @@ public final class DBSPJoinOperator extends DBSPBinaryOperator {
 
     @Override
     public DBSPOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
-        return new DBSPJoinOperator(
-                this.getNode(), outputType.to(DBSPTypeZSet.class),
+        return new DBSPJoinIndexOperator(
+                this.getNode(), outputType.to(DBSPTypeIndexedZSet.class),
                 Objects.requireNonNull(expression),
                 this.isMultiset, this.left(), this.right()).copyAnnotations(this);
     }
@@ -61,8 +62,8 @@ public final class DBSPJoinOperator extends DBSPBinaryOperator {
     @Override
     public DBSPOperator withInputs(List<DBSPOperator> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
-            return new DBSPJoinOperator(
-                    this.getNode(), this.getOutputZSetType(),
+            return new DBSPJoinIndexOperator(
+                    this.getNode(), this.getOutputIndexedZSetType(),
                     this.getFunction(), this.isMultiset, newInputs.get(0), newInputs.get(1))
                     .copyAnnotations(this);
         return this;

@@ -31,6 +31,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.util.Linq;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 public abstract class DBSPTypeTupleBase extends DBSPType {
@@ -88,5 +89,12 @@ public abstract class DBSPTypeTupleBase extends DBSPType {
         return this.makeTuple(fields);
     }
 
-    public abstract DBSPType makeType(List<DBSPType> fields);
+    public abstract DBSPTypeTupleBase makeType(List<DBSPType> fields);
+
+    public DBSPTypeTupleBase concat(DBSPTypeTupleBase other) {
+        List<DBSPType> fields = new ArrayList<>(this.size() + other.size());
+        fields.addAll(Arrays.asList(this.tupFields));
+        fields.addAll(Arrays.asList(other.tupFields));
+        return this.makeType(fields);
+    }
 }

@@ -26,7 +26,7 @@ public class CalciteOptimizer implements IWritesLogs {
 
     public interface CalciteOptimizerStep {
         /** Name of the optimizer step */
-        abstract String getName();
+        String getName();
         /** Optimize the program for the specified optimization level */
         RelNode optimize(RelNode rel, int level);
     }
@@ -108,7 +108,7 @@ public class CalciteOptimizer implements IWritesLogs {
                         .append(CalciteCompiler.getPlan(optimized, false))
                         .decrease()
                         .newline();
-            };
+            }
             rel = optimized;
         }
         return rel;

@@ -530,6 +530,11 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
             }
 
             this.circuit = this.midend.getFinalCircuit().seal("parsed");
+            if (this.getDebugLevel() > 2) {
+                ToDotVisitor.toDot(this, "initial.png",
+                        this.getDebugLevel(), "png", this.circuit);
+            }
+
             this.validateForeignKeys(this.circuit, foreignKeys);
             this.optimize();
         } catch (SqlParseException e) {
@@ -642,7 +647,6 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
      * @param name  Name to use for the produced circuit. */
     public DBSPCircuit getFinalCircuit(String name) {
         this.runAllCompilerStages();
-
         if (this.circuit == null) {
             DBSPPartialCircuit circuit = this.midend.getFinalCircuit();
             this.circuit = circuit.seal(name);

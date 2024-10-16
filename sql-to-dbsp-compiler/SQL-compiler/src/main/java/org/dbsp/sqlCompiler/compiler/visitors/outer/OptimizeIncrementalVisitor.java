@@ -119,6 +119,23 @@ public class OptimizeIncrementalVisitor extends CircuitCloneVisitor {
     }
 
     @Override
+    public void postorder(DBSPStreamJoinIndexOperator operator) {
+        List<DBSPOperator> sources = Linq.map(operator.inputs, this::mapped);
+        if (Linq.all(sources, s -> s.is(DBSPIntegrateOperator.class))) {
+            List<DBSPOperator> sourceSource = Linq.map(sources, s -> s.inputs.get(0));
+            DBSPOperator replace = new DBSPJoinIndexOperator(operator.getNode(),
+                    operator.getOutputIndexedZSetType(),
+                    operator.getFunction(), operator.isMultiset,
+                    sourceSource.get(0), sourceSource.get(1));
+            this.addOperator(replace);
+            DBSPIntegrateOperator integral = new DBSPIntegrateOperator(operator.getNode(), replace);
+            this.map(operator, integral);
+            return;
+        }
+        super.postorder(operator);
+    }
+
+    @Override
     public void postorder(DBSPSumOperator operator) {
         List<DBSPOperator> sources = Linq.map(operator.inputs, this::mapped);
         if (Linq.all(sources, s -> s.is(DBSPIntegrateOperator.class))) {

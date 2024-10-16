@@ -99,8 +99,8 @@ public final class DBSPTupleExpression extends DBSPBaseTupleExpression {
 
     /** @param expressions A list of expressions with tuple types.
      * @return  A tuple expressions that concatenates all fields of these tuple expressions. */
-    public static DBSPTupleExpression flatten(DBSPExpression... expressions) {
-        List<DBSPExpression> fields = new ArrayList<>();
+    public static DBSPTupleExpression flatten(List<DBSPExpression> expressions) {
+        List<DBSPExpression> fields = new ArrayList<>(expressions.size());
         for (DBSPExpression expression: expressions) {
             DBSPTypeTuple type = expression.getType().to(DBSPTypeTuple.class);
             for (int i = 0; i < type.size(); i++) {
@@ -112,6 +112,10 @@ public final class DBSPTupleExpression extends DBSPBaseTupleExpression {
             }
         }
         return new DBSPTupleExpression(fields, false);
+    }
+
+    public static DBSPTupleExpression flatten(DBSPExpression... expressions) {
+        return flatten(Linq.list(expressions));
     }
 
     /** @param expressions A list of expressions with tuple types.
