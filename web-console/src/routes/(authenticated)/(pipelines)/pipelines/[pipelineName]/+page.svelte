@@ -1,6 +1,5 @@
 <script lang="ts">
   import { page } from '$app/stores'
-  import { pipelineTabEq, useOpenPipelines } from '$lib/compositions/useOpenPipelines'
   import PipelineEditLayout from '$lib/components/layout/pipelines/PipelineEditLayout.svelte'
   import {
     writablePipeline,

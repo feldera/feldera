@@ -6,7 +6,7 @@ import { postPipeline } from '$lib/services/pipelineManager'
 
 export const useTryPipeline = () => {
   const { updatePipelines } = useUpdatePipelineList()
-  return async (pipeline: Demo) => {
+  return async (pipeline: Omit<Demo, 'title'>) => {
     try {
       const newPipeline = await postPipeline({
         name: pipeline.name,

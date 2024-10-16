@@ -1,31 +1,33 @@
 import { goto } from '$app/navigation'
 import { base } from '$app/paths'
 import { useTryPipeline } from '$lib/compositions/pipelines/useTryPipeline'
-import type { PipelineDescr } from '$lib/services/manager'
+import type { Demo } from '$lib/services/manager'
 import { getDemos } from '$lib/services/pipelineManager'
 
 export async function load({ url, parent }) {
   await parent()
-  const pipeline: PipelineDescr | undefined = await (() => {
+  const pipeline: Omit<Demo, 'title'> | undefined = await (() => {
     const name = url.searchParams.get('name')
     if (!name) {
       return undefined
     }
-    const code = url.searchParams.get('code')
-    if (code) {
+    const program_code = url.searchParams.get('program.sql') ?? url.searchParams.get('code')
+    const udf_rust = url.searchParams.get('udf.rs') ?? ''
+    const udf_toml = url.searchParams.get('udf.toml') ?? ''
+    if (program_code) {
       return {
         name,
         description: '',
-        program_code: code,
-        program_config: {},
-        runtime_config: {}
+        program_code,
+        udf_rust,
+        udf_toml
       }
     }
-    return getDemos().then((demos) => demos.find((demo) => demo.pipeline.name === name)?.pipeline)
+    return getDemos().then((demos) => demos.find((demo) => demo.name === name))
   })()
   if (!pipeline) {
     goto(`${base}/`)
     return
   }
-  useTryPipeline()(pipeline)
+  await useTryPipeline()(pipeline)
 }
