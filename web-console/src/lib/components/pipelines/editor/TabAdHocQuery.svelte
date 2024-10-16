@@ -123,7 +123,7 @@
         },
         {
           paths: ['$'],
-          bufferSize: 1 * 1024 * 1024,
+          bufferSize: 8 * 1024 * 1024,
           separator: ''
         }
       )
