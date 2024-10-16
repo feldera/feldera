@@ -7,6 +7,7 @@
 
   import * as va from 'valibot'
   import { clickedClass } from '$lib/compositions/actions/clickedClass'
+  import Tooltip from '$lib/components/common/Tooltip.svelte'
 
   let { onClose }: { onClose: () => void } = $props()
 
@@ -104,10 +105,13 @@
           use:clipboard={key}
           use:clickedClass={{
             base: 'fd fd-content_copy',
-            clicked: 'fd fd-check text-success-500 text-[20px]'
+            clicked: 'fd fd-check text-success-500 text-[20px] pointer-events-none'
           }}
-          aria-label="Copy to buffer"
+          aria-label="Copy to clipboard"
         ></button>
+        <Tooltip class="bg-white text-surface-950-50 dark:bg-black" placement="top">
+          Copy to clipboard
+        </Tooltip>
       </div>
     {/each}
   </div>
