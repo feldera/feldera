@@ -21,3 +21,5 @@ Our defining features:
 4. **Strong guarantees on consistency and freshness**. Feldera is strongly consistent: it [guarantees](https://www.feldera.com/blog/synchronous-streaming/) that the state of the views always corresponds to what you'd get if you ran the queries in a batch system for the same input.
 
 5. **Connectors for your favorite data sources and destinations**. Feldera connects to myriad batch and streaming data sources, like Kafka, HTTP, CDC streams, S3, Data Lakes, Warehouses and more. If you need a connector that we don't yet support, [let us know](https://github.com/feldera/feldera/issues/new/choose).
+
+6. **Fault tolerance**. Feldera can gracefully restart from the exact point of an abrupt shutdown or crash, picking up from where it left off without dropping or duplicating input or output. Fault tolerance is a preview feature that requires support from input and output connectors.
