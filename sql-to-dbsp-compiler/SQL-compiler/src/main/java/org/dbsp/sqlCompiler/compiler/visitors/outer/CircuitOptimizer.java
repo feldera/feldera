@@ -28,6 +28,7 @@ import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.ICompilerComponent;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.BetaReduction;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EliminateFunctions;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.ExpandCasts;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.ExpandWriteLog;
@@ -50,6 +51,9 @@ public record CircuitOptimizer(DBSPCompiler compiler) implements ICompilerCompon
         passes.add(new ImplementNow(reporter, compiler));
         if (options.languageOptions.outputsAreSets)
             passes.add(new EnsureDistinctOutputs(reporter));
+        // TODO: next one doesn't work yet
+        // passes.add(new MinMaxAsWindow(reporter));
+        passes.add(new ExpandAggregateZero(reporter));
         if (options.languageOptions.optimizationLevel < 2) {
             if (options.languageOptions.incrementalize) {
                 passes.add(new IncrementalizeVisitor(this.compiler()));
@@ -105,6 +109,11 @@ public record CircuitOptimizer(DBSPCompiler compiler) implements ICompilerCompon
             passes.add(new Simplify(reporter).circuitRewriter());
             passes.add(new CSE(reporter));
         }
+        // Lowering implements aggregates and inlines some calls.
+        passes.add(new LowerCircuitVisitor(reporter));
+        // Beta reduction after implementing aggregates.
+        passes.add(new BetaReduction(compiler).getCircuitVisitor());
+        passes.add(new CompactNames(compiler));
         return new Passes(reporter, passes);
     }
 

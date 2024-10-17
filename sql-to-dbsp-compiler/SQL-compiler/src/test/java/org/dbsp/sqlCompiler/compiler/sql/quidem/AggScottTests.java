@@ -1658,39 +1658,8 @@ public class AggScottTests extends ScottBaseTests {
     }
 
     @Test @Ignore("Several not-implemented aggregation functions")
-    public void testAnyValue() {
+    public void testRegrValue() {
         this.qs("""
-                -- [CALCITE-2366] Add support for ANY_VALUE function
-                -- Without GROUP BY clause
-                SELECT any_value(empno) as anyempno from emp;
-                +----------+
-                | ANYEMPNO |
-                +----------+
-                |     7934 |
-                +----------+
-                (1 row)
-                
-                -- [CALCITE-2366] Add support for ANY_VALUE function
-                -- With GROUP BY clause
-                SELECT any_value(empno) as anyempno from emp group by sal;
-                +----------+
-                | ANYEMPNO |
-                +----------+
-                |     7369 |
-                |     7499 |
-                |     7566 |
-                |     7654 |
-                |     7698 |
-                |     7782 |
-                |     7839 |
-                |     7844 |
-                |     7876 |
-                |     7900 |
-                |     7902 |
-                |     7934 |
-                +----------+
-                (12 rows)
-                
                 -- [CALCITE-1776, CALCITE-2402] REGR_COUNT
                 SELECT regr_count(COMM, SAL) as "REGR_COUNT(COMM, SAL)",
                    regr_count(EMPNO, SAL) as "REGR_COUNT(EMPNO, SAL)"

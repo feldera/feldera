@@ -33,15 +33,17 @@ import javax.annotation.Nullable;
 public abstract class DBSPSourceBaseOperator extends DBSPOperator {
     public final String tableName;
 
-    /** Create a DBSP operator that is a source to the dataflow graph.
+    /**
+     * Create a DBSP operator that is a source to the dataflow graph.
      *
      * @param node       Calcite node for the statement creating the table
      *                   that this node is created from.
-     * @param outputType The output type of the table.
      * @param operation  Type of table.
+     * @param outputType The output type of the table.
      * @param isMultiset True if the source data can be a multiset.
      * @param tableName  The name of the table that this operator is created from.
-     * @param comment    A comment describing the operator. */
+     * @param comment    A comment describing the operator.
+     */
     protected DBSPSourceBaseOperator(
             CalciteObject node, String operation, DBSPType outputType, boolean isMultiset,
             String tableName, @Nullable String comment) {

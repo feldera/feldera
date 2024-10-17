@@ -36,7 +36,7 @@ import java.util.Objects;
 
 /** Corresponds to a DBSP join operator, which may include multiple integrators.
  * Output is always a ZSet.  There's an DBSPJoinIndexOperator which can produce IndexedZSets. */
-public final class DBSPJoinOperator extends DBSPBinaryOperator {
+public final class DBSPJoinOperator extends DBSPJoinBaseOperator {
     public DBSPJoinOperator(
             CalciteObject node, DBSPTypeZSet outputType,
             DBSPExpression function, boolean isMultiset,
@@ -44,10 +44,6 @@ public final class DBSPJoinOperator extends DBSPBinaryOperator {
         super(node, "join", function, outputType, isMultiset, left, right);
         this.checkResultType(function, this.getOutputZSetElementType());
         assert left.getOutputIndexedZSetType().keyType.sameType(right.getOutputIndexedZSetType().keyType);
-    }
-
-    public DBSPType getKeyType() {
-        return left().getOutputIndexedZSetType().keyType;
     }
 
     @Override

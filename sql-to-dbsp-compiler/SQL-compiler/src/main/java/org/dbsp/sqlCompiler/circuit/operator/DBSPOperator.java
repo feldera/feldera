@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.circuit.operator;
 
+import org.dbsp.sqlCompiler.circuit.annotation.CompactName;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
@@ -94,10 +95,14 @@ public abstract class DBSPOperator extends DBSPNode implements IHasType, IDBSPOu
                 !operation.startsWith("delay") &&
                 !outputType.is(DBSPTypeZSet.class) &&
                 !outputType.is(DBSPTypeIndexedZSet.class))
-            throw new InternalCompilerError("Operator output type is unexpected " + outputType);
+            throw new InternalCompilerError("Operator " + operation +
+                    " output type is unexpected " + outputType);
     }
 
     public String getOutputName() {
+        String name = CompactName.getCompactName(this);
+        if (name != null)
+            return name;
         return "stream" + this.getId();
     }
 
@@ -108,6 +113,9 @@ public abstract class DBSPOperator extends DBSPNode implements IHasType, IDBSPOu
     }
 
     public String getIdString() {
+        String name = CompactName.getCompactName(this);
+        if (name != null)
+            return name;
         String result = Long.toString(this.id);
         if (this.derivedFrom >= 0)
             result += "(" + this.derivedFrom + ")";
