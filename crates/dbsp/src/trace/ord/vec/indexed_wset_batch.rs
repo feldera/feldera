@@ -453,10 +453,6 @@ where
         AntichainRef::empty()
     }
 
-    fn truncate_keys_below(&mut self, lower_bound: &Self::Key) {
-        self.layer.truncate_keys_below(lower_bound);
-    }
-
     fn sample_keys<RG>(&self, rng: &mut RG, sample_size: usize, sample: &mut DynVec<Self::Key>)
     where
         Self::Time: PartialEq<()>,
@@ -532,10 +528,10 @@ where
         _dst_hint: Option<BatchLocation>,
     ) -> Self {
         Self {
-            lower1: batch1.layer.lower_bound(),
-            upper1: batch1.layer.lower_bound() + batch1.layer.keys(),
-            lower2: batch2.layer.lower_bound(),
-            upper2: batch2.layer.lower_bound() + batch2.layer.keys(),
+            lower1: 0,
+            upper1: batch1.layer.keys(),
+            lower2: 0,
+            upper2: batch2.layer.keys(),
             result: <<Layers<K, V, R, O> as Trie>::MergeBuilder as MergeBuilder>::with_capacity(
                 &batch1.layer,
                 &batch2.layer,
@@ -627,9 +623,7 @@ where
 
     pub fn new_from(zset: &'s VecIndexedWSet<K, V, R, O>, lower_bound: usize) -> Self {
         Self {
-            cursor: zset
-                .layer
-                .cursor_from(lower_bound, zset.layer.lower_bound() + zset.layer.keys()),
+            cursor: zset.layer.cursor_from(lower_bound, zset.layer.keys()),
         }
     }
 }

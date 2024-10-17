@@ -21,7 +21,6 @@ use rand_chacha::ChaChaRng;
 use rkyv::{ser::Serializer, Archive, Archived, Deserialize, Fallible, Serialize};
 use size_of::SizeOf;
 use std::{
-    cmp::max,
     collections::{btree_map::Entry, BTreeMap, BTreeSet},
     fmt::{self, Debug},
     marker::PhantomData,
@@ -1203,17 +1202,6 @@ where
         todo!()
     }
 
-    fn truncate_keys_below(&mut self, lower_bound: &Self::Key) {
-        let bound = if let Some(bound) = &self.lower_key_bound {
-            clone_box(max(bound.as_ref(), lower_bound))
-        } else {
-            clone_box(lower_bound)
-        };
-
-        self.lower_key_bound = Some(clone_box(bound.as_ref()));
-        self.data.retain(|(k, _v, _t), _r| k >= &bound);
-    }
-
     fn sample_keys<RG>(&self, _rng: &mut RG, _sample_size: usize, _sample: &mut DynVec<Self::Key>)
     where
         RG: Rng,
@@ -1296,10 +1284,7 @@ where
         }
     }
 
-    fn insert(&mut self, mut batch: Self::Batch) {
-        if let Some(bound) = &self.lower_key_bound {
-            batch.truncate_keys_below(bound.as_ref());
-        }
+    fn insert(&mut self, batch: Self::Batch) {
         self.data = self
             .merge(&batch, &self.key_filter, &self.value_filter)
             .data;

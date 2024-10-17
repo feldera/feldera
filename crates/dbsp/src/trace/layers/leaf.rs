@@ -263,12 +263,6 @@ impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> Leaf<K, R> {
         self.len()
     }
 
-    /// Remove keys smaller than `lower_bound` from the batch.
-    pub fn truncate_keys_below(&mut self, lower_bound: &K) {
-        let index = self.keys.advance_to(0, self.keys.len(), lower_bound);
-        self.truncate_below(index);
-    }
-
     /// Compute a random sample of size `sample_size` of keys in `self.keys`.
     ///
     /// Pushes the random sample of keys to the `output` vector in ascending
@@ -315,16 +309,6 @@ impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> Trie for Leaf<K, R> {
 
     fn cursor_from(&self, lower: usize, upper: usize) -> Self::Cursor<'_> {
         LeafCursor::new(lower, self, (lower, upper))
-    }
-
-    fn truncate_below(&mut self, lower_bound: usize) {
-        if lower_bound > self.lower_bound {
-            self.lower_bound = min(lower_bound, self.len());
-        }
-    }
-
-    fn lower_bound(&self) -> usize {
-        self.lower_bound
     }
 }
 

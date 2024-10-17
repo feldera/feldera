@@ -108,11 +108,6 @@ where
         self.upper.as_ref()
     }
 
-    fn truncate_keys_below(&mut self, _lower_bound: &Self::Key) {
-        // This method probably shouldn't be in the BatchReader
-        unimplemented!("Shouldn't be called on a snapshot");
-    }
-
     fn sample_keys<RG>(&self, _rng: &mut RG, _sample_size: usize, _sample: &mut DynVec<Self::Key>)
     where
         Self::Time: PartialEq<()>,
