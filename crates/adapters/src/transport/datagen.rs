@@ -1727,7 +1727,7 @@ mod test {
     {
         let relation = Relation::new("test_input".into(), fields, true, BTreeMap::new());
         let (endpoint, consumer, _parser, zset) =
-            mock_input_pipeline::<T, U>(serde_yaml::from_str(config_str)?, relation)?;
+            mock_input_pipeline::<T, U>(serde_yaml::from_str(config_str)?, relation, false)?;
         endpoint.extend();
         Ok((endpoint, consumer, zset))
     }

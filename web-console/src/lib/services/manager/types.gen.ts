@@ -759,10 +759,6 @@ export type KafkaHeaderValue = Blob | File
  */
 export type KafkaInputConfig = {
   /**
-   * If true, this enables fault tolerance in the Kafka input connector.
-   */
-  fault_tolerance?: boolean
-  /**
    * Maximum timeout in seconds to wait for the endpoint to join the Kafka
    * consumer group during initialization.
    */
@@ -795,7 +791,7 @@ export type KafkaInputConfig = {
    * * "enable.auto.commit", if present, must be set to "false",
    * * "enable.auto.offset.store", if present, must be set to "false"
    */
-  '[key: string]': (string | boolean | number | unknown) | undefined
+  '[key: string]': (string | number | unknown) | undefined
 }
 
 /**

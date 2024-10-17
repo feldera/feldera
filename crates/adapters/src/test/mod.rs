@@ -128,6 +128,7 @@ where
 pub fn mock_input_pipeline<T, U>(
     config: InputEndpointConfig,
     relation: Relation,
+    fault_tolerant: bool,
 ) -> AnyResult<(
     Box<dyn InputReader>,
     MockInputConsumer,
@@ -157,8 +158,12 @@ where
             .unwrap_or(&default_format),
     )?;
 
-    let endpoint =
-        input_transport_config_to_endpoint(config.connector_config.transport.clone(), "")?.unwrap();
+    let endpoint = input_transport_config_to_endpoint(
+        config.connector_config.transport.clone(),
+        "",
+        fault_tolerant,
+    )?
+    .unwrap();
 
     let reader = endpoint.open(
         Box::new(consumer.clone()),

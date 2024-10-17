@@ -246,6 +246,7 @@ fn test_pubsub_input(
     let (endpoint, _consumer, _parser, zset) = mock_input_pipeline::<TestStruct, TestStruct>(
         serde_yaml::from_str(&config_str).unwrap(),
         Relation::empty(),
+        false,
     )
     .unwrap();
 
@@ -403,6 +404,7 @@ fn test_pubsub_input_errors() {
     match mock_input_pipeline::<TestStruct, TestStruct>(
         serde_yaml::from_str(&config_str).unwrap(),
         Relation::empty(),
+        false,
     ) {
         Ok(_) => panic!("expected an error"),
         Err(e) => println!("test_pubsub_input: Error (expected): {e}"),
@@ -427,6 +429,7 @@ fn test_pubsub_input_errors() {
     match mock_input_pipeline::<TestStruct, TestStruct>(
         serde_yaml::from_str(&config_str).unwrap(),
         Relation::empty(),
+        false,
     ) {
         Ok(_) => panic!("expected an error"),
         Err(e) => println!("test_pubsub_input: Error (expected): {e}"),

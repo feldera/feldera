@@ -19,7 +19,6 @@
 
 use crate::catalog::OutputCollectionHandles;
 use crate::create_integrated_output_endpoint;
-use crate::transport::input_transport_config_is_fault_tolerant;
 use crate::transport::InputReader;
 use crate::transport::Step;
 use crate::transport::{input_transport_config_to_endpoint, output_transport_config_to_endpoint};
@@ -59,6 +58,7 @@ use std::cmp::min;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::fs;
+use std::path::Path;
 use std::path::PathBuf;
 use std::sync::mpsc::{channel, sync_channel, Receiver, Sender};
 use std::{
@@ -805,9 +805,6 @@ struct FtState {
     /// The step currently running or replaying.
     step: Step,
 
-    /// Path to `state.json`.
-    state_path: PathBuf,
-
     /// The step reader/writer.
     ///
     /// This is always non-`None` unless a fatal error occurs.
@@ -824,11 +821,32 @@ struct FtState {
 impl FtState {
     /// Returns a new [FtState] for `ft` and `controller`.
     fn new(ft: FtInit, controller: Arc<ControllerInner>) -> Result<Self, ControllerError> {
-        let FtInit {
-            step,
-            step_rw,
-            state_path,
-        } = ft;
+        let FtInit { step, step_rw } = ft;
+
+        let step_rw = match step_rw {
+            Some(step_rw) => step_rw,
+            None => {
+                let config = controller.status.pipeline_config.clone();
+                let path = storage_path(&config).unwrap();
+                let state_path = state_path(&config).unwrap();
+                let steps_path = steps_path(&config).unwrap();
+
+                fs::create_dir_all(path).map_err(|error| {
+                    ControllerError::io_error(String::from("controller startup"), error)
+                })?;
+                let _ = fs::remove_file(&state_path);
+                let _ = fs::remove_dir(&steps_path);
+
+                let checkpoint = Checkpoint {
+                    circuit: CheckpointMetadata::default(),
+                    step: 0,
+                    config,
+                };
+                checkpoint.write(&state_path)?;
+
+                StepRw::create(&steps_path)?
+            }
+        };
 
         let (step_rw, prev_step_metadata) = if step > 0 {
             let (step_rw, prev_step_metadata) = step_rw.into_reader().unwrap().seek(step - 1)?;
@@ -848,7 +866,6 @@ impl FtState {
         Ok(Self {
             controller,
             step,
-            state_path,
             step_rw: Some(step_rw),
             replaying,
             prev_step_metadata: step_metadata.or(prev_step_metadata),
@@ -995,7 +1012,8 @@ impl FtState {
                     step: self.step,
                     config,
                 };
-                checkpoint.write(&self.state_path).map(|()| checkpoint)
+                let state_path = state_path(&self.controller.status.pipeline_config).unwrap();
+                checkpoint.write(&state_path).map(|()| checkpoint)
             })?;
         self.step_rw = Some(
             self.step_rw
@@ -1111,15 +1129,15 @@ impl StepTrigger {
 ///
 /// This structure handles all these cases.
 struct ControllerInit {
+    /// The circuit configuration.
+    circuit_config: CircuitConfig,
+
     /// The pipeline configuration.
     ///
     /// This will differ from the one passed into [ControllerInit::new] if a
     /// checkpoint is read, because a checkpoint includes the pipeline
     /// configuration.
     pipeline_config: PipelineConfig,
-
-    /// The circuit configuration.
-    circuit_config: CircuitConfig,
 
     /// Fault-tolerance initialization, if FT will be enabled.
     ft: Option<FtInit>,
@@ -1129,111 +1147,106 @@ struct FtInit {
     /// The first step that the circuit will execute.
     step: Step,
 
-    /// The path to the `state.json` checkpoint file, if fault tolerance is
-    /// enabled.
-    state_path: PathBuf,
+    /// The step reader/writer, if we've already opened it..
+    step_rw: Option<StepRw>,
+}
 
-    /// The step reader/writer, if fault tolerance is enabled.
-    step_rw: StepRw,
+fn storage_path(config: &PipelineConfig) -> Option<&Path> {
+    config.storage_config.as_ref().map(|storage| storage.path())
+}
+
+fn state_path(config: &PipelineConfig) -> Option<PathBuf> {
+    storage_path(config).map(|path| path.join("state.json"))
+}
+
+fn steps_path(config: &PipelineConfig) -> Option<PathBuf> {
+    storage_path(config).map(|path| path.join("steps.bin"))
 }
 
 impl ControllerInit {
     fn new(config: PipelineConfig) -> Result<Self, ControllerError> {
         let Some(ft) = config.global.fault_tolerance else {
             info!("fault tolerance is disabled in configuration");
-            return Self::without_ft(config);
+            return Ok(Self {
+                circuit_config: Self::circuit_config(&config, None)?,
+                pipeline_config: config,
+                ft: None,
+            });
         };
-        let Some(path) = config.storage_config.as_ref().map(|storage| storage.path()) else {
+        let Some(state_path) = state_path(&config) else {
             return Err(ControllerError::Config {
                 config_error: ConfigError::FtRequiresStorage,
             });
         };
+        let steps_path = steps_path(&config).unwrap();
 
         fn startup_io_error(error: IoError) -> ControllerError {
             ControllerError::io_error(String::from("controller startup"), error)
         }
-        let state_path = path.join("state.json");
-        let steps_path = path.join("steps.bin");
 
         // If we're allowed to resume from a checkpoint and one exists, use it.
         if ft == FtConfig::LatestCheckpoint && fs::exists(&state_path).map_err(startup_io_error)? {
             // Open the existing checkpoint.
             info!(
-                "{}: initializing fault tolerance from saved state",
+                "{}: resuming fault tolerant pipeline from saved state",
                 state_path.display()
             );
-            let checkpoint = Checkpoint::read(&state_path)?;
+            let Checkpoint {
+                circuit,
+                step,
+                config,
+            } = Checkpoint::read(&state_path)?;
 
             // There might be a steps file already (there must be, if
             // we're not at step 0). Open it, if so; otherwise, create a
             // new one.
-            let step_rw =
-                if fs::exists(&steps_path).map_err(startup_io_error)? || checkpoint.step > 0 {
-                    info!(
-                        "{}: opening to start from step {}",
-                        steps_path.display(),
-                        checkpoint.step
-                    );
-                    StepRw::open(&steps_path)?
-                } else {
-                    info!("{}: creating", steps_path.display());
-                    StepRw::create(&steps_path)?
-                };
-            Self::with_ft(checkpoint, state_path, step_rw)
-        } else if config.inputs.values().all(|config| {
-            input_transport_config_is_fault_tolerant(&config.connector_config.transport)
-        }) {
-            let _ = fs::remove_file(&state_path);
-            let _ = fs::remove_dir(&steps_path);
+            let step_rw = if fs::exists(&steps_path).map_err(startup_io_error)? || step > 0 {
+                info!(
+                    "{}: opening to start from step {}",
+                    steps_path.display(),
+                    step
+                );
+                StepRw::open(&steps_path)?
+            } else {
+                info!("{}: creating", steps_path.display());
+                StepRw::create(&steps_path)?
+            };
+            Ok(Self {
+                circuit_config: Self::circuit_config(&config, Some(circuit.uuid))?,
+                pipeline_config: config,
+                ft: Some(FtInit {
+                    step,
+                    step_rw: Some(step_rw),
+                }),
+            })
+        } else {
+            // We're starting a new fault-tolerant pipeline.
+            //
+            // Defer creating the checkpoint and steps files on disk because we
+            // might fail to initialize[*] and if that happens we want to be
+            // able to try again with a new configuration, rather than
+            // triggering the "open the existing checkpoint" flow above and
+            // mysterioulsy failing again for the same reason as before.
+            //
+            // [*] For example, if the configured input adapters aren't
+            // fault-tolerant.
             info!(
                 "{}: creating new fault tolerant pipeline",
                 state_path.display()
             );
-            let checkpoint = Checkpoint {
-                circuit: CheckpointMetadata::default(),
-                step: 0,
-                config: config.clone(),
-            };
-            fs::create_dir_all(path).map_err(startup_io_error)?;
-            checkpoint.write(&state_path)?;
-
-            info!("{}: creating", steps_path.display());
-            let step_rw = StepRw::create(&steps_path)?;
-            Self::with_ft(checkpoint, state_path, step_rw)
-        } else {
-            Err(ControllerError::Config {
-                config_error: ConfigError::FtRequiresFtInput,
+            Ok(Self {
+                circuit_config: Self::circuit_config(&config, None)?,
+                pipeline_config: config,
+                ft: Some(FtInit {
+                    step: 0,
+                    step_rw: None,
+                }),
             })
         }
     }
-    fn without_ft(pipeline_config: PipelineConfig) -> Result<Self, ControllerError> {
-        let circuit_config =
-            Self::circuit_config(&pipeline_config, CheckpointMetadata::default().uuid)?;
-        Ok(Self {
-            pipeline_config,
-            circuit_config,
-            ft: None,
-        })
-    }
-    fn with_ft(
-        checkpoint: Checkpoint,
-        state_path: PathBuf,
-        step_rw: StepRw,
-    ) -> Result<Self, ControllerError> {
-        let circuit_config = Self::circuit_config(&checkpoint.config, checkpoint.circuit.uuid)?;
-        Ok(Self {
-            pipeline_config: checkpoint.config,
-            circuit_config,
-            ft: Some(FtInit {
-                step: checkpoint.step,
-                state_path,
-                step_rw,
-            }),
-        })
-    }
     fn circuit_config(
         pipeline_config: &PipelineConfig,
-        init_checkpoint: Uuid,
+        init_checkpoint: Option<Uuid>,
     ) -> Result<CircuitConfig, ControllerError> {
         Ok(CircuitConfig {
             layout: Layout::new_solo(pipeline_config.global.workers as usize),
@@ -1244,9 +1257,7 @@ impl ControllerInit {
                 .as_ref()
                 .map(|storage| {
                     let path = storage.path().join("circuit");
-                    if !fs::exists(&path)? {
-                        fs::create_dir(&path)?;
-                    }
+                    fs::create_dir_all(&path)?;
                     Ok(StorageConfig {
                         path: {
                             // This `unwrap` should be OK because `path` came
@@ -1272,7 +1283,7 @@ impl ControllerInit {
             } else {
                 usize::MAX
             },
-            init_checkpoint,
+            init_checkpoint: init_checkpoint.unwrap_or(CheckpointMetadata::default().uuid),
         })
     }
 }
@@ -1577,6 +1588,7 @@ pub struct ControllerInner {
     metrics_snapshotter: Arc<Snapshotter>,
     prometheus_handle: PrometheusHandle,
     session_ctxt: SessionContext,
+    fault_tolerant: bool,
 }
 
 impl ControllerInner {
@@ -1590,7 +1602,7 @@ impl ControllerInner {
             .name
             .as_ref()
             .map_or_else(|| "unnamed".to_string(), |n| n.clone());
-        let status = Arc::new(ControllerStatus::new(config, fault_tolerant));
+        let status = Arc::new(ControllerStatus::new(config));
         let (metrics_snapshotter, prometheus_handle) =
             Self::install_metrics_recorder(pipeline_name);
         let circuit_thread_parker = Parker::new();
@@ -1612,6 +1624,7 @@ impl ControllerInner {
             metrics_snapshotter,
             prometheus_handle,
             session_ctxt: SessionContext::new(),
+            fault_tolerant,
         });
         controller.initialize_adhoc_queries();
         for (input_name, input_config) in controller.status.pipeline_config.inputs.iter() {
@@ -1702,6 +1715,7 @@ impl ControllerInner {
         let endpoint = input_transport_config_to_endpoint(
             endpoint_config.connector_config.transport.clone(),
             endpoint_name,
+            self.fault_tolerant,
         )
         .map_err(|e| ControllerError::input_transport_error(endpoint_name, true, e))?;
 
@@ -1793,12 +1807,8 @@ impl ControllerInner {
                 let parser =
                     format.new_parser(endpoint_name, input_handle, &format_config.config)?;
                 // Initialize endpoint stats.
-                self.status.add_input(
-                    &endpoint_id,
-                    endpoint_name,
-                    endpoint_config,
-                    endpoint.is_fault_tolerant(),
-                );
+                self.status
+                    .add_input(&endpoint_id, endpoint_name, endpoint_config);
 
                 endpoint
                     .open(probe, parser, input_handle.schema.clone())
@@ -1809,12 +1819,8 @@ impl ControllerInner {
                     create_integrated_input_endpoint(endpoint_name, &endpoint_config, probe)?;
 
                 // Initialize endpoint stats.
-                self.status.add_input(
-                    &endpoint_id,
-                    endpoint_name,
-                    endpoint_config,
-                    endpoint.is_fault_tolerant(),
-                );
+                self.status
+                    .add_input(&endpoint_id, endpoint_name, endpoint_config);
 
                 endpoint
                     .open(input_handle)
@@ -1876,6 +1882,7 @@ impl ControllerInner {
         let endpoint = output_transport_config_to_endpoint(
             endpoint_config.connector_config.transport.clone(),
             endpoint_name,
+            self.fault_tolerant,
         )
         .map_err(|e| ControllerError::output_transport_error(endpoint_name, true, e))?;
 
@@ -2306,7 +2313,7 @@ impl InputConsumer for InputProbe {
     }
 
     fn is_pipeline_fault_tolerant(&self) -> bool {
-        self.controller.status.global_metrics.fault_tolerant
+        self.controller.fault_tolerant
     }
 
     fn parse_errors(&self, errors: Vec<ParseError>) {

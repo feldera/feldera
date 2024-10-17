@@ -62,7 +62,6 @@ outputs:
             config:
                 bootstrap.servers: localhost:11111
                 topic: ft_end_to_end_test_output_topic
-                fault_tolerance: {}
         format:
             name: csv
 "#;
@@ -95,12 +94,11 @@ name: kafka_input
 config:
     topics: [{topic}]
     log_level: debug
-    fault_tolerance: true
 "#
     );
 
     let endpoint =
-        input_transport_config_to_endpoint(serde_yaml::from_str(&config_str).unwrap(), "")
+        input_transport_config_to_endpoint(serde_yaml::from_str(&config_str).unwrap(), "", true)
             .unwrap()
             .unwrap();
     assert!(endpoint.is_fault_tolerant());
@@ -548,12 +546,11 @@ fn kafka_output_test(
 name: kafka_output
 config:
     topic: {output_topic}
-    fault_tolerance: {{}}
 "#
     );
 
     let mut endpoint =
-        output_transport_config_to_endpoint(serde_yaml::from_str(&config_str).unwrap(), "")
+        output_transport_config_to_endpoint(serde_yaml::from_str(&config_str).unwrap(), "", true)
             .unwrap()
             .unwrap();
     assert!(endpoint.is_fault_tolerant());
@@ -574,11 +571,10 @@ fn _test() {
 name: kafka_output
 config:
     topic: my_topic
-    fault_tolerance: {{}}
 "#;
 
     let mut endpoint =
-        output_transport_config_to_endpoint(serde_yaml::from_str(config_str).unwrap(), "")
+        output_transport_config_to_endpoint(serde_yaml::from_str(config_str).unwrap(), "", true)
             .unwrap()
             .unwrap();
     assert!(endpoint.is_fault_tolerant());
@@ -620,7 +616,6 @@ transport:
         bootstrap.servers: localhost:11111
         topics: ["{topic1}", "{topic2}"]
         log_level: debug
-        fault_tolerance: {{}}
 format:
     name: csv
 "#
@@ -648,7 +643,6 @@ transport:
     config:
         topics: ["this_topic_does_not_exist"]
         log_level: debug
-        fault_tolerance: {}
 format:
     name: csv
 "#;
@@ -674,7 +668,6 @@ transport:
     config:
         topics: [{topic1}, {topic2}]
         log_level: debug
-        fault_tolerance: {{}}
 format:
     name: csv
 "#
