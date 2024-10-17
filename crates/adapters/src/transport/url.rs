@@ -465,6 +465,7 @@ format:
         mock_input_pipeline::<TestStruct, TestStruct>(
             serde_yaml::from_str(&config_str).unwrap(),
             Relation::empty(),
+            true,
         )
         .unwrap()
     }

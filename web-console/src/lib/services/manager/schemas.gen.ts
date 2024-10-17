@@ -1109,10 +1109,6 @@ export const $KafkaInputConfig = {
   description: 'Configuration for reading data from Kafka topics with `InputTransport`.',
   required: ['topics'],
   properties: {
-    fault_tolerance: {
-      type: 'boolean',
-      description: 'If true, this enables fault tolerance in the Kafka input connector.'
-    },
     group_join_timeout_secs: {
       type: 'integer',
       format: 'int32',

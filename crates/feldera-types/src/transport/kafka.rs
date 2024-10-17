@@ -38,10 +38,6 @@ pub struct KafkaInputConfig {
     #[serde(default = "default_group_join_timeout_secs")]
     pub group_join_timeout_secs: u32,
 
-    /// If true, this enables fault tolerance in the Kafka input connector.
-    #[serde(default)]
-    pub fault_tolerance: bool,
-
     /// If specified, this service is used to provide defaults for the Kafka options.
     pub kafka_service: Option<String>,
 
@@ -259,8 +255,7 @@ pub struct KafkaOutputConfig {
     #[serde(default = "default_initialization_timeout_secs")]
     pub initialization_timeout_secs: u32,
 
-    /// If specified, this enables fault tolerance in the Kafka output
-    /// connector.
+    /// Optional configuration for fault tolerance.
     pub fault_tolerance: Option<KafkaOutputFtConfig>,
 
     /// If specified, this service is used to provide defaults for the Kafka options.

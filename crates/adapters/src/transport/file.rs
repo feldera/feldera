@@ -324,6 +324,7 @@ format:
         let (endpoint, consumer, _parser, zset) = mock_input_pipeline::<TestStruct, TestStruct>(
             serde_yaml::from_str(&config_str).unwrap(),
             Relation::empty(),
+            true,
         )
         .unwrap();
 
@@ -381,6 +382,7 @@ format:
         let (endpoint, consumer, parser, zset) = mock_input_pipeline::<TestStruct, TestStruct>(
             serde_yaml::from_str(&config_str).unwrap(),
             Relation::empty(),
+            true,
         )
         .unwrap();
 

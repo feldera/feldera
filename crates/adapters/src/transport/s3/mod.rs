@@ -630,7 +630,9 @@ format:
         let mut mock = super::MockS3Client::default();
         mock.expect_get_object_keys()
             .with(eq("test-bucket"), eq(""), eq(&None), eq(&None))
-            .return_once(|_, _, _, _| Ok((vec!["obj1".to_string()], Some("next_token".to_string()))));
+            .return_once(|_, _, _, _| {
+                Ok((vec!["obj1".to_string()], Some("next_token".to_string())))
+            });
         mock.expect_get_object_keys()
             .with(
                 eq("test-bucket"),
@@ -714,7 +716,9 @@ format:
         let mut mock = super::MockS3Client::default();
         mock.expect_get_object_keys()
             .with(eq("test-bucket"), eq(""), eq(&None), eq(&None))
-            .return_once(|_, _, _, _| Ok((vec!["obj1".to_string()], Some("next_token".to_string()))));
+            .return_once(|_, _, _, _| {
+                Ok((vec!["obj1".to_string()], Some("next_token".to_string())))
+            });
         mock.expect_get_object_keys()
             .with(
                 eq("test-bucket"),

@@ -85,7 +85,7 @@ pub struct KafkaOutputEndpoint {
 
 impl KafkaOutputEndpoint {
     pub fn new(config: KafkaOutputConfig) -> AnyResult<Self> {
-        let ft = config.fault_tolerance.as_ref().unwrap();
+        let ft = config.fault_tolerance.unwrap_or_default();
         let mut common = CommonConfig::new(
             &config.kafka_options,
             &ft.consumer_options,
