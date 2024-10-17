@@ -8,16 +8,24 @@
   import { CanvasRenderer } from 'echarts/renderers'
   import { format } from 'd3-format'
   import type { EChartsInitOpts } from 'echarts/core'
+  import type { Pipeline } from '$lib/services/pipelineManager'
 
   const formatQty = (v: number) => format(v >= 1000 ? '.3s' : '.0f')(v)
 
   let {
+    pipeline,
     metrics,
     refetchMs,
     keepMs
-  }: { metrics: PipelineMetrics; refetchMs: number; keepMs: number } = $props()
+  }: {
+    metrics: PipelineMetrics
+    refetchMs: number
+    keepMs: number
+    pipeline: { current: Pipeline }
+  } = $props()
   use([LineChart, GridComponent, CanvasRenderer, TitleComponent, TooltipComponent])
 
+  let pipelineName = $derived(pipeline.current.name)
   const throughput = $derived(calcPipelineThroughput(metrics))
 
   const options = $derived({
@@ -32,8 +40,9 @@
       bottom: 48
     },
     xAxis: {
-      type: 'time',
-      min: Math.round(metrics.global.at(-1)?.timeMs ?? Date.now()) - keepMs,
+      type: 'time' as const,
+      min: Date.now() - keepMs,
+      max: Date.now(),
       minInterval: 25000,
       maxInterval: 25000,
       axisLabel: {
@@ -59,7 +68,7 @@
     },
     tooltip: {
       show: true,
-      position: 'top',
+      position: ['top'],
       formatter: (x: any) => {
         return formatQty(x.value[1])
       }
@@ -80,6 +89,9 @@
 <span class="absolute whitespace-nowrap pl-16">
   Throughput: {formatQty(throughput.current)} records/s
 </span>
-<div class="absolute mt-6 h-full w-full">
-  <Chart {init} {options} />
-</div>
+
+{#key pipelineName}
+  <div class="absolute mt-6 h-full w-full">
+    <Chart {init} {options} />
+  </div>
+{/key}

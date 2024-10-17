@@ -133,7 +133,6 @@ export const parseUTF8AsTextLines = (
   return {
     cancel: () => {
       reader.cancel()
-      stream.cancel()
     }
   }
 }
