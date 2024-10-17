@@ -44,6 +44,7 @@ import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.ir.aggregate.AggregateBase;
 import org.dbsp.sqlCompiler.ir.aggregate.LinearAggregate;
+import org.dbsp.sqlCompiler.ir.aggregate.MinMaxAggregate;
 import org.dbsp.sqlCompiler.ir.aggregate.NonLinearAggregate;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
@@ -384,6 +385,7 @@ public class AggregateCompiler implements ICompilerComponent {
         DBSPExpression zero = DBSPLiteral.none(this.nullableResultType);
         CalciteObject node = CalciteObject.create(function);
         DBSPOpcode call;
+        boolean isMin = true;
         String semigroupName = switch (function.getKind()) {
             case MIN -> {
                 call = DBSPOpcode.AGG_MIN;
@@ -391,6 +393,7 @@ public class AggregateCompiler implements ICompilerComponent {
             }
             case MAX -> {
                 call = DBSPOpcode.AGG_MAX;
+                isMin = false;
                 yield "MaxSemigroup";
             }
             default -> throw new UnimplementedException("Aggregate function not yet implemented", node);
@@ -400,8 +403,16 @@ public class AggregateCompiler implements ICompilerComponent {
         DBSPExpression increment = this.aggregateOperation(
                 node, call, this.nullableResultType, accumulator, aggregatedValue, this.filterArgument());
         DBSPType semigroup = new DBSPTypeUser(node, SEMIGROUP, semigroupName, false, accumulator.getType());
-        this.setResult(new NonLinearAggregate(
-                node, zero, this.makeRowClosure(increment, accumulator), zero, semigroup));
+        // If there is a filter, do not use a MinMaxAggregate
+        NonLinearAggregate aggregate;
+        if (this.filterArgument >= 0)
+            aggregate = new NonLinearAggregate(
+                    node, zero, this.makeRowClosure(increment, accumulator), zero, semigroup);
+        else
+            aggregate = new MinMaxAggregate(
+                    node, zero, this.makeRowClosure(increment, accumulator),
+                    zero, semigroup, aggregatedValue, isMin);
+        this.setResult(aggregate);
     }
 
     void processSum(SqlSumAggFunction function) {

@@ -83,7 +83,8 @@ public class NonLinearAggregate extends AggregateBase {
 
     @Override
     public boolean compatible(AggregateBase other) {
-        return other.is(NonLinearAggregate.class);
+        return other.is(NonLinearAggregate.class) &&
+                !other.is(MinMaxAggregate.class);
     }
 
     @Override

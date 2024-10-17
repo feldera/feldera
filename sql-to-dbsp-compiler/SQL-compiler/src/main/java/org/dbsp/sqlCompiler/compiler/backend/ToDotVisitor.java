@@ -39,7 +39,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPViewBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWaterlineOperator;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
-import org.dbsp.sqlCompiler.compiler.backend.rust.LowerCircuitVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.LowerCircuitVisitor;
 import org.dbsp.sqlCompiler.compiler.backend.rust.ToRustInnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
@@ -78,9 +78,7 @@ public class ToDotVisitor extends CircuitVisitor implements IWritesLogs {
     }
 
     static String annotations(DBSPOperator operator) {
-        if (operator.annotations.isEmpty())
-            return "";
-        return " " + operator.annotations;
+        return operator.annotations.toDotString();
     }
 
     @Override

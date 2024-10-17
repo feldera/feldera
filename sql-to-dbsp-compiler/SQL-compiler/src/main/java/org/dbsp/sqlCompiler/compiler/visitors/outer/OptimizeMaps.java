@@ -1,6 +1,7 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
 import org.dbsp.sqlCompiler.circuit.operator.DBSPApplyOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPDeindexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDelayOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDifferentiateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateOperator;
@@ -48,6 +49,17 @@ public class OptimizeMaps extends CircuitCloneVisitor {
             DBSPOperator result = new DBSPMapIndexOperator(
                     operator.getNode(), newFunction, operator.getOutputIndexedZSetType(), source.inputs.get(0));
             this.map(operator, result);
+            return;
+        }
+        super.postorder(operator);
+    }
+
+    @Override
+    public void postorder(DBSPDeindexOperator operator) {
+        DBSPOperator source = this.mapped(operator.input());
+        if (source.is(DBSPMapIndexOperator.class)) {
+            // deindex(mapindex) = nothing
+            this.map(operator, source.inputs.get(0));
             return;
         }
         super.postorder(operator);

@@ -1,4 +1,4 @@
-package org.dbsp.sqlCompiler.compiler.backend.rust;
+package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapOperator;
@@ -9,7 +9,6 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateWith
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAggregateOperator;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
-import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitCloneVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyMethodExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
@@ -35,11 +34,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
-/**
- * Lowers a circuit's representation.
- * - converts DBSPAggregate into basic operations.
- * - converts DBSPFlatmap into basic operations.
- */
+/** Lowers a circuit's representation; most changes are about
+ * generating compilable Rust for operator functions. */
 public class LowerCircuitVisitor extends CircuitCloneVisitor {
     public LowerCircuitVisitor(IErrorReporter reporter) {
         super(reporter, false);
@@ -194,7 +190,8 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
 
     public static DBSPClosureExpression lowerJoinFilterMapFunctions(
             IErrorReporter errorReporter, DBSPJoinFilterMapOperator node) {
-        assert node.filter != null;
+        if (node.filter == null)
+            return node.getClosureFunction();
         if (node.map == null) {
             // Generate code of the form
             // let tmp = join(...);
