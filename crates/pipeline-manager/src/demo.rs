@@ -410,15 +410,15 @@ mod test {
         // Valid file
         let mut file = File::create(dir_path.join("file.sql").as_path()).unwrap();
         let sql = "-- title (name)\n--\n-- description\n--\nSQL";
-        file.write(sql.as_bytes()).unwrap();
+        file.write_all(sql.as_bytes()).unwrap();
 
         // Does not end in .sql
         let mut file = File::create(dir_path.join("file.txt").as_path()).unwrap();
-        file.write("txt".as_bytes()).unwrap();
+        file.write_all("txt".as_bytes()).unwrap();
 
         // Invalid file
         let mut file = File::create(dir_path.join("file2.sql").as_path()).unwrap();
-        file.write("abc".as_bytes()).unwrap();
+        file.write_all("abc".as_bytes()).unwrap();
 
         // Only the valid one should have been read as demo
         assert_eq!(
@@ -439,7 +439,7 @@ mod test {
         let dir = tempfile::tempdir().unwrap();
         let dir_path = dir.path();
         let mut file = File::create(dir_path.join("file.sql").as_path()).unwrap();
-        file.write(EXAMPLE_SQL_1.as_bytes()).unwrap();
+        file.write_all(EXAMPLE_SQL_1.as_bytes()).unwrap();
         assert_eq!(
             read_demos_from_directories(&vec![dir_path.to_str().unwrap().to_string()]),
             vec![expected_demos()[0].clone()]
@@ -450,7 +450,7 @@ mod test {
     fn make_demo_files_in_dir(dir_path: &Path, names: &Vec<&str>) {
         for name in names {
             let mut file = File::create(dir_path.join(format!("{}.sql", name)).as_path()).unwrap();
-            file.write(name.as_bytes()).unwrap();
+            file.write_all(name.as_bytes()).unwrap();
         }
     }
 
@@ -503,11 +503,11 @@ mod test {
         let dir = tempfile::tempdir().unwrap();
         let dir_path = dir.path();
         let mut file = File::create(dir_path.join("file.sql").as_path()).unwrap();
-        file.write(EXAMPLE_SQL_1.as_bytes()).unwrap();
+        file.write_all(EXAMPLE_SQL_1.as_bytes()).unwrap();
         let mut file = File::create(dir_path.join("file.udf.rs").as_path()).unwrap();
-        file.write("123".as_bytes()).unwrap();
+        file.write_all("123".as_bytes()).unwrap();
         let mut file = File::create(dir_path.join("file.udf.toml").as_path()).unwrap();
-        file.write("456".as_bytes()).unwrap();
+        file.write_all("456".as_bytes()).unwrap();
         let mut expectation = expected_demos()[0].clone();
         expectation.udf_rust = "123".to_string();
         expectation.udf_toml = "456".to_string();
@@ -522,9 +522,9 @@ mod test {
         let dir = tempfile::tempdir().unwrap();
         let dir_path = dir.path();
         let mut file = File::create(dir_path.join("file.sql").as_path()).unwrap();
-        file.write(EXAMPLE_SQL_1.as_bytes()).unwrap();
+        file.write_all(EXAMPLE_SQL_1.as_bytes()).unwrap();
         let mut file = File::create(dir_path.join("file.udf.rs").as_path()).unwrap();
-        file.write("rust_code".as_bytes()).unwrap();
+        file.write_all("rust_code".as_bytes()).unwrap();
         let mut expectation = expected_demos()[0].clone();
         expectation.udf_rust = "rust_code".to_string();
         expectation.udf_toml = "".to_string();
@@ -539,9 +539,9 @@ mod test {
         let dir = tempfile::tempdir().unwrap();
         let dir_path = dir.path();
         let mut file = File::create(dir_path.join("file.sql").as_path()).unwrap();
-        file.write(EXAMPLE_SQL_1.as_bytes()).unwrap();
+        file.write_all(EXAMPLE_SQL_1.as_bytes()).unwrap();
         let mut file = File::create(dir_path.join("file.udf.toml").as_path()).unwrap();
-        file.write("example = \"1.0.0\"".as_bytes()).unwrap();
+        file.write_all("example = \"1.0.0\"".as_bytes()).unwrap();
         let mut expectation = expected_demos()[0].clone();
         expectation.udf_rust = "".to_string();
         expectation.udf_toml = "example = \"1.0.0\"".to_string();
