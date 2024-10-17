@@ -17,7 +17,6 @@ use crate::{
     Error, NumEntries,
 };
 
-use crate::dynamic::{ClonableTrait, DeserializableDyn};
 use crate::storage::file::to_bytes;
 use crate::storage::{checkpoint_path, write_commit_metadata};
 use crate::trace::spine_async::snapshot::SpineSnapshot;
@@ -54,15 +53,6 @@ pub(crate) const MAX_LEVELS: usize = 9;
 
 impl<B: Batch + Send + Sync> From<(Vec<String>, &Spine<B>)> for CommittedSpine<B> {
     fn from((batches, spine): (Vec<String>, &Spine<B>)) -> Self {
-        // Transform the lower key bound into a serialized form and store it as a byte vector.
-        // This is necessary because the key type is not sized.
-        use crate::dynamic::rkyv::SerializeDyn;
-        let lower_key_bound_ser = spine.lower_key_bound.as_ref().map(|b| {
-            let mut s: crate::trace::Serializer = crate::trace::Serializer::default();
-            b.serialize(&mut s).unwrap();
-            s.into_serializer().into_inner().to_vec()
-        });
-
         CommittedSpine {
             batches,
             merged: Vec::new(),
@@ -70,7 +60,6 @@ impl<B: Batch + Send + Sync> From<(Vec<String>, &Spine<B>)> for CommittedSpine<B
             upper: spine.upper.clone().into(),
             effort: 0,
             dirty: spine.dirty,
-            lower_key_bound: lower_key_bound_ser,
         }
     }
 }
@@ -553,7 +542,6 @@ where
     lower: Antichain<B::Time>,
     upper: Antichain<B::Time>,
     dirty: bool,
-    lower_key_bound: Option<Box<B::Key>>,
     key_filter: Option<Filter<B::Key>>,
     value_filter: Option<Filter<B::Val>>,
 
@@ -713,33 +701,6 @@ where
 
     fn cursor(&self) -> Self::Cursor<'_> {
         SpineCursor::new_cursor(&self.factories, self.merger.get_batches())
-    }
-
-    fn truncate_keys_below(&mut self, lower_bound: &Self::Key) {
-        if let Some(bound) = &mut self.lower_key_bound {
-            if bound.as_ref() < lower_bound {
-                lower_bound.clone_to(&mut *bound);
-            }
-        } else {
-            let mut bound = self.key_factory().default_box();
-            lower_bound.clone_to(&mut *bound);
-            self.lower_key_bound = Some(bound);
-        };
-        let mut bound = self.factories.key_factory().default_box();
-        self.lower_key_bound.as_ref().unwrap().clone_to(&mut *bound);
-
-        let batches = self
-            .merger
-            .pause()
-            .into_iter()
-            .map(|batch| {
-                let mut batch = Arc::into_inner(batch).unwrap();
-                batch.truncate_keys_below(&bound);
-                Arc::new(batch)
-            })
-            .collect();
-
-        self.merger.resume(batches);
     }
 
     fn sample_keys<RG>(&self, rng: &mut RG, sample_size: usize, sample: &mut DynVec<Self::Key>)
@@ -1021,11 +982,8 @@ where
         }
     }
 
-    fn insert(&mut self, mut batch: Self::Batch) {
+    fn insert(&mut self, batch: Self::Batch) {
         assert!(batch.lower() != batch.upper());
-        if let Some(bound) = &self.lower_key_bound {
-            batch.truncate_keys_below(bound);
-        }
 
         if !batch.is_empty() {
             self.dirty = true;
@@ -1115,11 +1073,6 @@ where
         self.lower = Antichain::from(committed.lower);
         self.upper = Antichain::from(committed.upper);
         self.dirty = committed.dirty;
-        if let Some(bytes) = committed.lower_key_bound {
-            let mut default_box = self.factories.key_factory().default_box();
-            unsafe { default_box.deserialize_from_bytes(&bytes, 0) };
-            self.lower_key_bound = Some(default_box);
-        }
         self.key_filter = None;
         self.value_filter = None;
         for batch in committed.batches {
@@ -1156,11 +1109,6 @@ where
         }
     }
 
-    #[inline]
-    fn key_factory(&self) -> &'static dyn Factory<B::Key> {
-        self.factories.key_factory()
-    }
-
     /// Allocates a fueled `Spine` with a specified effort multiplier.
     ///
     /// This trace will merge batches progressively, with each inserted batch
@@ -1173,7 +1121,6 @@ where
             lower: Antichain::from_elem(B::Time::minimum()),
             upper: Antichain::new(),
             dirty: false,
-            lower_key_bound: None,
             key_filter: None,
             value_filter: None,
             merger: AsyncMerger::new(),

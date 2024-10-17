@@ -23,7 +23,7 @@ use rand::{seq::index::sample, Rng};
 use rkyv::{ser::Serializer, Archive, Archived, Deserialize, Fallible, Serialize};
 use size_of::SizeOf;
 use std::{
-    cmp::{min, Ordering},
+    cmp::Ordering,
     fmt::{self, Debug},
     path::{Path, PathBuf},
 };
@@ -149,7 +149,6 @@ where
         &'static DynUnit,
         (&'static DynDataTyped<T>, &'static R, ()),
     )>,
-    lower_bound: usize,
     pub lower: Antichain<T>,
     pub upper: Antichain<T>,
 }
@@ -161,11 +160,7 @@ where
     R: WeightTrait + ?Sized,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "FileKeyBatch {{ lower_bound: {}, data: ",
-            self.lower_bound
-        )?;
+        write!(f, "FileKeyBatch {{ data: ")?;
         let mut cursor = self.cursor();
         let mut n_keys = 0;
         while cursor.key_valid() {
@@ -199,7 +194,6 @@ where
         Self {
             factories: self.factories.clone(),
             file: self.file.clone(),
-            lower_bound: self.lower_bound,
             lower: self.lower.clone(),
             upper: self.upper.clone(),
         }
@@ -246,7 +240,7 @@ where
 
     #[inline]
     fn key_count(&self) -> usize {
-        self.file.n_rows(0) as usize - self.lower_bound
+        self.file.n_rows(0) as usize
     }
 
     #[inline]
@@ -269,16 +263,6 @@ where
 
     fn upper(&self) -> AntichainRef<'_, T> {
         self.upper.as_ref()
-    }
-
-    fn truncate_keys_below(&mut self, lower_bound: &Self::Key) {
-        let mut cursor = self.file.rows().before();
-        unsafe { cursor.advance_to_value_or_larger(lower_bound) }.unwrap();
-
-        let lower_bound = cursor.absolute_position() as usize;
-        if lower_bound > self.lower_bound {
-            self.lower_bound = min(lower_bound, self.file.rows().len() as usize);
-        }
     }
 
     fn sample_keys<RG>(&self, rng: &mut RG, sample_size: usize, output: &mut DynVec<Self::Key>)
@@ -341,7 +325,6 @@ where
         Ok(Self {
             factories: factories.clone(),
             file,
-            lower_bound: 0,
             lower: Antichain::new(),
             upper: Antichain::new(),
         })
@@ -486,8 +469,8 @@ where
             factories: batch1.factories.clone(),
             lower: batch1.lower().meet(batch2.lower()),
             upper: batch1.upper().join(batch2.upper()),
-            lower1: batch1.lower_bound,
-            lower2: batch2.lower_bound,
+            lower1: 0,
+            lower2: 0,
             writer: Writer2::new(
                 &batch1.factories.factories0,
                 &batch1.factories.factories1,
@@ -502,7 +485,6 @@ where
         FileKeyBatch {
             factories: self.factories.clone(),
             file: self.writer.into_reader().unwrap(),
-            lower_bound: 0,
             lower: self.lower,
             upper: self.upper,
         }
@@ -647,7 +629,7 @@ where
     }
 
     fn new(batch: &'s FileKeyBatch<K, T, R>) -> Self {
-        Self::new_from(batch, batch.lower_bound)
+        Self::new_from(batch, 0)
     }
 
     fn move_key<F>(&mut self, op: F)
@@ -892,7 +874,6 @@ where
             file: self.writer.into_reader().unwrap(),
             lower,
             upper,
-            lower_bound: 0,
         }
     }
 }

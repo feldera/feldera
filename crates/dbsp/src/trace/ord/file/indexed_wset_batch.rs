@@ -24,7 +24,7 @@ use rand::{seq::index::sample, Rng};
 use rkyv::{ser::Serializer, Archive, Archived, Deserialize, Fallible, Serialize};
 use size_of::SizeOf;
 use std::{
-    cmp::{min, Ordering},
+    cmp::Ordering,
     fmt::{self, Debug},
     ops::Neg,
     path::{Path, PathBuf},
@@ -149,7 +149,6 @@ where
     #[allow(clippy::type_complexity)]
     #[size_of(skip)]
     file: Reader<(&'static K, &'static DynUnit, (&'static V, &'static R, ()))>,
-    lower_bound: usize,
 }
 
 impl<K, V, R> Debug for FileIndexedWSet<K, V, R>
@@ -159,11 +158,7 @@ where
     R: WeightTrait + ?Sized,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "FileIndexedWSet {{ lower_bound: {}, data: ",
-            self.lower_bound
-        )?;
+        write!(f, "FileIndexedWSet {{ data: ")?;
         let mut cursor = self.cursor();
         let mut n_keys = 0;
         while cursor.key_valid() {
@@ -201,7 +196,6 @@ where
         Self {
             factories: self.factories.clone(),
             file: self.file.clone(),
-            lower_bound: self.lower_bound,
         }
     }
 }
@@ -278,7 +272,6 @@ where
         Self {
             factories: self.factories.clone(),
             file: writer.into_reader().unwrap(),
-            lower_bound: 0,
         }
     }
 }
@@ -350,7 +343,7 @@ where
 
     #[inline]
     fn key_count(&self) -> usize {
-        self.file.n_rows(0) as usize - self.lower_bound
+        self.file.n_rows(0) as usize
     }
 
     #[inline]
@@ -375,16 +368,6 @@ where
     #[inline]
     fn upper(&self) -> AntichainRef<'_, ()> {
         AntichainRef::empty()
-    }
-
-    fn truncate_keys_below(&mut self, lower_bound: &Self::Key) {
-        let mut cursor = self.file.rows().before();
-        unsafe { cursor.advance_to_value_or_larger(lower_bound) }.unwrap();
-
-        let lower_bound = cursor.absolute_position() as usize;
-        if lower_bound > self.lower_bound {
-            self.lower_bound = min(lower_bound, self.file.rows().len() as usize);
-        }
     }
 
     fn sample_keys<RG>(&self, rng: &mut RG, sample_size: usize, output: &mut DynVec<Self::Key>)
@@ -439,7 +422,6 @@ where
         let file = Reader::open(&[&any_factory0, &any_factory1], &Runtime::storage(), path)?;
         Ok(Self {
             factories: factories.clone(),
-            lower_bound: 0,
             file,
         })
     }
@@ -574,13 +556,13 @@ where
     #[inline]
     fn new_merger(
         batch1: &FileIndexedWSet<K, V, R>,
-        batch2: &FileIndexedWSet<K, V, R>,
+        _batch2: &FileIndexedWSet<K, V, R>,
         _dst_hint: Option<BatchLocation>,
     ) -> Self {
         Self {
             factories: batch1.factories.clone(),
-            lower1: batch1.lower_bound,
-            lower2: batch2.lower_bound,
+            lower1: 0,
+            lower2: 0,
             writer: Writer2::new(
                 &batch1.factories.factories0,
                 &batch1.factories.factories1,
@@ -596,7 +578,6 @@ where
         FileIndexedWSet {
             factories: self.factories.clone(),
             file,
-            lower_bound: 0,
         }
     }
 
@@ -725,7 +706,7 @@ where
     }
 
     pub fn new(wset: &'s FileIndexedWSet<K, V, R>) -> Self {
-        Self::new_from(wset, wset.lower_bound)
+        Self::new_from(wset, 0)
     }
 
     fn move_key<F>(&mut self, op: F)
@@ -960,7 +941,6 @@ where
         FileIndexedWSet {
             factories: self.factories,
             file: self.writer.into_reader().unwrap(),
-            lower_bound: 0,
         }
     }
 }

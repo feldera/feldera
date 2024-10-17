@@ -367,12 +367,6 @@ where
     /// `upper`.
     fn upper(&self) -> AntichainRef<'_, Self::Time>;
 
-    /// Remove keys smaller than `lower_bound` from the batch.
-    ///
-    /// The removed tuples may not get deallocated instantly but they won't
-    /// appear when iterating over the batch.
-    fn truncate_keys_below(&mut self, lower_bound: &Self::Key);
-
     /// Returns a uniform random sample of distincts keys from the batch.
     ///
     /// Does not take into account the number values associated with each

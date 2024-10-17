@@ -285,13 +285,6 @@ where
         }
     }
 
-    fn truncate_keys_below(&mut self, lower_bound: &Self::Key) {
-        match &mut self.inner {
-            Inner::Vec(vec) => vec.truncate_keys_below(lower_bound),
-            Inner::File(file) => file.truncate_keys_below(lower_bound),
-        }
-    }
-
     fn sample_keys<RG>(&self, rng: &mut RG, sample_size: usize, output: &mut DynVec<Self::Key>)
     where
         RG: Rng,
