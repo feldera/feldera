@@ -16,7 +16,6 @@
   import type { EChartsInitOpts } from 'echarts/core'
   import type { Pipeline } from '$lib/services/pipelineManager'
   import type { ECMouseEvent } from 'svelte-echarts'
-  import { format } from 'd3-format'
 
   let {
     pipeline,
@@ -38,6 +37,8 @@
     TooltipComponent
   ])
 
+  let pipelineName = $derived(pipeline.current.name)
+
   const memUsed = $derived(metrics.global.map((m) => tuple(m.timeMs, m.rss_bytes ?? 0)))
   const valueMax = $derived(memUsed.length ? Math.max(...memUsed.map((v) => v[1])) : 0)
   const yMaxStep = $derived(Math.pow(2, Math.ceil(Math.log2(valueMax * 1.25))))
@@ -57,7 +58,8 @@
     },
     xAxis: {
       type: 'time' as const,
-      min: Math.round(metrics.global.at(-1)?.timeMs ?? Date.now()) - keepMs,
+      min: Date.now() - keepMs,
+      max: Date.now(),
       minInterval: 25000,
       maxInterval: 25000,
       axisLabel: {
@@ -138,6 +140,8 @@
 <span class="pl-16">
   Used memory: {humanSize(metrics.global.at(-1)?.rss_bytes ?? 0)}
 </span>
-<div class="absolute h-full w-full">
-  <Chart {init} {options} />
-</div>
+{#key pipelineName}
+  <div class="absolute h-full w-full">
+    <Chart {init} {options} />
+  </div>
+{/key}

@@ -131,9 +131,7 @@ export const accumulatePipelineMetrics =
 /**
  * @returns Time series of throughput with smoothing window over 3 data intervals
  */
-export const calcPipelineThroughput = (metrics: {
-  global: (GlobalMetrics & { timeMs: number })[]
-}) => {
+export const calcPipelineThroughput = (metrics: { global: GlobalMetricsTimestamp[] }) => {
   const totalProcessed = metrics.global.map((m) => tuple(m.timeMs, m.total_processed_records))
   const series = discreteDerivative(totalProcessed, ({}, {}, i, arr) => {
     const n3 = arr[i]
