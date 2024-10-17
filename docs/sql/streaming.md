@@ -94,11 +94,57 @@ A table or view can have any number of columns annotated with
 lateness.  An inserted row is considered "too late" if any of its
 annotated columns is too late.
 
+## `emit_final` views
+
+:::warning
+
+The `emit_final` feature is still experimental, and it may be removed
+or substantially modified in the future.
+
+:::
+
+A view can have the property `emit_final` attached, as in the
+following example:
+
+```sql
+CREATE VIEW V WITH (
+  'emit_final' = 'ts'
+) AS SELECT ... as ts, .... FROM ...
+```
+
+This property is modeled after the Kafka [emit on
+close](https://kafka.apache.org/33/javadoc/org/apache/kafka/streams/kstream/EmitStrategy.html#onWindowClose())
+property.
+
+The `emit_final` property must specify either a column name that
+exists in the view, or a column number, where 0 is the leftmost view
+column.
+
+The SQL runtime attempts to extract for every relation computed a
+[*waterline*](https://www.feldera.com/blog/lateness-in-streaming-programs).
+The waterline of a relation is a row value W with the property that
+all records R that will be updated in the relation in the future will
+have values "after" W.  In general a waterline can be computed for
+relations that depend on inputs with `LATENESS` annotations, or are
+known to be monotone (e.g., the NOW() function).
+
+The effect of the `emit_final` annotation is to cause the views to
+emit only the records that have a value in the specific column that is
+before the current waterline, i.e., these rows will never be updated.
+If the compiler cannot infer a waterline for the specified column of
+the view, it will emit an error.  Recall that waterline if updated
+only when the current program step terminates, and takes effect in the
+next step.
+
+Currently this annotation is only allowed on views that are not
+`LOCAL`.
+
 ## `WATERMARK` expressions
 
 :::warning
 
-The `WATERMARK` feature is still experimental.
+The `WATERMARK` feature is still experimental, and it may be removed
+or substantially modified in the future.
 
 :::
 
