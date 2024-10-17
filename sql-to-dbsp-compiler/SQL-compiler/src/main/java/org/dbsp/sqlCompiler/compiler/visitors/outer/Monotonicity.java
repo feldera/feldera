@@ -16,6 +16,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPNoopOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPrimitiveAggregateOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
@@ -220,11 +221,16 @@ public class Monotonicity extends CircuitVisitor {
     }
 
     @Override
+    public void postorder(DBSPSinkOperator node) {
+        this.identity(node);
+    }
+
+    @Override
     public void postorder(DBSPViewOperator node) {
         // If the view has LATENESS declarations, we use these.
         // Otherwise, we treat it as an identity function.
         // We could do better: merge the input with the declared lateness.
-        // This is still TODO.
+        // This is still TODO: https://github.com/feldera/feldera/issues/1906
         DBSPTypeTuple tuple = node.getOutputZSetElementType().as(DBSPTypeTuple.class);
         if (tuple == null) {
             // This must be an ORDER BY node

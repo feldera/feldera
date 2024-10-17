@@ -468,6 +468,48 @@ public class StreamingTests extends StreamingTestBase {
     }
 
     @Test
+    public void testEmitFinal() {
+        String sql = """
+                create table t (
+                    ts int not null LATENESS 2
+                );
+
+                CREATE VIEW v WITH
+                ('emit_final' = 'ts') AS
+                SELECT ts, COUNT(*)
+                FROM t
+                GROUP BY ts;""";
+        CompilerCircuitStream ccs = this.getCCS(sql);
+        this.addRustTestCase(ccs);
+        // waterline is -infinity
+        ccs.step("""
+                INSERT INTO T VALUES(0), (1);
+                """, """
+                 ts | count | weight
+                ---------------------""");
+        // waterline is -1
+        ccs.step("""
+                INSERT INTO T VALUES(1), (2);
+                """, """
+                 ts | count | weight
+                ---------------------""");
+        // waterline is 1
+        ccs.step("""
+                INSERT INTO T VALUES(4), (5);
+                """, """
+                 ts | count | weight
+                ---------------------
+                  0 |     1 | 1""");
+        // waterline is 3
+        ccs.step("""
+                """, """
+                 ts | count | weight
+                ---------------------
+                  1 |     2 | 1
+                  2 |     1 | 1""");
+    }
+
+    @Test
     public void issue1973() {
         String sql = """
                 create table t (
