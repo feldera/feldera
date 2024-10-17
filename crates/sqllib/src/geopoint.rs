@@ -1,12 +1,13 @@
 // I cannot use the standard geopoint object because it doesn't implement Ord
 
-use crate::{casts::cast_to_d_decimal, some_polymorphic_function2, Decimal};
+use crate::{casts::cast_to_d_decimal, some_polymorphic_function2};
 use ::serde::{Deserialize, Serialize};
 use dbsp::algebra::{F32, F64};
 use dbsp::num_entries_scalar;
 use feldera_types::serde_with_context::SerializeWithContext;
 use geo::EuclideanDistance;
 use geo::Point;
+use rust_decimal::Decimal;
 use serde::ser::Error;
 use size_of::*;
 

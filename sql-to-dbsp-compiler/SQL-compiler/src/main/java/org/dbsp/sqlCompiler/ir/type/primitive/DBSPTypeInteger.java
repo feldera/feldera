@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.type.primitive;
 
+import org.checkerframework.checker.nullness.qual.Nullable;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
@@ -72,6 +73,22 @@ public class DBSPTypeInteger extends DBSPTypeBaseType
         }
         throw new InternalCompilerError("Unexpected integer type: " +
                 "width=" + width + " signed=" + signed);
+    }
+
+    /** Return the opcode of the smallest integer that can represent values with the specified precision */
+    @Nullable
+    public static DBSPTypeCode smallestInteger(int precision) {
+        if (precision < 3)
+            return INT8;
+        else if (precision < 5)
+            return INT16;
+        else if (precision < 10)
+            return INT32;
+        else if (precision < 19)
+            return INT64;
+        else if (precision < 38)
+            return INT128;
+        return null;
     }
 
     UnsupportedException unsupported() {
@@ -199,6 +216,21 @@ public class DBSPTypeInteger extends DBSPTypeBaseType
             case 64 -> 19;
             case 128 -> 38;
             default -> throw new UnsupportedException(this.getNode());
+        };
+    }
+
+    public static DBSPTypeInteger getType(CalciteObject node, DBSPTypeCode code, boolean mayBenull) {
+        return switch (code) {
+            case INT8 -> new DBSPTypeInteger(node, 8, true, mayBenull);
+            case INT16 -> new DBSPTypeInteger(node, 16, true, mayBenull);
+            case INT32 -> new DBSPTypeInteger(node, 32, true, mayBenull);
+            case INT64 -> new DBSPTypeInteger(node, 64, true, mayBenull);
+            case INT128 -> new DBSPTypeInteger(node, 128, true, mayBenull);
+            case UINT16 -> new DBSPTypeInteger(node, 16, false, mayBenull);
+            case UINT32 -> new DBSPTypeInteger(node, 32, false, mayBenull);
+            case UINT64 -> new DBSPTypeInteger(node, 64, false, mayBenull);
+            case UINT128 -> new DBSPTypeInteger(node, 128, false, mayBenull);
+            default -> throw new InternalCompilerError("Opcode does not represent an type");
         };
     }
 

@@ -12,15 +12,15 @@ public class TpcDsTest extends BaseSQLTests {
     // TODO: Disabled in the SQL code the following views
     // q12: OVER without ORDER BY https://github.com/feldera/feldera/issues/457
     // q20: OVER without ORDER BY
-    // q36: OVER sort on DECIMAL column https://github.com/feldera/feldera/issues/2291
+    // q36: OVER and RANK
     // q47: OVER without ORDER BY
-    // q49: OVER sort on DECIMAL column
+    // q49: OVER and RANK
     // q51: OVER with ROWS aggregate
     // q53: OVER without ORDER BY
     // q57: OVER without ORDER BY
     // q63: OVER without ORDER BY
-    // q70: OVER sort on DECIMAL column
-    // q86: OVER sort on DECIMAL column
+    // q70: OVER and RANK (this should probably work)
+    // q86: OVER and RANK
     // q89: OVER without ORDER BY
     @Test
     public void compileTpcds() throws IOException {

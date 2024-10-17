@@ -144,6 +144,7 @@ public class RustFileWriter {
                     array::*,
                     casts::*,
                     binary::*,
+                    decimal::*,
                     geopoint::*,
                     timestamp::*,
                     interval::*,

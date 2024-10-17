@@ -8,6 +8,8 @@ pub mod binary;
 #[doc(hidden)]
 pub mod casts;
 #[doc(hidden)]
+pub mod decimal;
+#[doc(hidden)]
 pub mod geopoint;
 pub mod interval;
 #[doc(hidden)]
@@ -22,7 +24,6 @@ pub mod timestamp;
 pub mod variant;
 
 pub use binary::ByteArray;
-use casts::cast_to_decimal_decimal;
 #[doc(hidden)]
 pub use geopoint::GeoPoint;
 pub use interval::{LongInterval, ShortInterval};
@@ -56,13 +57,12 @@ use dbsp::{
 use itertools::Itertools;
 use lazy_static::lazy_static;
 use metrics::{counter, Counter};
-use num::{PrimInt, Signed, ToPrimitive};
+use num::{PrimInt, ToPrimitive};
 use num_traits::{Pow, Zero};
-use rust_decimal::{Decimal, MathematicalOps};
+use rust_decimal::Decimal;
 use std::fmt::Debug;
 use std::marker::PhantomData;
 use std::ops::{Add, Deref, Neg};
-use std::str::FromStr;
 
 /// Convert a value of a SQL data type to an integer
 /// that preserves ordering.  Used for partitioned_rolling_aggregates
@@ -1282,57 +1282,6 @@ pub fn times_LongInterval_i32(left: LongInterval, right: i32) -> LongInterval {
 
 some_polymorphic_function2!(times, LongInterval, LongInterval, i32, i32, LongInterval);
 
-/***** decimals ***** */
-
-#[doc(hidden)]
-#[inline(always)]
-pub fn new_decimal(s: &str, precision: u32, scale: u32) -> Option<Decimal> {
-    let value = Decimal::from_str(s).ok()?;
-    Some(cast_to_decimal_decimal(value, precision, scale))
-}
-
-#[doc(hidden)]
-#[inline(always)]
-pub fn round_decimal(left: Decimal, right: i32) -> Decimal {
-    // Rust decimal doesn't support rounding with negative values
-    // but Calcite does
-    if right.is_negative() {
-        let right_unsigned = right.unsigned_abs();
-        let pow_of_ten = Decimal::new(10_i64.pow(right_unsigned), 0);
-        let rounded = ((left / pow_of_ten).round()) * pow_of_ten;
-        return rounded;
-    }
-
-    left.round_dp(u32::try_from(right).unwrap())
-}
-
-#[doc(hidden)]
-#[inline(always)]
-pub fn round_decimalN(left: Option<Decimal>, right: i32) -> Option<Decimal> {
-    left.map(|x| round_decimal(x, right))
-}
-
-#[doc(hidden)]
-#[inline(always)]
-pub fn truncate_decimal(left: Decimal, right: i32) -> Decimal {
-    // Rust decimal doesn't support rounding with negative values
-    // but Calcite does
-    if right.is_negative() {
-        let right_unsigned = right.unsigned_abs();
-        let pow_of_ten = Decimal::new(10_i64.pow(right_unsigned), 0);
-        let truncated = (left / pow_of_ten).trunc() * pow_of_ten;
-        return truncated;
-    }
-
-    left.trunc_with_scale(u32::try_from(right).unwrap())
-}
-
-#[doc(hidden)]
-#[inline(always)]
-pub fn truncate_decimalN(left: Option<Decimal>, right: i32) -> Option<Decimal> {
-    left.map(|x| truncate_decimal(x, right))
-}
-
 #[doc(hidden)]
 #[inline(always)]
 pub fn truncate_d(left: F64, right: i32) -> F64 {
@@ -1387,20 +1336,6 @@ pub fn power_d_i32(left: F64, right: i32) -> F64 {
 some_polymorphic_function2!(power, d, F64, i32, i32, F64);
 
 #[doc(hidden)]
-pub fn power_i32_decimal(left: i32, right: Decimal) -> F64 {
-    F64::new((left as f64).powf(right.to_f64().unwrap()))
-}
-
-some_polymorphic_function2!(power, i32, i32, decimal, Decimal, F64);
-
-#[doc(hidden)]
-pub fn power_decimal_i32(left: Decimal, right: i32) -> F64 {
-    F64::new(left.powi(right.into()).to_f64().unwrap())
-}
-
-some_polymorphic_function2!(power, decimal, Decimal, i32, i32, F64);
-
-#[doc(hidden)]
 pub fn power_i32_i32(left: i32, right: i32) -> F64 {
     (left as f64).pow(right).into()
 }
@@ -1418,45 +1353,11 @@ pub fn power_d_d(left: F64, right: F64) -> F64 {
 some_polymorphic_function2!(power, d, F64, d, F64, F64);
 
 #[doc(hidden)]
-pub fn power_decimal_decimal(left: Decimal, right: Decimal) -> F64 {
-    if right == Decimal::new(5, 1) {
-        // special case for sqrt, has higher precision than pow
-        F64::from(left.sqrt().unwrap().to_f64().unwrap())
-    } else {
-        F64::from(left.powd(right).to_f64().unwrap())
-    }
-}
-
-some_polymorphic_function2!(power, decimal, Decimal, decimal, Decimal, F64);
-
-#[doc(hidden)]
-pub fn power_decimal_d(left: Decimal, right: F64) -> F64 {
-    // Special case to match Java pow
-    if right.into_inner().is_nan() {
-        return right;
-    }
-    F64::new(left.powf(right.into_inner()).to_f64().unwrap())
-}
-
-some_polymorphic_function2!(power, decimal, Decimal, d, F64, F64);
-
-#[doc(hidden)]
 pub fn power_d_decimal(left: F64, right: Decimal) -> F64 {
     F64::new(left.into_inner().powf(right.to_f64().unwrap()))
 }
 
 some_polymorphic_function2!(power, d, F64, decimal, Decimal, F64);
-
-#[doc(hidden)]
-pub fn sqrt_decimal(left: Decimal) -> F64 {
-    if left < Decimal::ZERO {
-        return F64::new(f64::NAN);
-    }
-
-    F64::from(left.sqrt().unwrap().to_f64().unwrap())
-}
-
-some_polymorphic_function1!(sqrt, decimal, Decimal, F64);
 
 #[doc(hidden)]
 pub fn sqrt_d(left: F64) -> F64 {
@@ -1480,15 +1381,8 @@ pub fn floor_f(value: F32) -> F32 {
     F32::new(value.into_inner().floor())
 }
 
-#[inline(always)]
-#[doc(hidden)]
-pub fn floor_decimal(value: Decimal) -> Decimal {
-    value.floor()
-}
-
 some_polymorphic_function1!(floor, f, F32, F32);
 some_polymorphic_function1!(floor, d, F64, F64);
-some_polymorphic_function1!(floor, decimal, Decimal, Decimal);
 
 //////////////////// ceil /////////////////////
 
@@ -1504,15 +1398,8 @@ pub fn ceil_f(value: F32) -> F32 {
     F32::new(value.into_inner().ceil())
 }
 
-#[inline(always)]
-#[doc(hidden)]
-pub fn ceil_decimal(value: Decimal) -> Decimal {
-    value.ceil()
-}
-
 some_polymorphic_function1!(ceil, f, F32, F32);
 some_polymorphic_function1!(ceil, d, F64, F64);
-some_polymorphic_function1!(ceil, decimal, Decimal, Decimal);
 
 ///////////////////// sign //////////////////////
 
@@ -1540,15 +1427,8 @@ pub fn sign_f(value: F32) -> F32 {
     }
 }
 
-#[inline(always)]
-#[doc(hidden)]
-pub fn sign_decimal(value: Decimal) -> Decimal {
-    value.signum()
-}
-
 some_polymorphic_function1!(sign, f, F32, F32);
 some_polymorphic_function1!(sign, d, F64, F64);
-some_polymorphic_function1!(sign, decimal, Decimal, Decimal);
 
 // PI
 #[inline(always)]
