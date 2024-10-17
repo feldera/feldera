@@ -1,11 +1,9 @@
 use crate::db::types::common::Version;
-use crate::db::types::pipeline::{ExtendedPipelineDescr, PipelineId};
-use crate::db::types::program::generate_pipeline_config;
+use crate::db::types::pipeline::PipelineId;
 use crate::error::ManagerError;
-use crate::runner::error::RunnerError;
 use crate::runner::logs_buffer::LogsBuffer;
 use async_trait::async_trait;
-use feldera_types::config::PipelineConfig;
+use feldera_types::config::{PipelineConfig, StorageConfig};
 use log::{debug, error};
 use std::time::Duration;
 use tokio::sync::mpsc::error::TrySendError;
@@ -21,16 +19,6 @@ pub enum LogMessage {
     End(String),
 }
 
-/// A description of a pipeline to execute.
-#[derive(Eq, PartialEq, Debug, Clone)]
-pub struct PipelineExecutionDesc {
-    pub pipeline_id: PipelineId,
-    pub pipeline_name: String,
-    pub program_version: Version,
-    pub program_binary_url: String,
-    pub deployment_config: PipelineConfig,
-}
-
 /// Trait to be implemented by any pipeline runner.
 /// The `PipelineAutomaton` invokes these methods per pipeline.
 #[async_trait]
@@ -41,7 +29,6 @@ pub trait PipelineExecutor: Sync + Send {
     // Timing constants, which should be set based on the runner type.
     const PROVISIONING_TIMEOUT: Duration;
     const PROVISIONING_POLL_PERIOD: Duration;
-    const SHUTDOWN_TIMEOUT: Duration;
     const SHUTDOWN_POLL_PERIOD: Duration;
 
     // Logs buffer size limit constants.
@@ -55,68 +42,47 @@ pub trait PipelineExecutor: Sync + Send {
         follow_request_receiver: mpsc::Receiver<mpsc::Sender<LogMessage>>,
     ) -> Self;
 
-    /// Converts an extended pipeline descriptor retrieved from the database
-    /// into an execution descriptor which has no optional fields.
-    async fn to_execution_desc(
-        &self,
-        pipeline: &ExtendedPipelineDescr,
-    ) -> Result<PipelineExecutionDesc, ManagerError> {
-        // Handle optional fields
-        let (inputs, outputs) = match pipeline.program_info.clone() {
-            None => {
-                return Err(ManagerError::from(
-                    RunnerError::PipelineMissingProgramInfo {
-                        pipeline_name: pipeline.name.clone(),
-                        pipeline_id: pipeline.id,
-                    },
-                ))
-            }
-            Some(program_info) => (
-                program_info.input_connectors,
-                program_info.output_connectors,
-            ),
-        };
-        let program_binary_url = match pipeline.program_binary_url.clone() {
-            None => {
-                return Err(ManagerError::from(
-                    RunnerError::PipelineMissingProgramBinaryUrl {
-                        pipeline_name: pipeline.name.clone(),
-                        pipeline_id: pipeline.id,
-                    },
-                ))
-            }
-            Some(program_binary_url) => program_binary_url,
-        };
+    /// Generates the storage configuration of the pipeline if storage is enabled.
+    /// The storage configuration is part of the pipeline deployment configuration.
+    async fn generate_storage_config(&self) -> StorageConfig;
 
-        let deployment_config =
-            generate_pipeline_config(pipeline.id, &pipeline.runtime_config, &inputs, &outputs);
-        Ok(PipelineExecutionDesc {
-            pipeline_id: pipeline.id,
-            pipeline_name: pipeline.name.clone(),
-            program_version: pipeline.program_version,
-            program_binary_url,
-            deployment_config,
-        })
-    }
+    /// Initializes any runner internal state. In particular, reconnects with
+    /// pipeline resources provisioned by a prior runner, including switching
+    /// to operational logging.
+    async fn init(&mut self, was_provisioned: bool);
 
-    /// Initializes internal state by reconnecting to a pipeline instance that is already started
-    /// by a prior runner and is still potentially running. In particular, it should switch to
-    /// operational logging if this is supported by the instance type.
-    async fn init(&mut self, was_started: bool);
+    /// Provisions resources required for the pipeline to run.
+    /// The provisioned resources must be uniquely identifiable/addressable through the
+    /// pipeline identifier, such that `shutdown()` without any other state is able to
+    /// delete them. The backing storage must be mounted at the storage directory
+    /// specified earlier by `generate_storage_config()` and be empty. Calls to
+    /// `provision()` must be idempotent as it can be called again if the runner is
+    /// unexpectedly restarted during provisioning.
+    ///
+    /// The implementation should be as non-blocking as possible -- resources which might take
+    /// a long time should have their provisioning initiated, and completion validation done
+    /// within `is_provisioned()`. This enables a user to swiftly shut down a provisioning pipeline.
+    async fn provision(
+        &mut self,
+        deployment_config: &PipelineConfig,
+        program_binary_url: &str,
+        program_version: Version,
+    ) -> Result<(), ManagerError>;
 
-    /// Brings up some instance (e.g., process) that runs the pipeline binary and switches to operational logging.
-    async fn start(&mut self, ped: PipelineExecutionDesc) -> Result<(), ManagerError>;
+    /// Validates whether the provisioning initiated by `provision()` is completed.
+    /// Returns the following:
+    /// - `Ok(Some(deployment_location))` if provisioning completed successfully
+    /// - `Ok(None)` if provisioning is still ongoing
+    /// - `Err(...)` if provisioning failed
+    async fn is_provisioned(&self) -> Result<Option<String>, ManagerError>;
 
-    /// Attempts to retrieve the hostname:port over which the pipeline's HTTP server should be
-    /// reachable. `Ok(None)` indicates that the pipeline is still initializing.
-    async fn get_location(&mut self) -> Result<Option<String>, ManagerError>;
+    /// Checks the pipeline.
+    /// Returns an error if the provisioned resources encountered a fatal error.
+    async fn check(&mut self) -> Result<(), ManagerError>;
 
-    /// Shuts down the instance (e.g., send SIGTERM to the process) that is running the pipeline
-    /// binary and switches to rejection logging.
+    /// Terminates and deletes provisioned resources (including storage),
+    /// and switches to rejection logging.
     async fn shutdown(&mut self) -> Result<(), ManagerError>;
-
-    /// Returns whether the instance (e.g., process) running the pipeline binary has been shutdown.
-    async fn check_if_shutdown(&mut self) -> bool;
 
     /// Sets up a thread which replies to any log follow request with a rejection that the pipeline
     /// has not yet started.

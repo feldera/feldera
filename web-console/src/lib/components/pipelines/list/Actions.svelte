@@ -71,6 +71,7 @@
       .with({ PipelineError: P.any }, () => ['_spacer', '_configure', '_shutdown'])
       .with('Compiling sql', () => ['_start_pending', '_configure', '_delete'])
       .with('Compiling bin', () => ['_start_pending', '_configure', '_delete'])
+      .with('Unavailable', () => ['_spinner', '_configure', '_shutdown'])
       .with({ SqlError: P.any }, { RustError: P.any }, { SystemError: P.any }, () => [
         '_start_error',
         '_configure',

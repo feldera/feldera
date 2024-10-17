@@ -223,6 +223,13 @@ pub(crate) trait Storage {
         pipeline_id: PipelineId,
     ) -> Result<(), DBError>;
 
+    /// Transitions deployment status to `Unavailable`.
+    async fn transit_deployment_status_to_unavailable(
+        &self,
+        tenant_id: TenantId,
+        pipeline_id: PipelineId,
+    ) -> Result<(), DBError>;
+
     /// Transitions deployment status to `ShuttingDown`.
     async fn transit_deployment_status_to_shutting_down(
         &self,
