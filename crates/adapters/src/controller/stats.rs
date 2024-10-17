@@ -102,10 +102,6 @@ pub struct GlobalControllerMetrics {
     /// input buffers.
     #[serde(skip)]
     pub step_requested: AtomicBool,
-
-    /// Is this a fault-tolerant pipeline?
-    #[serde(skip)]
-    pub fault_tolerant: bool,
 }
 
 fn serialize_pipeline_state<S>(
@@ -119,7 +115,7 @@ where
 }
 
 impl GlobalControllerMetrics {
-    fn new(fault_tolerant: bool) -> Self {
+    fn new() -> Self {
         Self {
             state: Atomic::new(PipelineState::Paused),
             #[cfg(any(target_os = "macos", target_os = "linux"))]
@@ -130,7 +126,6 @@ impl GlobalControllerMetrics {
             total_processed_records: AtomicU64::new(0),
             pipeline_complete: AtomicBool::new(false),
             step_requested: AtomicBool::new(false),
-            fault_tolerant,
         }
     }
 
@@ -396,10 +391,10 @@ impl Serialize for ControllerMetric {
 }
 
 impl ControllerStatus {
-    pub fn new(pipeline_config: PipelineConfig, fault_tolerant: bool) -> Self {
+    pub fn new(pipeline_config: PipelineConfig) -> Self {
         Self {
             pipeline_config,
-            global_metrics: GlobalControllerMetrics::new(fault_tolerant),
+            global_metrics: GlobalControllerMetrics::new(),
             inputs: ShardedLock::new(BTreeMap::new()),
             outputs: ShardedLock::new(BTreeMap::new()),
             metrics: Mutex::new(Vec::new()),
@@ -420,11 +415,10 @@ impl ControllerStatus {
         endpoint_id: &EndpointId,
         endpoint_name: &str,
         config: InputEndpointConfig,
-        is_fault_tolerant: bool,
     ) {
         self.inputs.write().unwrap().insert(
             *endpoint_id,
-            InputEndpointStatus::new(endpoint_name, config, is_fault_tolerant),
+            InputEndpointStatus::new(endpoint_name, config),
         );
     }
 
@@ -819,9 +813,6 @@ pub struct InputEndpointStatus {
     /// The first fatal error that occurred at the endpoint.
     pub fatal_error: Mutex<Option<String>>,
 
-    /// Whether this input endpoint is [fault tolerant](crate#fault-tolerance).
-    pub is_fault_tolerant: bool,
-
     /// Progress within the latest step.
     #[serde(skip)]
     pub progress: Mutex<StepProgress>,
@@ -839,14 +830,13 @@ pub struct InputEndpointStatus {
 }
 
 impl InputEndpointStatus {
-    fn new(endpoint_name: &str, config: InputEndpointConfig, is_fault_tolerant: bool) -> Self {
+    fn new(endpoint_name: &str, config: InputEndpointConfig) -> Self {
         let paused_by_user = config.connector_config.paused;
         Self {
             endpoint_name: endpoint_name.to_string(),
             config,
             metrics: Default::default(),
             fatal_error: Mutex::new(None),
-            is_fault_tolerant,
             progress: Mutex::new(StepProgress::NotStarted),
             paused: paused_by_user,
         }

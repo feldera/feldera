@@ -22,7 +22,7 @@
 //! ```
 use crate::{InputBuffer, ParseError, Parser, PipelineState};
 use adhoc::AdHocInputEndpoint;
-use anyhow::{Error as AnyError, Result as AnyResult};
+use anyhow::{anyhow, Error as AnyError, Result as AnyResult};
 use dyn_clone::DynClone;
 use http::HttpInputEndpoint;
 #[cfg(feature = "with-pubsub")]
@@ -79,61 +79,58 @@ pub type Step = u64;
 
 /// Creates an input transport endpoint instance using an input transport configuration.
 ///
+/// If `fault_tolerant` is true, this function succeeds only if it can create a
+/// fault-tolerant endpoint.
+///
 /// Returns an error if there is a invalid configuration for the endpoint.
 /// Returns `None` if the transport configuration variant is incompatible with an input endpoint.
 #[allow(unused_variables)]
 pub fn input_transport_config_to_endpoint(
     config: TransportConfig,
     endpoint_name: &str,
+    fault_tolerant: bool,
 ) -> AnyResult<Option<Box<dyn TransportInputEndpoint>>> {
-    match config {
-        TransportConfig::FileInput(config) => Ok(Some(Box::new(FileInputEndpoint::new(config)))),
+    let endpoint: Box<dyn TransportInputEndpoint> = match config {
+        TransportConfig::FileInput(config) => Box::new(FileInputEndpoint::new(config)),
         #[cfg(feature = "with-kafka")]
-        TransportConfig::KafkaInput(config) => match config.fault_tolerance {
-            false => Ok(Some(Box::new(KafkaInputEndpoint::new(
-                config,
-                endpoint_name,
-            )?))),
-            true => Ok(Some(Box::new(KafkaFtInputEndpoint::new(config)?))),
+        TransportConfig::KafkaInput(config) => match fault_tolerant {
+            false => Box::new(KafkaInputEndpoint::new(config, endpoint_name)?),
+            true => Box::new(KafkaFtInputEndpoint::new(config)?),
         },
         #[cfg(not(feature = "with-kafka"))]
-        TransportConfig::KafkaInput(_) => Ok(None),
+        TransportConfig::KafkaInput(_) => return Ok(None),
         #[cfg(feature = "with-pubsub")]
-        TransportConfig::PubSubInput(config) => {
-            Ok(Some(Box::new(PubSubInputEndpoint::new(config.clone())?)))
-        }
+        TransportConfig::PubSubInput(config) => Box::new(PubSubInputEndpoint::new(config.clone())?),
         #[cfg(not(feature = "with-pubsub"))]
-        TransportConfig::PubSubInput(_) => Ok(None),
-        TransportConfig::UrlInput(config) => Ok(Some(Box::new(UrlInputEndpoint::new(config)))),
-        TransportConfig::S3Input(config) => Ok(Some(Box::new(S3InputEndpoint::new(config)?))),
-        TransportConfig::Datagen(config) => {
-            Ok(Some(Box::new(GeneratorEndpoint::new(config.clone()))))
-        }
+        TransportConfig::PubSubInput(_) => return Ok(None),
+        TransportConfig::UrlInput(config) => Box::new(UrlInputEndpoint::new(config)),
+        TransportConfig::S3Input(config) => Box::new(S3InputEndpoint::new(config)?),
+        TransportConfig::Datagen(config) => Box::new(GeneratorEndpoint::new(config.clone())),
         #[cfg(feature = "with-nexmark")]
-        TransportConfig::Nexmark(config) => {
-            Ok(Some(Box::new(NexmarkEndpoint::new(config.clone()))))
-        }
+        TransportConfig::Nexmark(config) => Box::new(NexmarkEndpoint::new(config.clone())),
         #[cfg(not(feature = "with-nexmark"))]
-        TransportConfig::Nexmark(_) => Ok(None),
-        TransportConfig::HttpInput(config) => Ok(Some(Box::new(HttpInputEndpoint::new(config)))),
-        TransportConfig::AdHocInput(config) => Ok(Some(Box::new(AdHocInputEndpoint::new(config)))),
+        TransportConfig::Nexmark(_) => return Ok(None),
+        TransportConfig::HttpInput(config) => Box::new(HttpInputEndpoint::new(config)),
+        TransportConfig::AdHocInput(config) => Box::new(AdHocInputEndpoint::new(config)),
         TransportConfig::FileOutput(_)
         | TransportConfig::KafkaOutput(_)
         | TransportConfig::DeltaTableInput(_)
         | TransportConfig::DeltaTableOutput(_)
-        | TransportConfig::HttpOutput => Ok(None),
+        | TransportConfig::HttpOutput => return Ok(None),
+    };
+    if fault_tolerant && !endpoint.is_fault_tolerant() {
+        return Err(anyhow!(
+            "fault tolerance for endpoint could not be configured"
+        ));
     }
-}
-
-pub fn input_transport_config_is_fault_tolerant(config: &TransportConfig) -> bool {
-    if let Ok(Some(endpoint)) = input_transport_config_to_endpoint(config.clone(), "default") {
-        endpoint.is_fault_tolerant()
-    } else {
-        false
-    }
+    Ok(Some(endpoint))
 }
 
 /// Creates an output transport endpoint instance using an output transport configuration.
+///
+/// If `fault_tolerant` is true, this function attempts to create a
+/// fault-tolerant output endpoint (but it will still return a non-FT endpoint
+/// if that's all it can do).
 ///
 /// Returns an error if there is a invalid configuration for the endpoint.
 /// Returns `None` if the transport configuration variant is incompatible with an output endpoint.
@@ -141,16 +138,17 @@ pub fn input_transport_config_is_fault_tolerant(config: &TransportConfig) -> boo
 pub fn output_transport_config_to_endpoint(
     config: TransportConfig,
     endpoint_name: &str,
+    fault_tolerant: bool,
 ) -> AnyResult<Option<Box<dyn OutputEndpoint>>> {
     match config {
         TransportConfig::FileOutput(config) => Ok(Some(Box::new(FileOutputEndpoint::new(config)?))),
         #[cfg(feature = "with-kafka")]
-        TransportConfig::KafkaOutput(config) => match config.fault_tolerance {
-            None => Ok(Some(Box::new(KafkaOutputEndpoint::new(
+        TransportConfig::KafkaOutput(config) => match fault_tolerant {
+            false => Ok(Some(Box::new(KafkaOutputEndpoint::new(
                 config,
                 endpoint_name,
             )?))),
-            Some(_) => Ok(Some(Box::new(KafkaFtOutputEndpoint::new(config)?))),
+            true => Ok(Some(Box::new(KafkaFtOutputEndpoint::new(config)?))),
         },
         _ => Ok(None),
     }
