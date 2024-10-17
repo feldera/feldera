@@ -19,6 +19,7 @@
       .with('Compiling sql', () => 'preset-filled-warning-400-600')
       .with('Queued', () => 'preset-filled-warning-400-600')
       .with('Compiling bin', () => 'preset-filled-warning-400-600')
+      .with('Unavailable', () => 'bg-orange-300 dark:bg-orange-700')
       .with(
         { SqlError: P.any },
         { RustError: P.any },

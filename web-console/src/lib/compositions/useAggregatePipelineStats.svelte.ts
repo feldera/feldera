@@ -7,6 +7,7 @@ import {
   type PipelineMetrics
 } from '$lib/functions/pipelineMetrics'
 import { isMetricsAvailable } from '$lib/functions/pipelines/status'
+import { untrack } from 'svelte'
 
 let metrics: Record<string, PipelineMetrics> = {} // Disable reactivity for metrics data for better performance
 let getMetrics = $state<() => typeof metrics>(() => metrics)
@@ -21,8 +22,13 @@ export const useAggregatePipelineStats = (
 
   let metricsAvailable = $derived(isMetricsAvailable(pipelineStatus))
   const doFetch = (pipelineName: string) => {
-    if (!metricsAvailable) {
+    if (metricsAvailable === 'no') {
       metrics[pipelineName] = emptyPipelineMetrics
+      getMetrics = () => metrics
+      return
+    }
+    if (metricsAvailable === 'soon') {
+      timeout = setTimeout(() => doFetch(pipelineName), Math.max(0, refetchMs))
       getMetrics = () => metrics
       return
     }
@@ -46,7 +52,7 @@ export const useAggregatePipelineStats = (
   $effect(() => {
     pipelineName
     metricsAvailable
-    queueMicrotask(() => doFetch(pipelineName))
+    untrack(() => doFetch(pipelineName))
     return () => {
       clearTimeout(timeout)
     }

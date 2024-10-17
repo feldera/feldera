@@ -255,6 +255,7 @@ const consolidatePipelineStatus = (
     .with(['Running', P.any, P.nullish, P._], () => 'Running' as const)
     .with(['ShuttingDown', P.any, P.nullish, P._], () => 'ShuttingDown' as const)
     .with(['Failed', P.any, P.select(P.nonNullable), P._], (PipelineError) => ({ PipelineError }))
+    .with(['Unavailable', P.any, P.any, P.any], () => 'Unavailable' as const)
     .otherwise(() => {
       throw new Error(
         `Unable to consolidatePipelineStatus: ${pipelineStatus} ${desiredStatus} ${pipelineError} ${programStatus}`
