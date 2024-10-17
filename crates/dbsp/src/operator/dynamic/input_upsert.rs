@@ -344,8 +344,7 @@ where
         let mut builder = B::Builder::with_capacity(&self.batch_factories, (), updates.len() * 2);
 
         let val_filter = self.bounds.effective_val_filter();
-        let key_filter = self.bounds.key_filter();
-        let key_bound = self.bounds.effective_key_bound();
+        let key_filter = self.bounds.effective_key_filter();
 
         // Current key for which we are processing updates.
         let mut cur_key: Box<DynOpt<T::Key>> = self.opt_key_factory.default_box();
@@ -361,13 +360,6 @@ where
 
         for key_upd in updates.dyn_iter() {
             let (key, upd) = key_upd.split();
-
-            if let Some(key_bound) = &key_bound {
-                if key < key_bound {
-                    // TODO: report lateness violation.
-                    continue;
-                }
-            }
 
             if !passes_filter(&key_filter, key) {
                 // TODO: report lateness violation.

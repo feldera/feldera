@@ -11,7 +11,7 @@ use crate::{
     },
     circuit_cache_key,
     dynamic::DataTrait,
-    trace::{Batch, BatchReader, Filter, Spine, Trace},
+    trace::{Batch, BatchReader, Filter, Spine, SpineSnapshot, Trace},
     Error, Timestamp,
 };
 use dyn_clone::clone_box;
@@ -113,8 +113,7 @@ impl<K: DataTrait + ?Sized, V: DataTrait + ?Sized> TraceBounds<K, V> {
     /// running the circuit.
     pub(crate) fn new() -> Self {
         Self(Rc::new(RefCell::new(TraceBoundsInner {
-            key_bounds: Vec::new(),
-            key_filter: None,
+            key_predicate: Predicate::Bounds(Vec::new()),
             val_predicate: Predicate::Bounds(Vec::new()),
         })))
     }
@@ -123,18 +122,22 @@ impl<K: DataTrait + ?Sized, V: DataTrait + ?Sized> TraceBounds<K, V> {
     /// being truncated.
     pub(crate) fn unbounded() -> Self {
         Self(Rc::new(RefCell::new(TraceBoundsInner {
-            key_bounds: vec![TraceBound::new()],
-            key_filter: None,
+            key_predicate: Predicate::Bounds(vec![TraceBound::new()]),
             val_predicate: Predicate::Bounds(vec![TraceBound::new()]),
         })))
     }
 
     pub(crate) fn add_key_bound(&self, bound: TraceBound<K>) {
-        self.0.borrow_mut().key_bounds.push(bound);
+        match &mut self.0.borrow_mut().key_predicate {
+            Predicate::Bounds(bounds) => bounds.push(bound),
+            Predicate::Filter(_) => {}
+        };
     }
 
+    /// Set key retainment condition.  Disables any key bounds
+    /// set using [`Self::add_key_bound`].
     pub(crate) fn set_key_filter(&self, filter: Filter<K>) {
-        self.0.borrow_mut().key_filter = Some(filter);
+        self.0.borrow_mut().key_predicate = Predicate::Filter(filter);
     }
 
     pub(crate) fn add_val_bound(&self, bound: TraceBound<V>) {
@@ -150,24 +153,25 @@ impl<K: DataTrait + ?Sized, V: DataTrait + ?Sized> TraceBounds<K, V> {
         self.0.borrow_mut().val_predicate = Predicate::Filter(filter);
     }
 
-    /// Compute effective key bound as the minimum of all individual
-    /// key bounds applied to the trace.
-    pub(crate) fn effective_key_bound(&self) -> Option<Box<K>> {
-        (*self.0)
-            .borrow()
-            .key_bounds
-            .iter()
-            .min()
-            .expect("At least one trace bound must be set")
-            .get()
-            .deref()
-            .as_ref()
-            .map(|bx| clone_box(bx.as_ref()))
-    }
-
-    /// Set key retainment condition.
-    pub(crate) fn key_filter(&self) -> Option<Filter<K>> {
-        (*self.0).borrow().key_filter.clone()
+    /// Returns effective key retention condition, computed as the
+    /// minimum bound installed using [`Self::add_val_bound`] or as the
+    /// condition installed using [`Self::set_val_filter`] (the latter
+    /// takes precedence).
+    pub(crate) fn effective_key_filter(&self) -> Option<Filter<K>> {
+        match &(*self.0).borrow().key_predicate {
+            Predicate::Bounds(bounds) => bounds
+                .iter()
+                .min()
+                .expect("At least one trace bound must be set")
+                .get()
+                .deref()
+                .as_ref()
+                .map(|bx| Arc::from(clone_box(bx.as_ref())))
+                .map(|bound: Arc<K>| {
+                    Box::new(move |k: &K| bound.as_ref().cmp(k) != Ordering::Greater) as Filter<K>
+                }),
+            Predicate::Filter(filter) => Some(filter.clone()),
+        }
     }
 
     /// Returns effective value retention condition, computed as the
@@ -202,16 +206,11 @@ enum Predicate<V: ?Sized> {
 }
 
 struct TraceBoundsInner<K: ?Sized + 'static, V: ?Sized + 'static> {
-    /// Key bounds.
-    key_bounds: Vec<TraceBound<K>>,
-    /// Key retainment condition (can be set at the same time as one
-    /// or more key bounds).
-    key_filter: Option<Filter<K>>,
+    /// Key bounds _or_ retainment condition.
+    key_predicate: Predicate<K>,
     /// Value bounds _or_ retainment condition.
     val_predicate: Predicate<V>,
 }
-
-// TODO: add infrastructure to compact the trace during slack time.
 
 /// A key-only [`Spine`] of `C`'s default batch type, with key and weight types
 /// taken from `B`.
@@ -583,20 +582,23 @@ pub trait TraceFeedback: Circuit {
 
 impl<C: Circuit> TraceFeedback for C {}
 
-impl<C, T> Stream<C, T>
+impl<C, B> Stream<C, Spine<B>>
 where
     C: Circuit,
-    T: Trace + 'static,
+    B: Batch,
 {
-    pub fn delay_trace(&self) -> Stream<C, T> {
+    pub fn delay_trace(&self) -> Stream<C, SpineSnapshot<B>> {
         // The delayed trace should be automatically created while the real trace is
         // created via `.trace()` or a similar function
         // FIXME: Create a trace if it doesn't exist
-        self.circuit()
+        let delayed_trace = self
+            .circuit()
             .cache_get_or_insert_with(DelayedTraceId::new(self.origin_node_id().clone()), || {
                 panic!("called `.delay_trace()` on a stream without a previously created trace")
             })
-            .clone()
+            .deref()
+            .clone();
+        delayed_trace.apply(|spine: &Spine<B>| spine.ro_snapshot())
     }
 }
 
@@ -764,7 +766,6 @@ pub struct Z1Trace<T: Trace> {
     root_scope: Scope,
     reset_on_clock_start: bool,
     bounds: TraceBounds<T::Key, T::Val>,
-    effective_key_bound: Option<Box<T::Key>>,
     // Handle to update the metric `total_size`.
     total_size_metric: Option<Gauge>,
 }
@@ -787,7 +788,6 @@ where
             root_scope,
             reset_on_clock_start,
             bounds,
-            effective_key_bound: None,
             total_size_metric: None,
         }
     }
@@ -919,14 +919,7 @@ where
 
         let dirty = i.dirty();
 
-        let effective_key_bound = self.bounds.effective_key_bound();
-        if effective_key_bound != self.effective_key_bound {
-            if let Some(bound) = &effective_key_bound {
-                i.truncate_keys_below(bound);
-            }
-        }
-        self.effective_key_bound = effective_key_bound.map(|b| clone_box(b.as_ref()));
-        if let Some(filter) = self.bounds.key_filter() {
+        if let Some(filter) = self.bounds.effective_key_filter() {
             i.retain_keys(filter);
         }
 

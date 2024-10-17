@@ -95,7 +95,6 @@ use crate::{
 };
 
 use crate::circuit::metrics::{COMPACTION_DURATION, COMPACTION_SIZE, TOTAL_COMPACTIONS};
-use crate::dynamic::{ClonableTrait, DeserializableDyn};
 use crate::storage::file::to_bytes;
 use crate::storage::{checkpoint_path, write_commit_metadata};
 use metrics::{counter, histogram};
@@ -122,7 +121,6 @@ pub(crate) struct CommittedSpine<B: Batch + Send + Sync> {
     pub upper: Vec<B::Time>,
     pub effort: u64,
     pub dirty: bool,
-    pub lower_key_bound: Option<Vec<u8>>,
 }
 
 impl<B: Batch + Send + Sync> From<&Spine<B>> for CommittedSpine<B> {
@@ -137,15 +135,6 @@ impl<B: Batch + Send + Sync> From<&Spine<B>> for CommittedSpine<B> {
             );
         });
 
-        // Transform the lower key bound into a serialized form and store it as a byte vector.
-        // This is necessary because the key type is not sized.
-        use crate::dynamic::rkyv::SerializeDyn;
-        let lower_key_bound_ser = value.lower_key_bound.as_ref().map(|b| {
-            let mut s: crate::trace::Serializer = crate::trace::Serializer::default();
-            b.serialize(&mut s).unwrap();
-            s.into_serializer().into_inner().to_vec()
-        });
-
         CommittedSpine {
             batches,
             merged: Vec::new(),
@@ -153,7 +142,6 @@ impl<B: Batch + Send + Sync> From<&Spine<B>> for CommittedSpine<B> {
             upper: value.upper.clone().into(),
             effort: value.effort as u64,
             dirty: value.dirty,
-            lower_key_bound: lower_key_bound_ser,
         }
     }
 }
@@ -172,8 +160,6 @@ where
     upper: Antichain<B::Time>,
     effort: usize,
     dirty: bool,
-    #[size_of(skip)]
-    lower_key_bound: Option<Box<B::Key>>,
     #[size_of(skip)]
     key_filter: Option<Filter<B::Key>>,
     #[size_of(skip)]
@@ -335,24 +321,6 @@ where
     /*fn consumer(self) -> Self::Consumer {
         todo!()
     }*/
-
-    fn truncate_keys_below(&mut self, lower_bound: &Self::Key) {
-        self.complete_merges();
-
-        if let Some(bound) = &mut self.lower_key_bound {
-            if bound.as_ref() < lower_bound {
-                lower_bound.clone_to(&mut *bound);
-            }
-        } else {
-            let mut bound = self.key_factory().default_box();
-            lower_bound.clone_to(&mut *bound);
-            self.lower_key_bound = Some(bound);
-        };
-        let mut bound = self.factories.key_factory().default_box();
-        self.lower_key_bound.as_ref().unwrap().clone_to(&mut *bound);
-
-        self.map_batches_mut(|batch| batch.truncate_keys_below(&bound));
-    }
 
     fn sample_keys<RG>(&self, rng: &mut RG, sample_size: usize, sample: &mut DynVec<Self::Key>)
     where
@@ -727,17 +695,13 @@ where
     // Ideally, this method acts as insertion of `batch`, even if we are not yet
     // able to begin merging the batch. This means it is a good time to perform
     // amortized work proportional to the size of batch.
-    fn insert(&mut self, mut batch: Self::Batch) {
+    fn insert(&mut self, batch: Self::Batch) {
         assert!(batch.lower() != batch.upper());
 
         // Ignore empty batches.
         // Note: we may want to use empty batches to artificially force compaction.
         if batch.is_empty() {
             return;
-        }
-
-        if let Some(bound) = &self.lower_key_bound {
-            batch.truncate_keys_below(bound);
         }
 
         self.dirty = true;
@@ -812,11 +776,6 @@ where
         self.upper = Antichain::from(committed.upper);
         self.effort = committed.effort as usize;
         self.dirty = committed.dirty;
-        if let Some(bytes) = committed.lower_key_bound {
-            let mut default_box = self.factories.key_factory().default_box();
-            unsafe { default_box.deserialize_from_bytes(&bytes, 0) };
-            self.lower_key_bound = Some(default_box);
-        }
         self.key_filter = None;
         self.value_filter = None;
         for batch in committed.batches {
@@ -833,11 +792,6 @@ impl<B> Spine<B>
 where
     B: Batch + Send + Sync,
 {
-    #[inline]
-    fn key_factory(&self) -> &'static dyn Factory<B::Key> {
-        self.factories.key_factory()
-    }
-
     /// True iff there is at most one non-empty batch in `self.merging`.
     ///
     /// When true, there is no maintenance work to perform in the trace, other
@@ -893,7 +847,6 @@ where
             merging: Vec::new(),
             effort,
             dirty: false,
-            lower_key_bound: None,
             key_filter: None,
             value_filter: None,
         }

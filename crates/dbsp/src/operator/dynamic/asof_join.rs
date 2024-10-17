@@ -1,7 +1,7 @@
 use std::{borrow::Cow, cmp::Ordering, marker::PhantomData, panic::Location};
 
 use crate::{
-    algebra::{IndexedZSet, IndexedZSetReader, OrdIndexedZSet, OrdZSet, ZCursor, ZTrace},
+    algebra::{IndexedZSet, IndexedZSetReader, OrdIndexedZSet, OrdZSet, ZBatchReader, ZCursor},
     circuit::{
         metadata::OperatorLocation,
         operator_traits::{Operator, QuaternaryOperator},
@@ -183,9 +183,9 @@ pub struct AsofJoin<TS, I1, T1, I2, T2, Z>
 where
     TS: DataTrait + ?Sized,
     I1: IndexedZSet,
-    T1: ZTrace,
+    T1: ZBatchReader,
     I2: IndexedZSet,
-    T2: ZTrace,
+    T2: ZBatchReader,
     Z: IndexedZSet,
 {
     factories: AsofJoinFactories<TS, I1, I2, Z>,
@@ -201,9 +201,9 @@ impl<TS, I1, T1, I2, T2, Z> AsofJoin<TS, I1, T1, I2, T2, Z>
 where
     TS: DataTrait + ?Sized,
     I1: IndexedZSet,
-    T1: ZTrace,
+    T1: ZBatchReader,
     I2: IndexedZSet<Key = I1::Key>,
-    T2: ZTrace,
+    T2: ZBatchReader,
     Z: IndexedZSet,
 {
     pub fn new(
@@ -506,9 +506,9 @@ impl<TS, I1, T1, I2, T2, Z> Operator for AsofJoin<TS, I1, T1, I2, T2, Z>
 where
     TS: DataTrait + ?Sized,
     I1: IndexedZSet,
-    T1: ZTrace,
+    T1: ZBatchReader,
     I2: IndexedZSet,
-    T2: ZTrace,
+    T2: ZBatchReader,
     Z: IndexedZSet,
 {
     fn name(&self) -> Cow<'static, str> {
@@ -555,9 +555,9 @@ impl<TS, I1, T1, I2, T2, Z> QuaternaryOperator<I1, T1, I2, T2, Z>
 where
     TS: DataTrait + ?Sized,
     I1: IndexedZSet,
-    T1: ZTrace<Key = I1::Key, Val = I1::Val, Time = ()> + Clone,
+    T1: ZBatchReader<Key = I1::Key, Val = I1::Val, Time = ()> + Clone,
     I2: IndexedZSet<Key = I1::Key>,
-    T2: ZTrace<Key = I2::Key, Val = I2::Val, Time = ()> + Clone,
+    T2: ZBatchReader<Key = I2::Key, Val = I2::Val, Time = ()> + Clone,
     Z: IndexedZSet,
 {
     fn eval<'a>(

@@ -322,17 +322,10 @@ where
         let mut builder = B::Builder::with_capacity(&self.batch_factories, (), updates.len() * 2);
 
         let val_filter = self.bounds.effective_val_filter();
-        let key_filter = self.bounds.key_filter();
-        let key_bound = self.bounds.effective_key_bound();
+        let key_filter = self.bounds.effective_key_filter();
 
         for kv in updates.dyn_iter() {
             let (key, val) = kv.split();
-
-            if let Some(key_bound) = &key_bound {
-                if key < key_bound {
-                    continue;
-                }
-            }
 
             if let Some(key_filter) = &key_filter {
                 if !key_filter(key) {

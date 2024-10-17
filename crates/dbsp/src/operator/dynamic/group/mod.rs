@@ -2,7 +2,7 @@
 //! into multiple output records.
 
 use crate::{
-    algebra::{HasZero, IndexedZSet, OrdIndexedZSet, ZCursor, ZTrace},
+    algebra::{HasZero, IndexedZSet, OrdIndexedZSet, ZBatchReader, ZCursor, ZTrace},
     circuit::{
         operator_traits::{Operator, TernaryOperator},
         Scope,
@@ -384,7 +384,7 @@ where
 impl<B, OB, T, OT> TernaryOperator<B, T, OT, OB> for GroupTransform<B, OB, T, OT>
 where
     B: IndexedZSet,
-    T: ZTrace<Key = B::Key, Val = B::Val, Time = ()> + Clone,
+    T: ZBatchReader<Key = B::Key, Val = B::Val, Time = ()> + Clone,
     OB: IndexedZSet<Key = B::Key>,
     OT: ZTrace<Key = B::Key, Val = OB::Val, Time = ()> + Clone,
 {

@@ -195,19 +195,6 @@ where
     }
 }
 
-impl<K, L, O> Layer<K, L, O>
-where
-    K: DataTrait + ?Sized,
-    L: Trie,
-    O: OrdOffset,
-{
-    /// Truncate layer at the first key greater than or equal to `lower_bound`.
-    pub fn truncate_keys_below(&mut self, lower_bound: &K) {
-        let index = self.keys.advance_to(0, self.keys.len(), lower_bound);
-        self.truncate_below(index);
-    }
-}
-
 impl<K, L, O> NumEntries for Layer<K, L, O>
 where
     K: DataTrait + ?Sized,
@@ -339,19 +326,6 @@ where
                 pos: 0,
             }
         }
-    }
-
-    fn lower_bound(&self) -> usize {
-        self.lower_bound
-    }
-
-    fn truncate_below(&mut self, lower_bound: usize) {
-        if lower_bound > self.lower_bound {
-            self.lower_bound = min(lower_bound, self.keys.len());
-        }
-
-        let vals_bound = self.offs[self.lower_bound];
-        self.vals.truncate_below(vals_bound.into_usize());
     }
 }
 

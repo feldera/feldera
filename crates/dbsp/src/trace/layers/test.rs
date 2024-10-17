@@ -207,58 +207,6 @@ where
     result
 }
 
-// Map-based implementations for `truncate_below`.
-pub(crate) fn truncate_map1<T, R>(map: &Map1<T, R>, lower_bound: usize) -> Map1<T, R>
-where
-    T: DBData,
-    R: DBData,
-{
-    map.iter()
-        .skip(lower_bound)
-        .map(|(k, v)| (k.clone(), v.clone()))
-        .collect()
-}
-
-pub(crate) fn truncate_map2<K, T, R>(map: &Map2<K, T, R>, lower_bound: usize) -> Map2<K, T, R>
-where
-    K: DBData,
-    T: DBData,
-    R: DBData,
-{
-    map.iter()
-        .skip(lower_bound)
-        .map(|(k, vals)| (k.clone(), vals.clone()))
-        .collect()
-}
-
-pub(crate) fn truncate_map3<K, V, T, R>(
-    map: &Map3<K, V, T, R>,
-    lower_bound: usize,
-) -> Map3<K, V, T, R>
-where
-    K: DBData,
-    V: DBData,
-    T: DBData,
-    R: DBData,
-{
-    map.iter()
-        .skip(lower_bound)
-        .map(|(k, vals)| (k.clone(), vals.clone()))
-        .collect()
-}
-
-// Map-based implementations for `truncate_below`.
-/*fn retain_map1<T, R, F>(map: &mut Map1<T, R>, retain: F)
-where
-    T: DBData,
-    R: DBData,
-    F: Fn(&T, &R) -> bool,
-{
-    map.retain(|k, v| retain(k, v));
-}
-
- */
-
 type Trie1 /* <T, R> */ = Leaf<DynData, DynWeight>;
 type Trie2 /* <K, T, R> */ = Layer<DynData, Trie1>;
 type Trie3 /* <K, V, T, R> */ = Layer<DynData, Trie2>;
@@ -596,20 +544,9 @@ fn test_trie1<T, R, F, L>(
     assert_eq_trie_map1(&right_trie, &right_map, trie_to_map);
 
     // Merge produces identical results.
-    let mut merged_trie = left_trie.merge(&right_trie);
+    let merged_trie = left_trie.merge(&right_trie);
     let merged_map = merge_map1(&left_map, &right_map);
     assert_eq_trie_map1(&merged_trie, &merged_map, trie_to_map);
-
-    // Truncate tries at the start, middle, and end.
-    for lower_bound in [0, merged_trie.keys() >> 1, merged_trie.keys()] {
-        println!("lower_bound: {lower_bound}");
-        merged_trie.truncate_below(lower_bound);
-        assert_eq_trie_map1(
-            &merged_trie,
-            &truncate_map1(&merged_map, lower_bound),
-            trie_to_map,
-        );
-    }
 }
 
 fn test_trie2<K, T, R, F, L>(
@@ -634,18 +571,9 @@ fn test_trie2<K, T, R, F, L>(
 
     assert_eq_trie_map2(&right_trie, &right_map, trie_to_map);
 
-    let mut merged_trie = left_trie.merge(&right_trie);
+    let merged_trie = left_trie.merge(&right_trie);
     let merged_map = merge_map2(&left_map, &right_map);
     assert_eq_trie_map2(&merged_trie, &merged_map, trie_to_map);
-
-    for lower_bound in [0, merged_trie.keys() >> 1, merged_trie.keys()] {
-        merged_trie.truncate_below(lower_bound);
-        assert_eq_trie_map2(
-            &merged_trie,
-            &truncate_map2(&merged_map, lower_bound),
-            trie_to_map,
-        );
-    }
 }
 
 fn test_trie3<K, V, T, R, F>(
@@ -669,18 +597,9 @@ fn test_trie3<K, V, T, R, F>(
 
     assert_eq_trie_map3(&right_trie, &right_map, trie_to_map);
 
-    let mut merged_trie = left_trie.merge(&right_trie);
+    let merged_trie = left_trie.merge(&right_trie);
     let merged_map = merge_map3(&left_map, &right_map);
     assert_eq_trie_map3(&merged_trie, &merged_map, trie_to_map);
-
-    for lower_bound in [0, merged_trie.keys() >> 1, merged_trie.keys()] {
-        merged_trie.truncate_below(lower_bound);
-        assert_eq_trie_map3(
-            &merged_trie,
-            &truncate_map3(&merged_map, lower_bound),
-            trie_to_map,
-        );
-    }
 }
 
 proptest! {

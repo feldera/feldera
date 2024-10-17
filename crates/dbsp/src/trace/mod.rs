@@ -49,7 +49,7 @@ pub mod cursor;
 pub mod layers;
 pub mod ord;
 pub mod spine_async;
-pub use spine_async::Spine;
+pub use spine_async::{Spine, SpineSnapshot};
 
 mod spine_fueled;
 pub use spine_fueled::Spine as OldSpine;
@@ -366,12 +366,6 @@ where
     /// All times in the batch are not greater or equal to any element of
     /// `upper`.
     fn upper(&self) -> AntichainRef<'_, Self::Time>;
-
-    /// Remove keys smaller than `lower_bound` from the batch.
-    ///
-    /// The removed tuples may not get deallocated instantly but they won't
-    /// appear when iterating over the batch.
-    fn truncate_keys_below(&mut self, lower_bound: &Self::Key);
 
     /// Returns a uniform random sample of distincts keys from the batch.
     ///

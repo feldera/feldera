@@ -106,7 +106,7 @@ pub trait Trie: Sized {
 
     /// Returns a cursor capable of navigating the collection.
     fn cursor(&self) -> Self::Cursor<'_> {
-        self.cursor_from(self.lower_bound(), self.lower_bound() + self.keys())
+        self.cursor_from(0, self.keys())
     }
 
     /// Returns a cursor over a range of data, commonly used by others to
@@ -125,26 +125,6 @@ pub trait Trie: Sized {
         merger.push_merge(self.cursor(), other.cursor());
         merger.done()
     }
-
-    /// Informs the trie that keys below `lower_bound` will no longer be
-    /// accessed.
-    ///
-    /// This operation affects the behavior of the trie in two ways:
-    ///
-    /// * The default cursor returned by the [`Self::cursor`] method starts
-    ///   iterating from this bound and not from the start of the trie.
-    /// * Merging two tries using [`Self::merge`] does not include truncated
-    ///   tuples in the result.
-    ///
-    /// This operation is ignored if `lower_bound` is less than or equal to
-    /// the bound specified in an earlier call to this method.
-    fn truncate_below(&mut self, lower_bound: usize);
-
-    /// Returns the current value of the lower bound.
-    ///
-    /// The result is equal to the largest bound specified via
-    /// [`Self::truncate_below`] or 0 if `truncate_below` was never called.
-    fn lower_bound(&self) -> usize;
 }
 
 /// A type used to assemble collections.
@@ -316,10 +296,6 @@ impl Trie for () {
     }
     fn cursor_from(&self, _lower: usize, _upper: usize) -> Self::Cursor<'_> {}
     fn merge(&self, _other: &Self) -> Self {}
-    fn truncate_below(&mut self, _lower_bound: usize) {}
-    fn lower_bound(&self) -> usize {
-        0
-    }
 }
 
 impl Builder for () {

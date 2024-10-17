@@ -347,10 +347,6 @@ impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> BatchReader for VecWSet<K, 
         AntichainRef::empty()
     }
 
-    fn truncate_keys_below(&mut self, lower_bound: &Self::Key) {
-        self.layer.truncate_keys_below(lower_bound);
-    }
-
     fn sample_keys<RG>(&self, rng: &mut RG, sample_size: usize, sample: &mut DynVec<Self::Key>)
     where
         RG: Rng,

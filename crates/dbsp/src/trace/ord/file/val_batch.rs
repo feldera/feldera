@@ -195,7 +195,6 @@ where
     factories: FileValBatchFactories<K, V, T, R>,
     #[size_of(skip)]
     pub file: RawValBatch<K, V, T, R>,
-    pub lower_bound: usize,
     pub lower: Antichain<T>,
     pub upper: Antichain<T>,
 }
@@ -211,7 +210,6 @@ where
         Self {
             factories: self.factories.clone(),
             file: self.file.clone(),
-            lower_bound: self.lower_bound,
             lower: self.lower.clone(),
             upper: self.upper.clone(),
         }
@@ -274,7 +272,7 @@ where
     }
 
     fn key_count(&self) -> usize {
-        self.file.rows().len() as usize - self.lower_bound
+        self.file.rows().len() as usize
     }
 
     fn len(&self) -> usize {
@@ -296,15 +294,6 @@ where
 
     fn upper(&self) -> AntichainRef<'_, T> {
         self.upper.as_ref()
-    }
-
-    fn truncate_keys_below(&mut self, lower_bound: &Self::Key) {
-        let mut cursor = self.file.rows().before();
-        unsafe { cursor.advance_to_value_or_larger(lower_bound) }.unwrap();
-        let lower_bound = cursor.absolute_position() as usize;
-        if lower_bound > self.lower_bound {
-            self.lower_bound = lower_bound;
-        }
     }
 
     fn sample_keys<RG>(&self, rng: &mut RG, sample_size: usize, output: &mut DynVec<Self::Key>)
@@ -399,7 +388,6 @@ where
         let file = Reader::open(&[&any_factory0, &any_factory1], &Runtime::storage(), path)?;
         Ok(Self {
             factories: factories.clone(),
-            lower_bound: 0,
             file,
             lower: Antichain::new(),
             upper: Antichain::new(),
@@ -626,8 +614,8 @@ where
             Parameters::default(),
         )
         .unwrap();
-        let mut cursor1 = source1.file.rows().nth(source1.lower_bound as u64).unwrap();
-        let mut cursor2 = source2.file.rows().nth(source2.lower_bound as u64).unwrap();
+        let mut cursor1 = source1.file.rows().nth(0).unwrap();
+        let mut cursor2 = source2.file.rows().nth(0).unwrap();
         self.factories.factories0.key_factory.with(&mut |tmp_key1| {
             self.factories
                 .factories0
@@ -700,7 +688,6 @@ where
                 .result
                 .take()
                 .unwrap_or(Reader::empty(&Runtime::storage()).unwrap()),
-            lower_bound: 0,
             lower: self.lower,
             upper: self.upper,
         }
@@ -790,12 +777,7 @@ where
     R: WeightTrait + ?Sized,
 {
     fn new(batch: &'s FileValBatch<K, V, T, R>) -> Self {
-        let key_cursor = batch
-            .file
-            .rows()
-            .subset(batch.lower_bound as u64..)
-            .first()
-            .unwrap();
+        let key_cursor = batch.file.rows().first().unwrap();
         let val_cursor = key_cursor.next_column().unwrap().first().unwrap();
         let mut key = batch.factories.factories0.key_factory.default_box();
         let mut val = batch.factories.factories1.key_factory.default_box();
@@ -1071,7 +1053,6 @@ where
         FileValBatch {
             factories: self.factories,
             file: self.writer.into_reader().unwrap(),
-            lower_bound: 0,
             lower,
             upper,
         }
@@ -1136,7 +1117,6 @@ where
         FileValBatch {
             factories: self.factories,
             file: self.writer.into_reader().unwrap(),
-            lower_bound: 0,
             lower: Antichain::from_elem(self.time),
             upper,
         }

@@ -355,13 +355,6 @@ where
         AntichainRef::empty()
     }
 
-    fn truncate_keys_below(&mut self, lower_bound: &Self::Key) {
-        match &mut self.inner {
-            Inner::File(file) => file.truncate_keys_below(lower_bound),
-            Inner::Vec(vec) => vec.truncate_keys_below(lower_bound),
-        }
-    }
-
     fn sample_keys<RG>(&self, rng: &mut RG, sample_size: usize, sample: &mut DynVec<Self::Key>)
     where
         RG: Rng,
