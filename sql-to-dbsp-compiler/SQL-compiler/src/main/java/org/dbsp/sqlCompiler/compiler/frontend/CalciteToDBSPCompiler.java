@@ -114,8 +114,10 @@ import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.RelColumnMetadata;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.parser.PropertyList;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateView;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateTable;
+import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlFragment;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateFunctionStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateTableStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateTypeStatement;
@@ -2569,6 +2571,13 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 .newline();
         this.go(rel);
         DBSPOperator op = this.getOperator(rel);
+        if (view.emitFinalColumn() >= 0 && this.options.languageOptions.optimizationLevel < 2) {
+            PropertyList properties = Objects.requireNonNull(view.getProperties());
+            SqlFragment value = Objects.requireNonNull(properties.getPropertyKey("emit_only"));
+            throw new UnsupportedException("The 'emit_only' annotation can only be used with " +
+                    " optimization level 2 or higher in the compiler",
+                    CalciteObject.create(value.getParserPosition()));
+        }
 
         // The operator above may not contain all columns that were computed.
         RelRoot root = view.getRoot();
@@ -2632,7 +2641,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
             }
         }
 
-        ViewMetadata meta = new ViewMetadata(additionalMetadata, view.viewKind);
+        int emitFinalIndex = view.emitFinalColumn();
+        ViewMetadata meta = new ViewMetadata(additionalMetadata, view.viewKind, emitFinalIndex);
         if (view.viewKind != SqlCreateView.ViewKind.LOCAL) {
             this.metadata.addView(view);
             // Create two operators chained, a ViewOperator and a SinkOperator.

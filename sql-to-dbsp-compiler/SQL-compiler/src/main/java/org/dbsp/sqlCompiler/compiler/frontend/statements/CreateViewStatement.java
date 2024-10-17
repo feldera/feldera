@@ -27,9 +27,14 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.RelRoot;
+import org.apache.calcite.sql.SqlIdentifier;
+import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.RelColumnMetadata;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.PropertyList;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateView;
+import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlFragment;
+import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.List;
@@ -41,6 +46,8 @@ public class CreateViewStatement extends CreateRelationStatement {
     private final RelRoot compiled;
     public final SqlCreateView createView;
     public final SqlCreateView.ViewKind viewKind;
+    public static final String EMIT_FINAL = "emit_final";
+    public static final int NO_COLUMN = -1;
 
     public CreateViewStatement(SqlCreateView node, String statement, String tableName,
                                boolean nameIsQuoted,
@@ -67,5 +74,24 @@ public class CreateViewStatement extends CreateRelationStatement {
         ObjectNode object = (ObjectNode) node;
         object.put("materialized", viewKind == SqlCreateView.ViewKind.MATERIALIZED);
         return object;
+    }
+
+    /** Column number specified by "emit_final" annotation.  -1 if no such annotation */
+    public int emitFinalColumn() {
+        if (this.properties == null)
+            return NO_COLUMN;
+        SqlFragment val = this.properties.getPropertyValue(EMIT_FINAL);
+        if (val == null)
+            return NO_COLUMN;
+        try {
+            int index = Integer.parseInt(val.getString());
+            if (index >= 0 && index < this.columns.size())
+                return index;
+            throw new CompilationError("View " + Utilities.singleQuote(relationName) +
+                    " does not have a column with number " + index,
+                    CalciteObject.create(val.getParserPosition()));
+        } catch (NumberFormatException ignored) {}
+
+        return this.getColumnIndex(new SqlIdentifier(val.getString(), val.getParserPosition()));
     }
 }
