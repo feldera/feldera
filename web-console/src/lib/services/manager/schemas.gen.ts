@@ -1705,46 +1705,39 @@ runner and observed by the API client via the \`GET /v0/pipelines/{name}\` endpo
 
 ### The lifecycle of a pipeline
 
-The following automaton captures the lifecycle of the pipeline.  Individual
-states and transitions of the automaton are described below.
+The following automaton captures the lifecycle of the pipeline.
+Individual states and transitions of the automaton are described below.
 
-* In addition to the transitions shown in the diagram, all states have an
-implicit "forced shutdown" transition to the \`Shutdown\` state.  This
-transition is triggered when the pipeline runner is unable to communicate
-with the pipeline and thereby forces a shutdown.
-
-* States labeled with the hourglass symbol (⌛) are **timed** states.  The
+* States labeled with the hourglass symbol (⌛) are **timed** states. The
 automaton stays in timed state until the corresponding operation completes
-or until the runner performs a forced shutdown of the pipeline after a
-pre-defined timeout period.
+or until it transitions to become failed after the pre-defined timeout
+period expires.
 
 * State transitions labeled with API endpoint names (\`/start\`, \`/pause\`,
 \`/shutdown\`) are triggered by invoking corresponding endpoint,
-e.g., \`POST /v0/pipelines/{name}/start\`.
+e.g., \`POST /v0/pipelines/{name}/start\`. Note that these only express
+desired state, and are applied asynchronously by the automata.
 
 \`\`\`text
-Shutdown◄────┐
-│         │
-/deploy│         │
-│   ⌛ShuttingDown
-▼         ▲
-⌛Provisioning     │
-│         │
-│         │
-▼         │/shutdown
-⌛Initializing     │
-│         │
-┌────────┴─────────┴─┐
-│        ▼           │
-│      Paused        │
-│      │    ▲        │
-│/start│    │/pause  │
-│      ▼    │        │
-│     Running        │
-└──────────┬─────────┘
-│
-▼
-Failed
+Shutdown◄────────────────────┐
+│                        │
+/start or /pause│                    ShuttingDown ◄────── Failed
+│                        ▲                  ▲
+▼              /shutdown │                  │
+⌛Provisioning ──────────────────┤        Shutdown, Provisioning,
+│                        │        Initializing, Paused,
+│                        │         Running, Unavailable
+▼                        │    (all states except ShuttingDown
+⌛Initializing ──────────────────┤      can transition to Failed)
+│                        │
+┌─────────┼────────────────────────┴─┐
+│         ▼                          │
+│       Paused  ◄──────► Unavailable │
+│       │    ▲                ▲      │
+│ /start│    │/pause          │      │
+│       ▼    │                │      │
+│      Running ◄──────────────┘      │
+└────────────────────────────────────┘
 \`\`\`
 
 ### Desired and actual status
@@ -1762,14 +1755,23 @@ These statuses are selected by invoking REST endpoints shown
 in the diagram.
 
 The user can monitor the current state of the pipeline via the
-\`GET /v0/pipelines/{name}\` endpoint, which returns an object of type \`ExtendedPipelineDescr\`.
-In a typical scenario, the user first sets
-the desired state, e.g., by invoking the \`/deploy\` endpoint, and
-then polls the \`GET /v0/pipelines/{name}\` endpoint to monitor the actual status
-of the pipeline until its \`deployment_status\` attribute changes
-to "paused" indicating that the pipeline has been successfully
-initialized, or "failed", indicating an error.`,
-  enum: ['Shutdown', 'Provisioning', 'Initializing', 'Paused', 'Running', 'ShuttingDown', 'Failed']
+\`GET /v0/pipelines/{name}\` endpoint, which returns an object of type
+\`ExtendedPipelineDescr\`. In a typical scenario, the user first sets
+the desired state, e.g., by invoking the \`/start\` endpoint, and
+then polls the \`GET /v0/pipelines/{name}\` endpoint to monitor the
+actual status of the pipeline until its \`deployment_status\` attribute
+changes to "running" indicating that the pipeline has been successfully
+initialized and is processing data, or "failed", indicating an error.`,
+  enum: [
+    'Shutdown',
+    'Provisioning',
+    'Initializing',
+    'Paused',
+    'Running',
+    'Unavailable',
+    'Failed',
+    'ShuttingDown'
+  ]
 } as const
 
 export const $ProgramConfig = {

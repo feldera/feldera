@@ -19,6 +19,7 @@
       .with('Compiling sql', () => '')
       .with('Queued', () => '')
       .with('Compiling bin', () => '')
+      .with('Unavailable', () => 'bg-orange-300 dark:bg-orange-700')
       .with({ SqlError: P.any }, { RustError: P.any }, { SystemError: P.any }, () => '')
       .exhaustive()
   )
