@@ -105,7 +105,7 @@ public class Simplify extends InnerRewriteVisitor {
         super.endVisit();
         Logger.INSTANCE.belowLevel(this, 1)
                 .append("Result is ")
-                .append(this.lastResult != null ? this.lastResult.toString() : "")
+                .appendSupplier(() -> (this.lastResult != null ? this.lastResult.toString() : ""))
                 .newline();
     }
 

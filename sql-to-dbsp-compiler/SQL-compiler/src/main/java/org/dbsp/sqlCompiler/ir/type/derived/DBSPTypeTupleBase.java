@@ -24,8 +24,13 @@
 package org.dbsp.sqlCompiler.ir.type.derived;
 
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
+import org.dbsp.sqlCompiler.compiler.frontend.ExpressionCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
+import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.util.Linq;
@@ -96,5 +101,19 @@ public abstract class DBSPTypeTupleBase extends DBSPType {
         fields.addAll(Arrays.asList(this.tupFields));
         fields.addAll(Arrays.asList(other.tupFields));
         return this.makeType(fields);
+    }
+
+    /** Generates a closure that computes a binary operation pairwise of two tuple timestamps fieldwise */
+    public DBSPClosureExpression pairwiseOperation(CalciteObject node, DBSPOpcode code) {
+        DBSPVariablePath left = this.ref().var();
+        DBSPVariablePath right = this.ref().var();
+        List<DBSPExpression> maxes = new ArrayList<>();
+        for (int i = 0; i < this.size(); i++) {
+            DBSPType ftype = this.tupFields[i];
+            maxes.add(ExpressionCompiler.makeBinaryExpression(node, ftype, code,
+                    left.deref().field(i), right.deref().field(i)));
+        }
+        DBSPExpression max = new DBSPTupleExpression(maxes, false);
+        return max.closure(left.asParameter(), right.asParameter());
     }
 }

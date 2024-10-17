@@ -17,7 +17,7 @@ import java.util.Objects;
  * where the synthesized function
  * returns None when filter(function) is false, and Some(map(function))
  * otherwise. */
-public final class DBSPJoinFilterMapOperator extends DBSPBinaryOperator {
+public final class DBSPJoinFilterMapOperator extends DBSPJoinBaseOperator {
     // If the following is null, the function represents the combined function/filter
     // and the function returns Option.
     @Nullable
@@ -34,10 +34,6 @@ public final class DBSPJoinFilterMapOperator extends DBSPBinaryOperator {
         this.filter = filter;
         this.map = map;
         assert left.getOutputIndexedZSetType().keyType.sameType(right.getOutputIndexedZSetType().keyType);
-    }
-
-    public DBSPType getKeyType() {
-        return this.left().getOutputIndexedZSetType().keyType;
     }
 
     public DBSPExpression getFilter() {

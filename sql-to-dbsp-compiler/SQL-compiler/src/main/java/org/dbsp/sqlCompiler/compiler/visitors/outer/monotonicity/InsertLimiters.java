@@ -1113,19 +1113,8 @@ public class InsertLimiters extends CircuitCloneVisitor {
         this.markBound(expanded, limiter);
     }
 
-    /** Generates a closure that computes the max of two tuple timestamps fieldwise */
-    public static DBSPClosureExpression timestampMax(CalciteObject node, DBSPTypeTupleBase type) {
-        // Generate the max function for the timestamp tuple
-        DBSPVariablePath left = type.ref().var();
-        DBSPVariablePath right = type.ref().var();
-        List<DBSPExpression> maxes = new ArrayList<>();
-        for (int i = 0; i < type.size(); i++) {
-            DBSPType ftype = type.tupFields[i];
-            maxes.add(ExpressionCompiler.makeBinaryExpression(node, ftype, DBSPOpcode.MAX,
-                    left.deref().field(i), right.deref().field(i)));
-        }
-        DBSPExpression max = new DBSPTupleExpression(maxes, false);
-        return max.closure(left.asParameter(), right.asParameter());
+    static DBSPClosureExpression timestampMax(CalciteObject node, DBSPTypeTupleBase type) {
+        return type.pairwiseOperation(node, DBSPOpcode.MAX);
     }
 
     /** Generate an expression that compares two other expressions for equality */

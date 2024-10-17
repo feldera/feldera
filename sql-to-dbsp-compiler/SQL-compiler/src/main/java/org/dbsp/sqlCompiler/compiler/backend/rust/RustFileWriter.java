@@ -3,7 +3,6 @@ package org.dbsp.sqlCompiler.compiler.backend.rust;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
-import org.dbsp.sqlCompiler.compiler.visitors.inner.BetaReduction;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitRewriter;
 import org.dbsp.sqlCompiler.ir.DBSPFunction;
@@ -383,32 +382,25 @@ public class RustFileWriter {
     }
 
     public void write(DBSPCompiler compiler) {
-        // Lower the circuits
-        CircuitRewriter reducer = new BetaReduction(compiler).getCircuitVisitor();
-        List<IDBSPNode> lowered = new ArrayList<>();
+        List<IDBSPNode> objects = new ArrayList<>();
         FindResources findResources = new FindResources(compiler);
         CircuitRewriter findCircuitResources = findResources.getCircuitVisitor();
-        LowerCircuitVisitor lower = new LowerCircuitVisitor(compiler);
 
         for (IDBSPNode node: this.toWrite) {
             IDBSPInnerNode inner = node.as(IDBSPInnerNode.class);
             if (inner != null) {
                 inner.accept(findResources);
-                lowered.add(inner);
+                objects.add(inner);
             } else {
                 DBSPCircuit outer = node.to(DBSPCircuit.class);
-                // Lowering implements aggregates and inlines some calls.
-                outer = lower.apply(outer);
-                // Beta reduction is beneficial after implementing aggregates.
-                outer = reducer.apply(outer);
                 // Find the resources used to generate the correct Rust preamble
                 outer = findCircuitResources.apply(outer);
-                lowered.add(outer);
+                objects.add(outer);
             }
         }
         // Emit code
         this.outputStream.println(generatePreamble(compiler, used));
-        for (IDBSPNode node: lowered) {
+        for (IDBSPNode node: objects) {
             String str;
             IDBSPInnerNode inner = node.as(IDBSPInnerNode.class);
             if (inner != null) {

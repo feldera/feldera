@@ -47,12 +47,12 @@ public class StreamingTests extends StreamingTestBase {
 
     @Test @Ignore("https://github.com/feldera/feldera/issues/69")
     public void temporalAppendOnly() {
+        this.showFinalVerbose();
         String sql = """
                 CREATE TABLE T(TS INT) WITH ('append_only' = 'true');
                 CREATE VIEW V AS
-                SELECT * FROM T WHERE TS < (SELECT MAX(TS) - 1 FROM T);""";
+                SELECT * FROM T WHERE TS < (SELECT MAX(TS * 2) - 1 FROM T);""";
         var ccs = this.getCCS(sql);
-        this.addRustTestCase(ccs);
     }
 
     @Test
@@ -78,11 +78,9 @@ public class StreamingTests extends StreamingTestBase {
                     l.id = r.id and
                     r.ts = l.ts;
 
-                CREATE VIEW agg1 as\s
-                SELECT
-                    MAX(id)
-                FROM
-                    v
+                CREATE VIEW agg1 as
+                SELECT MAX(id)
+                FROM v
                 GROUP BY lts;""";
         CompilerCircuitStream ccs = this.getCCS(sql);
         CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
@@ -99,6 +97,7 @@ public class StreamingTests extends StreamingTestBase {
             }
         };
         visitor.apply(ccs.circuit);
+        this.addRustTestCase(ccs);
     }
 
     @Test

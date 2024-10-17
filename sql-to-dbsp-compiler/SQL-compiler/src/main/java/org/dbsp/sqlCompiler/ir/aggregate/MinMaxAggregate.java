@@ -1,61 +1,29 @@
 package org.dbsp.sqlCompiler.ir.aggregate;
 
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
-import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
-import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
-import org.dbsp.sqlCompiler.ir.IDBSPNode;
+import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
-import org.dbsp.util.IIndentStream;
 
-public class MinMaxAggregate extends AggregateBase {
-    // TODO
-    public MinMaxAggregate(CalciteObject node, DBSPType type) {
-        super(node, type);
-    }
+/** Representation of an aggregate that is a call to a Min or Max function.
+ * In some cases this will be treated as a NonLinearAggregate, in other cases
+ * it is handled specially. */
+public class MinMaxAggregate extends NonLinearAggregate {
+    public final boolean isMin;
+    /** An expression that refers to the row variable.  The row variable is
+     * the second parameter of the 'increment' closure. */
+    public final DBSPExpression aggregatedValue;
 
-    @Override
-    public void validate() {
-
-    }
-
-    @Override
-    public DBSPExpression getEmptySetResult() {
-        return null;
-    }
-
-    @Override
-    public boolean isLinear() {
-        return false;
+    public MinMaxAggregate(CalciteObject origin, DBSPExpression zero, DBSPClosureExpression increment,
+                           DBSPExpression emptySetResult, DBSPType semigroup, DBSPExpression aggregatedValue,
+                           boolean isMin) {
+        super(origin, zero, increment, emptySetResult, semigroup);
+        this.aggregatedValue = aggregatedValue;
+        this.isMin = isMin;
     }
 
     @Override
     public boolean compatible(AggregateBase other) {
         return false;
-    }
-
-    @Override
-    public DBSPExpression deepCopy() {
-        return null;
-    }
-
-    @Override
-    public boolean equivalent(EquivalenceContext context, DBSPExpression other) {
-        return false;
-    }
-
-    @Override
-    public void accept(InnerVisitor visitor) {
-
-    }
-
-    @Override
-    public boolean sameFields(IDBSPNode other) {
-        return false;
-    }
-
-    @Override
-    public IIndentStream toString(IIndentStream builder) {
-        return null;
     }
 }

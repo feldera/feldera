@@ -36,6 +36,15 @@ public class Annotations {
         return Linq.any(this.annotations, test);
     }
 
+    public List<Annotation> get(Predicate<Annotation> test) { return Linq.where(this.annotations, test); }
+
+    public String toDotString() {
+        List<Annotation> toShow = Linq.where(this.annotations, t -> !t.invisible());
+        if (toShow.isEmpty())
+            return "";
+        return " " + toShow;
+    }
+
     @Override
     public String toString() {
         return this.annotations.toString();

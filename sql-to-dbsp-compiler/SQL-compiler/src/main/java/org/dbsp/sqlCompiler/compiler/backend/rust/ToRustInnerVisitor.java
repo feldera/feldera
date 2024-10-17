@@ -461,15 +461,20 @@ public class ToRustInnerVisitor extends InnerVisitor {
 
     @Override
     public VisitDecision preorder(DBSPZSetLiteral literal) {
-        this.builder.append("zset!(")
-                .increase();
+        this.builder.append("zset!(");
+        boolean large = literal.data.entrySet().size() > 1;
+        if (large)
+            this.builder.increase();
         for (Map.Entry<DBSPExpression, Long> e: literal.data.entrySet()) {
             e.getKey().accept(this);
             this.builder.append(" => ")
-                    .append(e.getValue())
-                    .append(",\n");
+                    .append(e.getValue());
+            if (large)
+                this.builder.append(",\n");
         }
-        this.builder.decrease().append(")");
+        if (large)
+            this.builder.decrease();
+        this.builder.append(")");
         return VisitDecision.STOP;
     }
 
