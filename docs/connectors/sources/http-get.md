@@ -4,6 +4,10 @@ Feldera can ingest data from a user-provided URL into a SQL table.
 
 * The file is fetched using HTTP with the GET method.
 
+The HTTP GET input connector supports [fault
+tolerance](..#fault-tolerance).  Fault tolerance only makes sense for
+URLs with static, unchanging data.
+
 ## Example usage
 
 We will create a pipeline with an HTTP GET connector.
