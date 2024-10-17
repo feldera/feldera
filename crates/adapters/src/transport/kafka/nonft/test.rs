@@ -181,6 +181,7 @@ format:
     match mock_input_pipeline::<TestStruct, TestStruct>(
         serde_yaml::from_str(&config_str).unwrap(),
         Relation::empty(),
+        false,
     ) {
         Ok(_) => panic!("expected an error"),
         Err(e) => info!("proptest_kafka_input: Error: {e}"),
@@ -203,6 +204,7 @@ format:
     match mock_input_pipeline::<TestStruct, TestStruct>(
         serde_yaml::from_str(config_str).unwrap(),
         Relation::empty(),
+        false,
     ) {
         Ok(_) => panic!("expected an error"),
         Err(e) => info!("proptest_kafka_input: Error: {e}"),
@@ -233,6 +235,7 @@ max_batch_size: 10000000
     let (endpoint, _consumer, _parser, zset) = mock_input_pipeline::<TestStruct, TestStruct>(
         serde_yaml::from_str(&config_str).unwrap(),
         Relation::empty(),
+        false,
     )
     .unwrap();
 

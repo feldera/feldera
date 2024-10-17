@@ -2924,10 +2924,6 @@
           "topics"
         ],
         "properties": {
-          "fault_tolerance": {
-            "type": "boolean",
-            "description": "If true, this enables fault tolerance in the Kafka input connector."
-          },
           "group_join_timeout_secs": {
             "type": "integer",
             "format": "int32",
