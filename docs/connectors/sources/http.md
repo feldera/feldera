@@ -13,6 +13,9 @@ Feldera supports directly pushing data to a SQL table over HTTP.
 * Specify data input format using URL query parameters
   (e.g., `format=...`, and more depending on format).
 
+The HTTP input connector supports [fault
+tolerance](..#fault-tolerance).
+
 ## Example usage
 
 We will insert rows into table `product` for pipeline `supply-chain-pipeline`.

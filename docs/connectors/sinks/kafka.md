@@ -2,6 +2,9 @@
 
 Feldera can output a stream of changes to a SQL table or view to a Kafka topic.
 
+The Kafka output connector supports [fault
+tolerance](..#fault-tolerance).
+
 * The Kafka connector uses **librdkafka** in its implementation.
   [Relevant options supported by it](https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md)
   can be defined in the connector configuration.

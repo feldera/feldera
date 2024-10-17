@@ -13,6 +13,9 @@ Feldera supports receiving a stream of changes to a SQL table or view over HTTP.
 * Specify data output format using URL query parameters
   (e.g., `format=...`, and more depending on format).
 
+The HTTP output connector does not yet support [fault
+tolerance](..#fault-tolerance).
+
 ## Example usage
 
 We will subscribe to a stream of updates to the `average_price` view for pipeline `supply-chain-pipeline`.

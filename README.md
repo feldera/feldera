@@ -75,6 +75,12 @@ and more.
    sources, like Kafka, HTTP, CDC streams, S3, Data Lakes, Warehouses and more.
    If you need a connector that we don't yet support, [let us know](https://github.com/feldera/feldera/issues).
 
+6. **Fault tolerance**. Feldera can gracefully restart from the exact
+   point of an abrupt shutdown or crash, picking up from where it left
+   off without dropping or duplicating input or output. Fault
+   tolerance is a preview feature that requires support from input and
+   output connectors.
+
 ## 💻 Architecture
 
 The following diagram shows Feldera's architecture
