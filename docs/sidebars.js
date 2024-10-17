@@ -268,7 +268,7 @@ const sidebars = {
                 type: 'doc',
                 id: 'contributors/intro',
             },
-            items: ['contributors/compiler', 'contributors/dev-flow', 'contributors/ui-testing']
+            items: ['contributors/dev-flow', 'contributors/ui-testing']
         }
     ]
 }
