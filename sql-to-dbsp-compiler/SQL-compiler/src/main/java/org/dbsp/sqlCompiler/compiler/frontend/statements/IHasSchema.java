@@ -9,7 +9,7 @@ import org.apache.calcite.rel.externalize.RelJson;
 import org.apache.calcite.sql.SqlIdentifier;
 import org.apache.calcite.util.JsonBuilder;
 import org.dbsp.sqlCompiler.compiler.IHasCalciteObject;
-import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
+import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.TypeCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.RelColumnMetadata;
@@ -41,7 +41,8 @@ public interface IHasSchema extends IHasCalciteObject {
             if (columns.get(i).getName().equals(id.toString()))
                 return i;
         }
-        throw new InternalCompilerError("Column not found", CalciteObject.create(id));
+        throw new CompilationError("Column " + Utilities.singleQuote(id.toString()) +
+                " not found in " + Utilities.singleQuote(this.getName()), CalciteObject.create(id));
     }
 
     default JsonNode asJson() {

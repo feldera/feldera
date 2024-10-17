@@ -24,6 +24,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateWithWaterlineOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSumOperator;
@@ -34,6 +35,7 @@ import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.IHasColumnsMetadata;
 import org.dbsp.sqlCompiler.compiler.IHasLateness;
 import org.dbsp.sqlCompiler.compiler.IHasWatermark;
+import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
@@ -41,6 +43,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.ExpressionCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Projection;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.IMaybeMonotoneType;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.MonotoneClosureType;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.MonotoneExpression;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.MonotoneTransferFunctions;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.MonotoneType;
@@ -98,6 +101,7 @@ import static org.dbsp.sqlCompiler.ir.expression.DBSPOpcode.AND;
  * - {@link DBSPIntegrateTraceRetainKeysOperator} to prune data from integral operators
  * - {@link DBSPPartitionedRollingAggregateWithWaterlineOperator} operators
  * - {@link DBSPIntegrateTraceRetainValuesOperator} to prune data from integral operators
+ * This also inserts WINDOWS before views that have "emit_final" annotations.
  *
  * <P>This visitor is tricky because it operates on a circuit, but takes the information
  * required to rewrite the graph from a different circuit, the expandedCircuit and
@@ -106,7 +110,8 @@ import static org.dbsp.sqlCompiler.ir.expression.DBSPOpcode.AND;
  *
  * <p>Each apply operator has the signature (bool, arg) -> (bool, result), where the
  * boolean field indicates whether this is the first step.  In the first step the
- * apply operators do not compute, since the inputs may cause exceptions.
+ * apply operators do not compute, sin
+ * ce the inputs may cause exceptions.
  **/
 public class InsertLimiters extends CircuitCloneVisitor {
     /** For each operator in the expansion of the operators of this circuit
@@ -1225,7 +1230,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
     @Override
     public void postorder(DBSPSourceMultisetOperator operator) {
         ReplacementExpansion replacementExpansion = Objects.requireNonNull(this.getReplacement(operator));
-        DBSPOperator expansion = this.processLateness(operator, replacementExpansion.replacement);
+        DBSPOperator replacement = this.processLateness(operator, replacementExpansion.replacement);
 
         // Process watermark annotations.  Very similar to lateness annotations.
         int index = 0;
@@ -1235,14 +1240,13 @@ public class InsertLimiters extends CircuitCloneVisitor {
         List<DBSPExpression> timestamps = new ArrayList<>();
         List<DBSPExpression> minimums = new ArrayList<>();
         for (IHasWatermark column: operator.to(IHasColumnsMetadata.class).getWatermarks()) {
-            DBSPExpression lateness = column.getWatermark();
-
-            if (lateness != null) {
+            DBSPExpression watermark = column.getWatermark();
+            if (watermark != null) {
                 DBSPExpression field = t.deref().field(index);
                 fields.add(field);
                 DBSPType type = field.getType();
                 field = ExpressionCompiler.makeBinaryExpression(operator.getNode(), field.getType(),
-                        DBSPOpcode.SUB, field.deepCopy(), lateness);
+                        DBSPOpcode.SUB, field.deepCopy(), watermark);
                 timestamps.add(field);
                 DBSPExpression min = type.to(IsBoundedType.class).getMinValue();
                 minimums.add(min);
@@ -1253,12 +1257,13 @@ public class InsertLimiters extends CircuitCloneVisitor {
         // Currently we only support at most 1 watermark column per table.
         // TODO: support multiple fields.
         if (minimums.size() > 1) {
-            throw new UnimplementedException("More than 1 watermark per table not yet supported", 2734, operator.getNode());
+            throw new UnimplementedException("More than 1 watermark per table not yet supported",
+                    2734, operator.getNode());
         }
 
         if (!minimums.isEmpty()) {
             assert fields.size() == 1;
-            this.addOperator(expansion);
+            this.addOperator(replacement);
 
             DBSPTupleExpression min = new DBSPTupleExpression(minimums, false);
             DBSPTupleExpression timestamp = new DBSPTupleExpression(timestamps, false);
@@ -1286,18 +1291,18 @@ public class InsertLimiters extends CircuitCloneVisitor {
                             fields.get(0).applyCloneIfNeeded(),
                             t.deref().applyCloneIfNeeded()).closure(t.asParameter()),
                     new DBSPTypeIndexedZSet(operator.getNode(),
-                            fields.get(0).getType(), dataType), true, expansion);
+                            fields.get(0).getType(), dataType), true, replacement);
             this.addOperator(ix);
             DBSPWindowOperator window = new DBSPWindowOperator(
                     operator.getNode(), true, true, ix, apply);
             this.addOperator(window);
-            expansion = new DBSPDeindexOperator(operator.getNode(), window);
+            replacement = new DBSPDeindexOperator(operator.getNode(), window);
         }
 
-        if (expansion == operator) {
+        if (replacement == operator) {
             this.replace(operator);
         } else {
-            this.map(operator, expansion);
+            this.map(operator, replacement);
         }
     }
 
@@ -1454,6 +1459,79 @@ public class InsertLimiters extends CircuitCloneVisitor {
                 this.markBound(operator, bound);
         } else {
             this.nonMonotone(operator);
+        }
+        super.postorder(operator);
+    }
+
+    @Override
+    public void postorder(DBSPSinkOperator operator) {
+        int monotoneFieldIndex = operator.metadata.emitFinalColumn;
+        if (monotoneFieldIndex >= 0) {
+            ReplacementExpansion expanded = this.getReplacement(operator);
+            if (expanded != null) {
+                DBSPOperator operatorFromExpansion = expanded.replacement;
+                MonotoneExpression monotone = this.expansionMonotoneValues.get(operatorFromExpansion);
+                if (monotone != null && monotone.mayBeMonotone()) {
+                    DBSPOperator source = operatorFromExpansion.inputs.get(0);
+                    DBSPOperator boundSource = Utilities.getExists(this.bound, source);
+
+                    MonotoneClosureType monoClosure = monotone.getMonotoneType().to(MonotoneClosureType.class);
+                    IMaybeMonotoneType bodyType = monoClosure.getBodyType();
+                    assert bodyType.mayBeMonotone();
+                    PartiallyMonotoneTuple tuple = bodyType.to(PartiallyMonotoneTuple.class);
+                    if (!tuple.getField(monotoneFieldIndex).mayBeMonotone()) {
+                        throw new CompilationError("Compiler could not infer a waterline for column " +
+                                Utilities.singleQuote(operator.metadata.columns.get(monotoneFieldIndex).columnName),
+                                operator.getNode());
+                    }
+                    int controlFieldIndex = 0;
+                    assert monotoneFieldIndex < tuple.size();
+                    for (int i = 0; i < monotoneFieldIndex; i++) {
+                        IMaybeMonotoneType field = tuple.getField(i);
+                        if (field.mayBeMonotone())
+                            controlFieldIndex++;
+                    }
+
+                    DBSPTypeTupleBase dataType = operator.getOutputZSetType().elementType.to(DBSPTypeTupleBase.class);
+                    DBSPVariablePath t = dataType.ref().var();
+                    DBSPType tsType = dataType.getFieldType(monotoneFieldIndex);
+                    DBSPExpression minimum = tsType.to(IsBoundedType.class).getMinValue();
+
+                    // boundSource has a type (boolean, TupN), extract the corresponding
+                    // value in the second tuple
+                    DBSPVariablePath var = boundSource.outputType.ref().var();
+                    DBSPExpression makePair = new DBSPRawTupleExpression(
+                            DBSPTypeTypedBox.wrapTypedBox(minimum, false),
+                            DBSPTypeTypedBox.wrapTypedBox(var.deref().field(1).field(controlFieldIndex), false));
+                    DBSPApplyOperator apply = new DBSPApplyOperator(
+                            operator.getNode(), makePair.closure(var.asParameter()), boundSource,
+                            "(" + operator.getDerivedFrom() + ")");
+                    this.addOperator(apply);
+
+                    // Window requires data to be indexed
+                    DBSPExpression field = t.deref().field(monotoneFieldIndex);
+                    DBSPOperator ix = new DBSPMapIndexOperator(operator.getNode(),
+                            new DBSPRawTupleExpression(
+                                    field.applyCloneIfNeeded(),
+                                    t.deref().applyCloneIfNeeded()).closure(t.asParameter()),
+                            new DBSPTypeIndexedZSet(operator.getNode(),
+                                    field.getType(), dataType), true,
+                            this.mapped(operator.input()));
+                    this.addOperator(ix);
+                    DBSPWindowOperator window = new DBSPWindowOperator(
+                            operator.getNode(), true, true, ix, apply);
+                    this.addOperator(window);
+                    DBSPOperator deindex = new DBSPDeindexOperator(operator.getNode(), window);
+                    this.addOperator(deindex);
+                    DBSPOperator sink = operator.withInputs(Linq.list(deindex), false);
+                    this.map(operator, sink);
+                    return;
+                }
+            }
+            throw new CompilationError("Could not infer a waterline for column " +
+                    Utilities.singleQuote(operator.metadata.columns.get(monotoneFieldIndex).columnName) +
+                    " of view " + Utilities.singleQuote(operator.viewName) + " which has an " +
+                    "'emit_final' annotation", operator.getNode());
         }
         super.postorder(operator);
     }
