@@ -13,15 +13,11 @@ import org.dbsp.util.Linq;
 import java.util.List;
 import java.util.function.Predicate;
 
-/**
- * Instrument a plan by inserting code to write dump the contents after
- * chosen plan stages.
- */
+/** Instrument a plan by inserting code to write dump the contents after
+ * chosen plan stages. */
 public class InstrumentDump extends CircuitCloneVisitor {
-    /**
-     * When this predicate returns true, the corresponding operator
-     * is instrumented with a dump.
-     */
+    /** When this predicate returns true, the corresponding operator
+     * is instrumented with a dump. */
     public final Predicate<DBSPOperator> instrument;
 
     public InstrumentDump(IErrorReporter reporter, Predicate<DBSPOperator> instrument) {

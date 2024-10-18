@@ -29,7 +29,7 @@ import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.rust.RustFileWriter;
 import org.dbsp.sqlCompiler.compiler.frontend.TableContents;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteCompiler;
-import org.dbsp.sqlCompiler.compiler.visitors.outer.MonotoneAnalyzer;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity.MonotoneAnalyzer;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.Logger;
 import org.dbsp.util.ProgramAndTester;

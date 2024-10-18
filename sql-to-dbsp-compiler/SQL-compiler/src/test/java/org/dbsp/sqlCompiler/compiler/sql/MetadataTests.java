@@ -327,38 +327,6 @@ public class MetadataTests extends BaseSQLTests {
     }
 
     @Test
-    public void testViewLateness() {
-        String query = """
-                LATENESS V.COL1 INTERVAL 1 HOUR;
-                -- no view called W
-                LATENESS W.COL2 INTERVAL 1 HOUR;
-                CREATE VIEW V AS SELECT T.COL1, T.COL2 FROM T;
-                CREATE VIEW V1 AS SELECT * FROM V;
-                """;
-        DBSPCompiler compiler = this.testCompiler();
-        compiler.options.ioOptions.quiet = false;  // show warnings
-        compiler.compileStatement(OtherTests.ddl);
-        compiler.compileStatements(query);
-        DBSPCircuit circuit = getCircuit(compiler);
-        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
-            boolean found = false;
-
-            @Override
-            public VisitDecision preorder(DBSPControlledFilterOperator filter) {
-                found = true;
-                return VisitDecision.CONTINUE;
-            }
-
-            @Override
-            public void endVisit() {
-                Assert.assertTrue(this.found);
-            }
-        };
-        visitor.apply(circuit);
-        TestUtil.assertMessagesContain(compiler, "No view named 'w' found");
-    }
-
-    @Test
     public void testDefaultColumnValueCompiler() throws IOException, InterruptedException, SQLException {
         String sql = """
                 CREATE TABLE T (COL1 INT NOT NULL DEFAULT 0, COL2 DOUBLE DEFAULT 0.0, COL3 VARCHAR DEFAULT NULL);

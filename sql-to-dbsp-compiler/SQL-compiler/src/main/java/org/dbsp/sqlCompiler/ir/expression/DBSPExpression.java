@@ -37,6 +37,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRef;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeResult;
 import org.dbsp.sqlCompiler.ir.type.IHasType;
@@ -222,6 +223,7 @@ public abstract class DBSPExpression
     }
 
     public DBSPExpression not() {
+        assert this.getType().is(DBSPTypeBool.class);
         return new DBSPUnaryExpression(this.getNode(), this.getType(), DBSPOpcode.NOT, this);
     }
 }
