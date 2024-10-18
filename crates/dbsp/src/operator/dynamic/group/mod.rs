@@ -368,8 +368,8 @@ where
 
 impl<B, OB, T, OT> Operator for GroupTransform<B, OB, T, OT>
 where
-    B: IndexedZSet + 'static,
-    OB: IndexedZSet + 'static,
+    B: IndexedZSet,
+    OB: IndexedZSet,
     T: 'static,
     OT: 'static,
 {

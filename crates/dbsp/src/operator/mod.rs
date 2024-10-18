@@ -31,6 +31,7 @@ mod z1;
 mod aggregate;
 mod asof_join;
 mod average;
+pub mod chain_aggregate;
 mod consolidate;
 mod distinct;
 pub mod dynamic;
