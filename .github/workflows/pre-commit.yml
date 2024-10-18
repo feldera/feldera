@@ -17,6 +17,6 @@ jobs:
         with:
           python-version: 3.x
       - uses: Swatinem/rust-cache@v2
-      - uses: pre-commit/action@v3.0.1
+      - run: cargo run --bin=pipeline-manager -- --dump-openapi
       - uses: pre-commit-ci/lite-action@v1.0.3
         if: always()
