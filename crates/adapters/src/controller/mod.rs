@@ -515,18 +515,6 @@ impl CircuitThread {
             self.backpressure_thread.start();
         }
 
-        // Current input endpoint ids and names, so that we can track updates
-        // for the fault-tolerance logs.
-        let mut input_endpoints = self
-            .controller
-            .status
-            .inputs
-            .read()
-            .unwrap()
-            .iter()
-            .map(|(id, status)| (*id, status.endpoint_name.clone()))
-            .collect();
-
         loop {
             self.run_commands();
             let running = match self.controller.state() {
@@ -557,7 +545,7 @@ impl CircuitThread {
                 break;
             };
             if let Some(ft) = self.ft.as_mut() {
-                ft.write_step(step_metadata, &mut input_endpoints)?;
+                ft.write_step(step_metadata)?;
             }
 
             // Wake up the backpressure thread to unpause endpoints blocked due to
@@ -816,6 +804,10 @@ struct FtState {
     /// Metadata for the last step we read or wrote. This is only `None` if
     /// `step` is 0.
     prev_step_metadata: Option<StepMetadata>,
+
+    // Input endpoint ids and names at the time we wrote the last step,
+    // so that we can log changes for the replay log.
+    input_endpoints: HashMap<EndpointId, String>,
 }
 
 impl FtState {
@@ -863,13 +855,26 @@ impl FtState {
 
         let (step_rw, step_metadata) = Self::replay_step(step_rw, step, &controller)?;
         let replaying = step_metadata.is_some();
+        let input_endpoints = Self::initial_input_endpoints(&controller);
         Ok(Self {
             controller,
             step,
             step_rw: Some(step_rw),
             replaying,
             prev_step_metadata: step_metadata.or(prev_step_metadata),
+            input_endpoints,
         })
+    }
+
+    fn initial_input_endpoints(controller: &ControllerInner) -> HashMap<EndpointId, String> {
+        controller
+            .status
+            .inputs
+            .read()
+            .unwrap()
+            .iter()
+            .map(|(id, status)| (*id, status.endpoint_name.clone()))
+            .collect()
     }
 
     fn replay_step(
@@ -918,24 +923,23 @@ impl FtState {
     fn write_step(
         &mut self,
         step_metadata: HashMap<String, RmpValue>,
-        input_endpoints: &mut HashMap<EndpointId, String>,
     ) -> Result<(), ControllerError> {
         if let Some(step_writer) = self.step_rw.as_mut().and_then(|rw| rw.as_writer()) {
             let mut remove_inputs = HashSet::new();
             let mut add_inputs = HashMap::new();
             let inputs = self.controller.status.inputs.read().unwrap();
-            for (endpoint_id, endpoint_name) in input_endpoints.iter() {
+            for (endpoint_id, endpoint_name) in self.input_endpoints.iter() {
                 if !inputs.contains_key(endpoint_id) {
                     remove_inputs.insert(endpoint_name.clone());
                 }
             }
             for (endpoint_id, status) in inputs.iter() {
-                if !input_endpoints.contains_key(endpoint_id) {
+                if !self.input_endpoints.contains_key(endpoint_id) {
                     add_inputs.insert(status.endpoint_name.clone(), status.config.clone());
                 }
             }
             if !remove_inputs.is_empty() || !add_inputs.is_empty() {
-                *input_endpoints = inputs
+                self.input_endpoints = inputs
                     .iter()
                     .map(|(id, status)| (*id, status.endpoint_name.clone()))
                     .collect();
@@ -977,6 +981,7 @@ impl FtState {
                 self.prev_step_metadata = step_metadata;
             } else {
                 info!("replay complete, starting pipeline");
+                self.input_endpoints = Self::initial_input_endpoints(&self.controller);
             }
         }
         Ok(())
