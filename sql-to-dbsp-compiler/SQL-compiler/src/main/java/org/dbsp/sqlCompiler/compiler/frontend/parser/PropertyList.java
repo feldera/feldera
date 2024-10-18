@@ -35,6 +35,15 @@ public class PropertyList implements Iterable<Map.Entry<SqlFragment, SqlFragment
         return null;
     }
 
+    @Nullable
+    public SqlFragment getPropertyKey(String propertyName) {
+        for (Map.Entry<SqlFragment, SqlFragment> p: this.propertyValue) {
+            if (Objects.requireNonNull(p.getKey()).getString().equals(propertyName))
+                return p.getKey();
+        }
+        return null;
+    }
+
     /** Report an error for duplicate property names */
     public void checkDuplicates(IErrorReporter errorReporter) {
         Map<String, SqlFragment> previous = new HashMap<>();

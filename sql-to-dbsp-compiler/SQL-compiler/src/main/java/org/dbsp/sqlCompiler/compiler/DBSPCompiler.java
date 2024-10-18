@@ -377,8 +377,10 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
     void validateViewProperty(SqlFragment key, SqlFragment value) {
         CalciteObject node = CalciteObject.create(key.getParserPosition());
         String keyString = key.getString();
-        //noinspection SwitchStatementWithTooFewBranches
         switch (keyString) {
+            case CreateViewStatement.EMIT_FINAL:
+                // Actual value validated elsewhere
+                break;
             case "connectors":
                 this.validateConnectorsProperty(node, key, value);
                 break;
