@@ -24,6 +24,7 @@
 package org.dbsp.sqlCompiler.ir.type;
 
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
+import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.ir.DBSPNode;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
@@ -34,9 +35,11 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.path.DBSPPath;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRef;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBaseType;
 import org.dbsp.util.IndentStream;
+import org.dbsp.util.Linq;
 
 import javax.annotation.Nullable;
 import java.util.Objects;
@@ -187,5 +190,20 @@ public abstract class DBSPType extends DBSPNode implements IDBSPInnerNode {
             // This prevents us from trying to make something nullable that can't be
             return this.sameType(type);
         return this.setMayBeNull(true).sameType(type.setMayBeNull(true));
+    }
+
+    /** An expression containing the minimum value of the given type.
+     * Only defined if the all the fields implement IsBoundedType;
+     * will throw otherwise. */
+    public DBSPExpression minimumValue() {
+        if (this.is(DBSPTypeTupleBase.class)) {
+            DBSPTypeTupleBase tuple = this.to(DBSPTypeTupleBase.class);
+            DBSPExpression[] mins = Linq.map(tuple.tupFields, DBSPType::minimumValue, DBSPExpression.class);
+            return tuple.makeTuple(mins);
+        } else if (this.is(IsBoundedType.class)) {
+            return this.to(IsBoundedType.class).getMinValue();
+        } else {
+            throw new UnsupportedException("Type has no minimum value", this.getNode());
+        }
     }
 }

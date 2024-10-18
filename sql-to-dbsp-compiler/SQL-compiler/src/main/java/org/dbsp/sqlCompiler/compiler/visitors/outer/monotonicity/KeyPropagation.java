@@ -1,6 +1,5 @@
-package org.dbsp.sqlCompiler.compiler.visitors.outer;
+package org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity;
 
-import org.apache.commons.math3.util.Pair;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPBinaryOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDelayedIntegralOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDistinctOperator;
@@ -23,6 +22,7 @@ import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.InputColumnMetadata;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ForeignKey;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Projection;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Logger;
@@ -184,7 +184,7 @@ public class KeyPropagation extends CircuitVisitor {
     /** Maps each operator to a StreamDescription for its output */
     final Map<DBSPOperator, StreamDescription> keys;
     /** Maps each join that operates on a primary/foreign key to its description */
-    final Map<DBSPOperator, JoinDescription> joins;
+    public final Map<DBSPOperator, JoinDescription> joins;
 
     public KeyPropagation(IErrorReporter errorReporter) {
         super(errorReporter);

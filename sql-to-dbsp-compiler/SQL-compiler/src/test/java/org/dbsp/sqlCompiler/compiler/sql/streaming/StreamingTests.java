@@ -1,16 +1,22 @@
 package org.dbsp.sqlCompiler.compiler.sql.streaming;
 
 import org.dbsp.sqlCompiler.CompilerMain;
+import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPControlledFilterOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateWithWaterlineOperator;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWaterlineOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.StderrErrorReporter;
+import org.dbsp.sqlCompiler.compiler.TestUtil;
 import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
+import org.dbsp.sqlCompiler.compiler.sql.OtherTests;
 import org.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests;
 import org.dbsp.sqlCompiler.compiler.sql.StreamingTestBase;
+import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.OptimizeMaps;
 import org.dbsp.util.Linq;
@@ -493,7 +499,41 @@ public class StreamingTests extends StreamingTestBase {
     }
 
     @Test
+    public void testViewLateness() {
+        this.showFinal();
+        String query = """
+                LATENESS V.COL1 INTERVAL 1 HOUR;
+                -- no view called W
+                LATENESS W.COL2 INTERVAL 1 HOUR;
+                CREATE VIEW V AS SELECT T.COL1, T.COL2 FROM T;
+                CREATE VIEW V1 AS SELECT * FROM V;
+                """;
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.options.ioOptions.quiet = false;  // show warnings
+        compiler.compileStatement(OtherTests.ddl);
+        compiler.compileStatements(query);
+        DBSPCircuit circuit = getCircuit(compiler);
+        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+            boolean found = false;
+
+            @Override
+            public VisitDecision preorder(DBSPControlledFilterOperator filter) {
+                this.found = true;
+                return VisitDecision.CONTINUE;
+            }
+
+            @Override
+            public void endVisit() {
+                Assert.assertTrue(this.found);
+            }
+        };
+        visitor.apply(circuit);
+        TestUtil.assertMessagesContain(compiler, "No view named 'w' found");
+    }
+
+    @Test
     public void testEmitFinal() {
+        this.showFinal();
         String sql = """
                 create table t (ts int not null LATENESS 2);
 
@@ -502,25 +542,25 @@ public class StreamingTests extends StreamingTestBase {
                 GROUP BY ts;""";
         CompilerCircuitStream ccs = this.getCCS(sql);
         this.addRustTestCase(ccs);
-        // waterline is -infinity
+        // waterline is 1
         ccs.step("INSERT INTO T VALUES (0), (1);", """
                  ts | count | weight
                 ---------------------""");
-        // waterline is -1
+        // waterline is 3
         ccs.step("INSERT INTO T VALUES (1), (2);", """
-                 ts | count | weight
-                ---------------------""");
-        // waterline is 1
-        ccs.step("INSERT INTO T VALUES (4), (5);", """
                  ts | count | weight
                 ---------------------
                   0 |     1 | 1""");
-        // waterline is 3
-        ccs.step("", """
+        // waterline is 5
+        ccs.step("INSERT INTO T VALUES (4), (5);", """
                  ts | count | weight
                 ---------------------
                   1 |     2 | 1
                   2 |     1 | 1""");
+        // waterline is 5
+        ccs.step("", """
+                 ts | count | weight
+                ---------------------""");
     }
 
     @Test
@@ -1099,6 +1139,7 @@ public class StreamingTests extends StreamingTestBase {
 
     @Test
     public void smallTaxiTest() {
+        this.showFinal();
         String sql = """
                 CREATE TABLE tripdata (
                   t TIMESTAMP NOT NULL LATENESS INTERVAL 1 HOUR,

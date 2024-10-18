@@ -34,6 +34,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.ExpandWriteLog;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Simplify;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.SimplifyWaterline;
 import org.dbsp.sqlCompiler.circuit.annotation.Waterline;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity.MonotoneAnalyzer;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -72,10 +73,10 @@ public record CircuitOptimizer(DBSPCompiler compiler) implements ICompilerCompon
             passes.add(new OptimizeWithGraph(reporter, g -> new OptimizeMaps(reporter, g)));
             passes.add(new OptimizeWithGraph(reporter, g -> new FilterJoinVisitor(reporter, g)));
             passes.add(new NarrowJoins(reporter));
-            // The MonotoneAnalyzer will insert some operators for GC which have weird behavior
-            // (they influence their *input* operators).  So optimizations that come afterward have to
-            // handle these properly.
-            passes.add(new MonotoneAnalyzer(reporter));
+            if (options.languageOptions.incrementalize) {
+                // Monotonicity analysis only makes sense for incremental programs
+                passes.add(new MonotoneAnalyzer(reporter));
+            }
             // Doing this after the monotone analysis only
             if (!options.ioOptions.emitHandles)
                 passes.add(new IndexedInputs(reporter));
