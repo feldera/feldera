@@ -735,7 +735,8 @@ where
     K: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
-    type TimeDiffCursor<'a> = SingletonTimeDiffCursor<'a, R>
+    type TimeDiffCursor<'a>
+        = SingletonTimeDiffCursor<'a, R>
     where
         Self: 'a;
 

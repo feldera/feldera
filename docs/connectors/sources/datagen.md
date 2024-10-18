@@ -6,6 +6,9 @@ prototyping and benchmarking purposes.
 For a tutorial on how to use the Datagen connector, see the
 [Random Data Generation](/tutorials/basics/part4) tutorial.
 
+The datagen input connector does not yet support [fault
+tolerance](..#fault-tolerance).
+
 ## Datagen input connector configuration
 
 ### Config Parameters

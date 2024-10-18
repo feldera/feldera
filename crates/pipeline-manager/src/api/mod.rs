@@ -106,6 +106,7 @@ The program version is used internally by the compiler to know when to recompile
         pipeline::get_pipeline_circuit_profile,
         pipeline::get_pipeline_heap_profile,
         pipeline::pipeline_adhoc_sql,
+        pipeline::checkpoint_pipeline,
 
         // HTTP input/output
         http_io::http_input,
@@ -167,6 +168,7 @@ The program version is used internally by the compiler to know when to recompile
         feldera_types::config::StorageConfig,
         feldera_types::config::StorageCacheConfig,
         feldera_types::config::RuntimeConfig,
+        feldera_types::config::FtConfig,
         feldera_types::config::InputEndpointConfig,
         feldera_types::config::ConnectorConfig,
         feldera_types::config::OutputBufferConfig,
@@ -174,15 +176,16 @@ The program version is used internally by the compiler to know when to recompile
         feldera_types::config::TransportConfig,
         feldera_types::config::FormatConfig,
         feldera_types::config::ResourceConfig,
+        feldera_types::transport::adhoc::AdHocInputConfig,
         feldera_types::transport::file::FileInputConfig,
         feldera_types::transport::file::FileOutputConfig,
+        feldera_types::transport::http::HttpInputConfig,
         feldera_types::transport::url::UrlInputConfig,
         feldera_types::transport::kafka::KafkaHeader,
         feldera_types::transport::kafka::KafkaHeaderValue,
         feldera_types::transport::kafka::KafkaLogLevel,
         feldera_types::transport::kafka::KafkaInputConfig,
         feldera_types::transport::kafka::KafkaOutputConfig,
-        feldera_types::transport::kafka::KafkaInputFtConfig,
         feldera_types::transport::kafka::KafkaOutputFtConfig,
         feldera_types::transport::pubsub::PubSubInputConfig,
         feldera_types::transport::s3::S3InputConfig,
@@ -264,6 +267,7 @@ fn api_scope() -> Scope {
         .service(pipeline::get_pipeline_circuit_profile)
         .service(pipeline::get_pipeline_heap_profile)
         .service(pipeline::pipeline_adhoc_sql)
+        .service(pipeline::checkpoint_pipeline)
         // API keys endpoints
         .service(api_key::list_api_keys)
         .service(api_key::get_api_key)

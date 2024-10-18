@@ -10,6 +10,9 @@ a file system or an object stores like [AWS S3](https://aws.amazon.com/s3/),
 Like other Lakehouse-native storage formats, Delta Lake is optimized for both
 batch and stream processing, offering a bridge between the two worlds.
 
+The Delta Lake input connector does not yet support [fault
+tolerance](..#fault-tolerance).
+
 ## Delta Lake input connector configuration
 
 ### Required parameters

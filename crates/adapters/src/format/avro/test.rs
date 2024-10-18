@@ -326,11 +326,10 @@ where
             mock_parser_pipeline(&test.relation_schema, &format_config).unwrap();
         consumer.on_error(Some(Box::new(|_, _| {})));
         for (avro, expected_errors) in test.input_batches {
-            let errors = parser.input_chunk(&avro);
+            let (mut buffer, errors) = parser.parse(&avro);
             assert_eq!(&errors, &expected_errors);
+            buffer.flush_all();
         }
-        parser.end_of_fragments();
-        parser.flush_all();
         assert_eq!(&test.expected_output, &outputs.state().flushed);
     }
 }

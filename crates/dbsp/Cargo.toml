@@ -57,7 +57,7 @@ crc32c = "0.6.4"
 num-derive = "0.4.1"
 num-traits = "0.2.17"
 thiserror = "1.0"
-uuid = { version = "1.6.1", features = ["v7"] }
+uuid = { version = "1.6.1", features = ["v7", "serde"] }
 clap = { version = "4.4.14", features = ["derive", "env", "wrap_help"] }
 fdlimit = { version = "0.3.0" }
 # metrics won't display if it doesn't match the adapters metrics version!
@@ -67,7 +67,6 @@ rlimit = "0.10.1"
 serde = { version = "1.0", features = ["derive"] }
 ptr_meta = "0.2.0"
 feldera-types = { path = "../feldera-types", version = "0.28.0" }
-sysinfo = "0.30.5"
 libc = "0.2.153"
 static_assertions = "1.1.0"
 lazy_static = "1.4.0"
