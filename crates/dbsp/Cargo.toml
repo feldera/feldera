@@ -67,7 +67,6 @@ rlimit = "0.10.1"
 serde = { version = "1.0", features = ["derive"] }
 ptr_meta = "0.2.0"
 feldera-types = { path = "../feldera-types", version = "0.28.0" }
-sysinfo = "0.30.5"
 libc = "0.2.153"
 static_assertions = "1.1.0"
 lazy_static = "1.4.0"
