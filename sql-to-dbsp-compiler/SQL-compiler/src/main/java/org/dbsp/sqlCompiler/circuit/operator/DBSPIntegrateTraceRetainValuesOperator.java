@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.circuit.operator;
 
+import org.dbsp.sqlCompiler.compiler.frontend.ExpressionCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.IMaybeMonotoneType;
@@ -7,6 +8,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.PartiallyMonotoneTu
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
@@ -41,8 +43,11 @@ public final class DBSPIntegrateTraceRetainValuesOperator extends DBSPBinaryOper
                 .to(PartiallyMonotoneTuple.class)
                 .getField(1)
                 .projectExpression(dataArg);
+        DBSPExpression compare0 = controlArg.deref().field(0).not();
         DBSPExpression compare = DBSPControlledFilterOperator.generateTupleCompare(
                 project, controlArg.deref().field(1));
+        compare = ExpressionCompiler.makeBinaryExpression(
+                node, compare.getType(), DBSPOpcode.OR, compare0, compare);
         DBSPExpression closure = compare.closure(param, controlArg.asParameter());
         return new DBSPIntegrateTraceRetainValuesOperator(node, closure, data, control);
     }

@@ -1,10 +1,13 @@
-package org.dbsp.sqlCompiler.compiler.visitors.outer;
+package org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.backend.ToDotVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.MonotoneExpression;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.AppendOnly;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitTransform;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.Graph;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.ExpandOperators;
 import org.dbsp.util.IWritesLogs;
 import org.dbsp.util.IndentStream;
@@ -73,6 +76,11 @@ public class MonotoneAnalyzer implements CircuitTransform, IWritesLogs {
                 keyPropagation.joins::get);
         // Notice that we apply the limiters to the original circuit, not to the expanded circuit!
         DBSPCircuit result = limiters.apply(circuit);
+
+        Graph graph = new Graph(this.reporter);
+        graph.apply(result);
+        CheckRetain check = new CheckRetain(this.reporter, graph.graph);
+        check.apply(result);
 
         if (debug)
             ToDotVisitor.toDot(reporter, "limited.png", details, "png", result);

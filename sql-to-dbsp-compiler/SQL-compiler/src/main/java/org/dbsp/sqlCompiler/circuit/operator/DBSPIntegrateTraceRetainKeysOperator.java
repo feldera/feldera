@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.circuit.operator;
 
+import org.dbsp.sqlCompiler.compiler.frontend.ExpressionCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.IMaybeMonotoneType;
@@ -7,6 +8,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.PartiallyMonotoneTu
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
@@ -36,6 +38,7 @@ public final class DBSPIntegrateTraceRetainKeysOperator extends DBSPBinaryOperat
         DBSPParameter param;
         DBSPExpression compare;
         DBSPVariablePath controlArg = controlType.ref().var();
+        DBSPExpression compare0 = controlArg.deref().field(0).not();
         if (data.outputType.is(DBSPTypeIndexedZSet.class)) {
             DBSPType keyType = data.getOutputIndexedZSetType().keyType;
             DBSPVariablePath dataArg = keyType.var();
@@ -44,7 +47,7 @@ public final class DBSPIntegrateTraceRetainKeysOperator extends DBSPBinaryOperat
                     .to(PartiallyMonotoneTuple.class)
                     .getField(0)
                     .projectExpression(dataArg);
-            compare = DBSPControlledFilterOperator.generateTupleCompare(
+            compare =DBSPControlledFilterOperator.generateTupleCompare(
                     project, controlArg.deref().field(1).field(0));
         } else {
             DBSPType keyType = data.getOutputZSetElementType();
@@ -54,6 +57,8 @@ public final class DBSPIntegrateTraceRetainKeysOperator extends DBSPBinaryOperat
             compare = DBSPControlledFilterOperator.generateTupleCompare(
                     project, controlArg.deref().field(1));
         }
+        compare = ExpressionCompiler.makeBinaryExpression(
+                node, compare.getType(), DBSPOpcode.OR, compare0, compare);
         DBSPExpression closure = compare.closure(param, controlArg.asParameter());
         return new DBSPIntegrateTraceRetainKeysOperator(node, closure, data, control);
     }
