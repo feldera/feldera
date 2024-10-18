@@ -69,7 +69,7 @@ const sidebars = {
             items: [
                 {
                     type: 'category',
-                    label: 'Tutorial: writing your first SQL pipeline',
+                    label: 'Feldera Basics',
                     link: {
                         type: 'doc',
                         id: 'tutorials/basics/index',

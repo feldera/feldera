@@ -100,34 +100,91 @@ of **changes** to the view, but cannot inspect its current contents.
 
 Click the PLAY button to run the pipeline.
 
-## Step 2. Populate tables manually
+## Step 2. Insert data
 
-:::info UNDER CONSTRUCTION
+When the pipeline is running it can process incoming changes. Let's try just that via ad-hoc queries.
 
-This section is under construction.
+Open Ad-hoc query tab and insert in the input field the following statement:
 
-:::
+```sql
+INSERT INTO VENDOR (id, name, address) VALUES
+(1, 'Gravitech Dynamics', '222 Graviton Lane'),
+(2, 'HyperDrive Innovations', '456 Warp Way'),
+(3, 'DarkMatter Devices', '333 Singularity Street');
+```
 
-<!-- ## Step 3. Make changes
+Press `Enter` or click the Play button to submit the query. You will see the result containing the number of inserted rows: 3.
 
-:::note
+![Query to insert vendor data](basics-part1-1.png)
 
-The Web Console does not yet support deleting records.  Use the REST API
-described in the next part of the tutorial instead.
+Now let's check the state of the table with a quick select query that we insert into the empty input field below the result from the first query:
 
-:::
+```sql
+SELECT * FROM VENDOR
+```
 
-## Step 6. Stop the pipeline
+![Inserted vendor data](basics-part1-2.png)
 
-Click the stop icon <icon icon="bx:stop-circle" /> to shut down the pipeline.
+Yep, everything is in order. Let's fill the other table:
 
-:::caution
+```sql
+INSERT INTO PART (id, name) VALUES
+(1, 'Flux Capacitor'),
+(2, 'Warp Core'),
+(3, 'Kyber Crystal')
+```
 
-All pipeline state will be lost.
+```sql
+INSERT INTO PRICE (part, vendor, price) VALUES
+(1, 2, 10000),
+(2, 1, 15000),
+(3, 3, 9000);
+```
 
-::: -->
+The ad-hoc queries we run are executed by the same pipeline that handles the stream processing, but instead of using our incremental computation engine they are evaluated against the latest snapshot of the pipeline's tables and views.
 
-<!-- ## Takeaways
+Enough with the static SQL, let's see Feldera's incremental computation in action!
+
+## Step 3. Observe pipeline outputs
+
+To see the computed outputs of the pipeline switch to Change stream tab, and tick the checkboxes next to LOW_PRICE and PREFERRED_VENDOR views.
+
+... Well, nothing happened. See, as soon as the changes were ingested by Feldera the outputs were computed and transmitted through available output connectors, and we only subscribed to a stream of changes after that. So let's introduce another change which results we could see live.
+
+We will now insert new data into pipeline directly as a change. Paste (Ctrl + V or equivalent) the following JSON after clicking anywhere within the Change stream tab:
+
+```json
+[
+    {
+        "relationName": "price",
+        "insert": {
+            "part": 2, "vendor": 3, "price": 12000
+        }
+    }
+]
+```
+
+![Change stream updates for a new cheaper part](basics-part1-3.png)
+
+There we go! We can see deletes and inserts for both low_price and preferred_vendor views. There weren't only inserts in the output stream because in this case in order to correctly communicate the new view results Feldera needs to update previously computed rows - that is, delete the old view row and insert a new one, containing the actualized data.
+
+In our example DarkMatter Devices entered competition and undercut Gravitech Dynamics with a cheaper Warp Core, so we need to retract the statement that a Warp Core for 15,000 credits is a reasonable market offering and issue a new one.
+
+Since preferred_vendor view is materialized we can also query its state with SELECT query if we go back to the Ad-hoc tab:
+
+```sql
+SELECT * FROM PREFERRED_VENDOR;
+```
+
+To reiterate, we can't do the same with a non-materialized view low_price. Let's make sure of it after pausing <icon icon="bx:pause" /> the pipeline (just because we can):
+
+```sql
+SELECT (part) FROM low_price
+```
+
+Now, let's shut down the pipeline by clicking the stop icon <icon icon="bx:stop" /> to forget all the ingested data, computed view results and any accumulated internal state.
+
+## Takeaways
 
 Let us recap what we have learned so far:
 
@@ -135,7 +192,12 @@ Let us recap what we have learned so far:
   - `CREATE TABLE` statements define a schema for input data.
   - `CREATE VIEW` statements define queries over input tables and other views.
 
-- A SQL program is instantiated as part of a **pipeline**.
+- An SQL program is instantiated as a part of a **pipeline**.
 
-- Feldera evaluates queries **continuously**, updating their results
-  as input data changes. -->
+- Running Feldera pipeline converts input changes into output changes in the context of the running history of the pipeline.
+
+- Feldera evaluates SQL programs **continuously**, updating their results as input data changes.
+
+- You can observe input and output changes as they happen, or query a snapshot of data in input tables and output views.
+
+- When the pipeline is stopped, all its processed inputs and computed results are lost.
