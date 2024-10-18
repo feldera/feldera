@@ -5,7 +5,7 @@
 
 use log::{debug, warn};
 use std::fs::{File, OpenOptions};
-use std::io::{self, Error as IoError, ErrorKind, Read, Write};
+use std::io::{self, Error as IoError, ErrorKind, Read, Seek, SeekFrom, Write};
 use std::os::fd::AsRawFd;
 use std::path::{Path, PathBuf};
 use sysinfo::{Pid, System};
@@ -79,7 +79,7 @@ impl LockedDirectory {
     const LOCKFILE_NAME: &'static str = "feldera.pidlock";
 
     fn with_pid<P: AsRef<Path>>(base_path: P, pid: Pid) -> Result<LockedDirectory, StorageError> {
-        let pid_str = pid.to_string();
+        let pid_str = format!("{pid}\n");
         let pid_file = base_path.as_ref().join(LockedDirectory::LOCKFILE_NAME);
         let mut guard = if pid_file.exists() {
             // we set create(true) for both branches, to avoid concurrency issues when two
@@ -106,13 +106,13 @@ impl LockedDirectory {
             if let Ok(old_pid) = old_pid {
                 if process_exists(old_pid) {
                     return Err(StorageError::StorageLocked(old_pid, pid_file));
-                } else if old_pid == pid.as_u32() {
-                    // The pidfile is ours, just leave it as is.
                 } else {
                     // The process doesn't exist, so we can safely overwrite the pidfile.
                     log::debug!("Found stale pidfile: {}", pid_file.display());
                 }
-            } else {
+                guard.0.set_len(0)?;
+                guard.0.seek(SeekFrom::Start(0))?;
+            } else if !contents.is_empty() {
                 // If the pidfile is corrupt, we won't take ownership of the storage dir until
                 // the user fixes it.
                 log::error!(
@@ -155,7 +155,9 @@ impl LockedDirectory {
     pub fn new<P: AsRef<Path>>(base_path: P) -> Result<LockedDirectory, StorageError> {
         let pid = sysinfo::get_current_pid().expect("failed to get current pid");
         if !base_path.as_ref().exists() {
-            return Err(StorageError::StorageLocationNotFound);
+            return Err(StorageError::StorageLocationNotFound(
+                base_path.as_ref().to_path_buf(),
+            ));
         }
         Self::with_pid(base_path, pid)
     }

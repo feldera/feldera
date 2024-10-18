@@ -5,9 +5,8 @@ use crate::{
     transport::http::{
         HttpInputEndpoint, HttpInputTransport, HttpOutputEndpoint, HttpOutputTransport,
     },
-    CircuitCatalog, Controller, ControllerError, DbspCircuitHandle, FormatConfig,
-    InputEndpointConfig, InputFormat, OutputEndpoint, OutputEndpointConfig, OutputFormat,
-    PipelineConfig, TransportInputEndpoint,
+    CircuitCatalog, Controller, ControllerError, FormatConfig, InputEndpointConfig, InputFormat,
+    OutputEndpoint, OutputEndpointConfig, OutputFormat, PipelineConfig, TransportInputEndpoint,
 };
 use actix_web::body::MessageBody;
 use actix_web::dev::Service;
@@ -21,9 +20,12 @@ use actix_web::{
 };
 use clap::Parser;
 use colored::Colorize;
-use dbsp::circuit::CircuitConfig;
+use dbsp::{circuit::CircuitConfig, DBSPHandle};
 use env_logger::Env;
-use feldera_types::config::default_max_batch_size;
+use feldera_types::{
+    config::{default_max_batch_size, TransportConfig},
+    transport::http::HttpInputConfig,
+};
 use feldera_types::{query::AdhocQueryArgs, transport::http::SERVER_PORT_FILE};
 use futures_util::FutureExt;
 use log::{debug, error, info, log, trace, warn, Level};
@@ -155,10 +157,7 @@ pub struct ServerArgs {
 ///   input/output stream catalog.
 pub fn server_main<F>(circuit_factory: F) -> Result<(), ControllerError>
 where
-    F: FnOnce(
-            CircuitConfig,
-        )
-            -> Result<(Box<dyn DbspCircuitHandle>, Box<dyn CircuitCatalog>), ControllerError>
+    F: FnOnce(CircuitConfig) -> Result<(DBSPHandle, Box<dyn CircuitCatalog>), ControllerError>
         + Send
         + 'static,
 {
@@ -172,10 +171,7 @@ where
 
 pub fn run_server<F>(args: ServerArgs, circuit_factory: F) -> Result<(), ControllerError>
 where
-    F: FnOnce(
-            CircuitConfig,
-        )
-            -> Result<(Box<dyn DbspCircuitHandle>, Box<dyn CircuitCatalog>), ControllerError>
+    F: FnOnce(CircuitConfig) -> Result<(DBSPHandle, Box<dyn CircuitCatalog>), ControllerError>
         + Send
         + 'static,
 {
@@ -306,10 +302,7 @@ fn bootstrap<F>(
     state: WebData<ServerState>,
     loginit_sender: StdSender<()>,
 ) where
-    F: FnOnce(
-            CircuitConfig,
-        )
-            -> Result<(Box<dyn DbspCircuitHandle>, Box<dyn CircuitCatalog>), ControllerError>
+    F: FnOnce(CircuitConfig) -> Result<(DBSPHandle, Box<dyn CircuitCatalog>), ControllerError>
         + Send
         + 'static,
 {
@@ -367,10 +360,7 @@ fn do_bootstrap<F>(
     loginit_sender: StdSender<()>,
 ) -> Result<(), ControllerError>
 where
-    F: FnOnce(
-            CircuitConfig,
-        )
-            -> Result<(Box<dyn DbspCircuitHandle>, Box<dyn CircuitCatalog>), ControllerError>
+    F: FnOnce(CircuitConfig) -> Result<(DBSPHandle, Box<dyn CircuitCatalog>), ControllerError>
         + Send
         + 'static,
 {
@@ -487,6 +477,7 @@ where
         .service(metadata)
         .service(heap_profile)
         .service(dump_profile)
+        .service(checkpoint)
         .service(input_endpoint)
         .service(output_endpoint)
         .service(pause_input_endpoint)
@@ -619,6 +610,23 @@ async fn dump_profile(state: WebData<ServerState>) -> impl Responder {
         .body(profile.as_zip()))
 }
 
+#[post("/checkpoint")]
+async fn checkpoint(state: WebData<ServerState>) -> impl Responder {
+    let (sender, receiver) = oneshot::channel();
+    match &*state.controller.lock().unwrap() {
+        None => return Err(missing_controller_error(&state)),
+        Some(controller) => {
+            controller.start_checkpoint(Box::new(move |checkpoint| {
+                if sender.send(checkpoint.map(|_| ())).is_err() {
+                    error!("`/checkpoint` result could not be sent");
+                }
+            }));
+        }
+    };
+    receiver.await.unwrap()?;
+    Ok(HttpResponse::Ok())
+}
+
 #[get("/shutdown")]
 async fn shutdown(state: WebData<ServerState>) -> impl Responder {
     let controller = state.controller.lock().unwrap().take();
@@ -672,13 +680,17 @@ async fn input_endpoint(
     let endpoint_name = format!("api-ingress-{table_name}-{}", Uuid::new_v4());
 
     // Create HTTP endpoint.
-    let endpoint = HttpInputEndpoint::new(&endpoint_name, args.force);
+    let config = HttpInputConfig {
+        name: endpoint_name.clone(),
+        force: args.force,
+    };
+    let endpoint = HttpInputEndpoint::new(config.clone());
 
     // Create endpoint config.
     let config = InputEndpointConfig {
         stream: Cow::from(table_name),
         connector_config: ConnectorConfig {
-            transport: HttpInputTransport::config(),
+            transport: TransportConfig::HttpInput(config),
             format: Some(parser_config_from_http_request(
                 &endpoint_name,
                 &args.format,

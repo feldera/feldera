@@ -229,6 +229,7 @@ fn map_val_to_limited_runtime_config(val: RuntimeConfigPropVal) -> RuntimeConfig
         min_batch_size_records: val.val2,
         max_buffering_delay_usecs: val.val3,
         storage: val.val4,
+        fault_tolerance: None,
         tracing: val.val5,
         tracing_endpoint_jaeger: val.val6,
         resources: ResourceConfig {
@@ -844,15 +845,8 @@ async fn pipeline_versioning() {
     // Edit runtime configuration -> increment version
     let new_runtime_config = RuntimeConfig {
         workers: 100,
-        storage: false,
-        cpu_profiler: false,
-        tracing: false,
         tracing_endpoint_jaeger: "".to_string(),
-        min_batch_size_records: 0,
-        max_buffering_delay_usecs: 0,
-        resources: Default::default(),
-        min_storage_bytes: None,
-        clock_resolution_usecs: Some(100_000),
+        ..RuntimeConfig::default()
     };
     handle
         .db

@@ -22,7 +22,7 @@ pub use deserializer::string_record_deserializer;
 use feldera_types::program_schema::Relation;
 use serde_yaml::Value as YamlValue;
 
-use super::InputBuffer;
+use super::{InputBuffer, Splitter};
 
 /// When including a long CSV record in an error message,
 /// truncate it to `MAX_RECORD_LEN_IN_ERRMSG` bytes.
@@ -64,9 +64,6 @@ struct CsvParser {
     /// Input handle to push parsed data to.
     input_stream: Box<dyn DeCollectionStream>,
 
-    /// Any bytes that haven't been found to be part of a full CSV record yet.
-    leftover: Vec<u8>,
-
     last_event_number: u64,
 }
 
@@ -74,7 +71,6 @@ impl CsvParser {
     fn new(input_stream: Box<dyn DeCollectionStream>) -> Self {
         Self {
             input_stream,
-            leftover: Vec::new(),
             last_event_number: 0,
         }
     }
@@ -122,62 +118,66 @@ impl CsvParser {
         }
         None
     }
-
-    /// Parses `buffer` into a series of zero or more CSV records followed by
-    /// any remaining text.  Returns the remainder and the results of parsing
-    /// the records.
-    fn parse_from_buffer<'a>(&mut self, mut buffer: &'a [u8]) -> (&'a [u8], Vec<ParseError>) {
-        let mut errors = Vec::new();
-        while let Some((record, rest)) = self.split_record(buffer) {
-            self.parse_record(record, &mut errors);
-            self.last_event_number += 1;
-            buffer = rest;
-        }
-        (buffer, errors)
-    }
 }
 
 impl Parser for CsvParser {
-    fn input_fragment(&mut self, data: &[u8]) -> Vec<ParseError> {
-        if self.leftover.is_empty() {
-            let (rest, res) = self.parse_from_buffer(data);
-            self.leftover.extend(rest);
-            res
-        } else {
-            self.leftover.extend_from_slice(data);
-            let mut buffer = take(&mut self.leftover);
-            let (rest, res) = self.parse_from_buffer(&buffer);
-            buffer.drain(..buffer.len() - rest.len());
-            self.leftover = buffer;
-            res
-        }
-    }
-
-    fn end_of_fragments(&mut self) -> Vec<ParseError> {
-        let mut errors = Vec::new();
-        let leftover = take(&mut self.leftover);
-        if !leftover.is_empty() {
-            self.parse_record(leftover.as_slice(), &mut errors);
-        }
-        errors
-    }
-
     fn fork(&self) -> Box<dyn Parser> {
         Box::new(Self::new(self.input_stream.fork()))
     }
+
+    fn splitter(&self) -> Box<dyn super::Splitter> {
+        Box::new(CsvSplitter::new())
+    }
+
+    fn parse(&mut self, mut data: &[u8]) -> (Option<Box<dyn InputBuffer>>, Vec<ParseError>) {
+        let mut errors = Vec::new();
+        while let Some((record, rest)) = self.split_record(data) {
+            self.parse_record(record, &mut errors);
+            self.last_event_number += 1;
+            data = rest;
+        }
+        if !data.is_empty() {
+            self.parse_record(data, &mut errors);
+        }
+        (self.input_stream.take(), errors)
+    }
 }
 
-impl InputBuffer for CsvParser {
-    fn flush(&mut self, n: usize) -> usize {
-        self.input_stream.flush(n)
+struct CsvSplitter {
+    quoted: bool,
+}
+
+impl CsvSplitter {
+    fn new() -> Self {
+        Self { quoted: false }
+    }
+}
+
+impl Splitter for CsvSplitter {
+    fn input(&mut self, data: &[u8]) -> Option<usize> {
+        // This uses the simple rule that a new-line ends a record if it is not
+        // in double quotes.  The "standard" format for CSV escapes double
+        // quotes by doubling them (e.g. `"a""b""c"` unescapes to `a"b"c`), so
+        // that any even number of quotes followed by a new-line ends a reocrd,
+        // but any odd number followed by a new-line is a continuation of the
+        // field.  This means that this rule properly handles escapes.
+        //
+        // If we allow the user to configure the CSV format used, we'll need to
+        // adjust this to match the configuration.
+        for (offset, c) in data.iter().enumerate() {
+            match c {
+                b'"' => self.quoted = !self.quoted,
+                b'\n' if !self.quoted => {
+                    return Some(offset + 1);
+                }
+                _ => (),
+            }
+        }
+        None
     }
 
-    fn len(&self) -> usize {
-        self.input_stream.len()
-    }
-
-    fn take(&mut self) -> Option<Box<dyn InputBuffer>> {
-        self.input_stream.take()
+    fn clear(&mut self) {
+        self.quoted = false;
     }
 }
 
