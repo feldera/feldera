@@ -123,13 +123,6 @@ might appear in a different order):
 
 We will learn to decipher this in a moment.
 
-<!-- Meanwhile, you can use the Feldera
-Web Console to inspect tables and views (click on the <icon icon="bx:show" />
-icon next to a table or view to inspect it). For instance, here is the contents
-of the `PREFERRED_VENDOR` view:
-
-![PREFERRED_VENDOR](preferred-vendor1.png) -->
-
 ## Step 4. Modify inputs
 
 We already know that Feldera continuously updates output views in response to
@@ -221,7 +214,7 @@ description of this technique.
 
 ## Takeaways
 
-Let us review what we have learned in this part of the tutorial:
+Let us review:
 
 - Feldera operates on **changes**: a Feldera pipeline transforms a stream of
   input changes to SQL tables into a stream of output changes to SQL views.

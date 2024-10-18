@@ -29,21 +29,17 @@ These declarations instruct Feldera to maintain a complete snapshot of the table
 
 ## Using materialized tables and views
 
-### Web Console
+You can explore contents of materialized tables and views by issuing ad-hoc queries. Unlike our incremental view maintenance engine, ad-hoc queries are evaluated against the latest available snapshot of pipeline's tables' and views' data. Ad-hoc queries can be executed both when the pipeline is running or paused.
 
-You can browse materialized tables and views in the Feldera Web Console by clicking on the "eye"
-icon next to the table or view of a running pipeline:
+### Feldera Web Console
 
-![Browsing a materialized view in Web Console](../tutorials/basics/preferred-vendor1.png)
+You can issue ad-hoc queries by opening the Ad-hoc query tab of a pipeline and type up the SQL SELECT query in the input text field. To submit a query, press `Enter` or Play <icon icon="bx:play" /> icon next to a query. To start a new line, press `Shift + Enter`. After successful execution of the query you will see the table containing the results.
 
-### Ad hoc queries
+![Browsing a materialized view in the Web Console](materialized-1.png)
 
-:::caution Under Construction
+### Feldera CLI
 
-We are implementing ad hoc querying support for materialized tables and views.
-
-:::
-
+### Feldera Python SDK
 
 ## Usage considerations
 
