@@ -32,6 +32,7 @@ use crate::{
 mod aggregator;
 // Some standard aggregators.
 mod average;
+mod chain_aggregate;
 mod fold;
 mod max;
 mod min;
@@ -285,7 +286,7 @@ where
         aggregator: &dyn DynAggregator<Z::Val, (), Z::R, Accumulator = Acc, Output = Out>,
     ) -> Stream<C, OrdIndexedZSet<Z::Key, Out>>
     where
-        Z: IndexedZSet + Send,
+        Z: IndexedZSet,
         Acc: DataTrait + ?Sized,
         Out: DataTrait + ?Sized,
     {
@@ -301,7 +302,7 @@ where
     where
         Acc: DataTrait + ?Sized,
         Out: DataTrait + ?Sized,
-        Z: Batch<Time = ()> + Send,
+        Z: Batch<Time = ()>,
         O: IndexedZSet<Key = Z::Key, Val = Out>,
     {
         self.circuit()
@@ -370,7 +371,7 @@ where
     where
         Acc: DataTrait + ?Sized,
         Out: DataTrait + ?Sized,
-        Z: IndexedZSet + Send,
+        Z: IndexedZSet,
     {
         self.dyn_aggregate_generic::<Acc, Out, OrdIndexedZSet<Z::Key, Out>>(factories, aggregator)
     }
@@ -390,7 +391,7 @@ where
     where
         Acc: DataTrait + ?Sized,
         Out: DataTrait + ?Sized,
-        Z: Batch<Time = ()> + Send,
+        Z: Batch<Time = ()>,
         O: IndexedZSet<Key = Z::Key, Val = Out>,
     {
         let circuit = self.circuit();
@@ -796,7 +797,7 @@ impl<Z, IT, Acc, Out, Clk> Operator for AggregateIncremental<Z, IT, Acc, Out, Cl
 where
     Clk: WithClock<Time = IT::Time> + 'static,
     Z: BatchReader,
-    IT: BatchReader + 'static,
+    IT: BatchReader,
     Acc: DataTrait + ?Sized,
     Out: DataTrait + ?Sized,
 {
@@ -943,7 +944,7 @@ where
 }
 
 #[cfg(test)]
-mod test {
+pub mod test {
     use anyhow::Result as AnyResult;
 
     use std::{
@@ -1119,7 +1120,7 @@ mod test {
     const MAX_VAL: i64 = 3;
     const MAX_TUPLES: usize = 8;
 
-    fn test_zset() -> impl Strategy<Value = TestZSet> {
+    pub fn test_zset() -> impl Strategy<Value = TestZSet> {
         collection::vec(
             (
                 (0..NUM_KEYS, -MAX_VAL..MAX_VAL).prop_map(|(x, y)| Tup2(x, y)),
@@ -1137,7 +1138,7 @@ mod test {
             )
         })
     }
-    fn test_input() -> impl Strategy<Value = Vec<Vec<TestZSet>>> {
+    pub fn test_input() -> impl Strategy<Value = Vec<Vec<TestZSet>>> {
         collection::vec(
             collection::vec(test_zset(), 0..MAX_ITERATIONS),
             0..MAX_ROUNDS,
