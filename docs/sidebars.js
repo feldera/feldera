@@ -15,10 +15,9 @@
 const sidebars = {
     docsSidebar: [
         'what-is-feldera',
-        'concepts',
         {
             type: 'category',
-            label: 'Get Started',
+            label: 'Install Feldera',
             link: {
                 type: 'doc',
                 id: 'get-started'
@@ -26,55 +25,51 @@ const sidebars = {
             items: [
                 'docker',
                 'sandbox',
-            ]
-        },
-        {
-            type: 'category',
-            label: 'Feldera Enterprise',
-            link: {
-                type: 'doc',
-                id: 'enterprise/index'
-            },
-            items: [
-                'enterprise/quickstart',
-                'enterprise/helm-guide',
                 {
                     type: 'category',
-                    label: 'Kubernetes guides',
+                    label: 'Feldera Enterprise',
                     link: {
                         type: 'doc',
-                        id: 'enterprise/kubernetes-guides/index',
+                        id: 'enterprise/index'
                     },
                     items: [
-                        'enterprise/kubernetes-guides/k3d',
+                        'enterprise/quickstart',
+                        'enterprise/helm-guide',
                         {
                             type: 'category',
-                            label: 'EKS',
+                            label: 'Kubernetes guides',
                             link: {
                                 type: 'doc',
-                                id: 'enterprise/kubernetes-guides/eks/index',
+                                id: 'enterprise/kubernetes-guides/index',
                             },
                             items: [
-                                'enterprise/kubernetes-guides/eks/cluster',
-                                'enterprise/kubernetes-guides/eks/ingress'
+                                'enterprise/kubernetes-guides/k3d',
+                                {
+                                    type: 'category',
+                                    label: 'EKS',
+                                    link: {
+                                        type: 'doc',
+                                        id: 'enterprise/kubernetes-guides/eks/index',
+                                    },
+                                    items: [
+                                        'enterprise/kubernetes-guides/eks/cluster',
+                                        'enterprise/kubernetes-guides/eks/ingress'
+                                    ]
+                                },
+                                'enterprise/kubernetes-guides/secret-management'
                             ]
-                        },
-                        'enterprise/kubernetes-guides/secret-management'
+                        }
                     ]
-                }
+                },
             ]
         },
         {
             type: 'category',
-            label: 'Tutorials',
-            link: {
-                type: 'doc',
-                id: 'tutorials/index'
-            },
+            label: 'Guides',
             items: [
                 {
                     type: 'category',
-                    label: 'Interactive',
+                    label: 'Tutorial: writing your first SQL pipeline',
                     link: {
                         type: 'doc',
                         id: 'tutorials/basics/index',
@@ -86,36 +81,75 @@ const sidebars = {
                         'tutorials/basics/part4'
                     ]
                 },
-                'tutorials/rest_api/index',
-                'tutorials/monitoring/index'
-            ]
-        },
-        {
-            type: 'category',
-            label: 'Use Cases',
-            items: [
                 {
-                    type: 'doc',
-                    id: 'use_cases/fraud_detection/fraud_detection',
-                    label: 'Real-time Fraud Detection',
+                    type: 'category',
+                    label: 'Use Cases',
+                    items: [
+                        {
+                            type: 'doc',
+                            id: 'use_cases/fraud_detection/fraud_detection',
+                            label: 'Real-time Fraud Detection',
+                        },
+                    ]
                 },
-                {
-                    type: 'doc',
-                    id: 'tour/tour',
-                    label: 'Security Operations',
-                }
+                'tutorials/rest_api/index',
+                'tutorials/monitoring/index',
             ]
         },
         {
             type: 'category',
-            label: 'Reference',
+            label: 'Feldera Interface',
+            collapsed: false,
+            link: {
+                type: 'doc',
+                id: 'interact/index'
+            },
             items: [
+                'reference/web-console',
+                'reference/cli',
                 {
                     type: 'link',
                     label: "Python SDK",
                     href: "pathname:///python/index.html",
                 },
-                'reference/rest',
+                'reference/rest']
+        },
+        {
+            type: 'category',
+            label: 'Write SQL Pipelines',
+            collapsed: false,
+            link: {
+                type: 'doc',
+                id: 'writing/index'
+            },
+            items: [
+                {
+                    type: 'category',
+                    label: 'SQL Reference',
+                    items: [
+                        'sql/grammar',
+                        'sql/identifiers',
+                        'sql/operators',
+                        'sql/aggregates',
+                        'sql/casts',
+                        'sql/types',
+                        'sql/boolean',
+                        'sql/comparisons',
+                        'sql/integer',
+                        'sql/json',
+                        'sql/float',
+                        'sql/decimal',
+                        'sql/string',
+                        'sql/binary',
+                        'sql/array',
+                        'sql/map',
+                        'sql/datetime',
+                        'sql/materialized',
+                        'sql/streaming',
+                        'sql/table',
+                        'sql/udf'
+                    ]
+                },
                 {
                     type: 'category',
                     label: 'Connectors',
@@ -225,50 +259,13 @@ const sidebars = {
                         'formats/csv',
                     ],
                 },
-                {
-                    type: 'category',
-                    label: 'SQL Reference',
-                    link: {type: 'doc', id: 'sql/intro'},
-                    items: [
-                        'sql/grammar',
-                        'sql/identifiers',
-                        'sql/operators',
-                        'sql/aggregates',
-                        'sql/casts',
-                        'sql/types',
-                        'sql/boolean',
-                        'sql/comparisons',
-                        'sql/integer',
-                        'sql/json',
-                        'sql/float',
-                        'sql/decimal',
-                        'sql/string',
-                        'sql/binary',
-                        'sql/array',
-                        'sql/map',
-                        'sql/datetime',
-                        'sql/materialized',
-                        'sql/streaming',
-                        'sql/table',
-                        'sql/udf'
-                    ]
-                },
-                'reference/rust',
-                'reference/cli']
-        },
+            ]
+        }
+        ,
         {
             type: 'category',
-            label: 'Learn',
+            label: 'Literature',
             items: ['papers', 'videos']
-        },
-        {
-            type: 'category',
-            label: 'Contributing',
-            link: {
-                type: 'doc',
-                id: 'contributors/intro',
-            },
-            items: ['contributors/dev-flow', 'contributors/ui-testing']
         }
     ]
 }

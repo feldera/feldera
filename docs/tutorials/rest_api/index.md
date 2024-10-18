@@ -1,4 +1,4 @@
-# Using REST API
+# Using the REST API
 
 Feldera features a comprehensive REST API for managing
 [pipelines](/api/introduction#pipeline).

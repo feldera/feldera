@@ -1,17 +1,25 @@
 # Feldera Enterprise
 
 Feldera Enterprise is our commercial offering aimed at production use.
-It is designed such that you can bring your own cloud, on which you deploy Feldera.
+It let's you bring your own cloud or Kubernetes Cluster, 
+on which you deploy Feldera. Your data never leaves your premises.
+
+Feldera Enterprise adds
+[features](https://www.feldera.com/pricing) that are not available in the
+Docker offering. This includes multi-node clusters, pipeline and control plane
+fault-tolerance, pipeline resource isolation, pipeline scale-out (coming soon),
+and dedicated support.
+
 The documentation we provide here is publicly available, both to guide
 our existing customers and to provide insight to interested parties.
-Feldera Enterprise installation is only possible with a license key.
-Please contact us at `learnmore@feldera.com` if you are interested to learn
-more or would like to try out Feldera Enterprise. We'd be happy to get you started!
+
+Using Feldera Enterprise is only possible with a license key.
+Please [contact sales](https://calendly.com/d/cn7m-grv-mzm/feldera-demo) if you
+are interested.
 
 :::tip
-Don't forget to first try out the [Docker demo container](/docker), which requires
-no license key. The Docker demo already showcases many of Feldera's features.
-This documentation is about setting up a distributed cloud deployment.
+You can try a Feldera Enterprise instance by visiting
+our [free online sandbox](https://try.feldera.com`).
 :::
 
 ## Overview
@@ -19,10 +27,3 @@ This documentation is about setting up a distributed cloud deployment.
 1. [**Quickstart**](quickstart.md)
 2. [**Helm guide**](helm-guide.md)
 3. [**Kubernetes guides**](kubernetes-guides)
-
-## Supported cloud providers
-
-We currently support Amazon AWS. We are planning to expand our support
-offering to other cloud providers such as GCP and Azure. Please reach out
-if you are interested, we would be happy to hear more about how we can
-facilitate your use case.

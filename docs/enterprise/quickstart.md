@@ -3,9 +3,8 @@
 Brief instructions explaining how to install and run Feldera Enterprise
 in a Kubernetes cluster.
 
-1. **License:** obtain a Feldera account id and license key
-   (reach out to `learnmore@feldera.com`)
-
+1. **License:** [contact sales](https://calendly.com/d/cn7m-grv-mzm/feldera-demo) to obtain a Feldera account ID and license key.
+   
 2. **Installation using Helm:**
    ```bash
    ACCOUNT_ID="00000000-0000-0000-0000-000000000000"  # Set to own
