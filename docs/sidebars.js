@@ -26,42 +26,42 @@ const sidebars = {
             items: [
                 'docker',
                 'sandbox',
-            ]
-        },
-        {
-            type: 'category',
-            label: 'Feldera Enterprise',
-            link: {
-                type: 'doc',
-                id: 'enterprise/index'
-            },
-            items: [
-                'enterprise/quickstart',
-                'enterprise/helm-guide',
                 {
                     type: 'category',
-                    label: 'Kubernetes guides',
+                    label: 'Feldera Enterprise',
                     link: {
                         type: 'doc',
-                        id: 'enterprise/kubernetes-guides/index',
+                        id: 'enterprise/index'
                     },
                     items: [
-                        'enterprise/kubernetes-guides/k3d',
+                        'enterprise/quickstart',
+                        'enterprise/helm-guide',
                         {
                             type: 'category',
-                            label: 'EKS',
+                            label: 'Kubernetes guides',
                             link: {
                                 type: 'doc',
-                                id: 'enterprise/kubernetes-guides/eks/index',
+                                id: 'enterprise/kubernetes-guides/index',
                             },
                             items: [
-                                'enterprise/kubernetes-guides/eks/cluster',
-                                'enterprise/kubernetes-guides/eks/ingress'
+                                'enterprise/kubernetes-guides/k3d',
+                                {
+                                    type: 'category',
+                                    label: 'EKS',
+                                    link: {
+                                        type: 'doc',
+                                        id: 'enterprise/kubernetes-guides/eks/index',
+                                    },
+                                    items: [
+                                        'enterprise/kubernetes-guides/eks/cluster',
+                                        'enterprise/kubernetes-guides/eks/ingress'
+                                    ]
+                                },
+                                'enterprise/kubernetes-guides/secret-management'
                             ]
-                        },
-                        'enterprise/kubernetes-guides/secret-management'
+                        }
                     ]
-                }
+                },
             ]
         },
         {
@@ -108,7 +108,11 @@ const sidebars = {
         },
         {
             type: 'category',
-            label: 'Reference',
+            label: 'Interact with Feldera',
+            link: {
+                type: 'doc',
+                id: 'interact/index'
+            },
             items: [
                 {
                     type: 'link',
@@ -116,6 +120,17 @@ const sidebars = {
                     href: "pathname:///python/index.html",
                 },
                 'reference/rest',
+                'reference/cli']
+        },
+        {
+            type: 'category',
+            label: 'Writing Pipelines',
+            collapsed: false,
+            link: {
+                type: 'doc',
+                id: 'writing/index'
+            },
+            items: [
                 {
                     type: 'category',
                     label: 'Connectors',
@@ -228,7 +243,6 @@ const sidebars = {
                 {
                     type: 'category',
                     label: 'SQL Reference',
-                    link: {type: 'doc', id: 'sql/intro'},
                     items: [
                         'sql/grammar',
                         'sql/identifiers',
@@ -253,9 +267,9 @@ const sidebars = {
                         'sql/udf'
                     ]
                 },
-                'reference/rust',
-                'reference/cli']
-        },
+            ]
+        }
+        ,
         {
             type: 'category',
             label: 'Learn',
