@@ -1,4 +1,4 @@
-# Command line utility (fda)
+# Command line tool (fda)
 
 `fda` is a command line utility for interacting with the Feldera Manager's REST API.
 It allows you to create, manage, and monitor pipelines. It also features an interactive

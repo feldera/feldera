@@ -1,4 +1,4 @@
-# Monitoring & Performance
+# Monitoring and Profiling
 
 A Feldera instance and its pipelines can be monitored using various tools. This tutorial
 will guide you through setting up monitoring for your Feldera instance.
