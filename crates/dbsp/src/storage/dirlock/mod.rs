@@ -3,144 +3,84 @@
 //! Makes sure we don't accidentally run multiple instances of the program
 //! using the same data directory.
 
-use log::{debug, warn};
-use std::fs::{File, OpenOptions};
-use std::io::{self, Error as IoError, ErrorKind, Read, Seek, SeekFrom, Write};
+use libc::{c_int, c_short};
+use std::collections::HashSet;
+use std::fs::{self, File};
+use std::io::{Error as IoError, ErrorKind};
 use std::os::fd::AsRawFd;
+use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
-use sysinfo::{Pid, System};
+use std::process;
+use std::sync::{LazyLock, Mutex};
 
 use crate::storage::backend::StorageError;
 
 #[cfg(test)]
 mod test;
 
-/// Check whether a process exists, used to determine whether a pid file is
-/// stale.
-fn process_exists(pid: u32) -> bool {
-    let s = System::new_all();
-    s.process(Pid::from(pid as usize)).is_some()
-}
+/// Lock table.
+///
+/// We track the locks that we currently hold, in terms of the device and inode
+/// of the lock file, because POSIX says that closing *any* file descriptor on
+/// which a process holds a lock drops *all* locks on that file (see fcntl(2)).
+/// Therefore, we can't afford to open such a file more than once.
+///
+/// Linux has its own "open file description locks", introduced in Linux 3.15,
+/// that are non-POSIX, which avoid this problem. Maybe we should use those
+/// instead, if portability and backward compatibility are not paramount.
+static LOCKS: LazyLock<Mutex<HashSet<(u64, u64)>>> = LazyLock::new(|| Mutex::new(HashSet::new()));
 
 /// An instance of a PID file.
-///
-/// The PID file is removed from the FS when the instance is dropped.
 #[derive(Debug)]
 pub struct LockedDirectory {
+    /// The directory that we've locked.
     base: PathBuf,
-    pid: Pid,
+
+    /// The lockfile.
+    ///
+    /// This member just holds the file descriptor open until we're dropped, at
+    /// which time `File` will close the descriptor and the OS will drop the
+    /// lock.
+    _file: File,
+
+    /// Device and inode of the file, so that we can remove ourselves from
+    /// [LOCKS] when we're dropped.
+    dev_ino: (u64, u64),
 }
 
 impl Drop for LockedDirectory {
     fn drop(&mut self) {
-        let pid_file = self.base.join(LockedDirectory::LOCKFILE_NAME);
-        if pid_file.exists() {
-            let r = std::fs::remove_file(&pid_file);
-            if let Err(e) = r {
-                warn!("Failed to remove pidfile: {}", e);
-            }
-        }
+        assert!(LOCKS.lock().unwrap().remove(&self.dev_ino));
     }
 }
 
-/// A guard that holds an exclusive lock on a file.
-///
-/// The lock is dropped once the guard is dropped.
-/// This avoids concurrency issues when two pipelines are started at the same
-/// time.
-struct FlockGuard(File);
-
-impl FlockGuard {
-    fn new(file: File) -> Result<FlockGuard, IoError> {
-        #[cfg(unix)]
-        {
-            let r = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
-            if r != 0 {
-                return Err(io::Error::last_os_error());
-            }
-        }
-        Ok(FlockGuard(file))
+fn fcntl_lock(file: &File, cmd: c_int) -> Result<libc::flock, IoError> {
+    let mut flock = libc::flock {
+        l_type: libc::F_WRLCK as c_short,
+        l_whence: libc::SEEK_SET as c_short,
+        l_start: 0,
+        l_len: 0,
+        l_pid: 0,
+    };
+    match unsafe { libc::fcntl(file.as_raw_fd(), cmd, &mut flock as *mut libc::flock) } {
+        -1 => Err(IoError::last_os_error()),
+        _ => Ok(flock),
     }
 }
 
-impl Drop for FlockGuard {
-    fn drop(&mut self) {
-        #[cfg(unix)]
-        {
-            let r = unsafe { libc::flock(self.0.as_raw_fd(), libc::LOCK_UN) };
-            if r != 0 {
-                debug!("Failed to unlock pidfile: {}", io::Error::last_os_error());
-            }
-        }
-    }
+fn write_lock(file: &File) -> Result<(), IoError> {
+    fcntl_lock(file, libc::F_SETLK).map(|_| ())
+}
+
+fn get_lock(file: &File) -> Result<Option<u32>, IoError> {
+    fcntl_lock(file, libc::F_GETLK).map(|flock| match flock.l_type as c_int {
+        libc::F_UNLCK => None,
+        _ => Some(flock.l_pid as u32),
+    })
 }
 
 impl LockedDirectory {
     const LOCKFILE_NAME: &'static str = "feldera.pidlock";
-
-    fn with_pid<P: AsRef<Path>>(base_path: P, pid: Pid) -> Result<LockedDirectory, StorageError> {
-        let pid_str = format!("{pid}\n");
-        let pid_file = base_path.as_ref().join(LockedDirectory::LOCKFILE_NAME);
-        let mut guard = if pid_file.exists() {
-            // we set create(true) for both branches, to avoid concurrency issues when two
-            // pipelines are started at the same time.
-            let file = OpenOptions::new()
-                .read(true)
-                .write(true)
-                .create(true)
-                .truncate(false)
-                .open(&pid_file)?;
-            let mut guard = FlockGuard::new(file).map_err(|e: IoError| {
-                if e.kind() == ErrorKind::WouldBlock {
-                    StorageError::StorageLocked(0, pid_file.clone())
-                } else {
-                    e.into()
-                }
-            })?;
-
-            // From here on we have a lock on the file:
-            let mut contents = String::new();
-            guard.0.read_to_string(&mut contents)?;
-
-            let old_pid = contents.trim().parse::<u32>();
-            if let Ok(old_pid) = old_pid {
-                if process_exists(old_pid) {
-                    return Err(StorageError::StorageLocked(old_pid, pid_file));
-                } else {
-                    // The process doesn't exist, so we can safely overwrite the pidfile.
-                    log::debug!("Found stale pidfile: {}", pid_file.display());
-                }
-                guard.0.set_len(0)?;
-                guard.0.seek(SeekFrom::Start(0))?;
-            } else if !contents.is_empty() {
-                // If the pidfile is corrupt, we won't take ownership of the storage dir until
-                // the user fixes it.
-                log::error!(
-                    "Invalid pidfile contents: '{}' in {}, pipeline refused to take ownership of storage dir.",
-                    contents,
-                    pid_file.display(),
-                );
-                return Err(StorageError::StorageLocked(0, pid_file));
-            }
-
-            guard
-        } else {
-            FlockGuard::new(
-                OpenOptions::new()
-                    .read(true)
-                    .write(true)
-                    .create(true)
-                    .truncate(false)
-                    .open(&pid_file)?,
-            )?
-        };
-        guard.0.write_all(pid_str.as_bytes())?;
-
-        Ok(LockedDirectory {
-            base: base_path.as_ref().into(),
-            pid,
-        })
-    }
 
     /// Attempts to create a new pidfile in the `base_path` directory,
     /// returning an error if the file was already created by a different
@@ -153,18 +93,51 @@ impl LockedDirectory {
     /// # Panics
     /// - If the current process's PID cannot be determined.
     pub fn new<P: AsRef<Path>>(base_path: P) -> Result<LockedDirectory, StorageError> {
-        let pid = sysinfo::get_current_pid().expect("failed to get current pid");
-        if !base_path.as_ref().exists() {
-            return Err(StorageError::StorageLocationNotFound(
-                base_path.as_ref().to_path_buf(),
-            ));
-        }
-        Self::with_pid(base_path, pid)
-    }
+        let base = base_path.as_ref().to_path_buf();
+        let pid_file = base.join(LockedDirectory::LOCKFILE_NAME);
 
-    /// Returns the PID of the process that created the pidfile.
-    pub fn pid(&self) -> Pid {
-        self.pid
+        // Did we already lock it?
+        let mut locks = LOCKS.lock().unwrap();
+        match fs::metadata(&pid_file) {
+            Ok(metadata) => {
+                let dev_ino = (metadata.dev(), metadata.ino());
+                if locks.contains(&dev_ino) {
+                    return Err(StorageError::StorageLocked(process::id(), base));
+                }
+            }
+            Err(error) if error.kind() == ErrorKind::NotFound => (),
+            Err(error) => return Err(error.into()),
+        }
+
+        let file = File::options()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(&pid_file)?;
+        let metadata = file.metadata()?;
+        let dev_ino = (metadata.dev(), metadata.ino());
+
+        match write_lock(&file) {
+            Err(error)
+                if error.kind() == ErrorKind::PermissionDenied
+                    || error.kind() == ErrorKind::WouldBlock =>
+            {
+                Err(StorageError::StorageLocked(
+                    get_lock(&file).unwrap_or(None).unwrap_or(0),
+                    base,
+                ))
+            }
+            Err(error) => Err(error.into()),
+            Ok(()) => {
+                locks.insert(dev_ino);
+                Ok(Self {
+                    base,
+                    _file: file,
+                    dev_ino,
+                })
+            }
+        }
     }
 
     /// Returns the path to the directory in which the pidfile was created.
