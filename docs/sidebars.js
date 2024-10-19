@@ -74,7 +74,7 @@ const sidebars = {
             items: [
                 {
                     type: 'category',
-                    label: 'Interactive',
+                    label: 'Feldera Basics',
                     link: {
                         type: 'doc',
                         id: 'tutorials/basics/index',
