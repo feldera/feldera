@@ -39,7 +39,7 @@ out one of our pre-packaged demo pipelines.
 
 If you don't already have Docker or Docker Compose installed, follow one of these steps first:
 
-* On Mac OS, Windows, or Linux, install [Docker Desktop][1]. 
+* On Mac OS, Windows, or Linux, install [Docker Desktop][1].
   If you're on Apple Silicon,
   we recommend [enabling Rosetta](https://docs.docker.com/desktop/settings/mac/#use-rosetta-for-x86amd64-emulation-on-apple-silicon)
   for x86/amd64 emulation.

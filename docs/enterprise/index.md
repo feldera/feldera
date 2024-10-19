@@ -1,7 +1,7 @@
 # Feldera Enterprise
 
 Feldera Enterprise is our commercial offering aimed at production use.
-It let's you bring your own cloud or Kubernetes Cluster, 
+It let's you bring your own cloud or Kubernetes Cluster,
 on which you deploy Feldera. Your data never leaves your premises.
 
 Feldera Enterprise adds
