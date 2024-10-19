@@ -2478,6 +2478,9 @@ impl Storage for Mutex<DbModel> {
             .await?;
         pipeline.deployment_status = new_status;
         pipeline.deployment_status_since = Utc::now();
+        pipeline.deployment_config = None;
+        pipeline.deployment_location = None;
+        pipeline.deployment_error = None;
         self.lock()
             .await
             .pipelines
@@ -2496,9 +2499,6 @@ impl Storage for Mutex<DbModel> {
             .await?;
         pipeline.deployment_status = new_status;
         pipeline.deployment_status_since = Utc::now();
-        pipeline.deployment_config = None;
-        pipeline.deployment_location = None;
-        pipeline.deployment_error = None;
         self.lock()
             .await
             .pipelines
