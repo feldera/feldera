@@ -1751,7 +1751,6 @@ impl ControllerInner {
         debug!("Adding input endpoint '{endpoint_name}'; config: {endpoint_config:?}");
 
         let mut inputs = self.inputs.lock().unwrap();
-        let paused = endpoint_config.connector_config.paused;
 
         if inputs.values().any(|ep| ep.endpoint_name == endpoint_name) {
             Err(ControllerError::duplicate_input_endpoint(endpoint_name))?;
@@ -1832,10 +1831,6 @@ impl ControllerInner {
                     .map_err(|e| ControllerError::input_transport_error(endpoint_name, true, e))?
             }
         };
-
-        if self.state() == PipelineState::Running && !paused {
-            reader.extend();
-        }
 
         inputs.insert(endpoint_id, InputEndpointDescr::new(endpoint_name, reader));
 
