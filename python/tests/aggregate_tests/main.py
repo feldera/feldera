@@ -11,6 +11,7 @@ from tests.aggregate_tests.aggtst_base import *  # noqa: F403
 from tests.aggregate_tests.test_array import *  # noqa: F403
 from tests.aggregate_tests.test_arg_max import *  # noqa: F403
 from tests.aggregate_tests.test_arg_min import *  # noqa: F403
+from tests.aggregate_tests.test_atbl_varcharn import *  # noqa: F403
 from tests.aggregate_tests.test_avg import *  # noqa: F403
 from tests.aggregate_tests.test_bit_and import *  # noqa: F403
 from tests.aggregate_tests.test_bit_or import *  # noqa: F403
@@ -37,6 +38,7 @@ from tests.aggregate_tests.test_varchar_every import *  # noqa: F403
 from tests.aggregate_tests.test_varchar_max import *  # noqa: F403
 from tests.aggregate_tests.test_varchar_min import *  # noqa: F403
 from tests.aggregate_tests.test_varchar_table import *  # noqa: F403
+from tests.aggregate_tests.test_varcharn_arragg import *  # noqa: F403
 from tests.aggregate_tests.test_varcharn_count import *  # noqa: F403
 from tests.aggregate_tests.test_varcharn_count_col import *  # noqa: F403
 
