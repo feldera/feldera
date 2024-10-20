@@ -815,8 +815,24 @@ impl FtState {
     fn new(ft: FtInit, controller: Arc<ControllerInner>) -> Result<Self, ControllerError> {
         let FtInit { step, step_rw } = ft;
 
-        let step_rw = match step_rw {
-            Some(step_rw) => step_rw,
+        let (step_metadata, prev_step_metadata, step_rw) = match step_rw {
+            Some(step_rw) if step > 0 => {
+                let (step_rw, prev_step_metadata) =
+                    step_rw.into_reader().unwrap().seek(step - 1)?;
+                for (endpoint_name, metadata) in &prev_step_metadata.input_logs {
+                    let endpoint_id = controller.input_endpoint_id_by_name(endpoint_name)?;
+                    controller.inputs.lock().unwrap()[&endpoint_id]
+                        .reader
+                        .seek(metadata.clone());
+                }
+                let (step_rw, step_metadata) =
+                    Self::replay_step(StepRw::Reader(step_rw), step, &controller)?;
+                (step_metadata, Some(prev_step_metadata), step_rw)
+            }
+            Some(step_rw) => {
+                let (step_rw, step_metadata) = Self::replay_step(step_rw, step, &controller)?;
+                (step_metadata, None, step_rw)
+            }
             None => {
                 let config = controller.status.pipeline_config.clone();
                 let path = storage_path(&config).unwrap();
@@ -836,33 +852,17 @@ impl FtState {
                 };
                 checkpoint.write(&state_path)?;
 
-                StepRw::create(&steps_path)?
+                (None, None, StepRw::create(&steps_path)?)
             }
         };
 
-        let (step_rw, prev_step_metadata) = if step > 0 {
-            let (step_rw, prev_step_metadata) = step_rw.into_reader().unwrap().seek(step - 1)?;
-            for (endpoint_name, metadata) in &prev_step_metadata.input_logs {
-                let endpoint_id = controller.input_endpoint_id_by_name(endpoint_name)?;
-                controller.inputs.lock().unwrap()[&endpoint_id]
-                    .reader
-                    .seek(metadata.clone());
-            }
-            (StepRw::Reader(step_rw), Some(prev_step_metadata))
-        } else {
-            (step_rw, None)
-        };
-
-        let (step_rw, step_metadata) = Self::replay_step(step_rw, step, &controller)?;
-        let replaying = step_metadata.is_some();
-        let input_endpoints = Self::initial_input_endpoints(&controller);
         Ok(Self {
+            input_endpoints: Self::initial_input_endpoints(&controller),
             controller,
             step,
             step_rw: Some(step_rw),
-            replaying,
+            replaying: step_metadata.is_some(),
             prev_step_metadata: step_metadata.or(prev_step_metadata),
-            input_endpoints,
         })
     }
 
@@ -982,6 +982,13 @@ impl FtState {
             } else {
                 info!("replay complete, starting pipeline");
                 self.input_endpoints = Self::initial_input_endpoints(&self.controller);
+
+                // We start the controller because that is the most likely desired
+                // state after we crash. It seems more likely that we crash while
+                // running anyhow.
+                //
+                // Maybe we should log state transitions.
+                self.controller.start();
             }
         }
         Ok(())
