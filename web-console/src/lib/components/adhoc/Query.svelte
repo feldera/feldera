@@ -116,12 +116,11 @@
 
 <div
   class="flex flex-nowrap items-start"
-  oncopy={(e) => {
-    if (window.getSelection()?.toString().length) {
-      return
+  role="presentation"
+  onkeydown={(e) => {
+    if (e.code === 'KeyC' && (e.ctrlKey || e.metaKey)) {
+      onCancelQuery?.()
     }
-    e.preventDefault()
-    onCancelQuery?.()
   }}
 >
   <div class="w-full">
