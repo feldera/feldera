@@ -19,6 +19,7 @@ use once_cell::sync::Lazy;
 use serde::Serialize;
 use std::sync::Mutex;
 use std::thread::Thread;
+use std::time::Duration;
 use std::{
     backtrace::Backtrace,
     borrow::Cow,
@@ -371,7 +372,7 @@ impl Runtime {
                 ))
             },
             |s| {
-                let locked_path = LockedDirectory::new(s.path)?;
+                let locked_path = LockedDirectory::new_blocking(s.path, Duration::from_secs(60))?;
                 Ok(StorageLocation::Permanent(locked_path))
             },
         );
