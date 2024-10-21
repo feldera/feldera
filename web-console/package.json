@@ -18,7 +18,8 @@
     "test-ct": "DISPLAY= bun playwright test -c playwright-ct.config.ts",
     "test-ct-ui": "DISPLAY= bun playwright test -c playwright-ct.config.ts --ui-host=0.0.0.0",
     "test-report": "bun playwright show-report",
-    "test-prepare": "git clone --depth 1 https://github.com/feldera/playwright-snapshots.git"
+    "test-prepare": "git clone --depth 1 https://github.com/feldera/playwright-snapshots.git",
+    "fix-icons": "oslllo-svg-fixer -s tmp/assets/icons/feldera-material-icons -d src/assets/icons/feldera-material-icons"
   },
   "devDependencies": {
     "@auth/sveltekit": "^1.7.0",
