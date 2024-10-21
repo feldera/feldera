@@ -622,7 +622,7 @@ impl CircuitThread {
         for command in self.command_receiver.try_iter() {
             match command {
                 Command::GraphProfile(callback) => callback(Err(ControllerError::ControllerExit)),
-                Command::Checkpoint(_) => (),
+                Command::Checkpoint(callback) => callback(Err(ControllerError::ControllerExit)),
             }
         }
     }
@@ -1135,7 +1135,7 @@ impl StepTrigger {
 ///
 /// - Start from an existing checkpoint.
 ///
-/// - Start a new pipeline while a new initial checkpoint.
+/// - Start a new pipeline with a new initial checkpoint.
 ///
 /// - Start a new pipeline without any checkpoint support.
 ///
@@ -1200,7 +1200,7 @@ impl ControllerInit {
         if ft == FtConfig::LatestCheckpoint && fs::exists(&state_path).map_err(startup_io_error)? {
             // Open the existing checkpoint.
             info!(
-                "{}: resuming fault tolerant pipeline from saved state",
+                "{}: resuming fault tolerant pipeline from a saved checkpoint",
                 state_path.display()
             );
             let Checkpoint {
