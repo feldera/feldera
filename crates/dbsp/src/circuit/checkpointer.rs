@@ -16,11 +16,14 @@ use std::path::{Path, PathBuf};
 use crate::operator::NeighborhoodDescrBox;
 use crate::trace::Serializer;
 use rkyv::{Archive, Deserialize, Serialize};
+use serde::{Deserialize as SerdeDeserialize, Serialize as SerdeSerialize};
 use uuid::Uuid;
 
 /// Holds meta-data about a checkpoint that was taken for persistent storage
 /// and recovery of a circuit's state.
-#[derive(Debug, Clone, Serialize, Deserialize, Archive)]
+#[derive(
+    Debug, Clone, Default, Serialize, Deserialize, Archive, SerdeSerialize, SerdeDeserialize,
+)]
 pub struct CheckpointMetadata {
     /// A unique identifier for the given checkpoint.
     ///
@@ -30,17 +33,14 @@ pub struct CheckpointMetadata {
     pub identifier: Option<String>,
     /// Fingerprint of the circuit at the time of the checkpoint.
     pub fingerprint: u64,
-    /// Which `step` the circuit was at when the checkpoint was created.
-    pub step_id: u64,
 }
 
 impl CheckpointMetadata {
-    pub fn new(uuid: Uuid, identifier: Option<String>, fingerprint: u64, step_id: u64) -> Self {
+    pub fn new(uuid: Uuid, identifier: Option<String>, fingerprint: u64) -> Self {
         CheckpointMetadata {
             uuid,
             identifier,
             fingerprint,
-            step_id,
         }
     }
 }
@@ -155,13 +155,11 @@ impl Checkpointer {
         uuid: Uuid,
         identifier: Option<String>,
         fingerprint: u64,
-        step_id: u64,
     ) -> Result<CheckpointMetadata, Error> {
         let md = CheckpointMetadata {
             uuid,
             identifier,
             fingerprint,
-            step_id,
         };
         self.checkpoint_list.push_back(md.clone());
         self.update_checkpoint_file()?;

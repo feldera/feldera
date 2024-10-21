@@ -87,8 +87,19 @@ of tables and views.
 
 The following attributes are common to all connectors:
 
-* `max_queued_records` - Backpressure threshold. Maximal number of records queued by the endpoint before the endpoint
-   is paused by the backpressure mechanism. By default this is set to 1 million.
+* `max_queued_records` - The approximate maximum number of records to
+  keep in memory.  For an input connector, this is the maximum number
+  that the endpoint will read into memory, before the endpoint pauses
+  further reading until the pipeline has consumed some of the backlog.
+  For an output connector, this is the maximum number that the
+  endpoint will hold in memory waiting for the output endpoint to send
+  them, before the circuit pauses execution until the backlog
+  subsides.  By default, this is 1,000,000.
+
+* `max_batch_size` - For an input connector, the approximate maximum
+  number of records that the pipeline will process in a single
+  pipeline step.  By default, this is 10,000.
+
 * `paused` - If set to to true the connector will not fetch or push data to the pipeline when started
    unless [explicitly enabled through the API](/api/change-the-desired-state-of-an-input-endpoint).
    By default this is set to false.
@@ -149,6 +160,36 @@ specified.
 
 See [Delta Lake output connector documentation](/connectors/sinks/delta)
 for an example of configuring the output buffer.
+
+## Fault tolerance
+
+As a preview feature, Feldera supports fault tolerance, meaning that
+it can gracefully restart from the exact point of an abrupt shutdown
+or crash, picking up from where it left off without dropping or
+duplicating input or output.  To enable fault tolerance on a pipeline,
+set `"fault_tolerance": "latest_checkpoint"` in the pipeline
+configuration.
+
+When a fault-tolerant pipeline restarts, it loads its state from the
+most recent checkpoint, then it replays any data from input connectors
+previously processed beyond that checkpoint.  If replay produces
+output that was previously sent to output connectors, it discards that
+output.  After replay completes, the pipeline continues with new input
+that has not previously been processed.
+
+For Feldera to run a pipeline in fault-tolerant mode, all of its input
+connectors must support fault tolerance.  Some input adapters do not
+yet support fault tolerance and therefore may not be part of a
+fault-tolerant pipeline.  See the documentation for individual input
+connectors for details.
+
+For a pipeline to be fully fault tolerant, a pipeline's output
+connectors must also be fault tolerant.  Only the [Kafka output
+connector](sinks/kafka.md) supports fault tolerance as of now.  If a
+pipeline configured to be fault-tolerant includes non-fault-tolerant
+output connectors, then in the event of a crash and restart, Feldera
+may send duplicate output to those connectors, but it will not drop
+output.
 
 ## Additional resources
 

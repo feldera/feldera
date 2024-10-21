@@ -1,8 +1,8 @@
 use crate::catalog::InputCollectionHandle;
-use crate::format::InputBuffer;
-use crate::transport::Step;
+use crate::format::{InputBuffer, Splitter};
 use crate::{controller::FormatConfig, InputConsumer, InputFormat, ParseError, Parser};
 use anyhow::{anyhow, Error as AnyError};
+use rmpv::Value as RmpValue;
 use std::sync::{Arc, Mutex, MutexGuard};
 
 pub type ErrorCallback = Box<dyn FnMut(bool, &AnyError) + Send>;
@@ -11,6 +11,9 @@ pub type ErrorCallback = Box<dyn FnMut(bool, &AnyError) + Send>;
 pub struct MockInputConsumerState {
     /// `eoi` has been received since the last `reset`.
     pub eoi: bool,
+
+    /// Number of times `extended` has been called since the last `reset`.
+    pub n_extended: usize,
 
     /// The last error received from the endpoint since the last `reset`.
     pub endpoint_error: Option<AnyError>,
@@ -25,6 +28,7 @@ impl MockInputConsumerState {
     fn new() -> Self {
         Self {
             eoi: false,
+            n_extended: 0,
             endpoint_error: None,
             error_cb: None,
         }
@@ -33,6 +37,7 @@ impl MockInputConsumerState {
     /// Reset all fields to defaults.
     pub fn reset(&mut self) {
         self.eoi = false;
+        self.n_extended = 0;
         self.endpoint_error = None;
     }
 }
@@ -85,11 +90,23 @@ impl InputConsumer for MockInputConsumer {
         state.eoi = true;
     }
 
-    fn start_step(&self, _step: Step) {}
+    fn max_batch_size(&self) -> usize {
+        usize::MAX
+    }
 
-    fn committed(&self, _step: Step) {}
+    fn is_pipeline_fault_tolerant(&self) -> bool {
+        true
+    }
 
-    fn queued(&self, _num_bytes: usize, _num_records: usize, _errors: Vec<ParseError>) {}
+    fn parse_errors(&self, _errors: Vec<ParseError>) {}
+
+    fn buffered(&self, _num_records: usize, _num_bytes: usize) {}
+
+    fn replayed(&self, _num_records: usize) {}
+
+    fn extended(&self, _num_records: usize, _metadata: RmpValue) {
+        self.state().n_extended += 1;
+    }
 }
 
 pub struct MockInputParserState {
@@ -150,15 +167,13 @@ impl MockInputParser {
         let mut state = self.0.lock().unwrap();
         state.error_cb = error_cb;
     }
+}
 
-    fn input(&self, data: &[u8], fragment: bool) -> Vec<ParseError> {
+impl Parser for MockInputParser {
+    fn parse(&mut self, data: &[u8]) -> (Option<Box<dyn InputBuffer>>, Vec<ParseError>) {
         let mut state = self.0.lock().unwrap();
         state.data.extend_from_slice(data);
-        let errors = if fragment {
-            state.parser.input_fragment(data)
-        } else {
-            state.parser.input_chunk(data)
-        };
+        let (buffer, errors) = state.parser.parse(data);
 
         for error in errors.iter() {
             // println!("parser returned '{:?}'", state.parser_result);
@@ -170,49 +185,16 @@ impl MockInputParser {
         }
 
         state.parser_result = Some(errors.clone());
-        errors
-    }
-}
-
-impl Parser for MockInputParser {
-    fn input_fragment(&mut self, data: &[u8]) -> Vec<ParseError> {
-        self.input(data, true)
-    }
-
-    fn input_chunk(&mut self, data: &[u8]) -> Vec<ParseError> {
-        self.input(data, false)
-    }
-
-    fn end_of_fragments(&mut self) -> Vec<ParseError> {
-        let mut state = self.0.lock().unwrap();
-        let errors = state.parser.end_of_fragments();
-        for error in errors.iter() {
-            if let Some(error_cb) = &mut state.error_cb {
-                error_cb(false, &anyhow!(error.clone()));
-            } else {
-                panic!("mock_input_consumer: parse error '{error}'");
-            }
-        }
-        errors
+        (buffer, errors)
     }
 
     fn fork(&self) -> Box<dyn Parser> {
         let state = self.0.lock().unwrap();
         Box::new(Self::new(state.parser.fork()))
     }
-}
 
-impl InputBuffer for MockInputParser {
-    fn flush(&mut self, n: usize) -> usize {
-        self.0.lock().unwrap().parser.flush(n)
-    }
-
-    fn len(&self) -> usize {
-        self.0.lock().unwrap().parser.len()
-    }
-
-    fn take(&mut self) -> Option<Box<dyn InputBuffer>> {
-        let mut state = self.0.lock().unwrap();
-        state.parser.take()
+    fn splitter(&self) -> Box<dyn Splitter> {
+        let state = self.0.lock().unwrap();
+        state.parser.splitter()
     }
 }

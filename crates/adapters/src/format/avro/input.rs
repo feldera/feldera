@@ -1,6 +1,9 @@
 use crate::{
     catalog::{AvroStream, InputCollectionHandle},
-    format::avro::schema::{schema_json, validate_struct_schema},
+    format::{
+        avro::schema::{schema_json, validate_struct_schema},
+        Splitter, Sponge,
+    },
     ControllerError, DeCollectionHandle, InputBuffer, InputFormat, ParseError, Parser,
 };
 use actix_web::HttpRequest;
@@ -28,7 +31,7 @@ use std::{
 // TODO: Error handling here is a bit of a mess. Schema parsing and validation happens
 // as part of message processing; however since input_XXX methods must return `ParseError`,
 // we end up wrapping other error types like schema validation errors in ParseError.
-// The right solution is to allow `input_chunk`, `input_fragment` to return the more general
+// The right solution is to allow `input_chunk` to return the more general
 // `ControllerError` type.  There are multiple concurrent refactorings of this crate
 // going on at the moment, so we'll do this later.
 
@@ -431,20 +434,13 @@ impl AvroParser {
 }
 
 impl Parser for AvroParser {
-    fn input_fragment(&mut self, data: &[u8]) -> Vec<ParseError> {
-        vec![ParseError::bin_envelope_error(
-                "Avro streaming parser received an incomplete data fragment. This parser should only be used with message-based transports like Kafka.".to_string(),
-                data,
-                None,
-            )]
+    fn splitter(&self) -> Box<dyn Splitter> {
+        Box::new(Sponge)
     }
-
-    fn input_chunk(&mut self, data: &[u8]) -> Vec<ParseError> {
-        self.input(data).map_or_else(|e| vec![e], |_| Vec::new())
-    }
-
-    fn end_of_fragments(&mut self) -> Vec<ParseError> {
-        Vec::new()
+    fn parse(&mut self, data: &[u8]) -> (Option<Box<dyn InputBuffer>>, Vec<ParseError>) {
+        let errors = self.input(data).map_or_else(|e| vec![e], |_| Vec::new());
+        let buffer = self.input_stream.as_mut().and_then(|avro| avro.take());
+        (buffer, errors)
     }
 
     fn fork(&self) -> Box<dyn Parser> {
@@ -460,19 +456,5 @@ impl Parser for AvroParser {
             last_event_number: 0,
             schema_cache: self.schema_cache.clone(),
         })
-    }
-}
-
-impl InputBuffer for AvroParser {
-    fn flush(&mut self, n: usize) -> usize {
-        self.input_stream.as_mut().map_or(0, |avro| avro.flush(n))
-    }
-
-    fn len(&self) -> usize {
-        self.input_stream.as_ref().map_or(0, |avro| avro.len())
-    }
-
-    fn take(&mut self) -> Option<Box<dyn InputBuffer>> {
-        self.input_stream.as_mut().and_then(|avro| avro.take())
     }
 }

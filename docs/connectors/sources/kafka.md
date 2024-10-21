@@ -1,6 +1,10 @@
 # Kafka input connector
 
-Feldera can consume a stream of changes to a SQL table from Kafka.
+Feldera can consume a stream of changes to a SQL table from Kafka with
+the `kafka_input` connector.
+
+The Kafka input connector supports [fault
+tolerance](..#fault-tolerance).
 
 * One or more Kafka topics can be defined.
 * The Kafka connector uses **librdkafka** in its implementation.

@@ -1,19 +1,24 @@
-use crate::format::StreamSplitter;
+use crate::catalog::ArrowStream;
 use crate::transport::{InputEndpoint, InputQueue, InputReaderCommand};
 use crate::{
-    server::{PipelineError, MAX_REPORTED_PARSE_ERRORS},
-    transport::InputReader,
-    ControllerError, InputConsumer, PipelineState, TransportInputEndpoint,
+    server::PipelineError, transport::InputReader, ControllerError, InputConsumer, PipelineState,
+    TransportInputEndpoint,
 };
-use crate::{InputBuffer, ParseError, Parser};
-use actix_web::{web::Payload, HttpResponse};
+use crate::{InputBuffer, Parser};
 use anyhow::{anyhow, Error as AnyError, Result as AnyResult};
+use arrow::array::RecordBatch;
+use arrow::datatypes::Schema;
 use atomic::Atomic;
-use circular_queue::CircularQueue;
+use bytes::Bytes;
+use datafusion::execution::SendableRecordBatchStream;
 use feldera_types::program_schema::Relation;
-use feldera_types::transport::http::HttpInputConfig;
+use feldera_types::transport::adhoc::AdHocInputConfig;
+use futures::future::{BoxFuture, FutureExt};
 use futures_util::StreamExt;
-use log::debug;
+use parquet::arrow::async_writer::AsyncFileWriter;
+use parquet::arrow::AsyncArrowWriter;
+use parquet::basic::Compression;
+use parquet::file::properties::WriterProperties;
 use rmpv::Value as RmpValue;
 use serde::{Deserialize, Serialize};
 use serde_bytes::ByteBuf;
@@ -26,80 +31,70 @@ use tokio::{
     time::{sleep, timeout},
 };
 
-#[derive(Clone, Debug, Deserialize)]
-pub(crate) enum HttpIngressMode {
-    Batch,
-    Stream,
-    Chunks,
+/// An [AsyncFileWriter] that appends to a byte vector.
+struct BufferWriter<'a> {
+    buffer: &'a mut Vec<u8>,
 }
 
-/// HTTP input transport.
-///
-/// HTTP endpoints are instantiated via the REST API, so this type doesn't
-/// implement `trait InputTransport`.  It is only used to
-/// collect static functions related to HTTP.
-pub(crate) struct HttpInputTransport;
-
-impl HttpInputTransport {
-    /// Default data format assumed by API endpoints when not explicit
-    /// "?format=" argument provided.
-    // TODO: json is a better default, once we support it.
-    pub(crate) fn default_format() -> String {
-        String::from("csv")
+impl<'a> AsyncFileWriter for BufferWriter<'a> {
+    fn write(&mut self, bs: Bytes) -> BoxFuture<'_, parquet::errors::Result<()>> {
+        self.buffer.extend(bs);
+        async move { Ok(()) }.boxed()
     }
 
-    pub(crate) fn default_max_buffered_records() -> u64 {
-        100_000
+    fn complete(&mut self) -> BoxFuture<'_, parquet::errors::Result<()>> {
+        async move { Ok(()) }.boxed()
     }
-
-    // pub(crate) fn default_mode() -> HttpIngressMode {
-    //    HttpIngressMode::Stream
-    // }
 }
 
-struct HttpInputEndpointDetails {
+struct AdHocInputEndpointDetails {
     consumer: Box<dyn InputConsumer>,
     parser: Box<dyn Parser>,
-    splitter: StreamSplitter,
     queue: InputQueue<Vec<u8>>,
 }
 
-struct HttpInputEndpointInner {
+struct AdHocInputEndpointInner {
     name: String,
     state: Atomic<PipelineState>,
     status_notifier: watch::Sender<()>,
-    details: Mutex<Option<HttpInputEndpointDetails>>,
-    /// Ingest data even if the pipeline is paused.
-    force: bool,
+    details: Mutex<Option<AdHocInputEndpointDetails>>,
 }
 
-impl HttpInputEndpointInner {
-    fn new(config: HttpInputConfig) -> Self {
-        let force = config.force;
+impl AdHocInputEndpointInner {
+    fn new(config: AdHocInputConfig) -> Self {
         Self {
             name: config.name,
-            state: Atomic::new(if force {
-                PipelineState::Running
-            } else {
-                PipelineState::Paused
-            }),
+            state: Atomic::new(PipelineState::Paused),
             status_notifier: watch::channel(()).0,
             details: Mutex::new(None),
-            force,
         }
     }
 }
 
-/// Input endpoint that streams input data via HTTP.
+/// Input endpoint for updates from ad-hoc queries.
 #[derive(Clone)]
-pub(crate) struct HttpInputEndpoint {
-    inner: Arc<HttpInputEndpointInner>,
+pub(crate) struct AdHocInputEndpoint {
+    inner: Arc<AdHocInputEndpointInner>,
 }
 
-impl HttpInputEndpoint {
-    pub(crate) fn new(config: HttpInputConfig) -> Self {
+/// Ad-hoc input endpoint.
+///
+/// We can create an ad-hoc input endpoint in two ways:
+///
+/// - Directly from an ad-hoc query. In that case, the query passes the batch to
+///   insert to [AdHocInputEndpoint::complete_request] as a [RecordBatch]. If
+///   fault tolerance is enabled, we also serialize the batch as Parquet format
+///   to write to the log.
+///
+/// - From a fault tolerance log replay. In that case, we parse the batch in
+///   Parquet format and apply it. (There is nothing in the replay path that
+///   guarantees the batch is in Parquet format, but the ad-hoc query code
+///   configures the input adapter to use Parquet format, which propagates to
+///   the log record that creates the `AdHocInputEndpoint`.)
+impl AdHocInputEndpoint {
+    pub(crate) fn new(config: AdHocInputConfig) -> Self {
         Self {
-            inner: Arc::new(HttpInputEndpointInner::new(config)),
+            inner: Arc::new(AdHocInputEndpointInner::new(config)),
         }
     }
 
@@ -115,31 +110,44 @@ impl HttpInputEndpoint {
         self.inner.status_notifier.send_replace(());
     }
 
-    fn push(&self, bytes: Option<&[u8]>, errors: &mut CircularQueue<ParseError>) -> usize {
+    fn is_ft(&self) -> bool {
         let mut guard = self.inner.details.lock().unwrap();
         let details = guard.as_mut().unwrap();
-        if let Some(bytes) = bytes {
-            details.splitter.append(bytes);
-        }
-        let mut total_errors = 0;
-        while let Some(chunk) = details.splitter.next(bytes.is_none()) {
-            let (buffer, new_errors) = details.parser.parse(chunk);
-            let aux = if details.consumer.is_pipeline_fault_tolerant() {
-                Vec::from(chunk)
-            } else {
-                Vec::new()
-            };
-            details
-                .queue
-                .push_with_aux((buffer, new_errors.clone()), chunk.len(), aux);
-            total_errors += new_errors.len();
-            for error in new_errors {
-                errors.push(error);
-            }
-        }
-        drop(guard);
+        details.consumer.is_pipeline_fault_tolerant()
+    }
 
-        total_errors
+    async fn push(
+        &self,
+        batch: RecordBatch,
+        schema: &Arc<Schema>,
+        arrow_inserter: &mut Box<dyn ArrowStream>,
+    ) -> AnyResult<u64> {
+        arrow_inserter.insert(&batch)?;
+        let buffer = arrow_inserter.take();
+        let num_records = buffer.len();
+        if !buffer.is_empty() {
+            let mut aux = Vec::new();
+            if self.is_ft() {
+                let mut writer = AsyncArrowWriter::try_new(
+                    BufferWriter { buffer: &mut aux },
+                    schema.clone(),
+                    Some(
+                        WriterProperties::builder()
+                            .set_compression(Compression::SNAPPY)
+                            .build(),
+                    ),
+                )?;
+                writer.write(&batch).await?;
+                writer.flush().await?;
+                writer.close().await?;
+            };
+
+            let mut guard = self.inner.details.lock().unwrap();
+            let details = guard.as_mut().unwrap();
+            details.queue.push_with_aux((buffer, Vec::new()), 0, aux);
+        }
+
+        Ok(num_records as u64)
     }
 
     fn error(&self, fatal: bool, error: AnyError) {
@@ -164,19 +172,13 @@ impl HttpInputEndpoint {
             .len()
     }
 
-    /// Read the `payload` stream and push it to the pipeline.
-    ///
-    /// Returns on reaching the end of the `payload` stream
-    /// (if any) or when the pipeline terminates.
     pub(crate) async fn complete_request(
         &self,
-        mut payload: Payload,
-    ) -> Result<HttpResponse, PipelineError> {
-        debug!("HTTP input endpoint '{}': start of request", self.name());
-
-        let mut num_bytes = 0;
-        let mut errors = CircularQueue::with_capacity(MAX_REPORTED_PARSE_ERRORS);
-        let mut num_errors = 0;
+        mut data: SendableRecordBatchStream,
+        mut arrow_inserter: Box<dyn ArrowStream>,
+        schema: &Arc<Schema>,
+    ) -> Result<u64, PipelineError> {
+        let mut num_records = 0;
         let mut status_watch = self.inner.status_notifier.subscribe();
 
         loop {
@@ -189,11 +191,16 @@ impl HttpInputEndpoint {
                 }
                 PipelineState::Running => {
                     // Check pipeline status at least every second.
-                    match timeout(Duration::from_millis(1_000), payload.next()).await {
+                    match timeout(Duration::from_millis(1_000), data.next()).await {
                         Err(_elapsed) => (),
-                        Ok(Some(Ok(bytes))) => {
-                            num_bytes += bytes.len();
-                            num_errors += self.push(Some(&bytes), &mut errors);
+                        Ok(Some(Ok(batch))) => {
+                            num_records += self
+                                .push(batch, schema, &mut arrow_inserter)
+                                .await
+                                .map_err(|e| PipelineError::AdHocQueryError {
+                                    error: e.to_string(),
+                                    df: None,
+                                })?;
                         }
                         Ok(Some(Err(e))) => {
                             self.error(true, anyhow!(e.to_string()));
@@ -204,7 +211,6 @@ impl HttpInputEndpoint {
                             ))?
                         }
                         Ok(None) => {
-                            num_errors += self.push(None, &mut errors);
                             break;
                         }
                     }
@@ -219,15 +225,7 @@ impl HttpInputEndpoint {
             sleep(Duration::from_millis(100)).await;
         }
 
-        debug!(
-            "HTTP input endpoint '{}': end of request, {num_bytes} received",
-            self.name()
-        );
-        if errors.is_empty() {
-            Ok(HttpResponse::Ok().finish())
-        } else {
-            Err(PipelineError::parse_errors(num_errors, errors.asc_iter()))
-        }
+        Ok(num_records)
     }
 
     fn set_state(&self, state: PipelineState) {
@@ -236,61 +234,55 @@ impl HttpInputEndpoint {
     }
 }
 
-impl InputEndpoint for HttpInputEndpoint {
+impl InputEndpoint for AdHocInputEndpoint {
     fn is_fault_tolerant(&self) -> bool {
         true
     }
 }
 
-impl TransportInputEndpoint for HttpInputEndpoint {
+impl TransportInputEndpoint for AdHocInputEndpoint {
     fn open(
         &self,
         consumer: Box<dyn InputConsumer>,
         parser: Box<dyn Parser>,
         _schema: Relation,
     ) -> AnyResult<Box<dyn InputReader>> {
-        let splitter = StreamSplitter::new(parser.splitter());
         let queue = InputQueue::new(consumer.clone());
-        *self.inner.details.lock().unwrap() = Some(HttpInputEndpointDetails {
+        *self.inner.details.lock().unwrap() = Some(AdHocInputEndpointDetails {
             consumer,
             parser,
             queue,
-            splitter,
         });
         Ok(Box::new(self.clone()))
     }
 }
 
-impl InputReader for HttpInputEndpoint {
+impl InputReader for AdHocInputEndpoint {
     fn request(&self, command: InputReaderCommand) {
         match command {
             InputReaderCommand::Seek(_) => (),
             InputReaderCommand::Replay(metadata) => {
-                let Metadata { chunks } = rmpv::ext::from_value(metadata).unwrap();
+                let Metadata { batches: chunks } = rmpv::ext::from_value(metadata).unwrap();
                 let mut guard = self.inner.details.lock().unwrap();
                 let details = guard.as_mut().unwrap();
                 let mut num_records = 0;
                 for chunk in chunks {
                     let (mut buffer, errors) = details.parser.parse(&chunk);
-                    details.consumer.buffered(buffer.len(), chunk.len());
+                    details.consumer.buffered(buffer.len(), !chunk.len());
                     details.consumer.parse_errors(errors);
                     num_records += buffer.flush_all();
                 }
                 details.consumer.replayed(num_records);
             }
             InputReaderCommand::Extend => self.set_state(PipelineState::Running),
-            InputReaderCommand::Pause => {
-                if !self.inner.force {
-                    self.set_state(PipelineState::Paused)
-                }
-            }
+            InputReaderCommand::Pause => self.set_state(PipelineState::Paused),
             InputReaderCommand::Queue => {
                 let mut guard = self.inner.details.lock().unwrap();
                 let details = guard.as_mut().unwrap();
-                let (num_records, chunks) = details.queue.flush_with_aux();
+                let (num_records, batches) = details.queue.flush_with_aux();
                 let metadata = if details.consumer.is_pipeline_fault_tolerant() {
                     rmpv::ext::to_value(Metadata {
-                        chunks: chunks.into_iter().map(ByteBuf::from).collect(),
+                        batches: batches.into_iter().map(ByteBuf::from).collect(),
                     })
                     .unwrap()
                 } else {
@@ -305,5 +297,6 @@ impl InputReader for HttpInputEndpoint {
 
 #[derive(Serialize, Deserialize)]
 struct Metadata {
-    chunks: Vec<ByteBuf>,
+    /// Serialized batches in Parquet format.
+    batches: Vec<ByteBuf>,
 }
