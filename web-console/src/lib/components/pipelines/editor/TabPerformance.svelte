@@ -59,7 +59,7 @@
         </div>
       </div>
     </div>
-    {#if metrics.current.input.size}
+    {#if metrics.current.tables.size}
       <table class="max-w-[1000px]">
         <thead class="border-b-2">
           <tr>
@@ -71,7 +71,7 @@
           </tr>
         </thead>
         <tbody>
-          {#each metrics.current.input.entries() as [relation, stats]}
+          {#each metrics.current.tables.entries() as [relation, stats]}
             <tr>
               <td>
                 {relation}
@@ -89,7 +89,7 @@
         </tbody>
       </table>
     {/if}
-    {#if metrics.current.output.size}
+    {#if metrics.current.views.size}
       <table class="max-w-[1200px]">
         <thead class="border-b-2">
           <tr>
@@ -102,7 +102,7 @@
           </tr>
         </thead>
         <tbody>
-          {#each metrics.current.output.entries() as [relation, stats]}
+          {#each metrics.current.views.entries() as [relation, stats]}
             <tr>
               <td>
                 {relation}

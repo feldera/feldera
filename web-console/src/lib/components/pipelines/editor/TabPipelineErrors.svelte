@@ -1,18 +1,15 @@
 <script lang="ts">
-  import { useSystemErrors } from '$lib/compositions/health/systemErrors.svelte'
-  import type { ExtendedPipeline, Pipeline } from '$lib/services/pipelineManager'
   import { useSkeletonTheme } from '$lib/compositions/useSkeletonTheme.svelte'
+  import type { SystemError } from '$lib/compositions/health/systemErrors'
 
-  let { pipeline }: { pipeline: { current: ExtendedPipeline } } = $props()
-
-  let errors = useSystemErrors(pipeline)
+  let { errors }: { errors: SystemError<any, any>[] } = $props()
 
   const theme = useSkeletonTheme()
 </script>
 
 <div class=" h-full">
-  <div class="{errors.current.length ? 'bg-white-black' : ''} flex min-h-full flex-col p-2">
-    {#each errors.current as systemError}
+  <div class="{errors.length ? 'bg-white-black' : ''} flex min-h-full flex-col p-2">
+    {#each errors as systemError}
       <div class=" whitespace-nowrap">
         <a class="" href={systemError.cause.source}>
           <span
