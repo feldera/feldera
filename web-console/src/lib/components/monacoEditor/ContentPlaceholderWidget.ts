@@ -1,4 +1,4 @@
-import { editor } from 'monaco-editor/esm/vs/editor/editor.api'
+import { editor, type IDisposable } from 'monaco-editor/esm/vs/editor/editor.api'
 
 /**
  * Represents an placeholder renderer for monaco editor
@@ -21,21 +21,29 @@ export class MonacoPlaceholderContentWidget {
     this.editorRef = editorRef
     this.placeholderStyle = placeholderStyle
     // register a listener for editor code changes
-    let disposeHandler1 = this.editorRef.onDidChangeModelContent(() =>
-      this.refreshPlaceholderVisibility()
+    let disposables: IDisposable[] = []
+    disposables.push(
+      this.editorRef.onDidChangeModelContent(() => this.refreshPlaceholderVisibility())
     )
-    let disposeHandler2 = this.editorRef.onDidChangeModel(() => this.refreshPlaceholderVisibility())
+    disposables.push(this.editorRef.onDidChangeModel(() => this.refreshPlaceholderVisibility()))
+    disposables.push(this.editorRef.onDidFocusEditorText(() => this.refreshPlaceholderVisibility()))
+    disposables.push(this.editorRef.onDidBlurEditorText(() => this.refreshPlaceholderVisibility()))
     // ensure that on initial load the placeholder is shown
     this.refreshPlaceholderVisibility()
     // ensure widget and event handler are properly disposed of
     this.dispose = () => {
-      disposeHandler1.dispose()
-      disposeHandler2.dispose()
+      for (const { dispose } of disposables) {
+        dispose()
+      }
       this.editorRef.removeContentWidget(this)
     }
   }
 
   refreshPlaceholderVisibility() {
+    if (this.editorRef.hasTextFocus() && !this.editorRef.getOption(editor.EditorOption.readOnly)) {
+      this.editorRef.removeContentWidget(this)
+      return
+    }
     if (this.editorRef.getValue() === '') {
       this.editorRef.addContentWidget(this)
     } else {
