@@ -5,7 +5,7 @@
 use super::{
     super::model::Auction,
     config::{FIRST_AUCTION_ID, FIRST_CATEGORY_ID, FIRST_PERSON_ID},
-    NexmarkGenerator,
+    GeneratorContext,
 };
 use rand::Rng;
 use std::{
@@ -21,7 +21,7 @@ const NUM_CATEGORIES: u64 = 5;
 /// 1 over these values.
 const HOT_SELLER_RATIO: usize = 100;
 
-impl<R: Rng> NexmarkGenerator<R> {
+impl<R: Rng> GeneratorContext<'_, R> {
     /// Generate and return a random auction with the next available id.
     pub fn next_auction(&mut self, event_id: u64, timestamp: u64) -> Auction {
         let id = self.last_base0_auction_id(event_id) + FIRST_AUCTION_ID;
@@ -142,9 +142,10 @@ mod tests {
 
     #[test]
     fn test_next_auction() {
-        let mut ng = make_test_generator();
+        let (core, mut rng) = make_test_generator();
+        let mut gc = GeneratorContext::new(&core, &mut rng);
 
-        let auction = ng.next_auction(0, 0);
+        let auction = gc.next_auction(0, 0);
 
         // Note: due to usize differences on windows, need to calculate the
         // size explicitly:
@@ -195,9 +196,10 @@ mod tests {
     // After the 1st person is generated in the 33rd epoch, we have 99 auctions.
     #[case(50*33 + 1, 99)]
     fn test_last_base0_auction_id(#[case] event_id: u64, #[case] expected_id: u64) {
-        let ng = make_test_generator();
+        let (core, mut rng) = make_test_generator();
+        let gc = GeneratorContext::new(&core, &mut rng);
 
-        let last_auction_id = ng.last_base0_auction_id(event_id);
+        let last_auction_id = gc.last_base0_auction_id(event_id);
 
         assert_eq!(last_auction_id, expected_id);
     }
@@ -217,18 +219,20 @@ mod tests {
     #[case(50 * 35, 4)] // last_base0_auction_id is 35*3 + 0 - 1 = 104
     #[case(50 * 35 + 1, 5)] // last_base0_auction_id is 35*3 + 1 - 1 = 105
     fn test_next_base0_auction_id(#[case] next_event_id: u64, #[case] expected_id: u64) {
-        let mut ng = make_test_generator();
+        let (core, mut rng) = make_test_generator();
+        let mut gc = GeneratorContext::new(&core, &mut rng);
 
-        let next_auction_id = ng.next_base0_auction_id(next_event_id);
+        let next_auction_id = gc.next_base0_auction_id(next_event_id);
 
         assert_eq!(next_auction_id, expected_id);
     }
 
     #[test]
     fn test_next_auction_length() {
-        let mut ng = make_test_generator();
+        let (core, mut rng) = make_test_generator();
+        let mut gc = GeneratorContext::new(&core, &mut rng);
 
-        let len_ms = ng.next_auction_length_ms(0, 0);
+        let len_ms = gc.next_auction_length_ms(0, 0);
 
         // Since StepRng always returns zero, can only test the lower bound here.
         assert_eq!(len_ms, 1);
