@@ -32,7 +32,7 @@ All commands below should be run from the root directory of the repository.
   ```bash
   docker compose -f deploy/docker-compose.yml up
   ```
-  
+
 - **Built using local sources:** this can take a while as it both builds the pipeline
   manager and performs pre-compilation.
   ```bash
@@ -42,7 +42,7 @@ All commands below should be run from the root directory of the repository.
   ```
   As this section is for development, below we specify `-dev` configuration file each time.
   To use only the releases, remove the `-f ...-dev.yml` arguments.
-  
+
 - **Change logging level:**
   ```bash
   RUST_LOG=debug docker compose -f deploy/docker-compose.yml \
@@ -68,15 +68,15 @@ All commands below should be run from the root directory of the repository.
                  -f deploy/docker-compose-extra-dev.yml \
                  -f deploy/docker-compose-demo.yml \
                  -f deploy/docker-compose-demo-dev.yml \
-                 --profile demo-debezium-mysql up --build 
+                 --profile demo-debezium-mysql up --build
   ```
-  
+
   The demo profiles can be found within: `deploy/docker-compose-demo.yml`
 
 - **Extra (data source/sink):**
   ```bash
   docker compose -f deploy/docker-compose-extra.yml \
-                 --profile redpanda up --build 
+                 --profile redpanda up --build
   ```
-  
+
   The extra (data source/sink) profiles can be found within `deploy/docker-compose-extra.yml`
