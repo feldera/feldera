@@ -12,11 +12,15 @@
   import { tuple } from '$lib/functions/common/tuple'
   import { Tabs } from '@skeletonlabs/skeleton-svelte'
   import type { ExtendedPipeline } from '$lib/services/pipelineManager'
-  import { listPipelineErrors } from '$lib/compositions/health/systemErrors.svelte'
   import type { PipelineMetrics } from '$lib/functions/pipelineMetrics'
   import { usePipelineActionCallbacks } from '$lib/compositions/pipelines/usePipelineActionCallbacks.svelte'
   import { count } from '$lib/functions/common/array'
   import { untrack } from 'svelte'
+  import {
+    extractPipelineErrors,
+    extractPipelineXgressErrors,
+    extractProgramErrors
+  } from '$lib/compositions/health/systemErrors'
 
   let {
     pipeline,
@@ -28,7 +32,6 @@
     tuple('Errors' as const, TabPipelineErrors, PanelPipelineErrors),
     tuple('Performance' as const, undefined, PanelPerformance),
     tuple('Ad-hoc query' as const, TabControlAdhoc, PanelAdHocQuery),
-    // tuple('query plan', TabDBSPGraph),
     tuple('Change stream' as const, TabControlChangeStream, PanelChangeStream),
     tuple('Logs' as const, undefined, PanelLogs)
   ]
@@ -58,14 +61,23 @@
       pipelineActionCallbacks.remove('', 'start_paused', forgetCurrentTab)
     }
   })
+
+  let programErrors = $derived(
+    extractProgramErrors(() => pipeline.current)({
+      name: pipeline.current.name,
+      status: pipeline.current.programStatus
+    })
+  )
+  let pipelineErrors = $derived(extractPipelineErrors(pipeline.current))
+  let xgressErrors = $derived(
+    extractPipelineXgressErrors({ pipelineName, status: metrics.current })
+  )
+  let errors = $derived([...programErrors, ...pipelineErrors, ...xgressErrors])
 </script>
 
 {#snippet TabPipelineErrors(pipeline: ExtendedPipeline)}
-  {@const issues = listPipelineErrors(pipeline)}
-  {@const warningCount =
-    count(issues.programErrors, (w) => w.cause.warning) +
-    count(issues.pipelineErrors, (w) => w.cause.warning)}
-  {@const errorCount = issues.programErrors.length + issues.pipelineErrors.length - warningCount}
+  {@const warningCount = count(errors, (w) => w.cause.warning)}
+  {@const errorCount = errors.length - warningCount}
   <span class="pr-1">Errors</span>
   {#if warningCount !== 0}
     <span class="inline-block min-w-6 rounded-full px-1 font-medium preset-filled-warning-200-800">
@@ -121,7 +133,7 @@
     {#each tabs as [tabName, , TabComponent]}
       <Tabs.Panel value={tabName} classes="h-full overflow-y-auto relative">
         <div class="absolute h-full w-full">
-          <TabComponent {pipeline} {metrics}></TabComponent>
+          <TabComponent {pipeline} {metrics} {errors}></TabComponent>
         </div>
       </Tabs.Panel>
     {/each}

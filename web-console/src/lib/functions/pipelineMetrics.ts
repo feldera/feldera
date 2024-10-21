@@ -4,17 +4,20 @@ import { normalizeCaseIndependentName } from '$lib/functions/felderaRelation'
 import { groupBy } from '$lib/functions/common/array'
 import type {
   ControllerStatus,
-  GlobalMetrics,
   GlobalMetricsTimestamp,
   InputEndpointMetrics,
-  OutputEndpointMetrics
+  InputEndpointStatus,
+  OutputEndpointMetrics,
+  OutputEndpointStatus
 } from '$lib/types/pipelineManager'
 import invariant from 'tiny-invariant'
 import { discreteDerivative } from './common/math'
 
 export const emptyPipelineMetrics = {
-  input: new Map<string, InputEndpointMetrics>(),
-  output: new Map<string, OutputEndpointMetrics>(),
+  tables: new Map<string, InputEndpointMetrics>(),
+  views: new Map<string, OutputEndpointMetrics>(),
+  inputs: [] as InputEndpointStatus[],
+  outputs: [] as OutputEndpointStatus[],
   global: [] as GlobalMetricsTimestamp[]
 }
 
@@ -62,7 +65,9 @@ export const accumulatePipelineMetrics =
     }
     return {
       lastTimestamp: oldData?.lastTimestamp,
-      input: new Map(
+      inputs: newData.inputs,
+      outputs: newData.outputs,
+      tables: new Map(
         groupBy(newData.inputs, (i) => normalizeCaseIndependentName({ name: i.config.stream })).map(
           ([relationName, metrics]) =>
             tuple(
@@ -91,7 +96,7 @@ export const accumulatePipelineMetrics =
             )
         )
       ),
-      output: new Map(
+      views: new Map(
         groupBy(newData.outputs, (i) =>
           normalizeCaseIndependentName({ name: i.config.stream })
         ).map(([relationName, metrics]) =>
