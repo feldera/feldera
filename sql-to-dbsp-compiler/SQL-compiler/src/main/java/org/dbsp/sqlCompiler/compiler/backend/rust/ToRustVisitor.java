@@ -29,6 +29,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessOpera
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAsofJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPBinaryOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPChainAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPControlledFilterOperator;
 import org.dbsp.sqlCompiler.circuit.DBSPDeclaration;
@@ -829,6 +830,26 @@ public class ToRustVisitor extends CircuitVisitor {
         return VisitDecision.STOP;
     }
 
+    @Override
+    public VisitDecision preorder(DBSPChainAggregateOperator operator) {
+        DBSPType streamType = new DBSPTypeStream(operator.outputType);
+        this.writeComments(operator)
+                .append("let ")
+                .append(operator.getOutputName())
+                .append(": ");
+        streamType.accept(this.innerVisitor);
+        this.builder.append(" = ")
+                .append(operator.input().getOutputName())
+                .append(".")
+                .append(operator.operation)
+                .append("(");
+        operator.init.accept(this.innerVisitor);
+        this.builder.append(", ");
+        operator.getFunction().accept(this.innerVisitor);
+        builder.append(");");
+        return VisitDecision.STOP;
+    }
+
     /**
      * Helper function for generateComparator and generateCmpFunc.
      * @param fieldNo  Field index that is compared.
@@ -957,7 +978,7 @@ public class ToRustVisitor extends CircuitVisitor {
             result = new DBSPBinaryExpression(node, eq.getType(), DBSPOpcode.AND, result, eq);
             comparator = fc.source;
         }
-        return result.closure(left.asParameter(), right.asParameter());
+        return result.closure(left, right);
     }
 
     @Override

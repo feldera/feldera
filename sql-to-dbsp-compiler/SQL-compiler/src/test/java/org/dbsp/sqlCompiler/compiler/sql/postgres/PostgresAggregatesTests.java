@@ -82,7 +82,7 @@ public class PostgresAggregatesTests extends SqlIoTest {
                 FROM (SELECT * FROM bool_test WHERE FALSE);
                  n | n
                 ---+---
-                   |\s
+                   |
                 (1 row)
 
 

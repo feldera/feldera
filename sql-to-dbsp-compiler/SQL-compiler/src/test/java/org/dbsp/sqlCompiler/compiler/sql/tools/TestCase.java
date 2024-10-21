@@ -137,7 +137,7 @@ public class TestCase {
                         streams.getVarReference().field(changes.inputs.getSetCount() + i).borrow());
                 if (foundFp) {
                     DBSPExpression convertedValue = new DBSPTupleExpression(converted);
-                    DBSPExpression converter = convertedValue.closure(var.asParameter());
+                    DBSPExpression converter = convertedValue.closure(var);
                     DBSPVariablePath converterVar = new DBSPVariablePath("converter", DBSPTypeAny.getDefault());
                     list.add(new DBSPLetStatement(converterVar.variable, converter));
                     expected = new DBSPApplyExpression("zset_map", convertedValue.getType(), expected.borrow(), converterVar);

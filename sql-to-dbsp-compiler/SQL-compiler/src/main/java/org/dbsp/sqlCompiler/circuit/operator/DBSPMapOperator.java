@@ -26,6 +26,7 @@ package org.dbsp.sqlCompiler.circuit.operator;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
+import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
@@ -41,6 +42,9 @@ public final class DBSPMapOperator extends DBSPUnaryOperator {
         // type may be a ZSet or an IndexedZSet.
         super(node, "map", expression, outputType, true, input);
         DBSPType elementType = this.getOutputZSetElementType();
+        if (expression.is(DBSPClosureExpression.class))
+            // Could also be a SortExpression
+            this.checkParameterCount(expression,  1);
         this.checkResultType(expression, elementType);
         this.checkArgumentFunctionType(expression, 0, input);
     }
@@ -71,4 +75,6 @@ public final class DBSPMapOperator extends DBSPUnaryOperator {
                     .copyAnnotations(this);
         return this;
     }
+
+    // equivalent inherited from base class
 }

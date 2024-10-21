@@ -162,7 +162,7 @@ public class Monotonicity extends CircuitVisitor {
             body = var.deref();
             argumentType = MonotoneTransferFunctions.ArgumentKind.ZSet;
         }
-        DBSPClosureExpression closure = body.closure(var.asParameter());
+        DBSPClosureExpression closure = body.closure(var);
         // Invoke inner visitor.
         MonotoneTransferFunctions analyzer = new MonotoneTransferFunctions(
                 this.errorReporter, operator, argumentType, projection);
@@ -199,7 +199,7 @@ public class Monotonicity extends CircuitVisitor {
                 fields[node.timestampIndex].deepCopy(), node.interval, node.size, node.start);
         fields[varType.size() + 1] = fields[varType.size()].deepCopy();
         DBSPExpression body = new DBSPTupleExpression(fields);
-        DBSPClosureExpression closure = body.closure(var.asParameter());
+        DBSPClosureExpression closure = body.closure(var);
         MonotoneTransferFunctions analyzer = new MonotoneTransferFunctions(
                 this.errorReporter, node, MonotoneTransferFunctions.ArgumentKind.ZSet, projection);
         MonotoneExpression result = analyzer.applyAnalysis(closure);
@@ -598,7 +598,7 @@ public class Monotonicity extends CircuitVisitor {
             fields.add(expr);
         }
         DBSPTupleExpression tuple = new DBSPTupleExpression(fields, false);
-        DBSPClosureExpression closure = tuple.closure(k.asParameter(), l.asParameter(), r.asParameter());
+        DBSPClosureExpression closure = tuple.closure(k, l, r);
 
         MonotoneTransferFunctions mm = new MonotoneTransferFunctions(
                 this.errorReporter, node,
@@ -648,7 +648,7 @@ public class Monotonicity extends CircuitVisitor {
             }
             fields[i] = field;
         }
-        DBSPClosureExpression closure = tuple.makeTuple(fields).closure(var.asParameter());
+        DBSPClosureExpression closure = tuple.makeTuple(fields).closure(var);
         MonotoneTransferFunctions.ArgumentKind argumentType = MonotoneTransferFunctions.ArgumentKind.ZSet;
         MonotoneTransferFunctions analyzer = new MonotoneTransferFunctions(
                 this.errorReporter, node, argumentType, projection);
@@ -699,7 +699,7 @@ public class Monotonicity extends CircuitVisitor {
         DBSPExpression body = new DBSPRawTupleExpression(
                 var.field(0).deref(),
                 makeNoExpression(ix.elementType));
-        DBSPClosureExpression closure = body.closure(var.asParameter());
+        DBSPClosureExpression closure = body.closure(var);
         MonotoneTransferFunctions analyzer = new MonotoneTransferFunctions(
                 this.errorReporter, node, MonotoneTransferFunctions.ArgumentKind.IndexedZSet, projection);
         MonotoneExpression result = analyzer.applyAnalysis(closure);
@@ -749,7 +749,7 @@ public class Monotonicity extends CircuitVisitor {
                         new DBSPTupleExpression(
                                 lowerBound,
                                 makeNoExpression(outputValueType.tupFields[1]).some()));
-        DBSPClosureExpression closure = body.closure(var.asParameter());
+        DBSPClosureExpression closure = body.closure(var);
         MonotoneTransferFunctions analyzer = new MonotoneTransferFunctions(
                 this.errorReporter, node, MonotoneTransferFunctions.ArgumentKind.IndexedZSet, inputProjection);
         MonotoneExpression result = analyzer.applyAnalysis(closure);

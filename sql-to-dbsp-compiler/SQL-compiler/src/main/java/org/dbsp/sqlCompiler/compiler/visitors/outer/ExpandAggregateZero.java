@@ -27,7 +27,7 @@ public class ExpandAggregateZero extends CircuitCloneVisitor {
         DBSPExpression emptySetResult = operator.getFunction();
         DBSPOperator input = this.mapped(operator.input());
         DBSPVariablePath _t = emptySetResult.getType().ref().var();
-        DBSPExpression toZero = emptySetResult.closure(_t.asParameter());
+        DBSPExpression toZero = emptySetResult.closure(_t);
         DBSPOperator map1 = new DBSPMapOperator(node, toZero, TypeCompiler.makeZSet(emptySetResult.getType()), input);
         this.addOperator(map1);
         DBSPOperator neg = new DBSPNegateOperator(node, map1);

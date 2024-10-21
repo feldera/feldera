@@ -77,7 +77,7 @@ public class ExpandCasts extends InnerRewriteVisitor {
             DBSPVariablePath var = elementType.ref().var();
             // This expression may need to be recursively converted
             DBSPExpression converter = var.deref().cast(new DBSPTypeVariant(false))
-                    .closure(var.asParameter());
+                    .closure(var);
             expression = new DBSPBinaryExpression(source.getNode(),
                     new DBSPTypeVec(new DBSPTypeVariant(false), vecType.mayBeNull),
                     DBSPOpcode.ARRAY_CONVERT, source, converter);
@@ -122,7 +122,7 @@ public class ExpandCasts extends InnerRewriteVisitor {
                 DBSPExpression vecV = source.cast(vecVType);
                 // convert each element recursively to the target element type
                 DBSPVariablePath var = vecVType.getElementType().ref().var();
-                DBSPExpression convert = var.deref().cast(type.getElementType()).closure(var.asParameter());
+                DBSPExpression convert = var.deref().cast(type.getElementType()).closure(var);
                 source = new DBSPBinaryExpression(source.getNode(),
                         new DBSPTypeVec(type.getElementType(), sourceType.mayBeNull),
                         DBSPOpcode.ARRAY_CONVERT, vecV, convert);
@@ -137,7 +137,7 @@ public class ExpandCasts extends InnerRewriteVisitor {
                     return new DBSPVecLiteral(type, false);
                 }
                 DBSPVariablePath var = sourceVecType.getElementType().ref().var();
-                DBSPExpression convert = var.deref().cast(type.getElementType()).closure(var.asParameter());
+                DBSPExpression convert = var.deref().cast(type.getElementType()).closure(var);
                 source = new DBSPBinaryExpression(source.getNode(),
                         new DBSPTypeVec(type.getElementType(), sourceType.mayBeNull),
                         DBSPOpcode.ARRAY_CONVERT, source, convert);

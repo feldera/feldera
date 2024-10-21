@@ -38,6 +38,7 @@ public class Annotations {
 
     public List<Annotation> get(Predicate<Annotation> test) { return Linq.where(this.annotations, test); }
 
+    /** Generate a string for displaying the annotations in a .dot graphviz file */
     public String toDotString() {
         List<Annotation> toShow = Linq.where(this.annotations, t -> !t.invisible());
         if (toShow.isEmpty())

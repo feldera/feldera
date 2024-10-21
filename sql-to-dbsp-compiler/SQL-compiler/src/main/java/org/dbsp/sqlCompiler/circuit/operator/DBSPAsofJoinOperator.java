@@ -117,4 +117,16 @@ public final class DBSPAsofJoinOperator extends DBSPJoinBaseOperator {
             body = body.to(DBSPCastExpression.class).source;
         return body.to(DBSPFieldExpression.class).fieldNo;
     }
+
+    @Override
+    public boolean equivalent(DBSPOperator other) {
+        if (!super.equivalent(other))
+            return false;
+        DBSPAsofJoinOperator otherOperator = other.as(DBSPAsofJoinOperator.class);
+        if (otherOperator == null)
+            return false;
+        return this.leftTimestamp.equivalent(otherOperator.leftTimestamp) &&
+                this.rightTimestamp.equivalent(otherOperator.rightTimestamp) &&
+                this.comparator.equivalent(otherOperator.comparator);
+    }
 }

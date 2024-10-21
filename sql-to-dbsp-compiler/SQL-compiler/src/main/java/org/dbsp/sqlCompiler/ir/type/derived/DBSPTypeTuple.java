@@ -146,7 +146,7 @@ public class DBSPTypeTuple extends DBSPTypeTupleBase {
             casts[i] = this.tupFields[i].caster(tuple.tupFields[i]);
             casts[i] = casts[i].call(var.deref().field(i));
         }
-        return new DBSPTupleExpression(casts).closure(var.asParameter());
+        return new DBSPTupleExpression(casts).closure(var);
     }
 
     @Override

@@ -256,7 +256,7 @@ public class ImplementNow extends Passes {
                     new DBSPTupleExpression(),
                     var.deref().applyClone());
             DBSPMapIndexOperator index = new DBSPMapIndexOperator(
-                    operator.getNode(), indexFunction.closure(var.asParameter()),
+                    operator.getNode(), indexFunction.closure(var),
                     TypeCompiler.makeIndexedZSet(new DBSPTypeTuple(), inputType), input);
             this.addOperator(index);
 
@@ -269,7 +269,7 @@ public class ImplementNow extends Passes {
             DBSPTypeZSet joinType = TypeCompiler.makeZSet(new DBSPTypeTuple(
                     Linq.map(fields, DBSPExpression::getType)));
             DBSPExpression joinFunction = new DBSPTupleExpression(fields, false)
-                    .closure(key.asParameter(), left.asParameter(), right.asParameter());
+                    .closure(key, left, right);
             assert nowIndexed != null;
             DBSPOperator result = new DBSPStreamJoinOperator(operator.getNode(), joinType,
                         joinFunction, operator.isMultiset, index, nowIndexed);
@@ -329,7 +329,7 @@ public class ImplementNow extends Passes {
                 return new DBSPRawTupleExpression(
                         DBSPTypeTypedBox.wrapTypedBox(lowerBound, false),
                         DBSPTypeTypedBox.wrapTypedBox(upperBound, false))
-                        .closure(var.asParameter());
+                        .closure(var);
             }
 
             @Override
@@ -812,7 +812,7 @@ public class ImplementNow extends Passes {
                 DBSPVariablePath var = filter.getOutputZSetElementType().ref().var();
                 List<DBSPExpression> fields = var.deref().allFields();
                 Utilities.removeLast(fields);
-                DBSPExpression drop = new DBSPTupleExpression(fields, false).closure(var.asParameter());
+                DBSPExpression drop = new DBSPTupleExpression(fields, false).closure(var);
                 result = new DBSPMapOperator(operator.getNode(), drop, operator.getOutputZSetType(), filter);
                 this.addOperator(result);
             }
@@ -856,7 +856,7 @@ public class ImplementNow extends Passes {
                     new DBSPTupleExpression(),
                     new DBSPTupleExpression(DBSPTypeTupleBase.flatten(var.deref()), false));
             this.nowIndexed = new DBSPMapIndexOperator(
-                    node, indexFunction.closure(var.asParameter()),
+                    node, indexFunction.closure(var),
                     TypeCompiler.makeIndexedZSet(new DBSPTypeTuple(), new DBSPTypeTuple(timestamp)), now);
             this.nowIndexed.addAnnotation(new AlwaysMonotone());
             this.addOperator(this.nowIndexed);

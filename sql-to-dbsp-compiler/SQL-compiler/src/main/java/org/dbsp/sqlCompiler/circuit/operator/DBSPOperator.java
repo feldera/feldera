@@ -178,6 +178,11 @@ public abstract class DBSPOperator extends DBSPNode implements IHasType, IDBSPOu
         return this.outputType;
     }
 
+    protected void checkParameterCount(DBSPExpression function, int expected) {
+        DBSPClosureExpression closure = function.to(DBSPClosureExpression.class);
+        assert closure.parameters.length == expected;
+    }
+
     /**
      * Check that the specified source operator produces a ZSet/IndexedZSet with element types that can be fed
      * to the specified function.

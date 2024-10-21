@@ -38,7 +38,7 @@ import java.util.List;
 public final class DBSPNoopOperator extends DBSPUnaryOperator {
     static DBSPClosureExpression getClosure(DBSPType rowType) {
         DBSPVariablePath var = rowType.ref().var();
-        return var.deref().applyClone().closure(var.asParameter());
+        return var.deref().applyClone().closure(var);
     }
 
     public DBSPNoopOperator(CalciteObject node, DBSPOperator source,
@@ -63,4 +63,6 @@ public final class DBSPNoopOperator extends DBSPUnaryOperator {
                     .copyAnnotations(this);
         return this;
     }
+
+    // equivalent inherited from base class
 }
