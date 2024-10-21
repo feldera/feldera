@@ -177,7 +177,7 @@ where
 
 #[cfg(test)]
 mod test {
-    use std::{cmp::min, i32};
+    use std::cmp::min;
 
     use crate::{
         circuit::CircuitConfig, operator::Min, utils::Tup2, OrdIndexedZSet, OutputHandle,
