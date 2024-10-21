@@ -129,8 +129,7 @@ fn create_generators_for_config<R: Rng + Default>(
             thread::Builder::new()
                 .name(format!("generator-{}", generator_config.first_event_number))
                 .spawn(move || {
-                    let mut generator =
-                        NexmarkGenerator::new(generator_config, R::default(), wallclock_base_time);
+                    let mut generator = NexmarkGenerator::new(generator_config, R::default());
                     for event in &mut generator {
                         tx.send(event).unwrap();
                     }
@@ -214,7 +213,6 @@ pub mod tests {
                 ..GeneratorConfig::default()
             },
             StepRng::new(0, 1),
-            0,
         );
         let mut v = VecDeque::new();
         for _ in 0..max_events {
@@ -226,11 +224,8 @@ pub mod tests {
         NexmarkSource::from_next_events(BatchedReceiver::new(next_event_rx))
     }
 
-    pub fn generate_expected_zset_tuples(
-        wallclock_base_time: u64,
-        num_events: usize,
-    ) -> Vec<Tup2<Event, ZWeight>> {
-        let expected_events = generate_expected_next_events(wallclock_base_time, num_events);
+    pub fn generate_expected_zset_tuples(num_events: usize) -> Vec<Tup2<Event, ZWeight>> {
+        let expected_events = generate_expected_next_events(num_events);
 
         expected_events
             .into_iter()
@@ -240,11 +235,8 @@ pub mod tests {
     }
 
     // Generates a zset manually using the default test NexmarkGenerator
-    fn generate_expected_zset(wallclock_base_time: u64, num_events: usize) -> OrdZSet<Event> {
-        OrdZSet::<Event>::from_keys(
-            (),
-            generate_expected_zset_tuples(wallclock_base_time, num_events),
-        )
+    fn generate_expected_zset(num_events: usize) -> OrdZSet<Event> {
+        OrdZSet::<Event>::from_keys((), generate_expected_zset_tuples(num_events))
     }
 
     #[test]
@@ -252,7 +244,7 @@ pub mod tests {
         let (circuit, input_handle) = RootCircuit::build(move |circuit| {
             let (stream, input_handle) = circuit.add_input_zset();
 
-            let expected_zset = generate_expected_zset(0, 10);
+            let expected_zset = generate_expected_zset(10);
 
             stream.inspect(move |data: &OrdZSet<Event>| {
                 assert_eq!(data, &expected_zset);
@@ -277,7 +269,7 @@ pub mod tests {
         let receiver = create_generators_for_config::<ThreadRng>(options);
         let source = NexmarkSource::from_next_events(receiver);
 
-        let expected_zset_tuple = generate_expected_zset_tuples(0, 10);
+        let expected_zset_tuple = generate_expected_zset_tuples(10);
 
         // Until I can use the multi-threaded generators with the StepRng, just compare
         // the event types (effectively the same).

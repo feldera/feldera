@@ -320,7 +320,6 @@ impl Inner {
         let mut generator = NexmarkGenerator::new(
             GeneratorConfig::new(generator_options, 0, 0, index),
             ThreadRng::default(),
-            0,
         );
 
         let mut buffers = EnumMap::from_fn(|_| Vec::new());
