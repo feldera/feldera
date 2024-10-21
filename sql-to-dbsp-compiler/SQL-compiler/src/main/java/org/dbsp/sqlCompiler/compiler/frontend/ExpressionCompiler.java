@@ -1206,6 +1206,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 return compileFunction(call, node, type, ops, 2, 3);
             }
             case LIKE:
+            // ILIKE will also match LIKE in Calcite, it's just a special case for case-insensitive matching
             case SIMILAR: {
                 return compileFunction(call, node, type, ops, 2, 3);
             }
