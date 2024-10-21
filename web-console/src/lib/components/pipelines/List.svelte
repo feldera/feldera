@@ -95,7 +95,7 @@
           stopAssisting()
         }}
         onkeydown={async (e) => {
-          if (e.key === 'Enter') {
+          if (e.code === 'Enter') {
             await createPipeline(e.currentTarget.value).then(
               () => {
                 e.currentTarget?.blur()

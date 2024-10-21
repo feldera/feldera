@@ -42,7 +42,7 @@
       handleSubmit(e)
     }}
     onkeydown={(e) => {
-      if (e.key !== 'Enter') {
+      if (e.code !== 'Enter') {
         return
       }
       handleSubmit(e)
