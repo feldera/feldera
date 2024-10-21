@@ -232,7 +232,7 @@ public class ExternalFunction extends SqlFunction {
             DBSPLetStatement strct = new DBSPLetStatement("strct",toStruct);
             statements.add(strct);
             DBSPVariablePath var = DBSPTypeAny.getDefault().var();
-            DBSPExpression into = new DBSPApplyMethodExpression("into", DBSPTypeAny.getDefault(), var).closure(var.asParameter());
+            DBSPExpression into = new DBSPApplyMethodExpression("into", DBSPTypeAny.getDefault(), var).closure(var);
             DBSPExpression retval = new DBSPApplyMethodExpression("map", returnType, strct.getVarReference(), into);
             DBSPExpression body = new DBSPBlockExpression(statements, retval);
             // DBSPExpression ok = new DBSPApplyMethodExpression("Ok", new DBSPTypeResult(returnType), retval);

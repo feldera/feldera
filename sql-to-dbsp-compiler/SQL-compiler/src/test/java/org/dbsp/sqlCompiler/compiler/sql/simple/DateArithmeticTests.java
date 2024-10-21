@@ -394,13 +394,11 @@ public class DateArithmeticTests extends SqlIoTest {
                 ------
                  334 days ago
                 (1 row)""");
-        /*
         this.qs("""
                 SELECT (TIMESTAMP '2023-01-01 10:00:00' - TIMESTAMP '2023-12-01 10:00:00') month;
                  diff
                 ------
-                 334 days ago
+                 11 months ago
                 (1 row)""");
-         */
     }
 }

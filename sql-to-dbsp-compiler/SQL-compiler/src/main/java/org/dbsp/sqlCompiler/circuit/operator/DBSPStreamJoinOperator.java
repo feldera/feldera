@@ -34,7 +34,7 @@ import javax.annotation.Nullable;
 import java.util.List;
 import java.util.Objects;
 
-public final class DBSPStreamJoinOperator extends DBSPBinaryOperator {
+public final class DBSPStreamJoinOperator extends DBSPJoinBaseOperator {
     public DBSPStreamJoinOperator(CalciteObject node, DBSPTypeZSet outputType,
                                   // Closure from key, valueLeft, valueRight to result type
                                   DBSPExpression function, boolean isMultiset,
@@ -70,4 +70,6 @@ public final class DBSPStreamJoinOperator extends DBSPBinaryOperator {
                     .copyAnnotations(this);
         return this;
     }
+
+    // equivalent inherited from base class
 }

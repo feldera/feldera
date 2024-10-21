@@ -39,6 +39,113 @@ public class StreamingTests extends StreamingTestBase {
     }
 
     @Test
+    public void chainAggregateMax() {
+        String sql = """
+                CREATE TABLE T(TS INT, X INT) WITH ('append_only' = 'true');
+                CREATE VIEW V AS
+                SELECT SUM(X), MAX(TS * 2) FROM T;""";
+        var ccs = this.getCCS(sql);
+        ccs.step("INSERT INTO T VALUES(NULL, 0);",
+                """
+                         sum | max | weight
+                        --------------------
+                          0  | NULL| 1""");
+        ccs.step("INSERT INTO T VALUES(10, 10);",
+                """
+                         sum | max | weight
+                        --------------------
+                          0  | NULL| -1
+                         10  | 20  | 1""");
+        ccs.step("INSERT INTO T VALUES(5, 20);",
+                """
+                         sum | max | weight
+                        --------------------
+                         10  | 20  | -1
+                         30  | 20  | 1""");
+        ccs.step("INSERT INTO T VALUES(30, 30);",
+                """
+                         sum | max | weight
+                        --------------------
+                         30  | 20  | -1
+                         60  | 60  | 1""");
+        this.addRustTestCase(ccs);
+    }
+
+    @Test
+    public void chainAggregateMin() {
+        String sql = """
+                CREATE TABLE T(TS INT, X INT) WITH ('append_only' = 'true');
+                CREATE VIEW V AS
+                SELECT SUM(X), MIN(TS * 2) FROM T;""";
+        var ccs = this.getCCS(sql);
+        ccs.step("INSERT INTO T VALUES(NULL, 0);",
+                """
+                         sum | min | weight
+                        --------------------
+                          0  | NULL| 1""");
+        ccs.step("INSERT INTO T VALUES(10, 10);",
+                """
+                         sum | min | weight
+                        --------------------
+                          0  | NULL| -1
+                         10  | 20  | 1""");
+        ccs.step("INSERT INTO T VALUES(5, 20);",
+                """
+                         sum | min | weight
+                        --------------------
+                         10  | 20  | -1
+                         30  | 10  | 1""");
+        ccs.step("INSERT INTO T VALUES(30, 30);",
+                """
+                         sum | min | weight
+                        --------------------
+                         30  | 10  | -1
+                         60  | 10  | 1""");
+        ccs.step("INSERT INTO T VALUES(NULL, 0);",
+                """
+                         sum | min | weight
+                        --------------------""");
+        this.addRustTestCase(ccs);
+    }
+
+    @Test
+    public void chainAggregateGroupBy() {
+        String sql = """
+                CREATE TABLE T(TS INT, X INT) WITH ('append_only' = 'true');
+                CREATE VIEW V AS
+                SELECT X, MAX(TS * 2) FROM T
+                GROUP BY X;""";
+        var ccs = this.getCCS(sql);
+        ccs.step("INSERT INTO T VALUES(NULL, NULL);",
+                """
+                         x   | max | weight
+                        -------------------
+                         NULL| NULL| 1""");
+        ccs.step("INSERT INTO T VALUES(10, 10);",
+                """
+                         x   | max | weight
+                        -------------------
+                         10  | 20  | 1""");
+        ccs.step("INSERT INTO T VALUES(5, 20);",
+                """
+                         x   | max | weight
+                        --------------------
+                         20  | 10  | 1""");
+        ccs.step("INSERT INTO T VALUES(30, 30);",
+                """
+                         x   | max | weight
+                        --------------------
+                         30  | 60  | 1""");
+        ccs.step("INSERT INTO T VALUES(20, 10), (0, 20), (30, 30);",
+                """
+                         x   | max | weight
+                        --------------------
+                         10  | 20  | -1
+                         10  | 40  | 1""");
+        this.addRustTestCase(ccs);
+    }
+
+    @Test
     public void issue2531() {
         String sql = """
                 create table r(
@@ -61,11 +168,9 @@ public class StreamingTests extends StreamingTestBase {
                     l.id = r.id and
                     r.ts = l.ts;
 
-                CREATE VIEW agg1 as\s
-                SELECT
-                    MAX(id)
-                FROM
-                    v
+                CREATE VIEW agg1 as
+                SELECT MAX(id)
+                FROM v
                 GROUP BY lts;""";
         CompilerCircuitStream ccs = this.getCCS(sql);
         CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
@@ -82,6 +187,7 @@ public class StreamingTests extends StreamingTestBase {
             }
         };
         visitor.apply(ccs.circuit);
+        this.addRustTestCase(ccs);
     }
 
     @Test

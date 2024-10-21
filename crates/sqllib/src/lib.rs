@@ -738,6 +738,7 @@ pub(crate) use for_all_numeric_operator;
 macro_rules! for_all_comparable_operator {
     ($func_name: ident) => {
         for_all_numeric_operator!($func_name);
+        some_operator!($func_name, b, bool, bool);
         some_operator!($func_name, Timestamp, Timestamp, Timestamp);
         some_operator!($func_name, Date, Date, Date);
         some_operator!($func_name, Time, Time, Time);

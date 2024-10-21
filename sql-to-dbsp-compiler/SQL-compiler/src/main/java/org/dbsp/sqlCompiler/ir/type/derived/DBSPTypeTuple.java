@@ -35,7 +35,6 @@ import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
@@ -147,7 +146,7 @@ public class DBSPTypeTuple extends DBSPTypeTupleBase {
             casts[i] = this.tupFields[i].caster(tuple.tupFields[i]);
             casts[i] = casts[i].call(var.deref().field(i));
         }
-        return new DBSPTupleExpression(casts).closure(var.asParameter());
+        return new DBSPTupleExpression(casts).closure(var);
     }
 
     @Override
@@ -165,7 +164,7 @@ public class DBSPTypeTuple extends DBSPTypeTupleBase {
     }
 
     @Override
-    public DBSPType makeType(List<DBSPType> fields) {
+    public DBSPTypeTuple makeType(List<DBSPType> fields) {
         return new DBSPTypeTuple(CalciteObject.EMPTY, fields);
     }
 

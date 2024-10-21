@@ -82,6 +82,12 @@ public class NonLinearAggregate extends AggregateBase {
     }
 
     @Override
+    public boolean compatible(AggregateBase other) {
+        return other.is(NonLinearAggregate.class) &&
+                !other.is(MinMaxAggregate.class);
+    }
+
+    @Override
     public void validate() {
         // These validation rules actually don't apply for window-based aggregates.
         DBSPType emptyResultType = this.emptySetResult.getType();
@@ -119,7 +125,7 @@ public class NonLinearAggregate extends AggregateBase {
             return this.postProcess;
         // If it is not set return the identity function
         DBSPVariablePath var = new DBSPVariablePath(Objects.requireNonNull(this.increment.getResultType()));
-        return var.closure(var.asParameter());
+        return var.closure(var);
     }
 
     @Override
@@ -232,9 +238,9 @@ public class NonLinearAggregate extends AggregateBase {
         DBSPAssignmentExpression accumulatorBody = new DBSPAssignmentExpression(
                 accumulator.deref(), new DBSPTupleExpression(increments));
         DBSPClosureExpression accumFunction = accumulatorBody.closure(
-                accumulator.asParameter(), rowVar.asParameter(),
-                weightVar.asParameter());
-        DBSPClosureExpression postClosure = new DBSPTupleExpression(posts).closure(postAccumulator.asParameter());
+                accumulator, rowVar,
+                weightVar);
+        DBSPClosureExpression postClosure = new DBSPTupleExpression(posts).closure(postAccumulator);
         DBSPType semigroup = new DBSPTypeSemigroup(semigroups, accumulatorTypes);
         return new NonLinearAggregate(node, new DBSPTupleExpression(zeros),
                 accumFunction, postClosure, new DBSPTupleExpression(emptySetResults), semigroup);

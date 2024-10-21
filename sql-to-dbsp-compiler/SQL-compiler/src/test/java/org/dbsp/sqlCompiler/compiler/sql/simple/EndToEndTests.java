@@ -54,7 +54,6 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
 import org.junit.Test;
 
 import java.math.BigDecimal;
-import java.util.Objects;
 
 /**
  * Test end-to-end by compiling some DDL statements and view

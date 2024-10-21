@@ -11,13 +11,14 @@ import javax.annotation.Nullable;
 import java.util.List;
 import java.util.Objects;
 
-/** Given a stream, it computes max(function(stream), delay(this)).
+/** Given a stream, it computes function(extractTS(stream), delay(this, init)).
  * This operator is special: the output is replicated for all workers.
  * See the comments for {@link DBSPApplyOperator}. */
 public final class DBSPWaterlineOperator extends DBSPUnaryOperator {
-    /** Initial value of waterline */
+    /** Initial value of waterline; a closure with 0 parameters */
     public final DBSPClosureExpression init;
-    /** Function which extracts a timestamp */
+    /** Function which extracts a timestamp; a closure with two parameters;
+     * currently the second parameter is never used, and should always have the type &() */
     public final DBSPClosureExpression extractTs;
 
     public DBSPWaterlineOperator(CalciteObject node, DBSPClosureExpression init,

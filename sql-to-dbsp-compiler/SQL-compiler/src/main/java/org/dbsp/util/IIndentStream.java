@@ -36,9 +36,7 @@ public interface IIndentStream {
     <T extends ToIndentableString> IIndentStream append(T value);
     IIndentStream append(int value);
     IIndentStream append(long value);
-    /**
-     * For lazy evaluation of the argument.
-     */
+    /** For lazy evaluation of the argument. */
     IIndentStream appendSupplier(Supplier<String> supplier);
     IIndentStream joinS(String separator, Collection<String> data);
     <T extends ToIndentableString> IIndentStream joinI(String separator, Collection<T> data);
@@ -54,9 +52,7 @@ public interface IIndentStream {
     <T extends ToIndentableString> IIndentStream intercalateI(String separator, Collection<T> data);
     <T extends ToIndentableString> IIndentStream intercalateI(String separator, T[] data);
     IIndentStream newline();
-    /**
-     * Increase indentation and emit a newline.
-     */
+    /** Increase indentation and emit a newline. */
     IIndentStream increase();
     IIndentStream decrease();
 }

@@ -40,6 +40,7 @@ import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeResult;
 import org.dbsp.sqlCompiler.ir.type.IHasType;
+import org.dbsp.util.Linq;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
@@ -121,8 +122,17 @@ public abstract class DBSPExpression
         return new DBSPSomeExpression(this.getNode(), this);
     }
 
+    public DBSPClosureExpression closure() {
+        return new DBSPClosureExpression(this);
+    }
+
     public DBSPClosureExpression closure(DBSPParameter... parameters) {
         return new DBSPClosureExpression(this, parameters);
+    }
+
+    public DBSPClosureExpression closure(DBSPVariablePath... parameters) {
+        return new DBSPClosureExpression(this,
+                Linq.map(parameters, DBSPVariablePath::asParameter, DBSPParameter.class));
     }
 
     public DBSPExpression is_null() {

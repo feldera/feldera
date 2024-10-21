@@ -61,7 +61,7 @@ public class SimplifyWaterline extends Simplify {
                 tuple.makeTuple(new DBSPBoolLiteral(false), var.deref().field(1)).borrow())
                 .reduce(this.errorReporter);
         result = new DBSPIfExpression(expression.getNode(),
-                var.deref().field(0), ifTrue, ifFalse).closure(var.asParameter());
+                var.deref().field(0), ifTrue, ifFalse).closure(var);
         this.map(expression, result);
         return VisitDecision.STOP;
     }

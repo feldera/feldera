@@ -124,7 +124,8 @@ impl Into<()> for Tup0 {
 
 impl core::fmt::Debug for Tup0 {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::result::Result<(), core::fmt::Error> {
-        f.debug_tuple("").finish()
+        // For some reason Rust does not print anything when the tuple is empty
+        f.debug_tuple("()").finish()
     }
 }
 

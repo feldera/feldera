@@ -34,8 +34,9 @@ import javax.annotation.Nullable;
 import java.util.List;
 import java.util.Objects;
 
-/** Corresponds to a DBSP join operator, which may include multiple integrators. */
-public final class DBSPJoinOperator extends DBSPBinaryOperator {
+/** Corresponds to a DBSP join operator, which may include multiple integrators.
+ * Output is always a ZSet.  There's an DBSPJoinIndexOperator which can produce IndexedZSets. */
+public final class DBSPJoinOperator extends DBSPJoinBaseOperator {
     public DBSPJoinOperator(
             CalciteObject node, DBSPTypeZSet outputType,
             DBSPExpression function, boolean isMultiset,
@@ -43,10 +44,6 @@ public final class DBSPJoinOperator extends DBSPBinaryOperator {
         super(node, "join", function, outputType, isMultiset, left, right);
         this.checkResultType(function, this.getOutputZSetElementType());
         assert left.getOutputIndexedZSetType().keyType.sameType(right.getOutputIndexedZSetType().keyType);
-    }
-
-    public DBSPType getKeyType() {
-        return left().getOutputIndexedZSetType().keyType;
     }
 
     @Override
@@ -75,4 +72,6 @@ public final class DBSPJoinOperator extends DBSPBinaryOperator {
             visitor.postorder(this);
         visitor.pop(this);
     }
+
+    // equivalent inherited from base class
 }

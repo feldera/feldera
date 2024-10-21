@@ -98,6 +98,7 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs {
         if (derivedFrom == -1)
             derivedFrom = old.id;
         newOp.setDerivedFrom(derivedFrom);
+        assert old.outputType.sameType(newOp.outputType);
     }
 
     /**
@@ -218,6 +219,11 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs {
     }
 
     @Override
+    public void postorder(DBSPAggregateZeroOperator operator) {
+        this.replace(operator);
+    }
+
+    @Override
     public void postorder(DBSPNowOperator operator) {
         this.replace(operator);
     }
@@ -316,6 +322,16 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs {
     }
 
     @Override
+    public void postorder(DBSPStreamJoinIndexOperator operator) {
+        this.replace(operator);
+    }
+
+    @Override
+    public void postorder(DBSPJoinIndexOperator operator) {
+        this.replace(operator);
+    }
+
+    @Override
     public void postorder(DBSPAsofJoinOperator operator) {
         this.replace(operator);
     }
@@ -337,6 +353,11 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs {
 
     @Override
     public void postorder(DBSPAggregateOperator operator) {
+        this.replace(operator);
+    }
+
+    @Override
+    public void postorder(DBSPChainAggregateOperator operator) {
         this.replace(operator);
     }
 

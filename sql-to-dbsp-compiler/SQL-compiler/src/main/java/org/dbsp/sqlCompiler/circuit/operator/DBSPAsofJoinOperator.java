@@ -17,7 +17,7 @@ import java.util.List;
 import java.util.Objects;
 
 /** This operator is purely incremental, it does not have a non-incremental form */
-public final class DBSPAsofJoinOperator extends DBSPBinaryOperator {
+public final class DBSPAsofJoinOperator extends DBSPJoinBaseOperator {
     public final DBSPComparatorExpression comparator;
     public final DBSPClosureExpression leftTimestamp;
     public final DBSPClosureExpression rightTimestamp;
@@ -81,14 +81,6 @@ public final class DBSPAsofJoinOperator extends DBSPBinaryOperator {
         visitor.pop(this);
     }
 
-    public DBSPType getKeyType() {
-        return this.left().getOutputIndexedZSetType().keyType;
-    }
-
-    public DBSPType getLeftInputValueType() {
-        return this.left().getOutputIndexedZSetType().elementType;
-    }
-
     @Override
     public DBSPOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
         return new DBSPAsofJoinOperator(this.getNode(),
@@ -124,5 +116,17 @@ public final class DBSPAsofJoinOperator extends DBSPBinaryOperator {
         if (body.is(DBSPCastExpression.class))
             body = body.to(DBSPCastExpression.class).source;
         return body.to(DBSPFieldExpression.class).fieldNo;
+    }
+
+    @Override
+    public boolean equivalent(DBSPOperator other) {
+        if (!super.equivalent(other))
+            return false;
+        DBSPAsofJoinOperator otherOperator = other.as(DBSPAsofJoinOperator.class);
+        if (otherOperator == null)
+            return false;
+        return this.leftTimestamp.equivalent(otherOperator.leftTimestamp) &&
+                this.rightTimestamp.equivalent(otherOperator.rightTimestamp) &&
+                this.comparator.equivalent(otherOperator.comparator);
     }
 }
