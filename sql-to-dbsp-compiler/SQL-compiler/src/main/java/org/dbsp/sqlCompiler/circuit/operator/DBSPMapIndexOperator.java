@@ -64,6 +64,11 @@ public final class DBSPMapIndexOperator extends DBSPUnaryOperator {
         // Expression must return a tuple that is composed of a key and a value
         this.checkResultType(indexFunction, outputElementType);
         this.checkArgumentFunctionType(indexFunction, 0, input);
+        this.checkParameterCount(indexFunction, 1);
+    }
+
+    public DBSPType getKeyType() {
+        return this.getOutputIndexedZSetType().keyType;
     }
 
     @Override
@@ -91,4 +96,6 @@ public final class DBSPMapIndexOperator extends DBSPUnaryOperator {
                     this.getOutputIndexedZSetType(), newInputs.get(0)).copyAnnotations(this);
         return this;
     }
+
+    // equivalent inherited from base class
 }

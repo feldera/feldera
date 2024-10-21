@@ -132,7 +132,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
         //   Tuple3::new(x0.clone(), x1.clone(), e)
         // }
         DBSPClosureExpression toTuple = new DBSPTupleExpression(resultColumns, false)
-                .closure(elem.asParameter());
+                .closure(elem);
         DBSPExpression iter = new DBSPApplyMethodExpression(flatmap.getNode(), "into_iter",
                 DBSPTypeAny.getDefault(),
                 statement.getVarReference().applyClone());
@@ -144,7 +144,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
                 "map", DBSPTypeAny.getDefault(),
                 iter, toTuple);
         DBSPExpression block = new DBSPBlockExpression(statements, function);
-        return block.closure(rowVar.asParameter());
+        return block.closure(rowVar);
     }
 
     @Override

@@ -18,13 +18,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Function;
 
-/*
- * Eliminate some function implementations.
- * For now just:
- * - dump(x)
- */
-public class EliminateFunctions extends InnerRewriteVisitor {
-    public EliminateFunctions(IErrorReporter reporter) {
+/* Implement the dump() function. */
+public class EliminateDump extends InnerRewriteVisitor {
+    public EliminateDump(IErrorReporter reporter) {
         super(reporter);
     }
 

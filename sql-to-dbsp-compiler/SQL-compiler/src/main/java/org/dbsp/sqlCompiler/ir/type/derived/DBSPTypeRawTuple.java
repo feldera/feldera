@@ -123,7 +123,7 @@ public class DBSPTypeRawTuple extends DBSPTypeTupleBase {
             casts[i] = this.tupFields[i].caster(tuple.tupFields[i]);
             casts[i] = casts[i].call(var.deref().field(i));
         }
-        return new DBSPRawTupleExpression(casts).closure(var.asParameter());
+        return new DBSPRawTupleExpression(casts).closure(var);
     }
 
     @Override

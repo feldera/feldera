@@ -700,7 +700,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
         if (!argElemType.sameType(expectedType)) {
             // Apply a cast to every element of the vector
             DBSPVariablePath var = argElemType.ref().var();
-            DBSPExpression cast = var.deref().cast(expectedType).closure(var.asParameter());
+            DBSPExpression cast = var.deref().cast(expectedType).closure(var);
             arg = new DBSPApplyExpression("map", expectedVecType, arg.borrow(), cast);
         }
 

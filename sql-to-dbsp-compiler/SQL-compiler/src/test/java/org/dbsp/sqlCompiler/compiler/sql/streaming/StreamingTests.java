@@ -22,7 +22,6 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.OptimizeMaps;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
 import org.junit.Assert;
-import org.junit.Ignore;
 import org.junit.Test;
 
 import java.io.File;
@@ -45,14 +44,111 @@ public class StreamingTests extends StreamingTestBase {
         return options;
     }
 
-    @Test @Ignore("https://github.com/feldera/feldera/issues/69")
-    public void temporalAppendOnly() {
-        this.showFinalVerbose();
+    @Test
+    public void chainAggregateMax() {
         String sql = """
-                CREATE TABLE T(TS INT) WITH ('append_only' = 'true');
+                CREATE TABLE T(TS INT, X INT) WITH ('append_only' = 'true');
                 CREATE VIEW V AS
-                SELECT * FROM T WHERE TS < (SELECT MAX(TS * 2) - 1 FROM T);""";
+                SELECT SUM(X), MAX(TS * 2) FROM T;""";
         var ccs = this.getCCS(sql);
+        ccs.step("INSERT INTO T VALUES(NULL, 0);",
+                """
+                         sum | max | weight
+                        --------------------
+                          0  | NULL| 1""");
+        ccs.step("INSERT INTO T VALUES(10, 10);",
+                """
+                         sum | max | weight
+                        --------------------
+                          0  | NULL| -1
+                         10  | 20  | 1""");
+        ccs.step("INSERT INTO T VALUES(5, 20);",
+                """
+                         sum | max | weight
+                        --------------------
+                         10  | 20  | -1
+                         30  | 20  | 1""");
+        ccs.step("INSERT INTO T VALUES(30, 30);",
+                """
+                         sum | max | weight
+                        --------------------
+                         30  | 20  | -1
+                         60  | 60  | 1""");
+        this.addRustTestCase(ccs);
+    }
+
+    @Test
+    public void chainAggregateMin() {
+        String sql = """
+                CREATE TABLE T(TS INT, X INT) WITH ('append_only' = 'true');
+                CREATE VIEW V AS
+                SELECT SUM(X), MIN(TS * 2) FROM T;""";
+        var ccs = this.getCCS(sql);
+        ccs.step("INSERT INTO T VALUES(NULL, 0);",
+                """
+                         sum | min | weight
+                        --------------------
+                          0  | NULL| 1""");
+        ccs.step("INSERT INTO T VALUES(10, 10);",
+                """
+                         sum | min | weight
+                        --------------------
+                          0  | NULL| -1
+                         10  | 20  | 1""");
+        ccs.step("INSERT INTO T VALUES(5, 20);",
+                """
+                         sum | min | weight
+                        --------------------
+                         10  | 20  | -1
+                         30  | 10  | 1""");
+        ccs.step("INSERT INTO T VALUES(30, 30);",
+                """
+                         sum | min | weight
+                        --------------------
+                         30  | 10  | -1
+                         60  | 10  | 1""");
+        ccs.step("INSERT INTO T VALUES(NULL, 0);",
+                """
+                         sum | min | weight
+                        --------------------""");
+        this.addRustTestCase(ccs);
+    }
+
+    @Test
+    public void chainAggregateGroupBy() {
+        String sql = """
+                CREATE TABLE T(TS INT, X INT) WITH ('append_only' = 'true');
+                CREATE VIEW V AS
+                SELECT X, MAX(TS * 2) FROM T
+                GROUP BY X;""";
+        var ccs = this.getCCS(sql);
+        ccs.step("INSERT INTO T VALUES(NULL, NULL);",
+                """
+                         x   | max | weight
+                        -------------------
+                         NULL| NULL| 1""");
+        ccs.step("INSERT INTO T VALUES(10, 10);",
+                """
+                         x   | max | weight
+                        -------------------
+                         10  | 20  | 1""");
+        ccs.step("INSERT INTO T VALUES(5, 20);",
+                """
+                         x   | max | weight
+                        --------------------
+                         20  | 10  | 1""");
+        ccs.step("INSERT INTO T VALUES(30, 30);",
+                """
+                         x   | max | weight
+                        --------------------
+                         30  | 60  | 1""");
+        ccs.step("INSERT INTO T VALUES(20, 10), (0, 20), (30, 30);",
+                """
+                         x   | max | weight
+                        --------------------
+                         10  | 20  | -1
+                         10  | 40  | 1""");
+        this.addRustTestCase(ccs);
     }
 
     @Test

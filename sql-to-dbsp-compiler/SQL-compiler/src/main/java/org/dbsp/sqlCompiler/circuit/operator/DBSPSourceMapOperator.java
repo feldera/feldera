@@ -118,7 +118,7 @@ public final class DBSPSourceMapOperator extends DBSPSourceTableOperator {
             fields[insertAt++] = var.deref().field(index).applyCloneIfNeeded();
         }
         DBSPExpression tuple = new DBSPTupleExpression(fields);
-        return tuple.closure(var.asParameter());
+        return tuple.closure(var);
     }
 
     /** Return a closure that describes the key function when applied to upsertStructType.toTuple(). */
@@ -130,6 +130,8 @@ public final class DBSPSourceMapOperator extends DBSPSourceTableOperator {
             fields[insertAt++] = var.deref().field(index).applyCloneIfNeeded();
         }
         DBSPExpression tuple = new DBSPTupleExpression(fields);
-        return tuple.closure(var.asParameter());
+        return tuple.closure(var);
     }
+
+    // equivalent inherited from base class
 }

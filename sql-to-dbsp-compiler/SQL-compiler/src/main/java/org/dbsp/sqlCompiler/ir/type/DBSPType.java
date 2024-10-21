@@ -171,7 +171,7 @@ public abstract class DBSPType extends DBSPNode implements IDBSPInnerNode {
     public DBSPExpression caster(DBSPType to) {
         if (this.sameType(to)) {
             DBSPVariablePath var = this.ref().var();
-            return var.deref().applyCloneIfNeeded().closure(var.asParameter());
+            return var.deref().applyCloneIfNeeded().closure(var);
         }
         throw new UnimplementedException("Casting from " + this + " to " + to, to);
     }

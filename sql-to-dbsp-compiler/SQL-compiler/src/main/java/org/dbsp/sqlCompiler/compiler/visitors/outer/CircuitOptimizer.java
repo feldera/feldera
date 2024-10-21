@@ -29,7 +29,7 @@ import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.ICompilerComponent;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.BetaReduction;
-import org.dbsp.sqlCompiler.compiler.visitors.inner.EliminateFunctions;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.EliminateDump;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.ExpandCasts;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.ExpandWriteLog;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Simplify;
@@ -51,13 +51,11 @@ public record CircuitOptimizer(DBSPCompiler compiler) implements ICompilerCompon
         passes.add(new ImplementNow(reporter, compiler));
         if (options.languageOptions.outputsAreSets)
             passes.add(new EnsureDistinctOutputs(reporter));
-        // TODO: next one doesn't work yet
-        // passes.add(new MinMaxAsWindow(reporter));
+        passes.add(new MinMaxOptimize(reporter, compiler.weightVar));
         passes.add(new ExpandAggregateZero(reporter));
         if (options.languageOptions.optimizationLevel < 2) {
-            if (options.languageOptions.incrementalize) {
+            if (options.languageOptions.incrementalize)
                 passes.add(new IncrementalizeVisitor(this.compiler()));
-            }
             if (!options.ioOptions.emitHandles)
                 passes.add(new IndexedInputs(reporter));
         } else {
@@ -103,7 +101,7 @@ public record CircuitOptimizer(DBSPCompiler compiler) implements ICompilerCompon
             passes.add(new SimplifyWaterline(reporter)
                     .circuitRewriter(node -> node.hasAnnotation(a -> a.is(Waterline.class))));
         }
-        passes.add(new EliminateFunctions(reporter).circuitRewriter());
+        passes.add(new EliminateDump(reporter).circuitRewriter());
         passes.add(new ExpandWriteLog(reporter).circuitRewriter());
         if (options.languageOptions.optimizationLevel >= 2) {
             passes.add(new Simplify(reporter).circuitRewriter());

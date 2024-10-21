@@ -180,7 +180,7 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
         DBSPType resultType = expression.getType().to(DBSPTypeFunction.class).resultType;
         assert tuple.getType().sameType(resultType) :
             "Flatmap result type " + resultType + " does not match computed type " + tuple.getType();
-        DBSPClosureExpression closure = tuple.closure(param.asParameter());
+        DBSPClosureExpression closure = tuple.closure(param);
         // This is the same as this.apply(closure)
         this.resolver.apply(closure);
         this.preorder(closure);

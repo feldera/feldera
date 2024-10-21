@@ -70,4 +70,6 @@ public final class DBSPStreamJoinOperator extends DBSPJoinBaseOperator {
                     .copyAnnotations(this);
         return this;
     }
+
+    // equivalent inherited from base class
 }

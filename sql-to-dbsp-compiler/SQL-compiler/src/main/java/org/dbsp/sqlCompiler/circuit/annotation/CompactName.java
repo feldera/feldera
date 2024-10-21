@@ -6,7 +6,7 @@ import javax.annotation.Nullable;
 import java.util.List;
 
 /** Stores the output stream name used for an operator.
- * Used when writing the code to Rust to make operator names more readable. */
+ * Used when emitting the Rust code to make operator names more readable. */
 public class CompactName extends Annotation {
     public final String name;
 

@@ -61,7 +61,7 @@ public class ExpandHop extends CircuitCloneVisitor {
         results[nextIndex] = ExpressionCompiler.compilePolymorphicFunction(
                 "hop", node, new DBSPTypeVec(hopType, false), hopArguments, 4);
         DBSPTupleExpression mapBody = new DBSPTupleExpression(results);
-        DBSPClosureExpression func = mapBody.closure(row.asParameter());
+        DBSPClosureExpression func = mapBody.closure(row);
         DBSPMapOperator map = new DBSPMapOperator(node, func, TypeCompiler.makeZSet(mapBody.getType()), source);
         this.addOperator(map);
 
@@ -94,12 +94,12 @@ public class ExpandHop extends CircuitCloneVisitor {
                 // not the timestampType, but the hopType
                 hopType, DBSPOpcode.ADD, e, size);
 
-        DBSPExpression toTuple = new DBSPTupleExpression(resultFields).closure(e.asParameter());
+        DBSPExpression toTuple = new DBSPTupleExpression(resultFields).closure(e);
         DBSPExpression makeTuple = new DBSPApplyMethodExpression(node,
                 "map", DBSPTypeAny.getDefault(), iter, toTuple);
         DBSPBlockExpression block = new DBSPBlockExpression(statements, makeTuple);
 
-        DBSPOperator result = new DBSPFlatMapOperator(node, block.closure(data.asParameter()),
+        DBSPOperator result = new DBSPFlatMapOperator(node, block.closure(data),
                 TypeCompiler.makeZSet(type), map);
         this.map(operator, result);
     }
