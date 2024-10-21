@@ -34,7 +34,7 @@ import java.util.Set;
  * - the output of an append-only table
  * - produced by some stream operators from append-only streams */
 public class AppendOnly extends CircuitVisitor {
-    final Set<DBSPOperator> appendOnly;
+    public final Set<DBSPOperator> appendOnly;
 
     public AppendOnly(IErrorReporter errorReporter) {
         super(errorReporter);

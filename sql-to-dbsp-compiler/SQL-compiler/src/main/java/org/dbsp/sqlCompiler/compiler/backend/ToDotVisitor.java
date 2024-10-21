@@ -219,9 +219,9 @@ public class ToDotVisitor extends CircuitVisitor implements IWritesLogs {
                  "stream_aggregate", "stream_aggregate_linear",
                  "partitioned_tree_aggregate",
                  // some joins require integrators
-                 "join", "join_flatmap", "asof_join",
+                 "join", "join_flatmap", "asof_join", "join_index",
                  // delays contain state
-                 "delay_trace", "delay", "differentiate",
+                 "delay_trace", "differentiate",
                  // group operators
                  "topK", "lag_custom_order", "upsert",
                  "integrate" -> " style=filled fillcolor=orangered";

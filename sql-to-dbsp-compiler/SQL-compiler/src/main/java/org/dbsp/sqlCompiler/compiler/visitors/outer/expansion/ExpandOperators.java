@@ -19,9 +19,9 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPNoopOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPrimitiveAggregateOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSumOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPUpsertFeedbackOperator;
@@ -30,7 +30,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitCloneVisitor;
-import org.dbsp.sqlCompiler.compiler.visitors.outer.KeyPropagation;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity.KeyPropagation;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 import org.dbsp.util.Linq;
 import org.dbsp.util.NullableFunction;
@@ -107,6 +107,11 @@ public class ExpandOperators extends CircuitCloneVisitor {
 
     @Override
     public void postorder(DBSPViewOperator operator) {
+        this.identity(operator);
+    }
+
+    @Override
+    public void postorder(DBSPSinkOperator operator) {
         this.identity(operator);
     }
 
