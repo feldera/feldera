@@ -19,7 +19,7 @@ are interested.
 
 :::tip
 You can try a Feldera Enterprise instance by visiting
-our [free online sandbox](https://try.feldera.com`).
+our [free online sandbox](https://try.feldera.com).
 :::
 
 ## Overview
