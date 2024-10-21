@@ -50,7 +50,9 @@
     class={_class}
   />
 {:else}
-  <span role="button" tabindex={0} ondblclick={() => (showInput = true)}>
+  <span class="group" role="button" tabindex={0} ondblclick={() => (showInput = true)}>
     {@render children?.()}
+    <span class="fd fd-edit text-[20px] text-surface-300-700 group-hover:text-surface-950-50"
+    ></span>
   </span>
 {/if}
