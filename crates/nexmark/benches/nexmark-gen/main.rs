@@ -27,7 +27,7 @@ macro_rules! with_rng {
             },
             ..Config::default()
         };
-        let mut generator = NexmarkGenerator::new(config, rng, 0);
+        let mut generator = NexmarkGenerator::new(config, rng);
 
         println!("rng = {rng_name}");
 
