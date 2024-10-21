@@ -12,6 +12,7 @@ public abstract class DBSPJoinBaseOperator extends DBSPBinaryOperator {
             DBSPType outputType, boolean isMultiset,
             DBSPOperator left, DBSPOperator right) {
         super(node, operation, function, outputType, isMultiset, left, right);
+        this.checkParameterCount(function, 3);
     }
 
     public DBSPType getKeyType() {

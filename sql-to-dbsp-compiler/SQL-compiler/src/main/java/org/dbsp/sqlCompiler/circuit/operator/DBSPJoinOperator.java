@@ -72,4 +72,6 @@ public final class DBSPJoinOperator extends DBSPJoinBaseOperator {
             visitor.postorder(this);
         visitor.pop(this);
     }
+
+    // equivalent inherited from base class
 }

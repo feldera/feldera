@@ -96,6 +96,10 @@ public class OptimizeIncrementalVisitor extends CircuitCloneVisitor {
     @Override
     public void postorder(DBSPPartitionedRollingAggregateOperator operator) { this.linear(operator); }
 
+    // It's not linear, but it behaves like one
+    @Override
+    public void postorder(DBSPChainAggregateOperator operator) { this.linear(operator); }
+
     @Override
     public void postorder(DBSPMapIndexOperator operator) {
         this.linear(operator);

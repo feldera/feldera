@@ -123,7 +123,7 @@ public class NarrowJoins extends CircuitCloneVisitor {
         DBSPRawTupleExpression raw = new DBSPRawTupleExpression(
                 var.deepCopy().field(0).deref().applyClone(),
                 new DBSPTupleExpression(resultFields, false));
-        DBSPClosureExpression projection = raw.closure(var.asParameter());
+        DBSPClosureExpression projection = raw.closure(var);
 
         DBSPOperator source = this.mapped(input);
         DBSPTypeIndexedZSet ix = TypeCompiler.makeIndexedZSet(projection.getResultType().to(DBSPTypeRawTuple.class));

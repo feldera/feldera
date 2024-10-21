@@ -51,13 +51,5 @@ public final class DBSPJoinIndexOperator extends DBSPJoinBaseOperator {
         visitor.pop(this);
     }
 
-    @Override
-    public boolean equivalent(DBSPOperator other) {
-        if (!super.equivalent(other))
-            return false;
-        DBSPJoinIndexOperator otherOperator = other.as(DBSPJoinIndexOperator.class);
-        if (otherOperator == null)
-            return false;
-        return this.function.equivalent(otherOperator.function);
-    }
+    // equivalent inherited from base class
 }

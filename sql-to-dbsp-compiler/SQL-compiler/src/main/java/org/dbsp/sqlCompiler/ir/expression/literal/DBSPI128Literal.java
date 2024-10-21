@@ -16,8 +16,8 @@ import java.math.BigInteger;
 import java.util.Objects;
 
 public final class DBSPI128Literal extends DBSPIntLiteral implements IsNumericLiteral {
-    static final BigInteger min = BigInteger.ONE.shiftLeft(127).negate();
-    static final BigInteger max = BigInteger.ONE.shiftLeft(127).subtract(BigInteger.ONE);
+    static final BigInteger MIN = BigInteger.ONE.shiftLeft(127).negate();
+    static final BigInteger MAX = BigInteger.ONE.shiftLeft(127).subtract(BigInteger.ONE);
 
     @Nullable
     public final BigInteger value;
@@ -34,8 +34,8 @@ public final class DBSPI128Literal extends DBSPIntLiteral implements IsNumericLi
         super(node, type, value == null);
         this.value = value;
         if (value != null) {
-            assert value.compareTo(max) <= 0;
-            assert value.compareTo(min) >= 0;
+            assert value.compareTo(MAX) <= 0;
+            assert value.compareTo(MIN) >= 0;
         }
     }
 
@@ -63,7 +63,7 @@ public final class DBSPI128Literal extends DBSPIntLiteral implements IsNumericLi
     public IsNumericLiteral negate() {
         if (this.value == null)
             return this;
-        if (this.value.compareTo(min) == 0)
+        if (this.value.compareTo(MIN) == 0)
             throw new ArithmeticException("Negate i128 overflow");
         return new DBSPI128Literal(this.getNode(), this.type, this.value.negate());
     }

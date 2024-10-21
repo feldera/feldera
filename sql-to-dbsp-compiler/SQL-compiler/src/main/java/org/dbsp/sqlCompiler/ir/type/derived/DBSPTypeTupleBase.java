@@ -113,7 +113,7 @@ public abstract class DBSPTypeTupleBase extends DBSPType {
             maxes.add(ExpressionCompiler.makeBinaryExpression(node, ftype, code,
                     left.deref().field(i), right.deref().field(i)));
         }
-        DBSPExpression max = new DBSPTupleExpression(maxes, false);
-        return max.closure(left.asParameter(), right.asParameter());
+        DBSPExpression result = new DBSPTupleExpression(maxes, false);
+        return result.closure(left, right);
     }
 }

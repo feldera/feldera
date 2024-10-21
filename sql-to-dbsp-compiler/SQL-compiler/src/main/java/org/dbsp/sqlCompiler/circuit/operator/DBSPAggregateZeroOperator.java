@@ -65,13 +65,5 @@ public class DBSPAggregateZeroOperator extends DBSPUnaryOperator {
         visitor.pop(this);
     }
 
-    @Override
-    public boolean equivalent(DBSPOperator other) {
-        if (!super.equivalent(other))
-            return false;
-        DBSPAggregateZeroOperator otherOperator = other.as(DBSPAggregateZeroOperator.class);
-        if (otherOperator == null)
-            return false;
-        return this.function.equivalent(otherOperator.function);
-    }
+    // equivalent inherited from base class
 }

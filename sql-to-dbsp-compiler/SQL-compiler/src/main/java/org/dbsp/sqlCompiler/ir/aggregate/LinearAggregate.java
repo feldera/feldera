@@ -78,7 +78,7 @@ public class LinearAggregate extends AggregateBase {
             posts.add(aggregates.get(i).postProcess.call(postParam.field(i)));
         }
         tuple = new DBSPTupleExpression(posts, false);
-        DBSPClosureExpression post = tuple.closure(postParam.asParameter())
+        DBSPClosureExpression post = tuple.closure(postParam)
                 .reduce(reporter).to(DBSPClosureExpression.class);
         return new LinearAggregate(node, map, post, zero);
     }
