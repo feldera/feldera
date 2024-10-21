@@ -4,6 +4,7 @@
 //! using the same data directory.
 
 use libc::{c_int, c_short};
+use log::{error, info};
 use std::collections::HashSet;
 use std::fs::{self, File};
 use std::io::{Error as IoError, ErrorKind};
@@ -12,6 +13,8 @@ use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::process;
 use std::sync::{LazyLock, Mutex};
+use std::thread::sleep;
+use std::time::{Duration, Instant};
 
 use crate::storage::backend::StorageError;
 
@@ -82,9 +85,10 @@ fn get_lock(file: &File) -> Result<Option<u32>, IoError> {
 impl LockedDirectory {
     const LOCKFILE_NAME: &'static str = "feldera.pidlock";
 
-    /// Attempts to create a new pidfile in the `base_path` directory,
-    /// returning an error if the file was already created by a different
-    /// process (and that process is still alive).
+    /// Attempts to create a new pidfile in the `base_path` directory, returning
+    /// an error if the file was already created by a different process (and
+    /// that process is still alive), blocking as long as `patience` to wait for
+    /// an existing process to release the lock.
     ///
     /// # Arguments
     /// - `base_path`: The directory in which to create the pidfile. It must
@@ -92,52 +96,82 @@ impl LockedDirectory {
     ///
     /// # Panics
     /// - If the current process's PID cannot be determined.
-    pub fn new<P: AsRef<Path>>(base_path: P) -> Result<LockedDirectory, StorageError> {
+    pub fn new_blocking<P: AsRef<Path>>(
+        base_path: P,
+        patience: Duration,
+    ) -> Result<LockedDirectory, StorageError> {
         let base = base_path.as_ref().to_path_buf();
         let pid_file = base.join(LockedDirectory::LOCKFILE_NAME);
-
-        // Did we already lock it?
-        let mut locks = LOCKS.lock().unwrap();
-        match fs::metadata(&pid_file) {
-            Ok(metadata) => {
-                let dev_ino = (metadata.dev(), metadata.ino());
-                if locks.contains(&dev_ino) {
-                    return Err(StorageError::StorageLocked(process::id(), base));
+        let start = Instant::now();
+        let mut blocked = false;
+        loop {
+            // Did we already lock it?
+            let mut locks = LOCKS.lock().unwrap();
+            match fs::metadata(&pid_file) {
+                Ok(metadata) => {
+                    let dev_ino = (metadata.dev(), metadata.ino());
+                    if locks.contains(&dev_ino) {
+                        return Err(StorageError::StorageLocked(process::id(), base));
+                    }
                 }
+                Err(error) if error.kind() == ErrorKind::NotFound => (),
+                Err(error) => return Err(error.into()),
             }
-            Err(error) if error.kind() == ErrorKind::NotFound => (),
-            Err(error) => return Err(error.into()),
-        }
 
-        let file = File::options()
-            .read(true)
-            .write(true)
-            .create(true)
-            .truncate(false)
-            .open(&pid_file)?;
-        let metadata = file.metadata()?;
-        let dev_ino = (metadata.dev(), metadata.ino());
+            let file = File::options()
+                .read(true)
+                .write(true)
+                .create(true)
+                .truncate(false)
+                .open(&pid_file)?;
+            let metadata = file.metadata()?;
+            let dev_ino = (metadata.dev(), metadata.ino());
 
-        match write_lock(&file) {
-            Err(error)
-                if error.kind() == ErrorKind::PermissionDenied
-                    || error.kind() == ErrorKind::WouldBlock =>
-            {
-                Err(StorageError::StorageLocked(
-                    get_lock(&file).unwrap_or(None).unwrap_or(0),
-                    base,
-                ))
-            }
-            Err(error) => Err(error.into()),
-            Ok(()) => {
-                locks.insert(dev_ino);
-                Ok(Self {
-                    base,
-                    _file: file,
-                    dev_ino,
-                })
-            }
+            match write_lock(&file) {
+                Err(error)
+                    if error.kind() == ErrorKind::PermissionDenied
+                        || error.kind() == ErrorKind::WouldBlock =>
+                {
+                    let pid = get_lock(&file).unwrap_or(None).unwrap_or(0);
+                    if start.elapsed() >= patience {
+                        if blocked {
+                            error!("{}: gave up waiting for process {pid} to release lock after {:.1} seconds",
+                                   pid_file.display(), start.elapsed().as_secs_f64());
+                        }
+                        return Err(StorageError::StorageLocked(pid, base));
+                    }
+                    if !blocked {
+                        info!(
+                            "{}: waiting up to {:.1} seconds for process {pid} to release lock",
+                            pid_file.display(),
+                            patience.as_secs_f64(),
+                        );
+                        blocked = true;
+                    }
+                    sleep(Duration::from_millis(100));
+                }
+                Err(error) => return Err(error.into()),
+                Ok(()) => {
+                    if blocked {
+                        info!(
+                            "{}: acquired lock after {:.1} seconds",
+                            pid_file.display(),
+                            start.elapsed().as_secs_f64()
+                        );
+                    }
+                    locks.insert(dev_ino);
+                    return Ok(Self {
+                        base,
+                        _file: file,
+                        dev_ino,
+                    });
+                }
+            };
         }
+    }
+
+    pub fn new<P: AsRef<Path>>(base_path: P) -> Result<LockedDirectory, StorageError> {
+        Self::new_blocking(base_path, Duration::ZERO)
     }
 
     /// Returns the path to the directory in which the pidfile was created.
