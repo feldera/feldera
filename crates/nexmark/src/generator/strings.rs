@@ -2,7 +2,7 @@
 //!
 //! API based on the equivalent [Nexmark Flink StringsGenerator API](https://github.com/nexmark/nexmark/blob/v0.2.0/nexmark-flink/src/main/java/com/github/nexmark/flink/generator/model/StringsGenerator.java).
 
-use super::NexmarkGenerator;
+use super::GeneratorContext;
 use rand::{distributions::Alphanumeric, distributions::DistString, Rng};
 
 const MIN_STRING_LENGTH: usize = 3;
@@ -31,7 +31,7 @@ fn next_extra<R: Rng>(rng: &mut R, current_size: usize, desired_average_size: us
     Alphanumeric.sample_string(rng, desired_size)
 }
 
-impl<R: Rng> NexmarkGenerator<R> {
+impl<R: Rng> GeneratorContext<'_, R> {
     /// Return a random string of up to `max_length`.
     ///
     /// Note: The original java implementation selects from lower-case letters
@@ -51,14 +51,17 @@ impl<R: Rng> NexmarkGenerator<R> {
 
 #[cfg(test)]
 mod tests {
+    use crate::generator::GeneratorContext;
+
     use super::super::tests::make_test_generator;
     use rstest::rstest;
 
     #[test]
     fn next_string_length() {
-        let mut ng = make_test_generator();
+        let (core, mut rng) = make_test_generator();
+        let mut gc = GeneratorContext::new(&core, &mut rng);
 
-        let s = ng.next_string(5);
+        let s = gc.next_string(5);
 
         assert_eq!(s, "AAA");
     }
@@ -79,9 +82,10 @@ mod tests {
         #[case] desired_average_size: usize,
         #[case] expected_size: usize,
     ) {
-        let mut ng = make_test_generator();
+        let (core, mut rng) = make_test_generator();
+        let mut gc = GeneratorContext::new(&core, &mut rng);
 
-        let s = ng.next_extra(current_size, desired_average_size);
+        let s = gc.next_extra(current_size, desired_average_size);
 
         assert_eq!(s.len(), expected_size);
     }

@@ -1,7 +1,7 @@
 //! Generates bids for the Nexmark streaming data source.
 //!
 //! API based on the equivalent [Nexmark Flink PersonGenerator API](https://github.com/nexmark/nexmark/blob/v0.2.0/nexmark-flink/src/main/java/com/github/nexmark/flink/generator/model/BidGenerator.java).
-use super::NexmarkGenerator;
+use super::GeneratorContext;
 use super::{
     super::model::Bid,
     config::{FIRST_AUCTION_ID, FIRST_PERSON_ID},
@@ -29,12 +29,13 @@ static HOT_URLS: [&str; 4] = [
 
 const BASE_URL_PATH_LENGTH: usize = 5;
 
-impl<R: Rng> NexmarkGenerator<R> {
+impl<R: Rng> GeneratorContext<'_, R> {
     fn get_new_channel_instance(&mut self, channel_number: u32) -> (String, String) {
         // Manually check the cache. Note: using a manual SizedCache because the
         // `cached` library doesn't allow using the proc_macro `cached` with
         // `self`.
         self.bid_channel_cache
+            .borrow_mut()
             .cache_get_or_set_with(channel_number, || {
                 let mut url = get_base_url(&mut self.rng);
                 // Just following the Java implementation: 1 in 10 chance that
@@ -129,9 +130,10 @@ pub mod tests {
         #[case] expected_auction_id: u64,
         #[case] expected_bidder_id: u64,
     ) {
-        let mut ng = make_test_generator();
+        let (core, mut rng) = make_test_generator();
+        let mut gc = GeneratorContext::new(&core, &mut rng);
 
-        let bid = ng.next_bid(event_id, 1_000_000_000_000);
+        let bid = gc.next_bid(event_id, 1_000_000_000_000);
 
         // Note: due to usize differences on windows, need to calculate the
         // size explicitly:
@@ -164,9 +166,10 @@ pub mod tests {
 
     #[test]
     fn test_get_new_channel_instance() {
-        let mut ng = make_test_generator();
+        let (core, mut rng) = make_test_generator();
+        let mut gc = GeneratorContext::new(&core, &mut rng);
 
-        let (channel_name, channel_url) = ng.get_new_channel_instance(1234);
+        let (channel_name, channel_url) = gc.get_new_channel_instance(1234);
 
         assert_eq!(channel_name, "channel-1234");
         assert_eq!(
@@ -177,8 +180,9 @@ pub mod tests {
 
     #[test]
     fn test_get_new_channel_instance_cached() {
-        let mut ng = make_test_generator();
-        ng.bid_channel_cache.cache_set(
+        let (core, mut rng) = make_test_generator();
+        let mut gc = GeneratorContext::new(&core, &mut rng);
+        gc.bid_channel_cache.borrow_mut().cache_set(
             1234,
             (
                 String::from("Google"),
@@ -186,7 +190,7 @@ pub mod tests {
             ),
         );
 
-        let (channel_name, channel_url) = ng.get_new_channel_instance(1234);
+        let (channel_name, channel_url) = gc.get_new_channel_instance(1234);
 
         assert_eq!(channel_name, "Google");
         assert_eq!(channel_url, "https://google.example.com");

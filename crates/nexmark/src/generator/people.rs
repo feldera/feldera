@@ -4,7 +4,7 @@
 
 use super::{
     super::{config as nexmark_config, model::Person},
-    config, NexmarkGenerator,
+    config, GeneratorContext,
 };
 use rand::{seq::SliceRandom, Rng};
 use std::{
@@ -37,7 +37,7 @@ const LAST_NAMES: &[&str] = &[
     "Shultz", "Abrams", "Spencer", "White", "Bartels", "Walton", "Smith", "Jones", "Noris",
 ];
 
-impl<R: Rng> NexmarkGenerator<R> {
+impl<'a, R: Rng> GeneratorContext<'a, R> {
     // Generate and return a random person with next available id.
     pub fn next_person(&mut self, next_event_id: u64, timestamp: u64) -> Person {
         let id = self.last_base0_person_id(next_event_id) + config::FIRST_PERSON_ID;
@@ -146,9 +146,10 @@ mod tests {
 
     #[test]
     fn test_next_person() {
-        let mut ng = make_test_generator();
+        let (core, mut rng) = make_test_generator();
+        let mut gc = GeneratorContext::new(&core, &mut rng);
 
-        let p = ng.next_person(105, 1_000_000_000_000);
+        let p = gc.next_person(105, 1_000_000_000_000);
 
         assert_eq!(
             p,
@@ -169,47 +170,49 @@ mod tests {
 
     #[test]
     fn test_next_base0_person_id() {
-        let mut ng = make_test_generator();
+        let (core, mut rng) = make_test_generator();
+        let mut gc = GeneratorContext::new(&core, &mut rng);
 
         // When one more than the last person id is less than the configured
         // active people (1000), the id returned is a random id from one of
         // the currently active people plus the 'lead' people.
         // Note: the mock rng is always returning zero for the random addition
         // in the range (0..active_people).
-        assert_eq!(ng.next_base0_person_id(50 * 998), 0);
+        assert_eq!(gc.next_base0_person_id(50 * 998), 0);
 
         // Even when one more than the last person id is equal to the configured
         // active people, the id returned is a random id from one of the
         // active people plus the 'lead' people.
-        assert_eq!(ng.next_base0_person_id(50 * 999), 0);
+        assert_eq!(gc.next_base0_person_id(50 * 999), 0);
 
         // When one more than the last person id is one greater than the
         // configured active people, we consider the most recent
         // NUM_ACTIVE_PEOPLE to be the active ones, and return a random id from
         // those plus the 'lead'people.
-        assert_eq!(ng.next_base0_person_id(50 * 1000), 1);
+        assert_eq!(gc.next_base0_person_id(50 * 1000), 1);
 
         // When one more than the last person id is 501 greater than the
         // configured active people, we consider the most recent
         // NUM_ACTIVE_PEOPLE to be the active ones, and return a random id from
         // those plus the 'lead' people.
-        assert_eq!(ng.next_base0_person_id(50 * 1500), 501);
+        assert_eq!(gc.next_base0_person_id(50 * 1500), 501);
     }
 
     #[test]
     fn test_last_base0_person_id_default() {
-        let ng = make_test_generator();
+        let (core, mut rng) = make_test_generator();
+        let gc = GeneratorContext::new(&core, &mut rng);
 
         // With the default config, the first 50 events will only include one
         // person
-        assert_eq!(ng.last_base0_person_id(25), 0);
+        assert_eq!(gc.last_base0_person_id(25), 0);
 
         // The 50th event will correspond to the next...
-        assert_eq!(ng.last_base0_person_id(50), 1);
-        assert_eq!(ng.last_base0_person_id(75), 1);
+        assert_eq!(gc.last_base0_person_id(50), 1);
+        assert_eq!(gc.last_base0_person_id(75), 1);
 
         // And so on...
-        assert_eq!(ng.last_base0_person_id(100), 2);
+        assert_eq!(gc.last_base0_person_id(100), 2);
     }
 
     #[test]
@@ -217,58 +220,64 @@ mod tests {
         // Set the configured bid proportion to 21,
         // which together with the other defaults for person and auction
         // proportion, makes the total 25.
-        let mut ng = make_test_generator();
-        ng.config.options.bid_proportion = 21;
+        let (mut core, mut rng) = make_test_generator();
+        core.config.options.bid_proportion = 21;
+        let gc = GeneratorContext::new(&core, &mut rng);
 
         // With the total proportion at 25, there will be a new person
         // at every 25th event.
-        assert_eq!(ng.last_base0_person_id(25), 1);
-        assert_eq!(ng.last_base0_person_id(50), 2);
-        assert_eq!(ng.last_base0_person_id(75), 3);
-        assert_eq!(ng.last_base0_person_id(100), 4);
+        assert_eq!(gc.last_base0_person_id(25), 1);
+        assert_eq!(gc.last_base0_person_id(50), 2);
+        assert_eq!(gc.last_base0_person_id(75), 3);
+        assert_eq!(gc.last_base0_person_id(100), 4);
     }
 
     #[test]
     fn test_next_us_state() {
-        let mut ng = make_test_generator();
+        let (core, mut rng) = make_test_generator();
+        let mut gc = GeneratorContext::new(&core, &mut rng);
 
-        let s = ng.next_us_state();
+        let s = gc.next_us_state();
 
         assert_eq!(s, "AZ");
     }
 
     #[test]
     fn test_next_us_city() {
-        let mut ng = make_test_generator();
+        let (core, mut rng) = make_test_generator();
+        let mut gc = GeneratorContext::new(&core, &mut rng);
 
-        let c = ng.next_us_city();
+        let c = gc.next_us_city();
 
         assert_eq!(c, "Phoenix");
     }
 
     #[test]
     fn test_next_person_name() {
-        let mut ng = make_test_generator();
+        let (core, mut rng) = make_test_generator();
+        let mut gc = GeneratorContext::new(&core, &mut rng);
 
-        let n = ng.next_person_name();
+        let n = gc.next_person_name();
 
         assert_eq!(n, "Peter Shultz");
     }
 
     #[test]
     fn test_next_email() {
-        let mut ng = make_test_generator();
+        let (core, mut rng) = make_test_generator();
+        let mut gc = GeneratorContext::new(&core, &mut rng);
 
-        let e = ng.next_email();
+        let e = gc.next_email();
 
         assert_eq!(e, "AAA@AAA.com");
     }
 
     #[test]
     fn test_next_credit_card() {
-        let mut ng = make_test_generator();
+        let (core, mut rng) = make_test_generator();
+        let mut gc = GeneratorContext::new(&core, &mut rng);
 
-        let e = ng.next_credit_card();
+        let e = gc.next_credit_card();
 
         assert_eq!(e, "0000 0000 0000 0000");
     }
