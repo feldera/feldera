@@ -32,7 +32,7 @@
     onDeletePipeline?: (pipelineName: string) => void
     pipelineBusy: boolean
     unsavedChanges: boolean
-    onActionSuccess?: (action: PipelineAction | 'start_paused_start') => void
+    onActionSuccess?: (pipelineName: string, action: PipelineAction | 'start_paused_start') => void
     class?: string
   } = $props()
 
@@ -119,13 +119,14 @@
     class="{buttonClass} fd fd-play_arrow text-[36px] !bg-success-200-800"
     onclick={async (e) => {
       const _action = action(e.ctrlKey || e.shiftKey || e.metaKey)
+      const pipelineName = pipeline.current.name
       const success = await postPipelineAction(
         pipeline.current.name,
         _action === 'start_paused_start' ? 'start_paused' : _action
       )
       pipeline.optimisticUpdate({ status })
       await success()
-      onActionSuccess?.(_action)
+      onActionSuccess?.(pipelineName, _action)
     }}
   >
   </button>
@@ -166,22 +167,26 @@
 {#snippet _pause()}
   <button
     class="{buttonClass} fd fd-pause bg-surface-50-950"
-    onclick={() =>
-      postPipelineAction(pipeline.current.name, 'pause').then(() => {
-        onActionSuccess?.('pause')
+    onclick={() => {
+      const pipelineName = pipeline.current.name
+      postPipelineAction(pipelineName, 'pause').then(() => {
+        onActionSuccess?.(pipelineName, 'pause')
         pipeline.optimisticUpdate({ status: 'Pausing' })
-      })}
+      })
+    }}
   >
   </button>
 {/snippet}
 {#snippet _shutdown()}
   <button
     class="{buttonClass} fd fd-stop bg-surface-50-950"
-    onclick={() =>
-      postPipelineAction(pipeline.current.name, 'shutdown').then(() => {
-        onActionSuccess?.('shutdown')
+    onclick={() => {
+      const pipelineName = pipeline.current.name
+      postPipelineAction(pipelineName, 'shutdown').then(() => {
+        onActionSuccess?.(pipelineName, 'shutdown')
         pipeline.optimisticUpdate({ status: 'ShuttingDown' })
-      })}
+      })
+    }}
   >
   </button>
 {/snippet}
