@@ -1,0 +1,8 @@
+services:
+  # Kafka connect.
+  kafka-connect:
+    image: ghcr.io/feldera/kafka-connect
+    build:
+      context: ../deploy
+      dockerfile: Dockerfile.extra
+      target: kafka-connect

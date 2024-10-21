@@ -1,59 +1,82 @@
-Bringing up a local instance of Feldera Platform
-===================================
+# Deploy using Docker Compose
 
-First, install [Docker compose](https://docs.docker.com/compose/install/).
+## Requirements
 
-Next, to bring up a local Feldera Platform instance run the following:
+The following are required to build images and deploy them:
 
-```
-curl -L https://github.com/feldera/feldera/releases/latest/download/docker-compose.yml | docker compose -f - up
-```
+* [**docker**](https://docs.docker.com/engine/install/)
+  (ideally, configured to run [rootless](https://docs.docker.com/engine/security/rootless/)):
+  `docker --version`
 
-This will bring up a DBSP and Postgres container.
+* [**docker compose**](https://docs.docker.com/compose/install/):
+  `docker compose version`
 
-Open your browser and you should now be able to see the Feldera Console UI
-on `localhost:8080`. If you don't, double check that there are no
-port conflicts on your system (you can view and modify the port mappings in
-`deploy/docker-compose.yml`).
+## Quickstart
 
-## Demo
-
-If you'd like to prepopulate the Feldera Platform instance with a demo project,
-run:
-
-```
-docker compose -f deploy/docker-compose.yml --profile demo up
+Bring up a local Feldera platform with Docker by running:
+```bash
+curl -L https://github.com/feldera/feldera/releases/latest/download/docker-compose.yml | \
+docker compose -f -
 ```
 
-This brings up an additional Redpanda container, followed by a container that
-creates a sample SQL program and pipeline, loads some Redpanda topics with
-data, and runs the resulting pipeline.
+Interact with the platform:
+* The Web Console is accessible at: **http://localhost:8080**
+* The API can be directly used: `curl -X GET http://localhost:8080/v0/config`
 
-## Controlling rust logging levels
+## Development
 
-You can tune the DBSP container's log level using
-[`RUST_LOG`](https://docs.rs/env_logger/0.10.0/env_logger/).
+First, clone the `feldera` repository and navigate into it.
+All commands below should be run from the root directory of the repository.
 
-```
-RUST_LOG=info docker compose -f deploy/docker-compose.yml up
-```
+- **Latest release (same as Quickstart):**
+  ```bash
+  docker compose -f deploy/docker-compose.yml up
+  ```
 
-## Feldera containers from sources
+- **Built using local sources:** this can take a while as it both builds the pipeline
+  manager and performs pre-compilation.
+  ```bash
+  docker compose -f deploy/docker-compose.yml \
+                 -f deploy/docker-compose-dev.yml \
+                 up --build
+  ```
+  As this section is for development, below we specify `-dev` configuration file each time.
+  To use only the releases, remove the `-f ...-dev.yml` arguments.
 
-To bring up a local instance of Feldera Plaform from sources, run the following
-from the project root:
+- **Change logging level:**
+  ```bash
+  RUST_LOG=debug docker compose -f deploy/docker-compose.yml \
+                                -f deploy/docker-compose-dev.yml \
+                                up --build
+  ```
 
-```
-docker compose -f deploy/docker-compose.yml -f deploy/docker-compose-dev.yml up --build
-```
+- **Monitoring with Prometheus and Grafana:**
+  ```bash
+  docker compose -f deploy/docker-compose.yml \
+                 -f deploy/docker-compose-dev.yml \
+                 -f deploy/docker-compose-extra.yml \
+                 --profile grafana up --build
+  ```
+  ... after which you can view Prometheus at http://localhost:9090
+  and Grafana at http://localhost:3000
 
-## Update the DBSP container
+- **Demo:**
+  ```bash
+  docker compose -f deploy/docker-compose.yml \
+                 -f deploy/docker-compose-dev.yml \
+                 -f deploy/docker-compose-extra.yml \
+                 -f deploy/docker-compose-extra-dev.yml \
+                 -f deploy/docker-compose-demo.yml \
+                 -f deploy/docker-compose-demo-dev.yml \
+                 --profile demo-debezium-mysql up --build
+  ```
 
-To update the DBSP container while it is already running to a newer image, run
-the following. As of now, it will only preserve the API state (pipelines,
-connectors and programs), but not the state of the individual pipelines. You
-will have to reingest your data again via any configured connectors:
+  The demo profiles can be found within: `deploy/docker-compose-demo.yml`
 
-```
-docker compose -f deploy/docker-compose.yml up -d dbsp --pull always
-```
+- **Extra (data source/sink):**
+  ```bash
+  docker compose -f deploy/docker-compose-extra.yml \
+                 --profile redpanda up --build
+  ```
+
+  The extra (data source/sink) profiles can be found within `deploy/docker-compose-extra.yml`

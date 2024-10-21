@@ -1,0 +1,57 @@
+# Build the demo image from local source instead of using the latest release.
+services:
+  demo-standard:
+    image: ghcr.io/feldera/demo-container
+    build:
+      context: ../
+      dockerfile: deploy/Dockerfile.demo
+      target: demo
+
+  demo-sec-ops:
+    image: ghcr.io/feldera/demo-container
+    build:
+      context: ../
+      dockerfile: deploy/Dockerfile.demo
+      target: demo
+
+  demo-debezium-mysql:
+    image: ghcr.io/feldera/demo-container
+    build:
+      context: ../
+      dockerfile: deploy/Dockerfile.demo
+      target: demo
+
+  demo-supply-chain-tutorial:
+    image: ghcr.io/feldera/demo-container
+    build:
+      context: ../
+      dockerfile: deploy/Dockerfile.demo
+      target: demo
+
+  demo-snowflake-sink:
+    image: ghcr.io/feldera/demo-container
+    build:
+      context: ../
+      dockerfile: deploy/Dockerfile.demo
+      target: demo
+
+  demo-debezium-jdbc:
+    image: ghcr.io/feldera/demo-container
+    build:
+      context: ../
+      dockerfile: deploy/Dockerfile.demo
+      target: demo
+
+  demo-debezium-postgres:
+    image: ghcr.io/feldera/demo-container
+    build:
+      context: ../
+      dockerfile: deploy/Dockerfile.demo
+      target: demo
+
+  demo-simple-count:
+    image: ghcr.io/feldera/demo-container
+    build:
+      context: ../
+      dockerfile: deploy/Dockerfile.demo
+      target: demo

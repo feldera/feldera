@@ -1,0 +1,136 @@
+services:
+  redpanda:
+    profiles: [ "redpanda", "kafka-connect",
+                "demo-sec-ops", "demo-debezium-mysql", "demo-supply-chain-tutorial",
+                "demo-snowflake-sink", "demo-debezium-jdbc", "demo-debezium-postgres",
+                "demo-simple-count" ]
+    command:
+      - redpanda
+      - start
+      - --kafka-addr internal://0.0.0.0:9092,external://0.0.0.0:19092
+      # Address the broker advertises to clients that connect to the Kafka API.
+      # Use the internal addresses to connect to the Redpanda brokers'
+      # from inside the same Docker network.
+      # Use the external addresses to connect to the Redpanda brokers'
+      # from outside the Docker network.
+      - --advertise-kafka-addr internal://redpanda:9092,external://localhost:19092
+      - --pandaproxy-addr internal://0.0.0.0:8082,external://0.0.0.0:18082
+      # Address the broker advertises to clients that connect to the HTTP Proxy.
+      - --advertise-pandaproxy-addr internal://redpanda:8082,external://localhost:18082
+      - --schema-registry-addr internal://0.0.0.0:8081,external://0.0.0.0:18081
+      # Redpanda brokers use the RPC API to communicate with eachother internally.
+      - --rpc-addr redpanda:33145
+      - --advertise-rpc-addr redpanda:33145
+      # Tells Seastar (the framework Redpanda uses under the hood) to use 1 core on the system.
+      - --smp 1
+      # The amount of memory to make available to Redpanda.
+      - --memory 2G
+      # Mode dev-container uses well-known configuration properties for development in containers.
+      - --mode dev-container
+      # enable logs for debugging.
+      - --default-log-level=error
+    image: docker.redpanda.com/vectorized/redpanda:v24.2.4
+    ports:
+      - 18081:18081
+      - 18082:18082
+      - 19092:19092
+      - 19644:9644
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "rpk cluster health | grep -E 'Healthy:.+true' || exit 1"
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+  # Kafka connect.
+  kafka-connect:
+    profiles: [ "kafka-connect",
+                "demo-debezium-mysql", "demo-snowflake-sink", "demo-debezium-jdbc",
+                "demo-debezium-postgres" ]
+    image: ghcr.io/feldera/kafka-connect:${FELDERA_VERSION:-0.28.0}
+    depends_on:
+      redpanda:
+        condition: service_healthy
+    ports:
+      - "8083:8083"
+    environment:
+      BOOTSTRAP_SERVERS: "redpanda:9092"
+      GROUP_ID: "1"
+      CONFIG_STORAGE_TOPIC: "inventory.configs"
+      OFFSET_STORAGE_TOPIC: "inventory.offset"
+      STATUS_STORAGE_TOPIC: "inventory.status"
+      LOG_LEVEL: "ERROR"
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "curl --fail --request GET --url http://localhost:8083/"
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # MySQL container with a toy database used in the Debezium
+  # MySQL tutorial (based on MySQL 8.0).
+  mysql:
+    profiles: [ "mysql",
+                "demo-debezium-mysql" ]
+    image: debezium/example-mysql:2.5
+    ports:
+      - "3306:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: debezium
+      MYSQL_USER: mysqluser
+      MYSQL_PASSWORD: mysqlpw
+    healthcheck:
+      test: ["CMD-SHELL", "mysql -h 127.0.0.1 -u $$MYSQL_USER -p$$MYSQL_PASSWORD -e 'USE inventory;'"]
+      interval: 5s
+      timeout: 5s
+      # MySQL can be _very_ slow to start.
+      retries: 40
+
+  # Postgres container for testing Debezium JDBC sink connector.
+  postgres:
+    profiles: [ "postgres",
+                "demo-debezium-jdbc", "demo-debezium-postgres" ]
+    image: debezium/example-postgres:2.5
+    ports:
+      # Make sure that port numbers don't clash with the pipeline manager DB.
+      - "6432:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+
+  prometheus:
+    profiles: [ "prometheus", "grafana" ]
+    depends_on:
+      pipeline-manager:
+        condition: service_healthy
+    image: prom/prometheus:latest
+    ports:
+      - 9090:9090
+    volumes:
+      - ./config/prometheus.yml:/etc/prometheus/prometheus.yml
+    command: --web.enable-lifecycle --config.file=/etc/prometheus/prometheus.yml
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "--quiet", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 50s
+
+  grafana:
+    profiles: [ "grafana" ]
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    image: grafana/grafana:latest
+    ports:
+      - 3000:3000
+    restart: unless-stopped
+    volumes:
+        - ./config/grafana_data_sources.yaml:/etc/grafana/provisioning/datasources/grafana_data_sources.yaml
