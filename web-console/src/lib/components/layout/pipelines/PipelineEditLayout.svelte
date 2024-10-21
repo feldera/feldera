@@ -183,7 +183,7 @@ example = "1.0"`
             onDeletePipeline={handleDeletePipeline}
             pipelineBusy={editDisabled}
             unsavedChanges={downstreamChanged}
-            onActionSuccess={(action) => handleActionSuccess(pipeline.current.name, action)}
+            onActionSuccess={handleActionSuccess}
           ></PipelineActions>
         {/if}
       {/snippet}
