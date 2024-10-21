@@ -85,6 +85,17 @@ pub fn like3___(value: String, pattern: String, escape: String) -> bool {
 
 some_function3!(like3, String, String, String, bool);
 
+pub fn ilike2__(value: String, pattern: String) -> bool {
+    // Convert both the value and the pattern to lowercase for case-insensitive comparison
+    Like::<false>::like(
+        value.to_lowercase().as_str(),
+        pattern.to_lowercase().as_str(),
+    )
+    .unwrap()
+}
+
+some_function2!(ilike2, String, String, bool);
+
 pub fn position__(needle: String, haystack: String) -> i32 {
     let pos = haystack.find(needle.as_str());
     match pos {

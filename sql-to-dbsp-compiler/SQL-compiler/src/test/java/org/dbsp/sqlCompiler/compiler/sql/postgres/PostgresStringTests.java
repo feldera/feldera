@@ -823,7 +823,60 @@ public class PostgresStringTests extends SqlIoTest {
                  t""");
     }
 
-    // TODO ILIKE
+    @Test
+    public void testILike2() {
+        this.q("""
+                SELECT 'hawkeye' ILIKE 'h%' AS "true";
+                 true
+                ------
+                 t""");
+        this.q("""
+                SELECT 'hawkeye' NOT ILIKE 'h%' AS "false";
+                 false
+                -------
+                 f""");
+        this.q("""
+                SELECT 'hawkeye' ILIKE 'H%' AS "true";
+                 true
+                ------
+                 t""");
+        this.q("""
+                SELECT 'hawkeye' NOT ILIKE 'H%' AS "false";
+                 false
+                -------
+                 f""");
+        this.q("""
+                SELECT 'hawkeye' ILIKE 'H%Eye' AS "true";
+                 true
+                ------
+                 t""");
+        this.q("""
+                SELECT 'hawkeye' NOT ILIKE 'H%Eye' AS "false";
+                 false
+                -------
+                 f""");
+        this.q("""
+                SELECT 'Hawkeye' ILIKE 'h%' AS "true";
+                 true
+                ------
+                 t""");
+        this.q("""
+                SELECT 'Hawkeye' NOT ILIKE 'h%' AS "false";
+                 false
+                -------
+                 f""");
+        this.q("""
+                SELECT 'ABC' ILIKE '_b_' AS "true";
+                 true
+                -------
+                 t""");
+        this.q("""
+                SELECT 'ABC' NOT ILIKE '_b_' AS "false";
+                 false
+                ------
+                 f""");
+    }
+
 
     @Test
     public void testLikeCombinations() {

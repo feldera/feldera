@@ -97,6 +97,21 @@ addition to the normal way of `''`.
     <td>See below for details.</td>
   </tr>
   <tr>
+    <td>
+        <code>string ILIKE pattern </code> and
+        <code>string NOT ILIKE pattern</code>
+    </td>
+    <td>
+        The <code>ILIKE</code> expression returns true if the string matches the supplied pattern,
+        performing a case-insensitive comparison. This means that differences in character case
+        between the string and the pattern are ignored.
+        (Similarly, the <code>NOT ILIKE</code> expression returns false if <code>ILIKE</code> returns true.)
+    </td>
+    <td>
+        See below for details.
+    </td>
+  </tr>
+  <tr>
     <td><code>string RLIKE pattern</code> and
         <code>string NOT RLIKE pattern</code></td>
     <td>The RLIKE expression returns true if the string matches the supplied pattern.
@@ -247,6 +262,30 @@ SELECT 'h%awkeye' LIKE 'h#%a%k%e' ESCAPE '#'   true
 ```
 
 When either argument or `LIKE`, `NOT LIKE` is `NULL`, the result is `NULL`.
+
+## `ILIKE`
+
+string `ILIKE` pattern
+
+string `NOT ILIKE` pattern
+
+The `ILIKE` expression performs a case-insensitive pattern match. If the pattern does not contain percent signs or underscores, then the pattern represents the string itself, and `ILIKE` acts like the equals operator, ignoring character case. An underscore (`_`) in the pattern matches any single character, while a percent sign (`%`) matches any sequence of zero or more characters.
+
+Some examples:
+
+```sql
+SELECT 'hawkeye' ILIKE 'h%'        true
+SELECT 'hawkeye' NOT ILIKE 'h%'    false
+SELECT 'hawkeye' ILIKE 'H%'        true
+SELECT 'hawkeye' NOT ILIKE 'H%'    false
+SELECT 'hawkeye' ILIKE 'H%Eye'     true
+SELECT 'hawkeye' NOT ILIKE 'H%Eye' false
+SELECT 'Hawkeye' ILIKE 'h%'        true
+SELECT 'Hawkeye' NOT ILIKE 'h%'    false
+SELECT 'ABC'     ILIKE '_b_'       true
+SELECT 'ABC'     NOT ILIKE '_b_'   false
+```
+When either argument or `ILIKE`, `NOT ILIKE` is `NULL`, the result is `NULL`.
 
 ## POSIX regular expressions
 
