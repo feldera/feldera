@@ -42,6 +42,7 @@ from tests.aggregate_tests.test_varcharn_arragg import *  # noqa: F403
 from tests.aggregate_tests.test_varcharn_count import *  # noqa: F403
 from tests.aggregate_tests.test_varcharn_count_col import *  # noqa: F403
 from tests.aggregate_tests.test_varcharn_min import *  # noqa: F403
+from tests.aggregate_tests.test_varcharn_max import *  # noqa: F403
 
 
 def register_tests_in_module(module, ta: TstAccumulator):
