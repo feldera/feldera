@@ -78,4 +78,6 @@ public final class DBSPIntegrateTraceRetainValuesOperator
             visitor.postorder(this);
         visitor.pop(this);
     }
+
+    // equivalent inherited from parent
 }

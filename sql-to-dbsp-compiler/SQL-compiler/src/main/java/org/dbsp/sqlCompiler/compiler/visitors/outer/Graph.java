@@ -20,8 +20,9 @@ public class Graph extends CircuitVisitor {
     @Override
     public void postorder(DBSPOperator operator) {
         this.graph.addNode(operator);
+        int index = 0;
         for (DBSPOperator source: operator.inputs) {
-            this.graph.addEdge(source, operator);
+            this.graph.addEdge(source, operator, index++);
         }
     }
 }

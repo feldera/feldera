@@ -418,8 +418,9 @@ public class InsertLimiters extends CircuitCloneVisitor {
         IMaybeMonotoneType projection2 = Monotonicity.getBodyType(Objects.requireNonNull(monotoneValue2));
 
         if (INSERT_RETAIN_KEYS) {
-            DBSPIntegrateTraceRetainKeysOperator after = DBSPIntegrateTraceRetainKeysOperator.create(
-                    aggregator.getNode(), filteredAggregator, projection2, this.createDelay(limiter2));
+            DBSPOperator after = DBSPIntegrateTraceRetainKeysOperator.create(
+                    aggregator.getNode(), filteredAggregator, projection2, this.createDelay(limiter2))
+                    .addAnnotation(new Waterline(filteredAggregator.id));
             this.addOperator(after);
             // output of 'after'' is not used in the graph, but the DBSP Rust layer will use it
         }
@@ -467,13 +468,15 @@ public class InsertLimiters extends CircuitCloneVisitor {
         if (INSERT_RETAIN_KEYS) {
             // The before and after filters are actually identical for now.
             DBSPOperator delay = this.createDelay(limiter2);
-            DBSPIntegrateTraceRetainKeysOperator before = DBSPIntegrateTraceRetainKeysOperator.create(
-                    aggregator.getNode(), source, projection2, delay);
+            DBSPOperator before = DBSPIntegrateTraceRetainKeysOperator.create(
+                    aggregator.getNode(), source, projection2, delay)
+                    .addAnnotation(new Waterline(source.id));
             this.addOperator(before);
             // output of 'before' is not used in the graph, but the DBSP Rust layer will use it
 
-            DBSPIntegrateTraceRetainKeysOperator after = DBSPIntegrateTraceRetainKeysOperator.create(
-                    aggregator.getNode(), filteredAggregator, projection2, delay);
+            DBSPOperator after = DBSPIntegrateTraceRetainKeysOperator.create(
+                    aggregator.getNode(), filteredAggregator, projection2, delay)
+                    .addAnnotation(new Waterline(filteredAggregator.id));
             this.addOperator(after);
             // output of 'after'' is not used in the graph, but the DBSP Rust layer will use it
         }
@@ -608,8 +611,9 @@ public class InsertLimiters extends CircuitCloneVisitor {
         MonotoneExpression sourceMonotone = this.expansionMonotoneValues.get(expansion.distinct.right());
         IMaybeMonotoneType projection = Monotonicity.getBodyType(Objects.requireNonNull(sourceMonotone));
         if (INSERT_RETAIN_KEYS) {
-            DBSPIntegrateTraceRetainKeysOperator r = DBSPIntegrateTraceRetainKeysOperator.create(
-                    operator.getNode(), source, projection, this.createDelay(sourceLimiter));
+            DBSPOperator r = DBSPIntegrateTraceRetainKeysOperator.create(
+                    operator.getNode(), source, projection, this.createDelay(sourceLimiter))
+                    .addAnnotation(new Waterline(source.id));
             this.addOperator(r);
         }
         // Same limiter as the source
@@ -638,8 +642,9 @@ public class InsertLimiters extends CircuitCloneVisitor {
             // Check if the "key" field is monotone
             if (leftProjection.to(PartiallyMonotoneTuple.class).getField(0).mayBeMonotone()) {
                 if (INSERT_RETAIN_KEYS) {
-                    DBSPIntegrateTraceRetainKeysOperator r = DBSPIntegrateTraceRetainKeysOperator.create(
-                            join.getNode(), right, leftProjection, this.createDelay(leftLimiter));
+                    DBSPOperator r = DBSPIntegrateTraceRetainKeysOperator.create(
+                            join.getNode(), right, leftProjection, this.createDelay(leftLimiter))
+                            .addAnnotation(new Waterline(join.id));
                     this.addOperator(r);
                 }
             }
@@ -653,8 +658,9 @@ public class InsertLimiters extends CircuitCloneVisitor {
             // Check if the "key" field is monotone
             if (rightProjection.to(PartiallyMonotoneTuple.class).getField(0).mayBeMonotone()) {
                 if (INSERT_RETAIN_KEYS) {
-                    DBSPIntegrateTraceRetainKeysOperator l = DBSPIntegrateTraceRetainKeysOperator.create(
-                            join.getNode(), left, rightProjection, this.createDelay(rightLimiter));
+                    DBSPOperator l = DBSPIntegrateTraceRetainKeysOperator.create(
+                            join.getNode(), left, rightProjection, this.createDelay(rightLimiter))
+                            .addAnnotation(new Waterline(join.id));
                     this.addOperator(l);
                 }
             }
@@ -843,8 +849,9 @@ public class InsertLimiters extends CircuitCloneVisitor {
                 Linq.list(keyPart, new CustomOrdMonotoneType(valuePart, leftValueType)), true, false);
 
         if (INSERT_RETAIN_VALUES) {
-            DBSPIntegrateTraceRetainValuesOperator retain = DBSPIntegrateTraceRetainValuesOperator.create(
-                    join.getNode(), this.mapped(join.left()), dataProjection, this.createDelay(minOperator));
+            DBSPOperator retain = DBSPIntegrateTraceRetainValuesOperator.create(
+                    join.getNode(), this.mapped(join.left()), dataProjection, this.createDelay(minOperator))
+                    .addAnnotation(new Waterline(join.id));
             this.addOperator(retain);
         }
 
@@ -935,8 +942,9 @@ public class InsertLimiters extends CircuitCloneVisitor {
                         leftLimiter, join, func.closure(var));
 
                 if (INSERT_RETAIN_VALUES) {
-                    DBSPIntegrateTraceRetainValuesOperator l = DBSPIntegrateTraceRetainValuesOperator.create(
-                            join.getNode(), this.mapped(join.left()), together, this.createDelay(extractLeft));
+                    DBSPOperator l = DBSPIntegrateTraceRetainValuesOperator.create(
+                            join.getNode(), this.mapped(join.left()), together, this.createDelay(extractLeft))
+                            .addAnnotation(new Waterline(join.id));
                     this.addOperator(l);
                 }
             }
@@ -975,8 +983,9 @@ public class InsertLimiters extends CircuitCloneVisitor {
                         rightLimiter, join, func.closure(var));
 
                 if (INSERT_RETAIN_VALUES) {
-                    DBSPIntegrateTraceRetainValuesOperator r = DBSPIntegrateTraceRetainValuesOperator.create(
-                            join.getNode(), this.mapped(join.right()), together, this.createDelay(extractRight));
+                    DBSPOperator r = DBSPIntegrateTraceRetainValuesOperator.create(
+                            join.getNode(), this.mapped(join.right()), together, this.createDelay(extractRight))
+                            .addAnnotation(new Waterline(join.id));
                     this.addOperator(r);
                 }
             }
@@ -1168,7 +1177,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
         this.markBound(expanded, limiter);
     }
 
-    static DBSPClosureExpression timestampMax(CalciteObject node, DBSPTypeTupleBase type) {
+    public static DBSPClosureExpression timestampMax(CalciteObject node, DBSPTypeTupleBase type) {
         return type.pairwiseOperation(node, DBSPOpcode.MAX);
     }
 

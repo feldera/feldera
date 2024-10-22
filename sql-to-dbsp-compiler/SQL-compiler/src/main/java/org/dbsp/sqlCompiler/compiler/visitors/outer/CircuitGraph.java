@@ -13,9 +13,11 @@ import java.util.Set;
 /* The Graph represents edges source->destination,
  * while the circuit represents edges destination->source. */
 public class CircuitGraph {
+    public record Port(DBSPOperator operator, int input) {}
+
     private final Set<DBSPOperator> nodeSet = new HashSet<>();
     private final List<DBSPOperator> nodes = new ArrayList<>();
-    private final Map<DBSPOperator, List<DBSPOperator>> edges = new HashMap<>();
+    private final Map<DBSPOperator, List<Port>> edges = new HashMap<>();
 
     void addNode(DBSPOperator node) {
         if (this.nodeSet.contains(node))
@@ -25,10 +27,10 @@ public class CircuitGraph {
         this.edges.put(node, new ArrayList<>());
     }
 
-    void addEdge(DBSPOperator source, DBSPOperator dest) {
+    void addEdge(DBSPOperator source, DBSPOperator dest, int input) {
         assert this.nodeSet.contains(source);
         assert this.nodeSet.contains(dest);
-        this.edges.get(source).add(dest);
+        this.edges.get(source).add(new Port(dest, input));
     }
 
     @Override
@@ -45,7 +47,7 @@ public class CircuitGraph {
         this.nodes.clear();
     }
 
-    public List<DBSPOperator> getDestinations(DBSPOperator source) {
+    public List<Port> getDestinations(DBSPOperator source) {
         return Utilities.getExists(this.edges, source);
     }
 

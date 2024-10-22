@@ -86,4 +86,14 @@ public final class DBSPDelayOperator extends DBSPUnaryOperator {
             visitor.postorder(this);
         visitor.pop(this);
     }
+
+    @Override
+    public boolean equivalent(DBSPOperator other) {
+        if (!super.equivalent(other))
+            return false;
+        DBSPDelayOperator otherOperator = other.as(DBSPDelayOperator.class);
+        if (otherOperator == null)
+            return false;
+        return this.output == otherOperator.output;
+    }
 }

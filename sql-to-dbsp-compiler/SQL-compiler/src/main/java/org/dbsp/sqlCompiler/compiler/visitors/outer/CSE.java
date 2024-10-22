@@ -63,24 +63,25 @@ public class CSE extends Repeat {
         }
 
         boolean hasGcSuccessor(DBSPOperator operator) {
-            for (DBSPOperator succ: this.graph.getDestinations(operator)) {
-                if (succ.is(DBSPIntegrateTraceRetainKeysOperator.class) ||
-                        succ.is(DBSPIntegrateTraceRetainValuesOperator.class))
-                        return true;
+            for (CircuitGraph.Port succ: this.graph.getDestinations(operator)) {
+                if (succ.operator().is(DBSPIntegrateTraceRetainKeysOperator.class) ||
+                        succ.operator().is(DBSPIntegrateTraceRetainValuesOperator.class))
+                    // only input 0 of these operators affects the GC
+                        return succ.input() == 0;
             }
             return false;
         }
 
         @Override
         public void postorder(DBSPOperator operator) {
-            List<DBSPOperator> destinations = this.graph.getDestinations(operator);
+            List<CircuitGraph.Port> destinations = this.graph.getDestinations(operator);
             // Compare every pair of destinations
             for (int i = 0; i < destinations.size(); i++) {
-                DBSPOperator base = destinations.get(i);
+                DBSPOperator base = destinations.get(i).operator();
                 if (hasGcSuccessor(base))
                     continue;
                 for (int j = i + 1; j < destinations.size(); j++) {
-                    DBSPOperator compare = destinations.get(j);
+                    DBSPOperator compare = destinations.get(j).operator();
                     if (this.canonical.containsKey(compare))
                         // Already found a canonical representative
                         continue;
@@ -105,7 +106,7 @@ public class CSE extends Repeat {
     }
 
     /** Remove common subexpressions */
-    static class RemoveCSE extends CircuitCloneVisitor {
+    public static class RemoveCSE extends CircuitCloneVisitor {
         /** Maps each operator to its canonical representative */
         final Map<DBSPOperator, DBSPOperator> canonical;
 

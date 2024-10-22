@@ -241,8 +241,9 @@ public abstract class DBSPOperator extends DBSPNode implements IHasType, IDBSPOu
      */
     public abstract DBSPOperator withInputs(List<DBSPOperator> newInputs, boolean force);
 
-    public void addAnnotation(Annotation annotation) {
+    public DBSPOperator addAnnotation(Annotation annotation) {
         this.annotations.add(annotation);
+        return this;
     }
 
     public boolean hasAnnotation(Predicate<Annotation> test) {
