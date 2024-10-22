@@ -419,7 +419,7 @@ where
 //////////////
 
 #[doc(hidden)]
-pub fn gte_left__<T>(left: T, right: T) -> bool
+pub fn cf_compare__<T>(left: T, right: T) -> bool
 where
     T: Ord,
 {
@@ -427,7 +427,7 @@ where
 }
 
 #[doc(hidden)]
-pub fn gte_left__N<T>(left: T, right: Option<T>) -> bool
+pub fn cf_compare__N<T>(left: T, right: Option<T>) -> bool
 where
     T: Ord,
 {
@@ -438,7 +438,7 @@ where
 }
 
 #[doc(hidden)]
-pub fn gte_left_N_<T>(left: Option<T>, right: T) -> bool
+pub fn cf_compare_N_<T>(left: Option<T>, right: T) -> bool
 where
     T: Ord,
 {
@@ -449,14 +449,14 @@ where
 }
 
 #[doc(hidden)]
-pub fn gte_left_N_N<T>(left: Option<T>, right: Option<T>) -> bool
+pub fn cf_compare_N_N<T>(left: Option<T>, right: Option<T>) -> bool
 where
     T: Ord,
 {
     match (left, right) {
         (None, None) => true,
         (None, _) => true,
-        (_, None) => false,
+        (_, None) => true,
         (Some(left), Some(right)) => left >= right,
     }
 }

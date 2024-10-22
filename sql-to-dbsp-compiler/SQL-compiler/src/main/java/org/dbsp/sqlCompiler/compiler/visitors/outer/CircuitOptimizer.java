@@ -61,6 +61,7 @@ public record CircuitOptimizer(DBSPCompiler compiler) implements ICompilerCompon
         } else {
             // only on optimization level 2
             passes.add(new MergeSums(reporter));
+            passes.add(new OptimizeWithGraph(reporter, g -> new RemoveNoops(reporter, g)));
             passes.add(new PropagateEmptySources(reporter));
             passes.add(new DeadCode(reporter, options.languageOptions.generateInputForEveryTable, true));
             passes.add(new OptimizeDistinctVisitor(reporter));
@@ -92,6 +93,7 @@ public record CircuitOptimizer(DBSPCompiler compiler) implements ICompilerCompon
         }
         passes.add(new ExpandHop(reporter));
         passes.add(new RemoveDeindexOperators(reporter));
+        passes.add(new OptimizeWithGraph(reporter, g -> new RemoveNoops(reporter, g)));
         passes.add(new RemoveViewOperators(reporter));
         passes.add(new Repeat(reporter, new ExpandCasts(reporter).circuitRewriter()));
         if (options.languageOptions.optimizationLevel >= 2) {

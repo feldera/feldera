@@ -47,7 +47,7 @@ public class StreamingTests extends StreamingTestBase {
     @Test
     public void chainAggregateMax() {
         String sql = """
-                CREATE TABLE T(TS INT, X INT) WITH ('append_only' = 'true');
+                CREATE TABLE T(TS INT LATENESS 100, X INT) WITH ('append_only' = 'true');
                 CREATE VIEW V AS
                 SELECT SUM(X), MAX(TS * 2) FROM T;""";
         var ccs = this.getCCS(sql);
@@ -80,7 +80,7 @@ public class StreamingTests extends StreamingTestBase {
     @Test
     public void chainAggregateMin() {
         String sql = """
-                CREATE TABLE T(TS INT, X INT) WITH ('append_only' = 'true');
+                CREATE TABLE T(TS INT LATENESS 1000, X INT) WITH ('append_only' = 'true');
                 CREATE VIEW V AS
                 SELECT SUM(X), MIN(TS * 2) FROM T;""";
         var ccs = this.getCCS(sql);
@@ -117,7 +117,7 @@ public class StreamingTests extends StreamingTestBase {
     @Test
     public void chainAggregateGroupBy() {
         String sql = """
-                CREATE TABLE T(TS INT, X INT) WITH ('append_only' = 'true');
+                CREATE TABLE T(TS INT, X INT LATENESS 1000) WITH ('append_only' = 'true');
                 CREATE VIEW V AS
                 SELECT X, MAX(TS * 2) FROM T
                 GROUP BY X;""";
@@ -148,6 +148,31 @@ public class StreamingTests extends StreamingTestBase {
                         --------------------
                          10  | 20  | -1
                          10  | 40  | 1""");
+        this.addRustTestCase(ccs);
+    }
+
+    @Test
+    public void chainAggregateGroupByJoin() {
+        String sql = """
+                CREATE TABLE T(TS INT, X INT LATENESS 1000) WITH ('append_only' = 'true');
+                CREATE VIEW V AS
+                SELECT X, SUM(TS / 2), MAX(TS * 2) FROM T
+                GROUP BY X;""";
+        var ccs = this.getCCS(sql);
+        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+            int integrate_trace = 0;
+
+            @Override
+            public void postorder(DBSPIntegrateTraceRetainKeysOperator operator) {
+                this.integrate_trace++;
+            }
+
+            @Override
+            public void endVisit() {
+                Assert.assertEquals(3, this.integrate_trace);
+            }
+        };
+        visitor.apply(ccs.circuit);
         this.addRustTestCase(ccs);
     }
 

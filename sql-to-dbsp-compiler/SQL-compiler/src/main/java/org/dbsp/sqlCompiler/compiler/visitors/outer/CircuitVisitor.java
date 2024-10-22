@@ -48,7 +48,7 @@ public abstract class CircuitVisitor
     static long crtId = 0;
 
     @Nullable
-    private DBSPCircuit circuit = null;
+    protected DBSPCircuit circuit = null;
     public final IErrorReporter errorReporter;
     /** Circuit or operator currently being visited. */
     protected final List<IDBSPOuterNode> current;

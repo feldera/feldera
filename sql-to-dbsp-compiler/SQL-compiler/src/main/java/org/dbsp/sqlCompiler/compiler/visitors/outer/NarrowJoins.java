@@ -1,6 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
-import org.dbsp.sqlCompiler.circuit.operator.DBSPBinaryOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
@@ -132,7 +132,7 @@ public class NarrowJoins extends CircuitCloneVisitor {
         return map;
     }
 
-    boolean processJoin(DBSPBinaryOperator join) {
+    boolean processJoin(DBSPJoinBaseOperator join) {
         Projection projection = new Projection(this.errorReporter);
         projection.apply(join.getFunction());
         if (!projection.hasIoMap()) return false;

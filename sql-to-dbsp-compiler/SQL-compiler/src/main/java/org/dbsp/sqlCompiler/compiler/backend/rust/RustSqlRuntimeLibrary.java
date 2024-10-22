@@ -60,24 +60,25 @@ public class RustSqlRuntimeLibrary {
         this.arithmeticFunctions.put("modulo", DBSPOpcode.MOD);
         this.arithmeticFunctions.put("times", DBSPOpcode.MUL);
         this.arithmeticFunctions.put("div", DBSPOpcode.DIV);
-        this.arithmeticFunctions.put("div_null", DBSPOpcode.DIV_NULL);
+        this.arithmeticFunctions.put(DBSPOpcode.DIV_NULL.toString(), DBSPOpcode.DIV_NULL);
         this.arithmeticFunctions.put("band", DBSPOpcode.BW_AND);
         this.arithmeticFunctions.put("bor", DBSPOpcode.BW_OR);
         this.arithmeticFunctions.put("bxor", DBSPOpcode.XOR);
-        this.arithmeticFunctions.put("min", DBSPOpcode.MIN);
-        this.arithmeticFunctions.put("max", DBSPOpcode.MAX);
-        this.arithmeticFunctions.put("is_distinct", DBSPOpcode.IS_DISTINCT);
+        this.arithmeticFunctions.put(DBSPOpcode.MIN.toString(), DBSPOpcode.MIN);
+        this.arithmeticFunctions.put(DBSPOpcode.MAX.toString(), DBSPOpcode.MAX);
+        this.arithmeticFunctions.put(DBSPOpcode.IS_DISTINCT.toString(), DBSPOpcode.IS_DISTINCT);
         this.arithmeticFunctions.put("is_same", DBSPOpcode.IS_NOT_DISTINCT);
         this.arithmeticFunctions.put("mul_by_ref", DBSPOpcode.MUL_WEIGHT);
-        this.arithmeticFunctions.put("agg_plus", DBSPOpcode.AGG_ADD);
-        this.arithmeticFunctions.put("agg_min", DBSPOpcode.AGG_MIN);
-        this.arithmeticFunctions.put("agg_max", DBSPOpcode.AGG_MAX);
-        this.arithmeticFunctions.put("agg_and", DBSPOpcode.AGG_AND);
-        this.arithmeticFunctions.put("agg_or", DBSPOpcode.AGG_OR);
-        this.arithmeticFunctions.put("agg_xor", DBSPOpcode.AGG_XOR);
-        this.arithmeticFunctions.put("agg_lte", DBSPOpcode.AGG_LTE);
-        this.arithmeticFunctions.put("agg_gte", DBSPOpcode.AGG_GTE);
-        this.arithmeticFunctions.put("gte_left", DBSPOpcode.GTE_LEFT);
+        this.arithmeticFunctions.put(DBSPOpcode.AGG_ADD.toString(), DBSPOpcode.AGG_ADD);
+        this.arithmeticFunctions.put(DBSPOpcode.AGG_MIN.toString(), DBSPOpcode.AGG_MIN);
+        this.arithmeticFunctions.put(DBSPOpcode.AGG_MAX.toString(), DBSPOpcode.AGG_MAX);
+        this.arithmeticFunctions.put(DBSPOpcode.AGG_AND.toString(), DBSPOpcode.AGG_AND);
+        this.arithmeticFunctions.put(DBSPOpcode.AGG_OR.toString(), DBSPOpcode.AGG_OR);
+        this.arithmeticFunctions.put(DBSPOpcode.AGG_XOR.toString(), DBSPOpcode.AGG_XOR);
+        this.arithmeticFunctions.put(DBSPOpcode.AGG_LTE.toString(), DBSPOpcode.AGG_LTE);
+        this.arithmeticFunctions.put(DBSPOpcode.AGG_GTE.toString(), DBSPOpcode.AGG_GTE);
+        this.arithmeticFunctions.put(DBSPOpcode.CONTROLLED_FILTER_COMPARE.toString(), 
+                DBSPOpcode.CONTROLLED_FILTER_COMPARE);
 
         this.dateFunctions.put("plus", DBSPOpcode.ADD);
         this.dateFunctions.put("minus", DBSPOpcode.SUB);
@@ -89,14 +90,14 @@ public class RustSqlRuntimeLibrary {
         this.dateFunctions.put("lte", DBSPOpcode.LTE);
         this.dateFunctions.put("gte", DBSPOpcode.GTE);
         this.dateFunctions.put("is_same", DBSPOpcode.IS_NOT_DISTINCT);
-        this.dateFunctions.put("is_distinct", DBSPOpcode.IS_DISTINCT);
-        this.dateFunctions.put("agg_max", DBSPOpcode.AGG_MAX);
-        this.dateFunctions.put("agg_min", DBSPOpcode.AGG_MIN);
-        this.dateFunctions.put("agg_lte", DBSPOpcode.AGG_LTE);
-        this.dateFunctions.put("agg_gte", DBSPOpcode.AGG_GTE);
-        this.dateFunctions.put("gte_left", DBSPOpcode.GTE_LEFT);
-        this.dateFunctions.put("min", DBSPOpcode.MIN);
-        this.dateFunctions.put("max", DBSPOpcode.MAX);
+        this.dateFunctions.put(DBSPOpcode.IS_DISTINCT.toString(), DBSPOpcode.IS_DISTINCT);
+        this.dateFunctions.put(DBSPOpcode.AGG_MAX.toString(), DBSPOpcode.AGG_MAX);
+        this.dateFunctions.put(DBSPOpcode.AGG_MIN.toString(), DBSPOpcode.AGG_MIN);
+        this.dateFunctions.put(DBSPOpcode.AGG_LTE.toString(), DBSPOpcode.AGG_LTE);
+        this.dateFunctions.put(DBSPOpcode.AGG_GTE.toString(), DBSPOpcode.AGG_GTE);
+        this.dateFunctions.put(DBSPOpcode.CONTROLLED_FILTER_COMPARE.toString(), DBSPOpcode.CONTROLLED_FILTER_COMPARE);
+        this.dateFunctions.put(DBSPOpcode.MIN.toString(), DBSPOpcode.MIN);
+        this.dateFunctions.put(DBSPOpcode.MAX.toString(), DBSPOpcode.MAX);
 
         this.stringFunctions.put("concat", DBSPOpcode.CONCAT);
         this.stringFunctions.put("eq", DBSPOpcode.EQ);
@@ -106,39 +107,42 @@ public class RustSqlRuntimeLibrary {
         this.stringFunctions.put("lte", DBSPOpcode.LTE);
         this.stringFunctions.put("gte", DBSPOpcode.GTE);
         this.stringFunctions.put("is_same", DBSPOpcode.IS_NOT_DISTINCT);
-        this.stringFunctions.put("is_distinct", DBSPOpcode.IS_DISTINCT);
-        this.stringFunctions.put("agg_min", DBSPOpcode.AGG_MIN);
-        this.stringFunctions.put("agg_max", DBSPOpcode.AGG_MAX);
-        this.stringFunctions.put("agg_lte", DBSPOpcode.AGG_LTE);
-        this.stringFunctions.put("agg_gte", DBSPOpcode.AGG_GTE);
-        this.stringFunctions.put("gte_left", DBSPOpcode.GTE_LEFT);
+        this.stringFunctions.put(DBSPOpcode.IS_DISTINCT.toString(), DBSPOpcode.IS_DISTINCT);
+        this.stringFunctions.put(DBSPOpcode.AGG_MIN.toString(), DBSPOpcode.AGG_MIN);
+        this.stringFunctions.put(DBSPOpcode.AGG_MAX.toString(), DBSPOpcode.AGG_MAX);
+        this.stringFunctions.put(DBSPOpcode.AGG_LTE.toString(), DBSPOpcode.AGG_LTE);
+        this.stringFunctions.put(DBSPOpcode.AGG_GTE.toString(), DBSPOpcode.AGG_GTE);
+        this.stringFunctions.put(DBSPOpcode.CONTROLLED_FILTER_COMPARE.toString(), 
+                DBSPOpcode.CONTROLLED_FILTER_COMPARE);
 
         this.booleanFunctions.put("eq", DBSPOpcode.EQ);
         this.booleanFunctions.put("neq", DBSPOpcode.NEQ);
         this.booleanFunctions.put("and", DBSPOpcode.AND);
         this.booleanFunctions.put("or", DBSPOpcode.OR);
-        this.booleanFunctions.put("min", DBSPOpcode.MIN);
-        this.booleanFunctions.put("max", DBSPOpcode.MAX);
-        this.booleanFunctions.put("is_false", DBSPOpcode.IS_FALSE);
-        this.booleanFunctions.put("is_not_true", DBSPOpcode.IS_NOT_TRUE);
-        this.booleanFunctions.put("is_true", DBSPOpcode.IS_TRUE);
-        this.booleanFunctions.put("is_not_false", DBSPOpcode.IS_NOT_FALSE);
-        this.booleanFunctions.put("agg_min", DBSPOpcode.AGG_MIN);
-        this.booleanFunctions.put("agg_max", DBSPOpcode.AGG_MAX);
-        this.booleanFunctions.put("agg_lte", DBSPOpcode.AGG_LTE);
-        this.booleanFunctions.put("agg_gte", DBSPOpcode.AGG_GTE);
+        this.booleanFunctions.put(DBSPOpcode.MIN.toString(), DBSPOpcode.MIN);
+        this.booleanFunctions.put(DBSPOpcode.MAX.toString(), DBSPOpcode.MAX);
+        this.booleanFunctions.put(DBSPOpcode.IS_FALSE.toString(), DBSPOpcode.IS_FALSE);
+        this.booleanFunctions.put(DBSPOpcode.IS_NOT_TRUE.toString(), DBSPOpcode.IS_NOT_TRUE);
+        this.booleanFunctions.put(DBSPOpcode.IS_TRUE.toString(), DBSPOpcode.IS_TRUE);
+        this.booleanFunctions.put(DBSPOpcode.IS_NOT_FALSE.toString(), DBSPOpcode.IS_NOT_FALSE);
+        this.booleanFunctions.put(DBSPOpcode.AGG_MIN.toString(), DBSPOpcode.AGG_MIN);
+        this.booleanFunctions.put(DBSPOpcode.AGG_MAX.toString(), DBSPOpcode.AGG_MAX);
+        this.booleanFunctions.put(DBSPOpcode.AGG_LTE.toString(), DBSPOpcode.AGG_LTE);
+        this.booleanFunctions.put(DBSPOpcode.AGG_GTE.toString(), DBSPOpcode.AGG_GTE);
         this.booleanFunctions.put("is_same", DBSPOpcode.IS_NOT_DISTINCT);
-        this.booleanFunctions.put("is_distinct", DBSPOpcode.IS_DISTINCT);
-        this.booleanFunctions.put("gte_left", DBSPOpcode.GTE_LEFT);
+        this.booleanFunctions.put(DBSPOpcode.IS_DISTINCT.toString(), DBSPOpcode.IS_DISTINCT);
+        this.booleanFunctions.put(DBSPOpcode.CONTROLLED_FILTER_COMPARE.toString(), 
+                DBSPOpcode.CONTROLLED_FILTER_COMPARE);
 
         // These are defined for VARBIT types
-        this.otherFunctions.put("agg_and", DBSPOpcode.AGG_AND);
-        this.otherFunctions.put("agg_or", DBSPOpcode.AGG_OR);
-        this.otherFunctions.put("agg_xor", DBSPOpcode.AGG_XOR);
+        this.otherFunctions.put(DBSPOpcode.AGG_AND.toString(), DBSPOpcode.AGG_AND);
+        this.otherFunctions.put(DBSPOpcode.AGG_OR.toString(), DBSPOpcode.AGG_OR);
+        this.otherFunctions.put(DBSPOpcode.AGG_XOR.toString(), DBSPOpcode.AGG_XOR);
         this.otherFunctions.put("concat", DBSPOpcode.CONCAT);
-        this.otherFunctions.put("agg_lte", DBSPOpcode.AGG_LTE);
-        this.otherFunctions.put("agg_gte", DBSPOpcode.AGG_GTE);
-        this.otherFunctions.put("gte_left", DBSPOpcode.GTE_LEFT);
+        this.otherFunctions.put(DBSPOpcode.AGG_LTE.toString(), DBSPOpcode.AGG_LTE);
+        this.otherFunctions.put(DBSPOpcode.AGG_GTE.toString(), DBSPOpcode.AGG_GTE);
+        this.otherFunctions.put(DBSPOpcode.CONTROLLED_FILTER_COMPARE.toString(), 
+                DBSPOpcode.CONTROLLED_FILTER_COMPARE);
         // These are defined for all types
         this.otherFunctions.put("eq", DBSPOpcode.EQ);
         this.otherFunctions.put("neq", DBSPOpcode.NEQ);
@@ -233,7 +237,7 @@ public class RustSqlRuntimeLibrary {
             tsuffixr = "";
             suffixl = "";
             suffixr = "";
-        } else if (opcode == DBSPOpcode.AGG_GTE || opcode == DBSPOpcode.AGG_LTE || opcode == DBSPOpcode.GTE_LEFT) {
+        } else if (opcode == DBSPOpcode.AGG_GTE || opcode == DBSPOpcode.AGG_LTE || opcode == DBSPOpcode.CONTROLLED_FILTER_COMPARE) {
             tsuffixl = "";
             tsuffixr = "";
         } else {

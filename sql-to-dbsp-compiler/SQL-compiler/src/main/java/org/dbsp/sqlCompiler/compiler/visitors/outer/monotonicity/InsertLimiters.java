@@ -7,6 +7,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPApply2Operator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPApplyOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAsofJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPBinaryOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPChainAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPControlledFilterOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDeindexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDelayOperator;
@@ -17,10 +18,13 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPHopOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinFilterMapOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPNoopOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateWithWaterlineOperator;
@@ -56,6 +60,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.CommonJoinExpansio
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.DistinctExpansion;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.JoinExpansion;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.JoinFilterMapExpansion;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.JoinIndexExpansion;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.OperatorExpansion;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.ReplacementExpansion;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
@@ -121,8 +126,8 @@ public class InsertLimiters extends CircuitCloneVisitor {
     /** Maps each original operator to the set of operators it was expanded to */
     public final Map<DBSPOperator, OperatorExpansion> expandedInto;
     /** Maps each operator to the one that computes its lower bound.
-     * The keys in this map can be both operators from this circuit and from
-     * the expanded circuit. */
+     * The keys in this map can be both operators from the previous version of this
+     * circuit and from the expanded circuit. */
     public final Map<DBSPOperator, DBSPOperator> bound;
     /** Information about joins */
     final  NullableFunction<DBSPBinaryOperator, KeyPropagation.JoinDescription> joinInformation;
@@ -145,6 +150,8 @@ public class InsertLimiters extends CircuitCloneVisitor {
     }
 
     void markBound(DBSPOperator operator, DBSPOperator bound) {
+        assert this.circuit != null;
+        assert this.circuit.contains(operator) || this.expandedCircuit.contains(operator);
         Logger.INSTANCE.belowLevel(this, 1)
                 .append("Bound for ")
                 .append(operator.toString())
@@ -169,9 +176,15 @@ public class InsertLimiters extends CircuitCloneVisitor {
      * not the minimum legal value - i.e., the waterline has seen some data.
      *
      * @param source   Input operator.
+     * @param represented  Operator whose waterline is represented.
      * @param function Function to apply to the data.
      */
-    DBSPApplyOperator createApply(DBSPOperator source, DBSPClosureExpression function) {
+    DBSPApplyOperator createApply(DBSPOperator source, @Nullable DBSPOperator represented,
+                                  DBSPClosureExpression function) {
+        if (represented != null) {
+            assert this.circuit != null;
+            assert this.circuit.contains(represented);
+        }
         DBSPVariablePath var = source.outputType.ref().var();
         DBSPExpression v0 = var.deref().field(0);
         DBSPExpression v1 = var.deref().field(1);
@@ -182,7 +195,8 @@ public class InsertLimiters extends CircuitCloneVisitor {
         DBSPApplyOperator result = new DBSPApplyOperator(source.getNode(), cond.closure(var),
                 source, "(" + source.getDerivedFrom() + ")");
         this.addOperator(result);
-        result.addAnnotation(new Waterline());
+        Waterline w = represented != null ? new Waterline(represented.id) : new Waterline();
+        result.addAnnotation(w);
         return result;
     }
 
@@ -227,17 +241,20 @@ public class InsertLimiters extends CircuitCloneVisitor {
     }
 
     /**
-     * @param operatorFromExpansion Operator produced as the expansion of
-     *                              another operator.
-     * @param input                 Input of the operatorFromExpansion which
-     *                              is used.
-     * @return Add an operator which computes the smallest legal value
-     * for the output of an operator. */
+     * Add an operator which computes the waterline for the output of an operator.
+     *
+     * @param represented           Operator that was expanded, in case we want to assign the bounds to it.
+     * @param operatorFromExpansion Operator produced as the expansion of represented.
+     * @param input                 Input of the operatorFromExpansion which is used.
+     * */
     @SuppressWarnings("SameParameterValue")
     @Nullable
-    DBSPApplyOperator addBounds(@Nullable DBSPOperator operatorFromExpansion, int input) {
+    DBSPApplyOperator addBounds(
+            @Nullable DBSPOperator represented, @Nullable DBSPOperator operatorFromExpansion, int input) {
+        assert this.circuit != null;
         if (operatorFromExpansion == null)
             return null;
+        assert !this.circuit.contains(operatorFromExpansion);
         MonotoneExpression monotone = this.expansionMonotoneValues.get(operatorFromExpansion);
         if (monotone == null)
             return null;
@@ -245,8 +262,12 @@ public class InsertLimiters extends CircuitCloneVisitor {
         DBSPOperator boundSource = Utilities.getExists(this.bound, source);
         DBSPClosureExpression function = monotone.getReducedExpression().to(DBSPClosureExpression.class);
 
-        DBSPApplyOperator bound = this.createApply(boundSource, function);
+        DBSPApplyOperator bound = this.createApply(boundSource, represented, function);
         this.markBound(operatorFromExpansion, bound);
+        if (represented != null) {
+            assert this.circuit.contains(represented);
+            this.markBound(represented, bound);
+        }
         return bound;
     }
 
@@ -265,63 +286,49 @@ public class InsertLimiters extends CircuitCloneVisitor {
         return expanded.to(ReplacementExpansion.class);
     }
 
+    /** Add bounds for an operator that expands to itself */
+    void addBoundsForNonExpandedOperator(DBSPOperator represented) {
+        ReplacementExpansion expanded = this.getReplacement(represented);
+        if (expanded == null)
+            this.nonMonotone(represented);
+        else
+            this.addBounds(represented, expanded.replacement, 0);
+    }
+
     @Override
     public void postorder(DBSPHopOperator operator) {
-        ReplacementExpansion expanded = this.getReplacement(operator);
-        if (expanded != null)
-            this.addBounds(expanded.replacement, 0);
-        else
-            this.nonMonotone(operator);
+        this.addBoundsForNonExpandedOperator(operator);
         super.postorder(operator);
     }
 
     @Override
     public void postorder(DBSPDeindexOperator operator) {
-        ReplacementExpansion expanded = this.getReplacement(operator);
-        if (expanded != null)
-            this.addBounds(expanded.replacement, 0);
-        else
-            this.nonMonotone(operator);
+        this.addBoundsForNonExpandedOperator(operator);
         super.postorder(operator);
     }
 
     @Override
     public void postorder(DBSPMapOperator operator) {
-        ReplacementExpansion expanded = this.getReplacement(operator);
-        if (expanded != null) {
-            DBSPOperator bound = this.addBounds(expanded.replacement, 0);
-            if (operator != expanded.replacement && bound != null)
-                this.markBound(operator, bound);
-        } else {
-            this.nonMonotone(operator);
-        }
+        this.addBoundsForNonExpandedOperator(operator);
+        super.postorder(operator);
+    }
+
+    @Override
+    public void postorder(DBSPNoopOperator operator) {
+        this.addBoundsForNonExpandedOperator(operator);
         super.postorder(operator);
     }
 
     @Override
     public void postorder(DBSPFlatMapOperator operator) {
-        ReplacementExpansion expanded = this.getReplacement(operator);
-        if (expanded != null) {
-            DBSPOperator bound = this.addBounds(expanded.replacement, 0);
-            if (operator != expanded.replacement && bound != null)
-                this.markBound(operator, bound);
-        } else {
-            this.nonMonotone(operator);
-        }
+        this.addBoundsForNonExpandedOperator(operator);
         super.postorder(operator);
     }
 
     @Override
     public void postorder(DBSPWindowOperator operator) {
         // Treat as an identity function for the left input
-        ReplacementExpansion expanded = this.getReplacement(operator);
-        if (expanded != null) {
-            DBSPOperator bound = this.addBounds(expanded.replacement, 0);
-            if (operator != expanded.replacement && bound != null)
-                this.markBound(operator, bound);
-        } else {
-            this.nonMonotone(operator);
-        }
+        this.addBoundsForNonExpandedOperator(operator);
         super.postorder(operator);
     }
 
@@ -343,20 +350,42 @@ public class InsertLimiters extends CircuitCloneVisitor {
     DBSPOperator processFilter(@Nullable DBSPFilterOperator expansion) {
         if (expansion == null)
             return null;
-        return this.addBounds(expansion, 0);
+        return this.addBounds(null, expansion, 0);
     }
 
     @Override
     public void postorder(DBSPMapIndexOperator operator) {
-        ReplacementExpansion expanded = this.getReplacement(operator);
-        if (expanded != null) {
-            DBSPOperator bound = this.addBounds(expanded.replacement, 0);
-            if (operator != expanded.replacement && bound != null)
-                this.markBound(operator, bound);
-        } else {
-            this.nonMonotone(operator);
-        }
+        this.addBoundsForNonExpandedOperator(operator);
         super.postorder(operator);
+    }
+
+    @Override
+    public void postorder(DBSPChainAggregateOperator aggregator) {
+        DBSPOperator source = this.mapped(aggregator.input());
+        OperatorExpansion expanded = this.expandedInto.get(aggregator);
+        if (expanded == null) {
+            this.nonMonotone(aggregator);
+            super.postorder(aggregator);
+            return;
+        }
+
+        ReplacementExpansion ae = expanded.to(ReplacementExpansion.class);
+        DBSPOperator limiter = this.bound.get(aggregator.input());
+        if (limiter == null) {
+            super.postorder(aggregator);
+            this.nonMonotone(aggregator);
+            return;
+        }
+
+        DBSPOperator filteredAggregator = aggregator.withInputs(Linq.list(source), false);
+        DBSPOperator limiter2 = this.addBounds(aggregator, ae.replacement, 0);
+        if (limiter2 == null) {
+            this.map(aggregator, filteredAggregator);
+            return;
+        }
+
+        this.addOperator(filteredAggregator);
+        this.map(aggregator, filteredAggregator, false);
     }
 
     @Override
@@ -378,7 +407,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
         }
 
         DBSPOperator filteredAggregator = aggregator.withInputs(Linq.list(source), false);
-        DBSPOperator limiter2 = this.addBounds(ae.replacement, 0);
+        DBSPOperator limiter2 = this.addBounds(aggregator, ae.replacement, 0);
         if (limiter2 == null) {
             this.map(aggregator, filteredAggregator);
             return;
@@ -425,7 +454,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
 
         DBSPOperator filteredAggregator = aggregator.withInputs(Linq.list(source), false);
         // We use the input 0; input 1 comes from the integrator
-        DBSPOperator limiter2 = this.addBounds(ae.aggregator, 0);
+        DBSPOperator limiter2 = this.addBounds(null, ae.aggregator, 0);
         if (limiter2 == null) {
             this.map(aggregator, filteredAggregator);
             return;
@@ -449,9 +478,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
             // output of 'after'' is not used in the graph, but the DBSP Rust layer will use it
         }
 
-        DBSPApplyOperator limiter3 = this.addBounds(ae.upsert, 0);
-        this.markBound(aggregator, Objects.requireNonNull(limiter3));
-
+        this.addBounds(aggregator, ae.upsert, 0);
         this.map(aggregator, filteredAggregator, false);
     }
 
@@ -504,7 +531,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
         Objects.requireNonNull(monotone);
 
         DBSPClosureExpression function = monotone.getReducedExpression().to(DBSPClosureExpression.class);
-        DBSPOperator waterline = this.createApply(boundSource, function);
+        DBSPOperator waterline = this.createApply(boundSource, null, function);
         Logger.INSTANCE.belowLevel(this, 2)
                 .append("WATERLINE FUNCTION: ")
                 .append(function)
@@ -524,7 +551,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
                 .append(function)
                 .newline();
 
-        DBSPOperator bound = this.createApply(boundSource, function);
+        DBSPOperator bound = this.createApply(boundSource, operator, function);
         this.markBound(expanded.replacement, bound);
 
         // Drop the boolean flag from the waterline
@@ -592,7 +619,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
     }
 
     @Nullable
-    DBSPOperator gcJoin(DBSPBinaryOperator join, CommonJoinExpansion expansion) {
+    DBSPOperator gcJoin(DBSPJoinBaseOperator join, CommonJoinExpansion expansion) {
         DBSPOperator leftLimiter = this.bound.get(join.left());
         DBSPOperator rightLimiter = this.bound.get(join.right());
         if (leftLimiter == null && rightLimiter == null) {
@@ -601,8 +628,8 @@ public class InsertLimiters extends CircuitCloneVisitor {
 
         DBSPOperator left = this.mapped(join.left());
         DBSPOperator right = this.mapped(join.right());
-        DBSPBinaryOperator result = join.withInputs(Linq.list(left, right), false)
-                .to(DBSPBinaryOperator.class);
+        DBSPJoinBaseOperator result = join.withInputs(Linq.list(left, right), false)
+                .to(DBSPJoinBaseOperator.class);
         if (leftLimiter != null && expansion.getLeftIntegrator() != null) {
             MonotoneExpression leftMonotone = this.expansionMonotoneValues.get(
                     expansion.getLeftIntegrator().input());
@@ -663,6 +690,34 @@ public class InsertLimiters extends CircuitCloneVisitor {
         this.map(join, result, true);
     }
 
+    @Override
+    public void postorder(DBSPJoinIndexOperator join) {
+        OperatorExpansion expanded = this.expandedInto.get(join);
+        if (expanded == null) {
+            super.postorder(join);
+            this.nonMonotone(join);
+            return;
+        }
+
+        this.addJoinAnnotations(join);
+        JoinIndexExpansion expansion = expanded.to(JoinIndexExpansion.class);
+        DBSPOperator result = this.gcJoin(join, expansion);
+        if (result == null) {
+            super.postorder(join);
+            this.nonMonotone(join);
+            return;
+        }
+
+        this.processIntegral(expansion.leftIntegrator);
+        this.processIntegral(expansion.rightIntegrator);
+        this.processJoin(expansion.leftDelta);
+        this.processJoin(expansion.rightDelta);
+        this.processJoin(expansion.both);
+        this.processSum(expansion.sum);
+
+        this.map(join, result, true);
+    }
+
     private void processIntegral(@Nullable DBSPDelayedIntegralOperator replacement) {
         if (replacement == null)
             return;
@@ -694,7 +749,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
                 .field(outerIndex)
                 .field(innerIndex)
                 .closure(var);
-        return this.createApply(source, tsFunction);
+        return this.createApply(source, null, tsFunction);
     }
 
     @Override
@@ -877,7 +932,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
 
                 DBSPExpression func = new DBSPTupleExpression(monotoneFields, false);
                 DBSPApplyOperator extractLeft = this.createApply(
-                        leftLimiter, func.closure(var));
+                        leftLimiter, join, func.closure(var));
 
                 if (INSERT_RETAIN_VALUES) {
                     DBSPIntegrateTraceRetainValuesOperator l = DBSPIntegrateTraceRetainValuesOperator.create(
@@ -917,7 +972,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
 
                 DBSPExpression func = new DBSPTupleExpression(monotoneFields, false);
                 DBSPApplyOperator extractRight = this.createApply(
-                        rightLimiter, func.closure(var));
+                        rightLimiter, join, func.closure(var));
 
                 if (INSERT_RETAIN_VALUES) {
                     DBSPIntegrateTraceRetainValuesOperator r = DBSPIntegrateTraceRetainValuesOperator.create(
@@ -994,7 +1049,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
         return this.getLimiterOutputType(operator).tupFields[1];
     }
 
-    void processJoin(@Nullable DBSPBinaryOperator expanded) {
+    void processJoin(@Nullable DBSPJoinBaseOperator expanded) {
         if (expanded == null)
             return;
         MonotoneExpression monotoneValue = this.expansionMonotoneValues.get(expanded);
@@ -1086,7 +1141,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
                             l,
                             new DBSPTupleExpression())
                             .closure(var);
-            merger = this.createApply(leftLimiter, closure);
+            merger = this.createApply(leftLimiter, null, closure);
         } else {
             // (k, r) -> (k, Tup0<>, r)
             assert rightMono != null;
@@ -1105,11 +1160,11 @@ public class InsertLimiters extends CircuitCloneVisitor {
                             new DBSPTupleExpression(),
                             r)
                             .closure(var);
-            merger = this.createApply(rightLimiter, closure);
+            merger = this.createApply(rightLimiter, null, closure);
         }
 
         DBSPClosureExpression clo = monotoneValue.getReducedExpression().to(DBSPClosureExpression.class);
-        DBSPOperator limiter = this.createApply(merger, clo);
+        DBSPOperator limiter = this.createApply(merger, null, clo);
         this.markBound(expanded, limiter);
     }
 
@@ -1204,7 +1259,6 @@ public class InsertLimiters extends CircuitCloneVisitor {
         extend.addAnnotation(new Waterline());
         this.addOperator(extend);
 
-        this.markBound(replacement, extend);
         if (operator != replacement)
             this.markBound(operator, extend);
         if (operator != expansion)
@@ -1338,7 +1392,10 @@ public class InsertLimiters extends CircuitCloneVisitor {
                     currentIndex++;
                 }
             }
-            return new DBSPTupleExpression(source.getNode(), fields);
+            if (dest.raw)
+                return new DBSPRawTupleExpression(source.getNode(), fields);
+            else
+                return new DBSPTupleExpression(source.getNode(), fields);
         }
         throw new InternalCompilerError("Not yet handled " + destinationProjection, source.getNode());
     }
@@ -1376,7 +1433,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
             IMaybeMonotoneType destination) {
         DBSPVariablePath var = this.getLimiterDataOutputType(limit).ref().var();
         DBSPExpression proj = this.project(var.deref(), source, destination);
-        return this.createApply(limit, proj.closure(var));
+        return this.createApply(limit, null, proj.closure(var));
     }
 
     @Nullable
@@ -1438,14 +1495,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
             return;
         }
         // Treat like an identity function
-        ReplacementExpansion expanded = this.getReplacement(operator);
-        if (expanded != null) {
-            DBSPApplyOperator bound = this.addBounds(expanded.replacement, 0);
-            if (bound != null && operator != expanded.replacement)
-                this.markBound(operator, bound);
-        } else {
-            this.nonMonotone(operator);
-        }
+        this.addBoundsForNonExpandedOperator(operator);
         super.postorder(operator);
     }
 

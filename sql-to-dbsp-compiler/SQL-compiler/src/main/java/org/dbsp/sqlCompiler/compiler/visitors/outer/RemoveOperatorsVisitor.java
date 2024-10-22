@@ -24,7 +24,6 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPNoopOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -33,8 +32,7 @@ import org.dbsp.util.Logger;
 import java.util.Set;
 
 public class RemoveOperatorsVisitor extends CircuitCloneVisitor {
-    /** Keep all operators that appear in this list.
-     * Also removes Noop operators. */
+    /** Keep all operators that appear in this list. */
     public final Set<DBSPOperator> keep;
 
     public RemoveOperatorsVisitor(IErrorReporter reporter, Set<DBSPOperator> keep) {
@@ -46,20 +44,6 @@ public class RemoveOperatorsVisitor extends CircuitCloneVisitor {
     public VisitDecision preorder(DBSPOperator node) {
         if (this.keep.contains(node)) {
             this.replace(node);
-        } else {
-            Logger.INSTANCE.belowLevel(this, 2)
-                    .append("Removing ")
-                    .append(node.toString())
-                    .newline();
-        }
-        return VisitDecision.STOP;
-    }
-
-    @Override
-    public VisitDecision preorder(DBSPNoopOperator node) {
-        if (this.keep.contains(node)) {
-            DBSPOperator input = this.mapped(node.input());
-            this.map(node, input, false);
         } else {
             Logger.INSTANCE.belowLevel(this, 2)
                     .append("Removing ")

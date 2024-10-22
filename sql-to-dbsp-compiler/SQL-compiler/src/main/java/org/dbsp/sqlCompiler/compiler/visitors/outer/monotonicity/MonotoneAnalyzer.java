@@ -30,12 +30,12 @@ public class MonotoneAnalyzer implements CircuitTransform, IWritesLogs {
 
         @Override
         public String getEdgeLabel(DBSPOperator source) {
-            String result = source.id + " " + super.getEdgeLabel(source);
             MonotoneExpression expr = info.get(source);
             if (expr != null) {
-                result = source.id + " " + Monotonicity.getBodyType(expr);
+                return source.id + " " + Monotonicity.getBodyType(expr);
+            } else {
+                return source.id + " " + super.getEdgeLabel(source);
             }
-            return result;
         }
     }
 
@@ -48,16 +48,19 @@ public class MonotoneAnalyzer implements CircuitTransform, IWritesLogs {
         final boolean debug = this.getDebugLevel() >= 1;
         final int details = this.getDebugLevel();
 
+        // Insert noops between consecutive integrators
+        SeparateIntegrators separate = new SeparateIntegrators(this.reporter);
+        circuit = separate.apply(circuit);
         // Find relations which are append-only
         AppendOnly appendOnly = new AppendOnly(this.reporter);
         appendOnly.apply(circuit);
-
         // Identify uses of primary and foreign keys
         KeyPropagation keyPropagation = new KeyPropagation(this.reporter);
         keyPropagation.apply(circuit);
 
         if (debug)
             ToDotVisitor.toDot(this.reporter, "original.png", details, "png", circuit);
+
         ExpandOperators expander = new ExpandOperators(
                 this.reporter,
                 appendOnly.appendOnly::contains,

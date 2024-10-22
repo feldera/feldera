@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.circuit;
 
+import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceTableOperator;
 import org.dbsp.sqlCompiler.compiler.ProgramMetadata;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
@@ -117,5 +118,9 @@ public final class DBSPCircuit extends DBSPNode implements IDBSPOuterNode {
 
     public boolean isEmpty() {
         return this.circuit.isEmpty();
+    }
+
+    public boolean contains(DBSPOperator operator) {
+        return this.circuit.operators.contains(operator);
     }
 }

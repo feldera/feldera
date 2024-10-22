@@ -3,6 +3,9 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinFilterMapOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPNoopOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateWithWaterlineOperator;
@@ -28,6 +31,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeUSize;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 import org.dbsp.util.Linq;
 
 import java.util.ArrayList;
@@ -249,6 +253,19 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
                 this.mapped(node.left()), this.mapped(node.right()))
                 .copyAnnotations(node);
         this.map(node, result);
+    }
+
+    @Override
+    public void postorder(DBSPNoopOperator node) {
+        DBSPOperator replacement;
+        if (node.outputType.is(DBSPTypeZSet.class)) {
+            replacement = new DBSPMapOperator(node.getNode(), node.getFunction(),
+                    node.getOutputZSetType(), this.mapped(node.input()));
+        } else {
+            replacement = new DBSPMapIndexOperator(node.getNode(), node.getFunction(),
+                    node.getOutputIndexedZSetType(), this.mapped(node.input()));
+        }
+        this.map(node, replacement);
     }
 
     @Override
