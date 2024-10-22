@@ -117,13 +117,7 @@ RUN mkdir -p demos
 COPY demo/packaged/sql demos
 
 # The crates needed for the SQL compiler
-COPY crates/dbsp lib/crates/dbsp
-COPY crates/feldera-types lib/crates/feldera-types
-COPY crates/adapters lib/crates/adapters
-COPY crates/nexmark lib/crates/nexmark
-COPY crates/sqllib lib/crates/sqllib
-# Storage crate got folded into the dbsp crate for now. Revert if this changes.
-# COPY crates/feldera-storage lib/crates/feldera-storage
+COPY crates/ lib/crates/
 COPY README.md lib/README.md
 RUN mkdir -p lib/sql-to-dbsp-compiler/lib
 

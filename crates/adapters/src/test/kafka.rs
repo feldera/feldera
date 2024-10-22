@@ -1,11 +1,9 @@
 #![allow(clippy::type_complexity)]
 
 use crate::catalog::InputCollectionHandle;
+use crate::format::get_input_format;
+use crate::test::{wait, MockDeZSet, MockUpdate, TestStruct, DEFAULT_TIMEOUT_MS};
 use crate::InputBuffer;
-use crate::{
-    test::{wait, MockDeZSet, MockUpdate, TestStruct, DEFAULT_TIMEOUT_MS},
-    InputFormat,
-};
 use anyhow::{anyhow, bail, Result as AnyResult};
 use csv::WriterBuilder as CsvWriterBuilder;
 use feldera_types::program_schema::Relation;
@@ -245,7 +243,7 @@ impl BufferConsumer {
         let shutdown_flag_clone = shutdown_flag.clone();
 
         let topic = topic.to_string();
-        let format = <dyn InputFormat>::get_format(format).unwrap();
+        let format = get_input_format(format).unwrap();
         let buffer = MockDeZSet::new();
 
         // Input parsers don't care about schema yet.

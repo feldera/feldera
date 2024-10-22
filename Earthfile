@@ -318,11 +318,7 @@ build-pipeline-manager-container:
     COPY demo/packaged/sql demos
 
     # Then copy over the crates needed by the sql compiler
-    COPY crates/dbsp database-stream-processor/crates/dbsp
-    COPY crates/feldera-types database-stream-processor/crates/feldera-types
-    COPY crates/adapters database-stream-processor/crates/adapters
-    COPY crates/nexmark database-stream-processor/crates/nexmark
-    COPY crates/sqllib database-stream-processor/crates/sqllib
+    COPY crates/ database-stream-processor/crates/
     COPY README.md database-stream-processor/README.md
 
     # Then copy over the required SQL compiler files

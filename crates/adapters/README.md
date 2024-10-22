@@ -1,10 +1,10 @@
-# DBSP I/O adapter framework
+# Feldera I/O adapter framework
 
 This crate implements an infrastructure to ingest data into a DBSP
 circuit from external data sources and to stream the outputs of the
-circuit to external consumers. It also implements a DBSP I/O
+circuit to external consumers. It also implements a Feldera I/O
 controller that controls the execution of a DBSP circuit along with
-its input and output adapters, and a DBSP server that exposes the
+its input and output adapters, and a server that exposes the
 controller API over HTTP and through a web interface.
 
 ## Dependencies
@@ -12,7 +12,7 @@ controller API over HTTP and through a web interface.
 The test code has the following dependencies:
 
 - `cmake`:
-  >$ sudo apt install cmake
+  > $ sudo apt install cmake
 
 - `redpanda`:
 
@@ -33,8 +33,8 @@ The test code has the following dependencies:
 ## DBSP application server demo
 
 This directory also contains a demo application runnign a very simple
-DBSP pipeline as a service.  The service can be controlled using a web
-browser.  To run the demo you can execute the following command:
+DBSP pipeline as a service. The service can be controlled using a web
+browser. To run the demo you can execute the following command:
 
 ```
 $ cargo run --example server --features="with-kafka server"
