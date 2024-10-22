@@ -106,7 +106,8 @@
 
   let editorRef: editor.IStandaloneCodeEditor = $state()!
   const autoSavePipeline = useLocalStorage('layout/pipelines/autosave', true)
-  const showCodeEditorMinimap = useLocalStorage('layout/pipelines/editor/minimap', true)
+  const showMinimap = useLocalStorage('layout/pipelines/editor/minimap', true)
+  const showStickyScroll = useLocalStorage('layout/pipelines/editor/stickyScroll', true)
 
   let wait = $derived(autoSavePipeline.value ? 2000 : ('decoupled' as const))
   let file = $derived(files.find((f) => f.name === currentFileName)!)
@@ -297,12 +298,11 @@
             })
             editorRef.addCommand(KeyMod.CtrlCmd | KeyCode.KeyM, () => {
               const minimapOptions = editorRef.getOption(editor.EditorOption.minimap)
-              showCodeEditorMinimap.value = !minimapOptions.enabled
-              editorRef.updateOptions({
-                minimap: {
-                  enabled: !minimapOptions.enabled
-                }
-              })
+              showMinimap.value = !minimapOptions.enabled
+            })
+            editorRef.addCommand(KeyMod.CtrlCmd | KeyCode.KeyK, () => {
+              const stickyScrollOptions = editorRef.getOption(editor.EditorOption.stickyScroll)
+              showStickyScroll.value = !stickyScrollOptions.enabled
             })
           }}
           bind:editor={editorRef}
@@ -327,7 +327,10 @@
               vertical: 'visible'
             },
             minimap: {
-              enabled: showCodeEditorMinimap.value
+              enabled: showMinimap.value
+            },
+            stickyScroll: {
+              enabled: showStickyScroll.value
             }
           }}
         />

@@ -201,7 +201,7 @@
     <Pane defaultSize={20} minSize={5} class="flex h-full p-2 pr-0">
       <div class="flex w-full flex-col overflow-y-auto text-nowrap">
         {#snippet relationItem(relation: RelationInfo & ExtraType)}
-          <label class="flex-none overflow-hidden overflow-ellipsis">
+          <label class="flex-none cursor-pointer overflow-hidden overflow-ellipsis">
             <input
               type="checkbox"
               class="bg-white-black focus:ring-transparent"
