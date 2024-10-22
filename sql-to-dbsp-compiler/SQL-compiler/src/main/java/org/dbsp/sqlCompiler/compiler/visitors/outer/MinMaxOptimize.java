@@ -24,7 +24,13 @@ import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import java.util.function.Predicate;
 
 /** Optimize the implementation of Min and Max aggregates.
- * Currently only optimized min and max for append-only streams. */
+ * Currently only optimized min and max for append-only streams.
+ * The following pattern:
+ * mapIndex -> stream_aggregate(MinMaxAggregate)
+ * is replaced with
+ * mapIndex -> chain_aggregate.
+ * The new mapIndex needs to index only the key and the aggregated field.
+ * (The original mapIndex was keeping potentially more fields.) */
 public class MinMaxOptimize extends Passes {
     final AppendOnly appendOnly;
 

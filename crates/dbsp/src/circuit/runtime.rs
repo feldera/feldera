@@ -27,7 +27,7 @@ use std::{
     error::Error as StdError,
     fmt,
     fmt::{Debug, Display, Error as FmtError, Formatter},
-    panic::{self, Location, PanicInfo},
+    panic::{self, Location, PanicHookInfo},
     path::{Path, PathBuf},
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -160,7 +160,7 @@ impl Display for WorkerPanicInfo {
 }
 
 impl WorkerPanicInfo {
-    fn new(panic_info: &PanicInfo) -> Self {
+    fn new(panic_info: &PanicHookInfo) -> Self {
         #[allow(clippy::manual_map)]
         let message = if let Some(v) = panic_info.payload().downcast_ref::<String>() {
             Some(v.clone())
@@ -276,7 +276,7 @@ impl RuntimeInner {
 // correctly for threads from different DBSP runtimes or for threads
 // that don't belong to any DBSP runtime since it uses `RUNTIME`
 // thread-local variable to detect a DBSP runtime.
-fn panic_hook(panic_info: &PanicInfo<'_>, default_panic_hook: &dyn Fn(&PanicInfo<'_>)) {
+fn panic_hook(panic_info: &PanicHookInfo<'_>, default_panic_hook: &dyn Fn(&PanicHookInfo<'_>)) {
     // Call the default panic hook first.
     default_panic_hook(panic_info);
 
@@ -299,7 +299,7 @@ pub struct Runtime(Arc<RuntimeInner>);
 /// Stores the default Rust panic hook, so we can invoke it as part of
 /// the DBSP custom hook.
 #[allow(clippy::type_complexity)]
-static DEFAULT_PANIC_HOOK: Lazy<Box<dyn Fn(&PanicInfo<'_>) + 'static + Sync + Send>> =
+static DEFAULT_PANIC_HOOK: Lazy<Box<dyn Fn(&PanicHookInfo<'_>) + 'static + Sync + Send>> =
     Lazy::new(|| {
         // Clear any hooks installed by other libraries.
         let _ = panic::take_hook();
@@ -307,7 +307,7 @@ static DEFAULT_PANIC_HOOK: Lazy<Box<dyn Fn(&PanicInfo<'_>) + 'static + Sync + Se
     });
 
 /// Returns the default Rust panic hook.
-fn default_panic_hook() -> &'static (dyn Fn(&PanicInfo<'_>) + 'static + Sync + Send) {
+fn default_panic_hook() -> &'static (dyn Fn(&PanicHookInfo<'_>) + 'static + Sync + Send) {
     &*DEFAULT_PANIC_HOOK
 }
 
@@ -554,7 +554,7 @@ impl Runtime {
     }
 
     // Record information about a worker thread panic in `panic_info`
-    fn panic(&self, panic_info: &PanicInfo) {
+    fn panic(&self, panic_info: &PanicHookInfo) {
         let worker_index = Self::worker_index();
         let panic_info = WorkerPanicInfo::new(panic_info);
         let _ = self.inner().panic_info[worker_index]

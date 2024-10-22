@@ -319,7 +319,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
      * @param groupCount   Number of groupBy variables.
      * @param inputRowType Type of input row.
      * @param resultType   Type of result produced.
-     * @param linearAllowed If true linear aggregates are allowed.
+     * @param linearAllowed If true linear aggregates are allowed (a linear aggregate can
+     *                      also be implemented as a non-linear aggregate).
      */
     public List<DBSPAggregate> createAggregates(
             RelNode node, List<AggregateCall> aggregates, DBSPTypeTuple resultType,
@@ -328,9 +329,11 @@ public class CalciteToDBSPCompiler extends RelVisitor
             return Linq.list();
         CalciteObject obj = CalciteObject.create(node);
         DBSPVariablePath rowVar = inputRowType.ref().var();
+        // Each aggregate here will contain a sequence of compatible AggregateBase operations.
         List<DBSPAggregate> results = new ArrayList<>();
         int aggIndex = 0;
-        List<AggregateBase> currentGroup = new ArrayList<>(aggregates.size());
+        // A list of compatible aggregates
+        List<AggregateBase> currentGroup = new ArrayList<>();
 
         for (AggregateCall call: aggregates) {
             DBSPType resultFieldType = resultType.getFieldType(aggIndex + groupCount);
@@ -345,6 +348,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             currentGroup.add(implementation);
             aggIndex++;
         }
+        // Add all the left-over aggregates
         DBSPAggregate aggregate = new DBSPAggregate(obj, rowVar, currentGroup);
         results.add(aggregate);
         return results;
@@ -1266,8 +1270,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                             et -> DBSPLiteral.none(et.setMayBeNull(true)), DBSPExpression.class));
             DBSPVariablePath rCasted = rightResultType.ref().var();
             DBSPClosureExpression rightRow =
-                    DBSPTupleExpression.flatten(lEmpty, rCasted.deref()).closure(
-                    rCasted);
+                    DBSPTupleExpression.flatten(lEmpty, rCasted.deref()).closure(rCasted);
             DBSPOperator expand = new DBSPMapOperator(node,
                     rightRow, this.makeZSet(resultType), dist);
             this.addOperator(expand);

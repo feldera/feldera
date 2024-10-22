@@ -103,7 +103,9 @@ public abstract class DBSPTypeTupleBase extends DBSPType {
         return this.makeType(fields);
     }
 
-    /** Generates a closure that computes a binary operation pairwise of two tuple timestamps fieldwise */
+    /** Generates a closure that computes a binary operation pairwise for two values of this type.
+     * The binary operation is expected to preserve the type.
+     * e.g., |a, b| (a.0 OP b.0, a.1 OP b.1) */
     public DBSPClosureExpression pairwiseOperation(CalciteObject node, DBSPOpcode code) {
         DBSPVariablePath left = this.ref().var();
         DBSPVariablePath right = this.ref().var();
