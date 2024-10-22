@@ -119,6 +119,71 @@ const hasBackpressure = <T>(controller: TransformStreamDefaultController<T>, off
   return controller.desiredSize !== null && controller.desiredSize - offset < 0
 }
 
+const mkTransformerParser = <T>(
+  controller: TransformStreamDefaultController<T>,
+  opts?: JSONParserOptions
+) => {
+  const tokenizer = new BigNumberTokenizer()
+  const tokenParser = new TokenParser(opts)
+  tokenizer.onToken = tokenParser.write.bind(tokenParser)
+  tokenParser.onValue = (value) => {
+    controller.enqueue(value.value as T)
+  }
+
+  const parser = {
+    onToken: tokenizer.onToken.bind(tokenizer),
+    get isEnded() {
+      return tokenizer.isEnded
+    },
+    write: tokenizer.write.bind(tokenizer),
+    end: tokenizer.end.bind(tokenizer),
+    onError: tokenizer.onError.bind(tokenizer)
+  } as JSONParser
+  return parser
+}
+
+class JSONParserTransformer<T> implements Transformer<Uint8Array | string, T> {
+  // @ts-ignore Controller always defined during start
+  private controller: TransformStreamDefaultController<T>
+  // @ts-ignore Controller always defined during start
+  private parser: JSONParser
+  private opts?: JSONParserOptions
+
+  constructor(opts?: JSONParserOptions) {
+    this.opts = opts
+  }
+
+  start(controller: TransformStreamDefaultController<T>) {
+    this.controller = controller
+    this.parser = mkTransformerParser(this.controller, this.opts)
+  }
+
+  async transform(chunk: Uint8Array | string) {
+    try {
+      this.parser.write(chunk)
+    } catch (e) {
+      console.log('JSON stream parse error', e)
+      this.parser = mkTransformerParser(this.controller, this.opts)
+    }
+    await new Promise((resolve) => setTimeout(resolve))
+  }
+
+  flush() {
+    this.parser.end()
+  }
+}
+
+class CustomJSONParserTransformStream<T> extends TransformStream<Uint8Array | string, T> {
+  constructor(
+    opts?: JSONParserOptions,
+    writableStrategy?: QueuingStrategy<Uint8Array | string>,
+    readableStrategy?: QueuingStrategy<T>
+  ) {
+    const transformer = new JSONParserTransformer(opts)
+    super(transformer, writableStrategy, readableStrategy)
+  }
+}
+
 export const parseUTF8AsTextLines = (
   stream: ReadableStream<Uint8Array>,
   onValue: (value: string) => void,
@@ -171,68 +236,4 @@ async function* makeUTF8LineIterator(
     yield chunk.slice(startIndex)
   }
   onDone?.()
-}
-
-const mkTransformerParser = <T>(
-  controller: TransformStreamDefaultController<T>,
-  opts?: JSONParserOptions
-) => {
-  const tokenizer = new BigNumberTokenizer()
-  const tokenParser = new TokenParser(opts)
-  tokenizer.onToken = tokenParser.write.bind(tokenParser)
-  tokenParser.onValue = (value) => {
-    controller.enqueue(value.value as T)
-  }
-
-  const parser = {
-    onToken: tokenizer.onToken.bind(tokenizer),
-    get isEnded() {
-      return tokenizer.isEnded
-    },
-    write: tokenizer.write.bind(tokenizer),
-    end: tokenizer.end.bind(tokenizer),
-    onError: tokenizer.onError.bind(tokenizer)
-  } as JSONParser
-  return parser
-}
-
-class JSONParserTransformer<T> implements Transformer<Uint8Array | string, T> {
-  // @ts-ignore Controller always defined during start
-  private controller: TransformStreamDefaultController<T>
-  // @ts-ignore Controller always defined during start
-  private parser: JSONParser
-  private opts?: JSONParserOptions
-
-  constructor(opts?: JSONParserOptions) {
-    this.opts = opts
-  }
-
-  start(controller: TransformStreamDefaultController<T>) {
-    this.controller = controller
-    this.parser = mkTransformerParser(this.controller, this.opts)
-  }
-
-  async transform(chunk: Uint8Array | string) {
-    try {
-      this.parser.write(chunk)
-    } catch (e) {
-      console.log('JSON parse error', e)
-      this.parser = mkTransformerParser(this.controller, this.opts)
-    }
-  }
-
-  flush() {
-    this.parser.end()
-  }
-}
-
-class CustomJSONParserTransformStream<T> extends TransformStream<Uint8Array | string, T> {
-  constructor(
-    opts?: JSONParserOptions,
-    writableStrategy?: QueuingStrategy<Uint8Array | string>,
-    readableStrategy?: QueuingStrategy<T>
-  ) {
-    const transformer = new JSONParserTransformer(opts)
-    super(transformer, writableStrategy, readableStrategy)
-  }
 }
