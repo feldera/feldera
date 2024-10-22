@@ -12,9 +12,14 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPNoopOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateWithWaterlineOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMapOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
+import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateView;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitCloneVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitGraph;
 
@@ -39,8 +44,13 @@ public class SeparateIntegrators extends CircuitCloneVisitor {
                 operator.is(DBSPAggregateLinearPostprocessOperator.class) ||
                 operator.is(DBSPPartitionedRollingAggregateWithWaterlineOperator.class) ||
                 operator.is(DBSPPartitionedRollingAggregateOperator.class) ||
-                operator.is(DBSPStreamAggregateOperator.class) ||
-                operator.is(DBSPIntegrateOperator.class);
+                operator.is(DBSPIntegrateOperator.class) ||
+                operator.is(DBSPLagOperator.class) ||
+                operator.is(DBSPIndexedTopKOperator.class) ||
+                (operator.is(DBSPSourceMultisetOperator.class) &&
+                        operator.to(DBSPSourceMultisetOperator.class).metadata.materialized) ||
+                (operator.is(DBSPSourceMapOperator.class) &&
+                        operator.to(DBSPSourceMapOperator.class).metadata.materialized);
     }
 
     public static boolean hasPreIntegrator(CircuitGraph.Port port) {
@@ -53,7 +63,15 @@ public class SeparateIntegrators extends CircuitCloneVisitor {
                 operator.is(DBSPAggregateOperator.class) ||
                 operator.is(DBSPIntegrateOperator.class) ||
                 operator.is(DBSPLagOperator.class) ||
-                operator.is(DBSPIndexedTopKOperator.class);
+                operator.is(DBSPIndexedTopKOperator.class) ||
+                (operator.is(DBSPSinkOperator.class) &&
+                        operator.to(DBSPSinkOperator.class).metadata.viewKind ==
+                                SqlCreateView.ViewKind.MATERIALIZED);
+    }
+
+    @Override
+    public void postorder(DBSPStreamAggregateOperator operator) {
+        throw new InternalCompilerError("StreamAggregate operator should have been removed " + operator);
     }
 
     @Override
