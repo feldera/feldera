@@ -43,6 +43,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPQuestionExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPSomeExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPSortExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPStaticExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnsignedUnwrapExpression;
@@ -1107,6 +1108,16 @@ public abstract class InnerRewriteVisitor
         this.pop(expression);
         DBSPExpression result = new DBSPUnaryExpression(expression.getNode(), type,
                     expression.operation, source);
+        this.map(expression, result);
+        return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPStaticExpression expression) {
+        this.push(expression);
+        DBSPExpression source = this.transform(expression.initializer);
+        this.pop(expression);
+        DBSPExpression result = new DBSPStaticExpression(expression.getNode(), source);
         this.map(expression, result);
         return VisitDecision.STOP;
     }

@@ -78,6 +78,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFieldComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPNoComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
+import org.dbsp.sqlCompiler.ir.expression.DBSPStaticExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.DBSPWindowBoundExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
@@ -795,14 +796,17 @@ public class ToRustVisitor extends CircuitVisitor {
 
     @Override
     public VisitDecision preorder(DBSPOperator operator) {
-        FindComparators finder = new FindComparators(this.errorReporter);
+        FindComparators compFinder = new FindComparators(this.errorReporter);
+        FindStatics staticsFinder = new FindStatics(this.errorReporter);
         if (operator.function != null) {
-            finder.apply(operator.getFunction());
+            compFinder.apply(operator.getFunction());
+            staticsFinder.apply(operator.getFunction());
         }
 
-        for (DBSPComparatorExpression comparator: finder.found) {
+        for (DBSPComparatorExpression comparator: compFinder.found)
             this.generateCmpFunc(comparator);
-        }
+        for (DBSPStaticExpression comparator: staticsFinder.found)
+            this.generateStatic(comparator);
 
         DBSPType streamType = new DBSPTypeStream(operator.outputType);
         this.writeComments(operator)
@@ -911,17 +915,17 @@ public class ToRustVisitor extends CircuitVisitor {
 
     /** Generate a comparator */
     void generateCmpFunc(DBSPComparatorExpression comparator) {
-        //    impl CmpFunc<(String, i32, i32)> for AscDesc {
-        //        fn cmp(left: &(String, i32, i32), right: &(String, i32, i32)) -> std::cmp::Ordering {
-        //            let ord = left.1.cmp(&right.1);
-        //            if ord != Ordering::Equal { return ord; }
-        //            let ord = right.2.cmp(&left.2);
-        //            if ord != Ordering::Equal { return ord; }
-        //            let ord = left.3.cmp(&right.3);
-        //            if ord != Ordering::Equal { return ord; }
-        //            return Ordering::Equal;
-        //        }
-        //    }
+        // impl CmpFunc<(String, i32, i32)> for AscDesc {
+        //     fn cmp(left: &(String, i32, i32), right: &(String, i32, i32)) -> std::cmp::Ordering {
+        //         let ord = left.1.cmp(&right.1);
+        //         if ord != Ordering::Equal { return ord; }
+        //         let ord = right.2.cmp(&left.2);
+        //         if ord != Ordering::Equal { return ord; }
+        //         let ord = left.3.cmp(&right.3);
+        //         if ord != Ordering::Equal { return ord; }
+        //         return Ordering::Equal;
+        //     }
+        // }
         String structName = comparator.getComparatorStructName();
         this.builder.append("struct ")
                 .append(structName)
@@ -963,6 +967,22 @@ public class ToRustVisitor extends CircuitVisitor {
                 .decrease()
                 .append("}")
                 .newline();
+    }
+
+    /** Generate a static value */
+    void generateStatic(DBSPStaticExpression stat) {
+        // lazy_static! {
+        //     static ref NAME: type = expression;
+        // }
+        String name = stat.getName();
+        this.builder.append("lazy_static! {").increase()
+                .append("static ref ")
+                .append(name)
+                .append(": ");
+        stat.getType().accept(this.innerVisitor);
+        this.builder.append(" = ");
+        stat.initializer.accept(this.innerVisitor);
+        this.builder.append(";").decrease().newline().append("}").newline();
     }
 
     DBSPClosureExpression generateEqualityComparison(DBSPExpression comparator) {
@@ -1272,7 +1292,8 @@ public class ToRustVisitor extends CircuitVisitor {
         return VisitDecision.STOP;
     }
 
-    /** Collects all comparators that appear in a DBSPCustomOrderExpression */
+    /** Collects all {@link DBSPComparatorExpression} that appear in some
+     * {@link DBSPCustomOrdExpression}. */
     static class FindComparators extends InnerVisitor {
         final List<DBSPComparatorExpression> found = new ArrayList<>();
 
@@ -1282,6 +1303,19 @@ public class ToRustVisitor extends CircuitVisitor {
 
         public void postorder(DBSPCustomOrdExpression expression) {
             this.found.add(expression.comparator);
+        }
+    }
+
+    /** Collects all {@link DBSPStaticExpression}s that appear in an expression */
+    static class FindStatics extends InnerVisitor {
+        List<DBSPStaticExpression> found = new ArrayList<>();
+
+        public FindStatics(IErrorReporter reporter) {
+            super(reporter);
+        }
+
+        public void postorder(DBSPStaticExpression expression) {
+            this.found.add(expression);
         }
     }
 

@@ -67,6 +67,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPQuestionExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPSomeExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPSortExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPStaticExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnsignedUnwrapExpression;
@@ -587,6 +588,10 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId {
     }
 
     public VisitDecision preorder(DBSPUnaryExpression node) {
+        return this.preorder(node.to(DBSPExpression.class));
+    }
+
+    public VisitDecision preorder(DBSPStaticExpression node) {
         return this.preorder(node.to(DBSPExpression.class));
     }
 
@@ -1145,6 +1150,10 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId {
     }
 
     public void postorder(DBSPUnaryExpression node) {
+        this.postorder(node.to(DBSPExpression.class));
+    }
+
+    public void postorder(DBSPStaticExpression node) {
         this.postorder(node.to(DBSPExpression.class));
     }
 

@@ -118,4 +118,9 @@ public final class DBSPStringLiteral extends DBSPLiteral {
     public int hashCode() {
         return Objects.hash(super.hashCode(), this.value);
     }
+
+    public DBSPStrLiteral toStr() {
+        assert this.value != null;
+        return new DBSPStrLiteral(this.value);
+    }
 }

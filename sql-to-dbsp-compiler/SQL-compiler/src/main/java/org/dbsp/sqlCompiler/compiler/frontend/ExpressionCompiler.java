@@ -57,6 +57,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFieldExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPIfExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
+import org.dbsp.sqlCompiler.ir.expression.DBSPStaticExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
@@ -92,6 +93,7 @@ import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeResult;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeUser;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeVec;
 import org.dbsp.sqlCompiler.ir.type.IsDateType;
 import org.dbsp.sqlCompiler.ir.type.IsNumericType;
@@ -125,6 +127,7 @@ import java.util.List;
 import java.util.Objects;
 
 import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.NULL;
+import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.USER;
 
 public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
         implements IWritesLogs, ICompilerComponent {
@@ -644,6 +647,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
             ops.set(argument, arg.cast(new DBSPTypeDouble(arg.getType().getNode(), arg.getType().mayBeNull)));
     }
 
+    @SuppressWarnings("SameParameterValue")
     void ensureInteger(List<DBSPExpression> ops, int argument, int integerSize) {
         DBSPExpression arg = ops.get(argument);
         DBSPTypeInteger expected = new DBSPTypeInteger(arg.getType().getNode(), integerSize, true, arg.getType().mayBeNull);
@@ -652,6 +656,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
             ops.set(argument, arg.cast(expected));
     }
 
+    @SuppressWarnings("SameParameterValue")
     void nullLiteralToNullArray(List<DBSPExpression> ops, int arg) {
         if (ops.get(arg).is(DBSPNullLiteral.class)) {
             ops.set(arg, new DBSPTypeVec(new DBSPTypeNull(CalciteObject.EMPTY), true).nullValue());
@@ -1184,10 +1189,26 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 return compileKeywordFunction(call, node, "date_trunc", type, ops, 1, 2);
             }
             case RLIKE: {
-                // Calcite does not enforce the type of the arguments, why?
+                validateArgCount(node, operationName, ops.size(), 2);
                 for (int i = 0; i < 2; i++)
+                    // Calcite does not enforce the type of the arguments, why?
                     this.ensureString(ops, i);
-                return compileFunction(call, node, type, ops, 2);
+                // if the second argument is a constant, compile it into a static
+                if (ops.get(1).is(DBSPStringLiteral.class)) {
+                    DBSPStringLiteral lit = ops.get(1).to(DBSPStringLiteral.class);
+                    if (lit.isNull()) {
+                        return type.nullValue();
+                    }
+                    DBSPTypeUser user = new DBSPTypeUser(CalciteObject.EMPTY, USER, "Regex", true);
+                    // Here we lie about the type: new does not return an Regex, but a Result<Regex, Error>.
+                    // We lie again that ok returns an unchanged type.  These two lies cancel out.
+                    DBSPExpression init = user.constructor("new", lit.toStr());
+                    init = init.applyMethod("ok", init.getType());
+                    ops.set(1, new DBSPStaticExpression(node, init).borrow());
+                    return compileFunction("rlikeC", node, type, ops, 2);
+                } else {
+                    return compileFunction(call, node, type, ops, 2);
+                }
             }
             case POSITION: {
                 String module_prefix;
