@@ -72,8 +72,24 @@ pub fn like2__(value: String, pattern: String) -> bool {
 some_function2!(like2, String, String, bool);
 
 pub fn rlike__(value: String, pattern: String) -> bool {
-    let re = Regex::new(&pattern);
-    re.map_or_else(|_| false, |re| re.is_match(&value))
+    let re = Regex::new(&pattern).ok();
+    rlikeC__(value, &re)
+}
+
+// rlike with a Constant regular expression.
+// re is None when the regular expression expression is malformed,
+// In this case the result is false and not None.
+// The regular expression cannot be null - the compiler would detect that.
+pub fn rlikeC__(value: String, re: &Option<Regex>) -> bool {
+    match re {
+        None => false,
+        Some(re) => re.is_match(&value),
+    }
+}
+
+pub fn rlikeCN_(value: Option<String>, re: &Option<Regex>) -> Option<bool> {
+    let value = value?;
+    Some(rlikeC__(value, re))
 }
 
 some_function2!(rlike, String, String, bool);

@@ -68,6 +68,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPQuestionExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPSomeExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPSortExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPStaticExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnsignedUnwrapExpression;
@@ -942,6 +943,12 @@ public class ToRustInnerVisitor extends InnerVisitor {
     public VisitDecision preorder(DBSPCloneExpression expression) {
         expression.expression.accept(this);
         this.builder.append(".clone()");
+        return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPStaticExpression expression) {
+        this.builder.append(expression.getName());
         return VisitDecision.STOP;
     }
 

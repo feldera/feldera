@@ -143,6 +143,10 @@ public abstract class DBSPExpression
         return new DBSPApplyExpression(this, arguments);
     }
 
+    public DBSPExpression applyMethod(String method, DBSPType resultType, DBSPExpression... arguments) {
+        return new DBSPApplyMethodExpression(method, resultType, this, arguments);
+    }
+
     public DBSPExpression cast(DBSPType to, boolean force) {
         DBSPType fromType = this.getType();
         // Still, do not insert a cast if the source is a cast to the exact same type

@@ -29,6 +29,7 @@ pub use geopoint::GeoPoint;
 pub use interval::{LongInterval, ShortInterval};
 #[doc(hidden)]
 pub use num_traits::Float;
+pub use regex::Regex;
 #[doc(hidden)]
 pub use source::{SourcePosition, SourcePositionRange};
 pub use timestamp::{Date, Time, Timestamp};

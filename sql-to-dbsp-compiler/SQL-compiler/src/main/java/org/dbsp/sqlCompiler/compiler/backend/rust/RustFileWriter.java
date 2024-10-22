@@ -128,6 +128,7 @@ public class RustFileWriter {
                 use size_of::*;
                 use ::serde::{Deserialize,Serialize};
                 use compare::{Compare, Extract};
+                use lazy_static::lazy_static;
                 use std::{
                     collections::BTreeMap,
                     convert::identity,
