@@ -76,8 +76,17 @@ fn write_lock(file: &File) -> Result<(), IoError> {
 }
 
 fn get_lock(file: &File) -> Result<Option<u32>, IoError> {
+    // workaround: the size / type of `libc::F_UNLCK` can be different in
+    // different platforms. Resulting in the follow up pattern matching to fail.
+    //
+    // In linux, it is `c_int`:
+    // https://github.com/rust-lang/libc/blob/b667ac1fffe3b07b2ac68b6e8dec252f6e3e9993/src/unix/linux_like/linux/gnu/b64/s390x.rs#L485
+    // In bsd / macos, it is `c_short`:
+    // https://github.com/rust-lang/libc/blob/b667ac1fffe3b07b2ac68b6e8dec252f6e3e9993/src/unix/bsd/mod.rs#L349
+    const F_UNLCK: c_int = libc::F_UNLCK as c_int;
+
     fcntl_lock(file, libc::F_GETLK).map(|flock| match flock.l_type as c_int {
-        libc::F_UNLCK => None,
+        F_UNLCK => None,
         _ => Some(flock.l_pid as u32),
     })
 }
