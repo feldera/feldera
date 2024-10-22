@@ -23,8 +23,8 @@ use crate::transport::InputReader;
 use crate::transport::Step;
 use crate::transport::{input_transport_config_to_endpoint, output_transport_config_to_endpoint};
 use crate::{
-    catalog::SerBatch, CircuitCatalog, Encoder, InputConsumer, InputFormat, OutputConsumer,
-    OutputEndpoint, OutputFormat, ParseError, PipelineState, TransportInputEndpoint,
+    catalog::SerBatch, CircuitCatalog, Encoder, InputConsumer, OutputConsumer, OutputEndpoint,
+    ParseError, PipelineState, TransportInputEndpoint,
 };
 use anyhow::Error as AnyError;
 use arrow::datatypes::Schema;
@@ -84,6 +84,7 @@ mod stats;
 use crate::adhoc::table::AdHocTable;
 use crate::catalog::{SerBatchReader, SerTrace, SyncSerBatchReader};
 use crate::format::parquet::relation_to_arrow_fields;
+use crate::format::{get_input_format, get_output_format};
 use crate::integrated::create_integrated_input_endpoint;
 pub use error::{ConfigError, ControllerError};
 use feldera_types::config::OutputBufferConfig;
@@ -1810,10 +1811,9 @@ impl ControllerInner {
                     }
                 };
 
-                let format =
-                    <dyn InputFormat>::get_format(&format_config.name).ok_or_else(|| {
-                        ControllerError::unknown_input_format(endpoint_name, &format_config.name)
-                    })?;
+                let format = get_input_format(&format_config.name).ok_or_else(|| {
+                    ControllerError::unknown_input_format(endpoint_name, &format_config.name)
+                })?;
 
                 let parser =
                     format.new_parser(endpoint_name, input_handle, &format_config.config)?;
@@ -1973,7 +1973,7 @@ impl ControllerInner {
                 .ok_or_else(|| ControllerError::output_format_not_specified(endpoint_name))?
                 .clone();
 
-            let format = <dyn OutputFormat>::get_format(&format_config.name).ok_or_else(|| {
+            let format = get_output_format(&format_config.name).ok_or_else(|| {
                 ControllerError::unknown_output_format(endpoint_name, &format_config.name)
             })?;
             format.new_encoder(

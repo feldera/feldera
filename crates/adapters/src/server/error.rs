@@ -19,7 +19,7 @@
 //!
 //!      * [`dbsp::Error`], which indicates invalid pipeline or endpoint
 //!        configuration.
-//!      * [`controller::ConfigError`](ConfigError)
+//!      * [`ConfigError`](feldera_adapterlib::errors::controller::ConfigError)
 //!      * [`ControllerError::InputTransportError`]<br>
 //!        [`ControllerError::OutputTransportError`]<br>
 //!        [`ControllerError::ParseError`]<br>
@@ -39,7 +39,7 @@
 //! [`PipelineError`], which allows [`PipelineError`] to be returned as an error
 //! type by HTTP endpoints.
 
-use crate::{ConfigError, ControllerError, ParseError};
+use crate::{ControllerError, ParseError};
 use actix_web::{
     body::BoxBody, http::StatusCode, HttpResponse, HttpResponseBuilder, ResponseError,
 };
@@ -275,27 +275,6 @@ impl DetailedError for PipelineError {
             Self::ControllerError { error } => error.log_level(),
             _ => Level::Error,
         }
-    }
-}
-
-impl ResponseError for ControllerError {
-    fn status_code(&self) -> StatusCode {
-        match self {
-            Self::Config {
-                config_error: ConfigError::UnknownInputStream { .. },
-            } => StatusCode::NOT_FOUND,
-            Self::Config {
-                config_error: ConfigError::UnknownOutputStream { .. },
-            } => StatusCode::NOT_FOUND,
-            Self::Config { .. } => StatusCode::BAD_REQUEST,
-            Self::UnknownInputEndpoint { .. } => StatusCode::NOT_FOUND,
-            Self::ParseError { .. } => StatusCode::BAD_REQUEST,
-            _ => StatusCode::INTERNAL_SERVER_ERROR,
-        }
-    }
-
-    fn error_response(&self) -> HttpResponse<BoxBody> {
-        HttpResponseBuilder::new(self.status_code()).json(ErrorResponse::from_error(self))
     }
 }
 

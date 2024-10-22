@@ -1,5 +1,6 @@
 [workspace]
 members = [
+  "crates/adapterlib",
   "crates/adapters",
   "crates/dbsp",
   "crates/fda",
@@ -8,6 +9,7 @@ members = [
   "crates/pipeline-manager",
   "crates/sqllib",
   "sql-to-dbsp-compiler/lib/readers",
+  "crates/datagen",
 ]
 exclude = [
   "sql-to-dbsp-compiler/temp",

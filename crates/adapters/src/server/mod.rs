@@ -1,3 +1,4 @@
+use crate::format::{get_input_format, get_output_format};
 use crate::{
     adhoc::stream_adhoc_result,
     controller::ConnectorConfig,
@@ -5,8 +6,8 @@ use crate::{
     transport::http::{
         HttpInputEndpoint, HttpInputTransport, HttpOutputEndpoint, HttpOutputTransport,
     },
-    CircuitCatalog, Controller, ControllerError, FormatConfig, InputEndpointConfig, InputFormat,
-    OutputEndpoint, OutputEndpointConfig, OutputFormat, PipelineConfig, TransportInputEndpoint,
+    CircuitCatalog, Controller, ControllerError, FormatConfig, InputEndpointConfig, OutputEndpoint,
+    OutputEndpointConfig, PipelineConfig, TransportInputEndpoint,
 };
 use actix_web::body::MessageBody;
 use actix_web::dev::Service;
@@ -748,7 +749,7 @@ pub fn parser_config_from_http_request(
     format_name: &str,
     request: &HttpRequest,
 ) -> Result<FormatConfig, ControllerError> {
-    let format = <dyn InputFormat>::get_format(format_name)
+    let format = get_input_format(format_name)
         .ok_or_else(|| ControllerError::unknown_input_format(endpoint_name, format_name))?;
 
     let config = format.config_from_http_request(endpoint_name, request)?;
@@ -771,7 +772,7 @@ pub fn encoder_config_from_http_request(
     format_name: &str,
     request: &HttpRequest,
 ) -> Result<FormatConfig, ControllerError> {
-    let format = <dyn OutputFormat>::get_format(format_name)
+    let format = get_output_format(format_name)
         .ok_or_else(|| ControllerError::unknown_output_format(endpoint_name, format_name))?;
 
     let config = format.config_from_http_request(endpoint_name, request)?;

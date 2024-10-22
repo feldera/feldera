@@ -4,7 +4,7 @@
 
 use crate::{
     controller::InputEndpointConfig, format::InputBuffer, transport::InputReader, Catalog,
-    CircuitCatalog, FormatConfig, InputFormat,
+    CircuitCatalog, FormatConfig,
 };
 use anyhow::Result as AnyResult;
 use dbsp::{DBData, DBSPHandle, OrdZSet, Runtime};
@@ -36,7 +36,10 @@ mod mock_dezset;
 mod mock_input_consumer;
 mod mock_output_consumer;
 
+mod datagen;
+
 use crate::catalog::InputCollectionHandle;
+use crate::format::get_input_format;
 use crate::transport::input_transport_config_to_endpoint;
 pub use data::{
     generate_test_batch, generate_test_batches, generate_test_batches_with_weights,
@@ -241,7 +244,7 @@ pub fn file_to_zset<T>(file: &mut File, format: &str, format_config_yaml: &str) 
 where
     T: DBData + for<'de> DeserializeWithContext<'de, SqlSerdeConfig>,
 {
-    let format = <dyn InputFormat>::get_format(format).unwrap();
+    let format = get_input_format(format).unwrap();
     let buffer = MockDeZSet::<T, T>::new();
 
     // Input parsers don't care about schema yet.
