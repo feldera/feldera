@@ -1,5 +1,5 @@
 use crate::transport::kafka::ft::count_partitions_in_topic;
-use crate::transport::{InputEndpoint, InputReaderCommand};
+use crate::transport::InputCommandReceiver;
 use crate::{
     transport::{
         kafka::{rdkafka_loglevel_from, refine_kafka_error, DeferredLogging},
@@ -11,6 +11,7 @@ use crate::{
 use crate::{InputBuffer, ParseError, Parser};
 use anyhow::{anyhow, Error as AnyError, Result as AnyResult};
 use crossbeam::queue::ArrayQueue;
+use feldera_adapterlib::transport::{InputEndpoint, InputReaderCommand};
 use feldera_types::program_schema::Relation;
 use feldera_types::{secret_ref::MaybeSecretRef, transport::kafka::KafkaInputConfig};
 use indexmap::IndexSet;
@@ -26,7 +27,7 @@ use rdkafka::{Offset, TopicPartitionList};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 use std::ops::Range;
-use std::sync::mpsc::{channel, Receiver, RecvError, Sender, TryRecvError};
+use std::sync::mpsc::{channel, Receiver, Sender};
 use std::thread::Thread;
 use std::{
     cmp::max,
@@ -114,10 +115,9 @@ impl KafkaFtInputReaderInner {
         // beginning.
         let mut assignment = TopicPartitionList::new();
         let mut buffered_messages: Vec<Vec<MessageBuffer>> = Vec::with_capacity(topics.len());
-        let mut command_receiver = BufferedReceiver::new(command_receiver);
-        match command_receiver.recv()? {
-            InputReaderCommand::Seek(metadata) => {
-                let metadata = rmpv::ext::from_value::<Metadata>(metadata)?;
+        let mut command_receiver = InputCommandReceiver::<Metadata>::new(command_receiver);
+        match command_receiver.recv_seek()? {
+            Some(metadata) => {
                 let offsets = metadata.parse(&topics, &partition_counts)?;
                 for (topic, partitions) in topics.iter().zip(offsets.into_iter()) {
                     let mut buffered_partition = Vec::with_capacity(partitions.len());
@@ -134,9 +134,7 @@ impl KafkaFtInputReaderInner {
                     buffered_messages.push(buffered_partition);
                 }
             }
-            InputReaderCommand::Disconnect => return Ok(()),
-            other => {
-                command_receiver.put_back(other);
+            None => {
                 for (topic, n_partitions) in topics.iter().zip(partition_counts.iter()) {
                     for partition in 0..*n_partitions {
                         assignment
@@ -160,95 +158,77 @@ impl KafkaFtInputReaderInner {
             .map_err(|error| self.refine_error(error).1)?;
 
         // Then replay as many steps as requested.
-        loop {
-            match command_receiver.recv()? {
-                InputReaderCommand::Seek(_) => {
-                    unreachable!("Seek must be the first input reader command")
-                }
-                InputReaderCommand::Disconnect => return Ok(()),
-                InputReaderCommand::Replay(metadata) => {
-                    let metadata = rmpv::ext::from_value::<Metadata>(metadata)?;
-                    let metadata = metadata.parse(&topics, &partition_counts)?;
-                    let mut replayer = MetadataReplayer::new(&metadata);
-                    let mut total_records = 0;
-                    for (topic, partitions) in metadata.iter().enumerate() {
-                        for (partition, offsets) in partitions.iter().enumerate() {
-                            let buf = &mut buffered_messages[topic][partition];
-                            buf.next_offset = max(buf.next_offset, offsets.end);
+        while let Some(metadata) = command_receiver.recv_replay()? {
+            let metadata = metadata.parse(&topics, &partition_counts)?;
+            let mut replayer = MetadataReplayer::new(&metadata);
+            let mut total_records = 0;
+            for (topic, partitions) in metadata.iter().enumerate() {
+                for (partition, offsets) in partitions.iter().enumerate() {
+                    let buf = &mut buffered_messages[topic][partition];
+                    buf.next_offset = max(buf.next_offset, offsets.end);
 
-                            for (offset, mut msg) in buf.split_before(offsets.end) {
-                                match replayer.received_offset(topic, partition, offset)? {
-                                    ReplayAction::Replay => {
-                                        consumer.parse_errors(msg.errors);
-                                        total_records += msg.buffer.len();
-                                        msg.buffer.flush_all()
-                                    }
-                                    ReplayAction::Defer => unreachable!(
-                                        "`replay_messages` was split so that this couldn't happen."
-                                    ),
-                                };
+                    for (offset, mut msg) in buf.split_before(offsets.end) {
+                        match replayer.received_offset(topic, partition, offset)? {
+                            ReplayAction::Replay => {
+                                consumer.parse_errors(msg.errors);
+                                total_records += msg.buffer.len();
+                                msg.buffer.flush_all()
                             }
-                        }
+                            ReplayAction::Defer => unreachable!(
+                                "`replay_messages` was split so that this couldn't happen."
+                            ),
+                        };
                     }
-                    while !replayer.is_complete() {
-                        match self.kafka_consumer.poll(POLL_TIMEOUT) {
-                            Some(Err(e)) => {
-                                let (fatal, e) = self.refine_error(e);
-                                consumer.error(fatal, e);
-                                if fatal {
-                                    return Ok(());
-                                }
-                            }
-                            Some(Ok(message)) => {
-                                let payload = message.payload().unwrap_or(&[]);
-                                let (mut buffer, errors) = parser.parse(payload);
-                                consumer.buffered(buffer.len(), payload.len());
-                                let topic = Self::lookup_topic(&topics, message.topic())?;
-                                let partition = message.partition() as usize;
-                                match replayer.received_offset(
-                                    topic,
-                                    partition,
-                                    message.offset(),
-                                )? {
-                                    ReplayAction::Replay => {
-                                        consumer.parse_errors(errors);
-                                        total_records += buffer.len();
-                                        buffer.flush_all();
-                                    }
-                                    ReplayAction::Defer => {
-                                        // Message is after the step we're replaying.
-                                        let buf = &mut buffered_messages[topic][partition];
-                                        buf.next_offset =
-                                            max(buf.next_offset, message.offset() + 1);
-                                        buf.messages
-                                            .insert(message.offset(), Msg { buffer, errors });
-                                    }
-                                }
-                            }
-                            None => (),
-                        }
-                    }
-                    consumer.replayed(total_records);
-                }
-                other => {
-                    command_receiver.put_back(other);
-                    break;
                 }
             }
+            while !replayer.is_complete() {
+                match self.kafka_consumer.poll(POLL_TIMEOUT) {
+                    Some(Err(e)) => {
+                        let (fatal, e) = self.refine_error(e);
+                        consumer.error(fatal, e);
+                        if fatal {
+                            return Ok(());
+                        }
+                    }
+                    Some(Ok(message)) => {
+                        let payload = message.payload().unwrap_or(&[]);
+                        let (mut buffer, errors) = parser.parse(payload);
+                        consumer.buffered(buffer.len(), payload.len());
+                        let topic = Self::lookup_topic(&topics, message.topic())?;
+                        let partition = message.partition() as usize;
+                        match replayer.received_offset(topic, partition, message.offset())? {
+                            ReplayAction::Replay => {
+                                consumer.parse_errors(errors);
+                                total_records += buffer.len();
+                                buffer.flush_all();
+                            }
+                            ReplayAction::Defer => {
+                                // Message is after the step we're replaying.
+                                let buf = &mut buffered_messages[topic][partition];
+                                buf.next_offset = max(buf.next_offset, message.offset() + 1);
+                                buf.messages
+                                    .insert(message.offset(), Msg { buffer, errors });
+                            }
+                        }
+                    }
+                    None => (),
+                }
+            }
+            consumer.replayed(total_records);
         }
 
         let mut running = false;
         let mut kafka_paused = false;
         loop {
-            loop {
-                match command_receiver.try_recv() {
-                    Ok(command @ InputReaderCommand::Seek(_))
-                    | Ok(command @ InputReaderCommand::Replay(_)) => {
+            while let Some(command) = command_receiver.try_recv()? {
+                match command {
+                    command @ InputReaderCommand::Seek(_)
+                    | command @ InputReaderCommand::Replay(_) => {
                         unreachable!("{command:?} must be at the beginning of the command stream")
                     }
-                    Ok(InputReaderCommand::Extend) => running = true,
-                    Ok(InputReaderCommand::Pause) => running = false,
-                    Ok(InputReaderCommand::Queue) => {
+                    InputReaderCommand::Extend => running = true,
+                    InputReaderCommand::Pause => running = false,
+                    InputReaderCommand::Queue => {
                         let mut total = 0;
                         let mut ranges = partition_counts
                             .iter()
@@ -294,10 +274,7 @@ impl KafkaFtInputReaderInner {
                         consumer
                             .extended(total, rmpv::ext::to_value(&Metadata { offsets }).unwrap());
                     }
-                    Ok(InputReaderCommand::Disconnect) | Err(TryRecvError::Disconnected) => {
-                        return Ok(())
-                    }
-                    Err(TryRecvError::Empty) => break,
+                    InputReaderCommand::Disconnect => return Ok(()),
                 }
             }
 
@@ -573,41 +550,6 @@ impl<'a> MetadataReplayer<'a> {
             }
             Ok(ReplayAction::Defer)
         }
-    }
-}
-
-/// Wraps [Receiver] with a one-message buffer, to allow received messages to be
-/// put back and received again later.
-struct BufferedReceiver<T> {
-    receiver: Receiver<T>,
-    buffer: Option<T>,
-}
-
-impl<T> BufferedReceiver<T> {
-    fn new(receiver: Receiver<T>) -> Self {
-        Self {
-            receiver,
-            buffer: None,
-        }
-    }
-
-    fn recv(&mut self) -> Result<T, RecvError> {
-        match self.buffer.take() {
-            Some(value) => Ok(value),
-            None => self.receiver.recv(),
-        }
-    }
-
-    fn try_recv(&mut self) -> Result<T, TryRecvError> {
-        match self.buffer.take() {
-            Some(value) => Ok(value),
-            None => self.receiver.try_recv(),
-        }
-    }
-
-    fn put_back(&mut self, value: T) {
-        assert!(self.buffer.is_none());
-        self.buffer = Some(value);
     }
 }
 
