@@ -38,7 +38,10 @@ pub struct KafkaInputConfig {
     #[serde(default = "default_group_join_timeout_secs")]
     pub group_join_timeout_secs: u32,
 
-    /// If specified, this service is used to provide defaults for the Kafka options.
+    /// Deprecated.
+    pub fault_tolerance: Option<String>,
+
+    /// Deprecated.
     pub kafka_service: Option<String>,
 
     /// Set to 1 or more to fix the number of threads used to poll
