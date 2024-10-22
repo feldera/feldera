@@ -41,6 +41,31 @@ You can issue ad-hoc queries by opening the Ad-hoc query tab of a pipeline and t
 
 ### Feldera Python SDK
 
+You can execute adhoc queries via the Python SDK using the method [query](https://docs.feldera.com/python/feldera.html#feldera.pipeline.Pipeline.query).
+`query` is **lazy** and returns a generator of Python Dictionaries that must be consumed.
+
+Example:
+```py
+gen_obj = pipeline.query("SELECT * FROM materialized_view;")
+output = list(gen_obj)
+```
+
+There are variations of the `query` method that return response in different formats:
+- [query_tabular](https://docs.feldera.com/python/feldera.html#feldera.pipeline.Pipeline.query_tabular)
+  Returns a generator of `String`. Like `query`, this method is also **lazy**.
+- [query_parquet](https://docs.feldera.com/python/feldera.html#feldera.pipeline.Pipeline.query_parquet)
+  Saves the output of this query to the parquet file specified by the `path` parameter.
+
+#### Insert & Delete
+
+If you want to execute `INSERT` and `DELETE` queries, use the method [execute](https://docs.feldera.com/python/feldera.html#feldera.pipeline.Pipeline.execute).
+Unlike `query`, this method processes the query **eagerly** and discards the result.
+
+Example:
+```py
+pipeline.execute("INSERT INTO tbl VALUES(1, 2, 3);")
+```
+
 ## Usage considerations
 
 Materialized relations can significantly increase the storage used by the program.
