@@ -8,8 +8,6 @@ import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitGraph;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 
-import java.util.List;
-
 /** The DBSP runtime will incorrectly GC a relation that has multiple Retain operators of
  * the same kind.  Check that this doesn't happen. */
 public class CheckRetain extends CircuitVisitor {
@@ -23,11 +21,12 @@ public class CheckRetain extends CircuitVisitor {
     @Override
     public void postorder(DBSPIntegrateTraceRetainKeysOperator retain) {
         DBSPOperator left = retain.left();
-        for (DBSPOperator dest: graph.getDestinations(left)) {
-            if (dest == retain)
+        for (CircuitGraph.Port dest: graph.getDestinations(left)) {
+            if (dest.operator() == retain)
                 continue;
-            if (dest.is(DBSPIntegrateTraceRetainKeysOperator.class)) {
-                throw new InternalCompilerError("Operator " + left + " has two RetainKeys policies");
+            if (dest.operator().is(DBSPIntegrateTraceRetainKeysOperator.class)) {
+                throw new InternalCompilerError("Operator " + left + " has two RetainKeys policies:"
+                + retain + " and " + dest.operator());
             }
         }
     }
@@ -35,11 +34,12 @@ public class CheckRetain extends CircuitVisitor {
     @Override
     public void postorder(DBSPIntegrateTraceRetainValuesOperator retain) {
         DBSPOperator left = retain.left();
-        for (DBSPOperator dest: graph.getDestinations(left)) {
-            if (dest == retain)
+        for (CircuitGraph.Port dest: graph.getDestinations(left)) {
+            if (dest.operator() == retain)
                 continue;
-            if (dest.is(DBSPIntegrateTraceRetainValuesOperator.class)) {
-                throw new InternalCompilerError("Operator " + left + " has two RetainValues policies");
+            if (dest.operator().is(DBSPIntegrateTraceRetainValuesOperator.class)) {
+                throw new InternalCompilerError("Operator " + left + " has two RetainValues policies"
+                + retain + " and " + dest.operator());
             }
         }
     }

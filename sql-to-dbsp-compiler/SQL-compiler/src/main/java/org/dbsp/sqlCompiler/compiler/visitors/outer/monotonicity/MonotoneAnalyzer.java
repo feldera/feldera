@@ -7,7 +7,9 @@ import org.dbsp.sqlCompiler.compiler.backend.ToDotVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.MonotoneExpression;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.AppendOnly;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitTransform;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.Graph;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.OptimizeWithGraph;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.ExpandOperators;
 import org.dbsp.util.IWritesLogs;
 import org.dbsp.util.IndentStream;
@@ -49,7 +51,9 @@ public class MonotoneAnalyzer implements CircuitTransform, IWritesLogs {
         final int details = this.getDebugLevel();
 
         // Insert noops between consecutive integrators
-        SeparateIntegrators separate = new SeparateIntegrators(this.reporter);
+        Graph graph = new Graph(this.reporter);
+        graph.apply(circuit);
+        SeparateIntegrators separate = new SeparateIntegrators(this.reporter, graph.graph);
         circuit = separate.apply(circuit);
         // Find relations which are append-only
         AppendOnly appendOnly = new AppendOnly(this.reporter);
@@ -69,24 +73,24 @@ public class MonotoneAnalyzer implements CircuitTransform, IWritesLogs {
 
         Monotonicity monotonicity = new Monotonicity(this.reporter);
         expanded = monotonicity.apply(expanded);
-        if (debug) {
+        if (debug)
             MonotoneDot.toDot("expanded.png", "png", expanded,
                     stream -> new MonotoneDot(reporter, stream, details, monotonicity.info));
-        }
 
         InsertLimiters limiters = new InsertLimiters(
                 this.reporter, expanded, monotonicity.info, expander.expansion,
                 keyPropagation.joins::get);
         // Notice that we apply the limiters to the original circuit, not to the expanded circuit!
         DBSPCircuit result = limiters.apply(circuit);
+        if (debug)
+            ToDotVisitor.toDot(reporter, "limited.png", details, "png", result);
 
-        Graph graph = new Graph(this.reporter);
+        CircuitTransform merger = new OptimizeWithGraph(this.reporter, g -> new MergeGC(this.reporter, g));
+        result = merger.apply(result);
+
         graph.apply(result);
         CheckRetain check = new CheckRetain(this.reporter, graph.graph);
         check.apply(result);
-
-        if (debug)
-            ToDotVisitor.toDot(reporter, "limited.png", details, "png", result);
         return result;
     }
 

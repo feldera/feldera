@@ -19,8 +19,8 @@ public class RemoveNoops extends CircuitCloneVisitor {
 
     @Override
     public void postorder(DBSPNoopOperator operator) {
-        List<DBSPOperator> destinations = this.graph.getDestinations(operator);
-        boolean keep = Linq.any(destinations, d -> d.is(GCOperator.class));
+        List<CircuitGraph.Port> destinations = this.graph.getDestinations(operator);
+        boolean keep = Linq.any(destinations, d -> d.operator().is(GCOperator.class));
         if (keep) {
             super.postorder(operator);
         } else {

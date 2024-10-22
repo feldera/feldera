@@ -49,7 +49,7 @@ public final class DBSPIntegrateTraceRetainKeysOperator
                     .to(PartiallyMonotoneTuple.class)
                     .getField(0)
                     .projectExpression(dataArg);
-            compare =DBSPControlledFilterOperator.generateTupleCompare(
+            compare = DBSPControlledFilterOperator.generateTupleCompare(
                     project, controlArg.deref().field(1).field(0));
         } else {
             DBSPType keyType = data.getOutputZSetElementType();
@@ -90,4 +90,6 @@ public final class DBSPIntegrateTraceRetainKeysOperator
             visitor.postorder(this);
         visitor.pop(this);
     }
+
+    // equivalent inherited from parent
 }
