@@ -3,6 +3,7 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer.expansion;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAsofJoinOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPChainAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDeindexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDelayedIntegralOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDistinctIncrementalOperator;
@@ -12,6 +13,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPHopOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinFilterMapOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
@@ -22,6 +24,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPPrimitiveAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSumOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPUpsertFeedbackOperator;
@@ -157,6 +160,12 @@ public class ExpandOperators extends CircuitCloneVisitor {
     }
 
     @Override
+    public void postorder(DBSPChainAggregateOperator operator) {
+        // We lie about this one, in fact it contains an integrator
+        this.identity(operator);
+    }
+
+    @Override
     public void postorder(DBSPDistinctOperator operator) {
         DBSPOperator input = this.mapped(operator.input());
         DBSPIntegrateOperator integrator = new DBSPIntegrateOperator(operator.getNode(), input);
@@ -238,6 +247,43 @@ public class ExpandOperators extends CircuitCloneVisitor {
         DBSPSumOperator sum = new DBSPSumOperator(operator.getNode(), sumInputs);
         this.map(operator, sum);
         this.addExpansion(operator, new JoinExpansion(leftIntegrator, rightIntegrator,
+                leftJoin, rightJoin, deltaJoin, sum));
+    }
+
+    @Override
+    public void postorder(DBSPJoinIndexOperator operator) {
+        // Similar to a join, but we do not handle foreign keys,
+        // so all integrators are unconditional.
+        List<DBSPOperator> inputs = Linq.map(operator.inputs, this::mapped);
+
+        List<DBSPOperator> sumInputs = new ArrayList<>();
+        DBSPDelayedIntegralOperator leftIntegrator = new DBSPDelayedIntegralOperator(operator.getNode(), inputs.get(0));
+        leftIntegrator.copyAnnotations(operator.left());
+        this.addOperator(leftIntegrator);
+
+        DBSPStreamJoinIndexOperator rightJoin = new DBSPStreamJoinIndexOperator(operator.getNode(),
+                operator.getOutputIndexedZSetType(),
+                operator.getFunction(), operator.isMultiset, leftIntegrator, inputs.get(1));
+        this.addOperator(rightJoin);
+        sumInputs.add(rightJoin);
+        DBSPDelayedIntegralOperator rightIntegrator = new DBSPDelayedIntegralOperator(operator.getNode(), inputs.get(1));
+        rightIntegrator.copyAnnotations(operator.right());
+        this.addOperator(rightIntegrator);
+
+        DBSPStreamJoinIndexOperator leftJoin = new DBSPStreamJoinIndexOperator(operator.getNode(),
+                operator.getOutputIndexedZSetType(),
+                operator.getFunction(), operator.isMultiset, inputs.get(0), rightIntegrator);
+        this.addOperator(leftJoin);
+        sumInputs.add(leftJoin);
+        DBSPStreamJoinIndexOperator deltaJoin = new DBSPStreamJoinIndexOperator(operator.getNode(),
+                operator.getOutputIndexedZSetType(),
+                operator.getFunction(), operator.isMultiset, inputs.get(0), inputs.get(1));
+        this.addOperator(deltaJoin);
+        sumInputs.add(deltaJoin);
+
+        DBSPSumOperator sum = new DBSPSumOperator(operator.getNode(), sumInputs);
+        this.map(operator, sum);
+        this.addExpansion(operator, new JoinIndexExpansion(leftIntegrator, rightIntegrator,
                 leftJoin, rightJoin, deltaJoin, sum));
     }
 

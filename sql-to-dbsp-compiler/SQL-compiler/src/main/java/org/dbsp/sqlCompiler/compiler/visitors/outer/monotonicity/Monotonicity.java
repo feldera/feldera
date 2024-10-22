@@ -3,6 +3,7 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAsofJoinOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPChainAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDeindexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDelayedIntegralOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDistinctIncrementalOperator;
@@ -10,6 +11,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPDistinctOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFilterOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPHopOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNoopOperator;
@@ -19,6 +21,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPPrimitiveAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSumOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPUnaryOperator;
@@ -364,8 +367,7 @@ public class Monotonicity extends CircuitVisitor {
         this.set(node, result);
     }
 
-    @Override
-    public void postorder(DBSPStreamJoinOperator node) {
+    public void processJoinBase(DBSPJoinBaseOperator node) {
         MonotoneExpression left = this.getMonotoneExpression(node.left());
         MonotoneExpression right = this.getMonotoneExpression(node.right());
         if (left == null && right == null)
@@ -399,6 +401,16 @@ public class Monotonicity extends CircuitVisitor {
         if (result == null)
             return;
         this.set(node, result);
+    }
+
+    @Override
+    public void postorder(DBSPStreamJoinOperator node) {
+        this.processJoinBase(node);
+    }
+
+    @Override
+    public void postorder(DBSPStreamJoinIndexOperator node) {
+        this.processJoinBase(node);
     }
 
     @Override
@@ -713,6 +725,13 @@ public class Monotonicity extends CircuitVisitor {
 
     @Override
     public void postorder(DBSPAggregateLinearPostprocessOperator node) {
+        this.aggregate(node);
+    }
+
+    @Override
+    public void postorder(DBSPChainAggregateOperator node) {
+        // TODO: for MAX the output is always monotone, but we cannot use this information.
+        // https://github.com/feldera/feldera/issues/2805
         this.aggregate(node);
     }
 

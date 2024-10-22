@@ -19,7 +19,8 @@ import java.util.List;
 import java.util.Objects;
 
 /** Currently always inserted after the input of a join operator */
-public final class DBSPIntegrateTraceRetainValuesOperator extends DBSPBinaryOperator {
+public final class DBSPIntegrateTraceRetainValuesOperator
+        extends DBSPBinaryOperator implements GCOperator {
     public DBSPIntegrateTraceRetainValuesOperator(
             CalciteObject node, DBSPExpression function,
             DBSPOperator data, DBSPOperator control) {

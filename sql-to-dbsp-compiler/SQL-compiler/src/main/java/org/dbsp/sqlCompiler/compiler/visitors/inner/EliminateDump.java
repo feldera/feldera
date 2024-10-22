@@ -27,7 +27,6 @@ public class EliminateDump extends InnerRewriteVisitor {
     @Override
     public VisitDecision preorder(DBSPApplyExpression expression) {
         this.push(expression);
-        CalciteObject node = expression.getNode();
         DBSPExpression[] arguments = this.transform(expression.arguments);
         DBSPExpression function = this.transform(expression.function);
         DBSPType type = this.transform(expression.getType());

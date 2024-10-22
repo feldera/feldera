@@ -47,8 +47,8 @@ import java.util.*;
  * We expect that this is a base class for all visitors which modify a circuit.
  * This visitor is a base class for all visitors that modify circuits. */
 public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs {
-    @Nullable
-    protected DBSPPartialCircuit result;
+    /** Circuit under construction */
+    @Nullable protected DBSPPartialCircuit result;
     /** For each operator in the original circuit an operator in the
      * result circuit which computes the same result. */
     protected final Map<DBSPOperator, DBSPOperator> remap;

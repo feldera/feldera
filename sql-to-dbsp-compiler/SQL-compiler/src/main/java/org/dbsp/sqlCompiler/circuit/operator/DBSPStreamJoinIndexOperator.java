@@ -12,14 +12,14 @@ import java.util.List;
 import java.util.Objects;
 
 /** Currently there is no corespondent operator in DBSP, so an attept to generate
- * Rust for this operator will fail.   See {@link DBSPStreamJoinOperator} for
+ * Rust for this operator will fail.   See {@link DBSPJoinIndexOperator} for
  * the function signature. */
 public final class DBSPStreamJoinIndexOperator extends DBSPJoinBaseOperator {
     public DBSPStreamJoinIndexOperator(
             CalciteObject node, DBSPTypeIndexedZSet outputType,
             DBSPExpression function, boolean isMultiset,
             DBSPOperator left, DBSPOperator right) {
-        super(node, "full_join_index", function, outputType, isMultiset, left, right);
+        super(node, "stream_join_index", function, outputType, isMultiset, left, right);
         assert left.getOutputIndexedZSetType().keyType.sameType(right.getOutputIndexedZSetType().keyType);
     }
 

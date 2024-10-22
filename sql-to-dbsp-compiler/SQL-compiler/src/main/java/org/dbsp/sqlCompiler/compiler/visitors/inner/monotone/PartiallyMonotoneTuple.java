@@ -19,7 +19,7 @@ public class PartiallyMonotoneTuple
         extends BaseMonotoneType
         implements IMaybeMonotoneType {
     final List<IMaybeMonotoneType> fields;
-    final boolean raw;
+    public final boolean raw;
     final DBSPTypeTupleBase type;
     final boolean anyMonotone;
     final boolean mayBeNull;
@@ -57,8 +57,7 @@ public class PartiallyMonotoneTuple
         return this.type;
     }
 
-    @Override
-    @Nullable
+    @Override @Nullable
     public DBSPType getProjectedType() {
         // May return an empty tuple
         List<IMaybeMonotoneType> monotone = Linq.where(this.fields, IMaybeMonotoneType::mayBeMonotone);
@@ -128,9 +127,10 @@ public class PartiallyMonotoneTuple
     @Override
     public String toString() {
         StringBuilder result = new StringBuilder();
-        result.append("Tup")
-                .append(this.size())
-                .append("(");
+        if (!this.raw) {
+            result.append("Tup").append(this.size());
+        }
+        result.append("(");
         for (IMaybeMonotoneType field: this.fields) {
             result.append(field.toString());
             result.append(", ");

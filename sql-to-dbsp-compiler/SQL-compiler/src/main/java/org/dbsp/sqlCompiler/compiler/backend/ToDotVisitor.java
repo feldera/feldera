@@ -124,8 +124,9 @@ public class ToDotVisitor extends CircuitVisitor implements IWritesLogs {
                     .append(" -> ")
                     .append(node.getOutputName());
             if (this.details >= 2 && !this.edgesLabeled.contains(input)) {
+                String label = this.getEdgeLabel(input);
                 this.stream.append(" [xlabel=")
-                        .append(Utilities.doubleQuote(this.getEdgeLabel(input)))
+                        .append(Utilities.doubleQuote(label))
                         .append("]");
                 this.edgesLabeled.add(input);
             }
@@ -208,18 +209,17 @@ public class ToDotVisitor extends CircuitVisitor implements IWritesLogs {
             case "controlled_filter" -> " style=filled fillcolor=cyan";
             case "apply", "apply2" -> " style=filled fillcolor=yellow";
             case "integrate_trace_retain_keys",
-                 "partitioned_rolling_aggregate_with_waterline",
+                 "partitioned_rolling_aggregate_with_waterline", "window",
                  "integrate_trace_retain_values" -> " style=filled fillcolor=pink";
             // stateful operators
             case "distinct",
                  // all aggregates require an upsert, which is stateful, even the ones that are linear
-                 "aggregate", "partitioned_rolling_aggregate", "aggregate_linear",
-                 "stream_aggregate", "stream_aggregate_linear",
-                 "partitioned_tree_aggregate",
+                 "aggregate", "partitioned_rolling_aggregate",
+                 "stream_aggregate", "chain_aggregate",
                  // some joins require integrators
                  "join", "join_flatmap", "asof_join", "join_index",
-                 // delays contain state
-                 "delay_trace", "differentiate",
+                 // delays contain state, but not that much
+                 "delay_trace", // "delay", "differentiate",
                  // group operators
                  "topK", "lag_custom_order", "upsert",
                  "integrate" -> " style=filled fillcolor=orangered";

@@ -63,8 +63,11 @@ public enum DBSPOpcode {
     // NULL compares in a special way, since it means "uninitialized"
     AGG_GTE("agg_gte", true),
     AGG_LTE("agg_lte", true),
-    // Yet another way to compare, where NULL on the left is always greater
-    GTE_LEFT("gte_left", true),
+    // Yet another way to compare, used in controlled filters after a waterline
+    // The left argument is the data compared, the right argument is the current waterline
+    // A NULL on either side returns true.
+    // Otherwise, this returns left >= right.
+    CONTROLLED_FILTER_COMPARE("cf_compare", true),
 
     // Higher order operation: apply a function to every element of an array
     ARRAY_CONVERT("array_map", false)

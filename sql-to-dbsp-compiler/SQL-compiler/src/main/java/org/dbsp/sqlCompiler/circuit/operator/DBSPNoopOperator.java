@@ -23,27 +23,42 @@
 
 package org.dbsp.sqlCompiler.circuit.operator;
 
+import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 
 import javax.annotation.Nullable;
 import java.util.List;
 
-/** Implemented as a map with identity function.  Should be optimized away,
- * but sometimes it's useful to have in intermediate representations. */
+/** Same as a map with identity function, but, unlike a {@link DBSPMapOperator},
+ * the output can be an IndexedZSet. */
 public final class DBSPNoopOperator extends DBSPUnaryOperator {
-    static DBSPClosureExpression getClosure(DBSPType rowType) {
-        DBSPVariablePath var = rowType.ref().var();
-        return var.deref().applyClone().closure(var);
+    static DBSPClosureExpression getClosure(DBSPType sourceType) {
+        if (sourceType.is(DBSPTypeZSet.class)) {
+            DBSPVariablePath var = sourceType.to(DBSPTypeZSet.class).elementType.ref().var();
+            return var.deref().applyClone().closure(var);
+        } else if (sourceType.is(DBSPTypeIndexedZSet.class)) {
+            DBSPTypeIndexedZSet ix = sourceType.to(DBSPTypeIndexedZSet.class);
+            DBSPVariablePath var = ix.getKVRefType().var();
+            return new DBSPRawTupleExpression(
+                    var.field(0).deref().applyClone(),
+                    var.field(1).deref().applyClone())
+                    .closure(var);
+        } else {
+            throw new UnimplementedException("Noop for type " + sourceType);
+        }
     }
 
     public DBSPNoopOperator(CalciteObject node, DBSPOperator source,
                             @Nullable String comment) {
-        super(node, "map", getClosure(source.getOutputRowType()),
+        super(node, "noop", getClosure(source.outputType),
                 source.getType(), source.isMultiset, source, comment);
     }
 

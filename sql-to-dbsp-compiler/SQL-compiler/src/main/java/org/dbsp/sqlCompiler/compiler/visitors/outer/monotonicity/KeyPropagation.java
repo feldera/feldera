@@ -5,6 +5,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPDelayedIntegralOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDistinctOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFilterOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinFilterMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
@@ -321,37 +322,37 @@ public class KeyPropagation extends CircuitVisitor {
 
     }
 
-    void processJoin(DBSPBinaryOperator binary) {
-        StreamDescription left = this.keys.get(binary.left());
-        StreamDescription right = this.keys.get(binary.right());
+    void processJoin(DBSPJoinBaseOperator join) {
+        StreamDescription left = this.keys.get(join.left());
+        StreamDescription right = this.keys.get(join.right());
         if (left == null || right == null) {
-            super.postorder(binary);
+            super.postorder(join);
             return;
         }
 
-        int indexFields = binary.left()
+        int indexFields = join.left()
                 .getOutputIndexedZSetType().keyType.to(DBSPTypeTuple.class)
                 .tupFields.length;
         StreamDescription leftIndex = left.prefix(indexFields);
         StreamDescription rightIndex = right.prefix(indexFields);
         if (!leftIndex.hasSomeKey() || !rightIndex.hasSomeKey()) {
-            super.postorder(binary);
+            super.postorder(join);
             return;
         }
 
         // See if the key is on the left and the fk on the right
         DBSPSourceTableOperator table = this.checkForeign(leftIndex, rightIndex);
         if (table != null) {
-            this.mapJoin(binary, table, rightIndex, right.tail(indexFields), true);
+            this.mapJoin(join, table, rightIndex, right.tail(indexFields), true);
         } else {
             // See if the key is on the right and the fk on the left
             table = this.checkForeign(rightIndex, leftIndex);
             if (table != null) {
-                this.mapJoin(binary, table, leftIndex, left.tail(indexFields), false);
+                this.mapJoin(join, table, leftIndex, left.tail(indexFields), false);
             }
         }
 
-        super.postorder(binary);
+        super.postorder(join);
     }
 
     @Override

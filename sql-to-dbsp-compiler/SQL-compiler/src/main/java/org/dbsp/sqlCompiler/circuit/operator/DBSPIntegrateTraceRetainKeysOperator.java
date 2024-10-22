@@ -18,7 +18,9 @@ import javax.annotation.Nullable;
 import java.util.List;
 import java.util.Objects;
 
-public final class DBSPIntegrateTraceRetainKeysOperator extends DBSPBinaryOperator {
+public final class DBSPIntegrateTraceRetainKeysOperator
+        extends DBSPBinaryOperator implements GCOperator
+{
     public DBSPIntegrateTraceRetainKeysOperator(
             CalciteObject node, DBSPExpression expression,
             DBSPOperator data, DBSPOperator control) {
