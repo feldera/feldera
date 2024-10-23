@@ -303,13 +303,20 @@ macro_rules! declare_tuples {
             */
             impl<$($element: Copy),*> Copy for $tuple_name<$($element),*> {}
 
-            impl<$($element),*> $crate::circuit::checkpointer::Checkpoint for $tuple_name<$($element),*> {
+            impl<$($element),*> $crate::circuit::checkpointer::Checkpoint for $tuple_name<$($element),*>
+            where
+                $tuple_name<$($element),*>: ::rkyv::Serialize<$crate::storage::file::Serializer> + $crate::storage::file::Deserializable,
+            {
                 fn checkpoint(&self) -> Result<Vec<u8>, $crate::Error> {
-                    todo!()
+                    let mut s = $crate::storage::file::Serializer::default();
+                    let _offset = ::rkyv::ser::Serializer::serialize_value(&mut s, self).unwrap();
+                    let data = s.into_serializer().into_inner().into_vec();
+                    Ok(data)
                 }
 
-                fn restore(&mut self, _data: &[u8]) -> Result<(), $crate::Error> {
-                    todo!()
+                fn restore(&mut self, data: &[u8]) -> Result<(), $crate::Error> {
+                    *self = $crate::trace::unaligned_deserialize(data);
+                    Ok(())
                 }
             }
         )*
