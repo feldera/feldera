@@ -39,6 +39,20 @@ You can issue ad-hoc queries by opening the "Ad-hoc query" tab of the pipeline a
 
 ### Feldera CLI
 
+You can execute ad-hoc queries using the Feldera CLI. The command `fda exec` allows you to execute a SQL query
+against the pipeline's materialized tables and views.
+
+```bash
+fda exec pipeline-name "SELECT * FROM materialized_view;"
+cat query.sql | fda exec pipeline-name -s
+```
+
+Alternatively, you can enter the `fda shell` command to open an interactive shell and execute queries.
+
+```bash
+fda shell pipeline-name
+```
+
 ### Feldera Python SDK
 
 You can execute adhoc queries via the Python SDK using the method [query](https://docs.feldera.com/python/feldera.html#feldera.pipeline.Pipeline.query).
@@ -70,7 +84,7 @@ pipeline.execute("INSERT INTO tbl VALUES(1, 2, 3);")
 
 Materialized relations can significantly increase the storage used by the program.
 For example, Feldera can evaluate simple programs with no joins or aggregates without keeping
-any state.  However, Mmaterializing inputs or outputs of such programs will make them
+any state.  However, materializing inputs or outputs of such programs will make them
 **stateful**, requiring storage proportional to the size of the materialized
 relations.
 
