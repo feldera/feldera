@@ -340,7 +340,14 @@ impl PipelineExecutor for LocalRunner {
     ) -> Result<(), ManagerError> {
         // (Re-)create pipeline working directory (which will contain storage directory)
         let pipeline_dir = self.config.pipeline_dir(self.pipeline_id);
-        let _ = remove_dir_all(&pipeline_dir).await;
+        let ft = deployment_config
+            .storage_config
+            .as_ref()
+            .and(deployment_config.global.fault_tolerance);
+        if ft != Some(FtConfig::LatestCheckpoint) {
+            let _ = remove_dir_all(&pipeline_dir).await;
+        }
+        self.delete_pipeline_dir_on_shutdown = ft.is_none();
         create_dir_all(&pipeline_dir).await.map_err(|e| {
             ManagerError::io_error(
                 format!(
@@ -353,15 +360,6 @@ impl PipelineExecutor for LocalRunner {
 
         // (Re-)create pipeline storage directory
         if let Some(storage_config) = &deployment_config.storage_config {
-            let ft = &deployment_config.global.fault_tolerance;
-            match ft {
-                None | Some(FtConfig::InitialState) => {
-                    let _ = remove_dir_all(&storage_config.path).await;
-                }
-                Some(FtConfig::LatestCheckpoint) => (),
-            };
-            self.delete_pipeline_dir_on_shutdown = ft.is_none();
-
             create_dir_all(&storage_config.path).await.map_err(|e| {
                 ManagerError::io_error(
                     format!(
