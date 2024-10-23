@@ -318,7 +318,7 @@ impl Inner {
             ..GeneratorOptions::default()
         };
         let mut generator = NexmarkGenerator::new(
-            GeneratorConfig::new(generator_options, 0, 0, index),
+            GeneratorConfig::new(generator_options, 0, index),
             ThreadRng::default(),
         );
 
