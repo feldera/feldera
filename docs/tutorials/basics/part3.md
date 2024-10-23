@@ -58,7 +58,7 @@ create table PART (
 create table PRICE (
     part bigint not null,
     vendor bigint not null,
-    price decimal
+    price integer
 ) WITH ('connectors' = '[{
     "transport": {
         "name": "url_input", "config": {"path": "https://feldera-basics-tutorial.s3.amazonaws.com/price.json"  }
@@ -125,7 +125,7 @@ Modify the `PRICE` table adding a Kafka input connector to read from the `price`
 create table PRICE (
     part bigint not null,
     vendor bigint not null,
-    price decimal
+    price integer
 ) WITH ('connectors' = '[{
     "transport": {
         "name": "url_input", "config": {"path": "https://feldera-basics-tutorial.s3.amazonaws.com/price.json"  }
@@ -218,7 +218,7 @@ create table PART (
 create table PRICE (
     part bigint not null,
     vendor bigint not null,
-    price decimal
+    price integer
 ) WITH ('connectors' = '[{
     "transport": {
         "name": "url_input", "config": {"path": "https://feldera-basics-tutorial.s3.amazonaws.com/price.json"  }
