@@ -67,8 +67,7 @@ public enum DBSPOpcode {
     // The left argument is the data compared, the right argument is the current waterline
     // A NULL on either side returns true.
     // Otherwise, this returns left >= right.
-    CONTROLLED_FILTER_COMPARE("cf_compare", true),
-
+    CONTROLLED_FILTER_GTE("cf_compare_gte", true),
     // Higher order operation: apply a function to every element of an array
     ARRAY_CONVERT("array_map", false)
     ;

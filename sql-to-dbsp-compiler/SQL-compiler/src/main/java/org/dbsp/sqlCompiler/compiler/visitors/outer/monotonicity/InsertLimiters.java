@@ -97,8 +97,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
-import static org.dbsp.sqlCompiler.ir.expression.DBSPOpcode.AND;
-
 /** As a result of the Monotonicity analysis, this pass inserts new operators:
  * - apply operators that compute the bounds that drive the controlled filters
  * - {@link DBSPControlledFilterOperator} operators to throw away tuples that are not "useful"
@@ -226,7 +224,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
         DBSPExpression v01 = leftVar.deref().field(1);
         DBSPExpression v11 = rightVar.deref().field(1);
         DBSPExpression and = ExpressionCompiler.makeBinaryExpression(left.getNode(),
-                v0.getType(), AND, v0, v1);
+                v0.getType(), DBSPOpcode.AND, v0, v1);
         DBSPExpression min = function.getResultType().minimumValue();
         DBSPExpression cond = new DBSPTupleExpression(and,
                 new DBSPIfExpression(left.getNode(), and,
@@ -420,7 +418,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
             DBSPOperator after = DBSPIntegrateTraceRetainKeysOperator.create(
                     aggregator.getNode(), filteredAggregator, projection2, this.createDelay(limiter2));
             this.addOperator(after);
-            // output of 'after'' is not used in the graph, but the DBSP Rust layer will use it
+            // output of 'after' is not used in the graph, but the DBSP Rust layer will use it
         }
 
         this.map(aggregator, filteredAggregator, false);
@@ -474,7 +472,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
             DBSPOperator after = DBSPIntegrateTraceRetainKeysOperator.create(
                     aggregator.getNode(), filteredAggregator, projection2, delay);
             this.addOperator(after);
-            // output of 'after'' is not used in the graph, but the DBSP Rust layer will use it
+            // output of 'after' is not used in the graph, but the DBSP Rust layer will use it
         }
 
         this.addBounds(aggregator, ae.upsert, 0);
@@ -1185,7 +1183,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
             for (int i = 0; i < tuple.size(); i++) {
                 DBSPExpression compare = eq(left.field(i).simplify(), right.field(i).simplify());
                 result = ExpressionCompiler.makeBinaryExpression(left.getNode(),
-                        DBSPTypeBool.create(false), AND, result, compare);
+                        DBSPTypeBool.create(false), DBSPOpcode.AND, result, compare);
             }
             return result;
         } else {
@@ -1263,7 +1261,8 @@ public class InsertLimiters extends CircuitCloneVisitor {
         if (operator != expansion)
             this.markBound(expansion, extend);
         return DBSPControlledFilterOperator.create(
-                operator.getNode(), replacement, Monotonicity.getBodyType(expression), delay);
+                operator.getNode(), replacement, Monotonicity.getBodyType(expression),
+                delay, DBSPOpcode.CONTROLLED_FILTER_GTE);
     }
 
     @Override
@@ -1556,6 +1555,14 @@ public class InsertLimiters extends CircuitCloneVisitor {
                     DBSPWindowOperator window = new DBSPWindowOperator(
                             operator.getNode(), true, true, ix, apply);
                     this.addOperator(window);
+                    // GC for window: the waterline delayed
+                    if (INSERT_RETAIN_KEYS) {
+                        DBSPOperator retain = DBSPIntegrateTraceRetainKeysOperator.create(
+                                operator.getNode(), ix, tuple, this.createDelay(boundSource));
+                        this.addOperator(retain);
+                        // output of 'retain' is not used in the graph, but the DBSP Rust layer will use it
+                    }
+
                     DBSPOperator deindex = new DBSPDeindexOperator(operator.getNode(), window);
                     this.addOperator(deindex);
                     DBSPOperator sink = operator.withInputs(Linq.list(deindex), false);

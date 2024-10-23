@@ -50,14 +50,14 @@ public final class DBSPIntegrateTraceRetainKeysOperator
                     .getField(0)
                     .projectExpression(dataArg);
             compare = DBSPControlledFilterOperator.generateTupleCompare(
-                    project, controlArg.deref().field(1).field(0));
+                    project, controlArg.deref().field(1).field(0), DBSPOpcode.CONTROLLED_FILTER_GTE);
         } else {
             DBSPType keyType = data.getOutputZSetElementType();
             DBSPVariablePath dataArg = keyType.var();
             param = new DBSPParameter(dataArg.variable, dataArg.getType().ref());
             DBSPExpression project = dataProjection.projectExpression(dataArg);
             compare = DBSPControlledFilterOperator.generateTupleCompare(
-                    project, controlArg.deref().field(1));
+                    project, controlArg.deref().field(1), DBSPOpcode.CONTROLLED_FILTER_GTE);
         }
         compare = ExpressionCompiler.makeBinaryExpression(
                 node, compare.getType(), DBSPOpcode.OR, compare0, compare);

@@ -39,7 +39,8 @@ public final class DBSPControlledFilterOperator extends DBSPBinaryOperator {
         // this.checkArgumentFunctionType(expression, 0, data);
     }
 
-    static DBSPExpression compareRecursive(DBSPExpression compare, DBSPExpression left, DBSPExpression right) {
+    static DBSPExpression compareRecursive(
+            DBSPExpression compare, DBSPOpcode opcode, DBSPExpression left, DBSPExpression right) {
         DBSPType leftType = left.getType();
         if (leftType.is(DBSPTypeBaseType.class)) {
             DBSPType rightType = right.getType();
@@ -48,15 +49,15 @@ public final class DBSPControlledFilterOperator extends DBSPBinaryOperator {
                     "Types differ: " + leftType + " vs " + rightType;
             // Notice the comparison using AGG_GTE, which never returns NULL
             DBSPExpression comparison = new DBSPBinaryExpression(CalciteObject.EMPTY,
-                    DBSPTypeBool.create(false), DBSPOpcode.CONTROLLED_FILTER_COMPARE, left, right);
+                    DBSPTypeBool.create(false), opcode, left, right);
             return new DBSPBinaryExpression(CalciteObject.EMPTY,
                     new DBSPTypeBool(CalciteObject.EMPTY, false), DBSPOpcode.AND, compare, comparison);
         } else if (leftType.is(DBSPTypeRef.class)) {
-            return compareRecursive(compare, left.deref(), right.deref());
+            return compareRecursive(compare, opcode, left.deref(), right.deref());
         } else {
             DBSPTypeTupleBase tuple = leftType.to(DBSPTypeTupleBase.class);
             for (int i = 0; i < tuple.size(); i++) {
-                compare = compareRecursive(compare, left.field(i), right.field(i));
+                compare = compareRecursive(compare, opcode, left.field(i), right.field(i));
             }
         }
         return compare;
@@ -64,20 +65,24 @@ public final class DBSPControlledFilterOperator extends DBSPBinaryOperator {
 
     /** Given two expressions that evaluate to tuples with the same type
      * (ignoring nullability), generate an expression
-     * that evaluates to 'true' only if all fields in the left tuple are bigger or equal (recursively)
-     * than the corresponding fields in the right tuple. */
-    static DBSPExpression generateTupleCompare(DBSPExpression left, DBSPExpression right) {
+     * that evaluates to 'true' only if all fields in the left tuple compare to true
+     * using the opcode operation (recursively) than the corresponding fields in the right tuple.
+     * @param left   Left tuple to compare
+     * @param right  Right tuple to compare
+     * @param opcode Comparison operation to use. */
+    static DBSPExpression generateTupleCompare(DBSPExpression left, DBSPExpression right, DBSPOpcode opcode) {
         DBSPLetStatement leftVar = new DBSPLetStatement("left", left.borrow());
         DBSPLetStatement rightVar = new DBSPLetStatement("right", right.borrow());
         List<DBSPStatement> statements = Linq.list(leftVar, rightVar);
         DBSPExpression compare = compareRecursive(
-                new DBSPBoolLiteral(true),
+                new DBSPBoolLiteral(true), opcode,
                 leftVar.getVarReference().deref(), rightVar.getVarReference().deref());
         return new DBSPBlockExpression(statements, compare);
     }
 
     public static DBSPControlledFilterOperator create(
-            CalciteObject node, DBSPOperator data, IMaybeMonotoneType monotoneType, DBSPOperator control) {
+            CalciteObject node, DBSPOperator data, IMaybeMonotoneType monotoneType, DBSPOperator control,
+            DBSPOpcode opcode) {
         DBSPType controlType = control.getType();
 
         DBSPType leftSliceType = Objects.requireNonNull(monotoneType.getProjectedType());
@@ -98,7 +103,7 @@ public final class DBSPControlledFilterOperator extends DBSPBinaryOperator {
 
         DBSPVariablePath controlArg = new DBSPVariablePath(controlType.ref());
         DBSPExpression compare = DBSPControlledFilterOperator.generateTupleCompare(
-                projection, controlArg.deref());
+                projection, controlArg.deref(), opcode);
         DBSPExpression closure = compare.closure(param, controlArg.asParameter());
         return new DBSPControlledFilterOperator(node, closure, data, control);
     }
