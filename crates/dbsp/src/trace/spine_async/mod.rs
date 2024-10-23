@@ -1023,7 +1023,7 @@ where
         // Persist all the batches.
         let batches = self
             .merger
-            .pause()
+            .get_batches()
             .into_iter()
             .map(|batch| {
                 if let Some(persisted) = batch.persisted() {
@@ -1043,7 +1043,6 @@ where
                     .to_string()
             })
             .collect::<Vec<_>>();
-        self.merger.resume(batches);
 
         let committed: CommittedSpine<B> = (ids, self as &Self).into();
         let as_bytes = to_bytes(&committed).expect("Serializing CommittedSpine should work.");
