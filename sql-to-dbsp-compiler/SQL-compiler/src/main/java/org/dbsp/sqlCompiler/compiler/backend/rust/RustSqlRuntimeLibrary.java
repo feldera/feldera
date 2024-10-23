@@ -77,8 +77,8 @@ public class RustSqlRuntimeLibrary {
         this.arithmeticFunctions.put(DBSPOpcode.AGG_XOR.toString(), DBSPOpcode.AGG_XOR);
         this.arithmeticFunctions.put(DBSPOpcode.AGG_LTE.toString(), DBSPOpcode.AGG_LTE);
         this.arithmeticFunctions.put(DBSPOpcode.AGG_GTE.toString(), DBSPOpcode.AGG_GTE);
-        this.arithmeticFunctions.put(DBSPOpcode.CONTROLLED_FILTER_COMPARE.toString(), 
-                DBSPOpcode.CONTROLLED_FILTER_COMPARE);
+        this.arithmeticFunctions.put(DBSPOpcode.CONTROLLED_FILTER_GTE.toString(),
+                DBSPOpcode.CONTROLLED_FILTER_GTE);
 
         this.dateFunctions.put("plus", DBSPOpcode.ADD);
         this.dateFunctions.put("minus", DBSPOpcode.SUB);
@@ -95,7 +95,7 @@ public class RustSqlRuntimeLibrary {
         this.dateFunctions.put(DBSPOpcode.AGG_MIN.toString(), DBSPOpcode.AGG_MIN);
         this.dateFunctions.put(DBSPOpcode.AGG_LTE.toString(), DBSPOpcode.AGG_LTE);
         this.dateFunctions.put(DBSPOpcode.AGG_GTE.toString(), DBSPOpcode.AGG_GTE);
-        this.dateFunctions.put(DBSPOpcode.CONTROLLED_FILTER_COMPARE.toString(), DBSPOpcode.CONTROLLED_FILTER_COMPARE);
+        this.dateFunctions.put(DBSPOpcode.CONTROLLED_FILTER_GTE.toString(), DBSPOpcode.CONTROLLED_FILTER_GTE);
         this.dateFunctions.put(DBSPOpcode.MIN.toString(), DBSPOpcode.MIN);
         this.dateFunctions.put(DBSPOpcode.MAX.toString(), DBSPOpcode.MAX);
 
@@ -112,8 +112,8 @@ public class RustSqlRuntimeLibrary {
         this.stringFunctions.put(DBSPOpcode.AGG_MAX.toString(), DBSPOpcode.AGG_MAX);
         this.stringFunctions.put(DBSPOpcode.AGG_LTE.toString(), DBSPOpcode.AGG_LTE);
         this.stringFunctions.put(DBSPOpcode.AGG_GTE.toString(), DBSPOpcode.AGG_GTE);
-        this.stringFunctions.put(DBSPOpcode.CONTROLLED_FILTER_COMPARE.toString(), 
-                DBSPOpcode.CONTROLLED_FILTER_COMPARE);
+        this.stringFunctions.put(DBSPOpcode.CONTROLLED_FILTER_GTE.toString(),
+                DBSPOpcode.CONTROLLED_FILTER_GTE);
 
         this.booleanFunctions.put("eq", DBSPOpcode.EQ);
         this.booleanFunctions.put("neq", DBSPOpcode.NEQ);
@@ -131,8 +131,8 @@ public class RustSqlRuntimeLibrary {
         this.booleanFunctions.put(DBSPOpcode.AGG_GTE.toString(), DBSPOpcode.AGG_GTE);
         this.booleanFunctions.put("is_same", DBSPOpcode.IS_NOT_DISTINCT);
         this.booleanFunctions.put(DBSPOpcode.IS_DISTINCT.toString(), DBSPOpcode.IS_DISTINCT);
-        this.booleanFunctions.put(DBSPOpcode.CONTROLLED_FILTER_COMPARE.toString(), 
-                DBSPOpcode.CONTROLLED_FILTER_COMPARE);
+        this.booleanFunctions.put(DBSPOpcode.CONTROLLED_FILTER_GTE.toString(),
+                DBSPOpcode.CONTROLLED_FILTER_GTE);
 
         // These are defined for VARBIT types
         this.otherFunctions.put(DBSPOpcode.AGG_AND.toString(), DBSPOpcode.AGG_AND);
@@ -141,8 +141,8 @@ public class RustSqlRuntimeLibrary {
         this.otherFunctions.put("concat", DBSPOpcode.CONCAT);
         this.otherFunctions.put(DBSPOpcode.AGG_LTE.toString(), DBSPOpcode.AGG_LTE);
         this.otherFunctions.put(DBSPOpcode.AGG_GTE.toString(), DBSPOpcode.AGG_GTE);
-        this.otherFunctions.put(DBSPOpcode.CONTROLLED_FILTER_COMPARE.toString(), 
-                DBSPOpcode.CONTROLLED_FILTER_COMPARE);
+        this.otherFunctions.put(DBSPOpcode.CONTROLLED_FILTER_GTE.toString(),
+                DBSPOpcode.CONTROLLED_FILTER_GTE);
         // These are defined for all types
         this.otherFunctions.put("eq", DBSPOpcode.EQ);
         this.otherFunctions.put("neq", DBSPOpcode.NEQ);
@@ -237,7 +237,8 @@ public class RustSqlRuntimeLibrary {
             tsuffixr = "";
             suffixl = "";
             suffixr = "";
-        } else if (opcode == DBSPOpcode.AGG_GTE || opcode == DBSPOpcode.AGG_LTE || opcode == DBSPOpcode.CONTROLLED_FILTER_COMPARE) {
+        } else if (opcode == DBSPOpcode.AGG_GTE || opcode == DBSPOpcode.AGG_LTE ||
+                opcode == DBSPOpcode.CONTROLLED_FILTER_GTE) {
             tsuffixl = "";
             tsuffixr = "";
         } else {

@@ -574,7 +574,6 @@ public class StreamingTests extends StreamingTestBase {
     public void testEmitFinal() {
         String sql = """
                 create table t (ts int not null LATENESS 2);
-
                 CREATE VIEW v WITH ('emit_final' = 'ts') AS
                 SELECT ts, COUNT(*) FROM t
                 GROUP BY ts;""";
@@ -599,6 +598,23 @@ public class StreamingTests extends StreamingTestBase {
         ccs.step("", """
                  ts | count | weight
                 ---------------------""");
+        // There should be 2 retain keys:
+        // - one for the aggregate_linear
+        // - one for the final window
+        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+            int integrate_trace = 0;
+
+            @Override
+            public void postorder(DBSPIntegrateTraceRetainKeysOperator operator) {
+                this.integrate_trace++;
+            }
+
+            @Override
+            public void endVisit() {
+                Assert.assertEquals(2, this.integrate_trace);
+            }
+        };
+        visitor.apply(ccs.circuit);
     }
 
     @Test
