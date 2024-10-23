@@ -1553,8 +1553,9 @@ public class InsertLimiters extends CircuitCloneVisitor {
                                     field.getType(), dataType), true,
                             this.mapped(operator.input()));
                     this.addOperator(ix);
+                    // The upper bound must be exclusive
                     DBSPWindowOperator window = new DBSPWindowOperator(
-                            operator.getNode(), true, true, ix, apply);
+                            operator.getNode(), true, false, ix, apply);
                     this.addOperator(window);
                     DBSPOperator deindex = new DBSPDeindexOperator(operator.getNode(), window);
                     this.addOperator(deindex);
