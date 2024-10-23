@@ -116,7 +116,7 @@ impl<R: Rng> NexmarkGenerator<R> {
     /// Return a random time delay, in milliseconds, for length of auctions.
     fn next_auction_length_ms(&mut self, event_count_so_far: u64, timestamp: u64) -> u64 {
         // What's our current event number?
-        let current_event_number = self.config.next_adjusted_event_number(event_count_so_far);
+        let current_event_number = self.config.next_event_number(event_count_so_far);
         // How many events until we've generated num_in_flight_actions?
         // E.g. with defaults, this is 100 * 50 / 3 = 1666 total events (bids, people,
         // auctions)
