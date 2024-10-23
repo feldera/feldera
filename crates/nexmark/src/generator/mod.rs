@@ -31,9 +31,9 @@ pub struct NexmarkGenerator<R: Rng> {
 }
 
 impl<R: Rng> Iterator for NexmarkGenerator<R> {
-    type Item = NextEvent;
+    type Item = Event;
 
-    fn next(&mut self) -> Option<NextEvent> {
+    fn next(&mut self) -> Option<Event> {
         let new_event_id = self.get_next_event_id();
         if new_event_id >= self.config.max_events {
             return None;
@@ -43,18 +43,6 @@ impl<R: Rng> Iterator for NexmarkGenerator<R> {
         let event_timestamp = self
             .config
             .timestamp_for_event(self.config.next_event_number(self.events_count_so_far));
-        // When, in event time, the event should say it was generated. Depending on
-        // outOfOrderGroupSize may have local jitter.
-        let adjusted_event_timestamp = self.config.timestamp_for_event(
-            self.config
-                .next_adjusted_event_number(self.events_count_so_far),
-        );
-        // The minimum of this and all future adjusted event timestamps. Accounts for
-        // jitter in the event timestamp.
-        let watermark = self.config.timestamp_for_event(
-            self.config
-                .next_event_number_for_watermark(self.events_count_so_far),
-        );
 
         let (auction_proportion, person_proportion, total_proportion) = (
             self.config.options.auction_proportion as u64,
@@ -64,23 +52,19 @@ impl<R: Rng> Iterator for NexmarkGenerator<R> {
 
         let rem = new_event_id % total_proportion;
         let event = if rem < person_proportion {
-            Event::Person(self.next_person(new_event_id, adjusted_event_timestamp))
+            Event::Person(self.next_person(new_event_id, event_timestamp))
         } else if rem < person_proportion + auction_proportion {
             Event::Auction(self.next_auction(
                 self.events_count_so_far,
                 new_event_id,
-                adjusted_event_timestamp,
+                event_timestamp,
             ))
         } else {
-            Event::Bid(self.next_bid(new_event_id, adjusted_event_timestamp))
+            Event::Bid(self.next_bid(new_event_id, event_timestamp))
         };
 
         self.events_count_so_far += 1;
-        Some(NextEvent {
-            event_timestamp,
-            event,
-            watermark,
-        })
+        Some(event)
     }
 }
 
@@ -98,25 +82,8 @@ impl<R: Rng> NexmarkGenerator<R> {
     // to return an id that is globally unique (across generators) that is used
     // to calculate the next event typ deterministically.
     fn get_next_event_id(&self) -> u64 {
-        self.config.first_event_id
-            + self
-                .config
-                .next_adjusted_event_number(self.events_count_so_far)
+        self.config.first_event_id + self.config.next_event_number(self.events_count_so_far)
     }
-}
-
-/// The next event and its various timestamps. Ordered by increasing wallclock
-/// timestamp, then (arbitrary but stable) event hash order.
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct NextEvent {
-    /// When, in event time, should this event be considered to have occured?
-    pub event_timestamp: u64,
-
-    /// The event itself.
-    pub event: Event,
-
-    /// The minimum of this and all future event timestamps.
-    pub watermark: u64,
 }
 
 #[cfg(test)]
@@ -182,17 +149,13 @@ pub mod tests {
         }
     }
 
-    pub fn make_next_event() -> NextEvent {
-        NextEvent {
-            event_timestamp: 0,
-            event: Event::Bid(make_bid()),
-            watermark: 0,
-        }
+    pub fn make_next_event() -> Event {
+        Event::Bid(make_bid())
     }
 
     /// Generates a specified number of next events using the default test
     /// generator.
-    pub fn generate_expected_next_events(num_events: usize) -> Vec<Option<NextEvent>> {
+    pub fn generate_expected_next_events(num_events: usize) -> Vec<Option<Event>> {
         let mut ng = make_test_generator();
 
         (0..num_events).map(|_| ng.next()).collect()
@@ -258,11 +221,11 @@ pub mod tests {
         let next_event = next_event.unwrap();
 
         assert!(
-            matches!(next_event.event, Event::Person(_)),
+            matches!(next_event, Event::Person(_)),
             "got: {:?}, want: Event::NewPerson(_)",
-            next_event.event
+            next_event
         );
-        assert_eq!(next_event.event_timestamp, 0);
+        assert_eq!(next_event.timestamp(), 0);
 
         // The next 3 events with the default config are auctions
         for event_num in 1..=3 {
@@ -271,11 +234,11 @@ pub mod tests {
             let next_event = next_event.unwrap();
 
             assert!(
-                matches!(next_event.event, Event::Auction(_)),
+                matches!(next_event, Event::Auction(_)),
                 "got: {:?}, want: Event::NewAuction(_)",
-                next_event.event
+                next_event
             );
-            assert_eq!(next_event.event_timestamp, event_num * 10);
+            assert_eq!(next_event.timestamp(), event_num * 10);
         }
 
         // And the rest of the events in the first epoch are bids.
@@ -285,18 +248,18 @@ pub mod tests {
             let next_event = next_event.unwrap();
 
             assert!(
-                matches!(next_event.event, Event::Bid(_)),
+                matches!(next_event, Event::Bid(_)),
                 "got: {:?}, want: Event::NewBid(_)",
-                next_event.event
+                next_event
             );
         }
 
         // The next epoch begins with another person etc.
         let next_event = ng.next().unwrap();
         assert!(
-            matches!(next_event.event, Event::Person(_)),
+            matches!(next_event, Event::Person(_)),
             "got: {:?}, want: Event::NewPerson(_)",
-            next_event.event
+            next_event
         );
     }
 
@@ -312,9 +275,7 @@ pub mod tests {
         let expected_events = generate_expected_next_events(100);
 
         assert_eq!(
-            (0..100)
-                .map(|_| ng.next())
-                .collect::<Vec<Option<NextEvent>>>(),
+            (0..100).map(|_| ng.next()).collect::<Vec<Option<Event>>>(),
             expected_events
         );
     }

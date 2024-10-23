@@ -11,7 +11,7 @@
 //! parallel when DBSP can be scaled.
 
 use self::{
-    generator::{config::Config as GeneratorConfig, NexmarkGenerator, NextEvent},
+    generator::{config::Config as GeneratorConfig, NexmarkGenerator},
     model::Event,
 };
 use config::GeneratorOptions;
@@ -102,7 +102,7 @@ pub struct NexmarkSource {
     // other projects (in other languages).
 
     // Channel on which the source receives vectors of next events.
-    next_events_rx: BatchedReceiver<NextEvent>,
+    next_events_rx: BatchedReceiver<Event>,
 }
 
 // Creates and spawns the generators according to the nexmark config, returning
@@ -114,13 +114,13 @@ fn create_generators_for_config<R: Rng + Default>(
     // instantiate a ThreadRng, `Default` is not supported for `StepRng`. Not sure if it's
     // worth writing a wrapper around `StepRng` with a `Default` implementation (or if there's
     // a better way).
-) -> BatchedReceiver<NextEvent> {
+) -> BatchedReceiver<Event> {
     let wallclock_base_time = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
         .unwrap()
         .as_millis() as u64;
     let buffer_size = options.source_buffer_size;
-    let mut next_event_rxs: Vec<BatchedReceiver<NextEvent>> = (0..options.num_event_generators)
+    let mut next_event_rxs: Vec<BatchedReceiver<Event>> = (0..options.num_event_generators)
         .map(|generator_num| {
             GeneratorConfig::new(options.clone(), wallclock_base_time, 0, generator_num)
         })
@@ -165,7 +165,7 @@ fn create_generators_for_config<R: Rng + Default>(
 }
 
 impl NexmarkSource {
-    pub fn from_next_events(next_events_rx: BatchedReceiver<NextEvent>) -> Self {
+    pub fn from_next_events(next_events_rx: BatchedReceiver<Event>) -> Self {
         NexmarkSource { next_events_rx }
     }
 
@@ -180,7 +180,7 @@ impl Iterator for NexmarkSource {
     fn next(&mut self) -> Option<Self::Item> {
         let next_event = self.next_events_rx.recv().ok()?;
 
-        Some(next_event.event)
+        Some(next_event)
     }
 }
 
@@ -230,7 +230,7 @@ pub mod tests {
         expected_events
             .into_iter()
             .filter(|event| event.is_some())
-            .map(|event| Tup2(event.unwrap().event, 1))
+            .map(|event| Tup2(event.unwrap(), 1))
             .collect()
     }
 
