@@ -747,7 +747,7 @@ public class ImplementNow extends Passes {
          *
          * @param operator Original filter operator.
          * @param filters  A decomposition of the filter's condition into a sequence
-         *                 of Boolean expresions, some of which may be suitable for
+         *                 of Boolean expressions, some of which may be suitable for
          *                 temporal filters.
          * @return         The replacement for the original filter operator.
          */
