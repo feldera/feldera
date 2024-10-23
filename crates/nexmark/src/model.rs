@@ -135,6 +135,16 @@ impl Default for Event {
     }
 }
 
+impl Event {
+    pub fn timestamp(&self) -> u64 {
+        match self {
+            Event::Person(person) => person.date_time,
+            Event::Auction(auction) => auction.date_time,
+            Event::Bid(bid) => bid.date_time,
+        }
+    }
+}
+
 /// Serializes `timestamp` in a format parseable as a SQL `TIMESTAMP`, that is,
 /// similar to ISO 8601 but using space instead of `T` as a separator and
 /// omitting the time zone.

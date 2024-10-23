@@ -14,7 +14,7 @@ use crate::{
 use anyhow::{anyhow, Result as AnyResult};
 use atomic::Atomic;
 use csv::{Writer as CsvWriter, WriterBuilder as CsvWriterBuilder};
-use dbsp_nexmark::generator::{NexmarkGenerator, NextEvent};
+use dbsp_nexmark::generator::NexmarkGenerator;
 use dbsp_nexmark::model::Event;
 use dbsp_nexmark::{config::GeneratorOptions, generator::config::Config as GeneratorConfig};
 use enum_map::EnumMap;
@@ -338,7 +338,7 @@ impl Inner {
             let mut writers =
                 EnumMap::from_fn(|table| Self::make_csv_writer(mem::take(&mut buffers[table])));
             let mut n = 0;
-            for NextEvent { event, .. } in &mut generator {
+            for event in &mut generator {
                 match event {
                     Event::Person(person) => {
                         writers[NexmarkTable::Person].serialize(person).unwrap()

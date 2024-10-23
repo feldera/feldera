@@ -78,24 +78,6 @@ impl Config {
         self.first_event_number as u64 + num_events * self.options.num_event_generators as u64
     }
 
-    /// Return the next event number for a generator which has so far emitted
-    /// `num_events`, but adjusted to account for `out_of_order_group_size`.
-    pub fn next_adjusted_event_number(&self, num_events: u64) -> u64 {
-        let n = self.options.out_of_order_group_size as u64;
-        let event_number = self.next_event_number(num_events);
-        let base = (event_number / n) * n;
-        let offset = (event_number * 953) % n;
-        base + offset
-    }
-
-    /// Return the event number whose event time will be a suitable watermark
-    /// for a generator which has so far emitted nts`.
-    pub fn next_event_number_for_watermark(&self, num_events: u64) -> u64 {
-        let n = self.options.out_of_order_group_size as u64;
-        let event_number = self.next_event_number(num_events);
-        (event_number / n) * n
-    }
-
     // What timestamp should the event with `eventNumber` have for this
     // generator?
     pub fn timestamp_for_event(&self, event_number: u64) -> u64 {
@@ -174,7 +156,7 @@ pub mod tests {
                 0,
                 0
             )
-            .next_adjusted_event_number(num_events),
+            .next_event_number(num_events),
             expected
         );
     }
@@ -187,65 +169,7 @@ pub mod tests {
     fn test_next_adjusted_event_number_default(#[case] num_events: u64, #[case] expected: u64) {
         // The default config has 2 generators, so the 0th generator emits
         // events 0, 2, 4 etc.
-        assert_eq!(
-            Config::default().next_adjusted_event_number(num_events),
-            expected
-        );
-    }
-
-    // When the out-of-order-group-size is 3, each group of three numbers will
-    // have a pseudo-random order, but only from within the same group of three.
-    #[rstest]
-    #[case(0, 0)]
-    #[case(1, 2)]
-    #[case(2, 1)]
-    #[case(3, 3)]
-    #[case(4, 5)]
-    #[case(5, 4)]
-    #[case(6, 6)]
-    #[case(7, 8)]
-    #[case(8, 7)]
-    fn test_next_adjusted_event_number_custom_group_size_3_single_generator(
-        #[case] num_events: u64,
-        #[case] expected: u64,
-    ) {
-        // Seems to be issues in the Java implementation?!
-        let config = Config {
-            options: GeneratorOptions {
-                num_event_generators: 1,
-                out_of_order_group_size: 3,
-                ..GeneratorOptions::default()
-            },
-            ..Config::default()
-        };
-        assert_eq!(config.next_adjusted_event_number(num_events), expected);
-    }
-
-    // When the out-of-order-group-size is 3, each group of three numbers will
-    // have a pseudo-random order, but only from within the same group of three.
-    // With two generators, this single generator is emitting every second event
-    // [0, 2, 4, 6, 8, 10], so the out of order numbers are (based on the previous
-    // test expectations) [0, 1, 5, 6, 7, 11]
-    #[rstest]
-    #[case(0, 0)]
-    #[case(1, 1)]
-    #[case(2, 5)]
-    #[case(3, 6)]
-    #[case(4, 7)]
-    #[case(5, 11)]
-    fn test_next_adjusted_event_number_custom_group_size_3_default(
-        #[case] num_events: u64,
-        #[case] expected: u64,
-    ) {
-        // Seems to be issues in the Java implementation?!
-        let config = Config {
-            options: GeneratorOptions {
-                out_of_order_group_size: 3,
-                ..GeneratorOptions::default()
-            },
-            ..Config::default()
-        };
-        assert_eq!(config.next_adjusted_event_number(num_events), expected);
+        assert_eq!(Config::default().next_event_number(num_events), expected);
     }
 
     // The default event interval is 10 ms.

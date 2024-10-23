@@ -126,12 +126,6 @@ pub struct GeneratorOptions {
     #[clap(long, default_value = "100", env = "NEXMARK_NUM_IN_FLIGHT_AUCTIONS")]
     pub num_in_flight_auctions: usize,
 
-    /// Number of events in out-of-order groups. 1 implies no out-of-order
-    /// events. 1000 implies every 1000 events per generator are emitted in
-    /// pseudo-random order.
-    #[clap(long, default_value = "1", env = "NEXMARK_OUT_OF_ORDER_GROUP_SIZE")]
-    pub out_of_order_group_size: usize,
-
     /// Specify the proportion of events that will be new people.
     #[clap(long, default_value = "1", env = "NEXMARK_PERSON_PROPORTION")]
     pub person_proportion: usize,
@@ -178,7 +172,6 @@ impl Default for GeneratorOptions {
             num_active_people: 1000,
             num_event_generators: 2,
             num_in_flight_auctions: 100,
-            out_of_order_group_size: 1,
             person_proportion: 1,
             source_buffer_size: 10_000,
         }
