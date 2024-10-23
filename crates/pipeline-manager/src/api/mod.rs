@@ -260,6 +260,7 @@ fn api_scope() -> Scope {
         .service(pipeline::patch_pipeline)
         .service(pipeline::delete_pipeline)
         // Special pipeline endpoints
+        .service(pipeline::checkpoint_pipeline)
         .service(pipeline::post_pipeline_action)
         .service(pipeline::input_endpoint_action)
         .service(pipeline::get_pipeline_logs)
@@ -267,7 +268,6 @@ fn api_scope() -> Scope {
         .service(pipeline::get_pipeline_circuit_profile)
         .service(pipeline::get_pipeline_heap_profile)
         .service(pipeline::pipeline_adhoc_sql)
-        .service(pipeline::checkpoint_pipeline)
         // API keys endpoints
         .service(api_key::list_api_keys)
         .service(api_key::get_api_key)
