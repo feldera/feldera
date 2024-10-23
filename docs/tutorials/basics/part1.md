@@ -102,9 +102,9 @@ Click the PLAY button to run the pipeline.
 
 ## Step 2. Insert data
 
-When the pipeline is running it can process incoming changes. Let's try just that via ad-hoc queries.
+When the pipeline is running it can process incoming changes. The changes can be submitted to the pipeline in three ways: automatically via [input connectors](connectors/) attached to the pipeline tables, by sending HTTP ingress requests and by issuing `INSERT INTO ...` ad-hoc queries. You can use one of our tools - the [Python SDK](../../../../python/feldera.html#feldera.pipeline.Pipeline.input_json), the [Feldera CLI tool](reference/cli), the Web Console or the [REST API](../../../../api/push-data-to-a-sql-table) directly to leverage any of these methods. For simplicity, let us use the Web Console to run an `INSERT INTO ...` query.
 
-Open Ad-hoc query tab and insert in the input field the following statement:
+Open the "Ad-hoc query" tab and insert the following statement in the input field:
 
 ```sql
 INSERT INTO VENDOR (id, name, address) VALUES
@@ -113,25 +113,26 @@ INSERT INTO VENDOR (id, name, address) VALUES
 (3, 'DarkMatter Devices', '333 Singularity Street');
 ```
 
-Press `Enter` or click the Play button to submit the query. You will see the result containing the number of inserted rows: 3.
+Press `Enter` or click the Play button to submit the query. You will see the result containing the number of inserted rows - 3:
 
 ![Query to insert vendor data](basics-part1-1.png)
 
-Now let's check the state of the table with a quick select query that we insert into the empty input field below the result from the first query:
+Ad-hoc queries can also be used to inspect current state of tables and views.
+Now let us check the state of the `VENDOR` table with a quick select query that we insert into the empty input field below the result from the first query:
 
 ```sql
-SELECT * FROM VENDOR
+SELECT * FROM VENDOR;
 ```
 
 ![Inserted vendor data](basics-part1-2.png)
 
-Yep, everything is in order. Let's fill the other table:
+Yep, everything is in order. Let us fill the other tables:
 
 ```sql
 INSERT INTO PART (id, name) VALUES
 (1, 'Flux Capacitor'),
 (2, 'Warp Core'),
-(3, 'Kyber Crystal')
+(3, 'Kyber Crystal');
 ```
 
 ```sql
@@ -141,48 +142,62 @@ INSERT INTO PRICE (part, vendor, price) VALUES
 (3, 3, 9000);
 ```
 
-The ad-hoc queries we run are executed by the same pipeline that handles the stream processing, but instead of using our incremental computation engine they are evaluated against the latest snapshot of the pipeline's tables and views.
-
-Enough with the static SQL, let's see Feldera's incremental computation in action!
+Keep in mind that ad-hoc queries are evaluated for a single pipeline and not the entire system.
 
 ## Step 3. Observe pipeline outputs
 
-To see the computed outputs of the pipeline switch to Change stream tab, and tick the checkboxes next to LOW_PRICE and PREFERRED_VENDOR views.
+Feldera is an incremental view maintenance (IVM) engine. This means that when the new changes arrive the contents of the SQL views are automatically updated, but rather than evaluating the SQL query that defines the views from scratch Feldera only performs computation related to new changes with resource consumption proportional to the size of these changes.
 
-... Well, nothing happened. See, as soon as the changes were ingested by Feldera the outputs were computed and transmitted through available output connectors, and we only subscribed to a stream of changes after that. So let's introduce another change which results we could see live.
-
-We will now insert new data into pipeline directly as a change. Paste (Ctrl + V or equivalent) the following JSON after clicking anywhere within the Change stream tab:
-
-```json
-[
-    {
-        "relationName": "price",
-        "insert": {
-            "part": 2, "vendor": 3, "price": 12000
-        }
-    }
-]
-```
-
-![Change stream updates for a new cheaper part](basics-part1-3.png)
-
-There we go! We can see deletes and inserts for both low_price and preferred_vendor views. There weren't only inserts in the output stream because in this case in order to correctly communicate the new view results Feldera needs to update previously computed rows - that is, delete the old view row and insert a new one, containing the actualized data.
-
-In our example DarkMatter Devices entered competition and undercut Gravitech Dynamics with a cheaper Warp Core, so we need to retract the statement that a Warp Core for 15,000 credits is a reasonable market offering and issue a new one.
-
-Since preferred_vendor view is materialized we can also query its state with SELECT query if we go back to the Ad-hoc tab:
+When we inserted the new data into `VENDOR`, `PART` and `PRICE` tables Feldera already computed the results for views `LOW_PRICE` and `PREFERRED_VENDOR`. We can inspect `PREFERRED_VENDOR` with ad-hoc query:
 
 ```sql
-SELECT * FROM PREFERRED_VENDOR;
+SELECT (part_name, vendor_name) FROM PREFERRED_VENDOR;
 ```
 
-To reiterate, we can't do the same with a non-materialized view low_price. Let's make sure of it after pausing <icon icon="bx:pause" /> the pipeline (just because we can):
+Now, you cannot do that with `LOW_PRICE` view. As Feldera is incremental in its nature by default it does not store the data that it received as inputs to the tables and computed as outputs of the views. Rather, it only emits changes to views that correspond to changes in tables. In use-cases when we also want to inspect the tables and views we need to make the ones we want to "Materialized" - then Feldera will actually keep the data that the tables and views represent. Note that this does not affect the main IVM functionality of a pipeline.
+
+As you can see, in our example SQL program only the `LOW_PRICE` view is not materialized, so it cannot be inspected with a `SELECT` ad-hoc query.
+Let us can confirm that:
 
 ```sql
-SELECT (part) FROM low_price
+SELECT (part) FROM low_price;
 ```
 
-Now, let's shut down the pipeline by clicking the stop icon <icon icon="bx:stop" /> to forget all the ingested data, computed view results and any accumulated internal state.
+Again, this limitation only concerns ad-hoc queries - in our SQL program we `SELECT ... FROM ... LOW_PRICE` as usual.
+
+Note that `SELECT` ad-hoc queries do not play part in advancing pipeline's incremental computation, they only reveal the state that was already automatically and incrementally computed.
+
+Ad-hoc queries can also be evaluated when the pipeline is paused.
+
+## Step 4. Observe incremental changes
+
+Now, enough with the static SQL, let us see Feldera's incremental computation in action!
+
+Instead of inspecting views with queries, let's capture changes as they happen.
+Open the "Change Stream" tab and tick the checkboxes next to `PRICE` table, `LOW_PRICE` and `PREFERRED_VENDOR` views.
+Switch back and execute one more ad-hoc query:
+```sql
+INSERT INTO PRICE (part, vendor, price) VALUES
+(2, 3, 12000);
+```
+
+Here we are introducing a new, lower price for a part from a different vendor, so we expect an updated lowest price.
+
+Navigate to change stream and observe an insert for the `PRICE` table and inserts and deletes for the views:
+
+![Change stream updates for a new cheaper part](basics-part1-4.png)
+
+If you had both tabs open side-by-side you could see the changes to the table and views happen simultaneously.
+
+In order to incrementally update a view Feldera sometimes transmits a pair of "delete" and "insert" messages (effectively, "upsert"), rather than just insert new rows, as was the case here.
+
+If we inspect the `PREFERRED_VENDOR` now we will see that the entry for "Warp Core" has indeed been replaced as a result of an incremental update:
+
+```sql
+SELECT (part_name, vendor_name) FROM PREFERRED_VENDOR;
+```
+
+Shut down the pipeline by clicking the stop icon <icon icon="bx:stop" /> to forget all its ingested data, computed view results and any accumulated internal state.
 
 ## Takeaways
 
