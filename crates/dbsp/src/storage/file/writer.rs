@@ -666,7 +666,7 @@ where
         Default::default(),
     );
     let offset = value.serialize(&mut serializer).unwrap();
-    *dst = serializer.into_components().0.into_inner();
+    *dst = serializer.into_serializer().into_inner();
 
     if dst.len() == old_len {
         // Ensure that a value takes up at least one byte.  Otherwise, we'll
