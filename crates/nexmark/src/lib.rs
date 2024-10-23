@@ -122,7 +122,7 @@ fn create_generators_for_config<R: Rng + Default>(
     let buffer_size = options.source_buffer_size;
     let mut next_event_rxs: Vec<BatchedReceiver<Event>> = (0..options.num_event_generators)
         .map(|generator_num| {
-            GeneratorConfig::new(options.clone(), wallclock_base_time, 0, generator_num)
+            GeneratorConfig::new(options.clone(), wallclock_base_time, generator_num)
         })
         .map(|generator_config| {
             let (mut tx, rx) = batched_channel(buffer_size);

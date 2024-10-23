@@ -34,15 +34,13 @@ impl<R: Rng> Iterator for NexmarkGenerator<R> {
     type Item = Event;
 
     fn next(&mut self) -> Option<Event> {
-        let new_event_id = self.get_next_event_id();
+        let new_event_id = self.config.next_event_number(self.events_count_so_far);
         if new_event_id >= self.config.max_events {
             return None;
         }
 
         // When, in event time, we should generate the event. Monotonic.
-        let event_timestamp = self
-            .config
-            .timestamp_for_event(self.config.next_event_number(self.events_count_so_far));
+        let event_timestamp = self.config.timestamp_for_event(new_event_id);
 
         let (auction_proportion, person_proportion, total_proportion) = (
             self.config.options.auction_proportion as u64,
@@ -54,11 +52,7 @@ impl<R: Rng> Iterator for NexmarkGenerator<R> {
         let event = if rem < person_proportion {
             Event::Person(self.next_person(new_event_id, event_timestamp))
         } else if rem < person_proportion + auction_proportion {
-            Event::Auction(self.next_auction(
-                self.events_count_so_far,
-                new_event_id,
-                event_timestamp,
-            ))
+            Event::Auction(self.next_auction(new_event_id, event_timestamp))
         } else {
             Event::Bid(self.next_bid(new_event_id, event_timestamp))
         };
@@ -76,13 +70,6 @@ impl<R: Rng> NexmarkGenerator<R> {
             bid_channel_cache: SizedCache::with_size(CHANNELS_NUMBER as usize),
             events_count_so_far: 0,
         }
-    }
-
-    // Returns the sum of the first event id and the next (adjusted) event number,
-    // to return an id that is globally unique (across generators) that is used
-    // to calculate the next event typ deterministically.
-    fn get_next_event_id(&self) -> u64 {
-        self.config.first_event_id + self.config.next_event_number(self.events_count_so_far)
     }
 }
 
@@ -172,14 +159,11 @@ pub mod tests {
     }
 
     #[rstest]
-    #[case::single_generator_start_zero(1, 0, 0, vec![0, 1, 2])]
-    #[case::single_generator_start_1000(1, 1000, 0, vec![1000, 1001, 1002])]
-    #[case::first_of_three_generators_start_0(3, 0, 0, vec![0, 3, 6, 9])]
-    #[case::third_of_three_generators_start_0(3, 0, 2, vec![2, 5, 8, 11])]
-    #[case::third_of_three_generators_start_1000(3, 1000, 2, vec![1002, 1005, 1008, 1011])]
+    #[case::single_generator_start_zero(1, 0, vec![0, 1, 2])]
+    #[case::first_of_three_generators_start_0(3, 0, vec![0, 3, 6, 9])]
+    #[case::third_of_three_generators_start_0(3, 2, vec![2, 5, 8, 11])]
     fn test_next_event_id(
         #[case] num_event_generators: usize,
-        #[case] first_event_id: u64,
         #[case] first_event_number: usize,
         #[case] expected_next_event_ids: Vec<u64>,
     ) {
@@ -188,14 +172,13 @@ pub mod tests {
                 num_event_generators,
                 ..GeneratorOptions::default()
             },
-            first_event_id,
             first_event_number,
             ..Config::default()
         };
-        let mut generator = NexmarkGenerator::new(config, StepRng::new(0, 1));
+        let mut generator = NexmarkGenerator::new(config.clone(), StepRng::new(0, 1));
 
-        for expected_id in expected_next_event_ids.into_iter() {
-            assert_eq!(generator.get_next_event_id(), expected_id);
+        for (num_events, expected_id) in expected_next_event_ids.into_iter().enumerate() {
+            assert_eq!(config.next_event_number(num_events as u64), expected_id);
             generator.next().unwrap();
         }
     }

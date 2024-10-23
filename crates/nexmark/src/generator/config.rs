@@ -15,16 +15,6 @@ pub struct Config {
     /// Time for first event (ms since epoch).
     pub base_time: u64,
 
-    /// Event id of first event to be generated. Event ids are unique over all
-    /// generators, and are used as a seed to generate each event's data.
-    /// The event id is what is used to determine whether an event is a person,
-    /// auction or bid in the generator's `next_event` function, based on the
-    /// remainder of `new_event_id % total_proportion`. Note that the event_id
-    /// is based on the event number (see `get_next_event_id`). The first event
-    /// id will nearly always be zero, unless different generators are
-    /// generating different regions of the event space.
-    pub first_event_id: u64,
-
     /// Maximum number of events to generate.
     pub max_events: u64,
 
@@ -40,12 +30,7 @@ pub struct Config {
 /// Implementation of config methods based on the Java implementation at
 /// [GeneratorConfig.java](https://github.com/nexmark/nexmark/blob/v0.2.0/nexmark-flink/src/main/java/com/github/nexmark/flink/generator/GeneratorConfig.java)
 impl Config {
-    pub fn new(
-        options: GeneratorOptions,
-        base_time: u64,
-        first_event_id: u64,
-        first_event_number: usize,
-    ) -> Config {
+    pub fn new(options: GeneratorOptions, base_time: u64, first_event_number: usize) -> Config {
         // Original Java implementation says:
         // "Scale maximum down to avoid overflow in getEstimatedSizeBytes."
         // but including to ensure similar behavior.
@@ -66,7 +51,6 @@ impl Config {
         Config {
             options,
             base_time,
-            first_event_id,
             max_events,
             first_event_number,
         }
@@ -99,7 +83,7 @@ impl Default for Config {
         // the Java output before creating an issue against their repo, but for
         // now I'm using defaults of 0 for both, which results in the expected
         // events (first event is a person with id 1000, etc.).
-        Config::new(GeneratorOptions::default(), 0, 0, 0)
+        Config::new(GeneratorOptions::default(), 0, 0)
     }
 }
 
@@ -152,7 +136,6 @@ pub mod tests {
                     num_event_generators: 1,
                     ..GeneratorOptions::default()
                 },
-                0,
                 0,
                 0
             )

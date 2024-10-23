@@ -23,12 +23,7 @@ const HOT_SELLER_RATIO: usize = 100;
 
 impl<R: Rng> NexmarkGenerator<R> {
     /// Generate and return a random auction with the next available id.
-    pub fn next_auction(
-        &mut self,
-        events_count_so_far: u64,
-        event_id: u64,
-        timestamp: u64,
-    ) -> Auction {
+    pub fn next_auction(&mut self, event_id: u64, timestamp: u64) -> Auction {
         let id = self.last_base0_auction_id(event_id) + FIRST_AUCTION_ID;
 
         // Here P(auction will be for a hot seller) = 1 - 1/hot_sellers_ratio.
@@ -44,7 +39,10 @@ impl<R: Rng> NexmarkGenerator<R> {
         let category = FIRST_CATEGORY_ID + self.rng.gen_range(0..NUM_CATEGORIES);
         let initial_bid = self.next_price();
 
-        let next_length_ms: u64 = self.next_auction_length_ms(events_count_so_far, timestamp);
+        let next_length_ms: u64 = self.next_auction_length_ms(
+            event_id / self.config.options.num_event_generators as u64,
+            timestamp,
+        );
 
         let item_name = self.next_string(20);
         let description = self.next_string(100);
@@ -146,7 +144,7 @@ mod tests {
     fn test_next_auction() {
         let mut ng = make_test_generator();
 
-        let auction = ng.next_auction(0, 0, 0);
+        let auction = ng.next_auction(0, 0);
 
         // Note: due to usize differences on windows, need to calculate the
         // size explicitly:
