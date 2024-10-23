@@ -35,7 +35,7 @@ create table PART (
 create table PRICE (
     part bigint not null,
     vendor bigint not null,
-    price decimal
+    price integer
 ) with ('materialized' = 'true');
 
 -- Lowest available price for each part across all vendors.
@@ -151,8 +151,10 @@ Feldera is an incremental view maintenance (IVM) engine. This means that when th
 When we inserted the new data into `VENDOR`, `PART` and `PRICE` tables Feldera already computed the results for views `LOW_PRICE` and `PREFERRED_VENDOR`. We can inspect `PREFERRED_VENDOR` with ad-hoc query:
 
 ```sql
-SELECT (part_name, vendor_name) FROM PREFERRED_VENDOR;
+SELECT part_name, vendor_name FROM PREFERRED_VENDOR;
 ```
+
+![Initial preferred vendors](basics-part1-3.png)
 
 Now, you cannot do that with `LOW_PRICE` view. As Feldera is incremental in its nature by default it does not store the data that it received as inputs to the tables and computed as outputs of the views. Rather, it only emits changes to views that correspond to changes in tables. In use-cases when we also want to inspect the tables and views we need to make the ones we want to "Materialized" - then Feldera will actually keep the data that the tables and views represent. Note that this does not affect the main IVM functionality of a pipeline.
 
@@ -160,8 +162,10 @@ As you can see, in our example SQL program only the `LOW_PRICE` view is not mate
 Let us can confirm that:
 
 ```sql
-SELECT (part) FROM low_price;
+SELECT part FROM low_price;
 ```
+
+![Unable to inspect non-materialized view](basics-part1-4.png)
 
 Again, this limitation only concerns ad-hoc queries - in our SQL program we `SELECT ... FROM ... LOW_PRICE` as usual.
 
@@ -174,7 +178,8 @@ Ad-hoc queries can also be evaluated when the pipeline is paused.
 Now, enough with the static SQL, let us see Feldera's incremental computation in action!
 
 Instead of inspecting views with queries, let's capture changes as they happen.
-Open the "Change Stream" tab and tick the checkboxes next to `PRICE` table, `LOW_PRICE` and `PREFERRED_VENDOR` views.
+Open the "Change Stream" tab and tick the checkboxes next to the `PRICE` table, `LOW_PRICE` and `PREFERRED_VENDOR` views.
+
 Switch back and execute one more ad-hoc query:
 ```sql
 INSERT INTO PRICE (part, vendor, price) VALUES
@@ -183,18 +188,18 @@ INSERT INTO PRICE (part, vendor, price) VALUES
 
 Here we are introducing a new, lower price for a part from a different vendor, so we expect an updated lowest price.
 
-Navigate to change stream and observe an insert for the `PRICE` table and inserts and deletes for the views:
+Navigate to the change stream and observe an insert for the `PRICE` table and inserts and deletes for the views:
 
-![Change stream updates for a new cheaper part](basics-part1-4.png)
+![Change stream updates for a new cheaper part](basics-part1-5.png)
 
 If you had both tabs open side-by-side you could see the changes to the table and views happen simultaneously.
 
 In order to incrementally update a view Feldera sometimes transmits a pair of "delete" and "insert" messages (effectively, "upsert"), rather than just insert new rows, as was the case here.
 
-If we inspect the `PREFERRED_VENDOR` now we will see that the entry for "Warp Core" has indeed been replaced as a result of an incremental update:
+If we inspect the `PREFERRED_VENDOR` again we will see that the entry for the "Warp Core" has indeed been replaced as a result of an incremental update:
 
 ```sql
-SELECT (part_name, vendor_name) FROM PREFERRED_VENDOR;
+SELECT part_name, vendor_name FROM PREFERRED_VENDOR;
 ```
 
 Shut down the pipeline by clicking the stop icon <icon icon="bx:stop" /> to forget all its ingested data, computed view results and any accumulated internal state.

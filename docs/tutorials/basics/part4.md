@@ -110,7 +110,7 @@ plan to the connector that dynamically updates the prices to make it more intere
 create table PRICE (
   part bigint not null,
   vendor bigint not null,
-  price decimal,
+  price integer,
   -- Make sure that new updates overwrite existing entries in PRICE for the same part and vendor ids.
   PRIMARY KEY (part, vendor)
 ) with (
