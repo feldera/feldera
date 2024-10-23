@@ -706,7 +706,7 @@ impl CircuitThread {
                 warn_threshold *= 2;
             }
 
-            self.parker.park();
+            self.parker.park_timeout(Duration::from_secs(1));
             if self.controller.state() == PipelineState::Terminated {
                 return Err(());
             }
