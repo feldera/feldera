@@ -92,6 +92,7 @@ const sidebars = {
                         },
                     ]
                 },
+                'tutorials/time-series',
                 'tutorials/rest_api/index',
                 'tutorials/monitoring/index',
             ]
