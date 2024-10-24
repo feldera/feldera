@@ -9,7 +9,7 @@ be useful in the following scenarios:
   to validate their SQL program.
 * **Retrieve full state snapshot**.  This is useful, for instance, to sync the output of Feldera with an external
   database on demand.
-* **Ad hoc queries**.  In some applications, users may not want to store a complete copy of the data,
+* [**Ad-hoc queries**](/sql/ad-hoc).  In some applications, users may not want to store a complete copy of the data,
   but instead query it on demand.
 
 Feldera supports such use cases by allowing users to label tables and views as **materialized**.
@@ -27,12 +27,12 @@ CREATE MATERIALIZED VIEW my_view as SELECT * from my_table;
 
 These declarations instruct Feldera to maintain a complete snapshot of the table or view.
 
-## Using materialized tables and views
+## Inspecting materialized tables and views
 
-You can explore the contents of materialized tables and views by issuing `SELECT ...` ad-hoc queries.
+You can explore the contents of materialized tables and views by issuing `SELECT ...` [ad-hoc SQL queries](/sql/ad-hoc).
 Ad-hoc queries are evaluated non-incrementally against the current snapshot of pipeline's tables and views.
 
-See how to run ad-hoc queries in [Web Console](/sql/ad-hoc#Feldera Web Console), [Feldera CLI](/sql/ad-hoc#Feldera CLI) or via [Feldera Python SDK](/sql/ad-hoc#Feldera Python SDK).
+You can run ad-hoc queries in [Web Console](/sql/ad-hoc#feldera-web-console), [CLI](/sql/ad-hoc#feldera-cli) or via the [Python SDK](/sql/ad-hoc#feldera-python-sdk).
 
 ## Usage considerations
 

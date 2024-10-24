@@ -209,7 +209,7 @@ try!).
 This reflects the internal workings of Feldera: instead of reevaluating the
 query from scratch on every new input, it only updates affected outputs by
 propagating input changes through the query execution plan.  We refer to this as
-**incremental query evaluation**.  See our [paper](https://docs.feldera.com/vldb23.pdf) for a rigorous
+**incremental query evaluation**.  See our [paper](/vldb23.pdf) for a rigorous
 description of this technique.
 
 ## Takeaways

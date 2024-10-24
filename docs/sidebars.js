@@ -110,7 +110,7 @@ const sidebars = {
                 {
                     type: 'link',
                     label: "Python SDK",
-                    href: "pathname:///python/index.html",
+                    href: "pathname:///python/",
                 },
                 {
                     type: 'link',
