@@ -1,5 +1,6 @@
 use crate::{
     algebra::{AddAssignByRef, AddByRef, NegByRef, ZRingValue},
+    circuit::checkpointer::Checkpoint,
     dynamic::{
         DataTrait, DynPair, DynUnit, DynVec, DynWeightedPairs, Erase, Factory, WeightTrait,
         WeightTraitTyped,
@@ -8,13 +9,14 @@ use crate::{
     time::AntichainRef,
     trace::{
         cursor::DelegatingCursor,
+        deserialize_wset,
         ord::{
             file::wset_batch::{FileWSetBuilder, FileWSetMerger},
             merge_batcher::MergeBatcher,
             vec::wset_batch::{VecWSet, VecWSetBuilder, VecWSetFactories, VecWSetMerger},
         },
-        Batch, BatchFactories, BatchLocation, BatchReader, BatchReaderFactories, Builder, FileWSet,
-        FileWSetFactories, Filter, Merger, WeightedItem,
+        serialize_wset, Batch, BatchFactories, BatchLocation, BatchReader, BatchReaderFactories,
+        Builder, FileWSet, FileWSetFactories, Filter, Merger, WeightedItem,
     },
     DBData, DBWeight, NumEntries,
 };
@@ -726,5 +728,20 @@ where
 {
     fn deserialize(&self, _deserializer: &mut D) -> Result<FallbackWSet<K, R>, D::Error> {
         unimplemented!();
+    }
+}
+
+impl<K, R> Checkpoint for FallbackWSet<K, R>
+where
+    K: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+{
+    fn checkpoint(&self) -> Result<Vec<u8>, crate::Error> {
+        Ok(serialize_wset(self))
+    }
+
+    fn restore(&mut self, data: &[u8]) -> Result<(), crate::Error> {
+        self.inner = Inner::Vec(deserialize_wset(&self.factories.vec, data));
+        Ok(())
     }
 }

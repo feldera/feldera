@@ -1,19 +1,14 @@
 //! Logic to manage persistent checkpoints for a circuit.
 
 use crate::dynamic::{self, data::DataTyped, DataTrait, WeightTrait};
-use crate::trace::ord::{
-    vec::{VecIndexedWSet, VecWSet},
-    FallbackIndexedWSet, FallbackWSet,
-};
-use crate::typed_batch::TypedBatch;
-use crate::{DBData, DBWeight, Error};
+use crate::trace::ord::{vec::VecIndexedWSet, FallbackIndexedWSet};
+use crate::{Error, TypedBox};
 
 use std::collections::{HashSet, VecDeque};
 use std::fs::{self, create_dir_all, File};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-use crate::operator::NeighborhoodDescrBox;
 use crate::trace::Serializer;
 use rkyv::{Archive, Deserialize, Serialize};
 use serde::{Deserialize as SerdeDeserialize, Serialize as SerdeSerialize};
@@ -377,15 +372,10 @@ where
     }
 }
 
-impl<K, V> Checkpoint for NeighborhoodDescrBox<K, V>
-where
-    K: DBData,
-    V: DBData,
-{
+impl<T, D: ?Sized> Checkpoint for TypedBox<T, D> {
     fn checkpoint(&self) -> Result<Vec<u8>, Error> {
         todo!()
     }
-
     fn restore(&mut self, _data: &[u8]) -> Result<(), Error> {
         todo!()
     }
@@ -415,35 +405,6 @@ impl Checkpoint for dyn DataTyped<Type = u64> + 'static {
     }
 }
 
-impl<K, V, R, B> Checkpoint for TypedBatch<K, V, R, B>
-where
-    K: DBData,
-    V: DBData,
-    R: DBWeight,
-{
-    fn checkpoint(&self) -> Result<Vec<u8>, Error> {
-        todo!()
-    }
-
-    fn restore(&mut self, _data: &[u8]) -> Result<(), Error> {
-        todo!()
-    }
-}
-
-impl<K, R> Checkpoint for VecWSet<K, R>
-where
-    K: DataTrait + ?Sized,
-    R: WeightTrait + ?Sized,
-{
-    fn checkpoint(&self) -> Result<Vec<u8>, Error> {
-        todo!()
-    }
-
-    fn restore(&mut self, _data: &[u8]) -> Result<(), Error> {
-        todo!()
-    }
-}
-
 impl<K, V, R> Checkpoint for VecIndexedWSet<K, V, R>
 where
     K: DataTrait + ?Sized,
@@ -463,20 +424,6 @@ impl<K, V, R> Checkpoint for FallbackIndexedWSet<K, V, R>
 where
     K: DataTrait + ?Sized,
     V: DataTrait + ?Sized,
-    R: WeightTrait + ?Sized,
-{
-    fn checkpoint(&self) -> Result<Vec<u8>, Error> {
-        todo!()
-    }
-
-    fn restore(&mut self, _data: &[u8]) -> Result<(), Error> {
-        todo!()
-    }
-}
-
-impl<K, R> Checkpoint for FallbackWSet<K, R>
-where
-    K: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
     fn checkpoint(&self) -> Result<Vec<u8>, Error> {

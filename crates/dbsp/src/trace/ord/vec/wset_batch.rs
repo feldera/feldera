@@ -1,5 +1,6 @@
 use crate::{
     algebra::{AddAssignByRef, AddByRef, NegByRef, ZRingValue},
+    circuit::checkpointer::Checkpoint,
     dynamic::{
         DataTrait, DynPair, DynUnit, DynVec, DynWeightedPairs, Erase, Factory, LeanVec,
         WeightTrait, WeightTraitTyped, WithFactory,
@@ -7,13 +8,14 @@ use crate::{
     time::{Antichain, AntichainRef},
     trace::{
         cursor::{HasTimeDiffCursor, SingletonTimeDiffCursor},
+        deserialize_wset,
         layers::{
             Builder as _, Cursor as _, Leaf, LeafBuilder, LeafCursor, LeafFactories, MergeBuilder,
             Trie, TupleBuilder,
         },
         ord::merge_batcher::MergeBatcher,
-        Batch, BatchFactories, BatchLocation, BatchReader, BatchReaderFactories, Builder, Cursor,
-        Deserializer, Filter, Merger, Serializer, TimedBuilder, WeightedItem,
+        serialize_wset, Batch, BatchFactories, BatchLocation, BatchReader, BatchReaderFactories,
+        Builder, Cursor, Deserializer, Filter, Merger, Serializer, TimedBuilder, WeightedItem,
     },
     utils::Tup2,
     DBData, DBWeight, NumEntries,
@@ -124,6 +126,21 @@ where
 {
     fn eq(&self, other: &Self) -> bool {
         self.layer == other.layer
+    }
+}
+
+impl<K, R> Checkpoint for VecWSet<K, R>
+where
+    K: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+{
+    fn checkpoint(&self) -> Result<Vec<u8>, crate::Error> {
+        Ok(serialize_wset(self))
+    }
+
+    fn restore(&mut self, data: &[u8]) -> Result<(), crate::Error> {
+        *self = deserialize_wset(&self.factories, data);
+        Ok(())
     }
 }
 
