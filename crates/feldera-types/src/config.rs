@@ -18,6 +18,7 @@ use crate::transport::url::UrlInputConfig;
 use serde::{Deserialize, Serialize};
 use serde_yaml::Value as YamlValue;
 use std::path::Path;
+use std::str::FromStr;
 use std::{borrow::Cow, collections::BTreeMap};
 use utoipa::ToSchema;
 
@@ -259,6 +260,20 @@ pub enum FtConfig {
     /// initial state.
     #[default]
     LatestCheckpoint,
+}
+
+pub struct FtConfigParseError;
+
+impl FromStr for FtConfig {
+    type Err = FtConfigParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "initial_state" => Ok(Self::InitialState),
+            "latest_checkpoint" => Ok(Self::LatestCheckpoint),
+            _ => Err(FtConfigParseError),
+        }
+    }
 }
 
 /// Describes an input connector configuration

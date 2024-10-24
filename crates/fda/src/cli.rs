@@ -149,6 +149,7 @@ pub enum DebugActions {
 pub enum RuntimeConfigKey {
     Workers,
     Storage,
+    FaultTolerance,
     CpuProfiler,
     Tracing,
     TracingEndpointJaeger,
