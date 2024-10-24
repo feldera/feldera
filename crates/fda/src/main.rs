@@ -235,6 +235,12 @@ fn patch_runtime_config(
         RuntimeConfigKey::Storage => {
             rc.storage = value.parse().map_err(|_| ())?;
         }
+        RuntimeConfigKey::FaultTolerance => {
+            rc.fault_tolerance = match value {
+                "" => None,
+                _ => Some(value.parse().map_err(|_| ())?),
+            }
+        }
         RuntimeConfigKey::CpuProfiler => {
             rc.cpu_profiler = value.parse().map_err(|_| ())?;
         }
