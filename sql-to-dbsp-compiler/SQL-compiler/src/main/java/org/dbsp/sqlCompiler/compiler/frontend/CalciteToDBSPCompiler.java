@@ -240,6 +240,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
     final List<RelNode> ancestors;
     final ProgramMetadata metadata;
     final Map<String, Map<String, ViewColumnMetadata>> viewMetadata = new HashMap<>();
+    /** Current statement that is being compiled */
+    @Nullable CreateViewStatement currentView = null;
 
     /**
      * Create a compiler that translated from calcite to DBSP circuits.
@@ -2400,11 +2402,23 @@ public class CalciteToDBSPCompiler extends RelVisitor
         return Utilities.last(this.ancestors);
     }
 
+    void warnNoSort(CalciteObject node) {
+        boolean isFinal = this.ancestors.isEmpty();
+        String viewName = "";
+        if (this.currentView != null)
+            viewName = "producing view " + Utilities.singleQuote(this.currentView.relationName) + " ";
+        this.compiler.reportWarning(node.getPositionRange(), "ORDER BY is ignored",
+                "ORDER BY clause " + viewName + "is currently ignored" +
+                        (isFinal ? "" :
+                                "\nThis is tracked by issue https://github.com/feldera/feldera/issues/2833"));
+    }
+
     void visitSort(LogicalSort sort) {
         CalciteObject node = CalciteObject.create(sort);
         RelNode input = sort.getInput();
         DBSPOperator opInput = this.getOperator(input);
         if (this.options.languageOptions.ignoreOrderBy && sort.fetch == null) {
+            this.warnNoSort(node);
             Utilities.putNew(this.nodeOperator, sort, opInput);
             return;
         }
@@ -2458,6 +2472,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
             if (sort.getCollation().getFieldCollations().isEmpty())
                 // We don't really need to sort; this is just a limit operator
                 done = true;
+            else
+                this.warnNoSort(node);
             if (done) {
                 // We must drop the index we built.
                 DBSPDeindexOperator deindex = new DBSPDeindexOperator(node, integral);
@@ -2574,6 +2590,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
     }
 
     DBSPNode compileCreateView(CreateViewStatement view) {
+        CreateViewStatement previousView = this.currentView;
+        this.currentView = view;
         RelNode rel = view.getRelNode();
         Logger.INSTANCE.belowLevel(this, 2)
                 .append(CalciteCompiler.getPlan(rel, false))
@@ -2670,6 +2688,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             o = new DBSPViewOperator(view.getCalciteObject(), view.relationName, view.statement, struct, meta, op);
         }
         this.addOperator(o);
+        this.currentView = previousView;
         return o;
     }
 
