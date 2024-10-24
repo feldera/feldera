@@ -1,6 +1,6 @@
 use crate::catalog::InputCollectionHandle;
-use crate::format::{InputBuffer, Splitter};
-use crate::{controller::FormatConfig, InputConsumer, InputFormat, ParseError, Parser};
+use crate::format::{get_input_format, InputBuffer, Splitter};
+use crate::{controller::FormatConfig, InputConsumer, ParseError, Parser};
 use anyhow::{anyhow, Error as AnyError};
 use rmpv::Value as RmpValue;
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -145,7 +145,7 @@ impl MockInputParser {
     }
 
     pub fn from_handle(input_handle: &InputCollectionHandle, format_config: &FormatConfig) -> Self {
-        let format = <dyn InputFormat>::get_format(&format_config.name).unwrap();
+        let format = get_input_format(&format_config.name).unwrap();
         let parser = format
             .new_parser("mock_input_endpoint", input_handle, &format_config.config)
             .unwrap();

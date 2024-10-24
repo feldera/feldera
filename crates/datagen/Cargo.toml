@@ -1,0 +1,19 @@
+[package]
+name = "feldera-datagen"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+feldera-types = { path = "../feldera-types" }
+feldera-adapterlib = { path = "../adapterlib" }
+dbsp = { path = "../dbsp" }
+anyhow = "1.0.91"
+chrono = "0.4.38"
+num-traits = "0.2.19"
+rand = { version = "0.8.5", features = ["small_rng"] }
+rand_distr = "0.4.3"
+serde_json = "1.0.132"
+tokio = "1.41.0"
+atomic = "0.6.0"
+governor = { version = "0.6.3" }
+fake = { version = "2.10", features = ["http"] }

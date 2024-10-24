@@ -148,10 +148,7 @@
 //!
 //! [`Step`]: crate::transport::Step
 
-use bytemuck::NoUninit;
-use num_derive::FromPrimitive;
 use rustls::crypto::CryptoProvider;
-use serde::Serialize;
 
 pub(crate) mod adhoc;
 mod catalog;
@@ -168,22 +165,8 @@ pub mod test;
 
 pub use integrated::{create_integrated_output_endpoint, IntegratedOutputEndpoint};
 
-#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, FromPrimitive, Serialize, NoUninit)]
-#[repr(u8)]
-pub enum PipelineState {
-    /// All input endpoints are paused (or are in the process of being paused).
-    #[default]
-    Paused,
-
-    /// Controller is running.
-    Running,
-
-    /// Controller is being terminated.
-    Terminated,
-}
-
-// Re-export `DetailedError`.
 pub use dbsp::DetailedError;
+pub use feldera_adapterlib::PipelineState;
 
 pub use server::{ErrorResponse, PipelineError};
 
@@ -191,7 +174,7 @@ pub use catalog::{
     Catalog, CircuitCatalog, DeCollectionHandle, DeCollectionStream, RecordFormat, SerBatch,
     SerCollectionHandle, SerCursor,
 };
-pub use format::{
+pub use feldera_adapterlib::format::{
     Encoder, InputBuffer, InputFormat, OutputConsumer, OutputFormat, ParseError, Parser,
 };
 

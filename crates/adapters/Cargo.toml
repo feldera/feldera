@@ -15,7 +15,7 @@ default = ["with-kafka", "with-deltalake", "with-avro", "with-nexmark", "with-pu
 with-kafka = ["rdkafka"]
 with-deltalake = ["deltalake"]
 with-pubsub = ["google-cloud-pubsub", "google-cloud-gax"]
-with-avro = ["apache-avro", "schema_registry_converter"]
+with-avro = ["apache-avro", "schema_registry_converter", "feldera-adapterlib/with-avro"]
 with-nexmark = ["dbsp_nexmark"]
 # Run delta table tests against an S3 bucket.  Requires S3 authentication key
 # to be provided via an environment variable.
@@ -29,10 +29,10 @@ pubsub-gcp-test = []
 
 [dependencies]
 feldera-types = { path = "../feldera-types" }
+feldera-adapterlib = { path = "../adapterlib" }
+feldera-datagen = { path = "../datagen" }
 awc = { version = "3.1.1", default-features = false, features = ["compress-gzip", "compress-brotli", "cookies", "rustls-0_23-webpki-roots"] }
 async-stream = "0.3.5"
-num-traits = "0.2.15"
-num-derive = "0.3.3"
 anyhow = { version = "1.0.57", features = ["backtrace"] }
 circular-queue = { version = "0.2.6", features = ["serde_support"] }
 crossbeam = "0.8.2"
@@ -72,7 +72,6 @@ lazy_static = "1.4.0"
 rkyv = { version = "0.7.45", default-features = false, features = ["std", "size_64"] }
 csv-core = "0.1.10"
 rand = { version = "0.8.5", features = ["small_rng"] }
-rand_distr = "0.4.3"
 regex = "1.10.2"
 tempfile = "3.10.0"
 async-trait = "0.1"
@@ -94,13 +93,9 @@ metrics-exporter-prometheus = "0.15.1"
 ordered-float = { version = "4.2.0", features = ["serde"] }
 minitrace = { version = "0.6", features = ["enable"] }
 minitrace-jaeger = { version = "0.6" }
-governor = { version = "0.6.3" }
-fake = { version = "2.10", features = ["http"] }
 atomic = "0.6.0"
-bytemuck = "1.16.3"
 dbsp_nexmark = { path = "../nexmark", features = [], optional = true }
 enum-map = "2.7.3"
-dyn-clone = "1.0.17"
 google-cloud-pubsub = { version = "0.29.1", optional = true }
 google-cloud-gax = { version = "0.19.1", optional = true}
 tokio-util = "0.7.11"
