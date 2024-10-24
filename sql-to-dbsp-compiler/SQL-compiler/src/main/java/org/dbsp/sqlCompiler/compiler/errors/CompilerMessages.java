@@ -192,4 +192,11 @@ public class CompilerMessages {
         }
         return result;
     }
+
+    /** Print the messages on stdout, if any */
+    public void print() {
+        if (this.messages.isEmpty())
+            return;
+        System.out.println(this);
+    }
 }

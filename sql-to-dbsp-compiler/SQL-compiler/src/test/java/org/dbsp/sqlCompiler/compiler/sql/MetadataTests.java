@@ -174,7 +174,7 @@ public class MetadataTests extends BaseSQLTests {
         File file = createInputScript(sql);
         CompilerMessages messages = CompilerMain.execute("--unquotedCasing", "lower",
                 "-q", "-o", BaseSQLTests.testFilePath, file.getPath());
-        System.out.println(messages);
+        messages.print();
         Assert.assertEquals(0, messages.errorCount());
         Utilities.compileAndTestRust(BaseSQLTests.rustDirectory, true);
     }
@@ -329,7 +329,7 @@ public class MetadataTests extends BaseSQLTests {
                 CREATE VIEW V AS SELECT COL1 FROM T;""";
         File file = createInputScript(sql);
         CompilerMessages messages = CompilerMain.execute("-o", BaseSQLTests.testFilePath, file.getPath());
-        System.err.println(messages);
+        messages.print();
         Assert.assertEquals(0, messages.errorCount());
         Utilities.compileAndTestRust(BaseSQLTests.rustDirectory, false);
     }
