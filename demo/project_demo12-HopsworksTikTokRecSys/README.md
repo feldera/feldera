@@ -20,7 +20,9 @@ export KAFKA_SERVER_FROM_PIPELINE=$KAFKA_SERVER
 Or,
 
 ```sh
-docker compose -f deploy/docker-compose.yml -f deploy/docker-compose-dev.yml up pipeline-manager redpanda --build --renew-anon-volumes --force-recreate
+docker compose -f deploy/docker-compose.yml \
+               -f deploy/docker-compose-dev.yml \
+               --profile redpanda up --build --renew-anon-volumes --force-recreate
 ```
 
 2. Running the generator

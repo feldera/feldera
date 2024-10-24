@@ -82,49 +82,6 @@ Example:
 AUTH_CLIENT_ID=xxxxxxxxxxxx-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx.apps.googleusercontent.com AUTH_ISSUER="https://accounts.google.com" RUST_LOG=debug,tokio_postgres=info cargo run --bin=pipeline-manager --features pg-embed -- --dev-mode --auth-provider google-identity
 ```
 
-## Develop on your machine
-
-TODO
-
-## Launch the prepared demo
-
-Refer to the [Get Started page](/docker) for basic instructions on spinning up and interacting with the demos from a separate docker-compose.
-
-## Manually starting the demos
-
-You can prepare and run multiple demos. When initializing any demo, Pipeline Manager needs to be running. Preparing the demos might take more than 10 minutes.
-
-#### All demos
-
-To prepare all available demos, run
-```bash
-DBSP_MANAGER="http://localhost:8080" demo/create_demo_projects.sh && DBSP_MANAGER="http://localhost:8080" demo/prepare_demo_data.sh
-```
-
-#### Single demo
-To prepare a single demo navigate to the directory of the demo, e.g.
-```bash
-cd demo/project_demo00-SecOps
-```
-
-If the `simulator` directory exists - the following command generates simulated input data and creates the required Kafka input and output topics:
-```bash
-cargo run --manifest-path simulator/Cargo.toml --release -- 300000
-```
-
-> For SecOps demo, argument `300000` specifies the number of simulated CI pipelines to be generated, which impacts duration of the demo and system load. YMMV!
-
-Use `dbsp` python library to create and compile SQL Program, and prepare the Pipeline that utilizes them.
-```bash
-python3 run.py --api-url http://localhost:8080
-```
-
-> You should update `--api-url` depending on where Pipeline Manager is getting served from.
-
-<br/>
-
-Now you can see the prepared demos on the Pipeline Management page of the Web Console.
-
 ## Run benchmarks
 
 You can run bundled benchmarks in devcontainer.

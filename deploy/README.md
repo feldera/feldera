@@ -1,59 +1,90 @@
-Bringing up a local instance of Feldera Platform
-===================================
+# Deploy using Docker Compose
 
-First, install [Docker compose](https://docs.docker.com/compose/install/).
+## Requirements
 
-Next, to bring up a local Feldera Platform instance run the following:
+The following are required to build images and deploy them:
 
-```
-curl -L https://github.com/feldera/feldera/releases/latest/download/docker-compose.yml | docker compose -f - up
-```
+* [**docker**](https://docs.docker.com/engine/install/)
+  (ideally, configured to run [rootless](https://docs.docker.com/engine/security/rootless/)):
+  `docker --version`
 
-This will bring up a DBSP and Postgres container.
+* [**docker compose**](https://docs.docker.com/compose/install/):
+  `docker compose version`
 
-Open your browser and you should now be able to see the Feldera Console UI
-on `localhost:8080`. If you don't, double check that there are no
-port conflicts on your system (you can view and modify the port mappings in
-`deploy/docker-compose.yml`).
+## Development
 
-## Demo
+First, clone the `feldera` repository and navigate into it.
+All commands below should be run from the root directory of the repository.
 
-If you'd like to prepopulate the Feldera Platform instance with a demo project,
-run:
+- **Latest release (same as Quickstart):**
+  ```bash
+  docker compose -f deploy/docker-compose.yml up
+  ```
 
-```
-docker compose -f deploy/docker-compose.yml --profile demo up
-```
+- **Built using local sources:** this can take a while as it both builds the pipeline
+  manager and performs pre-compilation.
+  ```bash
+  docker compose -f deploy/docker-compose.yml \
+                 -f deploy/docker-compose-dev.yml \
+                 up --build
+  ```
+  As this section is for development, below we specify `-dev` configuration file each time.
+  To use only the releases, remove the `-f ...-dev.yml` arguments.
 
-This brings up an additional Redpanda container, followed by a container that
-creates a sample SQL program and pipeline, loads some Redpanda topics with
-data, and runs the resulting pipeline.
+- **Change logging level:**
+  ```bash
+  RUST_LOG=debug docker compose -f deploy/docker-compose.yml \
+                                -f deploy/docker-compose-dev.yml \
+                                up --build
+  ```
 
-## Controlling rust logging levels
+- **Monitoring with Prometheus and Grafana:**
+  ```bash
+  docker compose -f deploy/docker-compose.yml \
+                 -f deploy/docker-compose-dev.yml \
+                 --profile grafana up --build
+  ```
+  ... after which you can view Prometheus at http://localhost:9090
+  and Grafana at http://localhost:3000
 
-You can tune the DBSP container's log level using
-[`RUST_LOG`](https://docs.rs/env_logger/0.10.0/env_logger/).
+- **Demo:**
+  ```bash
+  docker compose -f deploy/docker-compose.yml \
+                 -f deploy/docker-compose-dev.yml \
+                 -f deploy/docker-compose-extra.yml \
+                 -f deploy/docker-compose-demo.yml \
+                 --profile demo-debezium-mysql up --build
+  ```
 
-```
-RUST_LOG=info docker compose -f deploy/docker-compose.yml up
-```
+  The demo profiles can be found within: `deploy/docker-compose-demo.yml`
 
-## Feldera containers from sources
+- **Redpanda:**
+  ```bash
+  docker compose -f deploy/docker-compose.yml \
+                 -f deploy/docker-compose-dev.yml \
+                 --profile redpanda up --build
+  ```
 
-To bring up a local instance of Feldera Plaform from sources, run the following
-from the project root:
+- **Kafka Connect:**
+  ```bash
+  docker compose -f deploy/docker-compose.yml \
+                 -f deploy/docker-compose-dev.yml \
+                 -f deploy/docker-compose-extra.yml \
+                 --profile kafka-connect up --build
+  ```
 
-```
-docker compose -f deploy/docker-compose.yml -f deploy/docker-compose-dev.yml up --build
-```
+- **Kafka Connect with MySQL:**
+  ```bash
+  docker compose -f deploy/docker-compose.yml \
+                 -f deploy/docker-compose-dev.yml \
+                 -f deploy/docker-compose-extra.yml \
+                 --profile mysql --profile kafka-connect up --build
+  ```
 
-## Update the DBSP container
-
-To update the DBSP container while it is already running to a newer image, run
-the following. As of now, it will only preserve the API state (pipelines,
-connectors and programs), but not the state of the individual pipelines. You
-will have to reingest your data again via any configured connectors:
-
-```
-docker compose -f deploy/docker-compose.yml up -d dbsp --pull always
-```
+- **Kafka Connect with Postgres:**
+  ```bash
+  docker compose -f deploy/docker-compose.yml \
+                 -f deploy/docker-compose-dev.yml \
+                 -f deploy/docker-compose-extra.yml \
+                 --profile postgres --profile kafka-connect up --build
+  ```

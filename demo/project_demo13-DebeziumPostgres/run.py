@@ -6,7 +6,9 @@
 # Start auxiliary containers before running this demo:
 #
 # ```bash
-# docker compose -f deploy/docker-compose.yml -f deploy/docker-compose-debezium-postgres.yml --profile debezium  up postgres redpanda connect  --force-recreate  -V
+# docker compose -f deploy/docker-compose.yml \
+#                -f deploy/docker-compose-extra.yml \
+#                up redpanda kafka-connect postgres --build --renew-anon-volumes --force-recreate
 # ```
 
 import os
