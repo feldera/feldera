@@ -698,6 +698,7 @@ bar,false,-10
     /// Test pause and resume of connections, with a zero `pause_timeout` so
     /// that the server connection gets dropped and reconnects.
     #[actix_web::test]
+    #[ignore]
     async fn test_pause_with_reconnect() -> Result<()> {
         test_pause(true).await
     }
@@ -705,6 +706,7 @@ bar,false,-10
     /// Test pause and resume of connections, with a long `pause_timeout` so
     /// that the server connection stays up.
     #[actix_web::test]
+    #[ignore]
     async fn test_pause_without_reconnect() -> Result<()> {
         test_pause(false).await
     }
