@@ -102,7 +102,7 @@ Click the PLAY button to run the pipeline.
 
 ## Step 2. Insert data
 
-When the pipeline is running it can process incoming changes. The changes can be submitted to the pipeline in three ways: automatically via [input connectors](connectors/) attached to the pipeline tables, by sending HTTP ingress requests and by issuing `INSERT INTO ...` ad-hoc queries. You can use one of our tools - the [Python SDK](../../../../python/feldera.html#feldera.pipeline.Pipeline.input_json), the [Feldera CLI tool](reference/cli), the Web Console or the [REST API](../../../../api/push-data-to-a-sql-table) directly to leverage any of these methods. For simplicity, let us use the Web Console to run an `INSERT INTO ...` query.
+When the pipeline is running it can process incoming changes. The changes can be submitted to the pipeline in three ways: automatically via [input connectors](connectors/) attached to the pipeline tables, by sending HTTP ingress requests and by issuing `INSERT INTO ...` ad-hoc queries. You can use one of our tools - the [Python SDK](/python/feldera.html#feldera.pipeline.Pipeline.input_json), the [Feldera CLI tool](reference/cli), the Web Console or the [REST API](/api/push-data-to-a-sql-table) directly to leverage any of these methods. For simplicity, let us use the Web Console to run an `INSERT INTO ...` query.
 
 Open the "Ad-hoc query" tab and insert the following statement in the input field:
 
@@ -146,7 +146,7 @@ Keep in mind that ad-hoc queries are evaluated for a single pipeline and not the
 
 ## Step 3. Observe pipeline outputs
 
-Feldera is an incremental view maintenance (IVM) engine. This means that when the new changes arrive the contents of the SQL views are automatically updated, but rather than evaluating the SQL query that defines the views from scratch Feldera only performs computation related to new changes with resource consumption proportional to the size of these changes.
+Feldera is an incremental view maintenance (IVM) engine. This means that when new changes arrive in SQL tables, the SQL views are automatically updated. Rather than evaluating the views from scratch, Feldera only performs computation related to new changes with resource consumption proportional to the size of these changes.
 
 When we inserted the new data into `VENDOR`, `PART` and `PRICE` tables Feldera already computed the results for views `LOW_PRICE` and `PREFERRED_VENDOR`. We can inspect `PREFERRED_VENDOR` with ad-hoc query:
 
@@ -188,13 +188,11 @@ INSERT INTO PRICE (part, vendor, price) VALUES
 
 Here we are introducing a new, lower price for a part from a different vendor, so we expect an updated lowest price.
 
-Navigate to the change stream and observe an insert for the `PRICE` table and inserts and deletes for the views:
+Navigate to the "Change stream" tab and observe an insert in the `PRICE` table and inserts and deletes for the views:
 
 ![Change stream updates for a new cheaper part](basics-part1-5.png)
 
-If you had both tabs open side-by-side you could see the changes to the table and views happen simultaneously.
-
-In order to incrementally update a view Feldera sometimes transmits a pair of "delete" and "insert" messages (effectively, "upsert"), rather than just insert new rows, as was the case here.
+As was the case here, Feldera incrementally updates the views by deleting old records that are no longer part of the view and inserting newly added records.
 
 If we inspect the `PREFERRED_VENDOR` again we will see that the entry for the "Warp Core" has indeed been replaced as a result of an incremental update:
 
@@ -214,9 +212,7 @@ Let us recap what we have learned so far:
 
 - An SQL program is instantiated as a part of a **pipeline**.
 
-- Running Feldera pipeline converts input changes into output changes in the context of the running history of the pipeline.
-
-- Feldera evaluates SQL programs **continuously**, updating their results as input data changes.
+- Feldera evaluates SQL programs **incrementally**, continuously updating their results as input data changes.
 
 - You can observe input and output changes as they happen, or query a snapshot of data in input tables and output views.
 
