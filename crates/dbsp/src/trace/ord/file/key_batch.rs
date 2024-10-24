@@ -313,7 +313,8 @@ where
         }
     }
 
-    fn persistent_id(&self) -> Option<PathBuf> {
+    fn checkpoint_path(&self) -> Option<PathBuf> {
+        self.file.mark_for_checkpoint();
         Some(self.file.path())
     }
 

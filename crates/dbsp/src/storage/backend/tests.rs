@@ -150,10 +150,7 @@ impl<const ALLOW_OVERWRITE: bool> Storage for InMemoryBackend<ALLOW_OVERWRITE> {
         unimplemented!()
     }
 
-    fn delete(&self, fd: ImmutableFileHandle) -> Result<(), StorageError> {
-        self.immutable_files.borrow_mut().remove(&fd.0);
-        Ok(())
-    }
+    fn mark_for_checkpoint(&self, _fd: &ImmutableFileHandle) {}
 
     fn delete_mut(&self, fd: FileHandle) -> Result<(), StorageError> {
         self.files.borrow_mut().remove(&fd.0);

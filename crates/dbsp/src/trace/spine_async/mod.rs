@@ -1037,7 +1037,7 @@ where
             .iter()
             .map(|batch| {
                 batch
-                    .persistent_id()
+                    .checkpoint_path()
                     .expect("The batch should have been persisted")
                     .to_string_lossy()
                     .to_string()

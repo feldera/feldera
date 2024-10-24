@@ -1070,6 +1070,14 @@ impl ImmutableFileRef {
         let file_handle = cache.open(path)?;
         Ok(Self::new(cache, file_handle, path.to_path_buf()))
     }
+
+    pub fn mark_for_checkpoint(&self) {
+        if let Some(file_handle) = self.file_handle.as_ref() {
+            self.cache.mark_for_checkpoint(file_handle);
+        } else {
+            log::error!("file_handle was None?")
+        }
+    }
 }
 
 struct ReaderInner<T> {
@@ -1196,6 +1204,11 @@ where
             columns: (0..T::n_columns()).map(|_| Column::empty()).collect(),
             _phantom: PhantomData,
         })))
+    }
+
+    /// Marks the file of the reader as being part of a checkpoint.
+    pub fn mark_for_checkpoint(&self) {
+        self.0.file.mark_for_checkpoint();
     }
 
     /// Instantiates a reader given an existing path.

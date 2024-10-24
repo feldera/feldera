@@ -13,11 +13,8 @@ use std::{
     time::Instant,
 };
 
-#[cfg(unix)]
-use std::os::unix::fs::MetadataExt;
-
 use super::{
-    append_to_path, tempdir_for_thread, AtomicIncrementOnlyI64, FileHandle, ImmutableFile,
+    append_to_path, tempdir_for_thread, AtomicIncrementOnlyI64, FileHandle, FileMetaData,
     ImmutableFileHandle, ImmutableFiles, Storage, StorageCacheFlags, StorageError,
     IMMUTABLE_FILE_METADATA, MUTABLE_EXTENSION,
 };
@@ -28,7 +25,7 @@ use crate::circuit::metrics::{
 use crate::storage::{backend::NEXT_FILE_HANDLE, buffer_cache::FBuf, init};
 
 /// Meta-data we keep per file we created.
-struct FileMetaData {
+struct MutableFileMetaData {
     file: File,
     path: PathBuf,
 
@@ -37,7 +34,7 @@ struct FileMetaData {
     len: u64,
 }
 
-impl FileMetaData {
+impl MutableFileMetaData {
     #[cfg(target_os = "linux")]
     fn flush(&mut self) -> Result<(), IoError> {
         use nix::sys::uio::pwritev;
@@ -87,7 +84,7 @@ pub struct PosixBackend {
     /// Directory in which we keep the files.
     base: PathBuf,
     /// Meta-data of all files we are currently writing to.
-    files: RefCell<HashMap<i64, FileMetaData>>,
+    files: RefCell<HashMap<i64, MutableFileMetaData>>,
     /// All files which are completed and can read from.
     immutable_files: Arc<ImmutableFiles>,
     /// A global counter to get unique identifiers for file-handles.
@@ -177,7 +174,7 @@ impl Storage for PosixBackend {
         let mut files = self.files.borrow_mut();
         files.insert(
             file_counter,
-            FileMetaData {
+            MutableFileMetaData {
                 file,
                 path,
                 buffers: Vec::new(),
@@ -192,7 +189,6 @@ impl Storage for PosixBackend {
 
     fn open(&self, name: &Path) -> Result<ImmutableFileHandle, StorageError> {
         let path = self.base.join(name);
-        let attr = fs::metadata(&path)?;
 
         let file = OpenOptions::new()
             .read(true)
@@ -200,23 +196,18 @@ impl Storage for PosixBackend {
             .open(&path)?;
 
         let file_counter = self.next_file_id.increment();
-        self.immutable_files.insert(
-            file_counter,
-            ImmutableFile::new(Arc::new(file), path.clone(), attr.size()),
-        );
+        self.immutable_files
+            .insert(file_counter, FileMetaData::new(file, path.clone(), false));
 
         Ok(ImmutableFileHandle(file_counter))
     }
 
-    fn delete(&self, fd: ImmutableFileHandle) -> Result<(), StorageError> {
-        let ifh = self.immutable_files.get(fd.0).unwrap();
-        fs::remove_file(&ifh.path)?;
-        counter!(FILES_DELETED).increment(1);
-        Ok(())
+    fn mark_for_checkpoint(&self, fd: &ImmutableFileHandle) {
+        self.immutable_files.disable_drop_deletion(fd.0);
     }
 
     fn delete_mut(&self, fd: FileHandle) -> Result<(), StorageError> {
-        let FileMetaData { path, .. } = self.files.borrow_mut().remove(&fd.0).unwrap();
+        let MutableFileMetaData { path, .. } = self.files.borrow_mut().remove(&fd.0).unwrap();
         fs::remove_file(path)?;
         counter!(FILES_DELETED).increment(1);
         Ok(())
@@ -259,9 +250,8 @@ impl Storage for PosixBackend {
         fs::rename(&fm.path, &finalized_path)?;
         fm.path = finalized_path;
         let path = fm.path.clone();
-        let attr = fs::metadata(&path)?;
 
-        let imf = ImmutableFile::new(Arc::new(fm.file), path.clone(), attr.size());
+        let imf = FileMetaData::new(fm.file, path.clone(), true);
         self.immutable_files.insert(fd.0, imf);
 
         Ok((ImmutableFileHandle(fd.0), path))
@@ -297,6 +287,6 @@ impl Storage for PosixBackend {
 
     fn get_size(&self, fd: &ImmutableFileHandle) -> Result<u64, StorageError> {
         let imf = self.immutable_files.get(fd.0).unwrap();
-        Ok(imf.size)
+        Ok(imf.size())
     }
 }

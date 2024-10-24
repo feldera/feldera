@@ -10,7 +10,12 @@
 #![warn(missing_docs)]
 
 use dashmap::DashMap;
-use std::fs::File;
+use feldera_types::config::StorageCacheConfig;
+use log::{trace, warn};
+use metrics::counter;
+use serde::{ser::SerializeStruct, Serialize, Serializer};
+use std::fs::{remove_file, File};
+use std::sync::atomic::AtomicBool;
 use std::{
     fs::OpenOptions,
     path::{Path, PathBuf},
@@ -19,14 +24,11 @@ use std::{
         Arc, OnceLock,
     },
 };
-
-use feldera_types::config::StorageCacheConfig;
-use log::{trace, warn};
-use serde::{ser::SerializeStruct, Serialize, Serializer};
 use tempfile::TempDir;
 use thiserror::Error;
 use uuid::Uuid;
 
+use crate::circuit::metrics::FILES_DELETED;
 use crate::storage::buffer_cache::FBuf;
 
 #[cfg(target_os = "linux")]
@@ -113,21 +115,29 @@ impl From<&ImmutableFileHandle> for i64 {
 /// This struct stores the open files in a way
 /// so that is globally accessible by all backends.
 pub struct ImmutableFiles {
-    inner: DashMap<i64, Arc<ImmutableFile>>,
+    inner: DashMap<i64, Arc<FileMetaData>>,
 }
 
 impl ImmutableFiles {
-    fn insert(&self, fd: i64, imf: Arc<ImmutableFile>) {
+    fn insert(&self, fd: i64, imf: Arc<FileMetaData>) {
         let r = self.inner.insert(fd, imf);
         assert!(r.is_none());
     }
 
-    fn get(&self, fd: i64) -> Option<Arc<ImmutableFile>> {
+    fn get(&self, fd: i64) -> Option<Arc<FileMetaData>> {
         self.inner.get(&fd).map(|v| v.value().clone())
     }
 
     fn remove(&self, fd: i64) {
         self.inner.remove(&fd);
+    }
+
+    fn disable_drop_deletion(&self, fd: i64) {
+        if let Some(imf) = self.inner.get(&fd) {
+            if imf.delete_on_drop.load(Ordering::Relaxed) {
+                imf.delete_on_drop.store(false, Ordering::Relaxed);
+            }
+        }
     }
 }
 
@@ -141,18 +151,56 @@ impl Default for ImmutableFiles {
 
 /// We use this to keep track of the files that are currently open
 /// for reading (and may be read by multiple threads).
-pub(crate) struct ImmutableFile {
+pub struct FileMetaData {
     /// The file.
-    file: Arc<File>,
+    file: File,
     /// File name.
     path: PathBuf,
     /// File size.
-    size: u64,
+    ///
+    /// -1 if the file size is unknown.
+    size: AtomicI64,
+    /// Delete on drop.
+    ///
+    /// Should this file be deleted when dropped?
+    /// - If files are part of a checkpoint already, they should not be deleted on drop
+    ///   instead they get cleaned up when the checkpoint is deleted.
+    /// - If files are created and become obsolete (e.g., get merged) within the same
+    ///   checkpoint, they can be safely deleted on drop.
+    delete_on_drop: AtomicBool,
 }
 
-impl ImmutableFile {
-    pub(crate) fn new(file: Arc<File>, path: PathBuf, size: u64) -> Arc<Self> {
-        Arc::new(Self { file, path, size })
+impl FileMetaData {
+    pub(self) fn new(file: File, path: PathBuf, delete_on_drop: bool) -> Arc<Self> {
+        Arc::new(Self {
+            file,
+            path,
+            size: AtomicI64::new(-1),
+            delete_on_drop: AtomicBool::new(delete_on_drop),
+        })
+    }
+
+    pub(crate) fn size(&self) -> u64 {
+        let sz = self.size.load(Ordering::Relaxed);
+        if sz >= 0 {
+            sz as u64
+        } else {
+            let sz = self.file.metadata().map_or(0, |m| m.len());
+            self.size.store(sz.try_into().unwrap(), Ordering::Relaxed);
+            sz
+        }
+    }
+}
+
+impl Drop for FileMetaData {
+    fn drop(&mut self) {
+        if self.delete_on_drop.load(Ordering::Relaxed) {
+            if let Err(e) = remove_file(&self.path) {
+                warn!("Unable to delete file {:?}: {:?}", self.path, e);
+            } else {
+                counter!(FILES_DELETED).increment(1);
+            }
+        }
     }
 }
 
@@ -275,6 +323,11 @@ pub trait Storage {
         self.create_named(name_path)
     }
 
+    /// Marks a file to be part of a checkpoint.
+    ///
+    /// This is used to prevent the file from being deleted when it is dropped.
+    fn mark_for_checkpoint(&self, fd: &ImmutableFileHandle);
+
     /// Opens a file for reading.
     ///
     /// # Arguments
@@ -282,19 +335,10 @@ pub trait Storage {
     ///   the storage backend.
     fn open(&self, name: &Path) -> Result<ImmutableFileHandle, StorageError>;
 
-    /// Deletes a previously completed file.
-    ///
-    /// This removes the file from the storage backend and makes it unavailable
-    /// for reading.
-    fn delete(&self, fd: ImmutableFileHandle) -> Result<(), StorageError>;
-
-    /// Deletes a previously created file.
+    /// Deletes a previously created but not completely written file.
     ///
     /// This removes the file from the storage backend and makes it unavailable
     /// for writing.
-    ///
-    /// Use [`delete`](Self::delete) for deleting a file that has been
-    /// completed.
     fn delete_mut(&self, fd: FileHandle) -> Result<(), StorageError>;
 
     /// Evicts in-memory, cached contents for a file.
@@ -414,8 +458,8 @@ where
         (**self).open(name)
     }
 
-    fn delete(&self, fd: ImmutableFileHandle) -> Result<(), StorageError> {
-        (**self).delete(fd)
+    fn mark_for_checkpoint(&self, fd: &ImmutableFileHandle) {
+        (**self).mark_for_checkpoint(fd)
     }
 
     fn delete_mut(&self, fd: FileHandle) -> Result<(), StorageError> {

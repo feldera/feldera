@@ -334,7 +334,7 @@ where
     type Builder = VecKeyBuilder<K, T, R, O>;
     type Merger = VecKeyMerger<K, T, R, O>;
 
-    fn persistent_id(&self) -> Option<PathBuf> {
+    fn checkpoint_path(&self) -> Option<PathBuf> {
         unimplemented!()
     }
 

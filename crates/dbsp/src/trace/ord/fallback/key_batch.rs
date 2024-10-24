@@ -326,10 +326,10 @@ where
         }
     }
 
-    fn persistent_id(&self) -> Option<PathBuf> {
+    fn checkpoint_path(&self) -> Option<PathBuf> {
         match &self.inner {
-            Inner::Vec(vec) => vec.persistent_id(),
-            Inner::File(file) => file.persistent_id(),
+            Inner::Vec(vec) => vec.checkpoint_path(),
+            Inner::File(file) => file.checkpoint_path(),
         }
     }
 
