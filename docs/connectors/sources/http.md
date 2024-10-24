@@ -8,7 +8,7 @@ Feldera supports directly pushing data to a SQL table over HTTP.
 * It is the only input connector not created and managed by the user.
 
 * Usage is through a special
-  endpoint: [/v0/pipelines/:pipeline_name/ingress/:table_name?format=...](https://docs.feldera.com/api/push-data-to-a-sql-table)
+  endpoint: [/v0/pipelines/:pipeline_name/ingress/:table_name?format=...](/api/push-data-to-a-sql-table)
 
 * Specify data input format using URL query parameters
   (e.g., `format=...`, and more depending on format).
@@ -131,4 +131,4 @@ For more information, see:
 * Data formats such as [JSON](/formats/json) and
   [CSV](/formats/csv)
 
-* [Python API documentation](https://docs.feldera.com/python/index.html)
+* [Python API documentation](/python/)

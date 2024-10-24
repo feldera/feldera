@@ -136,7 +136,7 @@ base64 = "0.22.1"
 fda create udf_fda_test --udf-rs udf.rs --udf-toml udf.toml program.sql
 ```
 
-#### Using [Feldera Python SDK](https://docs.feldera.com/python/)
+#### Using [Feldera Python SDK](/python/)
 
 <details>
   <summary>Click to see how to create a pipeline with a Rust UDF using the Feldera Python SDK</summary>
@@ -191,7 +191,7 @@ pipeline.delete()
 ```
 </details>
 
-#### Using [REST API](https://docs.feldera.com/api)
+#### Using the [REST API](/api)
 
 <details>
   <summary>Click to see how to create a pipeline with a Rust UDF using the Feldera REST API</summary>

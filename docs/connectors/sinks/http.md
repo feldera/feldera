@@ -8,7 +8,7 @@ Feldera supports receiving a stream of changes to a SQL table or view over HTTP.
 * It is the only output connector not created and managed by the user.
 
 * Usage is through a special
-  endpoint: [/v0/pipelines/:pipeline_name/egress/table_or_view_name?format=...](https://docs.feldera.com/api/subscribe-to-a-stream-of-updates-from-a-sql-view-or-table)
+  endpoint: [/v0/pipelines/:pipeline_name/egress/table_or_view_name?format=...](/api/subscribe-to-a-stream-of-updates-from-a-sql-view-or-table)
 
 * Specify data output format using URL query parameters
   (e.g., `format=...`, and more depending on format).
