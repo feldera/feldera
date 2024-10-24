@@ -1,0 +1,166 @@
+services:
+  demo-standard:
+    profiles: [ "demo-standard" ]
+    depends_on:
+      pipeline-manager:
+        condition: service_healthy
+    image: ghcr.io/feldera/demo-container:latest
+    build:
+      context: ../
+      dockerfile: deploy/Dockerfile.demo
+      target: demo
+    environment:
+      RUST_LOG: "info"
+      RUST_BACKTRACE: "1"
+    command:
+      - bash
+      - -c
+      - "curl -s -X GET http://pipeline-manager:8080/config && curl -s -X GET http://pipeline-manager:8080/v0/pipelines"
+
+  demo-debezium-mysql:
+    profiles: [ "demo-debezium-mysql" ]
+    depends_on:
+      pipeline-manager:
+        condition: service_healthy
+      redpanda:
+        condition: service_healthy
+      kafka-connect:
+        condition: service_healthy
+      mysql:
+        condition: service_healthy
+    image: ghcr.io/feldera/demo-container:latest
+    build:
+      context: ../
+      dockerfile: deploy/Dockerfile.demo
+      target: demo
+    environment:
+      RUST_BACKTRACE: "1"
+      REDPANDA_BROKERS: "redpanda:9092"
+      RUST_LOG: "info"
+      KAFKA_CONNECT_SERVER: "http://kafka-connect:8083"
+    command:
+      - bash
+      - -c
+      - "sleep 20 && cd demo/project_demo05-DebeziumMySQL/ && python3 run.py --api-url http://pipeline-manager:8080 --start"
+
+  demo-supply-chain-tutorial:
+    profiles: [ "demo-supply-chain-tutorial" ]
+    depends_on:
+      pipeline-manager:
+        condition: service_healthy
+      redpanda:
+        condition: service_healthy
+    image: ghcr.io/feldera/demo-container:latest
+    build:
+      context: ../
+      dockerfile: deploy/Dockerfile.demo
+      target: demo
+    environment:
+      RUST_BACKTRACE: "1"
+      REDPANDA_BROKERS: "redpanda:9092"
+      RUST_LOG: "info"
+    command:
+      - bash
+      - -c
+      - "sleep 5 && cd demo/project_demo06-SupplyChainTutorial && python3 -u run.py --start --api-url http://pipeline-manager:8080"
+
+  demo-snowflake-sink:
+    profiles: [ "demo-snowflake-sink" ]
+    depends_on:
+      pipeline-manager:
+        condition: service_healthy
+      redpanda:
+        condition: service_healthy
+      kafka-connect:
+        condition: service_healthy
+    image: ghcr.io/feldera/demo-container:latest
+    build:
+      context: ../
+      dockerfile: deploy/Dockerfile.demo
+      target: demo
+    environment:
+      - RUST_BACKTRACE=1
+      - REDPANDA_BROKERS=redpanda:9092
+      - RUST_LOG=info
+      - KAFKA_CONNECT_SERVER=http://kafka-connect:8083
+      - SNOWFLAKE_CI_USER_PRIVATE_KEY_PASSPHRASE
+      - SNOWFLAKE_CI_USER_PRIVATE_KEY
+      - SNOWFLAKE_CI_USER_PASSWORD
+    command:
+      - bash
+      - -c
+      - "sleep 1 && env && cd demo/project_demo07-SnowflakeSink/ && python3 run.py --api-url http://pipeline-manager:8080"
+
+  demo-debezium-jdbc:
+    profiles: [ "demo-debezium-jdbc" ]
+    depends_on:
+      pipeline-manager:
+        condition: service_healthy
+      redpanda:
+        condition: service_healthy
+      kafka-connect:
+        condition: service_healthy
+      postgres:
+        condition: service_started
+    image: ghcr.io/feldera/demo-container:latest
+    build:
+      context: ../
+      dockerfile: deploy/Dockerfile.demo
+      target: demo
+    environment:
+      RUST_BACKTRACE: "1"
+      REDPANDA_BROKERS: "redpanda:9092"
+      RUST_LOG: "info"
+      KAFKA_CONNECT_SERVER: "http://kafka-connect:8083"
+      POSTGRES_SERVER: "postgres:5432"
+    command:
+      - bash
+      - -c
+      - "sleep 5 && cd demo/project_demo08-DebeziumJDBC/ && python3 run.py --api-url http://pipeline-manager:8080 --start"
+
+  demo-debezium-postgres:
+    profiles: [ "demo-debezium-postgres" ]
+    depends_on:
+      pipeline-manager:
+        condition: service_healthy
+      redpanda:
+        condition: service_healthy
+      kafka-connect:
+        condition: service_healthy
+      postgres:
+        condition: service_started
+    image: ghcr.io/feldera/demo-container:latest
+    build:
+      context: ../
+      dockerfile: deploy/Dockerfile.demo
+      target: demo
+    environment:
+      RUST_BACKTRACE: "1"
+      REDPANDA_BROKERS: "redpanda:9092"
+      RUST_LOG: "info"
+      KAFKA_CONNECT_SERVER: "http://kafka-connect:8083"
+      POSTGRES_SERVER: "postgres:5432"
+    command:
+      - bash
+      - -c
+      - "sleep 20 && cd demo/project_demo13-DebeziumPostgres/ && python3 run.py --api-url http://pipeline-manager:8080 --kafka-url-from-script redpanda:9092"
+
+  demo-simple-count:
+    profiles: [ "demo-simple-count" ]
+    depends_on:
+      pipeline-manager:
+        condition: service_healthy
+      redpanda:
+        condition: service_healthy
+    image: ghcr.io/feldera/demo-container:latest
+    build:
+      context: ../
+      dockerfile: deploy/Dockerfile.demo
+      target: demo
+    environment:
+      RUST_LOG: "info"
+      RUST_BACKTRACE: "1"
+    command:
+      - bash
+      - -c
+      - "sleep 1 && cd demo/simple-count && python3 run.py --api-url http://pipeline-manager:8080"

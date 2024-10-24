@@ -12,9 +12,8 @@ services:
       - "8081:8081"
     stop_grace_period: 0s
     environment:
-      - RUST_BACKTRACE=1
-      - REDPANDA_BROKERS=redpanda:9092
       - RUST_LOG=info,actix_web=error,tokio_postgres=info
+      - RUST_BACKTRACE=1
       - AUTH_CLIENT_ID
       - AUTH_ISSUER
     security_opt:
@@ -38,7 +37,10 @@ services:
       retries: 5
 
   redpanda:
-    profiles: [ "demo", "debezium", "snowflake", "demo-service-related" ]
+    profiles: [ "redpanda", "kafka-connect",
+                "demo-debezium-mysql", "demo-supply-chain-tutorial",
+                "demo-snowflake-sink", "demo-debezium-jdbc", "demo-debezium-postgres",
+                "demo-simple-count" ]
     command:
       - redpanda
       - start
@@ -81,115 +83,8 @@ services:
       retries: 5
       start_period: 5s
 
-  # Kafka connect.
-  # TODO: add a healthcheck to this container.
-  connect:
-    profiles: [ "debezium", "snowflake" ]
-    build:
-      context: ../
-      dockerfile: deploy/Dockerfile
-      target: kafka-connect
-    image: ghcr.io/feldera/kafka-connect:${FELDERA_VERSION:-0.28.0}
-    depends_on:
-      redpanda:
-        condition: service_healthy
-    ports:
-      - "8083:8083"
-    environment:
-      BOOTSTRAP_SERVERS: "redpanda:9092"
-      GROUP_ID: "1"
-      CONFIG_STORAGE_TOPIC: "inventory.configs"
-      OFFSET_STORAGE_TOPIC: "inventory.offset"
-      STATUS_STORAGE_TOPIC: "inventory.status"
-      LOG_LEVEL: "ERROR"
-    healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "curl --fail --request GET --url http://localhost:8083/"
-        ]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  demo:
-    profiles: [ "demo" ]
-    depends_on:
-      pipeline-manager:
-        condition: service_healthy
-      redpanda:
-        condition: service_healthy
-    image: ghcr.io/feldera/demo-container:${FELDERA_VERSION:-0.28.0}
-    environment:
-      - RUST_BACKTRACE=1
-      - REDPANDA_BROKERS=redpanda:9092
-      - SECOPS_DEMO_ARGS
-      - RUST_LOG=info
-
-    # Run the demos after giving the service some time to initialize
-    command:
-      - bash
-      - -c
-      - |
-        sleep 1
-        demo/demo-container.sh
-
-  snowflake-demo:
-    profiles: [ "snowflake" ]
-    depends_on:
-      pipeline-manager:
-        condition: service_healthy
-      connect:
-        condition: service_healthy
-    image: ghcr.io/feldera/demo-container:${FELDERA_VERSION:-0.28.0}
-    environment:
-      - RUST_BACKTRACE=1
-      - REDPANDA_BROKERS=redpanda:9092
-      - RUST_LOG=info
-      - KAFKA_CONNECT_SERVER=http://connect:8083
-      - SNOWFLAKE_CI_USER_PRIVATE_KEY_PASSPHRASE
-      - SNOWFLAKE_CI_USER_PRIVATE_KEY
-      - SNOWFLAKE_CI_USER_PASSWORD
-    command:
-      - bash
-      - -c
-      - "sleep 1 && env && cd demo/project_demo07-SnowflakeSink/ && python3 run.py --api-url http://pipeline-manager:8080"
-
-  # TODO: Need to be adapted based on how we want to do e2e connector tests
-  # s3-demo:
-  #   profiles: [ "s3" ]
-  #   depends_on:
-  #     pipeline-manager:
-  #       condition: service_healthy
-  #   image: ghcr.io/feldera/demo-container:${FELDERA_VERSION:-0.10.0}
-  #   environment:
-  #     - RUST_BACKTRACE=1
-  #     - RUST_LOG=info
-  #     - CI_S3_AWS_ACCESS_KEY
-  #     - CI_S3_AWS_SECRET
-  #   command:
-  #     - bash
-  #     - -c
-  #     - "sleep 1 && env && cd demo/project_demo09-S3/ && python3 run.py --api-url http://pipeline-manager:8080"
-
-  demo-service-related:
-    profiles: [ "demo-service-related" ]
-    depends_on:
-      pipeline-manager:
-        condition: service_healthy
-      redpanda:
-        condition: service_healthy
-    image: ghcr.io/feldera/demo-container:${FELDERA_VERSION:-0.28.0}
-    environment:
-      - RUST_BACKTRACE=1
-      - RUST_LOG=info
-    command:
-      - bash
-      - -c
-      - "sleep 1 && cd demo/simple-count && python3 run.py --api-url http://pipeline-manager:8080"
-
   prometheus:
-    profiles: [ "monitoring" ]
+    profiles: [ "prometheus", "grafana" ]
     depends_on:
       pipeline-manager:
         condition: service_healthy
@@ -197,7 +92,7 @@ services:
     ports:
       - 9090:9090
     volumes:
-      - ./prometheus:/etc/prometheus
+      - ./config/prometheus.yml:/etc/prometheus/prometheus.yml
     command: --web.enable-lifecycle --config.file=/etc/prometheus/prometheus.yml
     healthcheck:
       test: ["CMD", "wget", "--spider", "--quiet", "http://localhost:9090/-/healthy"]
@@ -207,10 +102,8 @@ services:
       start_period: 50s
 
   grafana:
-    profiles: [ "monitoring" ]
+    profiles: [ "grafana" ]
     depends_on:
-      pipeline-manager:
-        condition: service_healthy
       prometheus:
         condition: service_healthy
     image: grafana/grafana:latest
@@ -218,5 +111,4 @@ services:
       - 3000:3000
     restart: unless-stopped
     volumes:
-        - ./grafana/prometheus_docker.yaml:/etc/grafana/provisioning/datasources/prometheus.yaml
-
+        - ./config/grafana_data_sources.yaml:/etc/grafana/provisioning/datasources/grafana_data_sources.yaml

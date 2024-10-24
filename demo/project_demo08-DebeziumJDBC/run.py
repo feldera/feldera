@@ -1,7 +1,9 @@
 # Stream output of a view to Postgres via Debezium JDBC sink connector and Confluent JDBC sink connector.
 #
-# To run the demo, start Feldera along with RedPanda, Kafka Connect, and Postgres containers:
-# > docker compose -f deploy/docker-compose.yml -f deploy/docker-compose-jdbc.yml --profile debezium up redpanda connect postgres --renew-anon-volumes --force-recreate
+# To run the demo, start RedPanda, Kafka Connect, and Postgres containers:
+# > docker compose -f deploy/docker-compose.yml \
+#                  -f deploy/docker-compose-extra.yml \
+#                  up redpanda kafka-connect postgres --build --renew-anon-volumes --force-recreate
 #
 # Run this script:
 # > python3 run.py --api-url=http://localhost:8080 --start
