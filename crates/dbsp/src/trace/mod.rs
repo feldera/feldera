@@ -52,7 +52,6 @@ pub mod spine_async;
 pub use spine_async::{Spine, SpineSnapshot};
 
 mod spine_fueled;
-pub use spine_fueled::Spine as OldSpine;
 #[cfg(test)]
 pub mod test;
 
@@ -568,7 +567,11 @@ where
         None
     }
 
-    fn persistent_id(&self) -> Option<PathBuf> {
+    /// This functions returns a path to a file that can be used by the checkpoint
+    /// mechanism to find the batch again on re-start.
+    ///
+    /// If the batch can not be persisted, this function returns None.
+    fn checkpoint_path(&self) -> Option<PathBuf> {
         None
     }
 

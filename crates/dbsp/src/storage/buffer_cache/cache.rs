@@ -307,13 +307,15 @@ where
     fn create_named(&self, name: &Path) -> Result<FileHandle, StorageError> {
         Self::backend().create_named(name)
     }
+
     fn open(&self, name: &Path) -> Result<ImmutableFileHandle, StorageError> {
         Self::backend().open(name)
     }
-    fn delete(&self, fd: ImmutableFileHandle) -> Result<(), StorageError> {
-        self.inner.lock().unwrap().delete_file((&fd).into());
-        Self::backend().delete(fd)
+
+    fn mark_for_checkpoint(&self, fd: &ImmutableFileHandle) {
+        Self::backend().mark_for_checkpoint(fd);
     }
+
     fn delete_mut(&self, fd: FileHandle) -> Result<(), StorageError> {
         self.inner.lock().unwrap().delete_file((&fd).into());
         Self::backend().delete_mut(fd)

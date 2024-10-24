@@ -128,7 +128,7 @@ impl<B: Batch + Send + Sync> From<&Spine<B>> for CommittedSpine<B> {
         let mut batches = vec![];
         value.map_batches(|b| {
             batches.push(
-                b.persistent_id()
+                b.checkpoint_path()
                     .expect("Persistent spine needs an identifier")
                     .to_string_lossy()
                     .to_string(),

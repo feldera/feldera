@@ -59,8 +59,8 @@ impl MemoryBackend {
     }
 
     /// Helper function to delete (mutable and immutable) files.
-    fn delete_inner(&self, fd: i64) -> Result<(), StorageError> {
-        self.files.write().unwrap().remove(&fd).unwrap();
+    fn delete_mut_inner(&self, fh: FileHandle) -> Result<(), StorageError> {
+        self.files.write().unwrap().remove(&fh.0).unwrap();
         counter!(FILES_DELETED).increment(1);
         Ok(())
     }
@@ -106,12 +106,10 @@ impl Storage for MemoryBackend {
         Ok(ImmutableFileHandle(file_id))
     }
 
-    fn delete(&self, fd: ImmutableFileHandle) -> Result<(), StorageError> {
-        self.delete_inner(fd.0)
-    }
+    fn mark_for_checkpoint(&self, _fd: &ImmutableFileHandle) {}
 
     fn delete_mut(&self, fd: FileHandle) -> Result<(), StorageError> {
-        self.delete_inner(fd.0)
+        self.delete_mut_inner(fd)
     }
 
     fn base(&self) -> PathBuf {
