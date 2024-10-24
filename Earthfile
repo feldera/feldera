@@ -153,7 +153,6 @@ build-dbsp:
 build-sql:
     FROM +build-dbsp
     COPY --keep-ts sql-to-dbsp-compiler sql-to-dbsp-compiler
-    COPY demo/hello-world/combiner.sql demo/hello-world/combiner.sql
     COPY demo/project_demo01-TimeSeriesEnrich/project.sql demo/project_demo01-TimeSeriesEnrich/project.sql
     COPY demo/project_demo03-GreenTrip/project.sql demo/project_demo03-GreenTrip/project.sql
     COPY demo/project_demo04-SimpleSelect/project.sql demo/project_demo04-SimpleSelect/project.sql
