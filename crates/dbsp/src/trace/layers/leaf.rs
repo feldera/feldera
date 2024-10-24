@@ -69,7 +69,6 @@ pub struct Leaf<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> {
     pub(crate) factories: LeafFactories<K, R>,
     pub(crate) keys: Box<DynVec<K>>,
     pub(crate) diffs: Box<DynVec<R>>,
-    lower_bound: usize,
 }
 
 impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> Clone for Leaf<K, R> {
@@ -78,7 +77,6 @@ impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> Clone for Leaf<K, R> {
             factories: self.factories.clone(),
             keys: self.keys.clone(),
             diffs: self.diffs.clone(),
-            lower_bound: self.lower_bound,
         }
     }
 }
@@ -106,7 +104,6 @@ impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> Leaf<K, R> {
             keys: factories.keys.default_box(),
             diffs: factories.diffs.default_box(),
             factories: factories.clone(),
-            lower_bound: 0,
         }
     }
 
@@ -115,7 +112,6 @@ impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> Leaf<K, R> {
             keys: factories.keys.default_box(),
             diffs: factories.diffs.default_box(),
             factories: factories.clone(),
-            lower_bound: 0,
         };
 
         result.keys.reserve_exact(capacity);
@@ -272,13 +268,12 @@ impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> Leaf<K, R> {
         RG: Rng,
     {
         self.keys
-            .sample_slice(self.lower_bound, self.len(), rng, sample_size, output);
+            .sample_slice(0, self.len(), rng, sample_size, output);
     }
 
     pub(crate) fn truncate(&mut self, length: usize) {
         self.keys.truncate(length);
         self.diffs.truncate(length);
-        self.lower_bound = min(self.lower_bound, length);
     }
 }
 
@@ -300,11 +295,11 @@ impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> Trie for Leaf<K, R> {
     type TupleBuilder = LeafBuilder<K, R>;
 
     fn keys(&self) -> usize {
-        self.len() - self.lower_bound
+        self.len()
     }
 
     fn tuples(&self) -> usize {
-        self.len() - self.lower_bound
+        self.len()
     }
 
     fn cursor_from(&self, lower: usize, upper: usize) -> Self::Cursor<'_> {
@@ -337,12 +332,9 @@ where
         for diff in self.diffs.as_slice().iter() {
             diffs.push(diff.neg_by_ref())
         }
-        // TODO: We can eliminate elements from `0..lower_bound` when creating the
-        // negated layer
         Self {
             keys: self.keys.clone(),
             diffs: Box::new(diffs).erase_box(),
-            lower_bound: self.lower_bound,
             factories: self.factories.clone(),
         }
     }

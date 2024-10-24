@@ -76,7 +76,6 @@ where
     pub(crate) offs: Vec<O>,
     /// The ranges of values associated with the keys.
     pub(crate) vals: L,
-    pub(crate) lower_bound: usize,
 }
 
 impl<K, L, O> PartialEq for Layer<K, L, O>
@@ -86,10 +85,7 @@ where
     L: Trie + PartialEq,
 {
     fn eq(&self, other: &Self) -> bool {
-        self.keys.eq(&other.keys)
-            && self.offs == other.offs
-            && self.vals == other.vals
-            && self.lower_bound == other.lower_bound
+        self.keys.eq(&other.keys) && self.offs == other.offs && self.vals == other.vals
     }
 }
 
@@ -113,7 +109,6 @@ where
             keys: self.keys.clone(),
             offs: self.offs.clone(),
             vals: self.vals.clone(),
-            lower_bound: self.lower_bound,
         }
     }
 }
@@ -129,7 +124,6 @@ where
             .field("keys", &self.keys)
             .field("offs", &self.offs)
             .field("vals", &self.vals)
-            .field("lower_bound", &self.lower_bound)
             .finish()
     }
 }
@@ -141,12 +135,12 @@ where
     /*
     /// Break down an `OrderedLayer` into its constituent parts
     pub fn into_parts(self) -> (ErasedVec<K>, Vec<O>, L, usize) {
-        (self.keys, self.offs, self.vals, self.lower_bound)
+        (self.keys, self.offs, self.vals)
     }
 
     /// Expose an `OrderedLayer` as its constituent parts
     pub fn as_parts(&self) -> (&[K], &[O], &L, usize) {
-        (&self.keys, &self.offs, &self.vals, self.lower_bound)
+        (&self.keys, &self.offs, &self.vals)
     }
 
     /// Create a new `OrderedLayer` from its component parts
@@ -157,17 +151,15 @@ where
     ///   `offs` must be a valid value index into `vals`.
     /// - Every key's offset range must also be a valid range within `vals`
     /// - Every value range must be non-empty
-    pub unsafe fn from_parts(keys: Vec<K>, offs: Vec<O>, vals: L, lower_bound: usize) -> Self {
+    pub unsafe fn from_parts(keys: Vec<K>, offs: Vec<O>, vals: L) -> Self {
         // TODO: Maybe validate indices into `vals` when debug assertions are enabled
         // TODO: Maybe validate that value ranges are all valid
         debug_assert_eq!(keys.len() + 1, offs.len());
-        debug_assert!(lower_bound <= keys.len());
 
         Self {
             keys,
             offs,
             vals,
-            lower_bound,
         }
     }
     */
@@ -179,7 +171,6 @@ where
     /// Requires that `offs` has a length of `keys + 1`
     unsafe fn assume_invariants(&self) {
         assume(self.offs.len() == self.keys.len() + 1);
-        assume(self.lower_bound <= self.keys.len());
     }
 
     /// Compute a random sample of size `sample_size` of keys in `self.keys`.
@@ -191,7 +182,7 @@ where
         RG: Rng,
     {
         self.keys
-            .sample_slice(self.lower_bound, self.keys.len(), rng, sample_size, output);
+            .sample_slice(0, self.keys.len(), rng, sample_size, output);
     }
 }
 
@@ -218,8 +209,6 @@ where
     L: Trie + NegByRef,
     O: OrdOffset,
 {
-    // TODO: We can eliminate elements from `0..lower_bound` when creating the
-    // negated layer
     fn neg_by_ref(&self) -> Self {
         Self {
             factories: self.factories.clone(),
@@ -228,7 +217,6 @@ where
             // We assume that offsets in `vals` don't change after negation;
             // otherwise `self.offs` will be invalid.
             vals: self.vals.neg_by_ref(),
-            lower_bound: self.lower_bound,
         }
     }
 }
@@ -241,8 +229,6 @@ where
 {
     type Output = Self;
 
-    // TODO: We can eliminate elements from `0..lower_bound` when creating the
-    // negated layer
     fn neg(self) -> Self {
         Self {
             factories: self.factories,
@@ -251,7 +237,6 @@ where
             // We assume that offsets in `vals` don't change after negation;
             // otherwise `self.offs` will be invalid.
             vals: self.vals.neg(),
-            lower_bound: self.lower_bound,
         }
     }
 }
@@ -300,7 +285,7 @@ where
 
     fn keys(&self) -> usize {
         unsafe { self.assume_invariants() }
-        self.keys.len() - self.lower_bound
+        self.keys.len()
     }
 
     fn tuples(&self) -> usize {
@@ -584,7 +569,6 @@ where
             keys: self.keys,
             offs: self.offs,
             vals: self.vals.done(),
-            lower_bound: 0,
         }
     }
 }
