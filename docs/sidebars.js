@@ -112,7 +112,12 @@ const sidebars = {
                     label: "Python SDK",
                     href: "pathname:///python/index.html",
                 },
-                'reference/rest']
+                {
+                    type: 'link',
+                    label: "REST API",
+                    href: "pathname:///api", // ../../../api
+                }
+            ]
         },
         {
             type: 'category',
@@ -145,6 +150,7 @@ const sidebars = {
                         'sql/map',
                         'sql/datetime',
                         'sql/materialized',
+                        'sql/ad-hoc',
                         'sql/streaming',
                         'sql/table',
                         'sql/udf'
