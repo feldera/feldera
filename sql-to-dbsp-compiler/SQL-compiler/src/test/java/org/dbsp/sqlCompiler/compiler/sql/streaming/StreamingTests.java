@@ -583,15 +583,15 @@ public class StreamingTests extends StreamingTestBase {
         ccs.step("INSERT INTO T VALUES (0), (1);", """
                  ts | count | weight
                 ---------------------""");
-        // waterline is 3
+        // waterline is 3, but 1 may still be updated, so no output yet
         ccs.step("INSERT INTO T VALUES (1), (2);", """
                  ts | count | weight
-                ---------------------
-                  0 |     1 | 1""");
+                ---------------------""");
         // waterline is 5
         ccs.step("INSERT INTO T VALUES (4), (5);", """
                  ts | count | weight
                 ---------------------
+                  0 |     1 | 1
                   1 |     2 | 1
                   2 |     1 | 1""");
         // waterline is 5

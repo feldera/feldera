@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.sql.simple;
 
+import org.dbsp.sqlCompiler.circuit.annotation.Waterline;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
@@ -24,6 +25,41 @@ public class IncrementalRegressionTests extends SqlIoTest {
         // Without the following ORDER BY causes failures
         options.languageOptions.ignoreOrderBy = true;
         return new DBSPCompiler(options);
+    }
+
+    @Test
+    public void issue2822() {
+        String sql = """
+                CREATE TABLE purchase (
+                   ts TIMESTAMP NOT NULL LATENESS INTERVAL 1 HOURS,
+                   amount BIGINT
+                );
+                
+                CREATE MATERIALIZED VIEW daily_total
+                WITH ('emit_final' = 'd') AS SELECT
+                    TIMESTAMP_TRUNC(ts, DAY) as d,
+                    SUM(amount) AS total
+                FROM purchase
+                GROUP BY TIMESTAMP_TRUNC(ts, DAY);""";
+        var ccs = this.getCCS(sql);
+        this.addRustTestCase(ccs);
+        ccs.step("""
+                -- Waterline is now 2020-01-01\s
+                INSERT INTO purchase VALUES('2020-01-01 00:00:01', 10);
+                INSERT INTO purchase VALUES('2020-01-01 01:00:00', 20);""", """
+                  d | sum | weight
+                 -----------------""");
+        ccs.step("""                                
+                -- Waterline still at 2020-01-01 due to lateness
+                INSERT INTO purchase VALUES('2020-01-02 00:10:00', 15);""", """ 
+                 d | sum | weight
+                ------------------""");
+        ccs.step("""
+                -- Waterline moves to 2020-01-02
+                INSERT INTO purchase VALUES('2020-01-02 02:00:00', 65);""", """
+                 d | sum | weight
+                ------------------
+                2020-01-01 00:00:00 | 30 | 1""");
     }
 
     @Test
