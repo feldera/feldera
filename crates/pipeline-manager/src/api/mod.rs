@@ -453,7 +453,7 @@ pub async fn run(db: Arc<Mutex<StoragePostgres>>, api_config: ApiServerConfig) -
         }
     };
 
-    let banner = if theme(Duration::from_millis(500)).unwrap_or(Theme::Dark) == Theme::Dark {
+    let banner = if theme(Duration::from_millis(500)).unwrap_or(Theme::Light) == Theme::Dark {
         include_str!("../../light-banner.ascii")
     } else {
         include_str!("../../dark-banner.ascii")
