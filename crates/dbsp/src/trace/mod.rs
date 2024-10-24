@@ -34,13 +34,14 @@
 
 use crate::circuit::metadata::OperatorMeta;
 use crate::circuit::GlobalNodeId;
-use crate::dynamic::{ClonableTrait, Weight};
+use crate::dynamic::{ClonableTrait, DynUnit, Weight};
 pub use crate::storage::file::{Deserializable, Deserializer, Rkyv, Serializer};
 use crate::time::Antichain;
 use crate::{dynamic::ArchivedDBData, storage::buffer_cache::FBuf};
 use cursor::CursorList;
 use dyn_clone::DynClone;
 use rand::Rng;
+use rkyv::ser::Serializer as _;
 use size_of::SizeOf;
 use std::path::Path;
 use std::{fmt::Debug, hash::Hash, path::PathBuf};
@@ -827,4 +828,42 @@ where
         c2.step_key();
     }
     !c1.key_valid() && !c2.key_valid()
+}
+
+fn serialize_wset<B, K, R>(batch: &B) -> Vec<u8>
+where
+    B: BatchReader<Key = K, Val = DynUnit, Time = (), R = R>,
+    K: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+{
+    let mut s = Serializer::default();
+    let mut offsets = Vec::with_capacity(2 * batch.len());
+    let mut cursor = batch.cursor();
+    while cursor.key_valid() {
+        offsets.push(cursor.key().serialize(&mut s).unwrap());
+        offsets.push(cursor.weight().serialize(&mut s).unwrap());
+        cursor.step_key();
+    }
+    let _offset = s.serialize_value(&offsets).unwrap();
+    s.into_serializer().into_inner().into_vec()
+}
+
+fn deserialize_wset<B, K, R>(factories: &B::Factories, data: &[u8]) -> B
+where
+    B: Batch<Key = K, Val = DynUnit, Time = (), R = R>,
+    K: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+{
+    let offsets = unsafe { archived_root::<Vec<usize>>(data) };
+    assert!(offsets.len() % 2 == 0);
+    let n = offsets.len() / 2;
+    let mut builder = B::Builder::with_capacity(factories, (), n);
+    let mut key = factories.key_factory().default_box();
+    let mut diff = factories.weight_factory().default_box();
+    for i in 0..n {
+        unsafe { key.deserialize_from_bytes(data, offsets[i * 2] as usize) };
+        unsafe { diff.deserialize_from_bytes(data, offsets[i * 2 + 1] as usize) };
+        builder.push_refs(&key, &(), &diff);
+    }
+    builder.done()
 }

@@ -24,11 +24,13 @@ pub use crate::{
     DBData, DBWeight, DynZWeight, Stream, Timestamp, ZWeight,
 };
 use crate::{
+    circuit::checkpointer::Checkpoint,
     dynamic::{DataTrait, DynData, DynUnit, Erase, LeanVec, WeightTrait},
     trace::BatchReaderFactories,
-    Circuit,
+    Circuit, Error,
 };
 use dyn_clone::clone_box;
+use rkyv::{Archive, Archived, Deserialize, Fallible, Serialize};
 use size_of::SizeOf;
 use std::{
     marker::PhantomData,
@@ -431,6 +433,22 @@ where
     }
 }
 
+impl<K, V, R, B> Checkpoint for TypedBatch<K, V, R, B>
+where
+    B: Checkpoint,
+    K: DBData,
+    V: DBData,
+    R: DBWeight,
+{
+    fn checkpoint(&self) -> Result<Vec<u8>, Error> {
+        self.inner.checkpoint()
+    }
+
+    fn restore(&mut self, data: &[u8]) -> Result<(), Error> {
+        self.inner.restore(data)
+    }
+}
+
 pub type OrdWSet<K, R, DynR> = TypedBatch<K, (), R, DynOrdWSet<DynData, DynR>>;
 pub type OrdZSet<K> = TypedBatch<K, (), ZWeight, DynOrdZSet<DynData>>;
 pub type OrdIndexedWSet<K, V, R, DynR> =
@@ -499,6 +517,37 @@ impl<C: Clone, B: DynBatchReader> Stream<C, B> {
 pub struct TypedBox<T, D: ?Sized> {
     inner: Box<D>,
     phantom: PhantomData<fn(&T)>,
+}
+
+impl<T, D> Archive for TypedBox<T, D>
+where
+    D: ?Sized,
+{
+    type Archived = ();
+    type Resolver = ();
+    unsafe fn resolve(&self, _pos: usize, _resolver: Self::Resolver, _out: *mut Self::Archived) {
+        todo!()
+    }
+}
+
+impl<T, D, S> Serialize<S> for TypedBox<T, D>
+where
+    D: ?Sized,
+    S: Fallible + ?Sized,
+{
+    fn serialize(&self, _serializer: &mut S) -> Result<Self::Resolver, S::Error> {
+        todo!()
+    }
+}
+
+impl<T, D, De> Deserialize<TypedBox<T, D>, De> for Archived<TypedBox<T, D>>
+where
+    De: Fallible + ?Sized,
+    D: ?Sized,
+{
+    fn deserialize(&self, _deserializer: &mut De) -> Result<TypedBox<T, D>, De::Error> {
+        todo!()
+    }
 }
 
 impl<T, D> Deref for TypedBox<T, D>
