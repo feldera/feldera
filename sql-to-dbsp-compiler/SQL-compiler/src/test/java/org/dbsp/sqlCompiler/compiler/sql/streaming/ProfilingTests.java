@@ -29,7 +29,7 @@ public class ProfilingTests extends StreamingTestBase {
         CompilerMessages messages = CompilerMain.execute(
                 "-o", BaseSQLTests.testFilePath, "--handles", "-i",
                 script.getPath());
-        System.out.println(messages);
+        messages.print();
         Assert.assertEquals(0, messages.errorCount());
 
         String mainFilePath = rustDirectory + "/main.rs";

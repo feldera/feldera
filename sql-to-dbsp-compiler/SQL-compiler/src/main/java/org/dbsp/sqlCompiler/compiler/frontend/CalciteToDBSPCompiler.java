@@ -1321,10 +1321,10 @@ public class CalciteToDBSPCompiler extends RelVisitor
         RexNode leftOver = decomposition.getLeftOver();
         assert leftOver == null;
 
-        int leftTsIndex;  // Index of "timestamp" column in left input
-        int rightTsIndex;
         SqlKind comparison;  // Comparison operation, with left table column always on the left
 
+        int leftTsIndex;  // Index of "timestamp" column in left input
+        int rightTsIndex;
         {
             // Analyze match condition.  We know it's always a simple comparison between
             // two columns (enforced by the Validator).

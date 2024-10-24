@@ -965,6 +965,9 @@ data: {
     includeAdditionalDeclarations: false
     includeParsingStringLiteralAsArrayLiteral: true
 
+    # Method for parsing "SET [OR RESET]" calls.
+    setOptionParserMethod: "SqlSetOption"
+
     implementationFiles: [
       "ddl.ftl"
       "parserImpls.ftl"

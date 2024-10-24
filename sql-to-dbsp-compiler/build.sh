@@ -1,6 +1,6 @@
 #!/bin/bash
 
-set -e
+set -ex
 
 # This script builds the SQL compiler
 # it has an optional argument which specifies whether to build
@@ -19,10 +19,10 @@ else
     # hasn't been merged yet
     CALCITE_REPO="https://github.com/mihaibudiu/calcite.git"
     CALCITE_BRANCH="variant"
-    CALCITE_NEXT_COMMIT="9eb0fe74380e0cb5f916a4ae88834ad989a66d7e"
+    CALCITE_NEXT_COMMIT="9b88b5b8807eeee4b728def3983e4c2a505319a3"
 fi
-CALCITE_NEXT="1.38.0"
-CALCITE_CURRENT="1.37.0"
+CALCITE_NEXT="1.39.0"
+CALCITE_CURRENT="1.38.0"
 
 usage() {
     echo "This script builds the sql-to-dbsp compiler"
