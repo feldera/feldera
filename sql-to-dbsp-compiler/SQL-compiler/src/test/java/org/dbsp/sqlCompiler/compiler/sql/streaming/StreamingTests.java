@@ -100,6 +100,40 @@ public class StreamingTests extends StreamingTestBase {
     }
 
     @Test
+    public void issue2852() {
+        String sql = """
+                CREATE TABLE t (
+                    id int not null primary key,
+                    ts TIMESTAMP NOT NULL LATENESS INTERVAL 30 MINUTES
+                ) WITH (
+                    'append_only' = 'true'
+                );
+                
+                create view v1 AS
+                SELECT
+                    TIMESTAMP_TRUNC(ts, DAY) as d,
+                    MAX(id) m,
+                    COUNT(*)
+                FROM t
+                GROUP BY TIMESTAMP_TRUNC(ts, DAY);""";
+        var ccs = this.getCCS(sql);
+        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+            int integrate_trace = 0;
+
+            @Override
+            public void postorder(DBSPIntegrateTraceRetainKeysOperator operator) {
+                this.integrate_trace++;
+            }
+
+            @Override
+            public void endVisit() {
+                Assert.assertEquals(4, this.integrate_trace);
+            }
+        };
+        visitor.apply(ccs.circuit);
+    }
+
+    @Test
     public void chainAggregateGroupBy() {
         String sql = """
                 CREATE TABLE T(TS INT, X INT LATENESS 1000) WITH ('append_only' = 'true');
@@ -178,7 +212,7 @@ public class StreamingTests extends StreamingTestBase {
 
             @Override
             public void endVisit() {
-                Assert.assertEquals(3, this.integrate_trace);
+                Assert.assertEquals(4, this.integrate_trace);
             }
         };
         visitor.apply(ccs.circuit);
