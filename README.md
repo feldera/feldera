@@ -96,7 +96,7 @@ a Feldera Platform deployment suitable for demos, development and testing:
 
 ```text
 curl -L https://github.com/feldera/feldera/releases/latest/download/docker-compose.yml | \
-docker compose -f - --profile demo up
+docker compose -f - up
 ```
 
 It can take some time for the container images to be downloaded. About ten seconds after that, the Feldera

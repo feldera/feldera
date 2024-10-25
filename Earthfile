@@ -352,21 +352,24 @@ build-demo-container:
     # Needed by the JDBC demo.
     RUN pip3 install "psycopg[binary]"
     # Needed by the simple-count demo.
-    RUN pip3 install kafka-python
+    RUN pip3 install kafka-python-ng
     COPY demo demo
     CMD bash
 
 build-kafka-connect-container:
-    FROM DOCKERFILE -f deploy/Dockerfile --target kafka-connect .
+    FROM DOCKERFILE -f deploy/Dockerfile.kafka-connect --target kafka-connect .
 
 test-docker-compose:
     FROM earthly/dind:alpine
     COPY deploy/docker-compose.yml .
+    COPY deploy/docker-compose-extra.yml .
+    COPY deploy/docker-compose-demo.yml .
     ENV FELDERA_VERSION=latest
-    WITH DOCKER --pull redpandadata/redpanda:v23.3.21 \
-                --load ghcr.io/feldera/pipeline-manager:latest=+build-pipeline-manager-container \
+    WITH DOCKER --load ghcr.io/feldera/pipeline-manager:latest=+build-pipeline-manager-container \
                 --load ghcr.io/feldera/demo-container:latest=+build-demo-container
-        RUN COMPOSE_HTTP_TIMEOUT=120 SECOPS_DEMO_ARGS="--prepare-args 200000" RUST_LOG=debug,tokio_postgres=info docker-compose -f docker-compose.yml --profile demo up --force-recreate --exit-code-from demo
+        RUN COMPOSE_HTTP_TIMEOUT=120 RUST_LOG=debug,tokio_postgres=info docker-compose \
+            -f docker-compose.yml -f docker-compose-extra.yml -f docker-compose-demo.yml \
+            --profile demo-standard up --force-recreate --exit-code-from demo-standard
     END
 
 # Test whether the stable container image runs with our Docker compose file
@@ -394,45 +397,56 @@ test-docker-compose-stable:
 test-debezium-mysql:
     FROM earthly/dind:alpine
     COPY deploy/docker-compose.yml .
-    COPY deploy/docker-compose-debezium-mysql.yml .
+    COPY deploy/docker-compose-extra.yml .
+    COPY deploy/docker-compose-demo.yml .
     ENV FELDERA_VERSION=latest
     WITH DOCKER --pull redpandadata/redpanda:v23.3.21 \
                 --pull debezium/example-mysql:2.5 \
                 --load ghcr.io/feldera/pipeline-manager:latest=+build-pipeline-manager-container \
                 --load ghcr.io/feldera/demo-container:latest=+build-demo-container \
                 --load ghcr.io/feldera/kafka-connect:latest=+build-kafka-connect-container
-        RUN COMPOSE_HTTP_TIMEOUT=120 RUST_LOG=debug,tokio_postgres=info docker-compose -f docker-compose.yml -f docker-compose-debezium-mysql.yml --profile debezium up --force-recreate --exit-code-from debezium-demo
+        RUN COMPOSE_HTTP_TIMEOUT=120 RUST_LOG=debug,tokio_postgres=info docker-compose \
+            -f docker-compose.yml -f docker-compose-extra.yml -f docker-compose-demo.yml \
+            --profile demo-debezium-mysql up --force-recreate --exit-code-from demo-debezium-mysql
     END
 
 test-debezium-postgres:
     FROM earthly/dind:alpine
     COPY deploy/docker-compose.yml .
-    COPY deploy/docker-compose-debezium-postgres.yml .
+    COPY deploy/docker-compose-extra.yml .
+    COPY deploy/docker-compose-demo.yml .
     ENV FELDERA_VERSION=latest
     WITH DOCKER --pull redpandadata/redpanda:v23.3.21 \
                 --pull debezium/example-postgres:2.5 \
                 --load ghcr.io/feldera/pipeline-manager:latest=+build-pipeline-manager-container \
                 --load ghcr.io/feldera/demo-container:latest=+build-demo-container \
                 --load ghcr.io/feldera/kafka-connect:latest=+build-kafka-connect-container
-        RUN COMPOSE_HTTP_TIMEOUT=120 RUST_LOG=debug,tokio_postgres=info docker-compose -f docker-compose.yml -f docker-compose-debezium-postgres.yml --profile debezium up --force-recreate --exit-code-from debezium-demo
+        RUN COMPOSE_HTTP_TIMEOUT=120 RUST_LOG=debug,tokio_postgres=info docker-compose \
+            -f docker-compose.yml -f docker-compose-extra.yml -f docker-compose-demo.yml \
+            --profile demo-debezium-postgres up --force-recreate --exit-code-from demo-debezium-postgres
     END
 
-test-debezium-jdbc-sink:
+test-debezium-jdbc:
     FROM earthly/dind:alpine
     COPY deploy/docker-compose.yml .
-    COPY deploy/docker-compose-jdbc.yml .
+    COPY deploy/docker-compose-extra.yml .
+    COPY deploy/docker-compose-demo.yml .
     ENV FELDERA_VERSION=latest
     WITH DOCKER --pull redpandadata/redpanda:v23.3.21 \
                 --pull debezium/example-postgres:2.3 \
                 --load ghcr.io/feldera/pipeline-manager:latest=+build-pipeline-manager-container \
                 --load ghcr.io/feldera/demo-container:latest=+build-demo-container \
                 --load ghcr.io/feldera/kafka-connect:latest=+build-kafka-connect-container
-        RUN COMPOSE_HTTP_TIMEOUT=120 RUST_LOG=debug,tokio_postgres=info docker-compose -f docker-compose.yml -f docker-compose-jdbc.yml --profile debezium up --force-recreate --exit-code-from debezium-jdbc-demo
+        RUN COMPOSE_HTTP_TIMEOUT=120 RUST_LOG=debug,tokio_postgres=info docker-compose \
+            -f docker-compose.yml -f docker-compose-extra.yml -f docker-compose-demo.yml \
+            --profile demo-debezium-jdbc up --force-recreate --exit-code-from demo-debezium-jdbc
     END
 
-test-snowflake:
+test-snowflake-sink:
     FROM earthly/dind:alpine
     COPY deploy/docker-compose.yml .
+    COPY deploy/docker-compose-extra.yml .
+    COPY deploy/docker-compose-demo.yml .
     COPY deploy/.env .
     RUN cat .env
     ENV FELDERA_VERSION=latest
@@ -440,32 +454,37 @@ test-snowflake:
                 --load ghcr.io/feldera/pipeline-manager:latest=+build-pipeline-manager-container \
                 --load ghcr.io/feldera/demo-container:latest=+build-demo-container \
                 --load ghcr.io/feldera/kafka-connect:latest=+build-kafka-connect-container
-        RUN COMPOSE_HTTP_TIMEOUT=120 RUST_LOG=debug,tokio_postgres=info docker-compose --env-file .env -f docker-compose.yml --profile snowflake up --force-recreate --exit-code-from snowflake-demo
+        RUN COMPOSE_HTTP_TIMEOUT=120 RUST_LOG=debug,tokio_postgres=info docker-compose \
+            --env-file .env -f docker-compose.yml -f docker-compose-extra.yml -f docker-compose-demo.yml \
+            --profile demo-snowflake-sink up --force-recreate --exit-code-from demo-snowflake-sink
     END
 
-test-s3:
+test-simple-count:
     FROM earthly/dind:alpine
     COPY deploy/docker-compose.yml .
-    COPY deploy/.env .
-    RUN cat .env
-    ENV FELDERA_VERSION=latest
-    WITH DOCKER --pull redpandadata/redpanda:v23.3.21 \
-                --load ghcr.io/feldera/pipeline-manager:latest=+build-pipeline-manager-container \
-                --load ghcr.io/feldera/demo-container:latest=+build-demo-container \
-                --load ghcr.io/feldera/kafka-connect:latest=+build-kafka-connect-container
-        RUN COMPOSE_HTTP_TIMEOUT=120 RUST_LOG=debug,tokio_postgres=info docker-compose --env-file .env -f docker-compose.yml --profile s3 up --force-recreate --exit-code-from s3-demo
-    END
-
-test-service-related:
-    FROM earthly/dind:alpine
-    COPY deploy/docker-compose.yml .
-    COPY deploy/.env .
-    RUN cat .env
+    COPY deploy/docker-compose-extra.yml .
+    COPY deploy/docker-compose-demo.yml .
     ENV FELDERA_VERSION=latest
     WITH DOCKER --pull redpandadata/redpanda:v23.3.21 \
                 --load ghcr.io/feldera/pipeline-manager:latest=+build-pipeline-manager-container \
                 --load ghcr.io/feldera/demo-container:latest=+build-demo-container
-        RUN COMPOSE_HTTP_TIMEOUT=120 RUST_LOG=debug,tokio_postgres=info docker-compose --env-file .env -f docker-compose.yml --profile demo-service-related up --force-recreate --exit-code-from demo-service-related
+        RUN COMPOSE_HTTP_TIMEOUT=120 RUST_LOG=debug,tokio_postgres=info docker-compose \
+            -f docker-compose.yml -f docker-compose-extra.yml -f docker-compose-demo.yml \
+            --profile demo-simple-count up --force-recreate --exit-code-from demo-simple-count
+    END
+
+test-supply-chain-tutorial:
+    FROM earthly/dind:alpine
+    COPY deploy/docker-compose.yml .
+    COPY deploy/docker-compose-extra.yml .
+    COPY deploy/docker-compose-demo.yml .
+    ENV FELDERA_VERSION=latest
+    WITH DOCKER --pull redpandadata/redpanda:v23.3.21 \
+                --load ghcr.io/feldera/pipeline-manager:latest=+build-pipeline-manager-container \
+                --load ghcr.io/feldera/demo-container:latest=+build-demo-container
+        RUN COMPOSE_HTTP_TIMEOUT=120 RUST_LOG=debug,tokio_postgres=info docker-compose \
+            -f docker-compose.yml -f docker-compose-extra.yml -f docker-compose-demo.yml \
+            --profile demo-supply-chain-tutorial up --force-recreate --exit-code-from demo-supply-chain-tutorial
     END
 
 # Fetches the test binary from test-manager, and produces a container image out of it
@@ -564,15 +583,16 @@ ci-tests:
     BUILD +integration-tests
     BUILD +test-python
     BUILD +demo-packaged-sql-formatting-check
+    BUILD +test-supply-chain-tutorial
     # BUILD +test-docker-compose-stable
     # TODO: Temporarily disabled while we port the demo script
-    # BUILD +test-snowflake
+    # BUILD +test-snowflake-sink
     # BUILD +test-s3
 
 nightly-tests:
     BUILD +test-python --all=1
     BUILD +test-debezium-postgres
-    BUILD +test-debezium-jdbc-sink
+    BUILD +test-debezium-jdbc
     BUILD +test-debezium-mysql
     BUILD +test-docker-compose
-    BUILD +test-service-related
+    BUILD +test-simple-count
