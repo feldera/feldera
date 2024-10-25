@@ -61,7 +61,7 @@ public class NonMonotoneType extends ScalarMonotoneType {
 
     @Override
     public DBSPExpression projectExpression(DBSPExpression source) {
-        throw new InternalCompilerError("Projecting a non-monotone type");
+        throw new InternalCompilerError("Projecting a non-monotone type " + this);
     }
 
     @Override

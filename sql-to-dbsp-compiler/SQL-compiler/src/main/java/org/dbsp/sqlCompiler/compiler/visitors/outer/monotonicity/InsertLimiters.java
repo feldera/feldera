@@ -1557,8 +1557,13 @@ public class InsertLimiters extends CircuitCloneVisitor {
                     this.addOperator(window);
                     // GC for window: the waterline delayed
                     if (INSERT_RETAIN_KEYS) {
+                        PartiallyMonotoneTuple projection = new PartiallyMonotoneTuple(
+                                // We project the key of the index operator, which is always the first field.
+                                Linq.list(new MonotoneType(tsType)),
+                                false,
+                                false);
                         DBSPOperator retain = DBSPIntegrateTraceRetainKeysOperator.create(
-                                operator.getNode(), ix, tuple, this.createDelay(boundSource));
+                                operator.getNode(), ix, projection, this.createDelay(boundSource));
                         this.addOperator(retain);
                         // output of 'retain' is not used in the graph, but the DBSP Rust layer will use it
                     }
