@@ -33,6 +33,7 @@
   const startReadingStream = (pipelineName: string, relationName: string) => {
     const handle = relationEgressStream(pipelineName, relationName).then((stream) => {
       if ('message' in stream) {
+        pipelinesRelations[pipelineName][relationName].cancelStream = undefined
         return undefined
       }
       const { cancel } = parseUTF8JSON(
@@ -43,7 +44,8 @@
             pushChanges(pipelineName, relationName)([{ skippedBytes }])
             changeStream[pipelineName].totalSkippedBytes += skippedBytes
           },
-          onParseEnded: undefined
+          onParseEnded: () =>
+            (pipelinesRelations[pipelineName][relationName].cancelStream = undefined)
         },
         {
           paths: ['$.json_data.*'],
@@ -56,11 +58,14 @@
       }
     })
     return () => {
-      handle.then((cancel) => cancel?.())
-      changeStream[pipelineName].rows = changeStream[pipelineName].rows.filter(
-        (row) => row.relationName !== relationName
-      )
-      getChangeStream = () => changeStream
+      handle.then((cancel) => {
+        cancel?.()
+        pipelinesRelations[pipelineName][relationName].cancelStream = undefined
+        changeStream[pipelineName].rows = changeStream[pipelineName].rows.filter(
+          (row) => row.relationName !== relationName
+        )
+        getChangeStream = () => changeStream
+      })
     }
   }
   const registerPipelineName = (pipelineName: string) => {
@@ -76,6 +81,9 @@
       for (const relationName of relations) {
         changeStream[pipelineName] = { rows: [], totalSkippedBytes: 0 } // Clear row buffer when starting pipeline again
         getChangeStream = () => changeStream
+        if (pipelinesRelations[pipelineName][relationName].cancelStream) {
+          return
+        }
         pipelinesRelations[pipelineName][relationName].cancelStream = startReadingStream(
           pipelineName,
           relationName
@@ -208,16 +216,14 @@
               checked={relation.selected}
               onchange={(e) => {
                 const follow = e.currentTarget.checked
-                pipelinesRelations[pipelineName] /*[relation.type]*/[
-                  relation.relationName
-                ].selected = follow
-                if (!follow) {
-                  pipelinesRelations[pipelineName][relation.relationName].cancelStream?.()
-                }
+                pipelinesRelations[pipelineName][relation.relationName].selected = follow
                 if (follow) {
                   // If stream is stopped - the action will silently fail
                   pipelinesRelations[pipelineName][relation.relationName].cancelStream =
                     startReadingStream(pipelineName, relation.relationName)
+                } else {
+                  pipelinesRelations[pipelineName][relation.relationName].cancelStream?.()
+                  pipelinesRelations[pipelineName][relation.relationName].cancelStream = undefined
                 }
               }}
               value={relation}
