@@ -381,7 +381,20 @@ public class InsertLimiters extends CircuitCloneVisitor {
             return;
         }
 
+        MonotoneExpression monotoneValue2 = this.expansionMonotoneValues.get(ae.replacement);
+        if (monotoneValue2 == null) {
+            this.map(aggregator, filteredAggregator);
+            return;
+        }
+        IMaybeMonotoneType projection2 = Monotonicity.getBodyType(Objects.requireNonNull(monotoneValue2));
         this.addOperator(filteredAggregator);
+        if (INSERT_RETAIN_KEYS) {
+            DBSPOperator after = DBSPIntegrateTraceRetainKeysOperator.create(
+                    aggregator.getNode(), filteredAggregator, projection2, this.createDelay(limiter2));
+            this.addOperator(after);
+            // output of 'after' is not used in the graph, but the DBSP Rust layer will use it
+        }
+
         this.map(aggregator, filteredAggregator, false);
     }
 
