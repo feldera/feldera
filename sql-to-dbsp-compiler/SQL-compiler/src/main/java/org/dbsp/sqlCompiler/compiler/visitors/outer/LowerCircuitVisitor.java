@@ -1,6 +1,8 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPApply2Operator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPApplyOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinFilterMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
@@ -12,6 +14,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateWith
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAggregateOperator;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyMethodExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
@@ -22,8 +25,10 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPIfExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStrLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPUSizeLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVecLiteral;
+import org.dbsp.sqlCompiler.ir.statement.DBSPExpressionStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStatement;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -162,6 +167,43 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
         } else {
             super.postorder(node);
         }
+    }
+
+    @Override
+    public void postorder(DBSPApplyOperator node) {
+        if (this.getDebugLevel() < 1) {
+            super.postorder(node);
+            return;
+        }
+        // Instrument apply functions to print their parameters
+        DBSPClosureExpression func = node.getClosureFunction();
+        DBSPExpression print = new DBSPApplyExpression("println!", DBSPTypeAny.getDefault(),
+                new DBSPStrLiteral(func.parameters[0].name + "={:?}"), func.parameters[0].asVariable());
+        DBSPExpression block = new DBSPBlockExpression(
+                Linq.list(new DBSPExpressionStatement(print)),
+                func.body);
+        DBSPOperator instrumented = node.withFunction(block.closure(func.parameters), func.getResultType())
+                .withInputs(Linq.map(node.inputs, this::mapped), false);
+        this.map(node, instrumented);
+    }
+
+    @Override
+    public void postorder(DBSPApply2Operator node) {
+        if (this.getDebugLevel() < 1) {
+            super.postorder(node);
+            return;
+        }
+        // Instrument apply functions to print their parameters
+        DBSPClosureExpression func = node.getClosureFunction();
+        DBSPExpression print = new DBSPApplyExpression("println!", DBSPTypeAny.getDefault(),
+                new DBSPStrLiteral(func.parameters[0].name + "={:?}," + func.parameters[1].name + "={:?}"),
+                func.parameters[0].asVariable(), func.parameters[1].asVariable());
+        DBSPExpression block = new DBSPBlockExpression(
+                Linq.list(new DBSPExpressionStatement(print)),
+                func.body);
+        DBSPOperator instrumented = node.withFunction(block.closure(func.parameters), func.getResultType())
+                .withInputs(Linq.map(node.inputs, this::mapped), false);
+        this.map(node, instrumented);
     }
 
     @Override

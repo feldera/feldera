@@ -29,6 +29,7 @@ import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.rust.RustFileWriter;
 import org.dbsp.sqlCompiler.compiler.frontend.TableContents;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteCompiler;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.LowerCircuitVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity.MonotoneAnalyzer;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.Logger;
@@ -64,14 +65,22 @@ public class BaseSQLTests {
         return new CompilerCircuitStream(compiler);
     }
 
+    @SuppressWarnings("unused")
     protected void showPlan() {
         Logger.INSTANCE.setLoggingLevel(CalciteCompiler.class, 2);
     }
 
+    @SuppressWarnings("unused")
+    protected void instrumentApply() {
+        Logger.INSTANCE.setLoggingLevel(LowerCircuitVisitor.class, 2);
+    }
+
+    @SuppressWarnings("unused")
     protected void showMonotone() {
         Logger.INSTANCE.setLoggingLevel(MonotoneAnalyzer.class, 2);
     }
 
+    @SuppressWarnings("unused")
     protected void showFinal() {
         Logger.INSTANCE.setLoggingLevel(DBSPCompiler.class, 2);
     }
