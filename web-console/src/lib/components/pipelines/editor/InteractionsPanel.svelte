@@ -80,12 +80,12 @@
   {@const errorCount = errors.length - warningCount}
   <span class="pr-1">Errors</span>
   {#if warningCount !== 0}
-    <span class="inline-block min-w-6 rounded-full px-1 font-medium preset-filled-warning-200-800">
+    <span class="preset-filled-warning-200-800 inline-block min-w-6 rounded-full px-1 font-medium">
       {warningCount}
     </span>
   {/if}
   {#if errorCount !== 0}
-    <span class="inline-block min-w-6 rounded-full px-1 font-medium preset-filled-error-500">
+    <span class="preset-filled-error-500 inline-block min-w-6 rounded-full px-1 font-medium">
       {errorCount}
     </span>
   {/if}
@@ -105,8 +105,7 @@
   bind:value={currentTab.value}
   listMargin=""
   contentClasses="h-full"
-  classes="flex flex-col flex-1 !space-y-0"
->
+  classes="flex flex-col flex-1 !space-y-0">
   {#snippet list()}
     <div class=" w-full">
       {#each tabs as [tabName, tabControl]}
@@ -117,8 +116,7 @@
           labelBase=""
           translateX=""
           stateInactive="hover:bg-surface-100-900 hover:!bg-opacity-50"
-          stateActive="bg-white-black"
-        >
+          stateActive="bg-white-black outline-none">
           {#if tabControl}
             {@render tabControl(pipeline.current)}
           {:else}
