@@ -182,7 +182,12 @@ build-manager:
 test-sql:
     # SQL-generated code imports adapters crate.
     FROM +build-adapters
-    RUN cd "sql-to-dbsp-compiler" && ./build.sh && mvn test --no-transfer-progress -q -B
+    RUN cd "sql-to-dbsp-compiler" && ./build.sh && mvn test --no-transfer-progress -q -B -pl SQL-compiler -Dsurefire.failIfNoSpecifiedTests=false
+
+test-slt:
+    # Run SQL logic test tests
+    FROM +build-adapters
+    RUN cd "sql-to-dbsp-compiler" && ./build.sh && mvn test --no-transfer-progress -q -B -pl slt -Dsurefire.failIfNoSpecifiedTests=false
 
 build-nexmark:
     FROM +build-dbsp
@@ -281,7 +286,7 @@ test-python:
             sleep 10 && \
             (./pipeline-manager --bind-address=0.0.0.0 --api-server-working-directory=/working-dir --compiler-working-directory=/working-dir --runner-working-directory=/working-dir --sql-compiler-home=/dbsp/sql-to-dbsp-compiler --dbsp-override-path=/dbsp --db-connection-string=postgresql://postgres:postgres@localhost:5432 --compilation-profile=unoptimized &) && \
             sleep 5 && \
-	    PYTHONPATH=`pwd` python3 ./tests/aggregate_tests/main.py && \
+            PYTHONPATH=`pwd` python3 ./tests/aggregate_tests/main.py && \
             if [ $ALL = "1" ]; then \
                 cd tests && python -m pytest . ; \
             else \
