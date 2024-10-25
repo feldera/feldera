@@ -17,6 +17,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPNegateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNoopOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateOperator;
@@ -26,6 +27,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSubtractOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSumOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPUpsertFeedbackOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewOperator;
@@ -74,6 +76,16 @@ public class ExpandOperators extends CircuitCloneVisitor {
 
     @Override
     public void postorder(DBSPSumOperator operator) {
+        this.identity(operator);
+    }
+
+    @Override
+    public void postorder(DBSPSubtractOperator operator) {
+        this.identity(operator);
+    }
+
+    @Override
+    public void postorder(DBSPNegateOperator operator) {
         this.identity(operator);
     }
 

@@ -14,6 +14,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPHopOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPNegateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNoopOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateOperator;
@@ -23,6 +24,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSubtractOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSumOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPUnaryOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPUpsertFeedbackOperator;
@@ -443,8 +445,7 @@ public class Monotonicity extends CircuitVisitor {
         this.set(node, result);
     }
 
-    @Override
-    public void postorder(DBSPSumOperator node) {
+    void sumOrDifference(DBSPOperator node) {
         List<MonotoneExpression> inputFunctions = Linq.map(node.inputs, this::getMonotoneExpression);
         // All the inputs must be monotone for the result to have a chance of being monotone
         if (inputFunctions.contains(null))
@@ -464,6 +465,15 @@ public class Monotonicity extends CircuitVisitor {
         this.set(node, result);
     }
 
+    @Override
+    public void postorder(DBSPSumOperator node) {
+        this.sumOrDifference(node);
+    }
+
+    @Override
+    public void postorder(DBSPSubtractOperator node) {
+        this.sumOrDifference(node);
+    }
 
     @Override
     public void postorder(DBSPDeindexOperator node) {
@@ -506,6 +516,11 @@ public class Monotonicity extends CircuitVisitor {
 
     @Override
     public void postorder(DBSPNoopOperator node) {
+        this.identity(node);
+    }
+
+    @Override
+    public void postorder(DBSPNegateOperator node) {
         this.identity(node);
     }
 
