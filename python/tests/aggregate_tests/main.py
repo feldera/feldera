@@ -11,6 +11,7 @@ from tests.aggregate_tests.aggtst_base import *  # noqa: F403
 from tests.aggregate_tests.test_array import *  # noqa: F403
 from tests.aggregate_tests.test_arg_max import *  # noqa: F403
 from tests.aggregate_tests.test_arg_min import *  # noqa: F403
+from tests.aggregate_tests.test_atbl_charn import *  # noqa: F403
 from tests.aggregate_tests.test_atbl_varcharn import *  # noqa: F403
 from tests.aggregate_tests.test_avg import *  # noqa: F403
 from tests.aggregate_tests.test_bit_and import *  # noqa: F403
@@ -48,6 +49,8 @@ from tests.aggregate_tests.test_varcharn_argmax import *  # noqa: F403
 from tests.aggregate_tests.test_varcharn_argmin import *  # noqa: F403
 from tests.aggregate_tests.test_varcharn_every import *  # noqa: F403
 from tests.aggregate_tests.test_varcharn_some import *  # noqa: F403
+from tests.aggregate_tests.test_charn_count_col import *  # noqa: F403
+from tests.aggregate_tests.test_charn_count import *  # noqa: F403
 
 
 def register_tests_in_module(module, ta: TstAccumulator):
