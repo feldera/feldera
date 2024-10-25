@@ -24,6 +24,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPNegateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNoopOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateOperator;
@@ -31,6 +32,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateWith
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSubtractOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSumOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWaterlineOperator;
@@ -312,6 +314,12 @@ public class InsertLimiters extends CircuitCloneVisitor {
 
     @Override
     public void postorder(DBSPNoopOperator operator) {
+        this.addBoundsForNonExpandedOperator(operator);
+        super.postorder(operator);
+    }
+
+    @Override
+    public void postorder(DBSPNegateOperator operator) {
         this.addBoundsForNonExpandedOperator(operator);
         super.postorder(operator);
     }
@@ -682,7 +690,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
         this.processJoin(expansion.leftDelta);
         this.processJoin(expansion.rightDelta);
         this.processJoin(expansion.both);
-        this.processSum(expansion.sum);
+        this.processSumOrDiff(expansion.sum);
 
         this.map(join, result, true);
     }
@@ -710,7 +718,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
         this.processJoin(expansion.leftDelta);
         this.processJoin(expansion.rightDelta);
         this.processJoin(expansion.both);
-        this.processSum(expansion.sum);
+        this.processSumOrDiff(expansion.sum);
 
         this.map(join, result, true);
     }
@@ -874,7 +882,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
         this.processFilter(expansion.filter);
         this.processFilter(expansion.leftFilter);
         this.processFilter(expansion.rightFilter);
-        this.processSum(expansion.sum);
+        this.processSumOrDiff(expansion.sum);
 
         // If any of the filters leftFilter or rightFilter has monotone outputs,
         // we can use these to GC the other input of the join using
@@ -1349,7 +1357,21 @@ public class InsertLimiters extends CircuitCloneVisitor {
         // Treat like an identity function
         ReplacementExpansion expanded = this.getReplacement(operator);
         if (expanded != null) {
-            DBSPOperator bound = this.processSum(expanded.replacement.to(DBSPSumOperator.class));
+            DBSPOperator bound = this.processSumOrDiff(expanded.replacement);
+            if (bound != null && expanded.replacement != operator)
+                this.markBound(operator, bound);
+        } else {
+            this.nonMonotone(operator);
+        }
+        super.postorder(operator);
+    }
+
+    @Override
+    public void postorder(DBSPSubtractOperator operator) {
+        // Similar to sum
+        ReplacementExpansion expanded = this.getReplacement(operator);
+        if (expanded != null) {
+            DBSPOperator bound = this.processSumOrDiff(expanded.replacement);
             if (bound != null && expanded.replacement != operator)
                 this.markBound(operator, bound);
         } else {
@@ -1435,7 +1457,8 @@ public class InsertLimiters extends CircuitCloneVisitor {
     }
 
     @Nullable
-    DBSPOperator processSum(DBSPSumOperator expanded) {
+    private DBSPOperator processSumOrDiff(DBSPOperator expanded) {
+        // Handles sum and subtract operators
         MonotoneExpression monotoneValue = this.expansionMonotoneValues.get(expanded);
         if (monotoneValue == null || !monotoneValue.mayBeMonotone()) {
             this.nonMonotone(expanded);

@@ -29,6 +29,41 @@ public class StreamingTests extends StreamingTestBase {
     }
 
     @Test
+    public void issue2846() {
+        String sql = """
+                CREATE TABLE t1(
+                    x INT,
+                    ts TIMESTAMP NOT NULL LATENESS INTERVAL 1 HOUR
+                );
+                
+                CREATE TABLE t2(
+                    y INT,
+                    ts TIMESTAMP NOT NULL LATENESS INTERVAL 1 HOUR
+                );
+                
+                CREATE VIEW v
+                WITH ('emit_final' = 'ts')
+                AS SELECT t1.ts
+                FROM t1 FULL OUTER JOIN t2 on t1.ts = t2.ts;""";
+        var ccs = this.getCCS(sql);
+        this.addRustTestCase(ccs);
+        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+            int window = 0;
+
+            @Override
+            public void postorder(DBSPWindowOperator operator) {
+                this.window++;
+            }
+
+            // Should have 1 window for emit_final
+            @Override
+            public void endVisit() {
+                Assert.assertEquals(1, this.window);
+            }
+        };
+    }
+
+    @Test
     public void chainAggregateMax() {
         String sql = """
                 CREATE TABLE T(TS INT LATENESS 100, X INT) WITH ('append_only' = 'true');
