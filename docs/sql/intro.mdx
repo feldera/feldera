@@ -62,9 +62,9 @@ Differences between DBSP and a database:
   the changes.  DBSP *can* be configured to store the data for tables
   and views.
 
-- DBSP does not provide any concurrency control mechanisms, or
-  transactions.  DBSP is simply a stream processing engine, where each
-  input change produces a corresponding output change.
+- DBSP does not currently provide any concurrency control mechanisms,
+  or transactions.  DBSP is simply a stream processing engine, where
+  each input change produces a corresponding output change.
 
 - Other traditional database constructs, such as triggers, or
   multi-version concurrency control, do not make sense for a system
@@ -78,11 +78,14 @@ Differences between DBSP and a database:
 Feldera offers a powerful set of features:
 
 - A rich set of data types, including the standard SQL datatypes,
-  dates, times, intervals, arrays, maps, user-defined types
+  dates, times, intervals, arrays, maps, user-defined types, variant
 
 - Arbitrary SQL queries, including the standard relational algebra,
   `GROUP BY`, aggregations, user-defined functions, joins of several
-  flavors, `UNNEST`, streaming constructs, and window queries
+  flavors, `UNNEST`, and window queries
+
+- Feldera provides some small extensions to SQL which make writing
+  programs for [streaming](streaming.md) data more convenient
 
 There are many good introductions to SQL on the Internet.  This
 document is not intended as a tutorial, but only as a specification of

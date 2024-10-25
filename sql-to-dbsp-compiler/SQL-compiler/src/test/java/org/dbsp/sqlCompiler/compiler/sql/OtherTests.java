@@ -354,6 +354,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         DBSPCompiler compiler = this.testCompiler();
         compiler.options.languageOptions.throwOnError = false;
         compiler.options.languageOptions.ignoreOrderBy = true;
+        compiler.options.ioOptions.quiet = false;
         String query = "CREATE VIEW V AS SELECT * FROM T ORDER BY T.COL2";
         compiler.compileStatement(ddl);
         compiler.compileStatements(query);
@@ -363,6 +364,8 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         Assert.assertNotNull(source);
         DBSPTypeZSet inputType = source.getType().to(DBSPTypeZSet.class);
         Assert.assertTrue(inputType.sameType(outputType));
+        TestUtil.assertMessagesContain(compiler.messages,
+                "ORDER BY clause producing view 'v' is currently ignored");
     }
 
     // Test the outputsAreSets compiler flag
