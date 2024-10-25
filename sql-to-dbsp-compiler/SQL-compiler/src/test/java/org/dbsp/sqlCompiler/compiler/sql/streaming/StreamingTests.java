@@ -16,6 +16,7 @@ import org.dbsp.sqlCompiler.compiler.sql.StreamingTestBase;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.junit.Assert;
+import org.junit.Ignore;
 import org.junit.Test;
 
 /** Tests that exercise streaming features. */
@@ -135,6 +136,30 @@ public class StreamingTests extends StreamingTestBase {
         this.addRustTestCase(ccs);
     }
 
+    @Test @Ignore("https://github.com/feldera/feldera/issues/2847")
+    public void issue2847() {
+        // this.showFinalVerbose();
+        String sql = """
+                CREATE TABLE t1(
+                    x INT,
+                    ts TIMESTAMP NOT NULL LATENESS INTERVAL 1 HOUR
+                );
+                
+                CREATE TABLE t2(
+                    y INT,
+                    ts TIMESTAMP NOT NULL LATENESS INTERVAL 1 HOUR
+                );
+                
+                CREATE VIEW v
+                WITH ('emit_final' = 'ts')
+                AS SELECT
+                    ts,
+                    x,
+                    LAG(x) OVER (ORDER BY ts)
+                FROM t1;""";
+        var ccs = this.getCCS(sql);
+    }
+
     @Test
     public void chainAggregateGroupByJoin() {
         String sql = """
@@ -158,6 +183,24 @@ public class StreamingTests extends StreamingTestBase {
         };
         visitor.apply(ccs.circuit);
         this.addRustTestCase(ccs);
+    }
+
+    @Test
+    public void iceTFTest() {
+        String sql = """
+                CREATE TABLE T (
+                   id INT,
+                   ts TIMESTAMP NOT NULL LATENESS INTERVAL 1 HOURS
+                ) WITH (
+                    'materialized' = 'true',
+                    'append_only' = 'true'
+                );
+                
+                CREATE VIEW V
+                WITH ('emit_final' = 'ts')
+                AS SELECT * FROM T
+                WHERE ts >= NOW() - INTERVAL 7 DAYS;""";
+        var ccs = this.getCCS(sql);
     }
 
     @Test
