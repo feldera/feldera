@@ -68,10 +68,9 @@
         return
       }
       const startTimestamp = Date.now()
-      const { cancel } = parseUTF8AsTextLines(
-        result,
-        (line) => streams[pipelineName].rows.push(line),
-        () => {
+      const { cancel } = parseUTF8AsTextLines(result, {
+        pushChanges: (lines) => streams[pipelineName].rows.push(...lines),
+        onParseEnded: () => {
           streams[pipelineName] = { stream: { closed: {} }, rows: streams[pipelineName].rows }
           if (
             typeof pipeline.current.status === 'string' &&
@@ -81,7 +80,7 @@
           }
           tryRestartStream(pipelineName, startTimestamp)
         }
-      )
+      })
       streams[pipelineName] = { stream: { open: result, stop: cancel }, rows: [] }
     })
   }

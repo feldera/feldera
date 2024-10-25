@@ -188,54 +188,118 @@ class CustomJSONParserTransformStream<T> extends TransformStream<Uint8Array | st
 
 export const parseUTF8AsTextLines = (
   stream: ReadableStream<Uint8Array>,
-  onValue: (value: string) => void,
-  onDone?: () => void
+  cbs: {
+    pushChanges: (changes: string[]) => void
+    onBytesSkipped?: (bytes: number) => void
+    onParseEnded?: () => void
+  },
 ) => {
-  let reader = stream.getReader()
-  queueMicrotask(async () => {
-    for await (let line of makeUTF8LineIterator(reader, onDone)) {
-      onValue(line)
+  const reader = stream
+    .pipeThrough(
+      new SplitNewlineTransformStream(undefined,
+        undefined,//{ highWaterMark: 256 * 1024, size: (c) => c.length },
+        { highWaterMark: 256 * 1024, size: (c) => c.length })
+    )
+    .getReader()
+  let resultBuffer = [] as string[]
+  setTimeout(async () => {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done || !value /*|| cancel*/) {
+        // console.log('done')
+        break
+      }
+      // console.log('value', value)
+      resultBuffer.push(value)
     }
+  })
+  const flush = () => {
+    // console.log('flush', resultBuffer.length)
+    if (resultBuffer.length) {
+      cbs.pushChanges?.(resultBuffer)
+      resultBuffer.length = 0
+    }
+  }
+  setTimeout(async () => {
+    let closed = false
+    reader.closed.then(() => {
+      // console.log('closed1')
+      closed = true
+    })
+    while (true) {
+      flush()
+      if (closed) {
+        // console.log('closed2')
+        break
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100))
+    }
+    cbs.onParseEnded?.()
   })
   return {
     cancel: () => {
+      // console.log('cancel')
+      flush()
       reader.cancel()
     }
   }
 }
 
-async function* makeUTF8LineIterator(
-  reader: ReadableStreamDefaultReader<Uint8Array>,
-  onDone?: () => void
-) {
-  const utf8Decoder = new TextDecoder('utf-8')
-  let readerDone = false
-  let res = await reader.read()
-  readerDone = res.done
-  let chunk = res.value ? utf8Decoder.decode(res.value, { stream: true }) : ''
+class SplitNewlineTransformStream extends TransformStream<Uint8Array, string> {
+  private decoder: TextDecoder;
+  private buffer: string;
+  private newlineRegex: RegExp;
+  private onBytesSkipped: ((bytes: number) => void) | undefined;
 
-  let re = /\r\n|\n|\r/gm
-  let startIndex = 0
+  constructor(
+      onBytesSkipped?: (bytes: number) => void,
+      writableStrategy?: QueuingStrategy<Uint8Array>,
+      readableStrategy?: QueuingStrategy<string>
+    ) {
+    super(
+    {
+      transform: (chunk, controller) => this.transform(chunk, controller),
+      flush: (controller) => this.flush(controller),
+    }
+    , writableStrategy, readableStrategy);
 
-  for (;;) {
-    let result = re.exec(chunk)
-    if (!result) {
-      if (readerDone) {
+    this.decoder = new TextDecoder('utf-8');
+    this.buffer = '';
+    this.newlineRegex = /\r?\n/g; // Matches both \n and \r\n
+    this.onBytesSkipped = onBytesSkipped
+  }
+
+  private async transform(chunk: Uint8Array, controller: TransformStreamDefaultController<string>) {
+    // Decode the chunk as a string and append it to the buffer
+    this.buffer += this.decoder.decode(chunk, { stream: true });
+
+    // Use RegExp.exec to find each newline
+    let match;
+    while ((match = this.newlineRegex.exec(this.buffer)) !== null) {
+      if (hasBackpressure(controller, match.index)) {
+        // console.log('backpressure', this.buffer.length - this.newlineRegex.lastIndex)
+        this.onBytesSkipped?.(this.buffer.length - this.newlineRegex.lastIndex)
+        this.buffer = this.buffer.slice(this.newlineRegex.lastIndex);
         break
       }
-      let remainder = chunk.slice(startIndex)
-      let res2 = await reader.read()
-      chunk = remainder + (res2.value ? utf8Decoder.decode(res2.value, { stream: true }) : '')
-      readerDone = res2.done
-      startIndex = re.lastIndex = 0
-      continue
+      // Extract the line from the start of the buffer up to the matched newline
+      const line = this.buffer.slice(0, match.index);
+      // console.log('match', this.buffer)
+      controller.enqueue(line);
+
+      // Update buffer by removing the processed line and newline
+      this.buffer = this.buffer.slice(this.newlineRegex.lastIndex); // this.buffer.slice(match.index + match[0].length);
+      // Reset lastIndex for the regex to handle the modified buffer
+      this.newlineRegex.lastIndex = 0;
+      await new Promise((resolve) => setTimeout(resolve))
     }
-    yield chunk.substring(startIndex, result.index)
-    startIndex = re.lastIndex
   }
-  if (startIndex < chunk.length) {
-    // last line didn't end in a newline char
-    yield chunk.slice(startIndex)
+
+  private flush(controller: TransformStreamDefaultController<string>) {
+    // Enqueue any remaining buffered data
+    if (this.buffer) {
+      controller.enqueue(this.buffer);
+      this.buffer = '';
+    }
   }
-  onDone?.()
 }
