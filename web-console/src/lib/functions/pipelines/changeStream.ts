@@ -55,16 +55,19 @@ export const parseUTF8JSON = <T>(
       resultBuffer.push(value)
     }
   })
+  const flush = () => {
+    if (resultBuffer.length) {
+      cbs.pushChanges?.(resultBuffer)
+      resultBuffer.length = 0
+    }
+  }
   setTimeout(async () => {
     let closed = false
     reader.closed.then(() => {
       closed = true
     })
     while (true) {
-      if (resultBuffer.length) {
-        cbs.pushChanges?.(resultBuffer)
-        resultBuffer.length = 0
-      }
+      flush()
       if (closed) {
         break
       }
@@ -74,7 +77,7 @@ export const parseUTF8JSON = <T>(
   })
   return {
     cancel: () => {
-      // cancel = true
+      flush()
       reader.cancel()
     }
   }
@@ -162,7 +165,6 @@ class JSONParserTransformer<T> implements Transformer<Uint8Array | string, T> {
     try {
       this.parser.write(chunk)
     } catch (e) {
-      console.log('JSON stream parse error', e)
       this.parser = mkTransformerParser(this.controller, this.opts)
     }
     await new Promise((resolve) => setTimeout(resolve))
