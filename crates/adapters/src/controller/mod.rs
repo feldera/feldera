@@ -567,7 +567,7 @@ impl CircuitThread {
 
             if let Some(ft) = self.ft.as_mut() {
                 ft.next_step()?;
-                if !self.replaying() && running {
+                if !self.replaying() {
                     self.backpressure_thread.start();
                 }
             }
@@ -983,13 +983,6 @@ impl FtState {
             } else {
                 info!("replay complete, starting pipeline");
                 self.input_endpoints = Self::initial_input_endpoints(&self.controller);
-
-                // We start the controller because that is the most likely desired
-                // state after we crash. It seems more likely that we crash while
-                // running anyhow.
-                //
-                // Maybe we should log state transitions.
-                self.controller.start();
             }
         }
         Ok(())
