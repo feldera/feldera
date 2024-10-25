@@ -1,13 +1,10 @@
 <script lang="ts" module>
   import { useSkeletonTheme } from '$lib/compositions/useSkeletonTheme.svelte'
   import { getCaseIndependentName } from '$lib/functions/felderaRelation'
-  import type { JSONXgressValue, SQLValueJS } from '$lib/functions/sqlValue'
+  import type { SQLValueJS } from '$lib/functions/sqlValue'
   import type { Field } from '$lib/services/manager'
-  import type { XgressRecord } from '$lib/types/pipelineManager'
   import { Progress } from '@skeletonlabs/skeleton-svelte'
-  import BigNumber from 'bignumber.js'
   import JSONbig from 'true-json-bigint'
-  import { match, P } from 'ts-pattern'
 
   export type Row = { cells: SQLValueJS[] } | { error: string } | { warning: string }
 
@@ -124,48 +121,54 @@
   }}
 >
   <div class="w-full">
-    <div class="flex max-w-[1000px] flex-nowrap">
-      <textarea
-        rows={3}
-        bind:value={query}
-        style="font-family: {theme.config.monospaceFontFamily}; field-sizing: content"
-        class="bg-white-black !border-1 w-full overflow-auto !border-l-4 !border-surface-500 !ring-0 !ring-primary-500 text-surface-950-50 focus:!border-primary-500"
-        placeholder="SELECT * FROM ..."
-        onkeydown={handleKeyDown(onSubmitQuery, disabled)}
-      ></textarea>
+    <div class="flex max-w-[1000px] flex-col">
+      <div class="flex w-full flex-nowrap">
+        <textarea
+          bind:value={query}
+          style="font-family: {theme.config.monospaceFontFamily}; field-sizing: content"
+          class="bg-white-black !border-1 w-full overflow-auto !border-l-4 !border-surface-500 !ring-0 !ring-primary-500 text-surface-950-50 focus:!border-primary-500"
+          placeholder="SELECT * FROM ..."
+          onkeydown={handleKeyDown(onSubmitQuery, disabled)}
+        ></textarea>
 
-      <div class="flex w-10 flex-col gap-2">
-        {#if progress}
-          <button
-            class="fd fd-stop w-10 p-2 text-[24px]"
-            onclick={onCancelQuery}
-            aria-label="Stop query"
-          ></button>
-        {:else}
-          <button
-            {disabled}
-            class="fd fd-play_arrow -ml-1 -mt-1 mb-1 h-10 w-12 p-2 text-[32px]"
-            onclick={() => onSubmitQuery(query)}
-            aria-label="Run query"
-          ></button>
+        <div class="flex h-10 flex-none">
+          {#if progress}
+            <button
+              class="fd fd-stop w-10 p-2 text-[24px]"
+              onclick={onCancelQuery}
+              aria-label="Stop query"
+            ></button>
+          {:else}
+            <button
+              {disabled}
+              class="fd fd-play_arrow -ml-1 -mt-1 mb-1 mr-1 w-10 p-2 text-[32px]"
+              onclick={() => onSubmitQuery(query)}
+              aria-label="Run query"
+            ></button>
+          {/if}
+          {#if !isLastQuery}
+            <button
+              class="fd fd-delete w-10 p-2 text-[24px]"
+              onclick={onDeleteQuery}
+              aria-label="Delete query"
+            ></button>
+          {:else}
+            <div class="w-10"></div>
+          {/if}
+        </div>
+      </div>
+      <div class="flex h-6 flex-nowrap items-center gap-4 whitespace-nowrap">
+        {#if result}
+          {result.rows.length > 1 ? `${result.rows.length} rows` : ''}
         {/if}
-        {#if !isLastQuery}
-          <button
-            class="fd fd-delete w-10 p-2 text-[24px]"
-            onclick={onDeleteQuery}
-            aria-label="Delete query"
-          ></button>
+        {#if progress}
+          <Progress value={null} meterBg="bg-primary-500" base="pr-20 h-1 max-w-[1000px]"
+          ></Progress>
         {/if}
       </div>
     </div>
-    {#if progress}
-      <Progress value={null} meterBg="bg-primary-500" base="py-2 h-5 -mb-5 max-w-[1000px] pr-10"
-      ></Progress>
-    {/if}
+
     {#if result}
-      <div class="mt-5">
-        {result.rows.length > 1 ? `${result.rows.length} rows` : ''}
-      </div>
       <div class="mr-4 max-h-64 w-fit max-w-full overflow-auto">
         <table class=" border-separate border-spacing-x-1">
           {#if result.columns.length}
