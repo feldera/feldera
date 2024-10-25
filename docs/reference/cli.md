@@ -13,20 +13,20 @@ the [Rust website](https://www.rust-lang.org/tools/install).
 
 Install `fda` with Cargo by running the following command:
 
-```commandline
+```bash
 cargo install fda
 ```
 
 Alternatively, to install the latest `fda` revision from our main git branch, run the following command:
 
-```commandline
+```bash
 cargo install --git https://github.com/feldera/feldera fda
 ```
 
 To install from the sources in your local feldera repository, you can install `fda` with the
 following commands:
 
-```commandline
+```bash
 cd crates/fda
 cargo install --path .
 ```
@@ -38,31 +38,31 @@ by adding the following line to your shell init script.
 
 * Bash
 
-```commandline
+```bash
 echo "source <(COMPLETE=bash fda)" >> ~/.bashrc
 ```
 
 * Elvish
 
-```commandline
+```bash
 echo "eval (COMPLETE=elvish fda)" >> ~/.elvish/rc.elv
 ```
 
 * Fish
 
-```commandline
+```bash
 echo "source (COMPLETE=fish fda | psub)" >> ~/.config/fish/config.fish
 ```
 
 * Powershell
 
-```commandline
+```bash
 echo "COMPLETE=powershell fda | Invoke-Expression" >> $PROFILE
 ```
 
 * Zsh
 
-```commandline
+```bash
 echo "source <(COMPLETE=zsh fda)" >> ~/.zshrc
 ```
 
@@ -89,7 +89,7 @@ right. Go to **Manage API Keys** and click **Generate new key**.
 
 Specify the host and API key as command line arguments or environment variables:
 
-```commandline
+```bash
 fda --host https://try.feldera.com --auth apikey:0aKFj50iE... pipelines
 export FELDERA_HOST=https://try.feldera.com
 export FELDERA_API_KEY=apikey:0aKFj50iE...
@@ -98,7 +98,7 @@ fda pipelines
 
 Create a new pipeline `p1` from a `program.sql` file:
 
-```commandline
+```bash
 echo "CREATE TABLE example ( id INT NOT NULL PRIMARY KEY );
 CREATE VIEW example_count AS ( SELECT COUNT(*) AS num_rows FROM example );" > program.sql
 fda create p1 program.sql
@@ -106,66 +106,63 @@ fda create p1 program.sql
 
 Retrieve the program for `p1` and create a new pipeline `p2` from it:
 
-```commandline
+```bash
 fda program get p1 | fda create p2 -s
 ```
 
 Enable storage for `p1`:
 
-```commandline
+```bash
 fda set-config p1 storage true
 ```
 
 Add Rust UDF code to `p1`:
 
-```commandline
+```bash
 fda program set p1 --udf-toml udf.toml --udf-rs udf.rs
 ```
 
 Run the pipeline `p1`:
 
-```commandline
+```bash
 fda start p1
 ```
 
 Retrieve the stats for `p1`:
 
-```commandline
+```bash
 fda stats p1
 ```
 
 Retrieve the latest logging statements for `p1`:
 
-```commandline
+```bash
 fda logs p1
 ```
 
 Shutdown and delete the pipeline `p1`:
 
-```commandline
+```bash
 fda shutdown p1
 fda delete p1
+```
+
+Execute [ad-hoc SQL query](/sql/ad-hoc):
+
+```bash
+fda exec pipeline-name "SELECT * FROM materialized_view;"
+cat query.sql | fda exec pipeline-name -s
 ```
 
 ## Shell
 
 You can enter the `fda` shell for a pipeline by running the following command:
 
-```commandline
+```bash
 fda shell p1
 ```
 
-Within the shell, you can interact with the pipeline `p1` by sending ad-hoc SQL queries to it. Currently, `INSERT` or
-`SELECT` statements are supported. You can not create or alter tables and views using ad-hoc SQL.
-
-:::note
-
-Tables and views are only accessible with ad-hoc queries if they are declared as materialized.
-
-:::
-
-Ad-hoc SQL commands are not evaluated incrementally but instead executed using a batch engine. You can however,
-very cheaply query the state of a materialized view.
+Within the shell, you can interact with the pipeline `p1` by sending [ad-hoc SQL queries](/sql/ad-hoc) to it.
 
 The shell also lets you execute certain CLI commands like `start`, `restart`, `shutdown` without having to provide the
 pipeline name every time. Type `help` for more information.

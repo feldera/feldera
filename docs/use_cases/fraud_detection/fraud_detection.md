@@ -17,7 +17,7 @@ will go through the following steps of building the application:
   seamlessly on streaming data for real-time inference.**
 
 The entire use case is implemented as a Python script written using the Feldera
-[Python SDK](https://docs.feldera.com/python/). It is available from our [github
+[Python SDK](/python/). It is available from our [github
 repository](https://github.com/feldera/feldera/blob/main/demo/project_demo10-FraudDetectionDeltaLake/run.py)
 and can be run from the command line or from your favorite Python notebook
 environment.
@@ -226,7 +226,7 @@ The following Python snippet connects to a Feldera service
 and creates a Feldera pipeline to read transaction and demographics
 data from Delta tables stored in S3 and evaluate the feature query
 defined above on this data. We use the
-[`listen`](https://docs.feldera.com/python/feldera.html#feldera.pipeline.Pipeline.listen)
+[`listen`](/python/feldera.html#feldera.pipeline.Pipeline.listen)
 API to read the computed features into a [Pandas](https://pandas.pydata.org/)
 dataframe. We split this dataframe into train and test sets. We
 use the former to train an XGBoost model and the latter to measure model

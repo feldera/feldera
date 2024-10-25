@@ -9,7 +9,7 @@ be useful in the following scenarios:
   to validate their SQL program.
 * **Retrieve full state snapshot**.  This is useful, for instance, to sync the output of Feldera with an external
   database on demand.
-* **Ad hoc queries**.  In some applications, users may not want to store a complete copy of the data,
+* [**Ad-hoc queries**](/sql/ad-hoc).  In some applications, users may not want to store a complete copy of the data,
   but instead query it on demand.
 
 Feldera supports such use cases by allowing users to label tables and views as **materialized**.
@@ -27,29 +27,18 @@ CREATE MATERIALIZED VIEW my_view as SELECT * from my_table;
 
 These declarations instruct Feldera to maintain a complete snapshot of the table or view.
 
-## Using materialized tables and views
+## Inspecting materialized tables and views
 
-### Web Console
+You can explore the contents of materialized tables and views by issuing `SELECT ...` [ad-hoc SQL queries](/sql/ad-hoc).
+Ad-hoc queries are evaluated non-incrementally against the current snapshot of pipeline's tables and views.
 
-You can browse materialized tables and views in the Feldera Web Console by clicking on the "eye"
-icon next to the table or view of a running pipeline:
-
-![Browsing a materialized view in Web Console](../tutorials/basics/preferred-vendor1.png)
-
-### Ad hoc queries
-
-:::caution Under Construction
-
-We are implementing ad hoc querying support for materialized tables and views.
-
-:::
-
+You can run ad-hoc queries in [Web Console](/sql/ad-hoc#feldera-web-console), [CLI](/sql/ad-hoc#feldera-cli) or via the [Python SDK](/sql/ad-hoc#feldera-python-sdk).
 
 ## Usage considerations
 
 Materialized relations can significantly increase the storage used by the program.
 For example, Feldera can evaluate simple programs with no joins or aggregates without keeping
-any state.  However, Mmaterializing inputs or outputs of such programs will make them
+any state.  However, materializing inputs or outputs of such programs will make them
 **stateful**, requiring storage proportional to the size of the materialized
 relations.
 

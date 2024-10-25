@@ -69,7 +69,7 @@ const sidebars = {
             items: [
                 {
                     type: 'category',
-                    label: 'Tutorial: writing your first SQL pipeline',
+                    label: 'Feldera Basics',
                     link: {
                         type: 'doc',
                         id: 'tutorials/basics/index',
@@ -110,9 +110,14 @@ const sidebars = {
                 {
                     type: 'link',
                     label: "Python SDK",
-                    href: "pathname:///python/index.html",
+                    href: "pathname:///python/",
                 },
-                'reference/rest']
+                {
+                    type: 'link',
+                    label: "REST API",
+                    href: "pathname:///api", // ../../../api
+                }
+            ]
         },
         {
             type: 'category',
@@ -145,6 +150,7 @@ const sidebars = {
                         'sql/map',
                         'sql/datetime',
                         'sql/materialized',
+                        'sql/ad-hoc',
                         'sql/streaming',
                         'sql/table',
                         'sql/udf'
