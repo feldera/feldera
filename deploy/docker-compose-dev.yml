@@ -1,15 +1,7 @@
-# For developers to build the two required
-# DBSP containers from local sources
+# Build the pipeline-manager image from local source instead of using the latest release.
 services:
   pipeline-manager:
-   build:
-     context: ../
-     dockerfile: deploy/Dockerfile
-   image: ghcr.io/feldera/pipeline-manager
-
-  demo:
+    image: ghcr.io/feldera/pipeline-manager
     build:
       context: ../
       dockerfile: deploy/Dockerfile
-      target: client
-    image: ghcr.io/feldera/demo-container
