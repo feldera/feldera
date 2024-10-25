@@ -20,7 +20,7 @@ class aggtst_charn_count_gby(TstView):
                       GROUP BY id"""
 
 
-# Checked manually since Postgres disagrees with us here 
+# Checked manually since Postgres disagrees with us here
 # While the length for CHAR is set to 7, for CHAR(N), the length function in Postgres disregards trailing spaces at the end of table values
 class aggtst_charn_count_where(TstView):
     def __init__(self):
