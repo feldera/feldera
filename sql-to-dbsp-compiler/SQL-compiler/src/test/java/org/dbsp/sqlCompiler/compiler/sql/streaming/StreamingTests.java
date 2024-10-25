@@ -47,6 +47,24 @@ public class StreamingTests extends StreamingTestBase {
                 AS SELECT t1.ts
                 FROM t1 FULL OUTER JOIN t2 on t1.ts = t2.ts;""";
         var ccs = this.getCCS(sql);
+        ccs.step("insert into t1 values (1, '2020-01-01 00:00:00');",
+                """
+                         ts | weight
+                        --------------""");
+        ccs.step("insert into t2 values (1, '2020-01-01 00:00:00');",
+                """
+                         ts | weight
+                        --------------""");
+        ccs.step("""
+                        insert into t1 values (1, '2020-01-02 00:00:00');
+                        insert into t2 values (1, '2020-01-02 00:00:00');
+                        """,
+                """
+                         ts | weight
+                        --------------
+                         2020-01-01 00:00:00 | 1""");
+
+
         this.addRustTestCase(ccs);
         CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
             int window = 0;
@@ -62,6 +80,7 @@ public class StreamingTests extends StreamingTestBase {
                 Assert.assertEquals(1, this.window);
             }
         };
+        visitor.apply(ccs.circuit);
     }
 
     @Test

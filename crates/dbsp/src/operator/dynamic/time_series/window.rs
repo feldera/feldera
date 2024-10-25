@@ -260,6 +260,7 @@ where
         //  region 3: [e0 .. e1)
 
         let (start1, end1) = bounds.into_owned();
+        // println!("{:?}-{:?}", start1, end1);
         let trace = trace.as_ref();
         let batch = batch.as_ref();
 

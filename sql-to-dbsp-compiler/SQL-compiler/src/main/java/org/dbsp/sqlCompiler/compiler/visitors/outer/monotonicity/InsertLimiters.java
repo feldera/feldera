@@ -1020,7 +1020,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
                 return left;
             } else {
                 return ExpressionCompiler.makeBinaryExpression(left.getNode(),
-                        left.getType(), DBSPOpcode.MAX, left, right);
+                        left.getType(), DBSPOpcode.AGG_MAX, left, right);
             }
         } else if (leftProjection.is(PartiallyMonotoneTuple.class)) {
             PartiallyMonotoneTuple l = leftProjection.to(PartiallyMonotoneTuple.class);
@@ -1187,7 +1187,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
     }
 
     public static DBSPClosureExpression timestampMax(CalciteObject node, DBSPTypeTupleBase type) {
-        return type.pairwiseOperation(node, DBSPOpcode.MAX);
+        return type.pairwiseOperation(node, DBSPOpcode.AGG_MAX);
     }
 
     /** Generate an expression that compares two other expressions for equality */
@@ -1439,7 +1439,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
         assert left.getType().sameTypeIgnoringNullability(right.getType());
         if (left.getType().is(DBSPTypeBaseType.class)) {
             return ExpressionCompiler.makeBinaryExpression(
-                    left.getNode(), left.getType(), DBSPOpcode.MIN, left, right);
+                    left.getNode(), left.getType(), DBSPOpcode.AGG_MIN, left, right);
         } else if (left.getType().is(DBSPTypeTupleBase.class)) {
             DBSPTypeTupleBase lt = left.getType().to(DBSPTypeTupleBase.class);
             DBSPExpression[] mins = new DBSPExpression[lt.size()];
