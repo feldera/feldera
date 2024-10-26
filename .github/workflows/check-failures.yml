@@ -1,7 +1,7 @@
 name: Notify Failures To Slack
 on:
   workflow_run:
-    workflows: [Nightly Tests, Benchmarks, Build & Tests]
+    workflows: [Nightly Tests, Integration Tests, Benchmarks, Build & Tests]
     types: [completed]
     branches: [main]
 

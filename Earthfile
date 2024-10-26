@@ -504,7 +504,7 @@ integration-test-container:
     SAVE IMAGE itest:latest
 
 # Runs the integration test container against the docker compose setup
-integration-tests:
+docker-integration-tests:
     FROM earthly/dind:alpine
     COPY deploy/docker-compose.yml .
     COPY deploy/.env .
@@ -585,7 +585,7 @@ ci-tests:
     BUILD +test-rust
     BUILD +openapi-checker
     BUILD +test-sql
-    BUILD +integration-tests
+    BUILD +docker-integration-tests
     BUILD +test-python
     BUILD +demo-packaged-sql-formatting-check
     BUILD +test-supply-chain-tutorial
@@ -594,7 +594,7 @@ ci-tests:
     # BUILD +test-snowflake-sink
     # BUILD +test-s3
 
-nightly-tests:
+integration-tests:
     BUILD +test-python --all=1
     BUILD +test-debezium-postgres
     BUILD +test-debezium-jdbc
