@@ -212,7 +212,7 @@ impl<A> InputQueue<A> {
                 queue.push_back((buffer, aux));
                 self.consumer.buffered(num_records, num_bytes);
             }
-            _ => self.consumer.buffered(num_bytes, 0),
+            _ => self.consumer.buffered(0, num_bytes),
         }
     }
 
