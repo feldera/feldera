@@ -5,7 +5,7 @@ data with Feldera.  A time series is a sequence of events, such as IoT sensor
 readings or financial transactions, where each event is associated with one or
 more timestamps.  Time series data is inherently dynamic, changing continuously
 as new events arrive in real-time.  Feldera is designed to
-efficiently compute over changing data, making it well-suited for time series
+compute over changing data, making it well-suited for time series
 analytics.
 
 :::tip
@@ -17,51 +17,35 @@ that ships with the
 
 :::
 
-**Time series data is not special**.  The most important thing to know about
-time series processing in Feldera is that for most intents and purposes time
-series are handled in the same way as any other input data, in particular:
+At a high-level, Feldera allows users to efficiently compute on time series data by
+providing [`LATENESS`](#timestamp-columns-and-lateness) annotations on tables and views. These
+annotations describe the datasource and tell Feldera the maximum out-of-orderness in the data.
+For example, it allows users to convey to Feldera a hint of the form "I know that data from my
+IoT sensor will never get delayed by more than a day". Feldera takes these hints and automatically
+decides when it is safe to drop state that won't affect the output of any of the views. **This allows
+Feldera to evaluate various classes of queries on infinite streams of data (like telemetry data)
+with finite memory, making it extremely resource efficient.**
 
-  * Time series inputs are modeled as SQL tables with [input connectors](/connectors)
-    attached to them.
+:::warning
 
-  * Time series tables support inserts, deletes, and upserts.
+Feldera does not automatically garbage collect [materialized tables and views](/sql/materialized),
+as well as tables declared with a primary key.  If such a table stores an unbounded time series,
+it will continue to consume storage without limit.
 
-  * **All** SQL operators apply to time series and non-time-series data with
-    identical semantics, i.e., given the same inputs, Feldera produces the exact
-    same outputs.
+:::
 
-**Feldera optimizes time series processing**.  While Feldera offers the same
-expressive power for time series and non-time-series data, it can evaluate some
-classes of time series queries faster and/or using less memory:
-
-  * It takes advantage of the fact that timestamps in a time series grow monotonically or
-    almost monotonically.  This allows discarding old data no longer needed to compute outputs
-    for new data points. In order to apply this optimization the query engine needs
-    to know which columns in the input time series contain (almost) monotonically growing
-    timestamp values.  This requires
-    [`LATENESS` annotations](#timestamp-columns-and-lateness), described below.
-
-  * Time series data is often append-only: once an event has been appended to the
-    series, it cannot be deleted or modified.  Feldera implements an optimized version
-    of several operators for append-only collections.  In order to enable these
-    optimizations, the query engine needs to know which inputs are append-only.  The user
-    can provide this information to the engine using [`append_only` annotations](#append-only-tables).
-
-As a user, you do not need to understand the intricate details of time series
-processing in order to take advantage of these optimizations. Your simply
-communicate information about the input data to the query engine using
-annotations.  Feldera uses this information to apply optimizations automatically
-in a way that does not affect the output of the queries.  **Assuming that user
-annotations are correct, the optimized query plan produces the same outputs as
-the unoptimized plan.**
-
-**Users can control the timing of the output of time series queries**.  Users
-can further take advantage of the monotonicity of time series inputs to control
+Users can further take advantage of `LATENESS` annotations to control
 **when** the output of a query is produced by Feldera using
 [`emit_final`](#emitting-final-values-of-a-view-with-emit_final)
 annotations.
 
-In the rest of this guide, we discuss these concepts in more detail.
+In the following sections, we will explain lateness and other key concepts with
+which users can efficiently compute over timeseries data.
+
+The last part of this guide lists [SQL patterns](#sql-for-time-series-analytics)
+frequently used in time series analysis. Feldera supports garbage collection for
+most of these patterns, meaning that the can be evaluated efficiently using
+bounded memory.
 
 ## Timestamp columns and lateness
 
@@ -104,10 +88,9 @@ CREATE TABLE purchase (
 );
 ```
 
-The value of the `LATENESS` attribute is an expression that evaluates to a
-constant value.  The expression must have a type that can be subtracted from the
-column type.  In the above example, lateness for a column of type `TIMESTAMP` is
-specified as an `INTERVAL` type.
+The value of the `LATENESS` attribute is a constant expression that must have a
+type that can be subtracted from the column type.  In the above example,
+lateness for a column of type `TIMESTAMP` is specified as an `INTERVAL` type.
 
 **Views can have lateness too**. Lateness is a property of input data; however
 it is not always possible to associate a lateness annotation with an input table
@@ -146,7 +129,7 @@ tables and views:
 
 We recommend choosing conservative `LATENESS` values, leaving sufficient time for any
 delayed inputs to arrive.  In practice, this may require accounting for potential
-upstream failures, such as an IoT devices losing cloud connectivity.
+upstream failures, such as an IoT device losing cloud connectivity.
 
 ### Lateness example
 
@@ -193,7 +176,7 @@ only keeps state needed by those views.
 
 :::note
 
-Feldera also supports on-demand queries (also know as **ad hoc queries**) for
+Feldera also supports on-demand queries (also known as **ad hoc queries**) for
 materialized tables and views.  See [documentation](/sql/materialized#ad-hoc-queries) for details.
 
 :::
@@ -225,39 +208,20 @@ to each other.  Hence, daily maxima can only change for the current and, possibl
 previous day.  Since we will never need to reevaluate the query for earlier dates,
 we do not need to store older data.
 
-To make this more precise, we need two new concepts:
-
-1. **Stream time** of a relation (a table or view) with respect to a timestamp column
-   is the highest timestamp value of any record that has ever been added to the relation.
-   Stream time can only move forward; removing the latest timestamp from the relation
-   does not cause it to revert. This concept enables reasoning about recent vs old
-   records without depending on a physical clock.
-
-2. **Waterline** of a relation with respect to a timestamp column is a timestamp value
-   `W`, such that all future additions or deletions in the relation will have timestamps
-   greater than or equal to `W`.
-
 ### The data retention algorithm
 
-Feldera uses the following procedure to identify and discard unused
-data:
+To explain how Feldera discards unused state, we need to introduce a new concept:
 
-1. **Compute waterlines of all program relations** through a combination of compile-time
-   and runtime dataflow analysis:
+**Waterline** of a relation with respect to a timestamp column is a timestamp value
+`W`, such that all future additions or deletions in the relation will have timestamps
+greater than or equal to `W`.
 
-   * Given a SQL table with a timestamp column with the current stream time
-     `T` and lateness `L`, waterline `W` for this column is computed as: `W = T - L`.
+Feldera uses the following procedure to identify and discard unused data:
 
-   * The waterline of a view column is derived from the waterlines
-     of all its inputs based on the semantics of the view
-     query.  In our example, the waterline of the `daily_max.d` column is
-     computed as `W = TIMESTAMP_TRUNC(Wp, DAY)`, where `Wp` is the waterline
-     of the `purchase.ts` column.
-
-     Not all SQL operators produce outputs monotonic in the input timestamp (and
-     hence have waterlines).  In our example, the `daily_max.d` column has a waterline
-     because the `GROUP BY` clause of the query uses a monotonic function
-     (`TIMESTAMP_TRUNC`) over an input column with a waterline.
+1. **Compute waterlines of all program relations**. Starting from user-supplied
+   `LATENESS` annotations, Feldera identifies all tables and views in the program
+   that produce outputs monotonic in the input timestamp and computes
+   waterlines for them.
 
 2. **Compute state retention bounds**. For each view in the program, the query engine
    determines how much state it needs to maintain in order to evaluate the view incrementally.
@@ -267,18 +231,11 @@ data:
    should be retained** based on the semantics of the query and the waterlines
    computed at the previous step.
 
-   In our example, the engine infers that the `daily_max` view needs to access
-   records in the `purchase` table only until the `purchase.ts` waterline rolls
-   over a date boundary, after which records for the past date can be discarded.
-   More precisrly, it retains `purchase` records where
-   `TIMESTAMP_TRUNC(purchase.ts) >= TIMESTAMP_TRUNC(Wp)`.
-
 3. **Discard old records**. Feldera continuously runs background jobs that garbage
    collect old records that fall below retention bounds.
 
 **Not all queries support discarding old inputs**. We list the operators for which
-Feldera implements garbage collection, along with the conditions under which it is
-applied [below](#sql-for-time-series-analysis).
+Feldera implements garbage collection [below](#sql-for-time-series-analysis).
 
 **Relations can have multiple waterlines**. The query engine can derive waterlines
 for multiple columns in a table or view. All these waterlines can be utilized for
@@ -294,24 +251,6 @@ requires recomputing the `daily_max` query for the corresponding date.
 In contrast, a discarded record is conceptually still part of the relation;
 however it will not participate in computing any future incremental updates
 and therefore does not need to be stored.
-
-:::warning
-
-Feldera does not automatically garbage collect [materialized tables and views](/sql/materialized),
-as well as tables declared with a primary key.
-
-When a table or view is declared as materialized, it indicates an explicit user
-request to store its entire contents, making it accessible for
-[ad hoc queries](/sql/materialized/#ad-hoc-queries).
-However, if the materialized table contains an unbounded time series, it will
-continue to consume storage without limit, even if the associated views only
-require storing a bounded portion of the time series.
-
-Similarly Feldera stores the entire contents of tables declared with a primary key.
-This is necessary to correctly implement the upsert operation for such tables.
-
-:::
-
 
 ## Emitting final values of a view with `emit_final`
 
@@ -393,33 +332,25 @@ waterline.  Let us insert some records in the `purchase` table and
 observe how this affects the waterlines and the output of the view
 with and without `emit_final` annotations.
 
-| `INSERT INTO purchase`                 | `purchase.ts` stream time  |  `purchase.ts` waterline     | `daily_total.d` waterline    | Output without `emit_final`                     | Output with `emit_final`    |
-|----------------------------------------|----------------------------|------------------------------|------------------------------|-------------------------------------------------|-----------------------------|
-| `VALUES(1, '2020-01-01 01:00:00', 10)` | '2020-01-01 01:00:00'      | '2020-01-01 00:00:00'        | '2020-01-01 00:00:00'        | `insert: {"d":"2020-01-01 00:00:00","total":10}`|                             |
-| `VALUES(1, '2020-01-01 02:00:00', 10)` | '2020-01-01 02:00:00'      | '2020-01-01 01:00:00'        | '2020-01-01 00:00:00'        | `delete: {"d":"2020-01-01 00:00:00","total":10}`|                             |
-|                                        |                            |                              |                              | `insert: {"d":"2020-01-01 00:00:00","total":20}`|                             |
-| `VALUES(1, '2020-01-02 00:00:00', 10)` | '2020-01-02 00:00:00'      | '2020-01-01 23:00:00'        | '2020-01-01 00:00:00'        | `insert: {"d":"2020-01-02 00:00:00","total":10}`|                             |
-| `VALUES(1, '2020-01-02 01:00:00', 10)` | '2020-01-02 01:00:00'      | '2020-01-02 00:00:00'        | '2020-01-02 00:00:00'        | `delete: {"d":"2020-01-02 00:00:00","total":10}`| `insert: {"d":"2020-01-01 00:00:00","total":20}`|
-|                                        |                            |                              |                              | `insert: {"d":"2020-01-02 00:00:00","total":20}`|                             |
-
-Explanation:
-
-* The `purchase.ts` waterline trails one hour behind stream time due
-  to the `LATENESS` annotation on the `purchase` table.
-
-* The `daily_total.d` waterline is obtained by rounding the `purchase.ts`
-  waterline down to start of day using `TIMESTAMP_TRUNC()`.
+| `INSERT INTO purchase`                 | Output without `emit_final`                     | Output with `emit_final`    |
+|----------------------------------------|-------------------------------------------------|-----------------------------|
+| `VALUES(1, '2020-01-01 01:00:00', 10)` | `insert: {"d":"2020-01-01 00:00:00","total":10}`|                             |
+| `VALUES(1, '2020-01-01 02:00:00', 10)` | `delete: {"d":"2020-01-01 00:00:00","total":10}`|                             |
+|                                        | `insert: {"d":"2020-01-01 00:00:00","total":20}`|                             |
+| `VALUES(1, '2020-01-02 00:00:00', 10)` | `insert: {"d":"2020-01-02 00:00:00","total":10}`|                             |
+| `VALUES(1, '2020-01-02 01:00:00', 10)` | `delete: {"d":"2020-01-02 00:00:00","total":10}`| `insert: {"d":"2020-01-01 00:00:00","total":20}`|
+|                                        | `insert: {"d":"2020-01-02 00:00:00","total":20}`|                             |
 
 * Without `emit_final`, every input update produces an output update,
   deleting any outdated records and inserting new records instead.
 
 * With `emit_final` only outputs below the current waterline are
   produced. In this example, the waterline of the `daily_total.d`
-  timestamp column remains at '2020-01-01 00:00:00' until the last
-  `INSERT`, which moves the stream time to '2020-01-02 01:00:00'.
-  At this point, we know that no new inputs will have a timestamp
-  `< 2020-01-02 00:00:00` and can output the final aggregate value
-  for `2020-01-01`.
+  timestamp column remains at `2020-01-01 00:00:00` until the last
+  input, which adds a record with timestamp `2020-01-02 01:00:00`.
+  Since `purchase.ts` has `LATENESS` of 1 hour, no new updates for
+  the previous date can be received after this.  The waterline
+  moves forward by one day and the final value for `2020-01-01` is output.
 
 The `emit_final` property must specify either a column name that
 exists in the view, or a column number, where 0 is the leftmost view
@@ -457,10 +388,10 @@ applications may not be able to handle results derived from out-of-order data
 correctly and prefer to wait until all out-of-order events have been delivered.
 
 `WATERMARK` is an annotation on a column of a table that delays the processing
-of the input rows by a specified amount of time.  More precisely, given a `WATERMARK` annotation with value `WM`,
-an input row with a value `X` for the watermarked column will be "held up" until
-the stream time of the table reaches `X + WM`, at which point the program will
-behave as if the row with value `X` has only just been received.
+of the input rows by a specified amount of time.  More precisely, given a `WATERMARK`
+annotation with value `WM`, an input row with a value `X` for the watermarked column
+will be "held up" until another row with a timestamp `>=X + WM` is received, at which
+point the program will behave as if the row with value `X` has only just been received.
 
 This delay allows `WM` time units for out-of-order data to arrive.
 For a column with a `LATENESS` annotation, setting `WATERMARK` to be equal
@@ -733,8 +664,7 @@ GC feature [roadmap](https://github.com/feldera/feldera/issues/1850)).
 ## `NOW()` and temporal filters
 
 All features discussed so far evaluate SQL queries over time series data without
-referring to the current physical time.  When the notion of "current time"
-was needed, stream time served the purpose.  Feldera allows using the current
+referring to the current physical time.  Feldera allows using the current
 physical time in queries via the [`NOW()`](/sql/datetime/#the-now-function) function.  The primary use of this
 function is in implementing **temporal filters**, i.e., queries that filter
 records based on the current time values, e.g.:
