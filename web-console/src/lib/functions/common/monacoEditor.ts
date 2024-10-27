@@ -5,7 +5,7 @@ import Monaco, {
 } from '$lib/components/MonacoEditorRunes.svelte'
 
 export const isMonacoEditorDisabled = (disabled?: boolean) => ({
-  domReadOnly: disabled,
+  // domReadOnly: disabled,
   readOnly: disabled
 })
 
