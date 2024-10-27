@@ -308,6 +308,11 @@
           bind:editor={editorRef}
           model={currentModel}
           options={{
+            readOnlyMessage: {
+              value: editDisabled
+                ? 'Cannot edit code while pipeline is running'
+                : 'Cannot edit a compiler-generated file'
+            },
             fontFamily: theme.config.monospaceFontFamily,
             fontSize: 16,
             theme: [
@@ -315,7 +320,7 @@
               'feldera-dark',
               'feldera-light-disabled',
               'feldera-light'
-            ][+(mode.darkMode.value === 'light') * 2 + +!editDisabled],
+            ][+(mode.darkMode.value === 'light') * 2 + +!isReadonly],
             automaticLayout: true,
             lineNumbersMinChars: 3,
             ...isMonacoEditorDisabled(isReadonly),
