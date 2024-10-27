@@ -53,10 +53,10 @@
         if (!adhocQueries[pipelineName].queries[i]?.result) {
           return
         }
-        // Add field for the next query if the last query was successful
+        // Add field for the next query if the last query did not yield an error right away
         if (
           adhocQueries[pipelineName].queries.length === i + 1 &&
-          input.find((row) => isDataRow(row))
+          ((row) => !row || isDataRow(row))(input.at(0))
         ) {
           adhocQueries[pipelineName].queries.push({ query: '' })
         }
@@ -71,16 +71,6 @@
               columntype: { nullable: true }
             }))
           )
-        }
-        {
-          // Circular buffer behavior - keep bufferSize latest rows
-          // adhocQueries[pipelineName].queries[i].result.rows.splice(
-          //   0,
-          //   adhocQueries[pipelineName].queries[i].result.rows.length + input.length - bufferSize
-          // )
-          // adhocQueries[pipelineName].queries[i].result.rows.push(...(input
-          //   .slice(-bufferSize)
-          //   .map((v) => (isError(v) ? v : { cells: Object.values(v) }) as Row)))
         }
         {
           // Limit result size behavior - ignore all but first bufferSize rows
