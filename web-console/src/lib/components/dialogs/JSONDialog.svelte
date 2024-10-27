@@ -26,7 +26,14 @@
 </script>
 
 <div class="flex flex-col gap-4 p-4">
-  {@render title()}
+  <div class="flex flex-nowrap justify-between">
+    {@render title()}
+    <button
+      onclick={onClose}
+      class="preset-grayout-surface fd fd-close text-[24px]"
+      aria-label="Close dialog"
+    ></button>
+  </div>
   <div class="h-96">
     <MonacoEditor
       bind:value
