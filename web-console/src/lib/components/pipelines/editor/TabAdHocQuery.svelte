@@ -15,7 +15,10 @@
   import { type QueryData } from '$lib/components/adhoc/Query.svelte'
   import { isPipelineIdle } from '$lib/functions/pipelines/status'
   import type { SQLValueJS } from '$lib/functions/sqlValue'
-  import { parseUTF8JSON } from '$lib/functions/pipelines/changeStream'
+  import {
+    CustomJSONParserTransformStream,
+    parseCancellable
+  } from '$lib/functions/pipelines/changeStream'
   import invariant from 'tiny-invariant'
   import WarningBanner from '$lib/components/pipelines/editor/WarningBanner.svelte'
 
@@ -103,7 +106,7 @@
           }
         }
       }
-      const { cancel } = parseUTF8JSON(
+      const { cancel } = parseCancellable(
         stream,
         {
           pushChanges,
@@ -121,10 +124,12 @@
             getAdhocQueries = () => adhocQueries
           }
         },
-        {
+        new CustomJSONParserTransformStream<Record<string, SQLValueJS>>({
           paths: ['$'],
-          bufferSize: 8 * 1024 * 1024,
           separator: ''
+        }),
+        {
+          bufferSize: 8 * 1024 * 1024
         }
       )
       adhocQueries[pipelineName].queries[i].result.endResultStream = cancel

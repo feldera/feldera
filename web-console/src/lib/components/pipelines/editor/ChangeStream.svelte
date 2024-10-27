@@ -33,20 +33,23 @@
           e.clipboardData!.setData('text/plain', JSONbig.stringify(item))
           e.preventDefault()
         }}
-        class={`row even:bg-surface-100-900 whitespace-nowrap pl-2 before:inline-block before:w-2 even:!bg-opacity-30 ` +
+        class={`row whitespace-nowrap pl-2 before:inline-block before:w-2 even:!bg-opacity-30 even:bg-surface-100-900 ` +
           ('insert' in item
             ? "shadow-[inset_26px_0px_0px_0px_rgba(0,255,0,0.3)] before:content-['+']"
             : 'delete' in item
               ? "shadow-[inset_26px_0px_0px_0px_rgba(255,0,0,0.3)] before:pl-[1px] before:content-['-']"
-              : '')}>
+              : '')}
+      >
         <span class="inline-block w-64 overflow-clip overflow-ellipsis pl-4"
-          >{item.relationName}</span>
+          >{item.relationName}</span
+        >
         <span class=""
           >{'insert' in item
             ? JSONbig.stringify(item.insert)
             : 'delete' in item
               ? JSONbig.stringify(item.delete)
-              : `Skipped ${humanSize(item.skippedBytes)} of changes stream`}</span>
+              : `Skipped ${humanSize(item.skippedBytes)} of changes stream`}</span
+        >
       </div>
     {/snippet}
   </ReverseScrollList>

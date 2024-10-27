@@ -18,39 +18,40 @@
   let getChangeStream = $state(() => changeStream)
 
   const bufferSize = 10000
-  const pushChanges = (pipelineName: string, relationName: string) => (changes: Payload[]) => {
-    changeStream[pipelineName].rows.splice(
-      0,
-      changeStream[pipelineName].rows.length + changes.length - bufferSize
-    )
-    changeStream[pipelineName].rows.push(
-      ...changes.slice(-bufferSize).map((change) => ({
-        ...change,
-        relationName
-      }))
-    )
-  }
   const startReadingStream = (pipelineName: string, relationName: string) => {
     const handle = relationEgressStream(pipelineName, relationName).then((stream) => {
       if ('message' in stream) {
         pipelinesRelations[pipelineName][relationName].cancelStream = undefined
         return undefined
       }
-      const { cancel } = parseUTF8JSON(
+      const { cancel } = parseCancellable(
         stream,
         {
-          pushChanges: pushChanges(pipelineName, relationName),
+          pushChanges: pushAsCircularBuffer(
+            () => changeStream[pipelineName].rows,
+            bufferSize,
+            (change: Payload) => ({
+              ...change,
+              relationName
+            })
+          ),
           onBytesSkipped: (skippedBytes) => {
-            pushChanges(pipelineName, relationName)([{ skippedBytes }])
+            pushAsCircularBuffer(
+              () => changeStream[pipelineName].rows,
+              bufferSize,
+              (v) => v
+            )([{ relationName, skippedBytes }])
             changeStream[pipelineName].totalSkippedBytes += skippedBytes
           },
           onParseEnded: () =>
             (pipelinesRelations[pipelineName][relationName].cancelStream = undefined)
         },
-        {
+        new CustomJSONParserTransformStream<Payload>({
           paths: ['$.json_data.*'],
-          bufferSize: 8 * 1024 * 1024,
           separator: ''
+        }),
+        {
+          bufferSize: 8 * 1024 * 1024
         }
       )
       return () => {
@@ -111,7 +112,11 @@
   import ChangeStream from './ChangeStream.svelte'
   import { Pane, PaneGroup, PaneResizer } from 'paneforge'
   import type { Relation } from '$lib/services/manager'
-  import { parseUTF8JSON } from '$lib/functions/pipelines/changeStream'
+  import {
+    CustomJSONParserTransformStream,
+    parseCancellable,
+    pushAsCircularBuffer
+  } from '$lib/functions/pipelines/changeStream'
   import JSONbig from 'true-json-bigint'
   import { groupBy } from '$lib/functions/common/array'
   import { untrack } from 'svelte'
@@ -224,6 +229,10 @@
                 } else {
                   pipelinesRelations[pipelineName][relation.relationName].cancelStream?.()
                   pipelinesRelations[pipelineName][relation.relationName].cancelStream = undefined
+                  changeStream[pipelineName].rows = changeStream[pipelineName].rows.filter(
+                    (row) => row.relationName !== relation.relationName
+                  )
+                  getChangeStream = () => changeStream
                 }
               }}
               value={relation}

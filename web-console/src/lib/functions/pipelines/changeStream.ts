@@ -20,36 +20,28 @@ class BigNumberTokenizer extends Tokenizer {
  * until the buffer size is under the threshold, or only one batch remains.
  * @returns
  */
-export const parseUTF8JSON = <T>(
+export const parseCancellable = <T, Transformer extends TransformStream<Uint8Array, T>>(
   stream: ReadableStream<Uint8Array>,
   cbs: {
     pushChanges: (changes: T[]) => void
     onBytesSkipped?: (bytes: number) => void
     onParseEnded?: () => void
   },
-  options?: TokenParserOptions & { bufferSize?: number }
+  transformer: Transformer,
+  options?: { bufferSize?: number }
 ) => {
-  // let cancel = false
   const maxChunkSize = 100000
   const reader = stream
     .pipeThrough(
       splitStreamByMaxChunk(maxChunkSize, options?.bufferSize ?? 1000000, cbs.onBytesSkipped)
     )
-    .pipeThrough(
-      new CustomJSONParserTransformStream<T>(
-        {
-          ...options
-        },
-        {},
-        {}
-      )
-    )
+    .pipeThrough(transformer)
     .getReader()
   let resultBuffer = [] as T[]
   setTimeout(async () => {
     while (true) {
       const { done, value } = await reader.read()
-      if (done || !value /*|| cancel*/) {
+      if (done || value === undefined) {
         break
       }
       resultBuffer.push(value)
@@ -170,12 +162,10 @@ class JSONParserTransformer<T> implements Transformer<Uint8Array | string, T> {
     await new Promise((resolve) => setTimeout(resolve))
   }
 
-  flush() {
-    this.parser.end()
-  }
+  flush() {}
 }
 
-class CustomJSONParserTransformStream<T> extends TransformStream<Uint8Array | string, T> {
+export class CustomJSONParserTransformStream<T> extends TransformStream<Uint8Array | string, T> {
   constructor(
     opts?: JSONParserOptions,
     writableStrategy?: QueuingStrategy<Uint8Array | string>,
@@ -186,120 +176,59 @@ class CustomJSONParserTransformStream<T> extends TransformStream<Uint8Array | st
   }
 }
 
-export const parseUTF8AsTextLines = (
-  stream: ReadableStream<Uint8Array>,
-  cbs: {
-    pushChanges: (changes: string[]) => void
-    onBytesSkipped?: (bytes: number) => void
-    onParseEnded?: () => void
-  },
-) => {
-  const reader = stream
-    .pipeThrough(
-      new SplitNewlineTransformStream(undefined,
-        undefined,//{ highWaterMark: 256 * 1024, size: (c) => c.length },
-        { highWaterMark: 256 * 1024, size: (c) => c.length })
-    )
-    .getReader()
-  let resultBuffer = [] as string[]
-  setTimeout(async () => {
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done || !value /*|| cancel*/) {
-        // console.log('done')
-        break
-      }
-      // console.log('value', value)
-      resultBuffer.push(value)
-    }
-  })
-  const flush = () => {
-    // console.log('flush', resultBuffer.length)
-    if (resultBuffer.length) {
-      cbs.pushChanges?.(resultBuffer)
-      resultBuffer.length = 0
-    }
-  }
-  setTimeout(async () => {
-    let closed = false
-    reader.closed.then(() => {
-      // console.log('closed1')
-      closed = true
-    })
-    while (true) {
-      flush()
-      if (closed) {
-        // console.log('closed2')
-        break
-      }
-      await new Promise((resolve) => setTimeout(resolve, 100))
-    }
-    cbs.onParseEnded?.()
-  })
-  return {
-    cancel: () => {
-      // console.log('cancel')
-      flush()
-      reader.cancel()
-    }
-  }
-}
-
-class SplitNewlineTransformStream extends TransformStream<Uint8Array, string> {
-  private decoder: TextDecoder;
-  private buffer: string;
-  private newlineRegex: RegExp;
-  private onBytesSkipped: ((bytes: number) => void) | undefined;
+export class SplitNewlineTransformStream extends TransformStream<Uint8Array, string> {
+  private decoder: TextDecoder
+  private buffer: string
+  private newlineRegex: RegExp
 
   constructor(
-      onBytesSkipped?: (bytes: number) => void,
-      writableStrategy?: QueuingStrategy<Uint8Array>,
-      readableStrategy?: QueuingStrategy<string>
-    ) {
+    writableStrategy?: QueuingStrategy<Uint8Array>,
+    readableStrategy?: QueuingStrategy<string>
+  ) {
     super(
-    {
-      transform: (chunk, controller) => this.transform(chunk, controller),
-      flush: (controller) => this.flush(controller),
-    }
-    , writableStrategy, readableStrategy);
+      {
+        transform: (chunk, controller) => this.transform(chunk, controller),
+        flush: (controller) => this.flush(controller)
+      },
+      writableStrategy,
+      readableStrategy
+    )
 
-    this.decoder = new TextDecoder('utf-8');
-    this.buffer = '';
-    this.newlineRegex = /\r?\n/g; // Matches both \n and \r\n
-    this.onBytesSkipped = onBytesSkipped
+    this.decoder = new TextDecoder('utf-8')
+    this.buffer = ''
+    this.newlineRegex = /\r?\n/g // Matches both \n and \r\n
   }
 
   private async transform(chunk: Uint8Array, controller: TransformStreamDefaultController<string>) {
     // Decode the chunk as a string and append it to the buffer
-    this.buffer += this.decoder.decode(chunk, { stream: true });
-
+    this.buffer += this.decoder.decode(chunk, { stream: true })
     // Use RegExp.exec to find each newline
-    let match;
+    let match
     while ((match = this.newlineRegex.exec(this.buffer)) !== null) {
-      if (hasBackpressure(controller, match.index)) {
-        // console.log('backpressure', this.buffer.length - this.newlineRegex.lastIndex)
-        this.onBytesSkipped?.(this.buffer.length - this.newlineRegex.lastIndex)
-        this.buffer = this.buffer.slice(this.newlineRegex.lastIndex);
-        break
-      }
       // Extract the line from the start of the buffer up to the matched newline
-      const line = this.buffer.slice(0, match.index);
-      // console.log('match', this.buffer)
-      controller.enqueue(line);
+      const line = this.buffer.slice(0, match.index)
+      controller.enqueue(line)
 
       // Update buffer by removing the processed line and newline
-      this.buffer = this.buffer.slice(this.newlineRegex.lastIndex); // this.buffer.slice(match.index + match[0].length);
+      this.buffer = this.buffer.slice(this.newlineRegex.lastIndex) // this.buffer.slice(match.index + match[0].length);
       // Reset lastIndex for the regex to handle the modified buffer
-      this.newlineRegex.lastIndex = 0;
-      await new Promise((resolve) => setTimeout(resolve))
+      this.newlineRegex.lastIndex = 0
+      // await new Promise((resolve) => setTimeout(resolve))
     }
   }
 
   private flush(controller: TransformStreamDefaultController<string>) {
     // Enqueue any remaining buffered data
     if (this.buffer) {
-      controller.enqueue(this.buffer);
-      this.buffer = '';
+      controller.enqueue(this.buffer)
+      this.buffer = ''
     }
   }
 }
+
+export const pushAsCircularBuffer =
+  <T, R = T>(arr: () => R[], bufferSize: number, mapValue: (v: T) => R) =>
+  (values: T[]) => {
+    arr().splice(0, arr().length + values.length - bufferSize)
+    arr().push(...values.slice(-bufferSize).map(mapValue))
+  }

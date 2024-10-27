@@ -3,6 +3,7 @@
     string,
     {
       rows: string[]
+      totalSkippedBytes: number
       stream: { open: ReadableStream<Uint8Array>; stop: () => void } | { closed: {} }
     }
   > = {}
@@ -19,7 +20,11 @@
 <script lang="ts">
   import LogsStreamList from '$lib/components/pipelines/editor/LogsStreamList.svelte'
 
-  import { parseUTF8AsTextLines } from '$lib/functions/pipelines/changeStream'
+  import {
+    parseCancellable,
+    pushAsCircularBuffer,
+    SplitNewlineTransformStream
+  } from '$lib/functions/pipelines/changeStream'
   import { isPipelineIdle } from '$lib/functions/pipelines/status'
   import { pipelineLogsStream, type ExtendedPipeline } from '$lib/services/pipelineManager'
   import { usePipelineActionCallbacks } from '$lib/compositions/pipelines/usePipelineActionCallbacks.svelte'
@@ -32,7 +37,8 @@
     if (!streams[pipelineName]) {
       streams[pipelineName] = {
         stream: { closed: {} },
-        rows: []
+        rows: [''],
+        totalSkippedBytes: 0
       }
     }
   })
@@ -58,7 +64,7 @@
       }
     }
   })
-
+  const bufferSize = 10000
   const startStream = (pipelineName: string) => {
     if ('open' in streams[pipelineName].stream) {
       return
@@ -68,20 +74,38 @@
         return
       }
       const startTimestamp = Date.now()
-      const { cancel } = parseUTF8AsTextLines(result, {
-        pushChanges: (lines) => streams[pipelineName].rows.push(...lines),
-        onParseEnded: () => {
-          streams[pipelineName] = { stream: { closed: {} }, rows: streams[pipelineName].rows }
-          if (
-            typeof pipeline.current.status === 'string' &&
-            ['Shutdown', 'ShuttingDown'].includes(pipeline.current.status)
-          ) {
-            return
+      const { cancel } = parseCancellable(
+        result,
+        {
+          pushChanges: pushAsCircularBuffer(
+            () => streams[pipelineName].rows,
+            bufferSize,
+            (v) => v
+          ),
+          onParseEnded: () => {
+            streams[pipelineName].stream = { closed: {} }
+            if (
+              typeof pipeline.current.status === 'string' &&
+              ['Shutdown', 'ShuttingDown'].includes(pipeline.current.status)
+            ) {
+              return
+            }
+            tryRestartStream(pipelineName, startTimestamp)
+          },
+          onBytesSkipped(bytes) {
+            streams[pipelineName].totalSkippedBytes += bytes
           }
-          tryRestartStream(pipelineName, startTimestamp)
+        },
+        new SplitNewlineTransformStream(),
+        {
+          bufferSize: 16 * 1024 * 1024
         }
-      })
-      streams[pipelineName] = { stream: { open: result, stop: cancel }, rows: [] }
+      )
+      streams[pipelineName] = {
+        stream: { open: result, stop: cancel },
+        rows: [''], // A workaround: current virtual list implementation will freeze if an empty list suddenly gets a lot of data
+        totalSkippedBytes: 0
+      }
     })
   }
 
@@ -94,7 +118,7 @@
     startStream(pipelineName)
   }
 
-  let previousStatus = $state(pipeline.current.status)
+  let previousStatus: typeof pipeline.current.status | undefined = $state()
   $effect(() => {
     pipelineName
     queueMicrotask(() => {
@@ -135,4 +159,4 @@
   })
 </script>
 
-<LogsStreamList rows={getStreams()[pipelineName].rows}></LogsStreamList>
+<LogsStreamList logs={getStreams()[pipelineName]}></LogsStreamList>
