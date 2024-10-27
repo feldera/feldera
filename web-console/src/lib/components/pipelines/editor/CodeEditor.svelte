@@ -234,7 +234,7 @@
 
   let placeholderContent = $derived(file.placeholder)
   $effect(() => {
-    return effectMonacoContentPlaceholder(editorRef, placeholderContent, { opacity: '60%' })
+    return effectMonacoContentPlaceholder(editorRef, placeholderContent, { opacity: '70%' })
   })
 
   $effect(() => {

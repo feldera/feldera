@@ -1,13 +1,22 @@
 <script lang="ts">
   import ReverseScrollList from './ReverseScrollList.svelte'
   import { useSkeletonTheme } from '$lib/compositions/useSkeletonTheme.svelte'
+  import { humanSize } from '$lib/functions/common/string'
+  import WarningBanner from '$lib/components/pipelines/editor/WarningBanner.svelte'
   const theme = useSkeletonTheme()
 
-  let { rows }: { rows: string[] } = $props()
+  let { logs }: { logs: { rows: string[]; totalSkippedBytes: number } } = $props()
 </script>
 
-<div class="relative h-full bg-white pl-2 dark:bg-black">
-  <ReverseScrollList items={rows}>
+<div class="relative flex h-full flex-1 flex-col bg-white dark:bg-black">
+  {#if logs.totalSkippedBytes}
+    <WarningBanner>
+      Receiving logs faster than can be displayed. Skipping some logs to keep up, {humanSize(
+        logs.totalSkippedBytes
+      )} in total.
+    </WarningBanner>
+  {/if}
+  <ReverseScrollList items={logs.rows} class="pl-2">
     {#snippet item(item)}
       <div class="whitespace-pre-wrap" style="font-family: {theme.config.monospaceFontFamily};">
         <!-- TODO: Re-enable line numbers when they get reported by backend -->
