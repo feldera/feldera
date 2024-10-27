@@ -84,7 +84,7 @@
   let newPipelineError = $state<string>()
 </script>
 
-<div class="relative flex flex-col gap-2 overflow-y-auto pb-2" use:bindScrollY={{ scrollY }}>
+<div class="relative flex flex-col gap-2 overflow-y-auto scrollbar" use:bindScrollY={{ scrollY }}>
   <div class="sticky top-0 px-4 py-0.5 bg-surface-50-950">
     {#if assistCreatingPipeline}
       <input
@@ -147,4 +147,7 @@
       <PipelineStatus class="ml-auto" {...pipeline}></PipelineStatus>
     </a>
   {/each}
+  <span class="sticky bottom-0 mt-auto py-1 pl-4 bg-surface-50-950 text-surface-700-300"
+    >{$page.data.felderaVersion}</span
+  >
 </div>
