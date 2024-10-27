@@ -40,7 +40,6 @@
         </a>
       </span>
       <PipelinesList bind:pipelines={pipelines.pipelines}></PipelinesList>
-      <span class="mt-auto pb-1 pl-4 text-surface-700-300">{$page.data.felderaVersion}</span>
     </div>
   </Drawer>
   <div class="flex h-full w-full flex-col">

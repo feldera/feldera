@@ -212,7 +212,7 @@
 <div class="flex h-full flex-row">
   <PaneGroup direction="horizontal" onpaste={ingestPasted}>
     <Pane defaultSize={20} minSize={5} class="flex h-full p-2 pr-0">
-      <div class="flex w-full flex-col overflow-y-auto text-nowrap">
+      <div class="flex w-full flex-col overflow-y-auto text-nowrap scrollbar">
         {#snippet relationItem(relation: RelationInfo & ExtraType)}
           <label class="flex-none cursor-pointer overflow-hidden overflow-ellipsis">
             <input

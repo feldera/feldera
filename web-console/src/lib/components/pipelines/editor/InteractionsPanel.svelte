@@ -131,7 +131,7 @@
 
   {#snippet content()}
     {#each tabs as [tabName, , TabComponent]}
-      <Tabs.Panel value={tabName} classes="h-full overflow-y-auto relative">
+      <Tabs.Panel value={tabName} classes="h-full overflow-y-auto relative scrollbar">
         <div class="absolute h-full w-full">
           <TabComponent {pipeline} {metrics} {errors}></TabComponent>
         </div>

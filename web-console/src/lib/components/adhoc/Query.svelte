@@ -126,7 +126,7 @@
         <textarea
           bind:value={query}
           style="font-family: {theme.config.monospaceFontFamily}; field-sizing: content"
-          class="bg-white-black !border-1 w-full overflow-auto !border-l-4 !border-surface-500 !ring-0 !ring-primary-500 text-surface-950-50 focus:!border-primary-500"
+          class="bg-white-black !border-1 w-full overflow-auto !border-l-4 !border-surface-500 !ring-0 !ring-primary-500 text-surface-950-50 scrollbar focus:!border-primary-500"
           placeholder="SELECT * FROM ..."
           onkeydown={handleKeyDown(onSubmitQuery, disabled)}
         ></textarea>
@@ -169,7 +169,7 @@
     </div>
 
     {#if result}
-      <div class="mr-4 max-h-64 w-fit max-w-full overflow-auto">
+      <div class="mr-4 max-h-64 w-fit max-w-full overflow-auto scrollbar">
         <table class=" border-separate border-spacing-x-1">
           {#if result.columns.length}
             <thead class="sticky top-0 !mb-0 bg-surface-50-950">

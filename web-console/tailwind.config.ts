@@ -1,6 +1,7 @@
 import { join } from 'path'
 
 import { skeleton } from '@skeletonlabs/skeleton/plugin'
+import scrollbar from 'tailwind-scrollbar'
 import forms from '@tailwindcss/forms'
 
 import { felderaModern } from './src/lib/functions/themes/feldera-modern'
@@ -25,7 +26,8 @@ const config = {
     forms,
     skeleton({
       themes: [felderaModern]
-    })
+    }),
+    scrollbar({ nocompatible: true })
   ]
 } satisfies Config
 

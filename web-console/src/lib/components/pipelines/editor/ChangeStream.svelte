@@ -26,7 +26,7 @@
       )} in total.
     </WarningBanner>
   {/if}
-  <ReverseScrollList items={changeStream.rows}>
+  <ReverseScrollList items={changeStream.rows} class="scrollbar">
     {#snippet item(item)}
       <div
         oncopy={(e) => {

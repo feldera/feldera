@@ -29,7 +29,7 @@
     {#snippet content(close)}
       <div
         transition:fade={{ duration: 100 }}
-        class="absolute right-0 z-10 max-h-[400px] w-[calc(100vw-100px)] max-w-[400px] justify-end overflow-y-auto rounded bg-white shadow-md dark:bg-black"
+        class="absolute right-0 z-10 max-h-[400px] w-[calc(100vw-100px)] max-w-[400px] justify-end overflow-y-auto rounded bg-white shadow-md scrollbar dark:bg-black"
       >
         <AuthPopupMenu user={auth.profile} signOut={auth.logout}></AuthPopupMenu>
       </div>
