@@ -56,6 +56,11 @@ from tests.aggregate_tests.test_charn_count_col import *  # noqa: F403
 from tests.aggregate_tests.test_charn_count import *  # noqa: F403
 
 
+
+from tests.aggregate_tests.test_charn_every import *  # noqa: F403
+from tests.aggregate_tests.test_charn_some import *  # noqa: F403
+
+
 def register_tests_in_module(module, ta: TstAccumulator):
     """Registers all the tests in the specified module.
     Tests are classes that start with aggtst_.
