@@ -49,6 +49,9 @@ from tests.aggregate_tests.test_varcharn_argmax import *  # noqa: F403
 from tests.aggregate_tests.test_varcharn_argmin import *  # noqa: F403
 from tests.aggregate_tests.test_varcharn_every import *  # noqa: F403
 from tests.aggregate_tests.test_varcharn_some import *  # noqa: F403
+from tests.aggregate_tests.test_charn_argmax import *  # noqa: F403
+from tests.aggregate_tests.test_charn_argmin import *  # noqa: F403
+from tests.aggregate_tests.test_charn_arr_agg import *  # noqa: F403
 from tests.aggregate_tests.test_charn_count_col import *  # noqa: F403
 from tests.aggregate_tests.test_charn_count import *  # noqa: F403
 
