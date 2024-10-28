@@ -47,19 +47,19 @@ Refer to [CLI docs](/reference/cli) for more details.
 
 ### Feldera Python SDK
 
-You can execute adhoc queries via the Python SDK using the [.query](/python/feldera.html#feldera.pipeline.Pipeline.query) method, which returns a generator of Python Dictionaries:
+You can execute adhoc queries via the Python SDK using the [.query](pathname:///python/feldera.html#feldera.pipeline.Pipeline.query) method, which returns a generator of Python Dictionaries:
 ```py
 gen_obj = pipeline.query("SELECT * FROM materialized_view;")
 output = list(gen_obj)
 ```
 
 There are variations of the `.query` method that return response in different formats:
-- [.query_tabular](/python/feldera.html#feldera.pipeline.Pipeline.query_tabular)
+- [.query_tabular](pathname:///python/feldera.html#feldera.pipeline.Pipeline.query_tabular)
   Returns a generator of `String`.
-- [.query_parquet](/python/feldera.html#feldera.pipeline.Pipeline.query_parquet)
+- [.query_parquet](pathname:///python/feldera.html#feldera.pipeline.Pipeline.query_parquet)
   Saves the output of this query to the parquet file.
 
-For `INSERT` and `DELETE` queries it is recommended to use the [.execute](/python/feldera.html#feldera.pipeline.Pipeline.execute) method:
+For `INSERT` and `DELETE` queries it is recommended to use the [.execute](pathname:///python/feldera.html#feldera.pipeline.Pipeline.execute) method:
 
 ```py
 pipeline.execute("INSERT INTO tbl VALUES(1, 2, 3);")
