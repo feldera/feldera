@@ -294,3 +294,40 @@ Will generate the following data:
 | 2024-08-28 | 2024-08-28 00:00:00 | 00:00:05 |
 +------------+---------------------+----------+
 ```
+
+* A table with values provided inline in columnar format:
+
+```sql
+CREATE TABLE example1 (
+    col1 INT NOT NULL,
+    col2 VARCHAR NOT NULL
+) WITH (
+  'connectors' = '[{
+    "transport": {
+      "name": "datagen",
+      "config": {
+        "plan": [{
+            "limit": 4,
+            "fields": {
+                "col1": { "values": [1, 2, 3, 4] },
+                "col2": { "values": ["a", "b", "c", "d"] }
+            }
+        }]
+      }
+    }
+  }]'
+);
+```
+
+Will generate the following data:
+
+```text
++------+------+
+| col1 | col2 |
++------+------+
+| 1    | a    |
+| 2    | b    |
+| 3    | c    |
+| 4    | d    |
++------+------+
+```
