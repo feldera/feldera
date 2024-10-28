@@ -131,4 +131,4 @@ For more information, see:
 * Data formats such as [JSON](/formats/json) and
   [CSV](/formats/csv)
 
-* [Python API documentation](/python/)
+* [Python API documentation](pathname:///python/)
