@@ -42,11 +42,11 @@ FROM data, UNNEST(cities) AS t (city)
 ```
 
 where we assume that the `data` table has a schema defined
-as `CREATE TABLE data AS (CITIES VARCHAR ARRAY, COUNTRY VARCHAR)`.
+as `CREATE TABLE data (CITIES VARCHAR ARRAY, COUNTRY VARCHAR)`.
 
 `UNNEST` applied to a `NULL` value returns an empty array.
 
-Note that applying `UNNEST` to an `ARRAY` of structure typed-objects
+Note that applying `UNNEST` to an `ARRAY` of structure-typed objects
 will produce a collection whose columns are the fields of the
 structure, instead of a collection with a single structure-typed
 column.
