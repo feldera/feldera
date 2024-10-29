@@ -29,6 +29,7 @@ import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.RelRoot;
 import org.apache.calcite.sql.SqlIdentifier;
 import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.RelColumnMetadata;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.PropertyList;
@@ -49,13 +50,11 @@ public class CreateViewStatement extends CreateRelationStatement {
     public static final String EMIT_FINAL = "emit_final";
     public static final int NO_COLUMN = -1;
 
-    public CreateViewStatement(SqlCreateView node, String statement, String tableName,
-                               boolean nameIsQuoted,
-                               List<RelColumnMetadata> columns, SqlCreateView createView,
-                               RelRoot compiled,
-                               @Nullable PropertyList properties) {
+    public CreateViewStatement(CalciteCompiler.ParsedStatement node, String statement, String tableName,
+                               boolean nameIsQuoted, List<RelColumnMetadata> columns, SqlCreateView createView,
+                               RelRoot compiled, @Nullable PropertyList properties) {
         super(node, statement, tableName, nameIsQuoted, columns, properties);
-        this.viewKind = node.viewKind;
+        this.viewKind = createView.viewKind;
         this.createView = createView;
         this.compiled = compiled;
     }

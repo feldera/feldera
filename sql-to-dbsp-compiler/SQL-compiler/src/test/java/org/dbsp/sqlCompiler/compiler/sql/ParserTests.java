@@ -24,7 +24,6 @@
 package org.dbsp.sqlCompiler.compiler.sql;
 
 import org.apache.calcite.sql.SqlNode;
-import org.apache.calcite.sql.SqlNodeList;
 import org.apache.calcite.sql.parser.SqlParseException;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
@@ -37,6 +36,8 @@ import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateTable;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlForeignKey;
 import org.junit.Assert;
 import org.junit.Test;
+
+import java.util.List;
 
 /** Test SQL parser extensions. */
 public class ParserTests {
@@ -127,7 +128,7 @@ public class ParserTests {
                 CREATE FUNCTION from_json(data VARBINARY) RETURNS VARCHAR;
                 CREATE FUNCTION no_args() RETURNS TIMESTAMP AS TIMESTAMP '2024-01-01 00:00:00';
                 """;
-        SqlNodeList list = calcite.parseStatements(ddl);
+        List<CalciteCompiler.ParsedStatement> list = calcite.parseStatements(ddl);
         Assert.assertNotNull(list);
         Assert.assertEquals(3, list.size());
     }
@@ -138,10 +139,10 @@ public class ParserTests {
         String ddl = """
                 CREATE FUNCTION dbl(n INTEGER) RETURNS INTEGER AS n * 2;
                 """;
-        SqlNodeList list = calcite.parseStatements(ddl);
+        List<CalciteCompiler.ParsedStatement> list = calcite.parseStatements(ddl);
         Assert.assertNotNull(list);
         Assert.assertEquals(1, list.size());
-        SqlNode first = list.get(0);
+        SqlNode first = list.get(0).statement();
         Assert.assertTrue(first instanceof SqlCreateFunctionDeclaration);
         SqlCreateFunctionDeclaration func = (SqlCreateFunctionDeclaration) first;
         Assert.assertNotNull(func.getBody());
@@ -161,7 +162,7 @@ public class ParserTests {
                    lastname        VARCHAR(30),
                    address         ADDRESS_TYP);
                 CREATE TABLE T(p PERSON_TYPE);""";
-        SqlNode node = calcite.parseStatements(ddl);
+        List<CalciteCompiler.ParsedStatement> node = calcite.parseStatements(ddl);
         Assert.assertNotNull(node);
     }
 
@@ -172,7 +173,7 @@ public class ParserTests {
                 CREATE TABLE T (
                    data     MAP<INT, INT>
                 );""";
-        SqlNode node = calcite.parseStatements(ddl);
+        List<CalciteCompiler.ParsedStatement> node = calcite.parseStatements(ddl);
         Assert.assertNotNull(node);
     }
 
@@ -285,7 +286,7 @@ public class ParserTests {
                 */
                 CREATE VIEW V AS SELECT 0""";
         CalciteCompiler calcite = this.getCompiler();
-        SqlNode node = calcite.parseStatements(query);
+        List<CalciteCompiler.ParsedStatement> node = calcite.parseStatements(query);
         Assert.assertNotNull(node);
     }
 
@@ -298,7 +299,7 @@ public class ParserTests {
                     git_commit_id bigint not null primary key
                 )""";
         CalciteCompiler calcite = this.getCompiler();
-        SqlNode node = calcite.parseStatements(query);
+        List<CalciteCompiler.ParsedStatement> node = calcite.parseStatements(query);
         Assert.assertNotNull(node);
     }
 
@@ -312,7 +313,7 @@ public class ParserTests {
                     PRIMARY KEY (git_commit_id)
                 )""";
         CalciteCompiler calcite = this.getCompiler();
-        SqlNode node = calcite.parseStatements(query);
+        List<CalciteCompiler.ParsedStatement> node = calcite.parseStatements(query);
         Assert.assertNotNull(node);
     }
 
@@ -333,10 +334,10 @@ public class ParserTests {
                     pipeline_id bigint not null
                 )""";
         CalciteCompiler calcite = this.getCompiler();
-        SqlNodeList node = calcite.parseStatements(query);
+        List<CalciteCompiler.ParsedStatement> node = calcite.parseStatements(query);
         Assert.assertNotNull(node);
         Assert.assertEquals(2, node.size());
-        SqlNode table = node.get(1);
+        SqlNode table = node.get(1).statement();
         Assert.assertTrue(table instanceof SqlCreateTable);
         SqlCreateTable ct = (SqlCreateTable) table;
         Assert.assertEquals(2, ct.columnsOrForeignKeys.size());
@@ -355,10 +356,10 @@ public class ParserTests {
                     FOREIGN KEY (id) REFERENCES inventoryitem_t (id)
                 );""";
         CalciteCompiler calcite = this.getCompiler();
-        SqlNodeList node = calcite.parseStatements(query);
+        List<CalciteCompiler.ParsedStatement> node = calcite.parseStatements(query);
         Assert.assertNotNull(node);
         Assert.assertEquals(1, node.size());
-        SqlNode table = node.get(0);
+        SqlNode table = node.get(0).statement();
         Assert.assertTrue(table instanceof SqlCreateTable);
         SqlCreateTable ct = (SqlCreateTable) table;
         Assert.assertEquals(2, ct.columnsOrForeignKeys.size());
@@ -382,7 +383,7 @@ public class ParserTests {
                     str VARCHAR DEFAULT ''
                 );""";
         CalciteCompiler calcite = this.getCompiler();
-        SqlNode node = calcite.parseStatements(query);
+        List<CalciteCompiler.ParsedStatement> node = calcite.parseStatements(query);
         Assert.assertNotNull(node);
     }
 
@@ -393,7 +394,7 @@ public class ParserTests {
                     id BIGINT NOT NULL PRIMARY KEY FOREIGN KEY REFERENCES inventoryitem_t (id)
                 );""";
         CalciteCompiler calcite = this.getCompiler();
-        SqlNode node = calcite.parseStatements(query);
+        List<CalciteCompiler.ParsedStatement> node = calcite.parseStatements(query);
         Assert.assertNotNull(node);
     }
 
@@ -405,7 +406,7 @@ public class ParserTests {
                     git_commit_id bigint not null FOREIGN KEY REFERENCES other(other) FOREIGN KEY REFERENCES other2(other2)
                 )""";
         CalciteCompiler calcite = this.getCompiler();
-        SqlNode node = calcite.parseStatements(query);
+        List<CalciteCompiler.ParsedStatement> node = calcite.parseStatements(query);
         Assert.assertNotNull(node);
     }
 }

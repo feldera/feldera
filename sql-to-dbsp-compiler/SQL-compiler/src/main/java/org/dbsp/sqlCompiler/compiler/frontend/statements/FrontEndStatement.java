@@ -23,8 +23,8 @@
 
 package org.dbsp.sqlCompiler.compiler.frontend.statements;
 
-import org.apache.calcite.sql.SqlNode;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.util.ICastable;
 
@@ -32,18 +32,23 @@ import org.dbsp.util.ICastable;
  * The representation is mostly at the level of RelNode, but there
  * is also some SqlNode-level information. */
 public abstract class FrontEndStatement implements ICastable {
-    public final SqlNode node;
+    public final CalciteCompiler.ParsedStatement node;
     /** Original statement compiled. */
     public final String statement;
 
-    protected FrontEndStatement(SqlNode node, String statement) {
+    protected FrontEndStatement(CalciteCompiler.ParsedStatement node, String statement) {
         this.node = node;
         this.statement = statement;
     }
 
     public CalciteObject getCalciteObject() {
-        return CalciteObject.create(this.node);
+        return CalciteObject.create(this.node.statement());
     }
 
-    public SourcePositionRange getPosition() { return new SourcePositionRange(this.node.getParserPosition()); }
+    public SourcePositionRange getPosition() {
+        if (this.node.visible())
+            return new SourcePositionRange(this.node.statement().getParserPosition());
+        else
+            return SourcePositionRange.INVALID;
+    }
 }

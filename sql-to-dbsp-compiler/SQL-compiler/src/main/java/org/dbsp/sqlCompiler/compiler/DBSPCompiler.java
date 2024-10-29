@@ -31,10 +31,8 @@ import org.apache.calcite.schema.Schema;
 import org.apache.calcite.sql.SqlFunction;
 import org.apache.calcite.sql.SqlKind;
 import org.apache.calcite.sql.SqlNode;
-import org.apache.calcite.sql.SqlNodeList;
 import org.apache.calcite.sql.SqlOperatorTable;
 import org.apache.calcite.sql.parser.SqlParseException;
-import org.apache.calcite.sql.parser.SqlParserPos;
 import org.apache.calcite.sql.util.SqlOperatorTables;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.DBSPPartialCircuit;
@@ -423,7 +421,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         CreateViewStatement currentView = null;
         try {
             // Parse using Calcite
-            SqlNodeList parsed = new SqlNodeList(SqlParserPos.ZERO);
+            List<CalciteCompiler.ParsedStatement> parsed = new ArrayList<>();
             // across all tables
             List<ForeignKey> foreignKeys = new ArrayList<>();
 
@@ -434,9 +432,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
                     parsed.addAll(this.frontend.parseStatements(stat.statement, stat.visible));
                 } else {
                     SqlNode node = this.frontend.parse(stat.statement, stat.visible);
-                    List<SqlNode> stmtList = new ArrayList<>();
-                    stmtList.add(node);
-                    parsed.addAll(new SqlNodeList(stmtList, node.getParserPosition()));
+                    parsed.add(new CalciteCompiler.ParsedStatement(node, stat.visible));
                 }
                 if (this.hasErrors())
                     return;
@@ -445,14 +441,14 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
             // All UDFs which have no bodies in SQL
             final List<SqlFunction> rustFunctions = new ArrayList<>();
             // Compile first the statements that define functions, types, and lateness
-            for (SqlNode node: parsed) {
+            for (CalciteCompiler.ParsedStatement node: parsed) {
                 Logger.INSTANCE.belowLevel(this, 2)
                         .append("Parsing result: ")
                         .append(node.toString())
                         .newline();
-                SqlKind kind = node.getKind();
+                SqlKind kind = node.statement().getKind();
                 if (kind == SqlKind.CREATE_TYPE) {
-                    FrontEndStatement fe = this.frontend.compile(node.toString(), node, this.sources);
+                    FrontEndStatement fe = this.frontend.compile(node, this.sources);
                     if (fe == null)
                         // error during compilation
                         continue;
@@ -460,7 +456,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
                     continue;
                 }
                 if (kind == SqlKind.CREATE_FUNCTION) {
-                    FrontEndStatement fe = this.frontend.compile(node.toString(), node, this.sources);
+                    FrontEndStatement fe = this.frontend.compile(node, this.sources);
                     if (fe == null)
                         continue;
                     CreateFunctionStatement stat = fe.to(CreateFunctionStatement.class);
@@ -484,8 +480,8 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
                     DBSPNode func = this.midend.compile(fe);
                     this.functions.add(Objects.requireNonNull(func).to(DBSPFunction.class));
                 }
-                if (node instanceof SqlLateness) {
-                    FrontEndStatement fe = this.frontend.compile(node.toString(), node, this.sources);
+                if (node.statement() instanceof SqlLateness) {
+                    FrontEndStatement fe = this.frontend.compile(node, this.sources);
                     if (fe == null)
                         continue;
                     this.lateness.add(fe.to(LatenessStatement.class));
@@ -501,13 +497,13 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
             }
 
             // Compile all statements which do not define functions or types
-            for (SqlNode node : parsed) {
-                SqlKind kind = node.getKind();
+            for (CalciteCompiler.ParsedStatement node : parsed) {
+                SqlKind kind = node.statement().getKind();
                 if (kind == SqlKind.CREATE_FUNCTION || kind == SqlKind.CREATE_TYPE)
                     continue;
-                if (node instanceof SqlLateness)
+                if (node.statement() instanceof SqlLateness)
                     continue;
-                FrontEndStatement fe = this.frontend.compile(node.toString(), node, this.sources);
+                FrontEndStatement fe = this.frontend.compile(node, this.sources);
                 if (fe == null)
                     // error during compilation
                     continue;
