@@ -15,7 +15,7 @@ public final class DBSPUnwrapExpression extends DBSPExpression {
     public final DBSPExpression expression;
 
     public DBSPUnwrapExpression(DBSPExpression expression) {
-        super(expression.getNode(), expression.getType().setMayBeNull(false));
+        super(expression.getNode(), expression.getType().withMayBeNull(false));
         this.expression = expression;
         assert expression.getType().mayBeNull;
     }

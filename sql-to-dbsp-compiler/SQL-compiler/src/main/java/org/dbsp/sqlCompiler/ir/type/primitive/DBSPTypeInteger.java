@@ -190,7 +190,7 @@ public class DBSPTypeInteger extends DBSPTypeBaseType
     }
 
     @Override
-    public DBSPType setMayBeNull(boolean mayBeNull) {
+    public DBSPType withMayBeNull(boolean mayBeNull) {
         if (mayBeNull == this.mayBeNull)
             return this;
         return new DBSPTypeInteger(this.getNode(), this.width, this.signed, mayBeNull);

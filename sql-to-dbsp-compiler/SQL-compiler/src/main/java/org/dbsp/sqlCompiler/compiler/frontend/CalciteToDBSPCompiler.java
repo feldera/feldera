@@ -205,6 +205,7 @@ import org.dbsp.util.IWritesLogs;
 import org.dbsp.util.IdShuffle;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Logger;
+import org.dbsp.util.Shuffle;
 import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
@@ -362,15 +363,22 @@ public class CalciteToDBSPCompiler extends RelVisitor
     }
 
     void visitCorrelate(LogicalCorrelate correlate) {
-        // We decorrelate queries using Calcite's optimizer.
-        // So we assume that the only correlated queries we receive
-        // are unnest-type queries.  We assume that unnest queries
+        // We decorrelate queries using Calcite's optimizer, which doesn't always work.
+        // In particular, it won't decorrelate queries with unnest.
+        // Here we check for unnest-type queries.  We assume that unnest queries
         // have a restricted plan of this form:
         // LogicalCorrelate(correlation=[$cor0], joinType=[inner], requiredColumns=[{...}])
-        //    LeftSubquery
+        //    LeftSubquery (arbitrary)
         //    Uncollect
-        //      LogicalProject(COL=[$cor0.ARRAY])
+        //      LogicalProject(COL=[$cor0.ARRAY])  // uncollectInput
         //        LogicalValues(tuples=[[{ 0 }]])
+        // or
+        // LogicalCorrelate(correlation=[$cor0], joinType=[inner], requiredColumns=[{...}])
+        //    LeftSubquery
+        //    LogicalProject // rightProject
+        //      Uncollect
+        //        LogicalProject(COL=[$cor0.ARRAY])  // uncollectInput
+        //          LogicalValues(tuples=[[{ 0 }]])
         // Instead of projecting and joining again we directly apply flatmap.
         // The translation for this is:
         // stream.flat_map({
@@ -410,27 +418,31 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPVariablePath dataVar = new DBSPVariablePath(leftElementType.ref());
         ExpressionCompiler eComp = new ExpressionCompiler(correlate, dataVar, this.compiler);
         DBSPClosureExpression arrayExpression = eComp.compile(projection).closure(dataVar);
+        DBSPType uncollectElementType = this.convertType(uncollect.getRowType(), false);
         DBSPType arrayElementType = arrayExpression.getResultType().to(DBSPTypeVec.class).getElementType();
+        if (arrayElementType.mayBeNull)
+            // This seems to be a bug in Calcite, we should not need to do this adjustment
+            uncollectElementType = uncollectElementType.withMayBeNull(true);
 
-        List<DBSPClosureExpression> rightProjections = null;
-        if (rightProject != null) {
-            DBSPVariablePath eVar = new DBSPVariablePath(arrayElementType.ref());
-            final ExpressionCompiler eComp0 = new ExpressionCompiler(correlate, eVar, this.compiler);
-            rightProjections =
-                    Linq.map(rightProject.getProjects(),
-                            e -> eComp0.compile(e).closure(eVar));
-        }
-        boolean emitIteratedElement = true;
         DBSPType indexType = null;
         if (uncollect.withOrdinality) {
-            // Index field is always last
-            indexType = type.getFieldType(type.size() - 1);
+            // Index field is always last.
+            DBSPTypeTuple uncollectTuple = uncollectElementType.to(DBSPTypeTuple.class);
+            indexType = uncollectTuple.getFieldType(uncollectTuple.size() - 1);
         }
-        DBSPType functionType = new DBSPTypeFunction(type, leftElementType.ref());
+
+        // Right projections are applied after uncollect
+        List<DBSPClosureExpression> rightProjections = null;
+        if (rightProject != null) {
+            DBSPVariablePath eVar = new DBSPVariablePath(uncollectElementType.ref());
+            final ExpressionCompiler eComp0 = new ExpressionCompiler(correlate, eVar, this.compiler);
+            rightProjections = Linq.map(rightProject.getProjects(), e -> eComp0.compile(e).closure(eVar));
+        }
+
+        DBSPTypeFunction functionType = new DBSPTypeFunction(type, leftElementType.ref());
         DBSPFlatmap flatmap = new DBSPFlatmap(node, functionType, leftElementType, arrayExpression,
                 Linq.range(0, leftElementType.size()),
-                rightProjections,
-                emitIteratedElement, indexType, new IdShuffle());
+                rightProjections, indexType, new IdShuffle());
         DBSPFlatMapOperator flatMap = new DBSPFlatMapOperator(uncollectNode,
                 flatmap, TypeCompiler.makeZSet(type), left);
         this.assignOperator(correlate, flatMap);
@@ -569,8 +581,10 @@ public class CalciteToDBSPCompiler extends RelVisitor
     }
 
     void visitUncollect(Uncollect uncollect) {
-        // This represents an unnest.
-        // flat_map(move |x| { x.0.into_iter().map(move |e| Tuple1::new(e)) })
+        // This represents an unnest:
+        // flat_map(move |x| { x.0.into_iter().map(move |e| Tup1::new(e)) })
+        // or, with ordinality:
+        // flat_map(move |x| { x.0.into_iter().map(move |e, i| Tup2::new(e, i+1)) })
         CalciteObject node = CalciteObject.create(uncollect);
         DBSPType type = this.convertType(uncollect.getRowType(), false);
         RelNode input = uncollect.getInput();
@@ -578,16 +592,15 @@ public class CalciteToDBSPCompiler extends RelVisitor
         // We expect this to be a single-element tuple whose type is a vector.
         DBSPOperator opInput = this.getInputAs(input, true);
         DBSPType indexType = null;
-        boolean emitIteratedElement = true;
         if (uncollect.withOrdinality) {
             DBSPTypeTuple pair = type.to(DBSPTypeTuple.class);
             indexType = pair.getFieldType(1);
         }
         DBSPVariablePath data = new DBSPVariablePath(inputRowType.ref());
         DBSPClosureExpression getField0 = data.deref().field(0).closure(data);
-        DBSPType functionType = new DBSPTypeFunction(type, inputRowType.ref());
+        DBSPTypeFunction functionType = new DBSPTypeFunction(type, inputRowType.ref());
         DBSPFlatmap function = new DBSPFlatmap(node, functionType, inputRowType, getField0,
-                Linq.list(), null, emitIteratedElement, indexType, new IdShuffle());
+                Linq.list(), null, indexType, new IdShuffle());
         DBSPFlatMapOperator flatMap = new DBSPFlatMapOperator(node, function,
                 TypeCompiler.makeZSet(type), opInput);
         this.assignOperator(uncollect, flatMap);
@@ -651,10 +664,13 @@ public class CalciteToDBSPCompiler extends RelVisitor
 
         DBSPTupleExpression localKeyExpression = this.generateKeyExpression(
                 localKeys, aggregate.getGroupSet(), t, keySlice);
+        DBSPTypeTuple type1 = inputRowType.to(DBSPTypeTuple.class);
+        DBSPExpression[] expressions = new DBSPExpression[]{t.deref()};
+        DBSPTupleExpression expr = DBSPTupleExpression.flatten(expressions);
         DBSPClosureExpression makeKeys =
                 new DBSPRawTupleExpression(
                         localKeyExpression,
-                        DBSPTupleExpression.flatten(inputRowType.to(DBSPTypeTuple.class), t.deref())).closure(t);
+                        new DBSPTupleExpression(expr.getNode(), type1, Objects.requireNonNull(expr.fields))).closure(t);
         DBSPType localGroupType = localKeyExpression.getType();
         DBSPTypeIndexedZSet localGroupAndInput = makeIndexedZSet(localGroupType, inputRowType);
         DBSPOperator indexedInput = new DBSPMapIndexOperator(
@@ -1227,7 +1243,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             // fill nulls in the right relation fields
             DBSPTupleExpression rEmpty = new DBSPTupleExpression(
                     Linq.map(rightElementType.tupFields,
-                             et -> DBSPLiteral.none(et.setMayBeNull(true)), DBSPExpression.class));
+                             et -> DBSPLiteral.none(et.withMayBeNull(true)), DBSPExpression.class));
             DBSPVariablePath lCasted = leftResultType.ref().var();
             DBSPClosureExpression leftRow = DBSPTupleExpression.flatten(lCasted.deref(), rEmpty).closure(
                     lCasted.asParameter());
@@ -1269,7 +1285,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             // fill nulls in the left relation fields
             DBSPTupleExpression lEmpty = new DBSPTupleExpression(
                     Linq.map(leftElementType.tupFields,
-                            et -> DBSPLiteral.none(et.setMayBeNull(true)), DBSPExpression.class));
+                            et -> DBSPLiteral.none(et.withMayBeNull(true)), DBSPExpression.class));
             DBSPVariablePath rCasted = rightResultType.ref().var();
             DBSPClosureExpression rightRow =
                     DBSPTupleExpression.flatten(lEmpty, rCasted.deref()).closure(rCasted);
@@ -1350,7 +1366,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         for (int i = 0; i < comparisons.size(); i++) {
             JoinConditionAnalyzer.EqualityTest test = comparisons.get(i);
             DBSPType leftType = leftElementType.tupFields[i];
-            DBSPType useType = test.commonType().setMayBeNull(leftType.mayBeNull);
+            DBSPType useType = test.commonType().withMayBeNull(leftType.mayBeNull);
             comparisons.set(i, test.withType(useType));
         }
 
@@ -1420,8 +1436,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPType rightTSType = rightTS.getType();
         // Rust expects both timestamps to have the same type
         boolean nullable = leftTSType.mayBeNull || rightTSType.mayBeNull;
-        DBSPType commonTSType = leftTSType.setMayBeNull(nullable);
-        assert commonTSType.sameType(rightTSType.setMayBeNull(nullable));
+        DBSPType commonTSType = leftTSType.withMayBeNull(nullable);
+        assert commonTSType.sameType(rightTSType.withMayBeNull(nullable));
 
         DBSPClosureExpression leftTimestamp = leftTS.cast(commonTSType).closure(leftVar);
         DBSPClosureExpression rightTimestamp = rightTS.cast(commonTSType).closure(rightVar);
@@ -1439,7 +1455,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPVariablePath k = keyType.ref().var();
         DBSPVariablePath l0 = wrappedLeftType.ref().var();
         // Signature of the function is (k: &K, l: &L, r: Option<&R>)
-        DBSPVariablePath r0 = wrappedRightType.ref().setMayBeNull(true).var();
+        DBSPVariablePath r0 = wrappedRightType.ref().withMayBeNull(true).var();
         List<DBSPExpression> lrFields = new ArrayList<>();
         for (int i = 0; i < leftElementType.size(); i++)
             lrFields.add(new DBSPUnwrapCustomOrdExpression(l0.deepCopy().deref()).field(i));
@@ -1936,7 +1952,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             //        OF: Fn(&V, &VL) -> OV + 'static,
             // Notice that the project function takes an Option<&V>.
             List<Integer> lagColumns = Linq.map(this.aggregateCalls, call -> call.getArgList().get(0));
-            DBSPVariablePath var = new DBSPVariablePath(inputRowType.ref().setMayBeNull(true));
+            DBSPVariablePath var = new DBSPVariablePath(inputRowType.ref().withMayBeNull(true));
             List<DBSPExpression> lagColumnExpressions = new ArrayList<>();
             for (int i = 0; i < lagColumns.size(); i++) {
                 int field = lagColumns.get(i);
@@ -2188,7 +2204,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                         makeIndexedZSet(partitionType,
                                 new DBSPTypeTuple(
                                         unsignedSortType,
-                                        aggResultType.setMayBeNull(true)));
+                                        aggResultType.withMayBeNull(true)));
 
                 // Compute aggregates for the window
                 windowAgg = new DBSPPartitionedRollingAggregateOperator(
@@ -2209,7 +2225,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                                 partitionType.ref(),
                                 new DBSPTypeTuple(
                                         unsignedSortType,  // not the sortType, but the wrapper type around it
-                                        aggResultType.setMayBeNull(true)).ref()));
+                                        aggResultType.withMayBeNull(true)).ref()));
                 // new DBSPTypeOption(aggResultType)).ref()));
                 DBSPExpression ixKey = var.deepCopy().field(0).deref().applyCloneIfNeeded();
                 DBSPExpression ts = var.deepCopy().field(1).deref().field(0);
@@ -2753,7 +2769,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 String referred = identifier.getSimple();
                 fieldType = this.compiler.getStructByName(referred);
                 if (typeSpec.getNullable() != null && typeSpec.getNullable() && fieldType != null)
-                    fieldType = fieldType.setMayBeNull(true);
+                    fieldType = fieldType.withMayBeNull(true);
             }
             if (fieldType == null) {
                 // Not a user-defined type

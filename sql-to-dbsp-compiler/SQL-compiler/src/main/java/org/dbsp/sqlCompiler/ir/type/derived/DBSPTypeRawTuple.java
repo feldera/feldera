@@ -75,7 +75,7 @@ public class DBSPTypeRawTuple extends DBSPTypeTupleBase {
     }
 
     @Override
-    public DBSPType setMayBeNull(boolean mayBeNull) {
+    public DBSPType withMayBeNull(boolean mayBeNull) {
         if (mayBeNull == this.mayBeNull)
             return this;
         return new DBSPTypeRawTuple(this.getNode(), this.code, mayBeNull, this.tupFields);

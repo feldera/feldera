@@ -44,7 +44,7 @@ public class DBSPTypeStream extends DBSPType {
     }
 
     @Override
-    public DBSPType setMayBeNull(boolean mayBeNull) {
+    public DBSPType withMayBeNull(boolean mayBeNull) {
         throw new UnsupportedOperationException();
     }
 

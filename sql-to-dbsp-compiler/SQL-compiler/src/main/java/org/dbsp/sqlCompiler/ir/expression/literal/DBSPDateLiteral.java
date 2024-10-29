@@ -79,7 +79,7 @@ public final class DBSPDateLiteral extends DBSPLiteral {
 
     @Override
     public DBSPLiteral getWithNullable(boolean mayBeNull) {
-        return new DBSPDateLiteral(this.getNode(), this.getType().setMayBeNull(mayBeNull),
+        return new DBSPDateLiteral(this.getNode(), this.getType().withMayBeNull(mayBeNull),
                 this.checkIfNull(this.value, mayBeNull));
     }
 

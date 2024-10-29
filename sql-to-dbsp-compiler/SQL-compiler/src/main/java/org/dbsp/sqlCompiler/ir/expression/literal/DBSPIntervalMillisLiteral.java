@@ -89,7 +89,7 @@ public final class DBSPIntervalMillisLiteral
     @Override
     public DBSPLiteral getWithNullable(boolean mayBeNull) {
         return new DBSPIntervalMillisLiteral(this.getNode(),
-                this.getType().setMayBeNull(mayBeNull), this.checkIfNull(this.value, mayBeNull));
+                this.getType().withMayBeNull(mayBeNull), this.checkIfNull(this.value, mayBeNull));
     }
 
     @Override

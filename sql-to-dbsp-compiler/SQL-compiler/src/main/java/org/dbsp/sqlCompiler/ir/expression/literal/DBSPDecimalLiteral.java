@@ -68,7 +68,7 @@ public final class DBSPDecimalLiteral extends DBSPLiteral implements IsNumericLi
 
     @Override
     public DBSPLiteral getWithNullable(boolean mayBeNull) {
-        return new DBSPDecimalLiteral(this.getNode(), this.getType().setMayBeNull(mayBeNull),
+        return new DBSPDecimalLiteral(this.getNode(), this.getType().withMayBeNull(mayBeNull),
                 this.checkIfNull(this.value, mayBeNull));
     }
 

@@ -37,12 +37,18 @@ duplicated values, the resulting table will be a multiset.
 The `UNNEST` operator can be used in self-joins as follows:
 
 ```sql
-SELECT city, country
-FROM data, UNNEST(cities) AS t (city)
+CREATE TABLE data(CITIES VARCHAR ARRAY, COUNTRY VARCHAR);
+
+CREATE VIEW V AS SELECT city, country
+FROM data, UNNEST(cities) AS t (city);
 ```
 
-where we assume that the `data` table has a schema defined
-as `CREATE TABLE data (CITIES VARCHAR ARRAY, COUNTRY VARCHAR)`.
+The previous query is a shortcut for a CROSS-JOIN query:
+
+```sql
+CREATE VIEW V AS SELECT city, data.country
+FROM data CROSS JOIN UNNEST(data.cities) AS city;
+```
 
 `UNNEST` applied to a `NULL` value returns an empty array.
 

@@ -27,7 +27,7 @@ public class DBSPTypeWithCustomOrd extends DBSPTypeUser {
     }
 
     @Override
-    public DBSPType setMayBeNull(boolean mayBeNull) {
+    public DBSPType withMayBeNull(boolean mayBeNull) {
         if (mayBeNull)
             throw new UnsupportedException(this.getNode());
         return this;

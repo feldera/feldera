@@ -69,7 +69,7 @@ public final class DBSPAsofJoinOperator extends DBSPJoinBaseOperator {
         DBSPType[] argumentTypes = function.getType().to(DBSPTypeFunction.class).parameterTypes;
         assert argumentTypes.length == 3;
         assert argumentTypes[1].sameType(leftTimestamp.parameters[0].getType());
-        assert argumentTypes[2].sameType(rightTimestamp.parameters[0].getType().setMayBeNull(true));
+        assert argumentTypes[2].sameType(rightTimestamp.parameters[0].getType().withMayBeNull(true));
     }
 
     @Override

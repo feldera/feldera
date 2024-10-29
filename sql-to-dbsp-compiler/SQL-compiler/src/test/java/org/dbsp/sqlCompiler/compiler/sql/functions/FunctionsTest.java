@@ -165,21 +165,19 @@ public class FunctionsTest extends SqlIoTest {
 
     @Test
     public void testBinaryCast() {
-        this.qs(
-                """
-                        SELECT CAST('1234567890' AS VARBINARY) as val;
-                         val
-                        -----
-                         31323334353637383930
-                        (1 row)
-
-                        SELECT '1234567890'::VARBINARY as val;
-                         val
-                        -----
-                         31323334353637383930
-                        (1 row)
-                        """
-        );
+        this.qs("""
+                SELECT CAST('1234567890' AS VARBINARY) as val;
+                 val
+                -----
+                 31323334353637383930
+                (1 row)
+                
+                SELECT '1234567890'::VARBINARY as val;
+                 val
+                -----
+                 31323334353637383930
+                (1 row)
+                """);
     }
 
     @Test
@@ -200,126 +198,126 @@ public class FunctionsTest extends SqlIoTest {
     public void issue1187modulo() {
         this.qs(
                 """
-                        SELECT (-128)::tinyint % (-1)::tinyint as x;
-                        x
-                        ---
-                         0
-                        (1 row)
+                SELECT (-128)::tinyint % (-1)::tinyint as x;
+                 x
+                ---
+                 0
+                (1 row)
 
-                        SELECT (-32768)::int2 % (-1)::int2 as x;
-                        x
-                        ---
-                         0
-                        (1 row)
+                SELECT (-32768)::int2 % (-1)::int2 as x;
+                x
+                ---
+                 0
+                (1 row)
 
-                        SELECT (-2147483648)::int4 % (-1)::int4 as x;
-                        x
-                        ---
-                         0
-                        (1 row)
+                SELECT (-2147483648)::int4 % (-1)::int4 as x;
+                x
+                ---
+                 0
+                (1 row)
 
-                        SELECT (-9223372036854775808)::int64 % (-1)::int64 as x;
-                        x
-                        ---
-                         0
-                        (1 row)
+                SELECT (-9223372036854775808)::int64 % (-1)::int64 as x;
+                x
+                ---
+                 0
+                (1 row)
 
-                        SELECT (8)::tinyint % (3)::tinyint as x;
-                        x
-                        ---
-                         2
-                        (1 row)
+                SELECT (8)::tinyint % (3)::tinyint as x;
+                x
+                ---
+                 2
+                (1 row)
 
-                        SELECT (8)::int2 % (3)::int2 as x;
-                        x
-                        ---
-                         2
-                        (1 row)
+                SELECT (8)::int2 % (3)::int2 as x;
+                x
+                ---
+                 2
+                (1 row)
 
-                        SELECT (8)::int4 % (3)::int4 as x;
-                        x
-                        ---
-                         2
-                        (1 row)
+                SELECT (8)::int4 % (3)::int4 as x;
+                x
+                ---
+                 2
+                (1 row)
 
-                        SELECT (8)::int64 % (3)::int64 as x;
-                        x
-                        ---
-                         2
-                        (1 row)
+                SELECT (8)::int64 % (3)::int64 as x;
+                x
+                ---
+                 2
+                (1 row)
 
-                        SELECT (8)::tinyint % (-3)::tinyint as x;
-                        x
-                        ---
-                         2
-                        (1 row)
+                SELECT (8)::tinyint % (-3)::tinyint as x;
+                x
+                ---
+                 2
+                (1 row)
 
-                        SELECT (8)::int2 % (-3)::int2 as x;
-                        x
-                        ---
-                         2
-                        (1 row)
+                SELECT (8)::int2 % (-3)::int2 as x;
+                x
+                ---
+                 2
+                (1 row)
 
-                        SELECT (8)::int4 % (-3)::int4 as x;
-                        x
-                        ---
-                         2
-                        (1 row)
+                SELECT (8)::int4 % (-3)::int4 as x;
+                x
+                ---
+                 2
+                (1 row)
 
-                        SELECT (8)::int64 % (-3)::int64 as x;
-                        x
-                        ---
-                         2
-                        (1 row)
+                SELECT (8)::int64 % (-3)::int64 as x;
+                x
+                ---
+                 2
+                (1 row)
 
-                        SELECT (-8)::tinyint % (3)::tinyint as x;
-                        x
-                        ---
-                         -2
-                        (1 row)
+                SELECT (-8)::tinyint % (3)::tinyint as x;
+                x
+                ---
+                 -2
+                (1 row)
 
-                        SELECT (-8)::int2 % (3)::int2 as x;
-                        x
-                        ---
-                         -2
-                        (1 row)
+                SELECT (-8)::int2 % (3)::int2 as x;
+                x
+                ---
+                 -2
+                (1 row)
 
-                        SELECT (-8)::int4 % (3)::int4 as x;
-                        x
-                        ---
-                         -2
-                        (1 row)
+                SELECT (-8)::int4 % (3)::int4 as x;
+                x
+                ---
+                 -2
+                (1 row)
 
-                        SELECT (-8)::int64 % (3)::int64 as x;
-                        x
-                        ---
-                         -2
-                        (1 row)
+                SELECT (-8)::int64 % (3)::int64 as x;
+                x
+                ---
+                 -2
+                (1 row)
 
-                        SELECT (-8)::tinyint % (-3)::tinyint as x;
-                        x
-                        ---
-                         -2
-                        (1 row)
+                SELECT (-8)::tinyint % (-3)::tinyint as x;
+                x
+                ---
+                 -2
+                (1 row)
 
-                        SELECT (-8)::int2 % (-3)::int2 as x;
-                        x
-                        ---
-                         -2
-                        (1 row)
+                SELECT (-8)::int2 % (-3)::int2 as x;
+                x
+                ---
+                 -2
+                (1 row)
 
-                        SELECT (-8)::int4 % (-3)::int4 as x;
-                        x
-                        ---
-                         -2
-                        (1 row)
+                SELECT (-8)::int4 % (-3)::int4 as x;
+                x
+                ---
+                 -2
+                (1 row)
 
-                        SELECT (-8)::int64 % (-3)::int64 as x;
-                        x
-                        ---
-                         -2
-                        (1 row)
-                        """
+                SELECT (-8)::int64 % (-3)::int64 as x;
+                x
+                ---
+                 -2
+                (1 row)
+                """
         );
     }
 

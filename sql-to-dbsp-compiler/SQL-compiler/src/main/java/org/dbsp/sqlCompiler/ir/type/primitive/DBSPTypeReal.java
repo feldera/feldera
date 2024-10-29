@@ -39,7 +39,7 @@ public class DBSPTypeReal extends DBSPTypeFP implements IsNumericType {
     public DBSPTypeReal(CalciteObject node, boolean mayBeNull) { super(node, DBSPTypeCode.REAL, mayBeNull); }
 
     @Override
-    public DBSPType setMayBeNull(boolean mayBeNull) {
+    public DBSPType withMayBeNull(boolean mayBeNull) {
         if (this.mayBeNull == mayBeNull)
             return this;
         return new DBSPTypeReal(this.getNode(), mayBeNull);

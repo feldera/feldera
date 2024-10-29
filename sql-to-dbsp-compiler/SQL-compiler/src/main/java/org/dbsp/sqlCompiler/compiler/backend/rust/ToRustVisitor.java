@@ -162,7 +162,7 @@ public class ToRustVisitor extends CircuitVisitor {
             this.builder.append(")");
         } else if (type.mayBeNull) {
             this.builder.append(".map(|x| x");
-            this.generateInto(type.setMayBeNull(false));
+            this.generateInto(type.withMayBeNull(false));
             this.builder.append(")");
         } else if (type.is(DBSPTypeVec.class)) {
             DBSPTypeVec vec = type.to(DBSPTypeVec.class);
@@ -494,7 +494,7 @@ public class ToRustVisitor extends CircuitVisitor {
         for (DBSPTypeStruct s: nested) {
             if (this.structsGenerated.contains(s.name))
                 continue;
-            s = s.setMayBeNull(false).to(DBSPTypeStruct.class);
+            s = s.withMayBeNull(false).to(DBSPTypeStruct.class);
             this.generateStructDeclarations(s);
             this.generateFromTrait(s);
             this.generateRenameMacro(s, metadata);

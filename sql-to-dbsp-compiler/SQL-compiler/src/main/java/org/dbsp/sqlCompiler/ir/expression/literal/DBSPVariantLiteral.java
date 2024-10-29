@@ -72,7 +72,7 @@ public class DBSPVariantLiteral extends DBSPLiteral {
 
     @Override
     public DBSPLiteral getWithNullable(boolean mayBeNull) {
-        return new DBSPVariantLiteral(this.value, this.type.setMayBeNull(true));
+        return new DBSPVariantLiteral(this.value, this.type.withMayBeNull(true));
     }
 
     @Override

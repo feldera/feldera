@@ -24,7 +24,6 @@ import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
-import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.frontend.ExpressionCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.TypeCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
@@ -228,7 +227,7 @@ public class ExternalFunction extends SqlFunction {
             if (parameterType.mayBeNull)
                 statements.add(new DBSPLetStatement("s", param.asVariable().question()));
             DBSPExpression toStruct = new DBSPApplyExpression("from_json_string",
-                    structType.setMayBeNull(true), param.asVariable().borrow());
+                    structType.withMayBeNull(true), param.asVariable().borrow());
             DBSPLetStatement strct = new DBSPLetStatement("strct",toStruct);
             statements.add(strct);
             DBSPVariablePath var = DBSPTypeAny.getDefault().var();

@@ -44,8 +44,8 @@ public final class DBSPControlledFilterOperator extends DBSPBinaryOperator {
         DBSPType leftType = left.getType();
         if (leftType.is(DBSPTypeBaseType.class)) {
             DBSPType rightType = right.getType();
-            assert leftType.setMayBeNull(true)
-                    .sameType(rightType.setMayBeNull(true)):
+            assert leftType.withMayBeNull(true)
+                    .sameType(rightType.withMayBeNull(true)):
                     "Types differ: " + leftType + " vs " + rightType;
             // Notice the comparison using AGG_GTE, which never returns NULL
             DBSPExpression comparison = new DBSPBinaryExpression(CalciteObject.EMPTY,

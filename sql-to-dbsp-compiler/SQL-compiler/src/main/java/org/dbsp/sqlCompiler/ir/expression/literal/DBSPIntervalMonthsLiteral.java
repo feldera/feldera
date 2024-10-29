@@ -94,7 +94,7 @@ public final class DBSPIntervalMonthsLiteral
     @Override
     public DBSPLiteral getWithNullable(boolean mayBeNull) {
         return new DBSPIntervalMonthsLiteral(this.getNode(),
-                this.getType().setMayBeNull(mayBeNull), this.checkIfNull(this.value, mayBeNull));
+                this.getType().withMayBeNull(mayBeNull), this.checkIfNull(this.value, mayBeNull));
     }
 
     @Override

@@ -167,7 +167,7 @@ public class JoinConditionAnalyzer implements IWritesLogs {
                     mayBeNull = true;
                 }
             }
-            DBSPType commonType = ExpressionCompiler.reduceType(leftType, rightType).setMayBeNull(mayBeNull);
+            DBSPType commonType = ExpressionCompiler.reduceType(leftType, rightType).withMayBeNull(mayBeNull);
             if (leftIsLeft) {
                 this.addEquality(left, right, commonType, !mayBeNull);
             } else {

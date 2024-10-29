@@ -116,7 +116,7 @@ public class AggregateCompiler implements ICompilerComponent {
         this.groups = groups;
         this.compiler = compiler;
         this.resultType = resultType;
-        this.nullableResultType = resultType.setMayBeNull(true);
+        this.nullableResultType = resultType.withMayBeNull(true);
         this.result = null;
         this.v = v;
         // distinct aggregates should have been removed by preprocessing
@@ -325,7 +325,7 @@ public class AggregateCompiler implements ICompilerComponent {
             default -> throw new UnimplementedException("Aggregate function not yet implemented", node);
         };
 
-        DBSPType currentType = tuple.fields[1].getType().setMayBeNull(true);
+        DBSPType currentType = tuple.fields[1].getType().withMayBeNull(true);
         DBSPType zeroType = new DBSPTypeTuple(this.resultType, currentType);
         DBSPExpression zero = new DBSPTupleExpression(
                 this.resultType.defaultValue(),
@@ -373,7 +373,7 @@ public class AggregateCompiler implements ICompilerComponent {
             DBSPType type, DBSPExpression left, DBSPExpression right, @Nullable DBSPExpression filter) {
         DBSPType leftType = left.getType();
         DBSPType rightType = right.getType();
-        DBSPType resultType = type.setMayBeNull(leftType.mayBeNull || rightType.mayBeNull);
+        DBSPType resultType = type.withMayBeNull(leftType.mayBeNull || rightType.mayBeNull);
         DBSPExpression binOp = new DBSPConditionalAggregateExpression(
                 node, op, resultType, left.applyCloneIfNeeded(), right.applyCloneIfNeeded(), filter);
         return binOp.cast(type);
@@ -427,7 +427,7 @@ public class AggregateCompiler implements ICompilerComponent {
             DBSPExpression one = new DBSPI64Literal(1);
             DBSPExpression realZero = new DBSPI64Literal(0);
             DBSPExpression typedZero = this.getAggregatedValueType()
-                    .setMayBeNull(false).to(IsNumericType.class).getZero();
+                    .withMayBeNull(false).to(IsNumericType.class).getZero();
             DBSPExpression agg = this.getAggregatedValue().is_null().not();
 
             DBSPExpression filter = this.filterArgument();
@@ -464,7 +464,7 @@ public class AggregateCompiler implements ICompilerComponent {
                     node, DBSPOpcode.AGG_ADD, this.nullableResultType,
                     accumulator, weighted, this.filterArgument());
             DBSPType semigroup = new DBSPTypeUser(CalciteObject.EMPTY, SEMIGROUP, "DefaultOptSemigroup",
-                    false, accumulator.getType().setMayBeNull(false));
+                    false, accumulator.getType().withMayBeNull(false));
             this.setResult(new NonLinearAggregate(
                     node, zero, this.makeRowClosure(increment, accumulator), zero, semigroup));
         }
@@ -508,7 +508,7 @@ public class AggregateCompiler implements ICompilerComponent {
             if (accumulator.getType().mayBeNull)
                 semigroupName = "DefaultOptSemigroup";
             DBSPType semigroup = new DBSPTypeUser(node, SEMIGROUP, semigroupName, false,
-                    accumulator.getType().setMayBeNull(false));
+                    accumulator.getType().withMayBeNull(false));
             this.setResult(new NonLinearAggregate(
                     node, zero, this.makeRowClosure(increment, accumulator), zero, semigroup));
         }
@@ -546,7 +546,7 @@ public class AggregateCompiler implements ICompilerComponent {
             //       if filter(v) && !v.field.is_null() { 1 } else { 0 },
             //       1 )}
             IsNumericType nonNullAggregateType = this.getAggregatedValueType()
-                    .setMayBeNull(false)
+                    .withMayBeNull(false)
                     .to(IsNumericType.class);
             DBSPExpression one = nonNullAggregateType.getOne();
             DBSPExpression typedZero = nonNullAggregateType.getZero();
@@ -578,7 +578,7 @@ public class AggregateCompiler implements ICompilerComponent {
             return new LinearAggregate(node, map, post, postZero);
         } else {
             DBSPType aggregatedValueType = this.getAggregatedValueType();
-            DBSPType intermediateResultType = aggregatedValueType.setMayBeNull(true);
+            DBSPType intermediateResultType = aggregatedValueType.withMayBeNull(true);
             DBSPExpression zero = new DBSPTupleExpression(
                     DBSPLiteral.none(intermediateResultType), DBSPLiteral.none(intermediateResultType));
             DBSPType pairType = zero.getType();
@@ -589,14 +589,14 @@ public class AggregateCompiler implements ICompilerComponent {
             DBSPExpression countAccumulator = accumulator.field(countIndex);
             DBSPExpression sumAccumulator = accumulator.field(sumIndex);
             DBSPExpression aggregatedValue = this.getAggregatedValue().cast(intermediateResultType);
-            DBSPType intermediateResultTypeNonNull = intermediateResultType.setMayBeNull(false);
+            DBSPType intermediateResultTypeNonNull = intermediateResultType.withMayBeNull(false);
             DBSPExpression plusOne = intermediateResultTypeNonNull.to(IsNumericType.class).getOne();
 
             if (aggregatedValueType.mayBeNull)
                 plusOne = ExpressionCompiler.makeIndicator(
                         node, intermediateResultTypeNonNull, aggregatedValue.deepCopy());
             DBSPExpression weightedCount = new DBSPBinaryExpression(
-                    node, intermediateResultType.setMayBeNull(plusOne.getType().mayBeNull),
+                    node, intermediateResultType.withMayBeNull(plusOne.getType().mayBeNull),
                     DBSPOpcode.MUL_WEIGHT, plusOne,
                     this.compiler.weightVar);
             count = this.aggregateOperation(
@@ -633,7 +633,7 @@ public class AggregateCompiler implements ICompilerComponent {
         DBSPType aggregatedValueType = this.getAggregatedValueType();
 
         // TODO: linear implementation
-        DBSPType intermediateResultType = aggregatedValueType.setMayBeNull(true);
+        DBSPType intermediateResultType = aggregatedValueType.withMayBeNull(true);
         // Compute 3 sums: Sum(value^2), Sum(value), Count(value)
         DBSPExpression zero = new DBSPTupleExpression(
                 DBSPLiteral.none(intermediateResultType),
@@ -650,13 +650,13 @@ public class AggregateCompiler implements ICompilerComponent {
         DBSPExpression sumSquaresAccumulator = accumulator.field(sumSquaresIndex);
 
         DBSPExpression aggregatedValue = this.getAggregatedValue().cast(intermediateResultType);
-        DBSPType intermediateResultTypeNonNull = intermediateResultType.setMayBeNull(false);
+        DBSPType intermediateResultTypeNonNull = intermediateResultType.withMayBeNull(false);
         DBSPExpression plusOne = intermediateResultTypeNonNull.to(IsNumericType.class).getOne();
 
         if (aggregatedValueType.mayBeNull)
             plusOne = ExpressionCompiler.makeIndicator(node, intermediateResultTypeNonNull, aggregatedValue.deepCopy());
         DBSPExpression weightedCount = new DBSPBinaryExpression(
-                node, intermediateResultType.setMayBeNull(plusOne.getType().mayBeNull),
+                node, intermediateResultType.withMayBeNull(plusOne.getType().mayBeNull),
                 DBSPOpcode.MUL_WEIGHT, plusOne,
                 this.compiler.weightVar);
         count = this.aggregateOperation(

@@ -45,7 +45,7 @@ public class DBSPTypeAny extends DBSPType {
     }
 
     @Override
-    public DBSPType setMayBeNull(boolean mayBeNull) {
+    public DBSPType withMayBeNull(boolean mayBeNull) {
         return this;
     }
 

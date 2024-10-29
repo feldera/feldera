@@ -6,17 +6,8 @@ import java.util.List;
 public class ExplicitShuffle implements Shuffle {
     final List<Integer> indexes;
 
-    /** Create an empty shuffle: no values produced in output */
-    public ExplicitShuffle() {
-        this.indexes = new ArrayList<>();
-    }
-
     public ExplicitShuffle(List<Integer> elements) {
         this.indexes = elements;
-    }
-
-    public void add(int index) {
-        this.indexes.add(index);
     }
 
     @Override

@@ -41,7 +41,6 @@ import org.dbsp.util.Linq;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Objects;
 
 /** Lowers a circuit's representation; most changes are about
  * generating compilable Rust for operator functions. */
@@ -63,14 +62,12 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
         //        }
         //     })
         DBSPVariablePath rowVar = new DBSPVariablePath(flatmap.inputElementType.ref());
-        DBSPType eType = flatmap.collectionElementType;
-        if (flatmap.collectionIndexType != null)
-            eType = new DBSPTypeRawTuple(new DBSPTypeUSize(CalciteObject.EMPTY, false), eType);
-        DBSPVariablePath elem = new DBSPVariablePath(eType);
+        DBSPType eType = flatmap.getCollectionElementType();
+        DBSPType collectionElementType = eType;
         List<DBSPStatement> statements = new ArrayList<>();
         List<DBSPExpression> resultColumns = new ArrayList<>();
-        for (int i = 0; i < flatmap.leftCollectionIndexes.size(); i++) {
-            int index = flatmap.leftCollectionIndexes.get(i);
+        for (int i = 0; i < flatmap.leftInputIndexes.size(); i++) {
+            int index = flatmap.leftInputIndexes.get(i);
             // let x0: Vec<i32> = x.0.clone();
             // let x1: x.1.clone();
             DBSPExpression field = rowVar.deref().field(index).applyCloneIfNeeded();
@@ -80,36 +77,60 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
             resultColumns.add(fieldClone.applyCloneIfNeeded());
         }
 
-        if (flatmap.emitIteratedElement) {
-            if (flatmap.collectionIndexType != null) {
-                // e.1, as produced by the iterator
-                resultColumns.add(elem.field(1));
-            } else {
-                if (flatmap.rightProjections != null) {
-                    for (DBSPClosureExpression clo: flatmap.rightProjections) {
-                        resultColumns.add(clo.call(elem.borrow()).applyCloneIfNeeded());
-                    }
-                } else if (elem.getType().is(DBSPTypeTupleBase.class)) {
-                        // Calcite's UNNEST has a strange semantics:
-                        // If e is a tuple type, unpack its fields here
-                        DBSPTypeTupleBase tuple = elem.getType().to(DBSPTypeTupleBase.class);
-                        for (int ei = 0; ei < tuple.size(); ei++) {
-                            resultColumns.add(elem.field(ei).applyCloneIfNeeded());
-                        }
-                } else {
-                        // e
-                        resultColumns.add(elem);
-                }
-            }
+        if (flatmap.ordinalityIndexType != null) {
+            eType = new DBSPTypeRawTuple(new DBSPTypeUSize(CalciteObject.EMPTY, false), eType);
+            // e.0 is usize, from the Rust library, so we do arithmetic using usize
+            // and convert at the end.
+        }
+        DBSPVariablePath e = new DBSPVariablePath(eType);
+
+        // e.0 + 1
+        DBSPExpression e0plus1 = null;
+        if (flatmap.ordinalityIndexType != null) {
+            e0plus1 = new DBSPBinaryExpression(flatmap.getNode(),
+                    new DBSPTypeUSize(CalciteObject.EMPTY, false), DBSPOpcode.ADD,
+                    e.field(0),
+                    new DBSPUSizeLiteral(1)).cast(flatmap.ordinalityIndexType);
         }
 
-        if (flatmap.collectionIndexType != null) {
-            // The INDEX field produced WITH ORDINALITY
-            Objects.requireNonNull(flatmap.collectionIndexType);
-            resultColumns.add(new DBSPBinaryExpression(flatmap.getNode(),
-                    new DBSPTypeUSize(CalciteObject.EMPTY, false), DBSPOpcode.ADD,
-                    elem.field(0),
-                    new DBSPUSizeLiteral(1)).cast(flatmap.collectionIndexType));
+        if (flatmap.rightProjections != null) {
+            for (DBSPClosureExpression clo: flatmap.rightProjections) {
+                List<DBSPExpression> fields;
+                DBSPExpression base = e;
+                if (flatmap.ordinalityIndexType != null)
+                    base = e.field(1);
+
+                if (collectionElementType.is(DBSPTypeTupleBase.class)) {
+                    // apply closure to (e.1.0, e.1.1, ..., e.0+1)
+                    fields = DBSPTupleExpression.flatten(base).allFields();
+                } else {
+                    // apply closure to (e.1, e.0+1)
+                    fields = Linq.list(base.applyCloneIfNeeded());
+                }
+                if (flatmap.ordinalityIndexType != null)
+                    fields.add(e0plus1);
+                DBSPExpression argument = new DBSPTupleExpression(
+                        fields, flatmap.getCollectionElementType().mayBeNull);
+                resultColumns.add(clo.call(argument.borrow()));
+
+            }
+        } else {
+            if (flatmap.ordinalityIndexType != null) {
+                // e.1, as produced by the iterator
+                resultColumns.add(e.field(1));
+            } else if (e.getType().is(DBSPTypeTupleBase.class)) {
+                // Calcite's UNNEST has a strange semantics:
+                // If e is a tuple type, unpack its fields here
+                DBSPTypeTupleBase tuple = e.getType().to(DBSPTypeTupleBase.class);
+                for (int ei = 0; ei < tuple.size(); ei++)
+                    resultColumns.add(e.field(ei).applyCloneIfNeeded());
+            } else {
+                // e
+                resultColumns.add(e);
+            }
+            if (flatmap.ordinalityIndexType != null) {
+                resultColumns.add(e0plus1);
+            }
         }
         resultColumns = flatmap.shuffle.shuffle(resultColumns);
 
@@ -128,7 +149,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
         DBSPExpression arrayExpression;
         if (arrayType.mayBeNull) {
             DBSPExpression condition = statement.getVarReference().deref().is_null();
-            DBSPExpression empty = new DBSPVecLiteral(flatmap.getNode(), arrayType.setMayBeNull(false), Linq.list());
+            DBSPExpression empty = new DBSPVecLiteral(flatmap.getNode(), arrayType.withMayBeNull(false), Linq.list());
             DBSPExpression contents = statement.getVarReference().deref().applyClone().unwrap();
             arrayExpression = new DBSPIfExpression(flatmap.getNode(), condition, empty, contents);
         } else {
@@ -141,11 +162,11 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
         //   Tuple3::new(x0.clone(), x1.clone(), e)
         // }
         DBSPClosureExpression toTuple = new DBSPTupleExpression(resultColumns, false)
-                .closure(elem);
+                .closure(e);
         DBSPExpression iter = new DBSPApplyMethodExpression(flatmap.getNode(), "into_iter",
                 DBSPTypeAny.getDefault(),
                 statement.getVarReference().applyClone());
-        if (flatmap.collectionIndexType != null) {
+        if (flatmap.ordinalityIndexType != null) {
             iter = new DBSPApplyMethodExpression(flatmap.getNode(), "enumerate",
                     DBSPTypeAny.getDefault(), iter);
         }
@@ -255,7 +276,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
                     node.getNode(),
                     cond,
                     tmp.some(),
-                    tmp.getType().setMayBeNull(true).none());
+                    tmp.getType().withMayBeNull(true).none());
             DBSPBlockExpression block = new DBSPBlockExpression(Linq.list(let), ifexp);
             return block.closure(expression.parameters);
         } else {
@@ -277,7 +298,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
                     node.getNode(),
                     cond,
                     map.some(),
-                    map.getType().setMayBeNull(true).none());
+                    map.getType().withMayBeNull(true).none());
             return ifexp.closure(expression.parameters);
         }
     }

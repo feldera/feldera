@@ -150,31 +150,30 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
         // This logic parallels the one from LowerCircuitVisitor
         DBSPVariablePath param = expression.inputElementType.ref().var();
         List<DBSPExpression> outputFields = new ArrayList<>();
-        for (int index: expression.leftCollectionIndexes) {
+        for (int index: expression.leftInputIndexes) {
              DBSPExpression field = param.deepCopy().deref().field(index);
              outputFields.add(field);
         }
 
-        DBSPTypeTupleBase tupleType = expression.collectionElementType.as(DBSPTypeTupleBase.class);
-        if (expression.emitIteratedElement) {
-            if (expression.collectionIndexType != null) {
-                outputFields.add(new NoExpression(expression.collectionIndexType));
-            } else {
-                if (expression.rightProjections != null) {
-                    for (DBSPClosureExpression clo: expression.rightProjections) {
-                        outputFields.add(new NoExpression(clo.getResultType()));
-                    }
-                } else if (tupleType != null) {
-                    for (DBSPType elem: tupleType.tupFields) {
-                        outputFields.add(new NoExpression(elem));
-                    }
-                } else {
-                    outputFields.add(new NoExpression(expression.collectionElementType));
+        DBSPTypeTupleBase tupleType = expression.getCollectionElementType().as(DBSPTypeTupleBase.class);
+        if (expression.ordinalityIndexType != null) {
+            outputFields.add(new NoExpression(expression.ordinalityIndexType));
+        } else {
+            if (expression.rightProjections != null) {
+                for (DBSPClosureExpression clo: expression.rightProjections) {
+                    // TODO: this is very conservative
+                    outputFields.add(new NoExpression(clo.getResultType()));
                 }
+            } else if (tupleType != null) {
+                for (DBSPType elem: tupleType.tupFields) {
+                    outputFields.add(new NoExpression(elem));
+                }
+            } else {
+                outputFields.add(new NoExpression(expression.getCollectionElementType()));
             }
         }
-        if (expression.collectionIndexType != null)
-            outputFields.add(new NoExpression(expression.collectionIndexType));
+        if (expression.ordinalityIndexType != null)
+            outputFields.add(new NoExpression(expression.ordinalityIndexType));
         outputFields = expression.shuffle.shuffle(outputFields);
         DBSPExpression tuple = new DBSPTupleExpression(outputFields, false);
         DBSPType resultType = expression.getType().to(DBSPTypeFunction.class).resultType;

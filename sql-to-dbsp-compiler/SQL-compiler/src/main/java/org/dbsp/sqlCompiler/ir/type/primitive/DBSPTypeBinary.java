@@ -29,7 +29,7 @@ public class DBSPTypeBinary extends DBSPTypeBaseType {
     }
 
     @Override
-    public DBSPType setMayBeNull(boolean mayBeNull) {
+    public DBSPType withMayBeNull(boolean mayBeNull) {
         if (this.mayBeNull == mayBeNull)
             return this;
         return new DBSPTypeBinary(this.getNode(), this.precision, mayBeNull);

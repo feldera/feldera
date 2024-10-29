@@ -173,7 +173,7 @@ public abstract class DBSPExpression
     public DBSPExpression castToNullable() {
         if (this.getType().mayBeNull)
             return this;
-        return this.cast(this.getType().setMayBeNull(true));
+        return this.cast(this.getType().withMayBeNull(true));
     }
 
     public DBSPExpression cast(DBSPType to) {
@@ -211,8 +211,7 @@ public abstract class DBSPExpression
     }
 
     /** 'this' must be an expression with a tuple type.
-     * @return a DBSPTupleExpression that contains all fields of this expression (cloned if necessary).
-     */
+     * @return a DBSPTupleExpression that contains all fields of this expression (cloned if necessary). */
     public List<DBSPExpression> allFields() {
         DBSPTypeTupleBase type = this.getType().to(DBSPTypeTupleBase.class);
         List<DBSPExpression> result = new ArrayList<>();

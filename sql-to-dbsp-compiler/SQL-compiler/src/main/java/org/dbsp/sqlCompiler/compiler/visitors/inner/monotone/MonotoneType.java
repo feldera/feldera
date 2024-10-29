@@ -33,7 +33,7 @@ public class MonotoneType extends ScalarMonotoneType {
 
     @Override
     public IMaybeMonotoneType setMaybeNull(boolean maybeNull) {
-        return new MonotoneType(this.type.setMayBeNull(true));
+        return new MonotoneType(this.type.withMayBeNull(true));
     }
 
     @Override

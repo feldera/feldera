@@ -106,7 +106,7 @@ public final class DBSPMapLiteral extends DBSPLiteral {
 
     @Override
     public DBSPLiteral getWithNullable(boolean mayBeNull) {
-        return new DBSPMapLiteral(this.getType().setMayBeNull(mayBeNull).to(DBSPTypeMap.class),
+        return new DBSPMapLiteral(this.getType().withMayBeNull(mayBeNull).to(DBSPTypeMap.class),
                 this.keys, this.values);
     }
 

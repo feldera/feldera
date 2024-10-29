@@ -54,7 +54,7 @@ public class DBSPTypeUser extends DBSPType {
     }
 
     @Override
-    public DBSPType setMayBeNull(boolean mayBeNull) {
+    public DBSPType withMayBeNull(boolean mayBeNull) {
         if (this.mayBeNull == mayBeNull)
             return this;
         return new DBSPTypeUser(this.getNode(), this.code, this.name, mayBeNull, this.typeArgs);
