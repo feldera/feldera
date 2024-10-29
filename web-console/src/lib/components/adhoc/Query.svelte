@@ -159,7 +159,11 @@
       </div>
       <div class="flex h-6 flex-nowrap items-center gap-4 whitespace-nowrap">
         {#if result}
-          {result.rows.length > 1 ? `${result.rows.length} rows` : ''}
+          {result.rows.length > 1
+            ? `${result.rows.length} rows`
+            : result.rows.length === 0
+              ? 'No rows returned'
+              : ''}
         {/if}
         {#if progress}
           <Progress value={null} meterBg="bg-primary-500" base="pr-20 h-1 max-w-[1000px]"
@@ -186,9 +190,19 @@
                 <tr class="whitespace-nowrap even:bg-surface-50-950">
                   {#each row.cells as value}
                     {@const text =
-                      typeof value === 'string' ? value : JSONbig.stringify(value, undefined, 1)}
-                    <td onmouseenter={handleCellHover(text)} onmouseleave={handleCellMouseLeave}>
-                      {text.slice(0, 37)}{text.length > 36 ? '...' : ''}
+                      value === null
+                        ? null
+                        : typeof value === 'string'
+                          ? value
+                          : JSONbig.stringify(value, undefined, 1)}
+                    <td
+                      onmouseenter={handleCellHover(text)}
+                      onmouseleave={handleCellMouseLeave}
+                      class:italic={text === null}
+                    >
+                      {text === null ? 'NULL' : text.slice(0, 37)}{text && text.length > 36
+                        ? '...'
+                        : ''}
                     </td>
                   {/each}
                 </tr>
