@@ -22,7 +22,10 @@ class aggtst_varcharn_argmin_value_diff(TstView):
 class aggtst_varcharn_argmin_gby(TstView):
     def __init__(self):
         # checked manually
-        self.data = [{"id": 0, "c2": "fred"}, {"id": 1, "c1": "hello", "c2": "varia"}]
+        self.data = [
+            {"id": 0, "c1": None, "c2": "fred"},
+            {"id": 1, "c1": "hello", "c2": "varia"},
+        ]
         self.sql = """CREATE MATERIALIZED VIEW varcharn_argmin_gby AS SELECT
                       id, ARG_MIN(f_c1, f_c2) AS c1, ARG_MIN(f_c2, f_c1) AS c2
                       FROM atbl_varcharn
@@ -41,7 +44,10 @@ class aggtst_varcharn_argmin_distinct(TstView):
 class aggtst_varcharn_argmin_distinct_gby(TstView):
     def __init__(self):
         # checked manually
-        self.data = [{"id": 0, "c2": "fred"}, {"id": 1, "c1": "hello", "c2": "varia"}]
+        self.data = [
+            {"id": 0, "c1": None, "c2": "fred"},
+            {"id": 1, "c1": "hello", "c2": "varia"},
+        ]
         self.sql = """CREATE MATERIALIZED VIEW varcharn_argmin_distinct_gby AS SELECT
                       id, ARG_MIN(DISTINCT f_c1, f_c2) AS c1, ARG_MIN(DISTINCT f_c2, f_c1) AS c2
                       FROM atbl_varcharn

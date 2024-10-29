@@ -100,7 +100,6 @@ class View(SqlObject):
         """Check that the data received matches the expected data"""
         data = list(pipeline.query(f"SELECT * FROM {self.name};"))
         expected = self.get_data()
-        expected = [{k: v for k, v in d.items() if v is not None} for d in expected]
 
         tc = unittest.TestCase()
         tc.assertCountEqual(

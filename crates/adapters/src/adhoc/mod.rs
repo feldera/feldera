@@ -3,7 +3,8 @@ use actix_web::http::header;
 use actix_web::HttpResponse;
 use arrow::array::RecordBatch;
 use arrow::util::pretty::pretty_format_batches;
-use arrow_json::LineDelimitedWriter;
+use arrow_json::writer::LineDelimited;
+use arrow_json::WriterBuilder;
 use async_stream::{stream, try_stream};
 use bytes::Bytes;
 use datafusion::common::DataFusionError;
@@ -145,7 +146,8 @@ pub async fn stream_adhoc_result(
                             match batch_result {
                                 Ok(batch) => {
                                     let mut buf = Vec::with_capacity(4096);
-                                    let mut writer = LineDelimitedWriter::new(&mut buf);
+                                    let builder = WriterBuilder::new().with_explicit_nulls(true);
+                                    let mut writer = builder.build::<_, LineDelimited>(&mut buf);
                                     if let Err(e) = writer.write(&batch).map_err(DataFusionError::from).map_err(PipelineError::from) {
                                         yield serde_json::to_string(&e).unwrap().into();
                                         return;
