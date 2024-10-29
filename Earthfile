@@ -593,8 +593,6 @@ ci-tests:
     # TODO: Temporarily disabled while we port the demo script
     # BUILD +test-snowflake-sink
     # BUILD +test-s3
-
-integration-tests:
     BUILD +test-python --all=1
     BUILD +test-debezium-postgres
     BUILD +test-debezium-jdbc
