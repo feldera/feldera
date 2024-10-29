@@ -1,5 +1,4 @@
 //! Tests for datagen input adapter that generates random data based on a schema and config.
-#[allow(clippy::type_complexity)]
 use crate::test::{mock_input_pipeline, MockDeZSet, MockInputConsumer, TestStruct2};
 use crate::InputReader;
 use anyhow::Result as AnyResult;
