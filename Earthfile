@@ -187,7 +187,7 @@ test-sql:
 test-slt:
     # Run SQL logic test tests
     FROM +build-adapters
-    RUN cd "sql-to-dbsp-compiler" && ./build.sh && mvn test --no-transfer-progress -q -B -pl slt -Dsurefire.failIfNoSpecifiedTests=false
+    RUN cd "sql-to-dbsp-compiler" && ./build.sh && mvn test --no-transfer-progress -q -B -Dtest=org.dbsp.sqllogictest.RotateTests -Dsurefire.failIfNoSpecifiedTests=false test
 
 build-nexmark:
     FROM +build-dbsp
