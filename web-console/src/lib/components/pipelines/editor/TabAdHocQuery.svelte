@@ -53,13 +53,6 @@
         if (!adhocQueries[pipelineName].queries[i]?.result) {
           return
         }
-        // Add field for the next query if the last query did not yield an error right away
-        if (
-          adhocQueries[pipelineName].queries.length === i + 1 &&
-          ((row) => !row || isDataRow(row))(input.at(0))
-        ) {
-          adhocQueries[pipelineName].queries.push({ query: '' })
-        }
         if (
           adhocQueries[pipelineName].queries[i].result.columns.length === 0 &&
           isDataRow(input[0])
@@ -109,6 +102,15 @@
           onParseEnded: () => {
             if (!adhocQueries[pipelineName].queries[i]) {
               return
+            }
+            // Add field for the next query if the last query did not yield an error right away
+            if (
+              adhocQueries[pipelineName].queries.length === i + 1 &&
+              ((row) => !row || isDataRow(row))(
+                adhocQueries[pipelineName].queries[i].result?.rows.at(0)
+              )
+            ) {
+              adhocQueries[pipelineName].queries.push({ query: '' })
             }
             adhocQueries[pipelineName].queries[i].progress = false
             getAdhocQueries = () => adhocQueries

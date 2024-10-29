@@ -32,7 +32,7 @@
 </script>
 
 <BodyAttr
-  class="{darkMode.value} scrollbar-thumb-surface-200 scrollbar-thumb-rounded-full scrollbar-w-2 scrollbar-h-2 hover:scrollbar-thumb-surface-400 dark:scrollbar-thumb-surface-800 dark:hover:scrollbar-thumb-surface-600"
+  class="{darkMode.value} scrollbar-thumb-surface-200 scrollbar-thumb-rounded-full scrollbar-w-2.5 scrollbar-h-2.5 hover:scrollbar-thumb-surface-400 dark:scrollbar-thumb-surface-800 dark:hover:scrollbar-thumb-surface-600"
 />
 
 {@render children()}

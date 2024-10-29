@@ -78,7 +78,7 @@
     "sk-oidc-oauth": "^1.2.0",
     "sort-on": "^6.1.0",
     "style-to-object": "^1.0.8",
-    "svelte": "^5.0.5",
+    "svelte": "^5.1.4",
     "svelte-attr": "^0.0.2",
     "svelte-check": "^4.0.5",
     "svelte-echarts": "^1.0.0-rc3",
