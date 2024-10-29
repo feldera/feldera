@@ -166,11 +166,9 @@ impl KafkaInputReaderInner {
                 match command {
                     NonFtInputReaderCommand::Queue => queue.queue(),
                     NonFtInputReaderCommand::Transition(PipelineState::Running) => {
-                        println!("start");
                         running = true;
                     }
                     NonFtInputReaderCommand::Transition(PipelineState::Paused) => {
-                        println!("pause");
                         running = false;
                         when_paused = Instant::now();
                         helper_state.store(PipelineState::Paused, Ordering::Release);
