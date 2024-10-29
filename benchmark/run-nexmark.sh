@@ -17,6 +17,7 @@ parse=false
 
 # Feldera SQL options.
 api_url=http://localhost:8080
+extra=
 
 # Dataflow options.
 project=
@@ -95,6 +96,12 @@ do
         --api-url)
             nextarg=api_url
             ;;
+        --extra=*)
+            extra=${arg#--extra=}
+            ;;
+        --extra)
+            nextarg=extra
+            ;;
         --storage)
             storage=:
             ;;
@@ -146,6 +153,7 @@ nexmark.txt.  These options select other modes of operation:
 
 The feldera backend with --language=sql takes the following additional options:
   --api-url=URL         URL to the Feldera API (default: $api_url)
+  --extra="..."         extra arguments to pass to run.py
 
 The beam.dataflow backend takes more configuration.  These settings are
 required:
@@ -485,7 +493,8 @@ case $runner:$language in
             --batchsize $batchsize \
             --circuit-profile \
             $(if $storage; then printf "%s" --storage; fi) \
-            --query $(if test $query = all; then echo all; else echo q$query; fi)
+            --query $(if test $query = all; then echo all; else echo q$query; fi) \
+	    $extra
         ;;
 
     flink:*)
