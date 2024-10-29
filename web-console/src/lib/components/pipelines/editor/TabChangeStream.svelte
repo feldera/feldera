@@ -261,7 +261,9 @@
 
     <Pane minSize={70} class="flex h-full">
       {#if getChangeStream()[pipelineName]?.rows?.length}
-        <ChangeStream changeStream={getChangeStream()[pipelineName]}></ChangeStream>
+        {#key pipelineName}
+          <ChangeStream changeStream={getChangeStream()[pipelineName]}></ChangeStream>
+        {/key}
       {:else}
         <span class="p-2 text-surface-600-400">
           {#if Object.values(pipelinesRelations[pipelineName] ?? {}).some((r) => r.selected)}

@@ -1,6 +1,6 @@
 <script lang="ts" generics="Row">
   import { VList } from 'virtua/svelte'
-  import { type Snippet } from 'svelte'
+  import { untrack, type Snippet } from 'svelte'
   import { scale } from 'svelte/transition'
   let {
     items,
@@ -8,19 +8,42 @@
     class: _class = ''
   }: { items: Row[]; item: Snippet<[item: Row]>; class?: string } = $props()
 
+  let handle1: number = 0
+  let handle2: number = 0
+  let handle3: NodeJS.Timeout
   let ref = $state<VList<Row>>(undefined!)
-  const scrollToBottom = () => {
-    ref.scrollTo(Number.MAX_SAFE_INTEGER)
+  const scrollToBottom = (lastOffset?: number) => {
+    ref.scrollTo(
+      ref.getScrollSize() -
+        (Math.round(ref.getScrollSize() - ref.getViewportSize()) <= 0 ? ref.getViewportSize() : 0)
+    )
+    handle1 = requestAnimationFrame(() => {
+      if (!ref) {
+        return
+      }
+      const offset = Math.round(ref.getScrollSize() - ref.getScrollOffset() - ref.getViewportSize())
+      if (offset === lastOffset) {
+        return
+      }
+      stickToBottom = true
+      if (offset > 1) {
+        scrollToBottom(offset)
+      }
+    })
   }
 
   let stickToBottom = $state(true)
 
   {
-    // TODO: this is not needed when it is fixed that the tabs are not mounted until opened
-    const len = $derived(items.length)
     $effect(() => {
-      if (stickToBottom && len) {
-        scrollToBottom()
+      items
+      untrack(() => {
+        if (Math.round(ref.getScrollSize() - ref.getScrollOffset()) <= 0) {
+          handle2 = requestAnimationFrame(scrollToBottom)
+        }
+      })
+      if (stickToBottom && items.length) {
+        handle3 = setTimeout(scrollToBottom)
       }
     })
   }
@@ -30,12 +53,14 @@
   bind:this={ref}
   data={items}
   onscroll={(scrollTop) => {
-    stickToBottom = Math.round(scrollTop - ref.getScrollSize() + ref.getViewportSize()) === 0
+    cancelAnimationFrame(handle1)
+    cancelAnimationFrame(handle2)
+    clearTimeout(handle3)
+    stickToBottom = Math.round(scrollTop - ref.getScrollSize() + ref.getViewportSize()) >= 0
   }}
   class={_class}
   getKey={(_, i) => i}
   children={renderItem}
-  shift
 ></VList>
 {#if !stickToBottom}
   <button
