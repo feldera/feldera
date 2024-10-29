@@ -1087,7 +1087,7 @@ async fn json_ingress() {
                 "select * from t1 order by c1, c2, c3;"
             )
             .await,
-        json!([{"c1": 10, "c2": true}, {"c1": 20, "c3": "foo"}])
+        json!([{"c1": 10, "c2": true, "c3": null}, {"c1": 20, "c2": null, "c3": "foo"}])
     );
 
     // Push more data using insert/delete format.
@@ -1108,7 +1108,7 @@ async fn json_ingress() {
                 "select * from t1 order by c1, c2, c3;"
             )
             .await,
-        json!([{"c1": 20, "c3": "foo"}, {"c1": 30, "c3": "bar"}])
+        json!([{"c1": 20, "c2": null, "c3": "foo"}, {"c1": 30, "c2": null, "c3": "bar"}])
     );
 
     // Format data as json array.
@@ -1136,7 +1136,7 @@ async fn json_ingress() {
                 "select * from T1 order by c1, c2, c3;"
             )
             .await,
-        json!([{"c1": 20, "c3": "foo"}, {"c1": 30, "c3": "bar"}, {"c1": 50, "c2": true, "c3": ""}])
+        json!([{"c1": 20, "c2": null, "c3": "foo"}, {"c1": 30, "c2": null, "c3": "bar"}, {"c1": 50, "c2": true, "c3": ""}])
     );
 
     // Trigger parse errors.
@@ -1160,7 +1160,7 @@ async fn json_ingress() {
                 "select * from t1 order by c1, c2, c3;"
             )
             .await,
-        json!([{"c1": 20, "c3": "foo"}, {"c1": 30, "c3": "bar"}, {"c1": 50, "c2": true, "c3": ""}])
+        json!([{"c1": 20, "c2": null, "c3": "foo"}, {"c1": 30, "c2": null, "c3": "bar"}, {"c1": 50, "c2": true, "c3": ""}])
     );
 
     let mut response = config
@@ -1183,7 +1183,7 @@ async fn json_ingress() {
                 "select * from t1 order by c1, c2, c3;"
             )
             .await,
-        json!([{"c1": 20, "c3": "foo"}, {"c1": 25, "c2": true, "c3": ""}, {"c1": 30, "c3": "bar"}, {"c1": 50, "c2": true, "c3": ""}])
+        json!([{"c1": 20, "c2": null, "c3": "foo"}, {"c1": 25, "c2": true, "c3": ""}, {"c1": 30, "c2": null, "c3": "bar"}, {"c1": 50, "c2": true, "c3": ""}])
     );
 
     // Debezium CDC format
@@ -1203,7 +1203,7 @@ async fn json_ingress() {
                 "select * from t1 order by c1, c2, c3;"
             )
             .await,
-        json!([{"c1": 20, "c3": "foo"}, {"c1": 25, "c2": true, "c3": ""}, {"c1": 30, "c3": "bar"}, {"c1": 60, "c2": true, "c3": "hello"}])
+        json!([{"c1": 20, "c2": null, "c3": "foo"}, {"c1": 25, "c2": true, "c3": ""}, {"c1": 30, "c2": null, "c3": "bar"}, {"c1": 60, "c2": true, "c3": "hello"}])
     );
 
     // Push some CSV data (the second record is invalid, but the other two should
@@ -1229,7 +1229,7 @@ not_a_number,true,ΑαΒβΓγΔδ
                 "select * from t1 order by c1, c2, c3;"
             )
             .await,
-        json!([{"c1": 15, "c2": true, "c3": "foo"}, {"c1": 16, "c2": false, "c3": "unicode🚲"}, {"c1": 20, "c3": "foo"}, {"c1": 25, "c2": true, "c3": ""}, {"c1": 30, "c3": "bar"}, {"c1": 60, "c2": true, "c3": "hello"}])
+        json!([{"c1": 15, "c2": true, "c3": "foo"}, {"c1": 16, "c2": false, "c3": "unicode🚲"}, {"c1": 20, "c2": null, "c3": "foo"}, {"c1": 25, "c2": true, "c3": ""}, {"c1": 30, "c2": null, "c3": "bar"}, {"c1": 60, "c2": true, "c3": "hello"}])
     );
 
     // Shutdown the pipeline
@@ -1279,7 +1279,7 @@ async fn map_column() {
         config
             .adhoc_query_json("/v0/pipelines/test/query", "select * from t1 order by c1;")
             .await,
-        json!([{"c1": 10, "c2": true, "c3": {"bar": "2", "foo": "1"}}, {"c1": 20}])
+        json!([{"c1": 10, "c2": true, "c3": {"bar": "2", "foo": "1"}}, {"c1": 20, "c2": null, "c3": null}])
     );
 
     // Shutdown the pipeline
