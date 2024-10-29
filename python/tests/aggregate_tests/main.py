@@ -60,6 +60,9 @@ from tests.aggregate_tests.test_charn_min import *  # noqa: F403
 
 from tests.aggregate_tests.test_charn_every import *  # noqa: F403
 from tests.aggregate_tests.test_charn_some import *  # noqa: F403
+from tests.aggregate_tests.test_time_max import *  # noqa: F403
+from tests.aggregate_tests.test_time_min import *  # noqa: F403
+from tests.aggregate_tests.test_time_tbl import *  # noqa: F403
 
 
 def register_tests_in_module(module, ta: TstAccumulator):
