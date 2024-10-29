@@ -51,6 +51,7 @@ import org.apache.calcite.rel.type.RelDataTypeSystemImpl;
 import org.apache.calcite.rel.type.RelProtoDataType;
 import org.apache.calcite.rel.type.RelRecordType;
 import org.apache.calcite.rex.RexBuilder;
+import org.apache.calcite.rex.RexCall;
 import org.apache.calcite.rex.RexInputRef;
 import org.apache.calcite.rex.RexNode;
 import org.apache.calcite.rex.RexUtil;
@@ -463,17 +464,24 @@ public class CalciteCompiler implements IWritesLogs {
         return this.parse(sql, true);
     }
 
+    public record ParsedStatement(SqlNode statement, boolean visible) {
+        @Override
+        public String toString() {
+            return this.statement.toString();
+        }
+    };
+
     /** Given a list of statements separated by semicolons, parse all of them. */
-    public SqlNodeList parseStatements(String statements, boolean saveLines) throws SqlParseException {
+    public List<ParsedStatement> parseStatements(String statements, boolean saveLines) throws SqlParseException {
         SqlParser sqlParser = this.createSqlParser(statements, saveLines);
         SqlNodeList sqlNodes = sqlParser.parseStmtList();
         for (SqlNode node: sqlNodes) {
             node.accept(this.getTypeValidator());
         }
-        return sqlNodes;
+        return Linq.map(sqlNodes, n -> new ParsedStatement(n, saveLines));
     }
 
-    public SqlNodeList parseStatements(String statements) throws SqlParseException {
+    public List<ParsedStatement> parseStatements(String statements) throws SqlParseException {
         return this.parseStatements(statements, true);
     }
 
@@ -628,7 +636,72 @@ public class CalciteCompiler implements IWritesLogs {
         return result;
     }
 
-    List<RelColumnMetadata> createTableColumnsMetadata(SqlNodeList list, SqlIdentifier table) {
+    RexNode validateLatenessOrWatermark(SqlExtendedColumnDeclaration column,
+                                        SqlNode value, SourceFileContents sources) {
+        try {
+            /* We generate the following SQL:
+              CREATE TABLE T(... column WATERMARK expression ...);
+              SELECT column - expression FROM tmp;
+              and validate it. */
+            String sql = "CREATE TABLE TMP(" +
+                    column.name + " " +
+                    column.dataType + ");\n" +
+                    "CREATE VIEW V AS SELECT " +
+                    column.name +
+                    " - " + value +
+                    " FROM TMP;\n";
+            Logger.INSTANCE.belowLevel(this, 2)
+                    .append("Submitting for compilation ")
+                    .newline()
+                    .append(sql)
+                    .newline();
+            CalciteCompiler clone = new CalciteCompiler(this);
+            List<ParsedStatement> list = clone.parseStatements(sql, false);
+            FrontEndStatement lastStatement = null;
+            for (ParsedStatement node : list) {
+                lastStatement = clone.compile(node, sources);
+            }
+            assert lastStatement != null;
+            assert lastStatement instanceof CreateViewStatement;
+            CreateViewStatement cv = (CreateViewStatement) lastStatement;
+            RelNode node = cv.getRelNode();
+            if (node instanceof LogicalTableScan) {
+                // This means that a subtraction with 0 was reduced to nothing
+                assert this.converter != null;
+                return this.converter.convertExpression(value);
+            }
+            if (node instanceof LogicalProject project) {
+                List<RexNode> projects = project.getProjects();
+                if (projects.size() == 1) {
+                    RexNode subtract = projects.get(0);
+                    if (subtract instanceof RexCall call) {
+                        if (call.getKind() == SqlKind.MINUS) {
+                            RexNode left = call.getOperands().get(0);
+                            if (left instanceof RexInputRef) {
+                                // This may include some casts
+                                return call.getOperands().get(1);
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (CalciteContextException e) {
+            SqlParserPos pos = value.getParserPosition();
+            CalciteContextException ex = new CalciteContextException(e.getMessage(), e.getCause());
+            ex.setPosition(pos.getLineNum(), pos.getColumnNum(), pos.getEndLineNum(), pos.getEndColumnNum());
+            throw ex;
+        } catch (SqlParseException e) {
+            // Do we need to rewrite other exceptions?
+            throw new RuntimeException(e);
+        }
+        throw new CompilationError("Cannot subtract " + value + " from column " +
+                Utilities.singleQuote(column.name.getSimple()) + " of type " +
+                column.dataType, CalciteObject.create(value));
+    }
+
+    List<RelColumnMetadata> createTableColumnsMetadata(
+            SqlCreateTable ct, SqlIdentifier table, boolean visible, SourceFileContents sources) {
+        SqlNodeList list = ct.columnsOrForeignKeys;
         List<RelColumnMetadata> result = new ArrayList<>();
         int index = 0;
         Map<String, SqlNode> columnDefinition = new HashMap<>();
@@ -698,10 +771,12 @@ public class CalciteCompiler implements IWritesLogs {
                 if (declaredPrimary)
                     primaryKeys.remove(name.getSimple());
                 SqlToRelConverter converter = this.getConverter();
-                if (cd.lateness != null)
-                    lateness = converter.convertExpression(cd.lateness);
-                if (cd.watermark != null)
-                    watermark = converter.convertExpression(cd.watermark);
+                if (cd.lateness != null) {
+                    lateness = this.validateLatenessOrWatermark(cd, cd.lateness, sources);
+                }
+                if (cd.watermark != null) {
+                    watermark = this.validateLatenessOrWatermark(cd, cd.watermark, sources);
+                }
                 if (cd.defaultValue != null) {
                     // workaround for https://issues.apache.org/jira/browse/CALCITE-6129
                     if (cd.defaultValue instanceof SqlLiteral literal) {
@@ -934,10 +1009,10 @@ public class CalciteCompiler implements IWritesLogs {
                     .append(sql)
                     .newline();
             CalciteCompiler clone = new CalciteCompiler(this);
-            SqlNodeList list = clone.parseStatements(sql, true);
+            List<ParsedStatement> list = clone.parseStatements(sql, true);
             FrontEndStatement statement = null;
-            for (SqlNode node: list) {
-                statement = clone.compile(node.toString(), node, sources);
+            for (ParsedStatement node: list) {
+                statement = clone.compile(node, sources);
             }
 
             CreateViewStatement view = Objects.requireNonNull(statement).as(CreateViewStatement.class);
@@ -973,34 +1048,28 @@ public class CalciteCompiler implements IWritesLogs {
                 line, col, endLine, endCol);
     }
 
-    /** Compile a SQL statement.
-     * @param node         Compiled version of the SQL statement.
-     * @param sqlStatement SQL statement as a string to compile. */
     @Nullable
-    public FrontEndStatement compile(
-            String sqlStatement,
-            SqlNode node,
-            SourceFileContents sources) {
-        CalciteObject object = CalciteObject.create(node);
+    public FrontEndStatement compile(ParsedStatement node, SourceFileContents sources) {
+        String sqlStatement = node.toString();
+        CalciteObject object = CalciteObject.create(node.statement);
         Logger.INSTANCE.belowLevel(this, 3)
                 .append("Compiling ")
                 .append(sqlStatement)
                 .newline();
-        SqlKind kind = node.getKind();
+        SqlKind kind = node.statement().getKind();
         switch (kind) {
             case DROP_TABLE: {
-                SqlDropTable dt = (SqlDropTable) node;
+                SqlDropTable dt = (SqlDropTable) node.statement;
                 String tableName = dt.name.getSimple();
                 this.calciteCatalog.dropTable(tableName);
                 return new DropTableStatement(node, sqlStatement, tableName);
             }
             case CREATE_TABLE: {
-                SqlCreateTable ct = (SqlCreateTable) node;
+                SqlCreateTable ct = (SqlCreateTable) node.statement;
                 if (ct.ifNotExists)
                     throw new UnsupportedException("IF NOT EXISTS not supported", object);
                 String tableName = ct.name.getSimple();
-                List<RelColumnMetadata> cols = this.createTableColumnsMetadata(
-                        Objects.requireNonNull(ct.columnsOrForeignKeys), ct.name);
+                List<RelColumnMetadata> cols = this.createTableColumnsMetadata(ct, ct.name, node.visible, sources);
                 @Nullable PropertyList properties = this.createProperties(ct.tableProperties);
                 if (properties != null)
                     properties.checkDuplicates(this.errorReporter);
@@ -1014,7 +1083,7 @@ public class CalciteCompiler implements IWritesLogs {
                 return table;
             }
             case CREATE_FUNCTION: {
-                SqlCreateFunctionDeclaration decl = (SqlCreateFunctionDeclaration) node;
+                SqlCreateFunctionDeclaration decl = (SqlCreateFunctionDeclaration) node.statement;
                 List<Map.Entry<String, RelDataType>> parameters = Linq.map(
                         decl.getParameters(), param -> {
                             SqlAttributeDefinition attr = (SqlAttributeDefinition) param;
@@ -1035,7 +1104,7 @@ public class CalciteCompiler implements IWritesLogs {
             }
             case CREATE_VIEW: {
                 SqlToRelConverter converter = this.getConverter();
-                SqlCreateView cv = (SqlCreateView) node;
+                SqlCreateView cv = (SqlCreateView) node.statement;
                 SqlNode query = cv.query;
                 if (cv.getReplace())
                     throw new UnsupportedException("OR REPLACE not supported", object);
@@ -1059,8 +1128,7 @@ public class CalciteCompiler implements IWritesLogs {
                 RelNode optimized = this.optimize(relRoot.rel);
                 relRoot = relRoot.withRel(optimized);
                 String viewName = cv.name.getSimple();
-                CreateViewStatement view = new CreateViewStatement(
-                        cv, sqlStatement,
+                CreateViewStatement view = new CreateViewStatement(node, sqlStatement,
                         cv.name.getSimple(), Utilities.identifierIsQuoted(cv.name),
                         columns, cv, relRoot, viewProperties);
                 // From Calcite's point of view we treat this view just as another table.
@@ -1070,7 +1138,7 @@ public class CalciteCompiler implements IWritesLogs {
                 return view;
             }
             case CREATE_TYPE: {
-                SqlCreateType ct = (SqlCreateType) node;
+                SqlCreateType ct = (SqlCreateType) node.statement;
                 RelProtoDataType proto = typeFactory -> {
                     if (ct.dataType != null) {
                         return this.specToRel(ct.dataType, false);
@@ -1110,7 +1178,7 @@ public class CalciteCompiler implements IWritesLogs {
             }
             case INSERT: {
                 SqlToRelConverter converter = this.getConverter();
-                SqlInsert insert = (SqlInsert) node;
+                SqlInsert insert = (SqlInsert) node.statement;
                 SqlNode table = insert.getTargetTable();
                 if (!(table instanceof SqlIdentifier id))
                     throw new CompilationError("INSERT statement expected a table name", CalciteObject.create(table));
@@ -1123,7 +1191,7 @@ public class CalciteCompiler implements IWritesLogs {
             case DELETE: {
                 // We expect this to be a REMOVE statement
                 SqlToRelConverter converter = this.getConverter();
-                if (node instanceof SqlRemove insert) {
+                if (node.statement instanceof SqlRemove insert) {
                     SqlNode table = insert.getTargetTable();
                     if (!(table instanceof SqlIdentifier id))
                         throw new CompilationError("REMOVE statement expected a table name", CalciteObject.create(table));
@@ -1141,9 +1209,9 @@ public class CalciteCompiler implements IWritesLogs {
                         CalciteObject.create(node));
             }
             case OTHER: {
-                if (node instanceof SqlLateness lateness) {
+                if (node.statement instanceof SqlLateness lateness) {
                     RexNode expr = this.getConverter().convertExpression(lateness.getLateness());
-                    return new LatenessStatement(lateness, sqlStatement,
+                    return new LatenessStatement(node, sqlStatement,
                             lateness.getView(), lateness.getColumn(), expr);
                 }
                 break;

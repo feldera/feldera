@@ -23,12 +23,12 @@
 
 package org.dbsp.sqlCompiler.compiler.frontend.statements;
 
-import org.apache.calcite.sql.SqlNode;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteCompiler;
 
 public class DropTableStatement extends FrontEndStatement {
     public final String tableName;
 
-    public DropTableStatement(SqlNode node, String statement,
+    public DropTableStatement(CalciteCompiler.ParsedStatement node, String statement,
                               String tableName) {
         super(node, statement);
         this.tableName = tableName;

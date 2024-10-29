@@ -24,7 +24,7 @@
 package org.dbsp.sqlCompiler.compiler.frontend.statements;
 
 import org.apache.calcite.schema.impl.AbstractTable;
-import org.apache.calcite.sql.SqlNode;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.RelColumnMetadata;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.PropertyList;
@@ -42,7 +42,7 @@ public abstract class CreateRelationStatement
     public final List<RelColumnMetadata> columns;
     @Nullable final PropertyList properties;
 
-    protected CreateRelationStatement(SqlNode node, String statement, String relationName,
+    protected CreateRelationStatement(CalciteCompiler.ParsedStatement node, String statement, String relationName,
                                       boolean nameIsQuoted,
                                       List<RelColumnMetadata> columns,
                                       @Nullable PropertyList properties) {

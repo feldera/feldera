@@ -2697,10 +2697,10 @@ public class CalciteToDBSPCompiler extends RelVisitor
         boolean isInsert = modify.insert;
         SqlNodeList targetColumnList;
         if (isInsert) {
-            SqlInsert insert = (SqlInsert) modify.node;
+            SqlInsert insert = (SqlInsert) modify.node.statement();
             targetColumnList = insert.getTargetColumnList();
         } else {
-            SqlRemove remove = (SqlRemove) modify.node;
+            SqlRemove remove = (SqlRemove) modify.node.statement();
             targetColumnList = remove.getTargetColumnList();
         }
         CreateTableStatement def = this.tableContents.getTableDefinition(modify.tableName);
@@ -2784,7 +2784,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPType rowType = def.getRowTypeAsTuple(this.compiler.getTypeCompiler());
         DBSPTypeStruct originalRowType = def.getRowTypeAsStruct(this.compiler.getTypeCompiler());
         CalciteObject identifier = CalciteObject.EMPTY;
-        if (create.node instanceof SqlCreateTable sct) {
+        if (create.node.statement() instanceof SqlCreateTable sct) {
             identifier = CalciteObject.create(sct.name);
         }
         List<InputColumnMetadata> metadata = Linq.map(create.columns, this::convertMetadata);

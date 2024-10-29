@@ -1,5 +1,7 @@
 package org.dbsp.sqlCompiler.compiler.errors;
 
+import org.apache.calcite.sql.SqlNode;
+
 import javax.annotation.Nullable;
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -106,6 +108,11 @@ public class SourceFileContents {
             }
         }
         return result.toString();
+    }
+
+    public String getFragment(SqlNode node) {
+        return this.getFragment(
+                new SourcePositionRange(node.getParserPosition()), false);
     }
 
     public String getSourceFileName(SourcePosition ignoredPosition) {

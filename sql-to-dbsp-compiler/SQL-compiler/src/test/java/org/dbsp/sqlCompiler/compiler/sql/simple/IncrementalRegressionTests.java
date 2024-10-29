@@ -1,6 +1,5 @@
 package org.dbsp.sqlCompiler.compiler.sql.simple;
 
-import org.dbsp.sqlCompiler.circuit.annotation.Waterline;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
@@ -25,6 +24,22 @@ public class IncrementalRegressionTests extends SqlIoTest {
         // Without the following ORDER BY causes failures
         options.languageOptions.ignoreOrderBy = true;
         return new DBSPCompiler(options);
+    }
+
+    @Test
+    public void wrongLateness() {
+        this.statementsFailingInCompilation("""
+                create table t (
+                    x BIGINT NOT NULL LATENESS INTERVAL 5 MINUTES
+                );
+                create view v as select * from t;""",
+                "Cannot apply '-' to arguments of type '<BIGINT> - <INTERVAL MINUTE>'");
+        this.statementsFailingInCompilation("""
+                create table t (
+                    x VARCHAR NOT NULL LATENESS 5.0
+                );
+                create view v as select * from t;""",
+                "Cannot subtract 5.0 from column 'x' of type VARCHAR");
     }
 
     @Test

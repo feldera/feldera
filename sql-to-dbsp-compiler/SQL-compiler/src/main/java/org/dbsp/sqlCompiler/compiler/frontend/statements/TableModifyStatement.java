@@ -25,6 +25,7 @@ package org.dbsp.sqlCompiler.compiler.frontend.statements;
 
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.sql.SqlNode;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteCompiler;
 
 import javax.annotation.Nullable;
 
@@ -38,7 +39,8 @@ public class TableModifyStatement extends FrontEndStatement {
     /** True for insert, false for remove */
     public final boolean insert;
 
-    public TableModifyStatement(SqlNode node, boolean insert, String statement, String tableName, SqlNode data) {
+    public TableModifyStatement(
+            CalciteCompiler.ParsedStatement node, boolean insert, String statement, String tableName, SqlNode data) {
         super(node, statement);
         this.insert = insert;
         this.tableName = tableName;
