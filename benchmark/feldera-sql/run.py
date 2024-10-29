@@ -14,6 +14,7 @@
 import csv
 import json
 import os
+import re
 import sys
 import time
 import requests
@@ -23,7 +24,7 @@ import argparse
 FILE_DIR = os.path.join(os.path.dirname(__file__))
 
 
-def load_queries(dir):
+def load_queries(dir, materialize):
     queries = {}
     for f in os.listdir(dir):
         if f.endswith(".sql"):
@@ -43,7 +44,12 @@ def load_queries(dir):
                 udf_toml = ""
 
             sql = file.read()
-            queries[query] = (sql, udf_rust, udf_toml)
+            views = re.findall("CREATE VIEW ([a-zA-Z0-9_]*)", sql)
+            if materialize:
+                sql = re.sub(
+                    "CREATE VIEW", "CREATE MATERIALIZED VIEW", sql, flags=re.IGNORECASE
+                )
+            queries[query] = (sql, udf_rust, udf_toml, views)
     return queries
 
 
@@ -122,6 +128,39 @@ def get_full_name(folder, name):
     return folder.split("/")[-1] + "-" + name
 
 
+def configure_program(pipeline_name, program, ft):
+    program_sql = table + program[0]
+    udf_rust = program[1]
+    udf_toml = program[2]
+    requests.put(
+        f"{api_url}/v0/pipelines/{pipeline_name}",
+        headers=headers,
+        json={
+            "name": pipeline_name,
+            "description": f"Benchmark: {pipeline_name}",
+            "runtime_config": {
+                "workers": cores,
+                "storage": storage,
+                "fault_tolerance": ft,
+                "min_storage_bytes": min_storage_bytes,
+                "cpu_profiler": True,
+                "resources": {
+                    # "cpu_cores_min": 0,
+                    # "cpu_cores_max": 16,
+                    # "memory_mb_min": 100,
+                    # "memory_mb_max": 32000,
+                    # "storage_mb_max": 128000,
+                    # "storage_class": "..."
+                },
+            },
+            "program_config": {},
+            "program_code": program_sql,
+            "udf_rust": udf_rust,
+            "udf_toml": udf_toml,
+        },
+    ).raise_for_status()
+
+
 def stop_pipeline(pipeline_name, wait):
     r = requests.post(
         f"{api_url}/v0/pipelines/{pipeline_name}/shutdown", headers=headers
@@ -139,6 +178,10 @@ def start_pipeline(pipeline_name, wait):
     ).raise_for_status()
     if wait:
         return wait_for_status(pipeline_name, "Running")
+
+
+def checkpoint_pipeline(pipeline_name):
+    requests.post(f"{api_url}/v0/pipelines/{pipeline_name}/checkpoint", headers=headers)
 
 
 def wait_for_status(pipeline_name, status):
@@ -246,6 +289,16 @@ def main():
         action=argparse.BooleanOptionalAction,
         help="If set to true, will save a circuit profile (default: --no-circuit-profile)",
     )
+    group.add_argument(
+        "--ft",
+        action=argparse.BooleanOptionalAction,
+        help="If set to true, enable fault tolerance (also enables --storage and --save-results)",
+    )
+    group.add_argument(
+        "--save-results",
+        action=argparse.BooleanOptionalAction,
+        help="If set to true, save views' final content",
+    )
 
     group = parser.add_argument_group("Options for Nexmark benchmark only")
     group.add_argument(
@@ -283,7 +336,7 @@ def main():
         events=100000,
     )
 
-    global api_url, kafka_options, headers
+    global api_url, kafka_options, headers, cores
     api_url = parser.parse_args().api_url
     api_key = parser.parse_args().api_key
     headers = {} if api_key is None else {"authorization": f"Bearer {api_key}"}
@@ -292,23 +345,29 @@ def main():
         option, value = option_value.split("=")
         kafka_options[option] = value
     suffix = parser.parse_args().input_topic_suffix or ""
-    events = parser.parse_args().events
+    events = int(parser.parse_args().events)
     cores = int(parser.parse_args().cores)
     batchsize = int(parser.parse_args().batchsize)
+    ft = parser.parse_args().ft or False
+    save_results = parser.parse_args().save_results or ft
 
+    global table
     folder = parser.parse_args().folder
     table = load_table(
         folder, parser.parse_args().lateness, suffix, events, cores, batchsize
     )
-    all_queries = load_queries(os.path.join(FILE_DIR, folder + "/queries/"))
+    all_queries = load_queries(
+        os.path.join(FILE_DIR, folder + "/queries/"), save_results
+    )
     include_disabled = parser.parse_args().include_disabled or False
     disabled_folder = os.path.join(FILE_DIR, folder + "/disabled-queries/")
     if include_disabled and os.path.exists(disabled_folder):
-        all_queries |= load_queries(disabled_folder)
+        all_queries |= load_queries(disabled_folder, save_results)
     profile = parser.parse_args().circuit_profile
 
+    global storage, min_storage_bytes
     queries = sort_queries(parse_queries(all_queries, parser.parse_args().query))
-    storage = parser.parse_args().storage
+    storage = parser.parse_args().storage or ft
     poller_threads = parser.parse_args().poller_threads
     if poller_threads is not None:
         kafka_options["poller_threads"] = poller_threads
@@ -332,36 +391,10 @@ def main():
     for program_name in queries:
         # Create program
         full_name = get_full_name(folder, program_name)
-        program_sql = table + all_queries[program_name][0]
-        udf_rust = all_queries[program_name][1]
-        udf_toml = all_queries[program_name][2]
 
-        requests.put(
-            f"{api_url}/v0/pipelines/{full_name}",
-            headers=headers,
-            json={
-                "name": full_name,
-                "description": f"Benchmark: {full_name}",
-                "runtime_config": {
-                    "workers": cores,
-                    "storage": storage,
-                    "min_storage_bytes": min_storage_bytes,
-                    "cpu_profiler": True,
-                    "resources": {
-                        # "cpu_cores_min": 0,
-                        # "cpu_cores_max": 16,
-                        # "memory_mb_min": 100,
-                        # "memory_mb_max": 32000,
-                        # "storage_mb_max": 128000,
-                        # "storage_class": "..."
-                    },
-                },
-                "program_config": {},
-                "program_code": program_sql,
-                "udf_rust": udf_rust,
-                "udf_toml": udf_toml,
-            },
-        ).raise_for_status()
+        configure_program(
+            full_name, all_queries[program_name], "initial_state" if ft else None
+        )
 
     print("Compiling program(s)...")
     for program_name in queries:
@@ -447,6 +480,18 @@ def main():
                     sys.stdout.write(
                         f"{before}Pipeline {full_name} processed {processed} records in {elapsed:.1f} seconds ({peak_gib:.1f} GiB peak memory, {cpu_secs:.1f} s CPU time, {late_drops} late drops){after}"
                     )
+                    if ft and processed >= events / 5:
+                        if os.isatty(1):
+                            print()
+                        print("checkpointing...")
+                        checkpoint_pipeline(full_name)
+                        print("stopping...")
+                        stop_pipeline(full_name, True)
+                        configure_program(
+                            full_name, all_queries[pipeline_name], "latest_checkpoint"
+                        )
+                        print("restarting...")
+                        start_pipeline(full_name, True)
                 last_processed = processed
                 if stats["global_metrics"]["pipeline_complete"]:
                     break
@@ -492,6 +537,18 @@ def main():
                             f.write(chunk)
                 else:
                     print("Failed to get stats")
+
+        if save_results:
+            view = all_queries[pipeline_name][3][0]
+            suffix = "ft" if ft else "noft"
+            filename = f"{pipeline_name}-{suffix}.txt"
+            print(f"saving materialized view {view} to {filename}")
+            r = requests.get(
+                f"{api_url}/v0/pipelines/{full_name}/query",
+                params={"sql": f"SELECT * FROM {view};"},
+                headers=headers,
+            )
+            open(filename, "w").write(r.text)
 
         # Stop pipeline
         elapsed = stop_pipeline(full_name, True)
