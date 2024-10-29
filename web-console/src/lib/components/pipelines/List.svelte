@@ -84,7 +84,10 @@
   let newPipelineError = $state<string>()
 </script>
 
-<div class="relative flex flex-col gap-2 overflow-y-auto scrollbar" use:bindScrollY={{ scrollY }}>
+<div
+  class="relative flex h-full flex-col gap-2 overflow-y-auto scrollbar"
+  use:bindScrollY={{ scrollY }}
+>
   <div class="sticky top-0 px-4 py-0.5 bg-surface-50-950">
     {#if assistCreatingPipeline}
       <input
