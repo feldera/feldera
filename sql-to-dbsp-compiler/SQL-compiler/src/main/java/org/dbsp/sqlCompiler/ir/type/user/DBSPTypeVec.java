@@ -57,7 +57,7 @@ public class DBSPTypeVec extends DBSPTypeUser implements ICollectionType {
     }
 
     @Override
-    public DBSPType setMayBeNull(boolean mayBeNull) {
+    public DBSPType withMayBeNull(boolean mayBeNull) {
         if (mayBeNull == this.mayBeNull)
             return this;
         return new DBSPTypeVec(this.getElementType(), mayBeNull);

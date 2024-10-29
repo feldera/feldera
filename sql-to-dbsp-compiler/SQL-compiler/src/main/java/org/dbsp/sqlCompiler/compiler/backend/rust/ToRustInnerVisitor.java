@@ -161,7 +161,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
     @SuppressWarnings("SameReturnValue")
     VisitDecision doNullExpression(DBSPExpression expression) {
         this.builder.append("None::<");
-        expression.getType().setMayBeNull(false).accept(this);
+        expression.getType().withMayBeNull(false).accept(this);
         this.builder.append(">");
         return VisitDecision.STOP;
     }
@@ -234,7 +234,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
     void codegen(DBSPUnsignedWrapExpression.TypeSequence sequence) {
         this.builder.append("<");
         // In the type parameter we do not put the Option<>
-        sequence.dataType.setMayBeNull(false).accept(this);
+        sequence.dataType.withMayBeNull(false).accept(this);
         this.builder.append(", ");
         sequence.dataConvertedType.accept(this);
         this.builder.append(", ");
@@ -406,15 +406,19 @@ public class ToRustInnerVisitor extends InnerVisitor {
     public VisitDecision preorder(DBSPVecLiteral literal) {
         if (literal.isNull())
             return this.doNull(literal);
+        assert literal.data != null;
         if (literal.mayBeNull())
             this.builder.append("Some(");
-        this.builder.append("vec!(")
-                .increase();
-        for (DBSPExpression exp: Objects.requireNonNull(literal.data)) {
+        this.builder.append("vec!(");
+        if (literal.data.size() > 1)
+            this.builder.increase();
+        for (DBSPExpression exp: literal.data) {
             exp.accept(this);
             this.builder.append(", ");
         }
-        this.builder.decrease().append(")");
+        if (literal.data.size() > 1)
+            this.builder.decrease();
+        this.builder.append(")");
         if (literal.mayBeNull())
             this.builder.append(")");
         return VisitDecision.STOP;

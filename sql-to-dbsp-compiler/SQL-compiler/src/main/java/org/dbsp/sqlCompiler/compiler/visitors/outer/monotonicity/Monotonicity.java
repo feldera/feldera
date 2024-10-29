@@ -581,7 +581,7 @@ public class Monotonicity extends CircuitVisitor {
         // look more like a regular join.
         DBSPVariablePath k = keyType.ref().var();
         DBSPVariablePath l = function.parameters[1].getType().var();
-        DBSPVariablePath r = function.parameters[2].getType().setMayBeNull(false).var();
+        DBSPVariablePath r = function.parameters[2].getType().withMayBeNull(false).var();
 
         DBSPExpression leftTsField = new DBSPUnwrapCustomOrdExpression(
                 l.deepCopy().deref()).field(leftTsIndex);

@@ -18,6 +18,7 @@ import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBaseType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeNull;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVariant;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeMap;
@@ -145,6 +146,8 @@ public class ExpandCasts extends InnerRewriteVisitor {
                 this.unsupported(source, type);
             }
             return source.cast(type);
+        } else if (sourceType.is(DBSPTypeNull.class)) {
+            return DBSPVecLiteral.none(type);
         } else {
             this.unsupported(source, type);
             // unreachable

@@ -111,6 +111,8 @@ public record CircuitOptimizer(DBSPCompiler compiler) implements ICompilerCompon
         }
         // Lowering implements aggregates and inlines some calls.
         passes.add(new LowerCircuitVisitor(reporter));
+        // Lowering may surface additional casts that need to be expanded
+        passes.add(new Repeat(reporter, new ExpandCasts(reporter).circuitRewriter()));
         // Beta reduction after implementing aggregates.
         passes.add(new BetaReduction(compiler).getCircuitVisitor());
         passes.add(new CompactNames(compiler));

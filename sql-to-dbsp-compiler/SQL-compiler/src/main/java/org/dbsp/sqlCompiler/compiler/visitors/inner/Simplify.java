@@ -144,7 +144,7 @@ public class Simplify extends InnerRewriteVisitor {
         DBSPLiteral lit = source.as(DBSPLiteral.class);
         if (lit != null) {
             DBSPType litType = lit.getType();
-            if (type.setMayBeNull(false).sameType(litType) &&
+            if (type.withMayBeNull(false).sameType(litType) &&
                     !type.is(DBSPTypeString.class)) {
                 // Casting to VARCHAR may change a string even if the source is the same type
                 // Cast from type to Option<type>

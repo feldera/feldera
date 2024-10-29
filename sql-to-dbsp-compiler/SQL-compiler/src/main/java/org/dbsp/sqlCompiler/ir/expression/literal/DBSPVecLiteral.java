@@ -126,7 +126,7 @@ public final class DBSPVecLiteral extends DBSPLiteral implements IDBSPContainer 
 
     @Override
     public DBSPLiteral getWithNullable(boolean mayBeNull) {
-        return new DBSPVecLiteral(this.getNode(), this.type.setMayBeNull(mayBeNull), this.data);
+        return new DBSPVecLiteral(this.getNode(), this.type.withMayBeNull(mayBeNull), this.data);
     }
 
     @Override
@@ -145,12 +145,15 @@ public final class DBSPVecLiteral extends DBSPLiteral implements IDBSPContainer 
                     .append(this.type)
                     .append(")")
                     .append("null");
-        return builder.append("vec!(")
-                .increase()
-                .intercalateI(System.lineSeparator(), this.data)
-                .append(")")
-                .decrease()
-                .newline();
+        builder.append("vec!(");
+        if (this.data.size() > 1)
+            builder
+                .increase();
+        builder.intercalateI(System.lineSeparator(), this.data)
+                .append(")");
+        if (this.data.size() > 1)
+                builder.decrease();
+        return builder;
     }
 
     @Override

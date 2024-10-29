@@ -48,7 +48,7 @@ public class DBSPTypeKeyword extends DBSPTypeBaseType {
     }
 
     @Override
-    public DBSPType setMayBeNull(boolean mayBeNull) {
+    public DBSPType withMayBeNull(boolean mayBeNull) {
         throw new UnsupportedException(this.getNode());
     }
 

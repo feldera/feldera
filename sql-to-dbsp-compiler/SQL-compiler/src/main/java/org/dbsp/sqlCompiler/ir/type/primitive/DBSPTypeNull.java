@@ -53,7 +53,7 @@ public class DBSPTypeNull extends DBSPTypeBaseType {
     }
 
     @Override
-    public DBSPType setMayBeNull(boolean mayBeNull) {
+    public DBSPType withMayBeNull(boolean mayBeNull) {
         if (mayBeNull == this.mayBeNull)
             return this;
         throw new UnsupportedException("Null type must be nullable", this.getNode());

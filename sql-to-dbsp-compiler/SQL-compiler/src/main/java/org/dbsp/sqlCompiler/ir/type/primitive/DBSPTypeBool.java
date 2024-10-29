@@ -42,7 +42,7 @@ public class DBSPTypeBool extends DBSPTypeBaseType implements IsBoundedType {
     }
 
     @Override
-    public DBSPType setMayBeNull(boolean mayBeNull) {
+    public DBSPType withMayBeNull(boolean mayBeNull) {
         if (this.mayBeNull == mayBeNull)
             return this;
         return new DBSPTypeBool(this.getNode(), mayBeNull);

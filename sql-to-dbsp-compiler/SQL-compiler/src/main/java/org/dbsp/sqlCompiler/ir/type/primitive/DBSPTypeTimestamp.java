@@ -68,7 +68,7 @@ public class DBSPTypeTimestamp extends DBSPTypeBaseType
     }
 
     @Override
-    public DBSPType setMayBeNull(boolean mayBeNull) {
+    public DBSPType withMayBeNull(boolean mayBeNull) {
         if (this.mayBeNull == mayBeNull)
             return this;
         return new DBSPTypeTimestamp(this.getNode(), mayBeNull);

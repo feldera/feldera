@@ -277,12 +277,12 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
      */
     public static DBSPType reduceType(DBSPType left, DBSPType right) {
         if (left.is(DBSPTypeNull.class))
-            return right.setMayBeNull(true);
+            return right.withMayBeNull(true);
         if (right.is(DBSPTypeNull.class))
-            return left.setMayBeNull(true);
+            return left.withMayBeNull(true);
         boolean anyNull = left.mayBeNull || right.mayBeNull;
         if (left.sameTypeIgnoringNullability(right))
-            return left.setMayBeNull(anyNull);
+            return left.withMayBeNull(anyNull);
 
         DBSPTypeInteger li = left.as(DBSPTypeInteger.class);
         DBSPTypeInteger ri = right.as(DBSPTypeInteger.class);
@@ -300,7 +300,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
             }
             if (rf != null) {
                 // Calcite uses the float always
-                return rf.setMayBeNull(anyNull);
+                return rf.withMayBeNull(anyNull);
             }
             if (rd != null) {
                 // INT op DECIMAL
@@ -312,14 +312,14 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
         if (lf != null) {
             if (ri != null) {
                 // FLOAT op INT, Calcite uses the float always
-                return lf.setMayBeNull(anyNull);
+                return lf.withMayBeNull(anyNull);
             }
             if (rf != null) {
                 // FLOAT op FLOAT, choose widest
                 if (ln.getPrecision() < rn.getPrecision())
-                    return right.setMayBeNull(anyNull);
+                    return right.withMayBeNull(anyNull);
                 else
-                    return left.setMayBeNull(anyNull);
+                    return left.withMayBeNull(anyNull);
             }
             if (rd != null) {
                 // FLOAT op DECIMAL, convert to FLOAT
@@ -411,7 +411,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
         DBSPType leftType = left.getType();
         DBSPType rightType = right.getType();
         boolean anyNull = leftType.mayBeNull || rightType.mayBeNull;
-        DBSPType typeWithNull = type.setMayBeNull(anyNull);
+        DBSPType typeWithNull = type.withMayBeNull(anyNull);
 
         assert opcode != DBSPOpcode.DIV_NULL || type.mayBeNull : "DIV_NULL should produce a nullable result";
         // Type produced by this operation; if different from 'type', a cast may be needed.
@@ -419,9 +419,9 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
         if (needCommonType(opcode, type, leftType, rightType)) {
             // Need to cast both operands to a common type.  Find out what it is.
             DBSPType commonBase = reduceType(leftType, rightType);
-            expressionResultType = commonBase.setMayBeNull(anyNull);
+            expressionResultType = commonBase.withMayBeNull(anyNull);
             if (commonBase.is(DBSPTypeDecimal.class))
-                expressionResultType = DBSPTypeDecimal.getDefault().setMayBeNull(anyNull);  // no limits
+                expressionResultType = DBSPTypeDecimal.getDefault().withMayBeNull(anyNull);  // no limits
             if (opcode == DBSPOpcode.BW_AND ||
                     opcode == DBSPOpcode.BW_OR || opcode == DBSPOpcode.XOR ||
                     opcode == DBSPOpcode.MAX || opcode == DBSPOpcode.MIN ||
@@ -437,10 +437,10 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 // Result is always NULL - evaluate to the NULL literal directly
                 return DBSPLiteral.none(type);
             }
-            if (leftType.code == NULL || !leftType.setMayBeNull(false).sameType(commonBase))
-                left = left.cast(commonBase.setMayBeNull(leftType.mayBeNull));
-            if (rightType.code == NULL || !rightType.setMayBeNull(false).sameType(commonBase))
-                right = right.cast(commonBase.setMayBeNull(rightType.mayBeNull));
+            if (leftType.code == NULL || !leftType.withMayBeNull(false).sameType(commonBase))
+                left = left.cast(commonBase.withMayBeNull(leftType.mayBeNull));
+            if (rightType.code == NULL || !rightType.withMayBeNull(false).sameType(commonBase))
+                right = right.cast(commonBase.withMayBeNull(rightType.mayBeNull));
         } else {
             // no common base.  Cases:
             // - one operand is a date/time/timestamp
@@ -465,7 +465,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
             else if (leftType.is(DBSPTypeBinary.class) && rightType.is(DBSPTypeBinary.class))
                 expressionResultType = typeWithNull;
             else if (leftType.is(DBSPTypeDecimal.class) && rightType.is(DBSPTypeDecimal.class))
-                expressionResultType = DBSPTypeDecimal.getDefault().setMayBeNull(anyNull);
+                expressionResultType = DBSPTypeDecimal.getDefault().withMayBeNull(anyNull);
             else
                 throw new UnsupportedException("Operation " + opcode + " on " + leftType + " and " + rightType, node);
             if (opcode.isComparison()) {
@@ -486,7 +486,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
         DBSPType resultType = operand.getType();
         if (op.toString().startsWith("is_"))
             // these do not produce nullable results
-            resultType = resultType.setMayBeNull(false);
+            resultType = resultType.withMayBeNull(false);
         DBSPExpression expr = new DBSPUnaryExpression(node, resultType, op, operand);
         return expr.cast(type);
     }
@@ -495,7 +495,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
         DBSPType type = expression.getType();
         if (type.mayBeNull) {
             return new DBSPUnaryExpression(
-                    expression.getNode(), type.setMayBeNull(false),
+                    expression.getNode(), type.withMayBeNull(false),
                     DBSPOpcode.WRAP_BOOL, expression);
         }
         return expression;
@@ -833,7 +833,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                     DBSPType finalType = result.getType();
                     for (int i = 1; i < ops.size() - 1; i += 2) {
                         if (ops.get(i + 1).getType().mayBeNull)
-                            finalType = finalType.setMayBeNull(true);
+                            finalType = finalType.withMayBeNull(true);
                     }
                     if (!result.getType().sameType(finalType))
                         result = result.cast(finalType);
@@ -854,7 +854,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                     for (int i = 0; i < ops.size() - 1; i += 2) {
                         int index = ops.size() - i - 2;
                         if (ops.get(index).getType().mayBeNull)
-                            finalType = finalType.setMayBeNull(true);
+                            finalType = finalType.withMayBeNull(true);
                     }
 
                     if (!result.getType().sameType(finalType))
@@ -885,7 +885,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                         "_" + left.getType().baseTypeWithSuffix() +
                         "_" + right.getType().baseTypeWithSuffix();
                 boolean resultIsNull = left.getType().mayBeNull || right.getType().mayBeNull;
-                return new DBSPApplyExpression(node, functionName, type.setMayBeNull(resultIsNull), left, right)
+                return new DBSPApplyExpression(node, functionName, type.withMayBeNull(resultIsNull), left, right)
                         .cast(type);
             }
             case OTHER_FUNCTION: {
@@ -951,7 +951,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                         this.ensureDouble(ops, 0);
                         // See: https://github.com/feldera/feldera/issues/1363
                         if (!ops.get(0).type.mayBeNull) {
-                            type = type.setMayBeNull(false);
+                            type = type.withMayBeNull(false);
                         }
                         return compilePolymorphicFunction(call, node, type, ops, 1);
                     }
@@ -1379,17 +1379,17 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 // so if elements of the vector are nullable and T is an Option type
                 // therefore we need to wrap arg1 in Some
                 if (elemType.mayBeNull) {
-                    arg1 = new DBSPApplyExpression(arg1.getNode(), "Some", arg1.type.setMayBeNull(true), arg1);
+                    arg1 = new DBSPApplyExpression(arg1.getNode(), "Some", arg1.type.withMayBeNull(true), arg1);
                 }
 
                 if (!elemType.sameType(arg1.type)) {
                     // edge case for elements of type null (like ARRAY [null])
                     if (elemType.is(DBSPTypeNull.class)) {
                         // cast to type of arg1
-                        arg0 = ensureArrayElementsOfType(arg0, arg1.type.setMayBeNull(true));
+                        arg0 = ensureArrayElementsOfType(arg0, arg1.type.withMayBeNull(true));
                     }
                     // if apart from the null case, the types are different
-                    else if (!elemType.sameType(arg1.type.setMayBeNull(elemType.mayBeNull))) {
+                    else if (!elemType.sameType(arg1.type.withMayBeNull(elemType.mayBeNull))) {
                         this.compiler.reportError(node.getPositionRange(), "array elements and argument of different types",
                                 "Fist argument is an array of type: " + elemType +
                                         " and second argument is of type: " + arg1.type

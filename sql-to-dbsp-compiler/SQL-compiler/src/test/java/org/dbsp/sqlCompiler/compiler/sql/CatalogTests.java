@@ -76,7 +76,7 @@ public class CatalogTests extends BaseSQLTests {
         DBSPTypeTuple sN = t0.to(DBSPTypeTuple.class);
         Assert.assertEquals(4, sN.size());
         DBSPType i32 = new DBSPTypeInteger(CalciteObject.EMPTY, 32, true, false);
-        DBSPType i32N = i32.setMayBeNull(true);
+        DBSPType i32N = i32.withMayBeNull(true);
         Assert.assertTrue(sN.mayBeNull);
         Assert.assertTrue(sN.getFieldType(0).sameType(i32N));
         Assert.assertTrue(sN.getFieldType(1).sameType(i32));
@@ -87,17 +87,17 @@ public class CatalogTests extends BaseSQLTests {
         Assert.assertTrue(t1.is(DBSPTypeTuple.class));
         DBSPTypeTuple nN = t1.to(DBSPTypeTuple.class);
         Assert.assertEquals(3, nN.size());
-        DBSPType vecS = new DBSPTypeVec(sN.setMayBeNull(true), true);
+        DBSPType vecS = new DBSPTypeVec(sN.withMayBeNull(true), true);
         Assert.assertTrue(nN.mayBeNull);
         Assert.assertTrue(nN.getFieldType(0).sameType(sN));
-        Assert.assertTrue(nN.getFieldType(1).sameType(sN.setMayBeNull(false)));
+        Assert.assertTrue(nN.getFieldType(1).sameType(sN.withMayBeNull(false)));
         Assert.assertTrue(nN.getFieldType(2).sameType(vecS));
 
         DBSPType t2 = t.getFieldType(2);
-        Assert.assertTrue(t2.sameType(sN.setMayBeNull(false)));
+        Assert.assertTrue(t2.sameType(sN.withMayBeNull(false)));
 
         DBSPType t3 = t.getFieldType(3);
-        Assert.assertTrue(t3.sameType(nN.setMayBeNull(false)));
+        Assert.assertTrue(t3.sameType(nN.withMayBeNull(false)));
     }
 
     @Test

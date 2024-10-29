@@ -40,7 +40,7 @@ public class DBSPTypeStr extends DBSPTypeBaseType {
     public DBSPTypeStr(CalciteObject node, boolean mayBeNull) { super(node, STR, mayBeNull); }
 
     @Override
-    public DBSPType setMayBeNull(boolean mayBeNull) {
+    public DBSPType withMayBeNull(boolean mayBeNull) {
         if (this.mayBeNull == mayBeNull)
             return this;
         return new DBSPTypeStr(this.getNode(), mayBeNull);

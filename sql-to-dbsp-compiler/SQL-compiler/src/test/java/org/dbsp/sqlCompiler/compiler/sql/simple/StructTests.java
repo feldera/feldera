@@ -223,6 +223,41 @@ public class StructTests extends SqlIoTest {
     }
 
     @Test
+    public void selectiveUnnestStructVecStructTestOrdinality() {
+        String ddl = """
+            CREATE TYPE simple AS (s INT, t BOOLEAN);
+            CREATE TYPE vec AS (fields SIMPLE ARRAY);
+            CREATE TABLE T(col vec);
+            CREATE VIEW V AS SELECT A.s + 1 FROM (T CROSS JOIN UNNEST(T.col.fields) WITH ORDINALITY A)""";
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.compileStatements(ddl);
+        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
+        DBSPBoolLiteral t = new DBSPBoolLiteral(true, true);
+        DBSPExpression t0 = new DBSPTupleExpression(true,
+                new DBSPVecLiteral(true,
+                        new DBSPTupleExpression(Linq.list(new DBSPI32Literal(0, true), t), true),
+                        new DBSPTupleExpression(Linq.list(new DBSPI32Literal(1, true), t), true),
+                        new DBSPTupleExpression(Linq.list(new DBSPI32Literal(2, true), t), true)));
+        DBSPExpression t1 = new DBSPTupleExpression(true,
+                new DBSPVecLiteral(true,
+                        new DBSPTupleExpression(Linq.list(new DBSPI32Literal(3, true), t), true),
+                        new DBSPTupleExpression(Linq.list(new DBSPI32Literal(4, true), t), true),
+                        new DBSPTupleExpression(Linq.list(new DBSPI32Literal(5, true), t), true)));
+        DBSPZSetLiteral input = new DBSPZSetLiteral(
+                new DBSPTupleExpression(t0),
+                new DBSPTupleExpression(t1));
+        DBSPZSetLiteral output = new DBSPZSetLiteral(
+                new DBSPTupleExpression(new DBSPI32Literal(1, true)),
+                new DBSPTupleExpression(new DBSPI32Literal(2, true)),
+                new DBSPTupleExpression(new DBSPI32Literal(3, true)),
+                new DBSPTupleExpression(new DBSPI32Literal(4, true)),
+                new DBSPTupleExpression(new DBSPI32Literal(5, true)),
+                new DBSPTupleExpression(new DBSPI32Literal(6, true)));
+        ccs.addPair(new Change(input), new Change(output));
+        this.addRustTestCase(ccs);
+    }
+
+    @Test
     public void structArrayStructTest() {
         String ddl = """
             CREATE TYPE address_typ AS (
@@ -273,7 +308,7 @@ public class StructTests extends SqlIoTest {
         DBSPType tuple = new DBSPTypeTuple(
                 new DBSPTypeInteger(CalciteObject.EMPTY, 32, true, true),
                 DBSPTypeString.varchar(true)
-        ).setMayBeNull(true);
+        ).withMayBeNull(true);
         DBSPExpression address0 = tuple.none();
         DBSPZSetLiteral input = new DBSPZSetLiteral(new DBSPTupleExpression(address0));
         ccs.addPair(new Change(input), new Change());

@@ -85,7 +85,7 @@ public final class DBSPBinaryLiteral extends DBSPLiteral {
 
     @Override
     public DBSPLiteral getWithNullable(boolean mayBeNull) {
-        return new DBSPBinaryLiteral(this.getNode(), this.type.setMayBeNull(mayBeNull),
+        return new DBSPBinaryLiteral(this.getNode(), this.type.withMayBeNull(mayBeNull),
                 this.checkIfNull(this.value, mayBeNull));
     }
 

@@ -45,9 +45,9 @@ public class DBSPTypeUSize extends DBSPTypeBaseType
     }
 
     @Override
-    public DBSPType setMayBeNull(boolean mayBeNull) {
-        if (mayBeNull)
-            throw new UnsupportedOperationException();
+    public DBSPType withMayBeNull(boolean mayBeNull) {
+        if (this.mayBeNull != mayBeNull)
+            return new DBSPTypeUSize(this.getNode(), mayBeNull);
         return this;
     }
 

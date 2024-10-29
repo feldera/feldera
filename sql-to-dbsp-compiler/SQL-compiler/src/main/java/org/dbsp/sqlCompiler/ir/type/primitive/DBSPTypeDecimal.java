@@ -105,7 +105,7 @@ public class DBSPTypeDecimal extends DBSPTypeBaseType
     }
 
     @Override
-    public DBSPType setMayBeNull(boolean mayBeNull) {
+    public DBSPType withMayBeNull(boolean mayBeNull) {
         if (mayBeNull == this.mayBeNull)
             return this;
         return new DBSPTypeDecimal(this.getNode(), this.precision, this.scale, mayBeNull);

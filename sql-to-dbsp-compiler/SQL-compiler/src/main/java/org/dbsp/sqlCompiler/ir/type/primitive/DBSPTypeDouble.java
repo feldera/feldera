@@ -39,7 +39,7 @@ public class DBSPTypeDouble extends DBSPTypeFP implements IsNumericType {
     public DBSPTypeDouble(CalciteObject node, boolean mayBeNull) { super(node, DBSPTypeCode.DOUBLE, mayBeNull); }
 
     @Override
-    public DBSPType setMayBeNull(boolean mayBeNull) {
+    public DBSPType withMayBeNull(boolean mayBeNull) {
         if (this.mayBeNull == mayBeNull)
             return this;
         return new DBSPTypeDouble(this.getNode(), mayBeNull);

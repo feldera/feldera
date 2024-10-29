@@ -37,7 +37,7 @@ public class DBSPTypeMap extends DBSPTypeUser {
     }
 
     @Override
-    public DBSPType setMayBeNull(boolean mayBeNull) {
+    public DBSPType withMayBeNull(boolean mayBeNull) {
         if (mayBeNull == this.mayBeNull)
             return this;
         return new DBSPTypeMap(this.getKeyType(), this.getValueType(), mayBeNull);

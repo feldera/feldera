@@ -14,7 +14,7 @@ public final class DBSPQuestionExpression extends DBSPExpression {
     public final DBSPExpression source;
 
     DBSPQuestionExpression(DBSPExpression source) {
-        super(source.getNode(), source.getType().setMayBeNull(false));
+        super(source.getNode(), source.getType().withMayBeNull(false));
         this.source = source;
         assert source.getType().is(DBSPTypeAny.class) ||
                 source.getType().mayBeNull;

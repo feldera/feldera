@@ -59,7 +59,7 @@ public class Projection extends InnerVisitor {
      * (2, a.3, a.3.2) is not simple.
      * Only makes sense for functions with a single parameter. */
     @Nullable
-    ExplicitShuffle shuffle;
+    List<Integer> shuffle;
 
     /** A pair containing an input (paramter) number (0, 1, 2, etc)
      * and an index field in the tuple of the corresponding input .*/
@@ -125,7 +125,7 @@ public class Projection extends InnerVisitor {
         super(reporter);
         this.isProjection = true;
         this.ioMap = new IOMap();
-        this.shuffle = new ExplicitShuffle();
+        this.shuffle = new ArrayList<>();
         this.resolver = new ResolveReferences(reporter, false);
         this.allowNoopCasts = allowNoopCasts;
     }
@@ -176,8 +176,8 @@ public class Projection extends InnerVisitor {
     @Override
     public VisitDecision preorder(DBSPCastExpression expression) {
         DBSPType type = expression.getType();
-        if (!expression.source.getType().setMayBeNull(true)
-                .sameType(type.setMayBeNull(true)) ||
+        if (!expression.source.getType().withMayBeNull(true)
+                .sameType(type.withMayBeNull(true)) ||
                 !this.allowNoopCasts) {
             // A cast which only changes nullability is
             // considered an identity function
@@ -277,7 +277,7 @@ public class Projection extends InnerVisitor {
 
     public Shuffle getShuffle() {
         assert this.isProjection;
-        return Objects.requireNonNull(this.shuffle);
+        return new ExplicitShuffle(Objects.requireNonNull(this.shuffle));
     }
 
     /** Compose this projection with a constant expression.

@@ -13,7 +13,6 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFlatmap;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
-import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeFunction;
 
 /** Optimizes patterns containing projections.
@@ -48,13 +47,12 @@ public class OptimizeProjectionVisitor extends CircuitCloneVisitor {
                 DBSPFlatmap sourceFunction = source.getFunction().as(DBSPFlatmap.class);
                 if (sourceFunction != null && projection.isShuffle()) {
                     DBSPTypeFunction previousFunctionType = sourceFunction.getType().to(DBSPTypeFunction.class);
-                    DBSPType newFunctionType = new DBSPTypeFunction(
+                    DBSPTypeFunction newFunctionType = new DBSPTypeFunction(
                             operator.getOutputZSetElementType(), previousFunctionType.parameterTypes);
                     DBSPExpression newFunction = new DBSPFlatmap(
                             function.getNode(), newFunctionType, sourceFunction.inputElementType,
-                            sourceFunction.collectionExpression, sourceFunction.leftCollectionIndexes,
-                            sourceFunction.rightProjections, sourceFunction.emitIteratedElement,
-                            sourceFunction.collectionIndexType, projection.getShuffle());
+                            sourceFunction.collectionExpression, sourceFunction.leftInputIndexes,
+                            sourceFunction.rightProjections, sourceFunction.ordinalityIndexType, projection.getShuffle());
                     DBSPOperator result = source.withFunction(newFunction, operator.outputType);
                     this.map(operator, result);
                     return;

@@ -700,8 +700,8 @@ public abstract class InnerRewriteVisitor
         DBSPTypeTuple inputElementType = this.transform(expression.inputElementType).to(DBSPTypeTuple.class);
         DBSPType type = this.transform(expression.type);
         DBSPType indexType = null;
-        if (expression.collectionIndexType != null)
-            indexType = this.transform(expression.collectionIndexType);
+        if (expression.ordinalityIndexType != null)
+            indexType = this.transform(expression.ordinalityIndexType);
         DBSPClosureExpression collectionExpression = this.transform(expression.collectionExpression)
                 .to(DBSPClosureExpression.class);
         List<DBSPClosureExpression> rightProjections = null;
@@ -709,9 +709,9 @@ public abstract class InnerRewriteVisitor
             rightProjections = Linq.map(expression.rightProjections,
                     e -> this.transform(e).to(DBSPClosureExpression.class));
         this.pop(expression);
-        DBSPExpression result = new DBSPFlatmap(expression.getNode(), type,
-                inputElementType, collectionExpression, expression.leftCollectionIndexes,
-                rightProjections, expression.emitIteratedElement, indexType, expression.shuffle);
+        DBSPExpression result = new DBSPFlatmap(expression.getNode(), type.to(DBSPTypeFunction.class),
+                inputElementType, collectionExpression,
+                expression.leftInputIndexes, rightProjections, indexType, expression.shuffle);
         this.map(expression, result);
         return VisitDecision.STOP;
     }

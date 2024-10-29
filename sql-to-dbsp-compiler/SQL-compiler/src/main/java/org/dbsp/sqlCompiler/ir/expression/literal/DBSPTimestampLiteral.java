@@ -101,7 +101,7 @@ public final class DBSPTimestampLiteral extends DBSPLiteral {
 
     @Override
     public DBSPLiteral getWithNullable(boolean mayBeNull) {
-        return new DBSPTimestampLiteral(this.getNode(), this.getType().setMayBeNull(mayBeNull),
+        return new DBSPTimestampLiteral(this.getNode(), this.getType().withMayBeNull(mayBeNull),
                 this.checkIfNull(this.value, mayBeNull));
     }
 

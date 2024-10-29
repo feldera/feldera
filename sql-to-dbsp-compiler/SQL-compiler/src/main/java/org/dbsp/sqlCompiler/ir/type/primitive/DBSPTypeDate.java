@@ -58,7 +58,7 @@ public class DBSPTypeDate extends DBSPTypeBaseType implements IsDateType {
     }
 
     @Override
-    public DBSPType setMayBeNull(boolean mayBeNull) {
+    public DBSPType withMayBeNull(boolean mayBeNull) {
         if (this.mayBeNull == mayBeNull)
             return this;
         return new DBSPTypeDate(this.getNode(), mayBeNull);

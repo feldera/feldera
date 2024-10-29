@@ -118,13 +118,6 @@ public final class DBSPTupleExpression extends DBSPBaseTupleExpression {
         return flatten(Linq.list(expressions));
     }
 
-    /** @param expressions A list of expressions with tuple types.
-     * @return  A tuple expressions that concatenates all fields of these tuple expressions. */
-    public static DBSPTupleExpression flatten(DBSPTypeTuple type, DBSPExpression... expressions) {
-        DBSPTupleExpression expr = flatten(expressions);
-        return new DBSPTupleExpression(expr.getNode(), type, Objects.requireNonNull(expr.fields));
-    }
-
     public DBSPTupleExpression append(DBSPExpression expression) {
         List<DBSPExpression> fields = Linq.list(Objects.requireNonNull(this.fields));
         fields.add(expression);

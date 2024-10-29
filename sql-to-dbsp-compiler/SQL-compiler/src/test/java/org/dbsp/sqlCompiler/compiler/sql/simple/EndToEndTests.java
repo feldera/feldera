@@ -797,7 +797,7 @@ public class EndToEndTests extends BaseSQLTests {
         String query = "SELECT DISTINCT 0 + NULL, T.COL1 FROM T";
         DBSPI32Literal ten = new DBSPI32Literal(10);
         this.testQuery(query, new DBSPZSetLiteral(
-                new DBSPTupleExpression(DBSPLiteral.none(ten.getType().setMayBeNull(true)),
+                new DBSPTupleExpression(DBSPLiteral.none(ten.getType().withMayBeNull(true)),
                         ten)));
     }
 

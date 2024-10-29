@@ -91,7 +91,7 @@ public class DBSPTypeTuple extends DBSPTypeTupleBase {
     }
 
     @Override
-    public DBSPType setMayBeNull(boolean mayBeNull) {
+    public DBSPType withMayBeNull(boolean mayBeNull) {
         if (mayBeNull == this.mayBeNull)
             return this;
         return new DBSPTypeTuple(this.getNode(), mayBeNull, this.originalStruct, this.tupFields);

@@ -77,6 +77,59 @@ public class RegressionTests extends SqlIoTest {
     }
 
     @Test
+    public void testUnnestWithOrdinality() {
+        String sql = """
+                CREATE TABLE data
+                (CITIES VARCHAR ARRAY, COUNTRY VARCHAR);
+                CREATE VIEW v as
+                SELECT city, country
+                FROM data, UNNEST(cities) WITH ORDINALITY AS city;""";
+        var ccs = this.getCCS(sql);
+        this.addRustTestCase(ccs);
+    }
+
+    @Test
+    public void testUnnest2() {
+        String sql = """
+                CREATE TYPE ResourceSpans AS (
+                    r int,
+                    scopeSpans int ARRAY
+                );
+                
+                CREATE TABLE t (
+                    resourceSpans ResourceSpans ARRAY
+                );
+                
+                CREATE MATERIALIZED VIEW resource_spans AS
+                SELECT
+                    resourceSpans.scopeSpans
+                FROM
+                    t, UNNEST(resourceSpans) WITH ORDINALITY as resourceSpans;""";
+        this.compileRustTestCase(sql);
+    }
+
+    @Test
+    public void testUnnest() {
+        String sql = """
+                CREATE TABLE tx (outputs VARIANT ARRAY);
+                
+                CREATE MATERIALIZED VIEW outs0 AS (
+                    select output['output_type'] as json_output from tx, UNNEST(outputs) AS t (output)
+                );
+                
+                CREATE MATERIALIZED VIEW outs1 AS (
+                    select PARSE_JSON(CAST(output AS STRING)) from tx, UNNEST(outputs) AS t (output)
+                );
+                
+                CREATE MATERIALIZED VIEW outs2 AS (
+                    select (CAST(output AS VARIANT))['output_type'] from tx, UNNEST(outputs) AS t (output)
+                );
+                """;
+        var ccs = this.getCCS(sql);
+        this.addRustTestCase(ccs);
+    }
+
+    @Test
     public void issue2638() {
         String sql = """
                 CREATE TABLE t (

@@ -180,8 +180,8 @@ public class RustSqlRuntimeLibrary {
                     Can you rephrase the query using an interval such as 'INTERVAL 30 DAYS' instead?""", node);
         }
         return new FunctionDescription("to_bound_" +
-                boundType.setMayBeNull(false).baseTypeWithSuffix() + "_" +
-                sortType.setMayBeNull(false).baseTypeWithSuffix() + "_" +
+                boundType.withMayBeNull(false).baseTypeWithSuffix() + "_" +
+                sortType.withMayBeNull(false).baseTypeWithSuffix() + "_" +
                 unsignedType.baseTypeWithSuffix(), unsignedType);
     }
 

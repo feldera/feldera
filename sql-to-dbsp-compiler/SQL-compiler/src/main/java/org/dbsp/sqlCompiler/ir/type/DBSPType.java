@@ -108,7 +108,7 @@ public abstract class DBSPType extends DBSPNode implements IDBSPInnerNode {
      * Return a copy of this type with the mayBeNull bit set to the specified value.
      * @param mayBeNull  Value for the mayBeNull bit.
      */
-    public abstract DBSPType setMayBeNull(boolean mayBeNull);
+    public abstract DBSPType withMayBeNull(boolean mayBeNull);
 
     public DBSPType ref() {
         return new DBSPTypeRef(this);
@@ -164,7 +164,11 @@ public abstract class DBSPType extends DBSPNode implements IDBSPInnerNode {
     /** The name of the type as used in the runtime library.
      * Only defined for base types. */
     public String baseTypeWithSuffix() {
-        return this.to(DBSPTypeBaseType.class).shortName() + this.nullableSuffix();
+        if (this.is(DBSPTypeBaseType.class))
+            return this.to(DBSPTypeBaseType.class).shortName() + this.nullableSuffix();
+        // The following is necessary to allow some programs to be emitted as dot
+        // before they are lowered.
+        return this + this.nullableSuffix();
     }
 
     /** Returns a lambda which casts the current type to the specified type. */
@@ -189,7 +193,7 @@ public abstract class DBSPType extends DBSPNode implements IDBSPInnerNode {
         if (this.mayBeNull == type.mayBeNull)
             // This prevents us from trying to make something nullable that can't be
             return this.sameType(type);
-        return this.setMayBeNull(true).sameType(type.setMayBeNull(true));
+        return this.withMayBeNull(true).sameType(type.withMayBeNull(true));
     }
 
     /** An expression containing the minimum value of the given type.

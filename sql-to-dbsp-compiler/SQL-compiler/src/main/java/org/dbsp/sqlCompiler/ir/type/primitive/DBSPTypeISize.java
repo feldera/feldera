@@ -45,7 +45,7 @@ public class DBSPTypeISize extends DBSPTypeBaseType implements IsNumericType {
     }
 
     @Override
-    public DBSPType setMayBeNull(boolean mayBeNull) {
+    public DBSPType withMayBeNull(boolean mayBeNull) {
         if (mayBeNull)
             throw new UnsupportedOperationException();
         return this;

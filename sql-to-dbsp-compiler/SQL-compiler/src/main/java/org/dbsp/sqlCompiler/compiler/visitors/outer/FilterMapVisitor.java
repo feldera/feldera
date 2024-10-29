@@ -42,7 +42,7 @@ public class FilterMapVisitor extends CircuitCloneVisitor {
                     operator.getNode(),
                     cond,
                     tmp.some(),
-                    tmp.getType().setMayBeNull(true).none());
+                    tmp.getType().withMayBeNull(true).none());
             DBSPBlockExpression block = new DBSPBlockExpression(Linq.list(let), ifexp);
             DBSPClosureExpression function = block.closure(map.parameters);
             DBSPOperator result =

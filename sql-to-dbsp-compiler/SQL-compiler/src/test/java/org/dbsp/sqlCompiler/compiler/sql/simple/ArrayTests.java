@@ -102,10 +102,10 @@ public class ArrayTests extends BaseSQLTests {
 
     @Test
     public void testUnnest() {
-        String query = "SELECT * FROM UNNEST(ARRAY [1, 2, 3, 4, 5])";
+        String query = "SELECT i*2 FROM UNNEST(ARRAY [1, 2, 3, 4, 5]) AS T(i)";
         DBSPZSetLiteral result = null;
         for (int i = 1; i < 6; i++) {
-            DBSPTupleExpression tuple = new DBSPTupleExpression(new DBSPI32Literal(i));
+            DBSPTupleExpression tuple = new DBSPTupleExpression(new DBSPI32Literal(i * 2));
             if (i == 1)
                 result = new DBSPZSetLiteral(tuple);
             else
@@ -211,7 +211,7 @@ public class ArrayTests extends BaseSQLTests {
         String ddl = "CREATE TABLE ARR_TABLE (\n"
                 + "VALS INTEGER ARRAY NOT NULL,"
                 + "ID INTEGER NOT NULL)";
-        String query = "SELECT VAL, ID FROM " +
+        String query = "SELECT VAL * 2, ID FROM " +
                 "ARR_TABLE, UNNEST(VALS) AS VAL";
         DBSPZSetLiteral input = new DBSPZSetLiteral(
                 new DBSPTupleExpression(
@@ -228,12 +228,12 @@ public class ArrayTests extends BaseSQLTests {
                         new DBSPI32Literal(7))
                 );
         DBSPZSetLiteral result = new DBSPZSetLiteral(
-                new DBSPTupleExpression(new DBSPI32Literal(1, true), new DBSPI32Literal(6)),
                 new DBSPTupleExpression(new DBSPI32Literal(2, true), new DBSPI32Literal(6)),
-                new DBSPTupleExpression(new DBSPI32Literal(3, true), new DBSPI32Literal(6)),
-                new DBSPTupleExpression(new DBSPI32Literal(1, true), new DBSPI32Literal(7)),
+                new DBSPTupleExpression(new DBSPI32Literal(4, true), new DBSPI32Literal(6)),
+                new DBSPTupleExpression(new DBSPI32Literal(6, true), new DBSPI32Literal(6)),
                 new DBSPTupleExpression(new DBSPI32Literal(2, true), new DBSPI32Literal(7)),
-                new DBSPTupleExpression(new DBSPI32Literal(3, true), new DBSPI32Literal(7))
+                new DBSPTupleExpression(new DBSPI32Literal(4, true), new DBSPI32Literal(7)),
+                new DBSPTupleExpression(new DBSPI32Literal(6, true), new DBSPI32Literal(7))
         );
         this.testQuery(ddl, query, new InputOutputChange(
                 new Change(input), new Change(result)).toStream());
