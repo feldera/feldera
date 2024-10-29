@@ -1,11 +1,5 @@
 import BigNumber from 'bignumber.js'
-import {
-  JSONParser,
-  Tokenizer,
-  TokenParser,
-  type JSONParserOptions,
-  type TokenParserOptions
-} from '@streamparser/json'
+import { JSONParser, Tokenizer, TokenParser, type JSONParserOptions } from '@streamparser/json'
 
 class BigNumberTokenizer extends Tokenizer {
   parseNumber = BigNumber as any
@@ -213,7 +207,6 @@ export class SplitNewlineTransformStream extends TransformStream<Uint8Array, str
       this.buffer = this.buffer.slice(this.newlineRegex.lastIndex) // this.buffer.slice(match.index + match[0].length);
       // Reset lastIndex for the regex to handle the modified buffer
       this.newlineRegex.lastIndex = 0
-      // await new Promise((resolve) => setTimeout(resolve))
     }
   }
 

@@ -159,4 +159,6 @@
   })
 </script>
 
-<LogsStreamList logs={getStreams()[pipelineName]}></LogsStreamList>
+{#key pipelineName}
+  <LogsStreamList logs={getStreams()[pipelineName]}></LogsStreamList>
+{/key}
