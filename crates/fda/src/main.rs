@@ -503,6 +503,21 @@ async fn pipeline(action: PipelineAction, client: Client) {
 
             trace!("{:#?}", response);
         }
+        PipelineAction::Checkpoint { name } => {
+            let response = client
+                .post_pipeline_action()
+                .pipeline_name(name.clone())
+                .action("checkpoint")
+                .send()
+                .await
+                .map_err(handle_errors_fatal(
+                    client.baseurl.clone(),
+                    "Failed to checkpoint pipeline",
+                    1,
+                ))
+                .unwrap();
+            trace!("{:#?}", response);
+        }
         PipelineAction::Pause { name, no_wait } => {
             let response = client
                 .post_pipeline_action()

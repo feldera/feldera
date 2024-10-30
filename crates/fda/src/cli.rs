@@ -247,6 +247,12 @@ pub enum PipelineAction {
         #[arg(long, short = 'n', default_value_t = false)]
         no_wait: bool,
     },
+    /// Checkpoint a fault-tolerant pipeline.
+    Checkpoint {
+        /// The name of the pipeline.
+        #[arg(value_hint = ValueHint::Other, add = ArgValueCompleter::new(pipeline_names))]
+        name: String,
+    },
     /// Pause a pipeline.
     Pause {
         /// The name of the pipeline.
