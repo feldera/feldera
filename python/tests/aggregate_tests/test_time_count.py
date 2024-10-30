@@ -23,7 +23,7 @@ class aggtst_time_count_groupby(TstView):
 class aggtst_time_count_where(TstView):
     def __init__(self):
         # Validated on Postgres
-        self.data = [{'count': 3}]
+        self.data = [{"count": 3}]
         self.sql = """CREATE MATERIALIZED VIEW time_count_where AS SELECT
                       COUNT(*) FILTER(WHERE c1 > '08:30:00') AS count
                       FROM time_tbl"""
