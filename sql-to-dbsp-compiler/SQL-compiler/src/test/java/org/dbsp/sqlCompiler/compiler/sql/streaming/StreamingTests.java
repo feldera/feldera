@@ -16,7 +16,6 @@ import org.dbsp.sqlCompiler.compiler.sql.StreamingTestBase;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.junit.Assert;
-import org.junit.Ignore;
 import org.junit.Test;
 
 /** Tests that exercise streaming features. */
@@ -224,9 +223,9 @@ public class StreamingTests extends StreamingTestBase {
         this.addRustTestCase(ccs);
     }
 
-    @Test @Ignore("https://github.com/feldera/feldera/issues/2847")
+    @Test
     public void issue2847() {
-        // this.showFinalVerbose();
+        this.showFinal();
         String sql = """
                 CREATE TABLE t1(
                     x INT,
@@ -241,11 +240,33 @@ public class StreamingTests extends StreamingTestBase {
                 CREATE VIEW v
                 WITH ('emit_final' = 'ts')
                 AS SELECT
-                    ts,
-                    x,
-                    LAG(x) OVER (ORDER BY ts)
+                    ts, x, LAG(x)
+                    OVER (ORDER BY ts)
                 FROM t1;""";
         var ccs = this.getCCS(sql);
+        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+            int integrate_trace = 0;
+            int window = 0;
+
+            @Override
+            public void postorder(DBSPWindowOperator operator) {
+                this.window++;
+            }
+
+            @Override
+            public void postorder(DBSPIntegrateTraceRetainKeysOperator operator) {
+                this.integrate_trace++;
+            }
+
+            @Override
+            public void endVisit() {
+                // 2 for the lag, one for the window
+                Assert.assertEquals(1, this.integrate_trace);
+                Assert.assertEquals(1, this.window);
+            }
+        };
+        visitor.apply(ccs.circuit);
+        this.addRustTestCase(ccs);
     }
 
     @Test
@@ -288,7 +309,7 @@ public class StreamingTests extends StreamingTestBase {
                 WITH ('emit_final' = 'ts')
                 AS SELECT * FROM T
                 WHERE ts >= NOW() - INTERVAL 7 DAYS;""";
-        var ccs = this.getCCS(sql);
+        this.getCCS(sql);
     }
 
     @Test

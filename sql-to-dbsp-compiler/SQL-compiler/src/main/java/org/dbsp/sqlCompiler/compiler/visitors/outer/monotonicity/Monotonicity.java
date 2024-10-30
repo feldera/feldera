@@ -2,6 +2,7 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAsofJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPChainAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDeindexOperator;
@@ -12,6 +13,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPFilterOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPHopOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinBaseOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPLagOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNegateOperator;
@@ -536,6 +538,37 @@ public class Monotonicity extends CircuitVisitor {
     }
 
     @Override
+    public void postorder(DBSPLagOperator node) {
+        MonotoneExpression input = this.getMonotoneExpression(node.input());
+        if (input == null)
+            return;
+        IMaybeMonotoneType projection = Monotonicity.getBodyType(input);
+        // The lag operator function has 2 inputs, although the operator has
+        // a single input.  The first parameter is actually fed from the
+        // operator's input.  The second parameter is fed from the lagged version of
+        // the input.  Moreover, the parameter operates always over indexed
+        // Z-sets, but the function's input is just the Z-set part.
+        //
+        // Let's say the function of lag is |x, y| f(x, y).
+        // We build a new function transfer = |kx| (*kx.0, f(kx.1, No)) and analyze this one.
+        DBSPClosureExpression function = node.getClosureFunction();
+        assert function.parameters.length == 2;
+
+        DBSPTypeIndexedZSet inputType = node.input().getOutputIndexedZSetType();
+        DBSPVariablePath kx = new DBSPTypeRawTuple(inputType.keyType.ref(), inputType.elementType.ref()).var();
+        DBSPExpression noExpression = new NoExpression(function.parameters[1].type);
+        DBSPExpression dataPart = function.call(kx.field(1), noExpression);
+        DBSPExpression transfer = new DBSPRawTupleExpression(kx.field(0).deref(), dataPart).closure(kx).reduce(this.errorReporter);
+        MonotoneTransferFunctions mm = new MonotoneTransferFunctions(
+                this.errorReporter, node,
+                MonotoneTransferFunctions.ArgumentKind.IndexedZSet, projection);
+        MonotoneExpression result = mm.applyAnalysis(transfer);
+        if (result == null)
+            return;
+        this.set(node, result);
+    }
+
+    @Override
     public void postorder(DBSPAsofJoinOperator node) {
         MonotoneExpression left = this.getMonotoneExpression(node.left());
         MonotoneExpression right = this.getMonotoneExpression(node.right());
@@ -577,7 +610,7 @@ public class Monotonicity extends CircuitVisitor {
         // - the parameters are wrapped DBSPCustomOrdExpression
         // - the third parameter is a nullable tuple.
         // Instead of analyzing node.function, we make up a simpler function with
-        // non-nullable tuple arguments and we analyze that one, making this ASOF join
+        // non-nullable tuple arguments, and we analyze that one, making this ASOF join
         // look more like a regular join.
         DBSPVariablePath k = keyType.ref().var();
         DBSPVariablePath l = function.parameters[1].getType().var();

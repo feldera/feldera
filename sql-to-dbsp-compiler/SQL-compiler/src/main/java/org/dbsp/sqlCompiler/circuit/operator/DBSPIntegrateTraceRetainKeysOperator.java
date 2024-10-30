@@ -27,6 +27,8 @@ public final class DBSPIntegrateTraceRetainKeysOperator
         super(node, "integrate_trace_retain_keys", expression, data.getType(), data.isMultiset, data, control);
     }
 
+    /** Create an operator to retain keys and returns it.  May return null if the keys contain no fields. */
+    @Nullable
     public static DBSPIntegrateTraceRetainKeysOperator create(
             CalciteObject node, DBSPOperator data, IMaybeMonotoneType dataProjection, DBSPOperator control) {
         DBSPType controlType = control.getType();
@@ -45,9 +47,12 @@ public final class DBSPIntegrateTraceRetainKeysOperator
             DBSPType keyType = data.getOutputIndexedZSetType().keyType;
             DBSPVariablePath dataArg = keyType.var();
             param = new DBSPParameter(dataArg.variable, dataArg.getType().ref());
-            DBSPExpression project = dataProjection
+            IMaybeMonotoneType dataField0 = dataProjection
                     .to(PartiallyMonotoneTuple.class)
-                    .getField(0)
+                    .getField(0);
+            if (!dataField0.mayBeMonotone())
+                return null;
+            DBSPExpression project = dataField0
                     .projectExpression(dataArg);
             compare = DBSPControlledFilterOperator.generateTupleCompare(
                     project, controlArg.deref().field(1).field(0), DBSPOpcode.CONTROLLED_FILTER_GTE);
@@ -55,6 +60,8 @@ public final class DBSPIntegrateTraceRetainKeysOperator
             DBSPType keyType = data.getOutputZSetElementType();
             DBSPVariablePath dataArg = keyType.var();
             param = new DBSPParameter(dataArg.variable, dataArg.getType().ref());
+            if (!dataProjection.mayBeMonotone())
+                return null;
             DBSPExpression project = dataProjection.projectExpression(dataArg);
             compare = DBSPControlledFilterOperator.generateTupleCompare(
                     project, controlArg.deref().field(1), DBSPOpcode.CONTROLLED_FILTER_GTE);
