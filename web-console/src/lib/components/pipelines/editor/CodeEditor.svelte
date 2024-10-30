@@ -86,7 +86,8 @@
     editDisabled,
     textEditor,
     statusBarCenter,
-    statusBarEnd
+    statusBarEnd,
+    tabButtons
   }: {
     path: string
     files: {
@@ -102,6 +103,7 @@
     textEditor: Snippet<[children: Snippet]>
     statusBarCenter?: Snippet
     statusBarEnd?: Snippet<[downstreamChanged: boolean]>
+    tabButtons?: Snippet<[btnClass: string]>
   } = $props()
 
   let editorRef: editor.IStandaloneCodeEditor = $state()!
@@ -287,6 +289,7 @@
           {file.name}
         </button>
       {/each}
+      {@render tabButtons?.('py-1 pl-3 pr-8 hover:!bg-opacity-50 hover:bg-surface-100-900')}
     </div>
     <div class="relative flex-1">
       <div class="absolute h-full w-full">

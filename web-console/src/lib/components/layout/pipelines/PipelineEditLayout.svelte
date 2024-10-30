@@ -1,5 +1,7 @@
 <script lang="ts" module>
+  import { SvelteSet } from 'svelte/reactivity'
   let currentPipelineFile: Record<string, string> = $state({})
+  let forceShowPipelinesUDF: SvelteSet<string> = $state(new SvelteSet())
 </script>
 
 <script lang="ts">
@@ -75,6 +77,13 @@
   )
 
   let metrics = useAggregatePipelineStats(pipeline, 1000, 61000)
+  let hideUDF = $derived(
+    !(
+      pipeline.current.programUdfRs ||
+      pipeline.current.programUdfToml ||
+      forceShowPipelinesUDF.has(pipeline.current.name)
+    )
+  )
   let files = $derived.by(() => {
     const current = pipeline.current
     const patch = pipeline.patch
@@ -95,60 +104,64 @@
           programErrors['program.sql']
         )
       },
-      {
-        name: `stubs.rs`,
-        access: {
-          get current() {
-            return current.programInfo?.udf_stubs ?? ''
-          }
-        },
-        language: 'rust' as const,
-        markers: ((errors) =>
-          errors ? { [felderaCompilerMarkerSource]: extractErrorMarkers(errors) } : undefined)(
-          programErrors['stubs.rs']
-        ),
-        behaviorOnConflict: 'auto-pull' as const
-      },
-      {
-        name: `udf.rs`,
-        access: {
-          get current() {
-            return current.programUdfRs
-          },
-          set current(programUdfRs: string) {
-            patch({ programUdfRs })
-          }
-        },
-        language: 'rust' as const,
-        markers: ((errors) =>
-          errors ? { [felderaCompilerMarkerSource]: extractErrorMarkers(errors) } : undefined)(
-          programErrors['udf.rs']
-        ),
-        placeholder: `// UDF implementation in Rust.
+      ...(hideUDF
+        ? []
+        : [
+            {
+              name: `stubs.rs`,
+              access: {
+                get current() {
+                  return current.programInfo?.udf_stubs ?? ''
+                }
+              },
+              language: 'rust' as const,
+              markers: ((errors) =>
+                errors
+                  ? { [felderaCompilerMarkerSource]: extractErrorMarkers(errors) }
+                  : undefined)(programErrors['stubs.rs']),
+              behaviorOnConflict: 'auto-pull' as const
+            },
+            {
+              name: `udf.rs`,
+              access: {
+                get current() {
+                  return current.programUdfRs
+                },
+                set current(programUdfRs: string) {
+                  patch({ programUdfRs })
+                }
+              },
+              language: 'rust' as const,
+              markers: ((errors) =>
+                errors
+                  ? { [felderaCompilerMarkerSource]: extractErrorMarkers(errors) }
+                  : undefined)(programErrors['udf.rs']),
+              placeholder: `// UDF implementation in Rust.
 // See function prototypes in \`stubs.rs\`
 
 pub fn my_udf(input: String) -> Result<String, Box<dyn std::error::Error>> {
   todo!()
 }`
-      },
-      {
-        name: `udf.toml`,
-        access: {
-          get current() {
-            return current.programUdfToml
-          },
-          set current(programUdfToml: string) {
-            patch({ programUdfToml })
-          }
-        },
-        language: 'graphql' as const,
-        markers: ((errors) =>
-          errors ? { [felderaCompilerMarkerSource]: extractErrorMarkers(errors) } : undefined)(
-          programErrors['udf.toml']
-        ),
-        placeholder: `# List Rust dependencies required by udf.rs.
+            },
+            {
+              name: `udf.toml`,
+              access: {
+                get current() {
+                  return current.programUdfToml
+                },
+                set current(programUdfToml: string) {
+                  patch({ programUdfToml })
+                }
+              },
+              language: 'graphql' as const,
+              markers: ((errors) =>
+                errors
+                  ? { [felderaCompilerMarkerSource]: extractErrorMarkers(errors) }
+                  : undefined)(programErrors['udf.toml']),
+              placeholder: `# List Rust dependencies required by udf.rs.
 example = "1.0"`
-      }
+            }
+          ])
     ]
   })
   let pipelineName = $derived(pipeline.current.name)
@@ -165,6 +178,13 @@ example = "1.0"`
       {editDisabled}
       bind:currentFileName={currentPipelineFile[pipelineName]}
     >
+      {#snippet tabButtons(classes)}
+        {#if hideUDF}
+          <button class={classes} onclick={() => forceShowPipelinesUDF.add(pipelineName)}>
+            + Add UDF
+          </button>
+        {/if}
+      {/snippet}
       {#snippet textEditor(children)}
         <Pane defaultSize={60} minSize={15} class="!overflow-visible">
           {@render children()}
