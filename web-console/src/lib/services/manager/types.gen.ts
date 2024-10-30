@@ -759,12 +759,16 @@ export type KafkaHeaderValue = Blob | File
  */
 export type KafkaInputConfig = {
   /**
+   * Deprecated.
+   */
+  fault_tolerance?: string | null
+  /**
    * Maximum timeout in seconds to wait for the endpoint to join the Kafka
    * consumer group during initialization.
    */
   group_join_timeout_secs?: number
   /**
-   * If specified, this service is used to provide defaults for the Kafka options.
+   * Deprecated.
    */
   kafka_service?: string | null
   log_level?: KafkaLogLevel | null
@@ -2386,7 +2390,7 @@ export type $OpenApiTs = {
          */
         '200': unknown
         /**
-         * Pipeline is not running or paused
+         * Pipeline is not running or paused, or fault tolerance is not enabled for this pipeline
          */
         '400': ErrorResponse
         /**

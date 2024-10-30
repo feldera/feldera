@@ -1109,6 +1109,11 @@ export const $KafkaInputConfig = {
   description: 'Configuration for reading data from Kafka topics with `InputTransport`.',
   required: ['topics'],
   properties: {
+    fault_tolerance: {
+      type: 'string',
+      description: 'Deprecated.',
+      nullable: true
+    },
     group_join_timeout_secs: {
       type: 'integer',
       format: 'int32',
@@ -1118,7 +1123,7 @@ consumer group during initialization.`,
     },
     kafka_service: {
       type: 'string',
-      description: 'If specified, this service is used to provide defaults for the Kafka options.',
+      description: 'Deprecated.',
       nullable: true
     },
     log_level: {
