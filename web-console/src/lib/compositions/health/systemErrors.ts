@@ -197,19 +197,18 @@ export const extractProgramErrors =
     const source = `${base}/pipelines/${encodeURI(pipeline.name)}/`
     const result = match(pipeline.status)
       .returnType<SystemError<any, Report>[]>()
-      .with({ RustError: P.any }, (e) => [
-        (() => ({
-          name: `Error compiling ${pipeline.name}`,
-          message: 'Program compilation error. See details below:\n' + e.RustError,
-          cause: {
-            entityName: pipeline.name,
-            tag: 'programError',
-            source,
-            report: getReport(pipeline.name, e.RustError),
-            body: e.RustError
-          }
-        }))()
-      ])
+      .with({ RustError: P.any }, (e) => {
+        const rustCompilerErrorRegex = /^((warning:(?! `)|error(\[[\w]+\])?:)([\s\S])+?)\n\n/gm
+        const rustCompilerMessages: string[] =
+          Array.from(e.RustError.matchAll(rustCompilerErrorRegex)).map((match) => match[1]) ?? []
+        const rustCompilerErrors = [
+          extractInternalCompilationError(e.RustError, pipeline.name, source, getReport)
+        ].filter(nonNull)
+        rustCompilerErrors.push(
+          ...rustCompilerMessages.map(extractRustCompilerError(pipeline.name, source, getReport))
+        )
+        return rustCompilerErrors
+      })
       .with(
         {
           SystemError: P.any
