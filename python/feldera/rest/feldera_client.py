@@ -286,6 +286,17 @@ class FelderaClient:
 
         raise RuntimeError(f"Failed to shutdown pipeline {pipeline_name}")
 
+    def checkpoint_pipeline(self, pipeline_name: str):
+        """
+        Checkpoint a fault-tolerant pipeline
+
+        :param pipeline_name: The name of the pipeline to checkpoint
+        """
+
+        self.http.post(
+            path=f"/pipelines/{pipeline_name}/checkpoint",
+        )
+
     def push_to_pipeline(
         self,
         pipeline_name: str,
