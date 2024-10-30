@@ -6,7 +6,8 @@ use crate::{
     FromInteger, ToInteger,
 };
 use chrono::{
-    DateTime, Datelike, Days, Months, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Timelike, Utc,
+    DateTime, Datelike, Days, Duration, Months, NaiveDate, NaiveDateTime, NaiveTime, TimeZone,
+    Timelike, Utc,
 };
 use core::fmt::Formatter;
 use dbsp::num_entries_scalar;
@@ -1160,6 +1161,13 @@ pub fn date_trunc_month_Timestamp(timestamp: Timestamp) -> Timestamp {
 }
 
 #[doc(hidden)]
+pub fn date_trunc_week_Timestamp(timestamp: Timestamp) -> Timestamp {
+    let dt = timestamp.get_date();
+    let dt = date_trunc_week_Date(dt);
+    Timestamp::from_date(dt)
+}
+
+#[doc(hidden)]
 pub fn date_trunc_day_Timestamp(timestamp: Timestamp) -> Timestamp {
     let dt = timestamp.get_date();
     let dt = date_trunc_day_Date(dt);
@@ -1171,6 +1179,7 @@ some_polymorphic_function1!(date_trunc_century, Timestamp, Timestamp, Timestamp)
 some_polymorphic_function1!(date_trunc_decade, Timestamp, Timestamp, Timestamp);
 some_polymorphic_function1!(date_trunc_year, Timestamp, Timestamp, Timestamp);
 some_polymorphic_function1!(date_trunc_month, Timestamp, Timestamp, Timestamp);
+some_polymorphic_function1!(date_trunc_week, Timestamp, Timestamp, Timestamp);
 some_polymorphic_function1!(date_trunc_day, Timestamp, Timestamp, Timestamp);
 
 #[doc(hidden)]
@@ -1196,6 +1205,11 @@ pub fn timestamp_trunc_year_Timestamp(timestamp: Timestamp) -> Timestamp {
 #[doc(hidden)]
 pub fn timestamp_trunc_month_Timestamp(timestamp: Timestamp) -> Timestamp {
     date_trunc_month_Timestamp(timestamp)
+}
+
+#[doc(hidden)]
+pub fn timestamp_trunc_week_Timestamp(timestamp: Timestamp) -> Timestamp {
+    date_trunc_week_Timestamp(timestamp)
 }
 
 #[doc(hidden)]
@@ -1238,6 +1252,7 @@ some_polymorphic_function1!(timestamp_trunc_century, Timestamp, Timestamp, Times
 some_polymorphic_function1!(timestamp_trunc_decade, Timestamp, Timestamp, Timestamp);
 some_polymorphic_function1!(timestamp_trunc_year, Timestamp, Timestamp, Timestamp);
 some_polymorphic_function1!(timestamp_trunc_month, Timestamp, Timestamp, Timestamp);
+some_polymorphic_function1!(timestamp_trunc_week, Timestamp, Timestamp, Timestamp);
 some_polymorphic_function1!(timestamp_trunc_day, Timestamp, Timestamp, Timestamp);
 some_polymorphic_function1!(timestamp_trunc_hour, Timestamp, Timestamp, Timestamp);
 some_polymorphic_function1!(timestamp_trunc_minute, Timestamp, Timestamp, Timestamp);
@@ -1280,6 +1295,14 @@ pub fn date_trunc_month_Date(date: Date) -> Date {
 }
 
 #[doc(hidden)]
+pub fn date_trunc_week_Date(date: Date) -> Date {
+    let naive = date.to_date();
+    let weekday = naive.weekday().num_days_from_sunday();
+    let rounded = naive - Duration::days(weekday.into());
+    Date::from_date(rounded)
+}
+
+#[doc(hidden)]
 pub fn date_trunc_day_Date(date: Date) -> Date {
     date
 }
@@ -1289,6 +1312,7 @@ some_polymorphic_function1!(date_trunc_century, Date, Date, Date);
 some_polymorphic_function1!(date_trunc_decade, Date, Date, Date);
 some_polymorphic_function1!(date_trunc_year, Date, Date, Date);
 some_polymorphic_function1!(date_trunc_month, Date, Date, Date);
+some_polymorphic_function1!(date_trunc_week, Date, Date, Date);
 some_polymorphic_function1!(date_trunc_day, Date, Date, Date);
 
 //////////////////////////// Time
