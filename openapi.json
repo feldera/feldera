@@ -1119,7 +1119,7 @@
             "description": "Checkpoint completed."
           },
           "400": {
-            "description": "Pipeline is not running or paused",
+            "description": "Pipeline is not running or paused, or fault tolerance is not enabled for this pipeline",
             "content": {
               "application/json": {
                 "schema": {
