@@ -13,6 +13,9 @@
   let handle3: NodeJS.Timeout
   let ref = $state<VList<Row>>(undefined!)
   const scrollToBottom = (lastOffset?: number) => {
+    if (!ref) {
+      return
+    }
     ref.scrollTo(
       ref.getScrollSize() -
         (Math.round(ref.getScrollSize() - ref.getViewportSize()) <= 0 ? ref.getViewportSize() : 0)
