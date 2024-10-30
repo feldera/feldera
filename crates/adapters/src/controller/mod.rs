@@ -607,7 +607,7 @@ impl CircuitThread {
                     } else {
                         Err(ControllerError::NotSupported {
                             error: String::from(
-                                "cannot checkpoint circuit because fault tolerance  is not enabled",
+                                "cannot checkpoint circuit because fault tolerance is not enabled",
                             ),
                         })
                     };
