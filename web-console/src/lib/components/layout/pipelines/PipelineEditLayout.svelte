@@ -1,7 +1,7 @@
 <script lang="ts" module>
   import { SvelteSet } from 'svelte/reactivity'
   let currentPipelineFile: Record<string, string> = $state({})
-  let forceShowPipelinesUDF: SvelteSet<string> = $state(new SvelteSet())
+  let showPipelinesUDF: SvelteSet<string> = $state(new SvelteSet())
 </script>
 
 <script lang="ts">
@@ -76,14 +76,9 @@
     )
   )
 
+  let pipelineName = $derived(pipeline.current.name)
   let metrics = useAggregatePipelineStats(pipeline, 1000, 61000)
-  let hideUDF = $derived(
-    !(
-      pipeline.current.programUdfRs ||
-      pipeline.current.programUdfToml ||
-      forceShowPipelinesUDF.has(pipeline.current.name)
-    )
-  )
+  let hideUDF = $derived(!showPipelinesUDF.has(pipelineName))
   let files = $derived.by(() => {
     const current = pipeline.current
     const patch = pipeline.patch
@@ -164,7 +159,6 @@ example = "1.0"`
           ])
     ]
   })
-  let pipelineName = $derived(pipeline.current.name)
   $effect.pre(() => {
     currentPipelineFile[pipelineName] ??= 'program.sql'
   })
@@ -180,8 +174,18 @@ example = "1.0"`
     >
       {#snippet tabButtons(classes)}
         {#if hideUDF}
-          <button class={classes} onclick={() => forceShowPipelinesUDF.add(pipelineName)}>
-            + Add UDF
+          <button class={classes} onclick={() => showPipelinesUDF.add(pipelineName)}>
+            &#62 Show UDF
+          </button>
+        {:else}
+          <button
+            class={classes}
+            onclick={() => {
+              showPipelinesUDF.delete(pipelineName)
+              currentPipelineFile[pipelineName] = 'program.sql'
+            }}
+          >
+            &#60 Hide UDF
           </button>
         {/if}
       {/snippet}
