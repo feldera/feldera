@@ -53,9 +53,10 @@
   bind:this={ref}
   data={items}
   onscroll={(scrollTop) => {
-    cancelAnimationFrame(handle1)
-    cancelAnimationFrame(handle2)
-    clearTimeout(handle3)
+    // TODO: re-enable only for vertical scroll when it can be disambiguated from horizontal scroll
+    // cancelAnimationFrame(handle1)
+    // cancelAnimationFrame(handle2)
+    // clearTimeout(handle3)
     stickToBottom = Math.round(scrollTop - ref.getScrollSize() + ref.getViewportSize()) >= 0
   }}
   class={_class}
