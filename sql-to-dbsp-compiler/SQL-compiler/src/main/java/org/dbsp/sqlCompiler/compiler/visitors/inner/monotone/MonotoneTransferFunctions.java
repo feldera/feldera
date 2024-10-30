@@ -137,6 +137,17 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
         this.resolver = new ResolveReferences(reporter, false);
         this.constantExpressions = new ExpressionSet();
         this.positiveExpressions = new ExpressionSet();
+        switch (argumentKind) {
+            case IndexedZSet:
+            case ZSet:
+                assert parameterTypes.length == 1;
+                break;
+            case Join:
+                assert parameterTypes.length == 3;
+                break;
+            default:
+                throw new InternalCompilerError("unreachable");
+        }
     }
 
     @Override
