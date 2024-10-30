@@ -19,7 +19,7 @@ use governor::{Jitter, Quota, RateLimiter};
 use num_traits::{clamp, Bounded, ToPrimitive};
 use rand::distributions::{Alphanumeric, Uniform};
 use rand::rngs::SmallRng;
-use rand::{Rng, SeedableRng};
+use rand::{thread_rng, Rng, SeedableRng};
 use rand_distr::{Distribution, Zipf};
 use serde_json::{to_writer, Map, Value};
 use tokio::sync::Notify;
@@ -338,7 +338,7 @@ impl InputGenerator {
         });
 
         let queue = Arc::new(InputQueue::new(consumer.clone()));
-        for worker in 0..config.workers {
+        for _ in 0..config.workers {
             let config = config.clone();
             let status = status.clone();
             let generated = generated.clone();
@@ -352,7 +352,6 @@ impl InputGenerator {
             if needs_blocking_tasks {
                 std::thread::spawn(move || {
                     TOKIO.block_on(Self::worker_thread(
-                        worker,
                         config,
                         shared_state,
                         schema,
@@ -366,7 +365,6 @@ impl InputGenerator {
                 });
             } else {
                 TOKIO.spawn(Self::worker_thread(
-                    worker,
                     config,
                     shared_state,
                     schema,
@@ -406,7 +404,6 @@ impl InputGenerator {
 
     #[allow(clippy::too_many_arguments, clippy::type_complexity)]
     async fn worker_thread(
-        worker_idx: usize,
         config: DatagenInputConfig,
         shared_state: Arc<
             Vec<(
@@ -427,6 +424,13 @@ impl InputGenerator {
         static END_ARR: &[u8; 1] = b"]";
         static REC_DELIM: &[u8; 1] = b",";
 
+        let seed = config
+            .seed
+            .unwrap_or(if consumer.is_pipeline_fault_tolerant() {
+                0
+            } else {
+                thread_rng().gen()
+            });
         for (plan, (progress, rate_limiter)) in config.plan.into_iter().zip(shared_state.iter()) {
             // Inserting in batches improves performance by around ~80k records/s for
             // me, so we always do it rather than giving the user the option.
@@ -437,7 +441,7 @@ impl InputGenerator {
 
             let limit = plan.limit.unwrap_or(usize::MAX);
             let schema = schema.clone();
-            let mut generator = RecordGenerator::new(worker_idx, config.seed, plan, schema);
+            let mut generator = RecordGenerator::new(seed, plan, schema);
 
             // Count how long we took to so far to create a batch
             // If we end up taking too long we send a batch earlier even if we don't reach `batch_size`
@@ -539,19 +543,13 @@ struct RecordGenerator {
     schema: Relation,
     /// The current record number.
     current: usize,
-    rng: Option<SmallRng>,
+    seed: u64,
     ymd_format: Vec<Item<'static>>,
     json_obj: Option<Value>,
 }
 
 impl RecordGenerator {
-    fn new(worker_idx: usize, seed: Option<u64>, config: GenerationPlan, schema: Relation) -> Self {
-        let rng = if let Some(seed) = seed {
-            SmallRng::seed_from_u64(seed + worker_idx as u64)
-        } else {
-            SmallRng::from_entropy()
-        };
-
+    fn new(seed: u64, config: GenerationPlan, schema: Relation) -> Self {
         let ymd_format = StrftimeItems::new("%Y-%m-%d")
             .parse_to_owned()
             .expect("%Y-%m-%d is a valid date format");
@@ -561,7 +559,7 @@ impl RecordGenerator {
             schema,
             current: 0,
             ymd_format,
-            rng: Some(rng),
+            seed,
             json_obj: Some(Value::Object(Map::with_capacity(8))),
         }
     }
@@ -1587,7 +1585,7 @@ impl RecordGenerator {
     /// - `idx` is the index of the record to generate, it should be global
     ///   across all threads.
     fn make_json_record(&mut self, idx: usize) -> AnyResult<&Value> {
-        let mut rng = self.rng.take().unwrap();
+        let mut rng = SmallRng::seed_from_u64(self.seed.wrapping_add(idx as u64));
         let mut obj = self.json_obj.take().unwrap();
         self.current = idx;
 
@@ -1598,7 +1596,6 @@ impl RecordGenerator {
             &mut rng,
             &mut obj,
         );
-        self.rng = Some(rng);
         self.json_obj = Some(obj);
         r?;
 
