@@ -32,6 +32,30 @@ public class RegressionTests extends SqlIoTest {
     }
 
     @Test
+    public void issue2881() {
+        String sql = """
+                CREATE TABLE transactions (
+                    transaction_id INT NOT NULL PRIMARY KEY,
+                    transaction_timestamp TIMESTAMP NOT NULL LATENESS INTERVAL 1 WEEK,
+                    account_id INT NOT NULL,
+                    amount DECIMAL(10, 2) NOT NULL
+                );
+                
+                CREATE VIEW weekly_financial_final
+                WITH ('emit_final' = 'week')
+                AS
+                SELECT
+                    TIMESTAMP_TRUNC(transaction_timestamp, WEEK) as week,
+                    account_id,
+                    SUM(amount) AS weekly_balance
+                FROM
+                    transactions
+                GROUP BY
+                    TIMESTAMP_TRUNC(transaction_timestamp, WEEK), account_id;""";
+        this.compileRustTestCase(sql);
+    }
+
+    @Test
     public void issue2642() {
         String sql = """
                 create table t (

@@ -1447,6 +1447,12 @@ public class PostgresDateTests extends SqlIoTest {
                 ------------------------------
                  1993-12-01
                 (1 row)
+                
+                SELECT DATE_TRUNC(DATE '1993-12-25', WEEK);
+                          date_trunc
+                ------------------------------
+                 1993-12-19
+                (1 row)
 
                 SELECT DATE_TRUNC(DATE '1993-12-25', DAY);
                           date_trunc
