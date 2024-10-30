@@ -49,7 +49,7 @@
   let options = $derived({
     animationDuration: 0,
     animationDurationUpdate: refetchMs * 1.5,
-    animationEasingUpdate: 'linear',
+    animationEasingUpdate: 'linear' as const,
     grid: {
       top: 10,
       left: 64,
@@ -78,14 +78,14 @@
       },
       splitLine: {
         lineStyle: {
-          color: 'gray',
+          color: 'gray' as const,
           opacity: 0.5
         }
       }
     },
     tooltip: {
       show: true,
-      position: 'top',
+      position: 'top' as const,
       formatter: (x: any) => {
         return humanSize(x.value[1])
       }
@@ -107,7 +107,7 @@
             show: false
           },
           label: {
-            position: 'end',
+            position: 'end' as const,
             formatter: (v) => humanSize(v.value as number)
           },
           emphasis: { disabled: true },
@@ -121,7 +121,7 @@
         triggerLineEvent: true
       }
     ]
-  } as EChartsInitOpts)
+  } satisfies EChartsInitOpts)
 
   const handleSeriesHover = <T,>(setValue: (value: T | null) => void) => ({
     mouseover: (e: CustomEvent<ECMouseEvent>) => {

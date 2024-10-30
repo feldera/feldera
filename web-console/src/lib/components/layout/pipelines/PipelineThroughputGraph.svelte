@@ -31,7 +31,7 @@
   const options = $derived({
     animationDuration: 0,
     animationDurationUpdate: refetchMs * 1.5,
-    animationEasingUpdate: 'linear',
+    animationEasingUpdate: 'linear' as const,
     dataLabels: { enabled: false },
     grid: {
       top: 10,
@@ -61,14 +61,14 @@
       },
       splitLine: {
         lineStyle: {
-          color: 'gray',
+          color: 'gray' as const,
           opacity: 0.5
         }
       }
     },
     tooltip: {
       show: true,
-      position: ['top'],
+      position: 'top' as const,
       formatter: (x: any) => {
         return formatQty(x.value[1])
       }
