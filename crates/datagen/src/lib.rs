@@ -23,7 +23,7 @@ use rand::{thread_rng, Rng, SeedableRng};
 use rand_distr::{Distribution, Zipf};
 use serde_json::{to_writer, Map, Value};
 use tokio::sync::Notify;
-use tokio::time::{Duration as TokioDuration, Instant as TokioInstant};
+use tokio::time::Instant as TokioInstant;
 
 use dbsp::circuit::tokio::TOKIO;
 use feldera_adapterlib::format::Parser;
@@ -445,7 +445,7 @@ impl InputGenerator {
 
             // Count how long we took to so far to create a batch
             // If we end up taking too long we send a batch earlier even if we don't reach `batch_size`
-            const BATCH_CREATION_TIMEOUT: TokioDuration = TokioDuration::from_secs(1);
+            const BATCH_CREATION_TIMEOUT: StdDuration = StdDuration::from_secs(1);
             let mut batch_creation_duration = TokioInstant::now();
 
             // Make sure we generate records from 0..limit:
