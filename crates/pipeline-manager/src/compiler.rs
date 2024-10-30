@@ -282,6 +282,9 @@ impl Compiler {
         let profile = Compiler::pick_compilation_profile(config, program_profile);
         info!("Compiling Rust for program {pipeline_id} with profile {profile}");
         command
+            // Set compiler stack size to 20MB (10x the default) to prevent
+            // SIGSEGV when the compiler runs out of stack on large programs.
+            .env("RUST_MIN_STACK", "20971520")
             .current_dir(config.workspace_dir())
             .arg("build")
             .arg("--workspace")
