@@ -96,6 +96,7 @@
       markers?: Record<string, editor.IMarkerData[]>
       behaviorOnConflict?: 'auto-pull' | 'auto-push' | 'promt'
       placeholder?: string
+      foldRangeIf?: (line: string) => boolean
     }[]
     currentFileName: string
     editDisabled?: boolean
@@ -152,6 +153,20 @@
       model,
       view: null
     }
+
+    if (file.foldRangeIf) {
+      const lines = file.access.current
+        .split('\n')
+        .map((line, lineNumber) => ({ line, lineNumber }))
+        .filter(({ line }) => file.foldRangeIf!(line))
+        .map(({ lineNumber }) => lineNumber)
+      setTimeout(() => {
+        if (!editorRef) {
+          return
+        }
+        editorRef.trigger(null, 'editor.fold', { selectionLines: lines })
+      })
+    }
   })
   $effect.pre(() => {
     file.access.current
@@ -191,14 +206,12 @@
   })
   $effect.pre(() => {
     filePath
-    $effect.root(() => {
+    untrack(() => {
       if (!editorRef) {
         return
       }
       // Save last file's scroll position
-      if (previousFilePath) {
-        openFiles[previousFilePath].view = editorRef.saveViewState()!
-      }
+      openFiles[previousFilePath].view = editorRef.saveViewState()!
       previousFilePath = filePath
       // Restore current file's scroll position
       setTimeout(() => {

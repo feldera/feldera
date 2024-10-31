@@ -93,7 +93,8 @@
         markers: ((errors) =>
           errors ? { [felderaCompilerMarkerSource]: extractErrorMarkers(errors) } : undefined)(
           programErrors['program.sql']
-        )
+        ),
+        foldRangeIf: (line: string) => /'connectors' =/.test(line)
       },
       {
         name: `stubs.rs`,
