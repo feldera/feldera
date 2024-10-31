@@ -1,6 +1,6 @@
 #!/bin/bash
 
-set -ex
+set -e
 
 # This script builds the SQL compiler
 # it has an optional argument which specifies whether to build
