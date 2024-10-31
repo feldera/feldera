@@ -71,6 +71,8 @@ table or view, such that if the table contains a record with timestamp equal to
 `TS`, then any future records inserted to or removed from the table will have
 timestamps greater than or equal to `TS - L`.  In other words, updates to the
 table cannot arrive more than `L` time units out of order.
+A lateness value of zero indicates that updates to the table arrive strictly in
+order, with each new update having a timestamp equal to or later than the previous one.
 
 The Feldera query engine uses lateness information to optimize the execution of
 queries.
@@ -122,6 +124,12 @@ tables and views:
   annotations are accurate, i.e., input records do not arrive more than lateness
   time units out of order, the output of the program with lateness annotations
   is guaranteed to be identical to outputs of the same program without annotations.
+
+* **LATENESS does NOT delay computation**.  Feldera does not delay computation
+  until all out-of-order records have been received.  It always computes the
+  output of the queries given all inputs received so far and incrementally updates
+  these outputs as new out-of-order inputs arrive.  (See [below](#delaying-inputs-with-watermark)
+  for an experimental feture that allows delaying inputs on demand).
 
 * **Inputs that violate lateness are discarded.**  When a program receives a record
   that is more than lateness time units behind the most recent timestamp value
