@@ -441,7 +441,7 @@ impl InputGenerator {
 
             let limit = plan.limit.unwrap_or(usize::MAX);
             let schema = schema.clone();
-            let mut generator = RecordGenerator::new(seed, plan, schema);
+            let mut generator = RecordGenerator::new(seed, &plan, &schema);
 
             // Count how long we took to so far to create a batch
             // If we end up taking too long we send a batch earlier even if we don't reach `batch_size`
@@ -544,17 +544,17 @@ static YMD_FORMAT: LazyLock<Vec<Item<'static>>> = LazyLock::new(|| {
         .expect("%Y-%m-%d is a valid date format")
 });
 
-struct RecordGenerator {
-    config: GenerationPlan,
-    schema: Relation,
+struct RecordGenerator<'a> {
+    config: &'a GenerationPlan,
+    schema: &'a Relation,
     /// The current record number.
     current: usize,
     seed: u64,
     json_obj: Option<Value>,
 }
 
-impl RecordGenerator {
-    fn new(seed: u64, config: GenerationPlan, schema: Relation) -> Self {
+impl<'a> RecordGenerator<'a> {
+    fn new(seed: u64, config: &'a GenerationPlan, schema: &'a Relation) -> Self {
         Self {
             config,
             schema,
