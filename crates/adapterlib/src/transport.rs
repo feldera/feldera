@@ -1,10 +1,14 @@
 use std::collections::VecDeque;
+use std::fmt::Display;
+use std::marker::PhantomData;
+use std::sync::mpsc::{Receiver, RecvError, TryRecvError};
 use std::sync::Mutex;
 
 use anyhow::{Error as AnyError, Result as AnyResult};
 use dyn_clone::DynClone;
 use feldera_types::program_schema::Relation;
-use rmpv::Value as RmpValue;
+use rmpv::{ext::Error as RmpDecodeError, Value as RmpValue};
+use serde::Deserialize;
 
 use crate::catalog::InputCollectionHandle;
 use crate::format::{InputBuffer, ParseError, Parser};
@@ -440,4 +444,118 @@ pub trait OutputEndpoint: Send {
 
     /// Whether this endpoint is [fault tolerant](crate#fault-tolerance).
     fn is_fault_tolerant(&self) -> bool;
+}
+
+/// A [Receiver] wrapper for [InputReaderCommand] for fault-tolerant connectors.
+///
+/// A fault-tolerant connector wants to receive, in order:
+///
+/// - Zero or one [InputReaderCommand::Seek]s.
+///
+/// - Zero or more [InputReaderCommand::Replay]s.
+///
+/// - Zero or more other commands.
+///
+/// This helps with that.
+// This is used by Kafka and Nexmark but both of those are optional.
+pub struct InputCommandReceiver<T> {
+    receiver: Receiver<InputReaderCommand>,
+    buffer: Option<InputReaderCommand>,
+    _phantom: PhantomData<T>,
+}
+
+/// Error type returned by some [InputCommandReceiver] methods.
+///
+/// We could just use `anyhow` and that would probably be just as good though.
+#[derive(Debug)]
+pub enum InputCommandReceiverError {
+    Disconnected,
+    DecodeError(RmpDecodeError),
+}
+
+impl std::error::Error for InputCommandReceiverError {}
+
+impl Display for InputCommandReceiverError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            InputCommandReceiverError::Disconnected => write!(f, "sender disconnected"),
+            InputCommandReceiverError::DecodeError(e) => e.fmt(f),
+        }
+    }
+}
+
+impl From<RecvError> for InputCommandReceiverError {
+    fn from(_: RecvError) -> Self {
+        Self::Disconnected
+    }
+}
+
+impl From<RmpDecodeError> for InputCommandReceiverError {
+    fn from(value: RmpDecodeError) -> Self {
+        Self::DecodeError(value)
+    }
+}
+
+// This is used by Kafka and Nexmark but both of those are optional.
+impl<T> InputCommandReceiver<T> {
+    pub fn new(receiver: Receiver<InputReaderCommand>) -> Self {
+        Self {
+            receiver,
+            buffer: None,
+            _phantom: PhantomData,
+        }
+    }
+
+    pub fn recv_seek(&mut self) -> Result<Option<T>, InputCommandReceiverError>
+    where
+        T: for<'a> Deserialize<'a>,
+    {
+        debug_assert!(self.buffer.is_none());
+        match self.recv()? {
+            InputReaderCommand::Seek(metadata) => Ok(Some(rmpv::ext::from_value::<T>(metadata)?)),
+            InputReaderCommand::Disconnect => Err(InputCommandReceiverError::Disconnected),
+            other => {
+                self.put_back(other);
+                Ok(None)
+            }
+        }
+    }
+
+    pub fn recv_replay(&mut self) -> Result<Option<T>, InputCommandReceiverError>
+    where
+        T: for<'a> Deserialize<'a>,
+    {
+        match self.recv()? {
+            InputReaderCommand::Seek(_) => unreachable!(),
+            InputReaderCommand::Replay(metadata) => Ok(Some(rmpv::ext::from_value::<T>(metadata)?)),
+            other => {
+                self.put_back(other);
+                Ok(None)
+            }
+        }
+    }
+
+    pub fn recv(&mut self) -> Result<InputReaderCommand, RecvError> {
+        match self.buffer.take() {
+            Some(value) => Ok(value),
+            None => self.receiver.recv(),
+        }
+    }
+
+    pub fn try_recv(&mut self) -> Result<Option<InputReaderCommand>, RecvError> {
+        if let Some(command) = self.buffer.take() {
+            Ok(Some(command))
+        } else {
+            match self.receiver.try_recv() {
+                Ok(command) => Ok(Some(command)),
+                Err(TryRecvError::Empty) => Ok(None),
+                Err(TryRecvError::Disconnected) => Err(RecvError),
+            }
+        }
+    }
+
+    pub fn put_back(&mut self, value: InputReaderCommand) {
+        assert!(self.buffer.is_none());
+        self.buffer = Some(value);
+    }
 }
