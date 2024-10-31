@@ -205,7 +205,6 @@ import org.dbsp.util.IWritesLogs;
 import org.dbsp.util.IdShuffle;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Logger;
-import org.dbsp.util.Shuffle;
 import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
@@ -1321,10 +1320,12 @@ public class CalciteToDBSPCompiler extends RelVisitor
         RexNode leftOver = decomposition.getLeftOver();
         assert leftOver == null;
 
-        SqlKind comparison;  // Comparison operation, with left table column always on the left
-
         int leftTsIndex;  // Index of "timestamp" column in left input
         int rightTsIndex;
+        SqlKind comparison;  // Comparison operation, with left table column always on the left
+        boolean needsLeftCast = false;
+        boolean needsRightCast = false;
+
         {
             // Analyze match condition.  We know it's always a simple comparison between
             // two columns (enforced by the Validator).
@@ -1335,8 +1336,22 @@ public class CalciteToDBSPCompiler extends RelVisitor
             assert SqlKind.ORDER_COMPARISON.contains(comparison);
             List<RexNode> operands = call.getOperands();
             assert operands.size() == 2;
-            RexNode lc = operands.get(0);
-            RexNode rc = operands.get(1);
+            RexNode leftCompared = operands.get(0);
+            RexNode rightCompared = operands.get(1);
+            RexNode lc = leftCompared;
+            RexNode rc = rightCompared;
+
+            if (leftCompared instanceof RexCall lrc) {
+                assert lrc.getKind() == SqlKind.CAST;
+                needsLeftCast = true;
+                lc = lrc.getOperands().get(0);
+            }
+
+            if (rightCompared instanceof RexCall rrc) {
+                assert rrc.getKind() == SqlKind.CAST;
+                needsRightCast = true;
+                rc = rrc.getOperands().get(0);
+            }
             assert lc instanceof RexInputRef;
             assert rc instanceof RexInputRef;
             RexInputRef li = (RexInputRef) lc;
@@ -1350,6 +1365,34 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 rightTsIndex = li.getIndex() - leftSize;
                 comparison = comparison.reverse();
             }
+
+            // If the comparison involves casts we compute them in an extra map stage prior to the actual join
+            if (needsLeftCast) {
+                DBSPVariablePath l = leftElementType.ref().var();
+                ExpressionCompiler compiler = new ExpressionCompiler(join, l, this.compiler);
+                RexCall compared = (RexCall) leftCompared;
+                leftCompared = compared.clone(compared.getType(), Linq.list(
+                        new RexInputRef(leftTsIndex, compared.operands.get(0).getType())));
+                DBSPExpression leftCast = compiler.compile(leftCompared);
+                DBSPExpression addCast = DBSPTupleExpression.flatten(l.deref()).append(leftCast);
+                left = new DBSPMapOperator(node, addCast.closure(l), this.makeZSet(addCast.getType()), left);
+                this.addOperator(left);
+                leftTsIndex = leftElementType.size();
+            }
+            if (needsRightCast) {
+                DBSPTypeTuple rightElementType = right.getType().to(DBSPTypeZSet.class).elementType
+                        .to(DBSPTypeTuple.class);
+                DBSPVariablePath r = rightElementType.ref().var();
+                ExpressionCompiler compiler = new ExpressionCompiler(join, r, this.compiler);
+                RexCall compared = (RexCall) rightCompared;
+                rightCompared = compared.clone(compared.getType(), Linq.list(
+                        new RexInputRef(rightTsIndex, compared.operands.get(0).getType())));
+                DBSPExpression rightCast = compiler.compile(rightCompared);
+                DBSPExpression addCast = DBSPTupleExpression.flatten(r.deref()).append(rightCast);
+                right = new DBSPMapOperator(node, addCast.closure(r), this.makeZSet(addCast.getType()), right);
+                this.addOperator(right);
+                rightTsIndex = rightElementType.size();
+            }
         }
 
         // Throw away all rows in the right collection that have a NULL in a join key column
@@ -1360,8 +1403,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPOperator filteredRight = this.filterNonNullFields(join, rightFilteredColumns, right);
         DBSPTypeTuple rightElementType = filteredRight.getType().to(DBSPTypeZSet.class).elementType.to(DBSPTypeTuple.class);
 
-        // We don't filter nulls in the left column, because this is a left join.
-        // So the resulting types may be nullable.
+        // We don't filter nulls in the left column, because this may be a left join,
+        // and thus the resulting types may be nullable.
         // The 'commonType' in 'comparisons' are never null.
         for (int i = 0; i < comparisons.size(); i++) {
             JoinConditionAnalyzer.EqualityTest test = comparisons.get(i);
@@ -1457,9 +1500,10 @@ public class CalciteToDBSPCompiler extends RelVisitor
         // Signature of the function is (k: &K, l: &L, r: Option<&R>)
         DBSPVariablePath r0 = wrappedRightType.ref().withMayBeNull(true).var();
         List<DBSPExpression> lrFields = new ArrayList<>();
-        for (int i = 0; i < leftElementType.size(); i++)
+        // Don't forget to drop the added field
+        for (int i = 0; i < leftElementType.size() - (needsLeftCast ? 1 : 0); i++)
             lrFields.add(new DBSPUnwrapCustomOrdExpression(l0.deepCopy().deref()).field(i));
-        for (int i = 0; i < rightElementType.size(); i++)
+        for (int i = 0; i < rightElementType.size() - (needsRightCast ? 1 : 0); i++)
             lrFields.add(new DBSPCustomOrdField(r0.deepCopy(), i));
         DBSPTupleExpression lr = new DBSPTupleExpression(lrFields, false);
         DBSPClosureExpression makeTuple = lr.closure(k, l0, r0);
