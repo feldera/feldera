@@ -61,7 +61,7 @@ If you don't already have Docker or Docker Compose installed, follow one of thes
 
   :::tip
 
-  If you you only want root to manage Docker, you can prefix
+  If you only want root to manage Docker, you can prefix
   the `docker compose` command below with `sudo`.
 
   :::
