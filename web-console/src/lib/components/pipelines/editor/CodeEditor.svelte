@@ -118,7 +118,8 @@
   let isReadonly = $derived(editDisabled || isReadonlyProperty(file.access, 'current'))
 
   let filePath = $derived(path + '/' + file.name)
-  let previousFilePath = $state<string | undefined>(undefined)
+  /* svelte-ignore state_referenced_locally */
+  let previousFilePath = $state(filePath)
 
   $effect.pre(() => {
     if (openFiles[filePath]) {
