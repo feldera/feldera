@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::fmt::Write;
 use std::num::NonZeroU32;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 use std::time::Duration as StdDuration;
 
 use anyhow::{anyhow, Result as AnyResult};
@@ -538,27 +538,27 @@ impl Drop for InputGenerator {
     }
 }
 
+static YMD_FORMAT: LazyLock<Vec<Item<'static>>> = LazyLock::new(|| {
+    StrftimeItems::new("%Y-%m-%d")
+        .parse_to_owned()
+        .expect("%Y-%m-%d is a valid date format")
+});
+
 struct RecordGenerator {
     config: GenerationPlan,
     schema: Relation,
     /// The current record number.
     current: usize,
     seed: u64,
-    ymd_format: Vec<Item<'static>>,
     json_obj: Option<Value>,
 }
 
 impl RecordGenerator {
     fn new(seed: u64, config: GenerationPlan, schema: Relation) -> Self {
-        let ymd_format = StrftimeItems::new("%Y-%m-%d")
-            .parse_to_owned()
-            .expect("%Y-%m-%d is a valid date format");
-
         Self {
             config,
             schema,
             current: 0,
-            ymd_format,
             seed,
             json_obj: Some(Value::Object(Map::with_capacity(8))),
         }
@@ -945,11 +945,7 @@ impl RecordGenerator {
                     let d = unix_date
                         .checked_add_days(Days::new(val as u64))
                         .ok_or_else(checked_days_arith_err)?;
-                    write!(
-                        str,
-                        "{}",
-                        d.format_with_items(self.ymd_format.as_slice().iter())
-                    )?;
+                    write!(str, "{}", d.format_with_items(YMD_FORMAT.as_slice().iter()))?;
                 }
                 (DatagenStrategy::Increment, Some(values)) => {
                     let new_value = values[incr % values.len()].clone();
@@ -968,11 +964,7 @@ impl RecordGenerator {
                             .checked_sub_days(Days::new(days.unsigned_abs() * scale.unsigned_abs()))
                             .ok_or_else(checked_days_arith_err)?
                     };
-                    write!(
-                        str,
-                        "{}",
-                        d.format_with_items(self.ymd_format.as_slice().iter())
-                    )?;
+                    write!(str, "{}", d.format_with_items(YMD_FORMAT.as_slice().iter()))?;
                 }
                 (DatagenStrategy::Uniform, Some(values)) => {
                     let new_value = values[rng.sample(Uniform::from(0..values.len()))].clone();
@@ -993,11 +985,7 @@ impl RecordGenerator {
                             .checked_sub_days(Days::new(days.unsigned_abs()))
                             .ok_or_else(checked_days_arith_err)?
                     };
-                    write!(
-                        str,
-                        "{}",
-                        d.format_with_items(self.ymd_format.as_slice().iter())
-                    )?;
+                    write!(str, "{}", d.format_with_items(YMD_FORMAT.as_slice().iter()))?;
                 }
                 (DatagenStrategy::Zipf, Some(values)) => {
                     let zipf = Zipf::new(values.len() as u64, settings.e as f64).unwrap();
