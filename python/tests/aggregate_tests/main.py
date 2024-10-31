@@ -58,6 +58,8 @@ from tests.aggregate_tests.test_charn_max import *  # noqa: F403
 from tests.aggregate_tests.test_charn_min import *  # noqa: F403
 from tests.aggregate_tests.test_charn_every import *  # noqa: F403
 from tests.aggregate_tests.test_charn_some import *  # noqa: F403
+from tests.aggregate_tests.test_time_arg_max import *  # noqa: F403
+from tests.aggregate_tests.test_time_arg_min import *  # noqa: F403
 from tests.aggregate_tests.test_time_arr_agg import *  # noqa: F403
 from tests.aggregate_tests.test_time_count_col import *  # noqa: F403
 from tests.aggregate_tests.test_time_count import *  # noqa: F403
