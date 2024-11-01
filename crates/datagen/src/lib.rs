@@ -1,15 +1,17 @@
 //! A datagen input adapter that generates random data based on a schema and config.
 
 use std::cmp::min;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::fmt::Write;
 use std::num::NonZeroU32;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::ops::{Range, RangeInclusive};
+use std::sync::mpsc::{Receiver as StdReceiver, Sender as StdSender};
 use std::sync::{Arc, LazyLock};
+use std::thread::Thread;
 use std::time::Duration as StdDuration;
 
 use anyhow::{anyhow, Result as AnyResult};
-use atomic::Atomic;
+use async_channel::Receiver as AsyncReceiver;
 use chrono::format::{Item, StrftimeItems};
 use chrono::{DateTime, Days, Duration, NaiveDate, NaiveTime, Timelike};
 use governor::clock::DefaultClock;
@@ -21,17 +23,17 @@ use rand::distributions::{Alphanumeric, Uniform};
 use rand::rngs::SmallRng;
 use rand::{thread_rng, Rng, SeedableRng};
 use rand_distr::{Distribution, Zipf};
+use range_set::RangeSet;
+use serde::{Deserialize, Serialize};
 use serde_json::{to_writer, Map, Value};
-use tokio::sync::Notify;
-use tokio::time::Instant as TokioInstant;
+use tokio::{sync::mpsc::UnboundedSender as TokioSender, time::Instant as TokioInstant};
 
 use dbsp::circuit::tokio::TOKIO;
-use feldera_adapterlib::format::Parser;
+use feldera_adapterlib::format::{InputBuffer, Parser};
 use feldera_adapterlib::transport::{
-    InputConsumer, InputEndpoint, InputQueue, InputReader, InputReaderCommand,
-    NonFtInputReaderCommand, TransportInputEndpoint,
+    InputCommandReceiver, InputConsumer, InputEndpoint, InputReader, InputReaderCommand,
+    TransportInputEndpoint,
 };
-use feldera_adapterlib::PipelineState;
 use feldera_types::program_schema::{ColumnType, Field, Relation, SqlIdentifier, SqlType};
 use feldera_types::transport::datagen::{
     DatagenInputConfig, DatagenStrategy, GenerationPlan, RngFieldSettings,
@@ -253,7 +255,7 @@ impl GeneratorEndpoint {
 
 impl InputEndpoint for GeneratorEndpoint {
     fn is_fault_tolerant(&self) -> bool {
-        false
+        true
     }
 }
 
@@ -274,12 +276,8 @@ impl TransportInputEndpoint for GeneratorEndpoint {
 }
 
 struct InputGenerator {
-    status: Arc<Atomic<PipelineState>>,
-    config: DatagenInputConfig,
-    /// Amount of records generated so far.
-    generated: Arc<AtomicUsize>,
-    queue: Arc<InputQueue>,
-    notifier: Arc<Notify>,
+    command_sender: StdSender<InputReaderCommand>,
+    datagen_thread: Thread,
 }
 
 impl InputGenerator {
@@ -289,10 +287,7 @@ impl InputGenerator {
         mut config: DatagenInputConfig,
         schema: Relation,
     ) -> AnyResult<Self> {
-        let notifier = Arc::new(Notify::new());
-
-        let generated = Arc::new(AtomicUsize::new(0));
-        let status = Arc::new(Atomic::new(PipelineState::Paused));
+        let (command_sender, command_receiver) = std::sync::mpsc::channel();
 
         // Deal with case sensitivity in field names, make sure we can find the field in settings.
         // return an error if have a field in datagen that's not in the table.
@@ -314,20 +309,43 @@ impl InputGenerator {
             plan.fields = normalized_plan_names;
         }
 
-        let rate_limiters = config
-            .plan
-            .iter()
-            .map(|p| {
-                RateLimiter::direct(Quota::per_second(
-                    p.rate.and_then(NonZeroU32::new).unwrap_or(NonZeroU32::MAX),
-                ))
-            })
-            .collect::<Vec<RateLimiter<_, _, _>>>();
-        let progress: Vec<AtomicUsize> = (0..config.plan.len())
-            .map(|_| AtomicUsize::new(0))
-            .collect();
-        let shared_state: Arc<Vec<(AtomicUsize, RateLimiter<_, _, _>)>> =
-            Arc::new(progress.into_iter().zip(rate_limiters).collect());
+        let join_handle = std::thread::spawn(move || {
+            if let Err(error) =
+                Self::datagen_thread(command_receiver, consumer.clone(), parser, config, schema)
+            {
+                consumer.error(true, error);
+            }
+        });
+        let datagen_thread = join_handle.thread().clone();
+
+        Ok(Self {
+            command_sender,
+            datagen_thread,
+        })
+    }
+
+    fn datagen_thread(
+        command_receiver: StdReceiver<InputReaderCommand>,
+        consumer: Box<dyn InputConsumer>,
+        parser: Box<dyn Parser>,
+        config: DatagenInputConfig,
+        schema: Relation,
+    ) -> AnyResult<()> {
+        let rate_limiters = Arc::new(
+            config
+                .plan
+                .iter()
+                .map(|p| {
+                    RateLimiter::direct(Quota::per_second(
+                        p.rate.and_then(NonZeroU32::new).unwrap_or(NonZeroU32::MAX),
+                    ))
+                })
+                .collect::<Vec<_>>(),
+        );
+
+        // Generate initial seed.  If we start from a checkpoint, we'll change
+        // it to use the seed from that checkpoint.
+        let mut seed = config.seed.unwrap_or(thread_rng().gen());
 
         // Long-running tasks with high CPU usage don't work well on cooperative runtimes,
         // so we use a separate blocking task if we think this will happen for our workload.
@@ -337,198 +355,393 @@ impl InputGenerator {
                 && p.limit.unwrap_or(usize::MAX) > 10_000_000
         });
 
-        let queue = Arc::new(InputQueue::new(consumer.clone()));
+        // Start our worker threads or tasks.
+        let (work_sender, work_receiver) = async_channel::bounded(config.workers * 2);
+        let (completion_sender, mut completion_receiver) = tokio::sync::mpsc::unbounded_channel();
         for _ in 0..config.workers {
+            let work_receiver = work_receiver.clone();
+            let completion_sender = completion_sender.clone();
             let config = config.clone();
-            let status = status.clone();
-            let generated = generated.clone();
             let schema = schema.clone();
-            let notifier = notifier.clone();
             let consumer = consumer.clone();
             let parser = parser.fork();
-            let queue = queue.clone();
-            let shared_state = shared_state.clone();
+            let rate_limiters = rate_limiters.clone();
 
+            let task = Self::worker_thread(
+                work_receiver,
+                completion_sender,
+                config,
+                schema,
+                consumer,
+                parser,
+                rate_limiters,
+                std::thread::current(),
+            );
             if needs_blocking_tasks {
                 std::thread::spawn(move || {
-                    TOKIO.block_on(Self::worker_thread(
-                        config,
-                        shared_state,
-                        schema,
-                        consumer,
-                        parser,
-                        queue,
-                        notifier,
-                        status,
-                        generated,
-                    ));
+                    TOKIO.block_on(task);
                 });
             } else {
-                TOKIO.spawn(Self::worker_thread(
-                    config,
-                    shared_state,
-                    schema,
-                    consumer,
-                    parser,
-                    queue,
-                    notifier,
-                    status,
-                    generated,
-                ));
+                TOKIO.spawn(task);
+            }
+        }
+        drop(work_receiver);
+        drop(completion_sender);
+
+        let mut command_receiver = InputCommandReceiver::<RawMetadata>::new(command_receiver);
+
+        // Tracks work that needs to be sent to a worker for execution.
+        let mut unassigned = if let Some(metadata) = command_receiver.recv_seek()? {
+            seed = metadata.seed;
+            range_sets_from_vecs(metadata.todo)
+        } else {
+            config
+                .plan
+                .iter()
+                .map(|plan| match plan.limit.unwrap_or(usize::MAX) {
+                    0 => RowRangeSet::new(),
+                    limit => RowRangeSet::from_ranges(&[0..=limit - 1]),
+                })
+                .collect()
+        };
+
+        // Tracks work that has been sent to a worker but for which we have not received a completion.
+        let mut in_flight = vec![RowRangeSet::new(); config.plan.len()];
+
+        // Replay steps.
+        while let Some(metadata) = command_receiver.recv_replay()? {
+            let metadata: Metadata = metadata.into();
+            seed = metadata.seed;
+            let mut rows = metadata.rows;
+            unassigned = metadata.todo;
+            let mut num_records = 0;
+
+            fn complete_replay(
+                completion: Completion,
+                in_flight: &mut [RowRangeSet],
+                consumer: &dyn InputConsumer,
+            ) {
+                let Completion {
+                    batch,
+                    mut buffer,
+                    num_bytes,
+                } = completion;
+                in_flight[batch.plan_idx].remove_range(batch.rows.start..=batch.rows.end - 1);
+                consumer.buffered(buffer.len(), num_bytes);
+                buffer.flush_all();
+            }
+
+            while let Some(work) = assign_work(&mut rows, &mut in_flight, &config, seed, false) {
+                num_records += work.batch.rows.len();
+                let _ = work_sender.send_blocking(work);
+                while let Ok(completion) = completion_receiver.try_recv() {
+                    complete_replay(completion, &mut in_flight, &*consumer);
+                }
+            }
+            while !in_flight.iter().all(|set| set.is_empty()) {
+                let Some(completion) = completion_receiver.blocking_recv() else {
+                    unreachable!()
+                };
+                complete_replay(completion, &mut in_flight, &*consumer);
+            }
+            consumer.replayed(num_records);
+        }
+
+        let mut running = false;
+        let mut eoi = false;
+        let mut completed = VecDeque::new();
+        loop {
+            match command_receiver.try_recv()? {
+                Some(command @ InputReaderCommand::Seek(_))
+                | Some(command @ InputReaderCommand::Replay(_)) => {
+                    unreachable!("{command:?} must be at the beginning of the command stream")
+                }
+                Some(InputReaderCommand::Extend) => running = true,
+                Some(InputReaderCommand::Pause) => running = false,
+                Some(InputReaderCommand::Queue) => {
+                    let mut num_records = 0;
+                    let n = consumer.max_batch_size();
+                    let mut consumed = vec![RowRangeSet::new(); config.plan.len()];
+                    while num_records < n {
+                        let Some(Completion {
+                            batch: Batch { plan_idx, rows },
+                            mut buffer,
+                            num_bytes: _,
+                        }) = completed.pop_front()
+                        else {
+                            break;
+                        };
+                        let flushed = buffer.flush(n - num_records);
+                        if flushed > 0 {
+                            consumed[plan_idx].insert_range(rows.start..=rows.start + flushed - 1);
+                        }
+                        num_records += flushed;
+                        if !buffer.is_empty() {
+                            completed.push_front(Completion {
+                                batch: Batch {
+                                    plan_idx,
+                                    rows: rows.start + flushed..rows.end,
+                                },
+                                buffer,
+                                num_bytes: 0,
+                            });
+                            break;
+                        }
+                    }
+                    let mut metadata_todo = unassigned.clone();
+                    for (idx, set) in in_flight.iter().enumerate() {
+                        for rows in set.as_ref().iter() {
+                            metadata_todo[idx].insert_range(rows.clone());
+                        }
+                    }
+                    for completion in &completed {
+                        let batch = &completion.batch;
+                        metadata_todo[batch.plan_idx]
+                            .insert_range(batch.rows.start..=batch.rows.end - 1);
+                    }
+                    let metadata: RawMetadata = Metadata {
+                        rows: consumed,
+                        todo: metadata_todo,
+                        seed,
+                    }
+                    .into();
+                    consumer.extended(num_records, rmpv::ext::to_value(metadata).unwrap());
+                }
+                Some(InputReaderCommand::Disconnect) => break,
+                None => (),
+            }
+
+            while let Ok(completion) = completion_receiver.try_recv() {
+                let batch = &completion.batch;
+                in_flight[batch.plan_idx].remove_range(batch.rows.start..=batch.rows.end - 1);
+                consumer.buffered(completion.buffer.len(), 0);
+                completed.push_back(completion);
+            }
+
+            if running && !work_sender.is_full() {
+                if let Some(work) =
+                    assign_work(&mut unassigned, &mut in_flight, &config, seed, true)
+                {
+                    let _ = work_sender.send_blocking(work);
+                } else if in_flight.iter().all(|set| set.is_empty()) && !eoi {
+                    eoi = true;
+                    running = false;
+                    consumer.eoi();
+                }
+            } else {
+                std::thread::park();
             }
         }
 
-        Ok(Self {
-            status,
-            config,
-            generated,
-            queue,
-            notifier,
-        })
+        Ok(())
     }
 
-    #[allow(unused)]
-    fn completed(&self) -> bool {
-        let limit: usize = self
-            .config
-            .plan
-            .iter()
-            .map(|p| p.limit.unwrap_or(usize::MAX))
-            .fold(0, |acc, l| acc.checked_add(l).unwrap_or(usize::MAX));
-        self.generated.load(Ordering::Relaxed) >= limit
-    }
-
-    fn unpark(&self) {
-        self.notifier.notify_waiters()
-    }
-
-    #[allow(clippy::too_many_arguments, clippy::type_complexity)]
+    #[allow(clippy::too_many_arguments)]
     async fn worker_thread(
+        work_receiver: AsyncReceiver<Work>,
+        completion_sender: TokioSender<Completion>,
         config: DatagenInputConfig,
-        shared_state: Arc<
-            Vec<(
-                AtomicUsize,
-                RateLimiter<NotKeyed, InMemoryState, DefaultClock, NoOpMiddleware>,
-            )>,
-        >,
         schema: Relation,
         consumer: Box<dyn InputConsumer>,
         mut parser: Box<dyn Parser>,
-        queue: Arc<InputQueue>,
-        notifier: Arc<Notify>,
-        status: Arc<Atomic<PipelineState>>,
-        generated: Arc<AtomicUsize>,
+        rate_limiters: Arc<Vec<RateLimiter<NotKeyed, InMemoryState, DefaultClock, NoOpMiddleware>>>,
+        datagen_thread: Thread,
     ) {
         let mut buffer = Vec::new();
+        let mut buffer_start = 0;
         static START_ARR: &[u8; 1] = b"[";
         static END_ARR: &[u8; 1] = b"]";
         static REC_DELIM: &[u8; 1] = b",";
 
-        let seed = config
-            .seed
-            .unwrap_or(if consumer.is_pipeline_fault_tolerant() {
-                0
-            } else {
-                thread_rng().gen()
-            });
-        for (plan, (progress, rate_limiter)) in config.plan.into_iter().zip(shared_state.iter()) {
-            // Inserting in batches improves performance by around ~80k records/s for
-            // me, so we always do it rather than giving the user the option.
-            // If we have a low rate, it's necessary to adjust the batch-size down otherwise no inserts might be visible
-            // for a long time (until a batch is full).
-            let batch_size: usize = min(plan.rate.unwrap_or(u32::MAX) as usize, 10_000);
-            let per_thread_chunk: usize = plan.worker_chunk_size.unwrap_or(batch_size);
+        while let Ok(work) = work_receiver.recv().await {
+            datagen_thread.unpark();
 
-            let limit = plan.limit.unwrap_or(usize::MAX);
+            let Work {
+                batch: Batch { plan_idx, rows },
+                rate_limit,
+                seed,
+            } = work;
+            let plan = &config.plan[plan_idx];
+            let batch_size: usize = min(plan.rate.unwrap_or(u32::MAX) as usize, 10_000);
             let schema = schema.clone();
-            let mut generator = RecordGenerator::new(seed, &plan, &schema);
+            let mut generator = RecordGenerator::new(seed, plan, &schema);
 
             // Count how long we took to so far to create a batch
             // If we end up taking too long we send a batch earlier even if we don't reach `batch_size`
             const BATCH_CREATION_TIMEOUT: StdDuration = StdDuration::from_secs(1);
             let mut batch_creation_duration = TokioInstant::now();
 
-            // Make sure we generate records from 0..limit:
-            loop {
-                // Where to start generating records for this iteration, this needs to be synchronized among thread
-                // so each thread generates a unique set of records.
-                let start = progress.fetch_add(per_thread_chunk, Ordering::Relaxed);
-                if start >= limit {
-                    break;
+            // Number of generated records.
+            let mut n_records = 0;
+
+            for idx in rows.clone() {
+                match generator.make_json_record(idx) {
+                    Ok(record) => {
+                        if n_records == 0 {
+                            buffer_start = idx;
+                            buffer.clear();
+                            buffer.extend(START_ARR);
+                        } else {
+                            buffer.extend(REC_DELIM);
+                        }
+                        //eprintln!("Record: {}", record);
+                        to_writer(&mut buffer, &record).unwrap();
+                        n_records += 1;
+
+                        if n_records >= batch_size
+                            || batch_creation_duration.elapsed() > BATCH_CREATION_TIMEOUT
+                        {
+                            buffer.extend(END_ARR);
+                            let num_bytes = buffer.len();
+                            let (buffer, errors) = parser.parse(&buffer);
+                            consumer.parse_errors(errors);
+                            let _ = completion_sender.send(Completion {
+                                batch: Batch {
+                                    plan_idx,
+                                    rows: buffer_start..idx + 1,
+                                },
+                                buffer,
+                                num_bytes,
+                            });
+                            datagen_thread.unpark();
+                            n_records = 0;
+                            batch_creation_duration = TokioInstant::now();
+                        }
+                    }
+                    Err(e) => {
+                        consumer.error(true, e);
+                        return;
+                    }
                 }
-                debug_assert!(start < limit);
 
-                // The current record range this thread is working on within 0..limit
-                let generate_range = start..min(start + per_thread_chunk, limit);
-                // The current record within 0..batch_size
-                let mut batch_idx = 0;
-
-                for idx in generate_range.clone() {
-                    loop {
-                        match status.load(Ordering::Acquire) {
-                            PipelineState::Paused => notifier.notified().await,
-                            PipelineState::Running => break,
-                            PipelineState::Terminated => return,
-                        }
-                    }
-                    match generator.make_json_record(idx) {
-                        Ok(record) => {
-                            if batch_idx == 0 {
-                                buffer.clear();
-                                buffer.extend(START_ARR);
-                            } else {
-                                buffer.extend(REC_DELIM);
-                            }
-                            //eprintln!("Record: {}", record);
-                            to_writer(&mut buffer, &record).unwrap();
-                            batch_idx += 1;
-
-                            if batch_idx % batch_size == 0
-                                || batch_creation_duration.elapsed() > BATCH_CREATION_TIMEOUT
-                            {
-                                buffer.extend(END_ARR);
-                                queue.push(parser.parse(&buffer), buffer.len());
-                                buffer.clear();
-                                buffer.extend(START_ARR);
-                                batch_idx = 0;
-                                batch_creation_duration = TokioInstant::now();
-                            }
-                        }
-                        Err(e) => {
-                            consumer.error(true, e);
-                            consumer.eoi();
-                            return;
-                        }
-                    }
-
-                    rate_limiter
+                if rate_limit {
+                    rate_limiters[plan_idx]
                         .until_ready_with_jitter(Jitter::up_to(StdDuration::from_millis(20)))
                         .await;
                 }
-                if !buffer.is_empty() {
-                    buffer.extend(END_ARR);
-                    queue.push(parser.parse(&buffer), buffer.len());
-                }
-                // Update global progress after we created all records for a batch
-                //eprintln!("adding {} to generated", generate_range.len());
-                generated.fetch_add(generate_range.len(), Ordering::Relaxed);
+            }
+            if n_records > 0 {
+                buffer.extend(END_ARR);
+                let num_bytes = buffer.len();
+                let (buffer, errors) = parser.parse(&buffer);
+                consumer.parse_errors(errors);
+                let _ = completion_sender.send(Completion {
+                    batch: Batch {
+                        plan_idx,
+                        rows: buffer_start..rows.end,
+                    },
+                    buffer,
+                    num_bytes,
+                });
+                datagen_thread.unpark();
             }
         }
-        consumer.eoi();
     }
+}
+
+struct Work {
+    batch: Batch,
+    rate_limit: bool,
+    seed: u64,
+}
+
+struct Completion {
+    batch: Batch,
+    buffer: Option<Box<dyn InputBuffer>>,
+    num_bytes: usize,
+}
+
+struct Batch {
+    plan_idx: usize,
+    rows: Range<usize>,
+}
+
+type RowRangeSet = RangeSet<[RangeInclusive<usize>; 4]>;
+
+struct Metadata {
+    /// Work done in this step.
+    rows: Vec<RowRangeSet>,
+
+    /// Work that remains to be done after this step.
+    todo: Vec<RowRangeSet>,
+
+    /// Random seed used for generating data.
+    seed: u64,
+}
+
+fn range_sets_from_vecs(vecs: Vec<Vec<RangeInclusive<usize>>>) -> Vec<RowRangeSet> {
+    vecs.into_iter()
+        .map(|ranges| RowRangeSet::from_ranges(&ranges))
+        .collect()
+}
+
+impl From<RawMetadata> for Metadata {
+    fn from(value: RawMetadata) -> Self {
+        Self {
+            rows: range_sets_from_vecs(value.rows),
+            todo: range_sets_from_vecs(value.todo),
+            seed: value.seed,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct RawMetadata {
+    rows: Vec<Vec<RangeInclusive<usize>>>,
+    todo: Vec<Vec<RangeInclusive<usize>>>,
+    seed: u64,
+}
+
+fn vecs_from_range_sets(range_sets: Vec<RowRangeSet>) -> Vec<Vec<RangeInclusive<usize>>> {
+    range_sets
+        .into_iter()
+        .map(|set| set.into_smallvec().into_vec())
+        .collect()
+}
+
+impl From<Metadata> for RawMetadata {
+    fn from(value: Metadata) -> Self {
+        Self {
+            rows: vecs_from_range_sets(value.rows),
+            todo: vecs_from_range_sets(value.todo),
+            seed: value.seed,
+        }
+    }
+}
+
+fn assign_work(
+    unassigned: &mut [RowRangeSet],
+    in_flight: &mut [RowRangeSet],
+    config: &DatagenInputConfig,
+    seed: u64,
+    rate_limit: bool,
+) -> Option<Work> {
+    for (plan_idx, (set, plan)) in unassigned.iter_mut().zip(config.plan.iter()).enumerate() {
+        if let Some(rows) = set.as_ref().iter().next().cloned() {
+            let (first, last) = rows.into_inner();
+            let batch_size: usize = min(plan.rate.unwrap_or(u32::MAX) as usize, 10_000);
+            let per_thread_chunk: usize = plan.worker_chunk_size.unwrap_or(batch_size);
+            let n = per_thread_chunk.min(last - first + 1);
+            let batch = Batch {
+                plan_idx,
+                rows: first..first + n,
+            };
+            set.remove_range(first..=first + n - 1);
+            in_flight[plan_idx].insert_range(batch.rows.start..=batch.rows.end - 1);
+            return Some(Work {
+                batch,
+                rate_limit,
+                seed,
+            });
+        }
+    }
+    None
 }
 
 impl InputReader for InputGenerator {
     fn request(&self, command: InputReaderCommand) {
-        match command.as_nonft().unwrap() {
-            NonFtInputReaderCommand::Queue => self.queue.queue(),
-            NonFtInputReaderCommand::Transition(state) => {
-                self.status.store(state, Ordering::Release);
-                if state != PipelineState::Paused {
-                    self.unpark();
-                }
-            }
-        }
+        let _ = self.command_sender.send(command);
+        self.datagen_thread.unpark();
     }
 }
 
