@@ -33,6 +33,7 @@ mod asof_join;
 mod average;
 pub mod chain_aggregate;
 mod consolidate;
+pub mod controlled_filter;
 mod distinct;
 pub mod dynamic;
 pub mod filter_map;
