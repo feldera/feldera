@@ -270,6 +270,7 @@ async fn put_pipeline(
     body: web::Json<PipelineDescr>,
 ) -> Result<HttpResponse, ManagerError> {
     let pipeline_name = parse_string_param(&request, "pipeline_name")?;
+    check_runtime_config(&body.runtime_config)?;
     let (is_new, pipeline) = state
         .db
         .lock()
@@ -335,6 +336,9 @@ pub(crate) async fn patch_pipeline(
     body: web::Json<PatchPipeline>,
 ) -> Result<HttpResponse, ManagerError> {
     let pipeline_name = parse_string_param(&request, "pipeline_name")?;
+    if let Some(config) = &body.runtime_config {
+        check_runtime_config(config)?;
+    }
     let pipeline = state
         .db
         .lock()
@@ -709,18 +713,27 @@ pub(crate) async fn checkpoint_pipeline(
     tenant_id: ReqData<TenantId>,
     request: HttpRequest,
 ) -> Result<HttpResponse, ManagerError> {
-    let pipeline_name = parse_string_param(&request, "pipeline_name")?;
-    state
-        .runner
-        .forward_http_request_to_pipeline_by_name(
-            *tenant_id,
-            &pipeline_name,
-            Method::POST,
-            "checkpoint",
-            request.query_string(),
-            Some(Duration::from_secs(120)),
-        )
-        .await
+    #[cfg(not(feature = "feldera-enterprise"))]
+    {
+        let _ = (state, tenant_id, request);
+        Err(ManagerError::EnterpriseFeature("checkpoint"))
+    }
+
+    #[cfg(feature = "feldera-enterprise")]
+    {
+        let pipeline_name = parse_string_param(&request, "pipeline_name")?;
+        state
+            .runner
+            .forward_http_request_to_pipeline_by_name(
+                *tenant_id,
+                &pipeline_name,
+                Method::POST,
+                "checkpoint",
+                request.query_string(),
+                Some(Duration::from_secs(120)),
+            )
+            .await
+    }
 }
 
 /// Retrieve the heap profile of a running or paused pipeline.
@@ -816,4 +829,16 @@ pub(crate) async fn pipeline_adhoc_sql(
             Some(Duration::MAX),
         )
         .await
+}
+
+fn check_runtime_config(config: &RuntimeConfig) -> Result<(), ManagerError> {
+    #[cfg(not(feature = "feldera-enterprise"))]
+    if config.fault_tolerance.is_some() {
+        return Err(ManagerError::EnterpriseFeature("fault tolerance"));
+    }
+
+    #[cfg(feature = "feldera-enterprise")]
+    let _ = config;
+
+    Ok(())
 }

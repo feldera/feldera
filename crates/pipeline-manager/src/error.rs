@@ -81,6 +81,7 @@ pub enum ManagerError {
     RustCompilerError {
         error: String,
     },
+    EnterpriseFeature(&'static str),
 }
 
 impl ManagerError {
@@ -185,6 +186,12 @@ impl Display for ManagerError {
             Self::RustCompilerError { error } => {
                 write!(f, "Error compiling generated Rust code: {error}")
             }
+            Self::EnterpriseFeature(feature) => {
+                write!(
+                    f,
+                    "Cannot use enterprise-only feature ({feature}) in Feldera community edition."
+                )
+            }
         }
     }
 }
@@ -205,6 +212,7 @@ impl ResponseError for ManagerError {
             Self::IoError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::InvalidProgramSchema { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::RustCompilerError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::EnterpriseFeature(_) => StatusCode::NOT_IMPLEMENTED,
         }
     }
 
@@ -229,6 +237,7 @@ impl DetailedError for ManagerError {
             Self::IoError { .. } => Cow::from("ManagerIoError"),
             Self::InvalidProgramSchema { .. } => Cow::from("InvalidProgramSchema"),
             Self::RustCompilerError { .. } => Cow::from("RustCompilerError"),
+            Self::EnterpriseFeature(_) => Cow::from("EnterpriseFeature"),
         }
     }
 }

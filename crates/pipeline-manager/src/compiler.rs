@@ -384,7 +384,13 @@ inherits = "release"
         project_toml_code = project_toml_code
             .replace(
                 "dbsp_adapters = { path = \"../../crates/adapters\", default-features = false }",
-                "dbsp_adapters = { path = \"../../crates/adapters\" }",
+                {
+                    #[cfg(not(feature = "feldera-enterprise"))]
+                    { r#"dbsp_adapters = { path = "../../crates/adapters" }"# }
+
+                    #[cfg(feature = "feldera-enterprise")]
+                    { r#"dbsp_adapters = { path = "../../crates/adapters", features = ["feldera-enterprise"] }"# }
+                },
             )
             .replace("../../crates", &format!("{p}/crates"))
             .replace("../lib", &format!("{}", config.sql_lib_path().display()));

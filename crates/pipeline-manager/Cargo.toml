@@ -66,6 +66,7 @@ termbg = "0.5.1"
 
 [features]
 integration-test = []
+feldera-enterprise = []
 
 [build-dependencies]
 change-detection = "1.2"
