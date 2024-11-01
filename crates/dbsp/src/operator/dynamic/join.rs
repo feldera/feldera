@@ -1,4 +1,5 @@
 use crate::algebra::ZBatchReader;
+use crate::circuit::circuit_builder::StreamId;
 use crate::circuit::metrics::Gauge;
 use crate::{
     algebra::{
@@ -37,7 +38,7 @@ use std::{
     panic::Location,
 };
 
-circuit_cache_key!(AntijoinId<C, D>((GlobalNodeId, GlobalNodeId) => Stream<C, D>));
+circuit_cache_key!(AntijoinId<C, D>((StreamId, StreamId) => Stream<C, D>));
 
 pub trait TraceJoinFuncTrait<K: ?Sized, V1: ?Sized, V2: ?Sized, OK: ?Sized, OV: ?Sized>:
     FnMut(&K, &V1, &V2, &mut dyn FnMut(&mut OK, &mut OV))
@@ -562,10 +563,7 @@ where
     {
         self.circuit()
             .cache_get_or_insert_with(
-                AntijoinId::new((
-                    self.origin_node_id().clone(),
-                    other.origin_node_id().clone(),
-                )),
+                AntijoinId::new((self.stream_id(), other.stream_id())),
                 move || {
                     self.circuit().region("antijoin", || {
                         let stream1 = self.dyn_shard(&factories.join_factories.left_factories);

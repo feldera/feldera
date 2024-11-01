@@ -1,8 +1,9 @@
 use crate::{
     circuit::{
+        circuit_builder::StreamId,
         metadata::OperatorLocation,
         operator_traits::{Operator, SinkOperator, SourceOperator},
-        GlobalNodeId, OwnershipPreference, Scope,
+        OwnershipPreference, Scope,
     },
     circuit_cache_key,
     trace::{merge_untimed_batches, Batch},
@@ -25,7 +26,7 @@ use std::{
 
 type NotifyCallback = dyn Fn() + Send + Sync + 'static;
 
-circuit_cache_key!(GatherId<C, D>((GlobalNodeId, usize) => Stream<C, D>));
+circuit_cache_key!(GatherId<C, D>((StreamId, usize) => Stream<C, D>));
 circuit_cache_key!(local GatherDataId<T>(usize => Arc<GatherData<T>>));
 
 impl<C, B> Stream<C, B>
@@ -53,7 +54,7 @@ where
                 } else {
                     self.circuit()
                         .cache_get_or_insert_with(
-                            GatherId::new((self.origin_node_id().clone(), receiver_worker)),
+                            GatherId::new((self.stream_id(), receiver_worker)),
                             move || {
                                 let current_worker = Runtime::worker_index();
                                 let gather_id = runtime.sequence_next(current_worker);

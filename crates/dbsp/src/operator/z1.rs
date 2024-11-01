@@ -1,5 +1,6 @@
 //! z^-1 operator delays its input by one timestamp.
 
+use crate::circuit::circuit_builder::StreamId;
 use crate::circuit::metrics::Gauge;
 use crate::{
     algebra::HasZero,
@@ -21,8 +22,8 @@ use size_of::{Context, SizeOf};
 use std::{borrow::Cow, fs, mem::replace, path::PathBuf};
 use uuid::Uuid;
 
-circuit_cache_key!(DelayedId<C, D>(GlobalNodeId => Stream<C, D>));
-circuit_cache_key!(NestedDelayedId<C, D>(GlobalNodeId => Stream<C, D>));
+circuit_cache_key!(DelayedId<C, D>(StreamId => Stream<C, D>));
+circuit_cache_key!(NestedDelayedId<C, D>(StreamId => Stream<C, D>));
 
 /// Like [`FeedbackConnector`] but specialized for [`Z1`] feedback operator.
 ///
@@ -90,8 +91,8 @@ where
         let circuit = output.circuit().clone();
 
         feedback.connect_with_preference(input, OwnershipPreference::STRONGLY_PREFER_OWNED);
-        circuit.cache_insert(DelayedId::new(input.origin_node_id().clone()), output);
-        circuit.cache_insert(ExportId::new(input.origin_node_id().clone()), export);
+        circuit.cache_insert(DelayedId::new(input.stream_id()), output);
+        circuit.cache_insert(ExportId::new(input.stream_id()), export);
     }
 }
 
@@ -132,7 +133,7 @@ where
         let circuit = output.circuit().clone();
 
         feedback.connect_with_preference(input, OwnershipPreference::STRONGLY_PREFER_OWNED);
-        circuit.cache_insert(NestedDelayedId::new(input.origin_node_id().clone()), output);
+        circuit.cache_insert(NestedDelayedId::new(input.stream_id()), output);
     }
 }
 
@@ -146,7 +147,7 @@ where
         D: Checkpoint + Eq + SizeOf + NumEntries + Clone + HasZero + 'static,
     {
         self.circuit()
-            .cache_get_or_insert_with(DelayedId::new(self.origin_node_id().clone()), || {
+            .cache_get_or_insert_with(DelayedId::new(self.stream_id()), || {
                 self.circuit().add_unary_operator(Z1::new(D::zero()), self)
             })
             .clone()
@@ -157,7 +158,7 @@ where
         D: Checkpoint + Eq + SizeOf + NumEntries + Clone + 'static,
     {
         self.circuit()
-            .cache_get_or_insert_with(DelayedId::new(self.origin_node_id().clone()), move || {
+            .cache_get_or_insert_with(DelayedId::new(self.stream_id()), move || {
                 self.circuit()
                     .add_unary_operator(Z1::new(initial.clone()), self)
             })
@@ -170,7 +171,7 @@ where
         D: Eq + Clone + HasZero + SizeOf + NumEntries + 'static,
     {
         self.circuit()
-            .cache_get_or_insert_with(NestedDelayedId::new(self.origin_node_id().clone()), || {
+            .cache_get_or_insert_with(NestedDelayedId::new(self.stream_id()), || {
                 self.circuit()
                     .add_unary_operator(Z1Nested::new(D::zero()), self)
             })

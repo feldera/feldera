@@ -30,7 +30,7 @@ where
         feedback
             .connect_with_preference(&new_accumulator, OwnershipPreference::STRONGLY_PREFER_OWNED);
         self.circuit().cache_insert(
-            DelayedId::new(new_accumulator.origin_node_id().clone()),
+            DelayedId::new(new_accumulator.stream_id()),
             prev_accumulator,
         );
 

@@ -3,17 +3,18 @@
 use std::ops::Neg;
 
 use crate::circuit::checkpointer::Checkpoint;
+use crate::circuit::circuit_builder::StreamId;
 use crate::{
     algebra::{AddAssignByRef, AddByRef, GroupValue, NegByRef},
-    circuit::{Circuit, GlobalNodeId, Stream},
+    circuit::{Circuit, Stream},
     circuit_cache_key,
     operator::{integrate::IntegralId, Minus},
     NumEntries,
 };
 use size_of::SizeOf;
 
-circuit_cache_key!(DifferentiateId<C, D>(GlobalNodeId => Stream<C, D>));
-circuit_cache_key!(NestedDifferentiateId<C, D>(GlobalNodeId => Stream<C, D>));
+circuit_cache_key!(DifferentiateId<C, D>(StreamId => Stream<C, D>));
+circuit_cache_key!(NestedDifferentiateId<C, D>(StreamId => Stream<C, D>));
 
 impl<C, D> Stream<C, D>
 where
@@ -36,18 +37,15 @@ where
     /// Nested stream differentiation.
     pub fn differentiate_nested(&self) -> Stream<C, D> {
         self.circuit()
-            .cache_get_or_insert_with(
-                NestedDifferentiateId::new(self.origin_node_id().clone()),
-                || {
-                    let differentiated = self.circuit().add_binary_operator(
-                        Minus::new(),
-                        &self.try_sharded_version(),
-                        &self.try_sharded_version().delay_nested(),
-                    );
-                    differentiated.mark_sharded_if(self);
-                    differentiated
-                },
-            )
+            .cache_get_or_insert_with(NestedDifferentiateId::new(self.stream_id()), || {
+                let differentiated = self.circuit().add_binary_operator(
+                    Minus::new(),
+                    &self.try_sharded_version(),
+                    &self.try_sharded_version().delay_nested(),
+                );
+                differentiated.mark_sharded_if(self);
+                differentiated
+            })
             .clone()
     }
 }
@@ -68,7 +66,7 @@ where
 {
     pub fn differentiate_with_initial_value(&self, initial: D) -> Stream<C, D> {
         self.circuit()
-            .cache_get_or_insert_with(DifferentiateId::new(self.origin_node_id().clone()), || {
+            .cache_get_or_insert_with(DifferentiateId::new(self.stream_id()), || {
                 let differentiated = self.circuit().add_binary_operator(
                     Minus::new(),
                     &self.try_sharded_version(),
@@ -78,10 +76,8 @@ where
                 );
                 differentiated.mark_sharded_if(self);
 
-                self.circuit().cache_insert(
-                    IntegralId::new(differentiated.origin_node_id().clone()),
-                    self.clone(),
-                );
+                self.circuit()
+                    .cache_insert(IntegralId::new(differentiated.stream_id()), self.clone());
                 differentiated
             })
             .clone()
