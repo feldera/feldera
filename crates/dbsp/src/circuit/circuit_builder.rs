@@ -96,6 +96,32 @@ impl<D> StreamValue<D> {
     }
 }
 
+#[repr(transparent)]
+pub struct RefStreamValue<D>(Rc<UnsafeCell<StreamValue<D>>>);
+
+impl<D> Clone for RefStreamValue<D> {
+    fn clone(&self) -> Self {
+        Self(self.0.clone())
+    }
+}
+
+impl<D> RefStreamValue<D> {
+    fn empty() -> Self {
+        Self(Rc::new(UnsafeCell::new(StreamValue::empty())))
+    }
+
+    fn get(&self) -> *mut StreamValue<D> {
+        self.0.get()
+    }
+
+    unsafe fn transmute<D2>(&self) -> RefStreamValue<D2> {
+        RefStreamValue(std::mem::transmute::<
+            Rc<UnsafeCell<StreamValue<D>>>,
+            Rc<UnsafeCell<StreamValue<D2>>>,
+        >(self.0.clone()))
+    }
+}
+
 /// A `Stream<C, D>` stores the output value of type `D` of an operator in a
 /// circuit with type `C`.
 ///
@@ -556,10 +582,7 @@ pub struct Stream<C, D> {
     circuit: C,
     /// Value stored in the stream (there can be at most one since our
     /// circuits are synchronous).
-    /// We use `UnsafeCell` instead of `RefCell` to avoid runtime ownership
-    /// tests. We enforce unique ownership by making sure that at most one
-    /// operator can run (and access the stream) at any time.
-    val: Rc<UnsafeCell<StreamValue<D>>>,
+    val: RefStreamValue<D>,
 }
 
 impl<C, D> Clone for Stream<C, D>
@@ -595,10 +618,7 @@ where
             local_node_id: self.local_node_id,
             origin_node_id: self.origin_node_id.clone(),
             circuit: self.circuit.clone(),
-            val: std::mem::transmute::<
-                Rc<UnsafeCell<StreamValue<D>>>,
-                Rc<UnsafeCell<StreamValue<D2>>>,
-            >(self.val.clone()),
+            val: self.val.transmute::<D2>(),
         }
     }
 }
@@ -649,7 +669,17 @@ where
             local_node_id: node_id,
             origin_node_id: GlobalNodeId::child_of(&circuit, node_id),
             circuit,
-            val: Rc::new(UnsafeCell::new(StreamValue::empty())),
+            val: RefStreamValue::empty(),
+        }
+    }
+
+    pub fn with_value(circuit: C, node_id: NodeId, val: RefStreamValue<D>) -> Self {
+        Self {
+            stream_id: circuit.allocate_stream_id(),
+            local_node_id: node_id,
+            origin_node_id: GlobalNodeId::child_of(&circuit, node_id),
+            circuit,
+            val,
         }
     }
 
@@ -684,7 +714,7 @@ impl<C, D> Stream<C, D> {
             local_node_id: node_id,
             origin_node_id,
             circuit,
-            val: Rc::new(UnsafeCell::new(StreamValue::empty())),
+            val: RefStreamValue::empty(),
         }
     }
 }
