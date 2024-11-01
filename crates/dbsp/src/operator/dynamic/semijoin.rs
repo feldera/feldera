@@ -1,8 +1,9 @@
 use crate::{
     algebra::{IndexedZSet, IndexedZSetReader, MulByRef, ZSet, ZSetReader},
     circuit::{
+        circuit_builder::StreamId,
         operator_traits::{BinaryOperator, Operator},
-        GlobalNodeId, Scope,
+        Scope,
     },
     circuit_cache_key,
     dynamic::{DynPair, DynUnit, Erase},
@@ -18,7 +19,7 @@ use std::{
     ops::Deref,
 };
 
-circuit_cache_key!(SemijoinId<C, D>((GlobalNodeId, GlobalNodeId) => Stream<C, D>));
+circuit_cache_key!(SemijoinId<C, D>((StreamId, StreamId) => Stream<C, D>));
 
 pub struct SemijoinStreamFactories<Pairs: IndexedZSetReader, Keys: ZSetReader, Out: ZSet> {
     pairs_factories: Pairs::Factories,
@@ -65,7 +66,7 @@ where
     {
         self.circuit()
             .cache_get_or_insert_with(
-                SemijoinId::new((self.origin_node_id().clone(), keys.origin_node_id().clone())),
+                SemijoinId::new((self.stream_id(), keys.stream_id())),
                 move || {
                     self.circuit()
                         .add_binary_operator(

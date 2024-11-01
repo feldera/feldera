@@ -546,6 +546,8 @@ impl<D> StreamValue<D> {
 /// stream of deltas.  This can be useful for windowing outside the context of
 /// rolling aggregation.
 pub struct Stream<C, D> {
+    /// Globally unique ID of the stream.
+    stream_id: StreamId,
     /// Id of the operator within the local circuit that writes to the stream.
     local_node_id: NodeId,
     /// Global id of the node that writes to this stream.
@@ -566,6 +568,7 @@ where
 {
     fn clone(&self) -> Self {
         Self {
+            stream_id: self.stream_id,
             local_node_id: self.local_node_id,
             origin_node_id: self.origin_node_id.clone(),
             circuit: self.circuit.clone(),
@@ -588,6 +591,7 @@ where
     /// Transmuting `D` into `D2` should be safe.
     pub(crate) unsafe fn transmute_payload<D2>(&self) -> Stream<C, D2> {
         Stream {
+            stream_id: self.stream_id,
             local_node_id: self.local_node_id,
             origin_node_id: self.origin_node_id.clone(),
             circuit: self.circuit.clone(),
@@ -618,13 +622,17 @@ impl<C, D> Stream<C, D> {
         &self.origin_node_id
     }
 
+    pub fn stream_id(&self) -> StreamId {
+        self.stream_id
+    }
+
     /// Reference to the circuit the stream belongs to.
     pub fn circuit(&self) -> &C {
         &self.circuit
     }
 
     pub fn ptr_eq<D2>(&self, other: &Stream<C, D2>) -> bool {
-        self.origin_node_id() == other.origin_node_id()
+        self.stream_id() == other.stream_id()
     }
 }
 
@@ -637,6 +645,7 @@ where
     /// node id.
     fn new(circuit: C, node_id: NodeId) -> Self {
         Self {
+            stream_id: circuit.allocate_stream_id(),
             local_node_id: node_id,
             origin_node_id: GlobalNodeId::child_of(&circuit, node_id),
             circuit,
@@ -657,18 +666,21 @@ where
         D: 'static,
     {
         self.circuit()
-            .cache_get_or_insert_with(
-                ExportId::new(self.origin_node_id().clone()),
-                || unimplemented!(),
-            )
+            .cache_get_or_insert_with(ExportId::new(self.stream_id()), || unimplemented!())
             .clone()
     }
 }
 
 impl<C, D> Stream<C, D> {
     /// Create a stream whose origin differs from its node id.
-    fn with_origin(circuit: C, node_id: NodeId, origin_node_id: GlobalNodeId) -> Self {
+    fn with_origin(
+        circuit: C,
+        stream_id: StreamId,
+        node_id: NodeId,
+        origin_node_id: GlobalNodeId,
+    ) -> Self {
         Self {
+            stream_id,
             local_node_id: node_id,
             origin_node_id,
             circuit,
@@ -833,6 +845,29 @@ pub trait Node {
     /// Takes a fingerprint of the node's inner operator adds it to `fip`.
     fn fingerprint(&self, fip: &mut Fingerprinter) {
         fip.hash(type_name_of_val(self));
+    }
+}
+
+/// Globally unique id of a stream.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
+#[repr(transparent)]
+pub struct StreamId(usize);
+
+impl StreamId {
+    pub fn new(id: usize) -> Self {
+        Self(id)
+    }
+
+    /// Extracts numeric representation of the stream id.
+    pub fn id(&self) -> usize {
+        self.0
+    }
+}
+
+impl Display for StreamId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_char('s')?;
+        Debug::fmt(&self.0, f)
     }
 }
 
@@ -1103,7 +1138,7 @@ impl Edge {
     }
 }
 
-circuit_cache_key!(ExportId<C, D>(GlobalNodeId => Stream<C, D>));
+circuit_cache_key!(ExportId<C, D>(StreamId => Stream<C, D>));
 
 /// Trait for an object that has a clock associated with it.
 /// This is implemented trivially for root circuits.
@@ -1184,6 +1219,13 @@ pub trait Circuit: WithClock + Clone + 'static {
 
     /// Returns vector of local node ids in the circuit.
     fn node_ids(&self) -> Vec<NodeId>;
+
+    /// Allocate a new globally unique stream id.  This method can be invoked on any circuit in the pipeline,
+    /// since all of them maintain a shared global counter.
+    fn allocate_stream_id(&self) -> StreamId;
+
+    /// Reference to the global counter shared by all circuits.
+    fn last_stream_id(&self) -> RefCell<StreamId>;
 
     /// Relative depth of `self` from the root circuit.
     ///
@@ -1808,6 +1850,7 @@ where
     circuit_event_handlers: CircuitEventHandlers,
     scheduler_event_handlers: SchedulerEventHandlers,
     store: CircuitCache,
+    last_stream_id: RefCell<StreamId>,
 }
 
 impl<P> CircuitInner<P>
@@ -1821,6 +1864,7 @@ where
         global_node_id: GlobalNodeId,
         circuit_event_handlers: CircuitEventHandlers,
         scheduler_event_handlers: SchedulerEventHandlers,
+        last_stream_id: RefCell<StreamId>,
     ) -> Self {
         Self {
             parent,
@@ -1832,6 +1876,7 @@ where
             circuit_event_handlers,
             scheduler_event_handlers,
             store: TypedMap::new(),
+            last_stream_id,
         }
     }
 
@@ -2053,6 +2098,7 @@ impl RootCircuit {
                 GlobalNodeId::root(),
                 Rc::new(RefCell::new(HashMap::new())),
                 Rc::new(RefCell::new(HashMap::new())),
+                RefCell::new(StreamId::new(0)),
             ))),
             time: Rc::new(RefCell::new(())),
         }
@@ -2132,6 +2178,7 @@ where
         let circuit_handlers = parent.circuit_event_handlers();
         let sched_handlers = parent.scheduler_event_handlers();
         let root_scope = parent.root_scope() + 1;
+        let last_stream_id = parent.last_stream_id();
 
         ChildCircuit {
             inner: Rc::new(RefCell::new(CircuitInner::new(
@@ -2141,6 +2188,7 @@ where
                 global_node_id,
                 circuit_handlers,
                 sched_handlers,
+                last_stream_id,
             ))),
             time: Rc::new(RefCell::new(Timestamp::clock_start())),
         }
@@ -2279,6 +2327,17 @@ where
             .iter()
             .map(|node| node.local_id())
             .collect()
+    }
+
+    fn allocate_stream_id(&self) -> StreamId {
+        let circuit = self.inner();
+        let mut last_stream_id = circuit.last_stream_id.borrow_mut();
+        last_stream_id.0 += 1;
+        *last_stream_id
+    }
+
+    fn last_stream_id(&self) -> RefCell<StreamId> {
+        self.inner().last_stream_id.clone()
     }
 
     fn root_scope(&self) -> Scope {
@@ -4257,6 +4316,7 @@ where
         let mut result = Self::new(operator, circuit.clone(), id);
         result.export_stream = Some(Stream::with_origin(
             circuit.parent(),
+            circuit.allocate_stream_id(),
             circuit.node_id(),
             GlobalNodeId::child_of(&circuit, id),
         ));

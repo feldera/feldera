@@ -252,9 +252,9 @@ where
             trace.mark_sharded_if(self);
 
             z1feedback.connect_with_preference(&trace, OwnershipPreference::STRONGLY_PREFER_OWNED);
-            circuit.cache_insert(DelayedTraceId::new(trace.origin_node_id().clone()), local);
-            circuit.cache_insert(TraceId::new(delta.origin_node_id().clone()), trace);
-            circuit.cache_insert(BoundsId::<B>::new(delta.origin_node_id().clone()), bounds);
+            circuit.cache_insert(DelayedTraceId::new(trace.stream_id()), local);
+            circuit.cache_insert(TraceId::new(delta.stream_id()), trace);
+            circuit.cache_insert(BoundsId::<B>::new(delta.stream_id()), bounds);
             delta
         })
     }

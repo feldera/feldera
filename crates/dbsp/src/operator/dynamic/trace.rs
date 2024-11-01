@@ -1,3 +1,4 @@
+use crate::circuit::circuit_builder::StreamId;
 use crate::circuit::metrics::Gauge;
 use crate::{
     circuit::{
@@ -28,10 +29,10 @@ use std::{
 };
 use uuid::Uuid;
 
-circuit_cache_key!(TraceId<C, D: BatchReader>(GlobalNodeId => Stream<C, D>));
-circuit_cache_key!(BoundsId<D: BatchReader>(GlobalNodeId => TraceBounds<<D as BatchReader>::Key, <D as BatchReader>::Val>));
-circuit_cache_key!(DelayedTraceId<C, D>(GlobalNodeId => Stream<C, D>));
-circuit_cache_key!(SpillId<C, D>(GlobalNodeId => Stream<C, D>));
+circuit_cache_key!(TraceId<C, D: BatchReader>(StreamId => Stream<C, D>));
+circuit_cache_key!(BoundsId<D: BatchReader>(StreamId => TraceBounds<<D as BatchReader>::Key, <D as BatchReader>::Val>));
+circuit_cache_key!(DelayedTraceId<C, D>(StreamId => Stream<C, D>));
+circuit_cache_key!(SpillId<C, D>(StreamId => Stream<C, D>));
 
 /// Lower bound on keys or values in a trace.
 ///
@@ -279,7 +280,7 @@ where
         let bounds = self.trace_bounds_with_bound(lower_key_bound, lower_val_bound);
 
         self.circuit()
-            .cache_get_or_insert_with(TraceId::new(self.origin_node_id().clone()), || {
+            .cache_get_or_insert_with(TraceId::new(self.stream_id()), || {
                 let circuit = self.circuit();
 
                 circuit.region("trace", || {
@@ -309,8 +310,7 @@ where
                         OwnershipPreference::STRONGLY_PREFER_OWNED,
                     );
 
-                    circuit
-                        .cache_insert(DelayedTraceId::new(trace.origin_node_id().clone()), local);
+                    circuit.cache_insert(DelayedTraceId::new(trace.stream_id()), local);
                     trace
                 })
             })
@@ -376,7 +376,7 @@ where
         // Moving from spilled to unspilled is handled by `spill()`.
         self.circuit()
             .cache_get_or_insert_with(
-                BoundsId::<B>::new(self.try_unsharded_version().origin_node_id().clone()),
+                BoundsId::<B>::new(self.try_unsharded_version().stream_id()),
                 TraceBounds::new,
             )
             .clone()
@@ -436,7 +436,7 @@ where
         Spine<B>: SizeOf,
     {
         self.circuit()
-            .cache_get_or_insert_with(TraceId::new(self.origin_node_id().clone()), || {
+            .cache_get_or_insert_with(TraceId::new(self.stream_id()), || {
                 let circuit = self.circuit();
                 let bounds = bounds.clone();
 
@@ -468,9 +468,8 @@ where
                         OwnershipPreference::STRONGLY_PREFER_OWNED,
                     );
 
-                    circuit
-                        .cache_insert(DelayedTraceId::new(trace.origin_node_id().clone()), local);
-                    circuit.cache_insert(ExportId::new(trace.origin_node_id().clone()), export);
+                    circuit.cache_insert(DelayedTraceId::new(trace.stream_id()), local);
+                    circuit.cache_insert(ExportId::new(trace.stream_id()), export);
 
                     trace
                 })
@@ -522,18 +521,12 @@ where
             .connect_with_preference(&trace, OwnershipPreference::STRONGLY_PREFER_OWNED);
 
         circuit.cache_insert(
-            DelayedTraceId::new(trace.origin_node_id().clone()),
+            DelayedTraceId::new(trace.stream_id()),
             self.delayed_trace.clone(),
         );
-        circuit.cache_insert(TraceId::new(stream.origin_node_id().clone()), trace.clone());
-        circuit.cache_insert(
-            BoundsId::<T>::new(stream.origin_node_id().clone()),
-            self.bounds.clone(),
-        );
-        circuit.cache_insert(
-            ExportId::new(trace.origin_node_id().clone()),
-            self.export_trace,
-        );
+        circuit.cache_insert(TraceId::new(stream.stream_id()), trace.clone());
+        circuit.cache_insert(BoundsId::<T>::new(stream.stream_id()), self.bounds.clone());
+        circuit.cache_insert(ExportId::new(trace.stream_id()), self.export_trace);
     }
 }
 
@@ -593,7 +586,7 @@ where
         // FIXME: Create a trace if it doesn't exist
         let delayed_trace = self
             .circuit()
-            .cache_get_or_insert_with(DelayedTraceId::new(self.origin_node_id().clone()), || {
+            .cache_get_or_insert_with(DelayedTraceId::new(self.stream_id()), || {
                 panic!("called `.delay_trace()` on a stream without a previously created trace")
             })
             .deref()

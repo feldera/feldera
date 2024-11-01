@@ -1,5 +1,6 @@
 //! Distinct operator.
 
+use crate::circuit::circuit_builder::StreamId;
 use crate::circuit::metrics::Gauge;
 use crate::{
     algebra::{
@@ -26,8 +27,8 @@ use std::{
     ops::Neg,
 };
 
-circuit_cache_key!(DistinctId<C, D>(GlobalNodeId => Stream<C, D>));
-circuit_cache_key!(DistinctIncrementalId<C, D>(GlobalNodeId => Stream<C, D>));
+circuit_cache_key!(DistinctId<C, D>(StreamId => Stream<C, D>));
+circuit_cache_key!(DistinctIncrementalId<C, D>(StreamId => Stream<C, D>));
 
 pub struct DistinctFactories<Z: IndexedZSet, T: Timestamp> {
     pub input_factories: Z::Factories,
@@ -75,25 +76,21 @@ where
     /// unit weights only, otherwise this will cause the dataflow to yield
     /// incorrect results
     pub fn mark_distinct(&self) -> Self {
-        self.circuit().cache_insert(
-            DistinctIncrementalId::new(self.origin_node_id().clone()),
-            self.clone(),
-        );
+        self.circuit()
+            .cache_insert(DistinctIncrementalId::new(self.stream_id()), self.clone());
         self.clone()
     }
 
     /// Returns `true` if a distinct version of the current stream exists
     pub fn has_distinct_version(&self) -> bool {
         self.circuit()
-            .cache_contains(&DistinctIncrementalId::<C, D>::new(
-                self.origin_node_id().clone(),
-            ))
+            .cache_contains(&DistinctIncrementalId::<C, D>::new(self.stream_id()))
     }
 
     /// Returns `true` if the current stream is known to be distinct.
     pub fn is_distinct(&self) -> bool {
         self.circuit()
-            .cache_get(&DistinctIncrementalId::new(self.origin_node_id().clone()))
+            .cache_get(&DistinctIncrementalId::new(self.stream_id()))
             .map_or(false, |value: Stream<C, D>| value.ptr_eq(self))
     }
 
@@ -101,7 +98,7 @@ where
     /// Otherwise, returns `self`.
     pub fn try_distinct_version(&self) -> Self {
         self.circuit()
-            .cache_get(&DistinctIncrementalId::new(self.origin_node_id().clone()))
+            .cache_get(&DistinctIncrementalId::new(self.stream_id()))
             .unwrap_or_else(|| self.clone())
     }
 
@@ -129,7 +126,7 @@ where
         let stream = self.dyn_shard(input_factories);
 
         self.circuit()
-            .cache_get_or_insert_with(DistinctId::new(stream.origin_node_id().clone()), || {
+            .cache_get_or_insert_with(DistinctId::new(stream.stream_id()), || {
                 self.circuit()
                     .add_unary_operator(Distinct::new(), &stream)
                     .mark_sharded()
@@ -148,42 +145,39 @@ where
             let stream = self.dyn_shard(&factories.input_factories);
 
             circuit
-                .cache_get_or_insert_with(
-                    DistinctIncrementalId::new(stream.origin_node_id().clone()),
-                    || {
-                        if circuit.root_scope() == 0 {
-                            // Use an implementation optimized to work in the root scope.
-                            circuit.add_binary_operator(
-                                DistinctIncrementalTotal::new(&factories.input_factories),
-                                &stream,
-                                &stream
-                                    .dyn_integrate_trace(&factories.input_factories)
-                                    .delay_trace(),
-                            )
-                        } else {
-                            // ```
-                            //          ┌────────────────────────────────────┐
-                            //          │                                    │
-                            //          │                                    ▼
-                            //  stream  │     ┌─────┐  stream.trace()  ┌───────────────────┐
-                            // ─────────┴─────┤trace├─────────────────►│DistinctIncremental├─────►
-                            //                └─────┘                  └───────────────────┘
-                            // ```
-                            circuit.add_binary_operator(
-                                DistinctIncremental::new(
-                                    &factories.input_factories,
-                                    &factories.aux_factories,
-                                    circuit.clone(),
-                                ),
-                                &stream,
-                                // TODO use OrdIndexedZSetSpine if `Z::Val = ()`
-                                &stream.dyn_trace(&factories.trace_factories),
-                            )
-                        }
-                        .mark_sharded()
-                        .mark_distinct()
-                    },
-                )
+                .cache_get_or_insert_with(DistinctIncrementalId::new(stream.stream_id()), || {
+                    if circuit.root_scope() == 0 {
+                        // Use an implementation optimized to work in the root scope.
+                        circuit.add_binary_operator(
+                            DistinctIncrementalTotal::new(&factories.input_factories),
+                            &stream,
+                            &stream
+                                .dyn_integrate_trace(&factories.input_factories)
+                                .delay_trace(),
+                        )
+                    } else {
+                        // ```
+                        //          ┌────────────────────────────────────┐
+                        //          │                                    │
+                        //          │                                    ▼
+                        //  stream  │     ┌─────┐  stream.trace()  ┌───────────────────┐
+                        // ─────────┴─────┤trace├─────────────────►│DistinctIncremental├─────►
+                        //                └─────┘                  └───────────────────┘
+                        // ```
+                        circuit.add_binary_operator(
+                            DistinctIncremental::new(
+                                &factories.input_factories,
+                                &factories.aux_factories,
+                                circuit.clone(),
+                            ),
+                            &stream,
+                            // TODO use OrdIndexedZSetSpine if `Z::Val = ()`
+                            &stream.dyn_trace(&factories.trace_factories),
+                        )
+                    }
+                    .mark_sharded()
+                    .mark_distinct()
+                })
                 .clone()
         })
     }

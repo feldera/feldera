@@ -5,14 +5,15 @@ use std::{borrow::Cow, marker::PhantomData};
 
 use crate::{
     circuit::{
+        circuit_builder::StreamId,
         operator_traits::{Operator, UnaryOperator},
-        Circuit, GlobalNodeId, OwnershipPreference, Scope, Stream,
+        Circuit, OwnershipPreference, Scope, Stream,
     },
     circuit_cache_key,
     trace::{Batch, BatchReader, Trace},
 };
 
-circuit_cache_key!(ConsolidateId<C, D>(GlobalNodeId => Stream<C, D>));
+circuit_cache_key!(ConsolidateId<C, D>(StreamId => Stream<C, D>));
 
 impl<C, T> Stream<C, T>
 where
@@ -25,7 +26,7 @@ where
         factories: &<T::Batch as BatchReader>::Factories,
     ) -> Stream<C, T::Batch> {
         self.circuit()
-            .cache_get_or_insert_with(ConsolidateId::new(self.origin_node_id().clone()), || {
+            .cache_get_or_insert_with(ConsolidateId::new(self.stream_id()), || {
                 let consolidated = self.circuit().add_unary_operator_with_preference(
                     Consolidate::new(factories),
                     &self.try_sharded_version(),

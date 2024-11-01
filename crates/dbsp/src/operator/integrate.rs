@@ -1,9 +1,10 @@
 //! Integration operators.
 
 use crate::circuit::checkpointer::Checkpoint;
+use crate::circuit::circuit_builder::StreamId;
 use crate::{
     algebra::{AddAssignByRef, AddByRef, HasZero},
-    circuit::{Circuit, GlobalNodeId, OwnershipPreference, Stream},
+    circuit::{Circuit, OwnershipPreference, Stream},
     circuit_cache_key,
     operator::{
         differentiate::DifferentiateId,
@@ -14,8 +15,8 @@ use crate::{
 };
 use size_of::SizeOf;
 
-circuit_cache_key!(IntegralId<C, D>(GlobalNodeId => Stream<C, D>));
-circuit_cache_key!(NestedIntegralId<C, D>(GlobalNodeId => Stream<C, D>));
+circuit_cache_key!(IntegralId<C, D>(StreamId => Stream<C, D>));
+circuit_cache_key!(NestedIntegralId<C, D>(StreamId => Stream<C, D>));
 
 impl<C, D> Stream<C, D>
 where
@@ -79,7 +80,7 @@ where
     /// ```
     pub fn integrate(&self) -> Stream<C, D> {
         self.circuit()
-            .cache_get_or_insert_with(IntegralId::new(self.origin_node_id().clone()), || {
+            .cache_get_or_insert_with(IntegralId::new(self.stream_id()), || {
                 // Integration circuit:
                 // ```
                 //              input
@@ -111,10 +112,8 @@ where
                     );
                     feedback.connect(&integral);
 
-                    self.circuit().cache_insert(
-                        DifferentiateId::new(integral.origin_node_id().clone()),
-                        self.clone(),
-                    );
+                    self.circuit()
+                        .cache_insert(DifferentiateId::new(integral.stream_id()), self.clone());
                     integral
                 })
             })
@@ -153,7 +152,7 @@ where
     /// ```
     pub fn integrate_nested(&self) -> Stream<C, D> {
         self.circuit()
-            .cache_get_or_insert_with(NestedIntegralId::new(self.origin_node_id().clone()), || {
+            .cache_get_or_insert_with(NestedIntegralId::new(self.stream_id()), || {
                 self.circuit().region("integrate_nested", || {
                     let feedback = DelayedNestedFeedback::new(self.circuit());
                     let integral = self.circuit().add_binary_operator_with_preference(

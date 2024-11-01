@@ -5,7 +5,7 @@
 // - different sharding modes.
 
 use crate::{
-    circuit::GlobalNodeId,
+    circuit::circuit_builder::StreamId,
     circuit_cache_key,
     dynamic::Data,
     operator::communication::new_exchange_operators,
@@ -16,8 +16,8 @@ use crate::{
 use crate::dynamic::ClonableTrait;
 use std::{hash::Hash, panic::Location};
 
-circuit_cache_key!(ShardId<C, D>((GlobalNodeId, ShardingPolicy) => Stream<C, D>));
-circuit_cache_key!(UnshardId<C, D>(GlobalNodeId => Stream<C, D>));
+circuit_cache_key!(ShardId<C, D>((StreamId, ShardingPolicy) => Stream<C, D>));
+circuit_cache_key!(UnshardId<C, D>(StreamId => Stream<C, D>));
 
 // An attempt to future-proof the design for when we support multiple sharding
 // disciplines.
@@ -69,10 +69,7 @@ where
                 let output = self
                     .circuit()
                     .cache_get_or_insert_with(
-                        ShardId::new((
-                            self.origin_node_id().clone(),
-                            sharding_policy(self.circuit()),
-                        )),
+                        ShardId::new((self.stream_id(), sharding_policy(self.circuit()))),
                         move || {
                             // As a minor optimization, we reuse this array across all invocations
                             // of the sharding operator.
@@ -106,17 +103,12 @@ where
                             });
 
                             self.circuit().cache_insert(
-                                ShardId::new((
-                                    output.origin_node_id().clone(),
-                                    sharding_policy(self.circuit()),
-                                )),
+                                ShardId::new((output.stream_id(), sharding_policy(self.circuit()))),
                                 output.clone(),
                             );
 
-                            self.circuit().cache_insert(
-                                UnshardId::new(output.origin_node_id().clone()),
-                                self.clone(),
-                            );
+                            self.circuit()
+                                .cache_insert(UnshardId::new(output.stream_id()), self.clone());
 
                             output
                         },
@@ -183,10 +175,7 @@ where
     /// incorrect results
     pub fn mark_sharded(&self) -> Self {
         self.circuit().cache_insert(
-            ShardId::new((
-                self.origin_node_id().clone(),
-                sharding_policy(self.circuit()),
-            )),
+            ShardId::new((self.stream_id(), sharding_policy(self.circuit()))),
             self.clone(),
         );
         self.clone()
@@ -195,7 +184,7 @@ where
     /// Returns `true` if a sharded version of the current stream exists
     pub fn has_sharded_version(&self) -> bool {
         self.circuit().cache_contains(&ShardId::<C, T>::new((
-            self.origin_node_id().clone(),
+            self.stream_id(),
             sharding_policy(self.circuit()),
         )))
     }
@@ -206,7 +195,7 @@ where
     pub fn try_sharded_version(&self) -> Self {
         self.circuit()
             .cache_get(&ShardId::new((
-                self.origin_node_id().clone(),
+                self.stream_id(),
                 sharding_policy(self.circuit()),
             )))
             .unwrap_or_else(|| self.clone())
@@ -216,7 +205,7 @@ where
     /// `self`.
     pub fn try_unsharded_version(&self) -> Self {
         self.circuit()
-            .cache_get(&UnshardId::new(self.origin_node_id().clone()))
+            .cache_get(&UnshardId::new(self.stream_id()))
             .unwrap_or_else(|| self.clone())
     }
 
@@ -224,7 +213,7 @@ where
     pub fn is_sharded(&self) -> bool {
         self.circuit()
             .cache_get(&ShardId::<C, T>::new((
-                self.origin_node_id().clone(),
+                self.stream_id(),
                 sharding_policy(self.circuit()),
             )))
             .map_or(false, |sharded| sharded.ptr_eq(self))

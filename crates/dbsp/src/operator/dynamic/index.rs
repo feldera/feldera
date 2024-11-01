@@ -2,8 +2,9 @@
 
 use crate::{
     circuit::{
+        circuit_builder::StreamId,
         operator_traits::{Operator, UnaryOperator},
-        Circuit, GlobalNodeId, OwnershipPreference, Scope, Stream,
+        Circuit, OwnershipPreference, Scope, Stream,
     },
     circuit_cache_key,
     dynamic::{ClonableTrait, DataTrait, DynPair, DynUnit},
@@ -12,7 +13,7 @@ use crate::{
 use minitrace::trace;
 use std::{borrow::Cow, marker::PhantomData, ops::DerefMut};
 
-circuit_cache_key!(IndexId<C, D>(GlobalNodeId => Stream<C, D>));
+circuit_cache_key!(IndexId<C, D>(StreamId => Stream<C, D>));
 
 impl<C, CI> Stream<C, CI>
 where
@@ -45,7 +46,7 @@ where
         CO: Batch<Time = ()>,
     {
         self.circuit()
-            .cache_get_or_insert_with(IndexId::new(self.origin_node_id().clone()), || {
+            .cache_get_or_insert_with(IndexId::new(self.stream_id()), || {
                 self.circuit()
                     .add_unary_operator(Index::new(output_factories), self)
             })
