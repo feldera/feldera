@@ -52,19 +52,20 @@ use crate::{
     Error as DbspError, Error, Runtime,
 };
 use anyhow::Error as AnyError;
+use log::info;
 use serde::Serialize;
 use std::{
     any::type_name_of_val,
     borrow::Cow,
     cell::{Ref, RefCell, RefMut, UnsafeCell},
     collections::HashMap,
-    fmt,
-    fmt::{Debug, Display, Write},
+    fmt::{self, Debug, Display, Write},
     iter::repeat,
     marker::PhantomData,
     panic::Location,
     rc::Rc,
     thread::panicking,
+    time::{Duration, Instant},
 };
 use typedmap::{TypedMap, TypedMapKey};
 use uuid::Uuid;
@@ -4744,7 +4745,17 @@ impl CircuitHandle {
     pub fn commit(&mut self, cid: Uuid) -> Result<(), SchedulerError> {
         self.circuit
             .map_nodes_recursive_mut(&mut |node: &mut dyn Node| {
+                let start = Instant::now();
                 node.commit(cid).expect("committed");
+                let elapsed = start.elapsed();
+                if elapsed >= Duration::from_millis(100) {
+                    info!(
+                        "{:?}: committing {} node took {:.2} s",
+                        node.global_id(),
+                        node.name(),
+                        elapsed.as_secs_f64()
+                    );
+                }
             });
         Ok(())
     }
