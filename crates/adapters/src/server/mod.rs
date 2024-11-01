@@ -372,6 +372,11 @@ where
         e
     })?;
 
+    #[cfg(not(feature = "feldera-enterprise"))]
+    if config.global.fault_tolerance.is_some() {
+        return Err(ControllerError::EnterpriseFeature("fault tolerance"));
+    }
+
     // Create env logger.
     let pipeline_name = format!("[{}]", config.name.clone().unwrap_or_default()).cyan();
     // By default, logging is set to INFO level for the Feldera crates:
@@ -613,19 +618,28 @@ async fn dump_profile(state: WebData<ServerState>) -> impl Responder {
 
 #[post("/checkpoint")]
 async fn checkpoint(state: WebData<ServerState>) -> impl Responder {
-    let (sender, receiver) = oneshot::channel();
-    match &*state.controller.lock().unwrap() {
-        None => return Err(missing_controller_error(&state)),
-        Some(controller) => {
-            controller.start_checkpoint(Box::new(move |checkpoint| {
-                if sender.send(checkpoint.map(|_| ())).is_err() {
-                    error!("`/checkpoint` result could not be sent");
-                }
-            }));
-        }
-    };
-    receiver.await.unwrap()?;
-    Ok(HttpResponse::Ok())
+    #[cfg(feature = "feldera-enterprise")]
+    {
+        let (sender, receiver) = oneshot::channel();
+        match &*state.controller.lock().unwrap() {
+            None => return Err(missing_controller_error(&state)),
+            Some(controller) => {
+                controller.start_checkpoint(Box::new(move |checkpoint| {
+                    if sender.send(checkpoint.map(|_| ())).is_err() {
+                        error!("`/checkpoint` result could not be sent");
+                    }
+                }));
+            }
+        };
+        receiver.await.unwrap()?;
+        Ok(HttpResponse::Ok())
+    }
+
+    #[cfg(not(feature = "feldera-enterprise"))]
+    {
+        let _ = state;
+        Err::<&str, _>(ControllerError::EnterpriseFeature("checkpoint"))
+    }
 }
 
 #[get("/shutdown")]

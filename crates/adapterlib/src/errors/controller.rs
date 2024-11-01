@@ -574,6 +574,9 @@ pub enum ControllerError {
 
     /// Controller terminated before command could be executed.
     ControllerExit,
+
+    /// Enterprise-only feature.
+    EnterpriseFeature(&'static str),
 }
 
 impl ResponseError for ControllerError {
@@ -589,6 +592,7 @@ impl ResponseError for ControllerError {
             Self::UnknownInputEndpoint { .. } => StatusCode::NOT_FOUND,
             Self::ParseError { .. } => StatusCode::BAD_REQUEST,
             Self::NotSupported { .. } => StatusCode::BAD_REQUEST,
+            Self::EnterpriseFeature(_) => StatusCode::NOT_IMPLEMENTED,
             _ => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
@@ -690,6 +694,7 @@ impl DbspDetailedError for ControllerError {
             Self::DbspPanic => Cow::from("DbspPanic"),
             Self::ControllerPanic => Cow::from("ControllerPanic"),
             Self::ControllerExit => Cow::from("ControllerExit"),
+            Self::EnterpriseFeature(_) => Cow::from("EnterpriseFeature"),
         }
     }
 }
@@ -720,6 +725,7 @@ impl DetailedError for ControllerError {
             Self::DbspPanic => Cow::from("DbspPanic"),
             Self::ControllerPanic => Cow::from("ControllerPanic"),
             Self::ControllerExit => Cow::from("ControllerExit"),
+            Self::EnterpriseFeature(_) => Cow::from("EnterpriseFeature"),
         }
     }
 }
@@ -814,8 +820,14 @@ impl Display for ControllerError {
             Self::ControllerPanic => {
                 write!(f, "Panic inside the DBSP controller")
             }
-            ControllerError::ControllerExit => {
+            Self::ControllerExit => {
                 write!(f, "Controller exited before command could be executed")
+            }
+            Self::EnterpriseFeature(feature) => {
+                write!(
+                    f,
+                    "Cannot use enterprise-only feature ({feature}) in Feldera community edition."
+                )
             }
         }
     }

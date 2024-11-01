@@ -26,6 +26,7 @@ pubsub-emulator-test = []
 # Run Pub/Sub connector tests agains a GCP account.
 # Google Cloud Application Default Credentials (ADC) must be configured. See `pubsub/test.rs`.
 pubsub-gcp-test = []
+feldera-enterprise = []
 
 [dependencies]
 feldera-types = { path = "../feldera-types" }
