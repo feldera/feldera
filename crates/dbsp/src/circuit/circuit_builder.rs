@@ -94,6 +94,15 @@ impl<D> StreamValue<D> {
             tokens: 0,
         }
     }
+
+    unsafe fn put(&mut self, val: D) {
+        // If the stream is not connected to any consumers, drop the output
+        // on the floor.
+        if self.consumers > 0 {
+            self.tokens = self.consumers;
+            self.val = Some(val);
+        }
+    }
 }
 
 #[repr(transparent)]
@@ -106,12 +115,23 @@ impl<D> Clone for RefStreamValue<D> {
 }
 
 impl<D> RefStreamValue<D> {
-    fn empty() -> Self {
+    pub fn empty() -> Self {
         Self(Rc::new(UnsafeCell::new(StreamValue::empty())))
     }
 
     fn get(&self) -> *mut StreamValue<D> {
         self.0.get()
+    }
+
+    /// Put a new value in the stream.
+    ///
+    /// # Safety
+    ///
+    /// Noone should be holding a reference to the stream value, e.g., the stream cannot
+    /// simultaneously be an input and an output of the same operator.
+    pub unsafe fn put(&self, d: D) {
+        let val = &mut *self.0.get();
+        val.put(d);
     }
 
     unsafe fn transmute<D2>(&self) -> RefStreamValue<D2> {
@@ -673,6 +693,7 @@ where
         }
     }
 
+    /// Create a stream out of an existing [`RefStreamValue`] with `node_id` as the source.
     pub fn with_value(circuit: C, node_id: NodeId, val: RefStreamValue<D>) -> Self {
         Self {
             stream_id: circuit.allocate_stream_id(),
@@ -758,13 +779,7 @@ where
     ///
     /// The caller must have exclusive access to the current stream.
     unsafe fn put(&self, d: D) {
-        let val = &mut *self.val.get();
-        // If the stream is not connected to any consumers, drop the output
-        // on the floor.
-        if val.consumers > 0 {
-            val.tokens = val.consumers;
-            val.val = Some(d);
-        }
+        self.val.put(d);
     }
 }
 

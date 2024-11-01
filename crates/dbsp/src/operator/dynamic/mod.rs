@@ -2,6 +2,7 @@ pub mod aggregate;
 pub mod asof_join;
 mod communication;
 mod consolidate;
+pub mod controlled_filter;
 pub mod count;
 pub mod distinct;
 pub mod filter_map;
