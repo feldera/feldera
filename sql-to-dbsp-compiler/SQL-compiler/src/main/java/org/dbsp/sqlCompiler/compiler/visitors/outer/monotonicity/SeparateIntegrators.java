@@ -22,6 +22,7 @@ import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateView;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitCloneVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitGraph;
+import org.dbsp.util.graph.Port;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -53,9 +54,9 @@ public class SeparateIntegrators extends CircuitCloneVisitor {
                         operator.to(DBSPSourceMapOperator.class).metadata.materialized);
     }
 
-    public static boolean hasPreIntegrator(CircuitGraph.Port port) {
-        DBSPOperator operator = port.operator();
-        int input = port.input();
+    public static boolean hasPreIntegrator(Port<DBSPOperator> port) {
+        DBSPOperator operator = port.node;
+        int input = port.port;
         return operator.is(DBSPJoinBaseOperator.class) ||
                 (operator.is(DBSPWindowOperator.class) && input == 0) ||
                 operator.is(DBSPPartitionedRollingAggregateOperator.class) ||
@@ -79,14 +80,14 @@ public class SeparateIntegrators extends CircuitCloneVisitor {
         List<DBSPOperator> sources = new ArrayList<>(operator.inputs.size());
         int index = 0;
         for (DBSPOperator input: operator.inputs) {
-            CircuitGraph.Port port = new CircuitGraph.Port(operator, index++);
+            Port<DBSPOperator> port = new Port<>(operator, index++);
             boolean addBuffer = false;
             if (hasPreIntegrator(port)) {
                 if (hasPostIntegrator(input)) {
                     addBuffer = true;
                 } else {
-                    for (CircuitGraph.Port dest : this.graph.getDestinations(input)) {
-                        if (dest.operator() == operator)
+                    for (Port<DBSPOperator> dest : this.graph.getSuccessors(input)) {
+                        if (dest.node == operator)
                             continue;
                         if (hasPreIntegrator(dest)) {
                             addBuffer = true;

@@ -543,11 +543,11 @@ public class Monotonicity extends CircuitVisitor {
         if (input == null)
             return;
         IMaybeMonotoneType projection = Monotonicity.getBodyType(input);
-        // The lag operator function has 2 inputs, although the operator has
-        // a single input.  The first parameter is actually fed from the
-        // operator's input.  The second parameter is fed from the lagged version of
-        // the input.  Moreover, the parameter operates always over indexed
-        // Z-sets, but the function's input is just the Z-set part.
+        // The lag node function has 2 inputs, although the node has
+        // a single port.  The first parameter is actually fed from the
+        // node's port.  The second parameter is fed from the lagged version of
+        // the port.  Moreover, the parameter operates always over indexed
+        // Z-sets, but the function's port is just the Z-set part.
         //
         // Let's say the function of lag is |x, y| f(x, y).
         // We build a new function transfer = |kx| (*kx.0, f(kx.1, No)) and analyze this one.

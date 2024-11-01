@@ -24,21 +24,31 @@
 package org.dbsp.sqlCompiler.circuit;
 
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceTableOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceViewDeclarationOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPViewOperator;
 import org.dbsp.sqlCompiler.compiler.ProgramMetadata;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitGraph;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.DBSPNode;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.util.graph.DiGraph;
 import org.dbsp.util.IIndentStream;
+import org.dbsp.util.Linq;
+import org.dbsp.util.graph.Port;
 
 import javax.annotation.Nullable;
+import java.util.List;
 import java.util.Set;
 
 /** Core representation of a dataflow graph (aka a query plan). */
-public final class DBSPCircuit extends DBSPNode implements IDBSPOuterNode {
+public final class DBSPCircuit
+        extends DBSPNode
+        implements IDBSPOuterNode, DiGraph<DBSPOperator> {
     /** All the operators are in fact in the partial circuit. */
     public final DBSPPartialCircuit circuit;
     public final String name;
@@ -122,5 +132,23 @@ public final class DBSPCircuit extends DBSPNode implements IDBSPOuterNode {
 
     public boolean contains(DBSPOperator operator) {
         return this.circuit.operators.contains(operator);
+    }
+
+    @Override
+    public Iterable<DBSPOperator> getNodes() {
+        return this.circuit.getAllOperators();
+    }
+
+    /** Returns the *predecessors* of a node.
+     * The graph represented by DBSPCircuit is actually the reverse graph.
+     * Use {@link CircuitGraph} to get the actual graph. */
+    @Override
+    public List<Port<DBSPOperator>> getSuccessors(DBSPOperator operator) {
+        if (operator.is(DBSPSourceViewDeclarationOperator.class)) {
+            DBSPSourceViewDeclarationOperator vd = operator.to(DBSPSourceViewDeclarationOperator.class);
+            DBSPViewOperator view = vd.getCorrespondingView(this.circuit);
+            return Linq.list(new Port<>(view, 0));
+        }
+        return Linq.map(operator.inputs, i -> new Port<>(i, 0));
     }
 }

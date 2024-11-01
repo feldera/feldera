@@ -1,0 +1,33 @@
+package org.dbsp.sqlCompiler.circuit.operator;
+
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
+
+import java.util.List;
+
+/** Represents a delta operator (called delta0 in DBSP) */
+public class DBSPDeltaOperator extends DBSPUnaryOperator {
+    public DBSPDeltaOperator(CalciteObject node, DBSPOperator source) {
+        super(node, "delta0", null, source.outputType, source.isMultiset, source);
+    }
+
+    @Override
+    public DBSPOperator withInputs(List<DBSPOperator> newInputs, boolean force) {
+        if (force || this.inputsDiffer(newInputs))
+            return new DBSPDeltaOperator(this.getNode(), newInputs.get(0))
+                    .copyAnnotations(this);
+        return this;
+    }
+
+    @Override
+    public void accept(CircuitVisitor visitor) {
+        visitor.push(this);
+        VisitDecision decision = visitor.preorder(this);
+        if (!decision.stop())
+            visitor.postorder(this);
+        visitor.pop(this);
+    }
+
+    // equivalent inherited from base class
+}

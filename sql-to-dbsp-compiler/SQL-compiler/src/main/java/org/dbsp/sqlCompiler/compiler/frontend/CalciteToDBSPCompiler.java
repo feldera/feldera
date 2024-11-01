@@ -241,6 +241,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
     /** Keep track of position in RelNode tree */
     final List<RelNode> ancestors;
     final ProgramMetadata metadata;
+    /** Recursive views, indexed by actual view name (not rewritten name) */
+    final Map<String, DeclareViewStatement> recursiveViews = new HashMap<>();
     final Map<String, Map<String, ViewColumnMetadata>> viewMetadata = new HashMap<>();
     /** Current statement that is being compiled */
     @Nullable CreateViewStatement currentView = null;
@@ -2730,7 +2732,9 @@ public class CalciteToDBSPCompiler extends RelVisitor
         }
 
         int emitFinalIndex = view.emitFinalColumn();
-        ViewMetadata meta = new ViewMetadata(additionalMetadata, view.viewKind, emitFinalIndex);
+        DeclareViewStatement declare = this.recursiveViews.get(view.relationName);
+                ViewMetadata meta = new ViewMetadata(
+                        additionalMetadata, view.viewKind, emitFinalIndex, declare != null);
         if (view.viewKind != SqlCreateView.ViewKind.LOCAL) {
             this.metadata.addView(view);
             // Create two operators chained, a ViewOperator and a SinkOperator.
@@ -2867,7 +2871,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
 
     @Nullable
     DBSPNode compileDeclareView(DeclareViewStatement create) {
-        String tableName = create.getName();
+        String tableName = create.getName();  // not the same as the declared view's name!
+        Utilities.putNew(this.recursiveViews, create.relationName, create);
         DBSPType rowType = create.getRowTypeAsTuple(this.compiler.getTypeCompiler());
         DBSPTypeStruct originalRowType = create.getRowTypeAsStruct(this.compiler.getTypeCompiler());
         CalciteObject identifier = CalciteObject.EMPTY;

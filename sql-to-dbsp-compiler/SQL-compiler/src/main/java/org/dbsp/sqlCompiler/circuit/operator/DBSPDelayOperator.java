@@ -11,70 +11,27 @@ import java.util.List;
 
 /**
  * The z^-1 operator from DBSP.
- * If the delay is used for a cycle then the operator points
- * to a DelayOutput operator which closes the loop.
- * In this way a circuit like
- *            +---------+
- *    ------->|         |
- *     ------>|         |------>
- *     |      +---------+  |
- *     |                   |
- *     |      +---------+  |
- *     -------|    Z    |<--
- *            |         |
- *            +---------+
- * is represented instead like:
- *            +---------+
- *    ------->|         |
- *    ------->|         |------>
- *    |       +---------+  |
- *  +---+                  |    +---------+
- *  |ZO |                  ---->|    Z    |
- *  |   |<......................|         |
- *  +---+          back edge    +---------+
- * where ZO is the DelayOutput operator, and the back-edge is not an explicit operator input.
- *
- * <p></p>If the function is specified, it is the initial value produced by the delay.
+ * If the function is specified, it is the initial value produced by the delay.
  */
 public final class DBSPDelayOperator extends DBSPUnaryOperator {
-    /** This can be null for operators that do not create back-edges. */
-    @Nullable
-    public final DBSPDelayOutputOperator output;
-
-    public DBSPDelayOperator(CalciteObject node, @Nullable DBSPExpression initial,
-                             DBSPOperator source, @Nullable DBSPDelayOutputOperator output) {
+    public DBSPDelayOperator(CalciteObject node, @Nullable DBSPExpression initial, DBSPOperator source) {
         super(node, initial == null ? "delay" : "delay_with_initial_value",
                 initial, source.outputType, source.isMultiset, source);
-        this.output = output;
-        if (initial != null) {
-            assert initial.getType().sameType(source.outputType) :
-                    "Delay input has type " + source.outputType + " but initial value has type " + initial.getType();
-        }
-    }
-
-    public DBSPDelayOperator(CalciteObject node, @Nullable DBSPExpression initial, DBSPOperator source) {
-        this(node, initial, source, null);
-    }
-
-    public DBSPDelayOperator(CalciteObject node, DBSPOperator source, DBSPDelayOutputOperator output) {
-        this(node, null, source, output);
-    }
-
-    public DBSPDelayOperator(CalciteObject node, DBSPOperator source) {
-        this(node, null, source, null);
+        assert initial == null || initial.getType().sameType(source.outputType) :
+                "Delay input has type " + source.outputType + " but initial value has type " + initial.getType();
     }
 
     @Override
     public DBSPOperator withInputs(List<DBSPOperator> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
-            return new DBSPDelayOperator(this.getNode(), this.function, newInputs.get(0), this.output)
+            return new DBSPDelayOperator(this.getNode(), this.function, newInputs.get(0))
                     .copyAnnotations(this);
         return this;
     }
 
     @Override
     public DBSPOperator withFunction(@Nullable DBSPExpression function, DBSPType unusedOutputType) {
-        return new DBSPDelayOperator(this.getNode(), function, this.input(), this.output)
+        return new DBSPDelayOperator(this.getNode(), function, this.input())
                 .copyAnnotations(this);
     }
 
@@ -92,8 +49,6 @@ public final class DBSPDelayOperator extends DBSPUnaryOperator {
         if (!super.equivalent(other))
             return false;
         DBSPDelayOperator otherOperator = other.as(DBSPDelayOperator.class);
-        if (otherOperator == null)
-            return false;
-        return this.output == otherOperator.output;
+        return otherOperator != null;
     }
 }

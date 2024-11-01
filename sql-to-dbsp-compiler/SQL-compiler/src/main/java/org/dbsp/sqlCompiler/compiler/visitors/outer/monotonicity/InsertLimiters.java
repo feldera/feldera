@@ -1286,8 +1286,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
         this.addOperator(waterline);
 
         // Waterline fed through a delay
-        DBSPDelayOperator delay = new DBSPDelayOperator(
-                operator.getNode(), min, waterline);
+        DBSPDelayOperator delay = new DBSPDelayOperator(operator.getNode(), min, waterline);
         this.addOperator(delay);
 
         // An apply operator to add a Boolean bit to the waterline.
@@ -1620,7 +1619,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
                     this.addOperator(window);
                     // GC for window: the waterline delayed
                     PartiallyMonotoneTuple projection = new PartiallyMonotoneTuple(
-                            // We project the key of the index operator, which is always the first field.
+                            // We project the key of the index node, which is always the first field.
                             Linq.list(new MonotoneType(tsType)), false, false);
                     this.createRetainKeys(operator.getNode(), ix, projection, boundSource);
 

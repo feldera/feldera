@@ -7,6 +7,7 @@ import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitGraph;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
+import org.dbsp.util.graph.Port;
 
 /** The DBSP runtime will incorrectly GC a relation that has multiple Retain operators of
  * the same kind.  Check that this doesn't happen. */
@@ -21,12 +22,12 @@ public class CheckRetain extends CircuitVisitor {
     @Override
     public void postorder(DBSPIntegrateTraceRetainKeysOperator retain) {
         DBSPOperator left = retain.left();
-        for (CircuitGraph.Port dest: graph.getDestinations(left)) {
-            if (dest.operator() == retain)
+        for (Port<DBSPOperator> dest: graph.getSuccessors(left)) {
+            if (dest.node == retain)
                 continue;
-            if (dest.operator().is(DBSPIntegrateTraceRetainKeysOperator.class)) {
+            if (dest.node.is(DBSPIntegrateTraceRetainKeysOperator.class)) {
                 throw new InternalCompilerError("Operator " + left + " has two RetainKeys policies:"
-                + retain + " and " + dest.operator());
+                + retain + " and " + dest.node);
             }
         }
     }
@@ -34,12 +35,12 @@ public class CheckRetain extends CircuitVisitor {
     @Override
     public void postorder(DBSPIntegrateTraceRetainValuesOperator retain) {
         DBSPOperator left = retain.left();
-        for (CircuitGraph.Port dest: graph.getDestinations(left)) {
-            if (dest.operator() == retain)
+        for (Port<DBSPOperator> dest: graph.getSuccessors(left)) {
+            if (dest.node == retain)
                 continue;
-            if (dest.operator().is(DBSPIntegrateTraceRetainValuesOperator.class)) {
+            if (dest.node.is(DBSPIntegrateTraceRetainValuesOperator.class)) {
                 throw new InternalCompilerError("Operator " + left + " has two RetainValues policies"
-                + retain + " and " + dest.operator());
+                + retain + " and " + dest.node);
             }
         }
     }

@@ -6,6 +6,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesOpera
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.util.Logger;
+import org.dbsp.util.graph.Port;
 
 import java.util.HashMap;
 import java.util.HashSet;
@@ -63,25 +64,25 @@ public class CSE extends Repeat {
         }
 
         boolean hasGcSuccessor(DBSPOperator operator) {
-            for (CircuitGraph.Port succ: this.graph.getDestinations(operator)) {
-                if (succ.operator().is(DBSPIntegrateTraceRetainKeysOperator.class) ||
-                        succ.operator().is(DBSPIntegrateTraceRetainValuesOperator.class))
+            for (Port<DBSPOperator> succ: this.graph.getSuccessors(operator)) {
+                if (succ.node.is(DBSPIntegrateTraceRetainKeysOperator.class) ||
+                        succ.node.is(DBSPIntegrateTraceRetainValuesOperator.class))
                     // only input 0 of these operators affects the GC
-                        return succ.input() == 0;
+                        return succ.port == 0;
             }
             return false;
         }
 
         @Override
         public void postorder(DBSPOperator operator) {
-            List<CircuitGraph.Port> destinations = this.graph.getDestinations(operator);
+            List<Port<DBSPOperator>> destinations = this.graph.getSuccessors(operator);
             // Compare every pair of destinations
             for (int i = 0; i < destinations.size(); i++) {
-                DBSPOperator base = destinations.get(i).operator();
+                DBSPOperator base = destinations.get(i).node;
                 if (hasGcSuccessor(base))
                     continue;
                 for (int j = i + 1; j < destinations.size(); j++) {
-                    DBSPOperator compare = destinations.get(j).operator();
+                    DBSPOperator compare = destinations.get(j).node;
                     if (this.canonical.containsKey(compare))
                         // Already found a canonical representative
                         continue;

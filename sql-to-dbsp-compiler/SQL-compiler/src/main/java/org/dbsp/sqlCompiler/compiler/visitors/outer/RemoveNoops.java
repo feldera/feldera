@@ -5,6 +5,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.GCOperator;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.util.Linq;
+import org.dbsp.util.graph.Port;
 
 import java.util.List;
 
@@ -19,8 +20,8 @@ public class RemoveNoops extends CircuitCloneVisitor {
 
     @Override
     public void postorder(DBSPNoopOperator operator) {
-        List<CircuitGraph.Port> destinations = this.graph.getDestinations(operator);
-        boolean keep = Linq.any(destinations, d -> d.operator().is(GCOperator.class));
+        List<Port<DBSPOperator>> destinations = this.graph.getSuccessors(operator);
+        boolean keep = Linq.any(destinations, d -> d.node.is(GCOperator.class));
         if (keep) {
             super.postorder(operator);
         } else {

@@ -27,7 +27,7 @@ public final class DBSPIntegrateTraceRetainKeysOperator
         super(node, "integrate_trace_retain_keys", expression, data.getType(), data.isMultiset, data, control);
     }
 
-    /** Create an operator to retain keys and returns it.  May return null if the keys contain no fields. */
+    /** Create a operator to retain keys and returns it.  May return null if the keys contain no fields. */
     @Nullable
     public static DBSPIntegrateTraceRetainKeysOperator create(
             CalciteObject node, DBSPOperator data, IMaybeMonotoneType dataProjection, DBSPOperator control) {

@@ -178,25 +178,14 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs {
     public void postorder(DBSPApplyOperator operator) { this.replace(operator); }
 
     @Override
+    public void postorder(DBSPDeltaOperator operator) { this.replace(operator); }
+
+    @Override
     public void postorder(DBSPApply2Operator operator) { this.replace(operator); }
 
     @Override
     public void postorder(DBSPDelayOperator operator) {
-        if (operator.output == null) {
-            this.replace(operator);
-            return;
-        }
-        // If the delay has an output we must replace it too.
-        this.visited.add(operator);
-        List<DBSPOperator> sources = Linq.map(operator.inputs, this::mapped);
-        DBSPOperator output = this.mapped(operator.output);
-        DBSPOperator result = operator;
-        if (operator.inputsDiffer(sources) || output != operator.output) {
-            result = new DBSPDelayOperator(
-                    operator.getNode(), operator.function,
-                    sources.get(0), output.to(DBSPDelayOutputOperator.class));
-        }
-        this.map(operator, result);
+        this.replace(operator);
     }
 
     @Override
@@ -287,9 +276,6 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs {
     public void postorder(DBSPViewOperator operator) {
         this.replace(operator);
     }
-
-    @Override
-    public void postorder(DBSPDelayOutputOperator operator) { this.replace(operator); }
 
     @Override
     public void postorder(DBSPSourceMultisetOperator operator) {

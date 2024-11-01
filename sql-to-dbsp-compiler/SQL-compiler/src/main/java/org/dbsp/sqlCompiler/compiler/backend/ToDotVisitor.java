@@ -27,14 +27,12 @@ import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.DBSPPartialCircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperatorBase;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPDelayOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPDelayOutputOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinFilterMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateWithWaterlineOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceBaseOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPUnaryOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceViewDeclarationOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWaterlineOperator;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
@@ -84,17 +82,17 @@ public class ToDotVisitor extends CircuitVisitor implements IWritesLogs {
     @Override
     public VisitDecision preorder(DBSPSourceBaseOperator node) {
         String name = node.operation;
-        if (node.is(DBSPDelayOutputOperator.class))
-            name = "delay";
-        this.stream.append(node.getOutputName())
-                .append(" [ shape=box style=filled fillcolor=lightgrey label=\"")
-                .append(node.getIdString())
-                .append(isMultiset(node))
-                .append(annotations(node))
-                .append(" ")
-                .append(name)
-                .append("\" ]")
-                .newline();
+        if (!node.is(DBSPSourceViewDeclarationOperator.class)) {
+            this.stream.append(node.getOutputName())
+                    .append(" [ shape=box style=filled fillcolor=lightgrey label=\"")
+                    .append(node.getIdString())
+                    .append(isMultiset(node))
+                    .append(annotations(node))
+                    .append(" ")
+                    .append(name)
+                    .append("\" ]")
+                    .newline();
+        }
         return VisitDecision.STOP;
     }
 
@@ -120,6 +118,11 @@ public class ToDotVisitor extends CircuitVisitor implements IWritesLogs {
 
     void addInputs(DBSPOperator node) {
         for (DBSPOperator input : node.inputs) {
+            if (input.is(DBSPSourceViewDeclarationOperator.class)) {
+                assert this.circuit != null;
+                input = input.to(DBSPSourceViewDeclarationOperator.class)
+                        .getCorrespondingView(this.circuit.circuit);
+            }
             this.stream.append(input.getOutputName())
                     .append(" -> ")
                     .append(node.getOutputName());
@@ -133,21 +136,6 @@ public class ToDotVisitor extends CircuitVisitor implements IWritesLogs {
             this.stream.append(";")
                     .newline();
         }
-    }
-
-    @Override
-    public VisitDecision preorder(DBSPDelayOperator node) {
-        DBSPOperator input = node.input();
-        if (node.output != null) {
-            // Add the edge which isn't represented explicitly in the graph
-            this.stream.append(input.getOutputName())
-                    .append(" -> ")
-                    .append(node.output.getOutputName())
-                    .append(";")
-                    .newline();
-            return VisitDecision.STOP;
-        }
-        return this.preorder((DBSPUnaryOperator) node);
     }
 
     @Override
@@ -301,6 +289,7 @@ public class ToDotVisitor extends CircuitVisitor implements IWritesLogs {
         this.stream.append("{")
                 .increase();
         this.stream.append("ordering=\"in\"").newline();
+        this.stream.append("splines=\"ortho\"").newline();
         return VisitDecision.CONTINUE;
     }
 

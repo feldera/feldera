@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.circuit.operator;
 
+import org.dbsp.sqlCompiler.circuit.DBSPPartialCircuit;
 import org.dbsp.sqlCompiler.compiler.TableMetadata;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -13,6 +14,7 @@ import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 
 import javax.annotation.Nullable;
 import java.util.List;
+import java.util.Objects;
 
 /** Operator temporarily used in the creation of recursive circuits.
  * Represents a view that is used in the defnition of a set of other views. */
@@ -52,6 +54,16 @@ public final class DBSPSourceViewDeclarationOperator
                     this.getNode(), this.sourceName, this.getOutputZSetType(), this.originalRowType,
                     this.metadata, this.tableName);
         return this;
+    }
+
+    public String originalViewName() {
+        return this.tableName.replace("-port", "");
+    }
+
+    /** Get the corresponding view operator for this view declaration */
+    public DBSPViewOperator getCorrespondingView(DBSPPartialCircuit circuit) {
+        DBSPViewOperator view = circuit.getView(this.originalViewName());
+        return Objects.requireNonNull(view);
     }
 
     @Override

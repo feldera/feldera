@@ -11,6 +11,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.Passes;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Logger;
+import org.dbsp.util.graph.Port;
 
 import javax.annotation.Nullable;
 import java.util.HashMap;
@@ -46,27 +47,27 @@ public class MergeGC extends Passes {
         DBSPOperator getSingleGcSuccessor(DBSPOperator operator) {
             if (!operator.is(DBSPNoopOperator.class))
                 return null;
-            List<CircuitGraph.Port> baseDests = Linq.where(
-                    this.graph.getDestinations(operator),
-                    p -> (p.operator().is(GCOperator.class) && p.input() == 0));
+            List<Port<DBSPOperator>> baseDests = Linq.where(
+                    this.graph.getSuccessors(operator),
+                    p -> (p.node.is(GCOperator.class) && p.port == 0));
             if (baseDests.size() != 1)
                 return null;
-            CircuitGraph.Port port = baseDests.get(0);
-            return port.operator();
+            Port<DBSPOperator> port = baseDests.get(0);
+            return port.node;
         }
 
         @Override
         public void postorder(DBSPOperator operator) {
-            List<CircuitGraph.Port> destinations = this.graph.getDestinations(operator);
+            List<Port<DBSPOperator>> destinations = this.graph.getSuccessors(operator);
             // Compare every pair of destinations
             for (int i = 0; i < destinations.size(); i++) {
-                DBSPOperator base = destinations.get(i).operator();
+                DBSPOperator base = destinations.get(i).node;
                 DBSPOperator gc0 = this.getSingleGcSuccessor(base);
                 if (gc0 == null)
                     continue;
 
                 for (int j = i + 1; j < destinations.size(); j++) {
-                    DBSPOperator compare = destinations.get(j).operator();
+                    DBSPOperator compare = destinations.get(j).node;
                     if (this.canonical.containsKey(compare))
                         // Already found a canonical representative
                         continue;

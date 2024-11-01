@@ -59,6 +59,7 @@ public final class DBSPPartialCircuit extends DBSPNode implements IDBSPOuterNode
     /** Maps indexed z-set table names to the corresponding deindex operator */
     public final IErrorReporter errorReporter;
     public final ProgramMetadata metadata;
+    // Used to detect duplicate insertions (always a bug).
     final Set<DBSPOperator> operators = new HashSet<>();
 
     public DBSPPartialCircuit(IErrorReporter errorReporter, ProgramMetadata metadata) {
