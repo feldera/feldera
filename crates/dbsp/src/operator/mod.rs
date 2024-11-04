@@ -7,11 +7,11 @@
 //!
 //! Code that uses DBSP hardly needs to work directly with this module. Instead,
 //! use [Stream](crate::Stream) methods to instantiate operators.
+pub(crate) mod apply;
 pub mod apply2;
 pub mod apply3;
+pub mod apply_n;
 pub mod communication;
-
-pub(crate) mod apply;
 pub(crate) mod inspect;
 
 mod condition;
