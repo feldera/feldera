@@ -199,3 +199,96 @@ export function count<T>(arr: T[], pred: (v: T) => boolean | null | undefined) {
   }
   return count
 }
+
+export function findIndex<T, S>(
+  arr: T[],
+  predicate: (state: S, value: T, index: number, obj: T[]) => [boolean, S],
+  initialState: S
+) {
+  let state = initialState
+  return arr.findIndex((value, index, obj) => {
+    let res: boolean
+    ;[res, state] = predicate(state, value, index, obj)
+    return res
+  })
+}
+
+/**
+ * @param arr Numbers sorted in ascending order
+ * @param target
+ * @returns -1 if value is not found
+ */
+export function binarySearchNumber(arr: number[], target: number) {
+  let left = 0
+  let right = arr.length - 1
+
+  while (left <= right) {
+    const mid = Math.floor((left + right) / 2)
+
+    if (arr[mid] === target) {
+    }
+    if (arr[mid] < target) {
+      left = mid + 1
+    } else if (arr[mid] === target) {
+      return mid
+    } else {
+      right = mid - 1
+    }
+  }
+
+  return -1
+}
+
+/**
+ * Finds the index of the smallest element in a sorted array that is greater-than-or-equal to the target.
+ * If no such element exists (i.e., all elements are less than the target), returns -1.
+ *
+ * @param arr - A sorted array of numbers in ascending order
+ * @param target - The target number to search for
+ * @returns The index of the minimum value in arr that is >= target, or -1 if no such value exists.
+ */
+export function binarySearchMin(arr: number[], target: number): number {
+  let left = 0
+  let right = arr.length - 1
+  let result = -1
+
+  while (left <= right) {
+    const mid = Math.floor((left + right) / 2)
+
+    if (arr[mid] >= target) {
+      result = mid // We found a candidate, move left to find a smaller valid index
+      right = mid - 1
+    } else {
+      left = mid + 1 // Mid element is too small, move right
+    }
+  }
+
+  return result
+}
+
+/**
+ * Finds the index of the largest element in a sorted array that is less-than-or-equal to the target.
+ * If no such element exists (i.e., all elements are greater than the target), returns -1.
+ *
+ * @param arr - A sorted array of numbers in ascending order
+ * @param target - The target number to search for
+ * @returns The index of the maximum value in arr that is <= target, or -1 if no such value exists.
+ */
+export function binarySearchMax(arr: number[], target: number): number {
+  let left = 0
+  let right = arr.length - 1
+  let result = -1
+
+  while (left <= right) {
+    const mid = Math.floor((left + right) / 2)
+
+    if (arr[mid] <= target) {
+      result = mid // We found a candidate, move right to find a larger valid index
+      left = mid + 1
+    } else {
+      right = mid - 1 // Mid element is too large, move left
+    }
+  }
+
+  return result
+}

@@ -84,6 +84,7 @@
     "svelte-echarts": "^1.0.0-rc3",
     "svelte-monaco": "^0.4.0",
     "svelte-mq-store": "^2.2.21",
+    "svelte-virtual": "^1.0.0-next.21",
     "svelte-virtuallists": "^1.3.9",
     "sveltekit-superforms": "^2.20.0",
     "sveltekit-top-loader": "^0.0.4",

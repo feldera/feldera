@@ -1,4 +1,5 @@
 <script lang="ts" module>
+  import type { ChangeStreamData, Row } from '$lib/components/pipelines/editor/ChangeStream.svelte'
   type RelationInfo = {
     pipelineName: string
     relationName: string
@@ -7,17 +8,41 @@
     selected: boolean
     cancelStream?: () => void
   }
+
   let pipelinesRelations = $state<
     Record<string, Record<string, ExtraType & { type: 'tables' | 'views' }>>
   >({})
   const pipelineActionCallbacks = usePipelineActionCallbacks()
-  type Payload = { insert: XgressRecord } | { delete: XgressRecord } | { skippedBytes: number }
-  type Row = { relationName: string } & Payload
-  let changeStream: Record<string, { rows: Row[]; totalSkippedBytes: number }> = {} // Initialize row array
+  let changeStream: Record<string, ChangeStreamData> = {} // Initialize row array
   // Separate getRows as a $state avoids burdening rows array itself with reactivity overhead
   let getChangeStream = $state(() => changeStream)
 
   const bufferSize = 10000
+  const filterOutRows = (rows: Row[], headers: number[], relationName: string) => {
+    let batchRelationName: string | undefined = undefined
+    const newRows = rows.filter((row) => {
+      if ('skippedBytes' in row && batchRelationName === undefined) {
+        return true
+      }
+      if ('relationName' in row) {
+        batchRelationName = row.relationName
+      }
+      return batchRelationName !== relationName
+    })
+    const newHeaders = (() => {
+      const res: number[] = []
+      for (let i = 0; i < newRows.length; ++i) {
+        if ('relationName' in newRows[i]) {
+          res.push(i)
+        }
+      }
+      return res
+    })()
+    return {
+      rows: newRows,
+      headers: newHeaders
+    }
+  }
   const startReadingStream = (pipelineName: string, relationName: string) => {
     const handle = relationEgressStream(pipelineName, relationName).then((stream) => {
       if ('message' in stream) {
@@ -27,14 +52,43 @@
       const { cancel } = parseCancellable(
         stream,
         {
-          pushChanges: pushAsCircularBuffer(
-            () => changeStream[pipelineName].rows,
-            bufferSize,
-            (change: Payload) => ({
-              ...change,
-              relationName
-            })
-          ),
+          pushChanges: (rows: XgressEntry[]) => {
+            const initialLen = changeStream[pipelineName].rows.length
+            const lastRelationName = ((headerIdx) =>
+              headerIdx !== undefined
+                ? ((header) => (header && 'relationName' in header ? header.relationName : null))(
+                    changeStream[pipelineName].rows[headerIdx]
+                  )
+                : null)(changeStream[pipelineName].headers.at(-1))
+            const offset = pushAsCircularBuffer(
+              () => changeStream[pipelineName].rows,
+              bufferSize,
+              (v: Row) => v
+            )(
+              [
+                ...(relationName !== lastRelationName
+                  ? ([
+                      {
+                        relationName,
+                        columns: Object.keys(
+                          ((row) => ('insert' in row ? row.insert : row.delete))(rows[0])
+                        ).map((name) => ({
+                          name,
+                          case_sensitive: false,
+                          columntype: { nullable: true }
+                        }))
+                      }
+                    ] as Row[])
+                  : [])
+              ].concat(rows)
+            )
+            if (relationName !== lastRelationName) {
+              changeStream[pipelineName].headers.push(initialLen)
+            }
+            changeStream[pipelineName].headers = changeStream[pipelineName].headers
+              .map((i) => i - offset)
+              .filter((i) => i >= 0)
+          },
           onBytesSkipped: (skippedBytes) => {
             pushAsCircularBuffer(
               () => changeStream[pipelineName].rows,
@@ -46,7 +100,7 @@
           onParseEnded: () =>
             (pipelinesRelations[pipelineName][relationName].cancelStream = undefined)
         },
-        new CustomJSONParserTransformStream<Payload>({
+        new CustomJSONParserTransformStream<XgressEntry>({
           paths: ['$.json_data.*'],
           separator: ''
         }),
@@ -62,9 +116,12 @@
       handle.then((cancel) => {
         cancel?.()
         pipelinesRelations[pipelineName][relationName].cancelStream = undefined
-        changeStream[pipelineName].rows = changeStream[pipelineName].rows.filter(
-          (row) => row.relationName !== relationName
-        )
+        ;({ rows: changeStream[pipelineName].rows, headers: changeStream[pipelineName].headers } =
+          filterOutRows(
+            changeStream[pipelineName].rows,
+            changeStream[pipelineName].headers,
+            relationName
+          ))
         getChangeStream = () => changeStream
       })
     }
@@ -74,13 +131,13 @@
       return
     }
     pipelinesRelations[pipelineName] = {}
-    changeStream[pipelineName] = { rows: [], totalSkippedBytes: 0 }
+    changeStream[pipelineName] = { rows: [], headers: [], totalSkippedBytes: 0 }
     pipelineActionCallbacks.add(pipelineName, 'start_paused', async () => {
       const relations = Object.entries(pipelinesRelations[pipelineName])
         .filter((relation) => relation[1].selected)
         .map((relation) => relation[0])
       for (const relationName of relations) {
-        changeStream[pipelineName] = { rows: [], totalSkippedBytes: 0 } // Clear row buffer when starting pipeline again
+        changeStream[pipelineName] = { rows: [], headers: [], totalSkippedBytes: 0 } // Clear row buffer when starting pipeline again
         getChangeStream = () => changeStream
         if (pipelinesRelations[pipelineName][relationName].cancelStream) {
           return
@@ -229,9 +286,14 @@
                 } else {
                   pipelinesRelations[pipelineName][relation.relationName].cancelStream?.()
                   pipelinesRelations[pipelineName][relation.relationName].cancelStream = undefined
-                  changeStream[pipelineName].rows = changeStream[pipelineName].rows.filter(
-                    (row) => row.relationName !== relation.relationName
-                  )
+                  ;({
+                    rows: changeStream[pipelineName].rows,
+                    headers: changeStream[pipelineName].headers
+                  } = filterOutRows(
+                    changeStream[pipelineName].rows,
+                    changeStream[pipelineName].headers,
+                    relation.relationName
+                  ))
                   getChangeStream = () => changeStream
                 }
               }}
