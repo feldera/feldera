@@ -23,15 +23,16 @@ public final class DBSPIntegrateTraceRetainKeysOperator
 {
     public DBSPIntegrateTraceRetainKeysOperator(
             CalciteObject node, DBSPExpression expression,
-            DBSPOperator data, DBSPOperator control) {
-        super(node, "integrate_trace_retain_keys", expression, data.getType(), data.isMultiset, data, control);
+            OperatorPort data, OperatorPort control) {
+        super(node, "integrate_trace_retain_keys", expression,
+                data.outputType(), data.isMultiset(), data, control);
     }
 
     /** Create a operator to retain keys and returns it.  May return null if the keys contain no fields. */
     @Nullable
     public static DBSPIntegrateTraceRetainKeysOperator create(
-            CalciteObject node, DBSPOperator data, IMaybeMonotoneType dataProjection, DBSPOperator control) {
-        DBSPType controlType = control.getType();
+            CalciteObject node, OperatorPort data, IMaybeMonotoneType dataProjection, OperatorPort control) {
+        DBSPType controlType = control.outputType();
         assert controlType.is(DBSPTypeTupleBase.class) : "Control type is not a tuple: " + controlType;
         DBSPTypeTupleBase controlTuple = controlType.to(DBSPTypeTupleBase.class);
         assert controlTuple.size() == 2;
@@ -43,7 +44,7 @@ public final class DBSPIntegrateTraceRetainKeysOperator
         DBSPExpression compare;
         DBSPVariablePath controlArg = controlType.ref().var();
         DBSPExpression compare0 = controlArg.deref().field(0).not();
-        if (data.outputType.is(DBSPTypeIndexedZSet.class)) {
+        if (data.outputType().is(DBSPTypeIndexedZSet.class)) {
             DBSPType keyType = data.getOutputIndexedZSetType().keyType;
             DBSPVariablePath dataArg = keyType.var();
             param = new DBSPParameter(dataArg.variable, dataArg.getType().ref());
@@ -73,14 +74,14 @@ public final class DBSPIntegrateTraceRetainKeysOperator
     }
 
     @Override
-    public DBSPOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
+    public DBSPSimpleOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
         return new DBSPIntegrateTraceRetainKeysOperator(
                 this.getNode(), Objects.requireNonNull(expression),
                 this.left(), this.right()).copyAnnotations(this);
     }
 
     @Override
-    public DBSPOperator withInputs(List<DBSPOperator> newInputs, boolean force) {
+    public DBSPSimpleOperator withInputs(List<OperatorPort> newInputs, boolean force) {
         assert newInputs.size() == 2: "Expected 2 inputs, got " + newInputs.size();
         if (force || this.inputsDiffer(newInputs))
             return new DBSPIntegrateTraceRetainKeysOperator(

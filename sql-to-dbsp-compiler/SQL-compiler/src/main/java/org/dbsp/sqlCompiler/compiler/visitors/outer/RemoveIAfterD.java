@@ -2,8 +2,9 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDifferentiateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPUnaryOperator;
+import org.dbsp.sqlCompiler.circuit.operator.OperatorPort;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 
 /** Remove I immediately after D.
@@ -15,10 +16,10 @@ public class RemoveIAfterD extends CircuitCloneVisitor {
 
     @Override
     public void postorder(DBSPIntegrateOperator operator) {
-        DBSPOperator source = this.mapped(operator.input());
-        if (source.is(DBSPDifferentiateOperator.class)) {
-            DBSPUnaryOperator integral = source.to(DBSPUnaryOperator.class);
-            this.map(operator, integral.input(), false);  // It should already be there
+        OperatorPort source = this.mapped(operator.input());
+        if (source.node().is(DBSPDifferentiateOperator.class)) {
+            DBSPUnaryOperator integral = source.node().to(DBSPUnaryOperator.class);
+            this.map(operator.getOutput(), integral.input(), false);  // It should already be there
             return;
         }
         super.postorder(operator);

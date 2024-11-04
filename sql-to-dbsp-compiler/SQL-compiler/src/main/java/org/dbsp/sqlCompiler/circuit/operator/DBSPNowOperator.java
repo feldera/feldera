@@ -14,7 +14,7 @@ import javax.annotation.Nullable;
 import java.util.List;
 
 /** Operator that generates the NOW() timestamp */
-public final class DBSPNowOperator extends DBSPOperator {
+public final class DBSPNowOperator extends DBSPSimpleOperator {
     // zset!(Tup1::new(now()))
     static DBSPExpression createFunction(CalciteObject node) {
         return new DBSPZSetLiteral(
@@ -38,12 +38,12 @@ public final class DBSPNowOperator extends DBSPOperator {
     }
 
     @Override
-    public DBSPOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
+    public DBSPSimpleOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
         return this;
     }
 
     @Override
-    public DBSPOperator withInputs(List<DBSPOperator> newInputs, boolean force) {
+    public DBSPSimpleOperator withInputs(List<OperatorPort> newInputs, boolean force) {
         return this;
     }
 }

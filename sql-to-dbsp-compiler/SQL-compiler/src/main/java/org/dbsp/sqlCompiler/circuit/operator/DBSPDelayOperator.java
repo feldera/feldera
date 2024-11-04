@@ -9,20 +9,18 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import javax.annotation.Nullable;
 import java.util.List;
 
-/**
- * The z^-1 operator from DBSP.
- * If the function is specified, it is the initial value produced by the delay.
- */
+/** The z^-1 operator from DBSP.
+ * If the function is specified, it is the initial value produced by the delay. */
 public final class DBSPDelayOperator extends DBSPUnaryOperator {
-    public DBSPDelayOperator(CalciteObject node, @Nullable DBSPExpression initial, DBSPOperator source) {
+    public DBSPDelayOperator(CalciteObject node, @Nullable DBSPExpression initial, OperatorPort source) {
         super(node, initial == null ? "delay" : "delay_with_initial_value",
-                initial, source.outputType, source.isMultiset, source);
-        assert initial == null || initial.getType().sameType(source.outputType) :
-                "Delay input has type " + source.outputType + " but initial value has type " + initial.getType();
+                initial, source.outputType(), source.isMultiset(), source);
+        assert initial == null || initial.getType().sameType(source.outputType()) :
+                "Delay input has type " + source.outputType() + " but initial value has type " + initial.getType();
     }
 
     @Override
-    public DBSPOperator withInputs(List<DBSPOperator> newInputs, boolean force) {
+    public DBSPSimpleOperator withInputs(List<OperatorPort> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPDelayOperator(this.getNode(), this.function, newInputs.get(0))
                     .copyAnnotations(this);
@@ -30,7 +28,7 @@ public final class DBSPDelayOperator extends DBSPUnaryOperator {
     }
 
     @Override
-    public DBSPOperator withFunction(@Nullable DBSPExpression function, DBSPType unusedOutputType) {
+    public DBSPSimpleOperator withFunction(@Nullable DBSPExpression function, DBSPType unusedOutputType) {
         return new DBSPDelayOperator(this.getNode(), function, this.input())
                 .copyAnnotations(this);
     }

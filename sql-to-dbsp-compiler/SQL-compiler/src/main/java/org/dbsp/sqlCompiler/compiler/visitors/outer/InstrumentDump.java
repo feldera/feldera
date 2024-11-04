@@ -18,14 +18,14 @@ import java.util.function.Predicate;
 public class InstrumentDump extends CircuitCloneVisitor {
     /** When this predicate returns true, the corresponding operator
      * is instrumented with a dump. */
-    public final Predicate<DBSPOperator> instrument;
+    public final Predicate<DBSPSimpleOperator> instrument;
 
-    public InstrumentDump(IErrorReporter reporter, Predicate<DBSPOperator> instrument) {
+    public InstrumentDump(IErrorReporter reporter, Predicate<DBSPSimpleOperator> instrument) {
         super(reporter, false);
         this.instrument = instrument;
     }
 
-    public void instrument(DBSPOperator operator) {
+    public void instrument(DBSPSimpleOperator operator) {
         if (operator.is(DBSPSinkOperator.class)) {
             super.replace(operator);
             return;
@@ -40,15 +40,15 @@ public class InstrumentDump extends CircuitCloneVisitor {
             return;
         }
 
-        List<DBSPOperator> inputs = Linq.map(operator.inputs, this::mapped);
-        DBSPOperator input = operator.withInputs(inputs, false);
+        List<OperatorPort> inputs = Linq.map(operator.inputs, this::mapped);
+        DBSPSimpleOperator input = operator.withInputs(inputs, false);
         this.addOperator(input);
         DBSPTypeZSet zset = type.to(DBSPTypeZSet.class);
         DBSPVariablePath row = new DBSPVariablePath(zset.elementType.ref());
         DBSPExpression dump = new DBSPApplyExpression(operator.getNode(), "dump", zset.elementType,
                 new DBSPStringLiteral(Long.toString(operator.id)), row);
         DBSPExpression function = dump.closure(row.asParameter());
-        DBSPOperator map = new DBSPMapOperator(operator.getNode(), function, zset, input);
+        DBSPSimpleOperator map = new DBSPMapOperator(operator.getNode(), function, zset, input.getOutput());
         this.map(operator, map);
     }
 

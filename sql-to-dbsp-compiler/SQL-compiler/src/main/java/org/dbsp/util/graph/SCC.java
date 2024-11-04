@@ -43,8 +43,8 @@ public class SCC<Node> {
             Utilities.putNew(this.component, this.count, new ArrayList<>());
         this.component.get(this.count).add(v);
         for (Port<Node> w : graph.getSuccessors(v)) {
-            if (!this.marked.contains(w.node))
-                this.dfs(graph, w.node);
+            if (!this.marked.contains(w.node()))
+                this.dfs(graph, w.node());
         }
     }
 }

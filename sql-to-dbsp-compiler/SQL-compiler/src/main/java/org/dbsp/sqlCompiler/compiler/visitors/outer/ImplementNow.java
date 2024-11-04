@@ -9,12 +9,13 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNowOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPUnaryOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWaterlineOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
+import org.dbsp.sqlCompiler.circuit.operator.OperatorPort;
 import org.dbsp.sqlCompiler.compiler.ICompilerComponent;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
@@ -249,7 +250,7 @@ public class ImplementNow extends Passes {
             this.compiler = compiler;
         }
 
-        DBSPOperator createJoin(DBSPOperator input, DBSPUnaryOperator operator) {
+        DBSPSimpleOperator createJoin(DBSPSimpleOperator input, DBSPUnaryOperator operator) {
             DBSPType inputType = input.getOutputZSetElementType();
             DBSPVariablePath var = inputType.ref().var();
             DBSPExpression indexFunction = new DBSPRawTupleExpression(
@@ -257,7 +258,7 @@ public class ImplementNow extends Passes {
                     var.deref().applyClone());
             DBSPMapIndexOperator index = new DBSPMapIndexOperator(
                     operator.getNode(), indexFunction.closure(var),
-                    TypeCompiler.makeIndexedZSet(new DBSPTypeTuple(), inputType), input);
+                    TypeCompiler.makeIndexedZSet(new DBSPTypeTuple(), inputType), input.getOutput());
             this.addOperator(index);
 
             // Join with 'indexedNow'
@@ -271,8 +272,8 @@ public class ImplementNow extends Passes {
             DBSPExpression joinFunction = new DBSPTupleExpression(fields, false)
                     .closure(key, left, right);
             assert nowIndexed != null;
-            DBSPOperator result = new DBSPStreamJoinOperator(operator.getNode(), joinType,
-                        joinFunction, operator.isMultiset, index, nowIndexed);
+            DBSPSimpleOperator result = new DBSPStreamJoinOperator(operator.getNode(), joinType,
+                        joinFunction, operator.isMultiset, index.getOutput(), nowIndexed.getOutput());
             this.addOperator(result);
             return result;
         }
@@ -283,10 +284,11 @@ public class ImplementNow extends Passes {
             DBSPExpression function = operator.getFunction();
             cn.apply(function);
             if (cn.found()) {
-                DBSPOperator join = this.createJoin(operator.input(), operator);
+                DBSPSimpleOperator join = this.createJoin(operator.input().simpleNode(), operator);
                 RewriteNowClosure rn = new RewriteNowClosure(this.errorReporter);
                 function = rn.apply(function).to(DBSPExpression.class);
-                DBSPOperator result = new DBSPMapOperator(operator.getNode(), function, operator.getOutputZSetType(), join);
+                DBSPSimpleOperator result = new DBSPMapOperator(
+                        operator.getNode(), function, operator.getOutputZSetType(), join.getOutput());
                 this.map(operator, result);
             } else {
                 super.postorder(operator);
@@ -636,15 +638,15 @@ public class ImplementNow extends Passes {
             return analyzer.comparisons;
         }
 
-        public DBSPOperator getNow() {
+        public DBSPSimpleOperator getNow() {
             assert this.nowIndexed != null;
-            return this.nowIndexed.inputs.get(0);
+            return this.nowIndexed.inputs.get(0).simpleNode();
         }
 
-        public DBSPOperator flattenNow() {
+        public DBSPSimpleOperator flattenNow() {
             // An operator that produces a scalar value of the now input
             // (not a ZSet, but a single scalar).
-            DBSPOperator source = this.getNow();
+            DBSPSimpleOperator source = this.getNow();
             DBSPVariablePath t = source.getOutputZSetElementType().ref().var();
             // We know that the output type of the source is Zset<Tup1<Timestamp>>
             DBSPTypeTimestamp type = ContainsNow.timestampType();
@@ -657,7 +659,7 @@ public class ImplementNow extends Passes {
             DBSPWaterlineOperator waterline = new DBSPWaterlineOperator(
                     source.getNode(), min.closure(),
                     timestampTuple.closure(parameter, new DBSPTypeRawTuple().ref().var().asParameter()),
-                    max, source);
+                    max, source.getOutput());
             this.addOperator(waterline);
             return waterline;
         }
@@ -690,15 +692,15 @@ public class ImplementNow extends Passes {
          * @param comparisons A list of compatible comparisons that can be compiled into a window.
          * @return            An operator whose output is the result of the filtering.
          */
-        DBSPOperator implementTemporalFilter(DBSPFilterOperator operator,
-                                             DBSPOperator source,
-                                             TemporalFilterList comparisons) {
+        DBSPSimpleOperator implementTemporalFilter(DBSPFilterOperator operator,
+                                                   DBSPSimpleOperator source,
+                                                   TemporalFilterList comparisons) {
             // Now input comes from here
-            DBSPOperator flattenNow = this.flattenNow();
+            DBSPSimpleOperator flattenNow = this.flattenNow();
             WindowBounds bounds = comparisons.getWindowBounds(this.errorReporter);
             DBSPClosureExpression makeWindow = bounds.makeWindow();
-            DBSPOperator windowBounds = new DBSPApplyOperator(operator.getNode(),
-                    makeWindow, flattenNow, null);
+            DBSPSimpleOperator windowBounds = new DBSPApplyOperator(operator.getNode(),
+                    makeWindow, flattenNow.getOutput(), null);
             this.addOperator(windowBounds);
 
             // Filter the null timestamps away, they won't be selected anyway,
@@ -709,7 +711,7 @@ public class ImplementNow extends Passes {
             if (bounds.common.getType().mayBeNull) {
                 DBSPClosureExpression nonNull =
                         bounds.common.is_null().not().closure(param);
-                DBSPFilterOperator filter = new DBSPFilterOperator(operator.getNode(), nonNull, source);
+                DBSPFilterOperator filter = new DBSPFilterOperator(operator.getNode(), nonNull, source.getOutput());
                 this.addOperator(filter);
                 source = filter;
             }
@@ -723,22 +725,22 @@ public class ImplementNow extends Passes {
                     commonType.withMayBeNull(false),
                     inputType);
             DBSPMapIndexOperator index = new DBSPMapIndexOperator(operator.getNode(),
-                    indexFunction, ix, operator.isMultiset, source);
+                    indexFunction, ix, operator.isMultiset, source.getOutput());
             this.addOperator(index);
 
             // Apply window function.  Operator is incremental, so add D & I around it
-            DBSPDifferentiateOperator diffIndex = new DBSPDifferentiateOperator(operator.getNode(), index);
+            DBSPDifferentiateOperator diffIndex = new DBSPDifferentiateOperator(operator.getNode(), index.getOutput());
             this.addOperator(diffIndex);
             boolean lowerInclusive = bounds.lower == null || bounds.lower.inclusive;
             boolean upperInclusive = bounds.upper == null || bounds.upper.inclusive;
-            DBSPOperator window = new DBSPWindowOperator(
-                    operator.getNode(), lowerInclusive, upperInclusive, diffIndex, windowBounds);
+            DBSPSimpleOperator window = new DBSPWindowOperator(
+                    operator.getNode(), lowerInclusive, upperInclusive, diffIndex.getOutput(), windowBounds.getOutput());
             this.addOperator(window);
-            DBSPOperator winInt = new DBSPIntegrateOperator(operator.getNode(), window);
+            DBSPSimpleOperator winInt = new DBSPIntegrateOperator(operator.getNode(), window.getOutput());
             this.addOperator(winInt);
 
             // Deindex result of window
-            DBSPOperator deindex = new DBSPDeindexOperator(operator.getNode(), winInt);
+            DBSPSimpleOperator deindex = new DBSPDeindexOperator(operator.getNode(), winInt.getOutput());
             this.addOperator(deindex);
             return deindex;
         }
@@ -751,31 +753,33 @@ public class ImplementNow extends Passes {
          *                 temporal filters.
          * @return         The replacement for the original filter operator.
          */
-        DBSPOperator implementTemporalFilters(DBSPFilterOperator operator,
-                                              List<BooleanExpression> filters) {
+        DBSPSimpleOperator implementTemporalFilters(DBSPFilterOperator operator,
+                                                    List<BooleanExpression> filters) {
             int nonTemporal = Linq.where(filters, f -> f.is(NonTemporalFilter.class)).size();
             assert nonTemporal <= 1;
             if (nonTemporal == 1) {
                 // Only the last element may be a non-temporal filter
                 assert Utilities.last(filters).is(NonTemporalFilter.class);
             }
-            DBSPOperator current = this.mapped(operator.input());
+            OperatorPort current = this.mapped(operator.input());
             DBSPParameter param = operator.getClosureFunction().parameters[0];
             for (BooleanExpression expression: filters) {
                 if (expression.is(NonTemporalFilter.class)) {
                     // must be the last in the list
-                    return current;
+                    return current.simpleNode();
                 } else if (expression.is(TemporalFilterList.class)) {
-                    current = this.implementTemporalFilter(operator, current, expression.to(TemporalFilterList.class));
+                    current = this.implementTemporalFilter(
+                            operator, current.simpleNode(), expression.to(TemporalFilterList.class)).getOutput();
                 } else {
                     // NowComparison expressions have been eliminated by combineExpressions
                     DBSPExpression body = ExpressionCompiler.wrapBoolIfNeeded(expression.to(NoNow.class).noNow);
                     DBSPClosureExpression closure = body.closure(param);
-                    current = new DBSPFilterOperator(operator.getNode(), closure, current);
-                    this.addOperator(current);
+                    DBSPFilterOperator filter = new DBSPFilterOperator(operator.getNode(), closure, current);
+                    this.addOperator(filter);
+                    current = filter.getOutput();
                 }
             }
-            return current;
+            return current.simpleNode();
         }
 
         @Override
@@ -796,27 +800,27 @@ public class ImplementNow extends Passes {
             List<BooleanExpression> filters = this.findTemporalFilters(operator, closure);
             filters = combineExpressions(filters);
             assert !filters.isEmpty();
-            DBSPOperator result = this.implementTemporalFilters(operator, filters);
+            DBSPSimpleOperator result = this.implementTemporalFilters(operator, filters);
             // If the last value in the list is a NonTemporalFilter, implement that as well
             BooleanExpression leftOver = Utilities.last(filters);
 
             if (leftOver.is(NonTemporalFilter.class)) {
                 // Implement leftover as a join
-                DBSPOperator join = this.createJoin(result, operator);
+                DBSPSimpleOperator join = this.createJoin(result, operator);
                 RewriteNowClosure rn = new RewriteNowClosure(this.errorReporter);
                 function = leftOver.to(NonTemporalFilter.class).expression.closure(closure.parameters);
                 function = rn.apply(function).to(DBSPExpression.class);
-                DBSPOperator filter = new DBSPFilterOperator(operator.getNode(), function, join);
+                DBSPSimpleOperator filter = new DBSPFilterOperator(operator.getNode(), function, join.getOutput());
                 this.addOperator(filter);
                 // Drop the extra field
                 DBSPVariablePath var = filter.getOutputZSetElementType().ref().var();
                 List<DBSPExpression> fields = var.deref().allFields();
                 Utilities.removeLast(fields);
                 DBSPExpression drop = new DBSPTupleExpression(fields, false).closure(var);
-                result = new DBSPMapOperator(operator.getNode(), drop, operator.getOutputZSetType(), filter);
+                result = new DBSPMapOperator(operator.getNode(), drop, operator.getOutputZSetType(), filter.getOutput());
                 this.addOperator(result);
             }
-            this.map(operator, result, false);
+            this.map(operator.getOutput(), result.getOutput(), false);
         }
 
         @Override
@@ -829,7 +833,7 @@ public class ImplementNow extends Passes {
             // We are doing this in startVisitor because we want now to be first in topological order,
             // otherwise it may be traversed too late, after nodes that should depend on it
             // (but don't yet, because they think they are calling a function).
-            DBSPOperator now;
+            DBSPSimpleOperator now;
             boolean useSource = !this.compiler.compiler().options.ioOptions.nowStream;
             if (useSource) {
                 now = new DBSPNowOperator(circuit.getNode());
@@ -844,12 +848,12 @@ public class ImplementNow extends Passes {
                 this.visited.add(now);
                 this.addOperator(now);
 
-                DBSPDifferentiateOperator dNow = new DBSPDifferentiateOperator(circuit.getNode(), now);
+                DBSPDifferentiateOperator dNow = new DBSPDifferentiateOperator(circuit.getNode(), now.getOutput());
                 now = dNow;
                 dNow.annotations.add(new NoInc());
             }
             this.addOperator(now);
-            this.map(now, now, false);
+            this.map(now.getOutput(), now.getOutput(), false);
 
             DBSPVariablePath var = new DBSPTypeTuple(timestamp).ref().var();
             DBSPExpression indexFunction = new DBSPRawTupleExpression(
@@ -857,7 +861,7 @@ public class ImplementNow extends Passes {
                     new DBSPTupleExpression(DBSPTypeTupleBase.flatten(var.deref()), false));
             this.nowIndexed = new DBSPMapIndexOperator(
                     node, indexFunction.closure(var),
-                    TypeCompiler.makeIndexedZSet(new DBSPTypeTuple(), new DBSPTypeTuple(timestamp)), now);
+                    TypeCompiler.makeIndexedZSet(new DBSPTypeTuple(), new DBSPTypeTuple(timestamp)), now.getOutput());
             this.nowIndexed.addAnnotation(new AlwaysMonotone());
             this.addOperator(this.nowIndexed);
         }

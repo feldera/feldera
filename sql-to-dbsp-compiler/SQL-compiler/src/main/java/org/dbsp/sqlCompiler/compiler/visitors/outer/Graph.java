@@ -1,8 +1,9 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
-import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceViewDeclarationOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewOperator;
+import org.dbsp.sqlCompiler.circuit.operator.OperatorPort;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 
@@ -25,11 +26,11 @@ public class Graph extends CircuitVisitor {
     }
 
     @Override
-    public void postorder(DBSPOperator operator) {
+    public void postorder(DBSPSimpleOperator operator) {
         this.graph.addNode(operator);
         int index = 0;
-        for (DBSPOperator source: operator.inputs) {
-            this.graph.addEdge(source, operator, index++);
+        for (OperatorPort source: operator.inputs) {
+            this.graph.addEdge(source.node(), operator, index++);
         }
     }
 

@@ -25,7 +25,7 @@ public final class DBSPViewOperator
     public DBSPViewOperator(
             CalciteObject node,
             String viewName, String query, DBSPTypeStruct originalRowType,
-            ViewMetadata metadata, DBSPOperator input) {
+            ViewMetadata metadata, OperatorPort input) {
         super(node, "map", DBSPClosureExpression.id(), viewName, query,
                 originalRowType, metadata, input);
         assert metadata.size() == originalRowType.fields.size();
@@ -46,13 +46,13 @@ public final class DBSPViewOperator
     }
 
     @Override
-    public DBSPOperator withFunction(@Nullable DBSPExpression ignoredFunction, DBSPType ignoredType) {
+    public DBSPSimpleOperator withFunction(@Nullable DBSPExpression ignoredFunction, DBSPType ignoredType) {
         return new DBSPViewOperator(this.getNode(), this.viewName, this.query, this.originalRowType,
                 this.metadata, this.input()).copyAnnotations(this);
     }
 
     @Override
-    public DBSPOperator withInputs(List<DBSPOperator> newInputs, boolean force) {
+    public DBSPSimpleOperator withInputs(List<OperatorPort> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPViewOperator(
                     this.getNode(), this.viewName, this.query, this.originalRowType,

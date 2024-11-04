@@ -59,8 +59,8 @@ public final class DBSPPartitionedRollingAggregateWithWaterlineOperator
             // using the current IR, so this type is a lie.
             // See DBSPPartitionedRollingAggregateOperator.
             DBSPTypeIndexedZSet outputType,
-            DBSPOperator dataInput,
-            DBSPOperator waterlineInput) {
+            OperatorPort dataInput,
+            OperatorPort waterlineInput) {
         super(node, "partitioned_rolling_aggregate_with_waterline",
                 function, outputType, true, dataInput, waterlineInput);
         this.aggregate = aggregate;
@@ -71,7 +71,7 @@ public final class DBSPPartitionedRollingAggregateWithWaterlineOperator
     }
 
     @Override
-    public DBSPOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
+    public DBSPSimpleOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
         return new DBSPPartitionedRollingAggregateWithWaterlineOperator(
                 this.getNode(),
                 this.partitioningFunction,
@@ -81,7 +81,7 @@ public final class DBSPPartitionedRollingAggregateWithWaterlineOperator
     }
 
     @Override
-    public DBSPOperator withInputs(List<DBSPOperator> newInputs, boolean force) {
+    public DBSPSimpleOperator withInputs(List<OperatorPort> newInputs, boolean force) {
         assert newInputs.size() == 2: "Expected 2 inputs, got " + newInputs.size();
         if (force || this.inputsDiffer(newInputs))
             return new DBSPPartitionedRollingAggregateWithWaterlineOperator(

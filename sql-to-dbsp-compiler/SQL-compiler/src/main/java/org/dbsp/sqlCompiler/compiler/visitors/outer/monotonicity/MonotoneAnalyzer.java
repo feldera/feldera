@@ -1,13 +1,12 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.circuit.operator.OperatorPort;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.backend.ToDotVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.MonotoneExpression;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.AppendOnly;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitTransform;
-import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.Graph;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.OptimizeWithGraph;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.ExpandOperators;
@@ -31,12 +30,12 @@ public class MonotoneAnalyzer implements CircuitTransform, IWritesLogs {
         }
 
         @Override
-        public String getEdgeLabel(DBSPOperator source) {
-            MonotoneExpression expr = info.get(source);
+        public String getEdgeLabel(OperatorPort source) {
+            MonotoneExpression expr = this.info.get(source.simpleNode());
             if (expr != null) {
-                return source.id + " " + Monotonicity.getBodyType(expr);
+                return source.node().id + " " + Monotonicity.getBodyType(expr);
             } else {
-                return source.id + " " + super.getEdgeLabel(source);
+                return source.node().id + " " + super.getEdgeLabel(source);
             }
         }
     }

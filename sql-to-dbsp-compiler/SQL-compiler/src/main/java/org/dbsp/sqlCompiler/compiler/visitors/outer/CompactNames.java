@@ -1,7 +1,7 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
 import org.dbsp.sqlCompiler.circuit.annotation.CompactName;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 
@@ -14,7 +14,7 @@ public class CompactNames extends CircuitCloneVisitor {
     }
 
     @Override
-    public VisitDecision preorder(DBSPOperator operator) {
+    public VisitDecision preorder(DBSPSimpleOperator operator) {
         operator.addAnnotation(new CompactName("s" + id++));
         return super.preorder(operator);
     }

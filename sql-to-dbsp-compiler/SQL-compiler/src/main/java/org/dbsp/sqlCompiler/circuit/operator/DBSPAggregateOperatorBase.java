@@ -7,6 +7,7 @@ import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregate;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.util.IIndentStream;
+import org.dbsp.util.graph.Port;
 
 import javax.annotation.Nullable;
 import java.util.Objects;
@@ -23,7 +24,7 @@ public abstract class DBSPAggregateOperatorBase extends DBSPUnaryOperator {
                                         @Nullable DBSPExpression function,
                                         @Nullable DBSPAggregate aggregate,
                                         boolean multiset,
-                                        DBSPOperator source) {
+                                        OperatorPort source) {
         super(node, operation, function, outputType, multiset, source);
         this.aggregate = aggregate;
         // There are really two different representations of an aggregate operator,

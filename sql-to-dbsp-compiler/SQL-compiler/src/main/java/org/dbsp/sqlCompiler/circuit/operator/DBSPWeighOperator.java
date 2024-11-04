@@ -16,13 +16,13 @@ public final class DBSPWeighOperator extends DBSPUnaryOperator {
         return new DBSPTypeZSet(sourceType.elementType);
     }
 
-    public DBSPWeighOperator(CalciteObject node, DBSPExpression function, DBSPOperator source) {
+    public DBSPWeighOperator(CalciteObject node, DBSPExpression function, OperatorPort source) {
         super(node, "weigh", function,
                 outputType(source.getOutputIndexedZSetType()), false, source);
     }
 
     @Override
-    public DBSPOperator withInputs(List<DBSPOperator> newInputs, boolean force) {
+    public DBSPSimpleOperator withInputs(List<OperatorPort> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPWeighOperator(this.getNode(), this.getFunction(), newInputs.get(0))
                     .copyAnnotations(this);

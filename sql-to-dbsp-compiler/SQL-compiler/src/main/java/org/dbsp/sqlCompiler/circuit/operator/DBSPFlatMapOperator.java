@@ -36,7 +36,7 @@ import java.util.Objects;
 
 public final class DBSPFlatMapOperator extends DBSPUnaryOperator {
     public DBSPFlatMapOperator(CalciteObject node, DBSPExpression expression,
-                               DBSPTypeZSet outputType, boolean isMultiset, DBSPOperator input) {
+                               DBSPTypeZSet outputType, boolean isMultiset, OperatorPort input) {
         super(node, "flat_map", expression, outputType, isMultiset, input);
         this.checkArgumentFunctionType(expression, 0, input);
     }
@@ -49,7 +49,7 @@ public final class DBSPFlatMapOperator extends DBSPUnaryOperator {
     //   array_clone.clone().into_iter().map(move |e: X| ... )
     // }
     public DBSPFlatMapOperator(CalciteObject node, DBSPExpression expression,
-                               DBSPTypeZSet outputType, DBSPOperator input) {
+                               DBSPTypeZSet outputType, OperatorPort input) {
         this(node, expression, outputType, true, input);
     }
 
@@ -63,7 +63,7 @@ public final class DBSPFlatMapOperator extends DBSPUnaryOperator {
     }
 
     @Override
-    public DBSPOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
+    public DBSPSimpleOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
         return new DBSPFlatMapOperator(
                 this.getNode(), Objects.requireNonNull(expression),
                 outputType.to(DBSPTypeZSet.class), this.input())
@@ -71,7 +71,7 @@ public final class DBSPFlatMapOperator extends DBSPUnaryOperator {
     }
 
     @Override
-    public DBSPOperator withInputs(List<DBSPOperator> newInputs, boolean force) {
+    public DBSPSimpleOperator withInputs(List<OperatorPort> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPFlatMapOperator(
                     this.getNode(), this.getFunction(),

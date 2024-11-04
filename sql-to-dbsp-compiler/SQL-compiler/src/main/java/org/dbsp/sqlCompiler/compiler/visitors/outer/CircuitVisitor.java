@@ -97,7 +97,7 @@ public abstract class CircuitVisitor
     // preorder methods return 'true' when normal traversal is desired,
     // and 'false' when the traversal should stop right away at the current node.
     // base classes
-    public VisitDecision preorder(DBSPOperator node) { return VisitDecision.CONTINUE; }
+    public VisitDecision preorder(DBSPSimpleOperator node) { return VisitDecision.CONTINUE; }
 
     public void setCircuit(DBSPCircuit circuit) {
         if (this.circuit != null)
@@ -118,7 +118,7 @@ public abstract class CircuitVisitor
     public VisitDecision preorder(IDBSPOuterNode ignoredNode) { return VisitDecision.CONTINUE; }
 
     public VisitDecision preorder(DBSPUnaryOperator node) {
-        return this.preorder(node.to(DBSPOperator.class));
+        return this.preorder(node.to(DBSPSimpleOperator.class));
     }
 
     public VisitDecision preorder(DBSPIndexedTopKOperator node) {
@@ -150,7 +150,7 @@ public abstract class CircuitVisitor
     }
 
     public VisitDecision preorder(DBSPSumOperator node) {
-        return this.preorder(node.to(DBSPOperator.class));
+        return this.preorder(node.to(DBSPSimpleOperator.class));
     }
 
     public VisitDecision preorder(DBSPJoinBaseOperator node) {
@@ -194,11 +194,11 @@ public abstract class CircuitVisitor
     }
 
     public VisitDecision preorder(DBSPConstantOperator node) {
-        return this.preorder(node.to(DBSPOperator.class));
+        return this.preorder(node.to(DBSPSimpleOperator.class));
     }
 
     public VisitDecision preorder(DBSPNowOperator node) {
-        return this.preorder(node.to(DBSPOperator.class));
+        return this.preorder(node.to(DBSPSimpleOperator.class));
     }
 
     public VisitDecision preorder(DBSPMapOperator node) {
@@ -270,7 +270,7 @@ public abstract class CircuitVisitor
     }
 
     public VisitDecision preorder(DBSPSourceBaseOperator node) {
-        return this.preorder(node.to(DBSPOperator.class));
+        return this.preorder(node.to(DBSPSimpleOperator.class));
     }
 
     public VisitDecision preorder(DBSPSourceTableOperator node) {
@@ -351,12 +351,12 @@ public abstract class CircuitVisitor
 
     public void postorder(DBSPPartialCircuit ignoredCircuit) {}
 
-    public void postorder(DBSPOperator ignored) {}
+    public void postorder(DBSPSimpleOperator ignored) {}
 
     public void postorder(DBSPDeclaration ignored) {}
 
     public void postorder(DBSPUnaryOperator node) {
-        this.postorder(node.to(DBSPOperator.class));
+        this.postorder(node.to(DBSPSimpleOperator.class));
     }
 
     public void postorder(DBSPIndexedTopKOperator node) {
@@ -372,7 +372,7 @@ public abstract class CircuitVisitor
     }
 
     public void postorder(DBSPSumOperator node) {
-        this.postorder(node.to(DBSPOperator.class));
+        this.postorder(node.to(DBSPSimpleOperator.class));
     }
 
     public void postorder(DBSPJoinBaseOperator node) {
@@ -436,11 +436,11 @@ public abstract class CircuitVisitor
     }
 
     public void postorder(DBSPConstantOperator node) {
-        this.postorder(node.to(DBSPOperator.class));
+        this.postorder(node.to(DBSPSimpleOperator.class));
     }
 
     public void postorder(DBSPNowOperator node) {
-        this.postorder(node.to(DBSPOperator.class));
+        this.postorder(node.to(DBSPSimpleOperator.class));
     }
 
     public void postorder(DBSPMapOperator node) {
@@ -528,7 +528,7 @@ public abstract class CircuitVisitor
     }
 
     public void postorder(DBSPSourceBaseOperator node) {
-        this.postorder(node.to(DBSPOperator.class));
+        this.postorder(node.to(DBSPSimpleOperator.class));
     }
 
     public void postorder(DBSPSourceTableOperator node) {

@@ -2,6 +2,7 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity;
 
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNoopOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.GCOperator;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CSE;
@@ -44,37 +45,37 @@ public class MergeGC extends Passes {
         }
 
         @Nullable
-        DBSPOperator getSingleGcSuccessor(DBSPOperator operator) {
+        DBSPSimpleOperator getSingleGcSuccessor(DBSPOperator operator) {
             if (!operator.is(DBSPNoopOperator.class))
                 return null;
             List<Port<DBSPOperator>> baseDests = Linq.where(
                     this.graph.getSuccessors(operator),
-                    p -> (p.node.is(GCOperator.class) && p.port == 0));
+                    p -> (p.node().is(GCOperator.class) && p.port() == 0));
             if (baseDests.size() != 1)
                 return null;
             Port<DBSPOperator> port = baseDests.get(0);
-            return port.node;
+            return port.node().to(DBSPSimpleOperator.class);
         }
 
         @Override
-        public void postorder(DBSPOperator operator) {
+        public void postorder(DBSPSimpleOperator operator) {
             List<Port<DBSPOperator>> destinations = this.graph.getSuccessors(operator);
             // Compare every pair of destinations
             for (int i = 0; i < destinations.size(); i++) {
-                DBSPOperator base = destinations.get(i).node;
-                DBSPOperator gc0 = this.getSingleGcSuccessor(base);
+                DBSPOperator base = destinations.get(i).node();
+                DBSPSimpleOperator gc0 = this.getSingleGcSuccessor(base);
                 if (gc0 == null)
                     continue;
 
                 for (int j = i + 1; j < destinations.size(); j++) {
-                    DBSPOperator compare = destinations.get(j).node;
+                    DBSPOperator compare = destinations.get(j).node();
                     if (this.canonical.containsKey(compare))
                         // Already found a canonical representative
                         continue;
                     if (!base.equivalent(compare))
                         continue;
 
-                    DBSPOperator gc1 = this.getSingleGcSuccessor(compare);
+                    DBSPSimpleOperator gc1 = this.getSingleGcSuccessor(compare);
                     if (gc1 == null)
                         continue;
 

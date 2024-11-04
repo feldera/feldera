@@ -33,7 +33,7 @@ class DFSOrder<Node> {
         this.marked.add(v);
         this.preorder.add(v);
         for (Port<Node> p : graph.getSuccessors(v)) {
-            Node w = p.node;
+            Node w = p.node();
             if (!this.marked.contains(w)) {
                 this.dfs(graph, w);
             }

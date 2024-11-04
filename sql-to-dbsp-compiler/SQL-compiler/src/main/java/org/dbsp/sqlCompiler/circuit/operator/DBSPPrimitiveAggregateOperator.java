@@ -15,19 +15,19 @@ import java.util.List;
 public final class DBSPPrimitiveAggregateOperator extends DBSPBinaryOperator {
     public DBSPPrimitiveAggregateOperator(
             CalciteObject node, @Nullable DBSPExpression function, DBSPType outputType,
-            DBSPOperator delta, DBSPOperator integral) {
+            OperatorPort delta, OperatorPort integral) {
         super(node, "AggregateIncremental", function, outputType, false, delta, integral);
         assert delta.getOutputIndexedZSetType().sameType(integral.getOutputIndexedZSetType());
     }
 
     @Override
-    public DBSPOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
+    public DBSPSimpleOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
         return new DBSPPrimitiveAggregateOperator(this.getNode(), expression,
                 outputType, this.left(), this.right()).copyAnnotations(this);
     }
 
     @Override
-    public DBSPOperator withInputs(List<DBSPOperator> newInputs, boolean force) {
+    public DBSPSimpleOperator withInputs(List<OperatorPort> newInputs, boolean force) {
         assert newInputs.size() == 2: "Expected 2 inputs";
         if (force || this.inputsDiffer(newInputs))
             return new DBSPPrimitiveAggregateOperator(this.getNode(), this.function,

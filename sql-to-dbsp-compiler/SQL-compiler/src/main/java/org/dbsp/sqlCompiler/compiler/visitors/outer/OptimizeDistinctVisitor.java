@@ -37,23 +37,23 @@ public class OptimizeDistinctVisitor extends CircuitCloneVisitor {
     @Override
     public void postorder(DBSPStreamDistinctOperator distinct) {
         // distinct (distinct) = distinct
-        DBSPOperator input = this.mapped(distinct.input());
-        if (input.is(DBSPStreamDistinctOperator.class) ||
-            input.is(DBSPDistinctOperator.class) ||
-            !input.isMultiset) {
-            this.map(distinct, input, false);
+        OperatorPort input = this.mapped(distinct.input());
+        if (input.node().is(DBSPStreamDistinctOperator.class) ||
+            input.node().is(DBSPDistinctOperator.class) ||
+            !input.isMultiset()) {
+            this.map(distinct.getOutput(), input, false);
             return;
         }
-        if (input.is(DBSPStreamJoinOperator.class) ||
-            input.is(DBSPMapOperator.class) ||
-            input.is(DBSPSumOperator.class)) {
-            boolean allDistinct = Linq.all(input.inputs, i -> i.is(DBSPStreamDistinctOperator.class));
+        if (input.node().is(DBSPStreamJoinOperator.class) ||
+            input.node().is(DBSPMapOperator.class) ||
+            input.node().is(DBSPSumOperator.class)) {
+            boolean allDistinct = Linq.all(input.node().inputs, i -> i.node().is(DBSPStreamDistinctOperator.class));
             if (allDistinct) {
                 // distinct(map(distinct)) = distinct(map)
-                List<DBSPOperator> newInputs = Linq.map(input.inputs, i -> i.inputs.get(0));
-                DBSPOperator newInput = input.withInputs(newInputs, false);
+                List<OperatorPort> newInputs = Linq.map(input.node().inputs, i -> i.node().inputs.get(0));
+                DBSPSimpleOperator newInput = input.simpleNode().withInputs(newInputs, false);
                 this.addOperator(newInput);
-                DBSPOperator newDistinct = distinct.withInputs(Linq.list(newInput), false);
+                DBSPSimpleOperator newDistinct = distinct.withInputs(Linq.list(newInput.getOutput()), false);
                 this.map(distinct, newDistinct);
                 return;
             }
@@ -64,23 +64,23 @@ public class OptimizeDistinctVisitor extends CircuitCloneVisitor {
     @Override
     public void postorder(DBSPDistinctOperator distinct) {
         // distinct (distinct) = distinct
-        DBSPOperator input = this.mapped(distinct.input());
-        if (input.is(DBSPStreamDistinctOperator.class) ||
-            input.is(DBSPDistinctOperator.class) ||
-            !input.isMultiset) {
-            this.map(distinct, input, false);
+        OperatorPort input = this.mapped(distinct.input());
+        if (input.node().is(DBSPStreamDistinctOperator.class) ||
+            input.node().is(DBSPDistinctOperator.class) ||
+            !input.isMultiset()) {
+            this.map(distinct.getOutput(), input, false);
             return;
         }
-        if (input.is(DBSPStreamJoinOperator.class) ||
-                input.is(DBSPMapOperator.class) ||
-                input.is(DBSPSumOperator.class)) {
-            boolean allDistinct = Linq.all(input.inputs, i -> i.is(DBSPStreamDistinctOperator.class));
+        if (input.node().is(DBSPStreamJoinOperator.class) ||
+                input.node().is(DBSPMapOperator.class) ||
+                input.node().is(DBSPSumOperator.class)) {
+            boolean allDistinct = Linq.all(input.node().inputs, i -> i.node().is(DBSPStreamDistinctOperator.class));
             if (allDistinct) {
                 // distinct(map(distinct)) = distinct(map)
-                List<DBSPOperator> newInputs = Linq.map(input.inputs, i -> i.inputs.get(0));
-                DBSPOperator newInput = input.withInputs(newInputs, false);
+                List<OperatorPort> newInputs = Linq.map(input.node().inputs, i -> i.node().inputs.get(0));
+                DBSPSimpleOperator newInput = input.simpleNode().withInputs(newInputs, false);
                 this.addOperator(newInput);
-                DBSPOperator newDistinct = distinct.withInputs(Linq.list(newInput), false);
+                DBSPSimpleOperator newDistinct = distinct.withInputs(Linq.list(newInput.getOutput()), false);
                 this.map(distinct, newDistinct);
                 return;
             }
@@ -89,12 +89,12 @@ public class OptimizeDistinctVisitor extends CircuitCloneVisitor {
     }
 
     public void postorder(DBSPFilterOperator filter) {
-        DBSPOperator input = this.mapped(filter.input());
-        if (input.is(DBSPStreamDistinctOperator.class)) {
+        OperatorPort input = this.mapped(filter.input());
+        if (input.node().is(DBSPStreamDistinctOperator.class)) {
             // swap distinct after filter
-            DBSPOperator newFilter = filter.withInputs(input.inputs, false);
+            DBSPSimpleOperator newFilter = filter.withInputs(input.node().inputs, false);
             this.addOperator(newFilter);
-            DBSPOperator result = input.withInputs(Linq.list(newFilter), false);
+            DBSPSimpleOperator result = input.simpleNode().withInputs(Linq.list(newFilter.getOutput()), false);
             this.map(filter, result);
         } else {
             super.postorder(filter);
@@ -102,17 +102,17 @@ public class OptimizeDistinctVisitor extends CircuitCloneVisitor {
     }
 
     public void postorder(DBSPStreamJoinOperator join) {
-        DBSPOperator left = this.mapped(join.left());
-        DBSPOperator right = this.mapped(join.right());
+        OperatorPort left = this.mapped(join.left());
+        OperatorPort right = this.mapped(join.right());
         // join(distinct) = distinct(join)
-        if (left.is(DBSPStreamDistinctOperator.class) &&
-            right.is(DBSPStreamDistinctOperator.class)) {
+        if (left.node().is(DBSPStreamDistinctOperator.class) &&
+            right.node().is(DBSPStreamDistinctOperator.class)) {
             // swap distinct after filter
-            DBSPOperator newLeft = left.inputs.get(0);
-            DBSPOperator newRight = right.inputs.get(0);
-            DBSPOperator result = join.withInputs(Linq.list(newLeft, newRight), false);
+            OperatorPort newLeft = left.node().inputs.get(0);
+            OperatorPort newRight = right.node().inputs.get(0);
+            DBSPSimpleOperator result = join.withInputs(Linq.list(newLeft, newRight), false);
             this.addOperator(result);
-            DBSPOperator distinct = new DBSPStreamDistinctOperator(join.getNode(), result);
+            DBSPSimpleOperator distinct = new DBSPStreamDistinctOperator(join.getNode(), result.getOutput());
             this.map(join, distinct);
             return;
         }

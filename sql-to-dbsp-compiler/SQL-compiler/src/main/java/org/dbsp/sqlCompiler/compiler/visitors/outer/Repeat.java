@@ -33,7 +33,7 @@ public class Repeat implements IWritesLogs, CircuitTransform {
             circuit = result;
             repeats++;
             if (repeats == maxRepeats) {
-                this.errorReporter.reportWarning(SourcePositionRange.INVALID,
+                this.errorReporter.reportError(SourcePositionRange.INVALID,
                         "InfiniteLoop",
                         "Repeated optimization " + this.transform + " " +
                         repeats + " times without convergence");

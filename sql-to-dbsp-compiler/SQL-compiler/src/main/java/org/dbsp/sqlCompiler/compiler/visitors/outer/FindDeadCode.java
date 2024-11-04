@@ -25,11 +25,12 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
+import org.dbsp.sqlCompiler.circuit.operator.OperatorPort;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
@@ -46,9 +47,9 @@ import java.util.Set;
  * operators that are 'used' by other operators (inputs, outputs,
  * and sources). */
 public class FindDeadCode extends CircuitVisitor implements IWritesLogs {
-    public final Set<DBSPOperator> reachable = new HashSet<>();
+    public final Set<DBSPSimpleOperator> reachable = new HashSet<>();
     // Includes reachable plus all inputs
-    public final Set<DBSPOperator> toKeep = new HashSet<>();
+    public final Set<DBSPSimpleOperator> toKeep = new HashSet<>();
     /** If true all sources are kept, even if they are dead. */
     public final boolean keepAllSources;
     public final boolean warn;
@@ -65,7 +66,7 @@ public class FindDeadCode extends CircuitVisitor implements IWritesLogs {
         this.warn = warn;
     }
 
-    public void keep(DBSPOperator operator) {
+    public void keep(DBSPSimpleOperator operator) {
         Logger.INSTANCE.belowLevel(this, 1)
                 .append(operator.toString())
                 .append(" reachable")
@@ -94,16 +95,16 @@ public class FindDeadCode extends CircuitVisitor implements IWritesLogs {
         return VisitDecision.STOP;
     }
 
-    VisitDecision keepInverseReachable(DBSPOperator destination) {
-        List<DBSPOperator> r = new ArrayList<>();
-        r.add(destination);
+    VisitDecision keepInverseReachable(DBSPSimpleOperator destination) {
+        List<OperatorPort> r = new ArrayList<>();
+        r.add(destination.getOutput());
         while (!r.isEmpty()) {
-            DBSPOperator op = r.remove(0);
-            this.reachable.add(op);
-            if (this.toKeep.contains(op))
+            OperatorPort op = r.remove(0);
+            this.reachable.add(op.simpleNode());
+            if (this.toKeep.contains(op.simpleNode()))
                 continue;
-            this.keep(op);
-            r.addAll(op.inputs);
+            this.keep(op.simpleNode());
+            r.addAll(op.simpleNode().inputs);
         }
         return VisitDecision.STOP;
     }
@@ -135,7 +136,7 @@ public class FindDeadCode extends CircuitVisitor implements IWritesLogs {
     }
 
     @Override
-    public VisitDecision preorder(DBSPOperator operator) {
+    public VisitDecision preorder(DBSPSimpleOperator operator) {
         return VisitDecision.STOP;
     }
 }

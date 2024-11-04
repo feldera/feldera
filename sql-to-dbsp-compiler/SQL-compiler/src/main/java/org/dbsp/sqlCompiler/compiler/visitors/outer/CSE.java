@@ -4,6 +4,8 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
+import org.dbsp.sqlCompiler.circuit.operator.OperatorPort;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.util.Logger;
 import org.dbsp.util.graph.Port;
@@ -65,24 +67,24 @@ public class CSE extends Repeat {
 
         boolean hasGcSuccessor(DBSPOperator operator) {
             for (Port<DBSPOperator> succ: this.graph.getSuccessors(operator)) {
-                if (succ.node.is(DBSPIntegrateTraceRetainKeysOperator.class) ||
-                        succ.node.is(DBSPIntegrateTraceRetainValuesOperator.class))
+                if (succ.node().is(DBSPIntegrateTraceRetainKeysOperator.class) ||
+                        succ.node().is(DBSPIntegrateTraceRetainValuesOperator.class))
                     // only input 0 of these operators affects the GC
-                        return succ.port == 0;
+                    return succ.port() == 0;
             }
             return false;
         }
 
         @Override
-        public void postorder(DBSPOperator operator) {
+        public void postorder(DBSPSimpleOperator operator) {
             List<Port<DBSPOperator>> destinations = this.graph.getSuccessors(operator);
             // Compare every pair of destinations
             for (int i = 0; i < destinations.size(); i++) {
-                DBSPOperator base = destinations.get(i).node;
+                DBSPOperator base = destinations.get(i).node();
                 if (hasGcSuccessor(base))
                     continue;
                 for (int j = i + 1; j < destinations.size(); j++) {
-                    DBSPOperator compare = destinations.get(j).node;
+                    DBSPOperator compare = destinations.get(j).node();
                     if (this.canonical.containsKey(compare))
                         // Already found a canonical representative
                         continue;
@@ -117,14 +119,14 @@ public class CSE extends Repeat {
         }
 
         @Override
-        public void replace(DBSPOperator operator) {
+        public void replace(DBSPSimpleOperator operator) {
             DBSPOperator replacement = this.canonical.get(operator);
             if (replacement == null) {
                 super.replace(operator);
                 return;
             }
-            DBSPOperator newReplacement = this.mapped(replacement);
-            this.map(operator, newReplacement, false);
+            OperatorPort newReplacement = this.mapped(replacement.to(DBSPSimpleOperator.class).getOutput());
+            this.map(operator.getOutput(), newReplacement, false);
         }
     }
 }

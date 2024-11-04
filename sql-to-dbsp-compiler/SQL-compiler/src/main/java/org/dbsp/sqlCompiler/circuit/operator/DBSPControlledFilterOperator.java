@@ -34,8 +34,8 @@ import java.util.Objects;
 public final class DBSPControlledFilterOperator extends DBSPBinaryOperator {
     public DBSPControlledFilterOperator(
             CalciteObject node, DBSPExpression expression,
-            DBSPOperator data, DBSPOperator control) {
-        super(node, "controlled_filter", expression, data.getType(), data.isMultiset, data, control);
+            OperatorPort data, OperatorPort control) {
+        super(node, "controlled_filter", expression, data.outputType(), data.isMultiset(), data, control);
         // this.checkArgumentFunctionType(expression, 0, data);
     }
 
@@ -81,9 +81,9 @@ public final class DBSPControlledFilterOperator extends DBSPBinaryOperator {
     }
 
     public static DBSPControlledFilterOperator create(
-            CalciteObject node, DBSPOperator data, IMaybeMonotoneType monotoneType, DBSPOperator control,
-            DBSPOpcode opcode) {
-        DBSPType controlType = control.getType();
+            CalciteObject node, OperatorPort data, IMaybeMonotoneType monotoneType,
+            OperatorPort control, DBSPOpcode opcode) {
+        DBSPType controlType = control.outputType();
 
         DBSPType leftSliceType = Objects.requireNonNull(monotoneType.getProjectedType());
         assert leftSliceType.sameType(controlType):
@@ -109,14 +109,14 @@ public final class DBSPControlledFilterOperator extends DBSPBinaryOperator {
     }
 
     @Override
-    public DBSPOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
+    public DBSPSimpleOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
         return new DBSPControlledFilterOperator(
                 this.getNode(), Objects.requireNonNull(expression),
                 this.left(), this.right()).copyAnnotations(this);
     }
 
     @Override
-    public DBSPOperator withInputs(List<DBSPOperator> newInputs, boolean force) {
+    public DBSPSimpleOperator withInputs(List<OperatorPort> newInputs, boolean force) {
         assert newInputs.size() == 2: "Expected 2 inputs, got " + newInputs.size();
         if (force || this.inputsDiffer(newInputs))
             return new DBSPControlledFilterOperator(

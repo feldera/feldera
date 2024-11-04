@@ -24,7 +24,7 @@
 package org.dbsp.sqlCompiler.circuit;
 
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceTableOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceViewDeclarationOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewOperator;
@@ -149,6 +149,6 @@ public final class DBSPCircuit
             DBSPViewOperator view = vd.getCorrespondingView(this.circuit);
             return Linq.list(new Port<>(view, 0));
         }
-        return Linq.map(operator.inputs, i -> new Port<>(i, 0));
+        return Linq.map(operator.inputs, i -> new Port<>(i.node(), 0));
     }
 }

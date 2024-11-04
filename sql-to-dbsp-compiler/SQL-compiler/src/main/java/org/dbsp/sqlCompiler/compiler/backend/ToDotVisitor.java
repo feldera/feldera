@@ -30,11 +30,13 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinFilterMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateWithWaterlineOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceViewDeclarationOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWaterlineOperator;
+import org.dbsp.sqlCompiler.circuit.operator.OperatorPort;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.LowerCircuitVisitor;
@@ -71,11 +73,11 @@ public class ToDotVisitor extends CircuitVisitor implements IWritesLogs {
         this.edgesLabeled = new HashSet<>();
     }
 
-    static String isMultiset(DBSPOperator operator) {
+    static String isMultiset(DBSPSimpleOperator operator) {
         return operator.isMultiset ? "" : "*";
     }
 
-    static String annotations(DBSPOperator operator) {
+    static String annotations(DBSPSimpleOperator operator) {
         return operator.annotations.toDotString();
     }
 
@@ -110,14 +112,15 @@ public class ToDotVisitor extends CircuitVisitor implements IWritesLogs {
         return VisitDecision.STOP;
     }
 
-    public String getEdgeLabel(DBSPOperator source) {
+    public String getEdgeLabel(OperatorPort source) {
         DBSPType type = source.getOutputRowType();
         return ToRustInnerVisitor.toRustString(
                 this.errorReporter, type, CompilerOptions.getDefault(), true);
     }
 
-    void addInputs(DBSPOperator node) {
-        for (DBSPOperator input : node.inputs) {
+    void addInputs(DBSPSimpleOperator node) {
+        for (OperatorPort i : node.inputs) {
+            DBSPSimpleOperator input = i.node().to(DBSPSimpleOperator.class);
             if (input.is(DBSPSourceViewDeclarationOperator.class)) {
                 assert this.circuit != null;
                 input = input.to(DBSPSourceViewDeclarationOperator.class)
@@ -127,7 +130,7 @@ public class ToDotVisitor extends CircuitVisitor implements IWritesLogs {
                     .append(" -> ")
                     .append(node.getOutputName());
             if (this.details >= 2 && !this.edgesLabeled.contains(input)) {
-                String label = this.getEdgeLabel(input);
+                String label = this.getEdgeLabel(i);
                 this.stream.append(" [xlabel=")
                         .append(Utilities.doubleQuote(label))
                         .append("]");
@@ -162,7 +165,7 @@ public class ToDotVisitor extends CircuitVisitor implements IWritesLogs {
         return Utilities.escapeDoubleQuotes(result);
     }
 
-    String getFunction(DBSPOperator node) {
+    String getFunction(DBSPSimpleOperator node) {
         DBSPExpression expression = node.function;
         if (node.is(DBSPAggregateOperatorBase.class)) {
             DBSPAggregateOperatorBase aggregate = node.to(DBSPAggregateOperatorBase.class);
@@ -191,7 +194,7 @@ public class ToDotVisitor extends CircuitVisitor implements IWritesLogs {
         return this.convertFunction(expression);
     }
 
-    String getColor(DBSPOperator operator) {
+    String getColor(DBSPSimpleOperator operator) {
         return switch (operator.operation) {
             case "waterline" -> " style=filled fillcolor=lightgreen";
             case "controlled_filter" -> " style=filled fillcolor=cyan";
@@ -224,7 +227,7 @@ public class ToDotVisitor extends CircuitVisitor implements IWritesLogs {
     }
 
     @Override
-    public VisitDecision preorder(DBSPOperator node) {
+    public VisitDecision preorder(DBSPSimpleOperator node) {
         this.stream.append(node.getOutputName())
                 .append(" [ shape=box")
                 .append(this.getColor(node))
@@ -289,7 +292,6 @@ public class ToDotVisitor extends CircuitVisitor implements IWritesLogs {
         this.stream.append("{")
                 .increase();
         this.stream.append("ordering=\"in\"").newline();
-        this.stream.append("splines=\"ortho\"").newline();
         return VisitDecision.CONTINUE;
     }
 

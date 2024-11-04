@@ -38,7 +38,7 @@ public final class DBSPStreamJoinOperator extends DBSPJoinBaseOperator {
     public DBSPStreamJoinOperator(CalciteObject node, DBSPTypeZSet outputType,
                                   // Closure from key, valueLeft, valueRight to result type
                                   DBSPExpression function, boolean isMultiset,
-                                  DBSPOperator left, DBSPOperator right) {
+                                  OperatorPort left, OperatorPort right) {
         super(node, "stream_join", function, outputType, isMultiset, left, right);
         DBSPType elementResultType = this.getOutputZSetElementType();
         this.checkResultType(function, elementResultType);
@@ -54,7 +54,7 @@ public final class DBSPStreamJoinOperator extends DBSPJoinBaseOperator {
     }
 
     @Override
-    public DBSPOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
+    public DBSPSimpleOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
         return new DBSPStreamJoinOperator(
                 this.getNode(), outputType.to(DBSPTypeZSet.class),
                 Objects.requireNonNull(expression),
@@ -62,7 +62,7 @@ public final class DBSPStreamJoinOperator extends DBSPJoinBaseOperator {
     }
 
     @Override
-    public DBSPOperator withInputs(List<DBSPOperator> newInputs, boolean force) {
+    public DBSPSimpleOperator withInputs(List<OperatorPort> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPStreamJoinOperator(
                     this.getNode(), this.getOutputZSetType(),

@@ -4,9 +4,10 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinIndexOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
+import org.dbsp.sqlCompiler.circuit.operator.OperatorPort;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.frontend.TypeCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
@@ -133,7 +134,7 @@ public class NarrowJoins extends Repeat {
             super(reporter, false);
         }
 
-        DBSPMapIndexOperator getProjection(CalciteObject node, List<Integer> fields, DBSPOperator input) {
+        DBSPMapIndexOperator getProjection(CalciteObject node, List<Integer> fields, OperatorPort input) {
             DBSPType inputType = input.getOutputIndexedZSetType().getKVRefType();
             DBSPVariablePath var = inputType.var();
             List<DBSPExpression> resultFields = Linq.map(fields,
@@ -143,7 +144,7 @@ public class NarrowJoins extends Repeat {
                     new DBSPTupleExpression(resultFields, false));
             DBSPClosureExpression projection = raw.closure(var);
 
-            DBSPOperator source = this.mapped(input);
+            OperatorPort source = this.mapped(input);
             DBSPTypeIndexedZSet ix = TypeCompiler.makeIndexedZSet(projection.getResultType().to(DBSPTypeRawTuple.class));
             DBSPMapIndexOperator map = new DBSPMapIndexOperator(node, projection, ix, source);
             this.addOperator(map);
@@ -165,8 +166,8 @@ public class NarrowJoins extends Repeat {
             // If all the fields are used there is no point in optimizing this
             if (leftInputs.size() == leftSize && rightInputs.size() == rightSize)
                 return false;
-            DBSPOperator leftMap = getProjection(join.getNode(), leftInputs, join.left());
-            DBSPOperator rightMap = getProjection(join.getNode(), rightInputs, join.right());
+            DBSPSimpleOperator leftMap = getProjection(join.getNode(), leftInputs, join.left());
+            DBSPSimpleOperator rightMap = getProjection(join.getNode(), rightInputs, join.right());
 
             Map<Integer, Integer> leftRemap = new HashMap<>();
             for (int i = 0; i < leftInputs.size(); i++)
@@ -195,8 +196,8 @@ public class NarrowJoins extends Repeat {
 
             RewriteFields rw = new RewriteFields(this.errorReporter, subst, remap);
             DBSPExpression newJoinFunction = rw.apply(join.getFunction()).to(DBSPExpression.class);
-            DBSPOperator replacement = join.withFunction(newJoinFunction, join.outputType)
-                    .withInputs(Linq.list(leftMap, rightMap), true);
+            DBSPSimpleOperator replacement = join.withFunction(newJoinFunction, join.outputType)
+                    .withInputs(Linq.list(leftMap.getOutput(), rightMap.getOutput()), true);
             this.map(join, replacement);
             return true;
         }

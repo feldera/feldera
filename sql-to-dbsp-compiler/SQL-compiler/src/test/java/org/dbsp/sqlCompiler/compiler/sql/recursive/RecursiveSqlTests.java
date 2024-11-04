@@ -9,7 +9,7 @@ import org.junit.Test;
 public class RecursiveSqlTests extends BaseSQLTests {
     @Test
     public void testFrontEnd() {
-        this.showFinal();
+        // this.showFinal();
         String sql = """
                 CREATE RECURSIVE VIEW V(v INT);
                 CREATE VIEW V AS SELECT v FROM V UNION SELECT 1;""";

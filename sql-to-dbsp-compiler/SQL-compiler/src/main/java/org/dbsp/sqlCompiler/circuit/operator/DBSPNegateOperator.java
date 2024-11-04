@@ -30,8 +30,8 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import java.util.List;
 
 public final class DBSPNegateOperator extends DBSPUnaryOperator {
-    public DBSPNegateOperator(CalciteObject node, DBSPOperator input) {
-        super(node, "neg", null, input.outputType, input.isMultiset, input);
+    public DBSPNegateOperator(CalciteObject node, OperatorPort input) {
+        super(node, "neg", null, input.outputType(), input.isMultiset(), input);
     }
 
     @Override
@@ -44,7 +44,8 @@ public final class DBSPNegateOperator extends DBSPUnaryOperator {
     }
 
     @Override
-    public DBSPOperator withInputs(List<DBSPOperator> newInputs, boolean force) {
+    public DBSPSimpleOperator withInputs(List<OperatorPort> newInputs, boolean force) {
+        assert newInputs.size() == 1;
         if (force || this.inputsDiffer(newInputs))
             return new DBSPNegateOperator(
                     this.getNode(), newInputs.get(0)).copyAnnotations(this);

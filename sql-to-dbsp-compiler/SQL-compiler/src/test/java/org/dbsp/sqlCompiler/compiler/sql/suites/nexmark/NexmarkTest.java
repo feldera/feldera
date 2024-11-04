@@ -24,7 +24,7 @@
 package org.dbsp.sqlCompiler.compiler.sql.suites.nexmark;
 
 import org.apache.calcite.config.Lex;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.StderrErrorReporter;
@@ -866,7 +866,7 @@ INSERT INTO auction VALUES(101, 'item-name', 'description', 5, 10, '2020-01-01 0
         // Test for https://github.com/feldera/feldera/issues/2250
         CircuitVisitor v = new CircuitVisitor(new StderrErrorReporter()) {
             @Override
-            public VisitDecision preorder(DBSPOperator node) {
+            public VisitDecision preorder(DBSPSimpleOperator node) {
                 assert !node.operation.contains("aggregate") || node.operation.equals("aggregate_linear_postprocess");
                 return super.preorder(node);
             }

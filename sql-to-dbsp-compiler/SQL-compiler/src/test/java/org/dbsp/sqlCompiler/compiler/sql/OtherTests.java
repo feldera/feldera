@@ -26,9 +26,10 @@ package org.dbsp.sqlCompiler.compiler.sql;
 import org.dbsp.sqlCompiler.CompilerMain;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamDistinctOperator;
+import org.dbsp.sqlCompiler.circuit.operator.OperatorPort;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.TestUtil;
 import org.dbsp.sqlCompiler.compiler.backend.ToCsvVisitor;
@@ -380,7 +381,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         compiler.compileStatements(query);
         DBSPCircuit circuit = compiler.getFinalCircuit("circuit");
         DBSPTypeZSet outputType = circuit.getSingleOutputType().to(DBSPTypeZSet.class);
-        DBSPOperator source = circuit.getInput(compiler.canonicalName("T"));
+        DBSPSimpleOperator source = circuit.getInput(compiler.canonicalName("T"));
         Assert.assertNotNull(source);
         DBSPTypeZSet inputType = source.getType().to(DBSPTypeZSet.class);
         Assert.assertTrue(inputType.sameType(outputType));
@@ -400,9 +401,9 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         DBSPCircuit circuit = compiler.getFinalCircuit("circuit");
         DBSPSinkOperator sink = circuit.circuit.getSink(compiler.canonicalName("V"));
         Assert.assertNotNull(sink);
-        DBSPOperator op = sink.input();
+        OperatorPort op = sink.input();
         // There is no optimization I can imagine which will remove the distinct
-        Assert.assertTrue(op.is(DBSPStreamDistinctOperator.class));
+        Assert.assertTrue(op.node().is(DBSPStreamDistinctOperator.class));
     }
 
     @Test

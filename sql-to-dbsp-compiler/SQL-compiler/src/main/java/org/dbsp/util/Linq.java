@@ -166,7 +166,7 @@ public class Linq {
             return false;
         if (left.size() != right.size())
             return false;
-        return Linq.all(Linq.zipSameLength(left, right, (l, r) -> l == r));
+        return Linq.all(Linq.zipSameLength(left, right, Object::equals));
     }
 
     public static boolean sameStrings(List<String> left, List<String> right) {
@@ -291,7 +291,7 @@ public class Linq {
         if (left.size() != right.size())
             return true;
         for (int i = 0; i < left.size(); i++)
-            if (left.get(i) != right.get(i))
+            if (!left.get(i).equals(right.get(i)))
                 return true;
         return false;
     }
@@ -300,7 +300,7 @@ public class Linq {
         if (left.length != right.length)
             return true;
         for (int i = 0; i < left.length; i++)
-            if (left[i] != right[i])
+            if (!left[i].equals(right[i]))
                 return true;
         return false;
     }

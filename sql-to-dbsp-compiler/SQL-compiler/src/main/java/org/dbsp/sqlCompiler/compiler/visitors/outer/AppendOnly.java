@@ -16,13 +16,14 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNoopOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceTableOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamDistinctOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSumOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewOperator;
+import org.dbsp.sqlCompiler.circuit.operator.OperatorPort;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.util.Logger;
 
@@ -34,31 +35,31 @@ import java.util.Set;
  * - the output of an append-only table
  * - produced by some stream operators from append-only streams */
 public class AppendOnly extends CircuitVisitor {
-    public final Set<DBSPOperator> appendOnly;
+    public final Set<OperatorPort> appendOnly;
 
     public AppendOnly(IErrorReporter errorReporter) {
         super(errorReporter);
         this.appendOnly = new HashSet<>();
     }
 
-    public boolean isAppendOnly(DBSPOperator source) {
+    public boolean isAppendOnly(OperatorPort source) {
         return this.appendOnly.contains(source);
     }
 
     @Override
-    public void postorder(DBSPOperator node) {
+    public void postorder(DBSPSimpleOperator node) {
         // Default behavior
         super.postorder(node);
     }
 
-    void setAppendOnly(DBSPOperator operator) {
+    void setAppendOnly(DBSPSimpleOperator operator) {
         Logger.INSTANCE.belowLevel(this, 1)
                 .append(operator.getIdString())
                 .append(" ")
                 .append(operator.operation)
                 .append(" is append-only")
                 .newline();
-        this.appendOnly.add(operator);
+        this.appendOnly.add(operator.getOutput());
     }
 
     @Override
@@ -74,9 +75,9 @@ public class AppendOnly extends CircuitVisitor {
     }
 
     /** Make operator append-only if all sources are append-only */
-    void copy(DBSPOperator operator) {
+    void copy(DBSPSimpleOperator operator) {
         super.postorder(operator);
-        for (DBSPOperator source: operator.inputs) {
+        for (OperatorPort source: operator.inputs) {
             if (!this.isAppendOnly(source))
                 return;
         }

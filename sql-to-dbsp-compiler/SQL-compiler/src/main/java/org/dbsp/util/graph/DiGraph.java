@@ -20,7 +20,7 @@ public interface DiGraph<Node> {
             for (Port<Node> port: this.getSuccessors(node)) {
                 builder.append(node)
                         .append(" -> ")
-                        .append(port.node)
+                        .append(port.node())
                         .append(System.lineSeparator());
             }
         }

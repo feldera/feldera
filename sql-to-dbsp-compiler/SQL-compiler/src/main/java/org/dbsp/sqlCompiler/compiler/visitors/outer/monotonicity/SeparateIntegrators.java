@@ -10,6 +10,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPLagOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNoopOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateWithWaterlineOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
@@ -17,6 +18,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
+import org.dbsp.sqlCompiler.circuit.operator.OperatorPort;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateView;
@@ -39,7 +41,7 @@ public class SeparateIntegrators extends CircuitCloneVisitor {
         this.graph = graph;
     }
 
-    public static boolean hasPostIntegrator(DBSPOperator operator) {
+    public static boolean hasPostIntegrator(DBSPSimpleOperator operator) {
         return operator.is(DBSPAggregateOperator.class) ||
                 operator.is(DBSPChainAggregateOperator.class) ||
                 operator.is(DBSPAggregateLinearPostprocessOperator.class) ||
@@ -54,9 +56,9 @@ public class SeparateIntegrators extends CircuitCloneVisitor {
                         operator.to(DBSPSourceMapOperator.class).metadata.materialized);
     }
 
-    public static boolean hasPreIntegrator(Port<DBSPOperator> port) {
-        DBSPOperator operator = port.node;
-        int input = port.port;
+    public static boolean hasPreIntegrator(OperatorPort port) {
+        DBSPOperator operator = port.node();
+        int input = port.port();
         return operator.is(DBSPJoinBaseOperator.class) ||
                 (operator.is(DBSPWindowOperator.class) && input == 0) ||
                 operator.is(DBSPPartitionedRollingAggregateOperator.class) ||
@@ -76,20 +78,20 @@ public class SeparateIntegrators extends CircuitCloneVisitor {
     }
 
     @Override
-    public void replace(DBSPOperator operator) {
-        List<DBSPOperator> sources = new ArrayList<>(operator.inputs.size());
+    public void replace(DBSPSimpleOperator operator) {
+        List<OperatorPort> sources = new ArrayList<>(operator.inputs.size());
         int index = 0;
-        for (DBSPOperator input: operator.inputs) {
-            Port<DBSPOperator> port = new Port<>(operator, index++);
+        for (OperatorPort input: operator.inputs) {
+            OperatorPort port = new OperatorPort(operator, index++);
             boolean addBuffer = false;
             if (hasPreIntegrator(port)) {
-                if (hasPostIntegrator(input)) {
+                if (hasPostIntegrator(input.simpleNode())) {
                     addBuffer = true;
                 } else {
-                    for (Port<DBSPOperator> dest : this.graph.getSuccessors(input)) {
-                        if (dest.node == operator)
+                    for (Port<DBSPOperator> dest : this.graph.getSuccessors(input.node())) {
+                        if (dest.node() == operator)
                             continue;
-                        if (hasPreIntegrator(dest)) {
+                        if (hasPreIntegrator(new OperatorPort(dest))) {
                             addBuffer = true;
                             break;
                         }
@@ -97,17 +99,17 @@ public class SeparateIntegrators extends CircuitCloneVisitor {
                 }
             }
 
-            DBSPOperator source = this.mapped(input);
+            OperatorPort source = this.mapped(input);
             if (addBuffer) {
                 DBSPNoopOperator noop = new DBSPNoopOperator(operator.getNode(), source, null);
                 this.addOperator(noop);
-                sources.add(noop);
+                sources.add(noop.getOutput());
             } else {
                 sources.add(source);
             }
         }
 
-        DBSPOperator result = operator.withInputs(sources, this.force);
+        DBSPSimpleOperator result = operator.withInputs(sources, this.force);
         result.setDerivedFrom(operator.id);
         this.map(operator, result);
     }

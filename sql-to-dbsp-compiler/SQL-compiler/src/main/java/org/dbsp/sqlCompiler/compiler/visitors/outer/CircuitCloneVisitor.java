@@ -49,9 +49,9 @@ import java.util.*;
 public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs {
     /** Circuit under construction */
     @Nullable protected DBSPPartialCircuit result;
-    /** For each operator in the original circuit an operator in the
+    /** For each operator port in the original circuit an operator port in the
      * result circuit which computes the same result. */
-    protected final Map<DBSPOperator, DBSPOperator> remap;
+    protected final Map<OperatorPort, OperatorPort> remap;
     protected final boolean force;
     protected final Set<DBSPOperator> visited = new HashSet<>();
 
@@ -61,7 +61,7 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs {
         this.force = force;
     }
 
-    public DBSPOperator mapped(DBSPOperator original) {
+    public OperatorPort mapped(OperatorPort original) {
         return Utilities.getExists(this.remap, original);
     }
 
@@ -76,7 +76,7 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs {
      * @param newOp  Operator replacing it in the new circuit.
      * @param add    If true add the operator to the new circuit.
      *               This may not be necessary if the operator has already been added. */
-    protected void map(DBSPOperator old, DBSPOperator newOp, boolean add) {
+    protected void map(OperatorPort old, OperatorPort newOp, boolean add) {
         if (old != newOp) {
             Logger.INSTANCE.belowLevel(this, 1)
                     .append(this.toString())
@@ -88,17 +88,25 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs {
         }
         Utilities.putNew(this.remap, old, newOp);
         if (add)
-            this.addOperator(newOp);
+            this.addOperator(newOp.node());
     }
 
-    protected void map(DBSPOperator old, DBSPOperator newOp) {
+    protected void map(DBSPSimpleOperator old, DBSPSimpleOperator newOp, boolean add) {
+        this.map(old.getOutput(), newOp.getOutput(), add);
+    }
+
+    protected void map(OperatorPort old, OperatorPort newOp) {
         this.map(old, newOp, true);
-        assert old == this.getCurrent();
-        long derivedFrom = old.derivedFrom;
+        assert old.node() == this.getCurrent();
+        long derivedFrom = old.node().derivedFrom;
         if (derivedFrom == -1)
-            derivedFrom = old.id;
-        newOp.setDerivedFrom(derivedFrom);
-        assert old.outputType.sameType(newOp.outputType);
+            derivedFrom = old.node().id;
+        newOp.node().setDerivedFrom(derivedFrom);
+        assert old.outputType().sameType(newOp.outputType());
+    }
+
+    protected void map(DBSPSimpleOperator old, DBSPSimpleOperator newOp) {
+        this.map(old.getOutput(), newOp.getOutput());
     }
 
     /**
@@ -123,7 +131,7 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs {
         super.preorder(circuit);
         for (DBSPDeclaration node : circuit.declarations)
             node.accept(this);
-        for (DBSPOperator node : circuit.getAllOperators())
+        for (IDBSPOuterNode node : circuit.getAllOperators())
             node.accept(this);
         return VisitDecision.STOP;
     }
@@ -132,12 +140,12 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs {
      * Replace the specified operator with an equivalent one
      * by replacing all the inputs with their replacements from the 'mapped' map.
      * @param operator  Operator to replace. */
-    public void replace(DBSPOperator operator) {
+    public void replace(DBSPSimpleOperator operator) {
         if (this.visited.contains(operator))
             // Graph can be a DAG
             return;
         this.visited.add(operator);
-        List<DBSPOperator> sources = Linq.map(operator.inputs, this::mapped);
+        List<OperatorPort> sources = Linq.map(operator.inputs, this::mapped);
         if (!Linq.same(sources, operator.inputs)) {
             Logger.INSTANCE.belowLevel(this, 2)
                     .append(this.toString())
@@ -145,14 +153,14 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs {
                     .increase()
                     .append(operator.toString())
                     .append(":")
-                    .join(", ", Linq.map(operator.inputs, DBSPOperator::toString))
+                    .join(", ", Linq.map(operator.inputs, OperatorPort::toString))
                     .newline()
                     .append("with:")
-                    .join(", ", Linq.map(sources, DBSPOperator::toString))
+                    .join(", ", Linq.map(sources, OperatorPort::toString))
                     .newline()
                     .decrease();
         }
-        DBSPOperator result = operator.withInputs(sources, this.force);
+        DBSPSimpleOperator result = operator.withInputs(sources, this.force);
         result.setDerivedFrom(operator.id);
         this.map(operator, result);
     }

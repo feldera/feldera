@@ -40,14 +40,14 @@ public final class DBSPSourceViewDeclarationOperator
     }
 
     @Override
-    public DBSPOperator withFunction(@Nullable DBSPExpression unused, DBSPType outputType) {
+    public DBSPSimpleOperator withFunction(@Nullable DBSPExpression unused, DBSPType outputType) {
         return new DBSPSourceViewDeclarationOperator(this.getNode(), this.sourceName,
                 outputType.to(DBSPTypeZSet.class), this.originalRowType,
                 this.metadata, this.tableName);
     }
 
     @Override
-    public DBSPOperator withInputs(List<DBSPOperator> newInputs, boolean force) {
+    public DBSPSimpleOperator withInputs(List<OperatorPort> newInputs, boolean force) {
         assert newInputs.isEmpty();
         if (force)
             return new DBSPSourceViewDeclarationOperator(

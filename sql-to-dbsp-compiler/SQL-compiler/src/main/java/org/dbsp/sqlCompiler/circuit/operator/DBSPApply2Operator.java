@@ -17,22 +17,22 @@ import java.util.Objects;
  * The comments from {@link DBSPApplyOperator} apply to this operator as well. */
 public final class DBSPApply2Operator extends DBSPBinaryOperator {
     public DBSPApply2Operator(CalciteObject node, DBSPClosureExpression function,
-                              DBSPOperator left, DBSPOperator right) {
+                              OperatorPort left, OperatorPort right) {
         super(node, "apply2", function, function.getResultType(), false, left, right);
         assert function.parameters.length == 2: "Expected 2 parameters for function " + function;
         DBSPType param0Type = function.parameters[0].getType().deref();
-        assert left.outputType.sameType(param0Type):
-                "Parameter type " + param0Type + " does not match input type " + left.outputType;
+        assert left.outputType().sameType(param0Type):
+                "Parameter type " + param0Type + " does not match input type " + left.outputType();
         DBSPType param1Type = function.parameters[1].getType().deref();
-        assert right.outputType.sameType(param1Type):
-                "Parameter type " + param1Type + " does not match input type " + right.outputType;
-        DBSPApplyOperator.noZsets(left.outputType);
-        DBSPApplyOperator.noZsets(right.outputType);
-        DBSPApplyOperator.noZsets(this.outputType);
+        assert right.outputType().sameType(param1Type):
+                "Parameter type " + param1Type + " does not match input type " + right.outputType();
+        DBSPApplyOperator.noZsets(left.outputType());
+        DBSPApplyOperator.noZsets(right.outputType());
+        DBSPApplyOperator.noZsets(this.outputType());
     }
 
     @Override
-    public DBSPOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
+    public DBSPSimpleOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
         return new DBSPApply2Operator(
                 this.getNode(), Objects.requireNonNull(expression).to(DBSPClosureExpression.class),
                 this.left(), this.right())
@@ -40,7 +40,7 @@ public final class DBSPApply2Operator extends DBSPBinaryOperator {
     }
 
     @Override
-    public DBSPOperator withInputs(List<DBSPOperator> newInputs, boolean force) {
+    public DBSPSimpleOperator withInputs(List<OperatorPort> newInputs, boolean force) {
         assert newInputs.size() == 2: "Expected 2 inputs " + newInputs;
         if (force || this.inputsDiffer(newInputs)) {
             return new DBSPApply2Operator(

@@ -35,8 +35,8 @@ import java.util.List;
 import java.util.Objects;
 
 public final class DBSPFilterOperator extends DBSPUnaryOperator {
-    public DBSPFilterOperator(CalciteObject node, DBSPExpression condition, DBSPOperator input) {
-        super(node, "filter", condition, input.outputType, input.isMultiset, input);
+    public DBSPFilterOperator(CalciteObject node, DBSPExpression condition, OperatorPort input) {
+        super(node, "filter", condition, input.outputType(), input.isMultiset(), input);
         this.checkResultType(condition, new DBSPTypeBool(CalciteObject.EMPTY, false));
     }
 
@@ -50,13 +50,13 @@ public final class DBSPFilterOperator extends DBSPUnaryOperator {
     }
 
     @Override
-    public DBSPOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
+    public DBSPSimpleOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
         return new DBSPFilterOperator(this.getNode(), Objects.requireNonNull(expression), this.input())
                 .copyAnnotations(this);
     }
 
     @Override
-    public DBSPOperator withInputs(List<DBSPOperator> newInputs, boolean force) {
+    public DBSPSimpleOperator withInputs(List<OperatorPort> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPFilterOperator(
                     this.getNode(), this.getFunction(), newInputs.get(0)).copyAnnotations(this);

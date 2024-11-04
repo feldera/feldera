@@ -42,13 +42,13 @@ public class DBSPAggregateZeroOperator extends DBSPUnaryOperator {
      * @param source Input from aggregation.
      */
     public DBSPAggregateZeroOperator(
-            CalciteObject node, DBSPExpression zero, DBSPOperator source) {
+            CalciteObject node, DBSPExpression zero, OperatorPort source) {
         super(node, "aggregate_zero", zero, TypeCompiler.makeZSet(zero.getType()),
                 false, source);
     }
 
     @Override
-    public DBSPOperator withInputs(List<DBSPOperator> newInputs, boolean force) {
+    public DBSPSimpleOperator withInputs(List<OperatorPort> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPAggregateZeroOperator(this.getNode(), this.getFunction(),
                     newInputs.get(0))

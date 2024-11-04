@@ -4,6 +4,8 @@ import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.TestUtil;
 import org.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.Passes;
+import org.dbsp.util.Logger;
 import org.junit.Test;
 
 import java.io.IOException;
@@ -24,6 +26,7 @@ public class TpcDsTest extends BaseSQLTests {
     // q89: OVER without ORDER BY
     @Test
     public void compileTpcds() throws IOException {
+        Logger.INSTANCE.setLoggingLevel(Passes.class, 2);
         String tpcds = TestUtil.readStringFromResourceFile("tpcds.sql");
         CompilerOptions options = this.testOptions(true, true);
         DBSPCompiler compiler = new DBSPCompiler(options);

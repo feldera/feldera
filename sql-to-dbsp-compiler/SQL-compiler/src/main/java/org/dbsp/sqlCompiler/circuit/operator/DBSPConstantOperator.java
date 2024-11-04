@@ -33,7 +33,7 @@ import javax.annotation.Nullable;
 import java.util.List;
 import java.util.Objects;
 
-public final class DBSPConstantOperator extends DBSPOperator {
+public final class DBSPConstantOperator extends DBSPSimpleOperator {
     /** If true generate the constant only on the first step, then generate 0 */
     public final boolean incremental;
 
@@ -55,14 +55,14 @@ public final class DBSPConstantOperator extends DBSPOperator {
     }
 
     @Override
-    public DBSPOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
+    public DBSPSimpleOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
         return new DBSPConstantOperator(this.getNode(), Objects.requireNonNull(expression),
                 this.incremental, this.isMultiset)
                 .copyAnnotations(this);
     }
 
     @Override
-    public DBSPOperator withInputs(List<DBSPOperator> newInputs, boolean force) {
+    public DBSPSimpleOperator withInputs(List<OperatorPort> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPConstantOperator(this.getNode(), this.getFunction(),
                     this.incremental, this.isMultiset)
