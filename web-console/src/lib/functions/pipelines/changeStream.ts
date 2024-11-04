@@ -1,5 +1,7 @@
 import BigNumber from 'bignumber.js'
 import { JSONParser, Tokenizer, TokenParser, type JSONParserOptions } from '@streamparser/json'
+import { findIndex } from '../common/array'
+import { tuple } from '../common/tuple'
 
 class BigNumberTokenizer extends Tokenizer {
   parseNumber = BigNumber as any
@@ -219,9 +221,43 @@ export class SplitNewlineTransformStream extends TransformStream<Uint8Array, str
   }
 }
 
+/**
+ *
+ * @returns Index offset of items in the original list after push (positive number)
+ */
 export const pushAsCircularBuffer =
-  <T, R = T>(arr: () => R[], bufferSize: number, mapValue: (v: T) => R) =>
+  <T, R = T>(
+    arr: () => R[],
+    bufferSize: number,
+    mapValue: (v: T) => R,
+    getLength?: (value: R) => number
+  ) =>
   (values: T[]) => {
-    arr().splice(0, arr().length + values.length - bufferSize)
-    arr().push(...values.slice(-bufferSize).map(mapValue))
+    if (!getLength) {
+      const offset = arr().length + values.length - bufferSize
+      arr().splice(0, offset)
+      arr().push(...values.slice(-bufferSize).map(mapValue))
+      return Math.max(offset, 0)
+    }
+    const vs = values.map(mapValue)
+    let numNewItems = findIndex(
+      vs,
+      (acc: number, item: R) => {
+        const sum = acc + getLength(item)
+        return tuple(sum > 0, sum)
+      },
+      -bufferSize
+    )
+    numNewItems = numNewItems === -1 ? vs.length : numNewItems
+    const numItemsToDrop = findIndex(
+      arr(),
+      (acc: number, item: R) => {
+        const sum = acc + getLength(item)
+        return tuple(sum >= 0, sum)
+      },
+      bufferSize - numNewItems
+    )
+    arr().splice(0, numItemsToDrop)
+    arr().push(...vs.slice(0, numNewItems))
+    return numItemsToDrop
   }

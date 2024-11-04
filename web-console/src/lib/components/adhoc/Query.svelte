@@ -41,6 +41,10 @@
 </script>
 
 <script lang="ts">
+  import SqlValue from '$lib/components/relationData/SQLValue.svelte'
+  import SqlColumnHeader from '../relationData/SQLColumnHeader.svelte'
+  import { usePopoverTooltip } from '$lib/compositions/common/usePopoverTooltip.svelte'
+
   let {
     query = $bindable(),
     result,
@@ -62,53 +66,16 @@
 
   // Handle hover popup over table cells to display full SQL value
   let popupRef: HTMLElement | undefined = $state()
-  let cellDetails: { ref: HTMLElement; value: any } | undefined = $state()
-  let popupData: { x: number; y: number; text: string } | undefined = $state()
-  type CustomMouseEvent = MouseEvent & {
-    currentTarget: EventTarget & HTMLTableCellElement
-  }
-  const handleCellHoverImpl = (e: CustomMouseEvent, value: any) => {
-    cellDetails = { ref: e.currentTarget, value }
-  }
-  const handleCellHover = (value: any) => (e: CustomMouseEvent) => handleCellHoverImpl(e, value)
-  const handleCellMouseLeave = (e: CustomMouseEvent) => {
-    cellDetails = undefined
-  }
-  $effect(() => {
-    if (!popupRef) {
-      return
-    }
-    if (!cellDetails) {
-      popupData = undefined
-      popupRef.hidePopover()
-      return
-    }
-    const text = cellDetails.value
-    const rect = cellDetails.ref.getBoundingClientRect()
-    popupData = {
-      x: 0,
-      y: 0,
-      text
-    }
-    popupRef.showPopover()
-    requestAnimationFrame(() => {
-      const rect2 = popupRef!.getBoundingClientRect()
-      popupData = {
-        x: Math.min(Math.max(0, rect.left), window.innerWidth - rect2.width),
-        y: Math.min(rect.top, window.innerHeight - rect2.height),
-        text
-      }
-    })
-  })
+  let tooltip = usePopoverTooltip(() => popupRef)
 </script>
 
 <div
-  class="bg-white-black pointer-events-none absolute m-0 w-max max-w-lg whitespace-break-spaces break-words border border-surface-500 px-2 py-1 text-surface-950-50"
+  class="bg-white-black absolute m-0 w-max max-w-lg -translate-x-[5px] -translate-y-[3.5px] whitespace-break-spaces break-words border border-surface-500 px-2 py-1 text-surface-950-50"
   popover="manual"
   bind:this={popupRef}
-  style={popupData ? `left: ${popupData.x}px; top: ${popupData.y}px` : ''}
+  style={tooltip.data ? `left: ${tooltip.data.x}px; top: ${tooltip.data.y}px` : ''}
 >
-  {popupData?.text}
+  {tooltip.data?.text}
 </div>
 
 <div
@@ -174,12 +141,12 @@
 
     {#if result}
       <div class="mr-4 max-h-64 w-fit max-w-full overflow-auto scrollbar">
-        <table class=" border-separate border-spacing-x-1">
+        <table>
           {#if result.columns.length}
-            <thead class="sticky top-0 !mb-0 bg-surface-50-950">
+            <thead class="bg-white-black sticky top-0 !mb-0">
               <tr>
                 {#each result.columns as column}
-                  <th>{getCaseIndependentName(column)}</th>
+                  <SqlColumnHeader {column}></SqlColumnHeader>
                 {/each}
               </tr>
             </thead>
@@ -189,21 +156,13 @@
               {#if 'cells' in row}
                 <tr class="whitespace-nowrap even:bg-surface-50-950">
                   {#each row.cells as value}
-                    {@const text =
-                      value === null
-                        ? null
-                        : typeof value === 'string'
-                          ? value
-                          : JSONbig.stringify(value, undefined, 1)}
-                    <td
-                      onmouseenter={handleCellHover(text)}
-                      onmouseleave={handleCellMouseLeave}
-                      class:italic={text === null}
-                    >
-                      {text === null ? 'NULL' : text.slice(0, 37)}{text && text.length > 36
-                        ? '...'
-                        : ''}
-                    </td>
+                    <SqlValue
+                      {value}
+                      props={(text) => ({
+                        onmouseenter: tooltip.onmouseenter(text),
+                        onmouseleave: tooltip.onmouseleave
+                      })}
+                    ></SqlValue>
                   {/each}
                 </tr>
               {:else if 'error' in row}

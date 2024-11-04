@@ -127,4 +127,4 @@ export interface ConnectorStatus {
   fatal_error: string | null
 }
 
-export type XgressRecord = Record<string, string | number | boolean | BigNumber | Date>
+export type XgressRecord = Record<string, string | number | boolean | BigNumber>
