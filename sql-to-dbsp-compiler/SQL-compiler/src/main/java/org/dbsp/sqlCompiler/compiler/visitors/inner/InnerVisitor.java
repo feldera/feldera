@@ -1054,7 +1054,7 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId {
     // Expressions
 
     public void postorder(DBSPFlatmap node) {
-        this.preorder(node.to(DBSPExpression.class));
+        this.postorder(node.to(DBSPExpression.class));
     }
 
     public void postorder(DBSPSortExpression node) {
@@ -1138,7 +1138,7 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId {
     }
 
     public void postorder(DBSPUnwrapExpression node) {
-        this.preorder(node.to(DBSPExpression.class));
+        this.postorder(node.to(DBSPExpression.class));
     }
 
     public void postorder(DBSPPathExpression node) {
