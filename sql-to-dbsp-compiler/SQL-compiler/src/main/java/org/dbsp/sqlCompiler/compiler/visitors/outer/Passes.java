@@ -25,7 +25,7 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
-import org.dbsp.sqlCompiler.compiler.backend.ToDotVisitor;
+import org.dbsp.sqlCompiler.compiler.backend.rust.ToDot;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerRewriteVisitor;
 import org.dbsp.util.IWritesLogs;
 import org.dbsp.util.Linq;
@@ -38,15 +38,16 @@ public class Passes implements IWritesLogs, CircuitTransform {
     public final List<CircuitTransform> passes;
     // Generate a new name for each dumped circuit.
     static int dumped = 0;
+    final long id;
 
     public Passes(IErrorReporter reporter, CircuitTransform... passes) {
-        this.errorReporter = reporter;
-        this.passes = Linq.list(passes);
+        this(reporter, Linq.list(passes));
     }
 
     public Passes(IErrorReporter reporter, List<CircuitTransform> passes) {
         this.errorReporter = reporter;
         this.passes = passes;
+        this.id = CircuitVisitor.crtId++;
     }
 
     public void add(CircuitTransform pass) {
@@ -62,7 +63,7 @@ public class Passes implements IWritesLogs, CircuitTransform {
         int details = this.getDebugLevel();
         if (this.getDebugLevel() >= 3) {
             String name = String.format("%02d-", dumped++) + "before.png";
-            ToDotVisitor.toDot(this.errorReporter, name, details, "png", circuit);
+            ToDot.dump(this.errorReporter, name, details, "png", circuit);
         }
         for (CircuitTransform pass: this.passes) {
             Logger.INSTANCE.belowLevel("Passes", 1)
@@ -72,7 +73,7 @@ public class Passes implements IWritesLogs, CircuitTransform {
             circuit = pass.apply(circuit);
             if (this.getDebugLevel() >= 3) {
                 String name = String.format("%02d-", dumped++) + pass.toString().replace(" ", "_") + ".png";
-                ToDotVisitor.toDot(this.errorReporter, name, details, "png", circuit);
+                ToDot.dump(this.errorReporter, name, details, "png", circuit);
             }
         }
         return circuit;
@@ -81,6 +82,13 @@ public class Passes implements IWritesLogs, CircuitTransform {
     @Override
     public String toString() {
         StringBuilder names = new StringBuilder();
+        names.append(this.id)
+                .append(" Passes")
+                .append("[")
+                .append(this.passes.size())
+                .append("]");
+        return names.toString();
+        /*
         boolean first = true;
         for (CircuitTransform pass: this.passes) {
             if (!first)
@@ -89,5 +97,6 @@ public class Passes implements IWritesLogs, CircuitTransform {
             names.append(pass.toString());
         }
         return names.toString();
+         */
     }
 }

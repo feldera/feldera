@@ -3,7 +3,9 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.operator.OperatorPort;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
-import org.dbsp.sqlCompiler.compiler.backend.ToDotVisitor;
+import org.dbsp.sqlCompiler.compiler.backend.ToDotEdgesVisitor;
+import org.dbsp.sqlCompiler.compiler.backend.rust.ToDot;
+import org.dbsp.sqlCompiler.compiler.backend.rust.ToDotNodesVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.MonotoneExpression;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.AppendOnly;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitTransform;
@@ -20,7 +22,7 @@ public class MonotoneAnalyzer implements CircuitTransform, IWritesLogs {
 
     /** Extension of ToDot which shows monotone types.
      * They are shown as M(type) on the edges. */
-    static class MonotoneDot extends ToDotVisitor {
+    static class MonotoneDot extends ToDotEdgesVisitor {
         final Monotonicity.MonotonicityInformation info;
 
         public MonotoneDot(IErrorReporter reporter, IndentStream stream, int details,
@@ -62,7 +64,7 @@ public class MonotoneAnalyzer implements CircuitTransform, IWritesLogs {
         keyPropagation.apply(circuit);
 
         if (debug)
-            ToDotVisitor.toDot(this.reporter, "original.png", details, "png", circuit);
+            ToDot.dump(this.reporter, "original.png", details, "png", circuit);
 
         ExpandOperators expander = new ExpandOperators(
                 this.reporter,
@@ -73,7 +75,8 @@ public class MonotoneAnalyzer implements CircuitTransform, IWritesLogs {
         Monotonicity monotonicity = new Monotonicity(this.reporter);
         expanded = monotonicity.apply(expanded);
         if (debug)
-            MonotoneDot.toDot("expanded.png", "png", expanded,
+            ToDot.dump("expanded.png", "png", expanded,
+                    stream -> new ToDotNodesVisitor(reporter, stream, details),
                     stream -> new MonotoneDot(reporter, stream, details, monotonicity.info));
 
         InsertLimiters limiters = new InsertLimiters(
@@ -82,7 +85,7 @@ public class MonotoneAnalyzer implements CircuitTransform, IWritesLogs {
         // Notice that we apply the limiters to the original circuit, not to the expanded circuit!
         DBSPCircuit result = limiters.apply(circuit);
         if (debug)
-            ToDotVisitor.toDot(reporter, "limited.png", details, "png", result);
+            ToDot.dump(reporter, "limited.png", details, "png", result);
 
         CircuitTransform merger = new OptimizeWithGraph(this.reporter, g -> new MergeGC(this.reporter, g));
         result = merger.apply(result);

@@ -18,7 +18,8 @@ public class Repeat implements IWritesLogs, CircuitTransform {
 
     @Override
     public DBSPCircuit apply(DBSPCircuit circuit) {
-        int maxRepeats = circuit.size();
+        // In some cases more repeats are needed
+        int maxRepeats = Math.max(circuit.size(), 10);
         int repeats = 0;
         while (true) {
             DBSPCircuit result = this.transform.apply(circuit);

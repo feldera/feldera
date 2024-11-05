@@ -210,6 +210,12 @@ public class Utilities {
         return data.remove(data.size() - 1);
     }
 
+    public static <T> void removeLast(List<T> data, T expected) {
+        T removed = removeLast(data);
+        assert removed.equals(expected):
+                "Unexpected node popped " + removed + " expected " + expected;
+    }
+
     public static <T> T[] arraySlice(T[] data, int start, int endExclusive) {
         if (endExclusive > data.length)
             throw new RuntimeException("Slice larger than array " + endExclusive + " vs " + data.length);

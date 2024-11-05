@@ -257,7 +257,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
     public CalciteToDBSPCompiler(boolean trackTableContents,
                                  CompilerOptions options, DBSPCompiler compiler,
                                  ProgramMetadata metadata) {
-        this.circuit = new DBSPPartialCircuit(compiler, compiler.metadata);
+        this.circuit = new DBSPPartialCircuit(compiler.metadata);
         this.compiler = compiler;
         this.nodeOperator = new HashMap<>();
         this.tableContents = new TableContents(compiler, trackTableContents);
@@ -290,7 +290,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
     /** Gets the circuit produced so far and starts a new one. */
     public DBSPPartialCircuit getFinalCircuit() {
         DBSPPartialCircuit result = this.circuit;
-        this.circuit = new DBSPPartialCircuit(this.compiler, this.compiler.metadata);
+        this.circuit = new DBSPPartialCircuit(this.compiler.metadata);
         return result;
     }
 

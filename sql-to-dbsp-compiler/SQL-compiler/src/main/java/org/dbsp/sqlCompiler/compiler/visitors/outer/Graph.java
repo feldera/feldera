@@ -1,19 +1,22 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
+import org.dbsp.sqlCompiler.circuit.ICircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceViewDeclarationOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewOperator;
 import org.dbsp.sqlCompiler.circuit.operator.OperatorPort;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
+import org.dbsp.util.Utilities;
 
-import java.util.ArrayList;
-import java.util.List;
+import java.util.HashMap;
+import java.util.Map;
 
 /** Build a graph data structure from a Circuit */
 public class Graph extends CircuitVisitor {
     public final CircuitGraph graph = new CircuitGraph();
-    final List<DBSPSourceViewDeclarationOperator> delayed = new ArrayList<>();
+    /** Map each source view operator to its parent */
+    final Map<DBSPSourceViewDeclarationOperator, ICircuit> delayed = new HashMap<>();
 
     public Graph(IErrorReporter errorReporter) {
         super(errorReporter);
@@ -37,9 +40,9 @@ public class Graph extends CircuitVisitor {
     @Override
     public void endVisit() {
         assert this.circuit != null;
-        for (DBSPSourceViewDeclarationOperator operator: this.delayed) {
-            DBSPViewOperator view = operator.getCorrespondingView(this.circuit.circuit);
-            this.graph.addEdge(view, operator, 0);
+        for (var opAndParent: this.delayed.entrySet()) {
+            DBSPViewOperator view = opAndParent.getKey().getCorrespondingView(opAndParent.getValue());
+            this.graph.addEdge(view, opAndParent.getKey(), 0);
         }
         super.endVisit();
     }
@@ -47,7 +50,7 @@ public class Graph extends CircuitVisitor {
     @Override
     public void postorder(DBSPSourceViewDeclarationOperator operator) {
         this.graph.addNode(operator);
-        // Add the input edges at the end.
-        this.delayed.add(operator);
+        // Process the input edges at the end
+        Utilities.putNew(this.delayed, operator, this.getParent());
     }
 }

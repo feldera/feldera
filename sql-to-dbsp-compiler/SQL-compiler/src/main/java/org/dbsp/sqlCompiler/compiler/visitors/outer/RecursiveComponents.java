@@ -1,9 +1,12 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
+import org.dbsp.sqlCompiler.circuit.annotation.Recursive;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDeltaOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPViewOperator;
 import org.dbsp.sqlCompiler.circuit.operator.OperatorPort;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
@@ -12,16 +15,24 @@ import org.dbsp.util.graph.SCC;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 public class RecursiveComponents extends CircuitCloneVisitor {
     final CircuitGraph graph;
     @Nullable
     SCC<DBSPOperator> scc = null;
+    final Map<Integer, DBSPNestedOperator> components;
+    final Set<DBSPNestedOperator> toAdd;
 
     public RecursiveComponents(IErrorReporter reporter, CircuitGraph graph) {
         super(reporter, false);
         this.graph = graph;
+        this.components = new HashMap<>();
+        this.toAdd = new HashSet<>();
     }
 
     @Override
@@ -34,6 +45,22 @@ public class RecursiveComponents extends CircuitCloneVisitor {
             super.replace(operator);
             return;
         }
+
+        DBSPNestedOperator recursive;
+        if (!this.components.containsKey(myComponent)) {
+            recursive = new DBSPNestedOperator(operator.getNode());
+            recursive.addAnnotation(new Recursive());
+            this.toAdd.add(recursive);
+            Utilities.putNew(this.components, myComponent, recursive);
+        } else {
+            recursive = this.components.get(myComponent);
+            if (operator.is(DBSPViewOperator.class) && this.toAdd.contains(recursive)) {
+                // This ensures that it's inserted in topological order
+                this.addOperator(recursive);
+                this.toAdd.remove(recursive);
+            }
+        }
+
         // Check if any inputs of the operator are in a different component
         // If they are, insert a delta operator in front.
         List<OperatorPort> sources = new ArrayList<>();
@@ -42,7 +69,7 @@ public class RecursiveComponents extends CircuitCloneVisitor {
             int sourceComp = Utilities.getExists(this.scc.componentId, input.node());
             if (sourceComp != myComponent) {
                 DBSPDeltaOperator delta = new DBSPDeltaOperator(operator.getNode(), source);
-                this.addOperator(delta);
+                recursive.addOperator(delta);
                 sources.add(delta.getOutput());
             } else {
                 sources.add(source);
@@ -51,7 +78,8 @@ public class RecursiveComponents extends CircuitCloneVisitor {
 
         DBSPSimpleOperator result = operator.withInputs(sources, this.force);
         result.setDerivedFrom(operator.id);
-        this.map(operator, result);
+        recursive.addOperator(result);
+        this.map(operator, result, false);
     }
 
     @Override

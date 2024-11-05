@@ -7,6 +7,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.OperatorPort;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
+import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 import org.dbsp.sqlCompiler.ir.aggregate.AggregateBase;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregate;
 import org.dbsp.sqlCompiler.ir.aggregate.MinMaxAggregate;
@@ -51,6 +52,11 @@ public class MinMaxOptimize extends Passes {
             super(reporter, false);
             this.isAppendOnly = isAppendOnly;
             this.weightVar = weightVar;
+        }
+
+        @Override
+        public void startVisit(IDBSPOuterNode circuit) {
+            super.startVisit(circuit);
         }
 
         @Override

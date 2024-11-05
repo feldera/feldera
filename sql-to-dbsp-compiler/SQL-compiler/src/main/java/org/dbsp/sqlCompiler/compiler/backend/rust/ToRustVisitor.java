@@ -25,16 +25,20 @@ package org.dbsp.sqlCompiler.compiler.backend.rust;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.DBSPPartialCircuit;
+import org.dbsp.sqlCompiler.circuit.annotation.Recursive;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAsofJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPBinaryOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPChainAggregateOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPControlledFilterOperator;
 import org.dbsp.sqlCompiler.circuit.DBSPDeclaration;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPDeltaOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDistinctOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinBaseOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIndexedTopKOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperator;
@@ -53,6 +57,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceViewDeclarationOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSumOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewBaseOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPViewOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWaterlineOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
@@ -343,7 +348,7 @@ public class ToRustVisitor extends CircuitVisitor {
     }
 
     void processNode(IDBSPNode node) {
-        DBSPSimpleOperator op = node.as(DBSPSimpleOperator.class);
+        DBSPOperator op = node.as(DBSPOperator.class);
         if (op != null)
             this.generateOperator(op);
         IDBSPInnerNode inner = node.as(IDBSPInnerNode.class);
@@ -353,7 +358,7 @@ public class ToRustVisitor extends CircuitVisitor {
         }
     }
 
-    void generateOperator(DBSPSimpleOperator operator) {
+    void generateOperator(DBSPOperator operator) {
         String str = operator.getNode().toInternalString();
         this.writeComments(str);
         operator.accept(this);
@@ -467,6 +472,48 @@ public class ToRustVisitor extends CircuitVisitor {
         return VisitDecision.STOP;
     }
 
+    @Override
+    public VisitDecision preorder(DBSPDeltaOperator delta) {
+        this.builder.append("let ")
+                .append(delta.getOutputName())
+                .append(" = ")
+                .append(delta.input().getOutputName())
+                .append(".delta0(child);")
+                .newline();
+        return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPNestedOperator circuit) {
+        boolean recursive = circuit.hasAnnotation(a -> a.is(Recursive.class));
+        if (!recursive)
+            throw new InternalCompilerError("NestedOperator not recursive");
+
+        this.builder.append("circuit.recursive(|child");
+        // view list
+        for (var view: circuit.views.values()) {
+            this.builder.append(", ")
+                    .append(view.getOutputName())
+                    .append(": ");
+            view.outputStreamType.accept(this.innerVisitor);
+        }
+        this.builder.append("| {").increase().newline();
+        for (IDBSPNode node : circuit.getAllOperators())
+            this.processNode(node);
+
+        this.builder.append("Ok((");
+        for (var view: circuit.views.values()) {
+            this.builder
+                    .append(view.getOutputName())
+                    .append(", ");
+        }
+        this.builder.append("))").newline()
+                .decrease()
+                .append("}).unwrap();")
+                .newline();
+        return VisitDecision.STOP;
+    }
+
     void findNestedStructs(DBSPTypeStruct struct, List<DBSPTypeStruct> result) {
         for (DBSPTypeStruct str: result)
             if (str.name.equals(struct.name))
@@ -546,7 +593,14 @@ public class ToRustVisitor extends CircuitVisitor {
 
     @Override
     public VisitDecision preorder(DBSPSourceViewDeclarationOperator operator) {
-        throw new InternalCompilerError("Source View Operator should have been eliminated " + operator);
+        DBSPViewOperator view = operator.getCorrespondingView(this.getParent());
+        this.builder.append("let ")
+                .append(operator.getOutputName())
+                .append(" = ")
+                .append(view.getOutputName())
+                .append(";")
+                .newline();
+        return VisitDecision.STOP;
     }
 
     @Override

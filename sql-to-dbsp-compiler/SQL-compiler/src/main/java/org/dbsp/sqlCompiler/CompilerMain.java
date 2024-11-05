@@ -32,8 +32,8 @@ import org.apache.calcite.schema.SchemaPlus;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
-import org.dbsp.sqlCompiler.compiler.backend.ToDotVisitor;
 import org.dbsp.sqlCompiler.compiler.backend.rust.RustFileWriter;
+import org.dbsp.sqlCompiler.compiler.backend.rust.ToDot;
 import org.dbsp.sqlCompiler.compiler.backend.rust.ToRustInnerVisitor;
 import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
@@ -211,7 +211,7 @@ public class CompilerMain {
                         "Must specify an output file when outputting jpeg or png");
                 return compiler.messages;
             }
-            ToDotVisitor.toDot(compiler, this.options.ioOptions.outputFile,
+            ToDot.dump(compiler, this.options.ioOptions.outputFile,
                     this.options.ioOptions.verbosity, dotFormat, dbsp);
             return compiler.messages;
         }

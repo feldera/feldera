@@ -25,6 +25,7 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.DBSPDeclaration;
+import org.dbsp.sqlCompiler.circuit.ICircuit;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 import org.dbsp.sqlCompiler.circuit.operator.*;
@@ -63,6 +64,11 @@ public abstract class CircuitVisitor
         return Objects.requireNonNull(this.circuit);
     }
 
+    public ICircuit getParent() {
+        assert this.current.size() > 1;
+        return this.current.get(this.current.size() - 2).to(ICircuit.class);
+    }
+
     /** Override to initialize before visiting any node. */
     public void startVisit(IDBSPOuterNode node) {
         if (node.is(DBSPCircuit.class))
@@ -71,7 +77,12 @@ public abstract class CircuitVisitor
 
     /** Override to finish after visiting all nodes. */
     public void endVisit() {
+        assert this.circuit != null;
         this.circuit = null;
+    }
+
+    public IDBSPOuterNode getCurrent() {
+        return Utilities.last(this.current);
     }
 
     /** Returns by default the input circuit unmodified. */
@@ -88,8 +99,7 @@ public abstract class CircuitVisitor
     }
 
     public void pop(IDBSPOuterNode node) {
-        IDBSPOuterNode previous = Utilities.removeLast(this.current);
-        assert previous == node: "Unexpected node popped " + node + " expected " + previous;
+        Utilities.removeLast(this.current, node);
     }
 
     /************************* PREORDER *****************************/
@@ -147,6 +157,10 @@ public abstract class CircuitVisitor
 
     public VisitDecision preorder(DBSPSubtractOperator node) {
         return this.preorder(node.to(DBSPBinaryOperator.class));
+    }
+
+    public VisitDecision preorder(DBSPNestedOperator node) {
+        return this.preorder(node.to(DBSPOperator.class));
     }
 
     public VisitDecision preorder(DBSPSumOperator node) {
@@ -350,6 +364,10 @@ public abstract class CircuitVisitor
     public void postorder(DBSPCircuit ignored) {}
 
     public void postorder(DBSPPartialCircuit ignoredCircuit) {}
+
+    public void postorder(DBSPNestedOperator node) {
+        this.postorder(node.to(DBSPOperator.class));
+    }
 
     public void postorder(DBSPSimpleOperator ignored) {}
 

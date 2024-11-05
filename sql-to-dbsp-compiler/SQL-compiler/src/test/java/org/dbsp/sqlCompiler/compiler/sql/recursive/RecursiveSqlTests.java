@@ -1,15 +1,12 @@
 package org.dbsp.sqlCompiler.compiler.sql.recursive;
 
 import org.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests;
-import org.dbsp.sqlCompiler.compiler.visitors.outer.Passes;
-import org.dbsp.util.Logger;
-import org.junit.Ignore;
 import org.junit.Test;
 
 public class RecursiveSqlTests extends BaseSQLTests {
     @Test
     public void testFrontEnd() {
-        // this.showFinal();
+        this.showFinal();
         String sql = """
                 CREATE RECURSIVE VIEW V(v INT);
                 CREATE VIEW V AS SELECT v FROM V UNION SELECT 1;""";

@@ -1,6 +1,7 @@
 package org.dbsp.sqlCompiler.circuit.operator;
 
 import org.dbsp.sqlCompiler.circuit.DBSPPartialCircuit;
+import org.dbsp.sqlCompiler.circuit.ICircuit;
 import org.dbsp.sqlCompiler.compiler.TableMetadata;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -61,7 +62,7 @@ public final class DBSPSourceViewDeclarationOperator
     }
 
     /** Get the corresponding view operator for this view declaration */
-    public DBSPViewOperator getCorrespondingView(DBSPPartialCircuit circuit) {
+    public DBSPViewOperator getCorrespondingView(ICircuit circuit) {
         DBSPViewOperator view = circuit.getView(this.originalViewName());
         return Objects.requireNonNull(view);
     }

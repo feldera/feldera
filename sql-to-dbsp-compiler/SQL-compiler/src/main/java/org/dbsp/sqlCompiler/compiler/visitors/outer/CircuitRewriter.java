@@ -47,6 +47,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWaterlineOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
@@ -316,6 +317,11 @@ public class CircuitRewriter extends CircuitCloneVisitor {
     }
 
     @Override
+    public void postorder(DBSPNestedOperator operator) {
+        super.postorder(operator);
+    }
+
+    @Override
     public void postorder(DBSPJoinOperator operator) {
         DBSPType outputType = this.transform(operator.outputType);
         DBSPExpression function = this.transform(operator.getFunction());
@@ -569,7 +575,7 @@ public class CircuitRewriter extends CircuitCloneVisitor {
     @Override
     public void postorder(DBSPDeclaration decl) {
         DBSPItem rewritten = this.transform.apply(decl.item).to(DBSPItem.class);
-        this.getResult().declarations.add(new DBSPDeclaration(rewritten));
+        this.getUnderConstruction().addDeclaration(new DBSPDeclaration(rewritten));
     }
 
     @Override

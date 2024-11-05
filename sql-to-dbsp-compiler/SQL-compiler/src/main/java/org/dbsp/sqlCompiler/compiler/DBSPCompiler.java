@@ -38,7 +38,7 @@ import org.apache.calcite.sql.util.SqlOperatorTables;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.DBSPPartialCircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceTableOperator;
-import org.dbsp.sqlCompiler.compiler.backend.ToDotVisitor;
+import org.dbsp.sqlCompiler.compiler.backend.rust.ToDot;
 import org.dbsp.sqlCompiler.compiler.errors.BaseCompilerException;
 import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
@@ -528,8 +528,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
             this.frontend.endCompilation(this.compiler());
             this.circuit = this.midend.getFinalCircuit().seal("parsed");
             if (this.getDebugLevel() > 2) {
-                ToDotVisitor.toDot(this, "initial.png",
-                        this.getDebugLevel(), "png", this.circuit);
+                ToDot.dump(this, "initial.png", this.getDebugLevel(), "png", this.circuit);
             }
 
             this.validateForeignKeys(this.circuit, foreignKeys);
@@ -660,8 +659,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         DBSPCircuit result = this.circuit.rename(name);
         this.circuit = null;
         if (this.getDebugLevel() > 0 && !result.name.equals("tmp")) {
-            ToDotVisitor.toDot(
-                    this, "final.png", this.getDebugLevel(), "png", result);
+            ToDot.dump(this, "final.png", this.getDebugLevel(), "png", result);
         }
         return result;
     }

@@ -27,7 +27,6 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceTableOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewOperator;
-import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.ProgramMetadata;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -50,21 +49,18 @@ import java.util.Set;
 
 /** A partial circuit is a circuit under construction.
  * A complete circuit can be obtained by calling the "seal" method. */
-public final class DBSPPartialCircuit extends DBSPNode implements IDBSPOuterNode, IWritesLogs {
+public final class DBSPPartialCircuit extends DBSPNode implements IDBSPOuterNode, IWritesLogs, ICircuit {
     public final List<DBSPDeclaration> declarations = new ArrayList<>();
     public final LinkedHashMap<String, DBSPSourceTableOperator> sourceOperators = new LinkedHashMap<>();
     public final LinkedHashMap<String, DBSPViewOperator> viewOperators = new LinkedHashMap<>();
     public final LinkedHashMap<String, DBSPSinkOperator> sinkOperators = new LinkedHashMap<>();
     public final List<DBSPOperator> allOperators = new ArrayList<>();
-    /** Maps indexed z-set table names to the corresponding deindex operator */
-    public final IErrorReporter errorReporter;
     public final ProgramMetadata metadata;
     // Used to detect duplicate insertions (always a bug).
     final Set<DBSPOperator> operators = new HashSet<>();
 
-    public DBSPPartialCircuit(IErrorReporter errorReporter, ProgramMetadata metadata) {
+    public DBSPPartialCircuit(ProgramMetadata metadata) {
         super(CalciteObject.EMPTY);
-        this.errorReporter = errorReporter;
         this.metadata = metadata;
     }
 
@@ -144,10 +140,12 @@ public final class DBSPPartialCircuit extends DBSPNode implements IDBSPOuterNode
     }
 
     /** Return true if this circuit and other are identical (have the exact same operators). */
-    public boolean sameCircuit(DBSPPartialCircuit other) {
+    public boolean sameCircuit(ICircuit other) {
         if (this == other)
             return true;
-        return Linq.same(this.allOperators, other.allOperators);
+        if (!other.is(DBSPPartialCircuit.class))
+            return false;
+        return Linq.same(this.allOperators, other.to(DBSPPartialCircuit.class).allOperators);
     }
 
     /** No more changes are expected to the circuit. */

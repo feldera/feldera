@@ -32,6 +32,8 @@ import java.util.List;
 
 /** Rewrites casts between complex types into sequences of operations. */
 public class ExpandCasts extends InnerRewriteVisitor {
+    // This pass may be iterated many times, depending on the complexity of the expressions involved.
+    // Expanding some casts generates other casts.
     public ExpandCasts(IErrorReporter reporter) {
         super(reporter);
     }
@@ -125,10 +127,10 @@ public class ExpandCasts extends InnerRewriteVisitor {
                 // Default conversion is fine
                 return null;
             } else {
-                // Convert to a Vector of VARIANT, and then
+                // Convert to a Vector of VARIANT, and then...
                 DBSPTypeVec vecVType = new DBSPTypeVec(new DBSPTypeVariant(false), sourceType.mayBeNull);
                 DBSPExpression vecV = source.cast(vecVType);
-                // convert each element recursively to the target element type
+                // ...convert each element recursively to the target element type
                 DBSPVariablePath var = vecVType.getElementType().ref().var();
                 DBSPExpression convert = var.deref().cast(type.getElementType()).closure(var);
                 source = new DBSPBinaryExpression(source.getNode(),
@@ -202,6 +204,7 @@ public class ExpandCasts extends InnerRewriteVisitor {
             // Default implementation
             result = source.cast(type);
         this.pop(expression);
+        assert expression.hasSameType(result);
         this.map(expression, result);
         return VisitDecision.STOP;
     }

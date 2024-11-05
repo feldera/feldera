@@ -11,11 +11,13 @@ public class Conditional implements IWritesLogs, CircuitTransform {
     final Supplier<Boolean> test;
     final IErrorReporter errorReporter;
     public final CircuitTransform transform;
+    final long id;
 
     public Conditional(IErrorReporter reporter, CircuitTransform visitor, Supplier<Boolean> test) {
         this.errorReporter = reporter;
         this.transform = visitor;
         this.test = test;
+        this.id = CircuitVisitor.crtId++;
     }
 
     @Override
@@ -27,6 +29,6 @@ public class Conditional implements IWritesLogs, CircuitTransform {
 
     @Override
     public String toString() {
-        return "Conditional " + this.transform;
+        return this.id + " Conditional " + this.transform;
     }
 }
