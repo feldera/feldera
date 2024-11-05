@@ -6,11 +6,11 @@ use std::collections::VecDeque;
 use std::io::Cursor;
 use std::mem;
 use std::ops::Range;
-use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::sync::{Barrier, Weak};
 use std::thread::{self};
 use tokio::sync::broadcast::{channel as broadcast_channel, Receiver as BroadcastReceiver};
+use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 
 use crate::format::InputBuffer;
 use crate::{InputConsumer, InputEndpoint, InputReader, Parser, TransportInputEndpoint};
@@ -124,11 +124,11 @@ struct InnerInit {
     /// The per-table consumers.
     consumers: EnumMap<NexmarkTable, Option<Box<dyn InputConsumer>>>,
 
-    command_receiver: Receiver<InputReaderCommand>,
+    command_receiver: UnboundedReceiver<InputReaderCommand>,
 }
 
 impl InnerInit {
-    pub fn new(command_receiver: Receiver<InputReaderCommand>) -> Self {
+    pub fn new(command_receiver: UnboundedReceiver<InputReaderCommand>) -> Self {
         Self {
             options: None,
             parsers: EnumMap::default(),
@@ -202,12 +202,12 @@ enum InnerStatus {
 
 struct Inner {
     status: Mutex<InnerStatus>,
-    command_sender: Sender<InputReaderCommand>,
+    command_sender: UnboundedSender<InputReaderCommand>,
 }
 
 impl Inner {
     pub fn new() -> Self {
-        let (command_sender, command_receiver) = channel();
+        let (command_sender, command_receiver) = unbounded_channel();
         Self {
             status: Mutex::new(InnerStatus::Initializing(InnerInit::new(command_receiver))),
             command_sender,
@@ -253,7 +253,7 @@ fn worker_thread(
     options: NexmarkInputOptions,
     parsers: EnumMap<NexmarkTable, Box<dyn Parser>>,
     consumers: EnumMap<NexmarkTable, Box<dyn InputConsumer>>,
-    command_receiver: Receiver<InputReaderCommand>,
+    command_receiver: UnboundedReceiver<InputReaderCommand>,
 ) -> AnyResult<()> {
     let mut command_receiver = InputCommandReceiver::<Metadata>::new(command_receiver);
 
@@ -287,13 +287,13 @@ fn worker_thread(
         .collect::<Vec<_>>();
     drop(parsers);
 
-    let mut next_event_id = if let Some(metadata) = command_receiver.recv_seek()? {
+    let mut next_event_id = if let Some(metadata) = command_receiver.blocking_recv_seek()? {
         metadata.event_ids.end
     } else {
         0
     };
 
-    while let Some(Metadata { event_ids }) = command_receiver.recv_replay()? {
+    while let Some(Metadata { event_ids }) = command_receiver.blocking_recv_replay()? {
         let _ = bcast_sender.send(event_ids.clone());
         barrier.wait();
         let mut total = 0;
@@ -311,7 +311,7 @@ fn worker_thread(
         let command = if running && !eoi {
             command_receiver.try_recv()?
         } else {
-            Some(command_receiver.recv()?)
+            Some(command_receiver.blocking_recv()?)
         };
         match command {
             Some(InputReaderCommand::Seek(_)) | Some(InputReaderCommand::Replay(_)) => {

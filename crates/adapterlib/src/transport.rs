@@ -1,7 +1,6 @@
 use std::collections::VecDeque;
 use std::fmt::Display;
 use std::marker::PhantomData;
-use std::sync::mpsc::{Receiver, RecvError, TryRecvError};
 use std::sync::Mutex;
 
 use anyhow::{Error as AnyError, Result as AnyResult};
@@ -9,6 +8,8 @@ use dyn_clone::DynClone;
 use feldera_types::program_schema::Relation;
 use rmpv::{ext::Error as RmpDecodeError, Value as RmpValue};
 use serde::Deserialize;
+use tokio::sync::mpsc::error::TryRecvError;
+use tokio::sync::mpsc::UnboundedReceiver;
 
 use crate::catalog::InputCollectionHandle;
 use crate::format::{InputBuffer, ParseError, Parser};
@@ -446,7 +447,7 @@ pub trait OutputEndpoint: Send {
     fn is_fault_tolerant(&self) -> bool;
 }
 
-/// A [Receiver] wrapper for [InputReaderCommand] for fault-tolerant connectors.
+/// An [UnboundedReceiver] wrapper for [InputReaderCommand] for fault-tolerant connectors.
 ///
 /// A fault-tolerant connector wants to receive, in order:
 ///
@@ -459,7 +460,7 @@ pub trait OutputEndpoint: Send {
 /// This helps with that.
 // This is used by Kafka and Nexmark but both of those are optional.
 pub struct InputCommandReceiver<T> {
-    receiver: Receiver<InputReaderCommand>,
+    receiver: UnboundedReceiver<InputReaderCommand>,
     buffer: Option<InputReaderCommand>,
     _phantom: PhantomData<T>,
 }
@@ -484,12 +485,6 @@ impl Display for InputCommandReceiverError {
     }
 }
 
-impl From<RecvError> for InputCommandReceiverError {
-    fn from(_: RecvError) -> Self {
-        Self::Disconnected
-    }
-}
-
 impl From<RmpDecodeError> for InputCommandReceiverError {
     fn from(value: RmpDecodeError) -> Self {
         Self::DecodeError(value)
@@ -498,7 +493,7 @@ impl From<RmpDecodeError> for InputCommandReceiverError {
 
 // This is used by Kafka and Nexmark but both of those are optional.
 impl<T> InputCommandReceiver<T> {
-    pub fn new(receiver: Receiver<InputReaderCommand>) -> Self {
+    pub fn new(receiver: UnboundedReceiver<InputReaderCommand>) -> Self {
         Self {
             receiver,
             buffer: None,
@@ -506,12 +501,31 @@ impl<T> InputCommandReceiver<T> {
         }
     }
 
-    pub fn recv_seek(&mut self) -> Result<Option<T>, InputCommandReceiverError>
+    pub fn blocking_recv_seek(&mut self) -> Result<Option<T>, InputCommandReceiverError>
+    where
+        T: for<'a> Deserialize<'a>,
+    {
+        let command = self.blocking_recv()?;
+        self.take_seek(command)
+    }
+
+    pub async fn recv_seek(&mut self) -> Result<Option<T>, InputCommandReceiverError>
+    where
+        T: for<'a> Deserialize<'a>,
+    {
+        let command = self.recv().await?;
+        self.take_seek(command)
+    }
+
+    fn take_seek(
+        &mut self,
+        command: InputReaderCommand,
+    ) -> Result<Option<T>, InputCommandReceiverError>
     where
         T: for<'a> Deserialize<'a>,
     {
         debug_assert!(self.buffer.is_none());
-        match self.recv()? {
+        match command {
             InputReaderCommand::Seek(metadata) => Ok(Some(rmpv::ext::from_value::<T>(metadata)?)),
             InputReaderCommand::Disconnect => Err(InputCommandReceiverError::Disconnected),
             other => {
@@ -521,11 +535,30 @@ impl<T> InputCommandReceiver<T> {
         }
     }
 
-    pub fn recv_replay(&mut self) -> Result<Option<T>, InputCommandReceiverError>
+    pub fn blocking_recv_replay(&mut self) -> Result<Option<T>, InputCommandReceiverError>
     where
         T: for<'a> Deserialize<'a>,
     {
-        match self.recv()? {
+        let command = self.blocking_recv()?;
+        self.take_replay(command)
+    }
+
+    pub async fn recv_replay(&mut self) -> Result<Option<T>, InputCommandReceiverError>
+    where
+        T: for<'a> Deserialize<'a>,
+    {
+        let command = self.recv().await?;
+        self.take_replay(command)
+    }
+
+    fn take_replay(
+        &mut self,
+        command: InputReaderCommand,
+    ) -> Result<Option<T>, InputCommandReceiverError>
+    where
+        T: for<'a> Deserialize<'a>,
+    {
+        match command {
             InputReaderCommand::Seek(_) => unreachable!(),
             InputReaderCommand::Replay(metadata) => Ok(Some(rmpv::ext::from_value::<T>(metadata)?)),
             other => {
@@ -535,21 +568,35 @@ impl<T> InputCommandReceiver<T> {
         }
     }
 
-    pub fn recv(&mut self) -> Result<InputReaderCommand, RecvError> {
+    pub async fn recv(&mut self) -> Result<InputReaderCommand, InputCommandReceiverError> {
         match self.buffer.take() {
             Some(value) => Ok(value),
-            None => self.receiver.recv(),
+            None => self
+                .receiver
+                .recv()
+                .await
+                .ok_or(InputCommandReceiverError::Disconnected),
         }
     }
 
-    pub fn try_recv(&mut self) -> Result<Option<InputReaderCommand>, RecvError> {
+    pub fn blocking_recv(&mut self) -> Result<InputReaderCommand, InputCommandReceiverError> {
+        match self.buffer.take() {
+            Some(value) => Ok(value),
+            None => self
+                .receiver
+                .blocking_recv()
+                .ok_or(InputCommandReceiverError::Disconnected),
+        }
+    }
+
+    pub fn try_recv(&mut self) -> Result<Option<InputReaderCommand>, InputCommandReceiverError> {
         if let Some(command) = self.buffer.take() {
             Ok(Some(command))
         } else {
             match self.receiver.try_recv() {
                 Ok(command) => Ok(Some(command)),
                 Err(TryRecvError::Empty) => Ok(None),
-                Err(TryRecvError::Disconnected) => Err(RecvError),
+                Err(TryRecvError::Disconnected) => Err(InputCommandReceiverError::Disconnected),
             }
         }
     }

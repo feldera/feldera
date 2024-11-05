@@ -4459,6 +4459,7 @@ dependencies = [
  "serde_arrow",
  "serde_json",
  "serde_yaml",
+ "tokio",
 ]
 
 [[package]]
