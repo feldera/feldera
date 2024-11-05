@@ -10,6 +10,7 @@ use actix_web::{
 use anyhow::{anyhow, bail, Result as AnyResult};
 use awc::{http::header::HeaderMap, Client, ClientResponse, Connector};
 use bytes::Bytes;
+use feldera_adapterlib::transport::InputCommandReceiver;
 use feldera_types::program_schema::Relation;
 use feldera_types::transport::url::UrlInputConfig;
 use futures::{future::OptionFuture, StreamExt};
@@ -180,8 +181,10 @@ impl<'a> UrlStream<'a> {
     }
 
     fn seek(&mut self, ofs: u64) {
-        self.ofs = ofs;
-        self.disconnect();
+        if ofs != self.ofs {
+            self.ofs = ofs;
+            self.disconnect();
+        }
     }
 
     fn disconnect(&mut self) {
@@ -224,13 +227,44 @@ impl UrlInputReader {
     async fn worker_thread(
         config: Arc<UrlInputConfig>,
         parser: &mut Box<dyn Parser>,
-        mut receiver: UnboundedReceiver<InputReaderCommand>,
+        command_receiver: UnboundedReceiver<InputReaderCommand>,
         consumer: &dyn InputConsumer,
     ) -> AnyResult<()> {
         ensure_default_crypto_provider();
 
+        let mut command_receiver = InputCommandReceiver::<Metadata>::new(command_receiver);
+        let offset = if let Some(metadata) = command_receiver.recv_seek().await? {
+            metadata.offsets.end
+        } else {
+            0
+        };
+
         let mut splitter = StreamSplitter::new(parser.splitter());
         let mut stream = UrlStream::new(&config.path);
+        stream.seek(offset);
+        splitter.seek(offset);
+
+        while let Some(Metadata { offsets }) = command_receiver.recv_replay().await? {
+            stream.seek(offsets.start);
+            splitter.seek(offsets.start);
+            let mut remainder = (offsets.end - offsets.start) as usize;
+            let mut num_records = 0;
+            while remainder > 0 {
+                let bytes = stream.read(remainder).await?;
+                let Some(bytes) = bytes else {
+                    return Err(anyhow!("unexpected end of data replaying read from URL"));
+                };
+                splitter.append(&bytes);
+                remainder -= bytes.len();
+                while let Some(chunk) = splitter.next(remainder == 0) {
+                    let (mut buffer, errors) = parser.parse(chunk);
+                    consumer.parse_errors(errors);
+                    consumer.buffered(buffer.len(), chunk.len());
+                    num_records += buffer.flush_all();
+                }
+            }
+            consumer.replayed(num_records);
+        }
 
         let mut queue = VecDeque::<(Range<u64>, Box<dyn InputBuffer>)>::new();
 
@@ -256,15 +290,18 @@ impl UrlInputReader {
                 _ = disconnect, if deadline.is_some() => {
                     stream.disconnect()
                 },
-                command = receiver.recv() => {
-                    match command {
-                        Some(InputReaderCommand::Extend) => {
+                command = command_receiver.recv() => {
+                    match command? {
+                        command @ InputReaderCommand::Seek(_) | command @ InputReaderCommand::Replay(_) => {
+                            unreachable!("{command:?} must be at the beginning of the command stream")
+                        }
+                        InputReaderCommand::Extend => {
                             extending = true;
                         }
-                        Some(InputReaderCommand::Pause) => {
+                        InputReaderCommand::Pause => {
                             extending = false;
                         }
-                        Some(InputReaderCommand::Queue) => {
+                        InputReaderCommand::Queue => {
                             let mut total = 0;
                             let limit = consumer.max_batch_size();
                             let mut range: Option<Range<u64>> = None;
@@ -289,37 +326,7 @@ impl UrlInputReader {
                                 }).unwrap(),
                             );
                         }
-                        Some(InputReaderCommand::Seek(metadata)) => {
-                            let Metadata { offsets } = rmpv::ext::from_value(metadata)?;
-                            let offset = offsets.end;
-                            stream.seek(offset);
-                            splitter.seek(offset);
-                        }
-                        Some(InputReaderCommand::Replay(metadata)) => {
-                            deadline = None;
-                            let Metadata { offsets } = rmpv::ext::from_value(metadata)?;
-                            stream.seek(offsets.start);
-                            splitter.seek(offsets.start);
-                            let mut remainder = (offsets.end - offsets.start) as usize;
-                            let mut num_records = 0;
-                            while remainder > 0 {
-                                let bytes = stream.read(remainder).await?;
-                                let Some(bytes) = bytes else {
-                                    todo!();
-                                };
-                                splitter.append(&bytes);
-                                remainder -= bytes.len();
-                                while let Some(chunk) = splitter.next(remainder == 0) {
-                                    let (mut buffer, errors) = parser.parse(chunk);
-                                    consumer.parse_errors(errors);
-                                    consumer.buffered(buffer.len(), chunk.len());
-                                    num_records += buffer.flush_all();
-                                }
-                            }
-                            consumer.replayed(num_records);
-                        }
-                        Some(InputReaderCommand::Disconnect) => return Ok(()),
-                        None => return Ok(())
+                        InputReaderCommand::Disconnect => return Ok(()),
                     }
                 },
                 bytes = stream.read(usize::MAX), if running => {
