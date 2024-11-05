@@ -326,6 +326,7 @@ fn test_pubsub_multiple_subscribers(data: Vec<Vec<TestStruct>>, topic: &str) {
     let (endpoint1, _consumer, _parser, zset1) = mock_input_pipeline::<TestStruct, TestStruct>(
         serde_yaml::from_str(&config_str1).unwrap(),
         Relation::empty(),
+        false,
     )
     .unwrap();
 
@@ -334,6 +335,7 @@ fn test_pubsub_multiple_subscribers(data: Vec<Vec<TestStruct>>, topic: &str) {
     let (endpoint2, _consumer, _parser, zset2) = mock_input_pipeline::<TestStruct, TestStruct>(
         serde_yaml::from_str(&config_str2).unwrap(),
         Relation::empty(),
+        false,
     )
     .unwrap();
 
