@@ -4,6 +4,8 @@ import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
+import org.dbsp.util.IHasId;
+import org.dbsp.util.Linq;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
@@ -28,6 +30,10 @@ public class RepeatedExpressions extends InnerVisitor {
         this.onlyExpressions = expressions;
         this.visited = new HashSet<>();
         this.duplicate = null;
+    }
+
+    void printContext() {
+        System.out.println(Linq.map(this.context, IHasId::getId));
     }
 
     @Override
@@ -67,13 +73,13 @@ public class RepeatedExpressions extends InnerVisitor {
                     .append(this.duplicate)
                     .append(" ")
                     .append(this.duplicate.getId())
-                    .append(" context ");
+                    .append(" context:\n");
             Collections.reverse(this.duplicateContext);
             for (IDBSPInnerNode parent: this.duplicateContext) {
                 builder.append(parent.getId())
                         .append(" ")
                         .append(parent)
-                        .append(" ");
+                        .append("\n");
             }
             throw new RuntimeException(builder.toString());
         }
