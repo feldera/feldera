@@ -27,7 +27,6 @@ use rdkafka::{Offset, TopicPartitionList};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 use std::ops::Range;
-use std::sync::mpsc::{channel, Receiver, Sender};
 use std::thread::Thread;
 use std::{
     cmp::max,
@@ -37,6 +36,7 @@ use std::{
     thread::spawn,
     time::Duration,
 };
+use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 
 /// Poll timeout must be low, as it bounds the amount of time it takes to resume the connector.
 const POLL_TIMEOUT: Duration = Duration::from_millis(5);
@@ -60,7 +60,7 @@ impl KafkaFtInputEndpoint {
 
 struct KafkaFtInputReader {
     _inner: Arc<KafkaFtInputReaderInner>,
-    command_sender: Sender<InputReaderCommand>,
+    command_sender: UnboundedSender<InputReaderCommand>,
     poller_thread: Thread,
 }
 
@@ -109,14 +109,14 @@ impl KafkaFtInputReaderInner {
         mut parser: Box<dyn Parser>,
         topics: IndexSet<String>,
         partition_counts: Vec<usize>,
-        command_receiver: Receiver<InputReaderCommand>,
+        command_receiver: UnboundedReceiver<InputReaderCommand>,
     ) -> AnyResult<()> {
         // Start reading the partitions either at the resume point or at the
         // beginning.
         let mut assignment = TopicPartitionList::new();
         let mut buffered_messages: Vec<Vec<MessageBuffer>> = Vec::with_capacity(topics.len());
         let mut command_receiver = InputCommandReceiver::<Metadata>::new(command_receiver);
-        match command_receiver.recv_seek()? {
+        match command_receiver.blocking_recv_seek()? {
             Some(metadata) => {
                 let offsets = metadata.parse(&topics, &partition_counts)?;
                 for (topic, partitions) in topics.iter().zip(offsets.into_iter()) {
@@ -158,7 +158,7 @@ impl KafkaFtInputReaderInner {
             .map_err(|error| self.refine_error(error).1)?;
 
         // Then replay as many steps as requested.
-        while let Some(metadata) = command_receiver.recv_replay()? {
+        while let Some(metadata) = command_receiver.blocking_recv_replay()? {
             let metadata = metadata.parse(&topics, &partition_counts)?;
             let mut replayer = MetadataReplayer::new(&metadata);
             let mut total_records = 0;
@@ -407,7 +407,7 @@ impl KafkaFtInputReader {
         });
         *inner.kafka_consumer.context().endpoint.lock().unwrap() = Arc::downgrade(&inner);
 
-        let (command_sender, command_receiver) = channel();
+        let (command_sender, command_receiver) = unbounded_channel();
         let poller_handle = spawn({
             let endpoint = inner.clone();
             move || {

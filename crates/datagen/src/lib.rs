@@ -5,7 +5,6 @@ use std::collections::{HashMap, VecDeque};
 use std::fmt::Write;
 use std::num::NonZeroU32;
 use std::ops::{Range, RangeInclusive};
-use std::sync::mpsc::{Receiver as StdReceiver, Sender as StdSender};
 use std::sync::{Arc, LazyLock};
 use std::thread::Thread;
 use std::time::Duration as StdDuration;
@@ -26,7 +25,8 @@ use rand_distr::{Distribution, Zipf};
 use range_set::RangeSet;
 use serde::{Deserialize, Serialize};
 use serde_json::{to_writer, Map, Value};
-use tokio::{sync::mpsc::UnboundedSender as TokioSender, time::Instant as TokioInstant};
+use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver};
+use tokio::{sync::mpsc::UnboundedSender, time::Instant as TokioInstant};
 
 use dbsp::circuit::tokio::TOKIO;
 use feldera_adapterlib::format::{InputBuffer, Parser};
@@ -276,7 +276,7 @@ impl TransportInputEndpoint for GeneratorEndpoint {
 }
 
 struct InputGenerator {
-    command_sender: StdSender<InputReaderCommand>,
+    command_sender: UnboundedSender<InputReaderCommand>,
     datagen_thread: Thread,
 }
 
@@ -287,7 +287,7 @@ impl InputGenerator {
         mut config: DatagenInputConfig,
         schema: Relation,
     ) -> AnyResult<Self> {
-        let (command_sender, command_receiver) = std::sync::mpsc::channel();
+        let (command_sender, command_receiver) = unbounded_channel();
 
         // Deal with case sensitivity in field names, make sure we can find the field in settings.
         // return an error if have a field in datagen that's not in the table.
@@ -325,7 +325,7 @@ impl InputGenerator {
     }
 
     fn datagen_thread(
-        command_receiver: StdReceiver<InputReaderCommand>,
+        command_receiver: UnboundedReceiver<InputReaderCommand>,
         consumer: Box<dyn InputConsumer>,
         parser: Box<dyn Parser>,
         config: DatagenInputConfig,
@@ -391,7 +391,7 @@ impl InputGenerator {
         let mut command_receiver = InputCommandReceiver::<RawMetadata>::new(command_receiver);
 
         // Tracks work that needs to be sent to a worker for execution.
-        let mut unassigned = if let Some(metadata) = command_receiver.recv_seek()? {
+        let mut unassigned = if let Some(metadata) = command_receiver.blocking_recv_seek()? {
             seed = metadata.seed;
             range_sets_from_vecs(metadata.todo)
         } else {
@@ -409,7 +409,7 @@ impl InputGenerator {
         let mut in_flight = vec![RowRangeSet::new(); config.plan.len()];
 
         // Replay steps.
-        while let Some(metadata) = command_receiver.recv_replay()? {
+        while let Some(metadata) = command_receiver.blocking_recv_replay()? {
             let metadata: Metadata = metadata.into();
             seed = metadata.seed;
             let mut rows = metadata.rows;
@@ -539,7 +539,7 @@ impl InputGenerator {
     #[allow(clippy::too_many_arguments)]
     async fn worker_thread(
         work_receiver: AsyncReceiver<Work>,
-        completion_sender: TokioSender<Completion>,
+        completion_sender: UnboundedSender<Completion>,
         config: DatagenInputConfig,
         schema: Relation,
         consumer: Box<dyn InputConsumer>,
