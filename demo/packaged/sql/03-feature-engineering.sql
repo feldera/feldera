@@ -88,7 +88,7 @@ CREATE TABLE transaction (
 CREATE VIEW enriched_transaction AS
 SELECT
     transaction.*,
-    (transaction.state = customer.state) AS out_of_state
+    (transaction.state != customer.state) AS out_of_state
 FROM
     transaction LEFT ASOF JOIN customer
     MATCH_CONDITION ( transaction.ts >= customer.ts )
@@ -98,7 +98,7 @@ FROM
 CREATE VIEW transaction_with_history AS
 SELECT
     *,
-    COUNT(case when out_of_state then 1 else 0 end) OVER window_30_day as out_of_state_count
+    SUM(case when out_of_state then 1 else 0 end) OVER window_30_day as out_of_state_count
 FROM
     enriched_transaction
 WINDOW window_30_day AS (PARTITION BY customer_id ORDER BY ts RANGE BETWEEN INTERVAL 30 DAYS PRECEDING AND CURRENT ROW);
