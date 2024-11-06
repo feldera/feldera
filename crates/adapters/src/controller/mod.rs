@@ -40,6 +40,9 @@ use dbsp::{
     profile::GraphProfile,
     DBSPHandle,
 };
+use governor::DefaultDirectRateLimiter;
+use governor::Quota;
+use governor::RateLimiter;
 use log::{debug, error, info, trace, warn};
 use metadata::Checkpoint;
 use metadata::StepMetadata;
@@ -50,6 +53,7 @@ use metrics_util::{
     debugging::{DebuggingRecorder, Snapshotter},
     layers::FanoutBuilder,
 };
+use nonzero_ext::nonzero;
 use rmpv::Value as RmpValue;
 use stats::StepProgress;
 use std::borrow::Cow;
@@ -59,6 +63,7 @@ use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::mpsc::{channel, sync_channel, Receiver, Sender};
+use std::sync::LazyLock;
 use std::{
     collections::{BTreeMap, BTreeSet},
     io::Error as IoError,
@@ -227,6 +232,7 @@ impl Controller {
         config: &InputEndpointConfig,
     ) -> Result<EndpointId, ControllerError> {
         debug!("Connecting input endpoint '{endpoint_name}'; config: {config:?}");
+        self.inner.fail_if_restoring()?;
         self.inner.connect_input(endpoint_name, config)
     }
 
@@ -238,8 +244,9 @@ impl Controller {
         self.inner.disconnect_input(endpoint_id)
     }
 
-    pub fn session_context(&self) -> SessionContext {
-        self.inner.session_ctxt.clone()
+    pub fn session_context(&self) -> Result<SessionContext, ControllerError> {
+        self.inner.fail_if_restoring()?;
+        Ok(self.inner.session_ctxt.clone())
     }
 
     /// Connect a previously instantiated input endpoint.
@@ -260,6 +267,7 @@ impl Controller {
         endpoint_config: InputEndpointConfig,
         endpoint: Box<dyn TransportInputEndpoint>,
     ) -> Result<EndpointId, ControllerError> {
+        self.inner.fail_if_restoring()?;
         self.inner
             .add_input_endpoint(endpoint_name, endpoint_config, Some(endpoint))
     }
@@ -294,6 +302,7 @@ impl Controller {
         endpoint: Box<dyn OutputEndpoint>,
     ) -> Result<EndpointId, ControllerError> {
         debug!("Adding output endpoint '{endpoint_name}'; config: {endpoint_config:?}");
+        self.inner.fail_if_restoring()?;
 
         self.inner
             .add_output_endpoint(endpoint_name, endpoint_config, Some(endpoint))
@@ -407,7 +416,10 @@ impl Controller {
     /// The callback-based nature of this function makes it useful in
     /// asynchronous contexts.
     pub fn start_checkpoint(&self, cb: CheckpointCallbackFn) {
-        self.inner.checkpoint(cb)
+        match self.inner.fail_if_restoring() {
+            Err(error) => cb(Err(error)),
+            Ok(()) => self.inner.checkpoint(cb),
+        }
     }
 
     pub fn checkpoint(&self) -> Result<Checkpoint, ControllerError> {
@@ -512,9 +524,7 @@ impl CircuitThread {
             });
         }
 
-        if !self.replaying() {
-            self.backpressure_thread.start();
-        }
+        self.finish_replaying();
 
         loop {
             self.run_commands();
@@ -548,6 +558,13 @@ impl CircuitThread {
         self.circuit
             .kill()
             .map_err(|_| ControllerError::dbsp_panic())
+    }
+
+    fn finish_replaying(&mut self) {
+        if !self.replaying() {
+            self.controller.restoring.store(false, Ordering::Release);
+            self.backpressure_thread.start();
+        }
     }
 
     fn step(&mut self) -> Result<bool, ControllerError> {
@@ -584,9 +601,7 @@ impl CircuitThread {
 
         if let Some(ft) = self.ft.as_mut() {
             ft.next_step()?;
-            if !self.replaying() {
-                self.backpressure_thread.start();
-            }
+            self.finish_replaying();
         }
         self.controller.unpark_backpressure();
 
@@ -606,15 +621,19 @@ impl CircuitThread {
     }
 
     fn checkpoint(&mut self) -> Result<Checkpoint, ControllerError> {
-        let result = if let Some(ft) = self.ft.as_mut() {
-            ft.checkpoint(&mut self.circuit)
-        } else {
-            Err(ControllerError::NotSupported {
-                error: String::from(
-                    "cannot checkpoint circuit because fault tolerance is not enabled",
-                ),
-            })
-        };
+        fn inner(this: &mut CircuitThread) -> Result<Checkpoint, ControllerError> {
+            this.controller.fail_if_restoring()?;
+            let Some(ft) = this.ft.as_mut() else {
+                return Err(ControllerError::NotSupported {
+                    error: String::from(
+                        "cannot checkpoint circuit because fault tolerance is not enabled",
+                    ),
+                });
+            };
+            ft.checkpoint(&mut this.circuit)
+        }
+
+        let result = inner(self);
         if let Err(error) = result.as_ref() {
             warn!("checkpoint failed: {error}");
         }
@@ -1625,7 +1644,12 @@ pub struct ControllerInner {
     metrics_snapshotter: Arc<Snapshotter>,
     prometheus_handle: PrometheusHandle,
     session_ctxt: SessionContext,
+
+    /// Is fault tolerance enabled?
     fault_tolerant: bool,
+
+    /// Is the circuit thread still restoring from a checkpoint?
+    restoring: AtomicBool,
 }
 
 impl ControllerInner {
@@ -1662,6 +1686,7 @@ impl ControllerInner {
             prometheus_handle,
             session_ctxt: SessionContext::new(),
             fault_tolerant,
+            restoring: AtomicBool::new(fault_tolerant),
         });
         controller.initialize_adhoc_queries();
         for (input_name, input_config) in controller.status.pipeline_config.inputs.iter() {
@@ -2310,6 +2335,19 @@ impl ControllerInner {
 
     fn output_buffers_full(&self) -> bool {
         self.status.output_buffers_full()
+    }
+
+    fn fail_if_restoring(&self) -> Result<(), ControllerError> {
+        if self.restoring.load(Ordering::Acquire) {
+            static RATE_LIMIT: LazyLock<DefaultDirectRateLimiter> =
+                LazyLock::new(|| RateLimiter::direct(Quota::per_minute(nonzero!(10u32))));
+            if RATE_LIMIT.check().is_ok() {
+                warn!("Failing request because restore from checkpoint is in progress");
+            }
+            Err(ControllerError::RestoreInProgress)
+        } else {
+            Ok(())
+        }
     }
 }
 

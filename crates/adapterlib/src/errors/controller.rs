@@ -501,6 +501,10 @@ pub enum ControllerError {
     /// Error parsing the checkpoint.
     CheckpointParseError { error: String },
 
+    /// Operation cannot be initiated now because the pipeline is being
+    /// restoring from a checkpoint.
+    RestoreInProgress,
+
     /// Error in steps metadata.
     StepError(StepError),
 
@@ -593,6 +597,7 @@ impl ResponseError for ControllerError {
             Self::ParseError { .. } => StatusCode::BAD_REQUEST,
             Self::NotSupported { .. } => StatusCode::BAD_REQUEST,
             Self::EnterpriseFeature(_) => StatusCode::NOT_IMPLEMENTED,
+            Self::RestoreInProgress => StatusCode::SERVICE_UNAVAILABLE,
             _ => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
@@ -677,6 +682,7 @@ impl DbspDetailedError for ControllerError {
             Self::SchemaParseError { .. } => Cow::from("SchemaParseError"),
             Self::SchemaValidationError { .. } => Cow::from("SchemaParseError"),
             Self::CheckpointParseError { .. } => Cow::from("CheckpointParseError"),
+            Self::RestoreInProgress => Cow::from("RestoreInProgress"),
             Self::StepError { .. } => Cow::from("StepError"),
             Self::UnexpectedStep { .. } => Cow::from("UnexpectedStep"),
             Self::IrParseError { .. } => Cow::from("IrParseError"),
@@ -708,6 +714,7 @@ impl DetailedError for ControllerError {
             Self::SchemaParseError { .. } => Cow::from("SchemaParseError"),
             Self::SchemaValidationError { .. } => Cow::from("SchemaParseError"),
             Self::CheckpointParseError { .. } => Cow::from("CheckpointParseError"),
+            Self::RestoreInProgress => Cow::from("RestoreInProgress"),
             Self::StepError { .. } => Cow::from("StepError"),
             Self::UnexpectedStep { .. } => Cow::from("UnexpectedStep"),
             Self::IrParseError { .. } => Cow::from("IrParseError"),
@@ -751,6 +758,9 @@ impl Display for ControllerError {
             }
             Self::CheckpointParseError { error } => {
                 write!(f, "Error parsing checkpoint file: {error}")
+            }
+            Self::RestoreInProgress => {
+                write!(f, "Operation cannot be initiated now because the pipeline is being restoring from a checkpoint.")
             }
             Self::StepError(error) => write!(f, "Error with persistent input steps: {error}"),
             Self::UnexpectedStep { actual, expected } => {

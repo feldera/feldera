@@ -3656,6 +3656,7 @@ dependencies = [
  "google-cloud-gax",
  "google-cloud-googleapis",
  "google-cloud-pubsub",
+ "governor 0.7.0",
  "home",
  "indexmap 2.6.0",
  "jemalloc_pprof",
@@ -3668,6 +3669,7 @@ dependencies = [
  "minitrace",
  "minitrace-jaeger",
  "mockall",
+ "nonzero_ext",
  "num-bigint",
  "once_cell",
  "ordered-float 4.3.0",
@@ -4473,7 +4475,7 @@ dependencies = [
  "fake",
  "feldera-adapterlib",
  "feldera-types",
- "governor",
+ "governor 0.6.3",
  "num-traits",
  "rand",
  "rand_distr",
@@ -5017,6 +5019,27 @@ dependencies = [
  "dashmap 5.5.3",
  "futures",
  "futures-timer",
+ "no-std-compat",
+ "nonzero_ext",
+ "parking_lot",
+ "portable-atomic",
+ "quanta",
+ "rand",
+ "smallvec",
+ "spinning_top",
+]
+
+[[package]]
+name = "governor"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0746aa765db78b521451ef74221663b57ba595bf83f75d0ce23cc09447c8139f"
+dependencies = [
+ "cfg-if",
+ "dashmap 6.1.0",
+ "futures-sink",
+ "futures-timer",
+ "futures-util",
  "no-std-compat",
  "nonzero_ext",
  "parking_lot",
