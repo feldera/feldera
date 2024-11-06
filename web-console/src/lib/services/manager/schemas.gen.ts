@@ -940,9 +940,20 @@ endpoint or to encode data sent to the endpoint.`,
 } as const
 
 export const $FtConfig = {
-  type: 'string',
+  type: 'object',
   description: 'Fault-tolerance configuration for runtime startup.',
-  enum: ['initial_state', 'latest_checkpoint']
+  properties: {
+    checkpoint_interval_secs: {
+      type: 'integer',
+      format: 'int64',
+      description: `Interval between automatic checkpoints, in seconds.
+
+The default is 60 seconds.  A value of 0 disables automatic
+checkpointing.`,
+      default: 60,
+      minimum: 0
+    }
+  }
 } as const
 
 export const $GenerationPlan = {

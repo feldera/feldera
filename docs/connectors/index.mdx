@@ -163,12 +163,13 @@ for an example of configuring the output buffer.
 
 ## Fault tolerance
 
-As a preview feature, Feldera supports fault tolerance, meaning that
-it can gracefully restart from the exact point of an abrupt shutdown
-or crash, picking up from where it left off without dropping or
-duplicating input or output.  To enable fault tolerance on a pipeline,
-set `"fault_tolerance": "latest_checkpoint"` in the pipeline
-configuration.
+As a preview feature in the enterprise edition only, Feldera supports
+fault tolerance, meaning that it can gracefully restart from the exact
+point of an abrupt shutdown or crash, picking up from where it left
+off without dropping or duplicating input or output.  To enable fault
+tolerance on a pipeline, set `"fault_tolerance": {}` in the pipeline
+configuration (optional configuration for fault tolerance may be
+specified inside `{}`).
 
 When a fault-tolerant pipeline restarts, it loads its state from the
 most recent checkpoint, then it replays any data from input connectors

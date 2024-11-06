@@ -40,7 +40,6 @@ use dbsp::{
     profile::GraphProfile,
     DBSPHandle,
 };
-use feldera_types::config::FtConfig;
 use log::{debug, error, info, trace, warn};
 use metadata::Checkpoint;
 use metadata::StepMetadata;
@@ -54,7 +53,6 @@ use metrics_util::{
 use rmpv::Value as RmpValue;
 use stats::StepProgress;
 use std::borrow::Cow;
-use std::cmp::min;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::fs;
@@ -465,6 +463,7 @@ struct CircuitThread {
     backpressure_thread: BackpressureThread,
     ft: Option<FtState>,
     parker: Parker,
+    last_checkpoint: Instant,
 }
 
 impl CircuitThread {
@@ -499,6 +498,7 @@ impl CircuitThread {
             command_receiver,
             backpressure_thread,
             parker,
+            last_checkpoint: Instant::now(),
         })
     }
 
@@ -533,50 +533,64 @@ impl CircuitThread {
                 continue;
             }
 
-            if let Some(wait) = trigger.trigger(self.replaying(), running) {
-                wait.park(&self.parker);
-                continue;
-            }
-
-            let Ok(FlushedInput {
-                total_consumed,
-                step_metadata,
-            }) = self.flush_input_to_circuit()
-            else {
-                break;
-            };
-            if let Some(ft) = self.ft.as_mut() {
-                ft.write_step(step_metadata)?;
-            }
-
-            // Wake up the backpressure thread to unpause endpoints blocked due to
-            // backpressure.
-            self.controller.unpark_backpressure();
-            self.step();
-
-            let processed_records = self.processed_records(total_consumed);
-
-            // Update `trace_snapshot` to the latest traces
-            self.update_snapshot();
-
-            // Push output batches to output pipelines.
-            if let Some(ft) = self.ft.as_mut() {
-                ft.sync_step()?;
-            }
-            self.push_output(processed_records);
-
-            if let Some(ft) = self.ft.as_mut() {
-                ft.next_step()?;
-                if !self.replaying() {
-                    self.backpressure_thread.start();
+            match trigger.trigger(self.last_checkpoint, self.replaying(), running) {
+                Action::Step => {
+                    if !self.step()? {
+                        break;
+                    }
                 }
+                Action::Checkpoint => drop(self.checkpoint()),
+                Action::Park(Some(deadline)) => self.parker.park_deadline(deadline),
+                Action::Park(None) => self.parker.park(),
             }
-            self.controller.unpark_backpressure();
         }
         self.flush_commands();
         self.circuit
             .kill()
             .map_err(|_| ControllerError::dbsp_panic())
+    }
+
+    fn step(&mut self) -> Result<bool, ControllerError> {
+        let Ok(FlushedInput {
+            total_consumed,
+            step_metadata,
+        }) = self.flush_input_to_circuit()
+        else {
+            return Ok(false);
+        };
+        if let Some(ft) = self.ft.as_mut() {
+            ft.write_step(step_metadata)?;
+        }
+
+        // Wake up the backpressure thread to unpause endpoints blocked due to
+        // backpressure.
+        self.controller.unpark_backpressure();
+        debug!("circuit thread: calling 'circuit.step'");
+        self.circuit
+            .step()
+            .unwrap_or_else(|e| self.controller.error(e.into()));
+        debug!("circuit thread: 'circuit.step' returned");
+
+        let processed_records = self.processed_records(total_consumed);
+
+        // Update `trace_snapshot` to the latest traces
+        self.update_snapshot();
+
+        // Push output batches to output pipelines.
+        if let Some(ft) = self.ft.as_mut() {
+            ft.sync_step()?;
+        }
+        self.push_output(processed_records);
+
+        if let Some(ft) = self.ft.as_mut() {
+            ft.next_step()?;
+            if !self.replaying() {
+                self.backpressure_thread.start();
+            }
+        }
+        self.controller.unpark_backpressure();
+
+        Ok(true)
     }
 
     // Update `trace_snapshot` to the latest traces.
@@ -591,6 +605,32 @@ impl CircuitThread {
         }
     }
 
+    fn checkpoint(&mut self) -> Result<Checkpoint, ControllerError> {
+        let result = if let Some(ft) = self.ft.as_mut() {
+            ft.checkpoint(&mut self.circuit)
+        } else {
+            Err(ControllerError::NotSupported {
+                error: String::from(
+                    "cannot checkpoint circuit because fault tolerance is not enabled",
+                ),
+            })
+        };
+        if let Err(error) = result.as_ref() {
+            warn!("checkpoint failed: {error}");
+        }
+
+        // Update the last checkpoint time *after* executing the checkpoint, so
+        // that if the checkpoint takes a long time and we have a short
+        // checkpoint interval, we get to do other work too.
+        //
+        // We always update `last_checkpoint`, even if there was an error,
+        // because we do not want to spend all our time checkpointing if there's
+        // a problem and a short checkpoint interval.
+        self.last_checkpoint = Instant::now();
+
+        result
+    }
+
     /// Reads and executes all the commands pending from
     /// `self.command_receiver`.
     fn run_commands(&mut self) {
@@ -602,16 +642,7 @@ impl CircuitThread {
                         .map_err(ControllerError::dbsp_error),
                 ),
                 Command::Checkpoint(reply_callback) => {
-                    let result = if let Some(ft) = self.ft.as_mut() {
-                        ft.checkpoint(&mut self.circuit)
-                    } else {
-                        Err(ControllerError::NotSupported {
-                            error: String::from(
-                                "cannot checkpoint circuit because fault tolerance is not enabled",
-                            ),
-                        })
-                    };
-                    reply_callback(result);
+                    reply_callback(self.checkpoint());
                 }
             }
         }
@@ -762,15 +793,6 @@ impl CircuitThread {
             }
         }
         drop(outputs);
-    }
-
-    /// Executes a step in the circuit.
-    fn step(&mut self) {
-        debug!("circuit thread: calling 'circuit.step'");
-        self.circuit
-            .step()
-            .unwrap_or_else(|e| self.controller.error(e.into()));
-        debug!("circuit thread: 'circuit.step' returned");
     }
 
     fn replaying(&self) -> bool {
@@ -1051,37 +1073,37 @@ struct StepTrigger {
 
     /// Time between clock ticks.
     clock_resolution: Option<Duration>,
+
+    /// Time between automatic checkpoints.
+    checkpoint_interval: Option<Duration>,
 }
 
-/// When the next step will definitely trigger (if not before).
-enum Wait {
-    /// At time `.0`.
-    Time(Instant),
+/// Action for the controller to take.
+enum Action {
+    /// Park until time `.0`, or forever if `None`.
+    Park(Option<Instant>),
 
-    /// No step is scheduled.
-    Forever,
-}
+    /// Write a checkpoint.
+    Checkpoint,
 
-impl Wait {
-    // Park until the next step will trigger (or until we're unparked).
-    fn park(self, parker: &Parker) {
-        match self {
-            Wait::Time(t) => parker.park_deadline(t),
-            Wait::Forever => parker.park(),
-        }
-    }
+    /// Step the circuit.
+    Step,
 }
 
 impl StepTrigger {
     /// Returns a new [StepTrigger].
     fn new(controller: Arc<ControllerInner>) -> Self {
-        let config = &controller.status.pipeline_config;
-        let max_buffering_delay = Duration::from_micros(config.global.max_buffering_delay_usecs);
-        let min_batch_size_records = config.global.min_batch_size_records;
-        let clock_resolution = config
-            .global
-            .clock_resolution_usecs
-            .map(Duration::from_micros);
+        let config = &controller.status.pipeline_config.global;
+        let max_buffering_delay = Duration::from_micros(config.max_buffering_delay_usecs);
+        let min_batch_size_records = config.min_batch_size_records;
+        let clock_resolution = config.clock_resolution_usecs.map(Duration::from_micros);
+        let checkpoint_interval =
+            config
+                .fault_tolerance
+                .and_then(|ft| match ft.checkpoint_interval_secs {
+                    0 => None,
+                    secs => Some(Duration::from_secs(secs)),
+                });
         Self {
             controller,
             tick: clock_resolution.map(|delay| Instant::now() + delay),
@@ -1089,36 +1111,45 @@ impl StepTrigger {
             max_buffering_delay,
             min_batch_size_records,
             clock_resolution,
+            checkpoint_interval,
         }
     }
 
     /// Determines when to trigger the next step, given whether we're currently
     /// `replaying` and whether the pipeline is currently `running`.  Returns
     /// `None` to trigger a step right away, and otherwise how long to wait.
-    fn trigger(&mut self, replaying: bool, running: bool) -> Option<Wait> {
+    fn trigger(&mut self, last_checkpoint: Instant, replaying: bool, running: bool) -> Action {
         let buffered_records = self.controller.status.num_buffered_input_records();
 
         // `self.tick` but `None` if we're not running.
         let tick = running.then_some(self.tick).flatten();
 
+        // Time of the next checkpoint.
+        let checkpoint = self
+            .checkpoint_interval
+            .map(|interval| last_checkpoint + interval);
+
+        let now = Instant::now();
         if replaying
             || self.controller.status.unset_step_requested()
             || buffered_records > self.min_batch_size_records
-            || tick.map_or(false, |t| Instant::now() >= t)
-            || self.buffer_timeout.map_or(false, |t| Instant::now() >= t)
+            || tick.map_or(false, |t| now >= t)
+            || self.buffer_timeout.map_or(false, |t| now >= t)
         {
-            self.tick = self.clock_resolution.map(|delay| Instant::now() + delay);
+            self.tick = self.clock_resolution.map(|delay| now + delay);
             self.buffer_timeout = None;
-            None
+            Action::Step
+        } else if checkpoint.map_or(false, |t| now >= t) {
+            Action::Checkpoint
         } else {
             if buffered_records > 0 && self.buffer_timeout.is_none() {
-                self.buffer_timeout = Some(Instant::now() + self.max_buffering_delay);
+                self.buffer_timeout = Some(now + self.max_buffering_delay);
             }
-            match (tick, self.buffer_timeout) {
-                (Some(t1), Some(t2)) => Some(Wait::Time(min(t1, t2))),
-                (Some(t), None) | (None, Some(t)) => Some(Wait::Time(t)),
-                (None, None) => Some(Wait::Forever),
-            }
+            let wakeup = [tick, self.buffer_timeout, checkpoint]
+                .into_iter()
+                .flatten()
+                .min();
+            Action::Park(wakeup)
         }
     }
 }
@@ -1171,7 +1202,7 @@ fn steps_path(config: &PipelineConfig) -> Option<PathBuf> {
 
 impl ControllerInit {
     fn new(config: PipelineConfig) -> Result<Self, ControllerError> {
-        let Some(ft) = config.global.fault_tolerance else {
+        if config.global.fault_tolerance.is_none() {
             info!("fault tolerance is disabled in configuration");
             return Ok(Self {
                 circuit_config: Self::circuit_config(&config, None)?,
@@ -1190,8 +1221,8 @@ impl ControllerInit {
             ControllerError::io_error(String::from("controller startup"), error)
         }
 
-        // If we're allowed to resume from a checkpoint and one exists, use it.
-        if ft == FtConfig::LatestCheckpoint && fs::exists(&state_path).map_err(startup_io_error)? {
+        // If a checkpoint exists, use it.
+        if fs::exists(&state_path).map_err(startup_io_error)? {
             // Open the existing checkpoint.
             info!(
                 "{}: resuming fault tolerant pipeline from a saved checkpoint",
@@ -2608,7 +2639,7 @@ workers: 4
 storage_config:
     path: {storage_dir:?}
 storage: true
-fault_tolerance: latest_checkpoint
+fault_tolerance: {{}}
 clock_resolution_usecs: null
 inputs:
     test_input1:

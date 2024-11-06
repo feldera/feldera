@@ -9,7 +9,7 @@ use crate::runner::error::RunnerError;
 use crate::runner::logs_buffer::LogsBuffer;
 use crate::runner::pipeline_executor::{LogMessage, PipelineExecutor};
 use async_trait::async_trait;
-use feldera_types::config::{FtConfig, PipelineConfig, StorageCacheConfig, StorageConfig};
+use feldera_types::config::{PipelineConfig, StorageCacheConfig, StorageConfig};
 use log::{debug, error, info};
 use std::path::Path;
 use std::process::Stdio;
@@ -127,7 +127,6 @@ pub struct LocalRunner {
         oneshot::Sender<()>,
         JoinHandle<mpsc::Receiver<mpsc::Sender<LogMessage>>>,
     )>,
-    delete_pipeline_dir_on_shutdown: bool,
 }
 
 impl Drop for LocalRunner {
@@ -303,7 +302,6 @@ impl PipelineExecutor for LocalRunner {
                 log_reject_terminate_sender,
                 log_reject_join_handle,
             )),
-            delete_pipeline_dir_on_shutdown: false,
         }
     }
 
@@ -353,15 +351,7 @@ impl PipelineExecutor for LocalRunner {
 
         // (Re-)create pipeline storage directory
         if let Some(storage_config) = &deployment_config.storage_config {
-            let ft = &deployment_config.global.fault_tolerance;
-            match ft {
-                None | Some(FtConfig::InitialState) => {
-                    let _ = remove_dir_all(&storage_config.path).await;
-                }
-                Some(FtConfig::LatestCheckpoint) => (),
-            };
-            self.delete_pipeline_dir_on_shutdown = ft.is_none();
-
+            let _ = remove_dir_all(&storage_config.path).await;
             create_dir_all(&storage_config.path).await.map_err(|e| {
                 ManagerError::io_error(
                     format!(
@@ -526,16 +516,14 @@ impl PipelineExecutor for LocalRunner {
         }
 
         // Remove the pipeline working directory
-        if self.delete_pipeline_dir_on_shutdown {
-            match remove_dir_all(self.config.pipeline_dir(self.pipeline_id)).await {
-                Ok(_) => (),
-                Err(e) => {
-                    log::warn!(
-                        "Failed to delete pipeline working directory for pipeline {}: {}",
-                        self.pipeline_id,
-                        e
-                    );
-                }
+        match remove_dir_all(self.config.pipeline_dir(self.pipeline_id)).await {
+            Ok(_) => (),
+            Err(e) => {
+                log::warn!(
+                    "Failed to delete pipeline working directory for pipeline {}: {}",
+                    self.pipeline_id,
+                    e
+                );
             }
         }
 

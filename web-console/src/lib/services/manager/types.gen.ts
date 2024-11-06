@@ -634,7 +634,15 @@ export type FormatConfig = {
 /**
  * Fault-tolerance configuration for runtime startup.
  */
-export type FtConfig = 'initial_state' | 'latest_checkpoint'
+export type FtConfig = {
+  /**
+   * Interval between automatic checkpoints, in seconds.
+   *
+   * The default is 60 seconds.  A value of 0 disables automatic
+   * checkpointing.
+   */
+  checkpoint_interval_secs?: number
+}
 
 /**
  * A random generation plan for a table that generates either a limited amount of rows or runs continuously.

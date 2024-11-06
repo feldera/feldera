@@ -150,6 +150,7 @@ pub enum RuntimeConfigKey {
     Workers,
     Storage,
     FaultTolerance,
+    CheckpointInterval,
     CpuProfiler,
     Tracing,
     TracingEndpointJaeger,

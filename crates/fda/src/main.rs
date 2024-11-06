@@ -6,7 +6,7 @@ use std::io::{ErrorKind, Read, Write};
 
 use clap::{CommandFactory, Parser};
 use clap_complete::CompleteEnv;
-use feldera_types::config::RuntimeConfig;
+use feldera_types::config::{FtConfig, RuntimeConfig};
 use feldera_types::error::ErrorResponse;
 use futures_util::StreamExt;
 use log::{debug, error, info, trace, warn};
@@ -236,10 +236,15 @@ fn patch_runtime_config(
             rc.storage = value.parse().map_err(|_| ())?;
         }
         RuntimeConfigKey::FaultTolerance => {
-            rc.fault_tolerance = match value {
-                "" => None,
-                _ => Some(value.parse().map_err(|_| ())?),
+            let enable: bool = value.parse().map_err(|_| ())?;
+            rc.fault_tolerance = match enable {
+                false => None,
+                true => Some(FtConfig::default()),
             }
+        }
+        RuntimeConfigKey::CheckpointInterval => {
+            let ft = rc.fault_tolerance.get_or_insert_with(FtConfig::default);
+            ft.checkpoint_interval_secs = value.parse().map_err(|_| ())?;
         }
         RuntimeConfigKey::CpuProfiler => {
             rc.cpu_profiler = value.parse().map_err(|_| ())?;

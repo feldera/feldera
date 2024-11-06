@@ -15,10 +15,11 @@ use crate::transport::nexmark::NexmarkInputConfig;
 use crate::transport::pubsub::PubSubInputConfig;
 use crate::transport::s3::S3InputConfig;
 use crate::transport::url::UrlInputConfig;
-use serde::{Deserialize, Serialize};
+use core::fmt;
+use serde::de::{self, MapAccess, Visitor};
+use serde::{Deserialize, Deserializer, Serialize};
 use serde_yaml::Value as YamlValue;
 use std::path::Path;
-use std::str::FromStr;
 use std::{borrow::Cow, collections::BTreeMap};
 use utoipa::ToSchema;
 
@@ -157,6 +158,7 @@ pub struct RuntimeConfig {
 
     /// Configures fault tolerance with the specified start up behavior. Fault
     /// tolerance is disabled if this is `None` or if `storage` is false.
+    #[serde(deserialize_with = "deserialize_fault_tolerance")]
     pub fault_tolerance: Option<FtConfig>,
 
     /// Enable CPU profiler.
@@ -210,6 +212,56 @@ pub struct RuntimeConfig {
     pub clock_resolution_usecs: Option<u64>,
 }
 
+/// Accepts old 'initial_state' and 'latest_checkpoint' and converts them to the
+/// new format.
+fn deserialize_fault_tolerance<'de, D>(deserializer: D) -> Result<Option<FtConfig>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    struct StringOrStruct;
+
+    impl<'de> Visitor<'de> for StringOrStruct {
+        type Value = Option<FtConfig>;
+
+        fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+            formatter.write_str("none or FtConfig or 'initial_state' or 'latest_checkpoint'")
+        }
+
+        fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            match v {
+                "initial_state" | "latest_checkpoint" => Ok(Some(FtConfig::default())),
+                _ => Err(de::Error::invalid_value(de::Unexpected::Str(v), &self)),
+            }
+        }
+
+        fn visit_unit<E>(self) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            Ok(None)
+        }
+
+        fn visit_none<E>(self) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            Ok(None)
+        }
+
+        fn visit_map<M>(self, map: M) -> Result<Option<FtConfig>, M::Error>
+        where
+            M: MapAccess<'de>,
+        {
+            Deserialize::deserialize(de::value::MapAccessDeserializer::new(map)).map(Some)
+        }
+    }
+
+    deserializer.deserialize_any(StringOrStruct)
+}
+
 impl Default for RuntimeConfig {
     fn default() -> Self {
         Self {
@@ -246,32 +298,21 @@ impl RuntimeConfig {
 }
 
 /// Fault-tolerance configuration for runtime startup.
-#[derive(Debug, Copy, Clone, Default, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
+#[serde(default)]
 #[serde(rename_all = "snake_case")]
-pub enum FtConfig {
-    /// Start from the pipeline's initial state.
+pub struct FtConfig {
+    /// Interval between automatic checkpoints, in seconds.
     ///
-    /// If the pipeline already has a checkpoint, it will be discarded.
-    InitialState,
-
-    /// Start from the pipeline's most recent checkpoint.
-    ///
-    /// If the pipeline does not have a checkpoint, it will start from the
-    /// initial state.
-    #[default]
-    LatestCheckpoint,
+    /// The default is 60 seconds.  A value of 0 disables automatic
+    /// checkpointing.
+    pub checkpoint_interval_secs: u64,
 }
 
-pub struct FtConfigParseError;
-
-impl FromStr for FtConfig {
-    type Err = FtConfigParseError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "initial_state" => Ok(Self::InitialState),
-            "latest_checkpoint" => Ok(Self::LatestCheckpoint),
-            _ => Err(FtConfigParseError),
+impl Default for FtConfig {
+    fn default() -> Self {
+        Self {
+            checkpoint_interval_secs: 60,
         }
     }
 }
