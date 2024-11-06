@@ -245,12 +245,6 @@ where
         self.slots.iter().any(|slot| slot.merging_batches.is_some())
     }
 
-    /// Returns true if the merger is empty: it is not doing any merging work
-    /// and there are no loose batches.
-    fn is_empty(&self) -> bool {
-        self.slots.iter().all(|slot| slot.n_batches() == 0)
-    }
-
     /// Finishes up the ongoing merge at the given `level`, which has completed
     /// with `new_batch` as the result.
     fn merge_complete(&mut self, level: usize, new_batch: Arc<B>) {
@@ -413,17 +407,23 @@ where
         batches
     }
 
-    /// Starts merging again with `batches`, which are presumably what
-    /// [Self::pause] returned.
-    fn resume(&self, batches: Vec<Arc<B>>) {
-        debug_assert!(self.is_empty());
-        self.add_batches(batches);
+    /// Stops the initiation of new merges.  Returns `(not_merging, merging)`,
+    /// where `not_merging` is the batches that were not being merged and
+    /// `merging` is the ones that were. Merging of batches in `merging` will
+    /// continue, and further merges of the results of those merges could happen
+    /// as well. The caller can re-insert `not_merging` later by passing it to
+    /// [Self::resume].
+    fn pause_new_merges(&self) -> (Vec<Arc<B>>, Vec<Arc<B>>) {
+        let mut state = self.state.lock().unwrap();
+        let not_merging = state.take_loose_batches();
+        let merging = state.get_batches();
+        (not_merging, merging)
     }
 
-    /// Returns true if the merger is empty: it is not doing any merging work
-    /// and there are no loose batches.
-    fn is_empty(&self) -> bool {
-        self.state.lock().unwrap().is_empty()
+    /// Starts merging again with `batches`, which are presumably what
+    /// [Self::pause] or [Self::pause_new_merges] returned.
+    fn resume(&self, batches: impl IntoIterator<Item = Arc<B>>) {
+        self.add_batches(batches);
     }
 
     fn metadata(&self, meta: &mut OperatorMeta) {
@@ -1007,7 +1007,7 @@ where
                 batch.recede_to(frontier);
                 Arc::new(batch)
             })
-            .collect();
+            .collect::<Vec<_>>();
         self.merger.resume(batches);
     }
 
@@ -1070,21 +1070,36 @@ where
     }
 
     fn commit<P: AsRef<str>>(&mut self, cid: Uuid, persistent_id: P) -> Result<(), Error> {
-        // Persist all the batches.
-        let batches = self
-            .merger
-            .get_batches()
-            .into_iter()
-            .map(|batch| {
-                if let Some(persisted) = batch.persisted() {
-                    Arc::new(persisted)
-                } else {
-                    batch
-                }
-            })
-            .collect::<Vec<_>>();
-        let ids = batches
+        fn persist_batches<B>(batches: Vec<Arc<B>>) -> Vec<Arc<B>>
+        where
+            B: Batch,
+        {
+            batches
+                .into_iter()
+                .map(|batch| {
+                    if let Some(persisted) = batch.persisted() {
+                        Arc::new(persisted)
+                    } else {
+                        batch
+                    }
+                })
+                .collect::<Vec<_>>()
+        }
+
+        // Persist all the batches, and stick the not-merging batches back into
+        // the merger.  (Putting the persisted batches into the merger means
+        // that we don't have to persist them again for the next checkpoint,
+        // saving time then. On the other hand, we do have to read them back
+        // from disk to use them: no free lunch.)
+        let (not_merging, merging) = self.merger.pause_new_merges();
+        let not_merging = persist_batches(not_merging);
+        self.merger.resume(not_merging.iter().cloned());
+        let merging = persist_batches(merging);
+
+        // Get the persistent IDs.
+        let ids = not_merging
             .iter()
+            .chain(merging.iter())
             .map(|batch| {
                 batch
                     .checkpoint_path()
