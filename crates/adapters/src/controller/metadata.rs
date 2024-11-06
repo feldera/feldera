@@ -364,7 +364,14 @@ pub struct StepMetadata {
     pub step: Step,
     pub remove_inputs: HashSet<String>,
     pub add_inputs: HashMap<String, InputEndpointConfig>,
-    pub input_logs: HashMap<String, RmpValue>,
+    pub input_logs: HashMap<String, InputLog>,
+}
+
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
+pub struct InputLog {
+    pub value: RmpValue,
+    pub num_records: u64,
+    pub hash: u64,
 }
 
 #[cfg(test)]

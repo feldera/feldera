@@ -23,6 +23,7 @@ use rmpv::Value as RmpValue;
 use serde::{Deserialize, Serialize};
 use serde_bytes::ByteBuf;
 use std::{
+    hash::Hasher,
     sync::{atomic::Ordering, Arc, Mutex},
     time::Duration,
 };
@@ -30,6 +31,7 @@ use tokio::{
     sync::watch,
     time::{sleep, timeout},
 };
+use xxhash_rust::xxh3::Xxh3Default;
 
 /// An [AsyncFileWriter] that appends to a byte vector.
 struct BufferWriter<'a> {
@@ -266,21 +268,23 @@ impl InputReader for AdHocInputEndpoint {
                 let mut guard = self.inner.details.lock().unwrap();
                 let details = guard.as_mut().unwrap();
                 let mut num_records = 0;
+                let mut hasher = Xxh3Default::new();
                 for chunk in chunks {
                     let (mut buffer, errors) = details.parser.parse(&chunk);
                     details.consumer.buffered(buffer.len(), !chunk.len());
                     details.consumer.parse_errors(errors);
                     num_records += buffer.len();
+                    buffer.hash(&mut hasher);
                     buffer.flush();
                 }
-                details.consumer.replayed(num_records);
+                details.consumer.replayed(num_records, hasher.finish());
             }
             InputReaderCommand::Extend => self.set_state(PipelineState::Running),
             InputReaderCommand::Pause => self.set_state(PipelineState::Paused),
             InputReaderCommand::Queue => {
                 let mut guard = self.inner.details.lock().unwrap();
                 let details = guard.as_mut().unwrap();
-                let (num_records, batches) = details.queue.flush_with_aux();
+                let (num_records, hash, batches) = details.queue.flush_with_aux();
                 let metadata = if details.consumer.is_pipeline_fault_tolerant() {
                     rmpv::ext::to_value(Metadata {
                         batches: batches.into_iter().map(ByteBuf::from).collect(),
@@ -289,7 +293,7 @@ impl InputReader for AdHocInputEndpoint {
                 } else {
                     RmpValue::Nil
                 };
-                details.consumer.extended(num_records, metadata);
+                details.consumer.extended(num_records, hash, metadata);
             }
             InputReaderCommand::Disconnect => self.set_state(PipelineState::Terminated),
         }

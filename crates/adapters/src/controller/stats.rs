@@ -605,11 +605,17 @@ impl ControllerStatus {
         };
     }
 
-    pub fn completed(&self, endpoint_id: EndpointId, num_records: u64, metadata: Option<RmpValue>) {
+    pub fn completed(
+        &self,
+        endpoint_id: EndpointId,
+        num_records: u64,
+        hash: u64,
+        metadata: Option<RmpValue>,
+    ) {
         let inputs = self.inputs.read().unwrap();
         self.global_metrics.consume_buffered_inputs(num_records);
         if let Some(endpoint_stats) = inputs.get(&endpoint_id) {
-            endpoint_stats.completed(num_records, metadata);
+            endpoint_stats.completed(num_records, hash, metadata);
         };
     }
 
@@ -795,6 +801,7 @@ pub enum StepProgress {
     Started,
     Complete {
         num_records: u64,
+        hash: u64,
         metadata: Option<RmpValue>,
     },
 }
@@ -888,9 +895,10 @@ impl InputEndpointStatus {
         }
     }
 
-    fn completed(&self, num_records: u64, metadata: Option<RmpValue>) {
+    fn completed(&self, num_records: u64, hash: u64, metadata: Option<RmpValue>) {
         *self.progress.lock().unwrap() = StepProgress::Complete {
             num_records,
+            hash,
             metadata,
         };
         self.metrics

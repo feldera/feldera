@@ -1,5 +1,6 @@
 use std::collections::VecDeque;
 use std::fmt::Display;
+use std::hash::Hasher;
 use std::marker::PhantomData;
 use std::sync::Mutex;
 
@@ -10,6 +11,7 @@ use rmpv::{ext::Error as RmpDecodeError, Value as RmpValue};
 use serde::Deserialize;
 use tokio::sync::mpsc::error::TryRecvError;
 use tokio::sync::mpsc::UnboundedReceiver;
+use xxhash_rust::xxh3::Xxh3Default;
 
 use crate::catalog::InputCollectionHandle;
 use crate::format::{InputBuffer, ParseError, Parser};
@@ -228,8 +230,12 @@ impl<A> InputQueue<A> {
     /// since auxiliary data is associated with a whole buffer rather than with
     /// individual records. If the auxiliary data type `A` is `()`, then
     /// [InputQueue<()>::flush] avoids that and so is a better choice.
-    pub fn flush_with_aux(&self) -> (usize, Vec<A>) {
+    pub fn flush_with_aux(&self) -> (usize, u64, Vec<A>) {
         let mut total = 0;
+        let mut hasher = self
+            .consumer
+            .is_pipeline_fault_tolerant()
+            .then(Xxh3Default::new);
         let n = self.consumer.max_batch_size();
         let mut consumed_aux = Vec::new();
         while total < n {
@@ -237,10 +243,17 @@ impl<A> InputQueue<A> {
                 break;
             };
             total += buffer.len();
+            if let Some(hasher) = hasher.as_mut() {
+                buffer.hash(hasher);
+            }
             buffer.flush();
             consumed_aux.push(aux);
         }
-        (total, consumed_aux)
+        (
+            total,
+            hasher.map_or(0, |hasher| hasher.finish()),
+            consumed_aux,
+        )
     }
 
     pub fn len(&self) -> usize {
@@ -282,7 +295,7 @@ impl InputQueue<()> {
                 break;
             }
         }
-        self.consumer.extended(total, RmpValue::Nil);
+        self.consumer.extended(total, 0, RmpValue::Nil);
     }
 }
 
@@ -347,16 +360,19 @@ pub trait InputConsumer: Send + Sync + DynClone {
     fn buffered(&self, num_records: usize, num_bytes: usize);
 
     /// Reports that the input adapter has completed flushing `num_records`
-    /// records to the circuit, in response to an [InputReaderCommand::Replay]
-    /// request.
+    /// records to the circuit, that hash to `hash`, in response to an
+    /// [InputReaderCommand::Replay] request.
     ///
     /// Only a fault-tolerant input adapter will invoke this.
-    fn replayed(&self, num_records: usize);
+    fn replayed(&self, num_records: usize, hash: u64);
 
     /// Reports that the input adapter has completed flushing `num_records`
-    /// records to the circuit, in response to an [InputReaderCommand::Queue]
-    /// request.
-    fn extended(&self, num_records: usize, metadata: RmpValue);
+    /// records to the circuit, that hash to `hash`, in response to an
+    /// [InputReaderCommand::Queue] request.
+    ///
+    /// If [InputConsumer::is_pipeline_fault_tolerant] returns false, then the
+    /// value of `hash` doesn't matter.
+    fn extended(&self, num_records: usize, hash: u64, metadata: RmpValue);
 
     /// Reports that the endpoint has reached end of input and that no more data
     /// will be received from the endpoint.

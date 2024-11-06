@@ -511,6 +511,9 @@ pub enum ControllerError {
     /// Unexpected step number.
     UnexpectedStep { actual: Step, expected: Step },
 
+    /// Step replay failure.
+    ReplayFailure { error: String },
+
     /// Feature is not supported.
     NotSupported { error: String },
 
@@ -685,6 +688,7 @@ impl DbspDetailedError for ControllerError {
             Self::RestoreInProgress => Cow::from("RestoreInProgress"),
             Self::StepError { .. } => Cow::from("StepError"),
             Self::UnexpectedStep { .. } => Cow::from("UnexpectedStep"),
+            Self::ReplayFailure { .. } => Cow::from("ReplayFailure"),
             Self::IrParseError { .. } => Cow::from("IrParseError"),
             Self::CliArgsError { .. } => Cow::from("ControllerCliArgsError"),
             Self::Config { config_error } => {
@@ -717,6 +721,7 @@ impl DetailedError for ControllerError {
             Self::RestoreInProgress => Cow::from("RestoreInProgress"),
             Self::StepError { .. } => Cow::from("StepError"),
             Self::UnexpectedStep { .. } => Cow::from("UnexpectedStep"),
+            Self::ReplayFailure { .. } => Cow::from("ReplayFailure"),
             Self::IrParseError { .. } => Cow::from("IrParseError"),
             Self::CliArgsError { .. } => Cow::from("ControllerCliArgsError"),
             Self::Config { config_error } => {
@@ -765,6 +770,9 @@ impl Display for ControllerError {
             Self::StepError(error) => write!(f, "Error with persistent input steps: {error}"),
             Self::UnexpectedStep { actual, expected } => {
                 write!(f, "Read step {actual}, expected {expected}")
+            }
+            Self::ReplayFailure { error } => {
+                write!(f, "{error}")
             }
             Self::IrParseError { error } => {
                 write!(f, "Error parsing program IR: {error}")

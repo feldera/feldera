@@ -3,6 +3,7 @@
 use std::cmp::min;
 use std::collections::{HashMap, VecDeque};
 use std::fmt::Write;
+use std::hash::Hasher;
 use std::num::NonZeroU32;
 use std::ops::{Range, RangeInclusive};
 use std::sync::{Arc, LazyLock};
@@ -38,6 +39,7 @@ use feldera_types::program_schema::{ColumnType, Field, Relation, SqlIdentifier, 
 use feldera_types::transport::datagen::{
     DatagenInputConfig, DatagenStrategy, GenerationPlan, RngFieldSettings,
 };
+use xxhash_rust::xxh3::Xxh3Default;
 
 fn range_as_i64(
     field: &SqlIdentifier,
@@ -415,11 +417,13 @@ impl InputGenerator {
             let mut rows = metadata.rows;
             unassigned = metadata.todo;
             let mut num_records = 0;
+            let mut hasher = Xxh3Default::new();
 
             fn complete_replay(
                 completion: Completion,
                 in_flight: &mut [RowRangeSet],
                 consumer: &dyn InputConsumer,
+                hasher: &mut Xxh3Default,
             ) {
                 let Completion {
                     batch,
@@ -428,6 +432,7 @@ impl InputGenerator {
                 } = completion;
                 in_flight[batch.plan_idx].remove_range(batch.rows.start..=batch.rows.end - 1);
                 consumer.buffered(buffer.len(), num_bytes);
+                buffer.hash(hasher);
                 buffer.flush();
             }
 
@@ -435,16 +440,16 @@ impl InputGenerator {
                 num_records += work.batch.rows.len();
                 let _ = work_sender.send_blocking(work);
                 while let Ok(completion) = completion_receiver.try_recv() {
-                    complete_replay(completion, &mut in_flight, &*consumer);
+                    complete_replay(completion, &mut in_flight, &*consumer, &mut hasher);
                 }
             }
             while !in_flight.iter().all(|set| set.is_empty()) {
                 let Some(completion) = completion_receiver.blocking_recv() else {
                     unreachable!()
                 };
-                complete_replay(completion, &mut in_flight, &*consumer);
+                complete_replay(completion, &mut in_flight, &*consumer, &mut hasher);
             }
-            consumer.replayed(num_records);
+            consumer.replayed(num_records, hasher.finish());
         }
 
         let mut running = false;
@@ -460,6 +465,7 @@ impl InputGenerator {
                 Some(InputReaderCommand::Pause) => running = false,
                 Some(InputReaderCommand::Queue) => {
                     let mut num_records = 0;
+                    let mut hasher = consumer.is_pipeline_fault_tolerant().then(Xxh3Default::new);
                     let n = consumer.max_batch_size();
                     let mut consumed = vec![RowRangeSet::new(); config.plan.len()];
                     while num_records < n {
@@ -475,6 +481,9 @@ impl InputGenerator {
                         let flushed = taken.len();
                         if flushed > 0 {
                             num_records += flushed;
+                            if let Some(hasher) = hasher.as_mut() {
+                                taken.hash(hasher);
+                            }
                             consumed[plan_idx].insert_range(rows.start..=rows.start + flushed - 1);
                             taken.flush();
                         }
@@ -507,7 +516,11 @@ impl InputGenerator {
                         seed,
                     }
                     .into();
-                    consumer.extended(num_records, rmpv::ext::to_value(metadata).unwrap());
+                    consumer.extended(
+                        num_records,
+                        hasher.map_or(0, |hasher| hasher.finish()),
+                        rmpv::ext::to_value(metadata).unwrap(),
+                    );
                 }
                 Some(InputReaderCommand::Disconnect) => break,
                 None => (),

@@ -26,6 +26,7 @@ use rdkafka::{
 use rdkafka::{Offset, TopicPartitionList};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
+use std::hash::Hasher;
 use std::ops::Range;
 use std::thread::Thread;
 use std::{
@@ -37,6 +38,7 @@ use std::{
     time::Duration,
 };
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
+use xxhash_rust::xxh3::Xxh3Default;
 
 /// Poll timeout must be low, as it bounds the amount of time it takes to resume the connector.
 const POLL_TIMEOUT: Duration = Duration::from_millis(5);
@@ -95,6 +97,42 @@ impl ClientContext for KafkaFtInputContext {
 }
 
 impl ConsumerContext for KafkaFtInputContext {}
+
+struct KafkaFtHasher(Vec<Vec<Xxh3Default>>);
+
+impl KafkaFtHasher {
+    fn new(partition_counts: &[usize]) -> Self {
+        Self(
+            partition_counts
+                .iter()
+                .map(|n_partitions| {
+                    iter::repeat_with(Xxh3Default::new)
+                        .take(*n_partitions)
+                        .collect()
+                })
+                .collect(),
+        )
+    }
+
+    fn add<B>(&mut self, topic: usize, partition: usize, buffer: &B)
+    where
+        B: InputBuffer,
+    {
+        buffer.hash(&mut self.0[topic][partition]);
+    }
+
+    fn finish(&self) -> u64 {
+        let mut h = Xxh3Default::new();
+        for (topic, partitions) in self.0.iter().enumerate() {
+            for (partition, hasher) in partitions.iter().enumerate() {
+                h.write_usize(topic);
+                h.write_usize(partition);
+                h.write_u64(hasher.finish());
+            }
+        }
+        h.finish()
+    }
+}
 
 struct KafkaFtInputReaderInner {
     kafka_consumer: BaseConsumer<KafkaFtInputContext>,
@@ -162,6 +200,7 @@ impl KafkaFtInputReaderInner {
             let metadata = metadata.parse(&topics, &partition_counts)?;
             let mut replayer = MetadataReplayer::new(&metadata);
             let mut total_records = 0;
+            let mut hasher = KafkaFtHasher::new(&partition_counts);
             for (topic, partitions) in metadata.iter().enumerate() {
                 for (partition, offsets) in partitions.iter().enumerate() {
                     let buf = &mut buffered_messages[topic][partition];
@@ -172,7 +211,8 @@ impl KafkaFtInputReaderInner {
                             ReplayAction::Replay => {
                                 consumer.parse_errors(msg.errors);
                                 total_records += msg.buffer.len();
-                                msg.buffer.flush()
+                                hasher.add(topic, partition, &msg.buffer);
+                                msg.buffer.flush();
                             }
                             ReplayAction::Defer => unreachable!(
                                 "`replay_messages` was split so that this couldn't happen."
@@ -200,6 +240,7 @@ impl KafkaFtInputReaderInner {
                             ReplayAction::Replay => {
                                 consumer.parse_errors(errors);
                                 total_records += buffer.len();
+                                hasher.add(topic, partition, &buffer);
                                 buffer.flush();
                             }
                             ReplayAction::Defer => {
@@ -214,7 +255,7 @@ impl KafkaFtInputReaderInner {
                     None => (),
                 }
             }
-            consumer.replayed(total_records);
+            consumer.replayed(total_records, hasher.finish());
         }
 
         let mut running = false;
@@ -230,6 +271,7 @@ impl KafkaFtInputReaderInner {
                     InputReaderCommand::Pause => running = false,
                     InputReaderCommand::Queue => {
                         let mut total = 0;
+                        let mut hasher = KafkaFtHasher::new(&partition_counts);
                         let mut ranges = partition_counts
                             .iter()
                             .map(|n_partitions| iter::repeat(None).take(*n_partitions).collect())
@@ -241,6 +283,7 @@ impl KafkaFtInputReaderInner {
                                     if let Some((offset, mut msg)) = buf.messages.pop_first() {
                                         consumer.parse_errors(msg.errors);
                                         total += msg.buffer.len();
+                                        hasher.add(topic, partition, &msg.buffer);
                                         msg.buffer.flush();
                                         empty = false;
 
@@ -272,8 +315,11 @@ impl KafkaFtInputReaderInner {
                                     .collect::<Vec<_>>()
                             }))
                             .collect();
-                        consumer
-                            .extended(total, rmpv::ext::to_value(&Metadata { offsets }).unwrap());
+                        consumer.extended(
+                            total,
+                            hasher.finish(),
+                            rmpv::ext::to_value(&Metadata { offsets }).unwrap(),
+                        );
                     }
                     InputReaderCommand::Disconnect => return Ok(()),
                 }
@@ -384,9 +430,14 @@ impl KafkaFtInputReader {
         //
         // This has the desirable side effect of ensuring that we can reach the
         // broker and failing with an error if we cannot.
+        //
+        // We sort `topics` to ensure that the topic-to-index mapping is
+        // constant even if the hash table implementation or hash function
+        // changes, which could be important for replay.
         let context = KafkaFtInputContext::new();
         let kafka_consumer = BaseConsumer::from_config_and_context(&client_config, context)?;
-        let topics = config.topics.iter().cloned().collect::<IndexSet<_>>();
+        let mut topics = config.topics.iter().cloned().collect::<IndexSet<_>>();
+        topics.sort_unstable();
         let mut partition_counts = Vec::with_capacity(topics.len());
         for topic in topics.iter() {
             partition_counts.push(count_partitions_in_topic(&kafka_consumer, topic)?);

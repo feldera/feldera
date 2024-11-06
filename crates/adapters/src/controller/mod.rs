@@ -45,6 +45,7 @@ use governor::Quota;
 use governor::RateLimiter;
 use log::{debug, error, info, trace, warn};
 use metadata::Checkpoint;
+use metadata::InputLog;
 use metadata::StepMetadata;
 use metadata::StepRw;
 use metrics::set_global_recorder;
@@ -728,12 +729,18 @@ impl CircuitThread {
                     ) {
                         StepProgress::Complete {
                             num_records,
+                            hash,
                             metadata,
                         } => {
                             total_consumed += num_records;
-                            if let Some(metadata) = metadata {
-                                step_metadata.insert(status.endpoint_name.clone(), metadata);
-                            }
+                            step_metadata.insert(
+                                status.endpoint_name.clone(),
+                                InputLog {
+                                    value: metadata.unwrap_or(RmpValue::Nil),
+                                    num_records,
+                                    hash,
+                                },
+                            );
                         }
                         StepProgress::NotStarted => {
                             info!("race adding endpoint {id}");
@@ -824,7 +831,7 @@ struct FlushedInput {
     total_consumed: u64,
 
     /// Metadata to write to the steps log.
-    step_metadata: HashMap<String, RmpValue>,
+    step_metadata: HashMap<String, InputLog>,
 }
 
 /// Tracks fault-tolerant state in a controller [CircuitThread].
@@ -865,7 +872,7 @@ impl FtState {
                     let endpoint_id = controller.input_endpoint_id_by_name(endpoint_name)?;
                     controller.inputs.lock().unwrap()[&endpoint_id]
                         .reader
-                        .seek(metadata.clone());
+                        .seek(metadata.value.clone());
                 }
                 let (step_rw, step_metadata) =
                     Self::replay_step(StepRw::Reader(step_rw), step, &controller)?;
@@ -956,16 +963,13 @@ impl FtState {
                 .unwrap() = StepProgress::Started;
             controller.inputs.lock().unwrap()[&endpoint_id]
                 .reader
-                .replay(metadata.clone());
+                .replay(metadata.value.clone());
         }
         Ok((step_rw, Some(metadata)))
     }
 
     /// Writes `step_metadata` to the step writer.
-    fn write_step(
-        &mut self,
-        step_metadata: HashMap<String, RmpValue>,
-    ) -> Result<(), ControllerError> {
+    fn write_step(&mut self, input_logs: HashMap<String, InputLog>) -> Result<(), ControllerError> {
         if let Some(step_writer) = self.step_rw.as_mut().and_then(|rw| rw.as_writer()) {
             let mut remove_inputs = HashSet::new();
             let mut add_inputs = HashMap::new();
@@ -992,10 +996,30 @@ impl FtState {
                 step: self.step,
                 remove_inputs,
                 add_inputs,
-                input_logs: step_metadata,
+                input_logs,
             };
             step_writer.write(&step_metadata)?;
             self.prev_step_metadata = Some(step_metadata);
+        } else if self.replaying {
+            let prev_step_metadata = self.prev_step_metadata.as_ref().unwrap();
+            let logged = prev_step_metadata
+                .input_logs
+                .iter()
+                .map(|(endpoint_name, entry)| {
+                    (endpoint_name.as_str(), (entry.num_records, entry.hash))
+                })
+                .collect::<BTreeMap<_, _>>();
+            let replayed = input_logs
+                .iter()
+                .map(|(endpoint_name, entry)| {
+                    (endpoint_name.as_str(), (entry.num_records, entry.hash))
+                })
+                .collect::<BTreeMap<_, _>>();
+            if logged != replayed {
+                let error = format!("Logged and replayed step {} contained different numbers of records or hashes:\nLogged: {logged:?}\nReplayed: {replayed:?}", self.step);
+                error!("{error}");
+                return Err(ControllerError::ReplayFailure { error });
+            }
         }
         Ok(())
     }
@@ -2397,17 +2421,20 @@ impl InputConsumer for InputProbe {
             .input_batch(Some((self.endpoint_id, num_bytes)), num_records);
     }
 
-    fn replayed(&self, num_records: usize) {
+    fn replayed(&self, num_records: usize, hash: u64) {
         self.controller
             .status
-            .completed(self.endpoint_id, num_records as u64, None);
+            .completed(self.endpoint_id, num_records as u64, hash, None);
         self.controller.unpark_circuit();
     }
 
-    fn extended(&self, num_records: usize, metadata: RmpValue) {
-        self.controller
-            .status
-            .completed(self.endpoint_id, num_records as u64, Some(metadata));
+    fn extended(&self, num_records: usize, hash: u64, metadata: RmpValue) {
+        self.controller.status.completed(
+            self.endpoint_id,
+            num_records as u64,
+            hash,
+            Some(metadata),
+        );
         self.controller.unpark_circuit();
     }
 

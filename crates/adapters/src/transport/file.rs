@@ -9,11 +9,13 @@ use feldera_types::program_schema::Relation;
 use feldera_types::transport::file::{FileInputConfig, FileOutputConfig};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
+use std::hash::Hasher;
 use std::io::{Seek, SeekFrom};
 use std::ops::Range;
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::thread::{self, Thread};
 use std::{fs::File, io::Write, thread::spawn, time::Duration};
+use xxhash_rust::xxh3::Xxh3Default;
 
 const SLEEP: Duration = Duration::from_millis(200);
 
@@ -114,6 +116,8 @@ impl FileInputReader {
                     }
                     InputReaderCommand::Queue => {
                         let mut total = 0;
+                        let mut hasher =
+                            consumer.is_pipeline_fault_tolerant().then(Xxh3Default::new);
                         let limit = consumer.max_batch_size();
                         let mut range: Option<Range<u64>> = None;
                         while let Some((offsets, mut buffer)) = queue.pop_front() {
@@ -122,6 +126,9 @@ impl FileInputReader {
                                 None => Some(offsets),
                             };
                             total += buffer.len();
+                            if let Some(hasher) = hasher.as_mut() {
+                                buffer.hash(hasher);
+                            }
                             buffer.flush();
                             if total >= limit {
                                 break;
@@ -129,6 +136,7 @@ impl FileInputReader {
                         }
                         consumer.extended(
                             total,
+                            hasher.map_or(0, |hasher| hasher.finish()),
                             rmpv::ext::to_value(Metadata {
                                 offsets: range.unwrap_or_else(|| {
                                     let ofs = splitter.position();
@@ -149,6 +157,7 @@ impl FileInputReader {
                         splitter.seek(offsets.start);
                         let mut remainder = (offsets.end - offsets.start) as usize;
                         let mut num_records = 0;
+                        let mut hasher = Xxh3Default::new();
                         while remainder > 0 {
                             let n = splitter.read(&mut file, buffer_size, remainder)?;
                             if n == 0 {
@@ -160,10 +169,11 @@ impl FileInputReader {
                                 consumer.parse_errors(errors);
                                 consumer.buffered(buffer.len(), chunk.len());
                                 num_records += buffer.len();
+                                buffer.hash(&mut hasher);
                                 buffer.flush();
                             }
                         }
-                        consumer.replayed(num_records);
+                        consumer.replayed(num_records, hasher.finish());
                     }
                     InputReaderCommand::Disconnect => return Ok(()),
                 }
