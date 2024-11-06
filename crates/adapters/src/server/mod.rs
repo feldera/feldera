@@ -519,8 +519,8 @@ async fn query(state: WebData<ServerState>, args: Query<AdhocQueryArgs>) -> impl
         controller.as_ref().map(|c| c.session_context())
     };
 
-    match session_ctxt {
-        Some(session) => stream_adhoc_result(args.into_inner(), session).await,
+    match session_ctxt.transpose()? {
+        Some(session) => Ok(stream_adhoc_result(args.into_inner(), session).await),
         None => Err(missing_controller_error(&state)),
     }
 }
