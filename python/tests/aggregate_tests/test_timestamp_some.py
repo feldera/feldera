@@ -65,3 +65,16 @@ class aggtst_timestamp_some_where_groupby(TstView):
                       id, SOME(c1 > '2014-11-05 08:27:00') FILTER(WHERE c2 IS NOT NULL) AS c1, SOME(c2 > '2024-12-05 12:45:00') FILTER(WHERE c2 IS NOT NULL) AS c2
                       FROM timestamp_tbl
                       GROUP BY id"""
+
+
+class aggtst_timestamp_some_where1_groupby(TstView):
+    def __init__(self):
+        # Validated on Postgres
+        self.data = [
+            {"id": 0, "c1": True, "c2": True},
+            {"id": 1, "c1": True, "c2": True},
+        ]
+        self.sql = """CREATE MATERIALIZED VIEW timestamp_some_where1_gby AS SELECT
+                      id, SOME(c1 < '2020-06-21 14:00:00') FILTER(WHERE c2 IS NOT NULL) AS c1, SOME(c2 > '2014-11-05 16:30:00') FILTER(WHERE c2 IS NOT NULL) AS c2
+                      FROM timestamp1_tbl
+                      GROUP BY id"""
