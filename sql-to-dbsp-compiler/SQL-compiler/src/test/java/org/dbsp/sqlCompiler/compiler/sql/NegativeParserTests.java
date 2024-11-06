@@ -140,14 +140,6 @@ public class NegativeParserTests extends BaseSQLTests {
     }
 
     @Test
-    public void testTypeErrorMessage() {
-        // TODO: this test may become invalid once we add support for ROW types
-        this.statementsFailingInCompilation("CREATE VIEW V AS SELECT ROW(2, 2);",
-                "error: Not yet implemented: Function 'ROW' not yet implemented\n" +
-                        "This is tracked by issue");
-    }
-
-    @Test
     public void duplicateColumnTest() {
         String ddl = "CREATE TABLE T (\n" +
                 "COL1 INT" +

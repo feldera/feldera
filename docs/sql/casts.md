@@ -41,3 +41,12 @@ A value of type `VARIANT` can be cast to any type and will produce a
 nullable result; this kind of cast will never fail at runtime.
 
 A value of any type can be cast to a `VARIANT` type.
+
+A cast to a `ROW` type is only allowed for compatible `ROW` types, or
+for `VARIANT` types.  Such a cast will cast recursively each field of
+the source value to the corresponding type of the destination field.
+For example, the following statment is legal:
+
+```sql
+SELECT cast(row(1, 2) as row(a integer, b tinyint)) as r;
+```

@@ -3,7 +3,6 @@
 #![allow(clippy::let_and_return)]
 
 use crate::binary::ByteArray;
-use crate::timestamp::*;
 use crate::{FromInteger, ToInteger};
 use dbsp::algebra::{FirstLargeValue, HasOne, HasZero, SignedPrimInt, UnsignedPrimInt, F32, F64};
 use num::PrimInt;
@@ -116,7 +115,7 @@ impl UnsignedWrapper {
 }
 
 // Macro to create variants of an aggregation function
-// There must exist a function g(left: T, right: T) -> T ($base_name = g)
+// There must exist a function f(left: T, right: T) -> T ($base_name is f)
 // This creates 4 more functions ($func_name = f)
 // f_t_t(left: T, right: T) -> T
 // f_tN_t(left: Option<T>, right: T) -> Option<T>
@@ -206,44 +205,115 @@ macro_rules! for_all_int_aggregate {
     };
 }
 
-macro_rules! for_all_numeric_aggregate {
-    ($base_name: ident, $func_name: ident) => {
-        for_all_int_aggregate!($base_name, $func_name);
-        some_aggregate!($base_name, $func_name, f, F32);
-        some_aggregate!($base_name, $func_name, d, F64);
-        some_aggregate!($base_name, $func_name, decimal, Decimal);
+// Macro to create variants of an aggregation function
+// There must exist a function f__(left: T, right: T) -> T
+// This creates 3 more functions
+// f_N_(left: Option<T>, right: T) -> Option<T>
+// etc.
+// And 4 more functions:
+// f_N_N_conditional(left: T, right: T, predicate: bool) -> T
+macro_rules! universal_aggregate {
+    ($func:ident) => {
+        ::paste::paste! {
+            #[doc(hidden)]
+            pub fn [<$func _N_ >]<T>( left: Option<T>, right: T ) -> Option<T>
+                where T: Ord + Clone,
+            {
+                match left {
+                    None => Some(right.clone()),
+                    Some(left) => Some([<$func __>](left, right)),
+                }
+            }
+
+            #[doc(hidden)]
+            pub fn [<$func __N>]<T>( left: T, right: Option<T> ) -> Option<T>
+                where T: Ord + Clone,
+            {
+                match right {
+                    None => Some(left.clone()),
+                    Some(right) => Some([<$func __>](left, right)),
+                }
+            }
+
+            #[doc(hidden)]
+            pub fn [<$func _N_N>]<T>( left: Option<T>, right: Option<T> ) -> Option<T>
+                where T: Ord + Clone,
+            {
+                match (left.clone(), right.clone()) {
+                    (None, _) => right.clone(),
+                    (_, None) => left.clone(),
+                    (Some(left), Some(right)) => Some([<$func __>](left, right)),
+                }
+            }
+
+            #[doc(hidden)]
+            pub fn [<$func ___conditional>]<T>( left: T, right: T, predicate: bool ) -> T
+                where T: Ord + Clone,
+            {
+                if predicate {
+                    [<$func __>](left, right)
+                } else {
+                    left.clone()
+                }
+            }
+
+            #[doc(hidden)]
+            pub fn [<$func _N__conditional>]<T>( left: Option<T>, right: T, predicate: bool ) -> Option<T>
+                where T: Ord + Clone,
+            {
+                match (left.clone(), right.clone(), predicate) {
+                    (_, _, false) => left.clone(),
+                    (None, _, _) => Some(right.clone()),
+                    (Some(x), _, _) => Some([<$func __>](x, right)),
+                }
+            }
+
+            #[doc(hidden)]
+            pub fn [<$func __N_conditional>]<T>( left: T, right: Option<T>, predicate: bool ) -> Option<T>
+                where T: Ord + Clone,
+            {
+                match (left.clone(), right.clone(), predicate) {
+                    (_, _, false) => Some(left.clone()),
+                    (_, None, _) => Some(left.clone()),
+                    (_, Some(y), _) => Some([<$func __>](left, y)),
+                }
+            }
+
+            #[doc(hidden)]
+            pub fn [<$func _N_N_conditional>]<T>( left: Option<T>, right: Option<T>, predicate: bool ) -> Option<T>
+                where T: Ord + Clone,
+            {
+                match (left.clone(), right.clone(), predicate) {
+                    (_, _, false) => left.clone(),
+                    (None, _, _) => right.clone(),
+                    (_, None, _) => left.clone(),
+                    (Some(x), Some(y), _) => Some([< $func __ >](x, y)),
+                }
+            }
+        }
     };
 }
+pub(crate) use universal_aggregate;
 
 #[doc(hidden)]
-pub fn agg_max<T>(left: T, right: T) -> T
+pub fn agg_max__<T>(left: T, right: T) -> T
 where
-    T: Ord,
+    T: Ord + Clone,
 {
     left.max(right)
 }
 
-for_all_numeric_aggregate!(agg_max, agg_max);
-some_aggregate!(agg_max, agg_max, b, bool);
-some_aggregate!(agg_max, agg_max, Timestamp, Timestamp);
-some_aggregate!(agg_max, agg_max, Date, Date);
-some_aggregate!(agg_max, agg_max, Time, Time);
-some_aggregate!(agg_max, agg_max, s, String);
+universal_aggregate!(agg_max);
 
 #[doc(hidden)]
-pub fn agg_min<T>(left: T, right: T) -> T
+pub fn agg_min__<T>(left: T, right: T) -> T
 where
-    T: Ord,
+    T: Ord + Clone,
 {
     left.min(right)
 }
 
-for_all_numeric_aggregate!(agg_min, agg_min);
-some_aggregate!(agg_min, agg_min, b, bool);
-some_aggregate!(agg_min, agg_min, Timestamp, Timestamp);
-some_aggregate!(agg_min, agg_min, Date, Date);
-some_aggregate!(agg_min, agg_min, Time, Time);
-some_aggregate!(agg_min, agg_min, s, String);
+universal_aggregate!(agg_min);
 
 #[doc(hidden)]
 pub fn agg_plus<T>(left: T, right: T) -> T

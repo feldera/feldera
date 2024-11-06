@@ -120,7 +120,9 @@ public class CatalogTests extends BaseSQLTests {
                 CREATE TABLE Data (
                     id BIGINT not null primary key,
                     msg CustomType
-                );""";
+                );
+                
+                CREATE VIEW V AS SELECT * FROM Data;""";
         this.compileRustTestCase(sql);
     }
 

@@ -15,6 +15,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVecLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBaseType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
@@ -92,14 +93,20 @@ public class ExpandCasts extends InnerRewriteVisitor {
         // Convert a tuple to a VARIANT MAP indexed by the field names
         List<DBSPExpression> fields = new ArrayList<>();
         assert type.originalStruct != null;
+        DBSPType sourceType = source.getType();
         List<String> names = Linq.list(type.originalStruct.getFieldNames());
         for (int i = 0; i < type.size(); i++) {
             String fieldName = names.get(i);
             DBSPType fieldType = type.getFieldType(i);
-            DBSPExpression index = new DBSPBinaryExpression(
-                    // Result of index is always nullable
-                    source.getNode(), new DBSPTypeVariant(true),
-                    DBSPOpcode.VARIANT_INDEX, source.applyCloneIfNeeded(), new DBSPStringLiteral(fieldName));
+            DBSPExpression index;
+            if (sourceType.is(DBSPTypeTupleBase.class)) {
+                index = source.field(i);
+            } else {
+                index = new DBSPBinaryExpression(
+                        // Result of index is always nullable
+                        source.getNode(), new DBSPTypeVariant(true),
+                        DBSPOpcode.VARIANT_INDEX, source.applyCloneIfNeeded(), new DBSPStringLiteral(fieldName));
+            }
             DBSPExpression expression;
             if (fieldType.is(DBSPTypeTuple.class)) {
                 expression = convertToStruct(index.applyClone(), fieldType.to(DBSPTypeTuple.class));

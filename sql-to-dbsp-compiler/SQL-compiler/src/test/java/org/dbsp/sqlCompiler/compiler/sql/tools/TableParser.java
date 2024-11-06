@@ -49,6 +49,7 @@ import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.regex.Matcher;
@@ -320,6 +321,26 @@ public class TableParser {
                 data = data.trim();
                 byte[] bytes = ConversionUtil.toByteArrayFromString(data, 16);
                 result = new DBSPBinaryLiteral(CalciteObject.EMPTY, fieldType, bytes);
+            }
+        } else if (fieldType.is(DBSPTypeTuple.class)) {
+            // TODO: this does not handle nested tuples, or tuples with arrays
+            DBSPTypeTuple tuple = fieldType.to(DBSPTypeTuple.class);
+            if (trimmed.equals("NULL")) {
+                result = tuple.none();
+            } else {
+                if (!trimmed.startsWith("{") || !trimmed.endsWith("}"))
+                    throw new UnimplementedException("Expected tuple constant to be bracketed: " + trimmed);
+                trimmed = trimmed.substring(1, trimmed.length() - 1);
+                assert !trimmed.isEmpty();
+
+                String[] parts = trimmed.split(",");
+                assert parts.length == tuple.size() :
+                        "Expected " + tuple.size() + " fields for tuple, got " + parts.length;
+                List<DBSPExpression> fields = new ArrayList<>(tuple.size());
+                int index = 0;
+                for (DBSPType ft: tuple.tupFields)
+                    fields.add(parseValue(ft, parts[index++]));
+                result = new DBSPTupleExpression(CalciteObject.EMPTY, tuple, fields);
             }
         } else {
             throw new UnimplementedException("Support for parsing fields of type " + fieldType + " not yet implemented",

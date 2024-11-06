@@ -23,6 +23,7 @@ The compiler supports the following SQL data types:
 | `TIMESTAMP`                 | A value containing a date and a time without a timezone.                                                                                                           | `DATETIME`                 |
 | `DATE`                      | A date value.                                                                                                                                                      |                            |
 | `GEOMETRY`                  | A geographic data type (only rudimentary support at this point).                                                                                                   |                            |
+| `ROW`                       | A tuple (anonymous struct with named fields) with 1 or more elements.  Example `ROW(left int null, right varchar)`                                                 |                            |
 | `ARRAY`                     | An array with element of the specified type. Used as a suffix for another type (e.g., `INT ARRAY`)                                                                 |                            |
 | `MAP`                       | A map with keys and values of specified types. The syntax is `MAP<KEYTYPE, VALUETYPE>`                                                                             |                            |
 | `VARIANT`                   | A dynamically-typed value that can wrap any other SQL type  |                            |
@@ -39,13 +40,16 @@ The compiler supports the following SQL data types:
   the `FLOAT` type, so we have decided to prohibit its use to avoid
   subtle bugs.
 
-- `INTERVAL` and `NULL` types are not supported in table schemas or
-  user-defined types as field types. They can only used in
-  expressions.
+- `INTERVAL`, `NULL` and types are currently not supported in table
+  schemas or as types for the columns of output views (non-`LOCAL`
+  views).
 
 - `VARIANT` is used to implement JSON.  See [JSON support](json.md)
-  Currently `VARIANT` values are not supported in table or output
-  views; they can only be used in intermediate computations.
+
+- Values of type `ROW` can be constructed using the `ROW(x, y, z)`
+  syntax, or, when not ambiguous, using the tuple syntax `(x, y, z)`,
+  where `x`, `y`, and `z` are expressions.  E.g. `SELECT x, (y, z+2)
+  FROM T`, is equivalent to `SELECT x, ROW(y, z+2) FROM T`.
 
 ## Computations on nullable types
 
@@ -116,6 +120,7 @@ typeName:
       sqlTypeName
   |   compoundIdentifier
   |   MAP < type , type >
+  |   ROW ( columnDecl [, columnDecl ]* )
 
 sqlTypeName:
       char [ precision ] [ charSet ]

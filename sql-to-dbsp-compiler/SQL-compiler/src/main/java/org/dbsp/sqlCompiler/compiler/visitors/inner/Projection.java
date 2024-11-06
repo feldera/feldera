@@ -24,6 +24,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBaseType;
 import org.dbsp.util.ExplicitShuffle;
@@ -261,16 +262,29 @@ public class Projection extends InnerVisitor {
         return VisitDecision.CONTINUE;
     }
 
+    /** True if the specified type is a tuple with non-tuple fields */
+    boolean isSimpletuple(DBSPType type) {
+        if (!type.is(DBSPTypeTupleBase.class))
+            return false;
+        DBSPTypeTupleBase tuple = type.to(DBSPTypeTupleBase.class);
+        for (DBSPType field: tuple.tupFields)
+            if (field.is(DBSPTypeTupleBase.class))
+                return false;
+        return true;
+    }
+
     @Override
     public VisitDecision preorder(DBSPClosureExpression expression) {
-        if (!this.context.isEmpty()) {
+        if (!this.context.isEmpty())
             // We only allow closures in the outermost context.
             return this.notProjection();
-        }
         this.expression = expression;
-        if (expression.parameters.length == 0) {
+        if (expression.parameters.length == 0)
             return this.notProjection();
-        }
+        // Currently skip expressions that return nested tuples
+        if (!this.isSimpletuple(expression.body.getType()))
+            return this.notProjection();
+
         this.parameters = expression.parameters;
         return VisitDecision.CONTINUE;
     }

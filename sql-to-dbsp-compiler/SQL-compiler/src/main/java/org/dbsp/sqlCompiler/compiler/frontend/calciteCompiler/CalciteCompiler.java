@@ -859,12 +859,13 @@ public class CalciteCompiler implements IWritesLogs {
         boolean illegal = family == SqlTypeFamily.INTERVAL_DAY_TIME ||
                 family == SqlTypeFamily.INTERVAL_YEAR_MONTH;
         if (illegal) {
+            String object = view ? "view" : "table";
             this.errorReporter.reportError(position,
                     "Unsupported column type",
-                    "Column " + Utilities.singleQuote(columnName) + " of " + (view ? "view " : "table ") +
+                    "Column " + Utilities.singleQuote(columnName) + " of " + object + " " +
                             Utilities.singleQuote(tableName.getSimple()) +
                             " has type " + Utilities.singleQuote(type.getFullTypeString()) +
-                            " which is currently unsupported");
+                            " which is currently not allowed in a " + object + ".");
         }
     }
 
