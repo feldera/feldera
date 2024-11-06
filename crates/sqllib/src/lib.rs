@@ -686,33 +686,39 @@ macro_rules! some_operator {
 
 pub(crate) use some_operator;
 
-macro_rules! for_all_int_compare {
-    ($func_name: ident, $ret_type: ty) => {
-        some_operator!($func_name, i8, i8, bool);
-        some_operator!($func_name, i16, i16, bool);
-        some_operator!($func_name, i32, i32, bool);
-        some_operator!($func_name, i64, i64, bool);
-    };
-}
-pub(crate) use for_all_int_compare;
-
-macro_rules! for_all_numeric_compare {
-    ($func_name: ident, $ret_type: ty) => {
-        for_all_int_compare!($func_name, bool);
-        some_operator!($func_name, f, F32, bool);
-        some_operator!($func_name, d, F64, bool);
-        some_operator!($func_name, decimal, Decimal, bool);
-    };
-}
-pub(crate) use for_all_numeric_compare;
-
 macro_rules! for_all_compare {
-    ($func_name: ident, $ret_type: ty) => {
-        for_all_numeric_compare!($func_name, bool);
-        some_operator!($func_name, b, bool, bool);
-        some_operator!($func_name, s, String, bool);
-        some_operator!($func_name, V, Variant, bool);
+    ($func_name: ident, $ret_type: ty, $t:ty where $($bounds:tt)*) => {
+        ::paste::paste! {
+            #[doc(hidden)]
+            #[inline(always)]
+            pub fn [<$func_name __ >]<T: $($bounds)*>( arg0: T, arg1: T ) -> $ret_type {
+                $func_name(arg0, arg1)
+            }
+
+            #[doc(hidden)]
+            #[inline(always)]
+            pub fn [<$func_name _N_ >]<T: $($bounds)*>( arg0: Option<T>, arg1: T ) -> Option<$ret_type> {
+                let arg0 = arg0?;
+                Some([< $func_name __ >](arg0, arg1))
+            }
+
+            #[doc(hidden)]
+            #[inline(always)]
+            pub fn [<$func_name __N >]<T: $($bounds)*>( arg0: T, arg1: Option<T> ) -> Option<$ret_type> {
+                let arg1 = arg1?;
+                Some([< $func_name __ >](arg0, arg1))
+            }
+
+            #[doc(hidden)]
+            #[inline(always)]
+            pub fn [<$func_name _N_N >]<T: $($bounds)*>( arg0: Option<T>, arg1: Option<T> ) -> Option<$ret_type> {
+                let arg0 = arg0?;
+                let arg1 = arg1?;
+                Some([< $func_name __ >](arg0, arg1))
+            }
+        }
     };
+
 }
 pub(crate) use for_all_compare;
 
@@ -725,29 +731,6 @@ macro_rules! for_all_int_operator {
     };
 }
 pub(crate) use for_all_int_operator;
-
-macro_rules! for_all_numeric_operator {
-    ($func_name: ident) => {
-        for_all_int_operator!($func_name);
-        some_operator!($func_name, f, F32, F32);
-        some_operator!($func_name, d, F64, F64);
-        some_operator!($func_name, decimal, Decimal, Decimal);
-    };
-}
-pub(crate) use for_all_numeric_operator;
-
-macro_rules! for_all_comparable_operator {
-    ($func_name: ident) => {
-        for_all_numeric_operator!($func_name);
-        some_operator!($func_name, b, bool, bool);
-        some_operator!($func_name, Timestamp, Timestamp, Timestamp);
-        some_operator!($func_name, Date, Date, Date);
-        some_operator!($func_name, Time, Time, Time);
-        some_operator!($func_name, ShortInterval, ShortInterval, ShortInterval);
-        some_operator!($func_name, LongInterval, LongInterval, LongInterval);
-    };
-}
-pub(crate) use for_all_comparable_operator;
 
 #[doc(hidden)]
 impl<T> Semigroup<Option<T>> for DefaultOptSemigroup<T>

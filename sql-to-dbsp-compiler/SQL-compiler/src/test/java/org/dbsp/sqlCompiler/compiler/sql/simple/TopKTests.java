@@ -16,13 +16,13 @@ public class TopKTests extends SqlIoTest {
                     Status VARCHAR,
                     DateCreated DATE NOT NULL
                 );
-                INSERT INTO DocumentStatusLog VALUES(2, 1, 'S1', '2011-07-29')
-                ;INSERT INTO DocumentStatusLog VALUES(3, 1, 'S2', '2011-07-30')
-                ;INSERT INTO DocumentStatusLog VALUES(6, 1, 'S1', '2011-09-02')
-                ;INSERT INTO DocumentStatusLog VALUES(1, 2, 'S1', '2011-07-28')
-                ;INSERT INTO DocumentStatusLog VALUES(4, 2, 'S2', '2011-07-30')
-                ;INSERT INTO DocumentStatusLog VALUES(5, 2, 'S3', '2011-08-01')
-                ;INSERT INTO DocumentStatusLog VALUES(6, 3, 'S1', '2011-08-02')
+                INSERT INTO DocumentStatusLog VALUES(2, 1, 'S1', '2011-07-29');
+                INSERT INTO DocumentStatusLog VALUES(3, 1, 'S2', '2011-07-30');
+                INSERT INTO DocumentStatusLog VALUES(6, 1, 'S1', '2011-09-02');
+                INSERT INTO DocumentStatusLog VALUES(1, 2, 'S1', '2011-07-28');
+                INSERT INTO DocumentStatusLog VALUES(4, 2, 'S2', '2011-07-30');
+                INSERT INTO DocumentStatusLog VALUES(5, 2, 'S3', '2011-08-01');
+                INSERT INTO DocumentStatusLog VALUES(6, 3, 'S1', '2011-08-02');
                 """;
         compiler.compileStatements(sql);
     }

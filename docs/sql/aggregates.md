@@ -121,6 +121,10 @@ DECIMAL(10, 4))` if you expect 10-digit results to be possible.
   </tr>
 </table>
 
+Comparisons like `MAX`, `MIN`, `ARG_MIN`, and `ARG_MAX` are defined
+for all data types, and they use the standard [comparison
+operations](comparisons.md).
+
 If `FILTER` is specified, then only the input rows for which the
 filter_clause evaluates to true are fed to the aggregate function;
 other rows are discarded. For example:

@@ -4,11 +4,7 @@ use dbsp::algebra::{HasZero, F32, F64};
 use num::PrimInt;
 use num_traits::{CheckedAdd, CheckedDiv, CheckedMul, CheckedSub, ToPrimitive};
 
-use crate::{
-    for_all_comparable_operator, for_all_compare, for_all_int_compare, for_all_int_operator,
-    for_all_numeric_compare, for_all_numeric_operator, some_existing_operator, some_operator, Date,
-    LongInterval, ShortInterval, Time, Timestamp, Variant,
-};
+use crate::{for_all_compare, for_all_int_operator, some_existing_operator, some_operator};
 
 use rust_decimal::Decimal;
 
@@ -21,7 +17,7 @@ where
     left == right
 }
 
-for_all_compare!(eq, bool);
+for_all_compare!(eq, bool, T where Eq);
 
 #[doc(hidden)]
 pub fn is_same__<T>(left: T, right: T) -> bool
@@ -30,6 +26,8 @@ where
 {
     left == right
 }
+
+// There is only one is_same__ function; no macros are needed.
 
 #[doc(hidden)]
 #[inline(always)]
@@ -40,7 +38,7 @@ where
     left != right
 }
 
-for_all_compare!(neq, bool);
+for_all_compare!(neq, bool, T where Eq);
 
 #[doc(hidden)]
 #[inline(always)]
@@ -51,7 +49,7 @@ where
     left < right
 }
 
-for_all_compare!(lt, bool);
+for_all_compare!(lt, bool, T where Ord);
 
 #[doc(hidden)]
 #[inline(always)]
@@ -62,7 +60,7 @@ where
     left > right
 }
 
-for_all_compare!(gt, bool);
+for_all_compare!(gt, bool, T where Ord);
 
 #[doc(hidden)]
 #[inline(always)]
@@ -73,7 +71,7 @@ where
     left <= right
 }
 
-for_all_compare!(lte, bool);
+for_all_compare!(lte, bool, T where Ord);
 
 #[doc(hidden)]
 #[inline(always)]
@@ -84,7 +82,7 @@ where
     left >= right
 }
 
-for_all_compare!(gte, bool);
+for_all_compare!(gte, bool, T where Ord);
 
 #[doc(hidden)]
 #[inline(always)]
@@ -339,7 +337,7 @@ where
     left.max(right)
 }
 
-for_all_comparable_operator!(max);
+for_all_compare!(max, T, T where Ord);
 
 #[inline(always)]
 #[doc(hidden)]
@@ -350,4 +348,4 @@ where
     left.min(right)
 }
 
-for_all_comparable_operator!(min);
+for_all_compare!(min, T, T where Ord);

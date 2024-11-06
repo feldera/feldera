@@ -26,8 +26,33 @@ public class StructTests extends SqlIoTest {
     }
 
     @Test
+    public void rowTest() {
+        String sql = """
+                CREATE TABLE t(
+                    group_id bigint,
+                    x bigint,
+                    y bigint,
+                    z bigint
+                );
+                
+                CREATE VIEW v2 AS
+                    SELECT group_id,
+                        ARG_MAX(z, (x,y))
+                    FROM t
+                    group by group_id;""";
+        var ccs = this.getCCS(sql);
+        ccs.step("INSERT INTO T VALUES(0, 1, 2, 3), (0, 1, 1, 1), (4, 5, 6, 7);",
+                """
+                 group_id | z | weight
+                -----------------------------
+                 0        | 3 | 1
+                 4        | 7 | 1""");
+        this.addRustTestCase(ccs);
+    }
+
+    @Test
     public void nestedStructTest() {
-        String ddl = """
+        String sql = """
             CREATE TYPE address_typ AS (
                street          VARCHAR(30),
                city            VARCHAR(30),
@@ -41,7 +66,7 @@ public class StructTests extends SqlIoTest {
             CREATE VIEW V AS
             SELECT PERS.p0.address FROM PERS
             WHERE PERS.p0.firstname = 'Mike'""";
-        CompilerCircuitStream ccs = this.getCCS(ddl);
+        CompilerCircuitStream ccs = this.getCCS(sql);
         DBSPExpression address0 = new DBSPTupleExpression(true,
                 new DBSPStringLiteral("Broadway", true),
                 new DBSPStringLiteral("New York", true),

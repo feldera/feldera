@@ -225,7 +225,6 @@ public class StreamingTests extends StreamingTestBase {
 
     @Test
     public void issue2847() {
-        this.showFinal();
         String sql = """
                 CREATE TABLE t1(
                     x INT,

@@ -20,6 +20,11 @@ but always return a Boolean value (sometimes nullable):
     <td></td>
   </tr>
   <tr>
+    <td><code>!=</code></td>
+    <td>inequality test, same as above</td>
+    <td></td>
+  </tr>
+  <tr>
     <td><code>&gt;</code></td>
     <td>greater than</td>
     <td></td>
@@ -100,6 +105,18 @@ but always return a Boolean value (sometimes nullable):
     <td>ignores <code>NULL</code> values</td>
   </tr>
 </table>
+
+Note that the SQL standard mandates `IS NULL` to return `true` for a
+`ROW` object where all fields are `NULL` (similarly, `IS NOT NULL` is
+required to return `false`).  Our compiler diverges from the standard,
+returning `false` for `ROW(null) is null`.
+
+Comparison operations (`=`, `<>`, `!=`, `<`, `>`, `<=`, `>=`, `<=>`,
+`IS NULL`, `IS NOT NULL`) are defined on all data types, even
+recursive data types (including `ARRAY`, `MAP`, `ROW`, `VARIANT`,
+user-defined types).  For complex types, comparisons are performed
+lexicographically on the type structure.  In such comparisons fields
+with `NULL` values are compared smaller than any other value.
 
 # Other conditional operators
 

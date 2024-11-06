@@ -1451,9 +1451,10 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 String method = getArrayCallName(call, ops.get(0), op1);
                 return new DBSPApplyExpression(node, method, type, ops.get(0), op1).cast(type);
             }
-            case HOP: {
+            case HOP:
                 throw new UnimplementedException("Please use the TABLE function HOP", node);
-            }
+            case ROW:
+                return new DBSPTupleExpression(node, ops);
             case DOT:
             default:
                 throw new UnimplementedException("Function " + Utilities.singleQuote(operationName)

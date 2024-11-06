@@ -9,72 +9,73 @@ public class PostgresArrayTests extends SqlIoTest {
     @Test
     public void testSplit() {
         // Renamed 'string_to_array' to 'split'
-        this.qs("select split('1|2|3', '|');\n" +
-                " split \n" +
-                "-----------------\n" +
-                " { 1, 2, 3}\n" +
-                "(1 row)\n" +
-                "\n" +
-                "select split('1|2|3|', '|');\n" +
-                " split \n" +
-                "-----------------\n" +
-                " { 1, 2, 3, }\n" +
-                "(1 row)\n" +
-                "\n" +
-                "select split('1||2|3||', '||');\n" +
-                " split \n" +
-                "-----------------\n" +
-                " { 1, 2|3, }\n" +
-                "(1 row)\n" +
-                "\n" +
-                "select split('1|2|3', '');\n" +
-                " split \n" +
-                "-----------------\n" +
-                " { 1|2|3}\n" +
-                "(1 row)\n" +
-                "\n" +
-                "select split('', '|');\n" +
-                " split \n" +
-                "-----------------\n" +
-                " {}\n" +
-                "(1 row)\n" +
-                "\n" +
-                // Semantics different from Postgres
-                "select split('1|2|3', NULL);\n" +
-                " split \n" +
-                "-----------------\n" +
-                " NULL\n" +
-                "(1 row)\n" +
-                "\n" +
-                "select split(NULL, '|') IS NULL;\n" +
-                " ?column? \n" +
-                "----------\n" +
-                " t\n" +
-                "(1 row)\n" +
-                "\n" +
-                "select split('abc', '');\n" +
-                " split \n" +
-                "-----------------\n" +
-                " { abc}\n" +
-                "(1 row)\n" +
-                "\n" +
-                "select split('abc', ',');\n" +
-                " split \n" +
-                "-----------------\n" +
-                " { abc}\n" +
-                "(1 row)\n" +
-                "\n" +
-                "select split('1,2,3,4,,6', ',');\n" +
-                " split \n" +
-                "-----------------\n" +
-                " { 1, 2, 3, 4, , 6}\n" +
-                "(1 row)\n" +
-                "\n" +
-                "select split('', '');\n" +
-                " split \n" +
-                "-----------------\n" +
-                " { }\n" +
-                "(1 row)");
+        this.qs("""
+                select split('1|2|3', '|');
+                 split
+                -----------------
+                 { 1, 2, 3}
+                (1 row)
+
+                select split('1|2|3|', '|');
+                 split
+                -----------------
+                 { 1, 2, 3, }
+                (1 row)
+
+                select split('1||2|3||', '||');
+                 split
+                -----------------
+                 { 1, 2|3, }
+                (1 row)
+
+                select split('1|2|3', '');
+                 split
+                -----------------
+                 { 1|2|3}
+                (1 row)
+
+                select split('', '|');
+                 split
+                -----------------
+                 {}
+                (1 row)
+
+                -- Semantics different from Postgres
+                select split('1|2|3', NULL);
+                 split
+                -----------------
+                 NULL
+                (1 row)
+
+                select split(NULL, '|') IS NULL;
+                 ?column?
+                ----------
+                 t
+                (1 row)
+
+                select split('abc', '');
+                 split
+                -----------------
+                 { abc}
+                (1 row)
+
+                select split('abc', ',');
+                 split\s
+                -----------------
+                 { abc}
+                (1 row)
+
+                select split('1,2,3,4,,6', ',');
+                 split
+                -----------------
+                 { 1, 2, 3, 4, , 6}
+                (1 row)
+
+                select split('', '');
+                 split
+                -----------------
+                 { }
+                (1 row)""");
         // Deleted some three-operand cases
     }
 
