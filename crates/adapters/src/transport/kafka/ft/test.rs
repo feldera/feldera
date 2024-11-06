@@ -496,11 +496,11 @@ impl InputConsumer for DummyInputConsumer {
         }
     }
 
-    fn replayed(&self, num_records: usize) {
+    fn replayed(&self, num_records: usize, _hash: u64) {
         self.called(ConsumerCall::Replayed { num_records });
     }
 
-    fn extended(&self, num_records: usize, metadata: RmpValue) {
+    fn extended(&self, num_records: usize, _hash: u64, metadata: RmpValue) {
         self.called(ConsumerCall::Extended {
             num_records,
             metadata,

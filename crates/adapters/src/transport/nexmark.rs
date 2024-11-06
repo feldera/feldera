@@ -3,6 +3,7 @@
 use feldera_adapterlib::transport::InputReaderCommand;
 use std::cmp::min;
 use std::collections::VecDeque;
+use std::hash::Hasher;
 use std::io::Cursor;
 use std::mem;
 use std::ops::Range;
@@ -11,6 +12,7 @@ use std::sync::{Barrier, Weak};
 use std::thread::{self};
 use tokio::sync::broadcast::{channel as broadcast_channel, Receiver as BroadcastReceiver};
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
+use xxhash_rust::xxh3::Xxh3Default;
 
 use crate::format::InputBuffer;
 use crate::{InputConsumer, InputEndpoint, InputReader, Parser, TransportInputEndpoint};
@@ -97,10 +99,10 @@ impl InputReader for InputGenerator {
             }
             _ => match command {
                 InputReaderCommand::Seek(_) => (),
-                InputReaderCommand::Replay(_) => self.consumer.replayed(0),
+                InputReaderCommand::Replay(_) => self.consumer.replayed(0, 0),
                 InputReaderCommand::Extend => (),
                 InputReaderCommand::Pause => (),
-                InputReaderCommand::Queue => self.consumer.extended(0, RmpValue::Nil),
+                InputReaderCommand::Queue => self.consumer.extended(0, 0, RmpValue::Nil),
                 InputReaderCommand::Disconnect => (),
             },
         }
@@ -297,11 +299,13 @@ fn worker_thread(
         let _ = bcast_sender.send(event_ids.clone());
         barrier.wait();
         let mut total = 0;
+        let mut hasher = Xxh3Default::new();
         for (_events, mut buffer) in queue.lock().unwrap().drain(..) {
             total += buffer.len();
+            buffer.hash(&mut hasher);
             buffer.flush();
         }
-        consumers[NexmarkTable::Bid].replayed(total);
+        consumers[NexmarkTable::Bid].replayed(total, hasher.finish());
         next_event_id = event_ids.end;
     }
 
@@ -322,6 +326,9 @@ fn worker_thread(
             Some(InputReaderCommand::Pause) => running = false,
             Some(InputReaderCommand::Queue) => {
                 let mut total = 0;
+                let mut hasher = consumers[NexmarkTable::Bid]
+                    .is_pipeline_fault_tolerant()
+                    .then(Xxh3Default::new);
                 let n = options.max_step_size_per_thread as usize * options.threads;
                 let mut events: Option<Range<u64>> = None;
                 while total < n {
@@ -336,11 +343,15 @@ fn worker_thread(
                             None => Some(range),
                         };
                         total += buffer.len();
+                        if let Some(hasher) = hasher.as_mut() {
+                            buffer.hash(hasher);
+                        }
                         buffer.flush();
                     }
                 }
                 consumers[NexmarkTable::Bid].extended(
                     total,
+                    hasher.map_or(0, |hasher| hasher.finish()),
                     rmpv::ext::to_value(Metadata {
                         event_ids: events.unwrap_or_else(|| next_event_id..next_event_id),
                     })

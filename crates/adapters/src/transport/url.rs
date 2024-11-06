@@ -15,14 +15,9 @@ use feldera_types::program_schema::Relation;
 use feldera_types::transport::url::UrlInputConfig;
 use futures::{future::OptionFuture, StreamExt};
 use serde::{Deserialize, Serialize};
+use xxhash_rust::xxh3::Xxh3Default;
 use std::{
-    cmp::{min, Ordering},
-    collections::VecDeque,
-    ops::Range,
-    str::FromStr,
-    sync::Arc,
-    thread::spawn,
-    time::Duration,
+    cmp::{min, Ordering}, collections::VecDeque, hash::Hasher, ops::Range, str::FromStr, sync::Arc, thread::spawn, time::Duration
 };
 use tokio::{
     select,
@@ -249,6 +244,7 @@ impl UrlInputReader {
             splitter.seek(offsets.start);
             let mut remainder = (offsets.end - offsets.start) as usize;
             let mut num_records = 0;
+            let mut hasher = Xxh3Default::new();
             while remainder > 0 {
                 let bytes = stream.read(remainder).await?;
                 let Some(bytes) = bytes else {
@@ -261,10 +257,11 @@ impl UrlInputReader {
                     consumer.parse_errors(errors);
                     consumer.buffered(buffer.len(), chunk.len());
                     num_records += buffer.len();
+                    buffer.hash(&mut hasher);
                     buffer.flush();
                 }
             }
-            consumer.replayed(num_records);
+            consumer.replayed(num_records, hasher.finish());
         }
 
         let mut queue = VecDeque::<(Range<u64>, Box<dyn InputBuffer>)>::new();
@@ -304,6 +301,7 @@ impl UrlInputReader {
                         }
                         InputReaderCommand::Queue => {
                             let mut total = 0;
+                            let mut hasher = consumer.is_pipeline_fault_tolerant().then(Xxh3Default::new);
                             let limit = consumer.max_batch_size();
                             let mut range: Option<Range<u64>> = None;
                             while let Some((offsets, mut buffer)) = queue.pop_front() {
@@ -312,6 +310,9 @@ impl UrlInputReader {
                                     None => Some(offsets),
                                 };
                                 total += buffer.len();
+                                if let Some(hasher) = hasher.as_mut() {
+                                    buffer.hash(hasher);
+                                }
                                 buffer.flush();
                                 if total >= limit {
                                     break;
@@ -319,6 +320,7 @@ impl UrlInputReader {
                             }
                             consumer.extended(
                                 total,
+                                hasher.map_or(0, |hasher| hasher.finish()),
                                 rmpv::ext::to_value(Metadata {
                                     offsets: range.unwrap_or_else(|| {
                                         let ofs = splitter.position();

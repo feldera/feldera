@@ -102,9 +102,9 @@ impl InputConsumer for MockInputConsumer {
 
     fn buffered(&self, _num_records: usize, _num_bytes: usize) {}
 
-    fn replayed(&self, _num_records: usize) {}
+    fn replayed(&self, _num_records: usize, _hash: u64) {}
 
-    fn extended(&self, _num_records: usize, _metadata: RmpValue) {
+    fn extended(&self, _num_records: usize, _hash: u64, _metadata: RmpValue) {
         self.state().n_extended += 1;
     }
 }

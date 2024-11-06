@@ -3703,6 +3703,7 @@ dependencies = [
  "url",
  "utoipa",
  "uuid",
+ "xxhash-rust",
 ]
 
 [[package]]
@@ -4462,6 +4463,7 @@ dependencies = [
  "serde_json",
  "serde_yaml",
  "tokio",
+ "xxhash-rust",
 ]
 
 [[package]]
@@ -4484,6 +4486,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+ "xxhash-rust",
 ]
 
 [[package]]

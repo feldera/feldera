@@ -1,10 +1,12 @@
 use std::{
     collections::{BTreeMap, VecDeque},
+    hash::Hasher,
     sync::Arc,
 };
 
 use aws_sdk_s3::operation::{get_object::GetObjectOutput, list_objects_v2::ListObjectsV2Error};
 use tokio::sync::mpsc::{self, unbounded_channel, UnboundedReceiver, UnboundedSender};
+use xxhash_rust::xxh3::Xxh3Default;
 
 use crate::{
     format::StreamSplitter, InputBuffer, InputConsumer, InputReader, Parser, TransportInputEndpoint,
@@ -252,6 +254,7 @@ impl S3InputReader {
                         start_position = Some((key.clone(), value.1));
                     }
                     let mut num_records = 0;
+                    let mut hasher = Xxh3Default::new();
                     for (key, (start, end)) in metadata.offsets {
                         let mut object = client
                             .get_object(&config.bucket_name, &key, start, end)
@@ -268,11 +271,12 @@ impl S3InputReader {
                                 consumer.parse_errors(errors);
                                 consumer.buffered(buffer.len(), chunk.len());
                                 num_records += buffer.len();
+                                buffer.hash(&mut hasher);
                                 buffer.flush();
                             }
                         }
                     }
-                    consumer.replayed(num_records);
+                    consumer.replayed(num_records, hasher.finish());
                 }
                 Some(other) => {
                     command_receiver.put_back(other);
@@ -352,19 +356,24 @@ impl S3InputReader {
                         Some(InputReaderCommand::Pause) => running = false,
                         Some(InputReaderCommand::Queue) => {
                             let mut total = 0;
+                            let mut hasher = consumer.is_pipeline_fault_tolerant().then(Xxh3Default::new);
                             let mut offsets = BTreeMap::<String, (u64, Option<u64>)>::new();
                             while total < consumer.max_batch_size() {
                                 let Some(QueuedBuffer { key, start_offset, end_offset, mut buffer }) = queue.pop_front() else {
                                     break
                                 };
                                 total += buffer.len();
+                                if let Some(hasher) = hasher.as_mut() {
+                                    buffer.hash(hasher);
+                                }
                                 buffer.flush();
                                 offsets.entry(key)
                                     .and_modify(|value| value.1 = end_offset)
                                     .or_insert((start_offset, end_offset));
                             }
-                            consumer
-                                .extended(total, rmpv::ext::to_value(&Metadata { offsets }).unwrap());
+                            consumer.extended(total,
+                                              hasher.map_or(0, |hasher| hasher.finish()),
+                                              rmpv::ext::to_value(&Metadata { offsets }).unwrap());
                         }
                         Some(InputReaderCommand::Disconnect) | None => {
                             return Ok(())
