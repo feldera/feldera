@@ -32,6 +32,7 @@ import org.dbsp.sqlCompiler.ir.statement.DBSPExpressionStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStatement;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
@@ -71,7 +72,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
             // let x0: Vec<i32> = x.0.clone();
             // let x1: x.1.clone();
             DBSPExpression field = rowVar.deref().field(index).applyCloneIfNeeded();
-            DBSPVariablePath fieldClone = new DBSPVariablePath(field.getType());
+            DBSPVariablePath fieldClone = field.getType().var();
             DBSPLetStatement stat = new DBSPLetStatement(fieldClone.variable, field);
             statements.add(stat);
             resultColumns.add(fieldClone.applyCloneIfNeeded());
@@ -117,7 +118,13 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
         } else {
             if (flatmap.ordinalityIndexType != null) {
                 // e.1, as produced by the iterator
-                resultColumns.add(e.field(1));
+                DBSPExpression eField1 = e.field(1);
+                // If this is a tuple, flatten it.
+                if (eField1.getType().is(DBSPTypeTuple.class)) {
+                    resultColumns.addAll(DBSPTypeTuple.flatten(eField1));
+                } else {
+                    resultColumns.add(eField1);
+                }
             } else if (e.getType().is(DBSPTypeTupleBase.class)) {
                 // Calcite's UNNEST has a strange semantics:
                 // If e is a tuple type, unpack its fields here

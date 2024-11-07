@@ -338,6 +338,9 @@ public class CalciteCompiler implements IWritesLogs {
         planner.setExecutor(RexUtil.EXECUTOR);
         this.cluster = RelOptCluster.create(planner, new RexBuilder(this.typeFactory));
         this.converterConfig = SqlToRelConverter.config()
+                // Calcite recommends not using withExpand, but there are no
+                // rules to decorrelate some queries that withExpand will produce,
+                // e.g., AggScottTests.testAggregates4
                 .withExpand(true);
         this.validator = null;
         this.validateTypes = null;
@@ -651,7 +654,6 @@ public class CalciteCompiler implements IWritesLogs {
                     " - " + value +
                     " FROM TMP;\n";
             Logger.INSTANCE.belowLevel(this, 2)
-                    .append("Submitting for compilation ")
                     .newline()
                     .append(sql)
                     .newline();
@@ -1005,7 +1007,6 @@ public class CalciteCompiler implements IWritesLogs {
 
             String sql = builder.toString();
             Logger.INSTANCE.belowLevel(this, 2)
-                    .append("Submitting for compilation ")
                     .newline()
                     .append(sql)
                     .newline();
