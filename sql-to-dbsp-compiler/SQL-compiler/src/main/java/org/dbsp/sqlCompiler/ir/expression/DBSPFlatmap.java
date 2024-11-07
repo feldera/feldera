@@ -205,7 +205,12 @@ public final class DBSPFlatmap extends DBSPExpression {
         } else {
             if (this.ordinalityIndexType != null) {
                 // e.1, as produced by the iterator
-                expressions.add("e.1");
+                if (collectionElementType.is(DBSPTypeTupleBase.class)) {
+                    for (int i = 0; i < collectionElementType.to(DBSPTypeTupleBase.class).size(); i++)
+                        expressions.add("e.1." + i);
+                } else {
+                    expressions.add("e.1");
+                }
             } else if (collectionElementType.is(DBSPTypeTupleBase.class)) {
                 // Calcite's UNNEST has a strange semantics:
                 // If e is a tuple type, unpack its fields here

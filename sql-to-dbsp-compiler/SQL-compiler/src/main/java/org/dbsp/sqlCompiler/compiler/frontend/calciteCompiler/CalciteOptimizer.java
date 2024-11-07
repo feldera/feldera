@@ -8,6 +8,7 @@ import org.apache.calcite.plan.hep.HepProgramBuilder;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.RelVisitor;
 import org.apache.calcite.rel.core.Join;
+import org.apache.calcite.rel.logical.LogicalCorrelate;
 import org.apache.calcite.rel.rules.CoreRules;
 import org.apache.calcite.rel.rules.PruneEmptyRules;
 import org.apache.calcite.sql2rel.RelDecorrelator;
@@ -134,6 +135,23 @@ public class CalciteOptimizer implements IWritesLogs {
         }
     }
 
+    /** Helper class to discover whether a query contains correlates */
+    static class CorrelateFinder extends RelVisitor {
+        public boolean found = false;
+        @Override public void visit(
+                RelNode node, int ordinal,
+                @org.checkerframework.checker.nullness.qual.Nullable RelNode parent) {
+            if (node instanceof LogicalCorrelate) {
+                this.found = true;
+            }
+            super.visit(node, ordinal, parent);
+        }
+
+        void run(RelNode node) {
+            this.go(node);
+        }
+    }
+
     void createOptimizer(int level) {
         this.addStep(new SimpleOptimizerStep("Constant fold", 2,
                 CoreRules.COERCE_INPUTS,
@@ -166,10 +184,7 @@ public class CalciteOptimizer implements IWritesLogs {
         this.addStep(new SimpleOptimizerStep("Convert to correlates", 1,
                 CoreRules.FILTER_SUB_QUERY_TO_CORRELATE,
                 CoreRules.JOIN_SUB_QUERY_TO_CORRELATE,
-                CoreRules.PROJECT_SUB_QUERY_TO_CORRELATE,
-                CoreRules.FILTER_CORRELATE,
-                CoreRules.PROJECT_CORRELATE_TRANSPOSE,
-                CoreRules.JOIN_TO_CORRELATE
+                CoreRules.PROJECT_SUB_QUERY_TO_CORRELATE
         ));
          */
 
@@ -240,15 +255,32 @@ public class CalciteOptimizer implements IWritesLogs {
                 CoreRules.AGGREGATE_MERGE,
                 CoreRules.INTERSECT_MERGE);
         // this.addStep(merge); -- messes up the shape of uncollect
-        this.addStep(new SimpleOptimizerStep(
-                "Move projections", 2,
-                CoreRules.PROJECT_CORRELATE_TRANSPOSE,
-                CoreRules.PROJECT_WINDOW_TRANSPOSE,
-                CoreRules.PROJECT_SET_OP_TRANSPOSE,
-                CoreRules.FILTER_PROJECT_TRANSPOSE
-                // Rule is unsound
-                // CoreRules.PROJECT_JOIN_TRANSPOSE
-        ));
+
+        this.addStep(new BaseOptimizerStep("Move projections", level) {
+            @Override
+            HepProgram getProgram(RelNode node, int level) {
+                this.addRules(2,
+                        // Rule is unsound: https://issues.apache.org/jira/browse/CALCITE-6681
+                        // CoreRules.PROJECT_CORRELATE_TRANSPOSE,
+                        CoreRules.PROJECT_WINDOW_TRANSPOSE,
+                        CoreRules.PROJECT_SET_OP_TRANSPOSE,
+                        CoreRules.FILTER_PROJECT_TRANSPOSE
+                );
+                /*
+                // Rule is unsound, hopefully it works if there are no correlates
+                // Moreover, rule interferes with temporal filters optimization
+                // Should be made obsolete when we add multijoins.
+                CorrelateFinder finder = new CorrelateFinder();
+                finder.run(node);
+                if (!finder.found) {
+                    this.addRules(level, CoreRules.PROJECT_JOIN_TRANSPOSE);
+                }
+                */
+                this.builder.addMatchOrder(HepMatchOrder.BOTTOM_UP);
+                return this.builder.build();
+            }
+        });
+
         this.addStep(merge);
         this.addStep(new SimpleOptimizerStep("Remove dead code", 0,
                 CoreRules.AGGREGATE_REMOVE,

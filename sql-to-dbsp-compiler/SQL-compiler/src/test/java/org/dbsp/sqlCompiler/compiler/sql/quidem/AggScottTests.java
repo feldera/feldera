@@ -30,6 +30,24 @@ public class AggScottTests extends ScottBaseTests {
                 (14 rows)""");
     }
 
+    @Test @Ignore("Cannot decorrelate LATERAL join")
+    public void testLateral() {
+        this.qs("""
+                SELECT deptno, ename
+                FROM
+                  (SELECT DISTINCT deptno FROM emp) t1,
+                  LATERAL (
+                    SELECT ename, sal
+                    FROM emp
+                    WHERE deptno IN (t1.deptno, t1.deptno)
+                    AND   deptno = t1.deptno
+                    ORDER BY sal
+                    DESC LIMIT 3);
+                 deptno | ename
+                ----------------
+                (0 rows)""");
+    }
+
     @Test
     public void testGrouping() {
         this.qs("""

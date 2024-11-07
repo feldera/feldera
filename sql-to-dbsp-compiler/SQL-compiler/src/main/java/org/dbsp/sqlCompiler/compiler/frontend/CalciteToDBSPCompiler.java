@@ -417,17 +417,16 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPVariablePath dataVar = new DBSPVariablePath(leftElementType.ref());
         ExpressionCompiler eComp = new ExpressionCompiler(correlate, dataVar, this.compiler);
         DBSPClosureExpression arrayExpression = eComp.compile(projection).closure(dataVar);
-        DBSPType uncollectElementType = this.convertType(uncollect.getRowType(), false);
+        DBSPTypeTuple uncollectElementType = this.convertType(uncollect.getRowType(), false).to(DBSPTypeTuple.class);
         DBSPType arrayElementType = arrayExpression.getResultType().to(DBSPTypeVec.class).getElementType();
         if (arrayElementType.mayBeNull)
             // This seems to be a bug in Calcite, we should not need to do this adjustment
-            uncollectElementType = uncollectElementType.withMayBeNull(true);
+            uncollectElementType = uncollectElementType.withMayBeNull(true).to(DBSPTypeTuple.class);
 
         DBSPType indexType = null;
         if (uncollect.withOrdinality) {
             // Index field is always last.
-            DBSPTypeTuple uncollectTuple = uncollectElementType.to(DBSPTypeTuple.class);
-            indexType = uncollectTuple.getFieldType(uncollectTuple.size() - 1);
+            indexType = uncollectElementType.getFieldType(uncollectElementType.size() - 1);
         }
 
         // Right projections are applied after uncollect

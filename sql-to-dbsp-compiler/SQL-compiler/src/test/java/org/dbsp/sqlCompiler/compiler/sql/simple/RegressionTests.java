@@ -15,6 +15,34 @@ import org.junit.Ignore;
 import org.junit.Test;
 
 public class RegressionTests extends SqlIoTest {
+    @Test @Ignore("https://issues.apache.org/jira/browse/CALCITE-6681")
+    public void issueLateral() {
+        // This triggers https://issues.apache.org/jira/browse/CALCITE-6681
+        // If we disable PROJECT_CORRELATE_TRANSPOSE, it fails due to the decorrelator
+        this.compileRustTestCase("""
+                CREATE TABLE t2 (
+                  a VARCHAR,
+                  ts INT,
+                  x BIGINT
+                );
+                
+                CREATE VIEW v AS
+                WITH t1(a, ts) AS (VALUES('a', 1))
+                SELECT * FROM t1
+                LEFT JOIN LATERAL (
+                    SELECT x
+                    FROM t2
+                    WHERE t2.a = t1.a
+                      AND t2.ts <= t1.ts
+                    LIMIT 1
+                ) ON true
+                LEFT JOIN LATERAL (
+                    SELECT x
+                    FROM t2
+                    WHERE t2.a = t1.a
+                ) ON true;""");
+    }
+
     @Test
     public void issue2639() {
         String sql = """
@@ -119,16 +147,11 @@ public class RegressionTests extends SqlIoTest {
                     r int,
                     scopeSpans int ARRAY
                 );
-                
-                CREATE TABLE t (
-                    resourceSpans ResourceSpans ARRAY
-                );
+                CREATE TABLE t (resourceSpans ResourceSpans ARRAY);
                 
                 CREATE MATERIALIZED VIEW resource_spans AS
-                SELECT
-                    resourceSpans.scopeSpans
-                FROM
-                    t, UNNEST(resourceSpans) WITH ORDINALITY as resourceSpans;""";
+                SELECT resourceSpans.scopeSpans
+                FROM t, UNNEST(resourceSpans) WITH ORDINALITY as resourceSpans;""";
         this.compileRustTestCase(sql);
     }
 

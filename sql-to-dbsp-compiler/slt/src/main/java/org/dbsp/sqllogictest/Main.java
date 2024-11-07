@@ -62,7 +62,7 @@ public class Main {
 
         List<String> list = new ArrayList<>(tests);
         list.sort(String::compareTo);
-        List<String> toRun = list.subList(firstTest, lastTest);
+        List<String> toRun = list.subList(firstTest, Math.min(lastTest, list.size()));
         String[] args = new String[] { "-v", "-x", "-inc", "-e", "hybrid" };
 
         String wd = System.getProperty("user.dir");
