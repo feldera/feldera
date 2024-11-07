@@ -26,8 +26,8 @@ use ouroboros::self_referencing;
 use rand::Rng;
 use rkyv::{ser::Serializer, Archive, Archived, Deserialize, Fallible, Serialize};
 use size_of::{Context, SizeOf};
-use std::sync::Arc;
 use std::sync::Mutex;
+use std::sync::{Arc, MutexGuard};
 use std::{
     collections::VecDeque,
     path::{Path, PathBuf},
@@ -195,6 +195,24 @@ where
         self.slots[level].loose_batches.push_back(batch);
     }
 
+    fn should_apply_backpressure(&self) -> bool {
+        const HIGH_THRESHOLD: usize = 128;
+        self.slots
+            .iter()
+            .map(|s| s.loose_batches.len())
+            .sum::<usize>()
+            >= HIGH_THRESHOLD
+    }
+
+    fn should_relieve_backpressure(&self) -> bool {
+        const LOWER_THRESHOLD: usize = 64;
+        self.slots
+            .iter()
+            .map(|s| s.loose_batches.len())
+            .sum::<usize>()
+            <= LOWER_THRESHOLD
+    }
+
     fn get_filters(&self) -> (Option<Filter<B::Key>>, Option<Filter<B::Val>>) {
         (self.key_filter.clone(), self.value_filter.clone())
     }
@@ -322,6 +340,10 @@ where
     /// State shared with the background thread.
     state: Arc<Mutex<SharedState<B>>>,
 
+    /// Allows us to wait for the background worker until we no longer want to
+    /// block for backpressure.
+    no_backpressure: Arc<Condvar>,
+
     /// Allows us to wait for the background worker to become idle.
     idle: Arc<Condvar>,
 }
@@ -332,14 +354,20 @@ where
 {
     fn new() -> Self {
         let idle = Arc::new(Condvar::new());
+        let no_backpressure = Arc::new(Condvar::new());
         let state = Arc::new(Mutex::new(SharedState::new()));
         BackgroundThread::add_worker({
             let state = Arc::clone(&state);
             let idle = Arc::clone(&idle);
+            let no_backpressure = Arc::clone(&no_backpressure);
             let mut mergers = std::array::from_fn(|_| None);
-            Box::new(move || Self::run(&mut mergers, &state, &idle))
+            Box::new(move || Self::run(&mut mergers, &state, &idle, &no_backpressure))
         });
-        Self { state, idle }
+        Self {
+            state,
+            idle,
+            no_backpressure,
+        }
     }
     fn set_key_filter(&self, key_filter: &Filter<B::Key>) {
         self.state.lock().unwrap().key_filter = Some(key_filter.clone());
@@ -351,8 +379,12 @@ where
     /// Adds `batch` to the shared merging state and wakes up the merger.
     fn add_batch(&self, batch: Arc<B>) {
         debug_assert!(!batch.is_empty());
-        self.state.lock().unwrap().add_batch(batch);
+        let mut state = self.state.lock().unwrap();
+        state.add_batch(batch);
         BackgroundThread::wake();
+        if state.should_apply_backpressure() {
+            let _r = self.no_backpressure.wait(state).unwrap();
+        }
     }
 
     /// Adds `batches` to the shared merging state and wakes up the merger.
@@ -436,10 +468,25 @@ where
             "merge reduction" => merge_stats.merge_reduction()
         });
     }
+
+    fn maybe_relieve_backpressure(
+        no_backpressure: &Arc<Condvar>,
+        state: &MutexGuard<SharedState<B>>,
+    ) {
+        if state.should_relieve_backpressure() {
+            Self::relieve_backpressure(no_backpressure);
+        }
+    }
+
+    fn relieve_backpressure(no_backpressure: &Arc<Condvar>) {
+        no_backpressure.notify_all();
+    }
+
     fn run(
         mergers: &mut [Option<(B::Merger, [Arc<B>; 2])>; MAX_LEVELS],
         state: &Arc<Mutex<SharedState<B>>>,
         idle: &Arc<Condvar>,
+        no_backpressure: &Arc<Condvar>,
     ) -> WorkerStatus {
         // Run in-progress merges.
         let (key_filter, value_filter) = state.lock().unwrap().get_filters();
@@ -473,12 +520,16 @@ where
             mergers[level] = Some((merger, [a, b]));
         }
 
-        if state.lock().unwrap().request_exit {
+        let state = state.lock().unwrap();
+        if state.request_exit {
+            Self::relieve_backpressure(no_backpressure);
             WorkerStatus::Done
         } else if mergers.iter().all(|m| m.is_none()) {
+            Self::relieve_backpressure(no_backpressure);
             idle.notify_all(); // XXX is there a race here?
             WorkerStatus::Idle
         } else {
+            Self::maybe_relieve_backpressure(no_backpressure, &state);
             WorkerStatus::Busy
         }
     }
@@ -661,7 +712,6 @@ where
     type Factories = B::Factories;
 
     type Cursor<'s> = SpineCursor<B>;
-    // type Consumer = SpineConsumer<B>;
 
     fn factories(&self) -> Self::Factories {
         self.factories.clone()
