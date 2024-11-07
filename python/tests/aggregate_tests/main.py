@@ -68,9 +68,12 @@ from tests.aggregate_tests.test_time_min import *  # noqa: F403
 from tests.aggregate_tests.test_time_every import *  # noqa: F403
 from tests.aggregate_tests.test_time_some import *  # noqa: F403
 from tests.aggregate_tests.test_time_tbl import *  # noqa: F403
+from tests.aggregate_tests.test_timestamp_arg_max import *  # noqa: F403
+from tests.aggregate_tests.test_timestamp_arg_min import *  # noqa: F403
 from tests.aggregate_tests.test_timestamp_arr_agg import *  # noqa: F403
 from tests.aggregate_tests.test_timestamp_count_col import *  # noqa: F403
 from tests.aggregate_tests.test_timestamp_count import *  # noqa: F403
+from tests.aggregate_tests.test_timestamp_every import *  # noqa: F403
 from tests.aggregate_tests.test_timestamp_max import *  # noqa: F403
 from tests.aggregate_tests.test_timestamp_min import *  # noqa: F403
 from tests.aggregate_tests.test_timestamp_some import *  # noqa: F403
