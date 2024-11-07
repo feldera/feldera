@@ -18,14 +18,14 @@ install-deps:
     RUN apt-get update && apt-get install --fix-missing --yes build-essential curl libssl-dev build-essential pkg-config \
                               cmake git gcc clang libclang-dev python3-pip python3-plumbum \
                               hub numactl openjdk-19-jre-headless maven netcat jq \
-                              docker.io libenchant-2-2 graphviz locales protobuf-compiler
+                              docker.io libenchant-2-2 graphviz locales protobuf-compiler csvkit \
+                              ca-certificates gnupg unzip
     # Set UTF-8 locale. Needed for the Rust compiler to handle Unicode column names.
     RUN sed -i -e 's/# en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen && \
         locale-gen
     ENV LC_ALL en_US.UTF-8
     ENV LANG en_US.UTF-8
     ## Install Bun.js
-    RUN sudo apt-get install -y ca-certificates gnupg unzip
     RUN curl -fsSL https://bun.sh/install | bash
     ENV PATH="$HOME/.bun/bin:$PATH"
     # Install redpanda's rpk cli
@@ -523,7 +523,6 @@ docker-integration-tests:
 
 benchmark:
     FROM +build-manager
-    RUN apt-get install --yes csvkit
     COPY demo/project_demo12-HopsworksTikTokRecSys/tiktok-gen demo/project_demo12-HopsworksTikTokRecSys/tiktok-gen
     COPY scripts/bench.bash scripts/bench.bash
     COPY benchmark/feldera-sql/run.py benchmark/feldera-sql/run.py
