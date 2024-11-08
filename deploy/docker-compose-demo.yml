@@ -164,3 +164,21 @@ services:
       - bash
       - -c
       - "sleep 1 && cd demo/simple-count && python3 run.py --api-url http://pipeline-manager:8080"
+
+  demo-all-packaged:
+    profiles: [ "demo-all-packaged" ]
+    depends_on:
+      pipeline-manager:
+        condition: service_healthy
+    image: ghcr.io/feldera/demo-container:latest
+    build:
+      context: ../
+      dockerfile: deploy/Dockerfile.demo
+      target: demo
+    environment:
+      RUST_LOG: "info"
+      RUST_BACKTRACE: "1"
+    command:
+      - bash
+      - -c
+      - "sleep 1 && cd demo/all-packaged && python3 -u run.py --api-url http://pipeline-manager:8080"
