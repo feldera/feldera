@@ -629,4 +629,119 @@ public class WinAggPostTests extends PostBaseTests {
                 +---+------+------+
                 (1 row)""");
     }
+
+    @Test
+    public void testCountIf() {
+        this.qs("""
+                -- COUNTIF(b) (BigQuery) is equivalent to COUNT(*) FILTER (WHERE b)
+                select deptno, countif(gender = 'F') as f
+                from emp
+                group by deptno;
+                +--------+---+
+                | DEPTNO | F |
+                +--------+---+
+                |     10 | 1 |
+                |     20 | 0 |
+                |     30 | 2 |
+                |     50 | 1 |
+                |     60 | 1 |
+                |        | 1 |
+                +--------+---+
+                (6 rows)
+                
+                select countif(gender = 'F') filter (where deptno = 30) as f
+                from emp;
+                +---+
+                | F |
+                +---+
+                | 2 |
+                +---+
+                (1 row)
+                
+                select countif(a > 0) + countif(a > 1) + countif(c > 1) as c
+                from (select 1 as a, 2 as b, 3 as c);
+                +---+
+                | C |
+                +---+
+                | 2 |
+                +---+
+                (1 row)""");
+    }
+
+    @Test
+    public void testGrouping3() {
+        this.qs("""
+                -- [CALCITE-4665] Allow Aggregate.groupKey to be a strict superset of
+             -- Aggregate.groupKeys
+             -- Use a condition on grouping_id to filter out the superset grouping sets.
+             select ename, deptno, gender, grouping(ename) as g_e,
+               grouping(deptno) as g_d, grouping(gender) as g_g
+             from emp
+             where gender = 'M'
+             group by grouping sets (ename, deptno, (ename, deptno),
+               (ename, deptno, gender))
+             having grouping_id(ename, deptno, gender) <> 0
+             order by ename, deptno;
+             +-------+--------+--------+-----+-----+-----+
+             | ENAME | DEPTNO | GENDER | G_E | G_D | G_G |
+             +-------+--------+--------+-----+-----+-----+
+             | Adam|       50 |NULL|       0 |   0 |   1 |
+             | Adam|          |NULL|       0 |   1 |   1 |
+             | Bob|        10 |NULL|       0 |   0 |   1 |
+             | Bob|           |NULL|       0 |   1 |   1 |
+             | Eric|       20 |NULL|       0 |   0 |   1 |
+             | Eric|          |NULL|       0 |   1 |   1 |
+             |NULL|        10 |NULL|       1 |   0 |   1 |
+             |NULL|        20 |NULL|       1 |   0 |   1 |
+             |NULL|        50 |NULL|       1 |   0 |   1 |
+             +-------+--------+--------+-----+-----+-----+
+             (9 rows)
+             
+             -- just a comparison about the above sql
+             select ename, deptno, grouping(ename) as g_e,
+               grouping(deptno) as g_d
+             from emp
+             where gender = 'M'
+             group by grouping sets (ename, deptno, (ename, deptno))
+             order by ename, deptno;
+             +-------+--------+-----+-----+
+             | ENAME | DEPTNO | G_E | G_D |
+             +-------+--------+-----+-----+
+             | Adam|       50 |   0 |   0 |
+             | Adam|          |   0 |   1 |
+             | Bob|        10 |   0 |   0 |
+             | Bob|           |   0 |   1 |
+             | Eric|       20 |   0 |   0 |
+             | Eric|          |   0 |   1 |
+             |NULL|        10 |   1 |   0 |
+             |NULL|        20 |   1 |   0 |
+             |NULL|        50 |   1 |   0 |
+             +-------+--------+-----+-----+
+             (9 rows)
+             
+             -- Test cases for [CALCITE-5209] Proper sub-query handling if it is used inside select list and group by
+             select
+                 case when deptno in (1, 2, 3, 4, 5) THEN 1 else 0 end
+             from emp
+             group by
+                 case when deptno in (1, 2, 3, 4, 5) THEN 1 else 0 end;
+             +--------+
+             | EXPR$0 |
+             +--------+
+             |      0 |
+             +--------+
+             (1 row)
+             
+             select
+                 case when deptno in (1, 2, 3, 4, 5) THEN 1 else 0 end
+             from emp
+             group by
+                 case when deptno in (1, 2, 3, 4, 5) THEN 1 else 0 end;
+             +--------+
+             | EXPR$0 |
+             +--------+
+             |      0 |
+             +--------+
+             (1 row)""");
+    }
 }

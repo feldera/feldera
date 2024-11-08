@@ -1,9 +1,10 @@
 #![allow(non_snake_case)]
 #![allow(non_camel_case_types)]
 #![allow(clippy::let_and_return)]
+#![allow(clippy::unnecessary_cast)]
 
 use crate::binary::ByteArray;
-use crate::{FromInteger, ToInteger};
+use crate::{FromInteger, ToInteger, Weight};
 use dbsp::algebra::{FirstLargeValue, HasOne, HasZero, SignedPrimInt, UnsignedPrimInt, F32, F64};
 use num::PrimInt;
 use num_traits::CheckedAdd;
@@ -377,6 +378,30 @@ where
 
 for_all_int_aggregate!(agg_xor, agg_xor);
 
+// Helper function for XOR
+#[doc(hidden)]
+#[inline]
+pub fn right_xor_weigh<T>(right: T, w: Weight) -> T
+where
+    T: PrimInt,
+{
+    if ((w as i64) % 2) == 0 {
+        T::zero()
+    } else {
+        right
+    }
+}
+
+#[doc(hidden)]
+#[inline]
+pub fn right_xor_weighN<T>(right: Option<T>, w: Weight) -> Option<T>
+where
+    T: PrimInt,
+{
+    let right = right?;
+    Some(right_xor_weigh(right, w))
+}
+
 #[doc(hidden)]
 pub fn agg_and_bytes(left: ByteArray, right: ByteArray) -> ByteArray {
     left.and(&right)
@@ -394,6 +419,23 @@ some_aggregate!(agg_or_bytes, agg_or, bytes, ByteArray);
 #[doc(hidden)]
 pub fn agg_xor_bytes(left: ByteArray, right: ByteArray) -> ByteArray {
     left.xor(&right)
+}
+
+#[doc(hidden)]
+#[inline]
+pub fn right_xor_weigh_bytes(right: ByteArray, w: Weight) -> ByteArray {
+    if ((w as i64) % 2) == 0 {
+        ByteArray::zero(right.length())
+    } else {
+        right
+    }
+}
+
+#[doc(hidden)]
+#[inline]
+pub fn right_xor_weigh_bytesN(right: Option<ByteArray>, w: Weight) -> Option<ByteArray> {
+    let right = right?;
+    Some(right_xor_weigh_bytes(right, w))
 }
 
 some_aggregate!(agg_xor_bytes, agg_xor, bytes, ByteArray);

@@ -60,6 +60,12 @@ impl ByteArray {
         Self { data: d.to_vec() }
     }
 
+    pub fn zero(size: usize) -> Self {
+        Self {
+            data: vec![0; size],
+        }
+    }
+
     /// Create a ByteArray from a Vector of bytes
     pub fn from_vec(d: Vec<u8>) -> Self {
         Self { data: d }
