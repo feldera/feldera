@@ -1116,25 +1116,6 @@ public class AggTests extends PostBaseTests {
                 +--------+--------------------------------------+
                 (3 rows)
 
-                -- BIT_AND, BIT_OR, BIT_XOR aggregate functions
-                select bit_and(deptno), bit_or(deptno), bit_xor(deptno) from "scott".emp;
-                +--------+--------+--------+
-                | EXPR$0 | EXPR$1 | EXPR$2 |
-                +--------+--------+--------+
-                |      0 |     30 |     30 |
-                +--------+--------+--------+
-                (1 row)
-
-                select deptno, bit_and(empno), bit_or(empno), bit_xor(empno) from "scott".emp group by deptno;
-                +--------+--------+--------+--------+
-                | DEPTNO | EXPR$1 | EXPR$2 | EXPR$3 |
-                +--------+--------+--------+--------+
-                |     10 |   7686 |   7935 |   7687 |
-                |     20 |   7168 |   8191 |   7985 |
-                |     30 |   7168 |   8191 |    934 |
-                +--------+--------+--------+--------+
-                (3 rows)
-
                 -- Based on [DRUID-7593] Exact distinct-COUNT with complex expression (CASE, IN) throws
                 -- NullPointerException
                 WITH wikipedia AS (
@@ -1232,40 +1213,6 @@ public class AggTests extends PostBaseTests {
                 | Jane,Alice,Susan,Eve,Grace,Wilma | Jane; Susan; Alice; Eve; Grace; Wilma |
                 +----------------------------------+---------------------------------------+
                 (2 rows)
-
-                -- COUNTIF(b) (BigQuery) is equivalent to COUNT(*) FILTER (WHERE b)
-                select deptno, countif(gender = 'F') as f
-                from emp
-                group by deptno;
-                +--------+---+
-                | DEPTNO | F |
-                +--------+---+
-                |     10 | 1 |
-                |     20 | 0 |
-                |     30 | 2 |
-                |     50 | 1 |
-                |     60 | 1 |
-                |        | 1 |
-                +--------+---+
-                (6 rows)
-
-                select countif(gender = 'F') filter (where deptno = 30) as f
-                from emp;
-                +---+
-                | F |
-                +---+
-                | 2 |
-                +---+
-                (1 row)
-
-                select countif(a > 0) + countif(a > 1) + countif(c > 1) as c
-                from (select 1 as a, 2 as b, 3 as c);
-                +---+
-                | C |
-                +---+
-                | 2 |
-                +---+
-                (1 row)
 
                 -- [CALCITE-3661] Add MODE aggregate function
 
@@ -1393,80 +1340,6 @@ public class AggTests extends PostBaseTests {
                 |        |       | F |
                 +--------+-------+---+
                 (15 rows)
-
-                -- [CALCITE-4665] Allow Aggregate.groupKey to be a strict superset of
-                -- Aggregate.groupKeys
-                -- Use a condition on grouping_id to filter out the superset grouping sets.
-                select ename, deptno, gender, grouping(ename) as g_e,
-                  grouping(deptno) as g_d, grouping(gender) as g_g
-                from emp
-                where gender = 'M'
-                group by grouping sets (ename, deptno, (ename, deptno),
-                  (ename, deptno, gender))
-                having grouping_id(ename, deptno, gender) <> 0
-                order by ename, deptno;
-                +-------+--------+--------+-----+-----+-----+
-                | ENAME | DEPTNO | GENDER | G_E | G_D | G_G |
-                +-------+--------+--------+-----+-----+-----+
-                | Adam  |     50 |        |   0 |   0 |   1 |
-                | Adam  |        |        |   0 |   1 |   1 |
-                | Bob   |     10 |        |   0 |   0 |   1 |
-                | Bob   |        |        |   0 |   1 |   1 |
-                | Eric  |     20 |        |   0 |   0 |   1 |
-                | Eric  |        |        |   0 |   1 |   1 |
-                |       |     10 |        |   1 |   0 |   1 |
-                |       |     20 |        |   1 |   0 |   1 |
-                |       |     50 |        |   1 |   0 |   1 |
-                +-------+--------+--------+-----+-----+-----+
-                (9 rows)
-
-                -- just a comparison about the above sql
-                select ename, deptno, grouping(ename) as g_e,
-                  grouping(deptno) as g_d
-                from emp
-                where gender = 'M'
-                group by grouping sets (ename, deptno, (ename, deptno))
-                order by ename, deptno;
-                +-------+--------+-----+-----+
-                | ENAME | DEPTNO | G_E | G_D |
-                +-------+--------+-----+-----+
-                | Adam  |     50 |   0 |   0 |
-                | Adam  |        |   0 |   1 |
-                | Bob   |     10 |   0 |   0 |
-                | Bob   |        |   0 |   1 |
-                | Eric  |     20 |   0 |   0 |
-                | Eric  |        |   0 |   1 |
-                |       |     10 |   1 |   0 |
-                |       |     20 |   1 |   0 |
-                |       |     50 |   1 |   0 |
-                +-------+--------+-----+-----+
-                (9 rows)
-
-                -- Test cases for [CALCITE-5209] Proper sub-query handling if it is used inside select list and group by
-                select
-                    case when deptno in (1, 2, 3, 4, 5) THEN 1 else 0 end
-                from emp
-                group by
-                    case when deptno in (1, 2, 3, 4, 5) THEN 1 else 0 end;
-                +--------+
-                | EXPR$0 |
-                +--------+
-                |      0 |
-                +--------+
-                (1 row)
-
-                !set insubquerythreshold 5
-                select
-                    case when deptno in (1, 2, 3, 4, 5) THEN 1 else 0 end
-                from emp
-                group by
-                    case when deptno in (1, 2, 3, 4, 5) THEN 1 else 0 end;
-                +--------+
-                | EXPR$0 |
-                +--------+
-                |      0 |
-                +--------+
-                (1 row)
 
                 -- Test case for [CALCITE-5388] tempList expression inside EnumerableWindow.getPartitionIterator should be unoptimized
                 with

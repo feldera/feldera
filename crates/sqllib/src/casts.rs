@@ -4,7 +4,7 @@
 
 use std::cmp::Ordering;
 
-use crate::{binary::ByteArray, geopoint::*, interval::*, timestamp::*, variant::*};
+use crate::{binary::ByteArray, geopoint::*, interval::*, timestamp::*, variant::*, Weight};
 use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 use dbsp::algebra::{HasOne, HasZero, F32, F64};
 use num::{FromPrimitive, One, ToPrimitive, Zero};
@@ -1365,6 +1365,13 @@ cast_to_i!(u16);
 cast_to_i!(u32);
 cast_to_i!(u64);
 cast_to_i!(u128);
+
+#[doc(hidden)]
+#[inline]
+#[allow(clippy::unnecessary_cast)]
+pub fn cast_to_i64_Weight(w: Weight) -> i64 {
+    w as i64
+}
 
 #[doc(hidden)]
 #[inline]

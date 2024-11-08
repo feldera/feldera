@@ -62,6 +62,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVecLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.IsNumericType;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBinary;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDouble;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
@@ -175,7 +176,14 @@ public class AggregateCompiler implements ICompilerComponent {
             default -> throw new UnimplementedException("Aggregation function not yet implemented", node);
         };
 
-        // TODO: some of these are linear, but we cannot implement them with the existing APIs
+        if (opcode == DBSPOpcode.AGG_XOR) {
+            // This function returns if (w % 2 == 0) { 0 } else { aggregateValue }
+            String helper = aggregatedValue.getType().is(DBSPTypeBinary.class) ?
+                    "right_xor_weigh_bytes" : "right_xor_weigh";
+            helper += aggregatedValue.getType().nullableSuffix();
+            aggregatedValue = new DBSPApplyExpression(node, helper,
+                    aggregatedValue.getType(), aggregatedValue.applyCloneIfNeeded(), this.compiler.weightVar);
+        }
         increment = this.aggregateOperation(node, opcode,
                 this.nullableResultType, accumulator, aggregatedValue, this.filterArgument());
         DBSPType semigroup = new DBSPTypeUser(CalciteObject.EMPTY, SEMIGROUP, "UnimplementedSemigroup",

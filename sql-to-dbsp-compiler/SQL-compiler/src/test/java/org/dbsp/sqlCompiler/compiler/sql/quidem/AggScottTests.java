@@ -1717,4 +1717,27 @@ public class AggScottTests extends ScottBaseTests {
                 +-----------------------+----------------------+---------------+-------------------+
                 (1 row)""");
     }
+
+    @Test
+    public void bitTests() {
+        this.qs("""
+                -- BIT_AND, BIT_OR, BIT_XOR aggregate functions
+                select bit_and(deptno), bit_or(deptno), bit_xor(deptno) from emp;
+                +--------+--------+--------+
+                | EXPR$0 | EXPR$1 | EXPR$2 |
+                +--------+--------+--------+
+                |      0 |     30 |     30 |
+                +--------+--------+--------+
+                (1 row)
+                
+                select deptno, bit_and(empno), bit_or(empno), bit_xor(empno) from emp group by deptno;
+                +--------+--------+--------+--------+
+                | DEPTNO | EXPR$1 | EXPR$2 | EXPR$3 |
+                +--------+--------+--------+--------+
+                |     10 |   7686 |   7935 |   7687 |
+                |     20 |   7168 |   8191 |   7985 |
+                |     30 |   7168 |   8191 |    934 |
+                +--------+--------+--------+--------+
+                (3 rows)""");
+    }
 }

@@ -55,9 +55,11 @@ public enum DBSPOpcode {
     // arithmetic operations, following SQL semantics.
     AGG_AND("agg_and", true),
     AGG_OR("agg_or", true),
+    // Operation which combines an accumulator and a *weighted* value
     AGG_XOR("agg_xor", true),
     AGG_MAX("agg_max", true),
     AGG_MIN("agg_min", true),
+    // Operation which combines an accumulator and a *weighted* value
     AGG_ADD("agg_plus", true),
     // > used in aggregation, for computing ARG_MAX.
     // NULL compares in a special way, since it means "uninitialized"
