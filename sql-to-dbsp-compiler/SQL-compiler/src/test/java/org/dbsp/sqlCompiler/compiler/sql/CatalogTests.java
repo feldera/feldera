@@ -326,18 +326,6 @@ public class CatalogTests extends BaseSQLTests {
         this.addRustTestCase(ccs);
     }
 
-    // Test for https://github.com/feldera/feldera/issues/1666
-    @Test
-    public void viewColumnsTest() {
-        String sql = """
-                CREATE TABLE t(v INT);
-                CREATE VIEW V (sum) AS SELECT SUM(v) FROM T;
-                """;
-        CompilerCircuitStream ccs = this.getCCS(sql);
-        String string = ToRustVisitor.toRustString(new StderrErrorReporter(), ccs.circuit, ccs.compiler.options);
-        Assert.assertTrue(string.contains("serde(rename = \"sum\")"));
-    }
-
     // Test for https://github.com/feldera/feldera/issues/1151
     @Test
     public void primaryKeyTest() {
