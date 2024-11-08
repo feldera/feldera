@@ -13,7 +13,9 @@ from feldera.enums import PipelineStatus
 def main():
     # Parse command-line arguments
     parser = argparse.ArgumentParser()
-    parser.add_argument("--api-url", required=True, help="Feldera API URL (e.g., http://localhost:8080)")
+    parser.add_argument(
+        "--api-url", required=True, help="Feldera API URL (e.g., http://localhost:8080)"
+    )
     args = parser.parse_args()
 
     # Create Feldera client using the API URL
@@ -31,12 +33,14 @@ def main():
             demo["name"],
             demo["program_code"],
             udf_rust=demo["udf_rust"],
-            udf_toml=demo["udf_toml"]
+            udf_toml=demo["udf_toml"],
         ).create_or_replace()
         pipeline.start()
         time.sleep(2)
         status = pipeline.status()
-        assert status == PipelineStatus.RUNNING, f"FAIL: demo {demo['name']}: expected pipeline to be RUNNING but instead is {status}"
+        assert (
+            status == PipelineStatus.RUNNING
+        ), f"FAIL: demo {demo['name']}: expected pipeline to be RUNNING but instead is {status}"
         pipeline.shutdown()
         print(f"PASS: demo {demo['name']}")
 
