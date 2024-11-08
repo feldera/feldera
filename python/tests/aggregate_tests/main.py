@@ -19,6 +19,9 @@ from tests.aggregate_tests.test_bit_or import *  # noqa: F403
 from tests.aggregate_tests.test_bit_xor import *  # noqa: F403
 from tests.aggregate_tests.test_count import *  # noqa: F403
 from tests.aggregate_tests.test_count_col import *  # noqa: F403
+from tests.aggregate_tests.test_date_arg_max import *  # noqa: F403
+from tests.aggregate_tests.test_date_arg_min import *  # noqa: F403
+from tests.aggregate_tests.test_date_arr_agg import *  # noqa: F403
 from tests.aggregate_tests.test_date_count_col import *  # noqa: F403
 from tests.aggregate_tests.test_date_count import *  # noqa: F403
 from tests.aggregate_tests.test_date_every import *  # noqa: F403
