@@ -175,6 +175,12 @@ class PipelineStatus(Enum):
     `PipelineStatus.SHUTDOWN` state.
     """
 
+    UNAVAILABLE = 9
+    """
+    The pipeline was at least once initialized, but in the most recent status check either
+    could not be reached or returned it is not yet ready.
+    """
+
     @staticmethod
     def from_str(value):
         for member in PipelineStatus:
