@@ -13,7 +13,7 @@ class aggtst_date_count_col(TstView):
 class aggtst_date_count_col_gby(TstView):
     def __init__(self):
         # Validated on Postgres
-        self.data = [{"id": 0, "c1": 2, "c2": 1}, {"id": 1, "c1":  3, "c2": 3}]
+        self.data = [{"id": 0, "c1": 2, "c2": 1}, {"id": 1, "c1": 3, "c2": 3}]
         self.sql = """CREATE MATERIALIZED VIEW date_count_col_gby AS SELECT
                       id, COUNT(c1) AS c1, COUNT(c2) AS c2
                       FROM date_tbl
@@ -32,7 +32,7 @@ class aggtst_date_count_col_distinct(TstView):
 class aggtst_date_count_col_distinct_gby(TstView):
     def __init__(self):
         # Validated on Postgres
-        self.data = [{"id": 0, "c1": 2, "c2": 1}, {"id": 1, "c1":  3, "c2": 3}]
+        self.data = [{"id": 0, "c1": 2, "c2": 1}, {"id": 1, "c1": 3, "c2": 3}]
         self.sql = """CREATE MATERIALIZED VIEW date_count_col_distinct_gby AS SELECT
                       id, COUNT(DISTINCT c1) AS c1, COUNT(DISTINCT c2) AS c2
                       FROM date_tbl
