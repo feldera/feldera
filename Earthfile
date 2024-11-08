@@ -492,6 +492,19 @@ test-supply-chain-tutorial:
             --profile demo-supply-chain-tutorial up --force-recreate --exit-code-from demo-supply-chain-tutorial
     END
 
+test-all-packaged:
+    FROM earthly/dind:alpine
+    COPY deploy/docker-compose.yml .
+    COPY deploy/docker-compose-extra.yml .
+    COPY deploy/docker-compose-demo.yml .
+    ENV FELDERA_VERSION=latest
+    WITH DOCKER --load ghcr.io/feldera/pipeline-manager:latest=+build-pipeline-manager-container \
+                --load ghcr.io/feldera/demo-container:latest=+build-demo-container
+        RUN COMPOSE_HTTP_TIMEOUT=120 RUST_LOG=debug,tokio_postgres=info docker-compose \
+            -f docker-compose.yml -f docker-compose-extra.yml -f docker-compose-demo.yml \
+            --profile demo-all-packaged up --force-recreate --exit-code-from demo-all-packaged
+    END
+
 # Fetches the test binary from test-manager, and produces a container image out of it
 integration-test-container:
     FROM +install-deps
@@ -588,6 +601,7 @@ ci-tests:
     BUILD +test-python
     BUILD +demo-packaged-sql-formatting-check
     BUILD +test-supply-chain-tutorial
+    BUILD +test-all-packaged
     # BUILD +test-docker-compose-stable
     # TODO: Temporarily disabled while we port the demo script
     # BUILD +test-snowflake-sink
