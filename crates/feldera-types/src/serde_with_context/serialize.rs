@@ -38,7 +38,7 @@ use std::{
 
 /// Similar to [`Serialize`], but takes an extra `context` argument and
 /// threads it through all nested structures.
-pub trait SerializeWithContext<C>: Sized + Serialize {
+pub trait SerializeWithContext<C>: Sized {
     fn serialize_with_context<S>(&self, serializer: S, context: &C) -> Result<S::Ok, S::Error>
     where
         S: Serializer;
@@ -372,7 +372,7 @@ macro_rules! serialize_struct {
         #[allow(unused_mut)]
         impl<C, $($arg),*> $crate::serde_with_context::SerializeWithContext<C> for $struct<$($arg),*>
         where
-            $($arg: $crate::serde_with_context::SerializeWithContext<C> + serde::Serialize),*
+            $($arg: $crate::serde_with_context::SerializeWithContext<C>),*
             $($($arg : $bound,)?),*
         {
             fn serialize_with_context<S>(&self, serializer: S, context: &C) -> Result<S::Ok, S::Error>

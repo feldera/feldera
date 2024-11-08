@@ -1547,17 +1547,13 @@ public class ToRustInnerVisitor extends InnerVisitor {
 
     @Override
     public VisitDecision preorder(DBSPStructItem item) {
-        this.builder.append("#[derive(Clone, Debug, Eq, PartialEq, Default, serde::Serialize, serde::Deserialize)]")
+        this.builder.append("#[derive(Clone, Debug, Eq, PartialEq, Default)]")
                 .newline();
         builder.append("struct ")
                     .append(Objects.requireNonNull(item.type.sanitizedName))
                 .append(" {")
                 .increase();
         for (DBSPTypeStruct.Field field: item.type.fields.values()) {
-            builder.append("#[serde(rename = \"")
-                    .append(Utilities.escape(
-                            this.options.canonicalName(field.name)))
-                    .append("\")]\n");
             field.accept(this);
             this.builder.append(",")
                     .newline();
