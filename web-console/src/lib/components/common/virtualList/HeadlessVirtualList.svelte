@@ -26,7 +26,9 @@
     header,
     footer,
     stickyIndices = [],
-    onscroll: _onscroll
+    onscroll: _onscroll,
+    overScan = 0,
+    marginTop = 0
   }: {
     itemCount: number
     itemSize: number
@@ -47,20 +49,21 @@
     listContainer?: Snippet<[Snippet, ListContainer]>
     placeholder?: Snippet<[Item]>
     footer?: Snippet
+    marginTop?: number
   } = $props()
 
   export function scrollToBottom() {
-    if (!setref) {
+    if (!containerRef) {
       return
     }
-    setref.scrollTo({ top: setref.scrollHeight })
+    containerRef.scrollTo({ top: containerRef.scrollHeight })
   }
 
   let scrollTop = $state(0)
   let clientHeight = $state(0)
-  const overscan = 1
-  let indexOffset = $derived(Math.max(Math.round(scrollTop / itemSize) - overscan, 0))
-  let visibleCount = $derived(Math.round(clientHeight / itemSize) + overscan)
+  let indexOffset = $derived(Math.max(Math.round(scrollTop / itemSize) - overScan, 0))
+  let visibleCount = $derived(Math.round(clientHeight / itemSize) + 1 + 2 * overScan)
+
   let stickyRow = $derived(
     ((i) => (i === -1 ? undefined : stickyIndices[i]))(
       binarySearchMax(stickyIndices, indexOffset + 1)
@@ -76,7 +79,7 @@
   const onresize = (event: { clientHeight: number }) => {
     clientHeight = event.clientHeight
   }
-  let setref = $state<Element>()
+  let containerRef = $state<Element>()
 </script>
 
 {#snippet defaultListContainer(
@@ -89,11 +92,11 @@
 {/snippet}
 
 {@render listContainer(listBody, {
-  height: `${itemCount * itemSize}px`,
+  height: `${itemCount * itemSize + marginTop}px`,
   width: '100%',
   onscroll,
   onresize,
-  setref: (v) => (setref = v)
+  setref: (v) => (containerRef = v)
 })}
 
 {#snippet listBody()}
