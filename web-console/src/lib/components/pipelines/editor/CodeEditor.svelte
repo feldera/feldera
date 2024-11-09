@@ -279,7 +279,7 @@
     <div class="flex flex-wrap">
       {#each files as file}
         <button
-          class="py-1 pl-3 pr-8 {file.name === currentFileName
+          class="px-3 py-1 {file.name === currentFileName
             ? 'bg-white-black'
             : 'hover:!bg-opacity-50 hover:bg-surface-100-900'}"
           onclick={() => (currentFileName = file.name)}

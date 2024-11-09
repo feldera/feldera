@@ -4,7 +4,7 @@ import { useIsMobile } from './useIsMobile.svelte'
 export const useDrawer = () => {
   const isMobile = useIsMobile()
 
-  const showDrawer = useLocalStorage('layout/drawer', true)
+  const showDrawer = useLocalStorage('layout/drawer', !isMobile)
   return {
     get value() {
       return showDrawer.value

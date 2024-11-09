@@ -1,17 +1,38 @@
 <script lang="ts">
   import { goto, preloadCode } from '$app/navigation'
   import { base } from '$app/paths'
+  import { useIsMobile } from '$lib/compositions/layout/useIsMobile.svelte'
   import { useTryPipeline } from '$lib/compositions/pipelines/useTryPipeline'
 
   preloadCode(`${base}/pipelines/*`)
 
   let { data } = $props()
   const tryPipeline = useTryPipeline()
+  const isMobile = useIsMobile()
 </script>
 
-<div class="self-center">
+{#snippet createNewPipeline()}
+  <button
+    class="btn mt-auto self-end text-sm preset-filled-primary-500"
+    onclick={() => goto('#new')}
+  >
+    CREATE NEW PIPELINE
+  </button>
+{/snippet}
+
+<div class="flex flex-col gap-8 self-center py-8">
   {#if data.demos.length}
-    <div class="h5 px-8 py-8 font-normal">Try running one of our examples below.</div>
+    <span class="h5 inline px-8 text-[0px] font-normal leading-8">
+      <span class="text-base"> Try running one of our examples below </span>
+      {#if isMobile.current}
+        <span class=" text-base">, or&nbsp;</span>
+        <span class="-my-2 inline-block">
+          {@render createNewPipeline()}
+        </span>
+      {:else}
+        <span class="text-base">:</span>
+      {/if}
+    </span>
     <div
       class="grid max-w-[1390px] grid-cols-1 gap-8 px-8 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4"
     >
@@ -26,14 +47,9 @@
       {/each}
     </div>
   {:else}
-    <div class="h5 px-8 py-8 font-normal">
+    <div class="h5 px-8 font-normal">
       Write a new SQL query from scratch:
-      <button
-        class="btn mt-auto self-end text-sm preset-filled-primary-500"
-        onclick={() => goto('#new')}
-      >
-        CREATE NEW PIPELINE
-      </button>
+      {@render creatyeNewPipeline()}
     </div>
     <div class="px-8 text-lg text-surface-600-400">
       There are no demo pipelines available at this time. Please refer to documentation for examples
