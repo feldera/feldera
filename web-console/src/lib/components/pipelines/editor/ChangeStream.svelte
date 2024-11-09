@@ -16,7 +16,7 @@
 
   import { humanSize } from '$lib/functions/common/string'
   import WarningBanner from '$lib/components/pipelines/editor/WarningBanner.svelte'
-  import ReverseScrollFixedList from './ReverseScrollFixedList.svelte'
+  import ReverseScrollFixedList from '$lib/components/pipelines/editor/ReverseScrollFixedList.svelte'
   import SqlValue from '$lib/components/relationData/SQLValue.svelte'
   import type { Field } from '$lib/services/manager'
   import SqlColumnHeader from '$lib/components/relationData/SQLColumnHeader.svelte'
@@ -33,10 +33,12 @@
 </script>
 
 <div
-  class="bg-white-black absolute m-0 w-max max-w-lg -translate-x-[4.5px] -translate-y-[3px] whitespace-break-spaces break-words border border-surface-500 px-2 py-1 text-surface-950-50"
+  class="bg-white-black absolute m-0 w-max max-w-lg -translate-x-[4.5px] -translate-y-[2.5px] whitespace-break-spaces break-words border border-surface-500 px-2 py-1 text-right text-surface-950-50"
   popover="manual"
   bind:this={popupRef}
-  style={tooltip.data ? `left: ${tooltip.data.x}px; top: ${tooltip.data.y}px` : ''}
+  style={tooltip.data
+    ? `left: ${tooltip.data.x}px; top: ${tooltip.data.y}px; min-width: ${tooltip.data.targetWidth + 8}px`
+    : ''}
 >
   {tooltip.data?.text}
 </div>
@@ -55,22 +57,22 @@
     class="overflow-scroll scrollbar"
     stickyIndices={changeStream.headers}
   >
-    {#snippet listContainer(children, { width, height, onscroll, onresize, setref })}
-      {@const z = {
-        set num(x: number) {
+    {#snippet listContainer(children, { height, onscroll, onresize, setref })}
+      {@const _height = {
+        set current(x: number) {
           onresize({ clientHeight: x })
         }
       }}
       {@const ref = {
-        set value(el: HTMLElement) {
+        set current(el: HTMLElement) {
           setref(el)
         }
       }}
       <div
         class="h-full overflow-auto scrollbar"
         {onscroll}
-        bind:clientHeight={z.num}
-        bind:this={ref.value}
+        bind:clientHeight={_height.current}
+        bind:this={ref.current}
       >
         <table style:height>
           <tbody>
@@ -88,11 +90,11 @@
         </tr>
       {:else if 'columns' in row}
         <tr class="h-7" style="{style} {padding}">
-          <th class=" font-normal {isSticky ? 'bg-white-black sticky top-0 z-10' : ''}"
+          <th class="pl-2 font-normal {isSticky ? 'bg-white-black sticky top-0 z-10' : ''}"
             >{row.relationName}</th
           >
           {#each row.columns as column}
-            <SqlColumnHeader {column} {isSticky} class="bg-white-black"></SqlColumnHeader>
+            <SqlColumnHeader {column} {isSticky} class="bg-white-black px-2"></SqlColumnHeader>
           {/each}
         </tr>
       {:else}
@@ -115,8 +117,8 @@
           {#each Object.values(data) as value}
             <SqlValue
               {value}
-              props={(text) => ({
-                onmouseenter: tooltip.onmouseenter(text),
+              props={(format) => ({
+                onclick: tooltip.showTooltip(format(value)),
                 onmouseleave: tooltip.onmouseleave
               })}
             ></SqlValue>

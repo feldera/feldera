@@ -12,7 +12,8 @@
     stickyIndices,
     class: _class = '',
     header,
-    footer
+    footer,
+    marginTop
   }: {
     items: Row[]
     item: Snippet<[item: Row, style?: string, padding?: string, isSticky?: boolean]>
@@ -22,6 +23,7 @@
     itemSize: number
     stickyIndices?: number[]
     class?: string
+    marginTop?: number
   } = $props()
 
   let ref = $state<ReturnType<typeof List>>(undefined!)
@@ -56,6 +58,7 @@
   {listContainer}
   {itemSize}
   {stickyIndices}
+  {marginTop}
 >
   {#snippet item({ index, style, padding, isSticky })}
     {#if items[index]}
