@@ -93,10 +93,9 @@ pub mod writer;
 
 use crate::{
     dynamic::{DataTrait, Erase, Factory, WithFactory},
-    storage::file::item::RefTup2Factory,
     DBData,
 };
-pub use item::{ArchivedItem, Item, ItemFactory, WithItemFactory};
+pub use item::{ArchivedItem, Item, ItemFactory, RefTup2Factory, WithItemFactory};
 
 /// Factory objects used by file reader and writer.
 pub struct Factories<K, A>
@@ -122,6 +121,16 @@ where
             item_factory: self.item_factory,
         }
     }
+}
+
+#[macro_export]
+macro_rules! file_factories {
+    ($ktype:ty, $ktrait:ty, $atype:ty, $atrait:ty) => {
+        $crate::storage::FileFactories {
+            key_factory: $crate::factory!($ktype, $ktrait),
+            item_factory: $crate::item_factory!($ktype, $ktrait, $atype, $atrait),
+        }
+    };
 }
 
 impl<K, A> Factories<K, A>

@@ -270,6 +270,23 @@ where
     }
 }
 
+#[macro_export]
+macro_rules! item_factory {
+    ($ktype:ty, $ktrait:ty, $atype:ty, $atrait:ty) => {{
+        println!(
+            "item_factory({}, {}, {}, {})",
+            stringify!($ktype),
+            stringify!($ktrait),
+            stringify!($atype),
+            stringify!($atrait)
+        );
+        <$crate::storage::RefTup2Factory<$ktype, $atype> as $crate::storage::file::WithItemFactory<
+                $ktrait,
+                $atrait,
+            >>::ITEM_FACTORY
+    }};
+}
+
 /// Trait for item factories that define a static instance.
 pub trait WithItemFactory<KTrait, ATrait>: 'static
 where

@@ -52,6 +52,20 @@ pub type VecZSet<K> = VecWSet<K, DynZWeight>;
 
 pub type VecZSetFactories<K> = VecWSetFactories<K, DynZWeight>;
 
+#[macro_export]
+macro_rules! ord_indexed_zset_factories {
+    ($ktype:ty, $vtype:ty) => {
+        $crate::ord_indexed_wset_factories!(
+            $ktype,
+            DynData,
+            $vtype,
+            DynData,
+            $crate::ZWeight,
+            $crate::DynZWeight
+        )
+    };
+}
+
 /// An indexed Z-set with integer weights.
 pub type OrdIndexedZSet<K, V> = OrdIndexedWSet<K, V, DynZWeight>;
 pub type OrdIndexedZSetFactories<K, V> = OrdIndexedWSetFactories<K, V, DynZWeight>;

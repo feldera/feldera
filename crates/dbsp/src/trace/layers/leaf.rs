@@ -31,6 +31,19 @@ pub struct LeafFactories<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> {
     pub paired: &'static dyn Factory<DynPair<K, R>>,
 }
 
+#[macro_export]
+macro_rules! leaf_factories {
+    ($ktype:ty, $ktrait:ty, $wtype:ty, $wtrait:ty) => {
+        $crate::trace::LeafFactories{
+            key: $crate::factory!($ktype, $ktrait),
+            keys: $crate::factory!($crate::dynamic::LeanVec<$ktype>, DynVec<$ktrait>),
+            diff: $crate::factory!($wtype, $wtrait),
+            diffs: $crate::factory!($crate::dynamic::LeanVec<$wtype>, DynVec<$wtrait>),
+            paired: $crate::factory!(Tup2<$ktype, $wtype>, DynPair<$ktrait, $wtrait>),
+        }
+    };
+}
+
 impl<K, R> LeafFactories<K, R>
 where
     K: DataTrait + ?Sized,

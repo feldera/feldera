@@ -22,6 +22,17 @@ use textwrap::indent;
 
 use super::{Builder, Cursor, MergeBuilder, OrdOffset, Trie, TupleBuilder};
 
+#[macro_export]
+macro_rules! layer_factories {
+    ($ktype:ty, $ktrait:ty, $child_factories:expr) => {
+        $crate::trace::LayerFactories {
+            key: $crate::factory!($ktype, $ktrait),
+            keys: $crate::factory!($crate::dynamic::LeanVec<$ktype>, DynVec<$ktrait>),
+            child: $child_factories,
+        }
+    };
+}
+
 pub struct LayerFactories<K: DataTrait + ?Sized, C> {
     pub key: &'static dyn Factory<K>,
     pub keys: &'static dyn Factory<DynVec<K>>,

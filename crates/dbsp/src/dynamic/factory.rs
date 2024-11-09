@@ -5,6 +5,14 @@ use crate::{
 use rkyv::archived_value;
 use std::{marker::PhantomData, mem};
 
+#[macro_export]
+macro_rules! factory {
+    ($vtype:ty, $vtrait:ty) => {{
+        println!("factory({}, {})", stringify!($vtype), stringify!($vtrait));
+        $crate::dynamic::WithFactory::<$vtype>::FACTORY
+    }};
+}
+
 /// Create instances of a concrete type wrapped in a trait object.
 pub trait Factory<Trait: ArchiveTrait + ?Sized>: Send + Sync {
     /// Size of the underlying concrete type.

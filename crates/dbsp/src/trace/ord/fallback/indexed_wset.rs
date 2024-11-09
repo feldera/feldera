@@ -35,8 +35,8 @@ where
     V: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
-    file: FileIndexedWSetFactories<K, V, R>,
-    vec: VecIndexedWSetFactories<K, V, R>,
+    pub file: FileIndexedWSetFactories<K, V, R>,
+    pub vec: VecIndexedWSetFactories<K, V, R>,
 }
 
 impl<K, V, R> Clone for FallbackIndexedWSetFactories<K, V, R>
@@ -51,6 +51,20 @@ where
             vec: self.vec.clone(),
         }
     }
+}
+
+#[macro_export]
+macro_rules! ord_indexed_wset_factories {
+    ($ktype:ty, $ktrait:ty, $vtype:ty, $vtrait:ty, $wtype:ty, $wtrait:ty) => {
+        $crate::trace::FallbackIndexedWSetFactories::<$ktrait, $vtrait, $wtrait> {
+            file: $crate::file_indexed_wset_factories!(
+                $ktype, $ktrait, $vtype, $vtrait, $wtype, $wtrait
+            ),
+            vec: $crate::vec_indexed_wset_factories!(
+                $ktype, $ktrait, $vtype, $vtrait, $wtype, $wtrait
+            ),
+        }
+    };
 }
 
 impl<K, V, R> BatchReaderFactories<K, V, (), R> for FallbackIndexedWSetFactories<K, V, R>

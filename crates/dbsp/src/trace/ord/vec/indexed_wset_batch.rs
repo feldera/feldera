@@ -33,10 +33,10 @@ where
     V: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
-    layer_factories: LayerFactories<K, LeafFactories<V, R>>,
-    item_factory: &'static dyn Factory<DynPair<K, V>>,
-    weighted_items_factory: &'static dyn Factory<DynWeightedPairs<DynPair<K, V>, R>>,
-    weighted_item_factory: &'static dyn Factory<DynPair<DynPair<K, V>, R>>,
+    pub layer_factories: LayerFactories<K, LeafFactories<V, R>>,
+    pub item_factory: &'static dyn Factory<DynPair<K, V>>,
+    pub weighted_items_factory: &'static dyn Factory<DynWeightedPairs<DynPair<K, V>, R>>,
+    pub weighted_item_factory: &'static dyn Factory<DynPair<DynPair<K, V>, R>>,
 }
 
 impl<K, V, R> Clone for VecIndexedWSetFactories<K, V, R>
@@ -53,6 +53,18 @@ where
             weighted_item_factory: self.weighted_item_factory,
         }
     }
+}
+
+#[macro_export]
+macro_rules! vec_indexed_wset_factories {
+    ($ktype:ty, $ktrait:ty, $vtype:ty, $vtrait:ty, $wtype:ty, $wtrait:ty) => {
+        $crate::trace::VecIndexedWSetFactories{
+            layer_factories: $crate::layer_factories!($ktype, $ktrait, $crate::leaf_factories!($ktype, $ktrait, $wtype, $wtrait)),
+            item_factory: $crate::factory!(Tup2<$ktype, $vtype>, DynPair<$ktrait, $vtrait>),
+            weighted_items_factory: $crate::factory!($crate::dynamic::LeanVec<Tup2<Tup2<$ktype, $vtype>, $wtype>>, DynWeightedPairs<DynPair<$ktrait, $vtrait>, $wtrait>),
+            weighted_item_factory: $crate::factory!(Tup2<Tup2<$ktype, $vtype>, $wtype>, DynPair<DynPair<$ktrait, $vtrait>, $wtrait>),
+        }
+    };
 }
 
 impl<K, V, R> BatchReaderFactories<K, V, (), R> for VecIndexedWSetFactories<K, V, R>

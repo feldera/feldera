@@ -20,6 +20,8 @@ use crate::{Error, Runtime};
 use std::sync::Once;
 use uuid::Uuid;
 
+pub use file::{Factories as FileFactories, ItemFactory as FileItemFactory, RefTup2Factory};
+
 /// Return the absolute path for a checkpoint.
 ///
 /// # Panics

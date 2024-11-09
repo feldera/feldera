@@ -79,7 +79,7 @@ use crate::{
     Error, NumEntries, Timestamp,
 };
 pub use cursor::Cursor;
-pub use layers::Trie;
+pub use layers::{LayerFactories, LeafFactories, Trie};
 
 /// Trait for data stored in batches.
 ///

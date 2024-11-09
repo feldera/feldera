@@ -36,16 +36,16 @@ where
     V: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
-    key_factory: &'static dyn Factory<K>,
-    val_factory: &'static dyn Factory<V>,
-    weight_factory: &'static dyn Factory<R>,
-    keys_factory: &'static dyn Factory<DynVec<K>>,
-    item_factory: &'static dyn Factory<DynPair<K, V>>,
-    factories0: FileFactories<K, DynUnit>,
-    factories1: FileFactories<V, R>,
-    opt_key_factory: &'static dyn Factory<DynOpt<K>>,
-    weighted_item_factory: &'static dyn Factory<WeightedItem<K, V, R>>,
-    weighted_items_factory: &'static dyn Factory<DynWeightedPairs<DynPair<K, V>, R>>,
+    pub key_factory: &'static dyn Factory<K>,
+    pub val_factory: &'static dyn Factory<V>,
+    pub weight_factory: &'static dyn Factory<R>,
+    pub keys_factory: &'static dyn Factory<DynVec<K>>,
+    pub item_factory: &'static dyn Factory<DynPair<K, V>>,
+    pub factories0: FileFactories<K, DynUnit>,
+    pub factories1: FileFactories<V, R>,
+    pub opt_key_factory: &'static dyn Factory<DynOpt<K>>,
+    pub weighted_item_factory: &'static dyn Factory<WeightedItem<K, V, R>>,
+    pub weighted_items_factory: &'static dyn Factory<DynWeightedPairs<DynPair<K, V>, R>>,
 }
 
 impl<K, V, R> Clone for FileIndexedWSetFactories<K, V, R>
@@ -68,6 +68,24 @@ where
             weighted_items_factory: self.weighted_items_factory,
         }
     }
+}
+
+#[macro_export]
+macro_rules! file_indexed_wset_factories {
+    ($ktype:ty, $ktrait:ty, $vtype:ty, $vtrait:ty, $wtype:ty, $wtrait:ty) => {
+        $crate::trace::FileIndexedWSetFactories {
+            key_factory: $crate::factory!($ktype, $ktrait),
+            val_factory: $crate::factory!($vtype, $vtrait),
+            weight_factory: $crate::factory!($wtype, $wtrait),
+            keys_factory: $crate::factory!($crate::dynamic::LeanVec<$ktype>, DynVec<$ktrait>),
+            item_factory: $crate::factory!(Tup2<$ktype, $vtype>, DynPair<$ktrait, $vtrait>),
+            factories0: $crate::file_factories!($ktype, $ktrait, (), $crate::dynamic::DynUnit),
+            factories1: $crate::file_factories!($vtype, $vtrait, $wtype, $wtrait),
+            opt_key_factory: $crate::factory!(Option<$ktype>, DynOpt<$ktrait>),
+            weighted_item_factory: $crate::factory!(Tup2<Tup2<$ktype, $vtype>, $wtype>, WeightedItem<$ktrait, $vtrait, $wtrait>),
+            weighted_items_factory: $crate::factory!($crate::dynamic::LeanVec<Tup2<Tup2<$ktype, $vtype>, $wtype>>, DynWeightedPairs<DynPair<$ktrait, $vtrait>, $wtrait>),
+        }
+    };
 }
 
 impl<K, V, R> BatchReaderFactories<K, V, (), R> for FileIndexedWSetFactories<K, V, R>
