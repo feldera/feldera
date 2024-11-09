@@ -129,7 +129,7 @@
   }
 </script>
 
-<div class="bg-white-black flex min-h-full flex-col gap-6 p-2">
+<div class="bg-white-black flex h-full min-h-full flex-col gap-6 overflow-y-auto p-2 scrollbar">
   {#if isIdle}
     <WarningBanner class="sticky top-0 z-10 -m-2">
       Start the pipeline to be able to execute queries

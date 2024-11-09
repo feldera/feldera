@@ -17,7 +17,7 @@
 </script>
 
 {#if global}
-  <div class="flex flex-col gap-4 p-2">
+  <div class="flex h-full flex-col gap-4 overflow-y-auto p-2 scrollbar">
     <div class="flex w-full flex-col-reverse gap-2 lg:flex-row">
       <div class="mr-auto">
         <div class="mb-auto flex flex-col">
