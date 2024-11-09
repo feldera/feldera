@@ -7,8 +7,8 @@
   const theme = useSkeletonTheme()
 </script>
 
-<div class=" h-full">
-  <div class="{errors.length ? 'bg-white-black' : ''} flex min-h-full flex-col p-2">
+<div class="{errors.length ? 'bg-white-black' : ''} h-full overflow-y-auto scrollbar">
+  <div class=" flex min-h-full flex-col p-2">
     {#each errors as systemError}
       <div class=" whitespace-nowrap">
         <a class="" href={systemError.cause.source}>

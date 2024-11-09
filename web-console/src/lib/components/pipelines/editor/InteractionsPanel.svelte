@@ -130,12 +130,11 @@
   {/snippet}
 
   {#snippet content()}
-    {#each tabs as [tabName, , TabComponent]}
-      <Tabs.Panel value={tabName} classes="h-full overflow-y-auto relative scrollbar">
-        <div class="absolute h-full w-full">
-          <TabComponent {pipeline} {metrics} {errors}></TabComponent>
-        </div>
-      </Tabs.Panel>
-    {/each}
+    {@const TabComponent = tabs.find((tab) => tab[0] === currentTab.value)![2]!}
+    <div class="relative h-full">
+      <div class="absolute h-full w-full">
+        <TabComponent {pipeline} {metrics} {errors}></TabComponent>
+      </div>
+    </div>
   {/snippet}
 </Tabs>
