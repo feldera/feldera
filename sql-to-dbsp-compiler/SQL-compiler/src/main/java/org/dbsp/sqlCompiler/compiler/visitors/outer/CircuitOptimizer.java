@@ -73,7 +73,7 @@ public record CircuitOptimizer(DBSPCompiler compiler) implements ICompilerCompon
             passes.add(new DeadCode(reporter, true, false));
             passes.add(new Simplify(reporter).circuitRewriter());
             passes.add(new OptimizeWithGraph(reporter, g -> new OptimizeProjectionVisitor(reporter, g)));
-            passes.add(new OptimizeWithGraph(reporter, g -> new OptimizeMaps(reporter, g)));
+            passes.add(new OptimizeWithGraph(reporter, g -> new OptimizeMaps(reporter, true, g)));
             passes.add(new OptimizeWithGraph(reporter, g -> new FilterJoinVisitor(reporter, g)));
             if (options.languageOptions.incrementalize) {
                 // Monotonicity analysis only makes sense for incremental programs
@@ -99,7 +99,7 @@ public record CircuitOptimizer(DBSPCompiler compiler) implements ICompilerCompon
         if (options.languageOptions.optimizationLevel >= 2) {
             passes.add(new OptimizeWithGraph(reporter, g -> new FilterMapVisitor(reporter, g)));
             // optimize the maps introduced by the deindex removal
-            passes.add(new OptimizeWithGraph(reporter, g -> new OptimizeMaps(reporter, g)));
+            passes.add(new OptimizeWithGraph(reporter, g -> new OptimizeMaps(reporter, false, g)));
             passes.add(new SimplifyWaterline(reporter)
                     .circuitRewriter(node -> node.hasAnnotation(a -> a.is(Waterline.class))));
         }

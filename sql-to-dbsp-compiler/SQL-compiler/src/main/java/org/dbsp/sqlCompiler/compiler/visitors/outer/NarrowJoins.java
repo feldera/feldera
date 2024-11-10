@@ -51,7 +51,7 @@ public class NarrowJoins extends Repeat {
             this.add(new RemoveJoinFields(reporter));
             this.add(new DeadCode(reporter, true, false));
             // Merges projections into other joins if possible
-            this.add(new OptimizeWithGraph(reporter, g -> new OptimizeMaps(reporter, g)));
+            this.add(new OptimizeWithGraph(reporter, g -> new OptimizeMaps(reporter, false, g)));
         }
     }
 
