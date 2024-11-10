@@ -28,7 +28,8 @@
     stickyIndices = [],
     onscroll: _onscroll,
     overScan = 0,
-    marginTop = 0
+    marginTop = 0,
+    children
   }: {
     itemCount: number
     itemSize: number
@@ -46,10 +47,11 @@
     onscroll?: OnScroll
     header?: Snippet
     item: Snippet<[Item]>
-    listContainer?: Snippet<[Snippet, ListContainer]>
+    listContainer?: Snippet<[Snippet, ListContainer, Snippet | undefined]>
     placeholder?: Snippet<[Item]>
     footer?: Snippet
     marginTop?: number
+    children?: Snippet
   } = $props()
 
   export function scrollToBottom() {
@@ -61,8 +63,8 @@
 
   let scrollTop = $state(0)
   let clientHeight = $state(0)
-  let indexOffset = $derived(Math.max(Math.round(scrollTop / itemSize) - overScan, 0))
-  let visibleCount = $derived(Math.round(clientHeight / itemSize) + 1 + 2 * overScan)
+  let indexOffset = $derived(Math.max(Math.round(scrollTop / itemSize) - overScan - 1, 0))
+  let visibleCount = $derived(Math.round(clientHeight / itemSize) + 2 + 2 * overScan)
 
   let stickyRow = $derived(
     ((i) => (i === -1 ? undefined : stickyIndices[i]))(
@@ -83,21 +85,26 @@
 </script>
 
 {#snippet defaultListContainer(
-  children: Snippet,
+  items: Snippet,
   { width, height }: { height: string; width: string }
 )}
   <div style:width style:height>
-    {@render children()}
+    {@render items()}
+    {@render children?.()}
   </div>
 {/snippet}
 
-{@render listContainer(listBody, {
-  height: `${itemCount * itemSize + marginTop}px`,
-  width: '100%',
-  onscroll,
-  onresize,
-  setref: (v) => (containerRef = v)
-})}
+{@render listContainer(
+  listBody,
+  {
+    height: `${itemCount * itemSize + marginTop}px`,
+    width: '100%',
+    onscroll,
+    onresize,
+    setref: (v) => (containerRef = v)
+  },
+  children
+)}
 
 {#snippet listBody()}
   {@render header?.()}

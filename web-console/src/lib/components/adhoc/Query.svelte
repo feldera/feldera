@@ -39,7 +39,7 @@
 </script>
 
 <script lang="ts">
-  import SqlValue from '$lib/components/relationData/SQLValue.svelte'
+  import SQLValue from '$lib/components/relationData/SQLValue.svelte'
   import SqlColumnHeader from '$lib/components/relationData/SQLColumnHeader.svelte'
   import { usePopoverTooltip } from '$lib/compositions/common/usePopoverTooltip.svelte'
   import ReverseScrollFixedList from '$lib/components/pipelines/editor/ReverseScrollFixedList.svelte'
@@ -66,6 +66,19 @@
   // Handle hover popup over table cells to display full SQL value
   let popupRef: HTMLElement | undefined = $state()
   let tooltip = usePopoverTooltip(() => popupRef)
+  const keepMaxWidth = (element: HTMLElement) => {
+    const observer = new ResizeObserver(([entry]) => {
+      maxW = Math.max(maxW, entry.borderBoxSize[0].inlineSize)
+      element.style.width = `${maxW}px`
+    })
+    observer.observe(element)
+    let maxW = $state(0)
+    return {
+      destroy() {
+        observer.disconnect()
+      }
+    }
+  }
 </script>
 
 <div
@@ -141,77 +154,82 @@
     </div>
 
     {#if result}
-      <div class="relative mr-4">
-        <ReverseScrollFixedList
-          itemSize={28}
-          items={result.rows}
-          class="overflow-scroll scrollbar"
-          stickyIndices={[]}
-          marginTop={28}
-        >
-          {#snippet listContainer(children, { height, onscroll, onresize, setref })}
-            {@const _height = {
-              set current(x: number) {
-                onresize({ clientHeight: x })
-              }
-            }}
-            {@const ref = {
-              set current(el: HTMLElement) {
-                setref(el)
-              }
-            }}
-            <div
-              class="h-full max-h-64 max-w-full overflow-auto scrollbar"
-              {onscroll}
-              bind:clientHeight={_height.current}
-              bind:this={ref.current}
+      {#key result.columns}
+        <div class="pr-4">
+          <div class="relative h-full w-fit max-w-full">
+            <ReverseScrollFixedList
+              itemSize={28}
+              items={result.rows}
+              class=""
+              stickyIndices={[]}
+              marginTop={28}
             >
-              <table style:height>
-                {#if result.columns.length}
-                  <thead class="bg-white-black sticky top-0 z-10 !mb-0 h-7">
-                    <tr>
-                      {#each result.columns as column}
-                        <SqlColumnHeader {column}></SqlColumnHeader>
-                      {/each}
-                    </tr>
-                  </thead>
+              {#snippet listContainer(items, { height, onscroll, onresize, setref })}
+                {@const _height = {
+                  set current(x: number) {
+                    onresize({ clientHeight: x })
+                  }
+                }}
+                {@const ref = {
+                  set current(el: HTMLElement) {
+                    setref(el)
+                  }
+                }}
+                <div
+                  class="relative h-full max-h-64 w-fit max-w-full overflow-auto scrollbar"
+                  {onscroll}
+                  bind:clientHeight={_height.current}
+                  bind:this={ref.current}
+                >
+                  <table style:height class="w-fit" use:keepMaxWidth>
+                    {#if result.columns.length}
+                      <thead class="bg-white-black sticky top-0 z-10 !mb-0 h-7">
+                        <tr>
+                          {#each result.columns as column}
+                            <SqlColumnHeader {column}></SqlColumnHeader>
+                          {/each}
+                        </tr>
+                      </thead>
+                    {/if}
+                    <tbody>
+                      {@render items()}
+                    </tbody>
+                  </table>
+                </div>
+              {/snippet}
+              {#snippet item(row, style, padding, isSticky)}
+                {#if 'cells' in row}
+                  <tr {style} class="h-7 whitespace-nowrap even:bg-surface-50-950">
+                    {#each row.cells as value}
+                      <SQLValue
+                        {value}
+                        class="cursor-pointer"
+                        props={(format) => ({
+                          onclick: tooltip.showTooltip(format(value)),
+                          onmouseleave: tooltip.onmouseleave
+                        })}
+                      ></SQLValue>
+                    {/each}
+                  </tr>
+                {:else if 'error' in row}
+                  <tr {style} class="h-7">
+                    <td colspan="99999999" class="px-2 preset-tonal-error">{row.error}</td>
+                  </tr>
+                {:else}
+                  <tr {style} class="h-7">
+                    <td colspan="99999999" class="px-2 preset-tonal-warning">{row.warning}</td>
+                  </tr>
                 {/if}
-                <tbody>
-                  {@render children()}
-                </tbody>
-              </table>
-            </div>
-          {/snippet}
-          {#snippet item(row, style, padding, isSticky)}
-            {#if 'cells' in row}
-              <tr {style} class="h-7 whitespace-nowrap even:bg-surface-50-950">
-                {#each row.cells as value}
-                  <SqlValue
-                    {value}
-                    props={(format) => ({
-                      onclick: tooltip.showTooltip(format(value)),
-                      onmouseleave: tooltip.onmouseleave
-                    })}
-                  ></SqlValue>
-                {/each}
-              </tr>
-            {:else if 'error' in row}
-              <tr {style} class="h-7">
-                <td colspan="99999999" class="px-2 preset-tonal-error">{row.error}</td>
-              </tr>
-            {:else}
-              <tr {style} class="h-7">
-                <td colspan="99999999" class="px-2 preset-tonal-warning">{row.warning}</td>
-              </tr>
-            {/if}
-          {/snippet}
-          {#snippet footer()}
-            <tr style="height: auto; ">
-              <td></td>
-            </tr>
-          {/snippet}
-        </ReverseScrollFixedList>
-      </div>
+              {/snippet}
+              {#snippet footer()}
+                <tr style="height: auto; ">
+                  <td></td>
+                </tr>
+              {/snippet}
+            </ReverseScrollFixedList>
+          </div>
+        </div>
+      {/key}
     {/if}
   </div>
 </div>
