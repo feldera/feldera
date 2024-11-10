@@ -1,21 +1,27 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
 import org.dbsp.sqlCompiler.circuit.operator.DBSPApplyOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPAsofJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDeindexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDelayOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDifferentiateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinFilterMapOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNegateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNoopOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
 import org.dbsp.util.Linq;
 
 import java.util.ArrayList;
@@ -31,7 +37,6 @@ import java.util.List;
  */
 public class OptimizeMaps extends CircuitCloneVisitor {
     final CircuitGraph graph;
-    public static boolean testIssue2228 = false;
 
     public OptimizeMaps(IErrorReporter reporter, CircuitGraph graph) {
         super(reporter, false);
@@ -41,6 +46,7 @@ public class OptimizeMaps extends CircuitCloneVisitor {
     @Override
     public void postorder(DBSPMapIndexOperator operator) {
         DBSPOperator source = this.mapped(operator.input());
+        int inputFanout = this.graph.getFanout(operator.input());
         if (source.is(DBSPMapOperator.class)) {
             // mapindex(map) = mapindex
             DBSPClosureExpression expression = source.getClosureFunction();
@@ -50,6 +56,36 @@ public class OptimizeMaps extends CircuitCloneVisitor {
                     operator.getNode(), newFunction, operator.getOutputIndexedZSetType(), source.inputs.get(0));
             this.map(operator, result);
             return;
+        } else if (source.is(DBSPMapIndexOperator.class)) {
+            // mapindex(mapindex) = mapindex
+            DBSPClosureExpression sourceFunction = source.getClosureFunction();
+            DBSPClosureExpression thisFunction = operator.getClosureFunction();
+            if (thisFunction.parameters.length != 1)
+                throw new InternalCompilerError("Expected closure with 1 parameter", operator);
+            DBSPExpression argument = new DBSPRawTupleExpression(
+                    sourceFunction.body.field(0).borrow(),
+                    sourceFunction.body.field(1).borrow());
+            DBSPExpression apply = thisFunction.call(argument);
+            DBSPClosureExpression newFunction = apply.closure(sourceFunction.parameters)
+                    .reduce(errorReporter).to(DBSPClosureExpression.class);
+            DBSPOperator result = new DBSPMapIndexOperator(
+                    operator.getNode(), newFunction, operator.getOutputIndexedZSetType(), source.inputs.get(0));
+            this.map(operator, result);
+            return;
+        } else if (inputFanout == 1) {
+            if (source.is(DBSPJoinOperator.class)
+                    || source.is(DBSPStreamJoinOperator.class)) {
+                DBSPOperator result = OptimizeProjectionVisitor.mapIndexAfterJoin(
+                        this.errorReporter, source.to(DBSPJoinBaseOperator.class), operator);
+                this.map(operator, result);
+                return;
+            } else if (source.is(DBSPJoinIndexOperator.class)
+                    || source.is(DBSPStreamJoinIndexOperator.class)) {
+                DBSPOperator result = OptimizeProjectionVisitor.mapIndexAfterJoinIndex(
+                        this.errorReporter, source.to(DBSPJoinBaseOperator.class), operator);
+                this.map(operator, result);
+                return;
+            }
         }
         super.postorder(operator);
     }
@@ -66,10 +102,6 @@ public class OptimizeMaps extends CircuitCloneVisitor {
     }
 
     public void postorder(DBSPApplyOperator operator) {
-        if (testIssue2228) {
-            super.postorder(operator);
-            return;
-        }
         DBSPOperator source = this.mapped(operator.input());
         int inputFanout = this.graph.getFanout(operator.input());
         if (source.is(DBSPApplyOperator.class) && inputFanout == 1) {
@@ -103,13 +135,18 @@ public class OptimizeMaps extends CircuitCloneVisitor {
                     jfm.filter, newMap, operator.isMultiset, jfm.left(), jfm.right())
                     .copyAnnotations(operator).copyAnnotations(source);
             this.map(operator, result);
-        } else if ((source.is(DBSPStreamJoinOperator.class) || source.is(DBSPJoinOperator.class)) &&
+        } else if ((source.is(DBSPStreamJoinOperator.class) ||
+                source.is(DBSPAsofJoinOperator.class) ||
+                source.is(DBSPJoinOperator.class)) &&
                 // We have to look up the original operator input, not source
                 inputFanout == 1) {
-            DBSPClosureExpression expression = source.getClosureFunction();
-            DBSPClosureExpression newFunction = operator.getClosureFunction()
-                    .applyAfter(this.errorReporter, expression);
-            DBSPOperator result = source.withFunction(newFunction, operator.outputType);
+            DBSPOperator result = OptimizeProjectionVisitor.mapAfterJoin(
+                    this.errorReporter, source.to(DBSPJoinBaseOperator.class), operator);
+            this.map(operator, result);
+        } else if (source.is(DBSPJoinIndexOperator.class) ||
+                   source.is(DBSPStreamJoinIndexOperator.class) && inputFanout == 1) {
+            DBSPOperator result = OptimizeProjectionVisitor.mapAfterJoinIndex(
+                    this.errorReporter, source.to(DBSPJoinBaseOperator.class), operator);
             this.map(operator, result);
         } else if (source.is(DBSPMapOperator.class)) {
             DBSPClosureExpression expression = source.getClosureFunction();

@@ -3,15 +3,21 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAsofJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinBaseOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Projection;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFlatmap;
+import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeFunction;
 
@@ -19,6 +25,9 @@ import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeFunction;
  * - constant followed by projection
  * - flatmap followed by projection
  * - join followed by projection
+ * - join followed by mapindex projection
+ * - indexjoin followed by mapindex projection
+ * - indexjoin followed by map projection
  * Projections are map operations that have a function with a very simple
  * structure.  The function is analyzed using the 'Projection' visitor. */
 public class OptimizeProjectionVisitor extends CircuitCloneVisitor {
@@ -34,7 +43,7 @@ public class OptimizeProjectionVisitor extends CircuitCloneVisitor {
         DBSPOperator source = this.mapped(operator.input());
         DBSPExpression function = operator.getFunction();
         int inputFanout = this.graph.getFanout(operator.input());
-        Projection projection = new Projection(this.errorReporter);
+        Projection projection = new Projection(this.errorReporter, true);
         projection.apply(function);
         if (projection.isProjection) {
             if (source.is(DBSPConstantOperator.class)) {
@@ -63,15 +72,116 @@ public class OptimizeProjectionVisitor extends CircuitCloneVisitor {
                 if (inputFanout == 1 && projection.isShuffle()) {
                     // We only do this if the source is a projection, because then the join function
                     // will still have a simple shape.  Subsequent analyses may care about this.
-                    DBSPClosureExpression joinFunction = source.getClosureFunction();
-                    DBSPExpression newFunction = function.to(DBSPClosureExpression.class)
-                            .applyAfter(this.errorReporter, joinFunction);
-                    DBSPOperator result = source.withFunction(newFunction, operator.outputType);
+                    DBSPOperator result = mapAfterJoin(
+                            this.errorReporter, source.to(DBSPJoinBaseOperator.class), operator);
+                    this.map(operator, result);
+                    return;
+                }
+            } else if (source.is(DBSPJoinIndexOperator.class) ||
+                    source.is(DBSPStreamJoinIndexOperator.class)) {
+                if (inputFanout == 1 && projection.isShuffle()) {
+                    // We only do this if the source is a projection, because then the join function
+                    // will still have a simple shape.  Subsequent analyses may care about this.
+                    DBSPOperator result = mapAfterJoinIndex(
+                            this.errorReporter, source.to(DBSPJoinBaseOperator.class), operator);
                     this.map(operator, result);
                     return;
                 }
             }
         }
         super.postorder(operator);
+    }
+
+
+    @Override
+    public void postorder(DBSPMapIndexOperator operator) {
+        DBSPOperator source = this.mapped(operator.input());
+        DBSPExpression function = operator.getFunction();
+        int inputFanout = this.graph.getFanout(operator.input());
+        Projection projection = new Projection(this.errorReporter, true);
+        projection.apply(function);
+        if (inputFanout == 1 && projection.isProjection && projection.isShuffle()) {
+            if (source.is(DBSPJoinOperator.class)
+                    || source.is(DBSPStreamJoinOperator.class)
+                    || source.is(DBSPJoinIndexOperator.class)
+                    || source.is(DBSPStreamJoinIndexOperator.class)) {
+                DBSPOperator result = mapIndexAfterJoin(
+                        this.errorReporter, source.to(DBSPJoinBaseOperator.class), operator);
+                this.map(operator, result);
+                return;
+            }
+        }
+        super.postorder(operator);
+    }
+
+    static DBSPJoinBaseOperator mapAfterJoin(
+            IErrorReporter reporter, DBSPJoinBaseOperator source, DBSPMapOperator operator) {
+        DBSPClosureExpression joinFunction = source.getClosureFunction();
+        DBSPExpression function = operator.getFunction();
+        DBSPExpression newFunction = function.to(DBSPClosureExpression.class)
+                .applyAfter(reporter, joinFunction);
+        return source.withFunction(newFunction, operator.outputType).to(DBSPJoinBaseOperator.class);
+    }
+
+    static DBSPJoinBaseOperator mapAfterJoinIndex(
+            IErrorReporter reporter, DBSPJoinBaseOperator source, DBSPMapOperator operator) {
+        DBSPJoinBaseOperator sourceJoin = source.to(DBSPJoinBaseOperator.class);
+        DBSPClosureExpression joinFunction = source.getClosureFunction();
+        DBSPClosureExpression function = operator.getClosureFunction();
+        if (function.parameters.length != 1)
+            throw new InternalCompilerError("Expected closure with 1 parameter", operator);
+        DBSPExpression argument = new DBSPRawTupleExpression(
+                joinFunction.body.field(0).borrow(),
+                joinFunction.body.field(1).borrow());
+        DBSPExpression apply = function.call(argument);
+        DBSPClosureExpression newFunction = apply.closure(joinFunction.parameters)
+                .reduce(reporter).to(DBSPClosureExpression.class);
+        if (source.is(DBSPJoinIndexOperator.class)) {
+            return new DBSPJoinOperator(source.getNode(), operator.getOutputZSetType(),
+                    newFunction, operator.isMultiset, sourceJoin.left(), sourceJoin.right());
+        } else {
+            assert source.is(DBSPStreamJoinIndexOperator.class);
+            return new DBSPStreamJoinOperator(source.getNode(), operator.getOutputZSetType(),
+                    newFunction, operator.isMultiset, sourceJoin.left(), sourceJoin.right());
+        }
+    }
+
+    static DBSPJoinBaseOperator mapIndexAfterJoin(
+            IErrorReporter reporter, DBSPJoinBaseOperator source, DBSPMapIndexOperator operator) {
+        DBSPExpression function = operator.getFunction();
+        DBSPClosureExpression joinFunction = source.getClosureFunction();
+        DBSPExpression newFunction = function.to(DBSPClosureExpression.class)
+                .applyAfter(reporter, joinFunction);
+        if (source.is(DBSPJoinOperator.class)) {
+            return new DBSPJoinIndexOperator(source.getNode(), operator.getOutputIndexedZSetType(),
+                    newFunction, operator.isMultiset, source.left(), source.right());
+        } else if (source.is(DBSPStreamJoinOperator.class)) {
+            return new DBSPStreamJoinIndexOperator(source.getNode(), operator.getOutputIndexedZSetType(),
+                    newFunction, operator.isMultiset, source.left(), source.right());
+        } else {
+            return source.withFunction(newFunction, operator.outputType).to(DBSPJoinBaseOperator.class);
+        }
+    }
+
+    static DBSPJoinBaseOperator mapIndexAfterJoinIndex(
+            IErrorReporter reporter, DBSPJoinBaseOperator source, DBSPMapIndexOperator operator) {
+        DBSPClosureExpression joinFunction = source.getClosureFunction();
+        DBSPClosureExpression function = operator.getClosureFunction();
+        if (function.parameters.length != 1)
+            throw new InternalCompilerError("Expected closure with 1 parameter", operator);
+        DBSPExpression argument = new DBSPRawTupleExpression(
+                joinFunction.body.field(0).borrow(),
+                joinFunction.body.field(1).borrow());
+        DBSPExpression apply = function.call(argument);
+        DBSPClosureExpression newFunction = apply.closure(joinFunction.parameters)
+                .reduce(reporter).to(DBSPClosureExpression.class);
+        if (source.is(DBSPJoinIndexOperator.class)) {
+            return new DBSPJoinIndexOperator(source.getNode(), operator.getOutputIndexedZSetType(),
+                    newFunction, operator.isMultiset, source.left(), source.right());
+        } else {
+            assert source.is(DBSPStreamJoinIndexOperator.class);
+            return new DBSPStreamJoinIndexOperator(source.getNode(), operator.getOutputIndexedZSetType(),
+                    newFunction, operator.isMultiset, source.left(), source.right());
+        }
     }
 }

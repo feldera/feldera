@@ -1,6 +1,7 @@
 package org.dbsp.sqlCompiler.compiler.sql;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateWithWaterlineOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.StderrErrorReporter;
@@ -8,6 +9,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests;
 import org.dbsp.sqlCompiler.compiler.sql.tools.Change;
 import org.dbsp.sqlCompiler.compiler.sql.tools.InputOutputChange;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDoubleLiteral;
@@ -17,12 +19,113 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimestampLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDouble;
 import org.junit.Assert;
 import org.junit.Ignore;
 import org.junit.Test;
 
 public class ComplexQueriesTest extends BaseSQLTests {
+    @Test
+    public void testMultiJoin() {
+        // From SLT/select5
+        String sql = """
+                CREATE TABLE t29(
+                  a29 INTEGER NOT NULL PRIMARY KEY,
+                  b29 INTEGER,
+                  x29 VARCHAR(40)
+                );
+                
+                CREATE TABLE t31(
+                  a31 INTEGER NOT NULL PRIMARY KEY,
+                  b31 INTEGER,
+                  x31 VARCHAR(40)
+                );
+                
+                CREATE TABLE t51(
+                  a51 INTEGER NOT NULL PRIMARY KEY,
+                  b51 INTEGER,
+                  x51 VARCHAR(40)
+                );
+                
+                CREATE TABLE t55(
+                  a55 INTEGER NOT NULL PRIMARY KEY,
+                  b55 INTEGER,
+                  x55 VARCHAR(40)
+                );
+                
+                CREATE VIEW V AS SELECT x29,x31,x51,x55
+                  FROM t51,t29,t31,t55
+                 WHERE a51=b31
+                   AND a29=6
+                   AND a29=b51
+                   AND b55=a31;
+                """;
+        var ccs = this.getCCS(sql);
+        ccs.step("""
+                INSERT INTO t29 VALUES(1,4,'table t29 row 1');
+                INSERT INTO t29 VALUES(2,2,'table t29 row 2');
+                INSERT INTO t29 VALUES(3,9,'table t29 row 3');
+                INSERT INTO t29 VALUES(4,8,'table t29 row 4');
+                INSERT INTO t29 VALUES(5,10,'table t29 row 5');
+                INSERT INTO t29 VALUES(6,3,'table t29 row 6');
+                INSERT INTO t29 VALUES(7,7,'table t29 row 7');
+                INSERT INTO t29 VALUES(8,6,'table t29 row 8');
+                INSERT INTO t29 VALUES(9,5,'table t29 row 9');
+                INSERT INTO t29 VALUES(10,1,'table t29 row 10');
+                
+                INSERT INTO t31 VALUES(1,1,'table t31 row 1');
+                INSERT INTO t31 VALUES(2,6,'table t31 row 2');
+                INSERT INTO t31 VALUES(3,4,'table t31 row 3');
+                INSERT INTO t31 VALUES(4,8,'table t31 row 4');
+                INSERT INTO t31 VALUES(5,2,'table t31 row 5');
+                INSERT INTO t31 VALUES(6,9,'table t31 row 6');
+                INSERT INTO t31 VALUES(7,7,'table t31 row 7');
+                INSERT INTO t31 VALUES(8,3,'table t31 row 8');
+                INSERT INTO t31 VALUES(9,5,'table t31 row 9');
+                INSERT INTO t31 VALUES(10,10,'table t31 row 10');
+                
+                INSERT INTO t51 VALUES(1,5,'table t51 row 1');
+                INSERT INTO t51 VALUES(2,3,'table t51 row 2');
+                INSERT INTO t51 VALUES(3,10,'table t51 row 3');
+                INSERT INTO t51 VALUES(4,7,'table t51 row 4');
+                INSERT INTO t51 VALUES(5,6,'table t51 row 5');
+                INSERT INTO t51 VALUES(6,2,'table t51 row 6');
+                INSERT INTO t51 VALUES(7,9,'table t51 row 7');
+                INSERT INTO t51 VALUES(8,4,'table t51 row 8');
+                INSERT INTO t51 VALUES(9,8,'table t51 row 9');
+                INSERT INTO t51 VALUES(10,1,'table t51 row 10');
+                
+                INSERT INTO t55 VALUES(1,1,'table t55 row 1');
+                INSERT INTO t55 VALUES(2,3,'table t55 row 2');
+                INSERT INTO t55 VALUES(3,7,'table t55 row 3');
+                INSERT INTO t55 VALUES(4,9,'table t55 row 4');
+                INSERT INTO t55 VALUES(5,5,'table t55 row 5');
+                INSERT INTO t55 VALUES(6,4,'table t55 row 6');
+                INSERT INTO t55 VALUES(7,10,'table t55 row 7');
+                INSERT INTO t55 VALUES(8,8,'table t55 row 8');
+                INSERT INTO t55 VALUES(9,6,'table t55 row 9');
+                INSERT INTO t55 VALUES(10,2,'table t55 row 10');""",
+                 """
+                 x29 | x31 | x51 | x55 | weight
+                ---------------------------------
+                 table t29 row 6 | table t31 row 9 | table t51 row 5 | table t55 row 4 | 1""");
+        InnerVisitor typeWidth = new InnerVisitor(new StderrErrorReporter()) {
+            @Override
+            public void postorder(DBSPTypeTupleBase type) {
+                // Without NarrowJoins the width of the tuples can be 9
+                assert type.size() <= 5;
+            }
+        };
+        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+            @Override
+            public void postorder(DBSPOperator operator) {
+                operator.outputType.accept(typeWidth);
+            }
+        };
+        visitor.apply(ccs.circuit);
+    }
+
     @Test
     public void testDateDiff() {
         String sql = """

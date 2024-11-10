@@ -1,11 +1,9 @@
 package org.dbsp.sqlCompiler.compiler.sql.streaming;
 
 import org.dbsp.sqlCompiler.CompilerMain;
-import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
 import org.dbsp.sqlCompiler.compiler.sql.StreamingTestBase;
 import org.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests;
-import org.dbsp.sqlCompiler.compiler.visitors.outer.OptimizeMaps;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
 import org.junit.Assert;
@@ -262,7 +260,6 @@ public class ProfilingTests extends StreamingTestBase {
 
     @Test
     public void issue2228() throws SQLException, IOException, InterruptedException {
-        OptimizeMaps.testIssue2228 = true;
         String sql = """
                 CREATE TABLE transaction (
                     id int NOT NULL,
@@ -286,6 +283,5 @@ public class ProfilingTests extends StreamingTestBase {
                 let _ = circuit.step().expect("could not run circuit");
                 """);
         this.measure(sql, main);
-        OptimizeMaps.testIssue2228 = false;
     }
 }
