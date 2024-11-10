@@ -81,7 +81,7 @@
                 return
               }
               adhocQueries[pipelineName].queries[i].result?.rows.push({
-                warning: `The query result contains more rows, but only the first ${bufferSize} are shown`
+                warning: `The result contains more rows, but only the first ${bufferSize} are shown`
               })
               getAdhocQueries = () => adhocQueries
               adhocQueries[pipelineName].queries[i].result?.endResultStream()
@@ -131,7 +131,7 @@
 
 <div class="bg-white-black flex h-full min-h-full flex-col gap-6 overflow-y-auto p-2 scrollbar">
   {#if isIdle}
-    <WarningBanner class="sticky top-0 z-10 -m-2">
+    <WarningBanner class="sticky top-0 z-10 -mx-2 -mb-4 -translate-y-2">
       Start the pipeline to be able to execute queries
     </WarningBanner>
   {/if}

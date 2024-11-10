@@ -43,7 +43,7 @@
     </div>
   </Drawer>
   <div class="flex h-full w-full flex-col">
-    <div class="flex justify-between p-1">
+    <div class=" flex justify-between p-1">
       <div class="flex">
         <button
           class="btn-icon"
@@ -68,7 +68,6 @@
             <span class="hidden xl:block">{item.title}</span>
           </a>
         {/each}
-        <!-- <HealthPopup></HealthPopup> -->
         <button
           onclick={toggleDarkMode}
           class="preset-grayout-surface btn-icon text-[24px]

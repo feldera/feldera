@@ -17,7 +17,7 @@
   }: {
     items: Row[]
     item: Snippet<[item: Row, style?: string, padding?: string, isSticky?: boolean]>
-    listContainer?: Snippet<[Snippet, ListContainer]>
+    listContainer?: Snippet<[Snippet, ListContainer, Snippet | undefined]>
     header?: Snippet
     footer?: Snippet
     itemSize: number
@@ -66,6 +66,7 @@
     {/if}
   {/snippet}
 </List>
+
 {#if !stickToBottom}
   <button
     transition:scale={{ duration: 200 }}

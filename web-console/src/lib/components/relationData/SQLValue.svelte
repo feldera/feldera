@@ -1,7 +1,6 @@
 <script lang="ts">
   import type { SQLValueJS } from '$lib/functions/sqlValue'
   import BigNumber from 'bignumber.js'
-  import { format } from 'd3-format'
   import type { HTMLTdAttributes } from 'svelte/elements'
   import JSONbig from 'true-json-bigint'
 
@@ -19,7 +18,7 @@
       : typeof value === 'string'
         ? value.slice(0, 37) + (value.length >= 37 ? '...' : '')
         : BigNumber.isBigNumber(value)
-          ? value.toFixed(3, BigNumber.ROUND_DOWN).replace(/\.0+$/, '')
+          ? value.toFixed(3, BigNumber.ROUND_DOWN).replace(/\.?0+$/, '')
           : JSONbig.stringify(value, undefined, 1)
   )
   let displayValue = (value: SQLValueJS) => {
@@ -31,11 +30,6 @@
           ? value.toFixed()
           : JSONbig.stringify(value, undefined, 1)
   }
-  //   let thumb = $derived(
-  //     text === null
-  //       ? 'NULL'
-  //       : text.slice(0, 37).replace(/\.0+$/, '') + (text.length >= 37 ? '...' : '')
-  //   )
 </script>
 
 <td

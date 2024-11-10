@@ -20,19 +20,19 @@
   </button>
 {/snippet}
 
-<div class="flex flex-col gap-8 self-center py-8">
-  {#if data.demos.length}
-    <span class="h5 inline px-8 text-[0px] font-normal leading-8">
-      <span class="text-base"> Try running one of our examples below </span>
-      {#if isMobile.current}
-        <span class=" text-base">, or&nbsp;</span>
-        <span class="-my-2 inline-block">
-          {@render createNewPipeline()}
-        </span>
-      {:else}
-        <span class="text-base">:</span>
-      {/if}
-    </span>
+{#if data.demos.length}
+  <div class="h5 block px-8 py-4 text-[0px] font-normal leading-8">
+    <span class="text-base"> Try running one of our examples below </span>
+    {#if isMobile.current}
+      <span class=" text-base">, or&nbsp;</span>
+      <span class="-my-2 inline-block">
+        {@render createNewPipeline()}
+      </span>
+    {:else}
+      <span class="text-base">:</span>
+    {/if}
+  </div>
+  <div class="h-full overflow-y-auto pb-8 scrollbar">
     <div
       class="grid max-w-[1390px] grid-cols-1 gap-8 px-8 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4"
     >
@@ -46,14 +46,14 @@
         </div>
       {/each}
     </div>
-  {:else}
-    <div class="h5 px-8 font-normal">
-      Write a new SQL query from scratch:
-      {@render creatyeNewPipeline()}
-    </div>
-    <div class="px-8 text-lg text-surface-600-400">
-      There are no demo pipelines available at this time. Please refer to documentation for examples
-      of SQL queries.
-    </div>
-  {/if}
-</div>
+  </div>
+{:else}
+  <div class="h5 px-8 font-normal">
+    Write a new SQL query from scratch:
+    {@render createNewPipeline()}
+  </div>
+  <div class="px-8 text-lg text-surface-600-400">
+    There are no demo pipelines available at this time. Please refer to documentation for examples
+    of SQL queries.
+  </div>
+{/if}

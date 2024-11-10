@@ -17,7 +17,7 @@
   import { humanSize } from '$lib/functions/common/string'
   import WarningBanner from '$lib/components/pipelines/editor/WarningBanner.svelte'
   import ReverseScrollFixedList from '$lib/components/pipelines/editor/ReverseScrollFixedList.svelte'
-  import SqlValue from '$lib/components/relationData/SQLValue.svelte'
+  import SQLValue from '$lib/components/relationData/SQLValue.svelte'
   import type { Field } from '$lib/services/manager'
   import SqlColumnHeader from '$lib/components/relationData/SQLColumnHeader.svelte'
   import { usePopoverTooltip } from '$lib/compositions/common/usePopoverTooltip.svelte'
@@ -101,27 +101,30 @@
         {@const data = 'insert' in row ? row.insert : row.delete}
         <tr
           style="{style} {padding}"
-          class={`h-7 whitespace-nowrap even:bg-surface-50-950`}
+          class="h-7 select-none whitespace-nowrap even:bg-surface-50-950"
           oncopy={(e) => {
-            e.clipboardData!.setData('text/plain', JSONbig.stringify(item))
+            e.clipboardData!.setData('text/plain', JSONbig.stringify(row))
             e.preventDefault()
           }}
         >
           {#if 'insert' in row}
-            <td class="block h-7 w-8 bg-opacity-30 pt-1 text-center font-mono bg-success-100-900"
-              >+</td
+            <td class="block h-7 w-20 bg-opacity-30 pt-1 text-center font-mono bg-success-100-900"
+              >Insert</td
             >
           {:else}
-            <td class="block h-7 w-8 bg-opacity-30 text-center font-mono bg-error-100-900">-</td>
+            <td class="block h-7 w-20 bg-opacity-30 text-center font-mono bg-error-100-900"
+              >Delete</td
+            >
           {/if}
           {#each Object.values(data) as value}
-            <SqlValue
+            <SQLValue
               {value}
+              class="cursor-pointer"
               props={(format) => ({
                 onclick: tooltip.showTooltip(format(value)),
                 onmouseleave: tooltip.onmouseleave
               })}
-            ></SqlValue>
+            ></SQLValue>
           {/each}
         </tr>
       {/if}
