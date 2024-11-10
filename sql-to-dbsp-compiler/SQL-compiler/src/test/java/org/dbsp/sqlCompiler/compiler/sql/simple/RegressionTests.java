@@ -835,8 +835,8 @@ public class RegressionTests extends SqlIoTest {
 
             @Override
             public void endVisit() {
-                // We expect 9 MapIndex operators instead of 11 if CSE works
-                Assert.assertEquals(9, this.mapIndex);
+                // We expect 7 MapIndex operators instead of 11 if CSE works
+                Assert.assertEquals(7, this.mapIndex);
             }
         };
         visitor.apply(circuit);
