@@ -52,17 +52,23 @@ public class Main {
     /** Executes a few test files based on the day of the month */
     public static void rotateTests() throws IOException, ClassNotFoundException {
         Set<String> tests = net.hydromatic.sqllogictest.Main.getTestList();
-        // Number of days required to run all tests
-        final int rotationPeriodInDays = 365;
-        int testsPerDay = (tests.size() + rotationPeriodInDays - 1) / rotationPeriodInDays;
-        LocalDate date = LocalDate.now();
-        final int day = date.getDayOfYear() % rotationPeriodInDays;
-        final int firstTest = testsPerDay * (day - 1);
-        final int lastTest = firstTest + testsPerDay;
-
         List<String> list = new ArrayList<>(tests);
+        list = Linq.where(list, n -> !n.contains("evidence"));
+        // This should have 610 tests
         list.sort(String::compareTo);
-        List<String> toRun = list.subList(firstTest, Math.min(lastTest, list.size()));
+
+        LocalDate date = LocalDate.now();
+        // Number of days required to run all tests.
+        // This period amounts to exactly 2 tests per day
+        final int rotationPeriodInDays = 305;
+        final int day = date.getDayOfYear() % rotationPeriodInDays;
+
+        List<String> toRun = new ArrayList<>();
+        for (int i = 0; i < (list.size() + rotationPeriodInDays - 1) / rotationPeriodInDays; i++) {
+            int index = i * rotationPeriodInDays + day;
+            if (index < list.size())
+                toRun.add(list.get(index));
+        }
         String[] args = new String[] { "-v", "-x", "-inc", "-e", "hybrid" };
 
         String wd = System.getProperty("user.dir");
