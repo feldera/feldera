@@ -45,8 +45,8 @@ impl<K: DataTrait + ?Sized, C> LayerFactories<K, C> {
         KType: DBData + Erase<K>,
     {
         Self {
-            key: WithFactory::<KType>::FACTORY,
-            keys: WithFactory::<LeanVec<KType>>::FACTORY,
+            key: WithFactory::<KType>::factory(),
+            keys: WithFactory::<LeanVec<KType>>::factory(),
             child,
         }
     }

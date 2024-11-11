@@ -59,9 +59,9 @@ impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> BatchReaderFactories<K, Dyn
     {
         Self {
             layer_factories: LeafFactories::new::<KType, RType>(),
-            item_factory: WithFactory::<Tup2<KType, ()>>::FACTORY,
-            weighted_item_factory: WithFactory::<Tup2<Tup2<KType, ()>, RType>>::FACTORY,
-            weighted_items_factory: WithFactory::<LeanVec<Tup2<Tup2<KType, ()>, RType>>>::FACTORY,
+            item_factory: WithFactory::<Tup2<KType, ()>>::factory(),
+            weighted_item_factory: WithFactory::<Tup2<Tup2<KType, ()>, RType>>::factory(),
+            weighted_items_factory: WithFactory::<LeanVec<Tup2<Tup2<KType, ()>, RType>>>::factory(),
         }
     }
 
@@ -74,7 +74,7 @@ impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> BatchReaderFactories<K, Dyn
     }
 
     fn val_factory(&self) -> &'static dyn Factory<DynUnit> {
-        WithFactory::<()>::FACTORY
+        WithFactory::<()>::factory()
     }
 
     fn weight_factory(&self) -> &'static dyn Factory<R> {

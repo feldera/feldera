@@ -87,14 +87,14 @@ where
         Self {
             factories0: FileFactories::new::<KType, ()>(),
             factories1: FileFactories::new::<VType, LeanVec<Tup2<T, RType>>>(),
-            optkey_factory: WithFactory::<Option<KType>>::FACTORY,
-            weight_factory: WithFactory::<RType>::FACTORY,
-            timediff_factory: WithFactory::<LeanVec<Tup2<T, RType>>>::FACTORY,
-            keys_factory: WithFactory::<LeanVec<KType>>::FACTORY,
-            item_factory: WithFactory::<Tup2<KType, VType>>::FACTORY,
-            weighted_item_factory: WithFactory::<Tup2<Tup2<KType, VType>, RType>>::FACTORY,
+            optkey_factory: WithFactory::<Option<KType>>::factory(),
+            weight_factory: WithFactory::<RType>::factory(),
+            timediff_factory: WithFactory::<LeanVec<Tup2<T, RType>>>::factory(),
+            keys_factory: WithFactory::<LeanVec<KType>>::factory(),
+            item_factory: WithFactory::<Tup2<KType, VType>>::factory(),
+            weighted_item_factory: WithFactory::<Tup2<Tup2<KType, VType>, RType>>::factory(),
             weighted_items_factory:
-                WithFactory::<LeanVec<Tup2<Tup2<KType, VType>, RType>>>::FACTORY,
+                WithFactory::<LeanVec<Tup2<Tup2<KType, VType>, RType>>>::factory(),
         }
     }
 

@@ -81,10 +81,10 @@ where
     {
         Self {
             layer_factories: LayerFactories::new::<KType>(LeafFactories::new::<VType, RType>()),
-            item_factory: WithFactory::<Tup2<KType, VType>>::FACTORY,
+            item_factory: WithFactory::<Tup2<KType, VType>>::factory(),
             weighted_items_factory:
-                WithFactory::<LeanVec<Tup2<Tup2<KType, VType>, RType>>>::FACTORY,
-            weighted_item_factory: WithFactory::<Tup2<Tup2<KType, VType>, RType>>::FACTORY,
+                WithFactory::<LeanVec<Tup2<Tup2<KType, VType>, RType>>>::factory(),
+            weighted_item_factory: WithFactory::<Tup2<Tup2<KType, VType>, RType>>::factory(),
         }
     }
 

@@ -46,9 +46,10 @@ where
     {
         Self {
             zset_factories: BatchReaderFactories::new::<KType, (), ZWeight>(),
-            weighted_pairs_factory: WithFactory::<LeanVec<Tup2<Tup2<KType, ()>, ZWeight>>>::FACTORY,
-            pairs_factory: WithFactory::<LeanVec<Tup2<Tup2<KType, ()>, ZWeight>>>::FACTORY,
-            pair_factory: WithFactory::<Tup2<Tup2<KType, ()>, ZWeight>>::FACTORY,
+            weighted_pairs_factory: WithFactory::<LeanVec<Tup2<Tup2<KType, ()>, ZWeight>>>::factory(
+            ),
+            pairs_factory: WithFactory::<LeanVec<Tup2<Tup2<KType, ()>, ZWeight>>>::factory(),
+            pair_factory: WithFactory::<Tup2<Tup2<KType, ()>, ZWeight>>::factory(),
         }
     }
 }
@@ -103,8 +104,8 @@ where
     {
         Self {
             indexed_zset_factories: BatchReaderFactories::new::<KType, VType, ZWeight>(),
-            pairs_factory: WithFactory::<LeanVec<Tup2<KType, Tup2<VType, ZWeight>>>>::FACTORY,
-            pair_factory: WithFactory::<Tup2<KType, Tup2<VType, ZWeight>>>::FACTORY,
+            pairs_factory: WithFactory::<LeanVec<Tup2<KType, Tup2<VType, ZWeight>>>>::factory(),
+            pair_factory: WithFactory::<Tup2<KType, Tup2<VType, ZWeight>>>::factory(),
         }
     }
 }
@@ -145,10 +146,10 @@ where
     {
         Self {
             update_set_factories: UpdateSetFactories::new::<KType>(),
-            input_pair_factory: WithFactory::<Tup2<KType, bool>>::FACTORY,
-            input_pairs_factory: WithFactory::<LeanVec<Tup2<KType, bool>>>::FACTORY,
-            upsert_pair_factory: WithFactory::<Tup2<KType, Option<()>>>::FACTORY,
-            upsert_pairs_factory: WithFactory::<LeanVec<Tup2<KType, Option<()>>>>::FACTORY,
+            input_pair_factory: WithFactory::<Tup2<KType, bool>>::factory(),
+            input_pairs_factory: WithFactory::<LeanVec<Tup2<KType, bool>>>::factory(),
+            upsert_pair_factory: WithFactory::<Tup2<KType, Option<()>>>::factory(),
+            upsert_pairs_factory: WithFactory::<LeanVec<Tup2<KType, Option<()>>>>::factory(),
         }
     }
 }
@@ -177,9 +178,10 @@ where
     {
         Self {
             upsert_factories: InputUpsertFactories::new::<KType, VType>(),
-            input_pair_factory: WithFactory::<Tup2<KType, Update<VType, UType>>>::FACTORY,
-            input_pairs_factory: WithFactory::<LeanVec<Tup2<KType, Update<VType, UType>>>>::FACTORY,
-            upsert_pair_factory: WithFactory::<Tup2<KType, Option<()>>>::FACTORY,
+            input_pair_factory: WithFactory::<Tup2<KType, Update<VType, UType>>>::factory(),
+            input_pairs_factory: WithFactory::<LeanVec<Tup2<KType, Update<VType, UType>>>>::factory(
+            ),
+            upsert_pair_factory: WithFactory::<Tup2<KType, Option<()>>>::factory(),
         }
     }
 }

@@ -164,9 +164,9 @@ where
             right_trace_factories: BatchReaderFactories::new::<KType, V2Type, ZWeight>(),
             output_factories: BatchReaderFactories::new::<OKType, OVType, ZWeight>(),
             timed_item_factory:
-                WithFactory::<Tup2<T, Tup2<Tup2<OKType, OVType>, ZWeight>>>::FACTORY,
+                WithFactory::<Tup2<T, Tup2<Tup2<OKType, OVType>, ZWeight>>>::factory(),
             timed_items_factory:
-                WithFactory::<LeanVec<Tup2<T, Tup2<Tup2<OKType, OVType>, ZWeight>>>>::FACTORY,
+                WithFactory::<LeanVec<Tup2<T, Tup2<Tup2<OKType, OVType>, ZWeight>>>>::factory(),
         }
     }
 }

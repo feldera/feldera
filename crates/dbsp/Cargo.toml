@@ -74,6 +74,7 @@ dashmap = "5"
 zip = "0.6.2"
 minitrace = "0.6"
 ouroboros = "0.18.4"
+typemap = "0.3.3"
 
 [dependencies.time]
 version = "0.3.20"

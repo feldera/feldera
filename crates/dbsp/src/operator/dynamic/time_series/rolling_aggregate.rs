@@ -194,9 +194,9 @@ where
         OVType: DBData + Erase<OV>,
     {
         Self {
-            aggregate_factory: WithFactory::<AType>::FACTORY,
-            opt_accumulator_factory: WithFactory::<Option<AType>>::FACTORY,
-            output_factory: WithFactory::<OVType>::FACTORY,
+            aggregate_factory: WithFactory::<AType>::factory(),
+            opt_accumulator_factory: WithFactory::<Option<AType>>::factory(),
+            output_factory: WithFactory::<OVType>::factory(),
             rolling_aggregate_factories: PartitionedRollingAggregateFactories::new::<
                 KType,
                 VType,
@@ -241,7 +241,7 @@ where
                 Avg<WType, ZWeight>,
                 VType,
             >(),
-            weight_factory: WithFactory::<WType>::FACTORY,
+            weight_factory: WithFactory::<WType>::factory(),
         }
     }
 }

@@ -91,11 +91,11 @@ where
             layer_factories: LayerFactories::new::<KType>(LayerFactories::new::<VType>(
                 LeafFactories::new::<T, RType>(),
             )),
-            item_factory: WithFactory::<Tup2<KType, VType>>::FACTORY,
+            item_factory: WithFactory::<Tup2<KType, VType>>::factory(),
             consolidate_weights: <dyn ConsolidatePairedSlices<_, _>>::factory::<T, RType>(),
-            weighted_item_factory: WithFactory::<Tup2<Tup2<KType, VType>, RType>>::FACTORY,
+            weighted_item_factory: WithFactory::<Tup2<Tup2<KType, VType>, RType>>::factory(),
             weighted_items_factory:
-                WithFactory::<LeanVec<Tup2<Tup2<KType, VType>, RType>>>::FACTORY,
+                WithFactory::<LeanVec<Tup2<Tup2<KType, VType>, RType>>>::factory(),
         }
     }
 

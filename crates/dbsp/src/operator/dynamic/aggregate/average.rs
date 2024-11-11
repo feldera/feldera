@@ -52,7 +52,7 @@ where
                 Avg<WType, ZWeight>,
                 AType,
             >(),
-            weight_factory: WithFactory::<WType>::FACTORY,
+            weight_factory: WithFactory::<WType>::factory(),
         }
     }
 }

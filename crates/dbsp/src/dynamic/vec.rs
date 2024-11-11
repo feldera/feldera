@@ -611,7 +611,7 @@ mod test {
 
     #[test]
     fn dyn_vec_test() {
-        let factory = <DynVec<DynData> as WithFactory<LeanVec<String>>>::FACTORY;
+        let factory = <DynVec<DynData> as WithFactory<LeanVec<String>>>::factory();
 
         let mut vec = factory.default_box();
 

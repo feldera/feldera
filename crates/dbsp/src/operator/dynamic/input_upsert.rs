@@ -145,8 +145,8 @@ where
     {
         Self {
             batch_factories: BatchReaderFactories::new::<KType, VType, ZWeight>(),
-            opt_key_factory: WithFactory::<Option<KType>>::FACTORY,
-            opt_val_factory: WithFactory::<Option<VType>>::FACTORY,
+            opt_key_factory: WithFactory::<Option<KType>>::factory(),
+            opt_val_factory: WithFactory::<Option<VType>>::factory(),
             trace_factories: BatchReaderFactories::new::<KType, VType, ZWeight>(),
         }
     }

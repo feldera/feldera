@@ -14,6 +14,7 @@ use std::{
     path::Path,
     sync::Mutex,
 };
+use typemap::ShareMap;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct RequiredFactory {
@@ -35,7 +36,6 @@ fn write_file_if_changed(path: &Path, content: &str) -> io::Result<()> {
 
         // If the content is the same, do nothing
         if existing_content == content {
-            println!("Content is unchanged; skipping write.");
             return Ok(());
         }
     }
@@ -43,7 +43,6 @@ fn write_file_if_changed(path: &Path, content: &str) -> io::Result<()> {
     // Write the new content to the file
     let mut file = fs::File::create(path)?;
     file.write_all(content.as_bytes())?;
-    println!("File written successfully with new content.");
 
     Ok(())
 }
@@ -76,7 +75,9 @@ name = "{crate_name}"
 edition = "2021"
 
 [dependencies]
-dbsp = {{ path = "{}" }}"#,
+dbsp = {{ path = "{}" }}
+ctor = "0.2.8"
+"#,
             dbsp_path.display()
         );
 
@@ -84,8 +85,15 @@ dbsp = {{ path = "{}" }}"#,
         let lib_path = workspace_path.join(&crate_name).join("src").join("lib.rs");
 
         let rust_code = format!(
-            r#"pub static factory: &'static dyn Factory<{}> = dbsp::dynamic::WithFactory::<{}>::FACTORY;"#,
-            self.val_trait, self.val_type
+            r#"use ctor::ctor;
+
+            pub static factory: &'static dyn Factory<{}> = dbsp::dynamic::WithFactory::<{}>::FACTORY;
+
+            #[ctor]
+            fn init() {{
+                dbsp::dynamic::factory::register_factory::<{}, {}>();
+            }}"#,
+            self.val_trait, self.val_type, self.val_type, self.val_trait
         );
 
         write_file_if_changed(&toml_path, &toml_code)?;
@@ -114,10 +122,42 @@ pub fn generate_factory_crates(dbsp_path: &Path, workspace_path: &Path) -> io::R
     Ok(())
 }
 
+#[derive(PartialEq, Eq)]
+pub struct FactoryMapKey<VType, VTrait> {
+    phantom: PhantomData<dyn Fn(&VType, &VTrait)>,
+}
+
+impl<VType, VTrait> typemap::Key for FactoryMapKey<VType, VTrait>
+where
+    VType: 'static,
+    VTrait: 'static,
+{
+    type Value = &'static dyn Factory<VTrait>;
+}
+
+pub static FACTORIES: Lazy<Mutex<ShareMap>> = Lazy::new(|| Mutex::new(ShareMap::custom()));
+
+pub fn register_factory<VType, VTrait>(factory: &'static dyn Factory<VTrait>)
+where
+    VType: 'static,
+    VTrait: 'static,
+{
+    FACTORIES
+        .lock()
+        .unwrap()
+        .insert::<FactoryMapKey<VType, VTrait>>(factory);
+}
+
 #[macro_export]
 macro_rules! factory {
     ($vtype:ty, $vtrait:ty) => {{
-        println!("factory({}, {})", stringify!($vtype), stringify!($vtrait));
+        use dbsp::{dynamic::*, trace::WeightedItem};
+        //println!("factory({}, {})", stringify!($vtype), stringify!($vtrait));
+        println!(
+            "factory({}, {})",
+            std::any::type_name::<$vtype>(),
+            std::any::type_name::<$vtrait>(),
+        );
         $crate::dynamic::WithFactory::<$vtype>::FACTORY
     }};
 }
@@ -156,7 +196,11 @@ struct FactoryImpl<T, Trait: ?Sized> {
 pub trait WithFactory<T>: 'static {
     /// A factory that creates trait objects of type `Self`, backed by concrete values
     /// of type `T`.
-    const FACTORY: &'static dyn Factory<Self>;
+    fn factory() -> &'static dyn Factory<Self>;
+
+    // /// A factory that creates trait objects of type `Self`, backed by concrete values
+    // /// of type `T`.
+    // const FACTORY: &'static dyn Factory<Self>;
 }
 
 impl<T, Trait> Factory<Trait> for FactoryImpl<T, Trait>
@@ -187,7 +231,18 @@ where
     Trait: ArchiveTrait + ?Sized + 'static,
     T: DBData + Erase<Trait>,
 {
-    const FACTORY: &'static dyn Factory<Self> = &FactoryImpl::<T, Self> {
-        phantom: PhantomData,
-    };
+    // const FACTORY: &'static dyn Factory<Self> = &FactoryImpl::<T, Self> {
+    //     phantom: PhantomData,
+    // };
+
+    fn factory() -> &'static dyn Factory<Self> {
+        println!(
+            "factory({}, {})",
+            std::any::type_name::<T>(),
+            std::any::type_name::<Self>(),
+        );
+        &FactoryImpl::<T, Self> {
+            phantom: PhantomData,
+        }
+    }
 }

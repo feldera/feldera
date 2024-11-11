@@ -38,8 +38,8 @@ where
         Self {
             input_factories: BatchReaderFactories::new::<KType, VType, ZWeight>(),
             output_factories: BatchReaderFactories::new::<KType, Tup2<VType, OVType>, ZWeight>(),
-            keys_factory: WithFactory::<LeanVec<VType>>::FACTORY,
-            output_val_factory: WithFactory::<OVType>::FACTORY,
+            keys_factory: WithFactory::<LeanVec<VType>>::factory(),
+            output_val_factory: WithFactory::<OVType>::factory(),
         }
     }
 }

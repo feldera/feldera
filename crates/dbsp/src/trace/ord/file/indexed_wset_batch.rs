@@ -101,17 +101,17 @@ where
         RType: DBWeight + Erase<R>,
     {
         Self {
-            key_factory: WithFactory::<KType>::FACTORY,
-            val_factory: WithFactory::<VType>::FACTORY,
-            weight_factory: WithFactory::<RType>::FACTORY,
-            keys_factory: WithFactory::<LeanVec<KType>>::FACTORY,
-            item_factory: WithFactory::<Tup2<KType, VType>>::FACTORY,
+            key_factory: WithFactory::<KType>::factory(),
+            val_factory: WithFactory::<VType>::factory(),
+            weight_factory: WithFactory::<RType>::factory(),
+            keys_factory: WithFactory::<LeanVec<KType>>::factory(),
+            item_factory: WithFactory::<Tup2<KType, VType>>::factory(),
             factories0: FileFactories::new::<KType, ()>(),
             factories1: FileFactories::new::<VType, RType>(),
-            opt_key_factory: WithFactory::<Option<KType>>::FACTORY,
-            weighted_item_factory: WithFactory::<Tup2<Tup2<KType, VType>, RType>>::FACTORY,
+            opt_key_factory: WithFactory::<Option<KType>>::factory(),
+            weighted_item_factory: WithFactory::<Tup2<Tup2<KType, VType>, RType>>::factory(),
             weighted_items_factory:
-                WithFactory::<LeanVec<Tup2<Tup2<KType, VType>, RType>>>::FACTORY,
+                WithFactory::<LeanVec<Tup2<Tup2<KType, VType>, RType>>>::factory(),
         }
     }
 

@@ -198,11 +198,11 @@ where
     type Output = Out;
 
     fn opt_accumulator_factory(&self) -> &'static dyn Factory<DynOpt<Self::Accumulator>> {
-        WithFactory::<Option<A::Accumulator>>::FACTORY
+        WithFactory::<Option<A::Accumulator>>::factory()
     }
 
     fn output_factory(&self) -> &'static dyn Factory<Self::Output> {
-        WithFactory::<A::Output>::FACTORY
+        WithFactory::<A::Output>::factory()
     }
 
     fn combine(&self) -> &dyn AggCombineFunc<Self::Accumulator> {

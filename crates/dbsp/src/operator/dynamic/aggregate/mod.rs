@@ -75,9 +75,9 @@ where
             input_factories: BatchReaderFactories::new::<KType, VType, RType>(),
             trace_factories: BatchReaderFactories::new::<KType, VType, RType>(),
             upsert_factories: UpsertFactories::new::<KType, OType>(),
-            keys_factory: WithFactory::<BSet<KType>>::FACTORY,
-            output_pair_factory: WithFactory::<Tup2<KType, Option<OType>>>::FACTORY,
-            output_pairs_factory: WithFactory::<LeanVec<Tup2<KType, Option<OType>>>>::FACTORY,
+            keys_factory: WithFactory::<BSet<KType>>::factory(),
+            output_pair_factory: WithFactory::<Tup2<KType, Option<OType>>>::factory(),
+            output_pairs_factory: WithFactory::<LeanVec<Tup2<KType, Option<OType>>>>::factory(),
         }
     }
 }
@@ -109,9 +109,9 @@ where
         OType: DBData + Erase<O::Val>,
     {
         Self {
-            out_factory: WithFactory::<OType>::FACTORY,
-            agg_factory: WithFactory::<RType>::FACTORY,
-            option_agg_factory: WithFactory::<Option<RType>>::FACTORY,
+            out_factory: WithFactory::<OType>::factory(),
+            agg_factory: WithFactory::<RType>::factory(),
+            option_agg_factory: WithFactory::<Option<RType>>::factory(),
             aggregate_factories: IncAggregateFactories::new::<KType, (), RType, OType>(),
         }
     }
@@ -138,7 +138,7 @@ where
         Self {
             input_factories: BatchReaderFactories::new::<KType, VType, RType>(),
             output_factories: BatchReaderFactories::new::<KType, OType, ZWeight>(),
-            option_output_factory: WithFactory::<Option<OType>>::FACTORY,
+            option_output_factory: WithFactory::<Option<OType>>::factory(),
         }
     }
 }
@@ -168,9 +168,9 @@ where
     {
         Self {
             aggregate_factories: StreamAggregateFactories::new::<KType, (), RType, OType>(),
-            out_factory: WithFactory::<OType>::FACTORY,
-            agg_factory: WithFactory::<RType>::FACTORY,
-            option_agg_factory: WithFactory::<Option<RType>>::FACTORY,
+            out_factory: WithFactory::<OType>::factory(),
+            agg_factory: WithFactory::<RType>::factory(),
+            option_agg_factory: WithFactory::<Option<RType>>::factory(),
         }
     }
 }

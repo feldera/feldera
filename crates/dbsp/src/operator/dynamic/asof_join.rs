@@ -48,8 +48,8 @@ where
         OVType: DBData + Erase<O::Val>,
     {
         Self {
-            timestamp_factory: WithFactory::<TSType>::FACTORY,
-            timestamps_factory: WithFactory::<LeanVec<TSType>>::FACTORY,
+            timestamp_factory: WithFactory::<TSType>::factory(),
+            timestamps_factory: WithFactory::<LeanVec<TSType>>::factory(),
             left_factories: BatchReaderFactories::new::<KType, V1Type, ZWeight>(),
             right_factories: BatchReaderFactories::new::<KType, V2Type, ZWeight>(),
             output_factories: BatchReaderFactories::new::<OKType, OVType, ZWeight>(),
@@ -422,7 +422,7 @@ where
         let mut cursor1 = Self::try_seek(cursor1, key);
         let mut cursor2 = Self::try_seek(cursor2, key);
 
-        let mut empty_cursor = CursorEmpty::new(WithFactory::<ZWeight>::FACTORY);
+        let mut empty_cursor = CursorEmpty::new(WithFactory::<ZWeight>::factory());
 
         if let Some(cursor2) = &mut cursor2 {
             self.compute_affected_times(
@@ -598,7 +598,7 @@ where
                 Ordering::Less => {
                     self.eval_key(
                         &mut delta1_cursor,
-                        &mut CursorEmpty::new(WithFactory::<ZWeight>::FACTORY),
+                        &mut CursorEmpty::new(WithFactory::<ZWeight>::factory()),
                         &mut delayed_trace1_cursor,
                         &mut delayed_trace2_cursor,
                         &mut trace1_cursor,
@@ -624,7 +624,7 @@ where
                 }
                 Ordering::Greater => {
                     self.eval_key(
-                        &mut CursorEmpty::new(WithFactory::<ZWeight>::FACTORY),
+                        &mut CursorEmpty::new(WithFactory::<ZWeight>::factory()),
                         &mut delta2_cursor,
                         &mut delayed_trace1_cursor,
                         &mut delayed_trace2_cursor,
@@ -641,7 +641,7 @@ where
         while delta1_cursor.key_valid() {
             self.eval_key(
                 &mut delta1_cursor,
-                &mut CursorEmpty::new(WithFactory::<ZWeight>::FACTORY),
+                &mut CursorEmpty::new(WithFactory::<ZWeight>::factory()),
                 &mut delayed_trace1_cursor,
                 &mut delayed_trace2_cursor,
                 &mut trace1_cursor,
@@ -654,7 +654,7 @@ where
 
         while delta2_cursor.key_valid() {
             self.eval_key(
-                &mut CursorEmpty::new(WithFactory::<ZWeight>::FACTORY),
+                &mut CursorEmpty::new(WithFactory::<ZWeight>::factory()),
                 &mut delta2_cursor,
                 &mut delayed_trace1_cursor,
                 &mut delayed_trace2_cursor,

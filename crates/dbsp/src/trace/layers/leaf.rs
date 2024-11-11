@@ -55,11 +55,11 @@ where
         RType: DBWeight + Erase<R>,
     {
         Self {
-            key: WithFactory::<KType>::FACTORY,
-            keys: WithFactory::<LeanVec<KType>>::FACTORY,
-            diff: WithFactory::<RType>::FACTORY,
-            diffs: WithFactory::<LeanVec<RType>>::FACTORY,
-            paired: WithFactory::<Tup2<KType, RType>>::FACTORY,
+            key: WithFactory::<KType>::factory(),
+            keys: WithFactory::<LeanVec<KType>>::factory(),
+            diff: WithFactory::<RType>::factory(),
+            diffs: WithFactory::<LeanVec<RType>>::factory(),
+            paired: WithFactory::<Tup2<KType, RType>>::factory(),
         }
     }
 }

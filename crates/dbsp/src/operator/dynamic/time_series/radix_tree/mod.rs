@@ -132,11 +132,11 @@ where
         AType: DBData + Erase<A>,
     {
         Self {
-            opt_aggregate_factory: WithFactory::<Option<AType>>::FACTORY,
-            child_ptr_factory: WithFactory::<ChildPtr<TS, AType>>::FACTORY,
-            node_factory: WithFactory::<TreeNode<TS, AType>>::FACTORY,
-            node_update_factory: WithFactory::<TreeNodeUpdate<TS, AType>>::FACTORY,
-            node_updates_factory: WithFactory::<LeanVec<TreeNodeUpdate<TS, AType>>>::FACTORY,
+            opt_aggregate_factory: WithFactory::<Option<AType>>::factory(),
+            child_ptr_factory: WithFactory::<ChildPtr<TS, AType>>::factory(),
+            node_factory: WithFactory::<TreeNode<TS, AType>>::factory(),
+            node_update_factory: WithFactory::<TreeNodeUpdate<TS, AType>>::factory(),
+            node_updates_factory: WithFactory::<LeanVec<TreeNodeUpdate<TS, AType>>>::factory(),
         }
     }
 }

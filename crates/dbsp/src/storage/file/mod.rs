@@ -146,7 +146,7 @@ where
         AType: DBData + Erase<A>,
     {
         Self {
-            key_factory: WithFactory::<KType>::FACTORY,
+            key_factory: WithFactory::<KType>::factory(),
             item_factory: <RefTup2Factory<KType, AType> as WithItemFactory<K, A>>::ITEM_FACTORY,
         }
     }

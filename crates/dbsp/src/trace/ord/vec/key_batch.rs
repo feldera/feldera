@@ -82,9 +82,9 @@ where
                 <LeafFactories<DynDataTyped<T>, R>>::new::<T, RType>(),
             ),
             consolidate_weights: <dyn ConsolidatePairedSlices<_, _>>::factory::<T, RType>(),
-            item_factory: WithFactory::<Tup2<KType, ()>>::FACTORY,
-            weighted_item_factory: WithFactory::<Tup2<Tup2<KType, ()>, RType>>::FACTORY,
-            weighted_items_factory: WithFactory::<LeanVec<Tup2<Tup2<KType, ()>, RType>>>::FACTORY,
+            item_factory: WithFactory::<Tup2<KType, ()>>::factory(),
+            weighted_item_factory: WithFactory::<Tup2<Tup2<KType, ()>, RType>>::factory(),
+            weighted_items_factory: WithFactory::<LeanVec<Tup2<Tup2<KType, ()>, RType>>>::factory(),
         }
     }
 
@@ -97,7 +97,7 @@ where
     }
 
     fn val_factory(&self) -> &'static dyn Factory<DynUnit> {
-        WithFactory::<()>::FACTORY
+        WithFactory::<()>::factory()
     }
 
     fn weight_factory(&self) -> &'static dyn Factory<R> {

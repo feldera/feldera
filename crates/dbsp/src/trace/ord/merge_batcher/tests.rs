@@ -47,8 +47,8 @@ where
 #[test]
 fn merge_empty_inputs() {
     let mut merger: MergeSorter<DynData /* <u64> */, DynWeight /* <i64> */> = MergeSorter::new(
-        WithFactory::<Tup2<u64, i64>>::FACTORY,
-        WithFactory::<LeanVec<Tup2<u64, i64>>>::FACTORY,
+        WithFactory::<Tup2<u64, i64>>::factory(),
+        WithFactory::<LeanVec<Tup2<u64, i64>>>::factory(),
     );
     let merged = merger.merge_by(Vec::new(), Vec::new());
     assert!(merged.is_empty());
@@ -60,8 +60,8 @@ fn small_push() {
         DynPair<DynData /* <u64> */, DynData /* <u64> */>,
         DynWeight, /* <i64> */
     > = MergeSorter::new(
-        WithFactory::<Tup2<Tup2<u64, u64>, i64>>::FACTORY,
-        WithFactory::<LeanVec<Tup2<Tup2<u64, u64>, i64>>>::FACTORY,
+        WithFactory::<Tup2<Tup2<u64, u64>, i64>>::factory(),
+        WithFactory::<LeanVec<Tup2<Tup2<u64, u64>, i64>>>::factory(),
     );
 
     merger.queue = vec![vec![
@@ -87,8 +87,8 @@ fn small_push() {
 #[test]
 fn merge_by() {
     let mut merger: MergeSorter<DynData /* <u64> */, DynWeight /* <i64> */> = MergeSorter::new(
-        WithFactory::<Tup2<u64, i64>>::FACTORY,
-        WithFactory::<LeanVec<Tup2<u64, i64>>>::FACTORY,
+        WithFactory::<Tup2<u64, i64>>::factory(),
+        WithFactory::<LeanVec<Tup2<u64, i64>>>::factory(),
     );
 
     let left = vec![pairs_vec![
@@ -118,8 +118,8 @@ fn merge_by() {
 #[test]
 fn push_with_excess_stashes() {
     let mut merger: MergeSorter<DynData /* <u64> */, DynWeight /* <i64> */> = MergeSorter::new(
-        WithFactory::<Tup2<u64, i64>>::FACTORY,
-        WithFactory::<LeanVec<Tup2<u64, i64>>>::FACTORY,
+        WithFactory::<Tup2<u64, i64>>::factory(),
+        WithFactory::<LeanVec<Tup2<u64, i64>>>::factory(),
     );
     merger.stash = preallocated_stashes::<_, _, u64, i64>(5);
 
@@ -147,8 +147,8 @@ fn push_with_excess_stashes() {
 #[test]
 fn force_finish_merge() {
     let mut merger: MergeSorter<DynData /* <u64> */, DynWeight /* <i64> */> = MergeSorter::new(
-        WithFactory::<Tup2<u64, i64>>::FACTORY,
-        WithFactory::<LeanVec<Tup2<u64, i64>>>::FACTORY,
+        WithFactory::<Tup2<u64, i64>>::factory(),
+        WithFactory::<LeanVec<Tup2<u64, i64>>>::factory(),
     );
 
     merger.queue = vec![
@@ -190,8 +190,8 @@ fn force_finish_merge() {
 #[test]
 fn force_merge_on_push() {
     let mut merger: MergeSorter<DynData /* <u64> */, DynWeight /* <i64> */> = MergeSorter::new(
-        WithFactory::<Tup2<u64, i64>>::FACTORY,
-        WithFactory::<LeanVec<Tup2<u64, i64>>>::FACTORY,
+        WithFactory::<Tup2<u64, i64>>::factory(),
+        WithFactory::<LeanVec<Tup2<u64, i64>>>::factory(),
     );
 
     merger.queue = vec![
@@ -234,15 +234,15 @@ fn force_merge_on_push() {
 #[test]
 fn count_tuples() {
     let empty: MergeSorter<DynData /* <u64> */, DynWeight /* <i64> */> = MergeSorter::new(
-        WithFactory::<Tup2<u64, i64>>::FACTORY,
-        WithFactory::<LeanVec<Tup2<u64, i64>>>::FACTORY,
+        WithFactory::<Tup2<u64, i64>>::factory(),
+        WithFactory::<LeanVec<Tup2<u64, i64>>>::factory(),
     );
 
     assert_eq!(empty.len(), 0);
 
     let mut still_empty: MergeSorter<DynData /* <u64> */, DynWeight /* <i64> */> = MergeSorter::new(
-        WithFactory::<Tup2<u64, i64>>::FACTORY,
-        WithFactory::<LeanVec<Tup2<u64, i64>>>::FACTORY,
+        WithFactory::<Tup2<u64, i64>>::factory(),
+        WithFactory::<LeanVec<Tup2<u64, i64>>>::factory(),
     );
 
     still_empty.stash = preallocated_stashes::<_, _, u64, i64>(100);
@@ -253,8 +253,8 @@ fn count_tuples() {
         DynPair<DynData /* <u64> */, DynData /* <u64> */>,
         DynWeight, /* <i64> */
     > = MergeSorter::new(
-        WithFactory::<Tup2<Tup2<u64, u64>, i64>>::FACTORY,
-        WithFactory::<LeanVec<Tup2<Tup2<u64, u64>, i64>>>::FACTORY,
+        WithFactory::<Tup2<Tup2<u64, u64>, i64>>::factory(),
+        WithFactory::<LeanVec<Tup2<Tup2<u64, u64>, i64>>>::factory(),
     );
 
     has_tuples.queue = vec![
@@ -366,7 +366,7 @@ mod proptests {
             )
         -> MergeSorter<DynPair<DynData, DynData>, DynWeight> {
             let mut merger: MergeSorter<DynPair<DynData, DynData>, DynWeight> =
-                MergeSorter::new(WithFactory::<Tup2<Tup2<u64, u64>, i64>>::FACTORY, WithFactory::<LeanVec<Tup2<Tup2<u64, u64>, i64>>>::FACTORY);
+                MergeSorter::new(WithFactory::<Tup2<Tup2<u64, u64>, i64>>::factory(), WithFactory::<LeanVec<Tup2<Tup2<u64, u64>, i64>>>::factory());
 
             merger.queue = queue;
             merger.stash = preallocated_stashes::<_,_,Tup2<u64, u64>, i64>(stashes);
@@ -376,8 +376,8 @@ mod proptests {
 
     fn empty_merge_sorter() -> MergeSorter<DynPair<DynData, DynData>, DynWeight> {
         let mut merger: MergeSorter<DynPair<DynData, DynData>, DynWeight> = MergeSorter::new(
-            WithFactory::<Tup2<Tup2<u64, u64>, i64>>::FACTORY,
-            WithFactory::<LeanVec<Tup2<Tup2<u64, u64>, i64>>>::FACTORY,
+            WithFactory::<Tup2<Tup2<u64, u64>, i64>>::factory(),
+            WithFactory::<LeanVec<Tup2<Tup2<u64, u64>, i64>>>::factory(),
         );
 
         merger.queue = Vec::new();

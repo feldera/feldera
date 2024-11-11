@@ -79,15 +79,15 @@ where
         RType: DBWeight + Erase<R>,
     {
         Self {
-            key_factory: WithFactory::<KType>::FACTORY,
-            weight_factory: WithFactory::<RType>::FACTORY,
-            keys_factory: WithFactory::<LeanVec<KType>>::FACTORY,
-            item_factory: WithFactory::<Tup2<KType, ()>>::FACTORY,
+            key_factory: WithFactory::<KType>::factory(),
+            weight_factory: WithFactory::<RType>::factory(),
+            keys_factory: WithFactory::<LeanVec<KType>>::factory(),
+            item_factory: WithFactory::<Tup2<KType, ()>>::factory(),
             factories0: FileFactories::new::<KType, ()>(),
             factories1: FileFactories::new::<T, RType>(),
-            opt_key_factory: WithFactory::<Option<KType>>::FACTORY,
-            weighted_item_factory: WithFactory::<Tup2<Tup2<KType, ()>, RType>>::FACTORY,
-            weighted_items_factory: WithFactory::<LeanVec<Tup2<Tup2<KType, ()>, RType>>>::FACTORY,
+            opt_key_factory: WithFactory::<Option<KType>>::factory(),
+            weighted_item_factory: WithFactory::<Tup2<Tup2<KType, ()>, RType>>::factory(),
+            weighted_items_factory: WithFactory::<LeanVec<Tup2<Tup2<KType, ()>, RType>>>::factory(),
         }
     }
 
@@ -100,7 +100,7 @@ where
     }
 
     fn val_factory(&self) -> &'static dyn Factory<DynUnit> {
-        WithFactory::<()>::FACTORY
+        WithFactory::<()>::factory()
     }
 
     fn weight_factory(&self) -> &'static dyn Factory<R> {
