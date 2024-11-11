@@ -2,8 +2,117 @@ use crate::{
     dynamic::{erase::Erase, ArchiveTrait},
     DBData,
 };
+use hashbrown::HashSet;
+use once_cell::sync::Lazy;
 use rkyv::archived_value;
-use std::{marker::PhantomData, mem};
+use std::{
+    fs,
+    hash::{DefaultHasher, Hash, Hasher},
+    io::{self, Read, Write},
+    marker::PhantomData,
+    mem,
+    path::Path,
+    sync::Mutex,
+};
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+struct RequiredFactory {
+    val_trait: String,
+    val_type: String,
+}
+
+// TODO: move to utils
+fn write_file_if_changed(path: &Path, content: &str) -> io::Result<()> {
+    // Create all parent directories if they don't exist
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+
+    // Check if the file exists and has the same content
+    if path.exists() {
+        let mut existing_content = String::new();
+        fs::File::open(path)?.read_to_string(&mut existing_content)?;
+
+        // If the content is the same, do nothing
+        if existing_content == content {
+            println!("Content is unchanged; skipping write.");
+            return Ok(());
+        }
+    }
+
+    // Write the new content to the file
+    let mut file = fs::File::create(path)?;
+    file.write_all(content.as_bytes())?;
+    println!("File written successfully with new content.");
+
+    Ok(())
+}
+
+impl RequiredFactory {
+    pub fn new(val_trait: &str, val_type: &str) -> Self {
+        Self {
+            val_trait: val_trait.to_string(),
+            val_type: val_type.to_string(),
+        }
+    }
+
+    pub fn crate_name(&self) -> String {
+        // TODO: use crypto hash to avoid conflicts.
+        let mut hasher = DefaultHasher::new();
+        self.hash(&mut hasher);
+        format!("factory_{}", hasher.finish())
+    }
+
+    pub fn generate_factory_crate(
+        &self,
+        dbsp_path: &Path,
+        workspace_path: &Path,
+    ) -> io::Result<()> {
+        let crate_name = self.crate_name();
+
+        let toml_code = format!(
+            r#"[package]
+name = "{crate_name}"
+edition = "2021"
+
+[dependencies]
+dbsp = {{ path = "{}" }}"#,
+            dbsp_path.display()
+        );
+
+        let toml_path = workspace_path.join(&crate_name).join("Cargo.toml");
+        let lib_path = workspace_path.join(&crate_name).join("src").join("lib.rs");
+
+        let rust_code = format!(
+            r#"pub static factory: &'static dyn Factory<{}> = dbsp::dynamic::WithFactory::<{}>::FACTORY;"#,
+            self.val_trait, self.val_type
+        );
+
+        write_file_if_changed(&toml_path, &toml_code)?;
+        write_file_if_changed(&lib_path, &rust_code)?;
+
+        Ok(())
+    }
+}
+
+static REQUIRED_FACTORIES: Lazy<Mutex<HashSet<RequiredFactory>>> =
+    Lazy::new(|| Mutex::new(HashSet::new()));
+
+pub fn register_required_factory(val_trait: &str, val_type: &str) {
+    REQUIRED_FACTORIES
+        .lock()
+        .unwrap()
+        .insert(RequiredFactory::new(val_trait, val_type));
+}
+
+pub fn generate_factory_crates(dbsp_path: &Path, workspace_path: &Path) -> io::Result<()> {
+    let required_factories = REQUIRED_FACTORIES.lock().unwrap().clone();
+    for required_factory in required_factories.into_iter() {
+        required_factory.generate_factory_crate(dbsp_path, workspace_path)?;
+    }
+
+    Ok(())
+}
 
 #[macro_export]
 macro_rules! factory {
