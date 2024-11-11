@@ -199,13 +199,21 @@ export const extractProgramErrors =
       .returnType<SystemError<any, Report>[]>()
       .with({ RustError: P.any }, (e) => {
         const rustCompilerErrorRegex = /^((warning:(?! `)|error(\[[\w]+\])?:)([\s\S])+?)\n\n/gm
+        const rustInternalCompilerError = extractInternalCompilationError(
+          e.RustError,
+          pipeline.name,
+          source,
+          getReport
+        )
+        if (rustInternalCompilerError) {
+          // In case of an internal error we return the entire stderr verbatim as a single error,
+          // so we don't need to split it into errors
+          return [rustInternalCompilerError]
+        }
         const rustCompilerMessages: string[] =
           Array.from(e.RustError.matchAll(rustCompilerErrorRegex)).map((match) => match[1]) ?? []
-        const rustCompilerErrors = [
-          extractInternalCompilationError(e.RustError, pipeline.name, source, getReport)
-        ].filter(nonNull)
-        rustCompilerErrors.push(
-          ...rustCompilerMessages.map(extractRustCompilerError(pipeline.name, source, getReport))
+        const rustCompilerErrors = rustCompilerMessages.map(
+          extractRustCompilerError(pipeline.name, source, getReport)
         )
         return rustCompilerErrors
       })
