@@ -1,9 +1,11 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinBaseOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.frontend.TypeCompiler;
@@ -37,9 +39,20 @@ import java.util.List;
 import java.util.Map;
 
 /** Find and remove unused fields in Join operators. */
-public class NarrowJoins extends CircuitCloneVisitor {
+public class NarrowJoins extends Repeat {
     public NarrowJoins(IErrorReporter reporter) {
-        super(reporter, false);
+        super(reporter, new OnePass(reporter));
+    }
+
+    static class OnePass extends Passes {
+        OnePass(IErrorReporter reporter) {
+            super(reporter);
+            // Moves projections from joins to their inputs
+            this.add(new RemoveJoinFields(reporter));
+            this.add(new DeadCode(reporter, true, false));
+            // Merges projections into other joins if possible
+            this.add(new OptimizeWithGraph(reporter, g -> new OptimizeMaps(reporter, false, g)));
+        }
     }
 
     /** Rewrite variable and field accesses */
@@ -115,85 +128,105 @@ public class NarrowJoins extends CircuitCloneVisitor {
         }
     }
 
-    DBSPMapIndexOperator getProjection(CalciteObject node, List<Integer> fields, DBSPOperator input) {
-        DBSPType inputType = input.getOutputIndexedZSetType().getKVRefType();
-        DBSPVariablePath var = inputType.var();
-        List<DBSPExpression> resultFields = Linq.map(fields,
-                f -> var.deepCopy().field(1).deref().field(f).applyCloneIfNeeded());
-        DBSPRawTupleExpression raw = new DBSPRawTupleExpression(
-                var.deepCopy().field(0).deref().applyClone(),
-                new DBSPTupleExpression(resultFields, false));
-        DBSPClosureExpression projection = raw.closure(var);
+    static class RemoveJoinFields extends CircuitCloneVisitor {
+        RemoveJoinFields(IErrorReporter reporter) {
+            super(reporter, false);
+        }
 
-        DBSPOperator source = this.mapped(input);
-        DBSPTypeIndexedZSet ix = TypeCompiler.makeIndexedZSet(projection.getResultType().to(DBSPTypeRawTuple.class));
-        DBSPMapIndexOperator map = new DBSPMapIndexOperator(node, projection, ix, source);
-        this.addOperator(map);
-        return map;
-    }
+        DBSPMapIndexOperator getProjection(CalciteObject node, List<Integer> fields, DBSPOperator input) {
+            DBSPType inputType = input.getOutputIndexedZSetType().getKVRefType();
+            DBSPVariablePath var = inputType.var();
+            List<DBSPExpression> resultFields = Linq.map(fields,
+                    f -> var.deepCopy().field(1).deref().field(f).applyCloneIfNeeded());
+            DBSPRawTupleExpression raw = new DBSPRawTupleExpression(
+                    DBSPTupleExpression.flatten(var.deepCopy().field(0).deref()),
+                    new DBSPTupleExpression(resultFields, false));
+            DBSPClosureExpression projection = raw.closure(var);
 
-    boolean processJoin(DBSPJoinBaseOperator join) {
-        Projection projection = new Projection(this.errorReporter);
-        projection.apply(join.getFunction());
-        if (!projection.hasIoMap()) return false;
-        DBSPClosureExpression joinFunction = join.getClosureFunction();
-        int leftSize = joinFunction.parameters[1].getType().deref().to(DBSPTypeTupleBase.class).size();
-        int rightSize = joinFunction.parameters[2].getType().deref().to(DBSPTypeTupleBase.class).size();
+            DBSPOperator source = this.mapped(input);
+            DBSPTypeIndexedZSet ix = TypeCompiler.makeIndexedZSet(projection.getResultType().to(DBSPTypeRawTuple.class));
+            DBSPMapIndexOperator map = new DBSPMapIndexOperator(node, projection, ix, source);
+            this.addOperator(map);
+            return map;
+        }
 
-        // Create a projection map for each input which has unused fields
-        Projection.IOMap outputMap = projection.getIoMap();
-        List<Integer> leftInputs = outputMap.getFieldsOfInput(1);
-        List<Integer> rightInputs = outputMap.getFieldsOfInput(2);
-        // If all the fields are used there is no point in optimizing this
-        if (leftInputs.size() == leftSize && rightInputs.size() == rightSize)
-            return false;
-        DBSPOperator leftMap = getProjection(join.getNode(), leftInputs, join.left());
-        DBSPOperator rightMap = getProjection(join.getNode(), rightInputs, join.right());
+        boolean processJoin(DBSPJoinBaseOperator join) {
+            Projection projection = new Projection(this.errorReporter, true);
+            projection.apply(join.getFunction());
+            if (!projection.hasIoMap()) return false;
+            DBSPClosureExpression joinFunction = join.getClosureFunction();
+            int leftSize = joinFunction.parameters[1].getType().deref().to(DBSPTypeTupleBase.class).size();
+            int rightSize = joinFunction.parameters[2].getType().deref().to(DBSPTypeTupleBase.class).size();
 
-        Map<Integer, Integer> leftRemap = new HashMap<>();
-        for (int i = 0; i < leftInputs.size(); i++)
-            // This "compresses" the indexes in the join function, omitting the ones
-            // that are no longer present in the inputs
-            leftRemap.put(leftInputs.get(i), i);
-        Map<Integer, Integer> rightRemap = new HashMap<>();
-        for (int i = 0; i < rightInputs.size(); i++)
-            rightRemap.put(rightInputs.get(i), i);
+            // Create a projection map for each input which has unused fields
+            Projection.IOMap outputMap = projection.getIoMap();
+            List<Integer> leftInputs = outputMap.getFieldsOfInput(1);
+            List<Integer> rightInputs = outputMap.getFieldsOfInput(2);
+            // If all the fields are used there is no point in optimizing this
+            if (leftInputs.size() == leftSize && rightInputs.size() == rightSize)
+                return false;
+            DBSPOperator leftMap = getProjection(join.getNode(), leftInputs, join.left());
+            DBSPOperator rightMap = getProjection(join.getNode(), rightInputs, join.right());
 
-        assert joinFunction.parameters.length == 3;
-        Substitution<DBSPParameter, DBSPParameter> subst = new Substitution<>();
-        subst.substituteNew(
-                joinFunction.parameters[0],
-                join.left().getOutputIndexedZSetType().keyType.ref().var().asParameter());
-        subst.substitute(
-                joinFunction.parameters[1],
-                leftMap.getOutputIndexedZSetType().elementType.ref().var().asParameter());
-        subst.substitute(
-                joinFunction.parameters[2],
-                rightMap.getOutputIndexedZSetType().elementType.ref().var().asParameter());
+            Map<Integer, Integer> leftRemap = new HashMap<>();
+            for (int i = 0; i < leftInputs.size(); i++)
+                // This "compresses" the indexes in the join function, omitting the ones
+                // that are no longer present in the inputs
+                leftRemap.put(leftInputs.get(i), i);
+            Map<Integer, Integer> rightRemap = new HashMap<>();
+            for (int i = 0; i < rightInputs.size(); i++)
+                rightRemap.put(rightInputs.get(i), i);
 
-        Map<DBSPParameter, Map<Integer, Integer>> remap = new HashMap<>();
-        Utilities.putNew(remap, joinFunction.parameters[1], leftRemap);
-        Utilities.putNew(remap, joinFunction.parameters[2], rightRemap);
+            assert joinFunction.parameters.length == 3;
+            Substitution<DBSPParameter, DBSPParameter> subst = new Substitution<>();
+            subst.substituteNew(
+                    joinFunction.parameters[0],
+                    join.left().getOutputIndexedZSetType().keyType.ref().var().asParameter());
+            subst.substitute(
+                    joinFunction.parameters[1],
+                    leftMap.getOutputIndexedZSetType().elementType.ref().var().asParameter());
+            subst.substitute(
+                    joinFunction.parameters[2],
+                    rightMap.getOutputIndexedZSetType().elementType.ref().var().asParameter());
 
-        RewriteFields rw = new RewriteFields(this.errorReporter, subst, remap);
-        DBSPExpression newJoinFunction = rw.apply(join.getFunction()).to(DBSPExpression.class);
-        DBSPOperator replacement = join.withFunction(newJoinFunction, join.outputType)
-                .withInputs(Linq.list(leftMap, rightMap), true);
-        this.map(join, replacement);
-        return true;
-    }
+            Map<DBSPParameter, Map<Integer, Integer>> remap = new HashMap<>();
+            Utilities.putNew(remap, joinFunction.parameters[1], leftRemap);
+            Utilities.putNew(remap, joinFunction.parameters[2], rightRemap);
 
-    @Override
-    public void postorder(DBSPStreamJoinOperator join) {
-        boolean done = this.processJoin(join);
-        if (!done)
-            super.postorder(join);
-    }
+            RewriteFields rw = new RewriteFields(this.errorReporter, subst, remap);
+            DBSPExpression newJoinFunction = rw.apply(join.getFunction()).to(DBSPExpression.class);
+            DBSPOperator replacement = join.withFunction(newJoinFunction, join.outputType)
+                    .withInputs(Linq.list(leftMap, rightMap), true);
+            this.map(join, replacement);
+            return true;
+        }
 
-    @Override
-    public void postorder(DBSPJoinOperator join) {
-        boolean done = this.processJoin(join);
-        if (!done)
-            super.postorder(join);
+        @Override
+        public void postorder(DBSPJoinIndexOperator join) {
+            boolean done = this.processJoin(join);
+            if (!done)
+                super.postorder(join);
+        }
+
+        @Override
+        public void postorder(DBSPStreamJoinIndexOperator join) {
+            boolean done = this.processJoin(join);
+            if (!done)
+                super.postorder(join);
+        }
+
+        @Override
+        public void postorder(DBSPStreamJoinOperator join) {
+            boolean done = this.processJoin(join);
+            if (!done)
+                super.postorder(join);
+        }
+
+        @Override
+        public void postorder(DBSPJoinOperator join) {
+            boolean done = this.processJoin(join);
+            if (!done)
+                super.postorder(join);
+        }
     }
 }

@@ -256,30 +256,15 @@ public class CalciteOptimizer implements IWritesLogs {
                 CoreRules.INTERSECT_MERGE);
         // this.addStep(merge); -- messes up the shape of uncollect
 
-        this.addStep(new BaseOptimizerStep("Move projections", level) {
-            @Override
-            HepProgram getProgram(RelNode node, int level) {
-                this.addRules(2,
-                        // Rule is unsound: https://issues.apache.org/jira/browse/CALCITE-6681
-                        // CoreRules.PROJECT_CORRELATE_TRANSPOSE,
-                        CoreRules.PROJECT_WINDOW_TRANSPOSE,
-                        CoreRules.PROJECT_SET_OP_TRANSPOSE,
-                        CoreRules.FILTER_PROJECT_TRANSPOSE
-                );
-                /*
-                // Rule is unsound, hopefully it works if there are no correlates
-                // Moreover, rule interferes with temporal filters optimization
-                // Should be made obsolete when we add multijoins.
-                CorrelateFinder finder = new CorrelateFinder();
-                finder.run(node);
-                if (!finder.found) {
-                    this.addRules(level, CoreRules.PROJECT_JOIN_TRANSPOSE);
-                }
-                */
-                this.builder.addMatchOrder(HepMatchOrder.BOTTOM_UP);
-                return this.builder.build();
-            }
-        });
+        this.addStep(new SimpleOptimizerStep("Move projections", 0,
+                // Rule is unsound: https://issues.apache.org/jira/browse/CALCITE-6681
+                // CoreRules.PROJECT_CORRELATE_TRANSPOSE,
+                CoreRules.PROJECT_WINDOW_TRANSPOSE,
+                CoreRules.PROJECT_SET_OP_TRANSPOSE,
+                CoreRules.FILTER_PROJECT_TRANSPOSE
+                // Rule is unsound, replaced with NarrowJoins done later.
+                //CoreRules.PROJECT_JOIN_TRANSPOSE
+        ));
 
         this.addStep(merge);
         this.addStep(new SimpleOptimizerStep("Remove dead code", 0,

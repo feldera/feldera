@@ -323,11 +323,21 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         }
     }
 
+    void compileFile(String file, boolean run) throws SQLException, IOException, InterruptedException {
+        CompilerMessages messages = CompilerMain.execute(
+                "-i", "--alltables", "--ignoreOrder", "-o", BaseSQLTests.testFilePath, file);
+        messages.print();
+        Assert.assertEquals(0, messages.errorCount());
+        if (run) {
+            Utilities.compileAndTestRust(BaseSQLTests.rustDirectory, false);
+        }
+    }
+
     @Test
     public void testProjectFiles() throws IOException, InterruptedException, SQLException {
         // Compiles all the programs in the tests directory
         final String projectsDirectory = "../../demo/";
-        File dir = new File(projectsDirectory);
+        final File dir = new File(projectsDirectory);
         File[] subdirs = dir.listFiles(File::isDirectory);
         Objects.requireNonNull(subdirs);
         for (File subdir: subdirs) {
@@ -338,12 +348,23 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
             assert sqlFiles != null;
             for (String sqlFile: sqlFiles) {
                 String path = subdir.getPath() + "/" + sqlFile;
-                CompilerMessages messages = CompilerMain.execute(
-                        "-i", "--alltables", "-o", BaseSQLTests.testFilePath, path);
-                messages.print();
-                Assert.assertEquals(0, messages.errorCount());
+                this.compileFile(path, true);
             }
-            Utilities.compileAndTestRust(BaseSQLTests.rustDirectory, false);
+        }
+    }
+
+    @Test
+    public void testPackagedDemos() throws SQLException, IOException, InterruptedException {
+        final String projectsDirectory = "../../demo/packaged/sql";
+        final File dir = new File(projectsDirectory);
+        FilenameFilter filter = (_d, name) -> !name.contains("setup") && name.endsWith(".sql");
+        String[] sqlFiles = dir.list(filter);
+        assert sqlFiles != null;
+        for (String sqlFile: sqlFiles) {
+            String basename = Utilities.getBaseName(sqlFile);
+            String udf = basename + ".udf.rs";
+            File udfFile = new File(dir.getPath() + "/" + udf);
+            this.compileFile(dir.getPath() + "/" + sqlFile, !udfFile.exists());
         }
     }
 

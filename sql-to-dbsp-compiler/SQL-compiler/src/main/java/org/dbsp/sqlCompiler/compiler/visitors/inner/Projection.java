@@ -168,7 +168,14 @@ public class Projection extends InnerVisitor {
 
     @Override
     public VisitDecision preorder(DBSPDerefExpression expression) {
-        if (!expression.expression.is(DBSPVariablePath.class)) {
+        // Allow two patterns: *param (when the input is a ZSet)
+        // and *(param.0) (when the input is an indexed ZSet).
+        boolean legal = expression.expression.is(DBSPVariablePath.class);
+        if (!legal)
+            legal = expression.expression.is(DBSPFieldExpression.class) &&
+                    expression.expression.to(DBSPFieldExpression.class)
+                            .expression.is(DBSPVariablePath.class);
+        if (!legal) {
             this.notShuffle();
         }
         return VisitDecision.CONTINUE;
@@ -267,9 +274,23 @@ public class Projection extends InnerVisitor {
         if (!type.is(DBSPTypeTupleBase.class))
             return false;
         DBSPTypeTupleBase tuple = type.to(DBSPTypeTupleBase.class);
-        for (DBSPType field: tuple.tupFields)
-            if (field.is(DBSPTypeTupleBase.class))
+        if (tuple.is(DBSPTypeRawTuple.class)) {
+            // This is an indexed Z-set, expect both key and value to be simple
+            if (tuple.size() != 2)
                 return false;
+
+            for (DBSPType field : tuple.tupFields) {
+                if (!field.is(DBSPTypeTuple.class))
+                    return false;
+                for (DBSPType fField : field.to(DBSPTypeTuple.class).tupFields)
+                    if (fField.is(DBSPTypeTupleBase.class))
+                        return false;
+            }
+        } else {
+            for (DBSPType field: tuple.tupFields)
+                if (field.is(DBSPTypeTupleBase.class))
+                    return false;
+        }
         return true;
     }
 

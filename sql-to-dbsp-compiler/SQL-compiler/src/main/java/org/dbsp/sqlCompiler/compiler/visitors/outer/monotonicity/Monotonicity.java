@@ -596,7 +596,7 @@ public class Monotonicity extends CircuitVisitor {
         IMaybeMonotoneType keyMonoType = leftKeyMonoType.union(rightKeyMonoType);
 
         // We expect ASOF joins to look like projections.
-        Projection projection = new Projection(this.errorReporter);
+        Projection projection = new Projection(this.errorReporter, true);
         DBSPClosureExpression function = node.getClosureFunction();
         projection.apply(function);
         assert projection.isProjection && projection.hasIoMap();

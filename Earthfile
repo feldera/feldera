@@ -182,6 +182,7 @@ build-manager:
 test-sql:
     # SQL-generated code imports adapters crate.
     FROM +build-adapters
+    COPY --dir demo/packaged demo/packaged
     RUN cd "sql-to-dbsp-compiler" && ./build.sh && mvn test --no-transfer-progress -q -B -pl SQL-compiler -Dsurefire.failIfNoSpecifiedTests=false
 
 test-slt:

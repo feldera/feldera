@@ -222,16 +222,16 @@ public class InsertLimiters extends CircuitCloneVisitor {
     DBSPApply2Operator createApply2(DBSPOperator left, DBSPOperator right, DBSPClosureExpression function) {
         DBSPVariablePath leftVar = left.outputType.ref().var();
         DBSPVariablePath rightVar = right.outputType.ref().var();
-        DBSPExpression v0 = leftVar.deref().field(0);
-        DBSPExpression v1 = rightVar.deref().field(0);
-        DBSPExpression v01 = leftVar.deref().field(1);
-        DBSPExpression v11 = rightVar.deref().field(1);
+        DBSPExpression l0 = leftVar.deref().field(0);
+        DBSPExpression r0 = rightVar.deref().field(0);
+        DBSPExpression l1 = leftVar.deref().field(1);
+        DBSPExpression r1 = rightVar.deref().field(1);
         DBSPExpression and = ExpressionCompiler.makeBinaryExpression(left.getNode(),
-                v0.getType(), DBSPOpcode.AND, v0, v1);
+                l0.getType(), DBSPOpcode.AND, l0, r0);
         DBSPExpression min = function.getResultType().minimumValue();
         DBSPExpression cond = new DBSPTupleExpression(and,
                 new DBSPIfExpression(left.getNode(), and,
-                        function.call(v01.borrow(), v11.borrow()), min));
+                        function.call(l1.borrow(), r1.borrow()), min));
         DBSPApply2Operator result = new DBSPApply2Operator(
                 left.getNode(), cond.closure(leftVar, rightVar),
                 left, right);
@@ -755,8 +755,10 @@ public class InsertLimiters extends CircuitCloneVisitor {
         this.processJoin(expansion.leftDelta);
         this.processJoin(expansion.rightDelta);
         this.processJoin(expansion.both);
-        this.processSumOrDiff(expansion.sum);
+        DBSPOperator limiter = this.processSumOrDiff(expansion.sum);
 
+        if (limiter != null)
+            this.markBound(join, limiter);
         this.map(join, result, true);
     }
 
@@ -1443,7 +1445,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
             int currentIndex = 0;
             for (int i = 0; i < dest.size(); i++) {
                 if (dest.getField(i).mayBeMonotone()) {
-                    fields.add(source.field(currentIndex));
+                    fields.add(this.project(source.field(currentIndex), src.getField(i), dest.getField(i)));
                 }
                 if (src.getField(i).mayBeMonotone()) {
                     currentIndex++;

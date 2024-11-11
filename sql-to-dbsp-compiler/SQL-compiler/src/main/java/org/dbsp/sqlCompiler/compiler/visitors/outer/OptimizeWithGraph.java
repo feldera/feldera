@@ -20,7 +20,7 @@ public class OptimizeWithGraph extends Repeat {
     }
 
     public OptimizeWithGraph(IErrorReporter reporter,
-                               Function<CircuitGraph, CircuitTransform> optimizerFactory) {
+                             Function<CircuitGraph, CircuitTransform> optimizerFactory) {
         super(reporter, createOnePass(reporter, optimizerFactory));
     }
 }
