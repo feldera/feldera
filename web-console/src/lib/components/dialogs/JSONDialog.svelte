@@ -4,6 +4,7 @@
   import { isMonacoEditorDisabled } from '$lib/functions/common/monacoEditor'
   import type { Snippet } from 'svelte'
   import { Tooltip } from '$lib/components/common/Tooltip.svelte'
+  import { useSkeletonTheme } from '$lib/compositions/useSkeletonTheme.svelte'
   let {
     json,
     onApply,
@@ -17,6 +18,7 @@
     title: Snippet
     disabled?: boolean
   } = $props()
+  const theme = useSkeletonTheme()
   const mode = useDarkMode()
   let value = $state(json)
   $effect(() => {
@@ -46,7 +48,9 @@
         })
       }}
       options={{
-        theme: mode.darkMode.value === 'light' ? 'vs' : 'vs-dark',
+        fontFamily: theme.config.monospaceFontFamily,
+        fontSize: 16,
+        theme: mode.darkMode.value === 'dark' ? 'feldera-dark' : 'feldera-light',
         automaticLayout: true,
         lineNumbersMinChars: 2,
         overviewRulerLanes: 0,
