@@ -77,6 +77,19 @@ impl<T: DBData> Data for T {
     }
 }
 
+/// This test ensures that the underlying hash function stays the same from one
+/// build to the next. If the hash function changes, then restoring from a
+/// checkpoint will fail because data hashes will change.
+///
+/// We only test this on little-endian platforms. Big-endian platforms will
+/// compute a different hash value, which means that checkpoints won't be
+/// exchangeable between big- and little-endian platforms.
+#[cfg(all(test, target_endian = "little"))]
+#[test]
+fn test_default_hash() {
+    assert_eq!(1.default_hash(), 15781232456890734344);
+}
+
 /// Strongly typed data.
 ///
 /// A trait that includes the concrete type behind the given trait object in its type signature.

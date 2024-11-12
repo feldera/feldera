@@ -13,13 +13,14 @@ use dbsp::DBData;
 use feldera_types::serde_with_context::{DeserializeWithContext, SqlSerdeConfig};
 use std::{
     fmt::Debug,
+    hash::{DefaultHasher, Hash, Hasher},
     mem::swap,
     sync::{Arc, Mutex, MutexGuard},
 };
 
 use super::{wait, DEFAULT_TIMEOUT_MS};
 
-#[derive(Clone, PartialEq, Eq, Debug, PartialOrd, Ord)]
+#[derive(Clone, PartialEq, Eq, Debug, Hash, PartialOrd, Ord)]
 pub enum MockUpdate<T, U> {
     Insert(T),
     Delete(T),
@@ -116,8 +117,8 @@ impl<T, U> MockDeZSet<T, U> {
 
 impl<T, U> DeCollectionHandle for MockDeZSet<T, U>
 where
-    T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + Sync + 'static,
-    U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + Sync + 'static,
+    T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Hash + Send + Sync + 'static,
+    U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Hash + Send + Sync + 'static,
 {
     fn configure_deserializer(
         &self,
@@ -181,8 +182,8 @@ impl<T, U> MockDeZSetStreamBuffer<T, U> {
 
 impl<T, U> InputBuffer for MockDeZSetStreamBuffer<T, U>
 where
-    T: Send + Sync + 'static,
-    U: Send + Sync + 'static,
+    T: Hash + Send + Sync + 'static,
+    U: Hash + Send + Sync + 'static,
 {
     fn flush(&mut self) {
         let mut state = self.handle.0.lock().unwrap();
@@ -191,6 +192,14 @@ where
 
     fn len(&self) -> usize {
         self.updates.len()
+    }
+
+    fn hash(&self, hasher: &mut dyn Hasher) {
+        for elem in &self.updates {
+            let mut elem_hasher = DefaultHasher::new();
+            elem.hash(&mut elem_hasher);
+            hasher.write_u64(elem_hasher.finish())
+        }
     }
 
     fn take_some(&mut self, n: usize) -> Option<Box<dyn InputBuffer>> {
@@ -237,8 +246,8 @@ where
 
 impl<De, T, U> DeCollectionStream for MockDeZSetStream<De, T, U>
 where
-    T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + Sync + 'static,
-    U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + Sync + 'static,
+    T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Hash + Send + Sync + 'static,
+    U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Hash + Send + Sync + 'static,
     De: DeserializerFromBytes<SqlSerdeConfig> + Send + Sync + 'static,
 {
     fn insert(&mut self, data: &[u8]) -> AnyResult<()> {
@@ -272,8 +281,8 @@ where
 
 impl<De, T, U> InputBuffer for MockDeZSetStream<De, T, U>
 where
-    T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + Sync + 'static,
-    U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + Sync + 'static,
+    T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Hash + Send + Sync + 'static,
+    U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Hash + Send + Sync + 'static,
     De: DeserializerFromBytes<SqlSerdeConfig> + Send + Sync + 'static,
 {
     fn flush(&mut self) {
@@ -282,6 +291,10 @@ where
 
     fn take_some(&mut self, n: usize) -> Option<Box<dyn InputBuffer>> {
         self.buffer.take_some(n)
+    }
+
+    fn hash(&self, hasher: &mut dyn Hasher) {
+        self.buffer.hash(hasher)
     }
 
     fn len(&self) -> usize {
@@ -308,8 +321,8 @@ impl<T, U> MockAvroStream<T, U> {
 
 impl<T, U> AvroStream for MockAvroStream<T, U>
 where
-    T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + Sync + 'static,
-    U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + Sync + 'static,
+    T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Hash + Send + Sync + 'static,
+    U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Hash + Send + Sync + 'static,
 {
     fn insert(&mut self, data: &AvroValue) -> AnyResult<()> {
         let v: T =
@@ -333,8 +346,8 @@ where
 
 impl<T, U> InputBuffer for MockAvroStream<T, U>
 where
-    T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + Sync + 'static,
-    U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + Sync + 'static,
+    T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Hash + Send + Sync + 'static,
+    U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Hash + Send + Sync + 'static,
 {
     fn flush(&mut self) {
         let mut state = self.handle.0.lock().unwrap();
@@ -358,6 +371,14 @@ where
 
     fn len(&self) -> usize {
         self.updates.len()
+    }
+
+    fn hash(&self, hasher: &mut dyn Hasher) {
+        for elem in &self.updates {
+            let mut elem_hasher = DefaultHasher::new();
+            elem.hash(&mut elem_hasher);
+            hasher.write_u64(elem_hasher.finish())
+        }
     }
 }
 

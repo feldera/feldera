@@ -12,6 +12,7 @@ use feldera_types::transport::datagen::GenerationPlan;
 use feldera_types::{deserialize_table_record, serialize_table_record};
 use size_of::SizeOf;
 use std::collections::BTreeMap;
+use std::hash::Hash;
 use std::time::Duration;
 use std::{env, thread};
 
@@ -114,8 +115,8 @@ fn mk_pipeline<T, U>(
     fields: Vec<Field>,
 ) -> AnyResult<(Box<dyn InputReader>, MockInputConsumer, MockDeZSet<T, U>)>
 where
-    T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + Sync + 'static,
-    U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + Sync + 'static,
+    T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Hash + Send + Sync + 'static,
+    U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Hash + Send + Sync + 'static,
 {
     let relation = Relation::new("test_input".into(), fields, true, BTreeMap::new());
     let (endpoint, consumer, _parser, zset) =

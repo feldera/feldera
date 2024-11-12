@@ -394,9 +394,9 @@ mod test {
         serde_with_context::{DeserializeWithContext, SqlSerdeConfig},
     };
     use log::trace;
-    use std::{borrow::Cow, fmt::Debug, panic::Location};
+    use std::{borrow::Cow, fmt::Debug, hash::Hash, panic::Location};
 
-    #[derive(PartialEq, Debug, Eq)]
+    #[derive(PartialEq, Debug, Eq, Hash)]
     struct TestStruct {
         b: bool,
         i: i32,
@@ -427,7 +427,7 @@ mod test {
         }
     }
 
-    #[derive(PartialEq, Debug, Eq)]
+    #[derive(PartialEq, Debug, Eq, Hash)]
     struct TestStructUpd {
         b: Option<bool>,
         i: i32,
@@ -469,12 +469,14 @@ mod test {
         T: Debug
             + Eq
             + for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+            + Hash
             + Send
             + Sync
             + 'static,
         U: Debug
             + Eq
             + for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+            + Hash
             + Send
             + Sync
             + 'static,

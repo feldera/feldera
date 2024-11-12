@@ -15,6 +15,7 @@ use env_logger::Env;
 use feldera_types::program_schema::Relation;
 use log::info;
 use rmpv::Value as RmpValue;
+use std::hash::Hasher;
 use std::ops::Range;
 use std::sync::atomic::AtomicUsize;
 use std::{
@@ -314,6 +315,8 @@ impl InputBuffer for DummyInputBuffer {
     fn len(&self) -> usize {
         self.data.as_ref().map_or(0, |_| 1)
     }
+
+    fn hash(&self, _hasher: &mut dyn Hasher) {}
 
     fn take_some(&mut self, _n: usize) -> Option<Box<dyn InputBuffer>> {
         self.data.take().map(|data| {

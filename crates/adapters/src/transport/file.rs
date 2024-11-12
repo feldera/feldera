@@ -273,7 +273,7 @@ mod test {
     use std::{io::Write, thread::sleep, time::Duration};
     use tempfile::NamedTempFile;
 
-    #[derive(Debug, PartialEq, Eq, Serialize, Deserialize, Clone)]
+    #[derive(Debug, PartialEq, Eq, Hash, Serialize, Deserialize, Clone)]
     pub struct TestStruct {
         s: String,
         b: bool,

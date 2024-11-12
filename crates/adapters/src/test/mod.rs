@@ -17,6 +17,7 @@ use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::ffi::OsStr;
 use std::fs::{read_dir, File};
+use std::hash::Hash;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::{
@@ -104,8 +105,8 @@ pub fn mock_parser_pipeline<T, U>(
     config: &FormatConfig,
 ) -> AnyResult<(MockInputConsumer, MockInputParser, MockDeZSet<T, U>)>
 where
-    T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + Sync + 'static,
-    U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + Sync + 'static,
+    T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Hash + Send + Sync + 'static,
+    U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Hash + Send + Sync + 'static,
 {
     let input_handle = <MockDeZSet<T, U>>::new();
     let consumer = MockInputConsumer::new();
@@ -139,8 +140,8 @@ pub fn mock_input_pipeline<T, U>(
     MockDeZSet<T, U>,
 )>
 where
-    T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + Sync + 'static,
-    U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + Sync + 'static,
+    T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Hash + Send + Sync + 'static,
+    U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Hash + Send + Sync + 'static,
 {
     let default_format = FormatConfig {
         name: Cow::from("json"),

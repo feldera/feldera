@@ -403,7 +403,7 @@ mod test {
         time::Duration,
     };
 
-    #[derive(Debug, PartialEq, Eq, Serialize, Deserialize, Clone)]
+    #[derive(Debug, PartialEq, Eq, Hash, Serialize, Deserialize, Clone)]
     struct TestStruct {
         s: String,
         b: bool,
