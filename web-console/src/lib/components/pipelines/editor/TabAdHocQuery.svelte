@@ -116,9 +116,6 @@
             getAdhocQueries = () => adhocQueries
           },
           onNetworkError(e, injectValue) {
-            if (!adhocQueries[pipelineName].queries[i]) {
-              return
-            }
             injectValue({ error: e.message })
           }
         },
