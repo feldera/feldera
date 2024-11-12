@@ -49,7 +49,7 @@ class SqlObject:
             pattern = r"CREATE\s+TABLE\s+(\w+)"
         else:
             pattern = r"CREATE\s+(?:MATERIALIZED|LOCAL)\s+VIEW\s+(\w+)"
-            
+
         match = re.search(pattern, sql, re.IGNORECASE)
         # If a match is found, return the table name
         if match:
@@ -94,7 +94,7 @@ class Table(SqlObject):
 
 class View(SqlObject):
     """A SQL view with contents"""
-    
+
     @staticmethod
     def sqlObject_is_local(sql: str) -> bool:
         """Checks if the SQL statement defines a local view"""
