@@ -300,9 +300,14 @@ where
         //     std::any::type_name::<T>(),
         //     std::any::type_name::<Self>(),
         // );
-        register_required_factory(std::any::type_name::<Self>(), std::any::type_name::<T>());
-        find_factory::<T, Self>().unwrap()
 
-        //FactoryImpl::<T, Self>::new()
+        #[cfg(not(feature = "factory_crates"))]
+        {
+            register_required_factory(std::any::type_name::<Self>(), std::any::type_name::<T>());
+            FactoryImpl::<T, Self>::new()
+        }
+
+        #[cfg(feature = "factory_crates")]
+        find_factory::<T, Self>().unwrap()
     }
 }

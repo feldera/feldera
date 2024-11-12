@@ -21,6 +21,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 # Note: If you add a feature, adjust the ALMOST_ALL_FEATURES environment variable in
 # main.yml and coverage.yml:
 default = []
+factory_crates = []
 
 [dependencies]
 num = "0.4.0"
