@@ -1,7 +1,7 @@
 import BigNumber from 'bignumber.js'
 import { JSONParser, Tokenizer, TokenParser, type JSONParserOptions } from '@streamparser/json'
-import { findIndex } from '../common/array'
-import { tuple } from '../common/tuple'
+import { findIndex } from '$lib/functions/common/array'
+import { tuple } from '$lib/functions/common/tuple'
 
 class BigNumberTokenizer extends Tokenizer {
   parseNumber = BigNumber as any
@@ -22,6 +22,7 @@ export const parseCancellable = <T, Transformer extends TransformStream<Uint8Arr
     pushChanges: (changes: T[]) => void
     onBytesSkipped?: (bytes: number) => void
     onParseEnded?: () => void
+    onNetworkError?: (e: TypeError, injectValue: (value: T) => void) => void
   },
   transformer: Transformer,
   options?: { bufferSize?: number }
@@ -36,11 +37,17 @@ export const parseCancellable = <T, Transformer extends TransformStream<Uint8Arr
   let resultBuffer = [] as T[]
   setTimeout(async () => {
     while (true) {
-      const { done, value } = await reader.read()
-      if (done || value === undefined) {
+      try {
+        const { done, value } = await reader.read()
+        if (done || value === undefined) {
+          break
+        }
+        resultBuffer.push(value)
+      } catch (e) {
+        cbs.onNetworkError?.(e as TypeError, (value: T) => resultBuffer.push(value))
+        cbs.onParseEnded?.()
         break
       }
-      resultBuffer.push(value)
     }
   })
   const flush = () => {
@@ -49,11 +56,17 @@ export const parseCancellable = <T, Transformer extends TransformStream<Uint8Arr
       resultBuffer.length = 0
     }
   }
+  let closed = false
   setTimeout(async () => {
-    let closed = false
-    reader.closed.then(() => {
-      closed = true
-    })
+    reader.closed.then(
+      () => {
+        closed = true
+      },
+      (e) => {
+        closed = true
+        cbs.onNetworkError?.(e, (value: T) => resultBuffer.push(value))
+      }
+    )
     while (true) {
       flush()
       if (closed) {
@@ -66,7 +79,10 @@ export const parseCancellable = <T, Transformer extends TransformStream<Uint8Arr
   return {
     cancel: () => {
       flush()
-      reader.cancel()
+      reader.cancel().catch((e) => {
+        closed = true
+        cbs.onNetworkError?.(e, (value: T) => resultBuffer.push(value))
+      })
     }
   }
 }
