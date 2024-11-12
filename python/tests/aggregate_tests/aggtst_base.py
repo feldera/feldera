@@ -45,9 +45,11 @@ class SqlObject:
         """Extract a table or view name from a SQL string;
         assumes a nicely written SQL program"""
 
-        pattern = (
-            r"CREATE\s+" + ("TABLE" if table else "MATERIALIZED VIEW") + r"\s+(\w+)"
-        )
+        if table:
+            pattern = r"CREATE\s+TABLE\s+(\w+)"
+        else:
+            pattern = r"CREATE\s+(?:MATERIALIZED|LOCAL)\s+VIEW\s+(\w+)"
+            
         match = re.search(pattern, sql, re.IGNORECASE)
         # If a match is found, return the table name
         if match:
@@ -92,19 +94,27 @@ class Table(SqlObject):
 
 class View(SqlObject):
     """A SQL view with contents"""
+    
+    @staticmethod
+    def sqlObject_is_local(sql: str) -> bool:
+        """Checks if the SQL statement defines a local view"""
+        pattern = r"\s+LOCAL\s+VIEW"
+        return bool(re.search(pattern, sql, re.IGNORECASE))
 
     def __init__(self, sql: str, data: JSON):
         super().__init__(SqlObject.extract_name(sql, False), sql, data)
+        self.local = View.sqlObject_is_local(sql)  # 'local' flag set based on SQL check
 
     def validate(self, pipeline: Pipeline):
         """Check that the data received matches the expected data"""
-        data = list(pipeline.query(f"SELECT * FROM {self.name};"))
-        expected = self.get_data()
+        if not self.local:  # If it's not a local view, perform validation
+            data = list(pipeline.query(f"SELECT * FROM {self.name};"))
+            expected = self.get_data()
 
-        tc = unittest.TestCase()
-        tc.assertCountEqual(
-            data, expected, f"\nASSERTION ERROR: failed view: {self.name}"
-        )
+            tc = unittest.TestCase()
+            tc.assertCountEqual(
+                data, expected, f"\nASSERTION ERROR: failed view: {self.name}"
+            )
 
 
 class TstAccumulator:
