@@ -441,6 +441,16 @@ impl Runtime {
             }
         }
 
+        println!(
+            "Generating factories, cwd: {}",
+            std::env::current_dir().unwrap().display()
+        );
+        crate::dynamic::generate_factory_crates(
+            Path::new("/Users/leonid/projects/feldera/crates/dbsp"),
+            Path::new("."),
+        )
+        .unwrap();
+
         // On error, kill the runtime.
         if init_status
             .iter()

@@ -3,7 +3,7 @@
 
 #[macro_use]
 mod checked_int;
-mod floats;
+pub mod floats;
 mod lattice;
 mod order;
 mod present;

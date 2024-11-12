@@ -116,29 +116,29 @@
 //! * [`DynWeightedPairs`] - a vector of key-value pairs, where the value behaves as weight,
 //!   meaning that tuples with the same key can be consolidated by adding their weights.
 
-mod clonable;
-mod comparable;
-pub(crate) mod data;
-mod declare_trait_object;
-mod downcast;
-mod erase;
-mod factory;
-mod lean_vec;
-mod option;
+pub mod clonable;
+pub mod comparable;
+pub mod data;
+pub mod declare_trait_object;
+pub mod downcast;
+pub mod erase;
+pub mod factory;
+pub mod lean_vec;
+pub mod option;
 pub mod pair;
-mod pairs;
-pub(crate) mod rkyv;
-mod set;
-mod vec;
-mod weight;
-mod weighted_pairs;
+pub mod pairs;
+pub mod rkyv;
+pub mod set;
+pub mod vec;
+pub mod weight;
+pub mod weighted_pairs;
 
 pub use clonable::{Clonable, ClonableTrait};
 pub use comparable::Comparable;
 pub use data::{Data, DataTrait, DataTraitTyped, DynBool, DynData, DynDataTyped, DynUnit};
 pub use downcast::{AsAny, DowncastTrait};
 pub use erase::Erase;
-pub use factory::{Factory, WithFactory};
+pub use factory::{generate_factory_crates, Factory, WithFactory};
 pub use lean_vec::{LeanVec, RawIter};
 pub use option::{DynOpt, Opt};
 pub use pair::{DynPair, Pair};

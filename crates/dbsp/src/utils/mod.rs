@@ -3,7 +3,7 @@ mod sample;
 //pub(crate) mod tests;
 mod consolidation;
 mod sort;
-mod tuple;
+pub mod tuple;
 
 #[cfg(test)]
 mod vec_ext;

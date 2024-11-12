@@ -6,7 +6,7 @@ use hashbrown::HashSet;
 use once_cell::sync::Lazy;
 use rkyv::archived_value;
 use std::{
-    fs,
+    fs::{self, File},
     hash::{DefaultHasher, Hash, Hasher},
     io::{self, Read, Write},
     marker::PhantomData,
@@ -24,6 +24,7 @@ struct RequiredFactory {
 
 // TODO: move to utils
 fn write_file_if_changed(path: &Path, content: &str) -> io::Result<()> {
+    println!("writing {}", path.display());
     // Create all parent directories if they don't exist
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
@@ -62,12 +63,16 @@ impl RequiredFactory {
         format!("factory_{}", hasher.finish())
     }
 
-    pub fn generate_factory_crate(
-        &self,
-        dbsp_path: &Path,
-        workspace_path: &Path,
-    ) -> io::Result<()> {
+    pub fn generate_factory_crate(&self, dbsp_path: &Path, project_path: &Path) -> io::Result<()> {
         let crate_name = self.crate_name();
+        println!("generating {crate_name}");
+
+        let toml_path = project_path.join("..").join(&crate_name).join("Cargo.toml");
+        let lib_path = project_path
+            .join("..")
+            .join(&crate_name)
+            .join("src")
+            .join("lib.rs");
 
         let toml_code = format!(
             r#"[package]
@@ -76,28 +81,31 @@ edition = "2021"
 
 [dependencies]
 dbsp = {{ path = "{}" }}
-ctor = "0.2.8"
+feldera-sqllib = {{ path = "{}" }}
 "#,
-            dbsp_path.display()
+            dbsp_path.display(),
+            dbsp_path.parent().unwrap().join("sqllib").display()
         );
 
-        let toml_path = workspace_path.join(&crate_name).join("Cargo.toml");
-        let lib_path = workspace_path.join(&crate_name).join("src").join("lib.rs");
-
         let rust_code = format!(
-            r#"use ctor::ctor;
+            r#"pub static factory: &'static dyn dbsp::dynamic::Factory<{}> = dbsp::dynamic::factory::FactoryImpl::<{}, {}>::new();"#,
+            self.val_trait, self.val_type, self.val_trait
+        ).replace("alloc::string::String", "String");
 
-            pub static factory: &'static dyn Factory<{}> = dbsp::dynamic::WithFactory::<{}>::FACTORY;
-
-            #[ctor]
-            fn init() {{
-                dbsp::dynamic::factory::register_factory::<{}, {}>();
-            }}"#,
-            self.val_trait, self.val_type, self.val_type, self.val_trait
+        let dependency = format!(
+            r#"[dependencies.{crate_name}]
+path = "../{crate_name}"
+"#
         );
 
         write_file_if_changed(&toml_path, &toml_code)?;
         write_file_if_changed(&lib_path, &rust_code)?;
+
+        let mut project_cargo_file = File::options()
+            .append(true)
+            .create(false)
+            .open(project_path.join("Cargo.toml"))?;
+        writeln!(project_cargo_file, "\n{}", &dependency)?;
 
         Ok(())
     }
@@ -113,24 +121,44 @@ pub fn register_required_factory(val_trait: &str, val_type: &str) {
         .insert(RequiredFactory::new(val_trait, val_type));
 }
 
-pub fn generate_factory_crates(dbsp_path: &Path, workspace_path: &Path) -> io::Result<()> {
+pub fn generate_factory_crates(dbsp_path: &Path, project_path: &Path) -> io::Result<()> {
     let required_factories = REQUIRED_FACTORIES.lock().unwrap().clone();
+    let mut register_factories = Vec::with_capacity(required_factories.len());
+
     for required_factory in required_factories.into_iter() {
-        required_factory.generate_factory_crate(dbsp_path, workspace_path)?;
+        required_factory.generate_factory_crate(dbsp_path, project_path)?;
+
+        let crate_name = required_factory.crate_name();
+        register_factories.push(format!(
+            "dbsp::dynamic::factory::register_factory::<{}, {}>({crate_name}::factory);",
+            &required_factory.val_type, &required_factory.val_trait
+        ));
     }
+
+    let factories_path = project_path.join("src").join("factories.rs");
+    let factories_code = format!(
+        r#"pub fn register_factories() {{
+    {}
+}}"#,
+        register_factories.join("\n    ")
+    );
+
+    let factories_code = factories_code.replace("alloc::string::String", "String");
+
+    write_file_if_changed(&factories_path, &factories_code)?;
 
     Ok(())
 }
 
 #[derive(PartialEq, Eq)]
-pub struct FactoryMapKey<VType, VTrait> {
+pub struct FactoryMapKey<VType, VTrait: ?Sized> {
     phantom: PhantomData<dyn Fn(&VType, &VTrait)>,
 }
 
 impl<VType, VTrait> typemap::Key for FactoryMapKey<VType, VTrait>
 where
     VType: 'static,
-    VTrait: 'static,
+    VTrait: ?Sized + 'static,
 {
     type Value = &'static dyn Factory<VTrait>;
 }
@@ -140,7 +168,7 @@ pub static FACTORIES: Lazy<Mutex<ShareMap>> = Lazy::new(|| Mutex::new(ShareMap::
 pub fn register_factory<VType, VTrait>(factory: &'static dyn Factory<VTrait>)
 where
     VType: 'static,
-    VTrait: 'static,
+    VTrait: ?Sized + 'static,
 {
     FACTORIES
         .lock()
@@ -148,16 +176,39 @@ where
         .insert::<FactoryMapKey<VType, VTrait>>(factory);
 }
 
+pub fn find_factory<VType, VTrait>() -> Option<&'static dyn Factory<VTrait>>
+where
+    VType: 'static,
+    VTrait: ?Sized + 'static,
+{
+    let factory = FACTORIES
+        .lock()
+        .unwrap()
+        .get::<FactoryMapKey<VType, VTrait>>()
+        .map(|factory| *factory);
+
+    if factory.is_none() {
+        println!(
+            "Factory not found. Known factories: {}",
+            FACTORIES.lock().unwrap().len()
+        );
+    } else {
+        println!("Factory found");
+    }
+
+    factory
+}
+
 #[macro_export]
 macro_rules! factory {
     ($vtype:ty, $vtrait:ty) => {{
         use dbsp::{dynamic::*, trace::WeightedItem};
         //println!("factory({}, {})", stringify!($vtype), stringify!($vtrait));
-        println!(
-            "factory({}, {})",
-            std::any::type_name::<$vtype>(),
-            std::any::type_name::<$vtrait>(),
-        );
+        // println!(
+        //     "factory({}, {})",
+        //     std::any::type_name::<$vtype>(),
+        //     std::any::type_name::<$vtrait>(),
+        // );
         $crate::dynamic::WithFactory::<$vtype>::FACTORY
     }};
 }
@@ -188,8 +239,16 @@ pub trait Factory<Trait: ArchiveTrait + ?Sized>: Send + Sync {
     unsafe fn archived_value<'a>(&self, bytes: &'a [u8], pos: usize) -> &'a Trait::Archived;
 }
 
-struct FactoryImpl<T, Trait: ?Sized> {
+pub struct FactoryImpl<T, Trait: ?Sized> {
     phantom: PhantomData<fn(&T, &Trait)>,
+}
+
+impl<T, Trait: ?Sized> FactoryImpl<T, Trait> {
+    pub const fn new() -> &'static Self {
+        &Self {
+            phantom: PhantomData,
+        }
+    }
 }
 
 /// Trait for trait objects that can be created from instances of a concrete type `T`.
@@ -236,13 +295,14 @@ where
     // };
 
     fn factory() -> &'static dyn Factory<Self> {
-        println!(
-            "factory({}, {})",
-            std::any::type_name::<T>(),
-            std::any::type_name::<Self>(),
-        );
-        &FactoryImpl::<T, Self> {
-            phantom: PhantomData,
-        }
+        // println!(
+        //     "factory({}, {})",
+        //     std::any::type_name::<T>(),
+        //     std::any::type_name::<Self>(),
+        // );
+        register_required_factory(std::any::type_name::<Self>(), std::any::type_name::<T>());
+        find_factory::<T, Self>().unwrap()
+
+        //FactoryImpl::<T, Self>::new()
     }
 }
