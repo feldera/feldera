@@ -114,6 +114,12 @@
             }
             adhocQueries[pipelineName].queries[i].progress = false
             getAdhocQueries = () => adhocQueries
+          },
+          onNetworkError(e, injectValue) {
+            if (!adhocQueries[pipelineName].queries[i]) {
+              return
+            }
+            injectValue({ error: e.message })
           }
         },
         new CustomJSONParserTransformStream<Record<string, SQLValueJS>>({
