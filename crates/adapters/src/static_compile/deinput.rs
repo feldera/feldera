@@ -12,12 +12,14 @@ use anyhow::{anyhow, bail, Result as AnyResult};
 #[cfg(feature = "with-avro")]
 use apache_avro::types::Value as AvroValue;
 use arrow::array::RecordBatch;
+use dbsp::dynamic::Data;
 use dbsp::{
     algebra::HasOne, operator::Update, utils::Tup2, DBData, InputHandle, MapHandle, SetHandle,
     ZSetHandle, ZWeight,
 };
 use feldera_types::serde_with_context::{DeserializeWithContext, SqlSerdeConfig};
 use serde_arrow::Deserializer as ArrowDeserializer;
+use std::hash::Hasher;
 use std::{collections::VecDeque, marker::PhantomData, mem::swap, ops::Neg};
 
 /// A deserializer that parses byte arrays into a strongly typed representation.
@@ -361,6 +363,12 @@ where
         self.handle.append(&mut self.updates);
     }
 
+    fn hash(&self, hasher: &mut dyn Hasher) {
+        for update in &self.updates {
+            hasher.write_u64(update.default_hash())
+        }
+    }
+
     fn len(&self) -> usize {
         self.updates.len()
     }
@@ -466,6 +474,10 @@ where
         self.buffer.len()
     }
 
+    fn hash(&self, hasher: &mut dyn Hasher) {
+        self.buffer.hash(hasher)
+    }
+
     fn take_some(&mut self, n: usize) -> Option<Box<dyn InputBuffer>> {
         self.buffer.take_some(n)
     }
@@ -534,6 +546,10 @@ where
 
     fn len(&self) -> usize {
         self.buffer.len()
+    }
+
+    fn hash(&self, hasher: &mut dyn Hasher) {
+        self.buffer.hash(hasher)
     }
 }
 
@@ -607,6 +623,10 @@ where
 
     fn len(&self) -> usize {
         self.buffer.len()
+    }
+
+    fn hash(&self, hasher: &mut dyn Hasher) {
+        self.buffer.hash(hasher)
     }
 }
 
@@ -708,6 +728,12 @@ where
 
     fn len(&self) -> usize {
         self.updates.len()
+    }
+
+    fn hash(&self, hasher: &mut dyn Hasher) {
+        for update in &self.updates {
+            hasher.write_u64(update.default_hash())
+        }
     }
 
     fn take_some(&mut self, n: usize) -> Option<Box<dyn InputBuffer>> {
@@ -812,6 +838,10 @@ where
         self.buffer.len()
     }
 
+    fn hash(&self, hasher: &mut dyn Hasher) {
+        self.buffer.hash(hasher)
+    }
+
     fn take_some(&mut self, n: usize) -> Option<Box<dyn InputBuffer>> {
         self.buffer.take_some(n)
     }
@@ -876,6 +906,10 @@ where
 
     fn take_some(&mut self, n: usize) -> Option<Box<dyn InputBuffer>> {
         self.buffer.take_some(n)
+    }
+
+    fn hash(&self, hasher: &mut dyn Hasher) {
+        self.buffer.hash(hasher)
     }
 
     fn len(&self) -> usize {
@@ -949,6 +983,10 @@ where
 
     fn take_some(&mut self, n: usize) -> Option<Box<dyn InputBuffer>> {
         self.buffer.take_some(n)
+    }
+
+    fn hash(&self, hasher: &mut dyn Hasher) {
+        self.buffer.hash(hasher)
     }
 
     fn len(&self) -> usize {
@@ -1122,6 +1160,12 @@ where
         self.updates.len()
     }
 
+    fn hash(&self, hasher: &mut dyn Hasher) {
+        for update in &self.updates {
+            hasher.write_u64(update.default_hash())
+        }
+    }
+
     fn take_some(&mut self, n: usize) -> Option<Box<dyn InputBuffer>> {
         if !self.updates.is_empty() {
             Some(Box::new(DeMapStreamBuffer {
@@ -1266,6 +1310,10 @@ where
         self.buffer.len()
     }
 
+    fn hash(&self, hasher: &mut dyn Hasher) {
+        self.buffer.hash(hasher)
+    }
+
     fn take_some(&mut self, n: usize) -> Option<Box<dyn InputBuffer>> {
         self.buffer.take_some(n)
     }
@@ -1357,6 +1405,10 @@ where
 
     fn take_some(&mut self, n: usize) -> Option<Box<dyn InputBuffer>> {
         self.buffer.take_some(n)
+    }
+
+    fn hash(&self, hasher: &mut dyn Hasher) {
+        self.buffer.hash(hasher)
     }
 
     fn len(&self) -> usize {
@@ -1466,6 +1518,10 @@ where
 
     fn len(&self) -> usize {
         self.buffer.len()
+    }
+
+    fn hash(&self, hasher: &mut dyn Hasher) {
+        self.buffer.hash(hasher)
     }
 }
 

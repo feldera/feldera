@@ -2,6 +2,7 @@ use crate::format::parquet::{ParquetInputFormat, ParquetOutputFormat};
 #[cfg(feature = "with-avro")]
 use avro::input::AvroInputFormat;
 use once_cell::sync::Lazy;
+use std::hash::Hasher;
 use std::ops::Range;
 use std::{
     cmp::max,
@@ -71,6 +72,8 @@ pub struct EmptyInputBuffer;
 
 impl InputBuffer for EmptyInputBuffer {
     fn flush(&mut self) {}
+
+    fn hash(&self, _hasher: &mut dyn Hasher) {}
 
     fn len(&self) -> usize {
         0

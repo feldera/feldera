@@ -502,7 +502,7 @@ mod test {
     use serde::{Deserialize, Serialize};
     use std::sync::Arc;
 
-    #[derive(Debug, PartialEq, Eq, Serialize, Deserialize, Clone)]
+    #[derive(Debug, PartialEq, Eq, Hash, Serialize, Deserialize, Clone)]
     struct TestStruct {
         i: i64,
     }

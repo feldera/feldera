@@ -27,7 +27,7 @@ use feldera_types::{
 use proptest::prelude::*;
 use proptest::proptest;
 use serde::Serialize;
-use std::{borrow::Cow, collections::HashMap, fmt::Debug};
+use std::{borrow::Cow, collections::HashMap, fmt::Debug, hash::Hash};
 use std::{iter::repeat, sync::Arc};
 
 #[derive(Debug)]
@@ -314,7 +314,13 @@ where
 
 fn run_parser_test<T>(test_cases: Vec<TestCase<T>>)
 where
-    T: Debug + Eq + for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + Sync + 'static,
+    T: Debug
+        + Eq
+        + for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+        + Hash
+        + Send
+        + Sync
+        + 'static,
 {
     for test in test_cases {
         let format_config = FormatConfig {

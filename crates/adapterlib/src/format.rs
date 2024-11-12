@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 use std::fmt::{Display, Error as FmtError, Formatter};
+use std::hash::Hasher;
 
 use actix_web::HttpRequest;
 use anyhow::Result as AnyResult;
@@ -70,6 +71,15 @@ pub trait InputBuffer: Send {
     /// Returns the number of buffered records.
     fn len(&self) -> usize;
 
+    /// Hashes the records in the input buffer into `hasher`, in order.  This is
+    /// used to ensure that input data remains the same for replay, so, for
+    /// equal data, it should remain the same from one program run to the next.
+    /// Data might be divided into `InputBuffer`s differently from one run to
+    /// the next, so the data fed into `hasher` should be the same if, for
+    /// example, records 0..10 then 10..20 are fed in one run and 0..5, 5..15,
+    /// 15..20 in another.
+    fn hash(&self, hasher: &mut dyn Hasher);
+
     fn is_empty(&self) -> bool {
         self.len() == 0
     }
@@ -94,6 +104,12 @@ pub trait InputBuffer: Send {
 impl InputBuffer for Option<Box<dyn InputBuffer>> {
     fn len(&self) -> usize {
         self.as_ref().map_or(0, |buffer| buffer.len())
+    }
+
+    fn hash(&self, hasher: &mut dyn Hasher) {
+        if let Some(buffer) = self {
+            buffer.hash(hasher)
+        }
     }
 
     fn flush(&mut self) {
