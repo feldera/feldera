@@ -53,9 +53,8 @@ done
 if [ ${NEXT} = 'y' ]; then
     update_pom ${CALCITE_NEXT}
     pushd /tmp >/dev/null
-    git clone --quiet ${CALCITE_REPO}
+    git clone --quiet --single-branch --branch ${CALCITE_BRANCH} --depth 1 ${CALCITE_REPO}
     cd calcite
-    git checkout ${CALCITE_BRANCH}
     if [[ ! -z "${CALCITE_NEXT_COMMIT}" ]]; then
         git reset --hard ${CALCITE_NEXT_COMMIT}
     fi
