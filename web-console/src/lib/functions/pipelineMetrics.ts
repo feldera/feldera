@@ -145,7 +145,7 @@ export const calcPipelineThroughput = (metrics: { global: GlobalMetricsTimestamp
     const n0 = arr[i - 3] ?? n1
     return {
       name: n3[0].toString(),
-      value: tuple(n1[0], ((n3[1] - n0[1]) * 1000) / (n3[0] - n0[0]))
+      value: tuple(n3[0], ((n3[1] - n0[1]) * 1000) / (n3[0] - n0[0]))
     }
   })
 
