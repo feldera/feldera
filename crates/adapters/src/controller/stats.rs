@@ -115,15 +115,15 @@ where
 }
 
 impl GlobalControllerMetrics {
-    fn new() -> Self {
+    fn new(processed_records: u64) -> Self {
         Self {
             state: Atomic::new(PipelineState::Paused),
             #[cfg(any(target_os = "macos", target_os = "linux"))]
             rss_bytes: Some(AtomicU64::new(0)),
             cpu_msecs: Some(AtomicU64::new(0)),
             buffered_input_records: AtomicU64::new(0),
-            total_input_records: AtomicU64::new(0),
-            total_processed_records: AtomicU64::new(0),
+            total_input_records: AtomicU64::new(processed_records),
+            total_processed_records: AtomicU64::new(processed_records),
             pipeline_complete: AtomicBool::new(false),
             step_requested: AtomicBool::new(false),
         }
@@ -391,10 +391,10 @@ impl Serialize for ControllerMetric {
 }
 
 impl ControllerStatus {
-    pub fn new(pipeline_config: PipelineConfig) -> Self {
+    pub fn new(pipeline_config: PipelineConfig, processed_records: u64) -> Self {
         Self {
             pipeline_config,
-            global_metrics: GlobalControllerMetrics::new(),
+            global_metrics: GlobalControllerMetrics::new(processed_records),
             inputs: ShardedLock::new(BTreeMap::new()),
             outputs: ShardedLock::new(BTreeMap::new()),
             metrics: Mutex::new(Vec::new()),

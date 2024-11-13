@@ -495,10 +495,16 @@ impl CircuitThread {
             pipeline_config,
             circuit_config,
             ft,
+            processed_records,
         } = ControllerInit::new(config)?;
         let (circuit, catalog) = circuit_factory(circuit_config)?;
-        let (parker, backpressure_thread, command_receiver, controller) =
-            ControllerInner::new(pipeline_config, catalog, error_cb, ft.is_some())?;
+        let (parker, backpressure_thread, command_receiver, controller) = ControllerInner::new(
+            pipeline_config,
+            catalog,
+            error_cb,
+            ft.is_some(),
+            processed_records,
+        )?;
 
         let ft = ft
             .map(|ft| FtState::new(ft, controller.clone()))
@@ -898,6 +904,7 @@ impl FtState {
                     circuit: CheckpointMetadata::default(),
                     step: 0,
                     config,
+                    processed_records: 0,
                 };
                 checkpoint.write(&state_path)?;
 
@@ -1082,16 +1089,34 @@ impl FtState {
                     circuit,
                     step: self.step,
                     config,
+                    processed_records: self
+                        .controller
+                        .status
+                        .global_metrics
+                        .num_total_processed_records(),
                 };
                 let state_path = state_path(&self.controller.status.pipeline_config).unwrap();
                 checkpoint.write(&state_path).map(|()| checkpoint)
             })?;
-        self.step_rw = Some(
-            self.step_rw
-                .take()
-                .unwrap()
-                .truncate(&self.prev_step_metadata)?,
-        );
+
+        if self
+            .prev_step_metadata
+            .as_ref()
+            .is_none_or(|psm| self.step > psm.step)
+        {
+            self.step_rw = Some(
+                self.step_rw
+                    .take()
+                    .unwrap()
+                    .truncate(&self.prev_step_metadata)?,
+            );
+        } else {
+            // We have the current step's metadata instead of the previous
+            // one's. This is what happens if we checkpoint immediately after
+            // resume. No big deal, we'll just skip truncating the steps file
+            // until next checkpoint.
+        }
+
         Ok(checkpoint)
     }
 }
@@ -1221,6 +1246,9 @@ struct ControllerInit {
 
     /// Fault-tolerance initialization, if FT will be enabled.
     ft: Option<FtInit>,
+
+    /// Initial counter for `total_processed_records`.
+    processed_records: u64,
 }
 
 struct FtInit {
@@ -1251,6 +1279,7 @@ impl ControllerInit {
                 circuit_config: Self::circuit_config(&config, None)?,
                 pipeline_config: config,
                 ft: None,
+                processed_records: 0,
             });
         };
         let Some(state_path) = state_path(&config) else {
@@ -1275,6 +1304,7 @@ impl ControllerInit {
                 circuit,
                 step,
                 config,
+                processed_records,
             } = Checkpoint::read(&state_path)?;
 
             // There might be a steps file already (there must be, if
@@ -1298,6 +1328,7 @@ impl ControllerInit {
                     step,
                     step_rw: Some(step_rw),
                 }),
+                processed_records,
             })
         } else {
             // We're starting a new fault-tolerant pipeline.
@@ -1321,6 +1352,7 @@ impl ControllerInit {
                     step: 0,
                     step_rw: None,
                 }),
+                processed_records: 0,
             })
         }
     }
@@ -1682,12 +1714,13 @@ impl ControllerInner {
         catalog: Box<dyn CircuitCatalog>,
         error_cb: Box<dyn Fn(ControllerError) + Send + Sync>,
         fault_tolerant: bool,
+        processed_records: u64,
     ) -> Result<(Parker, BackpressureThread, Receiver<Command>, Arc<Self>), ControllerError> {
         let pipeline_name = config
             .name
             .as_ref()
             .map_or_else(|| "unnamed".to_string(), |n| n.clone());
-        let status = Arc::new(ControllerStatus::new(config));
+        let status = Arc::new(ControllerStatus::new(config, processed_records));
         let (metrics_snapshotter, prometheus_handle) =
             Self::install_metrics_recorder(pipeline_name);
         let circuit_thread_parker = Parker::new();
