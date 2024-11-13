@@ -26,6 +26,23 @@ public class CatalogTests extends BaseSQLTests {
     }
 
     @Test
+    public void issue2939() {
+        String sql = """
+                CREATE TABLE T(id int);
+                CREATE VIEW V(x, y) AS SELECT id, id FROM T;""";
+        var ccs = this.getCCS(sql);
+        assert ccs.compiler.messages.messages.isEmpty();
+    }
+
+    @Test
+    public void duplicatedViewColumnName() {
+        String sql = """
+                CREATE TABLE T(id int);
+                CREATE VIEW V(x, x) AS SELECT id, id+1 FROM T;""";
+        this.statementsFailingInCompilation(sql, "Column with name 'x' already defined");
+    }
+
+    @Test
     public void issue2028() {
         String sql = """
                 CREATE TABLE varchar_pk (
