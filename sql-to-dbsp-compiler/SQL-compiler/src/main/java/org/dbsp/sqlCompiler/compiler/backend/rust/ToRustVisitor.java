@@ -91,6 +91,7 @@ import org.dbsp.sqlCompiler.ir.statement.DBSPStructItem;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStructWithHelperItem;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeNull;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeOption;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeStream;
@@ -160,7 +161,7 @@ public class ToRustVisitor extends CircuitVisitor {
             this.builder.append(".map(|x| x");
             this.generateInto(option.typeArgs[0]);
             this.builder.append(")");
-        } else if (type.mayBeNull) {
+        } else if (type.mayBeNull && !type.is(DBSPTypeNull.class)) {
             this.builder.append(".map(|x| x");
             this.generateInto(type.withMayBeNull(false));
             this.builder.append(")");
