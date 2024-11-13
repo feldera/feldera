@@ -2797,6 +2797,9 @@ public class CalciteToDBSPCompiler extends RelVisitor
         CalciteObject object = CalciteObject.create(stat.createType.name);
         SqlCreateType ct = stat.createType;
         int index = 0;
+        if (!stat.relDataType.isStruct()) {
+            return null;
+        }
         List<RelDataTypeField> relFields = stat.relDataType.getFieldList();
         List<DBSPTypeStruct.Field> fields = new ArrayList<>();
         for (SqlNode def : Objects.requireNonNull(ct.attributeDefs)) {
