@@ -714,16 +714,19 @@ mod tests {
                 &sql_str_base.to_lowercase(), // lowercase
                 &sql_str_base.to_uppercase(), // UPPERCASE
             ] {
-                let value1: SqlType = serde_json::from_str(&format!("\"{}\"", sql_str)).expect(
-                    &format!("\"{sql_str}\" should deserialize into its SQL type"),
-                );
+                let value1: SqlType = serde_json::from_str(&format!("\"{}\"", sql_str))
+                    .unwrap_or_else(|_| {
+                        panic!("\"{sql_str}\" should deserialize into its SQL type")
+                    });
                 assert_eq!(value1, expected_value);
                 let serialized_str =
                     serde_json::to_string(&value1).expect("Value should serialize into JSON");
-                let value2: SqlType = serde_json::from_str(&serialized_str).expect(&format!(
-                    "{} should deserialize back into its SQL type",
-                    serialized_str
-                ));
+                let value2: SqlType = serde_json::from_str(&serialized_str).unwrap_or_else(|_| {
+                    panic!(
+                        "{} should deserialize back into its SQL type",
+                        serialized_str
+                    )
+                });
                 assert_eq!(value1, value2);
             }
         }
