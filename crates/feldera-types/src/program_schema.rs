@@ -1,4 +1,4 @@
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::fmt::Display;
@@ -309,9 +309,8 @@ impl<'de> Deserialize<'de> for Field {
 ///
 /// `INTERVAL 1 DAY`, `INTERVAL 1 DAY TO HOUR`, `INTERVAL 1 DAY TO MINUTE`,
 /// would yield `Day`, `DayToHour`, `DayToMinute`, as the `IntervalUnit` respectively.
-#[derive(Serialize, Deserialize, ToSchema, Debug, Eq, PartialEq, Clone, Copy)]
+#[derive(ToSchema, Debug, Eq, PartialEq, Clone, Copy)]
 #[cfg_attr(feature = "testing", derive(proptest_derive::Arbitrary))]
-#[serde(rename_all = "UPPERCASE")]
 pub enum IntervalUnit {
     /// Unit for `INTERVAL ... DAY`.
     Day,
@@ -342,70 +341,50 @@ pub enum IntervalUnit {
 }
 
 /// The available SQL types as specified in `CREATE` statements.
-#[derive(Serialize, ToSchema, Debug, Eq, PartialEq, Clone, Copy)]
+#[derive(ToSchema, Debug, Eq, PartialEq, Clone, Copy)]
 #[cfg_attr(feature = "testing", derive(proptest_derive::Arbitrary))]
 pub enum SqlType {
     /// SQL `BOOLEAN` type.
-    #[serde(rename = "BOOLEAN")]
     Boolean,
     /// SQL `TINYINT` type.
-    #[serde(rename = "TINYINT")]
     TinyInt,
     /// SQL `SMALLINT` or `INT2` type.
-    #[serde(rename = "SMALLINT")]
     SmallInt,
     /// SQL `INTEGER`, `INT`, `SIGNED`, `INT4` type.
-    #[serde(rename = "INTEGER")]
     Int,
     /// SQL `BIGINT` or `INT64` type.
-    #[serde(rename = "BIGINT")]
     BigInt,
     /// SQL `REAL` or `FLOAT4` or `FLOAT32` type.
-    #[serde(rename = "REAL")]
     Real,
     /// SQL `DOUBLE` or `FLOAT8` or `FLOAT64` type.
-    #[serde(rename = "DOUBLE")]
     Double,
     /// SQL `DECIMAL` or `DEC` or `NUMERIC` type.
-    #[serde(rename = "DECIMAL")]
     Decimal,
     /// SQL `CHAR(n)` or `CHARACTER(n)` type.
-    #[serde(rename = "CHAR")]
     Char,
     /// SQL `VARCHAR`, `CHARACTER VARYING`, `TEXT`, or `STRING` type.
-    #[serde(rename = "VARCHAR")]
     Varchar,
     /// SQL `BINARY(n)` type.
-    #[serde(rename = "BINARY")]
     Binary,
     /// SQL `VARBINARY` or `BYTEA` type.
-    #[serde(rename = "VARBINARY")]
     Varbinary,
     /// SQL `TIME` type.
-    #[serde(rename = "TIME")]
     Time,
     /// SQL `DATE` type.
-    #[serde(rename = "DATE")]
     Date,
     /// SQL `TIMESTAMP` type.
-    #[serde(rename = "TIMESTAMP")]
     Timestamp,
     /// SQL `INTERVAL ... X` type where `X` is a unit.
     Interval(IntervalUnit),
     /// SQL `ARRAY` type.
-    #[serde(rename = "ARRAY")]
     Array,
     /// A complex SQL struct type (`CREATE TYPE x ...`).
-    #[serde(rename = "STRUCT")]
     Struct,
     /// SQL `MAP` type.
-    #[serde(rename = "MAP")]
     Map,
     /// SQL `NULL` type.
-    #[serde(rename = "NULL")]
     Null,
     /// SQL `VARIANT` type.
-    #[serde(rename = "VARIANT")]
     Variant,
 }
 
@@ -463,9 +442,12 @@ impl<'de> Deserialize<'de> for SqlType {
     }
 }
 
-impl From<SqlType> for &'static str {
-    fn from(value: SqlType) -> &'static str {
-        match value {
+impl Serialize for SqlType {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let type_str = match self {
             SqlType::Boolean => "BOOLEAN",
             SqlType::TinyInt => "TINYINT",
             SqlType::SmallInt => "SMALLINT",
@@ -481,13 +463,28 @@ impl From<SqlType> for &'static str {
             SqlType::Time => "TIME",
             SqlType::Date => "DATE",
             SqlType::Timestamp => "TIMESTAMP",
-            SqlType::Interval(_) => "INTERVAL",
+            SqlType::Interval(interval_unit) => match interval_unit {
+                IntervalUnit::Day => "INTERVAL_DAY",
+                IntervalUnit::DayToHour => "INTERVAL_DAY_HOUR",
+                IntervalUnit::DayToMinute => "INTERVAL_DAY_MINUTE",
+                IntervalUnit::DayToSecond => "INTERVAL_DAY_SECOND",
+                IntervalUnit::Hour => "INTERVAL_HOUR",
+                IntervalUnit::HourToMinute => "INTERVAL_HOUR_MINUTE",
+                IntervalUnit::HourToSecond => "INTERVAL_HOUR_SECOND",
+                IntervalUnit::Minute => "INTERVAL_MINUTE",
+                IntervalUnit::MinuteToSecond => "INTERVAL_MINUTE_SECOND",
+                IntervalUnit::Month => "INTERVAL_MONTH",
+                IntervalUnit::Second => "INTERVAL_SECOND",
+                IntervalUnit::Year => "INTERVAL_YEAR",
+                IntervalUnit::YearToMonth => "INTERVAL_YEAR_MONTH",
+            },
             SqlType::Array => "ARRAY",
             SqlType::Struct => "STRUCT",
             SqlType::Map => "MAP",
-            SqlType::Variant => "VARIANT",
             SqlType::Null => "NULL",
-        }
+            SqlType::Variant => "VARIANT",
+        };
+        serializer.serialize_str(type_str)
     }
 }
 
@@ -651,8 +648,86 @@ impl ColumnType {
 
 #[cfg(test)]
 mod tests {
-    use super::SqlIdentifier;
+    use super::{IntervalUnit, SqlIdentifier};
     use crate::program_schema::SqlType;
+
+    #[test]
+    fn serde_sql_type() {
+        for (sql_str_base, expected_value) in [
+            ("Boolean", SqlType::Boolean),
+            ("TinyInt", SqlType::TinyInt),
+            ("SmallInt", SqlType::SmallInt),
+            ("Integer", SqlType::Int),
+            ("BigInt", SqlType::BigInt),
+            ("Real", SqlType::Real),
+            ("Double", SqlType::Double),
+            ("Decimal", SqlType::Decimal),
+            ("Char", SqlType::Char),
+            ("Varchar", SqlType::Varchar),
+            ("Binary", SqlType::Binary),
+            ("Varbinary", SqlType::Varbinary),
+            ("Time", SqlType::Time),
+            ("Date", SqlType::Date),
+            ("Timestamp", SqlType::Timestamp),
+            ("Interval_Day", SqlType::Interval(IntervalUnit::Day)),
+            (
+                "Interval_Day_Hour",
+                SqlType::Interval(IntervalUnit::DayToHour),
+            ),
+            (
+                "Interval_Day_Minute",
+                SqlType::Interval(IntervalUnit::DayToMinute),
+            ),
+            (
+                "Interval_Day_Second",
+                SqlType::Interval(IntervalUnit::DayToSecond),
+            ),
+            ("Interval_Hour", SqlType::Interval(IntervalUnit::Hour)),
+            (
+                "Interval_Hour_Minute",
+                SqlType::Interval(IntervalUnit::HourToMinute),
+            ),
+            (
+                "Interval_Hour_Second",
+                SqlType::Interval(IntervalUnit::HourToSecond),
+            ),
+            ("Interval_Minute", SqlType::Interval(IntervalUnit::Minute)),
+            (
+                "Interval_Minute_Second",
+                SqlType::Interval(IntervalUnit::MinuteToSecond),
+            ),
+            ("Interval_Month", SqlType::Interval(IntervalUnit::Month)),
+            ("Interval_Second", SqlType::Interval(IntervalUnit::Second)),
+            ("Interval_Year", SqlType::Interval(IntervalUnit::Year)),
+            (
+                "Interval_Year_Month",
+                SqlType::Interval(IntervalUnit::YearToMonth),
+            ),
+            ("Array", SqlType::Array),
+            ("Struct", SqlType::Struct),
+            ("Map", SqlType::Map),
+            ("Null", SqlType::Null),
+            ("Variant", SqlType::Variant),
+        ] {
+            for sql_str in [
+                sql_str_base,                 // Capitalized
+                &sql_str_base.to_lowercase(), // lowercase
+                &sql_str_base.to_uppercase(), // UPPERCASE
+            ] {
+                let value1: SqlType = serde_json::from_str(&format!("\"{}\"", sql_str)).expect(
+                    &format!("\"{sql_str}\" should deserialize into its SQL type"),
+                );
+                assert_eq!(value1, expected_value);
+                let serialized_str =
+                    serde_json::to_string(&value1).expect("Value should serialize into JSON");
+                let value2: SqlType = serde_json::from_str(&serialized_str).expect(&format!(
+                    "{} should deserialize back into its SQL type",
+                    serialized_str
+                ));
+                assert_eq!(value1, value2);
+            }
+        }
+    }
 
     #[test]
     fn deserialize_interval_types() {
