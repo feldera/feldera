@@ -111,6 +111,7 @@
             )
           }
         }}
+        enterkeyhint="done"
         placeholder="New Pipeline Name"
         class="input placeholder-surface-800 outline-none transition-none duration-0 bg-surface-50-950 dark:placeholder-surface-200"
       />
