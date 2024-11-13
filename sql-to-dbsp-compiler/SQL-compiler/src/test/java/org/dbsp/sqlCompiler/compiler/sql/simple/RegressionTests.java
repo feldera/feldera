@@ -15,6 +15,13 @@ import org.junit.Ignore;
 import org.junit.Test;
 
 public class RegressionTests extends SqlIoTest {
+    @Test
+    public void issue2943() {
+        this.compileRustTestCase("""
+                CREATE TABLE x(c1 TIMESTAMP, c2 TIMESTAMP);
+                CREATE VIEW v AS SELECT (c1 - c2) SECONDS FROM x;""");
+    }
+
     @Test @Ignore("https://issues.apache.org/jira/browse/CALCITE-6681")
     public void issueLateral() {
         // This triggers https://issues.apache.org/jira/browse/CALCITE-6681

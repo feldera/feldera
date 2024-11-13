@@ -168,7 +168,9 @@ public class RustSqlRuntimeLibrary {
         } else if (ltype.is(IsDateType.class)) {
             map = this.dateFunctions;
             if (opcode == DBSPOpcode.SUB || opcode == DBSPOpcode.ADD) {
-                if (ltype.is(DBSPTypeTimestamp.class) || ltype.is(DBSPTypeDate.class)) {
+                if (ltype.is(DBSPTypeTimestamp.class) ||
+                        ltype.is(DBSPTypeDate.class) ||
+                        ltype.is(DBSPTypeTime.class)) {
                     assert rtype != null;
                     suffixReturn = "_" + expectedReturnType.baseTypeWithSuffix();
                     if (rtype.is(IsNumericType.class))

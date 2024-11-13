@@ -272,21 +272,22 @@ an increased precision for the corresponding type, e.g.:
 
 The following arithmetic operations are supported:
 
-| Operation                   | Result Type        | Explanation                                                      |
-|-----------------------------|--------------------|------------------------------------------------------------------|
-| `DATE` + `INTERVAL`         | `DATE`             | Add an interval to a date                                        |
-| `INTERVAL` + `INTERVAL`     | `INTERVAL`         | Add two intervals; both must have the same type                  |
-| `TIMESTAMP` + `INTERVAL`    | `TIMESTAMP`        | Add an interval to a timestamp                                   |
-| `TIME` + `INTERVAL`         | `TIME`             | Add an interval to a time. Performs wrapping addition.           |
-| `-` `INTERVAL`              | `INTERVAL`         | Negate an interval                                               |
-| `DATE` - `INTERVAL`         | `DATE`             | Subtract an interval from a date                                 |
-| `TIME` - `TIME`             | `INTERVAL` (short) | Compute the difference between two times                         |
-| `TIME` - `INTERVAL`         | `TIME`             | Subtract an interval from a time. Performs wrapping subtraction. |
-| `TIMESTAMP` - `INTERVAL`    | `TIMESTAMP`        | Subtract an interval from a timestamp                            |
-| `INTERVAL` - `INTERVAL`     | `INTERVAL`         | Subtract two intervals                                           |
-| `INTERVAL` * `DOUBLE`       | `INTERVAL`         | Multiply an interval by a scalar                                 |
-| `INTERVAL` / `DOUBLE`       | `INTERVAL`         | Divide an interval by a scalar                                   |
-| `TIMESTAMP` - `TIMESTAMP`   | `INTERVAL` (long)  | Subtract two timestamps, convert result into days                |
+| Operation                     | Result Type        | Explanation                                                      |
+|-------------------------------|--------------------|------------------------------------------------------------------|
+| `DATE` `+` `INTERVAL`         | `DATE`             | Add an interval to a date                                        |
+| `INTERVAL` `+` `INTERVAL`     | `INTERVAL`         | Add two intervals; both must have the same type                  |
+| `TIMESTAMP` `+` `INTERVAL`    | `TIMESTAMP`        | Add an interval to a timestamp                                   |
+| `TIME` `+` `INTERVAL`         | `TIME`             | Add an interval to a time. Performs wrapping addition.           |
+| `-` `INTERVAL`                | `INTERVAL`         | Negate an interval                                               |
+| `DATE` `-` `INTERVAL`         | `DATE`             | Subtract an interval from a date                                 |
+| (`TIME` `-` `TIME`) TIMEUNIT  | `INTERVAL` (short) | Compute the difference between two times                         |
+| `TIME` `-` `INTERVAL`         | `TIME`             | Subtract an interval from a time. Performs wrapping subtraction. |
+| `TIMESTAMP` `-` `INTERVAL`    | `TIMESTAMP`        | Subtract an interval from a timestamp                            |
+| `INTERVAL` `-` `INTERVAL`     | `INTERVAL`         | Subtract two intervals                                           |
+| `INTERVAL` `*` `DOUBLE`       | `INTERVAL`         | Multiply an interval by a scalar                                 |
+| `INTERVAL` `/` `DOUBLE`       | `INTERVAL`         | Divide an interval by a scalar                                   |
+| (`DATE` `-` `DATE`) `TIMEUNIT`| `INTERVAL`         | Subtract two dates, generate an interval with the specified time units |
+| (`TIMESTAMP` `-` `TIMESTAMP`) `TIMEUNIT` | `INTERVAL` | Subtract two timestamps, generate an interval with the specified time units |
 
 Arithmetic involving a `TIME` value always produces a (positive)
 `TIME` value, between `00:00:00` (inclusive) and `24:00:00`
@@ -300,6 +301,9 @@ number of days).
 Arithmetic between a DATE and an INTERVAL first converts the interval
 to a whole number days (rounding down) and then performs the
 computation on whole days.
+
+Subtraction between two dates, timestamps, or times must be followed
+by a TIMEUNIT qualifier: e.g., `(DATE '2024-01-01' - DATE '2023-12-31') DAYS`.
 
 ## Timezones
 

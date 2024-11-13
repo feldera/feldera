@@ -319,6 +319,13 @@ polymorphic_return_function2!(
 );
 
 #[doc(hidden)]
+pub fn minus_Time_Time_ShortInterval(left: Time, right: Time) -> ShortInterval {
+    ShortInterval::from((left.nanoseconds() as i64 - right.nanoseconds() as i64) / 1000000)
+}
+
+polymorphic_return_function2!(minus, Time, Time, Time, Time, ShortInterval, ShortInterval);
+
+#[doc(hidden)]
 pub fn minus_Timestamp_ShortInterval_Timestamp(left: Timestamp, right: ShortInterval) -> Timestamp {
     Timestamp::new(left.milliseconds() - right.milliseconds())
 }
@@ -1724,3 +1731,35 @@ pub fn time_trunc_second_Time(time: Time) -> Time {
 some_polymorphic_function1!(time_trunc_hour, Time, Time, Time);
 some_polymorphic_function1!(time_trunc_minute, Time, Time, Time);
 some_polymorphic_function1!(time_trunc_second, Time, Time, Time);
+
+#[doc(hidden)]
+#[inline(always)]
+pub fn plus_Time_ShortInterval_Time(left: Time, right: ShortInterval) -> Time {
+    left + right
+}
+
+polymorphic_return_function2!(plus, Time, Time, ShortInterval, ShortInterval, Time, Time);
+
+#[doc(hidden)]
+#[inline(always)]
+pub fn minus_Time_ShortInterval_Time(left: Time, right: ShortInterval) -> Time {
+    left - right
+}
+
+polymorphic_return_function2!(minus, Time, Time, ShortInterval, ShortInterval, Time, Time);
+
+#[doc(hidden)]
+#[inline(always)]
+pub fn plus_Time_LongInterval_Time(left: Time, _: LongInterval) -> Time {
+    left
+}
+
+polymorphic_return_function2!(plus, Time, Time, LongInterval, LongInterval, Time, Time);
+
+#[doc(hidden)]
+#[inline(always)]
+pub fn minus_Time_LongInterval_Time(left: Time, _: LongInterval) -> Time {
+    left
+}
+
+polymorphic_return_function2!(minus, Time, Time, LongInterval, LongInterval, Time, Time);
