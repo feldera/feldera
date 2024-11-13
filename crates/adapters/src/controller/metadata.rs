@@ -22,6 +22,7 @@ pub struct Checkpoint {
     pub circuit: CheckpointMetadata,
     pub step: Step,
     pub config: PipelineConfig,
+    pub processed_records: u64,
 }
 
 impl Checkpoint {
