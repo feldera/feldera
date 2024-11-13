@@ -1202,30 +1202,6 @@ where
 }
 
 #[doc(hidden)]
-#[inline(always)]
-pub fn plus_Time_ShortInterval(left: Time, right: ShortInterval) -> Time {
-    left + right
-}
-
-#[doc(hidden)]
-#[inline(always)]
-pub fn minus_Time_ShortInterval(left: Time, right: ShortInterval) -> Time {
-    left - right
-}
-
-#[doc(hidden)]
-#[inline(always)]
-pub fn plus_Time_LongInterval(left: Time, _: LongInterval) -> Time {
-    left
-}
-
-#[doc(hidden)]
-#[inline(always)]
-pub fn minus_Time_LongInterval(left: Time, _: LongInterval) -> Time {
-    left
-}
-
-#[doc(hidden)]
 pub fn times_ShortInterval_i64(left: ShortInterval, right: i64) -> ShortInterval {
     left * right
 }

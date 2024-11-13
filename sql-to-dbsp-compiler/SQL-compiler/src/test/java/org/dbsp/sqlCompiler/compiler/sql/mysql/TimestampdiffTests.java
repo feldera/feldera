@@ -390,4 +390,26 @@ public class TimestampdiffTests extends SqlIoTest {
                 (1 row)"""
                 );
     }
+
+    @Test
+    public void diffTests() {
+        this.qs("""
+                select (DATE '2024-01-01' - DATE '2023-12-31') DAYS;
+                 days
+                ------
+                 1 day
+                (1 row)
+                
+                 select (TIME '12:00:00' - TIME '10:00:00') MINUTES;
+                 minutes
+                ---------
+                 2 hours
+                (1 row)
+                
+                 select (TIMESTAMP '2024-01-01 12:00:00' - TIMESTAMP '2023-12-31 10:00:00') MINUTES;
+                 minutes
+                ---------
+                 1 day 2 hours
+                (1 row)""");
+    }
 }
