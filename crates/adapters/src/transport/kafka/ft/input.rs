@@ -172,7 +172,7 @@ impl KafkaFtInputReaderInner {
                             ReplayAction::Replay => {
                                 consumer.parse_errors(msg.errors);
                                 total_records += msg.buffer.len();
-                                msg.buffer.flush_all()
+                                msg.buffer.flush()
                             }
                             ReplayAction::Defer => unreachable!(
                                 "`replay_messages` was split so that this couldn't happen."
@@ -200,7 +200,7 @@ impl KafkaFtInputReaderInner {
                             ReplayAction::Replay => {
                                 consumer.parse_errors(errors);
                                 total_records += buffer.len();
-                                buffer.flush_all();
+                                buffer.flush();
                             }
                             ReplayAction::Defer => {
                                 // Message is after the step we're replaying.
@@ -240,7 +240,8 @@ impl KafkaFtInputReaderInner {
                                 for (partition, buf) in partitions.iter_mut().enumerate() {
                                     if let Some((offset, mut msg)) = buf.messages.pop_first() {
                                         consumer.parse_errors(msg.errors);
-                                        total += msg.buffer.flush_all();
+                                        total += msg.buffer.len();
+                                        msg.buffer.flush();
                                         empty = false;
 
                                         let range = &mut ranges[topic][partition];

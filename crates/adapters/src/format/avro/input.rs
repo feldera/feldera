@@ -439,7 +439,7 @@ impl Parser for AvroParser {
     }
     fn parse(&mut self, data: &[u8]) -> (Option<Box<dyn InputBuffer>>, Vec<ParseError>) {
         let errors = self.input(data).map_or_else(|e| vec![e], |_| Vec::new());
-        let buffer = self.input_stream.as_mut().and_then(|avro| avro.take());
+        let buffer = self.input_stream.as_mut().and_then(|avro| avro.take_all());
         (buffer, errors)
     }
 

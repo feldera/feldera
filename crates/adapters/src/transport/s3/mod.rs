@@ -267,7 +267,8 @@ impl S3InputReader {
                                 let (mut buffer, errors) = parser.parse(chunk);
                                 consumer.parse_errors(errors);
                                 consumer.buffered(buffer.len(), chunk.len());
-                                num_records += buffer.flush_all();
+                                num_records += buffer.len();
+                                buffer.flush();
                             }
                         }
                     }
@@ -356,7 +357,8 @@ impl S3InputReader {
                                 let Some(QueuedBuffer { key, start_offset, end_offset, mut buffer }) = queue.pop_front() else {
                                     break
                                 };
-                                total += buffer.flush_all();
+                                total += buffer.len();
+                                buffer.flush();
                                 offsets.entry(key)
                                     .and_modify(|value| value.1 = end_offset)
                                     .or_insert((start_offset, end_offset));

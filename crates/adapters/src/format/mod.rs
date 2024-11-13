@@ -70,15 +70,13 @@ pub fn get_output_format(name: &str) -> Option<&'static dyn OutputFormat> {
 pub struct EmptyInputBuffer;
 
 impl InputBuffer for EmptyInputBuffer {
-    fn flush(&mut self, _n: usize) -> usize {
-        0
-    }
+    fn flush(&mut self) {}
 
     fn len(&self) -> usize {
         0
     }
 
-    fn take(&mut self) -> Option<Box<dyn InputBuffer>> {
+    fn take_some(&mut self, _n: usize) -> Option<Box<dyn InputBuffer>> {
         None
     }
 }

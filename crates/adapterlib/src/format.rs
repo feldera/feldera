@@ -63,14 +63,9 @@ pub trait InputFormat: Send + Sync {
 /// more [InputBuffer]s and pushes them to the circuit when the controller
 /// requests it.
 pub trait InputBuffer: Send {
-    /// Pushes the `n` earliest buffered records into the circuit input
-    /// handle. If fewer than `n` are available, pushes all of them.  Discards
-    /// the records that are sent.  Returns the number sent.
-    fn flush(&mut self, n: usize) -> usize;
-
-    fn flush_all(&mut self) -> usize {
-        self.flush(usize::MAX)
-    }
+    /// Pushes all of the records into the circuit input handle, and discards
+    /// those records.
+    fn flush(&mut self);
 
     /// Returns the number of buffered records.
     fn len(&self) -> usize;
@@ -79,13 +74,21 @@ pub trait InputBuffer: Send {
         self.len() == 0
     }
 
-    /// Removes all of the records from this input buffer and returns a new
-    /// [InputBuffer] that holds them. Returns `None` if this input buffer is
-    /// empty.
+    /// Removes the first `n` records from this input buffer and returns a new
+    /// [InputBuffer] that holds them. If fewer than `n` records are available,
+    /// returns all of them. May return `None` if this input buffer is empty (or
+    /// if `n` is 0).
+    ///
+    /// Some implementations can't implement `n` with full granularity. These
+    /// implementations might return more than `n` records.
     ///
     /// This is useful for extracting the records from one of several parser
     /// threads to send to a single common thread to be pushed later.
-    fn take(&mut self) -> Option<Box<dyn InputBuffer>>;
+    fn take_some(&mut self, n: usize) -> Option<Box<dyn InputBuffer>>;
+
+    fn take_all(&mut self) -> Option<Box<dyn InputBuffer>> {
+        self.take_some(usize::MAX)
+    }
 }
 
 impl InputBuffer for Option<Box<dyn InputBuffer>> {
@@ -93,12 +96,14 @@ impl InputBuffer for Option<Box<dyn InputBuffer>> {
         self.as_ref().map_or(0, |buffer| buffer.len())
     }
 
-    fn flush(&mut self, n: usize) -> usize {
-        self.as_mut().map_or(0, |buffer| buffer.flush(n))
+    fn flush(&mut self) {
+        if let Some(buffer) = self.as_mut() {
+            buffer.flush()
+        }
     }
 
-    fn take(&mut self) -> Option<Box<dyn InputBuffer>> {
-        self.as_mut().and_then(|buffer| buffer.take())
+    fn take_some(&mut self, n: usize) -> Option<Box<dyn InputBuffer>> {
+        self.as_mut().and_then(|buffer| buffer.take_some(n))
     }
 }
 

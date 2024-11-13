@@ -18,7 +18,7 @@ use dbsp::{
 };
 use feldera_types::serde_with_context::{DeserializeWithContext, SqlSerdeConfig};
 use serde_arrow::Deserializer as ArrowDeserializer;
-use std::{cmp::min, collections::VecDeque, marker::PhantomData, mem::take, ops::Neg};
+use std::{collections::VecDeque, marker::PhantomData, mem::swap, ops::Neg};
 
 /// A deserializer that parses byte arrays into a strongly typed representation.
 pub trait DeserializerFromBytes<C> {
@@ -357,21 +357,22 @@ impl<K> InputBuffer for DeZSetStreamBuffer<K>
 where
     K: DBData,
 {
-    fn flush(&mut self, n: usize) -> usize {
-        let n = min(n, self.len());
-        let mut head = self.updates.drain(..n).collect();
-        self.handle.append(&mut head);
-        n
+    fn flush(&mut self) {
+        self.handle.append(&mut self.updates);
     }
 
     fn len(&self) -> usize {
         self.updates.len()
     }
 
-    fn take(&mut self) -> Option<Box<dyn InputBuffer>> {
+    fn take_some(&mut self, n: usize) -> Option<Box<dyn InputBuffer>> {
         if !self.updates.is_empty() {
             Some(Box::new(Self {
-                updates: take(&mut self.updates),
+                updates: {
+                    let mut some = self.updates.split_off(self.updates.len().min(n));
+                    swap(&mut some, &mut self.updates);
+                    some
+                },
                 handle: self.handle.clone(),
             }))
         } else {
@@ -457,16 +458,16 @@ where
     K: DBData + From<D>,
     D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
 {
-    fn flush(&mut self, n: usize) -> usize {
-        self.buffer.flush(n)
+    fn flush(&mut self) {
+        self.buffer.flush()
     }
 
     fn len(&self) -> usize {
         self.buffer.len()
     }
 
-    fn take(&mut self) -> Option<Box<dyn InputBuffer>> {
-        self.buffer.take()
+    fn take_some(&mut self, n: usize) -> Option<Box<dyn InputBuffer>> {
+        self.buffer.take_some(n)
     }
 }
 
@@ -523,12 +524,12 @@ where
     D: for<'de> DeserializeWithContext<'de, C> + Send + 'static,
     C: Clone + Send + 'static,
 {
-    fn flush(&mut self, n: usize) -> usize {
-        self.buffer.flush(n)
+    fn flush(&mut self) {
+        self.buffer.flush()
     }
 
-    fn take(&mut self) -> Option<Box<dyn InputBuffer>> {
-        self.buffer.take()
+    fn take_some(&mut self, n: usize) -> Option<Box<dyn InputBuffer>> {
+        self.buffer.take_some(n)
     }
 
     fn len(&self) -> usize {
@@ -596,12 +597,12 @@ where
     K: DBData + From<D>,
     D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + Sync + 'static,
 {
-    fn flush(&mut self, n: usize) -> usize {
-        self.buffer.flush(n)
+    fn flush(&mut self) {
+        self.buffer.flush()
     }
 
-    fn take(&mut self) -> Option<Box<dyn InputBuffer>> {
-        self.buffer.take()
+    fn take_some(&mut self, n: usize) -> Option<Box<dyn InputBuffer>> {
+        self.buffer.take_some(n)
     }
 
     fn len(&self) -> usize {
@@ -701,21 +702,22 @@ impl<K> InputBuffer for DeSetStreamBuffer<K>
 where
     K: DBData,
 {
-    fn flush(&mut self, n: usize) -> usize {
-        let n = min(n, self.len());
-        let mut head = self.updates.drain(..n).collect();
-        self.handle.append(&mut head);
-        n
+    fn flush(&mut self) {
+        self.handle.append(&mut self.updates);
     }
 
     fn len(&self) -> usize {
         self.updates.len()
     }
 
-    fn take(&mut self) -> Option<Box<dyn InputBuffer>> {
+    fn take_some(&mut self, n: usize) -> Option<Box<dyn InputBuffer>> {
         if !self.updates.is_empty() {
             Some(Box::new(DeSetStreamBuffer {
-                updates: take(&mut self.updates),
+                updates: {
+                    let mut some = self.updates.split_off(self.updates.len().min(n));
+                    swap(&mut some, &mut self.updates);
+                    some
+                },
                 handle: self.handle.clone(),
             }))
         } else {
@@ -802,16 +804,16 @@ where
     K: DBData + From<D>,
     D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
 {
-    fn flush(&mut self, n: usize) -> usize {
-        self.buffer.flush(n)
+    fn flush(&mut self) {
+        self.buffer.flush()
     }
 
     fn len(&self) -> usize {
         self.buffer.len()
     }
 
-    fn take(&mut self) -> Option<Box<dyn InputBuffer>> {
-        self.buffer.take()
+    fn take_some(&mut self, n: usize) -> Option<Box<dyn InputBuffer>> {
+        self.buffer.take_some(n)
     }
 }
 
@@ -868,12 +870,12 @@ where
     D: for<'de> DeserializeWithContext<'de, C> + Send + 'static,
     C: Clone + Send + 'static,
 {
-    fn flush(&mut self, n: usize) -> usize {
-        self.buffer.flush(n)
+    fn flush(&mut self) {
+        self.buffer.flush()
     }
 
-    fn take(&mut self) -> Option<Box<dyn InputBuffer>> {
-        self.buffer.take()
+    fn take_some(&mut self, n: usize) -> Option<Box<dyn InputBuffer>> {
+        self.buffer.take_some(n)
     }
 
     fn len(&self) -> usize {
@@ -941,12 +943,12 @@ where
     K: DBData + From<D>,
     D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
 {
-    fn flush(&mut self, n: usize) -> usize {
-        self.buffer.flush(n)
+    fn flush(&mut self) {
+        self.buffer.flush()
     }
 
-    fn take(&mut self) -> Option<Box<dyn InputBuffer>> {
-        self.buffer.take()
+    fn take_some(&mut self, n: usize) -> Option<Box<dyn InputBuffer>> {
+        self.buffer.take_some(n)
     }
 
     fn len(&self) -> usize {
@@ -1112,21 +1114,22 @@ where
     V: DBData,
     U: DBData,
 {
-    fn flush(&mut self, n: usize) -> usize {
-        let n = min(n, self.len());
-        let mut head = self.updates.drain(..n).collect();
-        self.handle.append(&mut head);
-        n
+    fn flush(&mut self) {
+        self.handle.append(&mut self.updates);
     }
 
     fn len(&self) -> usize {
         self.updates.len()
     }
 
-    fn take(&mut self) -> Option<Box<dyn InputBuffer>> {
+    fn take_some(&mut self, n: usize) -> Option<Box<dyn InputBuffer>> {
         if !self.updates.is_empty() {
             Some(Box::new(DeMapStreamBuffer {
-                updates: take(&mut self.updates),
+                updates: {
+                    let mut some = self.updates.split_off(self.updates.len().min(n));
+                    swap(&mut some, &mut self.updates);
+                    some
+                },
                 handle: self.handle.clone(),
             }))
         } else {
@@ -1255,16 +1258,16 @@ where
     VF: Fn(&V) -> K + Clone + Send + Sync + 'static,
     UF: Fn(&U) -> K + Clone + Send + Sync + 'static,
 {
-    fn flush(&mut self, n: usize) -> usize {
-        self.buffer.flush(n)
+    fn flush(&mut self) {
+        self.buffer.flush()
     }
 
     fn len(&self) -> usize {
         self.buffer.len()
     }
 
-    fn take(&mut self) -> Option<Box<dyn InputBuffer>> {
-        self.buffer.take()
+    fn take_some(&mut self, n: usize) -> Option<Box<dyn InputBuffer>> {
+        self.buffer.take_some(n)
     }
 }
 
@@ -1348,12 +1351,12 @@ where
     U: DBData,
     VF: Fn(&V) -> K + Clone + Send + Sync + 'static,
 {
-    fn flush(&mut self, n: usize) -> usize {
-        self.buffer.flush(n)
+    fn flush(&mut self) {
+        self.buffer.flush()
     }
 
-    fn take(&mut self) -> Option<Box<dyn InputBuffer>> {
-        self.buffer.take()
+    fn take_some(&mut self, n: usize) -> Option<Box<dyn InputBuffer>> {
+        self.buffer.take_some(n)
     }
 
     fn len(&self) -> usize {
@@ -1453,12 +1456,12 @@ where
     U: DBData,
     VF: Fn(&V) -> K + Clone + Send + Sync + 'static,
 {
-    fn flush(&mut self, n: usize) -> usize {
-        self.buffer.flush(n)
+    fn flush(&mut self) {
+        self.buffer.flush()
     }
 
-    fn take(&mut self) -> Option<Box<dyn InputBuffer>> {
-        self.buffer.take()
+    fn take_some(&mut self, n: usize) -> Option<Box<dyn InputBuffer>> {
+        self.buffer.take_some(n)
     }
 
     fn len(&self) -> usize {
@@ -1717,9 +1720,9 @@ mod test {
             }
         }
 
-        zset_stream.flush_all();
-        set_stream.flush_all();
-        map_stream.flush_all();
+        zset_stream.flush();
+        set_stream.flush();
+        map_stream.flush();
 
         dbsp.step().unwrap();
 
@@ -1772,14 +1775,14 @@ mod test {
             let input = to_json_string(input).unwrap();
 
             zset_input.delete(input.as_bytes()).unwrap();
-            zset_input.flush_all();
+            zset_input.flush();
 
             set_input.delete(input.as_bytes()).unwrap();
-            set_input.flush_all();
+            set_input.flush();
 
             let input_id = to_json_string(&id).unwrap();
             map_input.delete(input_id.as_bytes()).unwrap();
-            map_input.flush_all();
+            map_input.flush();
         }
 
         dbsp.step().unwrap();

@@ -151,7 +151,7 @@ impl Parser for ParquetParser {
                 )),
             )],
         };
-        (self.input_stream.take(), errors)
+        (self.input_stream.take_all(), errors)
     }
 
     fn fork(&self) -> Box<dyn Parser> {
