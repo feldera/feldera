@@ -2866,19 +2866,19 @@
         "type": "string",
         "description": "The specified units for SQL Interval types.\n\n`INTERVAL 1 DAY`, `INTERVAL 1 DAY TO HOUR`, `INTERVAL 1 DAY TO MINUTE`,\nwould yield `Day`, `DayToHour`, `DayToMinute`, as the `IntervalUnit` respectively.",
         "enum": [
-          "DAY",
-          "DAYTOHOUR",
-          "DAYTOMINUTE",
-          "DAYTOSECOND",
-          "HOUR",
-          "HOURTOMINUTE",
-          "HOURTOSECOND",
-          "MINUTE",
-          "MINUTETOSECOND",
-          "MONTH",
-          "SECOND",
-          "YEAR",
-          "YEARTOMONTH"
+          "Day",
+          "DayToHour",
+          "DayToMinute",
+          "DayToSecond",
+          "Hour",
+          "HourToMinute",
+          "HourToSecond",
+          "Minute",
+          "MinuteToSecond",
+          "Month",
+          "Second",
+          "Year",
+          "YearToMonth"
         ]
       },
       "JsonUpdateFormat": {
@@ -4074,105 +4074,105 @@
             "type": "string",
             "description": "SQL `BOOLEAN` type.",
             "enum": [
-              "BOOLEAN"
+              "Boolean"
             ]
           },
           {
             "type": "string",
             "description": "SQL `TINYINT` type.",
             "enum": [
-              "TINYINT"
+              "TinyInt"
             ]
           },
           {
             "type": "string",
             "description": "SQL `SMALLINT` or `INT2` type.",
             "enum": [
-              "SMALLINT"
+              "SmallInt"
             ]
           },
           {
             "type": "string",
             "description": "SQL `INTEGER`, `INT`, `SIGNED`, `INT4` type.",
             "enum": [
-              "INTEGER"
+              "Int"
             ]
           },
           {
             "type": "string",
             "description": "SQL `BIGINT` or `INT64` type.",
             "enum": [
-              "BIGINT"
+              "BigInt"
             ]
           },
           {
             "type": "string",
             "description": "SQL `REAL` or `FLOAT4` or `FLOAT32` type.",
             "enum": [
-              "REAL"
+              "Real"
             ]
           },
           {
             "type": "string",
             "description": "SQL `DOUBLE` or `FLOAT8` or `FLOAT64` type.",
             "enum": [
-              "DOUBLE"
+              "Double"
             ]
           },
           {
             "type": "string",
             "description": "SQL `DECIMAL` or `DEC` or `NUMERIC` type.",
             "enum": [
-              "DECIMAL"
+              "Decimal"
             ]
           },
           {
             "type": "string",
             "description": "SQL `CHAR(n)` or `CHARACTER(n)` type.",
             "enum": [
-              "CHAR"
+              "Char"
             ]
           },
           {
             "type": "string",
             "description": "SQL `VARCHAR`, `CHARACTER VARYING`, `TEXT`, or `STRING` type.",
             "enum": [
-              "VARCHAR"
+              "Varchar"
             ]
           },
           {
             "type": "string",
             "description": "SQL `BINARY(n)` type.",
             "enum": [
-              "BINARY"
+              "Binary"
             ]
           },
           {
             "type": "string",
             "description": "SQL `VARBINARY` or `BYTEA` type.",
             "enum": [
-              "VARBINARY"
+              "Varbinary"
             ]
           },
           {
             "type": "string",
             "description": "SQL `TIME` type.",
             "enum": [
-              "TIME"
+              "Time"
             ]
           },
           {
             "type": "string",
             "description": "SQL `DATE` type.",
             "enum": [
-              "DATE"
+              "Date"
             ]
           },
           {
             "type": "string",
             "description": "SQL `TIMESTAMP` type.",
             "enum": [
-              "TIMESTAMP"
+              "Timestamp"
             ]
           },
           {
@@ -4190,35 +4190,35 @@
             "type": "string",
             "description": "SQL `ARRAY` type.",
             "enum": [
-              "ARRAY"
+              "Array"
             ]
           },
           {
             "type": "string",
             "description": "A complex SQL struct type (`CREATE TYPE x ...`).",
             "enum": [
-              "STRUCT"
+              "Struct"
             ]
           },
           {
             "type": "string",
             "description": "SQL `MAP` type.",
             "enum": [
-              "MAP"
+              "Map"
             ]
           },
           {
             "type": "string",
             "description": "SQL `NULL` type.",
             "enum": [
-              "NULL"
+              "Null"
             ]
           },
           {
             "type": "string",
             "description": "SQL `VARIANT` type.",
             "enum": [
-              "VARIANT"
+              "Variant"
             ]
           }
         ],
