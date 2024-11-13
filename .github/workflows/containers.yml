@@ -78,18 +78,6 @@ jobs:
           tags: ${{ steps.meta_pipeline_manager.outputs.tags }}
           labels: ${{ steps.meta_pipeline_manager.outputs.labels }}
 
-      # Tagged Kafka Connect image
-      - name: Push (kafka-connect)
-        uses: docker/build-push-action@v4
-        if: github.event_name == 'release'
-        with:
-          context: .
-          file: deploy/Dockerfile
-          target: kafka-connect
-          push: true
-          tags: ${{ steps.meta_kafka_connect.outputs.tags }}
-          labels: ${{ steps.meta_kafka_connect.outputs.labels }}
-
       - uses: actions/delete-package-versions@v4
         with:
           package-name: pipeline-manager
