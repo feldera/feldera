@@ -123,7 +123,7 @@ impl AdHocInputEndpoint {
         arrow_inserter: &mut Box<dyn ArrowStream>,
     ) -> AnyResult<u64> {
         arrow_inserter.insert(&batch)?;
-        let buffer = arrow_inserter.take();
+        let buffer = arrow_inserter.take_all();
         let num_records = buffer.len();
         if !buffer.is_empty() {
             let mut aux = Vec::new();
@@ -270,7 +270,8 @@ impl InputReader for AdHocInputEndpoint {
                     let (mut buffer, errors) = details.parser.parse(&chunk);
                     details.consumer.buffered(buffer.len(), !chunk.len());
                     details.consumer.parse_errors(errors);
-                    num_records += buffer.flush_all();
+                    num_records += buffer.len();
+                    buffer.flush();
                 }
                 details.consumer.replayed(num_records);
             }

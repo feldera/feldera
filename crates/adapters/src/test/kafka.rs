@@ -300,7 +300,7 @@ impl BufferConsumer {
                             };
 
                             if let Some(payload) = message.payload() {
-                                parser.parse(payload).0.flush_all();
+                                parser.parse(payload).0.flush();
                             }
                         }
                     }

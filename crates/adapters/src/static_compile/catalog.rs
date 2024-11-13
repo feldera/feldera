@@ -498,7 +498,7 @@ mod test {
         input_stream_handle
             .insert(br#"{"id": 2, "b": true, "s": "2"}"#)
             .unwrap();
-        input_stream_handle.flush_all();
+        input_stream_handle.flush();
 
         circuit.step().unwrap();
 
@@ -515,7 +515,7 @@ mod test {
         input_stream_handle
             .insert(br#"{"id": 1, "b": true, "s": "1-modified"}"#)
             .unwrap();
-        input_stream_handle.flush_all();
+        input_stream_handle.flush();
 
         circuit.step().unwrap();
 
@@ -530,7 +530,7 @@ mod test {
         // Step 3: delete an entry.
 
         input_stream_handle.delete(br#"2"#).unwrap();
-        input_stream_handle.flush_all();
+        input_stream_handle.flush();
 
         circuit.step().unwrap();
 

@@ -139,7 +139,7 @@ impl Parser for CsvParser {
         if !data.is_empty() {
             self.parse_record(data, &mut errors);
         }
-        (self.input_stream.take(), errors)
+        (self.input_stream.take_all(), errors)
     }
 }
 

@@ -428,7 +428,7 @@ impl InputGenerator {
                 } = completion;
                 in_flight[batch.plan_idx].remove_range(batch.rows.start..=batch.rows.end - 1);
                 consumer.buffered(buffer.len(), num_bytes);
-                buffer.flush_all();
+                buffer.flush();
             }
 
             while let Some(work) = assign_work(&mut rows, &mut in_flight, &config, seed, false) {
@@ -471,11 +471,13 @@ impl InputGenerator {
                         else {
                             break;
                         };
-                        let flushed = buffer.flush(n - num_records);
+                        let mut taken = buffer.take_some(n - num_records);
+                        let flushed = taken.len();
                         if flushed > 0 {
+                            num_records += flushed;
                             consumed[plan_idx].insert_range(rows.start..=rows.start + flushed - 1);
+                            taken.flush();
                         }
-                        num_records += flushed;
                         if !buffer.is_empty() {
                             completed.push_front(Completion {
                                 batch: Batch {

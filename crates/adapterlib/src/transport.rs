@@ -224,7 +224,7 @@ impl<A> InputQueue<A> {
     /// Flushes a batch of records to the circuit and returns the auxiliary data
     /// that was associated with those records.
     ///
-    /// This always flushes whole buffers to the circuit (with `flush_all`),
+    /// This always flushes whole buffers to the circuit (with `flush`),
     /// since auxiliary data is associated with a whole buffer rather than with
     /// individual records. If the auxiliary data type `A` is `()`, then
     /// [InputQueue<()>::flush] avoids that and so is a better choice.
@@ -236,7 +236,8 @@ impl<A> InputQueue<A> {
             let Some((mut buffer, aux)) = self.queue.lock().unwrap().pop_front() else {
                 break;
             };
-            total += buffer.flush_all();
+            total += buffer.len();
+            buffer.flush();
             consumed_aux.push(aux);
         }
         (total, consumed_aux)
@@ -272,7 +273,10 @@ impl InputQueue<()> {
             let Some((mut buffer, ())) = self.queue.lock().unwrap().pop_front() else {
                 break;
             };
-            total += buffer.flush(n - total);
+            let mut taken = buffer.take_some(n - total);
+            total += taken.len();
+            taken.flush();
+            drop(taken);
             if !buffer.is_empty() {
                 self.queue.lock().unwrap().push_front((buffer, ()));
                 break;

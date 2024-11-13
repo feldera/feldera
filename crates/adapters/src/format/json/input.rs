@@ -367,7 +367,7 @@ impl Parser for JsonParser {
             }
         }
 
-        (self.input_stream.take(), errors)
+        (self.input_stream.take_all(), errors)
     }
 
     fn fork(&self) -> Box<dyn Parser> {
@@ -493,7 +493,7 @@ mod test {
             for (json, expected_errors) in test.input_batches {
                 let (mut buffer, errors) = parser.parse(json.as_bytes());
                 assert_eq!(&errors, &expected_errors);
-                buffer.flush_all();
+                buffer.flush();
             }
             consumer.eoi();
             assert_eq!(&test.expected_output, &outputs.state().flushed);

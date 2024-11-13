@@ -298,7 +298,8 @@ fn worker_thread(
         barrier.wait();
         let mut total = 0;
         for (_events, mut buffer) in queue.lock().unwrap().drain(..) {
-            total += buffer.flush_all();
+            total += buffer.len();
+            buffer.flush();
         }
         consumers[NexmarkTable::Bid].replayed(total);
         next_event_id = event_ids.end;
@@ -334,7 +335,8 @@ fn worker_thread(
                             Some(events) => Some(events.start..range.end),
                             None => Some(range),
                         };
-                        total += buffer.flush_all();
+                        total += buffer.len();
+                        buffer.flush();
                     }
                 }
                 consumers[NexmarkTable::Bid].extended(

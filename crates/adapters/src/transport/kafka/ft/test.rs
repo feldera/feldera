@@ -304,13 +304,10 @@ struct DummyInputBuffer {
 }
 
 impl InputBuffer for DummyInputBuffer {
-    fn flush(&mut self, _n: usize) -> usize {
+    fn flush(&mut self) {
         if let Some(s) = self.data.take() {
             info!("flushing {:?}", s);
             self.receiver.flushed.lock().unwrap().push(s);
-            1
-        } else {
-            0
         }
     }
 
@@ -318,7 +315,7 @@ impl InputBuffer for DummyInputBuffer {
         self.data.as_ref().map_or(0, |_| 1)
     }
 
-    fn take(&mut self) -> Option<Box<dyn InputBuffer>> {
+    fn take_some(&mut self, _n: usize) -> Option<Box<dyn InputBuffer>> {
         self.data.take().map(|data| {
             Box::new(Self {
                 receiver: self.receiver.clone(),

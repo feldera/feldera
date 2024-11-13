@@ -328,7 +328,7 @@ where
         for (avro, expected_errors) in test.input_batches {
             let (mut buffer, errors) = parser.parse(&avro);
             assert_eq!(&errors, &expected_errors);
-            buffer.flush_all();
+            buffer.flush();
         }
         assert_eq!(&test.expected_output, &outputs.state().flushed);
     }

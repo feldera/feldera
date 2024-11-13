@@ -122,7 +122,7 @@ impl FileInputReader {
                                 None => Some(offsets),
                             };
                             total += buffer.len();
-                            buffer.flush_all();
+                            buffer.flush();
                             if total >= limit {
                                 break;
                             }
@@ -159,7 +159,8 @@ impl FileInputReader {
                                 let (mut buffer, errors) = parser.parse(chunk);
                                 consumer.parse_errors(errors);
                                 consumer.buffered(buffer.len(), chunk.len());
-                                num_records += buffer.flush_all();
+                                num_records += buffer.len();
+                                buffer.flush();
                             }
                         }
                         consumer.replayed(num_records);

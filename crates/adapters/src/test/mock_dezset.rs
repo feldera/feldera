@@ -12,9 +12,8 @@ use apache_avro::types::Value as AvroValue;
 use dbsp::DBData;
 use feldera_types::serde_with_context::{DeserializeWithContext, SqlSerdeConfig};
 use std::{
-    cmp::min,
     fmt::Debug,
-    mem::take,
+    mem::swap,
     sync::{Arc, Mutex, MutexGuard},
 };
 
@@ -185,21 +184,23 @@ where
     T: Send + Sync + 'static,
     U: Send + Sync + 'static,
 {
-    fn flush(&mut self, n: usize) -> usize {
-        let n = min(n, self.len());
+    fn flush(&mut self) {
         let mut state = self.handle.0.lock().unwrap();
-        state.flushed.extend(self.updates.drain(..n));
-        n
+        state.flushed.append(&mut self.updates);
     }
 
     fn len(&self) -> usize {
         self.updates.len()
     }
 
-    fn take(&mut self) -> Option<Box<dyn InputBuffer>> {
+    fn take_some(&mut self, n: usize) -> Option<Box<dyn InputBuffer>> {
         if !self.updates.is_empty() {
             Some(Box::new(MockDeZSetStreamBuffer {
-                updates: take(&mut self.updates),
+                updates: {
+                    let mut some = self.updates.split_off(self.updates.len().min(n));
+                    swap(&mut some, &mut self.updates);
+                    some
+                },
                 handle: self.handle.clone(),
             }))
         } else {
@@ -275,12 +276,12 @@ where
     U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + Sync + 'static,
     De: DeserializerFromBytes<SqlSerdeConfig> + Send + Sync + 'static,
 {
-    fn flush(&mut self, n: usize) -> usize {
-        self.buffer.flush(n)
+    fn flush(&mut self) {
+        self.buffer.flush()
     }
 
-    fn take(&mut self) -> Option<Box<dyn InputBuffer>> {
-        self.buffer.take()
+    fn take_some(&mut self, n: usize) -> Option<Box<dyn InputBuffer>> {
+        self.buffer.take_some(n)
     }
 
     fn len(&self) -> usize {
@@ -335,18 +336,19 @@ where
     T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + Sync + 'static,
     U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + Sync + 'static,
 {
-    fn flush(&mut self, n: usize) -> usize {
-        let n = min(n, self.updates.len());
-
+    fn flush(&mut self) {
         let mut state = self.handle.0.lock().unwrap();
-        state.flushed.extend(self.updates.drain(..n));
-        n
+        state.flushed.append(&mut self.updates);
     }
 
-    fn take(&mut self) -> Option<Box<dyn InputBuffer>> {
+    fn take_some(&mut self, n: usize) -> Option<Box<dyn InputBuffer>> {
         if !self.updates.is_empty() {
             Some(Box::new(MockDeZSetStreamBuffer {
-                updates: take(&mut self.updates),
+                updates: {
+                    let mut some = self.updates.split_off(self.updates.len().min(n));
+                    swap(&mut some, &mut self.updates);
+                    some
+                },
                 handle: self.handle.clone(),
             }))
         } else {

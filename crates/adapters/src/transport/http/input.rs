@@ -274,7 +274,8 @@ impl InputReader for HttpInputEndpoint {
                     let (mut buffer, errors) = details.parser.parse(&chunk);
                     details.consumer.buffered(buffer.len(), chunk.len());
                     details.consumer.parse_errors(errors);
-                    num_records += buffer.flush_all();
+                    num_records += buffer.len();
+                    buffer.flush();
                 }
                 details.consumer.replayed(num_records);
             }
