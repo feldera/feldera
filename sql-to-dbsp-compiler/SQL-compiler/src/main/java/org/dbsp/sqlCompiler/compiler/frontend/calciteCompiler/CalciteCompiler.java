@@ -702,7 +702,7 @@ public class CalciteCompiler implements IWritesLogs {
     }
 
     List<RelColumnMetadata> createTableColumnsMetadata(
-            SqlCreateTable ct, SqlIdentifier table, boolean visible, SourceFileContents sources) {
+            SqlCreateTable ct, SqlIdentifier table, SourceFileContents sources) {
         SqlNodeList list = ct.columnsOrForeignKeys;
         List<RelColumnMetadata> result = new ArrayList<>();
         int index = 0;
@@ -871,9 +871,11 @@ public class CalciteCompiler implements IWritesLogs {
         }
     }
 
+    @Nullable
     public List<RelColumnMetadata> createViewColumnsMetadata(
             CalciteObject node, SqlIdentifier viewName, RelRoot relRoot, @Nullable SqlNodeList columnNames,
             SqlCreateView.ViewKind kind) {
+        Map<String, SqlNode> columnDefinition = new HashMap<>();
         List<RelColumnMetadata> columns = new ArrayList<>();
         RelDataType rowType = relRoot.rel.getRowType();
         SourcePositionRange position = new SourcePositionRange(viewName.getParserPosition());
@@ -883,41 +885,55 @@ public class CalciteCompiler implements IWritesLogs {
                     "View " + Utilities.singleQuote(viewName.getSimple()) +
                             " specifies " + columnNames.size() + " columns " +
                             " but query computes " + relRoot.fields.size() + " columns");
-            return columns;
+            return null;
         }
         int index = 0;
+        boolean error = false;
         Map<String, RelDataTypeField> colByName = new HashMap<>();
         List<RelDataTypeField> fieldList = rowType.getFieldList();
         for (Map.Entry<Integer, String> fieldPairs : relRoot.fields) {
-            String specifiedName = fieldPairs.getValue();
+            String queryFieldName = fieldPairs.getValue();
             RelDataTypeField field = fieldList.get(index);
             Objects.requireNonNull(field);
             boolean nameIsQuoted = false;
             if (columnNames != null) {
-                SqlIdentifier id = (SqlIdentifier)columnNames.get(index);
+                SqlIdentifier id = (SqlIdentifier) columnNames.get(index);
                 String columnName = id.getSimple();
                 nameIsQuoted = Utilities.identifierIsQuoted(id);
                 field = new RelDataTypeFieldImpl(columnName, field.getIndex(), field.getType());
+
+                SqlNode previousColumn = columnDefinition.get(columnName);
+                if (previousColumn != null) {
+                    this.errorReporter.reportError(new SourcePositionRange(id.getParserPosition()),
+                            "Duplicate name", "Column with name " +
+                                    Utilities.singleQuote(columnName) + " already defined");
+                    this.errorReporter.reportError(new SourcePositionRange(previousColumn.getParserPosition()),
+                            "Duplicate name",
+                            "Previous definition");
+                    error = true;
+                } else {
+                    columnDefinition.put(columnName, id);
+                }
             }
 
-            if (specifiedName != null) {
-                if (colByName.containsKey(specifiedName)) {
-                    if (!this.options.languageOptions.lenient) {
-                        this.errorReporter.reportError(position,
-                                "Duplicate column",
-                                "View " + Utilities.singleQuote(viewName.getSimple()) +
-                                        " contains two columns with the same name " + Utilities.singleQuote(specifiedName) + "\n" +
-                                        "You can allow this behavior using the --lenient compiler flag");
-                    } else {
-                        this.errorReporter.reportWarning(position,
-                                "Duplicate column",
-                                "View " + Utilities.singleQuote(viewName.getSimple()) +
-                                        " contains two columns with the same name " + Utilities.singleQuote(specifiedName) + "\n" +
-                                        "Some columns will be renamed in the produced output.");
-                    }
+            String actualColumnName = field.getName();
+            if (colByName.containsKey(actualColumnName)) {
+                if (!this.options.languageOptions.lenient) {
+                    this.errorReporter.reportError(position,
+                            "Duplicate column",
+                            "View " + Utilities.singleQuote(viewName.getSimple()) +
+                                    " contains two columns with the same name " + Utilities.singleQuote(queryFieldName) + "\n" +
+                                    "You can allow this behavior using the --lenient compiler flag");
+                    error = true;
+                } else {
+                    this.errorReporter.reportWarning(position,
+                            "Duplicate column",
+                            "View " + Utilities.singleQuote(viewName.getSimple()) +
+                                    " contains two columns with the same name " + Utilities.singleQuote(queryFieldName) + "\n" +
+                                    "Some columns will be renamed in the produced output.");
                 }
-                colByName.put(specifiedName, field);
             }
+            colByName.put(queryFieldName, field);
             RelColumnMetadata meta = new RelColumnMetadata(node,
                     field, false, nameIsQuoted, null, null, null);
             if (kind != SqlCreateView.ViewKind.LOCAL && !this.options.languageOptions.unrestrictedIOTypes)
@@ -925,6 +941,8 @@ public class CalciteCompiler implements IWritesLogs {
             columns.add(meta);
             index++;
         }
+        if (error)
+            return null;
         return columns;
     }
 
@@ -1071,7 +1089,7 @@ public class CalciteCompiler implements IWritesLogs {
                 if (ct.ifNotExists)
                     throw new UnsupportedException("IF NOT EXISTS not supported", object);
                 String tableName = ct.name.getSimple();
-                List<RelColumnMetadata> cols = this.createTableColumnsMetadata(ct, ct.name, node.visible, sources);
+                List<RelColumnMetadata> cols = this.createTableColumnsMetadata(ct, ct.name, sources);
                 @Nullable PropertyList properties = this.createProperties(ct.tableProperties);
                 if (properties != null)
                     properties.checkDuplicates(this.errorReporter);
@@ -1116,6 +1134,8 @@ public class CalciteCompiler implements IWritesLogs {
                 RelRoot relRoot = converter.convertQuery(query, true, true);
                 List<RelColumnMetadata> columns = this.createViewColumnsMetadata(CalciteObject.create(node),
                         cv.name, relRoot, cv.columnList, cv.viewKind);
+                if (columns == null)
+                    return null;
                 @Nullable PropertyList viewProperties = this.createProperties(cv.viewProperties);
                 if (viewProperties != null) {
                     viewProperties.checkDuplicates(this.errorReporter);
