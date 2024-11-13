@@ -40,6 +40,15 @@ public class CatalogTests extends BaseSQLTests {
     }
 
     @Test
+    public void issue2949() {
+        String sql = """
+                CREATE TABLE t4(c0 BOOLEAN, c1 DOUBLE, c2 VARCHAR);
+                CREATE MATERIALIZED VIEW v1(c0, c1, c2) AS (SELECT t4.c2, t4.c0, t4.c0 FROM t4 WHERE t4.c0);""";
+        var ccs = this.getCCS(sql);
+        assert ccs.compiler.messages.messages.isEmpty();
+    }
+
+    @Test
     public void duplicatedViewColumnName() {
         String sql = """
                 CREATE TABLE T(id int);

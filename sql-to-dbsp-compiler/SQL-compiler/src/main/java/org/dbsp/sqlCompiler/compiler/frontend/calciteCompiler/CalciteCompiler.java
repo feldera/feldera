@@ -689,6 +689,7 @@ public class CalciteCompiler implements IWritesLogs {
             }
         } catch (CalciteContextException e) {
             SqlParserPos pos = value.getParserPosition();
+            @SuppressWarnings("DataFlowIssue")
             CalciteContextException ex = new CalciteContextException(e.getMessage(), e.getCause());
             ex.setPosition(pos.getLineNum(), pos.getColumnNum(), pos.getEndLineNum(), pos.getEndColumnNum());
             throw ex;
@@ -933,7 +934,7 @@ public class CalciteCompiler implements IWritesLogs {
                                     "Some columns will be renamed in the produced output.");
                 }
             }
-            colByName.put(queryFieldName, field);
+            colByName.put(actualColumnName, field);
             RelColumnMetadata meta = new RelColumnMetadata(node,
                     field, false, nameIsQuoted, null, null, null);
             if (kind != SqlCreateView.ViewKind.LOCAL && !this.options.languageOptions.unrestrictedIOTypes)
