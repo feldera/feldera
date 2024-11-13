@@ -26,6 +26,11 @@ public class CatalogTests extends BaseSQLTests {
     }
 
     @Test
+    public void issue2946() {
+        this.compileRustTestCase("CREATE VIEW v(c0) AS (SELECT NULL);");
+    }
+
+    @Test
     public void issue2939() {
         String sql = """
                 CREATE TABLE T(id int);
