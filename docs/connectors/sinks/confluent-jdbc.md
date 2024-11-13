@@ -54,7 +54,7 @@ curl -i -X \
       "config": {
             "connector.class": "io.confluent.connect.jdbc.JdbcSinkConnector",
             "dialect.name": "PostgreSqlDatabaseDialect",
-            "connection.url": f"jdbc:postgresql://postgres:5432/my_database",
+            "connection.url": "jdbc:postgresql://postgres:5432/my_database",
             "connection.user": "postgres",
             "connection.password": "postgres",
             "insert.mode": "upsert",
@@ -104,7 +104,7 @@ Required settings:
   * `"pk.mode": "record_key"`
 * Database connectivity (specific settings depend on your database type)
   * `"dialect.name": "PostgreSqlDatabaseDialect"` - specify your database type
-  * `"connection.url": f"jdbc:postgresql://postgres:5432/my_database"`
+  * `"connection.url": "jdbc:postgresql://postgres:5432/my_database"`
   * `"connection.user": "postgres"`
   * `"connection.password": "postgres"`
 
