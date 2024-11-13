@@ -27,6 +27,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.apache.calcite.runtime.CalciteContextException;
+import org.apache.calcite.runtime.CalciteException;
 import org.apache.calcite.schema.Schema;
 import org.apache.calcite.sql.SqlFunction;
 import org.apache.calcite.sql.SqlKind;
@@ -545,6 +546,12 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
                 throw new RuntimeException(e);
             }
         } catch (CalciteContextException e) {
+            this.messages.reportError(e);
+            if (this.options.languageOptions.throwOnError) {
+                this.printMessages(currentView);
+                throw new RuntimeException(e);
+            }
+        } catch (CalciteException e) {
             this.messages.reportError(e);
             if (this.options.languageOptions.throwOnError) {
                 this.printMessages(currentView);

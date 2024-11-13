@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.apache.calcite.runtime.CalciteContextException;
+import org.apache.calcite.runtime.CalciteException;
 import org.apache.calcite.sql.parser.SqlParseException;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.IHasSourcePositionRange;
@@ -39,6 +40,13 @@ public class CompilerMessages {
             false, "Error in SQL statement",
                 (e.getCause() != null) ? e.getCause().getMessage() :
                         (e.getMessage() != null) ? e.getMessage() : "");
+        }
+
+        Error(CalciteException e) {
+            this(SourcePositionRange.INVALID,
+                    false, "Error in SQL statement",
+                    (e.getCause() != null) ? e.getCause().getMessage() :
+                            (e.getMessage() != null) ? e.getMessage() : "");
         }
 
         Error(Throwable e) {
@@ -130,6 +138,10 @@ public class CompilerMessages {
     }
 
     public void reportError(CalciteContextException e) {
+        this.reportError(new Error(e));
+    }
+
+    public void reportError(CalciteException e) {
         this.reportError(new Error(e));
     }
 

@@ -91,6 +91,13 @@ public class RegressionTests extends SqlIoTest {
     }
 
     @Test
+    public void issue2942() {
+        this.statementsFailingInCompilation(
+                "CREATE VIEW v1(c0) AS (SELECT '9,\uE8C7voz[*');",
+                "Failed to encode");
+    }
+
+    @Test
     public void issue2642() {
         String sql = """
                 create table t (
