@@ -510,9 +510,8 @@ async fn pipeline(action: PipelineAction, client: Client) {
         }
         PipelineAction::Checkpoint { name } => {
             let response = client
-                .post_pipeline_action()
+                .checkpoint_pipeline()
                 .pipeline_name(name.clone())
-                .action("checkpoint")
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
