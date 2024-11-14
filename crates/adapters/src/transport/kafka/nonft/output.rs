@@ -1,10 +1,9 @@
 use crate::transport::kafka::{
     build_headers, kafka_send, rdkafka_loglevel_from, DeferredLogging, PemToLocation,
 };
-use crate::transport::secret_resolver::MaybeSecret;
+use crate::transport::secret_resolver::resolve_secret;
 use crate::{AsyncErrorCallback, OutputEndpoint};
 use anyhow::{anyhow, bail, Error as AnyError, Result as AnyResult};
-use feldera_types::secret_ref::MaybeSecretRef;
 use feldera_types::transport::kafka::KafkaOutputConfig;
 use log::debug;
 use rdkafka::message::OwnedHeaders;
@@ -93,17 +92,7 @@ impl KafkaOutputEndpoint {
         let mut client_config = ClientConfig::new();
 
         for (key, value) in config.kafka_options.iter() {
-            // If it is a secret reference, resolve it to the actual secret string
-            match MaybeSecret::new_using_default_directory(
-                MaybeSecretRef::new_using_pattern_match(value.clone()),
-            )? {
-                MaybeSecret::String(simple_string) => {
-                    client_config.set(key, simple_string);
-                }
-                MaybeSecret::Secret(secret_string) => {
-                    client_config.set(key, secret_string);
-                }
-            }
+            client_config.set(key, resolve_secret(value)?);
         }
 
         client_config.pem_to_location(endpoint_name)?;
