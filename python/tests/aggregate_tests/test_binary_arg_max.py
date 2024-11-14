@@ -37,7 +37,7 @@ class aggtst_binary_arg_max_distinct_gby(TstView):
         # checked manually
         self.data = [
             {"id": 0, "c1": "17382115", "c2": "37424d58"},
-            {"id": 1, "c1": "17382115", "c2": "2022160c"}
+            {"id": 1, "c1": "17382115", "c2": "2022160c"},
         ]
         self.sql = """CREATE MATERIALIZED VIEW binary_arg_max_distinct_gby AS SELECT
                       id, ARG_MAX(DISTINCT c1, c2) AS c1, ARG_MAX(DISTINCT c2, c1) AS c2
