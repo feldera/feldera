@@ -21,6 +21,8 @@ from tests.aggregate_tests.test_binary_count_col import *  # noqa: F403
 from tests.aggregate_tests.test_binary_count import *  # noqa: F403
 from tests.aggregate_tests.test_binary_max import *  # noqa: F403
 from tests.aggregate_tests.test_binary_min import *  # noqa: F403
+from tests.aggregate_tests.test_binary_every import *  # noqa: F403
+from tests.aggregate_tests.test_binary_some import *  # noqa: F403
 from tests.aggregate_tests.test_binary_tbl import *  # noqa: F403
 from tests.aggregate_tests.test_bit_and import *  # noqa: F403
 from tests.aggregate_tests.test_bit_or import *  # noqa: F403
