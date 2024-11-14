@@ -3,16 +3,31 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer;
 import org.dbsp.sqlCompiler.circuit.DBSPDeclaration;
 import org.dbsp.sqlCompiler.circuit.DBSPPartialCircuit;
 import org.dbsp.sqlCompiler.circuit.annotation.Recursive;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPApply2Operator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPApplyOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDeltaOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDifferentiateOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPIndexedTopKOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPLagOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPNowOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateWithWaterlineOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewDeclarationOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewOperator;
-import org.dbsp.sqlCompiler.circuit.operator.OutputPort;
+import org.dbsp.sqlCompiler.circuit.OutputPort;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPWaterlineOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
+import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
+import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateView;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Logger;
@@ -27,7 +42,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-/** Handles recursive queries boxing them into NestedOperator operators */
+/** Handles recursive queries.  Multiple passes
+ * - Compute SCCs
+ * - Fix SCC by normalizing connections between some operations
+ * - Group SCC nodes into {@link DBSPNestedOperator} operators
+ * - Validate contents of nested operators. */
 public class RecursiveComponents extends Passes {
     public RecursiveComponents(IErrorReporter reporter) {
         super("Recursive", reporter);
@@ -37,6 +56,99 @@ public class RecursiveComponents extends Passes {
         Graph graph2 = new Graph(reporter);
         this.add(graph2);
         this.add(new BuildNestedOperators(reporter, graph2.getGraphs()));
+        this.add(new ValidateRecursiveOperators(reporter));
+    }
+
+    /** Check that all operators in recursive components are supported */
+    static class ValidateRecursiveOperators extends CircuitVisitor {
+        public ValidateRecursiveOperators(IErrorReporter errorReporter) {
+            super(errorReporter);
+        }
+
+        boolean inRecursive() {
+            return this.getParent().is(DBSPNestedOperator.class);
+        }
+
+        void reject(DBSPOperator operator, String operation, boolean bug) {
+            if (!inRecursive())
+                return;
+            if (bug)
+                throw new InternalCompilerError("Unsupported operation " + Utilities.singleQuote(operation) +
+                            " in recursive code", operator.getNode());
+            else
+                throw new CompilationError("Unsupported operation " + Utilities.singleQuote(operation) +
+                        " in recursive code", operator.getNode());
+        }
+
+        @Override
+        public void postorder(DBSPApplyOperator node) {
+            this.reject(node, "apply", true);
+        }
+
+        @Override
+        public void postorder(DBSPApply2Operator node) {
+            this.reject(node, "apply2", true);
+        }
+        
+        @Override
+        public void postorder(DBSPIndexedTopKOperator node) {
+            this.reject(node, "TopK", false);
+        }
+
+        @Override
+        public void postorder(DBSPIntegrateTraceRetainKeysOperator node) {
+            this.reject(node, "GC", true);
+        }
+
+        @Override
+        public void postorder(DBSPIntegrateTraceRetainValuesOperator node) {
+            this.reject(node, "GC", true);
+        }
+
+        @Override
+        public void postorder(DBSPLagOperator node) {
+            this.reject(node, "LAG", false);
+        }
+
+        @Override
+        public void postorder(DBSPNestedOperator node) {
+            this.reject(node, "recursion", true);
+        }
+
+        @Override
+        public void postorder(DBSPNowOperator node) {
+            this.reject(node, "NOW", true);
+        }
+
+        @Override
+        public void postorder(DBSPPartitionedRollingAggregateOperator node) {
+            this.reject(node, "OVER", false);
+        }
+
+        @Override
+        public void postorder(DBSPPartitionedRollingAggregateWithWaterlineOperator node) {
+            this.reject(node, "OVER", false);
+        }
+
+        @Override
+        public void postorder(DBSPSourceBaseOperator node) {
+            this.reject(node, "input", true);
+        }
+
+        @Override
+        public void postorder(DBSPViewDeclarationOperator node) {
+            // This is fine, all other SourceBaseOperators are not
+        }
+
+        @Override
+        public void postorder(DBSPWaterlineOperator node) {
+            this.reject(node, "WATERLINE", false);
+        }
+
+        @Override
+        public void postorder(DBSPWindowOperator node) {
+            this.reject(node, "WINDOW", false);
+        }
     }
 
     /** In the circuit recursive views can be referred either by their declaration,
@@ -75,6 +187,13 @@ public class RecursiveComponents extends Passes {
                 for (DBSPOperator operator: operators) {
                     // We only have simple operators at this stage
                     DBSPSimpleOperator simple = operator.to(DBSPSimpleOperator.class);
+                    if (simple.is(DBSPViewDeclarationOperator.class) && operators.size() == 1) {
+                        DBSPViewDeclarationOperator decl = simple.to(DBSPViewDeclarationOperator.class);
+                        this.errorReporter.reportWarning(simple.getSourcePosition(), "View is not recursive",
+                                "View " + Utilities.singleQuote(decl.originalViewName()) + " is declared" +
+                                " recursive, but is not used in any recursive computation");
+                    }
+
                     List<OutputPort> newSources = new ArrayList<>(simple.inputs.size());
                     for (OutputPort port: simple.inputs) {
                         DBSPSimpleOperator source = port.simpleNode();
@@ -99,6 +218,19 @@ public class RecursiveComponents extends Passes {
                     DBSPSimpleOperator result = simple.withInputs(newSources, false);
                     if (result.is(DBSPViewOperator.class)) {
                         DBSPViewOperator view = result.to(DBSPViewOperator.class);
+                        if (operators.size() > 1 &&
+                                !view.metadata.recursive &&
+                                view.metadata.viewKind != SqlCreateView.ViewKind.LOCAL) {
+                            List<DBSPOperator> recs =
+                                    Linq.where(operators, o -> o.is(DBSPViewOperator.class) && o != view);
+                            assert !recs.isEmpty();
+                            throw new CompilationError(
+                                    "View " + Utilities.singleQuote(view.viewName) + " must be declared" +
+                                            " either as LOCAL or as RECURSIVE\n" +
+                                    "since is is used in the computation of recursive view " +
+                                    Utilities.singleQuote(recs.get(0).to(DBSPViewOperator.class).viewName),
+                                    view.getNode());
+                        }
                         Utilities.putNew(viewByName, view.viewName, view);
                     }
                     if (result.is(DBSPViewDeclarationOperator.class)) {
@@ -119,22 +251,15 @@ public class RecursiveComponents extends Passes {
         }
     }
 
-    /** Encloses recursive components into separate NestedOperator operators,
-     * and does other circuit normalization operations. */
-    static class BuildNestedOperators extends CircuitCloneVisitor {
-        final CircuitGraphs graphs;
+    /** Encloses recursive components into separate {@link DBSPNestedOperator} operators. */
+    static class BuildNestedOperators extends CircuitCloneWithGraphsVisitor {
         @Nullable
         SCC<DBSPOperator> scc = null;
         final Map<Integer, DBSPNestedOperator> components;
         final Set<DBSPNestedOperator> toAdd;
 
-        public CircuitGraph getGraph() {
-            return this.graphs.getGraph(this.getParent());
-        }
-
         BuildNestedOperators(IErrorReporter reporter, CircuitGraphs graphs) {
-            super(reporter, false);
-            this.graphs = graphs;
+            super(reporter, graphs, false);
             this.components = new HashMap<>();
             this.toAdd = new HashSet<>();
         }

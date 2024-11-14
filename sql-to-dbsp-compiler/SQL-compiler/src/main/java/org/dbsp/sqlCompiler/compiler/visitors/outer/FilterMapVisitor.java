@@ -14,16 +14,9 @@ import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.util.Linq;
 
 /** Combine a map followed by a filter into a flatmap. */
-public class FilterMapVisitor extends CircuitCloneVisitor {
-    final CircuitGraphs graphs;
-
+public class FilterMapVisitor extends CircuitCloneWithGraphsVisitor {
     public FilterMapVisitor(IErrorReporter reporter, CircuitGraphs graphs) {
-        super(reporter, false);
-        this.graphs = graphs;
-    }
-
-    public CircuitGraph getGraph() {
-        return this.graphs.getGraph(this.getParent());
+        super(reporter, graphs, false);
     }
 
     @Override

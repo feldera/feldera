@@ -112,6 +112,7 @@ public record CircuitOptimizer(DBSPCompiler compiler) implements ICompilerCompon
             passes.add(new Simplify(reporter).circuitRewriter());
             passes.add(new CSE(reporter));
         }
+        passes.add(new RecursiveComponents.ValidateRecursiveOperators(reporter));
         // Lowering implements aggregates and inlines some calls.
         passes.add(new LowerCircuitVisitor(reporter));
         // Lowering may surface additional casts that need to be expanded

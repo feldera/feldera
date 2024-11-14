@@ -151,6 +151,7 @@ const sidebars = {
                         'sql/map',
                         'sql/datetime',
                         'sql/materialized',
+                        'sql/recursive',
                         'sql/ad-hoc',
                         'sql/streaming',
                         'sql/table',

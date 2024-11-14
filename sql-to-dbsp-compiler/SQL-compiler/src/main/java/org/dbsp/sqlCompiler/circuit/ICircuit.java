@@ -1,12 +1,10 @@
 package org.dbsp.sqlCompiler.circuit;
 
-import org.dbsp.sqlCompiler.circuit.annotation.Annotation;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewOperator;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 
 import javax.annotation.Nullable;
-import java.util.function.Predicate;
 
 /** Something that looks like a circuit: contains operators, and possibly declarations */
 public interface ICircuit extends IDBSPOuterNode {

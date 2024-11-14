@@ -45,11 +45,10 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWaterlineOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
-import org.dbsp.sqlCompiler.circuit.operator.OutputPort;
+import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.IRTransform;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregate;
@@ -314,11 +313,6 @@ public class CircuitRewriter extends CircuitCloneVisitor {
     }
 
     @Override
-    public void postorder(DBSPNestedOperator operator) {
-        super.postorder(operator);
-    }
-
-    @Override
     public void postorder(DBSPJoinOperator operator) {
         DBSPType outputType = this.transform(operator.outputType);
         DBSPExpression function = this.transform(operator.getFunction());
@@ -574,17 +568,6 @@ public class CircuitRewriter extends CircuitCloneVisitor {
         DBSPItem rewritten = this.transform.apply(decl.item).to(DBSPItem.class);
         this.getUnderConstruction().addDeclaration(new DBSPDeclaration(rewritten));
     }
-
-    /*
-    @Override
-    public VisitDecision preorder(DBSPPartialCircuit circuit) {
-        for (DBSPDeclaration node : circuit.declarations)
-            node.accept(this);
-        for (DBSPOperator node : circuit.getAllOperators())
-            node.accept(this);
-        return VisitDecision.STOP;
-    }
-     */
 
     @Override
     public String toString() {

@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.circuit.operator;
 
+import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
@@ -59,8 +60,7 @@ public final class DBSPPartitionedRollingAggregateWithWaterlineOperator
             // using the current IR, so this type is a lie.
             // See DBSPPartitionedRollingAggregateOperator.
             DBSPTypeIndexedZSet outputType,
-            OutputPort dataInput,
-            OutputPort waterlineInput) {
+            OutputPort dataInput, OutputPort waterlineInput) {
         super(node, "partitioned_rolling_aggregate_with_waterline",
                 function, outputType, true, dataInput, waterlineInput);
         this.aggregate = aggregate;

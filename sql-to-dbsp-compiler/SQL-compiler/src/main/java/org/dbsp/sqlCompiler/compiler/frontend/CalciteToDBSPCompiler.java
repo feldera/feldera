@@ -102,7 +102,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSubtractOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSumOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewOperator;
-import org.dbsp.sqlCompiler.circuit.operator.OutputPort;
+import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.ICompilerComponent;
@@ -1380,7 +1380,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
                         new RexInputRef(leftTsIndex, compared.operands.get(0).getType())));
                 DBSPExpression leftCast = compiler.compile(leftCompared);
                 DBSPExpression addCast = DBSPTupleExpression.flatten(l.deref()).append(leftCast);
-                left = new DBSPMapOperator(node, addCast.closure(l), this.makeZSet(addCast.getType()), left.outputPort());
+                left = new DBSPMapOperator(
+                        node, addCast.closure(l), this.makeZSet(addCast.getType()), left.outputPort());
                 this.addOperator(left);
                 leftTsIndex = leftElementType.size();
             }
@@ -1394,7 +1395,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
                         new RexInputRef(rightTsIndex, compared.operands.get(0).getType())));
                 DBSPExpression rightCast = compiler.compile(rightCompared);
                 DBSPExpression addCast = DBSPTupleExpression.flatten(r.deref()).append(rightCast);
-                right = new DBSPMapOperator(node, addCast.closure(r), this.makeZSet(addCast.getType()), right.outputPort());
+                right = new DBSPMapOperator(
+                        node, addCast.closure(r), this.makeZSet(addCast.getType()), right.outputPort());
                 this.addOperator(right);
                 rightTsIndex = rightElementType.size();
             }

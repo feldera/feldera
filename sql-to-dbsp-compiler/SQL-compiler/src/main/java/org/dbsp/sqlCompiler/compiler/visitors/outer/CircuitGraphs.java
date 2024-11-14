@@ -6,9 +6,7 @@ import org.dbsp.util.Utilities;
 import java.util.HashMap;
 import java.util.Map;
 
-/**
- * Maps each ICircuit to its CircuitGraph
- */
+/** Maps each ICircuit to its CircuitGraph */
 public class CircuitGraphs {
     public final Map<ICircuit, CircuitGraph> graphs = new HashMap<>();
 

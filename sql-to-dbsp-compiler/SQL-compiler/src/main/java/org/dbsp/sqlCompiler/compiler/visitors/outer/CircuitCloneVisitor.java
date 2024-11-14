@@ -27,6 +27,7 @@ import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.DBSPDeclaration;
 import org.dbsp.sqlCompiler.circuit.DBSPPartialCircuit;
 import org.dbsp.sqlCompiler.circuit.ICircuit;
+import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 import org.dbsp.sqlCompiler.circuit.operator.*;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
@@ -40,14 +41,14 @@ import java.util.*;
 
 /** This visitor rewrites a circuit by replacing each operator
  * recursively with an equivalent one.
- * The entire work is done in 'postorder' methods, except the NestedOperator.
+ * The entire work is done in 'postorder' methods, except for ICircuit nodes.
  * Each operator is replaced in one of two cases:
  * - any of its inputs has changed
  * - the 'force' flag is 'true'.
  * We expect that this is a base class for all visitors which modify a circuit.
  * This visitor is a base class for all visitors that modify circuits. */
 public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs {
-    /** For each operator port in the original circuit an operator port in the
+    /** For each {@link OutputPort} in the original circuit an {@link OutputPort} in the
      * result circuit which computes the same result. */
     protected final Map<OutputPort, OutputPort> remap;
     protected final Map<ICircuit, ICircuit> circuitRemap;

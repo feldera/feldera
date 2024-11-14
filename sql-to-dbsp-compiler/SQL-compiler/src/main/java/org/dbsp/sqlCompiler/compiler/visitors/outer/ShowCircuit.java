@@ -7,6 +7,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 
 /** Debugging visitor which prints the circuit on stdout. */
+@SuppressWarnings("unused")
 public class ShowCircuit extends CircuitVisitor {
     public ShowCircuit(IErrorReporter errorReporter) {
         super(errorReporter);

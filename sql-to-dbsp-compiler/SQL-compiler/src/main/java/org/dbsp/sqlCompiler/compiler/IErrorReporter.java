@@ -19,8 +19,8 @@ public interface IErrorReporter {
         reportProblem(range, false, false, errorType, message);
     }
 
-    default void reportError(SourcePositionRange range, String errorType, String message, boolean continued) {
-        reportProblem(range, false, continued, errorType, message);
+    default void reportError(SourcePositionRange range, String errorType, String message, boolean continuation) {
+        reportProblem(range, false, continuation, errorType, message);
     }
 
     default void reportWarning(SourcePositionRange range, String errorType, String message) {

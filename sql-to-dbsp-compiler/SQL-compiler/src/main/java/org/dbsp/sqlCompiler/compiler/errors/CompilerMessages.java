@@ -19,7 +19,7 @@ public class CompilerMessages {
     public class Error implements IHasSourcePositionRange {
         public final SourcePositionRange range;
         public final boolean warning;
-        public final boolean continued;
+        public final boolean continuation;
         public final String errorType;
         public final String message;
 
@@ -29,7 +29,7 @@ public class CompilerMessages {
             this.warning = warning;
             this.errorType = errorType;
             this.message = message;
-            this.continued = continuation;
+            this.continuation = continuation;
         }
 
         Error(SqlParseException e) {
@@ -47,7 +47,7 @@ public class CompilerMessages {
 
         Error(CalciteException e) {
             this(SourcePositionRange.INVALID,
-                    false, "Error in SQL statement",
+                    false, false, "Error in SQL statement",
                     (e.getCause() != null) ? e.getCause().getMessage() :
                             (e.getMessage() != null) ? e.getMessage() : "");
         }
@@ -65,7 +65,7 @@ public class CompilerMessages {
         public void format(SourceFileContents contents, StringBuilder output) {
             if (this.range.isValid()) {
                 String sourceFile = contents.getSourceFileName(this.range.start);
-                if (!this.continued) {
+                if (!this.continuation) {
                     output.append(sourceFile)
                             .append(": ")
                             .append(this.errorType)
@@ -76,7 +76,7 @@ public class CompilerMessages {
                         .append(this.range.start)
                         .append(": ");
             }
-            if (!this.continued) {
+            if (!this.continuation) {
                 if (this.warning)
                     output.append("warning:");
                 else

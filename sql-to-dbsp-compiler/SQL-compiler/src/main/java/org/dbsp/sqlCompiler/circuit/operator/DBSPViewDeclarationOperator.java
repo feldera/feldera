@@ -1,6 +1,7 @@
 package org.dbsp.sqlCompiler.circuit.operator;
 
 import org.dbsp.sqlCompiler.circuit.ICircuit;
+import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.TableMetadata;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -15,8 +16,8 @@ import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 import javax.annotation.Nullable;
 import java.util.List;
 
-/** Operator temporarily used in the creation of recursive circuits.
- * Represents a view that is used in the defnition of a set of other views.
+/** Operator used in the creation of recursive circuits.
+ * Represents a recursive view declaration that is used in the defnition of a set of other views.
  * In fact, this behaves exactly like a delay operator that closes a cycle. */
 @NonCoreIR
 public final class DBSPViewDeclarationOperator

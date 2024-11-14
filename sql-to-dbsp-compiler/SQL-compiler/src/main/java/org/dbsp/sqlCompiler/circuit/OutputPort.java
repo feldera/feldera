@@ -1,5 +1,7 @@
-package org.dbsp.sqlCompiler.circuit.operator;
+package org.dbsp.sqlCompiler.circuit;
 
+import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
@@ -95,5 +97,9 @@ public class OutputPort {
         int result = operator.hashCode();
         result = 31 * result + outputNumber;
         return result;
+    }
+
+    public boolean isSimpleNode() {
+        return this.node().is(DBSPSimpleOperator.class);
     }
 }

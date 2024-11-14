@@ -33,7 +33,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPUnaryOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPUpsertFeedbackOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
-import org.dbsp.sqlCompiler.circuit.operator.OutputPort;
+import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.InputColumnMetadata;
 import org.dbsp.sqlCompiler.compiler.ViewColumnMetadata;
@@ -97,13 +97,9 @@ import java.util.Set;
  * See the ExpandOperators class. */
 public class Monotonicity extends CircuitVisitor {
     public static class MonotonicityInformation {
-        /**
-         * For each operator the list of its output monotone columns.
-         */
+        /** For each operator the list of its output monotone columns. */
         final Map<OutputPort, MonotoneExpression> monotonicity;
-        /**
-         * List of operators in the expanded graph.
-         */
+        /** List of operators in the expanded graph. */
         final Set<DBSPOperator> expandedGraph;
 
         MonotonicityInformation() {
@@ -570,11 +566,11 @@ public class Monotonicity extends CircuitVisitor {
         if (input == null)
             return;
         IMaybeMonotoneType projection = Monotonicity.getBodyType(input);
-        // The lag node function has 2 inputs, although the node has
-        // a single port.  The first parameter is actually fed from the
-        // node's port.  The second parameter is fed from the lagged version of
-        // the port.  Moreover, the parameter operates always over indexed
-        // Z-sets, but the function's port is just the Z-set part.
+        // The lag operator function has 2 inputs, although the operator has
+        // a single input.  The first parameter is actually fed from the
+        // operator's input.  The second parameter is fed from the lagged version of
+        // the input.  Moreover, the parameter operates always over indexed
+        // Z-sets, but the function's input is just the Z-set part.
         //
         // Let's say the function of lag is |x, y| f(x, y).
         // We build a new function transfer = |kx| (*kx.0, f(kx.1, No)) and analyze this one.

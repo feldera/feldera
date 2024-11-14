@@ -177,8 +177,9 @@ public abstract class SqlIoTest extends BaseSQLTests {
     /**
      * Test a query followed by the expected output.
      * The query ends at the semicolon.
-     * Runs two test cases, one with optimizations and one without.
-     * This makes sure that constant queries still exercise the runtime.
+     *
+     * @param twoWays if true, runs two test cases, one with optimizations and one without.
+     *                Otherwise, it runs only with optimizations.
      */
     public void q(String queryAndOutput, boolean twoWays) {
         queryAndOutput = this.removeComments(queryAndOutput);

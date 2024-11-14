@@ -24,11 +24,10 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
 import org.dbsp.sqlCompiler.circuit.ICircuit;
-import org.dbsp.sqlCompiler.circuit.annotation.Recursive;
+import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.circuit.operator.*;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.circuit.annotation.NoInc;
-import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
@@ -51,7 +50,7 @@ public class OptimizeIncrementalVisitor extends CircuitCloneVisitor {
     @Override
     public void postorder(DBSPDifferentiateOperator operator) {
         if (operator.hasAnnotation(p -> p.is(NoInc.class))) {
-            this.linear(operator, true);
+            this.linear(operator);
             return;
         }
 
@@ -64,10 +63,7 @@ public class OptimizeIncrementalVisitor extends CircuitCloneVisitor {
         super.postorder(operator);
     }
 
-    public void linear(DBSPUnaryOperator operator, boolean supportedInRecursive) {
-        if (!supportedInRecursive) {
-            this.unsupportedInRecursive(operator);
-        }
+    public void linear(DBSPUnaryOperator operator) {
         OutputPort source = this.mapped(operator.input());
         if (source.node().is(DBSPIntegrateOperator.class)) {
             DBSPSimpleOperator replace = operator.withInputs(source.node().inputs, true);
@@ -80,45 +76,45 @@ public class OptimizeIncrementalVisitor extends CircuitCloneVisitor {
     }
 
     @Override
-    public void postorder(DBSPDeindexOperator operator) { this.linear(operator, true); }
+    public void postorder(DBSPDeindexOperator operator) { this.linear(operator); }
 
     @Override
-    public void postorder(DBSPMapOperator operator) { this.linear(operator, true); }
+    public void postorder(DBSPMapOperator operator) { this.linear(operator); }
 
     @Override
     public void postorder(DBSPFilterOperator operator) {
-        this.linear(operator, true);
+        this.linear(operator);
     }
 
     @Override
     public void postorder(DBSPNegateOperator operator) {
-        this.linear(operator, true);
+        this.linear(operator);
     }
 
     @Override
-    public void postorder(DBSPFlatMapOperator operator) { this.linear(operator, true); }
+    public void postorder(DBSPFlatMapOperator operator) { this.linear(operator); }
 
     @Override
-    public void postorder(DBSPNoopOperator operator) { this.linear(operator, true); }
+    public void postorder(DBSPNoopOperator operator) { this.linear(operator); }
 
     @Override
-    public void postorder(DBSPHopOperator operator) { this.linear(operator, true); }
+    public void postorder(DBSPHopOperator operator) { this.linear(operator); }
 
     @Override
     public void postorder(DBSPViewOperator operator) {
-        this.linear(operator, true);
+        this.linear(operator);
     }
 
     @Override
-    public void postorder(DBSPPartitionedRollingAggregateOperator operator) { this.linear(operator, false); }
+    public void postorder(DBSPPartitionedRollingAggregateOperator operator) { this.linear(operator); }
 
     // It's not linear, but it behaves like one
     @Override
-    public void postorder(DBSPChainAggregateOperator operator) { this.linear(operator, true); }
+    public void postorder(DBSPChainAggregateOperator operator) { this.linear(operator); }
 
     @Override
     public void postorder(DBSPMapIndexOperator operator) {
-        this.linear(operator, true);
+        this.linear(operator);
     }
 
     @Override
@@ -269,17 +265,6 @@ public class OptimizeIncrementalVisitor extends CircuitCloneVisitor {
             // The integral will be inserted in the next circuit
             OutputPort nestedPort = new OutputPort(operator, i);
             this.map(nestedPort, integral.outputPort());
-        }
-    }
-
-    /** Called for operators which are not supported in recursive components */
-    void unsupportedInRecursive(DBSPSimpleOperator operator) {
-        ICircuit circuit = this.getParent();
-        if (circuit.is(DBSPNestedOperator.class)) {
-            DBSPNestedOperator nested = circuit.to(DBSPNestedOperator.class);
-            if (nested.hasAnnotation(a -> a.is(Recursive.class))) {
-                throw new UnimplementedException("Operator not supported in a recursive query", operator);
-            }
         }
     }
 }

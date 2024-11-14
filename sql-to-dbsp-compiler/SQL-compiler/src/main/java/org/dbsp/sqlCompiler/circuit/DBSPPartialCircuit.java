@@ -59,7 +59,7 @@ public final class DBSPPartialCircuit extends DBSPNode
     public final LinkedHashMap<String, DBSPSourceTableOperator> sourceOperators = new LinkedHashMap<>();
     public final LinkedHashMap<String, DBSPViewOperator> viewOperators = new LinkedHashMap<>();
     public final LinkedHashMap<String, DBSPSinkOperator> sinkOperators = new LinkedHashMap<>();
-    // Should always be some in topological order
+    // Should always be in topological order
     public final List<DBSPOperator> allOperators = new ArrayList<>();
     public final ProgramMetadata metadata;
     // Used to detect duplicate insertions (always a bug).

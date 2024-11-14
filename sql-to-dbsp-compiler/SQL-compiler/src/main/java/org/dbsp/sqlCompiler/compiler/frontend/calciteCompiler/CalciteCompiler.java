@@ -194,7 +194,7 @@ public class CalciteCompiler implements IWritesLogs {
     private final HashMap<String, RelStruct> udt;
     private final HashMap<String, DeclareViewStatement> declaredViews;
     /** Recursive views which have been referred */
-    private final Set<String> usedViews;
+    private final Set<String> usedViewDeclarations;
     /** Views which have been defined */
     private final Set<String> definedViews;
 
@@ -265,11 +265,14 @@ public class CalciteCompiler implements IWritesLogs {
         planner.setExecutor(RexUtil.EXECUTOR);
         this.cluster = RelOptCluster.create(planner, new RexBuilder(this.typeFactory));
         this.converterConfig = SqlToRelConverter.config()
+                // Calcite recommends not using withExpand, but there are no
+                // rules to decorrelate some queries that withExpand will produce,
+                // e.g., AggScottTests.testAggregates4
                 .withExpand(true);
         this.validator = null;
         this.validateTypes = null;
         this.converter = null;
-        this.usedViews = new HashSet<>();
+        this.usedViewDeclarations = new HashSet<>();
         this.declaredViews = new HashMap<>();
 
         SqlOperatorTable operatorTable = this.createOperatorTable();
@@ -293,7 +296,7 @@ public class CalciteCompiler implements IWritesLogs {
         this.rootSchema = CalciteSchema.createRootSchema(false, false).plus();
         this.copySchema(source.rootSchema);
         this.rootSchema.add(this.calciteCatalog.schemaName, this.calciteCatalog);
-        this.usedViews = new HashSet<>(source.usedViews);
+        this.usedViewDeclarations = new HashSet<>(source.usedViewDeclarations);
         this.definedViews = new HashSet<>(source.definedViews);
         this.addOperatorTable(Objects.requireNonNull(source.validator).getOperatorTable());
     }
@@ -333,10 +336,10 @@ public class CalciteCompiler implements IWritesLogs {
         public boolean shouldConvertRaggedUnionTypesToVarying() { return true; }
     };
 
-    /** Invoked when compilation is finished, to do additional validation */
+    /** Invoked when front-end compilation is finished, to do additional validation */
     public void endCompilation(IErrorReporter reporter) {
         for (var declared: this.declaredViews.keySet()) {
-            if (this.usedViews.contains(declared))
+            if (this.usedViewDeclarations.contains(declared) || this.definedViews.contains(declared))
                 continue;
             DeclareViewStatement dv = this.declaredViews.get(declared);
             reporter.reportWarning(dv.getPosition(), "Unused view declaration",
@@ -936,7 +939,7 @@ public class CalciteCompiler implements IWritesLogs {
                                     Utilities.singleQuote(columnName) + " already defined");
                     this.errorReporter.reportError(new SourcePositionRange(previousColumn.getParserPosition()),
                             "Duplicate name",
-                            "Previous definition");
+                            "Previous definition", true);
                     error = true;
                 } else {
                     columnDefinition.put(columnName, id);
@@ -1176,7 +1179,7 @@ public class CalciteCompiler implements IWritesLogs {
             return query;
         ReplaceRecursiveViews rr = new ReplaceRecursiveViews(
                 toReplace, DeclareViewStatement::inputViewName);
-        this.usedViews.addAll(rr.usedViews);
+        this.usedViewDeclarations.addAll(rr.usedViews);
         query = rr.visitNode(query);
         return Objects.requireNonNull(query);
     }

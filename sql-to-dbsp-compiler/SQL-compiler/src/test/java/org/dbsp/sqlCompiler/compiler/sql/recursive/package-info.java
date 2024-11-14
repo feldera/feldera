@@ -1,4 +1,5 @@
 /**
+ * Tests for recursive queries.
  * Package that doesn't allow null values as method parameters.
  */
 

@@ -221,7 +221,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
     /**
      * Report an error or warning during compilation.
      * @param range      Position in source where error is located.
-     * @param continuation  If true, this error message is the first part of a multi-line report.
+     * @param continuation  If true, this error message is a continuation of a multi-line report.
      * @param warning    True if this is a warning.
      * @param errorType  A short string that categorizes the error type.
      * @param message    Error message.

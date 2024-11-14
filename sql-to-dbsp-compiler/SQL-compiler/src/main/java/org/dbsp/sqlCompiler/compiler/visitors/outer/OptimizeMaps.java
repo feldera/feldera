@@ -17,7 +17,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPNoopOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
-import org.dbsp.sqlCompiler.circuit.operator.OutputPort;
+import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Projection;
@@ -37,19 +37,13 @@ import java.util.List;
  * - Merge Maps with subsequent MapIndex operators
  * - Merge consecutive apply operators
  */
-public class OptimizeMaps extends CircuitCloneVisitor {
-    final CircuitGraphs graphs;
+public class OptimizeMaps extends CircuitCloneWithGraphsVisitor {
     /** If true only optimize projections after joins */
     final boolean onlyProjections;
 
     public OptimizeMaps(IErrorReporter reporter, boolean onlyProjections, CircuitGraphs graphs) {
-        super(reporter, false);
-        this.graphs = graphs;
+        super(reporter, graphs, false);
         this.onlyProjections = onlyProjections;
-    }
-
-    public CircuitGraph getGraph() {
-        return this.graphs.getGraph(this.getParent());
     }
 
     @Override

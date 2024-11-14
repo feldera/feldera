@@ -9,6 +9,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.CSE;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitGraph;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitGraphs;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitWithGraphsVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.Passes;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 import org.dbsp.util.Linq;
@@ -28,14 +29,12 @@ import java.util.Map;
  */
 public class MergeGC extends Passes {
     /** This is a modified form of {@link CSE.FindCSE} */
-    static class FindEquivalentNoops extends CircuitVisitor {
-        final CircuitGraphs graphs;
+    static class FindEquivalentNoops extends CircuitWithGraphsVisitor {
         /** Maps each operator to its canonical representative */
         public final Map<DBSPOperator, DBSPOperator> canonical;
 
         public FindEquivalentNoops(IErrorReporter errorReporter, CircuitGraphs graphs) {
-            super(errorReporter);
-            this.graphs = graphs;
+            super(errorReporter, graphs);
             this.canonical = new HashMap<>();
         }
 
@@ -43,10 +42,6 @@ public class MergeGC extends Passes {
         public Token startVisit(IDBSPOuterNode node) {
             this.canonical.clear();
             return super.startVisit(node);
-        }
-
-        public CircuitGraph getGraph() {
-            return this.graphs.getGraph(this.getParent());
         }
 
         @Nullable

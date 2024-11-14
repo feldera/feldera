@@ -4,20 +4,13 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPFilterOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinFilterMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
-import org.dbsp.sqlCompiler.circuit.operator.OutputPort;
+import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 
 /** Combine a Join followed by a filter into a JoinFilterMap. */
-public class FilterJoinVisitor extends CircuitCloneVisitor {
-    final CircuitGraphs graphs;
-
+public class FilterJoinVisitor extends CircuitCloneWithGraphsVisitor {
     public FilterJoinVisitor(IErrorReporter reporter, CircuitGraphs graphs) {
-        super(reporter, false);
-        this.graphs = graphs;
-    }
-
-    public CircuitGraph getGraph() {
-        return this.graphs.getGraph(this.getParent());
+        super(reporter, graphs, false);
     }
 
     @Override

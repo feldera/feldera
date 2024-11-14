@@ -82,6 +82,29 @@ public class RecursiveTests extends BaseSQLTests {
     }
 
     @Test
+    public void illegalRecursiveTests() {
+        String sql = """
+                CREATE TABLE E(x int, y int);
+                CREATE RECURSIVE VIEW CLOSURE(x int, y int);
+                CREATE VIEW STEP AS
+                SELECT E.x, CLOSURE.y FROM
+                E JOIN CLOSURE ON e.y = CLOSURE.x;
+                CREATE MATERIALIZED VIEW CLOSURE AS (SELECT * FROM E) UNION (SELECT * FROM STEP);
+                """;
+        this.statementsFailingInCompilation(sql,
+                "View 'step' must be declared either as LOCAL or as RECURSIVE");
+
+        sql = """
+                CREATE TABLE E(x int, y int);
+                CREATE RECURSIVE VIEW CLOSURE(x int, y int);
+                CREATE MATERIALIZED VIEW CLOSURE AS (SELECT * FROM E) UNION
+                    (SELECT lag(x) OVER (PARTITION BY x ORDER BY y), x FROM CLOSURE);
+                """;
+        this.statementsFailingInCompilation(sql,
+                "Unsupported operation 'LAG' in recursive code");
+    }
+
+    @Test
     public void typeMismatchTest() {
         // Declared type does not match
         String sql = """
@@ -99,6 +122,12 @@ public class RecursiveTests extends BaseSQLTests {
         sql = """
                 CREATE RECURSIVE VIEW V(v INT);""";
         this.shouldWarn(sql, "Unused view declaration");
+
+        // Recursive view is not recursive
+        sql = """
+                CREATE RECURSIVE VIEW V(v INT NOT NULL);
+                CREATE VIEW V AS SELECT 1 AS v;""";
+        this.shouldWarn(sql, "is declared recursive, but is not used in any recursive computation");
     }
 
     @Test
@@ -108,6 +137,6 @@ public class RecursiveTests extends BaseSQLTests {
                 CREATE TABLE T(v BIGINT);
                 CREATE LOCAL VIEW W AS SELECT * FROM V UNION SELECT * FROM T;
                 CREATE VIEW V AS SELECT COUNT(*) OVER (ORDER BY v) v FROM W;""";
-        this.statementsFailingInCompilation(sql, "Operator not supported in a recursive query");
+        this.statementsFailingInCompilation(sql, "Unsupported operation 'OVER' in recursive code");
     }
 }

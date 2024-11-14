@@ -48,7 +48,8 @@ public abstract class CircuitVisitor
     final long id;
     static long crtId = 0;
 
-    /** Used to force startVisit to call the base class */
+    /** Used to force startVisit to call the base class,
+     * since only the base class can access this object. */
     public static class Token {
         private Token() {};
     }

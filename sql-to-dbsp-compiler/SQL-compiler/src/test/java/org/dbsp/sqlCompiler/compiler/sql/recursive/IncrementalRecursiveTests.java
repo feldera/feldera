@@ -6,8 +6,6 @@ import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.StderrErrorReporter;
 import org.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
-import org.dbsp.sqlCompiler.compiler.visitors.outer.Passes;
-import org.dbsp.util.Logger;
 import org.junit.Assert;
 import org.junit.Test;
 
@@ -98,7 +96,7 @@ public class IncrementalRecursiveTests extends BaseSQLTests {
                 CREATE LOCAL VIEW STEP AS
                 SELECT E.x, CLOSURE.y FROM
                 E JOIN CLOSURE ON e.y = CLOSURE.x;
-                CREATE VIEW CLOSURE AS (SELECT * FROM E) UNION (SELECT * FROM STEP);
+                CREATE MATERIALIZED VIEW CLOSURE AS (SELECT * FROM E) UNION (SELECT * FROM STEP);
                 """;
         var ccs = this.getCCS(sql);
         ccs.step("", """
@@ -118,6 +116,100 @@ public class IncrementalRecursiveTests extends BaseSQLTests {
                 ---------------
                 0 | 1 | -1
                 0 | 2 | -1""");
+        this.addRustTestCase(ccs);
+    }
+
+    @Test
+    public void factorial() {
+        // Three tests adapted from https://www.geeksforgeeks.org/postgresql-create-recursive-views/
+        String sql = """
+                CREATE RECURSIVE VIEW fact(n int, factorial int);
+                CREATE VIEW fact AS
+                   SELECT 1 as n, 5 as factorial
+                   UNION ALL SELECT n+1, factorial*n FROM fact WHERE n < 5;""";
+        var ccs = this.getCCS(sql);
+        ccs.step("", """
+                 n | factorial | weight
+                ---+--------------------
+                 1 |         5 | 1
+                 2 |         5 | 1
+                 3 |        10 | 1
+                 4 |        30 | 1
+                 5 |       120 | 1""");
+        this.addRustTestCase(ccs);
+    }
+
+    @Test
+    public void testSequence() {
+        String sql = """
+                CREATE RECURSIVE VIEW tens(n int);
+                CREATE VIEW tens AS
+                    SELECT 1 as n
+                 UNION ALL
+                   SELECT n+1 FROM tens WHERE n < 10;""";
+        var ccs = this.getCCS(sql);
+        ccs.step("", """
+                 n  | weight
+                -------------
+                  1 | 1
+                  2 | 1
+                  3 | 1
+                  4 | 1
+                  5 | 1
+                  6 | 1
+                  7 | 1
+                  8 | 1
+                  9 | 1
+                 10 | 1""");
+        this.addRustTestCase(ccs);
+    }
+
+    @Test
+    public void testHierarchy() {
+        String sql = """
+                CREATE TABLE emp (
+                  emp_id INT NOT NULL PRIMARY KEY,
+                  emp_name VARCHAR,
+                  manager_id INT
+                );
+                
+                CREATE RECURSIVE VIEW subordinates(emp_id int NOT NULL, manager_id int, emp_name varchar, level int);
+                CREATE VIEW subordinates AS
+                  SELECT emp_id, manager_id, emp_name, 0 AS level
+                  FROM emp
+                  WHERE manager_id IS NULL
+                  UNION ALL
+                  SELECT e.emp_id, e.manager_id, e.emp_name, s.level + 1
+                  FROM emp e
+                  INNER JOIN subordinates s ON s.emp_id = e.manager_id;""";
+        var ccs = this.getCCS(sql);
+        ccs.step("""
+                INSERT INTO emp
+                VALUES
+                (1, 'Onkar', NULL),
+                (2, 'Isaac', 1),
+                (3, 'Jack', 1),
+                (4, 'Aditya', 1),
+                (5, 'Albert', 1),
+                (6, 'Alex', 2),
+                (7, 'Brian', 2),
+                (8, 'Harry', 3),
+                (9, 'Paul', 3),
+                (10, 'Kunal', 4),
+                (11, 'Pranav', 5)""", """
+                 emp_id | manager_id | emp_name | level | weight
+                -------------------------------------------------
+                      1 |            | Onkar|         0 | 1
+                      2 |          1 | Isaac|         1 | 1
+                      3 |          1 | Jack|          1 | 1
+                      4 |          1 | Aditya|        1 | 1
+                      5 |          1 | Albert|        1 | 1
+                      6 |          2 | Alex|          2 | 1
+                      7 |          2 | Brian|         2 | 1
+                      8 |          3 | Harry|         2 | 1
+                      9 |          3 | Paul|          2 | 1
+                     10 |          4 | Kunal|         2 | 1
+                     11 |          5 | Pranav|        2 | 1""");
         this.addRustTestCase(ccs);
     }
 }

@@ -1,28 +1,6 @@
-/*
- * Copyright 2022 VMware, Inc.
- * SPDX-License-Identifier: MIT
- *
- * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and associated documentation files (the "Software"), to deal
- * in the Software without restriction, including without limitation the rights
- * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- * copies of the Software, and to permit persons to whom the Software is
- * furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included in all
- * copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
- * SOFTWARE.
- */
-
 package org.dbsp.sqlCompiler.circuit.operator;
 
+import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.circuit.annotation.CompactName;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
@@ -47,12 +25,12 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * A DBSP simple operator, which applies a function to the inputs and produces an output.
+ * A DBSP simple operator, which applies a function to the inputs and produces a single output.
  * On the naming of the operator classes:
  * Each operator has an "operation" field. This one corresponds to the
  * Rust Stream method that is invoked to implement the operator.
  * Some operators have "Stream" in their name.  These usually correspond
- * to a method starting with "stream_*".
+ * to a Rust method starting with "stream_*".
  * Some operators compute correctly both over deltas and aver whole sets, e.g. Map.
  */
 public abstract class DBSPSimpleOperator extends DBSPOperator implements IHasType, IDBSPOuterNode {
@@ -63,11 +41,12 @@ public abstract class DBSPSimpleOperator extends DBSPOperator implements IHasTyp
     public final DBSPExpression function;
     /** Type of output produced. */
     public final DBSPType outputType;
-    /** True if the output of the operator is a multiset. */
+    /** True if the output of the operator is a multiset.  Conservative approximation;
+     * if this is 'false', it is surely false.  It if is true, the output may still be a set. */
     public final boolean isMultiset;
     @Nullable
     public final String comment;
-    /** Always the output type wrapped in a stream type */
+    /** Always {@link DBSPSimpleOperator#outputType} wrapped in a stream type */
     public final DBSPType outputStreamType;
 
     protected DBSPSimpleOperator(CalciteObject node, String operation,
@@ -129,8 +108,7 @@ public abstract class DBSPSimpleOperator extends DBSPOperator implements IHasTyp
     /**
      * Check that the result type of function is the same as expected.
      * @param function  An expression with a function type.
-     * @param expected  Type expected to be returned by the function.
-     */
+     * @param expected  Type expected to be returned by the function. */
     public void checkResultType(DBSPExpression function, DBSPType expected) {
         if (function.getType().is(DBSPTypeAny.class))
             return;

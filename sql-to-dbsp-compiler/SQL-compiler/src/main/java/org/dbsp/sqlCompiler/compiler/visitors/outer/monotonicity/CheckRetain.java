@@ -3,26 +3,20 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
-import org.dbsp.sqlCompiler.circuit.operator.OutputPort;
+import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitGraph;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitGraphs;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitWithGraphsVisitor;
 import org.dbsp.util.graph.Port;
 
 /** The DBSP runtime will incorrectly GC a relation that has multiple Retain operators of
  * the same kind.  Check that this doesn't happen. */
-public class CheckRetain extends CircuitVisitor {
-    final CircuitGraphs graphs;
-
+public class CheckRetain extends CircuitWithGraphsVisitor {
     public CheckRetain(IErrorReporter errorReporter, CircuitGraphs graphs) {
-        super(errorReporter);
-        this.graphs = graphs;
-    }
-
-    public CircuitGraph getGraph() {
-        return this.graphs.getGraph(this.getParent());
+        super(errorReporter, graphs);
     }
 
     @Override

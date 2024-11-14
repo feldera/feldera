@@ -3,7 +3,7 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNoopOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.GCOperator;
-import org.dbsp.sqlCompiler.circuit.operator.OutputPort;
+import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.util.Linq;
 import org.dbsp.util.graph.Port;
@@ -11,16 +11,9 @@ import org.dbsp.util.graph.Port;
 import java.util.List;
 
 /** Removes noops that are not followed by a GC operator */
-public class RemoveNoops extends CircuitCloneVisitor {
-    private final CircuitGraphs graphs;
-
+public class RemoveNoops extends CircuitCloneWithGraphsVisitor {
     public RemoveNoops(IErrorReporter reporter, CircuitGraphs graphs) {
-        super(reporter, false);
-        this.graphs = graphs;
-    }
-
-    public CircuitGraph getGraph() {
-        return this.graphs.getGraph(this.getParent());
+        super(reporter, graphs,  false);
     }
 
     @Override
