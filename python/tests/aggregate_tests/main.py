@@ -14,6 +14,9 @@ from tests.aggregate_tests.test_arg_min import *  # noqa: F403
 from tests.aggregate_tests.test_atbl_charn import *  # noqa: F403
 from tests.aggregate_tests.test_atbl_varcharn import *  # noqa: F403
 from tests.aggregate_tests.test_avg import *  # noqa: F403
+from tests.aggregate_tests.test_binary_arg_max import *  # noqa: F403
+from tests.aggregate_tests.test_binary_arg_min import *  # noqa: F403
+from tests.aggregate_tests.test_binary_arr_agg import *  # noqa: F403
 from tests.aggregate_tests.test_binary_count_col import *  # noqa: F403
 from tests.aggregate_tests.test_binary_count import *  # noqa: F403
 from tests.aggregate_tests.test_binary_max import *  # noqa: F403
