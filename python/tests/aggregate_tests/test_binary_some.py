@@ -58,8 +58,8 @@ class aggtst_binary_some_where_groupby(TstView):
     def __init__(self):
         # Validated on Postgres
         self.data = [
-            {'id': 0, 'c1': False, 'c2': True},
-            {'id': 1, 'c1': True, 'c2': True},
+            {"id": 0, "c1": False, "c2": True},
+            {"id": 1, "c1": True, "c2": True},
         ]
         self.sql = """CREATE MATERIALIZED VIEW binary_some_where_gby AS SELECT
                       id, SOME(c1 > c2) FILTER(WHERE c2 IS NOT NULL) AS c1, SOME(c2 > c1) FILTER(WHERE c2 IS NOT NULL) AS c2
