@@ -149,7 +149,7 @@ WITH (
         "registry_urls": ["http://redpanda:8081"],
         "key_fields": ["id"]
       }
-    },
+    }
   }]'
 )
 as select * from test_table;
