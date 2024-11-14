@@ -7,7 +7,9 @@ use arrow_json::writer::LineDelimited;
 use arrow_json::WriterBuilder;
 use async_stream::{stream, try_stream};
 use bytes::Bytes;
-use datafusion::common::DataFusionError;
+use datafusion::common::{DataFusionError, Result as DFResult};
+use datafusion::dataframe::DataFrame;
+use datafusion::execution::SendableRecordBatchStream;
 use datafusion::prelude::SessionContext;
 use feldera_types::query::{AdHocResultFormat, AdhocQueryArgs};
 use futures_util::future::{BoxFuture, FutureExt};
@@ -17,7 +19,8 @@ use parquet::arrow::AsyncArrowWriter;
 use parquet::basic::Compression;
 use parquet::file::properties::WriterProperties;
 use std::convert::Infallible;
-use tokio::sync::mpsc;
+use tokio::sync::oneshot::Receiver;
+use tokio::sync::{mpsc, oneshot};
 
 pub(crate) mod table;
 
@@ -48,6 +51,19 @@ impl AsyncFileWriter for ChannelWriter {
     }
 }
 
+/// We execute the dataframe in our dbsp tokio runtime. The reason is that this runtime will
+/// have a multi-threaded scheduler that can run things on many cores with work-stealing, whereas
+/// the actix-web runtime is single-threaded. This is important for datafusion because it can
+/// parallelize query execution.
+fn execute_stream(df: DataFrame) -> Receiver<DFResult<SendableRecordBatchStream>> {
+    let (tx, rx) = oneshot::channel();
+    dbsp::circuit::tokio::TOKIO.spawn(async move {
+        let _r = tx.send(df.execute_stream().await);
+    });
+
+    rx
+}
+
 /// Stream the result of an ad-hoc query.
 pub async fn stream_adhoc_result(
     args: AdhocQueryArgs,
@@ -68,9 +84,16 @@ pub async fn stream_adhoc_result(
             Ok(HttpResponse::Ok()
                 .content_type(mime::TEXT_PLAIN)
                 .streaming::<_, Infallible>(try_stream! {
+                    let stream_exec = match execute_stream(df).await {
+                        Ok(res) => res.map_err(|e| PipelineError::AdHocQueryError { error: e.to_string(), df: None }),
+                        Err(e) => {
+                            yield format!("ERROR: {}", e).into();
+                            return;
+                        }
+                    };
+
                     let mut headers_sent = false;
                     let mut last_line: Option<String> = None;
-                    let stream_exec = df.execute_stream().await.map_err(|e| PipelineError::AdHocQueryError { error: e.to_string(), df: None });
                     match stream_exec {
                         Ok(mut stream) => {
                             while let Some(batch) = stream.next().await {
@@ -138,7 +161,14 @@ pub async fn stream_adhoc_result(
         AdHocResultFormat::Json => Ok(HttpResponse::Ok()
             .content_type(mime::APPLICATION_JSON)
             .streaming::<_, Infallible>(try_stream! {
-                let stream_exec = df.execute_stream().await.map_err(|e| PipelineError::AdHocQueryError { error: e.to_string(), df: None });
+                let stream_exec = match execute_stream(df).await {
+                    Ok(res) => res.map_err(|e| PipelineError::AdHocQueryError { error: e.to_string(), df: None }),
+                    Err(e) => {
+                        yield format!("ERROR: {}", e).into();
+                        return;
+                    }
+                };
+
                 match stream_exec {
                     Ok(mut stream) => {
                         while let Some(batch) = stream.next().await {
@@ -181,7 +211,7 @@ pub async fn stream_adhoc_result(
 
             let mut stream_job = Box::pin(async move {
                 let schema = df.schema().inner().clone();
-                let mut stream = df.execute_stream().await?;
+                let mut stream = execute_stream(df).await.expect("unable to receive stream")?;
 
                 let mut writer = AsyncArrowWriter::try_new(
                     ChannelWriter::new(tx),
