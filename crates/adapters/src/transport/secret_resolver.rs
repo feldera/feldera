@@ -128,6 +128,23 @@ impl MaybeSecret {
             }
         }
     }
+
+    pub fn into_inner(self) -> String {
+        match self {
+            MaybeSecret::String(s) | MaybeSecret::Secret(s) => s,
+        }
+    }
+}
+
+/// If `value` has the pattern for a secret, resolves it and returns the
+/// resolved secret. Otherwise, returns the original string.
+pub fn resolve_secret(value: &str) -> AnyResult<String> {
+    Ok(
+        MaybeSecret::new_using_default_directory(MaybeSecretRef::new_using_pattern_match(
+            String::from(value),
+        ))?
+        .into_inner(),
+    )
 }
 
 #[cfg(test)]

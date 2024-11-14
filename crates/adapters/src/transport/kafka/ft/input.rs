@@ -1,9 +1,9 @@
 use crate::transport::kafka::ft::count_partitions_in_topic;
+use crate::transport::secret_resolver::resolve_secret;
 use crate::transport::InputCommandReceiver;
 use crate::{
     transport::{
         kafka::{rdkafka_loglevel_from, refine_kafka_error, DeferredLogging},
-        secret_resolver::MaybeSecret,
         InputReader,
     },
     InputConsumer, TransportInputEndpoint,
@@ -13,7 +13,7 @@ use anyhow::{anyhow, Error as AnyError, Result as AnyResult};
 use crossbeam::queue::ArrayQueue;
 use feldera_adapterlib::transport::{InputEndpoint, InputReaderCommand};
 use feldera_types::program_schema::Relation;
-use feldera_types::{secret_ref::MaybeSecretRef, transport::kafka::KafkaInputConfig};
+use feldera_types::transport::kafka::KafkaInputConfig;
 use indexmap::IndexSet;
 use log::debug;
 use rdkafka::config::RDKafkaLogLevel;
@@ -372,17 +372,7 @@ impl KafkaFtInputReader {
         let mut client_config = ClientConfig::new();
 
         for (key, value) in config.kafka_options.iter() {
-            // If it is a secret reference, resolve it to the actual secret string
-            match MaybeSecret::new_using_default_directory(
-                MaybeSecretRef::new_using_pattern_match(value.clone()),
-            )? {
-                MaybeSecret::String(simple_string) => {
-                    client_config.set(key, simple_string);
-                }
-                MaybeSecret::Secret(secret_string) => {
-                    client_config.set(key, secret_string);
-                }
-            }
+            client_config.set(key, resolve_secret(value)?);
         }
 
         if let Some(log_level) = config.log_level {
