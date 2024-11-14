@@ -5,7 +5,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperato
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
-import org.dbsp.sqlCompiler.circuit.operator.OperatorPort;
+import org.dbsp.sqlCompiler.circuit.operator.OutputPort;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.util.Logger;
 import org.dbsp.util.graph.Port;
@@ -31,10 +31,10 @@ public class CSE extends Repeat {
         final Map<DBSPOperator, DBSPOperator> canonical = new HashMap<>();
 
         OneCSEPass(IErrorReporter reporter) {
-            super(reporter);
+            super("CSE", reporter);
             Graph graph = new Graph(reporter);
             this.add(graph);
-            this.add(new FindCSE(reporter, graph.graph, this.canonical));
+            this.add(new FindCSE(reporter, graph.graphs, this.canonical));
             this.add(new RemoveCSE(reporter, this.canonical));
         }
     }
@@ -43,13 +43,13 @@ public class CSE extends Repeat {
     public static class FindCSE extends CircuitVisitor {
         /** Maps each operator to its canonical representative */
         final Map<DBSPOperator, DBSPOperator> canonical;
-        final CircuitGraph graph;
+        final CircuitGraphs graphs;
         final Set<DBSPConstantOperator> constants;
 
-        public FindCSE(IErrorReporter errorReporter, CircuitGraph graph,
+        public FindCSE(IErrorReporter errorReporter, CircuitGraphs graphs,
                        Map<DBSPOperator, DBSPOperator> canonical) {
             super(errorReporter);
-            this.graph = graph;
+            this.graphs = graphs;
             this.canonical = canonical;
             this.constants = new HashSet<>();
         }
@@ -65,8 +65,12 @@ public class CSE extends Repeat {
             }
         }
 
+        public CircuitGraph getGraph() {
+            return this.graphs.getGraph(this.getParent());
+        }
+
         boolean hasGcSuccessor(DBSPOperator operator) {
-            for (Port<DBSPOperator> succ: this.graph.getSuccessors(operator)) {
+            for (Port<DBSPOperator> succ: this.getGraph().getSuccessors(operator)) {
                 if (succ.node().is(DBSPIntegrateTraceRetainKeysOperator.class) ||
                         succ.node().is(DBSPIntegrateTraceRetainValuesOperator.class))
                     // only input 0 of these operators affects the GC
@@ -77,7 +81,7 @@ public class CSE extends Repeat {
 
         @Override
         public void postorder(DBSPSimpleOperator operator) {
-            List<Port<DBSPOperator>> destinations = this.graph.getSuccessors(operator);
+            List<Port<DBSPOperator>> destinations = this.getGraph().getSuccessors(operator);
             // Compare every pair of destinations
             for (int i = 0; i < destinations.size(); i++) {
                 DBSPOperator base = destinations.get(i).node();
@@ -125,8 +129,8 @@ public class CSE extends Repeat {
                 super.replace(operator);
                 return;
             }
-            OperatorPort newReplacement = this.mapped(replacement.to(DBSPSimpleOperator.class).getOutput());
-            this.map(operator.getOutput(), newReplacement, false);
+            OutputPort newReplacement = this.mapped(replacement.to(DBSPSimpleOperator.class).outputPort());
+            this.map(operator.outputPort(), newReplacement, false);
         }
     }
 }

@@ -31,7 +31,7 @@ import javax.annotation.CheckReturnValue;
 import java.util.List;
 
 public final class DBSPStreamDistinctOperator extends DBSPUnaryOperator {
-    public DBSPStreamDistinctOperator(CalciteObject node, OperatorPort input) {
+    public DBSPStreamDistinctOperator(CalciteObject node, OutputPort input) {
         super(node, "stream_distinct", null, input.outputType(), false, input);
     }
 
@@ -46,7 +46,7 @@ public final class DBSPStreamDistinctOperator extends DBSPUnaryOperator {
 
     @CheckReturnValue
     @Override
-    public DBSPSimpleOperator withInputs(List<OperatorPort> newInputs, boolean force) {
+    public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPStreamDistinctOperator(
                     this.getNode(), newInputs.get(0)).copyAnnotations(this);

@@ -10,19 +10,19 @@ import javax.annotation.Nullable;
 public abstract class DBSPBinaryOperator extends DBSPSimpleOperator {
     protected DBSPBinaryOperator(CalciteObject node, String operation,
                                  @Nullable DBSPExpression function, DBSPType outputType,
-                                 boolean isMultiset, OperatorPort left, OperatorPort right) {
+                                 boolean isMultiset, OutputPort left, OutputPort right) {
         super(node, operation, function, outputType, isMultiset);
         this.addInput(left);
         this.addInput(right);
     }
 
     /** The first input of this operator. */
-    public OperatorPort left() {
+    public OutputPort left() {
         return this.inputs.get(0);
     }
 
     /** The second input of this operator. */
-    public OperatorPort right() {
+    public OutputPort right() {
         return this.inputs.get(1);
     }
 }

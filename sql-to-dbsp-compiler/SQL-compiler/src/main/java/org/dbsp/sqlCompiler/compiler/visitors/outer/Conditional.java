@@ -31,4 +31,9 @@ public class Conditional implements IWritesLogs, CircuitTransform {
     public String toString() {
         return this.id + " Conditional " + this.transform;
     }
+
+    @Override
+    public String getName() {
+        return this.toString();
+    }
 }

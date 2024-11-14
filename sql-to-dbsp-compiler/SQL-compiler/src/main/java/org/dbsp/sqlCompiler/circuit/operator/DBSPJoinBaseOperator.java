@@ -10,7 +10,7 @@ public abstract class DBSPJoinBaseOperator extends DBSPBinaryOperator {
     protected DBSPJoinBaseOperator(
             CalciteObject node, String operation, DBSPExpression function,
             DBSPType outputType, boolean isMultiset,
-            OperatorPort left, OperatorPort right) {
+            OutputPort left, OutputPort right) {
         super(node, operation, function, outputType, isMultiset, left, right);
         this.checkParameterCount(function, 3);
     }

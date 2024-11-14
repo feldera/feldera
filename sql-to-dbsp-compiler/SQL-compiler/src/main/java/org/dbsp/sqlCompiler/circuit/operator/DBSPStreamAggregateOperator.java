@@ -39,7 +39,7 @@ public final class DBSPStreamAggregateOperator extends DBSPAggregateOperatorBase
                                        DBSPTypeIndexedZSet outputType,
                                        @Nullable DBSPExpression function,
                                        @Nullable DBSPAggregate aggregate,
-                                       OperatorPort input) {
+                                       OutputPort input) {
         super(node, "stream_aggregate",
                 outputType, function, aggregate, false, input);
         assert aggregate == null || !aggregate.isLinear();
@@ -63,7 +63,7 @@ public final class DBSPStreamAggregateOperator extends DBSPAggregateOperatorBase
     }
 
     @Override
-    public DBSPSimpleOperator withInputs(List<OperatorPort> newInputs, boolean force) {
+    public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPStreamAggregateOperator(
                     this.getNode(), this.getOutputIndexedZSetType(),

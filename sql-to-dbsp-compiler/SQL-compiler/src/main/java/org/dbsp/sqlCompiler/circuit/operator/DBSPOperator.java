@@ -29,6 +29,7 @@ import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.ir.DBSPNode;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
+import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.Linq;
 
 import java.util.ArrayList;
@@ -37,7 +38,7 @@ import java.util.function.Predicate;
 
 /** Base class for DBSPOperators */
 public abstract class DBSPOperator extends DBSPNode implements IDBSPOuterNode {
-    public final List<OperatorPort> inputs;
+    public final List<OutputPort> inputs;
     public final Annotations annotations;
     /** id of the operator this one is derived from.  -1 for "new" operators */
     public long derivedFrom;
@@ -66,7 +67,7 @@ public abstract class DBSPOperator extends DBSPNode implements IDBSPOuterNode {
             this.derivedFrom = id;
     }
 
-    protected void addInput(OperatorPort port) {
+    protected void addInput(OutputPort port) {
         this.inputs.add(port);
     }
 
@@ -86,10 +87,10 @@ public abstract class DBSPOperator extends DBSPNode implements IDBSPOuterNode {
      * @param newInputs  List of alternative inputs.
      * @param sameSizeRequired  If true and the sizes don't match, throw.
      */
-    public boolean inputsDiffer(List<OperatorPort> newInputs, boolean sameSizeRequired) {
+    public boolean inputsDiffer(List<OutputPort> newInputs, boolean sameSizeRequired) {
         if (this.inputs.size() != newInputs.size()) {
             if (sameSizeRequired)
-                throw new InternalCompilerError("Comparing opeartor with " + this.inputs.size() +
+                throw new InternalCompilerError("Comparing operator with " + this.inputs.size() +
                         " inputs with a list of " + newInputs.size() + " inputs", this);
             else
                 return false;
@@ -105,7 +106,7 @@ public abstract class DBSPOperator extends DBSPNode implements IDBSPOuterNode {
         return !this.inputsDiffer(other.inputs, false);
     }
 
-    public boolean inputsDiffer(List<OperatorPort> newInputs) {
+    public boolean inputsDiffer(List<OutputPort> newInputs) {
         return this.inputsDiffer(newInputs, true);
     }
 
@@ -113,4 +114,16 @@ public abstract class DBSPOperator extends DBSPNode implements IDBSPOuterNode {
      * which means that common-subexpression elimination can replace this with 'other'.
      * This implies that all inputs are the same, and the computed functions are the same. */
     public abstract boolean equivalent(DBSPOperator other);
+
+    /** Get the type of the specified output */
+    public abstract DBSPType outputType(int outputNo);
+
+    /** True if the specified output is a multiset */
+    public abstract boolean isMultiset(int outputNumber);
+
+    public abstract String getOutputName(int outputNumber);
+
+    public abstract int outputCount();
+
+    public abstract DBSPType streamType(int outputNumber);
 }

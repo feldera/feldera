@@ -7,7 +7,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
-import org.dbsp.sqlCompiler.circuit.operator.OperatorPort;
+import org.dbsp.sqlCompiler.circuit.operator.OutputPort;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.frontend.TypeCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
@@ -47,7 +47,7 @@ public class NarrowJoins extends Repeat {
 
     static class OnePass extends Passes {
         OnePass(IErrorReporter reporter) {
-            super(reporter);
+            super("NarrowJoins", reporter);
             // Moves projections from joins to their inputs
             this.add(new RemoveJoinFields(reporter));
             this.add(new DeadCode(reporter, true, false));
@@ -134,7 +134,7 @@ public class NarrowJoins extends Repeat {
             super(reporter, false);
         }
 
-        DBSPMapIndexOperator getProjection(CalciteObject node, List<Integer> fields, OperatorPort input) {
+        DBSPMapIndexOperator getProjection(CalciteObject node, List<Integer> fields, OutputPort input) {
             DBSPType inputType = input.getOutputIndexedZSetType().getKVRefType();
             DBSPVariablePath var = inputType.var();
             List<DBSPExpression> resultFields = Linq.map(fields,
@@ -144,7 +144,7 @@ public class NarrowJoins extends Repeat {
                     new DBSPTupleExpression(resultFields, false));
             DBSPClosureExpression projection = raw.closure(var);
 
-            OperatorPort source = this.mapped(input);
+            OutputPort source = this.mapped(input);
             DBSPTypeIndexedZSet ix = TypeCompiler.makeIndexedZSet(projection.getResultType().to(DBSPTypeRawTuple.class));
             DBSPMapIndexOperator map = new DBSPMapIndexOperator(node, projection, ix, source);
             this.addOperator(map);
@@ -197,7 +197,7 @@ public class NarrowJoins extends Repeat {
             RewriteFields rw = new RewriteFields(this.errorReporter, subst, remap);
             DBSPExpression newJoinFunction = rw.apply(join.getFunction()).to(DBSPExpression.class);
             DBSPSimpleOperator replacement = join.withFunction(newJoinFunction, join.outputType)
-                    .withInputs(Linq.list(leftMap.getOutput(), rightMap.getOutput()), true);
+                    .withInputs(Linq.list(leftMap.outputPort(), rightMap.outputPort()), true);
             this.map(join, replacement);
             return true;
         }

@@ -54,7 +54,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceViewDeclarationOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPViewDeclarationOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSumOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewOperator;
@@ -489,22 +489,28 @@ public class ToRustVisitor extends CircuitVisitor {
         if (!recursive)
             throw new InternalCompilerError("NestedOperator not recursive");
 
-        this.builder.append("circuit.recursive(|child");
-        // view list
-        for (var view: circuit.views.values()) {
-            this.builder.append(", ")
-                    .append(view.getOutputName())
-                    .append(": ");
-            view.outputStreamType.accept(this.innerVisitor);
+        this.builder.append("let (");
+        for (int i = 0; i < circuit.outputCount(); i++) {
+            this.builder.append(circuit.getOutputName(i)).append(", ");
         }
-        this.builder.append("| {").increase().newline();
+        this.builder.append(") = ")
+                .append("circuit.recursive(|child, (");
+        for (DBSPViewDeclarationOperator decl: circuit.viewDeclarations) {
+            this.builder.append(decl.getOutputName()).append(", ");
+        }
+        this.builder.append("): (");
+        for (int i = 0; i < circuit.outputCount(); i++) {
+            circuit.streamType(i).accept(this.innerVisitor);
+            this.builder.append(", ");
+        }
+        this.builder.append(")| {").increase().newline();
         for (IDBSPNode node : circuit.getAllOperators())
             this.processNode(node);
 
         this.builder.append("Ok((");
-        for (var view: circuit.views.values()) {
+        for (int i = 0; i < circuit.outputCount(); i++) {
             this.builder
-                    .append(view.getOutputName())
+                    .append(circuit.outputs.get(i).getOutputName())
                     .append(", ");
         }
         this.builder.append("))").newline()
@@ -592,14 +598,8 @@ public class ToRustVisitor extends CircuitVisitor {
     }
 
     @Override
-    public VisitDecision preorder(DBSPSourceViewDeclarationOperator operator) {
-        DBSPViewOperator view = operator.getCorrespondingView(this.getParent());
-        this.builder.append("let ")
-                .append(operator.getOutputName())
-                .append(" = ")
-                .append(view.getOutputName())
-                .append(";")
-                .newline();
+    public VisitDecision preorder(DBSPViewDeclarationOperator operator) {
+        // No output produced
         return VisitDecision.STOP;
     }
 
@@ -1294,6 +1294,17 @@ public class ToRustVisitor extends CircuitVisitor {
         builder.append(", ");
         operator.postProcess.accept(this.innerVisitor);
         builder.append(");");
+        return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPViewOperator operator) {
+        this.builder.append("let ")
+                .append(operator.getOutputName())
+                .append(" = ")
+                .append(operator.input().getOutputName())
+                .append(";")
+                .newline();
         return VisitDecision.STOP;
     }
 

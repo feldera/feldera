@@ -20,7 +20,7 @@ public final class DBSPAggregateLinearPostprocessOperator extends DBSPUnaryOpera
             CalciteObject node,
             DBSPTypeIndexedZSet outputType,
             DBSPExpression function,
-            DBSPClosureExpression postProcess, OperatorPort input) {
+            DBSPClosureExpression postProcess, OutputPort input) {
         super(node, "aggregate_linear_postprocess", function, outputType, false, input);
         this.postProcess = postProcess;
     }
@@ -40,7 +40,7 @@ public final class DBSPAggregateLinearPostprocessOperator extends DBSPUnaryOpera
     }
 
     @Override
-    public DBSPSimpleOperator withInputs(List<OperatorPort> newInputs, boolean force) {
+    public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPAggregateLinearPostprocessOperator(
                     this.getNode(), this.outputType.to(DBSPTypeIndexedZSet.class),

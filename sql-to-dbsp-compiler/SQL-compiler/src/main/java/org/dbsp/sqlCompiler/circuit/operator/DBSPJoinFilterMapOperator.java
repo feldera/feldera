@@ -29,7 +29,7 @@ public final class DBSPJoinFilterMapOperator extends DBSPJoinBaseOperator {
             CalciteObject node, DBSPTypeZSet outputType,
             DBSPExpression function, @Nullable DBSPExpression filter, @Nullable DBSPExpression map,
             boolean isMultiset,
-            OperatorPort left, OperatorPort right) {
+            OutputPort left, OutputPort right) {
         super(node, "join_flatmap", function, outputType, isMultiset, left, right);
         this.filter = filter;
         this.map = map;
@@ -49,7 +49,7 @@ public final class DBSPJoinFilterMapOperator extends DBSPJoinBaseOperator {
     }
 
     @Override
-    public DBSPSimpleOperator withInputs(List<OperatorPort> newInputs, boolean force) {
+    public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPJoinFilterMapOperator(
                     this.getNode(), this.getOutputZSetType(),

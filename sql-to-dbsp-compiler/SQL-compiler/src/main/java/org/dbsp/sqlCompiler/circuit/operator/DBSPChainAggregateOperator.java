@@ -15,7 +15,7 @@ public class DBSPChainAggregateOperator extends DBSPUnaryOperator {
     public final DBSPClosureExpression init;
 
     public DBSPChainAggregateOperator(CalciteObject node, DBSPClosureExpression init,
-                                      DBSPClosureExpression function, DBSPType outputType, OperatorPort source) {
+                                      DBSPClosureExpression function, DBSPType outputType, OutputPort source) {
         super(node, "chain_aggregate", function, outputType, false, source);
         this.init = init;
         assert init.parameters.length == 2;
@@ -28,7 +28,7 @@ public class DBSPChainAggregateOperator extends DBSPUnaryOperator {
     }
 
     @Override
-    public DBSPSimpleOperator withInputs(List<OperatorPort> newInputs, boolean force) {
+    public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPChainAggregateOperator(this.getNode(), this.init, this.getClosureFunction(),
                     this.outputType, newInputs.get(0)).copyAnnotations(this);

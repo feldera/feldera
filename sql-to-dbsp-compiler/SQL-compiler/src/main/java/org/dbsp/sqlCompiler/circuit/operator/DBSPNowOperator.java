@@ -43,7 +43,7 @@ public final class DBSPNowOperator extends DBSPSimpleOperator {
     }
 
     @Override
-    public DBSPSimpleOperator withInputs(List<OperatorPort> newInputs, boolean force) {
+    public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
         return this;
     }
 }

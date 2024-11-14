@@ -23,13 +23,13 @@ public final class DBSPIntegrateTraceRetainValuesOperator
         extends DBSPBinaryOperator implements GCOperator {
     public DBSPIntegrateTraceRetainValuesOperator(
             CalciteObject node, DBSPExpression function,
-            OperatorPort data, OperatorPort control) {
+            OutputPort data, OutputPort control) {
         super(node, "integrate_trace_retain_values",
                 function, data.outputType(), data.isMultiset(), data, control);
     }
 
     public static DBSPIntegrateTraceRetainValuesOperator create(
-            CalciteObject node, OperatorPort data, IMaybeMonotoneType dataProjection, OperatorPort control) {
+            CalciteObject node, OutputPort data, IMaybeMonotoneType dataProjection, OutputPort control) {
         DBSPType controlType = control.outputType();
         assert controlType.is(DBSPTypeTupleBase.class) : "Control type is not a tuple: " + controlType;
         DBSPTypeTupleBase controlTuple = controlType.to(DBSPTypeTupleBase.class);
@@ -61,7 +61,7 @@ public final class DBSPIntegrateTraceRetainValuesOperator
     }
 
     @Override
-    public DBSPSimpleOperator withInputs(List<OperatorPort> newInputs, boolean force) {
+    public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
         assert newInputs.size() == 2: "Expected 2 inputs, got " + newInputs.size();
         if (force || this.inputsDiffer(newInputs))
             return new DBSPIntegrateTraceRetainValuesOperator(

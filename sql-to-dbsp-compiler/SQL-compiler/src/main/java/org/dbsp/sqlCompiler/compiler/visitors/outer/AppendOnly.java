@@ -23,7 +23,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamDistinctOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSumOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewOperator;
-import org.dbsp.sqlCompiler.circuit.operator.OperatorPort;
+import org.dbsp.sqlCompiler.circuit.operator.OutputPort;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.util.Logger;
 
@@ -35,14 +35,14 @@ import java.util.Set;
  * - the output of an append-only table
  * - produced by some stream operators from append-only streams */
 public class AppendOnly extends CircuitVisitor {
-    public final Set<OperatorPort> appendOnly;
+    public final Set<OutputPort> appendOnly;
 
     public AppendOnly(IErrorReporter errorReporter) {
         super(errorReporter);
         this.appendOnly = new HashSet<>();
     }
 
-    public boolean isAppendOnly(OperatorPort source) {
+    public boolean isAppendOnly(OutputPort source) {
         return this.appendOnly.contains(source);
     }
 
@@ -59,7 +59,7 @@ public class AppendOnly extends CircuitVisitor {
                 .append(operator.operation)
                 .append(" is append-only")
                 .newline();
-        this.appendOnly.add(operator.getOutput());
+        this.appendOnly.add(operator.outputPort());
     }
 
     @Override
@@ -77,7 +77,7 @@ public class AppendOnly extends CircuitVisitor {
     /** Make operator append-only if all sources are append-only */
     void copy(DBSPSimpleOperator operator) {
         super.postorder(operator);
-        for (OperatorPort source: operator.inputs) {
+        for (OutputPort source: operator.inputs) {
             if (!this.isAppendOnly(source))
                 return;
         }

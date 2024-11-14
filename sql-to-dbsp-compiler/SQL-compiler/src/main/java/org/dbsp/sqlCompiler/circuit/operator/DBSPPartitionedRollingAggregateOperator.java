@@ -34,7 +34,7 @@ public final class DBSPPartitionedRollingAggregateOperator extends DBSPAggregate
             // The output type of partitioned_rolling_aggregate cannot actually be represented using
             // the current IR, so this type is a lie.
             DBSPTypeIndexedZSet outputType,
-            OperatorPort input) {
+            OutputPort input) {
         super(node, "partitioned_rolling_aggregate", outputType, function, aggregate, true, input);
         this.lower = lower;
         this.upper = upper;
@@ -52,7 +52,7 @@ public final class DBSPPartitionedRollingAggregateOperator extends DBSPAggregate
     }
 
     @Override
-    public DBSPSimpleOperator withInputs(List<OperatorPort> newInputs, boolean force) {
+    public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPPartitionedRollingAggregateOperator(
                     this.getNode(), this.partitioningFunction, this.function, this.aggregate,

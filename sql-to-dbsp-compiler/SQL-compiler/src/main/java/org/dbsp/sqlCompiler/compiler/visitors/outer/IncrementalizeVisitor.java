@@ -39,7 +39,7 @@ public class IncrementalizeVisitor extends CircuitCloneVisitor {
         if (this.visited.contains(operator))
             return;
         this.addOperator(operator);
-        DBSPIntegrateOperator integral = new DBSPIntegrateOperator(operator.getNode(), operator.getOutput());
+        DBSPIntegrateOperator integral = new DBSPIntegrateOperator(operator.getNode(), operator.outputPort());
         this.map(operator, integral);
     }
 
@@ -57,18 +57,18 @@ public class IncrementalizeVisitor extends CircuitCloneVisitor {
     public void postorder(DBSPNowOperator operator) {
         // Treat like a constant
         this.addOperator(operator);
-        DBSPSimpleOperator replacement = new DBSPDifferentiateOperator(operator.getNode(), operator.getOutput());
+        DBSPSimpleOperator replacement = new DBSPDifferentiateOperator(operator.getNode(), operator.outputPort());
         this.addOperator(replacement);
-        DBSPIntegrateOperator integral = new DBSPIntegrateOperator(operator.getNode(), replacement.getOutput());
+        DBSPIntegrateOperator integral = new DBSPIntegrateOperator(operator.getNode(), replacement.outputPort());
         this.map(operator, integral);
     }
 
     @Override
     public void postorder(DBSPSinkOperator operator) {
-        OperatorPort source = this.mapped(operator.input());
+        OutputPort source = this.mapped(operator.input());
         DBSPDifferentiateOperator diff = new DBSPDifferentiateOperator(operator.getNode(), source);
         DBSPSinkOperator sink = new DBSPSinkOperator(operator.getNode(), operator.viewName,
-                operator.query, operator.originalRowType, operator.metadata, diff.getOutput());
+                operator.query, operator.originalRowType, operator.metadata, diff.outputPort());
         this.addOperator(diff);
         this.map(operator, sink);
     }
@@ -78,7 +78,7 @@ public class IncrementalizeVisitor extends CircuitCloneVisitor {
         DBSPSimpleOperator replacement;
         if (true) {
             this.addOperator(operator);
-            replacement = new DBSPDifferentiateOperator(operator.getNode(), operator.getOutput());
+            replacement = new DBSPDifferentiateOperator(operator.getNode(), operator.outputPort());
             this.addOperator(replacement);
         } else {
             // Switch to this implementation: https://github.com/feldera/feldera/issues/2302
@@ -86,7 +86,7 @@ public class IncrementalizeVisitor extends CircuitCloneVisitor {
             replacement = new DBSPConstantOperator(operator.getNode(),
                     operator.function, true, operator.isMultiset);
         }
-        DBSPIntegrateOperator integral = new DBSPIntegrateOperator(operator.getNode(), replacement.getOutput());
+        DBSPIntegrateOperator integral = new DBSPIntegrateOperator(operator.getNode(), replacement.outputPort());
         this.map(operator, integral);
     }
 }

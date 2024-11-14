@@ -1,8 +1,7 @@
-package org.dbsp.sqlCompiler.compiler.backend.rust;
+package org.dbsp.sqlCompiler.compiler.backend.dot;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
-import org.dbsp.sqlCompiler.compiler.backend.ToDotEdgesVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.util.IndentStream;
 import org.dbsp.util.Logger;
@@ -21,8 +20,7 @@ public class ToDot {
                             ToDotEdgesVisitor.VisitorConstructor edgesVisitor) {
         if (circuit.isEmpty())
             return;
-        System.out.println("Writing circuit to " + fileName);
-        Logger.INSTANCE.belowLevel("ToDotVisitor", 1)
+        Logger.INSTANCE.belowLevel("ToDotVisitor", 0)
                 .append("Writing circuit to ")
                 .append(fileName)
                 .newline();

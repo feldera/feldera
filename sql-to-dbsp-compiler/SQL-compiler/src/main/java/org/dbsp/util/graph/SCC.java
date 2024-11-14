@@ -13,7 +13,7 @@ import java.util.Set;
 /** Strongly-connected components of a graph */
 public class SCC<Node> {
     /** Count of strongly connected components */
-    int count = 0;
+    public int count = 0;
     /** Visited nodes */
     final Set<Node> marked = new HashSet<>();
     /** Maps each node to the component id */
@@ -46,5 +46,17 @@ public class SCC<Node> {
             if (!this.marked.contains(w.node()))
                 this.dfs(graph, w.node());
         }
+    }
+
+    @Override
+    public String toString() {
+        StringBuilder builder = new StringBuilder();
+        for (var e : this.component.entrySet()) {
+            builder.append(e.getKey())
+                    .append("=>")
+                    .append(e.getValue().toString())
+                    .append("\n");
+        }
+        return builder.toString();
     }
 }

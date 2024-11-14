@@ -1,11 +1,11 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
-import org.dbsp.sqlCompiler.circuit.operator.OperatorPort;
+import org.dbsp.sqlCompiler.circuit.operator.OutputPort;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
-import org.dbsp.sqlCompiler.compiler.backend.ToDotEdgesVisitor;
-import org.dbsp.sqlCompiler.compiler.backend.rust.ToDot;
-import org.dbsp.sqlCompiler.compiler.backend.rust.ToDotNodesVisitor;
+import org.dbsp.sqlCompiler.compiler.backend.dot.ToDotEdgesVisitor;
+import org.dbsp.sqlCompiler.compiler.backend.dot.ToDot;
+import org.dbsp.sqlCompiler.compiler.backend.dot.ToDotNodesVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.MonotoneExpression;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.AppendOnly;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitTransform;
@@ -20,6 +20,11 @@ import org.dbsp.util.IndentStream;
 public class MonotoneAnalyzer implements CircuitTransform, IWritesLogs {
     final IErrorReporter reporter;
 
+    @Override
+    public String getName() {
+        return "MonotoneAnalyzer";
+    }
+
     /** Extension of ToDot which shows monotone types.
      * They are shown as M(type) on the edges. */
     static class MonotoneDot extends ToDotEdgesVisitor {
@@ -32,8 +37,8 @@ public class MonotoneAnalyzer implements CircuitTransform, IWritesLogs {
         }
 
         @Override
-        public String getEdgeLabel(OperatorPort source) {
-            MonotoneExpression expr = this.info.get(source.simpleNode());
+        public String getEdgeLabel(OutputPort source) {
+            MonotoneExpression expr = this.info.get(source);
             if (expr != null) {
                 return source.node().id + " " + Monotonicity.getBodyType(expr);
             } else {
@@ -54,7 +59,7 @@ public class MonotoneAnalyzer implements CircuitTransform, IWritesLogs {
         // Insert noops between consecutive integrators
         Graph graph = new Graph(this.reporter);
         graph.apply(circuit);
-        SeparateIntegrators separate = new SeparateIntegrators(this.reporter, graph.graph);
+        SeparateIntegrators separate = new SeparateIntegrators(this.reporter, graph.getGraphs());
         circuit = separate.apply(circuit);
         // Find relations which are append-only
         AppendOnly appendOnly = new AppendOnly(this.reporter);
@@ -71,6 +76,7 @@ public class MonotoneAnalyzer implements CircuitTransform, IWritesLogs {
                 appendOnly.appendOnly::contains,
                 keyPropagation.joins::get);
         DBSPCircuit expanded = expander.apply(circuit);
+        // ToDot.dump(this.reporter, "blowup.png", details, "png", expanded);
 
         Monotonicity monotonicity = new Monotonicity(this.reporter);
         expanded = monotonicity.apply(expanded);
@@ -91,7 +97,7 @@ public class MonotoneAnalyzer implements CircuitTransform, IWritesLogs {
         result = merger.apply(result);
 
         graph.apply(result);
-        CheckRetain check = new CheckRetain(this.reporter, graph.graph);
+        CheckRetain check = new CheckRetain(this.reporter, graph.getGraphs());
         check.apply(result);
         return result;
     }

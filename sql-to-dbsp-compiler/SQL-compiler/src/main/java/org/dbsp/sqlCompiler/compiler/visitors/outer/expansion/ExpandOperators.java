@@ -33,7 +33,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPSumOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPUpsertFeedbackOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
-import org.dbsp.sqlCompiler.circuit.operator.OperatorPort;
+import org.dbsp.sqlCompiler.circuit.operator.OutputPort;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitCloneVisitor;
@@ -53,12 +53,13 @@ import java.util.Map;
  * mimics the DBSP runtime representation. */
 public class ExpandOperators extends CircuitCloneVisitor {
     public final Map<DBSPSimpleOperator, OperatorExpansion> expansion;
-    public final NullablePredicate<OperatorPort> isApendOnly;
+    public final NullablePredicate<OutputPort> isApendOnly;
     public final NullableFunction<DBSPSimpleOperator, KeyPropagation.JoinDescription> joinDescriptions;
 
     public ExpandOperators(IErrorReporter reporter,
-                           NullablePredicate<OperatorPort> isApendOnly,
+                           NullablePredicate<OutputPort> isApendOnly,
                            NullableFunction<DBSPSimpleOperator, KeyPropagation.JoinDescription> joinDescriptions) {
+        // Force replacement so all operators are new.
         super(reporter, true);
         this.expansion = new HashMap<>();
         this.isApendOnly = isApendOnly;
@@ -72,7 +73,7 @@ public class ExpandOperators extends CircuitCloneVisitor {
     void identity(DBSPSimpleOperator operator) {
         // Replace an operator with another one of the same kind
         super.replace(operator);
-        OperatorPort replacement = this.mapped(operator.getOutput());
+        OutputPort replacement = this.mapped(operator.outputPort());
         this.addExpansion(operator, new ReplacementExpansion(replacement.simpleNode()));
     }
 
@@ -168,13 +169,13 @@ public class ExpandOperators extends CircuitCloneVisitor {
 
     @Override
     public void postorder(DBSPAggregateOperator operator) {
-        OperatorPort input = this.mapped(operator.input());
+        OutputPort input = this.mapped(operator.input());
         DBSPIntegrateOperator integrator = new DBSPIntegrateOperator(operator.getNode(), input);
         this.addOperator(integrator);
         DBSPPrimitiveAggregateOperator agg = new DBSPPrimitiveAggregateOperator(operator.getNode(),
-                operator.function, operator.outputType, input, integrator.getOutput());
+                operator.function, operator.outputType, input, integrator.outputPort());
         this.addOperator(agg);
-        DBSPUpsertFeedbackOperator upsert = new DBSPUpsertFeedbackOperator(operator.getNode(), agg.getOutput());
+        DBSPUpsertFeedbackOperator upsert = new DBSPUpsertFeedbackOperator(operator.getNode(), agg.outputPort());
         this.addExpansion(operator, new AggregateExpansion(integrator, agg, upsert));
         this.map(operator, upsert);
     }
@@ -187,11 +188,11 @@ public class ExpandOperators extends CircuitCloneVisitor {
 
     @Override
     public void postorder(DBSPDistinctOperator operator) {
-        OperatorPort input = this.mapped(operator.input());
+        OutputPort input = this.mapped(operator.input());
         DBSPIntegrateOperator integrator = new DBSPIntegrateOperator(operator.getNode(), input);
         this.addOperator(integrator);
         DBSPDistinctIncrementalOperator distinct =
-                new DBSPDistinctIncrementalOperator(operator.getNode(), integrator.getOutput(), input);
+                new DBSPDistinctIncrementalOperator(operator.getNode(), integrator.outputPort(), input);
         this.addExpansion(operator, new DistinctExpansion(integrator, distinct));
         this.map(operator, distinct);
     }
@@ -215,7 +216,7 @@ public class ExpandOperators extends CircuitCloneVisitor {
 
     @Override
     public void postorder(DBSPJoinOperator operator) {
-        List<OperatorPort> inputs = Linq.map(operator.inputs, this::mapped);
+        List<OutputPort> inputs = Linq.map(operator.inputs, this::mapped);
 
         boolean hasLeftIntegrator = true;
         boolean hasRightIntegrator = true;
@@ -236,16 +237,16 @@ public class ExpandOperators extends CircuitCloneVisitor {
 
         @Nullable DBSPDelayedIntegralOperator leftIntegrator = null;
         @Nullable DBSPStreamJoinOperator rightJoin = null;
-        List<OperatorPort> sumInputs = new ArrayList<>();
+        List<OutputPort> sumInputs = new ArrayList<>();
         if (hasLeftIntegrator) {
             leftIntegrator = new DBSPDelayedIntegralOperator(operator.getNode(), inputs.get(0));
             leftIntegrator.copyAnnotations(operator.left().node());
             this.addOperator(leftIntegrator);
 
             rightJoin = new DBSPStreamJoinOperator(operator.getNode(), operator.getOutputZSetType(),
-                    operator.getFunction(), operator.isMultiset, leftIntegrator.getOutput(), inputs.get(1));
+                    operator.getFunction(), operator.isMultiset, leftIntegrator.outputPort(), inputs.get(1));
             this.addOperator(rightJoin);
-            sumInputs.add(rightJoin.getOutput());
+            sumInputs.add(rightJoin.outputPort());
         }
         @Nullable DBSPDelayedIntegralOperator rightIntegrator = null;
         @Nullable DBSPStreamJoinOperator leftJoin = null;
@@ -255,14 +256,14 @@ public class ExpandOperators extends CircuitCloneVisitor {
             this.addOperator(rightIntegrator);
 
             leftJoin = new DBSPStreamJoinOperator(operator.getNode(), operator.getOutputZSetType(),
-                    operator.getFunction(), operator.isMultiset, inputs.get(0), rightIntegrator.getOutput());
+                    operator.getFunction(), operator.isMultiset, inputs.get(0), rightIntegrator.outputPort());
             this.addOperator(leftJoin);
-            sumInputs.add(leftJoin.getOutput());
+            sumInputs.add(leftJoin.outputPort());
         }
         DBSPStreamJoinOperator deltaJoin = new DBSPStreamJoinOperator(operator.getNode(), operator.getOutputZSetType(),
                 operator.getFunction(), operator.isMultiset, inputs.get(0), inputs.get(1));
         this.addOperator(deltaJoin);
-        sumInputs.add(deltaJoin.getOutput());
+        sumInputs.add(deltaJoin.outputPort());
 
         DBSPSumOperator sum = new DBSPSumOperator(operator.getNode(), sumInputs);
         this.map(operator, sum);
@@ -274,32 +275,32 @@ public class ExpandOperators extends CircuitCloneVisitor {
     public void postorder(DBSPJoinIndexOperator operator) {
         // Similar to a join, but we do not handle foreign keys,
         // so all integrators are unconditional.
-        List<OperatorPort> inputs = Linq.map(operator.inputs, this::mapped);
+        List<OutputPort> inputs = Linq.map(operator.inputs, this::mapped);
 
-        List<OperatorPort> sumInputs = new ArrayList<>();
+        List<OutputPort> sumInputs = new ArrayList<>();
         DBSPDelayedIntegralOperator leftIntegrator = new DBSPDelayedIntegralOperator(operator.getNode(), inputs.get(0));
         leftIntegrator.copyAnnotations(operator.left().node());
         this.addOperator(leftIntegrator);
 
         DBSPStreamJoinIndexOperator rightJoin = new DBSPStreamJoinIndexOperator(operator.getNode(),
                 operator.getOutputIndexedZSetType(),
-                operator.getFunction(), operator.isMultiset, leftIntegrator.getOutput(), inputs.get(1));
+                operator.getFunction(), operator.isMultiset, leftIntegrator.outputPort(), inputs.get(1));
         this.addOperator(rightJoin);
-        sumInputs.add(rightJoin.getOutput());
+        sumInputs.add(rightJoin.outputPort());
         DBSPDelayedIntegralOperator rightIntegrator = new DBSPDelayedIntegralOperator(operator.getNode(), inputs.get(1));
         rightIntegrator.copyAnnotations(operator.right().node());
         this.addOperator(rightIntegrator);
 
         DBSPStreamJoinIndexOperator leftJoin = new DBSPStreamJoinIndexOperator(operator.getNode(),
                 operator.getOutputIndexedZSetType(),
-                operator.getFunction(), operator.isMultiset, inputs.get(0), rightIntegrator.getOutput());
+                operator.getFunction(), operator.isMultiset, inputs.get(0), rightIntegrator.outputPort());
         this.addOperator(leftJoin);
-        sumInputs.add(leftJoin.getOutput());
+        sumInputs.add(leftJoin.outputPort());
         DBSPStreamJoinIndexOperator deltaJoin = new DBSPStreamJoinIndexOperator(operator.getNode(),
                 operator.getOutputIndexedZSetType(),
                 operator.getFunction(), operator.isMultiset, inputs.get(0), inputs.get(1));
         this.addOperator(deltaJoin);
-        sumInputs.add(deltaJoin.getOutput());
+        sumInputs.add(deltaJoin.outputPort());
 
         DBSPSumOperator sum = new DBSPSumOperator(operator.getNode(), sumInputs);
         this.map(operator, sum);
@@ -309,7 +310,7 @@ public class ExpandOperators extends CircuitCloneVisitor {
 
     @Override
     public void postorder(DBSPJoinFilterMapOperator operator) {
-        List<OperatorPort> inputs = Linq.map(operator.inputs, this::mapped);
+        List<OutputPort> inputs = Linq.map(operator.inputs, this::mapped);
 
         boolean hasLeftIntegrator = true;
         boolean hasRightIntegrator = true;
@@ -334,18 +335,18 @@ public class ExpandOperators extends CircuitCloneVisitor {
         @Nullable DBSPDelayedIntegralOperator rightIntegrator = null;
         @Nullable DBSPStreamJoinOperator rightJoin = null;
         @Nullable DBSPFilterOperator rightFilter = null;
-        List<OperatorPort> sumInputs = new ArrayList<>();
+        List<OutputPort> sumInputs = new ArrayList<>();
 
         if (hasLeftIntegrator) {
             leftIntegrator = new DBSPDelayedIntegralOperator(operator.getNode(), inputs.get(0));
             this.addOperator(leftIntegrator);
             leftIntegrator.copyAnnotations(operator.left().node());
             rightJoin = new DBSPStreamJoinOperator(operator.getNode(), operator.getOutputZSetType(),
-                    operator.getFunction(), operator.isMultiset, leftIntegrator.getOutput(), inputs.get(1));
+                    operator.getFunction(), operator.isMultiset, leftIntegrator.outputPort(), inputs.get(1));
             this.addOperator(rightJoin);
-            rightFilter = new DBSPFilterOperator(operator.getNode(), operator.getFilter(), rightJoin.getOutput());
+            rightFilter = new DBSPFilterOperator(operator.getNode(), operator.getFilter(), rightJoin.outputPort());
             this.addOperator(rightFilter);
-            sumInputs.add(rightFilter.getOutput());
+            sumInputs.add(rightFilter.outputPort());
         }
 
         if (hasRightIntegrator) {
@@ -353,20 +354,20 @@ public class ExpandOperators extends CircuitCloneVisitor {
             this.addOperator(rightIntegrator);
             rightIntegrator.copyAnnotations(operator.right().node());
             leftJoin = new DBSPStreamJoinOperator(operator.getNode(), operator.getOutputZSetType(),
-                    operator.getFunction(), operator.isMultiset, inputs.get(0), rightIntegrator.getOutput());
+                    operator.getFunction(), operator.isMultiset, inputs.get(0), rightIntegrator.outputPort());
             this.addOperator(leftJoin);
-            leftFilter = new DBSPFilterOperator(operator.getNode(), operator.getFilter(), leftJoin.getOutput());
+            leftFilter = new DBSPFilterOperator(operator.getNode(), operator.getFilter(), leftJoin.outputPort());
             this.addOperator(leftFilter);
-            sumInputs.add(leftFilter.getOutput());
+            sumInputs.add(leftFilter.outputPort());
         }
 
         DBSPTypeZSet type = operator.getOutputZSetType();
         DBSPStreamJoinOperator deltaJoin = new DBSPStreamJoinOperator(operator.getNode(), type,
                 operator.getFunction(), operator.isMultiset, inputs.get(0), inputs.get(1));
         this.addOperator(deltaJoin);
-        DBSPFilterOperator filter = new DBSPFilterOperator(operator.getNode(), operator.getFilter(), deltaJoin.getOutput());
+        DBSPFilterOperator filter = new DBSPFilterOperator(operator.getNode(), operator.getFilter(), deltaJoin.outputPort());
         this.addOperator(filter);
-        sumInputs.add(filter.getOutput());
+        sumInputs.add(filter.outputPort());
 
         DBSPSumOperator sum = new DBSPSumOperator(operator.getNode(), sumInputs);
         this.map(operator, sum);

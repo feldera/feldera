@@ -93,8 +93,8 @@ public abstract class DBSPSimpleOperator extends DBSPOperator implements IHasTyp
         return this.outputType;
     }
 
-    public OperatorPort getOutput() {
-        return new OperatorPort(this, 0);
+    public OutputPort outputPort() {
+        return new OutputPort(this, 0);
     }
 
     public String getOutputName() {
@@ -149,15 +149,15 @@ public abstract class DBSPSimpleOperator extends DBSPOperator implements IHasTyp
     }
 
     public DBSPTypeIndexedZSet getOutputIndexedZSetType() {
-        return this.getOutput().getOutputIndexedZSetType();
+        return this.outputPort().getOutputIndexedZSetType();
     }
 
     public DBSPTypeZSet getOutputZSetType() {
-        return this.getOutput().getOutputZSetType();
+        return this.outputPort().getOutputZSetType();
     }
 
     public DBSPType getOutputZSetElementType() {
-        return this.getOutput().getOutputZSetElementType();
+        return this.outputPort().getOutputZSetElementType();
     }
 
     /**
@@ -167,7 +167,7 @@ public abstract class DBSPSimpleOperator extends DBSPOperator implements IHasTyp
      * @param source   Source operator producing the arg input to function.
      * @param arg      Argument number of the function supplied from source operator. */
     protected void checkArgumentFunctionType(
-            DBSPExpression function, @SuppressWarnings("SameParameterValue") int arg, OperatorPort source) {
+            DBSPExpression function, @SuppressWarnings("SameParameterValue") int arg, OutputPort source) {
         if (function.getType().is(DBSPTypeAny.class))
             return;
         DBSPType sourceElementType;
@@ -209,7 +209,7 @@ public abstract class DBSPSimpleOperator extends DBSPOperator implements IHasTyp
      * @param force      If true always return a new operator.
      *                   If false and the inputs are the same this may return this.
      */
-    public abstract DBSPSimpleOperator withInputs(List<OperatorPort> newInputs, boolean force);
+    public abstract DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force);
 
     public DBSPSimpleOperator addAnnotation(Annotation annotation) {
         this.annotations.add(annotation);
@@ -285,5 +285,33 @@ public abstract class DBSPSimpleOperator extends DBSPOperator implements IHasTyp
         if (!this.sameInputs(simple))
             return false;
         return EquivalenceContext.equiv(this.function, simple.function);
+    }
+
+    @Override
+    public DBSPType outputType(int outputNo) {
+        assert outputNo == 0;
+        return this.outputType;
+    }
+
+    @Override
+    public boolean isMultiset(int outputNo) {
+        assert outputNo == 0;
+        return this.isMultiset;
+    }
+
+    @Override
+    public String getOutputName(int outputNo) {
+        assert outputNo == 0;
+        return this.getOutputName();
+    }
+
+    @Override
+    public int outputCount() {
+        return 1;
+    }
+
+    @Override
+    public DBSPType streamType(int outputNumber) {
+        return this.outputStreamType;
     }
 }

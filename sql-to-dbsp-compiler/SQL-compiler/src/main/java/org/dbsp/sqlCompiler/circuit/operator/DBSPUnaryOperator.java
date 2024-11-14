@@ -26,7 +26,6 @@ package org.dbsp.sqlCompiler.circuit.operator;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
-import org.dbsp.util.graph.Port;
 
 import javax.annotation.Nullable;
 
@@ -34,7 +33,7 @@ import javax.annotation.Nullable;
 public abstract class DBSPUnaryOperator extends DBSPSimpleOperator {
     protected DBSPUnaryOperator(CalciteObject node, String operation,
                                 @Nullable DBSPExpression function, DBSPType outputType,
-                                boolean isMultiset, OperatorPort source) {
+                                boolean isMultiset, OutputPort source) {
         super(node, operation, function, outputType, isMultiset);
         this.addInput(source);
     }
@@ -42,7 +41,7 @@ public abstract class DBSPUnaryOperator extends DBSPSimpleOperator {
     @SuppressWarnings("SameParameterValue")
     protected DBSPUnaryOperator(CalciteObject node, String operation,
                                 @Nullable DBSPExpression function, DBSPType outputType,
-                                boolean isMultiset, OperatorPort source,
+                                boolean isMultiset, OutputPort source,
                                 @Nullable String comment) {
         super(node, operation, function, outputType, isMultiset, comment);
         this.addInput(source);
@@ -55,7 +54,7 @@ public abstract class DBSPUnaryOperator extends DBSPSimpleOperator {
     }
 
     /** The only input of this operator. */
-    public OperatorPort input() {
+    public OutputPort input() {
         return this.inputs.get(0);
     }
 }

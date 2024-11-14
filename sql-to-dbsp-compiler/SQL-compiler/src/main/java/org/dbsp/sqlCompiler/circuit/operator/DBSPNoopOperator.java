@@ -56,7 +56,7 @@ public final class DBSPNoopOperator extends DBSPUnaryOperator {
         }
     }
 
-    public DBSPNoopOperator(CalciteObject node, OperatorPort source,
+    public DBSPNoopOperator(CalciteObject node, OutputPort source,
                             @Nullable String comment) {
         super(node, "noop", getClosure(source.outputType()),
                 source.outputType(), source.isMultiset(), source, comment);
@@ -72,7 +72,7 @@ public final class DBSPNoopOperator extends DBSPUnaryOperator {
     }
 
     @Override
-    public DBSPSimpleOperator withInputs(List<OperatorPort> newInputs, boolean force) {
+    public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPNoopOperator(this.getNode(), newInputs.get(0), this.comment)
                     .copyAnnotations(this);

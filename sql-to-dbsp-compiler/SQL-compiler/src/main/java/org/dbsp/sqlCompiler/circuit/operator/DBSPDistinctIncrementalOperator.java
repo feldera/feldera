@@ -13,7 +13,7 @@ import java.util.List;
 @NonCoreIR
 public final class DBSPDistinctIncrementalOperator extends DBSPBinaryOperator {
     // In the DBSP paper this operator was called H
-    public DBSPDistinctIncrementalOperator(CalciteObject node, OperatorPort integral, OperatorPort delta) {
+    public DBSPDistinctIncrementalOperator(CalciteObject node, OutputPort integral, OutputPort delta) {
         super(node, "distinct_incremental", null, delta.outputType(), false, integral, delta);
     }
 
@@ -32,7 +32,7 @@ public final class DBSPDistinctIncrementalOperator extends DBSPBinaryOperator {
     }
 
     @Override
-    public DBSPSimpleOperator withInputs(List<OperatorPort> newInputs, boolean force) {
+    public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
         assert newInputs.size() == 2;
         if (force || this.inputsDiffer(newInputs))
             return new DBSPDistinctIncrementalOperator(

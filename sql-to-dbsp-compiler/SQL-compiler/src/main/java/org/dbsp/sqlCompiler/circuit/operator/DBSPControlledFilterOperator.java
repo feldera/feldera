@@ -34,7 +34,7 @@ import java.util.Objects;
 public final class DBSPControlledFilterOperator extends DBSPBinaryOperator {
     public DBSPControlledFilterOperator(
             CalciteObject node, DBSPExpression expression,
-            OperatorPort data, OperatorPort control) {
+            OutputPort data, OutputPort control) {
         super(node, "controlled_filter", expression, data.outputType(), data.isMultiset(), data, control);
         // this.checkArgumentFunctionType(expression, 0, data);
     }
@@ -81,8 +81,8 @@ public final class DBSPControlledFilterOperator extends DBSPBinaryOperator {
     }
 
     public static DBSPControlledFilterOperator create(
-            CalciteObject node, OperatorPort data, IMaybeMonotoneType monotoneType,
-            OperatorPort control, DBSPOpcode opcode) {
+            CalciteObject node, OutputPort data, IMaybeMonotoneType monotoneType,
+            OutputPort control, DBSPOpcode opcode) {
         DBSPType controlType = control.outputType();
 
         DBSPType leftSliceType = Objects.requireNonNull(monotoneType.getProjectedType());
@@ -116,7 +116,7 @@ public final class DBSPControlledFilterOperator extends DBSPBinaryOperator {
     }
 
     @Override
-    public DBSPSimpleOperator withInputs(List<OperatorPort> newInputs, boolean force) {
+    public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
         assert newInputs.size() == 2: "Expected 2 inputs, got " + newInputs.size();
         if (force || this.inputsDiffer(newInputs))
             return new DBSPControlledFilterOperator(

@@ -10,7 +10,7 @@ public class CompactNames extends CircuitCloneVisitor {
     int id = 0;
 
     public CompactNames(IErrorReporter errorReporter) {
-        super(errorReporter, true);
+        super(errorReporter, false);
     }
 
     @Override

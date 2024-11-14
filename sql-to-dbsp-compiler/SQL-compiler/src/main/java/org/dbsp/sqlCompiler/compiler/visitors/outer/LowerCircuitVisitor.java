@@ -8,12 +8,11 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinFilterMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNoopOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateWithWaterlineOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAggregateOperator;
-import org.dbsp.sqlCompiler.circuit.operator.OperatorPort;
+import org.dbsp.sqlCompiler.circuit.operator.OutputPort;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
@@ -190,7 +189,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
     public void postorder(DBSPFlatMapOperator node) {
         DBSPSimpleOperator result;
         if (node.getFunction().is(DBSPFlatmap.class)) {
-            List<OperatorPort> sources = Linq.map(node.inputs, this::mapped);
+            List<OutputPort> sources = Linq.map(node.inputs, this::mapped);
             DBSPExpression function = rewriteFlatmap(node.getFunction().to(DBSPFlatmap.class));
             result = node.withFunction(function, node.outputType).withInputs(sources, this.force);
             this.map(node, result);

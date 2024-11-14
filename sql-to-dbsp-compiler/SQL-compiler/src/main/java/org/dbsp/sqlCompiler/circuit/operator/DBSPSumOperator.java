@@ -35,9 +35,9 @@ import javax.annotation.Nullable;
 import java.util.List;
 
 public final class DBSPSumOperator extends DBSPSimpleOperator {
-    public DBSPSumOperator(CalciteObject node, List<OperatorPort> inputs) {
+    public DBSPSumOperator(CalciteObject node, List<OutputPort> inputs) {
         super(node, "sum", null, inputs.get(0).outputType(), true);
-        for (OperatorPort op: inputs) {
+        for (OutputPort op: inputs) {
             this.addInput(op);
             if (!op.outputType().sameType(this.outputType)) {
                 throw new InternalCompilerError("Sum operator input type " + op.outputType() +
@@ -46,7 +46,7 @@ public final class DBSPSumOperator extends DBSPSimpleOperator {
         }
     }
 
-    public DBSPSumOperator(CalciteObject node, OperatorPort... inputs) {
+    public DBSPSumOperator(CalciteObject node, OutputPort... inputs) {
         this(node, Linq.list(inputs));
     }
 
@@ -65,7 +65,7 @@ public final class DBSPSumOperator extends DBSPSimpleOperator {
     }
 
     @Override
-    public DBSPSimpleOperator withInputs(List<OperatorPort> newInputs, boolean force) {
+    public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
         boolean different = force;
         if (newInputs.size() != this.inputs.size())
             // Sum can have any number of inputs

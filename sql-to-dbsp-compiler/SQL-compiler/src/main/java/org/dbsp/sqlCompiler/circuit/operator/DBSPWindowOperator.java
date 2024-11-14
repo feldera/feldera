@@ -22,7 +22,7 @@ public final class DBSPWindowOperator extends DBSPBinaryOperator {
 
     public DBSPWindowOperator(
             CalciteObject node, boolean lowerInclusive, boolean upperInclusive,
-            OperatorPort data, OperatorPort control) {
+            OutputPort data, OutputPort control) {
         super(node, "window", null, data.outputType(), data.isMultiset(),
                 data, control);
         // Check that the left input and output are indexed ZSets
@@ -37,7 +37,7 @@ public final class DBSPWindowOperator extends DBSPBinaryOperator {
     }
 
     @Override
-    public DBSPSimpleOperator withInputs(List<OperatorPort> newInputs, boolean force) {
+    public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
         assert newInputs.size() == 2: "Expected 2 inputs, got " + newInputs.size();
         if (force || this.inputsDiffer(newInputs))
             return new DBSPWindowOperator(

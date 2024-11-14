@@ -19,7 +19,7 @@ public final class DBSPJoinIndexOperator extends DBSPJoinBaseOperator {
     public DBSPJoinIndexOperator(
             CalciteObject node, DBSPTypeIndexedZSet outputType,
             DBSPExpression function, boolean isMultiset,
-            OperatorPort left, OperatorPort right) {
+            OutputPort left, OutputPort right) {
         super(node, "join_index", function, outputType, isMultiset, left, right);
         assert left.getOutputIndexedZSetType().keyType.sameType(right.getOutputIndexedZSetType().keyType);
     }
@@ -33,7 +33,7 @@ public final class DBSPJoinIndexOperator extends DBSPJoinBaseOperator {
     }
 
     @Override
-    public DBSPSimpleOperator withInputs(List<OperatorPort> newInputs, boolean force) {
+    public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPJoinIndexOperator(
                     this.getNode(), this.getOutputIndexedZSetType(),

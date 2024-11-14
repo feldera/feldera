@@ -47,4 +47,9 @@ public class Repeat implements IWritesLogs, CircuitTransform {
     public String toString() {
         return "Repeat " + this.transform;
     }
+
+    @Override
+    public String getName() {
+        return "Repeat_" + this.transform.getName();
+    }
 }

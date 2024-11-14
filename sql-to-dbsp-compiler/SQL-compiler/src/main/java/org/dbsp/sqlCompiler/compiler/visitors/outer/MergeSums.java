@@ -2,7 +2,7 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSumOperator;
-import org.dbsp.sqlCompiler.circuit.operator.OperatorPort;
+import org.dbsp.sqlCompiler.circuit.operator.OutputPort;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.util.Linq;
 
@@ -17,9 +17,9 @@ public class MergeSums extends CircuitCloneVisitor {
 
     @Override
     public void postorder(DBSPSumOperator operator) {
-        List<OperatorPort> sources = Linq.map(operator.inputs, this::mapped);
-        List<OperatorPort> newSources = new ArrayList<>();
-        for (OperatorPort source: sources) {
+        List<OutputPort> sources = Linq.map(operator.inputs, this::mapped);
+        List<OutputPort> newSources = new ArrayList<>();
+        for (OutputPort source: sources) {
             if (source.node().is(DBSPSumOperator.class)) {
                 newSources.addAll(source.node().inputs);
             } else {

@@ -7,6 +7,7 @@ import org.dbsp.sqlCompiler.circuit.operator.GCOperator;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CSE;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitGraph;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitGraphs;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.Passes;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
@@ -28,20 +29,24 @@ import java.util.Map;
 public class MergeGC extends Passes {
     /** This is a modified form of {@link CSE.FindCSE} */
     static class FindEquivalentNoops extends CircuitVisitor {
-        final CircuitGraph graph;
+        final CircuitGraphs graphs;
         /** Maps each operator to its canonical representative */
         public final Map<DBSPOperator, DBSPOperator> canonical;
 
-        public FindEquivalentNoops(IErrorReporter errorReporter, CircuitGraph graph) {
+        public FindEquivalentNoops(IErrorReporter errorReporter, CircuitGraphs graphs) {
             super(errorReporter);
-            this.graph = graph;
+            this.graphs = graphs;
             this.canonical = new HashMap<>();
         }
 
         @Override
-        public void startVisit(IDBSPOuterNode node) {
-            super.startVisit(node);
+        public Token startVisit(IDBSPOuterNode node) {
             this.canonical.clear();
+            return super.startVisit(node);
+        }
+
+        public CircuitGraph getGraph() {
+            return this.graphs.getGraph(this.getParent());
         }
 
         @Nullable
@@ -49,7 +54,7 @@ public class MergeGC extends Passes {
             if (!operator.is(DBSPNoopOperator.class))
                 return null;
             List<Port<DBSPOperator>> baseDests = Linq.where(
-                    this.graph.getSuccessors(operator),
+                    this.getGraph().getSuccessors(operator),
                     p -> (p.node().is(GCOperator.class) && p.port() == 0));
             if (baseDests.size() != 1)
                 return null;
@@ -59,7 +64,7 @@ public class MergeGC extends Passes {
 
         @Override
         public void postorder(DBSPSimpleOperator operator) {
-            List<Port<DBSPOperator>> destinations = this.graph.getSuccessors(operator);
+            List<Port<DBSPOperator>> destinations = this.getGraph().getSuccessors(operator);
             // Compare every pair of destinations
             for (int i = 0; i < destinations.size(); i++) {
                 DBSPOperator base = destinations.get(i).node();
@@ -99,9 +104,9 @@ public class MergeGC extends Passes {
         }
     }
 
-    public MergeGC(IErrorReporter reporter, CircuitGraph graph) {
-        super(reporter);
-        FindEquivalentNoops find = new FindEquivalentNoops(reporter, graph);
+    public MergeGC(IErrorReporter reporter, CircuitGraphs graphs) {
+        super("MergeGC", reporter);
+        FindEquivalentNoops find = new FindEquivalentNoops(reporter, graphs);
         this.add(find);
         this.add(new CSE.RemoveCSE(reporter, find.canonical));
     }

@@ -24,7 +24,7 @@ public final class DBSPHopOperator extends DBSPUnaryOperator {
     public DBSPHopOperator(CalciteObject node, int timestampIndex,
                            DBSPExpression interval,
                            DBSPExpression start, DBSPExpression size,
-                           DBSPTypeZSet outputType, OperatorPort input) {
+                           DBSPTypeZSet outputType, OutputPort input) {
         super(node, "hop", null, outputType, input.isMultiset(), input);
         this.timestampIndex = timestampIndex;
         this.interval = interval;
@@ -63,7 +63,7 @@ public final class DBSPHopOperator extends DBSPUnaryOperator {
     }
 
     @Override
-    public DBSPSimpleOperator withInputs(List<OperatorPort> newInputs, boolean force) {
+    public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPHopOperator(
                     this.getNode(), this.timestampIndex, this.interval, this.start, this.size,

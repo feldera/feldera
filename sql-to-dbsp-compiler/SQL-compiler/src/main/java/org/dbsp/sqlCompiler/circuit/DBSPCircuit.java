@@ -24,9 +24,8 @@
 package org.dbsp.sqlCompiler.circuit;
 
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceTableOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceViewDeclarationOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPViewDeclarationOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewOperator;
 import org.dbsp.sqlCompiler.compiler.ProgramMetadata;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
@@ -48,7 +47,7 @@ import java.util.Set;
 /** Core representation of a dataflow graph (aka a query plan). */
 public final class DBSPCircuit
         extends DBSPNode
-        implements IDBSPOuterNode, DiGraph<DBSPOperator> {
+        implements IDBSPOuterNode {
     /** All the operators are in fact in the partial circuit. */
     public final DBSPPartialCircuit circuit;
     public final String name;
@@ -132,23 +131,5 @@ public final class DBSPCircuit
 
     public boolean contains(DBSPOperator operator) {
         return this.circuit.operators.contains(operator);
-    }
-
-    @Override
-    public Iterable<DBSPOperator> getNodes() {
-        return this.circuit.getAllOperators();
-    }
-
-    /** Returns the *predecessors* of a node.
-     * The graph represented by DBSPCircuit is actually the reverse graph.
-     * Use {@link CircuitGraph} to get the actual graph. */
-    @Override
-    public List<Port<DBSPOperator>> getSuccessors(DBSPOperator operator) {
-        if (operator.is(DBSPSourceViewDeclarationOperator.class)) {
-            DBSPSourceViewDeclarationOperator vd = operator.to(DBSPSourceViewDeclarationOperator.class);
-            DBSPViewOperator view = vd.getCorrespondingView(this.circuit);
-            return Linq.list(new Port<>(view, 0));
-        }
-        return Linq.map(operator.inputs, i -> new Port<>(i.node(), 0));
     }
 }

@@ -40,7 +40,7 @@ public final class DBSPJoinOperator extends DBSPJoinBaseOperator {
     public DBSPJoinOperator(
             CalciteObject node, DBSPTypeZSet outputType,
             DBSPExpression function, boolean isMultiset,
-            OperatorPort left, OperatorPort right) {
+            OutputPort left, OutputPort right) {
         super(node, "join", function, outputType, isMultiset, left, right);
         this.checkResultType(function, this.getOutputZSetElementType());
         assert left.getOutputIndexedZSetType().keyType.sameType(right.getOutputIndexedZSetType().keyType);
@@ -55,7 +55,7 @@ public final class DBSPJoinOperator extends DBSPJoinBaseOperator {
     }
 
     @Override
-    public DBSPSimpleOperator withInputs(List<OperatorPort> newInputs, boolean force) {
+    public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPJoinOperator(
                     this.getNode(), this.getOutputZSetType(),

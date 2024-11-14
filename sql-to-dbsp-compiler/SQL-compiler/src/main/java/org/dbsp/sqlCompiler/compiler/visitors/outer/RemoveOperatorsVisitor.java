@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
+import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
@@ -33,9 +34,9 @@ import java.util.Set;
 
 public class RemoveOperatorsVisitor extends CircuitCloneVisitor {
     /** Keep all operators that appear in this list. */
-    public final Set<DBSPSimpleOperator> keep;
+    public final Set<DBSPOperator> keep;
 
-    public RemoveOperatorsVisitor(IErrorReporter reporter, Set<DBSPSimpleOperator> keep) {
+    public RemoveOperatorsVisitor(IErrorReporter reporter, Set<DBSPOperator> keep) {
         super(reporter, false);
         this.keep = keep;
     }
@@ -54,11 +55,11 @@ public class RemoveOperatorsVisitor extends CircuitCloneVisitor {
     }
 
     @Override
-    public void startVisit(IDBSPOuterNode node) {
-        super.startVisit(node);
+    public Token startVisit(IDBSPOuterNode node) {
         Logger.INSTANCE.belowLevel(this, 2)
                 .append("Keeping ")
                 .append(this.keep.toString())
                 .newline();
+        return super.startVisit(node);
     }
 }

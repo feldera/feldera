@@ -16,6 +16,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPLagOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNegateOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNoopOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
@@ -32,7 +33,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPUnaryOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPUpsertFeedbackOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
-import org.dbsp.sqlCompiler.circuit.operator.OperatorPort;
+import org.dbsp.sqlCompiler.circuit.operator.OutputPort;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.InputColumnMetadata;
 import org.dbsp.sqlCompiler.compiler.ViewColumnMetadata;
@@ -96,9 +97,13 @@ import java.util.Set;
  * See the ExpandOperators class. */
 public class Monotonicity extends CircuitVisitor {
     public static class MonotonicityInformation {
-        /** For each operator the list of its output monotone columns. */
-        final Map<DBSPSimpleOperator, MonotoneExpression> monotonicity;
-        /** List of operators in the expanded graph. */
+        /**
+         * For each operator the list of its output monotone columns.
+         */
+        final Map<OutputPort, MonotoneExpression> monotonicity;
+        /**
+         * List of operators in the expanded graph.
+         */
         final Set<DBSPOperator> expandedGraph;
 
         MonotonicityInformation() {
@@ -106,26 +111,35 @@ public class Monotonicity extends CircuitVisitor {
             this.expandedGraph = new HashSet<>();
         }
 
-        void setCircuit(DBSPCircuit circuit) {
-            for (DBSPOperator op: circuit.circuit.getAllOperators())
-                this.expandedGraph.add(op);
+        void markExpanded(DBSPOperator operator) {
+            this.expandedGraph.add(operator);
+            if (operator.is(DBSPNestedOperator.class)) {
+                for (DBSPOperator op : operator.to(DBSPNestedOperator.class).getAllOperators())
+                    this.markExpanded(op);
+            }
         }
 
-        void put(DBSPSimpleOperator operator, MonotoneExpression expression) {
-            assert this.expandedGraph.contains(operator);
+        void setCircuit(DBSPCircuit circuit) {
+            for (DBSPOperator op : circuit.circuit.getAllOperators()) {
+                this.markExpanded(op);
+            }
+        }
+
+        void put(OutputPort operator, MonotoneExpression expression) {
+            assert this.expandedGraph.contains(operator.node());
             Utilities.putNew(this.monotonicity, operator, expression);
         }
 
         @Nullable
-        MonotoneExpression get(DBSPSimpleOperator operator) {
-            if (!this.expandedGraph.contains(operator))
-                throw new InternalCompilerError("Querying operator that is not in the expanded graph " + operator);
-            return this.monotonicity.get(operator);
+        MonotoneExpression get(OutputPort port) {
+            if (!this.expandedGraph.contains(port.node()))
+                throw new InternalCompilerError("Querying operator that is not in the expanded graph " + port.node());
+            return this.monotonicity.get(port);
         }
 
         @Nullable
-        MonotoneExpression get(OperatorPort operator) {
-            return this.get(operator.simpleNode());
+        MonotoneExpression get(DBSPSimpleOperator operator) {
+            return this.get(operator.outputPort());
         }
     }
 
@@ -133,12 +147,14 @@ public class Monotonicity extends CircuitVisitor {
 
     @Nullable
     public MonotoneExpression getMonotoneExpression(DBSPSimpleOperator operator) {
-        return this.info.get(operator);
+        return this.info.get(operator.outputPort());
     }
 
     @Nullable
-    public MonotoneExpression getMonotoneExpression(OperatorPort port) {
-        return this.getMonotoneExpression(port.simpleNode());
+    public MonotoneExpression getMonotoneExpression(OutputPort port) {
+        if (port.node().is(DBSPSimpleOperator.class))
+            return this.getMonotoneExpression(port.simpleNode());
+        return null;
     }
 
     public Monotonicity(IErrorReporter errorReporter) {
@@ -156,7 +172,7 @@ public class Monotonicity extends CircuitVisitor {
                 .append(" => ")
                 .append(value.toString())
                 .newline();
-        this.info.put(operator, value);
+        this.info.put(operator.outputPort(), value);
     }
 
     @Nullable
@@ -835,9 +851,9 @@ public class Monotonicity extends CircuitVisitor {
     }
 
     @Override
-    public void startVisit(IDBSPOuterNode node) {
-        super.startVisit(node);
+    public Token startVisit(IDBSPOuterNode node) {
         this.info.setCircuit(node.to(DBSPCircuit.class));
+        return super.startVisit(node);
     }
 
     /** Helper class for analyzing filter functions.

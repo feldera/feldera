@@ -23,7 +23,7 @@ public final class DBSPWaterlineOperator extends DBSPUnaryOperator {
 
     public DBSPWaterlineOperator(CalciteObject node, DBSPClosureExpression init,
                                  DBSPClosureExpression extractTs,
-                                 DBSPClosureExpression function, OperatorPort input) {
+                                 DBSPClosureExpression function, OutputPort input) {
         super(node, "waterline", function, function.getResultType(),
                 false, input);
         this.init = init;
@@ -42,7 +42,7 @@ public final class DBSPWaterlineOperator extends DBSPUnaryOperator {
     }
 
     @Override
-    public DBSPSimpleOperator withInputs(List<OperatorPort> newInputs, boolean force) {
+    public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPWaterlineOperator(this.getNode(), this.init,
                     this.extractTs,

@@ -17,7 +17,7 @@ import java.util.Objects;
  * The comments from {@link DBSPApplyOperator} apply to this operator as well. */
 public final class DBSPApply2Operator extends DBSPBinaryOperator {
     public DBSPApply2Operator(CalciteObject node, DBSPClosureExpression function,
-                              OperatorPort left, OperatorPort right) {
+                              OutputPort left, OutputPort right) {
         super(node, "apply2", function, function.getResultType(), false, left, right);
         assert function.parameters.length == 2: "Expected 2 parameters for function " + function;
         DBSPType param0Type = function.parameters[0].getType().deref();
@@ -40,7 +40,7 @@ public final class DBSPApply2Operator extends DBSPBinaryOperator {
     }
 
     @Override
-    public DBSPSimpleOperator withInputs(List<OperatorPort> newInputs, boolean force) {
+    public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
         assert newInputs.size() == 2: "Expected 2 inputs " + newInputs;
         if (force || this.inputsDiffer(newInputs)) {
             return new DBSPApply2Operator(

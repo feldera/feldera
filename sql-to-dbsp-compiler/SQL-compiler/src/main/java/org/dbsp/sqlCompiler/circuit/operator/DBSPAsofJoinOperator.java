@@ -43,7 +43,7 @@ public final class DBSPAsofJoinOperator extends DBSPJoinBaseOperator {
                                 DBSPClosureExpression rightTimestamp,
                                 DBSPComparatorExpression comparator,
                                 boolean isMultiset, boolean isLeft,
-                                OperatorPort left, OperatorPort right) {
+                                OutputPort left, OutputPort right) {
         super(node, "asof_join", function, outputType, isMultiset, left, right);
         this.isLeft = isLeft;
         this.comparator = comparator;
@@ -90,7 +90,7 @@ public final class DBSPAsofJoinOperator extends DBSPJoinBaseOperator {
     }
 
     @Override
-    public DBSPSimpleOperator withInputs(List<OperatorPort> newInputs, boolean force) {
+    public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
         assert newInputs.size() == 2;
         if (force || this.inputsDiffer(newInputs))
             return new DBSPAsofJoinOperator(

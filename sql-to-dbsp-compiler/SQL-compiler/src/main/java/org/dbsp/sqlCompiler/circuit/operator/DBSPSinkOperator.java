@@ -35,7 +35,7 @@ public final class DBSPSinkOperator extends DBSPViewBaseOperator {
     public DBSPSinkOperator(CalciteObject node, String viewName, String query,
                             DBSPTypeStruct originalRowType,
                             ViewMetadata metadata,
-                            OperatorPort input) {
+                            OutputPort input) {
         super(node, "inspect", null, viewName, query,
                 originalRowType, metadata, input);
     }
@@ -50,7 +50,7 @@ public final class DBSPSinkOperator extends DBSPViewBaseOperator {
     }
 
     @Override
-    public DBSPSimpleOperator withInputs(List<OperatorPort> newInputs, boolean force) {
+    public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPSinkOperator(
                     this.getNode(), this.viewName, this.query, this.originalRowType,

@@ -30,7 +30,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import java.util.List;
 
 public final class DBSPDistinctOperator extends DBSPUnaryOperator {
-    public DBSPDistinctOperator(CalciteObject node, OperatorPort input) {
+    public DBSPDistinctOperator(CalciteObject node, OutputPort input) {
         super(node, "distinct", null, input.outputType(), false, input);
     }
 
@@ -44,7 +44,7 @@ public final class DBSPDistinctOperator extends DBSPUnaryOperator {
     }
 
     @Override
-    public DBSPSimpleOperator withInputs(List<OperatorPort> newInputs, boolean force) {
+    public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPDistinctOperator(
                     this.getNode(), newInputs.get(0)).copyAnnotations(this);

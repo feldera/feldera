@@ -21,7 +21,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPSumOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPUnaryOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateOperator;
-import org.dbsp.sqlCompiler.circuit.operator.OperatorPort;
+import org.dbsp.sqlCompiler.circuit.operator.OutputPort;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIndexedZSetLiteral;
@@ -63,7 +63,7 @@ public class PropagateEmptySources extends CircuitCloneVisitor {
     }
 
     boolean replaceUnary(DBSPUnaryOperator operator) {
-        OperatorPort source = this.mapped(operator.input());
+        OutputPort source = this.mapped(operator.input());
         if (this.emptySources.contains(source.node())) {
             DBSPType outputType = operator.getType();
             DBSPLiteral value = this.emptyLiteral(outputType);
@@ -162,9 +162,9 @@ public class PropagateEmptySources extends CircuitCloneVisitor {
 
     @Override
     public void postorder(DBSPSumOperator operator) {
-        List<OperatorPort> newSources = new ArrayList<>();
-        for (OperatorPort prev: operator.inputs) {
-            OperatorPort source = this.mapped(prev);
+        List<OutputPort> newSources = new ArrayList<>();
+        for (OutputPort prev: operator.inputs) {
+            OutputPort source = this.mapped(prev);
             if (this.emptySources.contains(source.node()))
                 continue;
             newSources.add(source);
@@ -177,7 +177,7 @@ public class PropagateEmptySources extends CircuitCloneVisitor {
             this.map(operator, result);
             return;
         } else if (newSources.size() == 1) {
-            this.map(operator.getOutput(), newSources.get(0), false);
+            this.map(operator.outputPort(), newSources.get(0), false);
             return;
         }
         super.postorder(operator);
@@ -185,8 +185,8 @@ public class PropagateEmptySources extends CircuitCloneVisitor {
 
     @Override
     public void postorder(DBSPSubtractOperator operator) {
-        OperatorPort left = this.mapped(operator.inputs.get(0));
-        OperatorPort right = this.mapped(operator.inputs.get(1));
+        OutputPort left = this.mapped(operator.inputs.get(0));
+        OutputPort right = this.mapped(operator.inputs.get(1));
         if (this.emptySources.contains(right.node())) {
             if (this.emptySources.contains(left.node())) {
                 DBSPLiteral value = this.emptyLiteral(operator.getType());
@@ -195,7 +195,7 @@ public class PropagateEmptySources extends CircuitCloneVisitor {
                 this.emptySources.add(result);
                 this.map(operator, result);
             } else {
-                this.map(operator.getOutput(), left, false);
+                this.map(operator.outputPort(), left, false);
             }
             return;
         }
@@ -204,8 +204,8 @@ public class PropagateEmptySources extends CircuitCloneVisitor {
 
     @Override
     public void postorder(DBSPStreamJoinOperator operator) {
-        for (OperatorPort prev: operator.inputs) {
-            OperatorPort source = this.mapped(prev);
+        for (OutputPort prev: operator.inputs) {
+            OutputPort source = this.mapped(prev);
             if (this.emptySources.contains(source.node())) {
                 DBSPLiteral value = this.emptyLiteral(operator.getType());
                 DBSPConstantOperator result = new DBSPConstantOperator(
@@ -220,8 +220,8 @@ public class PropagateEmptySources extends CircuitCloneVisitor {
 
     @Override
     public void postorder(DBSPJoinOperator operator) {
-        for (OperatorPort prev: operator.inputs) {
-            OperatorPort source = this.mapped(prev);
+        for (OutputPort prev: operator.inputs) {
+            OutputPort source = this.mapped(prev);
             if (this.emptySources.contains(source.node())) {
                 DBSPLiteral value = this.emptyLiteral(operator.getType());
                 DBSPConstantOperator result = new DBSPConstantOperator(

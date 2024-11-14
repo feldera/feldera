@@ -44,7 +44,7 @@ public final class DBSPMapIndexOperator extends DBSPUnaryOperator {
      * @param input           Source operator. */
     public DBSPMapIndexOperator(CalciteObject node, DBSPExpression indexFunction,
                                 DBSPTypeIndexedZSet outputType,
-                                OperatorPort input) {
+                                OutputPort input) {
         this(node, indexFunction, outputType, input.isMultiset(), input);
     }
 
@@ -58,7 +58,7 @@ public final class DBSPMapIndexOperator extends DBSPUnaryOperator {
     public DBSPMapIndexOperator(CalciteObject node, DBSPExpression indexFunction,
                                 DBSPTypeIndexedZSet outputType,
                                 boolean isMultiset,
-                                OperatorPort input) {
+                                OutputPort input) {
         super(node, "map_index", indexFunction, outputType, isMultiset, input);
         DBSPType outputElementType = outputType.getKVType();
         // Expression must return a tuple that is composed of a key and a value
@@ -89,7 +89,7 @@ public final class DBSPMapIndexOperator extends DBSPUnaryOperator {
     }
 
     @Override
-    public DBSPSimpleOperator withInputs(List<OperatorPort> newInputs, boolean force) {
+    public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
         assert newInputs.size() == 1;
         if (force || this.inputsDiffer(newInputs))
             return new DBSPMapIndexOperator(

@@ -51,7 +51,7 @@ public final class DBSPSourceMultisetOperator
     }
 
     @Override
-    public DBSPSimpleOperator withInputs(List<OperatorPort> newInputs, boolean force) {
+    public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
         assert newInputs.isEmpty();
         if (force)
             return new DBSPSourceMultisetOperator(

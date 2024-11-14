@@ -25,12 +25,14 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
-import org.dbsp.sqlCompiler.circuit.operator.OperatorPort;
+import org.dbsp.sqlCompiler.circuit.operator.OutputPort;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
@@ -47,9 +49,9 @@ import java.util.Set;
  * operators that are 'used' by other operators (inputs, outputs,
  * and sources). */
 public class FindDeadCode extends CircuitVisitor implements IWritesLogs {
-    public final Set<DBSPSimpleOperator> reachable = new HashSet<>();
+    public final Set<DBSPOperator> reachable = new HashSet<>();
     // Includes reachable plus all inputs
-    public final Set<DBSPSimpleOperator> toKeep = new HashSet<>();
+    public final Set<DBSPOperator> toKeep = new HashSet<>();
     /** If true all sources are kept, even if they are dead. */
     public final boolean keepAllSources;
     public final boolean warn;
@@ -66,7 +68,7 @@ public class FindDeadCode extends CircuitVisitor implements IWritesLogs {
         this.warn = warn;
     }
 
-    public void keep(DBSPSimpleOperator operator) {
+    public void keep(DBSPOperator operator) {
         Logger.INSTANCE.belowLevel(this, 1)
                 .append(operator.toString())
                 .append(" reachable")
@@ -75,10 +77,10 @@ public class FindDeadCode extends CircuitVisitor implements IWritesLogs {
     }
 
     @Override
-    public void startVisit(IDBSPOuterNode node) {
+    public Token startVisit(IDBSPOuterNode node) {
         this.toKeep.clear();
         this.reachable.clear();
-        super.startVisit(node);
+        return super.startVisit(node);
     }
 
     @Override
@@ -95,33 +97,38 @@ public class FindDeadCode extends CircuitVisitor implements IWritesLogs {
         return VisitDecision.STOP;
     }
 
-    VisitDecision keepInverseReachable(DBSPSimpleOperator destination) {
-        List<OperatorPort> r = new ArrayList<>();
-        r.add(destination.getOutput());
+    VisitDecision keepInverseReachable(OutputPort destination) {
+        List<OutputPort> r = new ArrayList<>();
+        r.add(destination);
         while (!r.isEmpty()) {
-            OperatorPort op = r.remove(0);
-            this.reachable.add(op.simpleNode());
-            if (this.toKeep.contains(op.simpleNode()))
+            OutputPort op = r.remove(0);
+            this.reachable.add(op.node());
+            if (op.node().is(DBSPNestedOperator.class)) {
+                DBSPNestedOperator nested = op.node().to(DBSPNestedOperator.class);
+                OutputPort internal = nested.outputs.get(op.outputNumber);
+                this.keepInverseReachable(internal);
+            }
+            if (this.toKeep.contains(op.node()))
                 continue;
-            this.keep(op.simpleNode());
-            r.addAll(op.simpleNode().inputs);
+            this.keep(op.node());
+            r.addAll(op.node().inputs);
         }
         return VisitDecision.STOP;
     }
 
     @Override
     public VisitDecision preorder(DBSPIntegrateTraceRetainKeysOperator operator) {
-        return this.keepInverseReachable(operator);
+        return this.keepInverseReachable(operator.outputPort());
     }
 
     @Override
     public VisitDecision preorder(DBSPIntegrateTraceRetainValuesOperator operator) {
-        return this.keepInverseReachable(operator);
+        return this.keepInverseReachable(operator.outputPort());
     }
 
     @Override
     public VisitDecision preorder(DBSPSinkOperator operator) {
-       return this.keepInverseReachable(operator);
+       return this.keepInverseReachable(operator.outputPort());
     }
 
     @Override

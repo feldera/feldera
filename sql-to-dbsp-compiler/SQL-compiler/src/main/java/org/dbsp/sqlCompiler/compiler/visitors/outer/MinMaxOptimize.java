@@ -4,7 +4,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPChainAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAggregateOperator;
-import org.dbsp.sqlCompiler.circuit.operator.OperatorPort;
+import org.dbsp.sqlCompiler.circuit.operator.OutputPort;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
@@ -37,31 +37,31 @@ public class MinMaxOptimize extends Passes {
     final AppendOnly appendOnly;
 
     public MinMaxOptimize(IErrorReporter reporter, DBSPVariablePath weightVar) {
-        super(reporter);
+        super("MinMaxOptimize", reporter);
         this.appendOnly = new AppendOnly(reporter);
         this.add(this.appendOnly);
         this.add(new ExpandMaxAsWindow(reporter, weightVar, this.appendOnly::isAppendOnly));
     }
 
     static class ExpandMaxAsWindow extends CircuitCloneVisitor {
-        final Predicate<OperatorPort> isAppendOnly;
+        final Predicate<OutputPort> isAppendOnly;
         final DBSPVariablePath weightVar;
 
         public ExpandMaxAsWindow(IErrorReporter reporter, DBSPVariablePath weightVar,
-                                 Predicate<OperatorPort> isAppendOnly) {
+                                 Predicate<OutputPort> isAppendOnly) {
             super(reporter, false);
             this.isAppendOnly = isAppendOnly;
             this.weightVar = weightVar;
         }
 
         @Override
-        public void startVisit(IDBSPOuterNode circuit) {
-            super.startVisit(circuit);
+        public Token startVisit(IDBSPOuterNode circuit) {
+            return super.startVisit(circuit);
         }
 
         @Override
         public void postorder(DBSPStreamAggregateOperator operator) {
-            OperatorPort i = this.mapped(operator.input());
+            OutputPort i = this.mapped(operator.input());
             if (!this.isAppendOnly.test(operator.input())) {
                 super.postorder(operator);
                 return;
@@ -110,12 +110,12 @@ public class MinMaxOptimize extends Passes {
                             .reduce(this.errorReporter)
                             .to(DBSPClosureExpression.class);
 
-            OperatorPort indexInput = index.input();
+            OutputPort indexInput = index.input();
             DBSPTypeIndexedZSet outputType = new DBSPTypeIndexedZSet(
                     index.getNode(), index.getKeyType(), new DBSPTypeTuple(aggregatedField.getType()));
             DBSPMapIndexOperator reIndex = new DBSPMapIndexOperator(
                     index.getNode(), newIndexClosure, outputType, index.isMultiset,
-                    indexInput.simpleNode().getOutput());
+                    indexInput.simpleNode().outputPort());
             this.addOperator(reIndex);
 
             DBSPVariablePath inputVar = new DBSPTypeTuple(aggregationInputType).ref().var();
@@ -131,7 +131,7 @@ public class MinMaxOptimize extends Passes {
                             .closure(acc, inputVar, this.weightVar);
 
             DBSPSimpleOperator chain = new DBSPChainAggregateOperator(operator.getNode(),
-                    init, comparison, operator.outputType, reIndex.getOutput());
+                    init, comparison, operator.outputType, reIndex.outputPort());
             this.map(operator, chain);
         }
     }

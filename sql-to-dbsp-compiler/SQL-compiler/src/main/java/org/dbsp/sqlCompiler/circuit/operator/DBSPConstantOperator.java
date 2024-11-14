@@ -62,7 +62,7 @@ public final class DBSPConstantOperator extends DBSPSimpleOperator {
     }
 
     @Override
-    public DBSPSimpleOperator withInputs(List<OperatorPort> newInputs, boolean force) {
+    public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPConstantOperator(this.getNode(), this.getFunction(),
                     this.incremental, this.isMultiset)

@@ -39,7 +39,7 @@ public final class DBSPAggregateOperator extends DBSPAggregateOperatorBase {
             CalciteObject node,
             DBSPTypeIndexedZSet outputType,
             @Nullable DBSPExpression function,
-            @Nullable DBSPAggregate aggregate, OperatorPort input) {
+            @Nullable DBSPAggregate aggregate, OutputPort input) {
         super(node, "aggregate", outputType,
                 function, aggregate, false, input);
     }
@@ -63,7 +63,7 @@ public final class DBSPAggregateOperator extends DBSPAggregateOperatorBase {
     }
 
     @Override
-    public DBSPSimpleOperator withInputs(List<OperatorPort> newInputs, boolean force) {
+    public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPAggregateOperator(
                     this.getNode(), this.outputType.to(DBSPTypeIndexedZSet.class),

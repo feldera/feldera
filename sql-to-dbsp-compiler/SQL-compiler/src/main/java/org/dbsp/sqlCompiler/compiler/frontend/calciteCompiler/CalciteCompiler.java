@@ -195,6 +195,86 @@ public class CalciteCompiler implements IWritesLogs {
     private final HashMap<String, DeclareViewStatement> declaredViews;
     /** Recursive views which have been referred */
     private final Set<String> usedViews;
+    /** Views which have been defined */
+    private final Set<String> definedViews;
+
+    public CalciteCompiler(CompilerOptions options, IErrorReporter errorReporter) {
+        this.options = options;
+        this.errorReporter = errorReporter;
+        this.customFunctions = new CustomFunctions();
+        this.definedViews = new HashSet<>();
+
+        Casing unquotedCasing = Casing.TO_UPPER;
+        switch (options.languageOptions.unquotedCasing) {
+            case "upper":
+                //noinspection ReassignedVariable,DataFlowIssue
+                unquotedCasing = Casing.TO_UPPER;
+                break;
+            case "lower":
+                unquotedCasing = Casing.TO_LOWER;
+                break;
+            case "unchanged":
+                unquotedCasing = Casing.UNCHANGED;
+                break;
+            default:
+                errorReporter.reportError(SourcePositionRange.INVALID,
+                        "Illegal option",
+                        "Illegal value for option --unquotedCasing: " +
+                                Utilities.singleQuote(options.languageOptions.unquotedCasing));
+                // Continue execution.
+        }
+
+        // This influences function name lookup.
+        // We want that to be case-insensitive.
+        // Notice that this does NOT affect the parser, only the validator.
+        Properties connConfigProp = new Properties();
+        connConfigProp.put(CalciteConnectionProperty.CASE_SENSITIVE.camelName(), String.valueOf(false));
+        this.udt = new HashMap<>();
+        this.connectionConfig = new CalciteConnectionConfigImpl(connConfigProp);
+        this.parserConfig = SqlParser.config()
+                .withLex(options.languageOptions.lexicalRules)
+                // Our own parser factory
+                .withParserFactory(DbspParserImpl.FACTORY)
+                .withUnquotedCasing(unquotedCasing)
+                .withQuotedCasing(Casing.UNCHANGED)
+                .withConformance(SqlConformanceEnum.LENIENT);
+        this.typeFactory = new SqlTypeFactoryImpl(TYPE_SYSTEM);
+        this.calciteCatalog = new Catalog("schema");
+        this.rootSchema = CalciteSchema.createRootSchema(false, false).plus();
+        this.rootSchema.add(calciteCatalog.schemaName, this.calciteCatalog);
+        // Register new types
+        this.rootSchema.add("BYTEA", factory -> factory.createSqlType(SqlTypeName.VARBINARY));
+        this.rootSchema.add("DATETIME", factory -> factory.createSqlType(SqlTypeName.TIMESTAMP));
+        this.rootSchema.add("INT2", factory -> factory.createSqlType(SqlTypeName.SMALLINT));
+        this.rootSchema.add("INT8", factory -> factory.createSqlType(SqlTypeName.BIGINT));
+        this.rootSchema.add("INT4", factory -> factory.createSqlType(SqlTypeName.INTEGER));
+        this.rootSchema.add("SIGNED", factory -> factory.createSqlType(SqlTypeName.INTEGER));
+        this.rootSchema.add("INT64", factory -> factory.createSqlType(SqlTypeName.BIGINT));
+        this.rootSchema.add("FLOAT64", factory -> factory.createSqlType(SqlTypeName.DOUBLE));
+        this.rootSchema.add("FLOAT32", factory -> factory.createSqlType(SqlTypeName.REAL));
+        this.rootSchema.add("FLOAT4", factory -> factory.createSqlType(SqlTypeName.REAL));
+        this.rootSchema.add("FLOAT8", factory -> factory.createSqlType(SqlTypeName.DOUBLE));
+        this.rootSchema.add("STRING", factory -> factory.createSqlType(SqlTypeName.VARCHAR));
+        this.rootSchema.add("NUMBER", factory -> factory.createSqlType(SqlTypeName.DECIMAL));
+        this.rootSchema.add("TEXT", factory -> factory.createSqlType(SqlTypeName.VARCHAR));
+        this.rootSchema.add("BOOL", factory -> factory.createSqlType(SqlTypeName.BOOLEAN));
+
+        // This planner does not do anything.
+        // We use a series of planner stages later to perform the real optimizations.
+        RelOptPlanner planner = new HepPlanner(new HepProgramBuilder().build());
+        planner.setExecutor(RexUtil.EXECUTOR);
+        this.cluster = RelOptCluster.create(planner, new RexBuilder(this.typeFactory));
+        this.converterConfig = SqlToRelConverter.config()
+                .withExpand(true);
+        this.validator = null;
+        this.validateTypes = null;
+        this.converter = null;
+        this.usedViews = new HashSet<>();
+        this.declaredViews = new HashMap<>();
+
+        SqlOperatorTable operatorTable = this.createOperatorTable();
+        this.addOperatorTable(operatorTable);
+    }
 
     /** Create a copy of the 'source' compiler which can be used to compile
      * some generated SQL without affecting its data structures */
@@ -214,6 +294,7 @@ public class CalciteCompiler implements IWritesLogs {
         this.copySchema(source.rootSchema);
         this.rootSchema.add(this.calciteCatalog.schemaName, this.calciteCatalog);
         this.usedViews = new HashSet<>(source.usedViews);
+        this.definedViews = new HashSet<>(source.definedViews);
         this.addOperatorTable(Objects.requireNonNull(source.validator).getOperatorTable());
     }
 
@@ -293,86 +374,6 @@ public class CalciteCompiler implements IWritesLogs {
             }
             return super.visit(type);
         }
-    }
-
-    public CalciteCompiler(CompilerOptions options, IErrorReporter errorReporter) {
-        this.options = options;
-        this.errorReporter = errorReporter;
-        this.customFunctions = new CustomFunctions();
-
-        Casing unquotedCasing = Casing.TO_UPPER;
-        switch (options.languageOptions.unquotedCasing) {
-            case "upper":
-                //noinspection ReassignedVariable,DataFlowIssue
-                unquotedCasing = Casing.TO_UPPER;
-                break;
-            case "lower":
-                unquotedCasing = Casing.TO_LOWER;
-                break;
-            case "unchanged":
-                unquotedCasing = Casing.UNCHANGED;
-                break;
-            default:
-                errorReporter.reportError(SourcePositionRange.INVALID,
-                        "Illegal option",
-                        "Illegal value for option --unquotedCasing: " +
-                        Utilities.singleQuote(options.languageOptions.unquotedCasing));
-                // Continue execution.
-        }
-
-        // This influences function name lookup.
-        // We want that to be case-insensitive.
-        // Notice that this does NOT affect the parser, only the validator.
-        Properties connConfigProp = new Properties();
-        connConfigProp.put(CalciteConnectionProperty.CASE_SENSITIVE.camelName(), String.valueOf(false));
-        this.udt = new HashMap<>();
-        this.connectionConfig = new CalciteConnectionConfigImpl(connConfigProp);
-        this.parserConfig = SqlParser.config()
-                .withLex(options.languageOptions.lexicalRules)
-                // Our own parser factory
-                .withParserFactory(DbspParserImpl.FACTORY)
-                .withUnquotedCasing(unquotedCasing)
-                .withQuotedCasing(Casing.UNCHANGED)
-                .withConformance(SqlConformanceEnum.LENIENT);
-        this.typeFactory = new SqlTypeFactoryImpl(TYPE_SYSTEM);
-        this.calciteCatalog = new Catalog("schema");
-        this.rootSchema = CalciteSchema.createRootSchema(false, false).plus();
-        this.rootSchema.add(calciteCatalog.schemaName, this.calciteCatalog);
-        // Register new types
-        this.rootSchema.add("BYTEA", factory -> factory.createSqlType(SqlTypeName.VARBINARY));
-        this.rootSchema.add("DATETIME", factory -> factory.createSqlType(SqlTypeName.TIMESTAMP));
-        this.rootSchema.add("INT2", factory -> factory.createSqlType(SqlTypeName.SMALLINT));
-        this.rootSchema.add("INT8", factory -> factory.createSqlType(SqlTypeName.BIGINT));
-        this.rootSchema.add("INT4", factory -> factory.createSqlType(SqlTypeName.INTEGER));
-        this.rootSchema.add("SIGNED", factory -> factory.createSqlType(SqlTypeName.INTEGER));
-        this.rootSchema.add("INT64", factory -> factory.createSqlType(SqlTypeName.BIGINT));
-        this.rootSchema.add("FLOAT64", factory -> factory.createSqlType(SqlTypeName.DOUBLE));
-        this.rootSchema.add("FLOAT32", factory -> factory.createSqlType(SqlTypeName.REAL));
-        this.rootSchema.add("FLOAT4", factory -> factory.createSqlType(SqlTypeName.REAL));
-        this.rootSchema.add("FLOAT8", factory -> factory.createSqlType(SqlTypeName.DOUBLE));
-        this.rootSchema.add("STRING", factory -> factory.createSqlType(SqlTypeName.VARCHAR));
-        this.rootSchema.add("NUMBER", factory -> factory.createSqlType(SqlTypeName.DECIMAL));
-        this.rootSchema.add("TEXT", factory -> factory.createSqlType(SqlTypeName.VARCHAR));
-        this.rootSchema.add("BOOL", factory -> factory.createSqlType(SqlTypeName.BOOLEAN));
-
-        // This planner does not do anything.
-        // We use a series of planner stages later to perform the real optimizations.
-        RelOptPlanner planner = new HepPlanner(new HepProgramBuilder().build());
-        planner.setExecutor(RexUtil.EXECUTOR);
-        this.cluster = RelOptCluster.create(planner, new RexBuilder(this.typeFactory));
-        this.converterConfig = SqlToRelConverter.config()
-                // Calcite recommends not using withExpand, but there are no
-                // rules to decorrelate some queries that withExpand will produce,
-                // e.g., AggScottTests.testAggregates4
-                .withExpand(true);
-        this.validator = null;
-        this.validateTypes = null;
-        this.converter = null;
-        this.usedViews = new HashSet<>();
-        this.declaredViews = new HashMap<>();
-
-        SqlOperatorTable operatorTable = this.createOperatorTable();
-        this.addOperatorTable(operatorTable);
     }
 
     SqlOperatorTable createOperatorTable() {
@@ -1109,7 +1110,8 @@ public class CalciteCompiler implements IWritesLogs {
         final java.util.function.Function<String, String> getInputName;
         List<CallAndChild> stack = new ArrayList<>();
 
-        ReplaceRecursiveViews(HashMap<String, DeclareViewStatement> declaredViews, java.util.function.Function<String, String> getInputName) {
+        ReplaceRecursiveViews(HashMap<String, DeclareViewStatement> declaredViews,
+                              java.util.function.Function<String, String> getInputName) {
             this.declaredViews = declaredViews;
             this.getInputName = getInputName;
         }
@@ -1140,7 +1142,7 @@ public class CalciteCompiler implements IWritesLogs {
         }
 
         @Override
-         public @org.checkerframework.checker.nullness.qual.Nullable SqlNode visit(SqlIdentifier id) {
+        public @org.checkerframework.checker.nullness.qual.Nullable SqlNode visit(SqlIdentifier id) {
             boolean inFrom = inSelectFrom();
             if (id.isSimple()) {
                 String simple = id.getSimple();
@@ -1158,14 +1160,22 @@ public class CalciteCompiler implements IWritesLogs {
                 }
                 return id;
             }
-         }
-     }
+        }
+    }
 
+    /** Replace references to recursive views that are not defined yet with
+     *  references to some fictitious input tables. */
     SqlNode replaceRecursiveViews(SqlNode query) {
-        if (this.declaredViews.isEmpty())
+        HashMap<String, DeclareViewStatement> toReplace = new HashMap<>();
+        for (var e : this.declaredViews.entrySet()) {
+            if (this.definedViews.contains(e.getKey()))
+                continue;
+            Utilities.putNew(toReplace, e.getKey(), e.getValue());
+        }
+        if (toReplace.isEmpty())
             return query;
         ReplaceRecursiveViews rr = new ReplaceRecursiveViews(
-                this.declaredViews, DeclareViewStatement::inputViewName);
+                toReplace, DeclareViewStatement::inputViewName);
         this.usedViews.addAll(rr.usedViews);
         query = rr.visitNode(query);
         return Objects.requireNonNull(query);
@@ -1190,7 +1200,6 @@ public class CalciteCompiler implements IWritesLogs {
                 line, col, endLine, endCol);
     }
 
-    @Nullable
     private DropTableStatement compileDropTable(ParsedStatement node) {
         SqlDropTable dt = (SqlDropTable) node.statement;
         String tableName = dt.name.getSimple();
@@ -1205,7 +1214,7 @@ public class CalciteCompiler implements IWritesLogs {
         if (ct.ifNotExists)
             throw new UnsupportedException("IF NOT EXISTS not supported", object);
         String tableName = ct.name.getSimple();
-        List<RelColumnMetadata> cols = this.createTableColumnsMetadata(ct, ct.name, true, sources);
+        List<RelColumnMetadata> cols = this.createTableColumnsMetadata(ct, ct.name, sources);
         @Nullable PropertyList properties = this.createProperties(ct.tableProperties);
         if (properties != null)
             properties.checkDuplicates(this.errorReporter);
@@ -1290,6 +1299,7 @@ public class CalciteCompiler implements IWritesLogs {
             }
         }
 
+        this.definedViews.add(view.relationName);
         return view;
     }
 

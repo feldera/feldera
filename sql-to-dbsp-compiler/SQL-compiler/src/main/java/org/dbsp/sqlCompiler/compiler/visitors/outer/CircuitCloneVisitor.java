@@ -40,7 +40,7 @@ import java.util.*;
 
 /** This visitor rewrites a circuit by replacing each operator
  * recursively with an equivalent one.
- * The entire work is done in 'postorder' methods.
+ * The entire work is done in 'postorder' methods, except the NestedOperator.
  * Each operator is replaced in one of two cases:
  * - any of its inputs has changed
  * - the 'force' flag is 'true'.
@@ -49,20 +49,23 @@ import java.util.*;
 public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs {
     /** For each operator port in the original circuit an operator port in the
      * result circuit which computes the same result. */
-    protected final Map<OperatorPort, OperatorPort> remap;
+    protected final Map<OutputPort, OutputPort> remap;
+    protected final Map<ICircuit, ICircuit> circuitRemap;
     protected final boolean force;
-    protected final Set<DBSPOperator> visited = new HashSet<>();
-    /** Stack of circuits under construction */
+    protected final Set<IDBSPOuterNode> visited = new HashSet<>();
+    /** Stack of circuits under construction.  Not the same as 'currrent': current
+     * has nodes from the *old* circuit, whereas these are nodes in the *new* circuit. */
     protected final List<ICircuit> underConstruction;
 
     public CircuitCloneVisitor(IErrorReporter reporter, boolean force) {
         super(reporter);
         this.remap = new HashMap<>();
+        this.circuitRemap = new HashMap<>();
         this.force = force;
         this.underConstruction = new ArrayList<>();
     }
 
-    public OperatorPort mapped(OperatorPort original) {
+    public OutputPort mapped(OutputPort original) {
         return Utilities.getExists(this.remap, original);
     }
 
@@ -73,14 +76,14 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs {
      * @param newOp  Operator replacing it in the new circuit.
      * @param add    If true add the operator to the new circuit.
      *               This may not be necessary if the operator has already been added. */
-    protected void map(OperatorPort old, OperatorPort newOp, boolean add) {
-        if (old != newOp) {
+    protected void map(OutputPort old, OutputPort newOp, boolean add) {
+        if (!old.equals(newOp)) {
             Logger.INSTANCE.belowLevel(this, 1)
-                    .append(this.toString())
+                    .appendSupplier(this::toString)
                     .append(":")
-                    .append(old.toString())
+                    .appendSupplier(old::toString)
                     .append(" -> ")
-                    .append(newOp.toString())
+                    .appendSupplier(newOp::toString)
                     .newline();
         }
         Utilities.putNew(this.remap, old, newOp);
@@ -89,10 +92,10 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs {
     }
 
     protected void map(DBSPSimpleOperator old, DBSPSimpleOperator newOp, boolean add) {
-        this.map(old.getOutput(), newOp.getOutput(), add);
+        this.map(old.outputPort(), newOp.outputPort(), add);
     }
 
-    protected void map(OperatorPort old, OperatorPort newOp) {
+    protected void map(OutputPort old, OutputPort newOp) {
         this.map(old, newOp, true);
         assert old.node() == this.getCurrent();
         long derivedFrom = old.node().derivedFrom;
@@ -103,7 +106,13 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs {
     }
 
     protected void map(DBSPSimpleOperator old, DBSPSimpleOperator newOp) {
-        this.map(old.getOutput(), newOp.getOutput());
+        this.map(old.outputPort(), newOp.outputPort());
+    }
+
+    protected void map(ICircuit old, ICircuit newOp) {
+        if (newOp.is(DBSPOperator.class))
+            this.addOperator(newOp.to(DBSPOperator.class));
+        Utilities.putNew(this.circuitRemap, old, newOp);
     }
 
     /**
@@ -113,10 +122,10 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs {
         Logger.INSTANCE.belowLevel(this, 2)
                 .append(this.toString())
                 .append(" adding ")
-                .append(operator.toString())
+                .appendSupplier(operator::toString)
                 .newline();
-        ICircuit newParent = this.getUnderConstruction();
-        newParent.addOperator(operator);
+        ICircuit parent = this.getUnderConstruction();
+        parent.addOperator(operator);
         if (!this.current.isEmpty()) {
             // This can happen when operators are inserted in startVisit, for example.
             // Such operators are not derived from the "current" operator.
@@ -133,7 +142,7 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs {
             // Graph can be a DAG
             return;
         this.visited.add(operator);
-        List<OperatorPort> sources = Linq.map(operator.inputs, this::mapped);
+        List<OutputPort> sources = Linq.map(operator.inputs, this::mapped);
         if (!Linq.same(sources, operator.inputs)) {
             Logger.INSTANCE.belowLevel(this, 2)
                     .append(this.toString())
@@ -141,10 +150,10 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs {
                     .increase()
                     .append(operator.toString())
                     .append(":")
-                    .join(", ", Linq.map(operator.inputs, OperatorPort::toString))
+                    .join(", ", Linq.map(operator.inputs, OutputPort::toString))
                     .newline()
                     .append("with:")
-                    .join(", ", Linq.map(sources, OperatorPort::toString))
+                    .join(", ", Linq.map(sources, OutputPort::toString))
                     .newline()
                     .decrease();
         }
@@ -279,7 +288,7 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs {
     }
 
     @Override
-    public void postorder(DBSPSourceViewDeclarationOperator operator) {
+    public void postorder(DBSPViewDeclarationOperator operator) {
         this.replace(operator);
     }
 
@@ -379,50 +388,63 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs {
     }
 
     @Override
-    public void startVisit(IDBSPOuterNode circuit) {
+    public Token startVisit(IDBSPOuterNode circuit) {
         this.visited.clear();
         this.remap.clear();
-        super.startVisit(circuit);
+        this.circuitRemap.clear();
+        return super.startVisit(circuit);
     }
 
     @Override
     public VisitDecision preorder(DBSPNestedOperator operator) {
-        this.underConstruction.add(new DBSPNestedOperator(operator.getNode()));
         if (this.visited.contains(operator))
-            // Graph can be a DAG
             return VisitDecision.STOP;
         this.visited.add(operator);
-        for (IDBSPOuterNode node : operator.getAllOperators())
-            node.accept(this);
-        // Continue so we can do the postorder too
-        DBSPNestedOperator result = this.getUnderConstruction().to(DBSPNestedOperator.class);
+        DBSPNestedOperator result = new DBSPNestedOperator(operator.getNode());
+        this.underConstruction.add(result);
+        return VisitDecision.CONTINUE;
+    }
+
+    @Override
+    public void postorder(DBSPNestedOperator operator) {
+        DBSPNestedOperator result = Utilities.removeLast(this.underConstruction).to(DBSPNestedOperator.class);
         result.setDerivedFrom(operator.id);
         result.copyAnnotations(operator);
         if (result.sameCircuit(operator))
             result = operator;
-        Utilities.removeLast(this.underConstruction);
-        this.addOperator(result);
-        return VisitDecision.STOP;
+        for (int i = 0; i < operator.outputCount(); i++) {
+            OutputPort originalOutput = operator.outputs.get(i);
+            OutputPort newPort = this.mapped(originalOutput);
+            if (result != operator) {
+                result.addOutput(newPort);
+            }
+            this.map(new OutputPort(operator, i), new OutputPort(result, i), false);
+        }
+        this.map(operator, result);
     }
 
     @Override
     public VisitDecision preorder(DBSPPartialCircuit circuit) {
-        for (DBSPDeclaration node : circuit.declarations)
-            node.accept(this);
-        for (IDBSPOuterNode node : circuit.getAllOperators())
-            node.accept(this);
-        return VisitDecision.STOP;
+        if (this.visited.contains(circuit))
+            return VisitDecision.STOP;
+        this.underConstruction.add(new DBSPPartialCircuit(circuit.metadata));
+        return VisitDecision.CONTINUE;
+    }
+
+    @Override
+    public void postorder(DBSPPartialCircuit circuit) {
+        DBSPPartialCircuit result = Utilities.removeLast(this.underConstruction).to(DBSPPartialCircuit.class);
+        if (result.sameCircuit(circuit))
+            result = circuit;
+        this.map(circuit, result);
     }
 
     @Override
     public DBSPCircuit apply(DBSPCircuit circuit) {
         this.startVisit(circuit);
-        this.underConstruction.add(new DBSPPartialCircuit(circuit.circuit.metadata));
         circuit.circuit.accept(this);
-        DBSPPartialCircuit result = Utilities.removeLast(this.underConstruction).to(DBSPPartialCircuit.class);
         this.endVisit();
-        if (circuit.circuit.sameCircuit(result))
-            return circuit;
-        return result.seal(circuit.name);
+        ICircuit result = Utilities.getExists(this.circuitRemap, circuit.circuit);
+        return result.to(DBSPPartialCircuit.class).seal(circuit.name);
     }
 }

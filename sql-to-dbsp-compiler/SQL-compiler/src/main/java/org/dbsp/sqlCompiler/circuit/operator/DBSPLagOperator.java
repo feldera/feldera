@@ -30,7 +30,7 @@ public final class DBSPLagOperator extends DBSPUnaryOperator {
     public DBSPLagOperator(CalciteObject node, int offset,
                            DBSPExpression projection, DBSPExpression function,
                            DBSPComparatorExpression comparator,
-                           DBSPTypeIndexedZSet outputType, OperatorPort source) {
+                           DBSPTypeIndexedZSet outputType, OutputPort source) {
         super(node, "lag_custom_order", function, outputType, source.isMultiset(), source);
         this.comparator = comparator;
         this.projection = projection;
@@ -50,7 +50,7 @@ public final class DBSPLagOperator extends DBSPUnaryOperator {
     }
 
     @Override
-    public DBSPSimpleOperator withInputs(List<OperatorPort> newInputs, boolean force) {
+    public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
         assert newInputs.size() == 1: "Expected 1 input " + newInputs;
         if (force || this.inputsDiffer(newInputs)) {
             return new DBSPLagOperator(this.getNode(), this.offset,

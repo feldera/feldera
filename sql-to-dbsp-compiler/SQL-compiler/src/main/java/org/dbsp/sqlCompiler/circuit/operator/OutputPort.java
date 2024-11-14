@@ -5,19 +5,35 @@ import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 import org.dbsp.util.graph.Port;
 
-import java.util.Objects;
+/** An output port of an operator. */
+public class OutputPort {
+    public final DBSPOperator operator;
+    public final int outputNumber;
 
-public class OperatorPort extends Port<DBSPOperator> {
-    public OperatorPort(DBSPOperator operator, int port) {
-        super(operator, port);
+    /** Create an OutputPort.
+     *
+     * @param operator  Operator whose port is represented.
+     * @param port      Output number.
+     */
+    public OutputPort(DBSPOperator operator, int port) {
+        this.operator = operator;
+        this.outputNumber = port;
     }
 
-    public OperatorPort(Port<DBSPOperator> dest) {
-        super(dest.node(), dest.port());
+    public OutputPort(Port<DBSPOperator> dest) {
+        this(dest.node(), dest.port());
+    }
+
+    public DBSPOperator node() {
+        return this.operator;
+    }
+
+    public int port() {
+        return this.outputNumber;
     }
 
     public String getOutputName() {
-        return this.node().to(DBSPSimpleOperator.class).getOutputName();
+        return this.node().getOutputName(this.outputNumber);
     }
 
     public DBSPTypeZSet getOutputZSetType() { return this.outputType().to(DBSPTypeZSet.class); }
@@ -43,15 +59,19 @@ public class OperatorPort extends Port<DBSPOperator> {
     }
 
     public boolean isMultiset() {
-        return this.node().to(DBSPSimpleOperator.class).isMultiset;
+        return this.node().isMultiset(this.outputNumber);
     }
 
     public DBSPType outputType() {
-        return this.node().to(DBSPSimpleOperator.class).outputType;
+        return this.node().outputType(this.outputNumber);
     }
 
     public DBSPSimpleOperator simpleNode() {
         return this.node().to(DBSPSimpleOperator.class);
+    }
+
+    public <T extends DBSPSimpleOperator> T to(Class<T> clazz) {
+        return this.node().to(clazz);
     }
 
     @Override
@@ -62,11 +82,18 @@ public class OperatorPort extends Port<DBSPOperator> {
     }
 
     @Override
-    public boolean equals(Object obj) {
-        if (!(obj instanceof OperatorPort op))
-            return false;
-        return this.node() == op.node() && this.port() == op.port();
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+
+        OutputPort that = (OutputPort) o;
+        return outputNumber == that.outputNumber && operator.equals(that.operator);
     }
 
-    // HashCode inherited from base class
+    @Override
+    public int hashCode() {
+        int result = operator.hashCode();
+        result = 31 * result + outputNumber;
+        return result;
+    }
 }

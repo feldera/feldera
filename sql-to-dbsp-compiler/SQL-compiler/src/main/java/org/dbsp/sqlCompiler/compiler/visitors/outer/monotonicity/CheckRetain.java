@@ -3,27 +3,32 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
-import org.dbsp.sqlCompiler.circuit.operator.OperatorPort;
+import org.dbsp.sqlCompiler.circuit.operator.OutputPort;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitGraph;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitGraphs;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.util.graph.Port;
 
 /** The DBSP runtime will incorrectly GC a relation that has multiple Retain operators of
  * the same kind.  Check that this doesn't happen. */
 public class CheckRetain extends CircuitVisitor {
-    final CircuitGraph graph;
+    final CircuitGraphs graphs;
 
-    public CheckRetain(IErrorReporter errorReporter, CircuitGraph graph) {
+    public CheckRetain(IErrorReporter errorReporter, CircuitGraphs graphs) {
         super(errorReporter);
-        this.graph = graph;
+        this.graphs = graphs;
+    }
+
+    public CircuitGraph getGraph() {
+        return this.graphs.getGraph(this.getParent());
     }
 
     @Override
     public void postorder(DBSPIntegrateTraceRetainKeysOperator retain) {
-        OperatorPort left = retain.left();
-        for (Port<DBSPOperator> dest: graph.getSuccessors(left.node())) {
+        OutputPort left = retain.left();
+        for (Port<DBSPOperator> dest: this.getGraph().getSuccessors(left.node())) {
             if (dest.node() == retain)
                 continue;
             if (dest.node().is(DBSPIntegrateTraceRetainKeysOperator.class)) {
@@ -35,8 +40,8 @@ public class CheckRetain extends CircuitVisitor {
 
     @Override
     public void postorder(DBSPIntegrateTraceRetainValuesOperator retain) {
-        OperatorPort left = retain.left();
-        for (Port<DBSPOperator> dest: graph.getSuccessors(left.node())) {
+        OutputPort left = retain.left();
+        for (Port<DBSPOperator> dest: this.getGraph().getSuccessors(left.node())) {
             if (dest.node() == retain)
                 continue;
             if (dest.node().is(DBSPIntegrateTraceRetainValuesOperator.class)) {

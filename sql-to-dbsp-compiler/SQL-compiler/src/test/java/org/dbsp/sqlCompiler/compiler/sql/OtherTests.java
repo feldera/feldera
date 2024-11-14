@@ -29,7 +29,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamDistinctOperator;
-import org.dbsp.sqlCompiler.circuit.operator.OperatorPort;
+import org.dbsp.sqlCompiler.circuit.operator.OutputPort;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.TestUtil;
 import org.dbsp.sqlCompiler.compiler.backend.ToCsvVisitor;
@@ -401,7 +401,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         DBSPCircuit circuit = compiler.getFinalCircuit("circuit");
         DBSPSinkOperator sink = circuit.circuit.getSink(compiler.canonicalName("V"));
         Assert.assertNotNull(sink);
-        OperatorPort op = sink.input();
+        OutputPort op = sink.input();
         // There is no optimization I can imagine which will remove the distinct
         Assert.assertTrue(op.node().is(DBSPStreamDistinctOperator.class));
     }

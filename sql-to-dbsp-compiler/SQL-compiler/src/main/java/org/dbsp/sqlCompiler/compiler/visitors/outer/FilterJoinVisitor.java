@@ -4,23 +4,27 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPFilterOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinFilterMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
-import org.dbsp.sqlCompiler.circuit.operator.OperatorPort;
+import org.dbsp.sqlCompiler.circuit.operator.OutputPort;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 
 /** Combine a Join followed by a filter into a JoinFilterMap. */
 public class FilterJoinVisitor extends CircuitCloneVisitor {
-    final CircuitGraph graph;
+    final CircuitGraphs graphs;
 
-    public FilterJoinVisitor(IErrorReporter reporter, CircuitGraph graph) {
+    public FilterJoinVisitor(IErrorReporter reporter, CircuitGraphs graphs) {
         super(reporter, false);
-        this.graph = graph;
+        this.graphs = graphs;
+    }
+
+    public CircuitGraph getGraph() {
+        return this.graphs.getGraph(this.getParent());
     }
 
     @Override
     public void postorder(DBSPFilterOperator operator) {
-        OperatorPort source = this.mapped(operator.input());
+        OutputPort source = this.mapped(operator.input());
         if (source.node().is(DBSPJoinOperator.class) &&
-                (this.graph.getFanout(operator.input().node()) == 1)) {
+                (this.getGraph().getFanout(operator.input().node()) == 1)) {
             DBSPJoinOperator join = source.node().to(DBSPJoinOperator.class);
             DBSPSimpleOperator result =
                     new DBSPJoinFilterMapOperator(join.getNode(), source.getOutputZSetType(),

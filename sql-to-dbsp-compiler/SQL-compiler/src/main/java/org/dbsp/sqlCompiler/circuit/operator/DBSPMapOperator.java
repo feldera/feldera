@@ -37,7 +37,7 @@ import java.util.Objects;
 
 public final class DBSPMapOperator extends DBSPUnaryOperator {
     public DBSPMapOperator(CalciteObject node, DBSPExpression expression,
-                           DBSPTypeZSet outputType, OperatorPort input) {
+                           DBSPTypeZSet outputType, OutputPort input) {
         // Currently the output type can only be a ZSet, but the input
         // type may be a ZSet or an IndexedZSet.
         super(node, "map", expression, outputType, true, input);
@@ -67,7 +67,7 @@ public final class DBSPMapOperator extends DBSPUnaryOperator {
     }
 
     @Override
-    public DBSPSimpleOperator withInputs(List<OperatorPort> newInputs, boolean force) {
+    public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
         assert newInputs.size() == 1;
         if (force || this.inputsDiffer(newInputs))
             return new DBSPMapOperator(

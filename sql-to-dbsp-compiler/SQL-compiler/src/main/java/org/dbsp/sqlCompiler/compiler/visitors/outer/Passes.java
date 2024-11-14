@@ -25,7 +25,7 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
-import org.dbsp.sqlCompiler.compiler.backend.rust.ToDot;
+import org.dbsp.sqlCompiler.compiler.backend.dot.ToDot;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerRewriteVisitor;
 import org.dbsp.util.IWritesLogs;
 import org.dbsp.util.Linq;
@@ -39,15 +39,17 @@ public class Passes implements IWritesLogs, CircuitTransform {
     // Generate a new name for each dumped circuit.
     static int dumped = 0;
     final long id;
+    final String name;
 
-    public Passes(IErrorReporter reporter, CircuitTransform... passes) {
-        this(reporter, Linq.list(passes));
+    public Passes(String name, IErrorReporter reporter, CircuitTransform... passes) {
+        this(name, reporter, Linq.list(passes));
     }
 
-    public Passes(IErrorReporter reporter, List<CircuitTransform> passes) {
+    public Passes(String name, IErrorReporter reporter, List<CircuitTransform> passes) {
         this.errorReporter = reporter;
         this.passes = passes;
         this.id = CircuitVisitor.crtId++;
+        this.name = name;
     }
 
     public void add(CircuitTransform pass) {
@@ -81,22 +83,14 @@ public class Passes implements IWritesLogs, CircuitTransform {
 
     @Override
     public String toString() {
-        StringBuilder names = new StringBuilder();
-        names.append(this.id)
-                .append(" Passes")
-                .append("[")
-                .append(this.passes.size())
-                .append("]");
-        return names.toString();
-        /*
-        boolean first = true;
-        for (CircuitTransform pass: this.passes) {
-            if (!first)
-                names.append("-");
-            first = false;
-            names.append(pass.toString());
-        }
-        return names.toString();
-         */
+        return this.id +
+                " " +
+                this.name +
+                this.passes.size();
+    }
+
+    @Override
+    public String getName() {
+        return this.name;
     }
 }

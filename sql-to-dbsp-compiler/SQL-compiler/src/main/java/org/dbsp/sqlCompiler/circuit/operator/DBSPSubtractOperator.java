@@ -34,7 +34,7 @@ import javax.annotation.Nullable;
 import java.util.List;
 
 public final class DBSPSubtractOperator extends DBSPBinaryOperator {
-    public DBSPSubtractOperator(CalciteObject node, OperatorPort left, OperatorPort right) {
+    public DBSPSubtractOperator(CalciteObject node, OutputPort left, OutputPort right) {
         super(node, "minus", null, left.outputType(), false, left, right);
         if (!left.outputType().sameType(right.outputType()))
             throw new InternalCompilerError("Inputs do not have the same type " + left.outputType() +
@@ -56,7 +56,7 @@ public final class DBSPSubtractOperator extends DBSPBinaryOperator {
     }
 
     @Override
-    public DBSPSimpleOperator withInputs(List<OperatorPort> newInputs, boolean force) {
+    public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPSubtractOperator(
                     this.getNode(), newInputs.get(0), newInputs.get(1)).copyAnnotations(this);

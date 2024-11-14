@@ -30,7 +30,7 @@ public final class DBSPApplyOperator extends DBSPUnaryOperator {
     }
 
     public DBSPApplyOperator(CalciteObject node, DBSPClosureExpression function,
-                             DBSPType outputType, OperatorPort input, @Nullable String comment) {
+                             DBSPType outputType, OutputPort input, @Nullable String comment) {
         super(node, "apply", function, outputType, false, input, comment);
         assert function.parameters.length == 1: "Expected 1 parameter for function " + function;
         DBSPType paramType = function.parameters[0].getType().deref();
@@ -43,7 +43,7 @@ public final class DBSPApplyOperator extends DBSPUnaryOperator {
     }
 
     public DBSPApplyOperator(CalciteObject node, DBSPClosureExpression function,
-                             OperatorPort input, @Nullable String comment) {
+                             OutputPort input, @Nullable String comment) {
         this(node, function, function.getResultType(), input, comment);
     }
 
@@ -56,7 +56,7 @@ public final class DBSPApplyOperator extends DBSPUnaryOperator {
     }
 
     @Override
-    public DBSPSimpleOperator withInputs(List<OperatorPort> newInputs, boolean force) {
+    public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
         assert newInputs.size() == 1: "Expected 1 input " + newInputs;
         if (force || this.inputsDiffer(newInputs)) {
             return new DBSPApplyOperator(

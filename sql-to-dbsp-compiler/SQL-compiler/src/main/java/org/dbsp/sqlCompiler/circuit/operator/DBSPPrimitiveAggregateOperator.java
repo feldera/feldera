@@ -15,7 +15,7 @@ import java.util.List;
 public final class DBSPPrimitiveAggregateOperator extends DBSPBinaryOperator {
     public DBSPPrimitiveAggregateOperator(
             CalciteObject node, @Nullable DBSPExpression function, DBSPType outputType,
-            OperatorPort delta, OperatorPort integral) {
+            OutputPort delta, OutputPort integral) {
         super(node, "AggregateIncremental", function, outputType, false, delta, integral);
         assert delta.getOutputIndexedZSetType().sameType(integral.getOutputIndexedZSetType());
     }
@@ -27,7 +27,7 @@ public final class DBSPPrimitiveAggregateOperator extends DBSPBinaryOperator {
     }
 
     @Override
-    public DBSPSimpleOperator withInputs(List<OperatorPort> newInputs, boolean force) {
+    public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
         assert newInputs.size() == 2: "Expected 2 inputs";
         if (force || this.inputsDiffer(newInputs))
             return new DBSPPrimitiveAggregateOperator(this.getNode(), this.function,

@@ -6,7 +6,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNegateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSumOperator;
-import org.dbsp.sqlCompiler.circuit.operator.OperatorPort;
+import org.dbsp.sqlCompiler.circuit.operator.OutputPort;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.frontend.TypeCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
@@ -26,18 +26,18 @@ public class ExpandAggregateZero extends CircuitCloneVisitor {
     public void postorder(DBSPAggregateZeroOperator operator) {
         CalciteObject node = operator.getNode();
         DBSPExpression emptySetResult = operator.getFunction();
-        OperatorPort input = this.mapped(operator.input());
+        OutputPort input = this.mapped(operator.input());
         DBSPVariablePath _t = emptySetResult.getType().ref().var();
         DBSPExpression toZero = emptySetResult.closure(_t);
         DBSPSimpleOperator map1 = new DBSPMapOperator(
                 node, toZero, TypeCompiler.makeZSet(emptySetResult.getType()), input);
         this.addOperator(map1);
-        DBSPSimpleOperator neg = new DBSPNegateOperator(node, map1.getOutput());
+        DBSPSimpleOperator neg = new DBSPNegateOperator(node, map1.outputPort());
         this.addOperator(neg);
         DBSPSimpleOperator constant = new DBSPConstantOperator(
                 node, new DBSPZSetLiteral(emptySetResult), false, false);
         this.addOperator(constant);
-        DBSPSimpleOperator sum = new DBSPSumOperator(node, Linq.list(constant.getOutput(), neg.getOutput(), input));
+        DBSPSimpleOperator sum = new DBSPSumOperator(node, Linq.list(constant.outputPort(), neg.outputPort(), input));
         this.map(operator, sum);
     }
 }

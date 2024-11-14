@@ -48,6 +48,12 @@ public abstract class CircuitVisitor
     final long id;
     static long crtId = 0;
 
+    /** Used to force startVisit to call the base class */
+    public static class Token {
+        private Token() {};
+    }
+    static final Token TOKEN_INSTANCE = new Token();
+
     @Nullable
     protected DBSPCircuit circuit = null;
     public final IErrorReporter errorReporter;
@@ -70,9 +76,10 @@ public abstract class CircuitVisitor
     }
 
     /** Override to initialize before visiting any node. */
-    public void startVisit(IDBSPOuterNode node) {
+    public Token startVisit(IDBSPOuterNode node) {
         if (node.is(DBSPCircuit.class))
             this.setCircuit(node.to(DBSPCircuit.class));
+        return TOKEN_INSTANCE;
     }
 
     /** Override to finish after visiting all nodes. */
@@ -295,7 +302,7 @@ public abstract class CircuitVisitor
         return this.preorder(node.to(DBSPSourceTableOperator.class));
     }
 
-    public VisitDecision preorder(DBSPSourceViewDeclarationOperator node) {
+    public VisitDecision preorder(DBSPViewDeclarationOperator node) {
         return this.preorder(node.to(DBSPSourceTableOperator.class));
     }
 
@@ -557,7 +564,7 @@ public abstract class CircuitVisitor
         this.postorder(node.to(DBSPSourceTableOperator.class));
     }
 
-    public void postorder(DBSPSourceViewDeclarationOperator node) {
+    public void postorder(DBSPViewDeclarationOperator node) {
         this.postorder(node.to(DBSPSourceTableOperator.class));
     }
 
@@ -601,6 +608,8 @@ public abstract class CircuitVisitor
     public String toString() {
         return this.id + " " + this.getClass().getSimpleName();
     }
+
+    public String getName() { return this.toString(); }
 
     @Override
     public long getId() {

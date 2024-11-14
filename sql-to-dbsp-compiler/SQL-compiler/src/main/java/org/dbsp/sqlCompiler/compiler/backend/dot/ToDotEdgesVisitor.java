@@ -21,12 +21,13 @@
  * SOFTWARE.
  */
 
-package org.dbsp.sqlCompiler.compiler.backend;
+package org.dbsp.sqlCompiler.compiler.backend.dot;
 
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceViewDeclarationOperator;
-import org.dbsp.sqlCompiler.circuit.operator.OperatorPort;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPViewDeclarationOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPViewOperator;
+import org.dbsp.sqlCompiler.circuit.operator.OutputPort;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.backend.rust.ToRustInnerVisitor;
@@ -55,27 +56,22 @@ public class ToDotEdgesVisitor extends CircuitVisitor implements IWritesLogs {
         this.edgesLabeled = new HashSet<>();
     }
 
-    public String getEdgeLabel(OperatorPort source) {
+    public String getEdgeLabel(OutputPort source) {
         DBSPType type = source.getOutputRowType();
         return ToRustInnerVisitor.toRustString(
                 this.errorReporter, type, CompilerOptions.getDefault(), true);
     }
 
     @Override
-    public void startVisit(IDBSPOuterNode node) {
-        super.startVisit(node);
+    public Token startVisit(IDBSPOuterNode node) {
+        return super.startVisit(node);
     }
 
     @Override
     public VisitDecision preorder(DBSPSimpleOperator node) {
-        for (OperatorPort i : node.inputs) {
-            DBSPSimpleOperator input = i.node().to(DBSPSimpleOperator.class);
-            if (input.is(DBSPSourceViewDeclarationOperator.class)) {
-                assert this.circuit != null;
-                input = input.to(DBSPSourceViewDeclarationOperator.class)
-                        .getCorrespondingView(this.getParent());
-            }
-            this.stream.append(input.getOutputName())
+        for (OutputPort i : node.inputs) {
+            DBSPOperator input = i.node();
+            this.stream.append(input.getOutputName(i.outputNumber))
                     .append(" -> ")
                     .append(node.getOutputName());
             if (this.details >= 2 && !this.edgesLabeled.contains(input)) {
@@ -87,6 +83,20 @@ public class ToDotEdgesVisitor extends CircuitVisitor implements IWritesLogs {
             }
             this.stream.append(";")
                     .newline();
+        }
+
+        // Add the edge represented implicitly
+        if (node.is(DBSPViewDeclarationOperator.class)) {
+            DBSPViewOperator view = node.to(DBSPViewDeclarationOperator.class)
+                    .getCorrespondingView(this.getParent());
+            if (view != null) {
+                // Should be always true, but for debugging we want to continue.
+                this.stream.append(view.getOutputName())
+                        .append(" -> ")
+                        .append(node.getOutputName())
+                        .append(";")
+                        .newline();
+            }
         }
         return VisitDecision.STOP;
     }

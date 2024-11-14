@@ -58,7 +58,7 @@ public final class DBSPIndexedTopKOperator extends DBSPUnaryOperator {
      */
     public DBSPIndexedTopKOperator(CalciteObject node, TopKNumbering numbering,
                                    DBSPComparatorExpression comparator, DBSPExpression limit,
-                                   @Nullable DBSPClosureExpression outputProducer, OperatorPort source) {
+                                   @Nullable DBSPClosureExpression outputProducer, OutputPort source) {
         super(node, "topK", comparator,
                 outputType(source.getOutputIndexedZSetType(), outputProducer), source.isMultiset(), source);
         this.limit = limit;
@@ -70,7 +70,7 @@ public final class DBSPIndexedTopKOperator extends DBSPUnaryOperator {
     }
 
     @Override
-    public DBSPSimpleOperator withInputs(List<OperatorPort> newInputs, boolean force) {
+    public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPIndexedTopKOperator(this.getNode(), this.numbering,
                     this.getFunction().to(DBSPComparatorExpression.class),

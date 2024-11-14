@@ -12,7 +12,7 @@ import java.util.List;
  * than using the pair. */
 @NonCoreIR
 public final class DBSPDelayedIntegralOperator extends DBSPUnaryOperator {
-    public DBSPDelayedIntegralOperator(CalciteObject node, OperatorPort source) {
+    public DBSPDelayedIntegralOperator(CalciteObject node, OutputPort source) {
         super(node, "delay_trace", null, source.outputType(), source.isMultiset(), source);
     }
 
@@ -26,7 +26,7 @@ public final class DBSPDelayedIntegralOperator extends DBSPUnaryOperator {
     }
 
     @Override
-    public DBSPSimpleOperator withInputs(List<OperatorPort> newInputs, boolean force) {
+    public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPDelayedIntegralOperator(
                     this.getNode(), newInputs.get(0));

@@ -17,7 +17,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPNoopOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
-import org.dbsp.sqlCompiler.circuit.operator.OperatorPort;
+import org.dbsp.sqlCompiler.circuit.operator.OutputPort;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Projection;
@@ -38,20 +38,24 @@ import java.util.List;
  * - Merge consecutive apply operators
  */
 public class OptimizeMaps extends CircuitCloneVisitor {
-    final CircuitGraph graph;
+    final CircuitGraphs graphs;
     /** If true only optimize projections after joins */
     final boolean onlyProjections;
 
-    public OptimizeMaps(IErrorReporter reporter, boolean onlyProjections, CircuitGraph graph) {
+    public OptimizeMaps(IErrorReporter reporter, boolean onlyProjections, CircuitGraphs graphs) {
         super(reporter, false);
-        this.graph = graph;
+        this.graphs = graphs;
         this.onlyProjections = onlyProjections;
+    }
+
+    public CircuitGraph getGraph() {
+        return this.graphs.getGraph(this.getParent());
     }
 
     @Override
     public void postorder(DBSPMapIndexOperator operator) {
-        OperatorPort source = this.mapped(operator.input());
-        int inputFanout = this.graph.getFanout(operator.input().node());
+        OutputPort source = this.mapped(operator.input());
+        int inputFanout = this.getGraph().getFanout(operator.input().node());
         if (source.node().is(DBSPMapOperator.class)) {
             // mapindex(map) = mapindex
             DBSPClosureExpression expression = source.simpleNode().getClosureFunction();
@@ -101,7 +105,7 @@ public class OptimizeMaps extends CircuitCloneVisitor {
 
     @Override
     public void postorder(DBSPDeindexOperator operator) {
-        OperatorPort source = this.mapped(operator.input());
+        OutputPort source = this.mapped(operator.input());
         if (source.node().is(DBSPMapIndexOperator.class)) {
             // deindex(mapindex) = nothing
             this.map(operator, source.node().inputs.get(0).node().to(DBSPSimpleOperator.class));
@@ -111,8 +115,8 @@ public class OptimizeMaps extends CircuitCloneVisitor {
     }
 
     public void postorder(DBSPApplyOperator operator) {
-        OperatorPort source = this.mapped(operator.input());
-        int inputFanout = this.graph.getFanout(operator.input().node());
+        OutputPort source = this.mapped(operator.input());
+        int inputFanout = this.getGraph().getFanout(operator.input().node());
         if (source.node().is(DBSPApplyOperator.class) && inputFanout == 1) {
             DBSPApplyOperator apply = source.node().to(DBSPApplyOperator.class);
             // apply(apply) = apply
@@ -130,8 +134,8 @@ public class OptimizeMaps extends CircuitCloneVisitor {
 
     @Override
     public void postorder(DBSPMapOperator operator) {
-        OperatorPort source = this.mapped(operator.input());
-        int inputFanout = this.graph.getFanout(operator.input().node());
+        OutputPort source = this.mapped(operator.input());
+        int inputFanout = this.getGraph().getFanout(operator.input().node());
         Projection projection = new Projection(this.errorReporter);
         projection.apply(operator.getFunction());
         if (source.node().is(DBSPJoinFilterMapOperator.class)) {
@@ -184,17 +188,15 @@ public class OptimizeMaps extends CircuitCloneVisitor {
                 // since it may apply operations like div by 0 to tuples that may never appear
                 source.node().is(DBSPNoopOperator.class)) {
             // For all such operators we can swap them with the map
-            List<OperatorPort> newSources = new ArrayList<>();
-            for (OperatorPort sourceSource: source.node().inputs) {
+            List<OutputPort> newSources = new ArrayList<>();
+            for (OutputPort sourceSource: source.node().inputs) {
                 DBSPSimpleOperator newProjection = operator.withInputs(Linq.list(sourceSource), true);
-                newSources.add(newProjection.getOutput());
+                newSources.add(newProjection.outputPort());
                 this.addOperator(newProjection);
             }
             DBSPSimpleOperator result = source.simpleNode().withInputs(newSources, true);
             this.map(operator, result, operator != result);
             return;
-        } else {
-            super.postorder(operator);
         }
         super.postorder(operator);
     }

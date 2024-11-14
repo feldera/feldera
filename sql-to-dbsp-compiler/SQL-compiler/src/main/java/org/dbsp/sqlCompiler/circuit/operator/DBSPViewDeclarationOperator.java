@@ -1,6 +1,5 @@
 package org.dbsp.sqlCompiler.circuit.operator;
 
-import org.dbsp.sqlCompiler.circuit.DBSPPartialCircuit;
 import org.dbsp.sqlCompiler.circuit.ICircuit;
 import org.dbsp.sqlCompiler.compiler.TableMetadata;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
@@ -15,18 +14,18 @@ import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 
 import javax.annotation.Nullable;
 import java.util.List;
-import java.util.Objects;
 
 /** Operator temporarily used in the creation of recursive circuits.
- * Represents a view that is used in the defnition of a set of other views. */
+ * Represents a view that is used in the defnition of a set of other views.
+ * In fact, this behaves exactly like a delay operator that closes a cycle. */
 @NonCoreIR
-public final class DBSPSourceViewDeclarationOperator
+public final class DBSPViewDeclarationOperator
         extends DBSPSourceTableOperator {
-    public DBSPSourceViewDeclarationOperator(
+    public DBSPViewDeclarationOperator(
             CalciteObject node, CalciteObject sourceName,
             DBSPTypeZSet outputType, DBSPTypeStruct originalRowType,
             TableMetadata metadata, String name) {
-        super(node, "recursive", sourceName, outputType, originalRowType, true, metadata, name, null);
+        super(node, "Z", sourceName, outputType, originalRowType, true, metadata, name, null);
         assert metadata.getColumnCount() == originalRowType.fields.size();
         assert metadata.getColumnCount() == outputType.elementType.to(DBSPTypeTuple.class).size();
     }
@@ -42,18 +41,18 @@ public final class DBSPSourceViewDeclarationOperator
 
     @Override
     public DBSPSimpleOperator withFunction(@Nullable DBSPExpression unused, DBSPType outputType) {
-        return new DBSPSourceViewDeclarationOperator(this.getNode(), this.sourceName,
+        return new DBSPViewDeclarationOperator(this.getNode(), this.sourceName,
                 outputType.to(DBSPTypeZSet.class), this.originalRowType,
-                this.metadata, this.tableName);
+                this.metadata, this.tableName).copyAnnotations(this);
     }
 
     @Override
-    public DBSPSimpleOperator withInputs(List<OperatorPort> newInputs, boolean force) {
+    public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
         assert newInputs.isEmpty();
         if (force)
-            return new DBSPSourceViewDeclarationOperator(
+            return new DBSPViewDeclarationOperator(
                     this.getNode(), this.sourceName, this.getOutputZSetType(), this.originalRowType,
-                    this.metadata, this.tableName);
+                    this.metadata, this.tableName).copyAnnotations(this);
         return this;
     }
 
@@ -62,9 +61,9 @@ public final class DBSPSourceViewDeclarationOperator
     }
 
     /** Get the corresponding view operator for this view declaration */
+    @Nullable
     public DBSPViewOperator getCorrespondingView(ICircuit circuit) {
-        DBSPViewOperator view = circuit.getView(this.originalViewName());
-        return Objects.requireNonNull(view);
+        return circuit.getView(this.originalViewName());
     }
 
     @Override

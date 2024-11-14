@@ -40,7 +40,7 @@ public class InstrumentDump extends CircuitCloneVisitor {
             return;
         }
 
-        List<OperatorPort> inputs = Linq.map(operator.inputs, this::mapped);
+        List<OutputPort> inputs = Linq.map(operator.inputs, this::mapped);
         DBSPSimpleOperator input = operator.withInputs(inputs, false);
         this.addOperator(input);
         DBSPTypeZSet zset = type.to(DBSPTypeZSet.class);
@@ -48,7 +48,7 @@ public class InstrumentDump extends CircuitCloneVisitor {
         DBSPExpression dump = new DBSPApplyExpression(operator.getNode(), "dump", zset.elementType,
                 new DBSPStringLiteral(Long.toString(operator.id)), row);
         DBSPExpression function = dump.closure(row.asParameter());
-        DBSPSimpleOperator map = new DBSPMapOperator(operator.getNode(), function, zset, input.getOutput());
+        DBSPSimpleOperator map = new DBSPMapOperator(operator.getNode(), function, zset, input.outputPort());
         this.map(operator, map);
     }
 

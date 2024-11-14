@@ -23,7 +23,7 @@ public final class DBSPIntegrateTraceRetainKeysOperator
 {
     public DBSPIntegrateTraceRetainKeysOperator(
             CalciteObject node, DBSPExpression expression,
-            OperatorPort data, OperatorPort control) {
+            OutputPort data, OutputPort control) {
         super(node, "integrate_trace_retain_keys", expression,
                 data.outputType(), data.isMultiset(), data, control);
     }
@@ -31,7 +31,7 @@ public final class DBSPIntegrateTraceRetainKeysOperator
     /** Create a operator to retain keys and returns it.  May return null if the keys contain no fields. */
     @Nullable
     public static DBSPIntegrateTraceRetainKeysOperator create(
-            CalciteObject node, OperatorPort data, IMaybeMonotoneType dataProjection, OperatorPort control) {
+            CalciteObject node, OutputPort data, IMaybeMonotoneType dataProjection, OutputPort control) {
         DBSPType controlType = control.outputType();
         assert controlType.is(DBSPTypeTupleBase.class) : "Control type is not a tuple: " + controlType;
         DBSPTypeTupleBase controlTuple = controlType.to(DBSPTypeTupleBase.class);
@@ -81,7 +81,7 @@ public final class DBSPIntegrateTraceRetainKeysOperator
     }
 
     @Override
-    public DBSPSimpleOperator withInputs(List<OperatorPort> newInputs, boolean force) {
+    public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
         assert newInputs.size() == 2: "Expected 2 inputs, got " + newInputs.size();
         if (force || this.inputsDiffer(newInputs))
             return new DBSPIntegrateTraceRetainKeysOperator(

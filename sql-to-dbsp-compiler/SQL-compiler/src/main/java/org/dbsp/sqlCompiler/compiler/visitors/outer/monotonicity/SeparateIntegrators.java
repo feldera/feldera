@@ -18,12 +18,13 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
-import org.dbsp.sqlCompiler.circuit.operator.OperatorPort;
+import org.dbsp.sqlCompiler.circuit.operator.OutputPort;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateView;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitCloneVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitGraph;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitGraphs;
 import org.dbsp.util.graph.Port;
 
 import java.util.ArrayList;
@@ -34,11 +35,11 @@ import java.util.List;
  * - before operators that share a source and have an integrator in front.
  * This will make the scope of Retain{Keys,Values} operators clear later. */
 public class SeparateIntegrators extends CircuitCloneVisitor {
-    final CircuitGraph graph;
+    final CircuitGraphs graphs;
 
-    public SeparateIntegrators(IErrorReporter reporter, CircuitGraph graph) {
+    public SeparateIntegrators(IErrorReporter reporter, CircuitGraphs graphs) {
         super(reporter, false);
-        this.graph = graph;
+        this.graphs = graphs;
     }
 
     public static boolean hasPostIntegrator(DBSPSimpleOperator operator) {
@@ -56,7 +57,7 @@ public class SeparateIntegrators extends CircuitCloneVisitor {
                         operator.to(DBSPSourceMapOperator.class).metadata.materialized);
     }
 
-    public static boolean hasPreIntegrator(OperatorPort port) {
+    public static boolean hasPreIntegrator(OutputPort port) {
         DBSPOperator operator = port.node();
         int input = port.port();
         return operator.is(DBSPJoinBaseOperator.class) ||
@@ -77,21 +78,25 @@ public class SeparateIntegrators extends CircuitCloneVisitor {
         throw new InternalCompilerError("StreamAggregate operator should have been removed " + operator);
     }
 
+    public CircuitGraph getGraph() {
+        return this.graphs.getGraph(this.getParent());
+    }
+
     @Override
     public void replace(DBSPSimpleOperator operator) {
-        List<OperatorPort> sources = new ArrayList<>(operator.inputs.size());
+        List<OutputPort> sources = new ArrayList<>(operator.inputs.size());
         int index = 0;
-        for (OperatorPort input: operator.inputs) {
-            OperatorPort port = new OperatorPort(operator, index++);
+        for (OutputPort input: operator.inputs) {
+            OutputPort port = new OutputPort(operator, index++);
             boolean addBuffer = false;
             if (hasPreIntegrator(port)) {
                 if (hasPostIntegrator(input.simpleNode())) {
                     addBuffer = true;
                 } else {
-                    for (Port<DBSPOperator> dest : this.graph.getSuccessors(input.node())) {
+                    for (Port<DBSPOperator> dest : this.getGraph().getSuccessors(input.node())) {
                         if (dest.node() == operator)
                             continue;
-                        if (hasPreIntegrator(new OperatorPort(dest))) {
+                        if (hasPreIntegrator(new OutputPort(dest))) {
                             addBuffer = true;
                             break;
                         }
@@ -99,11 +104,11 @@ public class SeparateIntegrators extends CircuitCloneVisitor {
                 }
             }
 
-            OperatorPort source = this.mapped(input);
+            OutputPort source = this.mapped(input);
             if (addBuffer) {
                 DBSPNoopOperator noop = new DBSPNoopOperator(operator.getNode(), source, null);
                 this.addOperator(noop);
-                sources.add(noop.getOutput());
+                sources.add(noop.outputPort());
             } else {
                 sources.add(source);
             }

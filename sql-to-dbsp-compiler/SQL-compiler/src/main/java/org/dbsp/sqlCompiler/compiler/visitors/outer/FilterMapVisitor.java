@@ -15,18 +15,22 @@ import org.dbsp.util.Linq;
 
 /** Combine a map followed by a filter into a flatmap. */
 public class FilterMapVisitor extends CircuitCloneVisitor {
-    final CircuitGraph graph;
+    final CircuitGraphs graphs;
 
-    public FilterMapVisitor(IErrorReporter reporter, CircuitGraph graph) {
+    public FilterMapVisitor(IErrorReporter reporter, CircuitGraphs graphs) {
         super(reporter, false);
-        this.graph = graph;
+        this.graphs = graphs;
+    }
+
+    public CircuitGraph getGraph() {
+        return this.graphs.getGraph(this.getParent());
     }
 
     @Override
     public void postorder(DBSPFilterOperator operator) {
         DBSPOperator in = this.mapped(operator.input()).node();
         if (in.is(DBSPMapOperator.class) &&
-                (graph.getFanout(operator.input().node()) == 1)) {
+                (this.getGraph().getFanout(operator.input().node()) == 1)) {
             // Generate code for the function
             // let tmp = map(...);
             // if (filter(tmp)) {

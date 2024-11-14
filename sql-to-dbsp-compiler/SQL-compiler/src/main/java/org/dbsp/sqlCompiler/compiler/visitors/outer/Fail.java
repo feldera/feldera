@@ -24,4 +24,9 @@ public class Fail implements IWritesLogs, CircuitTransform {
     public DBSPCircuit apply(DBSPCircuit circuit) {
         throw new InternalCompilerError(this.message, circuit.getNode());
     }
+
+    @Override
+    public String getName() {
+        return this.toString();
+    }
 }

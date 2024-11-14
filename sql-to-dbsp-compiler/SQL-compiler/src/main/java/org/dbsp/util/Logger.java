@@ -26,19 +26,15 @@ package org.dbsp.util;
 import java.util.HashMap;
 import java.util.Map;
 
-/**
- * Logging class which can output nicely indented strings.
+/** Logging class which can output nicely indented strings.
  * The logger extends IndentStream, and thus provides the capability
- * to output nicely indented hierarchical visualizations.
- */
+ * to output nicely indented hierarchical visualizations. */
 public class Logger {
     private final Map<String, Integer> loggingLevel = new HashMap<>();
     private final IndentStream debugStream;
     private final IIndentStream noStream;
 
-    /**
-     * There is only one instance of the logger for the whole program.
-     */
+    /** There is only one instance of the logger for the whole program. */
     public static final Logger INSTANCE = new Logger();
 
     private Logger() {
@@ -46,12 +42,10 @@ public class Logger {
         this.noStream = new NullIndentStream();
     }
 
-    /**
-     * Get the logging stream for messages below this logging level.
+    /** Get the logging stream for messages below this logging level.
      * @param clazz   Class which does the logging.
      * @param level   Level of message that is being logged.
-     * @return        A stream where the message can be appended.
-     */
+     * @return        A stream where the message can be appended. */
     public IIndentStream belowLevel(String clazz, int level) {
         int debugLevel = this.getLoggingLevel(clazz);
         if (debugLevel >= level)
@@ -63,8 +57,7 @@ public class Logger {
      * Get the logging stream for messages below this logging level.
      * @param module  Module which does the logging.
      * @param level   Level of message that is being logged.
-     * @return        A stream where the message can be appended.
-     */
+     * @return        A stream where the message can be appended. */
     public IIndentStream belowLevel(IWritesLogs module, int level) {
         return this.belowLevel(module.getClassName(), level);
     }
@@ -79,9 +72,7 @@ public class Logger {
         return previous;
     }
 
-    /**
-     * The current debug level for the specified class.
-     */
+    /** The current debug level for the specified class. */
     public int getLoggingLevel(String clazz) {
         return this.loggingLevel.getOrDefault(clazz, 0);
     }
@@ -96,8 +87,7 @@ public class Logger {
 
     /**
      * Where logging should be redirected.
-     * Notice that the indentation is *not* reset when the stream is changed.
-     */
+     * Notice that the indentation is *not* reset when the stream is changed. */
     public Appendable setDebugStream(Appendable writer) {
         return this.debugStream.setOutputStream(writer);
     }

@@ -11,7 +11,7 @@ public class DeadCode extends Passes {
      * @param warn      If true warn about unused inputs.
      */
     public DeadCode(IErrorReporter reporter, boolean keepAllSources, boolean warn) {
-        super(reporter);
+        super("DeadCode", reporter);
         FindDeadCode finder = new FindDeadCode(reporter, keepAllSources, warn);
         super.add(finder);
         super.add(new RemoveOperatorsVisitor(reporter, finder.toKeep));

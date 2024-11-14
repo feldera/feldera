@@ -1,4 +1,4 @@
-package org.dbsp.sqlCompiler.compiler.backend.rust;
+package org.dbsp.sqlCompiler.compiler.backend.dot;
 
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperatorBase;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
@@ -7,12 +7,12 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinFilterMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateWithWaterlineOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceBaseOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceViewDeclarationOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWaterlineOperator;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.backend.rust.ToRustInnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.LowerCircuitVisitor;
@@ -44,17 +44,15 @@ public class ToDotNodesVisitor extends CircuitVisitor {
     @Override
     public VisitDecision preorder(DBSPSourceBaseOperator node) {
         String name = node.operation;
-        if (!node.is(DBSPSourceViewDeclarationOperator.class)) {
-            this.stream.append(node.getOutputName())
-                    .append(" [ shape=box style=filled fillcolor=lightgrey label=\"")
-                    .append(node.getIdString())
-                    .append(isMultiset(node))
-                    .append(annotations(node))
-                    .append(" ")
-                    .append(name)
-                    .append("\" ]")
-                    .newline();
-        }
+        this.stream.append(node.getOutputName())
+                .append(" [ shape=box style=filled fillcolor=lightgrey label=\"")
+                .append(node.getIdString())
+                .append(isMultiset(node))
+                .append(annotations(node))
+                .append(" ")
+                .append(name)
+                .append("\" ]")
+                .newline();
         return VisitDecision.STOP;
     }
 

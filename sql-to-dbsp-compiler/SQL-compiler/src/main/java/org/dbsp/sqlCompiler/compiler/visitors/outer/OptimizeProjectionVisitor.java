@@ -11,7 +11,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
-import org.dbsp.sqlCompiler.circuit.operator.OperatorPort;
+import org.dbsp.sqlCompiler.circuit.operator.OutputPort;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Projection;
@@ -32,18 +32,22 @@ import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeFunction;
  * Projections are map operations that have a function with a very simple
  * structure.  The function is analyzed using the 'Projection' visitor. */
 public class OptimizeProjectionVisitor extends CircuitCloneVisitor {
-    final CircuitGraph graph;
+    final CircuitGraphs graphs;
 
-    public OptimizeProjectionVisitor(IErrorReporter reporter, CircuitGraph graph) {
+    public OptimizeProjectionVisitor(IErrorReporter reporter, CircuitGraphs graphs) {
         super(reporter, false);
-        this.graph = graph;
+        this.graphs = graphs;
+    }
+
+    public CircuitGraph getGraph() {
+        return this.graphs.getGraph(this.getParent());
     }
 
     @Override
     public void postorder(DBSPMapOperator operator) {
-        OperatorPort source = this.mapped(operator.input());
+        OutputPort source = this.mapped(operator.input());
         DBSPExpression function = operator.getFunction();
-        int inputFanout = this.graph.getFanout(operator.input().node());
+        int inputFanout = this.getGraph().getFanout(operator.input().node());
         Projection projection = new Projection(this.errorReporter, true);
         projection.apply(function);
         if (projection.isProjection) {
@@ -96,9 +100,9 @@ public class OptimizeProjectionVisitor extends CircuitCloneVisitor {
 
     @Override
     public void postorder(DBSPMapIndexOperator operator) {
-        OperatorPort source = this.mapped(operator.input());
+        OutputPort source = this.mapped(operator.input());
         DBSPExpression function = operator.getFunction();
-        int inputFanout = this.graph.getFanout(operator.input().node());
+        int inputFanout = this.getGraph().getFanout(operator.input().node());
         Projection projection = new Projection(this.errorReporter, true);
         projection.apply(function);
         if (inputFanout == 1 && projection.isProjection && projection.isShuffle()) {
