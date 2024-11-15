@@ -63,12 +63,31 @@ follows the SQL standard in this respect. Most operations (e.g.,
 `+`), when applied a `NULL` operand will produce a `NULL`
 value.
 
-## User-defined structures
+## User-defined types
 
-Users can declare new structure types.  Such types can be used for
-columns, record fields, user-defined function parameters or results.
+Users can declare new types.  Such types can be used for columns,
+record fields, user-defined function parameters or results.
 
-For example, we can declare types `address_typ` and `employee_typ`:
+We distinguish two kinds of user-defined types:
+
+- Users can define new type names for existing types
+- Users can define new record types
+
+### New type names for existing types
+
+The following example shows a table using two user-defined types:
+
+```sql
+CREATE TYPE INT32 AS INTEGER;
+CREATE TYPE IA AS INT ARRAY;
+CREATE TABLE T(x INT32, a IA);
+```
+
+### New structure types
+
+The syntax for defining new structures resembles the syntax for
+defining tables.  For example, we can declare types `address_typ` and
+`employee_typ`:
 
 ```sql
 CREATE TYPE address_typ AS (

@@ -22,6 +22,14 @@ public class RegressionTests extends SqlIoTest {
                 CREATE VIEW v AS SELECT (c1 - c2) SECONDS FROM x;""");
     }
 
+    @Test
+    public void issue2651() {
+        this.compileRustTestCase("""
+                CREATE TYPE INT32 AS INTEGER;
+                CREATE TYPE AI AS INT ARRAY;
+                CREATE TABLE T(x INT32, y AI);""");
+    }
+
     @Test @Ignore("https://issues.apache.org/jira/browse/CALCITE-6681")
     public void issueLateral() {
         // This triggers https://issues.apache.org/jira/browse/CALCITE-6681
