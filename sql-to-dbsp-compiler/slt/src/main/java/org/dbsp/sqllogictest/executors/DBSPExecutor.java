@@ -213,9 +213,9 @@ public class DBSPExecutor extends SqlSltTestExecutor {
     }
 
     /** Convert a description of the data in the SLT format to a ZSet. */
-    @Nullable public static DBSPZSetLiteral convert(@Nullable List<String> data, DBSPTypeZSet outputType) {
+    public static DBSPZSetLiteral convert(@Nullable List<String> data, DBSPTypeZSet outputType) {
         if (data == null)
-            return null;
+            data = Linq.list();
         DBSPZSetLiteral result;
         IDBSPContainer container;
         DBSPType elementType = outputType.elementType;
@@ -294,11 +294,9 @@ public class DBSPExecutor extends SqlSltTestExecutor {
             throw new RuntimeException(
                     "Didn't expect a query to have " + dbsp.getOutputCount() + " outputs");
         DBSPTypeZSet outputType = dbsp.getSingleOutputType().to(DBSPTypeZSet.class);
-        DBSPZSetLiteral expectedOutput = DBSPExecutor.convert(
-                testQuery.outputDescription.getQueryResults(), outputType);
-        if (expectedOutput == null) {
-            if (testQuery.outputDescription.hash == null)
-                throw new RuntimeException("No hash or outputs specified");
+        DBSPZSetLiteral expectedOutput = null;
+        if (testQuery.outputDescription.hash == null) {
+            expectedOutput = DBSPExecutor.convert(testQuery.outputDescription.getQueryResults(), outputType);
         }
 
         return createTesterCode(
