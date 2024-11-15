@@ -1,6 +1,5 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity;
 
-import org.dbsp.sqlCompiler.circuit.operator.DBSPBinaryOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDelayedIntegralOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDistinctOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFilterOperator;
@@ -12,7 +11,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNegateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNoopOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceTableOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamDistinctOperator;
@@ -171,7 +170,7 @@ public class KeyPropagation extends CircuitVisitor {
      * @param table     Table whose primary key is joined on
      * @param leftIsKey If true the LHS of the join uses the key
      */
-    public record JoinDescription(DBSPOperator join, DBSPSourceTableOperator table, boolean leftIsKey) {
+    public record JoinDescription(DBSPSimpleOperator join, DBSPSourceTableOperator table, boolean leftIsKey) {
         @Override
         public String toString() {
             return "JoinDescription{" +
@@ -183,9 +182,9 @@ public class KeyPropagation extends CircuitVisitor {
     }
 
     /** Maps each operator to a StreamDescription for its output */
-    final Map<DBSPOperator, StreamDescription> keys;
+    final Map<DBSPSimpleOperator, StreamDescription> keys;
     /** Maps each join that operates on a primary/foreign key to its description */
-    public final Map<DBSPOperator, JoinDescription> joins;
+    public final Map<DBSPSimpleOperator, JoinDescription> joins;
 
     public KeyPropagation(IErrorReporter errorReporter) {
         super(errorReporter);
@@ -288,7 +287,7 @@ public class KeyPropagation extends CircuitVisitor {
      * @param foreignKey      Description of the data part of the foreign key input
      * @param keyOnLeft       True if the key is the left input of the join
      */
-    void mapJoin(DBSPOperator operator, DBSPSourceTableOperator table,
+    void mapJoin(DBSPSimpleOperator operator, DBSPSourceTableOperator table,
                  StreamDescription foreignKeyIndex, StreamDescription foreignKey,
                  boolean keyOnLeft) {
         JoinDescription desc = new JoinDescription(operator, table, keyOnLeft);
@@ -419,7 +418,7 @@ public class KeyPropagation extends CircuitVisitor {
         super.postorder(operator);
     }
 
-    void map(DBSPOperator operator, StreamDescription keys) {
+    void map(DBSPSimpleOperator operator, StreamDescription keys) {
         Utilities.putNew(this.keys, operator, keys);
         Logger.INSTANCE.belowLevel(this, 1)
                 .append(operator.getIdString())

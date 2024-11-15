@@ -38,12 +38,12 @@ import java.util.List;
 public class CreateTableStatement extends CreateRelationStatement {
     public final List<ForeignKey> foreignKeys;
 
-    public CreateTableStatement(CalciteCompiler.ParsedStatement node, String statement,
+    public CreateTableStatement(CalciteCompiler.ParsedStatement node,
                                 String tableName, boolean nameIsQuoted,
                                 List<RelColumnMetadata> columns,
                                 List<ForeignKey> foreignKeys,
                                 @Nullable PropertyList properties) {
-        super(node, statement, tableName, nameIsQuoted, columns, properties);
+        super(node, tableName, nameIsQuoted, columns, properties);
         this.foreignKeys = foreignKeys;
     }
 

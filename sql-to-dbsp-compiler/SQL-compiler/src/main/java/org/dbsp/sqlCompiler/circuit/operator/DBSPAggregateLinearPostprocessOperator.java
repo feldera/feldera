@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.circuit.operator;
 
+import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -20,7 +21,7 @@ public final class DBSPAggregateLinearPostprocessOperator extends DBSPUnaryOpera
             CalciteObject node,
             DBSPTypeIndexedZSet outputType,
             DBSPExpression function,
-            DBSPClosureExpression postProcess, DBSPOperator input) {
+            DBSPClosureExpression postProcess, OutputPort input) {
         super(node, "aggregate_linear_postprocess", function, outputType, false, input);
         this.postProcess = postProcess;
     }
@@ -35,12 +36,12 @@ public final class DBSPAggregateLinearPostprocessOperator extends DBSPUnaryOpera
     }
 
     @Override
-    public DBSPOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
+    public DBSPSimpleOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
         throw new InternalCompilerError("Should not be called");
     }
 
     @Override
-    public DBSPOperator withInputs(List<DBSPOperator> newInputs, boolean force) {
+    public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPAggregateLinearPostprocessOperator(
                     this.getNode(), this.outputType.to(DBSPTypeIndexedZSet.class),

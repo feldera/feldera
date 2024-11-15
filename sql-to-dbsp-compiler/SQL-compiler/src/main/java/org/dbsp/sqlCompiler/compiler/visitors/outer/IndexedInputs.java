@@ -44,7 +44,7 @@ public class IndexedInputs extends CircuitCloneVisitor {
                 node.getNode(), node.sourceName, keyColumnFields,
                 ix, node.originalRowType, node.metadata, node.tableName, node.comment);
         this.addOperator(set);
-        DBSPDeindexOperator deindex = new DBSPDeindexOperator(node.getNode(), set);
+        DBSPDeindexOperator deindex = new DBSPDeindexOperator(node.getNode(), set.outputPort());
         this.map(node, deindex);
     }
 }

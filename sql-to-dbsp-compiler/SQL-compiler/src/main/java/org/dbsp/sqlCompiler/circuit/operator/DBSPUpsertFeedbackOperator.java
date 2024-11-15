@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.circuit.operator;
 
+import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
@@ -13,8 +14,8 @@ import java.util.List;
  * for the pre-existing key. */
 @NonCoreIR
 public final class DBSPUpsertFeedbackOperator extends DBSPUnaryOperator {
-    public DBSPUpsertFeedbackOperator(CalciteObject node, DBSPOperator source) {
-        super(node, "upsert_feedback", null, source.outputType, source.isMultiset, source);
+    public DBSPUpsertFeedbackOperator(CalciteObject node, OutputPort source) {
+        super(node, "upsert_feedback", null, source.outputType(), source.isMultiset(), source);
         source.getOutputIndexedZSetType();  // assert that the type is right
     }
 
@@ -28,7 +29,7 @@ public final class DBSPUpsertFeedbackOperator extends DBSPUnaryOperator {
     }
 
     @Override
-    public DBSPOperator withInputs(List<DBSPOperator> newInputs, boolean force) {
+    public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPUpsertFeedbackOperator(
                     this.getNode(), newInputs.get(0)).copyAnnotations(this);

@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.circuit.operator;
 
+import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
@@ -37,7 +38,7 @@ import java.util.Objects;
 
 public final class DBSPMapOperator extends DBSPUnaryOperator {
     public DBSPMapOperator(CalciteObject node, DBSPExpression expression,
-                           DBSPTypeZSet outputType, DBSPOperator input) {
+                           DBSPTypeZSet outputType, OutputPort input) {
         // Currently the output type can only be a ZSet, but the input
         // type may be a ZSet or an IndexedZSet.
         super(node, "map", expression, outputType, true, input);
@@ -59,7 +60,7 @@ public final class DBSPMapOperator extends DBSPUnaryOperator {
     }
 
     @Override
-    public DBSPOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
+    public DBSPSimpleOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
         return new DBSPMapOperator(
                 this.getNode(), Objects.requireNonNull(expression),
                 outputType.to(DBSPTypeZSet.class), this.input())
@@ -67,7 +68,8 @@ public final class DBSPMapOperator extends DBSPUnaryOperator {
     }
 
     @Override
-    public DBSPOperator withInputs(List<DBSPOperator> newInputs, boolean force) {
+    public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
+        assert newInputs.size() == 1;
         if (force || this.inputsDiffer(newInputs))
             return new DBSPMapOperator(
                     this.getNode(), this.getFunction(),

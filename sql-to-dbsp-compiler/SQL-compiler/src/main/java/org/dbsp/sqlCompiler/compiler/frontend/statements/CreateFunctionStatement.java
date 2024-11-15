@@ -7,8 +7,8 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ExternalFunction;
 public class CreateFunctionStatement extends FrontEndStatement {
     public final ExternalFunction function;
 
-    public CreateFunctionStatement(CalciteCompiler.ParsedStatement node, String statement, ExternalFunction function) {
-        super(node, statement);
+    public CreateFunctionStatement(CalciteCompiler.ParsedStatement node, ExternalFunction function) {
+        super(node);
         this.function = function;
     }
 }

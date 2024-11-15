@@ -26,11 +26,12 @@ package org.dbsp.sqlCompiler.circuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceTableOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPViewDeclarationOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewOperator;
-import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.ProgramMetadata;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitGraph;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.DBSPNode;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
@@ -40,6 +41,8 @@ import org.dbsp.util.IWritesLogs;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Logger;
 import org.dbsp.util.Utilities;
+import org.dbsp.util.graph.DiGraph;
+import org.dbsp.util.graph.Port;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
@@ -50,20 +53,20 @@ import java.util.Set;
 
 /** A partial circuit is a circuit under construction.
  * A complete circuit can be obtained by calling the "seal" method. */
-public final class DBSPPartialCircuit extends DBSPNode implements IDBSPOuterNode, IWritesLogs {
+public final class DBSPPartialCircuit extends DBSPNode
+        implements IDBSPOuterNode, IWritesLogs, ICircuit, DiGraph<DBSPOperator> {
     public final List<DBSPDeclaration> declarations = new ArrayList<>();
     public final LinkedHashMap<String, DBSPSourceTableOperator> sourceOperators = new LinkedHashMap<>();
     public final LinkedHashMap<String, DBSPViewOperator> viewOperators = new LinkedHashMap<>();
     public final LinkedHashMap<String, DBSPSinkOperator> sinkOperators = new LinkedHashMap<>();
+    // Should always be in topological order
     public final List<DBSPOperator> allOperators = new ArrayList<>();
-    /** Maps indexed z-set table names to the corresponding deindex operator */
-    public final IErrorReporter errorReporter;
     public final ProgramMetadata metadata;
+    // Used to detect duplicate insertions (always a bug).
     final Set<DBSPOperator> operators = new HashSet<>();
 
-    public DBSPPartialCircuit(IErrorReporter errorReporter, ProgramMetadata metadata) {
+    public DBSPPartialCircuit(ProgramMetadata metadata) {
         super(CalciteObject.EMPTY);
-        this.errorReporter = errorReporter;
         this.metadata = metadata;
     }
 
@@ -89,9 +92,10 @@ public final class DBSPPartialCircuit extends DBSPNode implements IDBSPOuterNode
     public void addOperator(DBSPOperator operator) {
         Logger.INSTANCE.belowLevel(this, 1)
                 .append("Adding ")
-                .append(operator.toString())
+                .appendSupplier(operator::toString)
                 .newline();
-        assert !this.operators.contains(operator): "Operator " + operator + " already inserted";
+        assert !this.operators.contains(operator):
+                "Operator " + operator + " already inserted";
         this.operators.add(operator);
         DBSPSourceTableOperator source = operator.as(DBSPSourceTableOperator.class);
         if (source != null)
@@ -106,6 +110,25 @@ public final class DBSPPartialCircuit extends DBSPNode implements IDBSPOuterNode
     }
 
     public Iterable<DBSPOperator> getAllOperators() { return this.allOperators; }
+
+    @Override
+    public Iterable<DBSPOperator> getNodes() {
+        return this.getAllOperators();
+    }
+
+    /** Returns the *predecessors* of a node.
+     * The graph represented by DBSPCircuit is actually the reverse graph.
+     * Use {@link CircuitGraph} to get the actual graph. */
+    @Override
+    public List<Port<DBSPOperator>> getSuccessors(DBSPOperator operator) {
+        if (operator.is(DBSPViewDeclarationOperator.class)) {
+            DBSPViewDeclarationOperator vd = operator.to(DBSPViewDeclarationOperator.class);
+            DBSPViewOperator view = vd.getCorrespondingView(this);
+            assert view != null;
+            return Linq.list(new Port<>(view, 0));
+        }
+        return Linq.map(operator.inputs, i -> new Port<>(i.node(), 0));
+    }
 
     /** Get the table with the specified name.
      * @param tableName must use the proper casing */
@@ -143,10 +166,17 @@ public final class DBSPPartialCircuit extends DBSPNode implements IDBSPOuterNode
     }
 
     /** Return true if this circuit and other are identical (have the exact same operators). */
-    public boolean sameCircuit(DBSPPartialCircuit other) {
+    public boolean sameCircuit(ICircuit other) {
         if (this == other)
             return true;
-        return Linq.same(this.allOperators, other.allOperators);
+        if (!other.is(DBSPPartialCircuit.class))
+            return false;
+        return Linq.same(this.allOperators, other.to(DBSPPartialCircuit.class).allOperators);
+    }
+
+    @Override
+    public boolean contains(DBSPOperator node) {
+        return this.operators.contains(node);
     }
 
     /** No more changes are expected to the circuit. */

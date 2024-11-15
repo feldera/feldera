@@ -10,6 +10,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPLagOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNoopOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateWithWaterlineOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
@@ -17,11 +18,13 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
+import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateView;
-import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitCloneVisitor;
-import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitGraph;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitCloneWithGraphsVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitGraphs;
+import org.dbsp.util.graph.Port;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -30,15 +33,12 @@ import java.util.List;
  * - operators that may introduce consecutive integrators in the circuit
  * - before operators that share a source and have an integrator in front.
  * This will make the scope of Retain{Keys,Values} operators clear later. */
-public class SeparateIntegrators extends CircuitCloneVisitor {
-    final CircuitGraph graph;
-
-    public SeparateIntegrators(IErrorReporter reporter, CircuitGraph graph) {
-        super(reporter, false);
-        this.graph = graph;
+public class SeparateIntegrators extends CircuitCloneWithGraphsVisitor {
+    public SeparateIntegrators(IErrorReporter reporter, CircuitGraphs graphs) {
+        super(reporter, graphs, false);
     }
 
-    public static boolean hasPostIntegrator(DBSPOperator operator) {
+    public static boolean hasPostIntegrator(DBSPSimpleOperator operator) {
         return operator.is(DBSPAggregateOperator.class) ||
                 operator.is(DBSPChainAggregateOperator.class) ||
                 operator.is(DBSPAggregateLinearPostprocessOperator.class) ||
@@ -53,9 +53,9 @@ public class SeparateIntegrators extends CircuitCloneVisitor {
                         operator.to(DBSPSourceMapOperator.class).metadata.materialized);
     }
 
-    public static boolean hasPreIntegrator(CircuitGraph.Port port) {
-        DBSPOperator operator = port.operator();
-        int input = port.input();
+    public static boolean hasPreIntegrator(OutputPort port) {
+        DBSPOperator operator = port.node();
+        int input = port.port();
         return operator.is(DBSPJoinBaseOperator.class) ||
                 (operator.is(DBSPWindowOperator.class) && input == 0) ||
                 operator.is(DBSPPartitionedRollingAggregateOperator.class) ||
@@ -75,20 +75,20 @@ public class SeparateIntegrators extends CircuitCloneVisitor {
     }
 
     @Override
-    public void replace(DBSPOperator operator) {
-        List<DBSPOperator> sources = new ArrayList<>(operator.inputs.size());
+    public void replace(DBSPSimpleOperator operator) {
+        List<OutputPort> sources = new ArrayList<>(operator.inputs.size());
         int index = 0;
-        for (DBSPOperator input: operator.inputs) {
-            CircuitGraph.Port port = new CircuitGraph.Port(operator, index++);
+        for (OutputPort input: operator.inputs) {
+            OutputPort port = new OutputPort(operator, index++);
             boolean addBuffer = false;
             if (hasPreIntegrator(port)) {
-                if (hasPostIntegrator(input)) {
+                if (input.isSimpleNode() && hasPostIntegrator(input.simpleNode())) {
                     addBuffer = true;
                 } else {
-                    for (CircuitGraph.Port dest : this.graph.getDestinations(input)) {
-                        if (dest.operator() == operator)
+                    for (Port<DBSPOperator> dest : this.getGraph().getSuccessors(input.node())) {
+                        if (dest.node() == operator)
                             continue;
-                        if (hasPreIntegrator(dest)) {
+                        if (hasPreIntegrator(new OutputPort(dest))) {
                             addBuffer = true;
                             break;
                         }
@@ -96,17 +96,17 @@ public class SeparateIntegrators extends CircuitCloneVisitor {
                 }
             }
 
-            DBSPOperator source = this.mapped(input);
+            OutputPort source = this.mapped(input);
             if (addBuffer) {
                 DBSPNoopOperator noop = new DBSPNoopOperator(operator.getNode(), source, null);
                 this.addOperator(noop);
-                sources.add(noop);
+                sources.add(noop.outputPort());
             } else {
                 sources.add(source);
             }
         }
 
-        DBSPOperator result = operator.withInputs(sources, this.force);
+        DBSPSimpleOperator result = operator.withInputs(sources, this.force);
         result.setDerivedFrom(operator.id);
         this.map(operator, result);
     }

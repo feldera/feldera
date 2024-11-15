@@ -23,7 +23,7 @@
 
 package org.dbsp.sqlCompiler.compiler.visitors.inner;
 
-import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitRewriter;
@@ -97,7 +97,7 @@ public class CollectIdentifiers extends InnerVisitor {
         }
 
         @Override
-        public VisitDecision preorder(DBSPOperator operator) {
+        public VisitDecision preorder(DBSPSimpleOperator operator) {
             this.identifiers.add(operator.getOutputName());
             return super.preorder(operator);
         }

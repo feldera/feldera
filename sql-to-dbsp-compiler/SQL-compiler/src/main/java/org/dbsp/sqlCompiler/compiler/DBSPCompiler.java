@@ -38,7 +38,7 @@ import org.apache.calcite.sql.util.SqlOperatorTables;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.DBSPPartialCircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceTableOperator;
-import org.dbsp.sqlCompiler.compiler.backend.ToDotVisitor;
+import org.dbsp.sqlCompiler.compiler.backend.dot.ToDot;
 import org.dbsp.sqlCompiler.compiler.errors.BaseCompilerException;
 import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
@@ -221,15 +221,16 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
     /**
      * Report an error or warning during compilation.
      * @param range      Position in source where error is located.
+     * @param continuation  If true, this error message is a continuation of a multi-line report.
      * @param warning    True if this is a warning.
      * @param errorType  A short string that categorizes the error type.
      * @param message    Error message.
      */
-    public void reportProblem(SourcePositionRange range, boolean warning,
+    public void reportProblem(SourcePositionRange range, boolean warning, boolean continuation,
                               String errorType, String message) {
         if (warning)
             this.hasWarnings = true;
-        this.messages.reportProblem(range, warning, errorType, message);
+        this.messages.reportProblem(range, warning, continuation, errorType, message);
         if (!warning && this.options.languageOptions.throwOnError) {
             System.err.println(this.messages);
             throw new CompilationError("Error during compilation");
@@ -524,10 +525,10 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
                 currentView = null;
             }
 
+            this.frontend.endCompilation(this.compiler());
             this.circuit = this.midend.getFinalCircuit().seal("parsed");
             if (this.getDebugLevel() > 2) {
-                ToDotVisitor.toDot(this, "initial.png",
-                        this.getDebugLevel(), "png", this.circuit);
+                ToDot.dump(this, "initial.png", this.getDebugLevel(), "png", this.circuit);
             }
 
             this.validateForeignKeys(this.circuit, foreignKeys);
@@ -658,8 +659,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         DBSPCircuit result = this.circuit.rename(name);
         this.circuit = null;
         if (this.getDebugLevel() > 0 && !result.name.equals("tmp")) {
-            ToDotVisitor.toDot(
-                    this, "final.png", this.getDebugLevel(), "png", result);
+            ToDot.dump(this, "final.png", this.getDebugLevel(), "png", result);
         }
         return result;
     }

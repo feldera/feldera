@@ -4,8 +4,9 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateZeroOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNegateOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSumOperator;
+import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.frontend.TypeCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
@@ -25,17 +26,18 @@ public class ExpandAggregateZero extends CircuitCloneVisitor {
     public void postorder(DBSPAggregateZeroOperator operator) {
         CalciteObject node = operator.getNode();
         DBSPExpression emptySetResult = operator.getFunction();
-        DBSPOperator input = this.mapped(operator.input());
+        OutputPort input = this.mapped(operator.input());
         DBSPVariablePath _t = emptySetResult.getType().ref().var();
         DBSPExpression toZero = emptySetResult.closure(_t);
-        DBSPOperator map1 = new DBSPMapOperator(node, toZero, TypeCompiler.makeZSet(emptySetResult.getType()), input);
+        DBSPSimpleOperator map1 = new DBSPMapOperator(
+                node, toZero, TypeCompiler.makeZSet(emptySetResult.getType()), input);
         this.addOperator(map1);
-        DBSPOperator neg = new DBSPNegateOperator(node, map1);
+        DBSPSimpleOperator neg = new DBSPNegateOperator(node, map1.outputPort());
         this.addOperator(neg);
-        DBSPOperator constant = new DBSPConstantOperator(
+        DBSPSimpleOperator constant = new DBSPConstantOperator(
                 node, new DBSPZSetLiteral(emptySetResult), false, false);
         this.addOperator(constant);
-        DBSPOperator sum = new DBSPSumOperator(node, Linq.list(constant, neg, input));
+        DBSPSimpleOperator sum = new DBSPSumOperator(node, Linq.list(constant.outputPort(), neg.outputPort(), input));
         this.map(operator, sum);
     }
 }

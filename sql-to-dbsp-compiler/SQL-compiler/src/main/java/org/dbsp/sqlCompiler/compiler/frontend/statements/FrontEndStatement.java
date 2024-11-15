@@ -41,6 +41,10 @@ public abstract class FrontEndStatement implements ICastable {
         this.statement = statement;
     }
 
+    protected FrontEndStatement(CalciteCompiler.ParsedStatement node) {
+        this(node, node.toString());
+    }
+
     public CalciteObject getCalciteObject() {
         return CalciteObject.create(this.node.statement());
     }

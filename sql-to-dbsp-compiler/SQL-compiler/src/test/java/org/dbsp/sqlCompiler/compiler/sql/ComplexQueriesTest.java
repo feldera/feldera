@@ -1,8 +1,8 @@
 package org.dbsp.sqlCompiler.compiler.sql;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateWithWaterlineOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.StderrErrorReporter;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
@@ -119,8 +119,8 @@ public class ComplexQueriesTest extends BaseSQLTests {
         };
         CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
             @Override
-            public void postorder(DBSPOperator operator) {
-                operator.outputType.accept(typeWidth);
+            public void postorder(DBSPSimpleOperator operator) {
+                operator.outputType().accept(typeWidth);
             }
         };
         visitor.apply(ccs.circuit);

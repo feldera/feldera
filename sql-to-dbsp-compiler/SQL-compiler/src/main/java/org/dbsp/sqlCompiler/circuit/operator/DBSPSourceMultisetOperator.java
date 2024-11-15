@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.circuit.operator;
 
+import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.TableMetadata;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -44,14 +45,14 @@ public final class DBSPSourceMultisetOperator
     }
 
     @Override
-    public DBSPOperator withFunction(@Nullable DBSPExpression unused, DBSPType outputType) {
+    public DBSPSimpleOperator withFunction(@Nullable DBSPExpression unused, DBSPType outputType) {
         return new DBSPSourceMultisetOperator(this.getNode(), this.sourceName,
                 outputType.to(DBSPTypeZSet.class), this.originalRowType,
                 this.metadata, this.tableName, this.comment).copyAnnotations(this);
     }
 
     @Override
-    public DBSPOperator withInputs(List<DBSPOperator> newInputs, boolean force) {
+    public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
         assert newInputs.isEmpty();
         if (force)
             return new DBSPSourceMultisetOperator(

@@ -8,10 +8,11 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinFilterMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNoopOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateWithWaterlineOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAggregateOperator;
+import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
@@ -186,9 +187,9 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
 
     @Override
     public void postorder(DBSPFlatMapOperator node) {
-        DBSPOperator result;
+        DBSPSimpleOperator result;
         if (node.getFunction().is(DBSPFlatmap.class)) {
-            List<DBSPOperator> sources = Linq.map(node.inputs, this::mapped);
+            List<OutputPort> sources = Linq.map(node.inputs, this::mapped);
             DBSPExpression function = rewriteFlatmap(node.getFunction().to(DBSPFlatmap.class));
             result = node.withFunction(function, node.outputType).withInputs(sources, this.force);
             this.map(node, result);
@@ -210,7 +211,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
         DBSPExpression block = new DBSPBlockExpression(
                 Linq.list(new DBSPExpressionStatement(print)),
                 func.body);
-        DBSPOperator instrumented = node.withFunction(block.closure(func.parameters), func.getResultType())
+        DBSPSimpleOperator instrumented = node.withFunction(block.closure(func.parameters), func.getResultType())
                 .withInputs(Linq.map(node.inputs, this::mapped), false);
         this.map(node, instrumented);
     }
@@ -229,7 +230,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
         DBSPExpression block = new DBSPBlockExpression(
                 Linq.list(new DBSPExpressionStatement(print)),
                 func.body);
-        DBSPOperator instrumented = node.withFunction(block.closure(func.parameters), func.getResultType())
+        DBSPSimpleOperator instrumented = node.withFunction(block.closure(func.parameters), func.getResultType())
                 .withInputs(Linq.map(node.inputs, this::mapped), false);
         this.map(node, instrumented);
     }
@@ -243,7 +244,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
         }
 
         DBSPExpression function = node.getAggregate().asFold(this.errorReporter);
-        DBSPOperator result = new DBSPStreamAggregateOperator(node.getNode(),node.getOutputIndexedZSetType(),
+        DBSPSimpleOperator result = new DBSPStreamAggregateOperator(node.getNode(),node.getOutputIndexedZSetType(),
                 function, null, this.mapped(node.input()));
         this.map(node, result);
     }
@@ -256,7 +257,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
             return;
         }
         DBSPExpression function = node.getAggregate().asFold(this.errorReporter);
-        DBSPOperator result = new DBSPAggregateOperator(
+        DBSPSimpleOperator result = new DBSPAggregateOperator(
                 node.getNode(), node.getOutputIndexedZSetType(),
                 function, null, this.mapped(node.input()));
         this.map(node, result);
@@ -318,7 +319,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
             return;
         }
         DBSPExpression newFunction = lowerJoinFilterMapFunctions(this.errorReporter, node);
-        DBSPOperator result = new DBSPJoinFilterMapOperator(node.getNode(), node.getOutputZSetType(),
+        DBSPSimpleOperator result = new DBSPJoinFilterMapOperator(node.getNode(), node.getOutputZSetType(),
                 newFunction, null, null, node.isMultiset,
                 this.mapped(node.left()), this.mapped(node.right()))
                 .copyAnnotations(node);
@@ -327,7 +328,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
 
     @Override
     public void postorder(DBSPNoopOperator node) {
-        DBSPOperator replacement;
+        DBSPSimpleOperator replacement;
         if (node.outputType.is(DBSPTypeZSet.class)) {
             replacement = new DBSPMapOperator(node.getNode(), node.getFunction(),
                     node.getOutputZSetType(), this.mapped(node.input()));
@@ -345,7 +346,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
             return;
         }
         DBSPExpression function = node.getAggregate().asFold(this.errorReporter);
-        DBSPOperator result = new DBSPPartitionedRollingAggregateOperator(node.getNode(),
+        DBSPSimpleOperator result = new DBSPPartitionedRollingAggregateOperator(node.getNode(),
                 node.partitioningFunction, function, null, node.lower, node.upper,
                 node.getOutputIndexedZSetType(), this.mapped(node.input()));
         this.map(node, result);
@@ -358,7 +359,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
             return;
         }
         DBSPExpression function = node.aggregate.asFold(this.errorReporter);
-        DBSPOperator result = new DBSPPartitionedRollingAggregateWithWaterlineOperator(node.getNode(),
+        DBSPSimpleOperator result = new DBSPPartitionedRollingAggregateWithWaterlineOperator(node.getNode(),
                 node.partitioningFunction, function, null, node.lower, node.upper,
                 node.getOutputIndexedZSetType(),
                 this.mapped(node.left()), this.mapped(node.right()));

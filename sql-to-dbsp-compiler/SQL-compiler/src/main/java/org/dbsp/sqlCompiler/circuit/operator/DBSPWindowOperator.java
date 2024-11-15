@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.circuit.operator;
 
+import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
@@ -22,8 +23,8 @@ public final class DBSPWindowOperator extends DBSPBinaryOperator {
 
     public DBSPWindowOperator(
             CalciteObject node, boolean lowerInclusive, boolean upperInclusive,
-            DBSPOperator data, DBSPOperator control) {
-        super(node, "window", null, data.getType(), data.isMultiset,
+            OutputPort data, OutputPort control) {
+        super(node, "window", null, data.outputType(), data.isMultiset(),
                 data, control);
         // Check that the left input and output are indexed ZSets
         this.getOutputIndexedZSetType();
@@ -32,12 +33,12 @@ public final class DBSPWindowOperator extends DBSPBinaryOperator {
     }
 
     @Override
-    public DBSPOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
+    public DBSPSimpleOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
         return this;
     }
 
     @Override
-    public DBSPOperator withInputs(List<DBSPOperator> newInputs, boolean force) {
+    public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
         assert newInputs.size() == 2: "Expected 2 inputs, got " + newInputs.size();
         if (force || this.inputsDiffer(newInputs))
             return new DBSPWindowOperator(

@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.circuit.operator;
 
+import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.ViewMetadata;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -35,7 +36,7 @@ public final class DBSPSinkOperator extends DBSPViewBaseOperator {
     public DBSPSinkOperator(CalciteObject node, String viewName, String query,
                             DBSPTypeStruct originalRowType,
                             ViewMetadata metadata,
-                            DBSPOperator input) {
+                            OutputPort input) {
         super(node, "inspect", null, viewName, query,
                 originalRowType, metadata, input);
     }
@@ -50,7 +51,7 @@ public final class DBSPSinkOperator extends DBSPViewBaseOperator {
     }
 
     @Override
-    public DBSPOperator withInputs(List<DBSPOperator> newInputs, boolean force) {
+    public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPSinkOperator(
                     this.getNode(), this.viewName, this.query, this.originalRowType,

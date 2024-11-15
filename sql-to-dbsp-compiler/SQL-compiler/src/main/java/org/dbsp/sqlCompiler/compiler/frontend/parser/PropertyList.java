@@ -55,7 +55,7 @@ public class PropertyList implements Iterable<Map.Entry<SqlFragment, SqlFragment
                         "Duplicate key", "property " + Utilities.singleQuote(keyString) +
                                 " already declared");
                 errorReporter.reportError(prev.getSourcePosition(),
-                        "Duplicate key", "Previous declaration");
+                        "Duplicate key", "Previous declaration", true);
                 continue;
             }
             Utilities.putNew(previous, keyString, p.getKey());

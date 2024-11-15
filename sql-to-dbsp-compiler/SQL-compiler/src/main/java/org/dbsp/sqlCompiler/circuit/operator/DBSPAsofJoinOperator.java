@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.circuit.operator;
 
+import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
@@ -43,7 +44,7 @@ public final class DBSPAsofJoinOperator extends DBSPJoinBaseOperator {
                                 DBSPClosureExpression rightTimestamp,
                                 DBSPComparatorExpression comparator,
                                 boolean isMultiset, boolean isLeft,
-                                DBSPOperator left, DBSPOperator right) {
+                                OutputPort left, OutputPort right) {
         super(node, "asof_join", function, outputType, isMultiset, left, right);
         this.isLeft = isLeft;
         this.comparator = comparator;
@@ -82,7 +83,7 @@ public final class DBSPAsofJoinOperator extends DBSPJoinBaseOperator {
     }
 
     @Override
-    public DBSPOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
+    public DBSPSimpleOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
         return new DBSPAsofJoinOperator(this.getNode(),
                 outputType.to(DBSPTypeZSet.class), Objects.requireNonNull(expression),
                 this.leftTimestamp, this.rightTimestamp,
@@ -90,7 +91,7 @@ public final class DBSPAsofJoinOperator extends DBSPJoinBaseOperator {
     }
 
     @Override
-    public DBSPOperator withInputs(List<DBSPOperator> newInputs, boolean force) {
+    public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
         assert newInputs.size() == 2;
         if (force || this.inputsDiffer(newInputs))
             return new DBSPAsofJoinOperator(

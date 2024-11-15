@@ -40,8 +40,8 @@ public class TableModifyStatement extends FrontEndStatement {
     public final boolean insert;
 
     public TableModifyStatement(
-            CalciteCompiler.ParsedStatement node, boolean insert, String statement, String tableName, SqlNode data) {
-        super(node, statement);
+            CalciteCompiler.ParsedStatement node, boolean insert, String tableName, SqlNode data) {
+        super(node);
         this.insert = insert;
         this.tableName = tableName;
         this.data = data;

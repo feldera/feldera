@@ -49,6 +49,7 @@ public record CircuitOptimizer(DBSPCompiler compiler) implements ICompilerCompon
         CompilerOptions options = this.compiler().options;
 
         passes.add(new ImplementNow(reporter, compiler));
+        passes.add(new RecursiveComponents(reporter));
         if (options.languageOptions.outputsAreSets)
             passes.add(new EnsureDistinctOutputs(reporter));
         passes.add(new MinMaxOptimize(reporter, compiler.weightVar));
@@ -59,12 +60,14 @@ public record CircuitOptimizer(DBSPCompiler compiler) implements ICompilerCompon
             if (!options.ioOptions.emitHandles)
                 passes.add(new IndexedInputs(reporter));
         } else {
-            // only on optimization level 2
             passes.add(new MergeSums(reporter));
             passes.add(new OptimizeWithGraph(reporter, g -> new RemoveNoops(reporter, g)));
             passes.add(new PropagateEmptySources(reporter));
             passes.add(new DeadCode(reporter, options.languageOptions.generateInputForEveryTable, true));
             passes.add(new OptimizeDistinctVisitor(reporter));
+            // This is useful even without incrementalization if we have recursion
+            passes.add(new OptimizeIncrementalVisitor(reporter));
+            passes.add(new DeadCode(reporter, true, false));
             if (options.languageOptions.incrementalize) {
                 passes.add(new IncrementalizeVisitor(reporter));
             }
@@ -109,6 +112,7 @@ public record CircuitOptimizer(DBSPCompiler compiler) implements ICompilerCompon
             passes.add(new Simplify(reporter).circuitRewriter());
             passes.add(new CSE(reporter));
         }
+        passes.add(new RecursiveComponents.ValidateRecursiveOperators(reporter));
         // Lowering implements aggregates and inlines some calls.
         passes.add(new LowerCircuitVisitor(reporter));
         // Lowering may surface additional casts that need to be expanded
@@ -116,7 +120,7 @@ public record CircuitOptimizer(DBSPCompiler compiler) implements ICompilerCompon
         // Beta reduction after implementing aggregates.
         passes.add(new BetaReduction(compiler).getCircuitVisitor());
         passes.add(new CompactNames(compiler));
-        return new Passes(reporter, passes);
+        return new Passes("optimize", reporter, passes);
     }
 
     public DBSPCircuit optimize(DBSPCircuit input) {

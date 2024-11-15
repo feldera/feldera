@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.circuit.operator;
 
+import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
@@ -40,14 +41,14 @@ public final class DBSPJoinOperator extends DBSPJoinBaseOperator {
     public DBSPJoinOperator(
             CalciteObject node, DBSPTypeZSet outputType,
             DBSPExpression function, boolean isMultiset,
-            DBSPOperator left, DBSPOperator right) {
+            OutputPort left, OutputPort right) {
         super(node, "join", function, outputType, isMultiset, left, right);
         this.checkResultType(function, this.getOutputZSetElementType());
         assert left.getOutputIndexedZSetType().keyType.sameType(right.getOutputIndexedZSetType().keyType);
     }
 
     @Override
-    public DBSPOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
+    public DBSPSimpleOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
         return new DBSPJoinOperator(
                 this.getNode(), outputType.to(DBSPTypeZSet.class),
                 Objects.requireNonNull(expression),
@@ -55,7 +56,7 @@ public final class DBSPJoinOperator extends DBSPJoinBaseOperator {
     }
 
     @Override
-    public DBSPOperator withInputs(List<DBSPOperator> newInputs, boolean force) {
+    public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPJoinOperator(
                     this.getNode(), this.getOutputZSetType(),

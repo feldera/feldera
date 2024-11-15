@@ -4,8 +4,11 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
+import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.util.Logger;
+import org.dbsp.util.graph.Port;
 
 import java.util.HashMap;
 import java.util.HashSet;
@@ -28,25 +31,23 @@ public class CSE extends Repeat {
         final Map<DBSPOperator, DBSPOperator> canonical = new HashMap<>();
 
         OneCSEPass(IErrorReporter reporter) {
-            super(reporter);
+            super("CSE", reporter);
             Graph graph = new Graph(reporter);
             this.add(graph);
-            this.add(new FindCSE(reporter, graph.graph, this.canonical));
+            this.add(new FindCSE(reporter, graph.graphs, this.canonical));
             this.add(new RemoveCSE(reporter, this.canonical));
         }
     }
 
     /** Find common subexpressions, write them into the 'canonical' map */
-    public static class FindCSE extends CircuitVisitor {
+    public static class FindCSE extends CircuitWithGraphsVisitor {
         /** Maps each operator to its canonical representative */
         final Map<DBSPOperator, DBSPOperator> canonical;
-        final CircuitGraph graph;
         final Set<DBSPConstantOperator> constants;
 
-        public FindCSE(IErrorReporter errorReporter, CircuitGraph graph,
+        public FindCSE(IErrorReporter errorReporter, CircuitGraphs graphs,
                        Map<DBSPOperator, DBSPOperator> canonical) {
-            super(errorReporter);
-            this.graph = graph;
+            super(errorReporter, graphs);
             this.canonical = canonical;
             this.constants = new HashSet<>();
         }
@@ -63,25 +64,25 @@ public class CSE extends Repeat {
         }
 
         boolean hasGcSuccessor(DBSPOperator operator) {
-            for (CircuitGraph.Port succ: this.graph.getDestinations(operator)) {
-                if (succ.operator().is(DBSPIntegrateTraceRetainKeysOperator.class) ||
-                        succ.operator().is(DBSPIntegrateTraceRetainValuesOperator.class))
+            for (Port<DBSPOperator> succ: this.getGraph().getSuccessors(operator)) {
+                if (succ.node().is(DBSPIntegrateTraceRetainKeysOperator.class) ||
+                        succ.node().is(DBSPIntegrateTraceRetainValuesOperator.class))
                     // only input 0 of these operators affects the GC
-                        return succ.input() == 0;
+                    return succ.port() == 0;
             }
             return false;
         }
 
         @Override
-        public void postorder(DBSPOperator operator) {
-            List<CircuitGraph.Port> destinations = this.graph.getDestinations(operator);
+        public void postorder(DBSPSimpleOperator operator) {
+            List<Port<DBSPOperator>> destinations = this.getGraph().getSuccessors(operator);
             // Compare every pair of destinations
             for (int i = 0; i < destinations.size(); i++) {
-                DBSPOperator base = destinations.get(i).operator();
+                DBSPOperator base = destinations.get(i).node();
                 if (hasGcSuccessor(base))
                     continue;
                 for (int j = i + 1; j < destinations.size(); j++) {
-                    DBSPOperator compare = destinations.get(j).operator();
+                    DBSPOperator compare = destinations.get(j).node();
                     if (this.canonical.containsKey(compare))
                         // Already found a canonical representative
                         continue;
@@ -116,14 +117,14 @@ public class CSE extends Repeat {
         }
 
         @Override
-        public void replace(DBSPOperator operator) {
+        public void replace(DBSPSimpleOperator operator) {
             DBSPOperator replacement = this.canonical.get(operator);
             if (replacement == null) {
                 super.replace(operator);
                 return;
             }
-            DBSPOperator newReplacement = this.mapped(replacement);
-            this.map(operator, newReplacement, false);
+            OutputPort newReplacement = this.mapped(replacement.to(DBSPSimpleOperator.class).outputPort());
+            this.map(operator.outputPort(), newReplacement, false);
         }
     }
 }

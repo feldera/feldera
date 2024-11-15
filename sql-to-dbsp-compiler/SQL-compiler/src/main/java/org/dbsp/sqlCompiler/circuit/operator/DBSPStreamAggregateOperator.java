@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.circuit.operator;
 
+import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
@@ -39,7 +40,7 @@ public final class DBSPStreamAggregateOperator extends DBSPAggregateOperatorBase
                                        DBSPTypeIndexedZSet outputType,
                                        @Nullable DBSPExpression function,
                                        @Nullable DBSPAggregate aggregate,
-                                       DBSPOperator input) {
+                                       OutputPort input) {
         super(node, "stream_aggregate",
                 outputType, function, aggregate, false, input);
         assert aggregate == null || !aggregate.isLinear();
@@ -55,7 +56,7 @@ public final class DBSPStreamAggregateOperator extends DBSPAggregateOperatorBase
     }
 
     @Override
-    public DBSPOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
+    public DBSPSimpleOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
         DBSPTypeIndexedZSet ixOutputType = outputType.to(DBSPTypeIndexedZSet.class);
         return new DBSPStreamAggregateOperator(this.getNode(),
                 ixOutputType, expression, this.aggregate, this.input())
@@ -63,7 +64,7 @@ public final class DBSPStreamAggregateOperator extends DBSPAggregateOperatorBase
     }
 
     @Override
-    public DBSPOperator withInputs(List<DBSPOperator> newInputs, boolean force) {
+    public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPStreamAggregateOperator(
                     this.getNode(), this.getOutputIndexedZSetType(),

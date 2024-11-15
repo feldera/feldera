@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.circuit.operator;
 
+import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
@@ -23,7 +24,7 @@ public abstract class DBSPAggregateOperatorBase extends DBSPUnaryOperator {
                                         @Nullable DBSPExpression function,
                                         @Nullable DBSPAggregate aggregate,
                                         boolean multiset,
-                                        DBSPOperator source) {
+                                        OutputPort source) {
         super(node, operation, function, outputType, multiset, source);
         this.aggregate = aggregate;
         // There are really two different representations of an aggregate operator,

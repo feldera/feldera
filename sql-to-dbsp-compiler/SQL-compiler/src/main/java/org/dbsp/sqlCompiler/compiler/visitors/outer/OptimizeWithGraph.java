@@ -9,18 +9,18 @@ import java.util.function.Function;
 public class OptimizeWithGraph extends Repeat {
     static CircuitTransform createOnePass(
             IErrorReporter reporter,
-            Function<CircuitGraph, CircuitTransform> optimizerFactory) {
-        Passes result = new Passes(reporter);
+            Function<CircuitGraphs, CircuitTransform> optimizerFactory) {
         Graph graph = new Graph(reporter);
+        CircuitTransform optimizer = optimizerFactory.apply(graph.getGraphs());
+        Passes result = new Passes(optimizer.getName(), reporter);
         result.add(graph);
-        CircuitTransform optimizer = optimizerFactory.apply(graph.graph);
         result.add(optimizer);
         result.add(new DeadCode(reporter, true, false));
         return result;
     }
 
     public OptimizeWithGraph(IErrorReporter reporter,
-                             Function<CircuitGraph, CircuitTransform> optimizerFactory) {
+                             Function<CircuitGraphs, CircuitTransform> optimizerFactory) {
         super(reporter, createOnePass(reporter, optimizerFactory));
     }
 }

@@ -1,6 +1,6 @@
 package org.dbsp.sqlCompiler.circuit.annotation;
 
-import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 
 import javax.annotation.Nullable;
 import java.util.List;
@@ -20,7 +20,7 @@ public class CompactName extends Annotation {
     }
 
     @Nullable
-    public static String getCompactName(DBSPOperator operator) {
+    public static String getCompactName(DBSPSimpleOperator operator) {
         List<Annotation> name = operator.annotations.get(t -> t.is(CompactName.class));
         if (!name.isEmpty()) {
             // there should be only one

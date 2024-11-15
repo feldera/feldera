@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.circuit.operator;
 
+import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
@@ -29,7 +30,7 @@ public final class DBSPJoinFilterMapOperator extends DBSPJoinBaseOperator {
             CalciteObject node, DBSPTypeZSet outputType,
             DBSPExpression function, @Nullable DBSPExpression filter, @Nullable DBSPExpression map,
             boolean isMultiset,
-            DBSPOperator left, DBSPOperator right) {
+            OutputPort left, OutputPort right) {
         super(node, "join_flatmap", function, outputType, isMultiset, left, right);
         this.filter = filter;
         this.map = map;
@@ -41,7 +42,7 @@ public final class DBSPJoinFilterMapOperator extends DBSPJoinBaseOperator {
     }
 
     @Override
-    public DBSPOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
+    public DBSPSimpleOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
         return new DBSPJoinFilterMapOperator(
                 this.getNode(), outputType.to(DBSPTypeZSet.class),
                 Objects.requireNonNull(expression), this.filter, this.map,
@@ -49,7 +50,7 @@ public final class DBSPJoinFilterMapOperator extends DBSPJoinBaseOperator {
     }
 
     @Override
-    public DBSPOperator withInputs(List<DBSPOperator> newInputs, boolean force) {
+    public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPJoinFilterMapOperator(
                     this.getNode(), this.getOutputZSetType(),

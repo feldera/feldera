@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.circuit.operator;
 
+import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
@@ -24,8 +25,8 @@ public final class DBSPHopOperator extends DBSPUnaryOperator {
     public DBSPHopOperator(CalciteObject node, int timestampIndex,
                            DBSPExpression interval,
                            DBSPExpression start, DBSPExpression size,
-                           DBSPTypeZSet outputType, DBSPOperator input) {
-        super(node, "hop", null, outputType, input.isMultiset, input);
+                           DBSPTypeZSet outputType, OutputPort input) {
+        super(node, "hop", null, outputType, input.isMultiset(), input);
         this.timestampIndex = timestampIndex;
         this.interval = interval;
         this.start = start;
@@ -55,7 +56,7 @@ public final class DBSPHopOperator extends DBSPUnaryOperator {
     }
 
     @Override
-    public DBSPOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
+    public DBSPSimpleOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
         return new DBSPHopOperator(
                 this.getNode(), this.timestampIndex, this.interval, this.start, this.size,
                 outputType.to(DBSPTypeZSet.class), this.input())
@@ -63,7 +64,7 @@ public final class DBSPHopOperator extends DBSPUnaryOperator {
     }
 
     @Override
-    public DBSPOperator withInputs(List<DBSPOperator> newInputs, boolean force) {
+    public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPHopOperator(
                     this.getNode(), this.timestampIndex, this.interval, this.start, this.size,

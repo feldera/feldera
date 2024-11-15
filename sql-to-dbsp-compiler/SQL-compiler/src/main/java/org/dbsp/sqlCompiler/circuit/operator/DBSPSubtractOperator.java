@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.circuit.operator;
 
+import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -34,11 +35,11 @@ import javax.annotation.Nullable;
 import java.util.List;
 
 public final class DBSPSubtractOperator extends DBSPBinaryOperator {
-    public DBSPSubtractOperator(CalciteObject node, DBSPOperator left, DBSPOperator right) {
-        super(node, "minus", null, left.outputType, false, left, right);
-        if (!left.outputType.sameType(right.outputType))
-            throw new InternalCompilerError("Inputs do not have the same type " + left.outputType +
-                    " and " + right.outputType, this);
+    public DBSPSubtractOperator(CalciteObject node, OutputPort left, OutputPort right) {
+        super(node, "minus", null, left.outputType(), false, left, right);
+        if (!left.outputType().sameType(right.outputType()))
+            throw new InternalCompilerError("Inputs do not have the same type " + left.outputType() +
+                    " and " + right.outputType(), this);
     }
 
     @Override
@@ -51,12 +52,12 @@ public final class DBSPSubtractOperator extends DBSPBinaryOperator {
     }
 
     @Override
-    public DBSPOperator withFunction(@Nullable DBSPExpression unused, DBSPType outputType) {
+    public DBSPSimpleOperator withFunction(@Nullable DBSPExpression unused, DBSPType outputType) {
         return this;
     }
 
     @Override
-    public DBSPOperator withInputs(List<DBSPOperator> newInputs, boolean force) {
+    public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPSubtractOperator(
                     this.getNode(), newInputs.get(0), newInputs.get(1)).copyAnnotations(this);

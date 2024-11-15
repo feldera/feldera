@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.circuit.operator;
 
+import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
@@ -39,7 +40,7 @@ public final class DBSPAggregateOperator extends DBSPAggregateOperatorBase {
             CalciteObject node,
             DBSPTypeIndexedZSet outputType,
             @Nullable DBSPExpression function,
-            @Nullable DBSPAggregate aggregate, DBSPOperator input) {
+            @Nullable DBSPAggregate aggregate, OutputPort input) {
         super(node, "aggregate", outputType,
                 function, aggregate, false, input);
     }
@@ -54,7 +55,7 @@ public final class DBSPAggregateOperator extends DBSPAggregateOperatorBase {
     }
 
     @Override
-    public DBSPOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
+    public DBSPSimpleOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
         DBSPTypeIndexedZSet ix = outputType.to(DBSPTypeIndexedZSet.class);
         return new DBSPAggregateOperator(
                 this.getNode(), ix,
@@ -63,7 +64,7 @@ public final class DBSPAggregateOperator extends DBSPAggregateOperatorBase {
     }
 
     @Override
-    public DBSPOperator withInputs(List<DBSPOperator> newInputs, boolean force) {
+    public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPAggregateOperator(
                     this.getNode(), this.outputType.to(DBSPTypeIndexedZSet.class),

@@ -30,6 +30,7 @@ import org.apache.calcite.schema.Function;
 import org.apache.calcite.schema.Table;
 import org.apache.calcite.schema.impl.AbstractSchema;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateRelationStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.FrontEndStatement;
 import org.dbsp.util.Utilities;
 
@@ -39,17 +40,13 @@ import java.util.Map;
 /** Maintains the catalog: a mapping from names to objects. */
 // I am not sure this class is needed.
 public class Catalog extends AbstractSchema {
-    private static int crtid = 0;
-
     public final String schemaName;
-    private final int id;
     private final Map<String, Table> tableMap;
     private final Map<String, FrontEndStatement> definition;
     private final Multimap<String, Function> functionMap;
     private final Map<String, RelProtoDataType> typeMap;
 
     public Catalog(String schemaName) {
-        this.id = crtid++;
         this.schemaName = schemaName;
         this.tableMap = new HashMap<>();
         this.definition = new HashMap<>();
@@ -58,7 +55,6 @@ public class Catalog extends AbstractSchema {
     }
 
     public Catalog(Catalog other) {
-        this.id = crtid++;
         this.schemaName = other.schemaName;
         this.tableMap = new HashMap<>(other.tableMap);
         this.definition = new HashMap<>(other.definition);
@@ -72,14 +68,16 @@ public class Catalog extends AbstractSchema {
                     Utilities.singleQuote(name) + " already defined");
             FrontEndStatement previous = this.definition.get(name);
             reporter.reportError(previous.getPosition(), "Duplicate declaration",
-                    "Location of previous definition");
+                    "Location of previous definition", true);
             return false;
         }
         this.definition.put(name, statement);
         return true;
     }
 
-    public boolean addTable(String name, Table table, IErrorReporter reporter, FrontEndStatement statement) {
+    public boolean addTable(CreateRelationStatement statement, IErrorReporter reporter) {
+        String name = statement.getName();
+        Table table = statement.getEmulatedTable();
         this.tableMap.put(name, table);
         return this.addDefinition(name, reporter, statement);
     }

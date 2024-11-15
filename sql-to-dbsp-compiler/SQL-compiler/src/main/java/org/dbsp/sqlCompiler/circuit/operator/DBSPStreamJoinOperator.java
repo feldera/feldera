@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.circuit.operator;
 
+import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
@@ -38,7 +39,7 @@ public final class DBSPStreamJoinOperator extends DBSPJoinBaseOperator {
     public DBSPStreamJoinOperator(CalciteObject node, DBSPTypeZSet outputType,
                                   // Closure from key, valueLeft, valueRight to result type
                                   DBSPExpression function, boolean isMultiset,
-                                  DBSPOperator left, DBSPOperator right) {
+                                  OutputPort left, OutputPort right) {
         super(node, "stream_join", function, outputType, isMultiset, left, right);
         DBSPType elementResultType = this.getOutputZSetElementType();
         this.checkResultType(function, elementResultType);
@@ -54,7 +55,7 @@ public final class DBSPStreamJoinOperator extends DBSPJoinBaseOperator {
     }
 
     @Override
-    public DBSPOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
+    public DBSPSimpleOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
         return new DBSPStreamJoinOperator(
                 this.getNode(), outputType.to(DBSPTypeZSet.class),
                 Objects.requireNonNull(expression),
@@ -62,7 +63,7 @@ public final class DBSPStreamJoinOperator extends DBSPJoinBaseOperator {
     }
 
     @Override
-    public DBSPOperator withInputs(List<DBSPOperator> newInputs, boolean force) {
+    public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPStreamJoinOperator(
                     this.getNode(), this.getOutputZSetType(),

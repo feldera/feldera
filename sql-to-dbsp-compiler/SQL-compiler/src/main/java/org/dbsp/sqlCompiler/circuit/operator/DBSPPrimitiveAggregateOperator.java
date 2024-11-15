@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.circuit.operator;
 
+import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
@@ -15,19 +16,19 @@ import java.util.List;
 public final class DBSPPrimitiveAggregateOperator extends DBSPBinaryOperator {
     public DBSPPrimitiveAggregateOperator(
             CalciteObject node, @Nullable DBSPExpression function, DBSPType outputType,
-            DBSPOperator delta, DBSPOperator integral) {
+            OutputPort delta, OutputPort integral) {
         super(node, "AggregateIncremental", function, outputType, false, delta, integral);
         assert delta.getOutputIndexedZSetType().sameType(integral.getOutputIndexedZSetType());
     }
 
     @Override
-    public DBSPOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
+    public DBSPSimpleOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
         return new DBSPPrimitiveAggregateOperator(this.getNode(), expression,
                 outputType, this.left(), this.right()).copyAnnotations(this);
     }
 
     @Override
-    public DBSPOperator withInputs(List<DBSPOperator> newInputs, boolean force) {
+    public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
         assert newInputs.size() == 2: "Expected 2 inputs";
         if (force || this.inputsDiffer(newInputs))
             return new DBSPPrimitiveAggregateOperator(this.getNode(), this.function,

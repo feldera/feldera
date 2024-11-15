@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.circuit.operator;
 
+import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.frontend.ExpressionCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -23,20 +24,20 @@ public final class DBSPIntegrateTraceRetainValuesOperator
         extends DBSPBinaryOperator implements GCOperator {
     public DBSPIntegrateTraceRetainValuesOperator(
             CalciteObject node, DBSPExpression function,
-            DBSPOperator data, DBSPOperator control) {
+            OutputPort data, OutputPort control) {
         super(node, "integrate_trace_retain_values",
-                function, data.getType(), data.isMultiset, data, control);
+                function, data.outputType(), data.isMultiset(), data, control);
     }
 
     public static DBSPIntegrateTraceRetainValuesOperator create(
-            CalciteObject node, DBSPOperator data, IMaybeMonotoneType dataProjection, DBSPOperator control) {
-        DBSPType controlType = control.getType();
+            CalciteObject node, OutputPort data, IMaybeMonotoneType dataProjection, OutputPort control) {
+        DBSPType controlType = control.outputType();
         assert controlType.is(DBSPTypeTupleBase.class) : "Control type is not a tuple: " + controlType;
         DBSPTypeTupleBase controlTuple = controlType.to(DBSPTypeTupleBase.class);
         assert controlTuple.size() == 2;
 
         DBSPVariablePath controlArg = controlType.ref().var();
-        assert data.outputType.is(DBSPTypeIndexedZSet.class);
+        assert data.outputType().is(DBSPTypeIndexedZSet.class);
         DBSPType valueType = data.getOutputIndexedZSetType().elementType;
         DBSPVariablePath dataArg = valueType.var();
         DBSPParameter param = new DBSPParameter(dataArg.variable, dataArg.getType().ref());
@@ -54,14 +55,14 @@ public final class DBSPIntegrateTraceRetainValuesOperator
     }
 
     @Override
-    public DBSPOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
+    public DBSPSimpleOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
         return new DBSPIntegrateTraceRetainValuesOperator(
                 this.getNode(), Objects.requireNonNull(expression),
                 this.left(), this.right());
     }
 
     @Override
-    public DBSPOperator withInputs(List<DBSPOperator> newInputs, boolean force) {
+    public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
         assert newInputs.size() == 2: "Expected 2 inputs, got " + newInputs.size();
         if (force || this.inputsDiffer(newInputs))
             return new DBSPIntegrateTraceRetainValuesOperator(

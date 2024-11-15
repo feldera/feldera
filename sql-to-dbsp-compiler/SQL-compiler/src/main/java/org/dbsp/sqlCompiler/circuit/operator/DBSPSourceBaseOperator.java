@@ -30,7 +30,7 @@ import org.dbsp.util.IIndentStream;
 import javax.annotation.Nullable;
 
 /** Base class for source operators. */
-public abstract class DBSPSourceBaseOperator extends DBSPOperator {
+public abstract class DBSPSourceBaseOperator extends DBSPSimpleOperator {
     public final String tableName;
 
     /** Create a DBSP operator that is a source to the dataflow graph.

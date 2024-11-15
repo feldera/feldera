@@ -25,16 +25,20 @@ package org.dbsp.sqlCompiler.compiler.backend.rust;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.DBSPPartialCircuit;
+import org.dbsp.sqlCompiler.circuit.annotation.Recursive;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAsofJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPBinaryOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPChainAggregateOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPControlledFilterOperator;
 import org.dbsp.sqlCompiler.circuit.DBSPDeclaration;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPDeltaOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDistinctOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinBaseOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIndexedTopKOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperator;
@@ -43,15 +47,17 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPLagOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNowOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateWithWaterlineOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPViewDeclarationOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSumOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewBaseOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPViewOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWaterlineOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
@@ -359,7 +365,7 @@ public class ToRustVisitor extends CircuitVisitor {
         this.builder.newline();
     }
 
-    String handleName(DBSPOperator operator) {
+    String handleName(DBSPSimpleOperator operator) {
         return "handle" + operator.id;
     }
 
@@ -394,7 +400,7 @@ public class ToRustVisitor extends CircuitVisitor {
             signature.append("Catalog");
         } else {
             signature.append("(");
-            for (DBSPOperator input: circuit.sourceOperators.values()) {
+            for (DBSPSimpleOperator input: circuit.sourceOperators.values()) {
                 DBSPType type;
                 DBSPTypeZSet zset = input.outputType.as(DBSPTypeZSet.class);
                 if (zset != null) {
@@ -411,7 +417,7 @@ public class ToRustVisitor extends CircuitVisitor {
                 signature.append(", ");
             }
             for (DBSPViewBaseOperator output: circuit.sinkOperators.values()) {
-                DBSPType outputType = output.input().outputType;
+                DBSPType outputType = output.input().outputType();
                 signature.append("OutputHandle<");
                 outputType.accept(inner);
                 signature.append(">, ");
@@ -466,6 +472,54 @@ public class ToRustVisitor extends CircuitVisitor {
         return VisitDecision.STOP;
     }
 
+    @Override
+    public VisitDecision preorder(DBSPDeltaOperator delta) {
+        this.builder.append("let ")
+                .append(delta.getOutputName())
+                .append(" = ")
+                .append(delta.input().getOutputName())
+                .append(".delta0(child);")
+                .newline();
+        return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPNestedOperator circuit) {
+        boolean recursive = circuit.hasAnnotation(a -> a.is(Recursive.class));
+        if (!recursive)
+            throw new InternalCompilerError("NestedOperator not recursive");
+
+        this.builder.append("let (");
+        for (int i = 0; i < circuit.outputCount(); i++) {
+            this.builder.append(circuit.getOutputName(i)).append(", ");
+        }
+        this.builder.append(") = ")
+                .append("circuit.recursive(|child, (");
+        for (DBSPViewDeclarationOperator decl: circuit.viewDeclarations) {
+            this.builder.append(decl.getOutputName()).append(", ");
+        }
+        this.builder.append("): (");
+        for (int i = 0; i < circuit.outputCount(); i++) {
+            circuit.streamType(i).accept(this.innerVisitor);
+            this.builder.append(", ");
+        }
+        this.builder.append(")| {").increase().newline();
+        for (IDBSPNode node : circuit.getAllOperators())
+            this.processNode(node);
+
+        this.builder.append("Ok((");
+        for (int i = 0; i < circuit.outputCount(); i++) {
+            this.builder
+                    .append(circuit.outputs.get(i).getOutputName())
+                    .append(", ");
+        }
+        this.builder.append("))").newline()
+                .decrease()
+                .append("}).unwrap();")
+                .newline();
+        return VisitDecision.STOP;
+    }
+
     void findNestedStructs(DBSPTypeStruct struct, List<DBSPTypeStruct> result) {
         for (DBSPTypeStruct str: result)
             if (str.name.equals(struct.name))
@@ -506,7 +560,7 @@ public class ToRustVisitor extends CircuitVisitor {
     @Override
     public VisitDecision preorder(DBSPSourceMultisetOperator operator) {
         DBSPTypeStruct type = operator.originalRowType;
-        if (!this.options.ioOptions.emitHandles)
+        if (!this.useHandles)
             this.generateStructHelpers(type, operator.metadata);
 
         this.writeComments(operator)
@@ -544,19 +598,25 @@ public class ToRustVisitor extends CircuitVisitor {
     }
 
     @Override
+    public VisitDecision preorder(DBSPViewDeclarationOperator operator) {
+        // No output produced
+        return VisitDecision.STOP;
+    }
+
+    @Override
     public VisitDecision preorder(DBSPSourceMapOperator operator) {
         DBSPTypeStruct type = operator.originalRowType;
-        if (!this.options.ioOptions.emitHandles)
+        if (!this.useHandles)
             this.generateStructHelpers(type, operator.metadata);
 
         DBSPTypeStruct keyStructType = operator.getKeyStructType(
                 operator.originalRowType.sanitizedName + "_key");
-        if (!this.options.ioOptions.emitHandles)
+        if (!this.useHandles)
             this.generateStructHelpers(keyStructType, operator.metadata);
 
         DBSPTypeStruct upsertStruct = operator.getStructUpsertType(
                 operator.originalRowType.sanitizedName + "_upsert");
-        if (!this.options.ioOptions.emitHandles)
+        if (!this.useHandles)
             this.generateStructHelpers(upsertStruct, operator.metadata);
 
         this.writeComments(operator)
@@ -762,7 +822,7 @@ public class ToRustVisitor extends CircuitVisitor {
     public VisitDecision preorder(DBSPSinkOperator operator) {
         this.writeComments(operator);
         DBSPTypeStruct type = operator.originalRowType;
-        if (!this.options.ioOptions.emitHandles)
+        if (!this.useHandles)
             this.generateStructHelpers(type, null);
         if (!this.useHandles) {
             IHasSchema description = this.metadata.getViewDescription(operator.viewName);
@@ -796,7 +856,7 @@ public class ToRustVisitor extends CircuitVisitor {
     }
 
     @Override
-    public VisitDecision preorder(DBSPOperator operator) {
+    public VisitDecision preorder(DBSPSimpleOperator operator) {
         FindComparators compFinder = new FindComparators(this.errorReporter);
         FindStatics staticsFinder = new FindStatics(this.errorReporter);
         if (operator.function != null) {
@@ -1238,6 +1298,17 @@ public class ToRustVisitor extends CircuitVisitor {
     }
 
     @Override
+    public VisitDecision preorder(DBSPViewOperator operator) {
+        this.builder.append("let ")
+                .append(operator.getOutputName())
+                .append(" = ")
+                .append(operator.input().getOutputName())
+                .append(";")
+                .newline();
+        return VisitDecision.STOP;
+    }
+
+    @Override
     public VisitDecision preorder(DBSPSumOperator operator) {
         this.writeComments(operator)
                     .append("let ")
@@ -1267,7 +1338,7 @@ public class ToRustVisitor extends CircuitVisitor {
         return this.builder.intercalate("\n", parts);
     }
 
-     IIndentStream writeComments(DBSPOperator operator) {
+     IIndentStream writeComments(DBSPSimpleOperator operator) {
         return this.writeComments(operator.getClass().getSimpleName() +
                 " " + operator.getIdString() +
                 (operator.comment != null ? "\n" + operator.comment : ""));
@@ -1320,7 +1391,7 @@ public class ToRustVisitor extends CircuitVisitor {
         }
     }
 
-    VisitDecision constantLike(DBSPOperator operator) {
+    VisitDecision constantLike(DBSPSimpleOperator operator) {
         assert operator.function != null;
         builder.append("let ")
                 .append(operator.getOutputName())

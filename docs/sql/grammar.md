@@ -19,6 +19,7 @@ statementList:
 
 statement
   :   createTableStatement
+  |   declareRecursiveViewStatement
   |   createViewStatement
   |   createFunctionStatement
   |   createTypeStatement
@@ -179,7 +180,16 @@ stream of changes.
 Such materialized views can be browsed and queried at runtime.
 See [Materialized Tables and Views](materialized.md) for more details.
 
+`CREATE RECURSIVE VIEW` is used to declare a view that can afterwards
+be used in a recursive SQL query.  The syntax of this statement is
+reminiscent of a table declaration, without constraints.  Recursive
+queries are documented in [this section](recursive.md).
+
 ```
+declareRecursiveViewStatement:
+  :   CREATE RECURSIVE VIEW name
+      '(' columnDecl [, columnDecl ]* ')'
+
 createViewStatement
   :   CREATE [ LOCAL | MATERIALIZED ] VIEW name
       [ '(' columnName [, columnName ]* ')' ]

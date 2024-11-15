@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.circuit.operator;
 
+import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
@@ -30,25 +31,25 @@ public final class DBSPApplyOperator extends DBSPUnaryOperator {
     }
 
     public DBSPApplyOperator(CalciteObject node, DBSPClosureExpression function,
-                             DBSPType outputType, DBSPOperator input, @Nullable String comment) {
+                             DBSPType outputType, OutputPort input, @Nullable String comment) {
         super(node, "apply", function, outputType, false, input, comment);
         assert function.parameters.length == 1: "Expected 1 parameter for function " + function;
         DBSPType paramType = function.parameters[0].getType().deref();
-        assert input.outputType.sameType(paramType) :
-                "Parameter type " + paramType + " does not match input type " + input.outputType;
-        noZsets(input.outputType);
-        noZsets(this.outputType);
+        assert input.outputType().sameType(paramType) :
+                "Parameter type " + paramType + " does not match input type " + input.outputType();
+        noZsets(input.outputType());
+        noZsets(this.outputType());
         assert function.getResultType().sameType(outputType) :
                 "Function return type " + function.getResultType() + " does not match output type " + outputType;
     }
 
     public DBSPApplyOperator(CalciteObject node, DBSPClosureExpression function,
-                             DBSPOperator input, @Nullable String comment) {
+                             OutputPort input, @Nullable String comment) {
         this(node, function, function.getResultType(), input, comment);
     }
 
     @Override
-    public DBSPOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
+    public DBSPSimpleOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
         return new DBSPApplyOperator(
                 this.getNode(), Objects.requireNonNull(expression).to(DBSPClosureExpression.class),
                 outputType, this.input(), this.comment)
@@ -56,7 +57,7 @@ public final class DBSPApplyOperator extends DBSPUnaryOperator {
     }
 
     @Override
-    public DBSPOperator withInputs(List<DBSPOperator> newInputs, boolean force) {
+    public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
         assert newInputs.size() == 1: "Expected 1 input " + newInputs;
         if (force || this.inputsDiffer(newInputs)) {
             return new DBSPApplyOperator(

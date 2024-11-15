@@ -18,7 +18,11 @@ public class Repeat implements IWritesLogs, CircuitTransform {
 
     @Override
     public DBSPCircuit apply(DBSPCircuit circuit) {
-        int maxRepeats = circuit.size();
+        // In some cases more repeats are needed.
+        // Some optimizations may require a number of iterations given by the size of the circuit
+        // but some may require a number of iterations that depends on the complexity of the
+        // inner expressions.  ConvertCasts is such an example */
+        int maxRepeats = Math.max(circuit.size(), 10);
         int repeats = 0;
         while (true) {
             DBSPCircuit result = this.transform.apply(circuit);
@@ -33,7 +37,7 @@ public class Repeat implements IWritesLogs, CircuitTransform {
             circuit = result;
             repeats++;
             if (repeats == maxRepeats) {
-                this.errorReporter.reportWarning(SourcePositionRange.INVALID,
+                this.errorReporter.reportError(SourcePositionRange.INVALID,
                         "InfiniteLoop",
                         "Repeated optimization " + this.transform + " " +
                         repeats + " times without convergence");
@@ -45,5 +49,10 @@ public class Repeat implements IWritesLogs, CircuitTransform {
     @Override
     public String toString() {
         return "Repeat " + this.transform;
+    }
+
+    @Override
+    public String getName() {
+        return "Repeat_" + this.transform.getName();
     }
 }

@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.circuit.operator;
 
+import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
@@ -34,7 +35,7 @@ public final class DBSPPartitionedRollingAggregateOperator extends DBSPAggregate
             // The output type of partitioned_rolling_aggregate cannot actually be represented using
             // the current IR, so this type is a lie.
             DBSPTypeIndexedZSet outputType,
-            DBSPOperator input) {
+            OutputPort input) {
         super(node, "partitioned_rolling_aggregate", outputType, function, aggregate, true, input);
         this.lower = lower;
         this.upper = upper;
@@ -43,7 +44,7 @@ public final class DBSPPartitionedRollingAggregateOperator extends DBSPAggregate
     }
 
     @Override
-    public DBSPOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
+    public DBSPSimpleOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
         return new DBSPPartitionedRollingAggregateOperator(
                 this.getNode(), this.partitioningFunction,
                 expression, this.aggregate, this.lower, this.upper,
@@ -52,7 +53,7 @@ public final class DBSPPartitionedRollingAggregateOperator extends DBSPAggregate
     }
 
     @Override
-    public DBSPOperator withInputs(List<DBSPOperator> newInputs, boolean force) {
+    public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPPartitionedRollingAggregateOperator(
                     this.getNode(), this.partitioningFunction, this.function, this.aggregate,

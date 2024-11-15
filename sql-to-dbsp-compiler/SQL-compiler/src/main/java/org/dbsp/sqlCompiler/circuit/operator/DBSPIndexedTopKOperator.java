@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.circuit.operator;
 
+import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -58,18 +59,19 @@ public final class DBSPIndexedTopKOperator extends DBSPUnaryOperator {
      */
     public DBSPIndexedTopKOperator(CalciteObject node, TopKNumbering numbering,
                                    DBSPComparatorExpression comparator, DBSPExpression limit,
-                                   @Nullable DBSPClosureExpression outputProducer, DBSPOperator source) {
+                                   @Nullable DBSPClosureExpression outputProducer, OutputPort source) {
         super(node, "topK", comparator,
-                outputType(source.getOutputIndexedZSetType(), outputProducer), source.isMultiset, source);
+                outputType(source.getOutputIndexedZSetType(), outputProducer), source.isMultiset(), source);
         this.limit = limit;
         this.numbering = numbering;
         this.outputProducer = outputProducer;
         if (!this.outputType.is(DBSPTypeIndexedZSet.class))
-            throw new InternalCompilerError("Expected the input to be an IndexedZSet type", source.outputType);
+            throw new InternalCompilerError("Expected the input to be an IndexedZSet type",
+                    source.outputType());
     }
 
     @Override
-    public DBSPOperator withInputs(List<DBSPOperator> newInputs, boolean force) {
+    public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPIndexedTopKOperator(this.getNode(), this.numbering,
                     this.getFunction().to(DBSPComparatorExpression.class),
@@ -90,7 +92,7 @@ public final class DBSPIndexedTopKOperator extends DBSPUnaryOperator {
     }
 
     @Override
-    public DBSPOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
+    public DBSPSimpleOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
         return new DBSPIndexedTopKOperator(this.getNode(), this.numbering,
                 Objects.requireNonNull(expression).to(DBSPComparatorExpression.class), this.limit,
                 this.outputProducer, this.input()).copyAnnotations(this);

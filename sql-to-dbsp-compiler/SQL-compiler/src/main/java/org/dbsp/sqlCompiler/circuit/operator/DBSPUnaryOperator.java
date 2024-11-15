@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.circuit.operator;
 
+import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -30,10 +31,10 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import javax.annotation.Nullable;
 
 /** Base class for all DBSP query operators that have a single input. */
-public abstract class DBSPUnaryOperator extends DBSPOperator {
+public abstract class DBSPUnaryOperator extends DBSPSimpleOperator {
     protected DBSPUnaryOperator(CalciteObject node, String operation,
                                 @Nullable DBSPExpression function, DBSPType outputType,
-                                boolean isMultiset, DBSPOperator source) {
+                                boolean isMultiset, OutputPort source) {
         super(node, operation, function, outputType, isMultiset);
         this.addInput(source);
     }
@@ -41,7 +42,7 @@ public abstract class DBSPUnaryOperator extends DBSPOperator {
     @SuppressWarnings("SameParameterValue")
     protected DBSPUnaryOperator(CalciteObject node, String operation,
                                 @Nullable DBSPExpression function, DBSPType outputType,
-                                boolean isMultiset, DBSPOperator source,
+                                boolean isMultiset, OutputPort source,
                                 @Nullable String comment) {
         super(node, operation, function, outputType, isMultiset, comment);
         this.addInput(source);
@@ -49,12 +50,12 @@ public abstract class DBSPUnaryOperator extends DBSPOperator {
 
     // Default implementation.
     @Override
-    public DBSPOperator withFunction(@Nullable DBSPExpression unused, DBSPType outputType) {
+    public DBSPSimpleOperator withFunction(@Nullable DBSPExpression unused, DBSPType outputType) {
         return this;
     }
 
     /** The only input of this operator. */
-    public DBSPOperator input() {
+    public OutputPort input() {
         return this.inputs.get(0);
     }
 }

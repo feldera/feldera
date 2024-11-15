@@ -89,7 +89,8 @@ where
 
 // TODO: `impl RecursiveStreams for Vec<Stream>`.
 
-#[impl_for_tuples(2, 12)]
+#[allow(clippy::unused_unit)]
+#[impl_for_tuples(12)]
 #[tuple_types_custom_trait_bound(Clone + RecursiveStreams<C>)]
 impl<C> RecursiveStreams<C> for Tuple {
     for_tuples!( type Feedback = ( #( Tuple::Feedback ),* ); );

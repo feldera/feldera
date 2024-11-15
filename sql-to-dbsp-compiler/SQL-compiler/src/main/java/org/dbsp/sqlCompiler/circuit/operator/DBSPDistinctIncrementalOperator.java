@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.circuit.operator;
 
+import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
@@ -13,8 +14,8 @@ import java.util.List;
 @NonCoreIR
 public final class DBSPDistinctIncrementalOperator extends DBSPBinaryOperator {
     // In the DBSP paper this operator was called H
-    public DBSPDistinctIncrementalOperator(CalciteObject node, DBSPOperator integral, DBSPOperator delta) {
-        super(node, "distinct_incremental", null, delta.outputType, false, integral, delta);
+    public DBSPDistinctIncrementalOperator(CalciteObject node, OutputPort integral, OutputPort delta) {
+        super(node, "distinct_incremental", null, delta.outputType(), false, integral, delta);
     }
 
     @Override
@@ -27,12 +28,12 @@ public final class DBSPDistinctIncrementalOperator extends DBSPBinaryOperator {
     }
 
     @Override
-    public DBSPOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
+    public DBSPSimpleOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
         return this;
     }
 
     @Override
-    public DBSPOperator withInputs(List<DBSPOperator> newInputs, boolean force) {
+    public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
         assert newInputs.size() == 2;
         if (force || this.inputsDiffer(newInputs))
             return new DBSPDistinctIncrementalOperator(

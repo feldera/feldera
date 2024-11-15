@@ -1,6 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.visitors.inner.monotone;
 
-import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
@@ -114,7 +114,7 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
     final ArgumentKind argumentKind;
     /** Operator where the analyzed closure originates from.
      * Only used for debugging. */
-    final DBSPOperator operator;
+    final DBSPSimpleOperator operator;
 
     /** Create a visitor to analyze the monotonicity of a closure
      * @param reporter      Error reporter.
@@ -124,7 +124,7 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
      *                      a source for this function.
      * @param argumentKind  Describes the arguments of the analyzed function. */
     public MonotoneTransferFunctions(IErrorReporter reporter,
-                                     DBSPOperator operator,
+                                     DBSPSimpleOperator operator,
                                      ArgumentKind argumentKind,
                                      IMaybeMonotoneType... parameterTypes) {
         super(reporter);

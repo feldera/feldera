@@ -9,10 +9,10 @@ public class LatenessStatement extends FrontEndStatement {
     public final SqlIdentifier column;
     public final RexNode value;
 
-    public LatenessStatement(CalciteCompiler.ParsedStatement node, String statement,
+    public LatenessStatement(CalciteCompiler.ParsedStatement node,
                              SqlIdentifier view, SqlIdentifier column,
                              RexNode value) {
-        super(node, statement);
+        super(node);
         this.view = view;
         this.column = column;
         this.value = value;

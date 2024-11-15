@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.circuit.operator;
 
+import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
@@ -15,20 +16,20 @@ public class DBSPChainAggregateOperator extends DBSPUnaryOperator {
     public final DBSPClosureExpression init;
 
     public DBSPChainAggregateOperator(CalciteObject node, DBSPClosureExpression init,
-                                      DBSPClosureExpression function, DBSPType outputType, DBSPOperator source) {
+                                      DBSPClosureExpression function, DBSPType outputType, OutputPort source) {
         super(node, "chain_aggregate", function, outputType, false, source);
         this.init = init;
         assert init.parameters.length == 2;
         assert function.parameters.length == 3;
         assert init.getResultType().sameType(function.getResultType());
         assert outputType.is(DBSPTypeIndexedZSet.class);
-        assert source.outputType.is(DBSPTypeIndexedZSet.class);
+        assert source.outputType().is(DBSPTypeIndexedZSet.class);
         assert source.getOutputIndexedZSetType().keyType.sameType(this.getOutputIndexedZSetType().keyType);
         this.checkResultType(function, this.getOutputIndexedZSetType().elementType);
     }
 
     @Override
-    public DBSPOperator withInputs(List<DBSPOperator> newInputs, boolean force) {
+    public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPChainAggregateOperator(this.getNode(), this.init, this.getClosureFunction(),
                     this.outputType, newInputs.get(0)).copyAnnotations(this);

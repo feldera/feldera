@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.circuit.operator;
 
+import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -34,19 +35,19 @@ import org.dbsp.util.Linq;
 import javax.annotation.Nullable;
 import java.util.List;
 
-public final class DBSPSumOperator extends DBSPOperator {
-    public DBSPSumOperator(CalciteObject node, List<DBSPOperator> inputs) {
-        super(node, "sum", null, inputs.get(0).outputType, true);
-        for (DBSPOperator op: inputs) {
+public final class DBSPSumOperator extends DBSPSimpleOperator {
+    public DBSPSumOperator(CalciteObject node, List<OutputPort> inputs) {
+        super(node, "sum", null, inputs.get(0).outputType(), true);
+        for (OutputPort op: inputs) {
             this.addInput(op);
-            if (!op.outputType.sameType(this.outputType)) {
-                throw new InternalCompilerError("Sum operator input type " + op.outputType +
+            if (!op.outputType().sameType(this.outputType)) {
+                throw new InternalCompilerError("Sum operator input type " + op.outputType() +
                         " does not match output type " + this.outputType, this);
             }
         }
     }
 
-    public DBSPSumOperator(CalciteObject node, DBSPOperator... inputs) {
+    public DBSPSumOperator(CalciteObject node, OutputPort... inputs) {
         this(node, Linq.list(inputs));
     }
 
@@ -60,23 +61,18 @@ public final class DBSPSumOperator extends DBSPOperator {
     }
 
     @Override
-    public DBSPOperator withFunction(@Nullable DBSPExpression unused, DBSPType outputType) {
+    public DBSPSimpleOperator withFunction(@Nullable DBSPExpression unused, DBSPType outputType) {
         return this;
     }
 
     @Override
-    public DBSPOperator withInputs(List<DBSPOperator> newInputs, boolean force) {
+    public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
         boolean different = force;
         if (newInputs.size() != this.inputs.size())
             // Sum can have any number of inputs
             different = true;
         if (!different) {
-            for (boolean b : Linq.zip(this.inputs, newInputs, (l, r) -> l != r)) {
-                if (b) {
-                    different = true;
-                    break;
-                }
-            }
+            different = this.inputsDiffer(newInputs);
         }
         if (different)
             return new DBSPSumOperator(this.getNode(), newInputs).copyAnnotations(this);

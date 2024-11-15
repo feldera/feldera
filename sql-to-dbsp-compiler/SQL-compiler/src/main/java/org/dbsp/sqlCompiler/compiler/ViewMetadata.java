@@ -10,11 +10,14 @@ public class ViewMetadata {
     public final SqlCreateView.ViewKind viewKind;
     // Only valid if positive
     public final int emitFinalColumn;
+    public final boolean recursive;
 
-    public ViewMetadata(List<ViewColumnMetadata> columns, SqlCreateView.ViewKind viewKind, int emitFinalColumn) {
+    public ViewMetadata(List<ViewColumnMetadata> columns, SqlCreateView.ViewKind viewKind,
+                        int emitFinalColumn, boolean recursive) {
         this.columns = columns;
         this.viewKind = viewKind;
         this.emitFinalColumn = emitFinalColumn;
+        this.recursive = recursive;
     }
 
     public int size() {

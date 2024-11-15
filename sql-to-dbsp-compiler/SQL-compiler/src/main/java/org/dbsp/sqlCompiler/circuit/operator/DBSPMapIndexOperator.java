@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.circuit.operator;
 
+import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
@@ -44,8 +45,8 @@ public final class DBSPMapIndexOperator extends DBSPUnaryOperator {
      * @param input           Source operator. */
     public DBSPMapIndexOperator(CalciteObject node, DBSPExpression indexFunction,
                                 DBSPTypeIndexedZSet outputType,
-                                DBSPOperator input) {
-        this(node, indexFunction, outputType, input.isMultiset, input);
+                                OutputPort input) {
+        this(node, indexFunction, outputType, input.isMultiset(), input);
     }
 
     /** Create an MapIndexOperator
@@ -58,7 +59,7 @@ public final class DBSPMapIndexOperator extends DBSPUnaryOperator {
     public DBSPMapIndexOperator(CalciteObject node, DBSPExpression indexFunction,
                                 DBSPTypeIndexedZSet outputType,
                                 boolean isMultiset,
-                                DBSPOperator input) {
+                                OutputPort input) {
         super(node, "map_index", indexFunction, outputType, isMultiset, input);
         DBSPType outputElementType = outputType.getKVType();
         // Expression must return a tuple that is composed of a key and a value
@@ -81,7 +82,7 @@ public final class DBSPMapIndexOperator extends DBSPUnaryOperator {
     }
 
     @Override
-    public DBSPOperator withFunction(@Nullable DBSPExpression expression, DBSPType type) {
+    public DBSPSimpleOperator withFunction(@Nullable DBSPExpression expression, DBSPType type) {
         DBSPTypeIndexedZSet ixOutputType = type.to(DBSPTypeIndexedZSet.class);
         return new DBSPMapIndexOperator(
                 this.getNode(), Objects.requireNonNull(expression),
@@ -89,7 +90,8 @@ public final class DBSPMapIndexOperator extends DBSPUnaryOperator {
     }
 
     @Override
-    public DBSPOperator withInputs(List<DBSPOperator> newInputs, boolean force) {
+    public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
+        assert newInputs.size() == 1;
         if (force || this.inputsDiffer(newInputs))
             return new DBSPMapIndexOperator(
                     this.getNode(), this.getFunction(),

@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.circuit.operator;
 
+import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.TypeCompiler;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -26,8 +27,8 @@ public final class DBSPDeindexOperator extends DBSPUnaryOperator {
         return t.field(1).deref().applyClone().closure(t);
     }
 
-    public DBSPDeindexOperator(CalciteObject node, DBSPOperator input) {
-        super(node, "map", function(input.outputType),
+    public DBSPDeindexOperator(CalciteObject node, OutputPort input) {
+        super(node, "map", function(input.outputType()),
                 outputType(input.getOutputIndexedZSetType()), true, input);
     }
 
@@ -42,7 +43,7 @@ public final class DBSPDeindexOperator extends DBSPUnaryOperator {
 
     @CheckReturnValue
     @Override
-    public DBSPOperator withInputs(List<DBSPOperator> newInputs, boolean force) {
+    public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPDeindexOperator(this.getNode(), newInputs.get(0))
                     .copyAnnotations(this);

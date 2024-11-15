@@ -3,7 +3,8 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPHopOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
+import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.frontend.ExpressionCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.TypeCompiler;
@@ -34,7 +35,7 @@ public class ExpandHop extends CircuitCloneVisitor {
 
     @Override
     public void postorder(DBSPHopOperator operator) {
-        DBSPOperator source = this.mapped(operator.input());
+        OutputPort source = this.mapped(operator.input());
         CalciteObject node = operator.getNode();
 
         DBSPTypeTuple type = operator.getOutputZSetElementType().to(DBSPTypeTuple.class);
@@ -99,8 +100,8 @@ public class ExpandHop extends CircuitCloneVisitor {
                 "map", DBSPTypeAny.getDefault(), iter, toTuple);
         DBSPBlockExpression block = new DBSPBlockExpression(statements, makeTuple);
 
-        DBSPOperator result = new DBSPFlatMapOperator(node, block.closure(data),
-                TypeCompiler.makeZSet(type), map);
+        DBSPSimpleOperator result = new DBSPFlatMapOperator(node, block.closure(data),
+                TypeCompiler.makeZSet(type), map.outputPort());
         this.map(operator, result);
     }
 }
