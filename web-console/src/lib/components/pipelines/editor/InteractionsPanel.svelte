@@ -130,11 +130,13 @@
   {/snippet}
 
   {#snippet content()}
-    {@const TabComponent = tabs.find((tab) => tab[0] === currentTab.value)![2]!}
-    <div class="relative h-full">
-      <div class="absolute h-full w-full">
-        <TabComponent {pipeline} {metrics} {errors}></TabComponent>
+    {@const TabComponent = tabs.find((tab) => tab[0] === currentTab.value)?.[2]}
+    {#if TabComponent}
+      <div class="relative h-full">
+        <div class="absolute h-full w-full">
+          <TabComponent {pipeline} {metrics} {errors}></TabComponent>
+        </div>
       </div>
-    </div>
+    {/if}
   {/snippet}
 </Tabs>
