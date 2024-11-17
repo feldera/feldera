@@ -126,6 +126,7 @@ import java.nio.charset.Charset;
 import java.util.List;
 import java.util.Objects;
 
+import static org.apache.calcite.util.BuiltInMethod.SPLIT_PART;
 import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.NULL;
 import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.USER;
 
@@ -1047,6 +1048,12 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                         for (int i = 0; i < ops.size(); i++)
                             this.ensureString(ops, i);
                         return compileFunction(call, node, type, ops, 1, 2);
+                    case "split_part": {
+                        this.ensureString(ops, 0);
+                        this.ensureString(ops, 1);
+                        this.ensureInteger(ops, 2, 32);
+                        return compileFunction(call, node, type, ops, 3);
+                    }
                     case "overlay": {
                         // case "regexp_replace":
                         String module_prefix;

@@ -1065,7 +1065,90 @@ public class PostgresStringTests extends SqlIoTest {
                  yaoo""");
     }
 
-    // TODO: split_part
+    @Test
+    public void testSplitPart() {
+        this.qs("""
+            SELECT split_part('abc~@~def~@~ghi', '~@~', 1) AS result;
+             result
+            -------
+             abc
+            (1 row)
+            
+            SELECT split_part('abc~@~def~@~ghi', '~@~', -1) AS result;
+             result
+            -------
+             ghi
+            (1 row)
+
+            SELECT split_part('abc~@~def~@~ghi', '~@~', 2) AS result;
+             result
+            -------
+             def
+            (1 row)
+            
+            SELECT split_part('abc~@~def~@~ghi', '~@~', -2) AS result;
+             result
+            -------
+             def
+            (1 row)
+
+            SELECT split_part('abc~@~def~@~ghi', '~@~', 3) AS result;
+             result
+            -------
+             ghi
+            (1 row)
+            
+            SELECT split_part('abc~@~def~@~ghi', '~@~', -3) AS result;
+             result
+            -------
+             abc
+            (1 row)
+            
+            SELECT split_part('abc~@~def~@~ghi', '~@~', 4) AS result;
+             result
+            -------
+            \s
+            (1 row)
+            
+            SELECT split_part('abc~@~def~@~ghi', '~@~', -4) AS result;
+             result
+            -------
+            \s
+            (1 row)
+            
+            SELECT split_part('abc~@~def~@~ghi', '~@~', 0) AS result;
+             result
+            -------
+            \s
+            (1 row)
+            
+            SELECT split_part('abc~@~def~@~ghi', 'abc~@~def~@~ghi', 1) AS result;
+             result
+            -------
+            \s
+            (1 row)
+            
+            SELECT split_part('abc', 'abc', 1) AS result;
+             result
+            -------
+            \s
+            (1 row)
+            
+            SELECT split_part('abc', 'abc', 2) AS result;
+             result
+            -------
+            \s
+            (1 row)
+            
+            SELECT split_part('abc', 'n', 1) AS result;
+             result
+            -------
+             abc
+            (1 row)
+            """);
+    }
+
+
     // TODO: to_hex
     // TODO: sha, encode, decode
 

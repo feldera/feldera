@@ -187,6 +187,23 @@ addition to the normal way of `''`.
     <td><code>SPLIT('a|b|c|', '|')</code> => { 'a', 'b', 'c', '' }</td>
   </tr>
   <tr>
+    <td><code>SPLIT_PART(string, delimiter, n)</code></td>
+    <td>
+        This function uses 1-based indexing. It extracts the <code>n</code>'th part of the string by splitting it at each occurrence of the delimiter.
+        <ul>
+            <li><code>n = 1</code> refers to the first part of the string after splitting.</li>
+            <li><code>n = 2</code> refers to the second part, and so on.</li>
+            <li>If <code>n</code> is negative, it returns the <code>abs(n)</code>'th part from the end of the string.</li>
+            <li>If <code>n</code> is out of bounds, it returns an empty string.</li>
+        </ul>
+    </td>
+    <td>
+        <code>SPLIT_PART('a|b|c|', '|', 2)</code> => <code>b</code><br>
+        <code>SPLIT_PART('a|b|c|', '|', -2)</code> => <code>c</code><br>
+        <code>SPLIT_PART('a|b|c|', '|', 5)</code> => <code>''</code>
+    </td>
+  </tr>
+  <tr>
     <td><code>SUBSTRING (</code> string <code>[ FROM</code> start <code>] [ FOR</code> count<code> ] )</code></td>
     <td>Extracts the substring of string starting at the "start"'th character if that is specified, and stopping after "count" characters if the value is specified. At least one of "start" or "count" must be provided.  If "start" is negative, it is replaced with 1.  If "count" is negative the empty string is returned.  The index of the first character is 1.</td>
     <td><code>SUBSTRING('Thomas' from 2 for 3)</code> => <code>hom</code><br></br>

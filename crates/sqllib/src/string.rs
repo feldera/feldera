@@ -260,6 +260,22 @@ pub fn split1_(source: String) -> Vec<String> {
 
 some_function1!(split1, String, Vec<String>);
 
+pub fn split_part___(s: String, delimiter: String, n: i32) -> String {
+    let parts: Vec<String> = split2__(s, delimiter);
+    let part_count = parts.len() as i32;
+
+    // Handle negative indices
+    let n = if n < 0 { part_count + n + 1 } else { n };
+
+    if n <= 0 || n > part_count {
+        return String::new();
+    }
+
+    parts[(n - 1) as usize].to_string()
+}
+
+some_function3!(split_part, String, String, i32, String);
+
 pub fn array_to_string2_vec__(value: Vec<String>, separator: String) -> String {
     value.join(&separator)
 }
