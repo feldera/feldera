@@ -3,7 +3,7 @@ from .aggtst_base import TstView
 
 class aggtst_interval_max(TstView):
     def __init__(self):
-        # Validated on Postgres
+        # Result validation is not required for local views
         self.data = []
         self.sql = """CREATE LOCAL VIEW interval_max AS SELECT
                       MAX(c1_minus_c2) AS f_c1, 
@@ -31,7 +31,7 @@ class aggtst_interval_max_seconds(TstView):
                       
 class aggtst_interval_max_gby(TstView):
     def __init__(self):
-        # Validated on Postgres
+        # Result validation is not required for local views
         self.data = []
         self.sql = """CREATE LOCAL VIEW interval_max_gby AS SELECT
                       id,
@@ -65,7 +65,7 @@ class aggtst_interval_max_gby_seconds(TstView):
 
 class aggtst_interval_max_distinct(TstView):
     def __init__(self):
-        # Validated on Postgres
+        # Result validation is not required for local views
         self.data = []
         self.sql = """CREATE LOCAL VIEW interval_max_distinct AS SELECT
                       MAX(DISTINCT c1_minus_c2) AS f_c1, 
@@ -93,7 +93,7 @@ class aggtst_interval_max_distinct_seconds(TstView):
 
 class aggtst_interval_max_distinct_gby(TstView):
     def __init__(self):
-        # Validated on Postgres
+        # Result validation is not required for local views
         self.data = []
         self.sql = """CREATE LOCAL VIEW interval_max_distinct_gby AS SELECT
                       id,
@@ -127,7 +127,7 @@ class aggtst_interval_max_distinct_gby_seconds(TstView):
 
 class aggtst_interval_max_where(TstView):
     def __init__(self):
-        # Validated on Postgres
+        # Result validation is not required for local views
         self.data = []
         self.sql = """CREATE LOCAL VIEW interval_max_where AS SELECT
                       MAX(c1_minus_c2) FILTER(WHERE c1_minus_c2 > c2_minus_c1) AS f_c1, 
@@ -155,7 +155,7 @@ class aggtst_interval_max_where_seconds(TstView):
 
 class aggtst_interval_max_where_gby(TstView):
     def __init__(self):
-        # Validated on Postgres
+        # Result validation is not required for local views
         self.data = []
         self.sql = """CREATE LOCAL VIEW interval_max_where_gby AS SELECT
                       id,
