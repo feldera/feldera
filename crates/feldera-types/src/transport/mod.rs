@@ -3,6 +3,7 @@ pub mod datagen;
 pub mod delta_table;
 pub mod file;
 pub mod http;
+pub mod iceberg;
 pub mod kafka;
 pub mod nexmark;
 pub mod pubsub;

@@ -10,6 +10,7 @@ members = [
   "crates/sqllib",
   "sql-to-dbsp-compiler/lib/readers",
   "crates/datagen",
+  "crates/iceberg"
 ]
 exclude = [
   "sql-to-dbsp-compiler/temp",

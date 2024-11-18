@@ -98,7 +98,8 @@ pub fn input_transport_config_to_endpoint(
         | TransportConfig::KafkaOutput(_)
         | TransportConfig::DeltaTableInput(_)
         | TransportConfig::DeltaTableOutput(_)
-        | TransportConfig::HttpOutput => return Ok(None),
+        | TransportConfig::HttpOutput
+        | TransportConfig::IcebergInput(_) => return Ok(None),
     };
     if fault_tolerant && !endpoint.is_fault_tolerant() {
         return Err(anyhow!(

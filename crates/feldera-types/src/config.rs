@@ -10,6 +10,7 @@ use crate::transport::datagen::DatagenInputConfig;
 use crate::transport::delta_table::{DeltaTableReaderConfig, DeltaTableWriterConfig};
 use crate::transport::file::{FileInputConfig, FileOutputConfig};
 use crate::transport::http::HttpInputConfig;
+use crate::transport::iceberg::IcebergReaderConfig;
 use crate::transport::kafka::{KafkaInputConfig, KafkaOutputConfig};
 use crate::transport::nexmark::NexmarkInputConfig;
 use crate::transport::pubsub::PubSubInputConfig;
@@ -494,6 +495,8 @@ pub enum TransportConfig {
     S3Input(S3InputConfig),
     DeltaTableInput(DeltaTableReaderConfig),
     DeltaTableOutput(DeltaTableWriterConfig),
+    // Prevent rust from complaining about large size difference between enum variants.
+    IcebergInput(Box<IcebergReaderConfig>),
     Datagen(DatagenInputConfig),
     Nexmark(NexmarkInputConfig),
     /// Direct HTTP input: cannot be instantiated through API
@@ -516,6 +519,7 @@ impl TransportConfig {
             TransportConfig::S3Input(_) => "s3_input".to_string(),
             TransportConfig::DeltaTableInput(_) => "delta_table_input".to_string(),
             TransportConfig::DeltaTableOutput(_) => "delta_table_output".to_string(),
+            TransportConfig::IcebergInput(_) => "iceberg_input".to_string(),
             TransportConfig::Datagen(_) => "datagen".to_string(),
             TransportConfig::Nexmark(_) => "nexmark".to_string(),
             TransportConfig::HttpInput(_) => "http_input".to_string(),

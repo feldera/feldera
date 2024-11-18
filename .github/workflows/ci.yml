@@ -92,11 +92,13 @@ jobs:
           s3_access_key: ${{ secrets.ci_s3_aws_access_key }}
           s3_secret: ${{ secrets.ci_s3_aws_secret }}
 
-      # Ship secrets for the AWS CI account for the delta table output transport test to Earthly.
-      - name: Delta output S3 secrets
+      # Ship secrets for the AWS CI account for Deltalake and Iceberg adapters tests to Earthly.
+      - name: Delta/Iceberg S3 secrets
         run: |
           echo DELTA_TABLE_TEST_AWS_ACCESS_KEY_ID="${delta_table_test_aws_access_key_id}" >> .arg && \
-          echo DELTA_TABLE_TEST_AWS_SECRET_ACCESS_KEY="${delta_table_test_aws_secret_access_key}" >> .arg
+          echo DELTA_TABLE_TEST_AWS_SECRET_ACCESS_KEY="${delta_table_test_aws_secret_access_key}" >> .arg && \
+          echo ICEBERG_TEST_AWS_ACCESS_KEY_ID="${delta_table_test_aws_access_key_id}" >> .arg && \
+          echo ICEBERG_TEST_AWS_SECRET_ACCESS_KEY="${delta_table_test_aws_secret_access_key}" >> .arg
         env:
           delta_table_test_aws_access_key_id: ${{ secrets.delta_table_test_aws_access_key_id }}
           delta_table_test_aws_secret_access_key: ${{ secrets.delta_table_test_aws_secret_access_key }}

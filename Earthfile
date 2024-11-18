@@ -212,12 +212,16 @@ test-adapters:
     DO rust+SET_CACHE_MOUNTS_ENV
     ARG DELTA_TABLE_TEST_AWS_ACCESS_KEY_ID
     ARG DELTA_TABLE_TEST_AWS_SECRET_ACCESS_KEY
+    ARG ICEBERG_TEST_AWS_ACCESS_KEY_ID
+    ARG ICEBERG_TEST_AWS_SECRET_ACCESS_KEY
+    # Dependencies needed by the Iceberg test
+    RUN pip3 install -r crates/iceberg/src/test/requirements.ci.txt
     WITH DOCKER --pull redpandadata/redpanda:v23.3.21
         RUN --mount=$EARTHLY_RUST_CARGO_HOME_CACHE --mount=$EARTHLY_RUST_TARGET_CACHE docker run -p 9092:9092 --rm -itd redpandadata/redpanda:v23.3.21 \
             redpanda start --smp 2  && \
             (google-cloud-sdk/bin/gcloud beta emulators pubsub start --project=feldera-test --host-port=127.0.0.1:8685 &) && \
             sleep 5 && \
-            RUST_BACKTRACE=1 cargo test --package dbsp_adapters --features "pubsub-emulator-test" --package feldera-sqllib
+            RUST_BACKTRACE=1 cargo test --package dbsp_adapters --features "pubsub-emulator-test,iceberg-tests-fs,iceberg-tests-glue" --package feldera-sqllib
     END
 
 test-manager:

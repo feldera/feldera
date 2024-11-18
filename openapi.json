@@ -2375,7 +2375,7 @@
       },
       "DeltaTableReaderConfig": {
         "type": "object",
-        "description": "Delta table output connector configuration.",
+        "description": "Delta table input connector configuration.",
         "required": [
           "uri",
           "mode"
@@ -2383,7 +2383,7 @@
         "properties": {
           "datetime": {
             "type": "string",
-            "description": "Optional timestamp for the snapshot in the ISO-8601/RFC-3339 format, e.g.,\n\"2024-12-09T16:09:53+00:00.\n\nWhen this option is set, the connector finds and opens the version of the table as of the\nspecified point in time.  In `snapshot` and `snapshot_and_follow` modes, it retrieves the\nsnapshot of this version of the table (based on the server time recorded in the transaction\nlog, not the event time encoded in the data).  In `follow` and `snapshot_and_follow` modes, it\nfollows transaction log records **after** this version.\n\nNote: at most one of `version` and `datetime` options can be specified.\nWhen neither of the two options is specified, the latest committed version of the table\nis used.",
+            "description": "Optional timestamp for the snapshot in the ISO-8601/RFC-3339 format, e.g.,\n\"2024-12-09T16:09:53+00:00\".\n\nWhen this option is set, the connector finds and opens the version of the table as of the\nspecified point in time (based on the server time recorded in the transaction log, not the\nevent time encoded in the data).  In `snapshot` and `snapshot_and_follow` modes, it\nretrieves the snapshot of this version of the table.  In `follow` and `snapshot_and_follow`\nmodes, it follows transaction log records **after** this version.\n\nNote: at most one of `version` and `datetime` options can be specified.\nWhen neither of the two options is specified, the latest committed version of the table\nis used.",
             "nullable": true
           },
           "mode": {
@@ -2423,26 +2423,6 @@
           "truncate",
           "error_if_exists"
         ]
-      },
-      "DeltaTableWriterConfig": {
-        "type": "object",
-        "description": "Delta table output connector configuration.",
-        "required": [
-          "uri"
-        ],
-        "properties": {
-          "mode": {
-            "$ref": "#/components/schemas/DeltaTableWriteMode"
-          },
-          "uri": {
-            "type": "string",
-            "description": "Table URI."
-          }
-        },
-        "additionalProperties": {
-          "type": "string",
-          "description": "Storage options for configuring backend object store.\n\nFor specific options available for different storage backends, see:\n* [Azure options](https://docs.rs/object_store/latest/object_store/azure/enum.AzureConfigKey.html)\n* [Amazon S3 options](https://docs.rs/object_store/latest/object_store/aws/enum.AmazonS3ConfigKey.html)\n* [Google Cloud Storage options](https://docs.rs/object_store/latest/object_store/gcp/enum.GoogleConfigKey.html)"
-        }
       },
       "Demo": {
         "type": "object",
@@ -2649,6 +2629,51 @@
           }
         }
       },
+      "GlueCatalogConfig": {
+        "type": "object",
+        "description": "AWS Glue catalog config.",
+        "properties": {
+          "glue.access-key-id": {
+            "type": "string",
+            "description": "Access key id used to access the Glue catalog.",
+            "nullable": true
+          },
+          "glue.endpoint": {
+            "type": "string",
+            "description": "Configure an alternative endpoint of the Glue service for Glue catalog to access.\n\nExample: `\"https://glue.us-east-1.amazonaws.com\"`",
+            "nullable": true
+          },
+          "glue.id": {
+            "type": "string",
+            "description": "The 12-digit ID of the Glue catalog.",
+            "nullable": true
+          },
+          "glue.profile-name": {
+            "type": "string",
+            "description": "Profile used to access the Glue catalog.",
+            "nullable": true
+          },
+          "glue.region": {
+            "type": "string",
+            "description": "Region of the Glue catalog.",
+            "nullable": true
+          },
+          "glue.secret-access-key": {
+            "type": "string",
+            "description": "Secret access key used to access the Glue catalog.",
+            "nullable": true
+          },
+          "glue.session-token": {
+            "type": "string",
+            "nullable": true
+          },
+          "glue.warehouse": {
+            "type": "string",
+            "description": "Location for table metadata.\n\nExample: `\"s3://my-data-warehouse/tables/\"`",
+            "nullable": true
+          }
+        }
+      },
       "HttpInputConfig": {
         "type": "object",
         "description": "Configuration for reading data via HTTP.\n\nHTTP input adapters cannot be usefully configured as part of pipeline\nconfiguration.  Instead, instantiate them through the REST API as\n`/pipelines/{pipeline_name}/ingress/{table_name}`.",
@@ -2666,6 +2691,87 @@
             "description": "Autogenerated name."
           }
         }
+      },
+      "IcebergCatalogType": {
+        "type": "string",
+        "enum": [
+          "rest",
+          "glue"
+        ]
+      },
+      "IcebergIngestMode": {
+        "type": "string",
+        "description": "Iceberg table read mode.\n\nThree options are available:\n\n* `snapshot` - read a snapshot of the table and stop.\n\n* `follow` - continuously ingest changes to the table, starting from a specified snapshot\nor timestamp.\n\n* `snapshot_and_follow` - read a snapshot of the table before switching to continuous ingestion\nmode.",
+        "enum": [
+          "snapshot",
+          "follow",
+          "snapshot_and_follow"
+        ]
+      },
+      "IcebergReaderConfig": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/GlueCatalogConfig"
+          },
+          {
+            "$ref": "#/components/schemas/RestCatalogConfig"
+          },
+          {
+            "type": "object",
+            "required": [
+              "mode"
+            ],
+            "properties": {
+              "catalog_type": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/IcebergCatalogType"
+                  }
+                ],
+                "nullable": true
+              },
+              "datetime": {
+                "type": "string",
+                "description": "Optional timestamp for the snapshot in the ISO-8601/RFC-3339 format, e.g.,\n\"2024-12-09T16:09:53+00:00\".\n\nWhen this option is set, the connector finds and opens the snapshot of the table as of the\nspecified point in time (based on the server time recorded in the transaction\nlog, not the event time encoded in the data).  In `snapshot` and `snapshot_and_follow`\nmodes, it retrieves this snapshot.  In `follow` and `snapshot_and_follow` modes, it\nfollows transaction log records **after** this snapshot.\n\nNote: at most one of `snapshot_id` and `datetime` options can be specified.\nWhen neither of the two options is specified, the latest committed version of the table\nis used.",
+                "nullable": true
+              },
+              "metadata_location": {
+                "type": "string",
+                "description": "Location of the table metadata JSON file.\n\nThis propery is used to access an Iceberg table without a catalog. It is mutually\nexclusive with the `catalog_type` property.",
+                "nullable": true
+              },
+              "mode": {
+                "$ref": "#/components/schemas/IcebergIngestMode"
+              },
+              "snapshot_filter": {
+                "type": "string",
+                "description": "Optional row filter.\n\nThis option is only valid when `mode` is set to `snapshot` or `snapshot_and_follow`.\n\nWhen specified, only rows that satisfy the filter condition are included in the\nsnapshot.  The condition must be a valid SQL Boolean expression that can be used in\nthe `where` clause of the `select * from snapshot where ...` query.\n\nThis option can be used to specify the range of event times to include in the snapshot,\ne.g.: `ts BETWEEN '2005-01-01 00:00:00' AND '2010-12-31 23:59:59'`.",
+                "nullable": true
+              },
+              "snapshot_id": {
+                "type": "integer",
+                "format": "int64",
+                "description": "Optional snapshot id.\n\nWhen this option is set, the connector finds the specified snapshot of the table.\nIn `snapshot` and `snapshot_and_follow` modes, it loads this snapshot.\nIn `follow` and `snapshot_and_follow` modes, it follows table updates\n**after** this snapshot.\n\nNote: at most one of `snapshot_id` and `datetime` options can be specified.\nWhen neither of the two options is specified, the latest committed version of the table\nis used.",
+                "nullable": true
+              },
+              "table_name": {
+                "type": "string",
+                "description": "Specifies the Iceberg table name in the \"namespace.table\" format.\n\nThis option is applicable when an Iceberg catalog is configured using the `catalog_type` property.",
+                "nullable": true
+              },
+              "timestamp_column": {
+                "type": "string",
+                "description": "Table column that serves as an event timestamp.\n\nWhen this option is specified, and `mode` is one of `snapshot` or `snapshot_and_follow`,\ntable rows are ingested in the timestamp order, respecting the\n[`LATENESS`](https://docs.feldera.com/sql/streaming#lateness-expressions)\nproperty of the column: each ingested row has a timestamp no more than `LATENESS`\ntime units earlier than the most recent timestamp of any previously ingested row.\nThe ingestion is performed by partitioning the table into timestamp ranges of width\n`LATENESS`. Each range is processed sequentially, in increasing timestamp order.\n\n# Example\n\nConsider a table with timestamp column of type `TIMESTAMP` and lateness attribute\n`INTERVAL 1 DAY`. Assuming that the oldest timestamp in the table is\n`2024-01-01T00:00:00``, the connector will fetch all records with timestamps\nfrom `2024-01-01`, then all records for `2024-01-02`, `2024-01-03`, etc., until all records\nin the table have been ingested.\n\n# Requirements\n\n* The timestamp column must be of a supported type: integer, `DATE`, or `TIMESTAMP`.\n* The timestamp column must be declared with non-zero `LATENESS`.\n* For efficient ingest, the table must be optimized for timestamp-based\nqueries using partitioning, Z-ordering, or liquid clustering.",
+                "nullable": true
+              }
+            },
+            "additionalProperties": {
+              "type": "string",
+              "description": "Storage options for configuring backend object store.\n\nSee the [list of available options in PyIceberg documentation](https://py.iceberg.apache.org/configuration/#fileio)."
+            }
+          }
+        ],
+        "description": "Iceberg input connector configuration."
       },
       "InputEndpointConfig": {
         "allOf": [
@@ -3827,6 +3933,74 @@
           }
         }
       },
+      "RestCatalogConfig": {
+        "type": "object",
+        "description": "Iceberg REST catalog config.",
+        "properties": {
+          "rest.audience": {
+            "type": "string",
+            "description": "Logical name of target resource or service.",
+            "nullable": true
+          },
+          "rest.credential": {
+            "type": "string",
+            "description": "Credential to use for OAuth2 credential flow when initializing the catalog.\n\nA key and secret pair separated by \":\" (key is optional).",
+            "nullable": true
+          },
+          "rest.headers": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": {
+                "allOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "string"
+                  }
+                ]
+              }
+            },
+            "description": "Additional HTTP request headers added to each catalog REST API call.",
+            "nullable": true
+          },
+          "rest.oauth2-server-uri": {
+            "type": "string",
+            "description": "Authentication URL to use for client credentials authentication (default: uri + 'v1/oauth/tokens')",
+            "nullable": true
+          },
+          "rest.prefix": {
+            "type": "string",
+            "description": "Customize table storage paths.\n\nWhen combined with the `warehouse` property, the prefix determines\nhow table data is organized within the storage.",
+            "nullable": true
+          },
+          "rest.resource": {
+            "type": "string",
+            "description": "URI for the target resource or service.",
+            "nullable": true
+          },
+          "rest.scope": {
+            "type": "string",
+            "nullable": true
+          },
+          "rest.token": {
+            "type": "string",
+            "description": "Bearer token value to use for `Authorization` header.",
+            "nullable": true
+          },
+          "rest.uri": {
+            "type": "string",
+            "description": "URI identifying the REST catalog server.",
+            "nullable": true
+          },
+          "rest.warehouse": {
+            "type": "string",
+            "description": "The default location for managed tables created by the catalog.",
+            "nullable": true
+          }
+        }
+      },
       "RngFieldSettings": {
         "type": "object",
         "description": "Configuration for generating random data for a field of a table.",
@@ -4456,6 +4630,24 @@
                 "type": "string",
                 "enum": [
                   "delta_table_output"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name",
+              "config"
+            ],
+            "properties": {
+              "config": {
+                "$ref": "#/components/schemas/IcebergReaderConfig"
+              },
+              "name": {
+                "type": "string",
+                "enum": [
+                  "iceberg_input"
                 ]
               }
             }

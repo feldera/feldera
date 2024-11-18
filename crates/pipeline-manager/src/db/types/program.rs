@@ -503,6 +503,7 @@ pub fn generate_program_info(
                 | TransportConfig::UrlInput(_)
                 | TransportConfig::S3Input(_)
                 | TransportConfig::DeltaTableInput(_)
+                | TransportConfig::IcebergInput(_)
                 | TransportConfig::Datagen(_)
                 | TransportConfig::Nexmark(_) => {}
                 _ => {

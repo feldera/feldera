@@ -1,0 +1,5 @@
+# Only include requirements used in CI (no s3 or glue pyiceberg features).
+numpy==2.2.0
+pandas==2.2.3
+pyarrow==17.0.0
+pyiceberg[sql-sqlite]==0.8.1

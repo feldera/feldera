@@ -193,6 +193,11 @@ const sidebars = {
                                 },
                                 {
                                     type: 'doc',
+                                    id: 'connectors/sources/iceberg',
+                                    label: 'Apache Iceberg'
+                                },
+                                {
+                                    type: 'doc',
                                     id: 'connectors/sources/kafka',
                                     label: 'Kafka'
                                 },
