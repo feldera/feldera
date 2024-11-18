@@ -98,6 +98,10 @@ from tests.aggregate_tests.test_timestamp_max import *  # noqa: F403
 from tests.aggregate_tests.test_timestamp_min import *  # noqa: F403
 from tests.aggregate_tests.test_timestamp_some import *  # noqa: F403
 from tests.aggregate_tests.test_timestamp_tbl import *  # noqa: F403
+from tests.aggregate_tests.test_varbinary_arr_agg import *  # noqa: F403
+from tests.aggregate_tests.test_varbinary_count_col import *  # noqa: F403
+from tests.aggregate_tests.test_varbinary_count import *  # noqa: F403
+from tests.aggregate_tests.test_varbinary_tbl import *  # noqa: F403
 
 
 def register_tests_in_module(module, ta: TstAccumulator):
