@@ -206,6 +206,14 @@ impl Timestamp {
             .unwrap_or_else(|| panic!("Could not convert timestamp {:?} to DateTime", self))
     }
 
+    /// Convert a [Timestamp] to a chrono [NaiveDateTime]
+    pub fn to_naiveDateTime(&self) -> NaiveDateTime {
+        Utc.timestamp_millis_opt(self.milliseconds)
+            .single()
+            .unwrap_or_else(|| panic!("Could not convert timestamp {:?} to DateTime", self))
+            .naive_utc()
+    }
+
     /// Create a [Timestamp] from a chrono [DateTime] in the [Utc]
     /// timezone.
     // Cannot make this into a From trait because Rust reserved it
@@ -284,6 +292,50 @@ polymorphic_return_function2!(
     Timestamp,
     ShortInterval,
     ShortInterval,
+    Timestamp,
+    Timestamp
+);
+
+#[doc(hidden)]
+pub fn plus_Timestamp_LongInterval_Timestamp(left: Timestamp, right: LongInterval) -> Timestamp {
+    let dt = left.to_naiveDateTime();
+    let months = right.months();
+    let ndt = if months < 0 {
+        dt.checked_sub_months(Months::new(-months as u32))
+    } else {
+        dt.checked_add_months(Months::new(months as u32))
+    };
+    Timestamp::from_naiveDateTime(ndt.unwrap())
+}
+
+polymorphic_return_function2!(
+    plus,
+    Timestamp,
+    Timestamp,
+    LongInterval,
+    LongInterval,
+    Timestamp,
+    Timestamp
+);
+
+#[doc(hidden)]
+pub fn minus_Timestamp_LongInterval_Timestamp(left: Timestamp, right: LongInterval) -> Timestamp {
+    let dt = left.to_naiveDateTime();
+    let months = right.months();
+    let ndt = if months < 0 {
+        dt.checked_add_months(Months::new(-months as u32))
+    } else {
+        dt.checked_sub_months(Months::new(months as u32))
+    };
+    Timestamp::from_naiveDateTime(ndt.unwrap())
+}
+
+polymorphic_return_function2!(
+    minus,
+    Timestamp,
+    Timestamp,
+    LongInterval,
+    LongInterval,
     Timestamp,
     Timestamp
 );
