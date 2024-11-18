@@ -39,12 +39,22 @@ mod mock_output_consumer;
 
 mod datagen;
 
+#[cfg(all(
+    feature = "with-iceberg",
+    any(
+        feature = "iceberg-tests-fs",
+        feature = "iceberg-tests-glue",
+        feature = "iceberg-tests-rest"
+    )
+))]
+mod iceberg;
+
 use crate::catalog::InputCollectionHandle;
 use crate::format::get_input_format;
 use crate::transport::input_transport_config_to_endpoint;
 pub use data::{
     generate_test_batch, generate_test_batches, generate_test_batches_with_weights,
-    DatabricksPeople, EmbeddedStruct, TestStruct, TestStruct2,
+    DatabricksPeople, EmbeddedStruct, IcebergTestStruct, TestStruct, TestStruct2,
 };
 use dbsp::circuit::CircuitConfig;
 use dbsp::utils::Tup2;
@@ -166,7 +176,6 @@ where
 /// Create a simple test circuit that passes the input stream right through to
 /// the output.
 // TODO: parameterize with the number (and types?) of input and output streams.
-
 pub fn test_circuit<T>(
     config: CircuitConfig,
     schema: &[Field],

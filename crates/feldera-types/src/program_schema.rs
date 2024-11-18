@@ -701,6 +701,19 @@ impl ColumnType {
         }
     }
 
+    pub fn decimal(precision: i64, scale: i64, nullable: bool) -> Self {
+        ColumnType {
+            typ: SqlType::Decimal,
+            nullable,
+            precision: Some(precision),
+            scale: Some(scale),
+            component: None,
+            fields: None,
+            key: None,
+            value: None,
+        }
+    }
+
     pub fn varchar(nullable: bool) -> Self {
         ColumnType {
             typ: SqlType::Varchar,
@@ -719,6 +732,19 @@ impl ColumnType {
             typ: SqlType::Varbinary,
             nullable,
             precision: None,
+            scale: None,
+            component: None,
+            fields: None,
+            key: None,
+            value: None,
+        }
+    }
+
+    pub fn fixed(width: i64, nullable: bool) -> Self {
+        ColumnType {
+            typ: SqlType::Binary,
+            nullable,
+            precision: Some(width),
             scale: None,
             component: None,
             fields: None,

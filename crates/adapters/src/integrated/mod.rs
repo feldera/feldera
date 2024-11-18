@@ -4,12 +4,11 @@
 #![allow(unreachable_code)]
 
 use crate::controller::{ControllerInner, EndpointId};
+use crate::transport::IntegratedInputEndpoint;
 use crate::{ControllerError, Encoder, InputConsumer, OutputEndpoint, TransportInputEndpoint};
 use feldera_types::config::{InputEndpointConfig, OutputEndpointConfig, TransportConfig};
 use feldera_types::program_schema::Relation;
 use std::sync::Weak;
-
-use crate::transport::IntegratedInputEndpoint;
 
 #[cfg(feature = "with-deltalake")]
 mod delta_table;
@@ -19,6 +18,9 @@ pub use delta_table::{DeltaTableInputEndpoint, DeltaTableWriter};
 
 #[cfg(feature = "with-deltalake")]
 use feldera_types::config::TransportConfig::DeltaTableInput;
+
+#[cfg(feature = "with-iceberg")]
+use feldera_types::config::TransportConfig::IcebergInput;
 
 /// An integrated output connector implements both transport endpoint
 /// (`OutputEndpoint`) and `Encoder` traits.  It is used to implement
@@ -88,6 +90,12 @@ pub fn create_integrated_input_endpoint(
     let ep: Box<dyn IntegratedInputEndpoint> = match &config.connector_config.transport {
         #[cfg(feature = "with-deltalake")]
         DeltaTableInput(config) => Box::new(DeltaTableInputEndpoint::new(
+            endpoint_name,
+            config,
+            consumer,
+        )),
+        #[cfg(feature = "with-iceberg")]
+        IcebergInput(config) => Box::new(feldera_iceberg::IcebergInputEndpoint::new(
             endpoint_name,
             config,
             consumer,

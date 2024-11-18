@@ -4,7 +4,7 @@ use arrow::array::{
 };
 use arrow::datatypes::{DataType, Schema, TimeUnit};
 use dbsp::utils::Tup2;
-use feldera_sqllib::{Date, Timestamp};
+use feldera_sqllib::{ByteArray, Date, Time, Timestamp, F32, F64};
 use feldera_types::program_schema::{ColumnType, Field, Relation, SqlIdentifier};
 use feldera_types::{
     deserialize_table_record, deserialize_without_context, serialize_struct, serialize_table_record,
@@ -12,6 +12,7 @@ use feldera_types::{
 use prop::sample::SizeRange;
 use proptest::{collection, prelude::*};
 use proptest_derive::Arbitrary;
+use rust_decimal::Decimal;
 use size_of::SizeOf;
 use std::collections::BTreeMap;
 use std::string::ToString;
@@ -421,13 +422,7 @@ impl TestStruct2 {
         let row6_field = Arc::new(arrow::datatypes::Field::new("a", DataType::Boolean, false));
         let row6: Vec<Option<bool>> = data
             .iter()
-            .map(|r| {
-                if let Some(emb_struct) = &r.field_5 {
-                    Some(emb_struct.field)
-                } else {
-                    None
-                }
-            })
+            .map(|r| r.field_5.as_ref().map(|emb_struct| emb_struct.field))
             .collect();
         let row6_booleans = Arc::new(BooleanArray::from(row6));
 
@@ -563,4 +558,205 @@ deserialize_table_record!(DatabricksPeople["DatabricksPeople", 8] {
     (r#birth_date, "birthdate", false, Option<Timestamp>, Some(None)),
     (r#ssn, "ssn", false, Option<String>, Some(None)),
     (r#salary, "salary", false, Option<i32>, Some(None))
+});
+
+/// Struct will all types supported by the Iceberg connector.
+#[derive(
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    serde::Serialize,
+    serde::Deserialize,
+    Clone,
+    Hash,
+    SizeOf,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
+#[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
+pub struct IcebergTestStruct {
+    pub b: bool,
+    pub i: i32,
+    pub l: i64,
+    pub r: F32,
+    pub d: F64,
+    pub dec: Decimal,
+    pub dt: Date,
+    pub tm: Time,
+    pub ts: Timestamp,
+    pub s: String,
+    //pub uuid: ByteArray,
+    pub fixed: ByteArray,
+    pub varbin: ByteArray,
+}
+
+impl Arbitrary for IcebergTestStruct {
+    type Parameters = ();
+
+    type Strategy = BoxedStrategy<IcebergTestStruct>;
+
+    fn arbitrary_with(_params: Self::Parameters) -> Self::Strategy {
+        (
+            // Split into two tuples with <12 fields each.
+            (
+                bool::arbitrary(),
+                i32::arbitrary(),
+                i64::arbitrary(),
+                f32::arbitrary(),
+                f64::arbitrary(),
+                0..1_000_000i128,
+                // Scale
+                0..3u32,
+                0i32..100_000,
+                // Time in nanos
+                0u64..24 * 3600 * 1_000_000_000,
+                // Generate timestamps within a 1-year range
+                1704070800i64..1735693200,
+            ),
+            // String in the range "0".."1000"
+            (
+                0i32..1000,
+                // // UUID
+                // collection::vec(u8::arbitrary(), 16..=16),
+                // Fixed
+                collection::vec(u8::arbitrary(), 5..=5),
+                // Varbinary
+                collection::vec(u8::arbitrary(), 0..=10),
+            ),
+        )
+            .prop_map(
+                |(
+                    (b, i, l, r, d, dec_num, dec_scale, dt, tm, ts),
+                    (s, /*uuid,*/ fixed, varbin),
+                ): (
+                    (bool, i32, i64, f32, f64, i128, u32, i32, u64, i64),
+                    (i32, /*Vec<u8>,*/ Vec<u8>, Vec<u8>),
+                )| {
+                    IcebergTestStruct {
+                        b,
+                        i,
+                        l,
+                        r: F32::new(r),
+                        d: F64::new(d),
+                        dec: Decimal::from_i128_with_scale(dec_num, dec_scale),
+                        dt: Date::new(dt),
+                        tm: Time::new(tm),
+                        ts: Timestamp::new(ts),
+                        s: s.to_string(),
+                        // uuid: ByteArray::from_vec(uuid),
+                        fixed: ByteArray::from_vec(fixed),
+                        varbin: ByteArray::new(&varbin),
+                    }
+                },
+            )
+            .boxed()
+    }
+}
+
+impl IcebergTestStruct {
+    pub fn arrow_schema() -> Arc<Schema> {
+        Arc::new(Schema::new(vec![
+            arrow::datatypes::Field::new("b", DataType::Boolean, false),
+            arrow::datatypes::Field::new("i", DataType::Int32, false),
+            arrow::datatypes::Field::new("l", DataType::Int64, false),
+            arrow::datatypes::Field::new("r", DataType::Float32, false),
+            arrow::datatypes::Field::new("d", DataType::Float64, false),
+            arrow::datatypes::Field::new("dec", DataType::Decimal128(10, 3), false),
+            arrow::datatypes::Field::new("dt", DataType::Date32, false),
+            arrow::datatypes::Field::new("tm", DataType::Time64(TimeUnit::Microsecond), false),
+            arrow::datatypes::Field::new(
+                "ts",
+                DataType::Timestamp(TimeUnit::Microsecond, None),
+                false,
+            ),
+            arrow::datatypes::Field::new("s", DataType::Utf8, false),
+            // arrow::datatypes::Field::new("uuid", DataType::FixedSizeBinary(16), false),
+            arrow::datatypes::Field::new("fixed", DataType::FixedSizeBinary(5), false),
+            arrow::datatypes::Field::new("varbin", DataType::Binary, false),
+        ]))
+    }
+
+    pub fn schema() -> Vec<Field> {
+        vec![
+            Field::new("b".into(), ColumnType::boolean(false)),
+            Field::new("i".into(), ColumnType::int(false)),
+            Field::new("l".into(), ColumnType::bigint(false)),
+            Field::new("r".into(), ColumnType::real(false)),
+            Field::new("d".into(), ColumnType::double(false)),
+            Field::new("dec".into(), ColumnType::decimal(10, 3, false)),
+            Field::new("dt".into(), ColumnType::date(false)),
+            Field::new("tm".into(), ColumnType::time(false)),
+            Field::new("ts".into(), ColumnType::timestamp(false)),
+            Field::new("s".into(), ColumnType::varchar(false)),
+            // Field::new("uuid".into(), ColumnType::fixed(16, false)),
+            Field::new("fixed".into(), ColumnType::fixed(5, false)),
+            Field::new("varbin".into(), ColumnType::varbinary(false)),
+        ]
+    }
+
+    pub fn schema_with_lateness() -> Vec<Field> {
+        let fields = vec![
+            Field::new("b".into(), ColumnType::boolean(false)),
+            Field::new("i".into(), ColumnType::int(false)),
+            Field::new("l".into(), ColumnType::bigint(false)),
+            Field::new("r".into(), ColumnType::real(false)),
+            Field::new("d".into(), ColumnType::double(false)),
+            Field::new("dec".into(), ColumnType::decimal(10, 3, false)),
+            Field::new("dt".into(), ColumnType::date(false)),
+            Field::new("tm".into(), ColumnType::time(false)),
+            Field::new("ts".into(), ColumnType::timestamp(false))
+                .with_lateness("interval '10 days'"),
+            Field::new("s".into(), ColumnType::varchar(false)),
+            // Field::new("uuid".into(), ColumnType::fixed(16, false)),
+            Field::new("fixed".into(), ColumnType::fixed(5, false)),
+            Field::new("varbin".into(), ColumnType::varbinary(false)),
+        ];
+
+        fields
+    }
+
+    pub fn relation_schema() -> Relation {
+        Relation {
+            name: SqlIdentifier::new("IcebergTestStruct", false),
+            fields: Self::schema(),
+            materialized: false,
+            properties: BTreeMap::new(),
+        }
+    }
+}
+
+serialize_table_record!(IcebergTestStruct[13]{
+    b["b"]: bool,
+    i["i"]: i32,
+    l["l"]: i64,
+    r["r"]: F32,
+    d["d"]: F64,
+    dec["dec"]: Decimal,
+    dt["dt"]: Date,
+    tm["tm"]: Time,
+    ts["ts"]: Timestamp,
+    s["s"]: String,
+    // uuid["uuid"]: ByteArray,
+    fixed["fixed"]: ByteArray,
+    varbin["varbin"]: ByteArray
+});
+
+deserialize_table_record!(IcebergTestStruct["IcebergTestStruct", 13] {
+    (b, "b", false, bool, None),
+    (i, "i", false, i32, None),
+    (l, "l", false, i64, None),
+    (r, "r", false, F32, None),
+    (d, "d", false, F64, None),
+    (dec, "dec", false, Decimal, None),
+    (dt, "dt", false, Date, None),
+    (tm, "tm", false, Time, None),
+    (ts, "ts", false, Timestamp, None),
+    (s, "s", false, String, None),
+    // (uuid, "uuid", false, ByteArray, None),
+    (fixed, "fixed", false, ByteArray, None),
+    (varbin, "varbin", false, ByteArray, None)
 });

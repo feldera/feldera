@@ -70,7 +70,7 @@ pub enum DeltaTableIngestMode {
     SnapshotAndFollow,
 }
 
-/// Delta table output connector configuration.
+/// Delta table input connector configuration.
 #[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
 pub struct DeltaTableReaderConfig {
     /// Table URI.
@@ -132,13 +132,13 @@ pub struct DeltaTableReaderConfig {
     pub version: Option<i64>,
 
     /// Optional timestamp for the snapshot in the ISO-8601/RFC-3339 format, e.g.,
-    /// "2024-12-09T16:09:53+00:00.
+    /// "2024-12-09T16:09:53+00:00".
     ///
     /// When this option is set, the connector finds and opens the version of the table as of the
-    /// specified point in time.  In `snapshot` and `snapshot_and_follow` modes, it retrieves the
-    /// snapshot of this version of the table (based on the server time recorded in the transaction
-    /// log, not the event time encoded in the data).  In `follow` and `snapshot_and_follow` modes, it
-    /// follows transaction log records **after** this version.
+    /// specified point in time (based on the server time recorded in the transaction log, not the
+    /// event time encoded in the data).  In `snapshot` and `snapshot_and_follow` modes, it
+    /// retrieves the snapshot of this version of the table.  In `follow` and `snapshot_and_follow`
+    /// modes, it follows transaction log records **after** this version.
     ///
     /// Note: at most one of `version` and `datetime` options can be specified.
     /// When neither of the two options is specified, the latest committed version of the table

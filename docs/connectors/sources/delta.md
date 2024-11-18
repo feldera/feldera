@@ -1,5 +1,11 @@
 # Delta Lake input connector
 
+:::note
+This page describes configuration options specific to the Delta Lake connector.
+See [top-level connector documentation](/connectors/) for general information
+about configuring input and output connectors.
+:::
+
 [Delta Lake](https://delta.io/) is an open-source storage framework for the
 [Lakehouse architecture](https://www.cidrdb.org/cidr2021/papers/cidr2021_paper17.pdf).
 It is typically used with the [Apache Spark](https://spark.apache.org/) runtime.
@@ -61,8 +67,7 @@ one of `snapshot` or `snapshot_and_follow`, table rows are ingested in the times
 order, respecting the `LATENESS` annotation on the column: each ingested row has a
 timestamp no more than `LATENESS` time units earlier than the most recent timestamp
 of any previously ingested row.  The ingestion is performed by partitioning the table
-into timestamp ranges of width `LATENESS`. Each range is processed sequentially,
-in increasing timestamp order.
+into timestamp ranges of width `LATENESS` and ingesting ranges one by one in increasing timestamp order.
 
 Requirements:
 * The timestamp column must be of a supported type: integer, `DATE`, or `TIMESTAMP`.

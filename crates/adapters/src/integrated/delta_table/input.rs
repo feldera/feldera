@@ -575,7 +575,7 @@ impl DeltaTableInputEndpointInner {
         if let Some(timestamp_column) = &self.config.timestamp_column {
             validate_timestamp_column(
                 &self.endpoint_name,
-                &timestamp_column,
+                timestamp_column,
                 &self.datafusion,
                 schema,
                 "see DeltaLake connector documentation for more details: https://docs.feldera.com/connectors/sources/delta"
