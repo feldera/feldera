@@ -23,7 +23,7 @@ class aggtst_varbinary_table(TstTable):
         #     c1 BYTEA,
         #     c2 BYTEA NULL
         # );
-        
+
         # INSERT INTO varbinary_tbl (id, c1, c2) VALUES
         #     (0, '\x0c1620', NULL),
         #     (0, '\x17382115', '\x37424d58'),
