@@ -5,6 +5,118 @@ import org.junit.Test;
 
 public class TimeArithmeticTests extends SqlIoTest {
     @Test
+    public void testTimestampAddLongInterval() {
+        this.qs("""
+                SELECT TIMESTAMP '2024-01-01 10:23:45' + INTERVAL 10 MONTHS;
+                        ts
+                ---------------------
+                 2024-11-01 10:23:45
+                (1 row)
+                
+                SELECT TIMESTAMP '2024-01-01 10:23:45' + INTERVAL -10 MONTHS;
+                        ts
+                ---------------------
+                 2023-03-01 10:23:45
+                (1 row)
+                
+                SELECT TIMESTAMP '2024-01-01 10:23:45' - INTERVAL 10 MONTHS;
+                        ts
+                ---------------------
+                 2023-03-01 10:23:45
+                (1 row)
+
+                SELECT TIMESTAMP '2024-01-01 10:23:45' - INTERVAL -10 MONTHS;
+                        ts
+                ---------------------
+                 2024-11-01 10:23:45
+                (1 row)
+
+                SELECT TIMESTAMP '2024-01-31 10:23:45' + INTERVAL 10 MONTHS;
+                        ts
+                ---------------------
+                 2024-11-30 10:23:45
+                (1 row)
+                
+                SELECT TIMESTAMP '2024-01-31 10:23:45' + INTERVAL -10 MONTHS;
+                        ts
+                ---------------------
+                 2023-03-31 10:23:45
+                (1 row)
+                
+                SELECT TIMESTAMP '2024-01-31 10:23:45' - INTERVAL -10 MONTHS;
+                        ts
+                ---------------------
+                 2024-11-30 10:23:45
+                (1 row)
+                
+                SELECT TIMESTAMP '2024-01-31 10:23:45' + INTERVAL 1 MONTHS;
+                        ts
+                ---------------------
+                 2024-02-29 10:23:45
+                (1 row)
+                
+                SELECT TIMESTAMP '2024-01-31 10:23:45' + INTERVAL 100 MONTHS;
+                        ts
+                ---------------------
+                 2032-05-31 10:23:45
+                (1 row)
+                
+                SELECT TIMESTAMP '2024-01-31 10:23:45' + INTERVAL '8-4' YEARS TO MONTHS;
+                        ts
+                ---------------------
+                 2032-05-31 10:23:45
+                (1 row)
+
+                SELECT TIMESTAMP '2024-01-31 10:23:45' - INTERVAL -100 MONTHS;
+                        ts
+                ---------------------
+                 2032-05-31 10:23:45
+                (1 row)
+                
+                SELECT TIMESTAMP '2024-01-31 10:23:45' - INTERVAL '-8-4' YEARS TO MONTHS;
+                        ts
+                ---------------------
+                 2032-05-31 10:23:45
+                (1 row)
+
+                SELECT TIMESTAMP '2024-01-31 10:23:45' - INTERVAL 100 MONTHS;
+                        ts
+                ---------------------
+                 2015-09-30 10:23:45
+                (1 row)
+                
+                SELECT TIMESTAMP '2024-01-31 10:23:45' - INTERVAL '8-4' YEARS TO MONTHS;
+                        ts
+                ---------------------
+                 2015-09-30 10:23:45
+                (1 row)
+
+                SELECT TIMESTAMP '2024-01-31 10:23:45' + INTERVAL 10 YEARS;
+                        ts
+                ---------------------
+                 2034-01-31 10:23:45
+                (1 row)
+                
+                SELECT TIMESTAMP '2024-01-31 10:23:45' - INTERVAL 10 YEARS;
+                        ts
+                ---------------------
+                 2014-01-31 10:23:45
+                (1 row)
+                
+                SELECT TIMESTAMP '2024-01-31 10:23:45' + INTERVAL -10 YEARS;
+                        ts
+                ---------------------
+                 2014-01-31 10:23:45
+                (1 row)
+                
+                SELECT TIMESTAMP '2024-01-31 10:23:45' - INTERVAL -10 YEARS;
+                        ts
+                ---------------------
+                 2034-01-31 10:23:45
+                (1 row)""");
+    }
+
+    @Test
     public void testTimeAddInterval() {
         this.qs("""
                 SELECT '23:00:00'::time + INTERVAL '10' MINUTES;
