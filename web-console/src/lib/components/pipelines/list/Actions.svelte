@@ -71,8 +71,11 @@
       .with('Paused', () => ['_spacer_short', '_shutdown', '_start'])
       .with('ShuttingDown', () => ['_spinner', '_spacer_long', '_spacer_long'])
       .with({ PipelineError: P.any }, () => ['_spacer_short', '_shutdown', '_spacer_long'])
-      .with('Compiling sql', () => ['_delete', '_spacer_long', '_start_pending'])
-      .with('Compiling bin', () => ['_delete', '_spacer_long', '_start_pending'])
+      .with('Compiling SQL', 'SQL compiled', 'Compiling binary', () => [
+        '_delete',
+        '_spacer_long',
+        '_start_pending'
+      ])
       .with('Unavailable', () => ['_spinner', '_shutdown', '_spacer_long'])
       .with({ SqlError: P.any }, { RustError: P.any }, { SystemError: P.any }, () => [
         '_delete',

@@ -8,20 +8,20 @@
   import { browser } from '$app/environment'
   import { beforeNavigate, afterNavigate } from '$app/navigation'
 
-  import type { Action } from 'svelte/action'
+  // import type { Action } from 'svelte/action'
   import 'virtual:feldera-material-icons-webfont.css'
   import 'virtual:generic-icons-webfont.css'
 
-  export const classList: Action<Element, string | string[]> = (node, classes) => {
-    const tokens = Array.isArray(classes) ? classes : [classes]
-    node.classList.add(...tokens)
+  // export const classList: Action<Element, string | string[]> = (node, classes) => {
+  //   const tokens = Array.isArray(classes) ? classes : [classes]
+  //   node.classList.add(...tokens)
 
-    return {
-      destroy() {
-        node.classList.remove(...tokens)
-      }
-    }
-  }
+  //   return {
+  //     destroy() {
+  //       node.classList.remove(...tokens)
+  //     }
+  //   }
+  // }
   let { children } = $props()
   let { darkMode } = useDarkMode()
 

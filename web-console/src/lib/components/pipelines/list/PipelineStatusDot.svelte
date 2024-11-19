@@ -16,9 +16,8 @@
       .with('Resuming', () => 'preset-filled-tertiary-200-800')
       .with('ShuttingDown', () => 'preset-filled-secondary-200-800')
       .with({ PipelineError: P.any }, () => 'preset-filled-error-400-600')
-      .with('Compiling sql', () => 'preset-filled-warning-400-600')
       .with('Queued', () => 'preset-filled-warning-400-600')
-      .with('Compiling bin', () => 'preset-filled-warning-400-600')
+      .with('Compiling SQL', 'SQL compiled', 'Compiling binary', () => 'preset-filled-warning-400-600')
       .with('Unavailable', () => 'bg-orange-300 dark:bg-orange-700')
       .with(
         { SqlError: P.any },
