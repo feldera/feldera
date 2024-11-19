@@ -1,4 +1,5 @@
 use crate::format::{Splitter, Sponge};
+use crate::test::wait;
 use crate::transport::kafka::ft::input::Metadata;
 use crate::transport::{input_transport_config_to_endpoint, output_transport_config_to_endpoint};
 use crate::{
@@ -11,6 +12,7 @@ use crate::{
 use crate::{InputBuffer, InputReader, Parser, TransportInputEndpoint};
 use anyhow::Error as AnyError;
 use crossbeam::sync::{Parker, Unparker};
+use csv::ReaderBuilder as CsvReaderBuilder;
 use env_logger::Env;
 use feldera_types::program_schema::Relation;
 use log::info;
@@ -18,6 +20,7 @@ use rmpv::Value as RmpValue;
 use std::hash::Hasher;
 use std::ops::Range;
 use std::sync::atomic::AtomicUsize;
+use std::thread::sleep;
 use std::{
     io::Write,
     mem,
@@ -27,6 +30,7 @@ use std::{
     },
     time::{Duration, Instant},
 };
+use tempfile::TempDir;
 
 fn init_test_logger() {
     let _ = env_logger::Builder::from_env(Env::default().default_filter_or("debug"))
@@ -149,15 +153,6 @@ fn test_input(topic: &str, batch_sizes: &[u32]) {
     let (_endpoint, receiver, reader) = create_reader(topic);
     reader.extend();
 
-    fn test(id: u32) -> TestStruct {
-        TestStruct {
-            id,
-            b: false,
-            i: None,
-            s: "".into(),
-        }
-    }
-
     fn metadata(topic: &str, batch: &Range<u32>) -> RmpValue {
         #[allow(clippy::single_range_in_vec_init)]
         let metadata = Metadata {
@@ -186,7 +181,10 @@ fn test_input(topic: &str, batch_sizes: &[u32]) {
 
         // Write a batch to the topic and wait for the adapter to read it.
         println!("producing {batch_size} messages {batch:?} to {topic}");
-        let input_batch = batch.clone().map(|id| vec![test(id)]).collect::<Vec<_>>();
+        let input_batch = batch
+            .clone()
+            .map(|id| vec![TestStruct::for_id(id)])
+            .collect::<Vec<_>>();
         producer.send_to_topic(&input_batch, topic);
 
         println!("waiting for to buffer the {batch_size} messages {batch:?}.");
@@ -776,3 +774,295 @@ proptest! {
     }
 }
 */
+
+#[derive(Clone)]
+struct FtTestRound {
+    n_records: usize,
+    do_checkpoint: bool,
+}
+
+impl FtTestRound {
+    fn with_checkpoint(n_records: usize) -> Self {
+        Self {
+            n_records,
+            do_checkpoint: true,
+        }
+    }
+    fn without_checkpoint(n_records: usize) -> Self {
+        Self {
+            n_records,
+            do_checkpoint: false,
+        }
+    }
+}
+
+/// Runs a basic test of fault tolerance.
+///
+/// The test proceeds in multiple rounds. For each element of `rounds`, the
+/// test writes `n_records` records to the input file, and starts the
+/// pipeline and waits for it to process the data.  If `do_checkpoint` is
+/// true, it creates a new checkpoint. Then it stops the checkpoint, checks
+/// that the output is as expected, and goes on to the next round.
+fn test_ft(topic: &str, rounds: &[FtTestRound]) {
+    init_test_logger();
+
+    let mut _kafka_resources = KafkaResources::create_topics(&[(topic, 1)]);
+    sleep(Duration::from_secs(1));
+    let producer = TestProducer::new();
+    let tempdir = TempDir::new().unwrap();
+
+    // This allows the temporary directory to be deleted when we finish.  If
+    // you want to keep it for inspection instead, comment out the following
+    // line and then remove the comment markers on the two lines after that.
+    let tempdir_path = tempdir.path();
+    //let tempdir_path = tempdir.into_path();
+    //println!("{}", tempdir_path.display());
+
+    let storage_dir = tempdir_path.join("storage");
+    let output_path = tempdir_path.join("output.csv");
+
+    let config_str = format!(
+        r#"
+name: test
+workers: 4
+storage_config:
+    path: {storage_dir:?}
+storage: true
+fault_tolerance: {{}}
+clock_resolution_usecs: null
+inputs:
+    test_input1:
+        stream: test_input1
+        transport:
+            name: kafka_input
+            config:
+                topics: [{topic}]
+                log_level: debug
+        format:
+            name: csv
+outputs:
+    test_output1:
+        stream: test_output1
+        transport:
+            name: file_output
+            config:
+                path: {output_path:?}
+        format:
+            name: csv
+            config:
+        "#
+    );
+
+    let config: PipelineConfig = serde_yaml::from_str(&config_str).unwrap();
+
+    // Number of records written to the input.
+    let mut total_records = 0usize;
+
+    // Number of input records included in the latest checkpoint (always <=
+    // total_records).
+    let mut checkpointed_records = 0usize;
+
+    for (
+        round,
+        FtTestRound {
+            n_records,
+            do_checkpoint,
+        },
+    ) in rounds.iter().cloned().enumerate()
+    {
+        println!(
+            "--- round {round}: add {n_records} records, {} --- ",
+            if do_checkpoint {
+                "and checkpoint"
+            } else {
+                "no checkpoint"
+            }
+        );
+
+        // Write records to the input topic.
+        println!(
+            "Writing records {total_records}..{}",
+            total_records + n_records
+        );
+        if n_records > 0 {
+            let input_batch = (total_records..total_records + n_records)
+                .map(|id| vec![TestStruct::for_id(id as u32)])
+                .collect::<Vec<_>>();
+            producer.send_to_topic(&input_batch, topic);
+
+            total_records += n_records;
+        }
+
+        // Start pipeline.
+        println!("start pipeline");
+        let controller = Controller::with_config(
+            |circuit_config| Ok(test_circuit::<TestStruct>(circuit_config, &[])),
+            &config,
+            Box::new(|e| panic!("error: {e}")),
+        )
+        .unwrap();
+        controller.start();
+
+        // Wait for the records that are not in the checkpoint to be
+        // processed or replayed.
+        let expect_n = total_records - checkpointed_records;
+        println!(
+            "wait for {} records {checkpointed_records}..{total_records}",
+            expect_n
+        );
+        let mut last_n = 0;
+        wait(
+            || {
+                let n = controller
+                    .status()
+                    .output_status()
+                    .get(&0)
+                    .unwrap()
+                    .transmitted_records() as usize;
+                if n > last_n {
+                    println!("received {n} records");
+                    last_n = n;
+                }
+                n >= expect_n
+            },
+            10_000,
+        )
+        .unwrap();
+
+        // No more records should arrive, but give the controller some time
+        // to send some more in case there's a bug.
+        sleep(Duration::from_millis(100));
+
+        // Then verify that the number is as expected.
+        assert_eq!(
+            controller
+                .status()
+                .output_status()
+                .get(&0)
+                .unwrap()
+                .transmitted_records(),
+            expect_n as u64
+        );
+
+        // Checkpoint, if requested.
+        if do_checkpoint {
+            println!("checkpoint");
+            controller.checkpoint().unwrap();
+        }
+
+        // Stop controller.
+        println!("stop controller");
+        controller.stop().unwrap();
+
+        // Read output and compare. Our output adapter, which is not FT,
+        // truncates the output file to length 0 each time. Therefore, the
+        // output file should contain all the records in
+        // `checkpointed_records..total_records`.
+        let mut actual = CsvReaderBuilder::new()
+            .has_headers(false)
+            .from_path(&output_path)
+            .unwrap()
+            .deserialize::<(TestStruct, i32)>()
+            .map(|res| {
+                let (val, weight) = res.unwrap();
+                assert_eq!(weight, 1);
+                val
+            })
+            .collect::<Vec<_>>();
+        actual.sort();
+
+        assert_eq!(actual.len(), expect_n);
+        for (record, expect_record) in actual
+            .into_iter()
+            .zip((checkpointed_records..).map(|id| TestStruct::for_id(id as u32)))
+        {
+            assert_eq!(record, expect_record);
+        }
+
+        if do_checkpoint {
+            checkpointed_records = total_records;
+        }
+        println!();
+    }
+}
+
+#[test]
+fn ft_with_checkpoints() {
+    test_ft(
+        "ft_with_checkpoints",
+        &[
+            FtTestRound::with_checkpoint(2500),
+            FtTestRound::with_checkpoint(2500),
+            FtTestRound::with_checkpoint(2500),
+            FtTestRound::with_checkpoint(2500),
+            FtTestRound::with_checkpoint(2500),
+        ],
+    );
+}
+
+#[test]
+fn ft_without_checkpoints() {
+    test_ft(
+        "ft_without_checkpoints",
+        &[
+            FtTestRound::without_checkpoint(2500),
+            FtTestRound::without_checkpoint(2500),
+            FtTestRound::without_checkpoint(2500),
+            FtTestRound::without_checkpoint(2500),
+            FtTestRound::without_checkpoint(2500),
+        ],
+    );
+}
+
+#[test]
+fn ft_alternating() {
+    test_ft(
+        "ft_alternating",
+        &[
+            FtTestRound::with_checkpoint(2500),
+            FtTestRound::without_checkpoint(2500),
+            FtTestRound::with_checkpoint(2500),
+            FtTestRound::without_checkpoint(2500),
+            FtTestRound::with_checkpoint(2500),
+            FtTestRound::without_checkpoint(2500),
+            FtTestRound::with_checkpoint(2500),
+            FtTestRound::without_checkpoint(2500),
+            FtTestRound::with_checkpoint(2500),
+            FtTestRound::without_checkpoint(2500),
+        ],
+    );
+}
+
+#[test]
+fn ft_initially_zero_without_checkpoint() {
+    test_ft(
+        "ft_initially_zero_without_checkpoint",
+        &[
+            FtTestRound::without_checkpoint(0),
+            FtTestRound::without_checkpoint(2500),
+            FtTestRound::without_checkpoint(0),
+            FtTestRound::with_checkpoint(2500),
+            FtTestRound::without_checkpoint(2500),
+            FtTestRound::with_checkpoint(2500),
+            FtTestRound::without_checkpoint(2500),
+            FtTestRound::with_checkpoint(2500),
+        ],
+    );
+}
+
+#[test]
+fn ft_initially_zero_with_checkpoint() {
+    test_ft(
+        "ft_initially_zero_with_checkpoint",
+        &[
+            FtTestRound::with_checkpoint(0),
+            FtTestRound::without_checkpoint(2500),
+            FtTestRound::without_checkpoint(0),
+            FtTestRound::with_checkpoint(2500),
+            FtTestRound::without_checkpoint(2500),
+            FtTestRound::with_checkpoint(2500),
+            FtTestRound::without_checkpoint(2500),
+            FtTestRound::with_checkpoint(2500),
+        ],
+    );
+}
