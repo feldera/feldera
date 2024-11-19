@@ -8,7 +8,7 @@ class arithtst_date_table(TstTable):
         self.sql = """CREATE FUNCTION d()
                       RETURNS DATE NOT NULL AS
                       CAST('1970-01-01' AS DATE);
-                      
+
                       CREATE TABLE date_tbl(
                       id INT,
                       c1 DATE NOT NULL,
