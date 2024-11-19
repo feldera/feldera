@@ -500,7 +500,7 @@ pub fn generate_program_info(
                 }
             }
             input_connectors.push((
-                input_relation.name.name(),
+                input_relation.name.sql_name(),
                 connector.name,
                 connector.config,
                 origin_value,
@@ -545,7 +545,7 @@ pub fn generate_program_info(
                 }
             }
             output_connectors.push((
-                output_relation.name.name(),
+                output_relation.name.sql_name(),
                 connector.name,
                 connector.config,
                 origin_value,
