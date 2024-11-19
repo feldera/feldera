@@ -207,8 +207,9 @@ class FelderaClient:
                 break
             elif status == "Failed":
                 raise RuntimeError(
-                    "error: cannot START a failed pipeline\n"
-                    + resp.deployment_error.get("message", "")
+                    f"""Unable to START the pipeline.
+Reason: The pipeline is in a FAILED state due to the following error:
+{resp.deployment_error.get("message", "")}"""
                 )
 
             logging.debug(
@@ -228,7 +229,7 @@ class FelderaClient:
         )
 
         if error_message is None:
-            error_message = "error: cannot PAUSE failed pipeline"
+            error_message = "Unable to PAUSE the pipeline.\n"
 
         while True:
             resp = self.get_pipeline(pipeline_name)
@@ -238,7 +239,9 @@ class FelderaClient:
                 break
             elif status == "Failed":
                 raise RuntimeError(
-                    error_message + "\n" + resp.deployment_error.get("message", "")
+                    error_message
+                    + f"""Reason: The pipeline is in a FAILED state due to the following error:
+{resp.deployment_error.get("message", "")}"""
                 )
 
             logging.debug(

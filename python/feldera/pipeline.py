@@ -233,13 +233,13 @@ class Pipeline:
         status = self.status()
         if status != PipelineStatus.SHUTDOWN:
             raise RuntimeError(
-                f"pipeline {self.name} in state: {str(status.name)} cannot be started\n"
+                f"pipeline {self.name} in state {str(status.name)} cannot be started\n"
                 + self.client.get_pipeline(self.name).deployment_error.get(
                     "message", ""
                 )
             )
 
-        self.client.pause_pipeline(self.name, "error: cannot START failed pipeline")
+        self.client.pause_pipeline(self.name, "Unable to START the pipeline.")
         self.__setup_output_listeners()
         self.resume()
 
