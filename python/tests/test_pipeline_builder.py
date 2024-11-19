@@ -951,6 +951,65 @@ Code snippet:
 
         self.assertCountEqual(got, expected)
 
+    def test_issue2971(self):
+        sql = """
+        CREATE TABLE t0(c0 TINYINT) with ('materialized' = 'true');
+        CREATE MATERIALIZED VIEW v0 AS SELECT (c0 + 127::TINYINT) as out FROM t0;
+        """
+
+        pipeline = PipelineBuilder(
+            TEST_CLIENT, name="test_issue2971", sql=sql
+        ).create_or_replace()
+        pipeline.start()
+        pipeline.input_json("t0", {"c0": 10})
+
+        with self.assertRaises(RuntimeError) as err:
+            pipeline.pause()
+
+        got_err: str = err.exception.args[0].strip()
+        assert "attempt to add with overflow" in got_err
+
+        with self.assertRaises(RuntimeError) as err:
+            pipeline.start()
+
+        got_err: str = err.exception.args[0].strip()
+        assert "attempt to add with overflow" in got_err
+
+        pipeline.shutdown()
+        pipeline.delete()
+
+    def test_initialization_error(self):
+        sql = """
+        CREATE TABLE t0 (
+            c0 INT NOT NULL
+        ) with (
+          'connectors' = '[{
+            "transport": {
+              "name": "datagen",
+              "config": {
+                "plan": [{
+                    "fields": {
+                        "c1": { "strategy": "uniform", "range": [100, 10000] }
+                    }
+                }]
+              }
+            }
+          }]'
+        );
+        """
+
+        pipeline = PipelineBuilder(
+            TEST_CLIENT, name="test_initialization_error", sql=sql
+        ).create_or_replace()
+        with self.assertRaises(RuntimeError) as err:
+            pipeline.start()
+
+        pipeline.shutdown()
+        pipeline.delete()
+
+        got_err: str = err.exception.args[0].strip()
+        assert "error: cannot START failed pipeline" in got_err
+
 
 if __name__ == "__main__":
     unittest.main()
