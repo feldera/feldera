@@ -167,7 +167,7 @@ public class CompilerMain {
         if (compiler.hasErrors())
             return compiler.messages;
         // The following runs all compilation stages
-        DBSPCircuit dbsp = compiler.getFinalCircuit(this.options.ioOptions.functionName);
+        DBSPCircuit dbsp = compiler.getFinalCircuit(false);
         if (compiler.hasErrors())
             return compiler.messages;
         if (this.options.ioOptions.emitJsonSchema != null) {

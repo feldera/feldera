@@ -1,7 +1,7 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
 import org.dbsp.sqlCompiler.circuit.DBSPDeclaration;
-import org.dbsp.sqlCompiler.circuit.DBSPPartialCircuit;
+import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.annotation.Recursive;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPApply2Operator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPApplyOperator;
@@ -167,7 +167,7 @@ public class RecursiveComponents extends Passes {
         }
 
         @Override
-        public VisitDecision preorder(DBSPPartialCircuit circuit) {
+        public VisitDecision preorder(DBSPCircuit circuit) {
             super.preorder(circuit);
             CircuitGraph graph = this.graphs.getGraph(circuit);
             this.scc = new SCC<>(circuit, graph);
@@ -254,7 +254,7 @@ public class RecursiveComponents extends Passes {
             }
 
             // This is normally done in postorder(DBSPPartialCircuit), but postorder is not executed.
-            DBSPPartialCircuit result = Utilities.removeLast(this.underConstruction).to(DBSPPartialCircuit.class);
+            DBSPCircuit result = Utilities.removeLast(this.underConstruction).to(DBSPCircuit.class);
             if (result.sameCircuit(circuit))
                 result = circuit;
             this.map(circuit, result);
@@ -354,7 +354,7 @@ public class RecursiveComponents extends Passes {
         }
 
         @Override
-        public VisitDecision preorder(DBSPPartialCircuit circuit) {
+        public VisitDecision preorder(DBSPCircuit circuit) {
             super.preorder(circuit);
             CircuitGraph graph = this.graphs.getGraph(circuit);
             this.scc = new SCC<>(circuit, graph);

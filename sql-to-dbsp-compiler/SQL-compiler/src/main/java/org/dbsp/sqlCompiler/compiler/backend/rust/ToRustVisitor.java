@@ -24,7 +24,6 @@
 package org.dbsp.sqlCompiler.compiler.backend.rust;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
-import org.dbsp.sqlCompiler.circuit.DBSPPartialCircuit;
 import org.dbsp.sqlCompiler.circuit.annotation.Recursive;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperator;
@@ -377,7 +376,11 @@ public class ToRustVisitor extends CircuitVisitor {
 
     @Override
     public VisitDecision preorder(DBSPCircuit circuit) {
-        for (DBSPDeclaration item: circuit.circuit.declarations) {
+        StringBuilder b = new StringBuilder();
+        IndentStream signature = new IndentStream(b);
+        ToRustInnerVisitor inner = this.createInnerVisitor(signature);
+
+        for (DBSPDeclaration item: circuit.declarations) {
             if (item.item.is(DBSPStructWithHelperItem.class)) {
                 DBSPStructWithHelperItem i = item.item.to(DBSPStructWithHelperItem.class);
                 this.generateStructHelpers(i.type, null);
@@ -385,16 +388,7 @@ public class ToRustVisitor extends CircuitVisitor {
         }
 
         this.builder.append("pub fn ")
-                .append(circuit.name);
-        circuit.circuit.accept(this);
-        return VisitDecision.STOP;
-    }
-
-    @Override
-    public VisitDecision preorder(DBSPPartialCircuit circuit) {
-        StringBuilder b = new StringBuilder();
-        IndentStream signature = new IndentStream(b);
-        ToRustInnerVisitor inner = this.createInnerVisitor(signature);
+                .append(circuit.getName());
 
         if (!this.useHandles) {
             signature.append("Catalog");
@@ -835,7 +829,7 @@ public class ToRustVisitor extends CircuitVisitor {
             IHasSchema description = this.metadata.getViewDescription(operator.viewName);
             DBSPStrLiteral json = new DBSPStrLiteral(description.asJson().toString(), false, true);
             String registerFunction = switch (operator.metadata.viewKind) {
-                case MATERIALIZED -> "register_materialized_output_zset";
+                case MATERIALIZED, SYSTEM -> "register_materialized_output_zset";
                 case LOCAL -> throw new InternalCompilerError("Sink operator for local view " + operator);
                 case STANDARD -> "register_output_zset";
             };

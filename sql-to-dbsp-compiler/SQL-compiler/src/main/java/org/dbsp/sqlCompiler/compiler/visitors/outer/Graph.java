@@ -1,7 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
-import org.dbsp.sqlCompiler.circuit.DBSPPartialCircuit;
 import org.dbsp.sqlCompiler.circuit.ICircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDeltaOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
@@ -62,7 +61,7 @@ public class Graph extends CircuitVisitor {
     }
 
     @Override
-    public VisitDecision preorder(DBSPPartialCircuit circuit) {
+    public VisitDecision preorder(DBSPCircuit circuit) {
         this.graphs.newCircuit(circuit);
         return super.preorder(circuit);
     }
@@ -92,7 +91,7 @@ public class Graph extends CircuitVisitor {
     }
 
     @Override
-    public void postorder(DBSPPartialCircuit circuit) {
+    public void postorder(DBSPCircuit circuit) {
         this.postCircuit(circuit);
         super.postorder(circuit);
     }

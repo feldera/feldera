@@ -72,7 +72,7 @@ import org.apache.calcite.sql.ddl.SqlAttributeDefinition;
 import org.apache.calcite.sql.ddl.SqlCreateType;
 import org.apache.calcite.sql.type.SqlTypeName;
 import org.apache.calcite.util.ImmutableBitSet;
-import org.dbsp.sqlCompiler.circuit.DBSPPartialCircuit;
+import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateZeroOperator;
@@ -233,7 +233,7 @@ import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.USER;
 public class CalciteToDBSPCompiler extends RelVisitor
         implements IWritesLogs, ICompilerComponent {
     // Result is deposited here
-    private DBSPPartialCircuit circuit;
+    private DBSPCircuit circuit;
     // Map each compiled RelNode operator to its DBSP implementation.
     final Map<RelNode, DBSPSimpleOperator> nodeOperator;
     final TableContents tableContents;
@@ -257,7 +257,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
     public CalciteToDBSPCompiler(boolean trackTableContents,
                                  CompilerOptions options, DBSPCompiler compiler,
                                  ProgramMetadata metadata) {
-        this.circuit = new DBSPPartialCircuit(compiler.metadata);
+        this.circuit = new DBSPCircuit(compiler.metadata);
         this.compiler = compiler;
         this.nodeOperator = new HashMap<>();
         this.tableContents = new TableContents(compiler, trackTableContents);
@@ -288,9 +288,9 @@ public class CalciteToDBSPCompiler extends RelVisitor
     }
 
     /** Gets the circuit produced so far and starts a new one. */
-    public DBSPPartialCircuit getFinalCircuit() {
-        DBSPPartialCircuit result = this.circuit;
-        this.circuit = new DBSPPartialCircuit(this.compiler.metadata);
+    public DBSPCircuit getFinalCircuit() {
+        DBSPCircuit result = this.circuit;
+        this.circuit = new DBSPCircuit(this.compiler.metadata);
         return result;
     }
 

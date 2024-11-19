@@ -85,6 +85,7 @@ public class BaseSQLTests {
         Logger.INSTANCE.setLoggingLevel(DBSPCompiler.class, 2);
     }
 
+    @SuppressWarnings("unused")
     protected void showFinalVerbose() {
         Logger.INSTANCE.setLoggingLevel(DBSPCompiler.class, 4);
     }
@@ -242,7 +243,7 @@ public class BaseSQLTests {
     public void testNegativeQuery(String query, String messageFragment) {
         DBSPCompiler compiler = this.noThrowCompiler();
         compiler.compileStatement("CREATE VIEW VV AS " + query);
-        compiler.getFinalCircuit("tmp");
+        compiler.getFinalCircuit(true);
         Assert.assertTrue(compiler.messages.exitCode != 0);
         String message = compiler.messages.toString();
         Assert.assertTrue(message.contains(messageFragment));
@@ -270,9 +271,9 @@ public class BaseSQLTests {
                         " are not compiled with the same options: "
                         + test.ccs.compiler.options.diff(firstCompiler.options));
             ProgramAndTester pt;
-            // Standard test
+            test.ccs.circuit.setName("circuit" + testNumber);
             pt = new ProgramAndTester(test.ccs.circuit, test.createTesterCode(testNumber, rustDirectory));
-            testsExecuted++;
+            BaseSQLTests.testsExecuted++;
             writer.add(pt);
             testNumber++;
         }
@@ -331,8 +332,7 @@ public class BaseSQLTests {
     }
 
     public static DBSPCircuit getCircuit(DBSPCompiler compiler) {
-        String name = "circuit" + testsToRun.size();
-        return compiler.getFinalCircuit(name);
+        return compiler.getFinalCircuit(false);
     }
 
     protected InputOutputChangeStream streamWithEmptyChanges() {

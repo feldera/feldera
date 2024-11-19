@@ -27,13 +27,13 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * The {@link DBSPControlledFilterOperator} does not correspond directly to any
- * DBSP operator.  The left input is a stream of ZSets or IndexedZSets, while the
+ * The {@link DBSPControlledKeyFilterOperator} is an operator with 2 outputs, including
+ * an error stream.  The left input is a stream of ZSets, while the
  * right input is a stream of scalars.  The function is a boolean function
  * that takes an input element and a scalar; when the function returns 'true'
  * the input element makes it to the output. */
-public final class DBSPControlledFilterOperator extends DBSPBinaryOperator {
-    public DBSPControlledFilterOperator(
+public final class DBSPControlledKeyFilterOperator extends DBSPBinaryOperator {
+    public DBSPControlledKeyFilterOperator(
             CalciteObject node, DBSPExpression expression,
             OutputPort data, OutputPort control) {
         super(node, "controlled_filter", expression, data.outputType(), data.isMultiset(), data, control);
@@ -81,7 +81,7 @@ public final class DBSPControlledFilterOperator extends DBSPBinaryOperator {
         return new DBSPBlockExpression(statements, compare);
     }
 
-    public static DBSPControlledFilterOperator create(
+    public static DBSPControlledKeyFilterOperator create(
             CalciteObject node, OutputPort data, IMaybeMonotoneType monotoneType,
             OutputPort control, DBSPOpcode opcode) {
         DBSPType controlType = control.outputType();
@@ -103,15 +103,15 @@ public final class DBSPControlledFilterOperator extends DBSPBinaryOperator {
         DBSPExpression projection = monotoneType.projectExpression(dataArg);
 
         DBSPVariablePath controlArg = new DBSPVariablePath(controlType.ref());
-        DBSPExpression compare = DBSPControlledFilterOperator.generateTupleCompare(
+        DBSPExpression compare = DBSPControlledKeyFilterOperator.generateTupleCompare(
                 projection, controlArg.deref(), opcode);
         DBSPExpression closure = compare.closure(param, controlArg.asParameter());
-        return new DBSPControlledFilterOperator(node, closure, data, control);
+        return new DBSPControlledKeyFilterOperator(node, closure, data, control);
     }
 
     @Override
     public DBSPSimpleOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
-        return new DBSPControlledFilterOperator(
+        return new DBSPControlledKeyFilterOperator(
                 this.getNode(), Objects.requireNonNull(expression),
                 this.left(), this.right()).copyAnnotations(this);
     }
@@ -120,7 +120,7 @@ public final class DBSPControlledFilterOperator extends DBSPBinaryOperator {
     public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
         assert newInputs.size() == 2: "Expected 2 inputs, got " + newInputs.size();
         if (force || this.inputsDiffer(newInputs))
-            return new DBSPControlledFilterOperator(
+            return new DBSPControlledKeyFilterOperator(
                     this.getNode(), this.getFunction(),
                     newInputs.get(0), newInputs.get(1))
                     .copyAnnotations(this);

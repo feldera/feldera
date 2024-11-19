@@ -117,7 +117,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         DBSPCompiler compiler = this.compileDef();
         compiler.compileStatement(query);
         // Deterministically name the circuit function.
-        DBSPCircuit circuit = compiler.getFinalCircuit("circuit");
+        DBSPCircuit circuit = compiler.getFinalCircuit(false);
         String str = circuit.toString();
         String expected = """
                 Circuit circuit {
@@ -379,7 +379,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         String query = "CREATE VIEW V AS SELECT * FROM T ORDER BY T.COL2";
         compiler.compileStatement(ddl);
         compiler.compileStatements(query);
-        DBSPCircuit circuit = compiler.getFinalCircuit("circuit");
+        DBSPCircuit circuit = compiler.getFinalCircuit(false);
         DBSPTypeZSet outputType = circuit.getSingleOutputType().to(DBSPTypeZSet.class);
         DBSPSimpleOperator source = circuit.getInput(compiler.canonicalName("T"));
         Assert.assertNotNull(source);
@@ -398,8 +398,8 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         String query = "CREATE VIEW V AS SELECT T.COL1 FROM T";
         compiler.compileStatement(ddl);
         compiler.compileStatements(query);
-        DBSPCircuit circuit = compiler.getFinalCircuit("circuit");
-        DBSPSinkOperator sink = circuit.circuit.getSink(compiler.canonicalName("V"));
+        DBSPCircuit circuit = compiler.getFinalCircuit(false);
+        DBSPSinkOperator sink = circuit.getSink(compiler.canonicalName("V"));
         Assert.assertNotNull(sink);
         OutputPort op = sink.input();
         // There is no optimization I can imagine which will remove the distinct

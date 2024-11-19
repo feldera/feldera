@@ -26,6 +26,8 @@ public class SqlCreateView extends SqlCreate {
         LOCAL,
         /** Standard views only produce deltas */
         STANDARD,
+        /** Automatic view maintained by the system */
+        SYSTEM,
     }
 
     public final SqlIdentifier name;

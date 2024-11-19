@@ -23,11 +23,12 @@
 
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
+import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.circuit.operator.*;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 
-/** This visitor converts a DBSPCircuit into a new circuit which
+/** This visitor converts a {@link DBSPCircuit} into a new circuit which
  * computes the incremental version of the same query.
  * The generated circuit is not efficient, though, it should be
  * further optimized. */

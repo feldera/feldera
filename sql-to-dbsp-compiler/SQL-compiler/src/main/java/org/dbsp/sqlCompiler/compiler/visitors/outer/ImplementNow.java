@@ -1,6 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
-import org.dbsp.sqlCompiler.circuit.DBSPPartialCircuit;
+import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPApplyOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDeindexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDifferentiateOperator;
@@ -823,7 +823,7 @@ public class ImplementNow extends Passes {
         }
 
         @Override
-        public VisitDecision preorder(DBSPPartialCircuit circuit) {
+        public VisitDecision preorder(DBSPCircuit circuit) {
             // We are doing this in preorder because we want now to be first in topological order,
             // otherwise the now operator may be inserted in the topological order too late,
             // after nodes that should depend on it

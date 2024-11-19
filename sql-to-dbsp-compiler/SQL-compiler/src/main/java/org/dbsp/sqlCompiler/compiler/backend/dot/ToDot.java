@@ -31,7 +31,7 @@ public class ToDot {
             PrintWriter writer = new PrintWriter(tmp.getAbsolutePath());
             IndentStream stream = new IndentStream(writer);
             stream.append("digraph ")
-                    .append(circuit.name)
+                    .append(circuit.id)
                     .append(" {")
                     .append("ordering=\"in\"").newline()
                     .increase();
