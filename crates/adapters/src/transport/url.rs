@@ -15,15 +15,22 @@ use feldera_types::program_schema::Relation;
 use feldera_types::transport::url::UrlInputConfig;
 use futures::{future::OptionFuture, StreamExt};
 use serde::{Deserialize, Serialize};
-use xxhash_rust::xxh3::Xxh3Default;
 use std::{
-    cmp::{min, Ordering}, collections::VecDeque, hash::Hasher, ops::Range, str::FromStr, sync::Arc, thread::spawn, time::Duration
+    cmp::{min, Ordering},
+    collections::VecDeque,
+    hash::Hasher,
+    ops::Range,
+    str::FromStr,
+    sync::Arc,
+    thread::spawn,
+    time::Duration,
 };
 use tokio::{
     select,
     sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender},
     time::{sleep_until, Instant},
 };
+use xxhash_rust::xxh3::Xxh3Default;
 
 pub(crate) struct UrlInputEndpoint {
     config: Arc<UrlInputConfig>,
