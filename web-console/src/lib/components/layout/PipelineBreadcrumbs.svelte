@@ -28,13 +28,13 @@
       {#snippet content(close)}
         <div
           transition:fade={{ duration: 100 }}
-          class="absolute left-0 z-10 flex max-h-[400px] w-[calc(100vw-100px)] max-w-[360px] flex-col justify-end gap-4 overflow-y-auto rounded bg-white p-4 shadow-md dark:bg-black"
+          class="absolute left-0 z-10 flex max-h-[400px] w-[calc(100vw-100px)] max-w-[360px] flex-col justify-end gap-0 overflow-y-auto rounded bg-white p-2 shadow-md dark:bg-black"
         >
           {#each pipelineList.pipelines as pipeline}
             <a
               onclick={close}
               href="{base}/pipelines/{pipeline.name}/"
-              class="flex justify-between"
+              class="flex justify-between rounded p-2 hover:preset-tonal-surface"
             >
               {pipeline.name}
               <PipelineStatus status={pipeline.status} class=""></PipelineStatus>

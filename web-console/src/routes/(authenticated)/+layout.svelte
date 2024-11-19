@@ -84,7 +84,7 @@
   <div class="flex h-full w-full flex-col">
     <div class="flex items-end justify-between px-2 py-2">
       <a class="px-8" href="{base}/">
-        <span class="hidden sm:inline">
+        <span class="hidden sm:block">
           {#if darkMode.value === 'dark'}
             <FelderaModernLogoColorLight class="h-12"></FelderaModernLogoColorLight>
           {:else}

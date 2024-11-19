@@ -169,7 +169,7 @@ example = "1.0"`
       href: `${base}/pipelines/${pipelineName}/`
     }
   ])
-  let separateAdHocTab = useLocalStorage('layout/separateAdHoc', false)
+  let separateAdHocTab = useLocalStorage('layout/pipelines/separateAdHoc', false)
   let downstreamChanged = $state(false)
 </script>
 
@@ -247,8 +247,8 @@ example = "1.0"`
           class="btn p-2 text-surface-700-300 hover:preset-tonal-surface"
           onclick={() => (separateAdHocTab.value = !separateAdHocTab.value)}
         >
-          Ad-Hoc Query
-          <IconLayputPanelRight class={separateAdHocTab.value ? 'fill-primary-500' : ''}
+          Ad-Hoc Queries
+          <IconLayputPanelRight class={separateAdHocTab.value ? 'fill-primary-500' : 'fill-surface-700-300'}
           ></IconLayputPanelRight>
         </button>
       {/snippet}

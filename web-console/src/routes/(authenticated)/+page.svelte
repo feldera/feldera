@@ -3,6 +3,7 @@
   import { base } from '$app/paths'
   import { useIsMobile, useIsTablet } from '$lib/compositions/layout/useIsMobile.svelte'
   import FelderaLogomarkLight from '$assets/images/feldera-modern/Feldera Logomark Color Dark.svg?component'
+  import FelderaLogomarkDark from '$assets/images/feldera-modern/Feldera Logomark Color Light.svg?component'
   import IconBook from '$assets/icons/feldera-material-icons/book.svg?component'
   import IconDiscord from '$assets/icons/vendors/discord-logomark-color.svg?component'
   import ImageBox from '$assets/images/generic/package.svg?component'
@@ -14,6 +15,8 @@
   import PipelineTable from '$lib/components/pipelines/Table.svelte'
   import DemoTile from '$lib/components/other/DemoTile.svelte'
   import CreatePipelineButton from '$lib/components/pipelines/CreatePipelineButton.svelte'
+  import { useLocalStorage } from '$lib/compositions/localStore.svelte'
+  import { useDarkMode } from '$lib/compositions/useDarkMode.svelte'
 
   preloadCode(`${base}/pipelines/*`).then(() => preloadCode(`${base}/demos/`))
 
@@ -42,35 +45,52 @@
   const maxShownDemos = $derived(isMobile.current ? 3 : isTablet.current ? 5 : 9)
 
   const pipelines = usePipelineList(data.preloaded)
+  let welcomed = useLocalStorage('home/welcomed', false)
+  let showSuggestedDemos = useLocalStorage('home/hideSuggestedDemos', true)
+  let { darkMode } = useDarkMode()
 </script>
 
 <div class="h-full overflow-y-auto scrollbar">
   <div class="flex flex-col gap-8 p-8">
-    <div class="relative flex min-h-40 w-full gap-4 p-6 sm:gap-12">
-      <div class="card absolute left-0 top-0 -z-10 flex h-full w-full overflow-clip">
-        <div class="w-1/2 bg-gradient-to-br from-fuchsia-300 via-amber-50 to-orange-300"></div>
-        <div class="w-1/2 bg-gradient-to-tr from-orange-300 via-amber-50 to-amber-50"></div>
-      </div>
-      <FelderaLogomarkLight class="hidden h-full max-h-28 sm:inline"></FelderaLogomarkLight>
-      <div class="flex w-full flex-col justify-between gap-y-2">
-        <div class="flex flex-nowrap justify-between">
-          <div class="h5">Explore our communities and documentation</div>
-          <button class="fd fd-close btn-icon-lg" aria-label="Close"></button>
+    {#if !welcomed.value}
+      <div class="relative flex min-h-40 w-full gap-4 p-6 sm:gap-12">
+        <div class="card absolute left-0 top-0 -z-10 flex h-full w-full overflow-clip">
+          <div
+            class="w-1/2 bg-gradient-to-br from-fuchsia-300 via-amber-50 to-orange-300 dark:from-fuchsia-700 dark:via-amber-950 dark:to-orange-700"
+          ></div>
+          <div
+            class="w-1/2 bg-gradient-to-tr from-orange-300 via-amber-50 to-amber-50 dark:from-orange-700 dark:via-amber-950 dark:to-amber-950"
+          ></div>
         </div>
+        {#if darkMode.value === 'dark'}
+          <FelderaLogomarkDark class="hidden h-full max-h-28 sm:inline"></FelderaLogomarkDark>
+        {:else}
+          <FelderaLogomarkLight class="hidden h-full max-h-28 sm:inline"></FelderaLogomarkLight>
+        {/if}
+        <div class="flex w-full flex-col justify-between gap-y-2">
+          <div class="flex flex-nowrap justify-between">
+            <div class="h5">Explore our communities and documentation</div>
+            <button
+              class="fd fd-close btn-icon-lg"
+              aria-label="Close"
+              onclick={() => (welcomed.value = !welcomed.value)}
+            ></button>
+          </div>
 
-        <div class="flex flex-col gap-x-8 gap-y-4 lg:flex-row">
-          {#each featured as link}
-            <a class="bg-white-black btn !p-6" href={link.href}
-              ><link.icon class="h-6 w-6"></link.icon>{link.title}</a
-            >
-          {/each}
+          <div class="flex flex-col gap-x-8 gap-y-4 lg:flex-row">
+            {#each featured as link}
+              <a class="bg-white-black btn !p-6" href={link.href}
+                ><link.icon class="h-6 w-6"></link.icon>{link.title}</a
+              >
+            {/each}
+          </div>
         </div>
       </div>
-    </div>
+    {/if}
 
     {#if data.demos.length}
       <div>
-        <InlineDropdown startOpen>
+        <InlineDropdown bind:open={showSuggestedDemos.value}>
           {#snippet header(open, toggle)}
             <div
               class="flex w-fit cursor-pointer items-center gap-2 py-2"

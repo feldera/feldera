@@ -45,7 +45,7 @@
     </thead>
     <tbody>
       {#each table.rows as pipeline}
-        <tr>
+        <tr class="hover:!bg-surface-50 dark:hover:!bg-surface-950">
           <td>
             <input
               class="checkbox"
