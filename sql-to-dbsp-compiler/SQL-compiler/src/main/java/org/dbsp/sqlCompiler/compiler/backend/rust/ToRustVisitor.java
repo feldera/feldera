@@ -484,33 +484,40 @@ public class ToRustVisitor extends CircuitVisitor {
     }
 
     @Override
-    public VisitDecision preorder(DBSPNestedOperator circuit) {
-        boolean recursive = circuit.hasAnnotation(a -> a.is(Recursive.class));
+    public VisitDecision preorder(DBSPNestedOperator operator) {
+        boolean recursive = operator.hasAnnotation(a -> a.is(Recursive.class));
         if (!recursive)
             throw new InternalCompilerError("NestedOperator not recursive");
 
         this.builder.append("let (");
-        for (int i = 0; i < circuit.outputCount(); i++) {
-            this.builder.append(circuit.getOutputName(i)).append(", ");
+        for (int i = 0; i < operator.outputCount(); i++) {
+            this.builder.append(operator.getOutputName(i)).append(", ");
         }
         this.builder.append(") = ")
                 .append("circuit.recursive(|child, (");
-        for (DBSPViewDeclarationOperator decl: circuit.viewDeclarations) {
-            this.builder.append(decl.getOutputName()).append(", ");
+        for (int i = 0; i < operator.outputCount(); i++) {
+            String view = operator.outputViews.get(i);
+            DBSPViewDeclarationOperator decl = operator.declarationByName.get(view);
+            if (decl != null) {
+                this.builder.append(decl.getOutputName()).append(", ");
+            } else {
+                // view is not really recursive
+                this.builder.append("_").append(", ");
+            }
         }
         this.builder.append("): (");
-        for (int i = 0; i < circuit.outputCount(); i++) {
-            circuit.streamType(i).accept(this.innerVisitor);
+        for (int i = 0; i < operator.outputCount(); i++) {
+            operator.streamType(i).accept(this.innerVisitor);
             this.builder.append(", ");
         }
         this.builder.append(")| {").increase().newline();
-        for (IDBSPNode node : circuit.getAllOperators())
+        for (IDBSPNode node : operator.getAllOperators())
             this.processNode(node);
 
         this.builder.append("Ok((");
-        for (int i = 0; i < circuit.outputCount(); i++) {
+        for (int i = 0; i < operator.outputCount(); i++) {
             this.builder
-                    .append(circuit.outputs.get(i).getOutputName())
+                    .append(operator.outputs.get(i).getOutputName())
                     .append(", ");
         }
         this.builder.append("))").newline()

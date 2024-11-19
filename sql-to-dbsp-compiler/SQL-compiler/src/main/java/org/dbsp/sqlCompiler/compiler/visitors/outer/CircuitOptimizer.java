@@ -97,7 +97,7 @@ public record CircuitOptimizer(DBSPCompiler compiler) implements ICompilerCompon
         passes.add(new ExpandHop(reporter));
         passes.add(new RemoveDeindexOperators(reporter));
         passes.add(new OptimizeWithGraph(reporter, g -> new RemoveNoops(reporter, g)));
-        passes.add(new RemoveViewOperators(reporter));
+        passes.add(new RemoveViewOperators(reporter, false));
         passes.add(new Repeat(reporter, new ExpandCasts(reporter).circuitRewriter()));
         if (options.languageOptions.optimizationLevel >= 2) {
             passes.add(new OptimizeWithGraph(reporter, g -> new FilterMapVisitor(reporter, g)));
@@ -118,8 +118,9 @@ public record CircuitOptimizer(DBSPCompiler compiler) implements ICompilerCompon
         // Lowering may surface additional casts that need to be expanded
         passes.add(new Repeat(reporter, new ExpandCasts(reporter).circuitRewriter()));
         // Beta reduction after implementing aggregates.
-        passes.add(new BetaReduction(compiler).getCircuitVisitor());
-        passes.add(new CompactNames(compiler));
+        passes.add(new BetaReduction(reporter).getCircuitVisitor());
+        passes.add(new RemoveViewOperators(reporter, true));
+        passes.add(new CompactNames(reporter));
         return new Passes("optimize", reporter, passes);
     }
 

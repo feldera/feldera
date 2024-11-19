@@ -257,7 +257,7 @@ public class OptimizeIncrementalVisitor extends CircuitCloneVisitor {
             OutputPort originalOutput = operator.outputs.get(i);
             OutputPort newPort = this.mapped(originalOutput);
             if (result != operator) {
-                result.addOutput(newPort);
+                result.addOutput(operator.outputViews.get(i), newPort);
             }
             // The integrator receives the input from 'result', not from 'newPort'
             DBSPIntegrateOperator integral = new DBSPIntegrateOperator(

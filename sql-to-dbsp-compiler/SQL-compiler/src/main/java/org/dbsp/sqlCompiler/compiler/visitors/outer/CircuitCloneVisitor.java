@@ -417,7 +417,7 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs {
             OutputPort originalOutput = operator.outputs.get(i);
             OutputPort newPort = this.mapped(originalOutput);
             if (result != operator) {
-                result.addOutput(newPort);
+                result.addOutput(operator.outputViews.get(i), newPort);
             }
             this.map(new OutputPort(operator, i), new OutputPort(result, i), false);
         }

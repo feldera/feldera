@@ -527,7 +527,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
 
             this.frontend.endCompilation(this.compiler());
             this.circuit = this.midend.getFinalCircuit().seal("parsed");
-            if (this.getDebugLevel() > 2) {
+            if (this.getDebugLevel() > 1) {
                 ToDot.dump(this, "initial.png", this.getDebugLevel(), "png", this.circuit);
             }
 

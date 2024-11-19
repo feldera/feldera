@@ -44,10 +44,6 @@ public final class DBSPStringLiteral extends DBSPLiteral {
     public final String value;
     public final Charset charset;
 
-    public DBSPStringLiteral(String value, Charset charset) {
-        this(value, charset, DBSPTypeString.varchar(false));
-    }
-
     public DBSPStringLiteral(String value) {
         this(value, StandardCharsets.UTF_8, DBSPTypeString.varchar(false));
     }

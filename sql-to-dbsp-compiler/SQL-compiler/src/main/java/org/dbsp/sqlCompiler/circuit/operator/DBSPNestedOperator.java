@@ -12,6 +12,7 @@ import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
 
+import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -24,11 +25,14 @@ public class DBSPNestedOperator extends DBSPOperator implements ICircuit {
     final List<DBSPOperator> allOperators;
     final Set<DBSPOperator> operators;
     final Map<String, DBSPViewOperator> viewByName;
-    public final List<DBSPViewDeclarationOperator> viewDeclarations;
+    /** Indexed by original view name */
+    public final Map<String, DBSPViewDeclarationOperator> declarationByName;
     final List<DBSPDeltaOperator> deltaInputs;
     /** For each output port of this, the actual port of an operator inside,
      * which produces the result. */
     public final List<OutputPort> outputs;
+    /** Outputs always correspond to recursive views.  Names of these views in order */
+    public final List<String> outputViews;
 
     public DBSPNestedOperator(CalciteObject node) {
         super(node);
@@ -37,7 +41,8 @@ public class DBSPNestedOperator extends DBSPOperator implements ICircuit {
         this.deltaInputs = new ArrayList<>();
         this.outputs = new ArrayList<>();
         this.operators = new HashSet<>();
-        this.viewDeclarations = new ArrayList<>();
+        this.outputViews = new ArrayList<>();
+        this.declarationByName = new HashMap<>();
     }
 
     public boolean contains(DBSPOperator operator) {
@@ -62,11 +67,13 @@ public class DBSPNestedOperator extends DBSPOperator implements ICircuit {
             this.deltaInputs.add(delta);
             this.addInput(delta.input());
         } else if (operator.is(DBSPViewDeclarationOperator.class)) {
-            this.viewDeclarations.add(operator.to(DBSPViewDeclarationOperator.class));
+            var decl = operator.to(DBSPViewDeclarationOperator.class);
+            Utilities.putNew(this.declarationByName, decl.originalViewName(), decl);
         }
     }
 
-    public OutputPort addOutput(OutputPort port) {
+    public OutputPort addOutput(String view, OutputPort port) {
+        this.outputViews.add(view);
         this.outputs.add(port);
         assert this.operators.contains(port.node());
         return new OutputPort(this, this.outputs.size() - 1);
@@ -77,9 +84,10 @@ public class DBSPNestedOperator extends DBSPOperator implements ICircuit {
         throw new InternalCompilerError("Adding declaration to CircuitOperator");
     }
 
+    @Nullable
     @Override
     public DBSPViewOperator getView(String name) {
-        return Utilities.getExists(this.viewByName, name);
+        return this.viewByName.get(name);
     }
 
     @Override

@@ -4,15 +4,21 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPViewOperator;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 
-/** Remove DBSPViewOperator operators that are not recursive. */
+/** Remove DBSPViewOperator operators. */
 public class RemoveViewOperators extends CircuitCloneVisitor {
-    public RemoveViewOperators(IErrorReporter reporter) {
+    /** If false remove only non-recursive views */
+    final boolean all;
+
+    public RemoveViewOperators(IErrorReporter reporter, boolean all) {
         super(reporter, false);
+        this.all = all;
     }
 
     @Override
     public void postorder(DBSPViewOperator operator) {
-        if (operator.metadata.recursive) {
+        if (!this.all && operator.metadata.recursive) {
+            // preserve the view.
+            // Views have to be preserved if we build the CircuitGraph.
             super.postorder(operator);
             return;
         }
