@@ -3,8 +3,8 @@
 
   import ModalDrawer from '$lib/components/layout/ModalDrawer.svelte'
   import InlineDrawer from '$lib/components/layout/InlineDrawer.svelte'
-  import { useIsMobile } from '$lib/compositions/layout/useIsMobile.svelte'
-  const isMobile = useIsMobile()
+  import { useIsTablet } from '$lib/compositions/layout/useIsMobile.svelte'
+  const isTablet = useIsTablet()
 
   let {
     open = $bindable(),
@@ -19,8 +19,8 @@
   } = $props()
 </script>
 
-<!-- {#if isMobile.matches} -->
-{#if isMobile.current}
+<!-- {#if isTablet.matches} -->
+{#if isTablet.current}
   <ModalDrawer {width} bind:open {side} {children} class="bg-surface-50 dark:bg-surface-950"
   ></ModalDrawer>
 {:else}

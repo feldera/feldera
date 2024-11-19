@@ -29,5 +29,6 @@
     "svelte.enable-ts-plugin": true,
     "python.analysis.extraPaths": [
         "./python"
-    ]
+    ],
+    "prettier.configPath": "web-console/.prettierrc"
 }

@@ -1,10 +1,10 @@
 import { useLocalStorage } from '$lib/compositions/localStore.svelte'
-import { useIsMobile } from './useIsMobile.svelte'
+import { useIsTablet } from './useIsMobile.svelte'
 
 export const useDrawer = () => {
-  const isMobile = useIsMobile()
+  const isTablet = useIsTablet()
 
-  const showDrawer = useLocalStorage('layout/drawer', !isMobile)
+  const showDrawer = useLocalStorage('layout/drawer', !isTablet)
   return {
     get value() {
       return showDrawer.value
@@ -13,7 +13,7 @@ export const useDrawer = () => {
       showDrawer.value = show
     },
     get isMobileDrawer() {
-      return isMobile.current
+      return isTablet.current
     }
   }
 }

@@ -7,29 +7,32 @@
   const { status, class: _class = '' }: { status: PipelineStatus; class?: string } = $props()
   const chipClass = $derived(
     match(status)
-      .with('Shutdown', () => 'preset-filled-surface-50-950')
+      .with('Shutdown', () => 'preset-filled-surface-400-600')
       .with('Starting up', () => 'preset-filled-tertiary-200-800')
       .with('Initializing', () => 'preset-filled-tertiary-200-800')
-      .with('Paused', () => 'preset-filled-warning-200-800')
-      .with('Running', () => 'preset-filled-success-200-800')
+      .with('Paused', () => 'preset-filled-warning-400-600')
+      .with('Running', () => 'preset-filled-success-400-600')
       .with('Pausing', () => 'preset-filled-secondary-200-800')
       .with('Resuming', () => 'preset-filled-tertiary-200-800')
       .with('ShuttingDown', () => 'preset-filled-secondary-200-800')
-      .with({ PipelineError: P.any }, () => 'preset-filled-error-200-800')
-      .with('Compiling sql', () => 'preset-filled-warning-200-800')
-      .with('Queued', () => 'preset-filled-warning-200-800')
-      .with('Compiling bin', () => 'preset-filled-warning-200-800')
-      .with('Unavailable', () => 'bg-orange-200 dark:bg-orange-800')
+      .with({ PipelineError: P.any }, () => 'preset-filled-error-400-600')
+      .with('Compiling sql', () => 'preset-filled-warning-400-600')
+      .with('Queued', () => 'preset-filled-warning-400-600')
+      .with('Compiling bin', () => 'preset-filled-warning-400-600')
+      .with('Unavailable', () => 'bg-orange-300 dark:bg-orange-700')
       .with(
         { SqlError: P.any },
         { RustError: P.any },
         { SystemError: P.any },
-        () => 'preset-filled-error-200-800'
+        () => 'preset-filled-error-400-600'
       )
       .exhaustive()
   )
 </script>
 
-<div class={'chip pointer-events-none w-32 uppercase ' + chipClass + ' ' + _class}>
-  {getPipelineStatusLabel(status)}
+<div class="p-2">
+  <div class="h-4 w-4 flex-none rounded-full text-[0.66rem] uppercase {chipClass} {_class}"></div>
 </div>
+<Tooltip class="bg-white text-surface-950-50 dark:bg-black" placement="left"
+  >{getPipelineStatusLabel(status)}</Tooltip
+>

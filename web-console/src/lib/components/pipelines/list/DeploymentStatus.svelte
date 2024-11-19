@@ -25,6 +25,6 @@
   )
 </script>
 
-<div class={'w-30 chip pointer-events-none text-[0.66rem] uppercase ' + chipClass + ' ' + _class}>
+<div class={'chip pointer-events-none text-[0.66rem] uppercase ' + chipClass + ' ' + _class}>
   {getDeploymentStatusLabel(status)}
 </div>

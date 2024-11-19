@@ -30,4 +30,6 @@
   )
 </script>
 
-<PipelineEditLayout {pipeline}></PipelineEditLayout>
+<div class="h-full px-8 py-4">
+  <PipelineEditLayout {pipeline}></PipelineEditLayout>
+</div>

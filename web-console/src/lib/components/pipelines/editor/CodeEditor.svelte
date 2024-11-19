@@ -84,9 +84,12 @@
     files,
     currentFileName = $bindable(),
     editDisabled,
-    textEditor,
+    codeEditor,
     statusBarCenter,
-    statusBarEnd
+    statusBarEnd,
+    toolBarEnd,
+    fileTab,
+    downstreamChanged: _downstreamChanged = $bindable()
   }: {
     path: string
     files: {
@@ -99,9 +102,12 @@
     }[]
     currentFileName: string
     editDisabled?: boolean
-    textEditor: Snippet<[children: Snippet]>
+    codeEditor: Snippet<[textEditor: Snippet, statusBar: Snippet, isReadOnly: boolean]>
     statusBarCenter?: Snippet
     statusBarEnd?: Snippet<[downstreamChanged: boolean]>
+    toolBarEnd?: Snippet
+    fileTab: Snippet<[text: string, onclick: () => void, isCurrent: boolean]>
+    downstreamChanged?: boolean
   } = $props()
 
   let editorRef: editor.IStandaloneCodeEditor = $state()!
@@ -115,7 +121,7 @@
   function isReadonlyProperty<T>(obj: T, prop: keyof T) {
     return !Object.getOwnPropertyDescriptor(obj, prop)?.['set']
   }
-  let isReadonly = $derived(editDisabled || isReadonlyProperty(file.access, 'current'))
+  let isReadOnly = $derived(editDisabled || isReadonlyProperty(file.access, 'current'))
 
   let filePath = $derived(path + '/' + file.name)
   let previousFilePath = $state<string | undefined>(undefined)
@@ -244,6 +250,10 @@
     }
   })
 
+  $effect(() => {
+    _downstreamChanged = openFiles[filePath].sync.downstreamChanged
+  })
+
   let conflictWidgetRef: HTMLElement = $state(undefined!)
   const mode = useDarkMode()
   const theme = useSkeletonTheme()
@@ -273,20 +283,19 @@
   </div>
 </div>
 
-{@render textEditor(x)}
-{#snippet x()}
+{@render codeEditor(textEditor, statusBar, isReadOnly)}
+{#snippet textEditor()}
   <div class="flex h-full flex-col">
     <div class="flex flex-wrap">
       {#each files as file}
-        <button
-          class="px-3 py-1 {file.name === currentFileName
-            ? 'bg-white-black'
-            : 'hover:!bg-opacity-50 hover:bg-surface-100-900'}"
-          onclick={() => (currentFileName = file.name)}
-        >
-          {file.name}
-        </button>
+        {@render fileTab(
+          file.name,
+          () => (currentFileName = file.name),
+          file.name === currentFileName
+        )}
       {/each}
+      <div class="ml-auto"></div>
+      {@render toolBarEnd?.()}
     </div>
     <div class="relative flex-1">
       <div class="absolute h-full w-full">
@@ -320,10 +329,10 @@
               'feldera-dark',
               'feldera-light-disabled',
               'feldera-light'
-            ][+(mode.darkMode.value === 'light') * 2 + +!isReadonly],
+            ][+(mode.darkMode.value === 'light') * 2 + +!isReadOnly],
             automaticLayout: true,
             lineNumbersMinChars: 3,
-            ...isMonacoEditorDisabled(isReadonly),
+            ...isMonacoEditorDisabled(isReadOnly),
             renderValidationDecorations: 'on', // Show red error squiggles even in read-only mode
             overviewRulerLanes: 0,
             hideCursorInOverviewRuler: true,
@@ -344,16 +353,16 @@
   </div>
 {/snippet}
 
-<div class="flex flex-wrap items-center gap-x-8 border-y-[1px] pr-2 border-surface-100-900">
+{#snippet statusBar()}
   <div class="flex h-9 flex-nowrap gap-2">
-    <PipelineEditorStatusBar
+    <!-- <PipelineEditorStatusBar
       {autoSavePipeline}
       downstreamChanged={openFiles[filePath].sync.downstreamChanged}
       saveCode={() => openFiles[filePath].sync.push()}
-    ></PipelineEditorStatusBar>
+    ></PipelineEditorStatusBar> -->
     {@render statusBarCenter?.()}
   </div>
   <div class=" ml-auto flex flex-nowrap gap-x-8">
     {@render statusBarEnd?.(openFiles[filePath].sync.downstreamChanged)}
   </div>
-</div>
+{/snippet}

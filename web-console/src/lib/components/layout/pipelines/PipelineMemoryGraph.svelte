@@ -137,11 +137,11 @@
   })
 </script>
 
-<span class="pl-16">
-  Used memory: {humanSize(metrics.global.at(-1)?.rss_bytes ?? 0)}
-</span>
-{#key pipelineName}
-  <div class="absolute h-full w-full">
-    <Chart {init} {options} />
+<div class="absolute h-full w-full py-4">
+  <div class="pl-16">
+    Used memory: {humanSize(metrics.global.at(-1)?.rss_bytes ?? 0)}
   </div>
-{/key}
+  {#key pipelineName}
+    <Chart {init} {options} />
+  {/key}
+</div>

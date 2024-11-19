@@ -86,12 +86,11 @@
   } satisfies EChartsInitOpts)
 </script>
 
-<span class="absolute whitespace-nowrap pl-16">
-  Throughput: {formatQty(throughput.current)} records/s
-</span>
-
-{#key pipelineName}
-  <div class="absolute mt-6 h-full w-full">
-    <Chart {init} {options} />
+<div class="absolute h-full w-full py-4">
+  <div class="whitespace-nowrap pl-16">
+    Throughput: {formatQty(throughput.current)} records/s
   </div>
-{/key}
+  {#key pipelineName}
+    <Chart {init} {options} />
+  {/key}
+</div>

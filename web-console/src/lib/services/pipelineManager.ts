@@ -44,6 +44,7 @@ import JSONbig from 'true-json-bigint'
 import { felderaEndpoint } from '$lib/functions/configs/felderaEndpoint'
 import type { SQLValueJS } from '$lib/functions/sqlValue'
 import invariant from 'tiny-invariant'
+import { tuple } from '$lib/functions/common/tuple'
 
 const unauthenticatedClient = createClient({
   bodySerializer: JSONbig.stringify,
@@ -406,4 +407,23 @@ export const relationIngress = async (
   })
 }
 
-export const getDemos = handled(getConfigDemos)
+const extractDemoType = (demo: { title: string }) =>
+  ((match) => (match ? tuple(match, 'Use Case' as const) : undefined))(
+    /^Use Case:(.*)/.exec(demo.title)?.[1]
+  ) ??
+  ((match) => (match ? tuple(match, 'Tutorial' as const) : undefined))(
+    /^Tutorial:(.*)/.exec(demo.title)?.[1]
+  ) ??
+  tuple(demo.title, 'Example' as const)
+
+export const getDemos = () =>
+  handled(getConfigDemos)().then((demos) =>
+    demos.map((demo) => {
+      const [title, type] = extractDemoType(demo)
+      return {
+        ...demo,
+        title,
+        type
+      }
+    })
+  )

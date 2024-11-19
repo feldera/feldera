@@ -7,11 +7,15 @@
   const theme = useSkeletonTheme()
 </script>
 
-<div class="{errors.length ? 'bg-white-black' : ''} h-full overflow-y-auto scrollbar">
-  <div class=" flex min-h-full flex-col p-2">
+<div class="{errors.length ? '' : ''} h-full overflow-y-auto scrollbar">
+  <div class=" flex min-h-full flex-col gap-4 pt-4">
     {#each errors as systemError}
-      <div class=" whitespace-nowrap">
-        <a class="" href={systemError.cause.source}>
+      <div class="bg-white-black whitespace-nowrap rounded p-4">
+        <a
+          class=""
+          href={systemError.cause.source}
+          aria-label={systemError.cause.warning ? 'Warning location' : 'Error location'}
+        >
           <span
             class=" text-[20px] {systemError.cause.warning
               ? 'fd fd-warning_amber text-warning-500'

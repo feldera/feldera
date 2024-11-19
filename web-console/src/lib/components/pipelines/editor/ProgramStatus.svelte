@@ -9,14 +9,14 @@
   } = $props()
 </script>
 
-<div class="flex w-16 flex-nowrap justify-end gap-2 self-center">
+<div class="flex w-20 flex-nowrap justify-end gap-2 self-center">
   <span
     class={match(programStatus)
       .with(
         'Success',
         'CompilingRust',
         { RustError: P.any },
-        () => 'fd fd-check -mr-1 -mt-1 h-6 text-[32px] text-success-500'
+        () => 'fd fd-check_circle text-[24px] text-success-500'
       )
       .with('Pending', 'CompilingSql', undefined, () => 'gc gc-loader-alt animate-spin text-[24px]')
       .with(P.shape({}), () => 'fd fd-close_circle_outline inline-block text-[24px] text-error-500')
