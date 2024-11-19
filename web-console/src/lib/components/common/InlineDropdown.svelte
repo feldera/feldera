@@ -4,9 +4,14 @@
   let {
     header,
     content,
-    startOpen
-  }: { header: Snippet<[boolean, () => void]>; content: Snippet; startOpen?: boolean } = $props()
-  let open = $state(!!startOpen)
+    startOpen,
+    open = $bindable(startOpen ?? false)
+  }: {
+    header: Snippet<[boolean, () => void]>
+    content: Snippet
+    open?: boolean
+    startOpen?: boolean
+  } = $props()
 </script>
 
 {@render header(open, () => (open = !open))}
