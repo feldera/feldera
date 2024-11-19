@@ -57,6 +57,7 @@ public class RecursiveComponents extends Passes {
         this.add(graph2);
         this.add(new BuildNestedOperators(reporter, graph2.getGraphs()));
         this.add(new ValidateRecursiveOperators(reporter));
+        // this.add(new ShowCircuit(reporter));
     }
 
     /** Check that all operators in recursive components are supported */
@@ -209,8 +210,15 @@ public class RecursiveComponents extends Passes {
                         } else if (source.is(DBSPViewOperator.class)) {
                             var view = source.to(DBSPViewOperator.class);
                             if (view.metadata.recursive && sourceScc == sccId) {
-                                var decl = Utilities.getExists(declByName, view.viewName);
-                                newPort = decl.outputPort();
+                                var decl = declByName.get(view.viewName);
+                                if (decl != null) {
+                                    // decl can be null if the view is declared recursive, but in fact it is not
+                                    // used recursively in an SCC.  The view may still need to be declared recursive
+                                    // because the user may want to e.g., materialize it.
+                                    newPort = decl.outputPort();
+                                } else {
+                                    newPort = this.mapped(view.outputPort());
+                                }
                             }
                         }
                         newSources.add(newPort);
@@ -232,10 +240,13 @@ public class RecursiveComponents extends Passes {
                                     view.getNode());
                         }
                         Utilities.putNew(viewByName, view.viewName, view);
-                    }
-                    if (result.is(DBSPViewDeclarationOperator.class)) {
+                    } else if (result.is(DBSPViewDeclarationOperator.class)) {
                         DBSPViewDeclarationOperator view = result.to(DBSPViewDeclarationOperator.class);
                         Utilities.putNew(declByName, view.originalViewName(), view);
+                        if (operators.size() == 1) {
+                            // If the declaration is in an SCC by itself, remove it from the graph.
+                            continue;
+                        }
                     }
                     result.setDerivedFrom(operator.id);
                     this.map(simple, result, true);
@@ -257,11 +268,14 @@ public class RecursiveComponents extends Passes {
         SCC<DBSPOperator> scc = null;
         final Map<Integer, DBSPNestedOperator> components;
         final Set<DBSPNestedOperator> toAdd;
+        /** Maps each view in an SCC to its output. */
+        final Map<String, OutputPort> viewPort;
 
         BuildNestedOperators(IErrorReporter reporter, CircuitGraphs graphs) {
             super(reporter, graphs, false);
             this.components = new HashMap<>();
             this.toAdd = new HashSet<>();
+            this.viewPort = new HashMap<>();
         }
 
         @Override
@@ -290,13 +304,13 @@ public class RecursiveComponents extends Passes {
                 }
             }
 
-            // Check if any inputs of the operator are in a different component
-            // If they are, insert a delta + integrator operator in front.
             List<OutputPort> sources = new ArrayList<>();
             for (OutputPort input : operator.inputs) {
                 OutputPort source = this.mapped(input);
                 int sourceComp = Utilities.getExists(this.scc.componentId, input.node());
                 if (sourceComp != myComponent) {
+                    // Check if any inputs of the operator are in a different component
+                    // If they are, insert a delta + integrator operator in front.
                     DBSPDeltaOperator delta = new DBSPDeltaOperator(operator.getNode(), source);
                     block.addOperator(delta);
                     DBSPIntegrateOperator integral = new DBSPIntegrateOperator(operator.getNode(), delta.outputPort());
@@ -307,6 +321,16 @@ public class RecursiveComponents extends Passes {
                     DBSPIntegrateOperator integral = new DBSPIntegrateOperator(operator.getNode(), source);
                     block.addOperator(integral);
                     sources.add(integral.outputPort());
+                } else if (input.node().is(DBSPViewOperator.class)) {
+                    // Same component and input is a view.  Can't use 'source', because
+                    // that is mapped to the differentiator in the check below if the view is recursive.
+                    DBSPViewOperator view = input.node().to(DBSPViewOperator.class);
+                    if (view.metadata.recursive) {
+                        OutputPort port = Utilities.getExists(this.viewPort, view.viewName);
+                        sources.add(port);
+                    } else {
+                        sources.add(source);
+                    }
                 } else {
                     sources.add(source);
                 }
@@ -323,7 +347,8 @@ public class RecursiveComponents extends Passes {
                 DBSPDifferentiateOperator diff = new DBSPDifferentiateOperator(operator.getNode(), view.outputPort());
                 block.addOperator(diff);
                 // Use as port the output of the NestedOperator, and not the source view
-                port = block.addOutput(diff.outputPort());
+                port = block.addOutput(view.viewName, diff.outputPort());
+                Utilities.putNew(this.viewPort, view.viewName, view.outputPort());
             }
             this.map(operator.outputPort(), port, false);
         }

@@ -126,7 +126,6 @@ import java.nio.charset.Charset;
 import java.util.List;
 import java.util.Objects;
 
-import static org.apache.calcite.util.BuiltInMethod.SPLIT_PART;
 import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.NULL;
 import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.USER;
 
@@ -227,7 +226,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 String str = literal.getValueAs(String.class);
                 RelDataType litType = literal.getType();
                 Charset charset = litType.getCharset();
-                return new DBSPStringLiteral(Objects.requireNonNull(str), Objects.requireNonNull(charset));
+                return new DBSPStringLiteral(Objects.requireNonNull(str), Objects.requireNonNull(charset), type);
             }
             else if (type.is(DBSPTypeBool.class))
                 return new DBSPBoolLiteral(Objects.requireNonNull(literal.getValueAs(Boolean.class)));

@@ -25,6 +25,15 @@ public class CircuitToString {
         for (var child: operator.getAllOperators()) {
             toString(child);
         }
+        int index = 0;
+        for (var o: operator.outputs) {
+            this.builder.append(operator.id)
+                    .append(":")
+                    .append(index++)
+                    .append(" = ");
+            port(o);
+            this.builder.newline();
+        }
         builder.decrease().append("}").newline();
     }
 
