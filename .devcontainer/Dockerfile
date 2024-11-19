@@ -12,7 +12,7 @@ ENV LC_ALL=en_US.UTF-8
 
 ## Install common dependencies
 
-RUN apt-get update && \
+RUN apt-get update --fix-missing && \
    apt-get install -y \
    curl \
    unzip \

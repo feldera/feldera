@@ -102,60 +102,60 @@
   }}
 >
   <div class="w-full">
-    <div class="flex max-w-[1000px] flex-col">
-      <div class="flex w-full flex-nowrap">
+    <div class="flex max-w-[1000px] flex-col rounded border p-2">
+      <div class="flex w-full flex-col gap-2">
         <textarea
           bind:value={query}
           style="font-family: {theme.config.monospaceFontFamily}; field-sizing: content"
-          class="bg-white-black !border-1 w-full overflow-auto !border-l-4 !border-surface-500 !ring-0 !ring-primary-500 text-surface-950-50 scrollbar focus:!border-primary-500"
+          class="bg-white-black w-full overflow-auto rounded border-0 !ring-0 !ring-primary-500 text-surface-950-50 scrollbar"
           placeholder="SELECT * FROM ..."
           onkeydown={handleKeyDown(onSubmitQuery, disabled)}
         ></textarea>
-
-        <div class="flex h-10 flex-none">
-          {#if progress}
-            <button
-              class="fd fd-stop w-10 p-2 text-[24px]"
-              onclick={onCancelQuery}
-              aria-label="Stop query"
-            ></button>
-          {:else}
-            <button
-              {disabled}
-              class="fd fd-play_arrow -ml-1 -mt-1 mb-1 mr-1 w-10 p-2 text-[32px]"
-              onclick={() => onSubmitQuery(query)}
-              aria-label="Run query"
-            ></button>
-          {/if}
-          {#if !isLastQuery}
-            <button
-              class="fd fd-delete w-10 p-2 text-[24px]"
-              onclick={onDeleteQuery}
-              aria-label="Delete query"
-            ></button>
-          {:else}
-            <div class="w-10"></div>
-          {/if}
+        <div class="flex flex-nowrap items-center">
+          <div class="flex h-10 flex-none">
+            {#if progress}
+              <button
+                class="fd fd-stop w-10 p-2 text-[24px]"
+                onclick={onCancelQuery}
+                aria-label="Stop query"
+              ></button>
+            {:else}
+              <button
+                {disabled}
+                class="fd fd-play_arrow -ml-1 -mt-1 mb-1 mr-1 w-10 p-2 text-[32px]"
+                onclick={() => onSubmitQuery(query)}
+                aria-label="Run query"
+              ></button>
+            {/if}
+            {#if !isLastQuery}
+              <button
+                class="fd fd-delete w-10 p-2 text-[24px]"
+                onclick={onDeleteQuery}
+                aria-label="Delete query"
+              ></button>
+            {:else}
+              <div class="w-10"></div>
+            {/if}
+          </div>
+          <div class="flex h-6 w-full flex-nowrap items-center gap-4 whitespace-nowrap">
+            {#if result}
+              {result.rows.length > 1
+                ? `${result.rows.length} rows`
+                : result.rows.length === 0
+                  ? 'No rows returned'
+                  : ''}
+            {/if}
+            {#if progress}
+              <Progress value={null} meterBg="bg-primary-500" base="h-1 max-w-[1000px]"></Progress>
+            {/if}
+          </div>
         </div>
-      </div>
-      <div class="flex h-6 flex-nowrap items-center gap-4 whitespace-nowrap">
-        {#if result}
-          {result.rows.length > 1
-            ? `${result.rows.length} rows`
-            : result.rows.length === 0
-              ? 'No rows returned'
-              : ''}
-        {/if}
-        {#if progress}
-          <Progress value={null} meterBg="bg-primary-500" base="pr-20 h-1 max-w-[1000px]"
-          ></Progress>
-        {/if}
       </div>
     </div>
 
     {#if result}
       {#key result.columns}
-        <div class="pr-4">
+        <div class="pr-4 pt-2">
           <div class="relative h-full w-fit max-w-full">
             <ReverseScrollFixedList
               itemSize={28}
@@ -176,7 +176,7 @@
                   }
                 }}
                 <div
-                  class="relative h-full max-h-64 w-fit max-w-full overflow-auto scrollbar"
+                  class="relative h-full max-h-64 w-fit max-w-full overflow-auto rounded scrollbar"
                   {onscroll}
                   bind:clientHeight={_height.current}
                   bind:this={ref.current}
@@ -199,7 +199,7 @@
               {/snippet}
               {#snippet item(row, style, padding, isSticky)}
                 {#if 'cells' in row}
-                  <tr {style} class="h-7 whitespace-nowrap even:bg-surface-50-950">
+                  <tr {style} class="h-7 whitespace-nowrap even:bg-white dark:even:bg-black">
                     {#each row.cells as value}
                       <SQLValue
                         {value}

@@ -1,7 +1,9 @@
 <script lang="ts">
   import { useGlobalDialog } from '$lib/compositions/useGlobalDialog.svelte'
-  import ApiKeyMenu from '../other/ApiKeyMenu.svelte'
+  import ApiKeyMenu from '$lib/components/other/ApiKeyMenu.svelte'
   import type { UserProfile } from '$lib/types/auth'
+  import { useDarkMode } from '$lib/compositions/useDarkMode.svelte'
+  let { darkMode, toggleDarkMode } = useDarkMode()
 
   const globalDialog = useGlobalDialog()
   let {
@@ -36,17 +38,15 @@
     <button
       class="btn text-surface-800-200 preset-outlined-surface-50-950 hover:preset-filled-surface-50-950"
       onclick={async () => {
-        // invariant($page.data.authDetails.enabled === true)
         await signOut({ callbackUrl: undefined! })
-        // await signOut({
-        //   callbackUrl: $page.data.authDetails.providerSignOutUrl.replaceAll(
-        //     '{redirect_uri}',
-        //     encodeURIComponent(window.location.origin + base)
-        //   )
-        // })
-        // await signOut({ callbackUrl: 'https://dev-jzraqtxsr8a3hhhv.us.auth0.com/oidc/logout' })
       }}><span class="fd fd-arrow_forward text-[24px]"></span> Logout</button
     >
+
+    <button
+      onclick={toggleDarkMode}
+      class="preset-grayout-surface btn-icon text-[24px]
+      {darkMode.value === 'dark' ? 'fd fd-brightness_5' : 'fd fd-brightness_2'}"
+    ></button>
   </div>
 </div>
 

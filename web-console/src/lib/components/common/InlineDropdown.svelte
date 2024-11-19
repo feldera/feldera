@@ -1,8 +1,12 @@
 <script lang="ts">
   import type { Snippet } from 'svelte'
 
-  let { header, content }: { header: Snippet<[boolean, () => void]>; content: Snippet } = $props()
-  let open = $state(false)
+  let {
+    header,
+    content,
+    startOpen
+  }: { header: Snippet<[boolean, () => void]>; content: Snippet; startOpen?: boolean } = $props()
+  let open = $state(!!startOpen)
 </script>
 
 {@render header(open, () => (open = !open))}

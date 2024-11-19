@@ -32,3 +32,18 @@
 .bg-black-white {
   @apply bg-black dark:bg-white;
 }
+
+/* Skeleton UI overrides */
+
+.checkbox,
+.radio {
+  @apply bg-white-black border-none;
+}
+
+.btn-icon-lg {
+  width: calc(2rem /* 32px */ * var(--space-scale-factor));
+  height: calc(2rem /* 32px */ * var(--space-scale-factor));
+  padding: 0px !important;
+}
+
+/* The end of Skeleton UI overrides */

@@ -18,30 +18,28 @@
 
 {#if global}
   <div class="flex h-full flex-col gap-4 overflow-y-auto p-2 scrollbar">
-    <div class="flex w-full flex-col-reverse gap-2 lg:flex-row">
-      <div class="mr-auto">
-        <div class="mb-auto flex flex-col">
-          <div class="border-b-2 text-center text-surface-600-400">Total records</div>
-          <div
-            class=" grid max-w-64 grid-flow-col grid-rows-2 gap-x-4 lg:grid-flow-row lg:grid-cols-2"
-          >
-            <span>Ingested:</span>
-            <span class="text-end">
-              {formatQty(global.total_input_records)}
-            </span>
-            <span>Processed:</span>
-            <span class="text-end">
-              {formatQty(global.total_processed_records)}
-            </span>
-            <span>Buffered:</span>
-            <span class="text-end">
-              {formatQty(global.buffered_input_records)}
-            </span>
-          </div>
+    <div class="flex w-full flex-col-reverse gap-4 lg:flex-row">
+      <div class="bg-white-black mb-auto mr-auto flex flex-col rounded px-4 py-2">
+        <div class="-mx-4 border-b-2 pb-2 text-center">Total records</div>
+        <div
+          class="grid max-w-64 grid-flow-col grid-rows-2 gap-x-4 gap-y-2 pt-2 lg:grid-flow-row lg:grid-cols-2"
+        >
+          <span>Ingested:</span>
+          <span class="text-end">
+            {formatQty(global.total_input_records)}
+          </span>
+          <span>Processed:</span>
+          <span class="text-end">
+            {formatQty(global.total_processed_records)}
+          </span>
+          <span>Buffered:</span>
+          <span class="text-end">
+            {formatQty(global.buffered_input_records)}
+          </span>
         </div>
       </div>
-      <div class="flex w-full flex-col md:flex-row">
-        <div class="relative h-44 w-full">
+      <div class="flex w-full flex-col gap-4 md:flex-row">
+        <div class="bg-white-black relative h-52 w-full rounded">
           <PipelineThroughputGraph
             {pipeline}
             metrics={metrics.current}
@@ -49,7 +47,7 @@
             keepMs={60 * 1000}
           ></PipelineThroughputGraph>
         </div>
-        <div class="relative h-44 w-full">
+        <div class="bg-white-black relative h-52 w-full rounded">
           <PipelineMemoryGraph
             {pipeline}
             metrics={metrics.current}
@@ -60,8 +58,8 @@
       </div>
     </div>
     {#if metrics.current.tables.size}
-      <table class="max-w-[1000px]">
-        <thead class="border-b-2">
+      <table class="bg-white-black table max-w-[1000px] rounded text-base">
+        <thead>
           <tr>
             <th class="text-center font-normal text-surface-600-400">Table</th>
             <th class="text-center font-normal text-surface-600-400">Ingested records</th>
@@ -90,8 +88,8 @@
       </table>
     {/if}
     {#if metrics.current.views.size}
-      <table class="max-w-[1200px]">
-        <thead class="border-b-2">
+      <table class="bg-white-black table max-w-[1200px] rounded text-base">
+        <thead>
           <tr>
             <th class="text-center font-normal text-surface-600-400">View</th>
             <th class="text-center font-normal text-surface-600-400">Transmitted records</th>

@@ -22,7 +22,8 @@
 				"lihui.vs-color-picker",
 				"ms-playwright.playwright",
 				"svelte.svelte-vscode",
-				"bradlc.vscode-tailwindcss"
+				"bradlc.vscode-tailwindcss",
+				"esbenp.prettier-vscode"
 			],
 			"settings": {
 				"editor.formatOnSave": true,
@@ -31,7 +32,9 @@
 					"**/CODE_OF_CONDUCT.md": true,
 					"**/LICENSE": true
 				},
-				"importSorter.generalConfiguration.configurationFilePath": "./import-sorter.json"
+				"importSorter.generalConfiguration.configurationFilePath": "./import-sorter.json",
+				"editor.defaultFormatter": "esbenp.prettier-vscode",
+				"prettier.configPath": "web-console/.prettierrc"
 			}
 		}
 	},

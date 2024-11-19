@@ -2,7 +2,7 @@
   import { page } from '$app/stores'
   import { Tooltip } from '$lib/components/common/Tooltip.svelte'
   import { fade } from 'svelte/transition'
-  import Popup from '../common/Popup.svelte'
+  import Popup from '$lib/components/common/Popup.svelte'
   import AuthPopupMenu from './AuthPopupMenu.svelte'
   import type { AuthDetails } from '$lib/types/auth'
 

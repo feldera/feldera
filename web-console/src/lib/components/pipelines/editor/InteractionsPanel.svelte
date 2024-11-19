@@ -21,26 +21,39 @@
     extractPipelineXgressErrors,
     extractProgramErrors
   } from '$lib/compositions/health/systemErrors'
+  import { nonNull } from '$lib/functions/common/function'
 
   let {
     pipeline,
-    metrics
-  }: { pipeline: { current: ExtendedPipeline }; metrics: { current: PipelineMetrics } } = $props()
+    metrics,
+    separateAdHocTab
+  }: {
+    pipeline: { current: ExtendedPipeline }
+    metrics: { current: PipelineMetrics }
+    separateAdHocTab: boolean
+  } = $props()
   const pipelineName = $derived(pipeline.current.name)
 
-  const tabs = [
-    tuple('Errors' as const, TabPipelineErrors, PanelPipelineErrors),
-    tuple('Performance' as const, undefined, PanelPerformance),
-    tuple('Ad-hoc query' as const, TabControlAdhoc, PanelAdHocQuery),
-    tuple('Change stream' as const, TabControlChangeStream, PanelChangeStream),
-    tuple('Logs' as const, undefined, PanelLogs)
-  ]
+  let tabs = $derived(
+    [
+      tuple('Errors' as const, TabPipelineErrors, PanelPipelineErrors),
+      tuple('Performance' as const, undefined, PanelPerformance),
+      separateAdHocTab ? null : tuple('Ad-Hoc Queries' as const, TabControlAdhoc, PanelAdHocQuery),
+      tuple('Changes Stream' as const, TabControlChangeStream, PanelChangeStream),
+      tuple('Logs' as const, undefined, PanelLogs)
+    ].filter(nonNull)
+  )
   let currentTab = $derived(
     useLocalStorage<(typeof tabs)[number][0]>(
       'pipelines/' + pipelineName + '/currentInteractionTab',
       'Errors'
     )
   )
+  $effect.pre(() => {
+    if (separateAdHocTab && currentTab.value === 'Ad-Hoc Queries') {
+      currentTab.value = 'Errors'
+    }
+  })
 
   const switchTo = async () => {
     if (currentTab.value === 'Errors') {
@@ -80,32 +93,32 @@
   {@const errorCount = errors.length - warningCount}
   <span class="pr-1">Errors</span>
   {#if warningCount !== 0}
-    <span class="inline-block min-w-6 rounded-full px-1 font-medium preset-filled-warning-200-800">
+    <span class="inline-block min-w-6 rounded px-1 font-medium preset-filled-warning-200-800">
       {warningCount}
     </span>
   {/if}
   {#if errorCount !== 0}
-    <span class="inline-block min-w-6 rounded-full px-1 font-medium preset-filled-error-500">
+    <span class="inline-block min-w-6 rounded px-1 font-medium preset-filled-error-50-950">
       {errorCount}
     </span>
   {/if}
 {/snippet}
 
 {#snippet TabControlAdhoc()}
-  <span class="inline sm:hidden"> Ad-hoc </span>
-  <span class="hidden sm:inline"> Ad-hoc query </span>
+  <span class="inline sm:hidden"> Ad-Hoc </span>
+  <span class="hidden sm:inline"> Ad-Hoc Queries </span>
 {/snippet}
 
 {#snippet TabControlChangeStream()}
   <span class="inline sm:hidden"> Changes </span>
-  <span class="hidden sm:inline"> Change stream </span>
+  <span class="hidden sm:inline"> Changes Stream </span>
 {/snippet}
 
 <Tabs
   bind:value={currentTab.value}
   listMargin=""
   contentClasses="h-full"
-  classes="flex flex-col flex-1 !space-y-0"
+  classes="flex flex-col flex-1 !space-y-0 bg-surface-50-950 rounded-container p-4 pt-2"
 >
   {#snippet list()}
     <div class=" w-full">
@@ -113,11 +126,11 @@
         <Tabs.Control
           value={tabName}
           base=""
-          classes="px-3 pt-1.5 h-9 rounded-none"
+          classes="px-3 py-2"
           labelBase=""
           translateX=""
-          stateInactive="hover:bg-surface-100-900 hover:!bg-opacity-50"
-          stateActive="bg-white-black outline-none"
+          stateInactive="rounded hover:!bg-opacity-50 hover:bg-surface-100-900"
+          stateActive="inset-y-2 border-b-2 pb-1.5 border-surface-950-50 outline-none"
         >
           {#if tabControl}
             {@render tabControl(pipeline.current)}

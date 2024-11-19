@@ -6,7 +6,9 @@
   import { PaneGroup, Pane, PaneResizer } from 'paneforge'
   import InteractionsPanel from '$lib/components/pipelines/editor/InteractionsPanel.svelte'
   import DeploymentStatus from '$lib/components/pipelines/list/DeploymentStatus.svelte'
+  import IconLayputPanelRight from '$assets/icons/generic/layout-panel-right.svg?component'
   import PipelineActions from '$lib/components/pipelines/list/Actions.svelte'
+  import { base } from '$app/paths'
   import {
     extractProgramErrors,
     programErrorReport,
@@ -26,6 +28,10 @@
   import { useAggregatePipelineStats } from '$lib/compositions/useAggregatePipelineStats.svelte'
   import CodeEditor from '$lib/components/pipelines/editor/CodeEditor.svelte'
   import ProgramStatus from '$lib/components/pipelines/editor/ProgramStatus.svelte'
+  import PipelineBreadcrumbs from '$lib/components/layout/PipelineBreadcrumbs.svelte'
+  import PipelineStatus from '$lib/components/pipelines/list/PipelineStatus.svelte'
+  import TabAdHocQuery from '$lib/components/pipelines/editor/TabAdHocQuery.svelte'
+  import { useLocalStorage } from '$lib/compositions/localStore.svelte'
 
   let {
     pipeline
@@ -155,42 +161,112 @@ example = "1.0"`
   $effect.pre(() => {
     currentPipelineFile[pipelineName] ??= 'program.sql'
   })
+
+  let breadcrumbs = $derived([
+    { text: 'Home', href: `${base}/` },
+    {
+      text: pipelineName,
+      href: `${base}/pipelines/${pipelineName}/`
+    }
+  ])
+  let separateAdHocTab = useLocalStorage('layout/separateAdHoc', false)
+  let downstreamChanged = $state(false)
 </script>
 
-<div class="h-full w-full">
-  <PaneGroup direction="vertical" class="!overflow-visible">
+<div class="flex h-full flex-col">
+  <PipelineBreadcrumbs {breadcrumbs}>
+    {#snippet after()}
+      <div class="flex items-center">
+        <PipelineStatus status={pipeline.current.status}></PipelineStatus>
+      </div>
+    {/snippet}
+    {#snippet end()}
+      <PipelineActions
+        {pipeline}
+        onDeletePipeline={handleDeletePipeline}
+        pipelineBusy={editDisabled}
+        unsavedChanges={downstreamChanged}
+        onActionSuccess={handleActionSuccess}
+      ></PipelineActions>
+    {/snippet}
+  </PipelineBreadcrumbs>
+  <PaneGroup direction="vertical" class="">
     <CodeEditor
       path={pipelineName}
       {files}
       {editDisabled}
       bind:currentFileName={currentPipelineFile[pipelineName]}
+      bind:downstreamChanged
     >
-      {#snippet textEditor(children)}
+      {#snippet codeEditor(textEditor, statusBar, isReadOnly)}
+        {#snippet editor()}
+          <div class="flex h-full flex-col rounded-container px-4 pb-4 pt-2 bg-surface-50-950">
+            {@render textEditor()}
+            <div
+              class:bg-white-black={!isReadOnly}
+              class="flex flex-wrap items-center gap-x-8 border-t-[1px] pr-2 border-surface-100-900"
+            >
+              {@render statusBar()}
+            </div>
+          </div>
+        {/snippet}
         <Pane defaultSize={60} minSize={15} class="!overflow-visible">
-          {@render children()}
+          <PaneGroup direction="horizontal" class="">
+            <Pane minSize={30}>
+              {@render editor()}
+            </Pane>
+            {#if separateAdHocTab.value}
+              <PaneResizer class="pane-divider-vertical mx-2"></PaneResizer>
+              <Pane defaultSize={40} minSize={20} class="">
+                <div class="flex h-full flex-col rounded-container p-4 bg-surface-50-950">
+                  <div class="flex justify-between">
+                    <span>Ad-Hoc Queries</span>
+                    <button
+                      class="fd fd-close btn btn-icon btn-icon-lg"
+                      onclick={() => (separateAdHocTab.value = false)}
+                      aria-label="Close"
+                    ></button>
+                  </div>
+                  <div class="relative flex-1 overflow-y-auto scrollbar">
+                    <div class="absolute left-0 h-full w-full">
+                      <TabAdHocQuery {pipeline}></TabAdHocQuery>
+                    </div>
+                  </div>
+                </div>
+              </Pane>
+            {/if}
+          </PaneGroup>
         </Pane>
-        <PaneResizer class="pane-divider-horizontal -mb-0.5" />
+        <PaneResizer class="pane-divider-horizontal my-2" />
       {/snippet}
       {#snippet statusBarCenter()}
         <ProgramStatus programStatus={pipeline.current.programStatus}></ProgramStatus>
       {/snippet}
-      {#snippet statusBarEnd(downstreamChanged)}
-        {#if pipeline.current.status}
-          <DeploymentStatus class="ml-auto w-40 text-[1rem] " status={pipeline.current.status}
-          ></DeploymentStatus>
-          <PipelineActions
-            {pipeline}
-            onDeletePipeline={handleDeletePipeline}
-            pipelineBusy={editDisabled}
-            unsavedChanges={downstreamChanged}
-            onActionSuccess={handleActionSuccess}
-          ></PipelineActions>
-        {/if}
+      {#snippet toolBarEnd()}
+        <button
+          class="btn p-2 text-surface-700-300 hover:preset-tonal-surface"
+          onclick={() => (separateAdHocTab.value = !separateAdHocTab.value)}
+        >
+          Ad-Hoc Query
+          <IconLayputPanelRight class={separateAdHocTab.value ? 'fill-primary-500' : ''}
+          ></IconLayputPanelRight>
+        </button>
+      {/snippet}
+      {#snippet fileTab(text, onClick, isCurrent)}
+        <button
+          class="px-3 py-2 {isCurrent
+            ? 'inset-y-2 border-b-2 pb-1.5 border-surface-950-50'
+            : ' rounded hover:!bg-opacity-50 hover:bg-surface-100-900'}"
+          onclick={onClick}
+        >
+          {text}
+        </button>
       {/snippet}
     </CodeEditor>
-    <Pane minSize={15} class="flex h-full flex-col !overflow-visible">
+    <Pane minSize={15} class="flex flex-col !overflow-visible">
       {#if pipeline.current.name}
-        <InteractionsPanel {pipeline} {metrics}></InteractionsPanel>
+        <InteractionsPanel {pipeline} {metrics} separateAdHocTab={separateAdHocTab.value}
+        ></InteractionsPanel>
       {/if}
     </Pane>
   </PaneGroup>

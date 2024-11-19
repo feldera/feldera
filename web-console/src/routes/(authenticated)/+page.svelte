@@ -1,59 +1,141 @@
 <script lang="ts">
   import { goto, preloadCode } from '$app/navigation'
   import { base } from '$app/paths'
-  import { useIsMobile } from '$lib/compositions/layout/useIsMobile.svelte'
-  import { useTryPipeline } from '$lib/compositions/pipelines/useTryPipeline'
+  import { useIsMobile, useIsTablet } from '$lib/compositions/layout/useIsMobile.svelte'
+  import FelderaLogomarkLight from '$assets/images/feldera-modern/Feldera Logomark Color Dark.svg?component'
+  import IconBook from '$assets/icons/feldera-material-icons/book.svg?component'
+  import IconDiscord from '$assets/icons/vendors/discord-logomark-color.svg?component'
+  import ImageBox from '$assets/images/generic/package.svg?component'
+  import IconSlack from '$assets/icons/vendors/slack-logomark-color.svg?component'
+  import InlineDropdown from '$lib/components/common/InlineDropdown.svelte'
+  import { slide } from 'svelte/transition'
+  import { usePipelineList } from '$lib/compositions/pipelines/usePipelineList.svelte'
+  import type { PageData } from './$types'
+  import PipelineTable from '$lib/components/pipelines/Table.svelte'
+  import DemoTile from '$lib/components/other/DemoTile.svelte'
+  import CreatePipelineButton from '$lib/components/pipelines/CreatePipelineButton.svelte'
 
-  preloadCode(`${base}/pipelines/*`)
+  preloadCode(`${base}/pipelines/*`).then(() => preloadCode(`${base}/demos/`))
 
-  let { data } = $props()
-  const tryPipeline = useTryPipeline()
+  let { data }: { data: PageData } = $props()
   const isMobile = useIsMobile()
+  const isTablet = useIsTablet()
+
+  const featured = [
+    {
+      title: 'Documentation',
+      href: 'https://docs.feldera.com',
+      icon: IconBook
+    },
+    {
+      title: 'Join the Conversation',
+      href: 'https://felderacommunity.slack.com',
+      icon: IconSlack
+    },
+    {
+      title: 'Join the Community',
+      href: 'https://discord.com/invite/s6t5n9UzHE',
+      icon: IconDiscord
+    }
+  ]
+
+  const maxShownDemos = $derived(isMobile.current ? 3 : isTablet.current ? 5 : 9)
+
+  const pipelines = usePipelineList(data.preloaded)
 </script>
 
-{#snippet createNewPipeline()}
-  <button
-    class="btn mt-auto self-end text-sm preset-filled-primary-500"
-    onclick={() => goto('#new')}
-  >
-    CREATE NEW PIPELINE
-  </button>
-{/snippet}
-
-{#if data.demos.length}
-  <div class="h5 block px-8 py-4 text-[0px] font-normal leading-8">
-    <span class="text-base"> Try running one of our examples below </span>
-    {#if isMobile.current}
-      <span class=" text-base">, or&nbsp;</span>
-      <span class="-my-2 inline-block">
-        {@render createNewPipeline()}
-      </span>
-    {:else}
-      <span class="text-base">:</span>
-    {/if}
-  </div>
-  <div class="h-full overflow-y-auto pb-8 scrollbar">
-    <div
-      class="grid max-w-[1390px] grid-cols-1 gap-8 px-8 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4"
-    >
-      {#each data.demos as demo}
-        <div class="card flex flex-col gap-2 bg-white p-4 dark:bg-black">
-          <button class="text-left text-primary-500" onclick={() => tryPipeline(demo)}>
-            <span class="text-lg">{demo.title}</span>
-            <span class="fd fd-arrow_forward w-0 text-[24px]"></span>
-          </button>
-          <span class="text-left">{demo.description}</span>
+<div class="h-full overflow-y-auto scrollbar">
+  <div class="flex flex-col gap-8 p-8">
+    <div class="relative flex min-h-40 w-full gap-4 p-6 sm:gap-12">
+      <div class="card absolute left-0 top-0 -z-10 flex h-full w-full overflow-clip">
+        <div class="w-1/2 bg-gradient-to-br from-fuchsia-300 via-amber-50 to-orange-300"></div>
+        <div class="w-1/2 bg-gradient-to-tr from-orange-300 via-amber-50 to-amber-50"></div>
+      </div>
+      <FelderaLogomarkLight class="hidden h-full max-h-28 sm:inline"></FelderaLogomarkLight>
+      <div class="flex w-full flex-col justify-between gap-y-2">
+        <div class="flex flex-nowrap justify-between">
+          <div class="h5">Explore our communities and documentation</div>
+          <button class="fd fd-close btn-icon-lg" aria-label="Close"></button>
         </div>
-      {/each}
+
+        <div class="flex flex-col gap-x-8 gap-y-4 lg:flex-row">
+          {#each featured as link}
+            <a class="bg-white-black btn !p-6" href={link.href}
+              ><link.icon class="h-6 w-6"></link.icon>{link.title}</a
+            >
+          {/each}
+        </div>
+      </div>
+    </div>
+
+    {#if data.demos.length}
+      <div>
+        <InlineDropdown startOpen>
+          {#snippet header(open, toggle)}
+            <div
+              class="flex w-fit cursor-pointer items-center gap-2 py-2"
+              onclick={toggle}
+              role="presentation"
+            >
+              <div
+                class={'fd fd-expand_more text-[24px] transition-transform ' +
+                  (open ? 'rotate-180' : '')}
+              ></div>
+
+              <div class="flex flex-nowrap items-center gap-4">
+                <div class="h5">Explore use cases and tutorials</div>
+                <a
+                  class="whitespace-nowrap text-primary-500"
+                  href="{base}/demos/"
+                  onclick={(e) => e.stopPropagation()}>View all</a
+                >
+              </div>
+            </div>
+          {/snippet}
+          {#snippet content()}
+            <div transition:slide={{ duration: 150 }}>
+              <div
+                class="grid grid-cols-1 gap-x-6 gap-y-5 py-2 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5"
+              >
+                {#each data.demos.slice(0, maxShownDemos) as demo}
+                  <DemoTile {demo}></DemoTile>
+                {/each}
+                <div class="card flex flex-col p-4">
+                  <div class="text-sm text-surface-500">&nbsp;</div>
+                  <a class="text-left text-primary-500" href="{base}/demos/">
+                    <span class="py-2 text-lg">Discover More Examples and Tutorials</span>
+                    <!-- <span class="fd fd-arrow_forward inline-block w-2 text-[24px]"></span> -->
+                  </a>
+                </div>
+              </div>
+            </div>
+          {/snippet}
+        </InlineDropdown>
+      </div>
+    {/if}
+    <div class="min-h-96">
+      <div class="h5 flex flex-nowrap items-center gap-4">
+        <span class="fd fd-mediation text-surface-500"></span><span>Your pipelines</span>
+      </div>
+      {#if pipelines.pipelines.length}
+        <PipelineTable>
+          {#snippet preHeaderEnd()}
+            <CreatePipelineButton class="max-w-64"></CreatePipelineButton>
+          {/snippet}
+        </PipelineTable>
+      {:else}
+        <div class="flex w-full flex-col items-center gap-4">
+          <ImageBox class="h-9 fill-surface-200-800"></ImageBox>
+          <div class="text-lg">Your pipelines will appear here</div>
+          <div class="relative flex gap-5">
+            <CreatePipelineButton></CreatePipelineButton>
+            <button class="btn text-sm preset-tonal-surface">
+              <span class="fd fd-book text-2xl"></span>
+              Documentation
+            </button>
+          </div>
+        </div>
+      {/if}
     </div>
   </div>
-{:else}
-  <div class="h5 px-8 font-normal">
-    Write a new SQL query from scratch:
-    {@render createNewPipeline()}
-  </div>
-  <div class="px-8 text-lg text-surface-600-400">
-    There are no demo pipelines available at this time. Please refer to documentation for examples
-    of SQL queries.
-  </div>
-{/if}
+</div>

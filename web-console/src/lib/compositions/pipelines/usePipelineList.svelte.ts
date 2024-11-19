@@ -14,20 +14,22 @@ export const useUpdatePipelineList = () => {
   }
 }
 
-export const usePipelineList = (preloaded?: { pipelines: typeof pipelines }) => {
-  if (preloaded) {
-    pipelines = preloaded.pipelines
-  }
+export const useRefreshPipelineList = () => {
   onMount(() => {
     let interval = setInterval(() => reload(), 2000)
     return () => {
       clearInterval(interval)
     }
   })
+}
+
+export const usePipelineList = (preloaded?: { pipelines: typeof pipelines }) => {
+  if (preloaded) {
+    pipelines = preloaded.pipelines
+  }
   return {
     get pipelines() {
-      const x = [...pipelines]
-      return x
+      return [...pipelines]
     },
     set pipelines(ps: typeof pipelines) {
       pipelines = ps

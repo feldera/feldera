@@ -268,13 +268,13 @@
 
 <div class="flex h-full flex-row">
   <PaneGroup direction="horizontal" onpaste={ingestPasted}>
-    <Pane defaultSize={20} minSize={5} class="flex h-full pl-2">
+    <Pane defaultSize={20} minSize={5} class="flex h-full">
       <div class="flex w-full flex-col overflow-y-auto text-nowrap scrollbar">
         {#snippet relationItem(relation: RelationInfo & ExtraType)}
           <label class="flex-none cursor-pointer overflow-hidden overflow-ellipsis">
             <input
               type="checkbox"
-              class="bg-white-black focus:ring-transparent"
+              class="bg-white-black checkbox m-1"
               checked={relation.selected}
               onchange={(e) => {
                 const follow = e.currentTarget.checked
