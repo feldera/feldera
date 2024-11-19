@@ -80,7 +80,7 @@ wheels = [
 
 [[package]]
 name = "feldera"
-version = "0.27.0"
+version = "0.30.0"
 source = { editable = "." }
 dependencies = [
     { name = "numpy" },

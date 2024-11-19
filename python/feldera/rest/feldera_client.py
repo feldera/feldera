@@ -200,35 +200,46 @@ class FelderaClient:
         )
 
         while True:
-            status = self.get_pipeline(pipeline_name).deployment_status
+            resp = self.get_pipeline(pipeline_name)
+            status = resp.deployment_status
 
             if status == "Running":
                 break
             elif status == "Failed":
-                raise RuntimeError("Failed to start pipeline")
+                raise RuntimeError(
+                    "error: cannot START a failed pipeline\n"
+                    + resp.deployment_error.get("message", "")
+                )
 
             logging.debug(
                 "still starting %s, waiting for 100 more milliseconds", pipeline_name
             )
             time.sleep(0.1)
 
-    def pause_pipeline(self, pipeline_name: str):
+    def pause_pipeline(self, pipeline_name: str, error_message: str = None):
         """
         Stop a pipeline
 
         :param pipeline_name: The name of the pipeline to stop
+        :param error_message: The error message to show if the pipeline is in FAILED state
         """
         self.http.post(
             path=f"/pipelines/{pipeline_name}/pause",
         )
 
+        if error_message is None:
+            error_message = "error: cannot PAUSE failed pipeline"
+
         while True:
-            status = self.get_pipeline(pipeline_name).deployment_status
+            resp = self.get_pipeline(pipeline_name)
+            status = resp.deployment_status
 
             if status == "Paused":
                 break
             elif status == "Failed":
-                raise RuntimeError("Failed to pause pipeline")
+                raise RuntimeError(
+                    error_message + "\n" + resp.deployment_error.get("message", "")
+                )
 
             logging.debug(
                 "still pausing %s, waiting for 100 more milliseconds", pipeline_name
