@@ -232,9 +232,10 @@ const consolidatePipelineStatus = (
   pipelineError: ErrorResponse | null | undefined
 ) => {
   return match([pipelineStatus, desiredStatus, pipelineError, programStatus])
-    .with(['Shutdown', P.any, P.nullish, 'CompilingSql'], () => 'Compiling sql' as const)
+    .with(['Shutdown', P.any, P.nullish, 'CompilingSql'], () => 'Compiling SQL' as const)
+    .with(['Shutdown', P.any, P.nullish, 'SqlCompiled' as any], () => 'SQL compiled' as const)
     .with(['Shutdown', P.any, P.nullish, 'Pending'], () => 'Queued' as const)
-    .with(['Shutdown', P.any, P.nullish, 'CompilingRust'], () => 'Compiling bin' as const)
+    .with(['Shutdown', P.any, P.nullish, 'CompilingRust'], () => 'Compiling binary' as const)
     .with(['Shutdown', P.any, P.nullish, { SqlError: P.select() }], (SqlError) => ({ SqlError }))
     .with(['Shutdown', P.any, P.nullish, { RustError: P.select() }], (RustError) => ({ RustError }))
     .with(['Shutdown', P.any, P.nullish, { SystemError: P.select() }], (SystemError) => ({
@@ -247,9 +248,9 @@ const consolidatePipelineStatus = (
     .with(['Shutdown', 'Shutdown', P.select(P.nonNullable), P.any], () => 'Shutdown' as const)
     .with(['Provisioning', P.any, P.nullish, P._], () => 'Starting up' as const)
     .with(['Initializing', P.any, P.nullish, P._], () => 'Initializing' as const)
-    .with(['Paused', P.any, P.nullish, 'CompilingSql'], () => 'Compiling sql' as const)
+    .with(['Paused', P.any, P.nullish, 'CompilingSql'], () => 'Compiling SQL' as const)
     .with(['Paused', P.any, P.nullish, 'Pending'], () => 'Queued' as const)
-    .with(['Paused', P.any, P.nullish, 'CompilingRust'], () => 'Compiling bin' as const)
+    .with(['Paused', P.any, P.nullish, 'CompilingRust'], () => 'Compiling binary' as const)
     .with(['Paused', 'Running', P.nullish, P._], () => 'Resuming' as const)
     .with(['Paused', 'Shutdown', P.nullish, P._], () => 'ShuttingDown' as const)
     .with(['Paused', P.any, P.nullish, P._], () => 'Paused' as const)
@@ -292,8 +293,8 @@ export const postPipelineAction = async (
     )[action]
     const ignoreStatuses = [
       'Initializing',
-      'Compiling bin',
-      'Compiling sql',
+      'Compiling binary',
+      'Compiling SQL',
       'Queued',
       'Starting up'
     ] as PipelineStatus[]
