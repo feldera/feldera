@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.sql.tools;
 
+import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.ir.DBSPFunction;
@@ -51,7 +52,7 @@ public class TestCase {
     }
 
     /**
-     * Generates a Rust function which tests a DBSP circuit.
+     * Generates a Rust function which tests a {@link DBSPCircuit}.
      *
      * @return The code for a function that runs the circuit with the specified
      * input and tests the produced output. */
@@ -65,7 +66,7 @@ public class TestCase {
         DBSPExpression[] circuitArguments = new DBSPExpression[1];
         circuitArguments[0] = new DBSPApplyExpression("CircuitConfig::with_workers", DBSPTypeAny.getDefault(), new DBSPUSizeLiteral(2));
         DBSPLetStatement cas = new DBSPLetStatement("circuitAndStreams",
-                new DBSPApplyExpression(this.ccs.circuit.name, DBSPTypeAny.getDefault(), circuitArguments).resultUnwrap(),
+                new DBSPApplyExpression(this.ccs.circuit.getName(), DBSPTypeAny.getDefault(), circuitArguments).resultUnwrap(),
                 true);
         list.add(cas);
         DBSPLetStatement streams = new DBSPLetStatement("streams", cas.getVarReference().field(1));
@@ -160,7 +161,7 @@ public class TestCase {
         annotations.add("#[test]");
         if (this.message != null)
             annotations.add("#[should_panic(expected = " + Utilities.doubleQuote(this.message) + ")]");
-        return new DBSPFunction("test" + testNumber, new ArrayList<>(),
+        return new DBSPFunction("test" + this.ccs.circuit.id, new ArrayList<>(),
                 new DBSPTypeVoid(), body, annotations);
     }
 }

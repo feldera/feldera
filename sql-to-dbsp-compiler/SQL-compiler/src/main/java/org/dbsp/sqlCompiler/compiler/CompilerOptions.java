@@ -175,8 +175,6 @@ public class CompilerOptions implements IDiff<CompilerOptions> {
         @Parameter(description = "Input file to compile", required = true)
         @Nullable
         public String inputFile = null;
-        @Parameter(names = "-f", description = "Name of function to generate")
-        public String functionName = "circuit";
         @Parameter(names = "-v", description = "Output verbosity")
         public int verbosity = 0;
         @Parameter(names = "--handles",
@@ -206,7 +204,6 @@ public class CompilerOptions implements IDiff<CompilerOptions> {
                     ", emitJsonErrors=" + this.emitJsonErrors +
                     ", emitJsonSchema=" + Utilities.singleQuote(this.emitJsonSchema) +
                     ", inputFile=" + Utilities.singleQuote(this.inputFile) +
-                    ", functionName=" + Utilities.singleQuote(this.functionName) +
                     ", verbosity=" + this.verbosity +
                     '}';
         }

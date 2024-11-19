@@ -89,9 +89,6 @@ Usage: sql-to-dbsp [options] Input file to compile
       SQL syntax dialect used
       Default: ORACLE
       Possible Values: [BIG_QUERY, ORACLE, MYSQL, MYSQL_ANSI, SQL_SERVER, JAVA]
-    -f
-      Name of function to generate
-      Default: circuit
     -i
       Generate an incremental circuit
       Default: false

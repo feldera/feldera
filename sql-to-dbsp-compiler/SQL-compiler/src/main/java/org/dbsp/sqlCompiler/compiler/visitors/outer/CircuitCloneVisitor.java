@@ -23,9 +23,8 @@
 
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
-import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.DBSPDeclaration;
-import org.dbsp.sqlCompiler.circuit.DBSPPartialCircuit;
+import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.ICircuit;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
@@ -425,16 +424,16 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs {
     }
 
     @Override
-    public VisitDecision preorder(DBSPPartialCircuit circuit) {
+    public VisitDecision preorder(DBSPCircuit circuit) {
         if (this.visited.contains(circuit))
             return VisitDecision.STOP;
-        this.underConstruction.add(new DBSPPartialCircuit(circuit.metadata));
+        this.underConstruction.add(new DBSPCircuit(circuit.metadata));
         return VisitDecision.CONTINUE;
     }
 
     @Override
-    public void postorder(DBSPPartialCircuit circuit) {
-        DBSPPartialCircuit result = Utilities.removeLast(this.underConstruction).to(DBSPPartialCircuit.class);
+    public void postorder(DBSPCircuit circuit) {
+        DBSPCircuit result = Utilities.removeLast(this.underConstruction).to(DBSPCircuit.class);
         if (result.sameCircuit(circuit))
             result = circuit;
         this.map(circuit, result);
@@ -443,9 +442,9 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs {
     @Override
     public DBSPCircuit apply(DBSPCircuit circuit) {
         this.startVisit(circuit);
-        circuit.circuit.accept(this);
+        circuit.accept(this);
         this.endVisit();
-        ICircuit result = Utilities.getExists(this.circuitRemap, circuit.circuit);
-        return result.to(DBSPPartialCircuit.class).seal(circuit.name);
+        ICircuit result = Utilities.getExists(this.circuitRemap, circuit);
+        return result.to(DBSPCircuit.class);
     }
 }

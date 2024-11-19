@@ -395,9 +395,6 @@ public class MetadataTests extends BaseSQLTests {
                       SQL syntax dialect used
                       Default: ORACLE
                       Possible Values: [BIG_QUERY, ORACLE, MYSQL, MYSQL_ANSI, SQL_SERVER, JAVA]
-                    -f
-                      Name of function to generate
-                      Default: circuit
                     -i
                       Generate an incremental circuit
                       Default: false
@@ -421,7 +418,7 @@ public class MetadataTests extends BaseSQLTests {
                     -v
                       Output verbosity
                       Default: 0
-                
+
                 """, captured);
     }
 

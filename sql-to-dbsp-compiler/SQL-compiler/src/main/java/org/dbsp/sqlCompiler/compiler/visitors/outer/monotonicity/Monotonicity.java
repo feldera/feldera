@@ -116,7 +116,7 @@ public class Monotonicity extends CircuitVisitor {
         }
 
         void setCircuit(DBSPCircuit circuit) {
-            for (DBSPOperator op : circuit.circuit.getAllOperators()) {
+            for (DBSPOperator op : circuit.getAllOperators()) {
                 this.markExpanded(op);
             }
         }

@@ -287,7 +287,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
         }
         compiler.compileStatement(dbspQuery);
         compiler.throwIfErrorsOccurred();
-        DBSPCircuit dbsp = compiler.getFinalCircuit("gen" + suffix);
+        DBSPCircuit dbsp = compiler.getFinalCircuit(false);
         DBSPNode.done();
 
         if (dbsp.getOutputCount() != 1)
@@ -424,7 +424,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
                 "CircuitConfig::with_workers", DBSPTypeAny.getDefault(), new DBSPUSizeLiteral(2)); // workers
         DBSPLetStatement cas = new DBSPLetStatement("circ",
                 new DBSPApplyExpression(
-                        circuit.getNode(), circuit.name, DBSPTypeAny.getDefault(), arg).resultUnwrap(), true);
+                        circuit.getNode(), circuit.getName(), DBSPTypeAny.getDefault(), arg).resultUnwrap(), true);
         list.add(cas);
         DBSPLetStatement streams = new DBSPLetStatement("streams", cas.getVarReference().field(1));
         list.add(streams);

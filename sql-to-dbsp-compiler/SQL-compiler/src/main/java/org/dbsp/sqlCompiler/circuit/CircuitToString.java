@@ -78,7 +78,7 @@ public class CircuitToString {
         }
     }
 
-    String convert(DBSPPartialCircuit circuit) {
+    String convert(DBSPCircuit circuit) {
         this.builder.append("{").increase();
         for (DBSPOperator op: circuit.getAllOperators()) {
             this.toString(op);
@@ -92,6 +92,6 @@ public class CircuitToString {
         StringBuilder builder1 = new StringBuilder();
         IIndentStream stream = new IndentStream(builder1);
         CircuitToString cts = new CircuitToString(stream);
-        return cts.convert(circuit.circuit);
+        return cts.convert(circuit);
     }
 }

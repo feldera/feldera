@@ -23,13 +23,12 @@
 
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
-import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.DBSPDeclaration;
 import org.dbsp.sqlCompiler.circuit.ICircuit;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 import org.dbsp.sqlCompiler.circuit.operator.*;
-import org.dbsp.sqlCompiler.circuit.DBSPPartialCircuit;
+import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.util.IHasId;
@@ -115,7 +114,18 @@ public abstract class CircuitVisitor
     // preorder methods return 'true' when normal traversal is desired,
     // and 'false' when the traversal should stop right away at the current node.
     // base classes
-    public VisitDecision preorder(DBSPSimpleOperator node) { return VisitDecision.CONTINUE; }
+
+    public VisitDecision preorder(DBSPOperator ignored) {
+        return VisitDecision.CONTINUE;
+    }
+
+    public VisitDecision preorder(DBSPSimpleOperator node) {
+        return this.preorder(node.to(DBSPOperator.class));
+    }
+
+    public VisitDecision preorder(DBSPOperatorWithError node) {
+        return this.preorder(node.to(DBSPOperator.class));
+    }
 
     public void setCircuit(DBSPCircuit circuit) {
         if (this.circuit != null)
@@ -126,10 +136,6 @@ public abstract class CircuitVisitor
     public VisitDecision preorder(DBSPDeclaration ignored) { return VisitDecision.CONTINUE; }
 
     public VisitDecision preorder(DBSPCircuit circuit) {
-        return VisitDecision.CONTINUE;
-    }
-
-    public VisitDecision preorder(DBSPPartialCircuit circuit) {
         return VisitDecision.CONTINUE;
     }
 
@@ -368,16 +374,17 @@ public abstract class CircuitVisitor
     @SuppressWarnings("EmptyMethod")
     public void postorder(IDBSPOuterNode ignored) {}
 
-    @SuppressWarnings("EmptyMethod")
-    public void postorder(DBSPCircuit ignored) {}
+    public void postorder(DBSPCircuit ignoredCircuit) {}
 
-    public void postorder(DBSPPartialCircuit ignoredCircuit) {}
+    public void postorder(DBSPOperator ignored) {}
 
     public void postorder(DBSPNestedOperator node) {
         this.postorder(node.to(DBSPOperator.class));
     }
 
-    public void postorder(DBSPSimpleOperator ignored) {}
+    public void postorder(DBSPSimpleOperator node) { this.postorder(node.to(DBSPOperator.class)); }
+
+    public void postorder(DBSPOperatorWithError node) { this.postorder(node.to(DBSPOperator.class)); }
 
     public void postorder(DBSPDeclaration ignored) {}
 

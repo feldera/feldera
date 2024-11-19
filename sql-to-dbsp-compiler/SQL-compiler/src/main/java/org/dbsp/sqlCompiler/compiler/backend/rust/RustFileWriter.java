@@ -332,7 +332,7 @@ public class RustFileWriter {
         }
     }
 
-    String generatePreamble(DBSPCompiler compiler, StructuresUsed used) {
+    String generatePreamble(StructuresUsed used) {
         IndentStream stream = new IndentStream(new StringBuilder());
         stream.append(commonPreamble);
         long max = this.used.getMaxTupleSize();
@@ -400,7 +400,7 @@ public class RustFileWriter {
             }
         }
         // Emit code
-        this.outputStream.println(generatePreamble(compiler, used));
+        this.outputStream.println(generatePreamble(used));
         for (IDBSPNode node: objects) {
             String str;
             IDBSPInnerNode inner = node.as(IDBSPInnerNode.class);
