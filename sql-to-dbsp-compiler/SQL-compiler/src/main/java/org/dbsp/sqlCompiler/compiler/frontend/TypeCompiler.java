@@ -140,7 +140,7 @@ public class TypeCompiler implements ICompilerComponent {
                     if (this.compiler().options.languageOptions.lenient)
                         // If we are not lenient and names are duplicated
                         // we will get an exception below where we create the struct.
-                        fieldName = fieldNameGen.freshName(fieldName);
+                        fieldName = fieldNameGen.freshName(fieldName, true);
                     fields.add(new DBSPTypeStruct.Field(
                             CalciteObject.create(dt), fieldName, index++, type, false));
                 }

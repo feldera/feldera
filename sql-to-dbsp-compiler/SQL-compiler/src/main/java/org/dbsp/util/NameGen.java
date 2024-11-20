@@ -28,9 +28,7 @@ package org.dbsp.util;
 import java.util.HashMap;
 import java.util.Map;
 
-/**
- * Used to generate new names during a program execution.
- */
+/** Used to generate new names during a program execution. */
 public class NameGen {
     private final String prefix;
 

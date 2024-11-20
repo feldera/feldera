@@ -135,6 +135,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.statements.FrontEndStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.LatenessStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.TableModifyStatement;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
+import org.dbsp.util.FreshName;
 import org.dbsp.util.ICastable;
 import org.dbsp.util.IWritesLogs;
 import org.dbsp.util.Linq;
@@ -388,6 +389,7 @@ public class CalciteCompiler implements IWritesLogs {
                                 SqlLibrary.POSTGRESQL,
                                 SqlLibrary.BIG_QUERY,
                                 SqlLibrary.SPARK,
+                                SqlLibrary.REDSHIFT,
                                 SqlLibrary.SPATIAL)),
                 SqlOperatorTables.of(this.customFunctions.getInitialFunctions())
         );
@@ -921,6 +923,7 @@ public class CalciteCompiler implements IWritesLogs {
         boolean error = false;
         Map<String, RelDataTypeField> colByName = new HashMap<>();
         List<RelDataTypeField> fieldList = rowType.getFieldList();
+        FreshName generator = new FreshName(colByName.keySet());
         for (Map.Entry<Integer, String> fieldPairs : relRoot.fields) {
             String queryFieldName = fieldPairs.getValue();
             RelDataTypeField field = fieldList.get(index);
@@ -962,6 +965,9 @@ public class CalciteCompiler implements IWritesLogs {
                                     " contains two columns with the same name " + Utilities.singleQuote(queryFieldName) + "\n" +
                                     "Some columns will be renamed in the produced output.");
                 }
+                // Rename field to avoid duplicates
+                actualColumnName = generator.freshName(actualColumnName, false);
+                field = new RelDataTypeFieldImpl(actualColumnName, field.getIndex(), field.getType());
             }
             colByName.put(actualColumnName, field);
             RelColumnMetadata meta = new RelColumnMetadata(node,

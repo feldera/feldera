@@ -31,4 +31,26 @@ public class RedshiftTests extends ScottBaseTests {
                 (6 rows)
                 """, false);
     }
+
+    @Test
+    public void testRegexpReplace() {
+        this.qs("""
+                select regexp_replace('DonecFri@semperpretiumneque.com', '@.*\\.(org|gov|com)$');
+                 result
+                --------
+                 DonecFri
+                (1 row)
+                
+                SELECT regexp_replace('abcabc', 'b') AS x;
+                 X
+                ----
+                 acac
+                (1 row)
+                
+                SELECT regexp_replace('abc def GHI', '[a-z]+', 'X') AS x;
+                 X
+                --------
+                 X X GHI
+                (1 row)""");
+    }
 }

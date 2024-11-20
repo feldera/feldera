@@ -726,6 +726,18 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                         operandCount + " arguments is unknown", node);
     }
 
+    /** If expression is a string literal, compile it into a Regex object and return it.
+     * Otherwise, return null. */
+    @Nullable
+    DBSPExpression makeRegex(DBSPStringLiteral lit) {
+        DBSPTypeUser user = new DBSPTypeUser(CalciteObject.EMPTY, USER, "Regex", true);
+        // Here we lie about the type: new does not return an Regex, but a Result<Regex, Error>.
+        // We lie again that ok returns an unchanged type.  These two lies cancel out.
+        DBSPExpression init = user.constructor("new", lit.toStr());
+        init = init.applyMethod("ok", init.getType());
+        return new DBSPStaticExpression(lit.getNode(), init).borrow();
+    }
+
     @Override
     public DBSPExpression visitCall(RexCall call) {
         CalciteObject node = CalciteObject.create(this.context, call);
@@ -1132,6 +1144,19 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                             this.ensureInteger(ops, i, 32);
 
                         return compileFunction(call, node, type, ops, 2);
+                    case "regexp_replace": {
+                        validateArgCount(node, operationName, ops.size(), 2, 3);
+                        for (int i = 0; i < ops.size(); i++)
+                            this.ensureString(ops, i);
+                        if (ops.get(1).is(DBSPStringLiteral.class)) {
+                            DBSPStringLiteral lit = ops.get(1).to(DBSPStringLiteral.class);
+                            if (lit.isNull())
+                                return type.nullValue();
+                            ops.set(1, this.makeRegex(lit));
+                            return compileFunction("regexp_replaceC", node, type, ops, 2, 3);
+                        }
+                        return compileFunction(call, node, type, ops, 2, 3);
+                    }
                     case "timestamp_trunc":
                     case "time_trunc":
                         // Like DATE_TRUNC
@@ -1202,15 +1227,9 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 // if the second argument is a constant, compile it into a static
                 if (ops.get(1).is(DBSPStringLiteral.class)) {
                     DBSPStringLiteral lit = ops.get(1).to(DBSPStringLiteral.class);
-                    if (lit.isNull()) {
+                    if (lit.isNull())
                         return type.nullValue();
-                    }
-                    DBSPTypeUser user = new DBSPTypeUser(CalciteObject.EMPTY, USER, "Regex", true);
-                    // Here we lie about the type: new does not return an Regex, but a Result<Regex, Error>.
-                    // We lie again that ok returns an unchanged type.  These two lies cancel out.
-                    DBSPExpression init = user.constructor("new", lit.toStr());
-                    init = init.applyMethod("ok", init.getType());
-                    ops.set(1, new DBSPStaticExpression(node, init).borrow());
+                    ops.set(1, this.makeRegex(lit));
                     return compileFunction("rlikeC", node, type, ops, 2);
                 } else {
                     return compileFunction(call, node, type, ops, 2);

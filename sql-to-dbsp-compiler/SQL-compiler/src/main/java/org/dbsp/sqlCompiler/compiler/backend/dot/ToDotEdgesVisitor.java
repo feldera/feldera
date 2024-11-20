@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.backend.dot;
 
+import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewDeclarationOperator;
@@ -64,12 +65,18 @@ public class ToDotEdgesVisitor extends CircuitVisitor implements IWritesLogs {
 
         // Add the back-edge represented implicitly between a View and a ViewDeclaration
         if (node.is(DBSPViewDeclarationOperator.class)) {
-            DBSPViewOperator view = node.to(DBSPViewDeclarationOperator.class)
-                    .getCorrespondingView(this.getParent());
-            if (view != null) {
-                // Should be always true, but since this tool is used for debugging bugs in the compiler,
-                // we want to continue even if it's not
-                this.stream.append(view.getOutputName())
+            var decl = node.to(DBSPViewDeclarationOperator.class);
+            DBSPSimpleOperator source = decl.getCorrespondingView(this.getParent());
+            if (source == null) {
+                // May happen after views have been deleted
+                DBSPNestedOperator nested = this.getParent().as(DBSPNestedOperator.class);
+                if (nested != null) {
+                    int index = nested.outputViews.indexOf(decl.originalViewName());
+                    source = nested.outputs.get(index).simpleNode();
+                }
+            }
+            if (source != null) {
+                this.stream.append(source.getOutputName())
                         .append(" -> ")
                         .append(node.getOutputName())
                         .append(";")

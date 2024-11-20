@@ -40,6 +40,15 @@ public class CatalogTests extends BaseSQLTests {
     }
 
     @Test
+    public void duplicateViewExplicitColumnName() {
+        String sql = """
+                CREATE TABLE T(id int);
+                CREATE VIEW V AS SELECT id as col0, cast(id AS BIGINT) as col0 FROM T;""";
+        var ccs = this.getCCS(sql);
+        assert ccs.compiler.messages.messages.isEmpty();
+    }
+
+    @Test
     public void issue2949() {
         String sql = """
                 CREATE TABLE t4(c0 BOOLEAN, c1 DOUBLE, c2 VARCHAR);

@@ -220,16 +220,15 @@ addition to the normal way of `''`.
     <td>Converts the string to all upper case.</td>
     <td><code>upper('tom')</code> => <code>TOM</code></td>
   </tr>
-</table>
-
-<!--
   <tr>
-    <td><code>REGEXP_REPLACE(expr, pat, repl[, pos[, occurrence[, match_type]]])</code></td>
-    <td>Replaces occurrences in the string expr that match the regular expression
-        specified by the pattern pat with the replacement string repl, and returns
-        the resulting string. If `expr`, `pat`, or `repl` is `NULL`, the return value is `NULL`.</td>
+    <td><code>REGEXP_REPLACE(expr, pat[, repl])</code></td>
+    <td>Replaces occurrences in the string `expr` that match the regular expression
+        specified by the pattern `pat` with the replacement string `repl`, and returns
+        the resulting string. If any one of `expr`, `pat`, or `repl` is `NULL`, the return value is `NULL`.
+        If `repl` is missing, it is assumed to be the empty string.  If the regular
+        expression is invalid, the original string is returned.</td>
   </tr>
--->
+</table>
 
 ## `LIKE`
 
@@ -544,36 +543,83 @@ constraints contained in it. For example, `(^\d)\1` will match `22`.
 |`\`m     |(where m is a nonzero digit) a back reference to the m'th subexpression|
 |`\`mnn   |(where m is a nonzero digit, and nn is some more digits, and the decimal value mnn is not greater than the number of closing capturing parentheses seen so far) a back reference to the mnn'th subexpression|
 
-<!--
+### Capture groups
+
+A common way to use regexes is with _capture groups_. That is, instead
+of just looking for matches of an entire regex, parentheses are used
+to create groups that represent part of the match.
+
+For example, consider a string with multiple lines, and each line has
+three whitespace delimited fields where the second field is expected
+to be a number and the third field a boolean.  This can be expressed
+with the following regular expression, where the capture groups have
+been labeled `$0` to `$4`.
+
+```
+(?m)^\s*(\S+)\s+([0-9]+)\s+(true|false)\s*$
+^^^^    ^^^^^   ^^^^^^^^   ^^^^^^^^^^^^
+ $1      $2       $3           $4
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+               $0
+```
+
+Capture group 0 always corresponds to an implicit unnamed group that
+includes the entire match.  If a match is found, this group is always
+present.
+
+Subsequent groups may be named and are numbered, starting at 1, by the
+order in which the opening parenthesis appears in the pattern.  For
+example, in the pattern `(?<a>.(?<b>.))(?<c>.)`, `a`, `b` and `c`
+correspond to capture groups `$1`, `$2` and `$3`, respectively.
+
 ### Regular expression functions
 
 ```sql
-REGEXP_REPLACE(expr, pat, repl[, pos[, occurrence[, match_type]]])
+REGEXP_REPLACE(expr, pat[, repl])
 ```
+
+If `repl` is missing, it is assumed to be the empty string.
 
 Replaces occurrences in the string `expr` that match the regular
 expression specified by the pattern `pat` with the replacement string
-`repl`, and returns the resulting string. If any of `expr`, `pat`, or
+`repl`, and returns the resulting string.  If any of `expr`, `pat`, or
 `repl` is `NULL`, the return value is `NULL`.
 
-`REGEXP_REPLACE()` takes these optional arguments:
+#### Replacement string syntax
 
-- `pos`: The position in expr at which to start the search. If omitted, the default is 1.
+All instances of `$N` in the replacement string are replaced with the
+substring corresponding to the capture group identified by `N`.
 
-- `occurrence`: Which occurrence of a match to replace. If omitted, the default is 0 (which
-  means “replace all occurrences”).
+`N` may be an integer corresponding to the index of the capture group
+(counted by order of opening parenthesis where 0 is the entire match)
+or it can be a name (consisting of letters, digits or underscores)
+corresponding to a named capture group.
 
-- `match_type`: A string that specifies how to perform matching.  It is a string that may
-  contain any or all the following characters specifying how to perform matching:
+If `N` isn’t a valid capture group (whether the name doesn’t exist or
+isn’t a valid index), then it is replaced with the empty string.
 
-  - `c`: Case-sensitive matching.
+The longest possible name is used. For example, `$1a` looks up the
+capture group named `1a` and not the capture group at index `1`. To
+exert more precise control over the name, use braces, e.g., `${1}a`.
 
-  - `i`: Case-insensitive matching.
+To write a literal `$` use `$$`.
 
-  - `m`: Multiple-line mode. Recognize line terminators within the string. The default
-     behavior is to match line terminators only at the start and end of the string expression.
+Examples:
 
-  - `n`: The `.` character matches line terminators. The default is for `.` matching to stop at the end of a line.
+```
+select regexp_replace('1078910', '[^01]');
+1010
 
-  - `u`: Unix-only line endings. Only the newline character is recognized as a line ending by the ., ^, and $ match operators.
--->
+select regexp_replace('deep fried', '(?<first>\w+)\s+(?<second>\w+)', '${first}_$second');
+deep_fried
+
+select regexp_replace('Springsteen, Bruce', '([^,\s]+),\s+(\S+)', '$2 $1');
+Bruce Springsteen
+
+select regexp_replace('Springsteen, Bruce', '(?<last>[^,\s]+),\s+(?<first>\S+)', '$first $last');
+Bruce Springsteen
+```
+
+Note that using `$2` instead of `$first` or `$1` instead of `$last`
+would produce the same result.
+
