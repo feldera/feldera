@@ -27,7 +27,7 @@ import DeltaLakeLogo from '$public/images/vendors/databricks-delta-lake-logo.svg
 import DebeziumLogo from '$public/images/vendors/debezium-logo-color.svg'
 import KafkaLogo from '$public/images/vendors/kafka-logo-black.svg'
 import SnowflakeLogo from '$public/images/vendors/snowflake-logo.svg'
-import BigNumber from 'bignumber.js/bignumber.js'
+import { BigNumber } from 'bignumber.js/bignumber.js'
 import invariant from 'tiny-invariant'
 import { match } from 'ts-pattern'
 
