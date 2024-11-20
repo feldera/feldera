@@ -15,16 +15,16 @@
       .with('Pausing', () => 'preset-filled-secondary-200-800')
       .with('Resuming', () => 'preset-filled-tertiary-200-800')
       .with('ShuttingDown', () => 'preset-filled-secondary-200-800')
-      .with({ PipelineError: P.any }, () => 'preset-filled-error-200-800')
       .with('Compiling SQL', 'SQL compiled', () => 'preset-filled-warning-200-800')
       .with('Queued', () => 'preset-filled-warning-200-800')
       .with('Compiling binary', () => 'preset-filled-warning-200-800')
       .with('Unavailable', () => 'bg-orange-200 dark:bg-orange-800')
       .with(
+        { PipelineError: P.any },
         { SqlError: P.any },
         { RustError: P.any },
         { SystemError: P.any },
-        () => 'preset-filled-error-200-800'
+        () => 'preset-filled-error-50-950'
       )
       .exhaustive()
   )
