@@ -183,7 +183,7 @@ See [Materialized Tables and Views](materialized.md) for more details.
 `CREATE RECURSIVE VIEW` is used to declare a view that can afterwards
 be used in a recursive SQL query.  The syntax of this statement is
 reminiscent of a table declaration, without constraints.  Recursive
-queries are documented in [this section](recursive.md).
+queries are documented in [this section](recursion).
 
 ```
 declareRecursiveViewStatement:

@@ -1,0 +1,254 @@
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Mutually-recursive queries
+
+:::warning
+
+Recursive queries are a new feature in Feldera SQL and are still evolving. Syntax and
+functionality may change in future versions.
+
+:::
+
+Recursive computations are notoriously limited in standard SQL due to cumbersome syntax and limited expressivity.
+Feldera SQL introduces an intuitive and powerful syntax for recursive queries that:
+
+- Removes the need for Common Table Expressions (CTEs) in recursive queries.
+- Supports mutually recursive view definitions involving multiple views.
+- Allows rich, non-monotonic queries in recursive view definitions, with a goal to support arbitrary queries in the future.
+
+These enhancements make Feldera SQL Turing-complete, meaning recursive queries that never terminate can be written—so
+care must be taken when designing queries.
+
+## Key Concepts of Recursive Views
+
+### Defining Recursive Views with Forward Declarations
+
+In Feldera SQL, recursive queries require [forward declarations](https://en.wikipedia.org/wiki/Forward_declaration)
+when a view references itself or another view before their definition.
+A forward declaration specifies the view's name, column names, and column types.
+
+```sql
+CREATE RECURSIVE VIEW CLOSURE(x INT, y INT);
+```
+
+This forward declaration states that `CLOSURE` is a recursive view with two columns, `x` and `y`, both of type `INT`.
+As we will see next, we can use this view to compute a transitive closure of a graph recursively, where x and y
+are nodes in the graph.
+
+### Recursive View Definitions
+
+Once declared, recursive views are defined using standard SQL syntax. Feldera SQL allows these views to
+reference each other recursively.
+
+```sql
+CREATE TABLE EDGES(x INT, y INT);
+
+-- Define a local view STEP depending on CLOSURE and EDGES
+CREATE LOCAL VIEW STEP AS
+SELECT E.x, CLOSURE.y
+FROM EDGES E
+JOIN CLOSURE ON E.y = CLOSURE.x;
+
+-- Define the recursive view CLOSURE
+CREATE MATERIALIZED VIEW CLOSURE AS
+(SELECT * FROM EDGES)
+UNION
+(SELECT * FROM STEP);
+```
+
+In this example we compute a transitive closure:
+
+- `EDGES` represents the edges of a graph.
+- The `CLOSURE` view represents the edges of a graph over the same nodes, such that CLOSURE is the transitive
+  closure of the EDGES graph.
+
+Forward declarations are needed only when:
+
+- A view is referenced before its definition.
+- The view participates in mutual recursion.
+
+For example, if `STEP` were not a local view, it would also require a forward declaration.
+
+The type inferred by the compiler for the view based on the query must
+match exactly the type of the declared view, including the nullability
+of the columns, and the column names.
+
+## Semantics
+
+- Mutually recursive views start out empty and are computed iteratively until they reach a stable state
+  (i.e., no further changes occur). This is the least fixed point semantics, which is common in programming
+  languages but differs from recursion in standard SQL.
+
+- All mutually recursive views are automatically treated as `DISTINCT` (e.g., as if they have a `SELECT DISTINCT` in their
+  definition) to avoid infinite growth due to duplicate rows. Without these restrictions, (and if we replace `UNION`
+  with `UNION ALL` in the view definition), the program that computes `CLOSURE` above would never terminate and the
+  `CLOSURE` table would keep growing, accumulating duplicate edges.
+
+We can verify this using our previous program and using the [Feldera Shell](/reference/cli)
+
+```sql
+INSERT INTO EDGES VALUES(0, 1);
+SELECT * FROM CLOSURE;
+ x | y
+-------
+ 0 | 1
+(1 row)
+INSERT INTO EDGES VALUES(1, 2);
+SELECT * FROM CLOSURE;
+ x | y
+-------
+ 0 | 1
+ 1 | 2
+ 0 | 2
+(3 rows)
+DELETE * FROM EDGES WHERE x = 0;
+SELECT * FROM CLOSURE;
+ x | y
+-------
+ 1 | 2
+(1 row)
+```
+
+## Debugging Recursive SQL
+
+SQL with non-terminating or long-running recursion should be avoided. e.g., the following SQL will attempt to
+create a view that computes all Fibonacci numbers. However, this program will fail (due to overflow) once
+it reaches values that do not fit into a 32-bit integer:
+
+```sql
+create recursive view fibonacci(n int, value int);
+
+create view fibonacci as
+(
+    -- Base case: first two Fibonacci numbers
+    select 0 as n, 0 as value
+    union all
+    select 1 as n, 1 as value
+)
+union all
+(
+    -- Compute F(n)=F(n-1)+F(n-2)
+    select
+        curr.n + 1 as n,
+        (prev.value + curr.value) as value
+    from fibonacci as curr
+    join fibonacci as prev
+    on prev.n = curr.n - 1
+);
+
+create view fib_outputs as select * from fibonacci;
+```
+
+Recursive computations are evaluated in a single [circuit step](https://www.feldera.com/blog/synchronous-streaming),
+so there’s no intermediate output in the change stream. This can make debugging recursive queries challenging.
+
+To debug, you can use a [a UDF](/sql/udf). For example, modify the previous example to use a Rust function that
+prints each invocation of the fibonacci view during recursion:
+
+<Tabs>
+  <TabItem value="program.sql" label="program.sql" default>
+    ```sql
+    create function logger(n int not null, value int not null) returns int not null;
+    create recursive view fibonacci(n int not null, value int not null);
+
+    create view fibonacci as
+    (
+        -- Base case: first two Fibonacci numbers
+        select 0 as n, 0 as value
+        union all
+        select 1 as n, 1 as value
+    )
+    union all
+    (
+        -- Compute F(n)=F(n-1)+F(n-2)
+        select
+            logger(curr.n + 1, prev.value + curr.value) as n,
+            (prev.value + curr.value) as value
+        from fibonacci as curr
+        join fibonacci as prev
+        on prev.n = curr.n - 1
+    );
+
+    create view fib_outputs as select * from fibonacci;
+    ```
+  </TabItem>
+  <TabItem value="udf.toml" label="udf.toml">
+    ```toml
+    log = "0.4"
+    ```
+  </TabItem>
+  <TabItem value="udf.rs" label="udf.rs">
+    ```rust
+    pub fn logger(n: i32, v: i32) -> Result<i32, Box<dyn std::error::Error>> {
+        log::info!("n={n} v={v}");
+        Ok(n)
+    }
+    ```
+  </TabItem>
+</Tabs>
+
+If we run the pipeline and inspect the log we now can see the following output before the pipeline crashes:
+
+```text
+...
+2024-11-21 00:36:16 INFO [pipeline-01934bea-8b46-71c2-9809-7eacf89f926d] n=44 v=701408733
+2024-11-21 00:36:16 INFO [pipeline-01934bea-8b46-71c2-9809-7eacf89f926d] n=45 v=1134903170
+2024-11-21 00:36:16 INFO [pipeline-01934bea-8b46-71c2-9809-7eacf89f926d] n=46 v=1836311903
+```
+
+The 46-th fibonacci value is the last one that fits in a 32-bit integer.
+
+### Bounding Recursion Depth
+
+The fix is to bound the recursion depth, e.g., by adding a `WHERE` clause to the `fibonacci` view:
+
+```sql
+create recursive view fibonacci(n int not null, value int not null);
+
+create view fibonacci as
+(
+    -- Base case: first two Fibonacci numbers
+    select 0 as n, 0 as value
+    union all
+    select 1 as n, 1 as value
+)
+union all
+(
+    -- Compute F(n)=F(n-1)+F(n-2)
+    select
+        curr.n + 1 as n,
+        (prev.value + curr.value) as value
+    from fibonacci as curr
+    join fibonacci as prev
+    on prev.n = curr.n - 1
+    where curr.n <= 45
+);
+
+create view fib_outputs as select * from fibonacci;
+```
+
+## Supported and Unsupported Features
+
+### Supported Constructs
+
+Feldera supports a wide range of operators in recursive queries, including:
+
+- `SELECT`, `WHERE`, `GROUP BY`, `HAVING`
+- All types of `JOINs`
+- Aggregations, `DISTINCT`, `UNION`, `INTERSECT`, `EXCEPT`
+- `UNNEST`, `VALUES`, `PIVOT`
+- Table functions like `HOP` and `TUMBLE`
+
+It is also possible to create a recursive [*materialized* view](/sql/materialized), which stores the result of
+the recursive computation for [ad-hoc queries](/sql/ad-hoc).
+
+### Unsupported Constructs
+
+The following are currently not supported in recursive queries:
+
+- Window functions (e.g., `OVER` clauses)
+
+### Known Limitations
+
+- Recursive queries mixed with [streaming annotations](streaming) currently can not leverage garbage collection.
