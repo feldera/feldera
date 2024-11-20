@@ -19,7 +19,14 @@ class aggtst_interval_min_seconds(TstView):
     def __init__(self):
         # Validated on Postgres
         self.data = [
-            {'m_c1': -1466619540, 'm_c2': -1592695620, 'm_c3': -571691580, 'm_c4': -229712400, 'm_c5': -1681851120, 'm_c6': -894927960}
+            {
+                "m_c1": -1466619540,
+                "m_c2": -1592695620,
+                "m_c3": -571691580,
+                "m_c4": -229712400,
+                "m_c5": -1681851120,
+                "m_c6": -894927960,
+            }
         ]
         self.sql = """CREATE MATERIALIZED VIEW interval_min_seconds AS SELECT
                       TIMESTAMPDIFF(SECOND, d(), d() + f_c1) AS m_c1,
@@ -51,8 +58,24 @@ class aggtst_interval_min_gby_seconds(TstView):
     def __init__(self):
         # Validated on Postgres
         self.data = [
-            {'id': 0, 'm_c1': -318226680, 'm_c2': -1592695620, 'm_c3': -169024440, 'm_c4': 89155500, 'm_c5': -1681851120, 'm_c6': -149202240},
-            {'id': 1, 'm_c1': -1466619540, 'm_c2': -1592695620, 'm_c3': -571691580, 'm_c4': -229712400, 'm_c5': -1635868800, 'm_c6': -894927960}
+            {
+                "id": 0,
+                "m_c1": -318226680,
+                "m_c2": -1592695620,
+                "m_c3": -169024440,
+                "m_c4": 89155500,
+                "m_c5": -1681851120,
+                "m_c6": -149202240,
+            },
+            {
+                "id": 1,
+                "m_c1": -1466619540,
+                "m_c2": -1592695620,
+                "m_c3": -571691580,
+                "m_c4": -229712400,
+                "m_c5": -1635868800,
+                "m_c6": -894927960,
+            },
         ]
         self.sql = """CREATE MATERIALIZED VIEW interval_min_gby_seconds AS SELECT
                       id,
@@ -83,7 +106,14 @@ class aggtst_interval_min_distinct_seconds(TstView):
     def __init__(self):
         # Validated on Postgres
         self.data = [
-            {'m_c1': -1466619540, 'm_c2': -1592695620, 'm_c3': -571691580, 'm_c4': -229712400, 'm_c5': -1681851120, 'm_c6': -894927960}
+            {
+                "m_c1": -1466619540,
+                "m_c2": -1592695620,
+                "m_c3": -571691580,
+                "m_c4": -229712400,
+                "m_c5": -1681851120,
+                "m_c6": -894927960,
+            }
         ]
         self.sql = """CREATE MATERIALIZED VIEW interval_min_distinct_seconds AS SELECT
                       TIMESTAMPDIFF(SECOND, d(), d() + f_c1) AS m_c1,
@@ -115,8 +145,24 @@ class aggtst_interval_min_distinct_gby_seconds(TstView):
     def __init__(self):
         # Validated on Postgres
         self.data = [
-            {'id': 0, 'm_c1': -318226680, 'm_c2': -1592695620, 'm_c3': -169024440, 'm_c4': 89155500, 'm_c5': -1681851120, 'm_c6': -149202240},
-            {'id': 1, 'm_c1': -1466619540, 'm_c2': -1592695620, 'm_c3': -571691580, 'm_c4': -229712400, 'm_c5': -1635868800, 'm_c6': -894927960}
+            {
+                "id": 0,
+                "m_c1": -318226680,
+                "m_c2": -1592695620,
+                "m_c3": -169024440,
+                "m_c4": 89155500,
+                "m_c5": -1681851120,
+                "m_c6": -149202240,
+            },
+            {
+                "id": 1,
+                "m_c1": -1466619540,
+                "m_c2": -1592695620,
+                "m_c3": -571691580,
+                "m_c4": -229712400,
+                "m_c5": -1635868800,
+                "m_c6": -894927960,
+            },
         ]
         self.sql = """CREATE MATERIALIZED VIEW interval_min_distinct_gby_seconds AS SELECT
                       id,
@@ -147,7 +193,14 @@ class aggtst_interval_min_where_seconds(TstView):
     def __init__(self):
         # Validated on Postgres
         self.data = [
-            {'m_c1': 318185100, 'm_c2': -1592695620, 'm_c3': 229712400, 'm_c4': -229712400, 'm_c5': 149202240, 'm_c6': -894927960}
+            {
+                "m_c1": 318185100,
+                "m_c2": -1592695620,
+                "m_c3": 229712400,
+                "m_c4": -229712400,
+                "m_c5": 149202240,
+                "m_c6": -894927960,
+            }
         ]
         self.sql = """CREATE MATERIALIZED VIEW interval_min_where_seconds AS SELECT
                       TIMESTAMPDIFF(SECOND, d(), d() + f_c1) AS m_c1,
@@ -179,8 +232,24 @@ class aggtst_interval_min_where_gby_seconds(TstView):
     def __init__(self):
         # Validated on Postgres
         self.data = [
-            {'id': 0, 'm_c1': 1592695620, 'm_c2': -1592695620, 'm_c3': None, 'm_c4': None, 'm_c5': 149202240, 'm_c6': -149202240},
-            {'id': 1, 'm_c1': 318185100, 'm_c2': -1592695620, 'm_c3': 229712400, 'm_c4': -229712400, 'm_c5': 894927960, 'm_c6': -894927960}
+            {
+                "id": 0,
+                "m_c1": 1592695620,
+                "m_c2": -1592695620,
+                "m_c3": None,
+                "m_c4": None,
+                "m_c5": 149202240,
+                "m_c6": -149202240,
+            },
+            {
+                "id": 1,
+                "m_c1": 318185100,
+                "m_c2": -1592695620,
+                "m_c3": 229712400,
+                "m_c4": -229712400,
+                "m_c5": 894927960,
+                "m_c6": -894927960,
+            },
         ]
         self.sql = """CREATE MATERIALIZED VIEW interval_min_where_gby_seconds AS SELECT
                       id,
