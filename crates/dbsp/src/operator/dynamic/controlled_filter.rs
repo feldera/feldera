@@ -282,8 +282,9 @@ mod test {
 
     use crate::{
         circuit::CircuitConfig,
+        dynamic::DynData,
         utils::{Tup1, Tup2},
-        OrdIndexedZSet, OrdZSet, Runtime,
+        OrdIndexedZSet, OrdZSet, Runtime, Stream, TypedBox,
     };
 
     #[test]
@@ -291,14 +292,14 @@ mod test {
         let (mut dbsp, (input_handle, output_handle, error_handle)) =
             Runtime::init_circuit(CircuitConfig::from(4), |circuit| {
                 let (input, input_handle) = circuit.add_input_zset::<u64>();
-                let threshold = input.waterline(
+                let threshold: Stream<_, TypedBox<Tup1<u64>, DynData>> = input.waterline(
                     || Tup1(0),
                     |&x, _| Tup1(x.saturating_sub(5)),
                     |x, y| *max(x, y),
                 );
 
-                let (output, errors) = input.controlled_key_filter(
-                    &threshold,
+                let (output, errors) = input.controlled_key_filter_typed(
+                    &threshold.inner_typed(),
                     |t, k| *k >= t.0,
                     |t, k, _v, _w| format!("{k} < {}", t.0),
                 );
@@ -340,7 +341,7 @@ mod test {
         let (mut dbsp, (input_handle, output_handle, error_handle)) =
             Runtime::init_circuit(CircuitConfig::from(4), |circuit| {
                 let (input, input_handle) = circuit.add_input_zset::<u64>();
-                let threshold = input.waterline(
+                let threshold: Stream<_, TypedBox<Tup1<u64>, DynData>> = input.waterline(
                     || Tup1(0),
                     |&x, _| Tup1(x.saturating_sub(5)),
                     |x, y| *max(x, y),
@@ -348,8 +349,8 @@ mod test {
 
                 let indexed = input.map_index(|i| (*i, *i));
 
-                let (output, errors) = indexed.controlled_value_filter(
-                    &threshold,
+                let (output, errors) = indexed.controlled_value_filter_typed(
+                    &threshold.inner_typed(),
                     |t, k, v| *k >= t.0 && *v % 2 == 0,
                     |t, k, _v, _w| format!("{k} < {}", t.0),
                 );

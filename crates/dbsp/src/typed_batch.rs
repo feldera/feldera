@@ -642,3 +642,13 @@ impl<C: Circuit, T: DBData, D: DataTrait + ?Sized> Stream<C, TypedBox<T, D>> {
         self.apply(|typed_box| unsafe { typed_box.inner().downcast::<T>().clone() })
     }
 }
+
+impl<C: Circuit, T: DBData> Stream<C, T> {
+    pub fn typed_box<D>(&self) -> Stream<C, TypedBox<T, D>>
+    where
+        D: DataTrait + ?Sized,
+        T: Erase<D>,
+    {
+        self.apply(|x| TypedBox::new(x.clone()))
+    }
+}
