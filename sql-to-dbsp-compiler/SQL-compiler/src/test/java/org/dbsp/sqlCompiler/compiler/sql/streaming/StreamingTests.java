@@ -2,6 +2,7 @@ package org.dbsp.sqlCompiler.compiler.sql.streaming;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPControlledFilterOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPControlledKeyFilterOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateWithWaterlineOperator;
@@ -15,6 +16,9 @@ import org.dbsp.sqlCompiler.compiler.sql.OtherTests;
 import org.dbsp.sqlCompiler.compiler.sql.StreamingTestBase;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.Passes;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity.MonotoneAnalyzer;
+import org.dbsp.util.Logger;
 import org.junit.Assert;
 import org.junit.Test;
 
@@ -707,7 +711,7 @@ public class StreamingTests extends StreamingTestBase {
             boolean found = false;
 
             @Override
-            public VisitDecision preorder(DBSPControlledFilterOperator filter) {
+            public VisitDecision preorder(DBSPControlledKeyFilterOperator filter) {
                 this.found = true;
                 return VisitDecision.CONTINUE;
             }

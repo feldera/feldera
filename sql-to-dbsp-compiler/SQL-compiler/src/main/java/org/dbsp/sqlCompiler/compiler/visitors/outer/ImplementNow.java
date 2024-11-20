@@ -10,7 +10,6 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNowOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPUnaryOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWaterlineOperator;
@@ -120,29 +119,6 @@ public class ImplementNow extends Passes {
 
         public Boolean found() {
             return this.found;
-        }
-    }
-
-    /** Remove the 'now' input table */
-    public static class RemoveNow extends CircuitCloneVisitor {
-        final ICompilerComponent compiler;
-
-        RemoveNow(IErrorReporter errorReporter, ICompilerComponent compiler) {
-            super(errorReporter, false);
-            this.compiler = compiler;
-        }
-
-        @Override
-        public void postorder(DBSPSourceMultisetOperator map) {
-            if (map.tableName.equalsIgnoreCase("now")) {
-                // Return without adding it to the circuit.
-                Logger.INSTANCE.belowLevel(this, 1)
-                        .append("Removing table 'now'")
-                        .newline();
-                this.compiler.compiler().removeNowTable();
-                return;
-            }
-            super.postorder(map);
         }
     }
 
@@ -874,7 +850,7 @@ public class ImplementNow extends Passes {
         RewriteNow rewriteNow = new RewriteNow(reporter, compiler);
         this.passes.add(cn.getCircuitVisitor());
         this.passes.add(new Conditional(reporter, rewriteNow, cn::found));
-        this.passes.add(new Conditional(reporter, new RemoveNow(reporter, compiler), () -> !cn.found || removeTable));
+        this.passes.add(new Conditional(reporter, new RemoveTable("now", reporter, compiler), () -> !cn.found || removeTable));
         ContainsNow cn0 = new ContainsNow(reporter, false);
         this.passes.add(cn0.getCircuitVisitor());
         this.passes.add(new Conditional(reporter,

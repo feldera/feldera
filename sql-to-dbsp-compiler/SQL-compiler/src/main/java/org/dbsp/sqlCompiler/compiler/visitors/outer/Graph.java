@@ -5,6 +5,7 @@ import org.dbsp.sqlCompiler.circuit.ICircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDeltaOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPOperatorWithError;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewDeclarationOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewOperator;
@@ -57,6 +58,11 @@ public class Graph extends CircuitVisitor {
 
     @Override
     public void postorder(DBSPSimpleOperator operator) {
+        this.addOperator(operator);
+    }
+
+    @Override
+    public void postorder(DBSPOperatorWithError operator) {
         this.addOperator(operator);
     }
 

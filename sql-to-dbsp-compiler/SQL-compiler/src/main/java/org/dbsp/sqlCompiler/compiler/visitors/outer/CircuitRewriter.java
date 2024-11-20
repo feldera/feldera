@@ -29,6 +29,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPAsofJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPControlledFilterOperator;
 import org.dbsp.sqlCompiler.circuit.DBSPDeclaration;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPControlledKeyFilterOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinFilterMapOperator;
@@ -37,6 +38,8 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPLagOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNowOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPOperatorWithError;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateWithWaterlineOperator;
@@ -74,7 +77,7 @@ public class CircuitRewriter extends CircuitCloneVisitor {
     public final IRTransform transform;
     /** Only optimize functions for nodes where this predicate returns 'true'.
      * By default optimize all nodes. */
-    Predicate<DBSPSimpleOperator> toOptimize = o -> true;
+    Predicate<DBSPOperator> toOptimize = o -> true;
 
     public CircuitRewriter(IErrorReporter reporter, IRTransform transform) {
         super(reporter, false);
@@ -86,14 +89,14 @@ public class CircuitRewriter extends CircuitCloneVisitor {
      * @param reporter    Error reporter.
      * @param transform   Function to apply to optimize each node's functions.
      * @param toOptimize  Predicate which returns 'true' for the nodes to optimize. */
-    public CircuitRewriter(IErrorReporter reporter, IRTransform transform, Predicate<DBSPSimpleOperator> toOptimize) {
+    public CircuitRewriter(IErrorReporter reporter, IRTransform transform, Predicate<DBSPOperator> toOptimize) {
         super(reporter, false);
         this.transform = transform;
         this.toOptimize = toOptimize;
     }
 
     public DBSPExpression transform(DBSPExpression expression) {
-        if (!this.toOptimize.test(this.getCurrent().to(DBSPSimpleOperator.class))) {
+        if (!this.toOptimize.test(this.getCurrent().to(DBSPOperator.class))) {
             return expression;
         }
         IDBSPInnerNode result = this.transform.apply(expression);
@@ -379,6 +382,23 @@ public class CircuitRewriter extends CircuitCloneVisitor {
                     .copyAnnotations(operator);
         }
         this.map(operator, result);
+    }
+
+    @Override
+    public void postorder(DBSPControlledKeyFilterOperator operator) {
+        List<OutputPort> sources = Linq.map(operator.inputs, this::mapped);
+        DBSPExpression function = this.transform(operator.function);
+        DBSPExpression error = this.transform(operator.error);
+        DBSPOperatorWithError result = operator;
+        if (Linq.different(sources, operator.inputs)
+                || function != operator.function
+                || error != operator.error) {
+            result = new DBSPControlledKeyFilterOperator(operator.getNode(),
+                    function.to(DBSPClosureExpression.class), error.to(DBSPClosureExpression.class),
+                    sources.get(0), sources.get(1))
+                    .copyAnnotations(operator);
+        }
+        this.map(operator, result, true);
     }
 
     @Override

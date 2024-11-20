@@ -127,4 +127,8 @@ public abstract class DBSPOperator extends DBSPNode implements IDBSPOuterNode {
     public abstract int outputCount();
 
     public abstract DBSPType streamType(int outputNumber);
+
+    public OutputPort getOutput(int outputNo) {
+        return new OutputPort(this, outputNo);
+    }
 }

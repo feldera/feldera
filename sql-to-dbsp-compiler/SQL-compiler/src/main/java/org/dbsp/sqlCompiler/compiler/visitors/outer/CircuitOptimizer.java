@@ -48,70 +48,64 @@ public record CircuitOptimizer(DBSPCompiler compiler) implements ICompilerCompon
         IErrorReporter reporter = this.compiler();
         CompilerOptions options = this.compiler().options;
 
+        // First part of optimizations may still synthesize some circuit components
+
         passes.add(new ImplementNow(reporter, compiler));
         passes.add(new RecursiveComponents(reporter));
         if (options.languageOptions.outputsAreSets)
             passes.add(new EnsureDistinctOutputs(reporter));
         passes.add(new MinMaxOptimize(reporter, compiler.weightVar));
         passes.add(new ExpandAggregateZero(reporter));
-        if (options.languageOptions.optimizationLevel < 2) {
-            if (options.languageOptions.incrementalize)
-                passes.add(new IncrementalizeVisitor(this.compiler()));
-            if (!options.ioOptions.emitHandles)
-                passes.add(new IndexedInputs(reporter));
-        } else {
-            passes.add(new MergeSums(reporter));
-            passes.add(new OptimizeWithGraph(reporter, g -> new RemoveNoops(reporter, g)));
-            passes.add(new PropagateEmptySources(reporter));
-            passes.add(new DeadCode(reporter, options.languageOptions.generateInputForEveryTable, true));
-            passes.add(new OptimizeDistinctVisitor(reporter));
-            // This is useful even without incrementalization if we have recursion
-            passes.add(new OptimizeIncrementalVisitor(reporter));
-            passes.add(new DeadCode(reporter, true, false));
-            if (options.languageOptions.incrementalize) {
-                passes.add(new IncrementalizeVisitor(reporter));
-            }
-            passes.add(new OptimizeIncrementalVisitor(reporter));
-            passes.add(new RemoveIAfterD(reporter));
-            passes.add(new DeadCode(reporter, true, false));
-            passes.add(new Simplify(reporter).circuitRewriter());
-            passes.add(new OptimizeWithGraph(reporter, g -> new OptimizeProjectionVisitor(reporter, g)));
-            passes.add(new OptimizeWithGraph(reporter, g -> new OptimizeMaps(reporter, true, g)));
-            passes.add(new OptimizeWithGraph(reporter, g -> new FilterJoinVisitor(reporter, g)));
-            if (options.languageOptions.incrementalize) {
-                // Monotonicity analysis only makes sense for incremental programs
-                passes.add(new MonotoneAnalyzer(reporter));
-            }
-            passes.add(new NarrowJoins(reporter));
-            // Doing this after the monotone analysis only
-            if (!options.ioOptions.emitHandles)
-                passes.add(new IndexedInputs(reporter));
-            passes.add(new OptimizeWithGraph(reporter, g -> new FilterJoinVisitor(reporter, g)));
-            passes.add(new DeadCode(reporter, true, false));
-            passes.add(new Simplify(reporter).circuitRewriter());
-            // The predicate below controls which nodes have their output dumped at runtime
-            passes.add(new InstrumentDump(reporter, t -> false));
-            if (options.languageOptions.incrementalize)
-                passes.add(new NoIntegralVisitor(reporter));
+        passes.add(new MergeSums(reporter));
+        passes.add(new OptimizeWithGraph(reporter, g -> new RemoveNoops(reporter, g)));
+        passes.add(new PropagateEmptySources(reporter));
+        passes.add(new DeadCode(reporter, options.languageOptions.generateInputForEveryTable, true));
+        passes.add(new OptimizeDistinctVisitor(reporter));
+        // This is useful even without incrementalization if we have recursion
+        passes.add(new OptimizeIncrementalVisitor(reporter));
+        passes.add(new DeadCode(reporter, true, false));
+        if (options.languageOptions.incrementalize) {
+            passes.add(new IncrementalizeVisitor(reporter));
         }
+        passes.add(new OptimizeIncrementalVisitor(reporter));
+        passes.add(new RemoveIAfterD(reporter));
+        passes.add(new DeadCode(reporter, true, false));
+        passes.add(new Simplify(reporter).circuitRewriter());
+        passes.add(new OptimizeWithGraph(reporter, g -> new OptimizeProjectionVisitor(reporter, g)));
+        passes.add(new OptimizeWithGraph(reporter, g -> new OptimizeMaps(reporter, true, g)));
+        passes.add(new OptimizeWithGraph(reporter, g -> new FilterJoinVisitor(reporter, g)));
+        if (options.languageOptions.incrementalize) {
+            // Monotonicity analysis only makes sense for incremental programs
+            passes.add(new MonotoneAnalyzer(reporter));
+        }
+        passes.add(new RemoveTable(DBSPCompiler.ERROR_TABLE_NAME, reporter, this.compiler));
+
+        // The circuit is complete here, start optimizing for real.
+        passes.add(new NarrowJoins(reporter));
+        // Doing this after the monotone analysis only
+        if (!options.ioOptions.emitHandles)
+            passes.add(new IndexedInputs(reporter));
+        passes.add(new OptimizeWithGraph(reporter, g -> new FilterJoinVisitor(reporter, g)));
+        passes.add(new DeadCode(reporter, true, false));
+        passes.add(new Simplify(reporter).circuitRewriter());
+        // The predicate below controls which nodes have their output dumped at runtime
+        passes.add(new InstrumentDump(reporter, t -> false));
+        if (options.languageOptions.incrementalize)
+            passes.add(new NoIntegralVisitor(reporter));
         passes.add(new ExpandHop(reporter));
         passes.add(new RemoveDeindexOperators(reporter));
         passes.add(new OptimizeWithGraph(reporter, g -> new RemoveNoops(reporter, g)));
         passes.add(new RemoveViewOperators(reporter, false));
         passes.add(new Repeat(reporter, new ExpandCasts(reporter).circuitRewriter()));
-        if (options.languageOptions.optimizationLevel >= 2) {
-            passes.add(new OptimizeWithGraph(reporter, g -> new FilterMapVisitor(reporter, g)));
-            // optimize the maps introduced by the deindex removal
-            passes.add(new OptimizeWithGraph(reporter, g -> new OptimizeMaps(reporter, false, g)));
-            passes.add(new SimplifyWaterline(reporter)
-                    .circuitRewriter(node -> node.hasAnnotation(a -> a.is(Waterline.class))));
-        }
+        passes.add(new OptimizeWithGraph(reporter, g -> new FilterMapVisitor(reporter, g)));
+        // optimize the maps introduced by the deindex removal
+        passes.add(new OptimizeWithGraph(reporter, g -> new OptimizeMaps(reporter, false, g)));
+        passes.add(new SimplifyWaterline(reporter)
+                .circuitRewriter(node -> node.hasAnnotation(a -> a.is(Waterline.class))));
         passes.add(new EliminateDump(reporter).circuitRewriter());
         passes.add(new ExpandWriteLog(reporter).circuitRewriter());
-        if (options.languageOptions.optimizationLevel >= 2) {
-            passes.add(new Simplify(reporter).circuitRewriter());
-            passes.add(new CSE(reporter));
-        }
+        passes.add(new Simplify(reporter).circuitRewriter());
+        passes.add(new CSE(reporter));
         passes.add(new RecursiveComponents.ValidateRecursiveOperators(reporter));
         // Lowering implements aggregates and inlines some calls.
         passes.add(new LowerCircuitVisitor(reporter));

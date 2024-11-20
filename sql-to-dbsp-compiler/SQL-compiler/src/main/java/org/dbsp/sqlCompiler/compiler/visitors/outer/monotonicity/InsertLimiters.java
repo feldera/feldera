@@ -9,6 +9,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPAsofJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPBinaryOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPChainAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPControlledFilterOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPControlledKeyFilterOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDeindexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDelayOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDelayedIntegralOperator;
@@ -1249,7 +1250,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
     /** Process LATENESS annotations.
      * @return Return the original operator if there aren't any annotations, or
      * the operator that produces the result of the input filtered otherwise. */
-    DBSPSimpleOperator processLateness(DBSPSimpleOperator operator, DBSPSimpleOperator expansion) {
+    DBSPOperator processLateness(String viewOrTable, DBSPSimpleOperator operator, DBSPSimpleOperator expansion) {
         MonotoneExpression expression = this.expansionMonotoneValues.get(expansion);
         if (expression == null) {
             this.nonMonotone(expansion);
@@ -1314,15 +1315,15 @@ public class InsertLimiters extends CircuitCloneVisitor {
             this.markBound(operator.outputPort(), extend.outputPort());
         if (operator != expansion)
             this.markBound(expansion.outputPort(), extend.outputPort());
-        return DBSPControlledFilterOperator.create(
-                operator.getNode(), replacement.outputPort(), Monotonicity.getBodyType(expression),
+        return DBSPControlledKeyFilterOperator.create(
+                operator.getNode(), viewOrTable, replacement.outputPort(), Monotonicity.getBodyType(expression),
                 delay.outputPort(), DBSPOpcode.CONTROLLED_FILTER_GTE);
     }
 
     @Override
     public void postorder(DBSPSourceMultisetOperator operator) {
         ReplacementExpansion replacementExpansion = Objects.requireNonNull(this.getReplacement(operator));
-        DBSPSimpleOperator replacement = this.processLateness(operator, replacementExpansion.replacement);
+        DBSPOperator replacement = this.processLateness(operator.tableName, operator, replacementExpansion.replacement);
 
         // Process watermark annotations.  Very similar to lateness annotations.
         int index = 0;
@@ -1383,7 +1384,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
                             fields.get(0).applyCloneIfNeeded(),
                             t.deref().applyCloneIfNeeded()).closure(t),
                     new DBSPTypeIndexedZSet(operator.getNode(),
-                            fields.get(0).getType(), dataType), true, replacement.outputPort());
+                            fields.get(0).getType(), dataType), true, replacement.getOutput(0));
             this.addOperator(ix);
             DBSPWindowOperator window = new DBSPWindowOperator(
                     operator.getNode(), true, true, ix.outputPort(), apply.outputPort());
@@ -1394,7 +1395,8 @@ public class InsertLimiters extends CircuitCloneVisitor {
         if (replacement == operator) {
             this.replace(operator);
         } else {
-            this.map(operator, replacement);
+            this.map(operator.getOutput(0), replacement.getOutput(0));
+            // TODO: connect error port
         }
     }
 
@@ -1552,12 +1554,13 @@ public class InsertLimiters extends CircuitCloneVisitor {
         if (operator.hasLateness()) {
             ReplacementExpansion expanded = this.getReplacement(operator);
             // Treat like a source operator
-            DBSPSimpleOperator replacement = this.processLateness(
-                    operator, Objects.requireNonNull(expanded).replacement);
+            DBSPOperator replacement = this.processLateness(
+                    operator.viewName, operator, Objects.requireNonNull(expanded).replacement);
             if (replacement == operator) {
                 super.postorder(operator);
             } else {
-                this.map(operator, replacement);
+                this.map(operator.getOutput(0), replacement.getOutput(0));
+                // TODO: connect the error output
             }
             return;
         }

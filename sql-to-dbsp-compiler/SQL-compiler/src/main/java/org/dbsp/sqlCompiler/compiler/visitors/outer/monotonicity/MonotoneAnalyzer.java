@@ -95,7 +95,6 @@ public class MonotoneAnalyzer implements CircuitTransform, IWritesLogs {
 
         CircuitTransform merger = new OptimizeWithGraph(this.reporter, g -> new MergeGC(this.reporter, g));
         result = merger.apply(result);
-
         graph.apply(result);
         CheckRetain check = new CheckRetain(this.reporter, graph.getGraphs());
         check.apply(result);

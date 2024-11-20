@@ -176,13 +176,17 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         return jsonPlan.toString();
     }
 
+    // Keep the following in sync with the start() method below
+    public static final String NOW_TABLE_NAME = "now";
+    public static final String ERROR_TABLE_NAME = "ERROR_TABLE";
+
     // Steps executed before the actual compilation.
     void start() {
         // Declare the system tables
         this.compileInternal(
                 """
                 CREATE TABLE NOW(now TIMESTAMP NOT NULL LATENESS INTERVAL 0 SECONDS);
-                -- CREATE TABLE TERRORS(table_or_view VARCHAR, message VARCHAR, metadata VARIANT);""",
+                CREATE TABLE ERROR_TABLE(table_or_view VARCHAR, message VARCHAR, metadata VARIANT);""",
                 true, false);
     }
 
@@ -603,8 +607,8 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         this.circuit = optimizer.optimize(this.circuit);
     }
 
-    public void removeNowTable() {
-        String name = this.canonicalName("now");
+    public void removeTable(String name) {
+        name = this.canonicalName(name);
         this.metadata.removeTable(name);
         this.midend.getTableContents().removeTable(name);
     }
