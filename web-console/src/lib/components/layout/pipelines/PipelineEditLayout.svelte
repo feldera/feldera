@@ -190,7 +190,7 @@ example = "1.0"`
       ></PipelineActions>
     {/snippet}
   </PipelineBreadcrumbs>
-  <PaneGroup direction="vertical" class="">
+  <PaneGroup direction="vertical" class="!overflow-visible">
     <CodeEditor
       path={pipelineName}
       {files}
@@ -211,13 +211,13 @@ example = "1.0"`
           </div>
         {/snippet}
         <Pane defaultSize={60} minSize={15} class="!overflow-visible">
-          <PaneGroup direction="horizontal" class="">
-            <Pane minSize={30}>
+          <PaneGroup direction="horizontal" class="!overflow-visible">
+            <Pane minSize={30} class="!overflow-visible">
               {@render editor()}
             </Pane>
             {#if separateAdHocTab.value}
               <PaneResizer class="pane-divider-vertical mx-2"></PaneResizer>
-              <Pane defaultSize={40} minSize={20} class="">
+              <Pane defaultSize={40} minSize={20} class="!overflow-visible">
                 <div class="flex h-full flex-col rounded-container p-4 bg-surface-50-950">
                   <div class="flex justify-between">
                     <span>Ad-Hoc Queries</span>
