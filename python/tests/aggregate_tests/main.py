@@ -101,6 +101,10 @@ from tests.aggregate_tests.test_timestamp_tbl import *  # noqa: F403
 from tests.aggregate_tests.test_varbinary_arr_agg import *  # noqa: F403
 from tests.aggregate_tests.test_varbinary_count_col import *  # noqa: F403
 from tests.aggregate_tests.test_varbinary_count import *  # noqa: F403
+from tests.aggregate_tests.test_varbinary_max import *  # noqa: F403
+from tests.aggregate_tests.test_varbinary_min import *  # noqa: F403
+from tests.aggregate_tests.test_varbinary_every import *  # noqa: F403
+from tests.aggregate_tests.test_varbinary_some import *  # noqa: F403
 from tests.aggregate_tests.test_varbinary_tbl import *  # noqa: F403
 from tests.aggregate_tests.test_atbl_interval import *  # noqa: F403
 from tests.aggregate_tests.test_interval_count import *  # noqa: F403
