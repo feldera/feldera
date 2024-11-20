@@ -3,7 +3,7 @@ import type {
   OutputEndpointConfig,
   RuntimeConfig
 } from '$lib/services/pipelineManager'
-import BigNumber from 'bignumber.js'
+import type { BigNumber } from 'bignumber.js/bignumber.js'
 
 export type ControllerStatus = {
   pipeline_config: RuntimeConfig

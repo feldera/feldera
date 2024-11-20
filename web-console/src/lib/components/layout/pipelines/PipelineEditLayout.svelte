@@ -248,7 +248,8 @@ example = "1.0"`
           onclick={() => (separateAdHocTab.value = !separateAdHocTab.value)}
         >
           Ad-Hoc Queries
-          <IconLayputPanelRight class={separateAdHocTab.value ? 'fill-primary-500' : 'fill-surface-700-300'}
+          <IconLayputPanelRight
+            class={separateAdHocTab.value ? 'fill-primary-500' : 'fill-surface-700-300'}
           ></IconLayputPanelRight>
         </button>
       {/snippet}

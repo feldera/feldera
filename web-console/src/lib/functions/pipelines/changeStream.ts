@@ -1,4 +1,4 @@
-import BigNumber from 'bignumber.js'
+import { BigNumber } from 'bignumber.js/bignumber.js'
 import { JSONParser, Tokenizer, TokenParser, type JSONParserOptions } from '@streamparser/json'
 import { findIndex } from '$lib/functions/common/array'
 import { tuple } from '$lib/functions/common/tuple'

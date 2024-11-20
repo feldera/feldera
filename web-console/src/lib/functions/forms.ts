@@ -1,4 +1,4 @@
-import BigNumber from 'bignumber.js/bignumber.js'
+import { BigNumber } from 'bignumber.js/bignumber.js'
 import { match } from 'ts-pattern'
 
 type EnumFormField<TEnum extends string = any> = {
