@@ -95,6 +95,11 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs {
         this.map(old.outputPort(), newOp.outputPort(), add);
     }
 
+    protected void map(DBSPOperatorWithError old, DBSPOperatorWithError newOp, boolean add) {
+        this.map(old.getOutput(0), newOp.getOutput(0), add);
+        this.map(old.getOutput(1), newOp.getOutput(1), false);
+    }
+
     protected void map(OutputPort old, OutputPort newOp) {
         this.map(old, newOp, true);
         assert old.node() == this.getCurrent();
@@ -160,6 +165,36 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs {
         DBSPSimpleOperator result = operator.withInputs(sources, this.force);
         result.setDerivedFrom(operator.id);
         this.map(operator, result);
+    }
+
+    /**
+     * Replace the specified operator with an equivalent one
+     * by replacing all the inputs with their replacements from the 'mapped' map.
+     * @param operator  Operator to replace. */
+    public void replace(DBSPOperatorWithError operator) {
+        if (this.visited.contains(operator))
+            // Graph can be a DAG
+            return;
+        this.visited.add(operator);
+        List<OutputPort> sources = Linq.map(operator.inputs, this::mapped);
+        if (!Linq.same(sources, operator.inputs)) {
+            Logger.INSTANCE.belowLevel(this, 2)
+                    .append(this.toString())
+                    .append(" replacing inputs of ")
+                    .increase()
+                    .append(operator.toString())
+                    .append(":")
+                    .join(", ", Linq.map(operator.inputs, OutputPort::toString))
+                    .newline()
+                    .append("with:")
+                    .join(", ", Linq.map(sources, OutputPort::toString))
+                    .newline()
+                    .decrease();
+        }
+        DBSPOperatorWithError result = operator.withInputs(sources, this.force);
+        result.setDerivedFrom(operator.id);
+        this.map(operator.getOutput(0), result.getOutput(0), true);
+        this.map(operator.getOutput(1), result.getOutput(1), false);
     }
 
     @Override
@@ -382,6 +417,9 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs {
 
     @Override
     public void postorder(DBSPWaterlineOperator operator) { this.replace(operator); }
+
+    @Override
+    public void postorder(DBSPControlledKeyFilterOperator operator) { this.replace(operator); }
 
     public ICircuit getUnderConstruction() {
         return Utilities.last(this.underConstruction);

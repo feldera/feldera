@@ -357,6 +357,10 @@ public abstract class CircuitVisitor
         return this.preorder(node.to(DBSPBinaryOperator.class));
     }
 
+    public VisitDecision preorder(DBSPControlledKeyFilterOperator node) {
+        return this.preorder(node.to(DBSPOperatorWithError.class));
+    }
+
     public VisitDecision preorder(DBSPIntegrateTraceRetainKeysOperator node) {
         return this.preorder(node.to(DBSPBinaryOperator.class));
     }
@@ -598,6 +602,10 @@ public abstract class CircuitVisitor
 
     public void postorder(DBSPControlledFilterOperator node) {
         this.postorder(node.to(DBSPBinaryOperator.class));
+    }
+
+    public void postorder(DBSPControlledKeyFilterOperator node) {
+        this.postorder(node.to(DBSPOperatorWithError.class));
     }
 
     public void postorder(DBSPIntegrateTraceRetainKeysOperator node) {

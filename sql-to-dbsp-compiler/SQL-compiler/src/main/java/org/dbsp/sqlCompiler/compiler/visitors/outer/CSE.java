@@ -4,6 +4,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPOperatorWithError;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
@@ -125,6 +126,18 @@ public class CSE extends Repeat {
             }
             OutputPort newReplacement = this.mapped(replacement.to(DBSPSimpleOperator.class).outputPort());
             this.map(operator.outputPort(), newReplacement, false);
+        }
+
+        @Override
+        public void replace(DBSPOperatorWithError operator) {
+            DBSPOperator replacement = this.canonical.get(operator);
+            if (replacement == null) {
+                super.replace(operator);
+                return;
+            }
+
+            DBSPOperatorWithError we = replacement.to(DBSPOperatorWithError.class);
+            this.map(operator, we, true);
         }
     }
 }

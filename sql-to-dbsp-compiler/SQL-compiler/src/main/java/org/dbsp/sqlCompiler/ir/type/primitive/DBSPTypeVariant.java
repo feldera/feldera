@@ -49,7 +49,7 @@ public class DBSPTypeVariant extends DBSPTypeBaseType {
 
     @Override
     public IIndentStream toString(IIndentStream builder) {
-        return builder.append("VARIANT");
+        return builder.append("VARIANT").append(this.mayBeNull ? "?" : "");
     }
 
     @Override

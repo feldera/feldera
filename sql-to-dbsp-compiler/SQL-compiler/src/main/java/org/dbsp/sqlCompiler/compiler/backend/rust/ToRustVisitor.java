@@ -30,6 +30,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAsofJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPBinaryOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPChainAggregateOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPControlledKeyFilterOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPControlledFilterOperator;
@@ -741,6 +742,30 @@ public class ToRustVisitor extends CircuitVisitor {
         this.builder.append("filter_comparator(d, c, ");
         operator.getFunction().accept(this.innerVisitor);
         this.builder.append(")");
+        this.builder.append(");");
+        return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPControlledKeyFilterOperator operator) {
+        this.builder.append("let (")
+                .append(operator.getOutputName(0))
+                .append(", ")
+                .append(operator.getOutputName(1))
+                .append("): (");
+        operator.streamType(0).accept(this.innerVisitor);
+        this.builder.append(", ");
+        operator.streamType(1).accept(this.innerVisitor);
+        this.builder.append(") = ")
+                .append(operator.left().getOutputName())
+                .append(".")
+                .append(operator.operation)
+                .append("(&")
+                .append(operator.right().getOutputName())
+                .append(", ");
+        operator.function.accept(this.innerVisitor);
+        this.builder.append(", ");
+        operator.error.accept(this.innerVisitor);
         this.builder.append(");");
         return VisitDecision.STOP;
     }

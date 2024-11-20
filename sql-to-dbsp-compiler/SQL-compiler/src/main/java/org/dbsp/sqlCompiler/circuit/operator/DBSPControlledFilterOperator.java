@@ -95,6 +95,7 @@ public final class DBSPControlledFilterOperator extends DBSPBinaryOperator {
         DBSPParameter param;
         if (rowType.is(DBSPTypeRawTuple.class)) {
             DBSPTypeRawTuple raw = rowType.to(DBSPTypeRawTuple.class);
+            assert raw.size() == 2;
             param = new DBSPParameter(dataArg.variable,
                     new DBSPTypeRawTuple(raw.tupFields[0].ref(), raw.tupFields[1].ref()));
         } else {

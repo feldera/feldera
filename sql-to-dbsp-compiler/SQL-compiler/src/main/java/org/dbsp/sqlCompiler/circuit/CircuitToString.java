@@ -3,6 +3,7 @@ package org.dbsp.sqlCompiler.circuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPOperatorWithError;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 import org.dbsp.util.IIndentStream;
@@ -70,11 +71,25 @@ public class CircuitToString {
         builder.newline();
     }
 
+    void withError(DBSPOperatorWithError operator) {
+        this.builder.append("(")
+                .append(operator.getId())
+                .append(".0")
+                .append(", ")
+                .append(operator.getId())
+                .append(".1) = ")
+                .append(operator.operation);
+        list(operator.inputs);
+        builder.newline();
+    }
+
     void toString(DBSPOperator operator) {
         if (operator.is(DBSPSimpleOperator.class)) {
             this.operator(operator.to(DBSPSimpleOperator.class));
-        } else {
+        } else if (operator.is(DBSPNestedOperator.class)) {
             this.nested(operator.to(DBSPNestedOperator.class));
+        } else {
+            this.withError(operator.to(DBSPOperatorWithError.class));
         }
     }
 
