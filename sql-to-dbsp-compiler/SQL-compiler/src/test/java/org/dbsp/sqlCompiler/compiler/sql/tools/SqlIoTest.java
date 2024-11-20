@@ -162,10 +162,21 @@ public abstract class SqlIoTest extends BaseSQLTests {
         int index = 0;
         for (String line: lines) {
             line = line.trim();
-            int comment = line.indexOf("--");
-            if (comment >= 0) {
-                line = line.substring(0, comment);
-                lines[index] = line;
+            boolean inString = false;
+            for (int i = 0; i < line.length(); i++) {
+                String c = line.substring(i, i + 1);
+                if (c.equals("'")) {
+                    inString = !inString;
+                }
+                if (inString)
+                    continue;
+                if (i < line.length() - 2) {
+                    String two = line.substring(i, i + 2);
+                    if (two.equals("--")) {
+                        line = line.substring(0, i);
+                        lines[index] = line;
+                    }
+                }
             }
             index++;
             if (line.contains(";"))

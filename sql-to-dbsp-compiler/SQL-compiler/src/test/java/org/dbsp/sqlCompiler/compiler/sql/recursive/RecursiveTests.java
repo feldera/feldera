@@ -11,6 +11,35 @@ import org.junit.Test;
 /** Tests with recursive queries */
 public class RecursiveTests extends BaseSQLTests {
     @Test
+    public void testFibonacci() {
+        String sql = """
+                create recursive view fibonacci(n INT, value INT);
+                create table input (x int);
+                
+                create view fibonacci AS
+                (
+                    -- Base case: first two Fibonacci numbers
+                    select 0 as n, 0 as value
+                    union all
+                    select 1 as n, 1 as value
+                )
+                union all
+                (
+                    -- Compute F(n)=F(n-1)+F(n-2)
+                    select
+                        prev.n + 1 as n,
+                        (prev.value + curr.value) as value
+                    from fibonacci as curr
+                    join fibonacci as prev
+                    on prev.n = curr.n - 1
+                    where curr.n < 10 and prev.n < 10
+                );
+                
+                create view fib_outputs as select * from fibonacci;""";
+        var ccs = this.getCCS(sql);
+    }
+
+    @Test
     public void issue2979() {
         String sql = """
                 -- Given a cell value as a formula (e.g., =A0+B0), and a context with cell values

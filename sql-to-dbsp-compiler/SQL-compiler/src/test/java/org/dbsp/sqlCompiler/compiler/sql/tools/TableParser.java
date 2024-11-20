@@ -280,7 +280,9 @@ public class TableParser {
                     throw new RuntimeException("Expected NULL or a space: " +
                             Utilities.singleQuote(data));
             } else {
+                // replace \\n with \n, otherwise we can't represent it
                 data = data.substring(1);
+                data = data.replace("\\n", "\n");
                 result = new DBSPStringLiteral(CalciteObject.EMPTY, fieldType, data, StandardCharsets.UTF_8);
             }
         } else if (fieldType.is(DBSPTypeBool.class)) {
