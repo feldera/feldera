@@ -198,8 +198,8 @@ addition to the normal way of `''`.
         </ul>
     </td>
     <td>
-        <code>SPLIT_PART('a|b|c|', '|', 2)</code> => <code>b</code><br>
-        <code>SPLIT_PART('a|b|c|', '|', -2)</code> => <code>c</code><br>
+        <code>SPLIT_PART('a|b|c|', '|', 2)</code> => <code>b</code><br></br>
+        <code>SPLIT_PART('a|b|c|', '|', -2)</code> => <code>c</code><br></br>
         <code>SPLIT_PART('a|b|c|', '|', 5)</code> => <code>''</code>
     </td>
   </tr>
