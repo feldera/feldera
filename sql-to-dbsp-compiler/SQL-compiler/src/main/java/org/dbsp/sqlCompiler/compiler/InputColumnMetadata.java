@@ -1,20 +1,20 @@
 package org.dbsp.sqlCompiler.compiler;
 
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.IHasType;
-import org.dbsp.util.IHasName;
 
 import javax.annotation.Nullable;
 
 /** Metadata describing an input table column. */
 public class InputColumnMetadata
-        implements IHasLateness, IHasWatermark, IHasName, IHasSourcePositionRange, IHasType {
+        implements IHasLateness, IHasWatermark, IHasSourcePositionRange, IHasType {
     public final CalciteObject node;
     /** Column name. */
-    public final String name;
+    public final ProgramIdentifier name;
     /** Column type. */
     public final DBSPType type;
     /** True if the column is part of a primary key. */
@@ -29,7 +29,7 @@ public class InputColumnMetadata
     @Nullable
     public final DBSPExpression defaultValue;
 
-    public InputColumnMetadata(CalciteObject node, String name, DBSPType type, boolean isPrimaryKey,
+    public InputColumnMetadata(CalciteObject node, ProgramIdentifier name, DBSPType type, boolean isPrimaryKey,
                                @Nullable DBSPExpression lateness, @Nullable DBSPExpression watermark,
                                @Nullable DBSPExpression defaultValue) {
         this.node = node;
@@ -41,8 +41,7 @@ public class InputColumnMetadata
         this.defaultValue = defaultValue;
     }
 
-    @Override
-    public String getName() {
+    public ProgramIdentifier getName() {
         return this.name;
     }
 

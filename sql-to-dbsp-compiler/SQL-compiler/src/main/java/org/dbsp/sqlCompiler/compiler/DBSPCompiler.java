@@ -46,6 +46,7 @@ import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.TypeCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ForeignKey;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteToDBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.TableContents;
@@ -53,6 +54,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CustomFunctions;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.PropertyList;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlFragment;
+import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlFragmentIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateFunctionStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateTableStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateViewStatement;
@@ -70,12 +72,14 @@ import org.dbsp.util.IWritesLogs;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Logger;
 import org.dbsp.util.Utilities;
+import org.hsqldb.lib.ObjectComparator;
 
 import javax.annotation.Nullable;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.PrintStream;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -104,8 +108,9 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
     final GlobalTypes globalTypes = new GlobalTypes();
 
     /** Convert the string to the casing specified by the options */
-    public String canonicalName(String name) {
-        return this.options.canonicalName(name);
+    public ProgramIdentifier canonicalName(String name, boolean nameIsQuoted) {
+        String canon = this.options.canonicalName(name, nameIsQuoted);
+        return new ProgramIdentifier(canon, nameIsQuoted);
     }
 
     /** Where does the compiled program come from? */
@@ -134,7 +139,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
     public final TypeCompiler typeCompiler;
     public boolean hasWarnings;
 
-    final Map<String, CreateViewStatement> views = new HashMap<>();
+    final Map<ProgramIdentifier, CreateViewStatement> views = new HashMap<>();
     final List<LatenessStatement> lateness = new ArrayList<>();
     /** All UDFs from the SQL program.  The ones in Rust have no bodies */
     public final List<DBSPFunction> functions = new ArrayList<>();
@@ -162,23 +167,27 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         StringBuilder jsonPlan = new StringBuilder();
         jsonPlan.append("{");
         boolean first = true;
-        for (var e: this.views.entrySet()) {
+        List<ProgramIdentifier> sorted = Linq.list(this.views.keySet());
+        sorted.sort(Comparator.comparing(ProgramIdentifier::name));
+        for (ProgramIdentifier e: sorted) {
+            CreateViewStatement cv = this.views.get(e);
             if (!first) {
                 jsonPlan.append(",").append(System.lineSeparator());
             }
             first = false;
-            jsonPlan.append("\"").append(Utilities.escapeDoubleQuotes(e.getKey())).append("\"");
+            jsonPlan.append("\"").append(Utilities.escapeDoubleQuotes(e.name())).append("\"");
             jsonPlan.append(":");
-            String json = CalciteCompiler.getPlan(e.getValue().getRelNode(), true);
+            String json = CalciteCompiler.getPlan(cv.getRelNode(), true);
             jsonPlan.append(json);
         }
         jsonPlan.append(System.lineSeparator()).append("}");
         return jsonPlan.toString();
     }
 
-    // Keep the following in sync with the start() method below
-    public static final String NOW_TABLE_NAME = "now";
-    public static final String ERROR_TABLE_NAME = "ERROR_TABLE";
+    // Will soon be overwritten
+    public static ProgramIdentifier NOW_TABLE_NAME = new ProgramIdentifier("", false);
+    public static ProgramIdentifier ERROR_TABLE_NAME = new ProgramIdentifier("", false);
+    public static ProgramIdentifier ERROR_VIEW_NAME = new ProgramIdentifier("", false);
 
     // Steps executed before the actual compilation.
     void start() {
@@ -186,8 +195,14 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         this.compileInternal(
                 """
                 CREATE TABLE NOW(now TIMESTAMP NOT NULL LATENESS INTERVAL 0 SECONDS);
-                CREATE TABLE ERROR_TABLE(table_or_view VARCHAR, message VARCHAR, metadata VARIANT);""",
+                CREATE TABLE ERROR_TABLE(table_or_view_name VARCHAR NOT NULL, message VARCHAR NOT NULL, metadata VARIANT NOT NULL);
+                CREATE VIEW ERROR_VIEW AS SELECT * FROM ERROR_TABLE;
+                """,
                 true, false);
+        // Compute them using the compiler flags
+        NOW_TABLE_NAME = this.canonicalName("now", false);
+        ERROR_TABLE_NAME = this.canonicalName("ERROR_TABLE", false);
+        ERROR_VIEW_NAME = this.canonicalName("ERROR_VIEW", false);
     }
 
     public boolean hasWarnings() {
@@ -207,7 +222,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         return this.typeCompiler;
     }
 
-    public String getSaneStructName(String name) {
+    public String getSaneStructName(ProgramIdentifier name) {
         return this.globalTypes.generateSaneName(name);
     }
 
@@ -216,11 +231,11 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
     }
 
     @Nullable
-    public DBSPTypeStruct getStructByName(String name) {
+    public DBSPTypeStruct getStructByName(ProgramIdentifier name) {
         return this.globalTypes.getStructByName(name);
     }
 
-    public boolean isStructConstructor(String name) {
+    public boolean isStructConstructor(ProgramIdentifier name) {
         return this.globalTypes.containsStruct(name);
     }
 
@@ -288,27 +303,27 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         for (ForeignKey fk: foreignKeys) {
             ForeignKey.TableAndColumns self = fk.thisTable;
             ForeignKey.TableAndColumns other = fk.otherTable;
-            String thisTableName = self.tableName.getString();
+            ProgramIdentifier thisTableName = self.tableName.toIdentifier();
 
-            if (self.columns.size() != other.columns.size()) {
+            if (self.columnNames.size() != other.columnNames.size()) {
                 this.reportError(self.listPos, "Size mismatch",
                         "FOREIGN KEY section of table " +
-                                Utilities.singleQuote(thisTableName) +
-                                " contains " + self.columns.size() + " columns," +
+                                thisTableName.singleQuote() +
+                                " contains " + self.columnNames.size() + " columns," +
                                 " which does not match the size the REFERENCES, which is " +
-                                other.columns.size());
+                                other.columnNames.size());
                 continue;
             }
 
             // Check that the referred columns exist and have proper types
-            String otherTableName = other.tableName.getString();
+            ProgramIdentifier otherTableName = other.tableName.toIdentifier();
             DBSPSourceTableOperator otherTable = circuit.getInput(otherTableName);
             if (otherTable == null) {
                 this.reportWarning(other.tableName.getSourcePosition(),
                         "Table not found",
-                        "Table " + Utilities.singleQuote(otherTableName)
+                        "Table " + otherTableName.singleQuote()
                                 + ", referred in FOREIGN KEY constraint of table " +
-                                Utilities.singleQuote(thisTableName) + ", does not exist");
+                                thisTableName.singleQuote() + ", does not exist");
                 continue;
             }
 
@@ -316,33 +331,33 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
             assert thisTable != null;
 
             List<InputColumnMetadata> otherKeys = otherTable.metadata.getPrimaryKeys();
-            if (otherKeys.size() != self.columns.size()) {
+            if (otherKeys.size() != self.columnNames.size()) {
                 this.reportError(self.listPos,
                         "PRIMARY KEY does not match",
-                        "The PRIMARY KEY of table " + Utilities.singleQuote(otherTableName) +
-                                " does not match the FOREIGN KEY of " + Utilities.singleQuote(thisTableName));
+                        "The PRIMARY KEY of table " + otherTableName.singleQuote() +
+                                " does not match the FOREIGN KEY of " + thisTableName.singleQuote());
                 continue;
             }
 
-            for (int i = 0; i < self.columns.size(); i++) {
-                SqlFragment selfColumn = self.columns.get(i);
-                SqlFragment otherColumn = other.columns.get(i);
-                String selfColumnName = selfColumn.getString();
-                String otherColumnName = otherColumn.getString();
+            for (int i = 0; i < self.columnNames.size(); i++) {
+                SqlFragmentIdentifier selfColumn = self.columnNames.get(i);
+                SqlFragmentIdentifier otherColumn = other.columnNames.get(i);
+                ProgramIdentifier selfColumnName = selfColumn.toIdentifier();
+                ProgramIdentifier otherColumnName = otherColumn.toIdentifier();
                 InputColumnMetadata selfMeta = thisTable.metadata.getColumnMetadata(selfColumnName);
                 if (selfMeta == null) {
                     this.reportError(selfColumn.getSourcePosition(),
                             "Column not found",
-                            "Table " + Utilities.singleQuote(thisTableName) +
-                                    " does not have a column named " + Utilities.singleQuote(selfColumnName));
+                            "Table " + thisTableName.singleQuote() +
+                                    " does not have a column named " + selfColumnName.singleQuote());
                     continue;
                 }
                 InputColumnMetadata otherMeta = otherTable.metadata.getColumnMetadata(otherColumnName);
                 if (otherMeta == null) {
                     this.reportError(selfColumn.getSourcePosition(),
                             "Column not found",
-                            "Table " + Utilities.singleQuote(otherTableName) +
-                                    " does not have a column named " + Utilities.singleQuote(otherColumnName));
+                            "Table " + otherTableName.singleQuote() +
+                                    " does not have a column named " + otherColumnName.singleQuote());
                     continue;
                 }
                 if (!otherMeta.isPrimaryKey) {
@@ -607,8 +622,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         this.circuit = optimizer.optimize(this.circuit);
     }
 
-    public void removeTable(String name) {
-        name = this.canonicalName(name);
+    public void removeTable(ProgramIdentifier name) {
         this.metadata.removeTable(name);
         this.midend.getTableContents().removeTable(name);
     }

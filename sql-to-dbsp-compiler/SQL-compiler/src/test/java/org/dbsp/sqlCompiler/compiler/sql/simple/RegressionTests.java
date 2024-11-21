@@ -5,7 +5,6 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinFilterMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateWithWaterlineOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
-import org.dbsp.sqlCompiler.compiler.StderrErrorReporter;
 import org.dbsp.sqlCompiler.compiler.TestUtil;
 import org.dbsp.sqlCompiler.compiler.backend.rust.ToRustVisitor;
 import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
@@ -78,30 +77,6 @@ public class RegressionTests extends SqlIoTest {
                 SELECT
                     nbin2nbin(bin)
                 FROM t;""";
-        this.compileRustTestCase(sql);
-    }
-
-    @Test
-    public void issue2881() {
-        String sql = """
-                CREATE TABLE transactions (
-                    transaction_id INT NOT NULL PRIMARY KEY,
-                    transaction_timestamp TIMESTAMP NOT NULL LATENESS INTERVAL 1 WEEK,
-                    account_id INT NOT NULL,
-                    amount DECIMAL(10, 2) NOT NULL
-                );
-                
-                CREATE VIEW weekly_financial_final
-                WITH ('emit_final' = 'week')
-                AS
-                SELECT
-                    TIMESTAMP_TRUNC(transaction_timestamp, WEEK) as week,
-                    account_id,
-                    SUM(amount) AS weekly_balance
-                FROM
-                    transactions
-                GROUP BY
-                    TIMESTAMP_TRUNC(transaction_timestamp, WEEK), account_id;""";
         this.compileRustTestCase(sql);
     }
 
@@ -223,7 +198,7 @@ public class RegressionTests extends SqlIoTest {
         // This is not executed, since the udfs have no definitions
         var ccs = this.getCCS(sql);
         // Test that code generation does not crash
-        ToRustVisitor.toRustString(new StderrErrorReporter(), ccs.circuit, ccs.compiler.options);
+        ToRustVisitor.toRustString(ccs.compiler, ccs.circuit, ccs.compiler.options);
     }
 
     @Test
@@ -678,7 +653,7 @@ public class RegressionTests extends SqlIoTest {
         DBSPCompiler compiler = this.testCompiler();
         compiler.compileStatements(sql);
         DBSPCircuit circuit = getCircuit(compiler);
-        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+        CircuitVisitor visitor = new CircuitVisitor(compiler) {
             int filterJoin = 0;
 
             @Override
@@ -854,7 +829,7 @@ public class RegressionTests extends SqlIoTest {
         compiler.options.languageOptions.incrementalize = true;
         compiler.compileStatements(sql);
         DBSPCircuit circuit = getCircuit(compiler);
-        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+        CircuitVisitor visitor = new CircuitVisitor(compiler) {
             int mapIndex = 0;
 
             @Override
@@ -977,7 +952,7 @@ public class RegressionTests extends SqlIoTest {
         compiler.options.languageOptions.incrementalize = true;
         compiler.compileStatements(sql);
         DBSPCircuit circuit = getCircuit(compiler);
-        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+        CircuitVisitor visitor = new CircuitVisitor(compiler) {
             int count = 0;
 
             @Override

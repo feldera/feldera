@@ -2,15 +2,15 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewOperator;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
-import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 
 /** Remove DBSPViewOperator operators. */
 public class RemoveViewOperators extends CircuitCloneVisitor {
     /** If false remove only non-recursive views */
     final boolean all;
 
-    public RemoveViewOperators(IErrorReporter reporter, boolean all) {
-        super(reporter, false);
+    public RemoveViewOperators(DBSPCompiler compiler, boolean all) {
+        super(compiler, false);
         this.all = all;
     }
 

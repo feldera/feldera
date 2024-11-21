@@ -864,7 +864,7 @@ INSERT INTO auction VALUES(101, 'item-name', 'description', 5, 10, '2020-01-01 0
  day | total_bids | rank1_bids | rank2_bids | rank3_bids | total_bidders | rank1_bidders | rank2_bidders | rank3_bidders | total_auctions | rank1_auctions | rank2_auctions | rank3_auctions
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------""");
         // Test for https://github.com/feldera/feldera/issues/2250
-        CircuitVisitor v = new CircuitVisitor(new StderrErrorReporter()) {
+        CircuitVisitor v = new CircuitVisitor(ccs.compiler) {
             @Override
             public VisitDecision preorder(DBSPSimpleOperator node) {
                 assert !node.operation.contains("aggregate") || node.operation.equals("aggregate_linear_postprocess");

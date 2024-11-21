@@ -3,6 +3,7 @@ package org.dbsp.sqlCompiler.circuit.operator;
 import org.dbsp.sqlCompiler.circuit.ICircuit;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.TableMetadata;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
@@ -25,7 +26,7 @@ public final class DBSPViewDeclarationOperator
     public DBSPViewDeclarationOperator(
             CalciteObject node, CalciteObject sourceName,
             DBSPTypeZSet outputType, DBSPTypeStruct originalRowType,
-            TableMetadata metadata, String name) {
+            TableMetadata metadata, ProgramIdentifier name) {
         super(node, "Z", sourceName, outputType, originalRowType, true, metadata, name, null);
         assert metadata.getColumnCount() == originalRowType.fields.size();
         assert metadata.getColumnCount() == outputType.elementType.to(DBSPTypeTuple.class).size();
@@ -57,8 +58,10 @@ public final class DBSPViewDeclarationOperator
         return this;
     }
 
-    public String originalViewName() {
-        return this.tableName.replace("-port", "");
+    public ProgramIdentifier originalViewName() {
+        return new ProgramIdentifier(
+                this.tableName.name().replace("-port", ""),
+                this.tableName.isQuoted());
     }
 
     /** Get the corresponding view operator for this view declaration */

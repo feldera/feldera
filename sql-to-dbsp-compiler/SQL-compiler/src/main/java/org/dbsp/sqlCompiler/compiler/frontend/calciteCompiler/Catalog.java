@@ -32,7 +32,6 @@ import org.apache.calcite.schema.impl.AbstractSchema;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateRelationStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.FrontEndStatement;
-import org.dbsp.util.Utilities;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -62,10 +61,11 @@ public class Catalog extends AbstractSchema {
         this.functionMap = ArrayListMultimap.create(other.functionMap);
     }
 
-    boolean addDefinition(String name, IErrorReporter reporter, FrontEndStatement statement) {
+    boolean addDefinition(ProgramIdentifier id, IErrorReporter reporter, FrontEndStatement statement) {
+        String name = id.name();
         if (this.definition.containsKey(name)) {
             reporter.reportError(statement.getPosition(), "Duplicate declaration",
-                    Utilities.singleQuote(name) + " already defined");
+                    id.singleQuote() + " already defined");
             FrontEndStatement previous = this.definition.get(name);
             reporter.reportError(previous.getPosition(), "Duplicate declaration",
                     "Location of previous definition", true);
@@ -76,10 +76,11 @@ public class Catalog extends AbstractSchema {
     }
 
     public boolean addTable(CreateRelationStatement statement, IErrorReporter reporter) {
-        String name = statement.getName();
+        ProgramIdentifier id = statement.getName();
+        String name = id.name();
         Table table = statement.getEmulatedTable();
         this.tableMap.put(name, table);
-        return this.addDefinition(name, reporter, statement);
+        return this.addDefinition(id, reporter, statement);
     }
 
     @Override
@@ -97,11 +98,11 @@ public class Catalog extends AbstractSchema {
         return this.functionMap;
     }
 
-    public void dropTable(String tableName) {
-        this.tableMap.remove(tableName);
+    public void dropTable(ProgramIdentifier tableName) {
+        this.tableMap.remove(tableName.name());
     }
 
-    public boolean addType(String name, IErrorReporter reporter, FrontEndStatement statement) {
+    public boolean addType(ProgramIdentifier name, IErrorReporter reporter, FrontEndStatement statement) {
         // Does not insert in the typeMap.
         return this.addDefinition(name, reporter, statement);
     }

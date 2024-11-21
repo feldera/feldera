@@ -3,7 +3,7 @@ package org.dbsp.sqlCompiler.compiler;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPViewDeclarationOperator;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.DeclareViewStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.IHasSchema;
 import org.dbsp.util.Utilities;
@@ -13,8 +13,8 @@ import java.util.LinkedHashMap;
 /** Represents metadata about the compiled program.
  * Contains a description of all input tables and all views. */
 public class ProgramMetadata {
-    final LinkedHashMap<String, IHasSchema> inputTables;
-    final LinkedHashMap<String, IHasSchema> outputViews;
+    final LinkedHashMap<ProgramIdentifier, IHasSchema> inputTables;
+    final LinkedHashMap<ProgramIdentifier, IHasSchema> outputViews;
 
     public ProgramMetadata() {
         this.inputTables = new LinkedHashMap<>();
@@ -38,11 +38,11 @@ public class ProgramMetadata {
         return ios;
     }
 
-    public IHasSchema getTableDescription(String name) {
+    public IHasSchema getTableDescription(ProgramIdentifier name) {
         return Utilities.getExists(this.inputTables, name);
     }
 
-    public IHasSchema getViewDescription(String name) {
+    public IHasSchema getViewDescription(ProgramIdentifier name) {
         return Utilities.getExists(this.outputViews, name);
     }
 
@@ -50,7 +50,7 @@ public class ProgramMetadata {
         this.inputTables.put(description.getName(), description);
     }
 
-    public void removeTable(String name) {
+    public void removeTable(ProgramIdentifier name) {
         this.inputTables.remove(name);
     }
 

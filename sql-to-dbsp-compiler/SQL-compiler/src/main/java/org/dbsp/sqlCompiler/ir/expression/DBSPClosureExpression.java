@@ -23,7 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.expression;
 
-import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -143,10 +143,10 @@ public final class DBSPClosureExpression extends DBSPExpression {
      * parameter, while the before one can have multiple ones.
      * @param before Closure to compose. */
     public DBSPClosureExpression applyAfter(
-            IErrorReporter errorReporter, DBSPClosureExpression before) {
+            DBSPCompiler compiler, DBSPClosureExpression before) {
         if (this.parameters.length != 1)
             throw new InternalCompilerError("Expected closure with 1 parameter", this);
         DBSPExpression apply = this.call(before.body.borrow());
-        return apply.closure(before.parameters).reduce(errorReporter).to(DBSPClosureExpression.class);
+        return apply.closure(before.parameters).reduce(compiler).to(DBSPClosureExpression.class);
     }
 }

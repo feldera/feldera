@@ -1,7 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.sql.streaming;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPControlledFilterOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPControlledKeyFilterOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesOperator;
@@ -10,15 +9,31 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPWaterlineOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
-import org.dbsp.sqlCompiler.compiler.StderrErrorReporter;
 import org.dbsp.sqlCompiler.compiler.TestUtil;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.sql.OtherTests;
 import org.dbsp.sqlCompiler.compiler.sql.StreamingTestBase;
+import org.dbsp.sqlCompiler.compiler.sql.tools.Change;
+import org.dbsp.sqlCompiler.compiler.sql.tools.InputOutputChange;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
-import org.dbsp.sqlCompiler.compiler.visitors.outer.Passes;
-import org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity.MonotoneAnalyzer;
-import org.dbsp.util.Logger;
+import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDateLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDoubleLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPMapLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimestampLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVariantLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
+import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDate;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDouble;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVariant;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeMap;
+import org.dbsp.util.Linq;
 import org.junit.Assert;
 import org.junit.Test;
 
@@ -69,7 +84,7 @@ public class StreamingTests extends StreamingTestBase {
 
 
         this.addRustTestCase(ccs);
-        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+        CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
             int window = 0;
 
             @Override
@@ -174,7 +189,7 @@ public class StreamingTests extends StreamingTestBase {
                 FROM t
                 GROUP BY TIMESTAMP_TRUNC(ts, DAY);""";
         var ccs = this.getCCS(sql);
-        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+        CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
             int integrate_trace = 0;
 
             @Override
@@ -247,7 +262,7 @@ public class StreamingTests extends StreamingTestBase {
                     OVER (ORDER BY ts)
                 FROM t1;""";
         var ccs = this.getCCS(sql);
-        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+        CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
             int integrate_trace = 0;
             int window = 0;
 
@@ -280,7 +295,7 @@ public class StreamingTests extends StreamingTestBase {
                 SELECT X, SUM(TS / 2), MAX(TS * 2) FROM T
                 GROUP BY X;""";
         var ccs = this.getCCS(sql);
-        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+        CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
             int integrate_trace = 0;
 
             @Override
@@ -343,7 +358,7 @@ public class StreamingTests extends StreamingTestBase {
                 FROM v
                 GROUP BY lts;""";
         CompilerCircuitStream ccs = this.getCCS(sql);
-        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+        CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
             int integrate_trace = 0;
 
             @Override
@@ -383,7 +398,7 @@ public class StreamingTests extends StreamingTestBase {
                     ts, a;""";
         CompilerCircuitStream ccs = this.getCCS(sql);
         this.addRustTestCase(ccs);
-        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+        CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
             int integrate_trace = 0;
 
             @Override
@@ -568,7 +583,8 @@ public class StreamingTests extends StreamingTestBase {
                     MATCH_CONDITION(transaction.unix_time <= feedback.unix_time)
                     ON transaction.id = feedback.id;
                 """;
-        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+        CompilerCircuitStream ccs = this.getCCS(sql);
+        CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
             int integrate_trace = 0;
 
             @Override
@@ -581,7 +597,6 @@ public class StreamingTests extends StreamingTestBase {
                 Assert.assertEquals(1, this.integrate_trace);
             }
         };
-           CompilerCircuitStream ccs = this.getCCS(sql);
         visitor.apply(ccs.circuit);
         this.addRustTestCase(ccs);
     }
@@ -707,7 +722,7 @@ public class StreamingTests extends StreamingTestBase {
         compiler.compileStatement(OtherTests.ddl);
         compiler.compileStatements(query);
         DBSPCircuit circuit = getCircuit(compiler);
-        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+        CircuitVisitor visitor = new CircuitVisitor(compiler) {
             boolean found = false;
 
             @Override
@@ -756,7 +771,7 @@ public class StreamingTests extends StreamingTestBase {
         // There should be 2 retain keys:
         // - one for the aggregate_linear
         // - one for the final window
-        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+        CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
             int integrate_trace = 0;
 
             @Override
@@ -790,7 +805,7 @@ public class StreamingTests extends StreamingTestBase {
                 group by ts;""";
            CompilerCircuitStream ccs = this.getCCS(sql);
         this.addRustTestCase(ccs);
-        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+        CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
             int integrate_trace = 0;
 
             @Override
@@ -946,7 +961,7 @@ public class StreamingTests extends StreamingTestBase {
                 WHERE ts >= now() - INTERVAL 1 DAY
                 GROUP BY users""";
         CompilerCircuitStream ccs = this.getCCS(sql);
-        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+        CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
             int window = 0;
             int waterline = 0;
 
@@ -983,7 +998,7 @@ public class StreamingTests extends StreamingTestBase {
                 FROM transactions
                 WHERE ts BETWEEN now() - INTERVAL 1 DAY AND now() + INTERVAL 1 DAY""";
         CompilerCircuitStream ccs = this.getCCS(sql);
-        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+        CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
             int window = 0;
             int waterline = 0;
 
@@ -1040,7 +1055,7 @@ public class StreamingTests extends StreamingTestBase {
                 FROM transactions
                 WHERE ts >= year(now()) + 10""";
         CompilerCircuitStream ccs = this.getCCS(sql);
-        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+        CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
             int window = 0;
             int waterline = 0;
 
@@ -1077,7 +1092,7 @@ public class StreamingTests extends StreamingTestBase {
                 WHERE id + ts/2 - SIN(id) >= year(now()) + 10 AND
                       id + ts/2 - SIN(id) <= EXTRACT(CENTURY FROM now()) * 20;""";
         CompilerCircuitStream ccs = this.getCCS(sql);
-        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+        CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
             int window = 0;
             int waterline = 0;
 
@@ -1117,7 +1132,7 @@ public class StreamingTests extends StreamingTestBase {
                       id >= EXTRACT(CENTURY FROM now()) * 20 AND
                       id = 4;""";
         CompilerCircuitStream ccs = this.getCCS(sql);
-        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+        CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
             int window = 0;
             int waterline = 0;
 
@@ -1154,7 +1169,7 @@ public class StreamingTests extends StreamingTestBase {
                 WHERE id >= EXTRACT(CENTURY FROM now()) * 20 AND
                       EXTRACT(CENTURY FROM now()) % 10 = 0;""";
         CompilerCircuitStream ccs = this.getCCS(sql);
-        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+        CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
             int window = 0;
             int waterline = 0;
 
@@ -1191,7 +1206,7 @@ public class StreamingTests extends StreamingTestBase {
                 WHERE end > start;""";
         CompilerCircuitStream ccs = this.getCCS(sql);
         this.addRustTestCase(ccs);
-        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+        CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
             int integrate_trace = 0;
 
             @Override
@@ -1364,7 +1379,7 @@ public class StreamingTests extends StreamingTestBase {
                 FROM tripdata;""";
         CompilerCircuitStream ccs = this.getCCS(sql);
         this.addRustTestCase(ccs);
-        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+        CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
             int rolling_waterline = 0;
             int integrate_trace = 0;
 
@@ -1390,14 +1405,13 @@ public class StreamingTests extends StreamingTestBase {
     @Test
     public void taxiTest() {
         String sql = """
-                CREATE TABLE green_tripdata
-                (
-                        lpep_pickup_datetime TIMESTAMP NOT NULL LATENESS INTERVAL '1:00' HOURS TO MINUTES,
-                        lpep_dropoff_datetime TIMESTAMP NOT NULL LATENESS INTERVAL '1:00' HOURS TO MINUTES,
-                        pickup_location_id BIGINT NOT NULL,
-                        dropoff_location_id BIGINT NOT NULL,
-                        trip_distance DOUBLE PRECISION,
-                        fare_amount DOUBLE PRECISION
+                CREATE TABLE green_tripdata(
+                   lpep_pickup_datetime TIMESTAMP NOT NULL LATENESS INTERVAL '1:00' HOURS TO MINUTES,
+                   lpep_dropoff_datetime TIMESTAMP NOT NULL LATENESS INTERVAL '1:00' HOURS TO MINUTES,
+                   pickup_location_id BIGINT NOT NULL,
+                   dropoff_location_id BIGINT NOT NULL,
+                   trip_distance DOUBLE PRECISION,
+                   fare_amount DOUBLE PRECISION
                 );
                 CREATE VIEW V AS SELECT
                 *,
@@ -1434,7 +1448,7 @@ public class StreamingTests extends StreamingTestBase {
                  (SELECT pickup + INTERVAL 5 MINUTES FROM series));""";
         CompilerCircuitStream ccs = this.getCCS(sql);
         this.addRustTestCase(ccs);
-        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+        CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
             int count = 0;
 
             @Override
@@ -1761,6 +1775,138 @@ public class StreamingTests extends StreamingTestBase {
     }
 
     @Test
+    public void errorStreamTest() {
+        // Same as before, but using the error stream
+        DBSPType out = new DBSPTypeTuple(
+                new DBSPTypeDouble(CalciteObject.EMPTY, true),
+                new DBSPTypeDate(CalciteObject.EMPTY, false));
+        DBSPType error = new DBSPTypeTuple(
+                DBSPTypeString.varchar(false),
+                DBSPTypeString.varchar(false),
+                new DBSPTypeVariant(false));
+        DBSPTypeMap map = new DBSPTypeMap(
+                new DBSPTypeVariant(false),
+                new DBSPTypeVariant(false), false);
+
+        String sql = """
+                CREATE TABLE series (
+                        distance DOUBLE,
+                        pickup TIMESTAMP NOT NULL LATENESS INTERVAL '1:00' HOURS TO MINUTES
+                );
+                CREATE VIEW V AS
+                SELECT AVG(distance), CAST(pickup AS DATE) FROM series GROUP BY CAST(pickup AS DATE);""";
+        CompilerCircuitStream ccs = this.getCCS(sql);
+        ccs.addChange(new InputOutputChange(
+                new Change(
+                        new DBSPZSetLiteral(
+                                new DBSPTupleExpression(
+                                        new DBSPDoubleLiteral(10.0, true),
+                                        new DBSPTimestampLiteral("2023-12-30 10:00:00", false)))),
+                new Change(
+                        new DBSPZSetLiteral(
+                                new DBSPTupleExpression(
+                                        new DBSPDoubleLiteral(10.0, true),
+                                        new DBSPDateLiteral("2023-12-30", false))),
+                        DBSPZSetLiteral.emptyWithElementType(error))));
+        // Insert tuple before waterline, should be dropped
+        ccs.addChange(new InputOutputChange(
+                new Change(
+                        new DBSPZSetLiteral(
+                                new DBSPTupleExpression(
+                                        new DBSPDoubleLiteral(10.0, true),
+                                        new DBSPTimestampLiteral("2023-12-29 10:00:00", false)))),
+                new Change(
+                        DBSPZSetLiteral.emptyWithElementType(out),
+                        new DBSPZSetLiteral(
+                                new DBSPTupleExpression(
+                                        new DBSPStringLiteral("series"),
+                                        new DBSPStringLiteral("Late value"),
+                                        new DBSPVariantLiteral(
+                                                new DBSPMapLiteral(map,
+                                                        Linq.list(
+                                                                new DBSPVariantLiteral(
+                                                                        new DBSPStringLiteral("distance")
+                                                                ),
+                                                                new DBSPVariantLiteral(
+                                                                        new DBSPDoubleLiteral(10.0)
+                                                                ),
+                                                                new DBSPVariantLiteral(
+                                                                        new DBSPStringLiteral("pickup")
+                                                                ),
+                                                                new DBSPVariantLiteral(
+                                                                        new DBSPTimestampLiteral("2023-12-29 10:00:00", false)
+                                                                )))))))));
+        // Insert tuple after waterline, should change average.
+        // Waterline is advanced
+        ccs.addChange(new InputOutputChange(
+                new Change(
+                        new DBSPZSetLiteral(
+                                new DBSPTupleExpression(
+                                        new DBSPDoubleLiteral(20.0, true),
+                                        new DBSPTimestampLiteral("2023-12-30 10:10:00", false)))),
+                new Change(
+                        new DBSPZSetLiteral(
+                                new DBSPTupleExpression(
+                                        new DBSPDoubleLiteral(15.0, true),
+                                        new DBSPDateLiteral("2023-12-30", false)))
+                                .add(
+                                        new DBSPZSetLiteral(
+                                                new DBSPTupleExpression(
+                                                        new DBSPDoubleLiteral(10.0, true),
+                                                        new DBSPDateLiteral("2023-12-30", false))).negate()
+                                ),
+                        DBSPZSetLiteral.emptyWithElementType(error))));
+        // Insert tuple before last waterline, should be dropped
+        ccs.addChange(new InputOutputChange(
+                new Change(
+                        new DBSPZSetLiteral(
+                                new DBSPTupleExpression(
+                                        new DBSPDoubleLiteral(10.0, true),
+                                        new DBSPTimestampLiteral("2023-12-29 09:10:00", false)))),
+                new Change(
+                        DBSPZSetLiteral.emptyWithElementType(out),
+                        new DBSPZSetLiteral(
+                                new DBSPTupleExpression(
+                                        new DBSPStringLiteral("series"),
+                                        new DBSPStringLiteral("Late value"),
+                                        new DBSPVariantLiteral(
+                                                new DBSPMapLiteral(map,
+                                                        Linq.list(
+                                                                new DBSPVariantLiteral(
+                                                                        new DBSPStringLiteral("distance")
+                                                                ),
+                                                                new DBSPVariantLiteral(
+                                                                        new DBSPDoubleLiteral(10.0)
+                                                                ),
+                                                                new DBSPVariantLiteral(
+                                                                        new DBSPStringLiteral("pickup")
+                                                                ),
+                                                                new DBSPVariantLiteral(
+                                                                        new DBSPTimestampLiteral("2023-12-29 09:10:00", false)
+                                                                )))))))));
+        // Insert tuple in the past, but before the last waterline
+        ccs.addChange(new InputOutputChange(
+                new Change(
+                        new DBSPZSetLiteral(
+                                new DBSPTupleExpression(
+                                        new DBSPDoubleLiteral(10.0, true),
+                                        new DBSPTimestampLiteral("2023-12-30 10:00:00", false)))),
+                new Change(
+                        new DBSPZSetLiteral(
+                                new DBSPTupleExpression(
+                                        new DBSPDoubleLiteral(13.333333333333334, true),
+                                        new DBSPDateLiteral("2023-12-30", false)))
+                                .add(
+                                        new DBSPZSetLiteral(
+                                                new DBSPTupleExpression(
+                                                        new DBSPDoubleLiteral(15.0, true),
+                                                        new DBSPDateLiteral("2023-12-30", false))).negate()
+                                ),
+                        DBSPZSetLiteral.emptyWithElementType(error))));
+        this.addRustTestCase(ccs);
+    }
+
+    @Test
     public void testJoin() {
         String ddl = """
             CREATE TABLE series (
@@ -1776,7 +1922,7 @@ public class StreamingTests extends StreamingTestBase {
             JOIN shift ON CAST(series.event_time AS DATE) = shift.on_call;""";
         CompilerCircuitStream ccs = this.getCCS(ddl);
         this.addRustTestCase(ccs);
-        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+        CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
             int count = 0;
 
             @Override
@@ -1811,7 +1957,7 @@ public class StreamingTests extends StreamingTestBase {
             """;
         CompilerCircuitStream ccs = this.getCCS(script);
         this.addRustTestCase(ccs);
-        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+        CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
             int count = 0;
 
             @Override
@@ -1847,7 +1993,7 @@ public class StreamingTests extends StreamingTestBase {
             """;
         CompilerCircuitStream ccs = this.getCCS(sql);
         this.addRustTestCase(ccs);
-        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+        CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
             int count = 0;
 
             @Override
@@ -1883,7 +2029,7 @@ public class StreamingTests extends StreamingTestBase {
             """;
         CompilerCircuitStream ccs = this.getCCS(script);
         this.addRustTestCase(ccs);
-        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+        CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
             int count = 0;
 
             @Override
@@ -1979,7 +2125,7 @@ public class StreamingTests extends StreamingTestBase {
                 group by ts;
                 """;
         CompilerCircuitStream ccs = this.getCCS(sql);
-        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+        CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
             int count = 0;
 
             @Override

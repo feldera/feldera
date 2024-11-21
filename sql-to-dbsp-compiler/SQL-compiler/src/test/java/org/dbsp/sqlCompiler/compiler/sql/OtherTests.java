@@ -108,15 +108,15 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
     // This is also testing the deterministic node numbering
     // The numbering of the nodes will change when the optimizations are changed.
     @Test public void toStringTest() {
+        // Ensure some test was run before so the state of the counters is not deterministic.
         this.testIntCastWarning();
-
+        // Reset the counters.
         NameGen.reset();
         DBSPNode.reset();
         DBSPVariablePath.reset();
         String query = "CREATE VIEW V AS SELECT T.COL3 FROM T";
         DBSPCompiler compiler = this.compileDef();
         compiler.compileStatement(query);
-        // Deterministically name the circuit function.
         DBSPCircuit circuit = compiler.getFinalCircuit(false);
         String str = circuit.toString();
         String expected = """
@@ -130,6 +130,12 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
                     // SELECT `t`.`col3`
                     // FROM `schema`.`t` AS `t`
                     let s2: stream<WSet<Tup1<b>>> = s1;
+                    // DBSPConstantOperator s3
+                    let s3: stream<WSet<Tup3<s, s, VARIANT>>> = (zset!());
+                    // CREATE VIEW `error_view` AS
+                    // SELECT `error_table`.`table_or_view_name`, `error_table`.`message`, `error_table`.`metadata`
+                    // FROM `schema`.`error_table` AS `error_table`
+                    let s4: stream<WSet<Tup3<s, s, VARIANT>>> = s3;
                 }
                 """;
         Assert.assertEquals(expected, str);
@@ -275,7 +281,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
                 );
 
                 create view LOW_PRICE AS
-                WITH LOW_PRICE_CTE AS (  select part, MIN(price) as price from PRICE group by part)
+                WITH LOW_PRICE_CTE AS (select part, MIN(price) as price from PRICE group by part)
                 SELECT * FROM LOW_PRICE_CTE""";
         File file = createInputScript(statement);
         CompilerMessages messages = CompilerMain.execute("-o", BaseSQLTests.testFilePath, file.getPath());
@@ -381,7 +387,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         compiler.compileStatements(query);
         DBSPCircuit circuit = compiler.getFinalCircuit(false);
         DBSPTypeZSet outputType = circuit.getSingleOutputType().to(DBSPTypeZSet.class);
-        DBSPSimpleOperator source = circuit.getInput(compiler.canonicalName("T"));
+        DBSPSimpleOperator source = circuit.getInput(compiler.canonicalName("T", false));
         Assert.assertNotNull(source);
         DBSPTypeZSet inputType = source.getType().to(DBSPTypeZSet.class);
         Assert.assertTrue(inputType.sameType(outputType));
@@ -399,7 +405,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         compiler.compileStatement(ddl);
         compiler.compileStatements(query);
         DBSPCircuit circuit = compiler.getFinalCircuit(false);
-        DBSPSinkOperator sink = circuit.getSink(compiler.canonicalName("V"));
+        DBSPSinkOperator sink = circuit.getSink(compiler.canonicalName("V", false));
         Assert.assertNotNull(sink);
         OutputPort op = sink.input();
         // There is no optimization I can imagine which will remove the distinct
@@ -451,7 +457,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         String rustHandlesTest = """
                 #[test]
                 pub fn test() {
-                    let (mut circuit, (person, adult) ) = circuit(CircuitConfig::with_workers(2)).unwrap();
+                    let (mut circuit, (person, errors, adult) ) = circuit(CircuitConfig::with_workers(2)).unwrap();
                     // Feed two input records to the circuit.
                     // First input has a count of "1"
                     person.push( ("Bob".to_string(), Some(12), Some(true)).into(), 1 );
@@ -569,13 +575,13 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         DBSPCompiler compiler = this.testCompiler();
         compiler.compileStatements(sql);
         DBSPCircuit circuit = getCircuit(compiler);
-        Assert.assertEquals(0, circuit.getOutputCount());
+        Assert.assertEquals(1, circuit.getOutputCount());
 
         String oneMore = "CREATE VIEW W AS SELECT * FROM V;";
         compiler = this.testCompiler();
         compiler.compileStatements(sql + oneMore);
         circuit = getCircuit(compiler);
-        Assert.assertEquals(1, circuit.getOutputCount());
+        Assert.assertEquals(2, circuit.getOutputCount());
     }
 
     @Test
@@ -586,7 +592,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         Change change = ccs.toChange("""
                 INSERT INTO T VALUES(1, 'x');
                 REMOVE FROM T VALUES(2, 'Y');
-                REMOVE FROM T VALUES(3, 'Z');""").simplify();
+                REMOVE FROM T VALUES(3, 'Z');""").simplify(compiler);
         DBSPZSetLiteral expected = DBSPZSetLiteral.emptyWithElementType(
                 new DBSPTypeTuple(
                         new DBSPTypeInteger(CalciteObject.EMPTY, 32, true, true),

@@ -23,7 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.expression;
 
-import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.BetaReduction;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
@@ -203,10 +203,10 @@ public abstract class DBSPExpression
     }
 
     /** Attempt to simplify the current expression */
-    public DBSPExpression reduce(IErrorReporter reporter) {
-        BetaReduction beta = new BetaReduction(reporter);
+    public DBSPExpression reduce(DBSPCompiler compiler) {
+        BetaReduction beta = new BetaReduction(compiler);
         DBSPExpression reduced = beta.apply(this).to(DBSPExpression.class);
-        Simplify simplify = new Simplify(reporter);
+        Simplify simplify = new Simplify(compiler);
         return simplify.apply(reduced).to(DBSPExpression.class);
     }
 

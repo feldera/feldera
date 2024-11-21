@@ -30,6 +30,7 @@ import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.ICompilerComponent;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.RelColumnMetadata;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.RelStruct;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
@@ -88,14 +89,13 @@ public class TypeCompiler implements ICompilerComponent {
     }
 
     public DBSPType convertType(
-            CalciteObject node, String name,
+            CalciteObject node, ProgramIdentifier name,
             List<RelColumnMetadata> columns, boolean asStruct, boolean mayBeNull) {
         List<DBSPTypeStruct.Field> fields = new ArrayList<>();
         int index = 0;
         for (RelColumnMetadata col : columns) {
             DBSPType fType = this.convertType(col.getType(), true);
-            fields.add(new DBSPTypeStruct.Field(
-                    col.node, col.getName(), index++, fType, col.nameIsQuoted));
+            fields.add(new DBSPTypeStruct.Field(col.node, col.getName(), index++, fType));
         }
         String saneName = this.compiler.getSaneStructName(name);
         DBSPTypeStruct struct = new DBSPTypeStruct(node, name, saneName, fields, mayBeNull);
@@ -123,13 +123,12 @@ public class TypeCompiler implements ICompilerComponent {
         DBSPTypeStruct struct;
         if (dt.isStruct()) {
             boolean isNamedStruct = dt instanceof RelStruct;
-            String saneName = this.compiler.getSaneStructName("*");
-            String name = saneName;
+            String saneName = this.compiler.getSaneStructName(new ProgramIdentifier("*", false));
             if (isNamedStruct) {
                 RelStruct rs = (RelStruct) dt;
-                name = rs.typeName.getSimple();
+                ProgramIdentifier simpleName = Utilities.toIdentifier(rs.typeName);
                 // Struct must be already declared
-                struct = Objects.requireNonNull(this.compiler.getStructByName(name));
+                struct = Objects.requireNonNull(this.compiler.getStructByName(simpleName));
             } else {
                 List<DBSPTypeStruct.Field> fields = new ArrayList<>();
                 FreshName fieldNameGen = new FreshName(new HashSet<>());
@@ -142,9 +141,9 @@ public class TypeCompiler implements ICompilerComponent {
                         // we will get an exception below where we create the struct.
                         fieldName = fieldNameGen.freshName(fieldName, true);
                     fields.add(new DBSPTypeStruct.Field(
-                            CalciteObject.create(dt), fieldName, index++, type, false));
+                            CalciteObject.create(dt), new ProgramIdentifier(fieldName, false), index++, type));
                 }
-                struct = new DBSPTypeStruct(node, name, saneName, fields, nullable);
+                struct = new DBSPTypeStruct(node, new ProgramIdentifier(saneName, false), saneName, fields, nullable);
             }
             if (asStruct) {
                 return struct;

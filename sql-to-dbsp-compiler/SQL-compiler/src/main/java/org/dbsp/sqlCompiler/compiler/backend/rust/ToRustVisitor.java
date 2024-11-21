@@ -33,7 +33,6 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPChainAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPControlledKeyFilterOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPControlledFilterOperator;
 import org.dbsp.sqlCompiler.circuit.DBSPDeclaration;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDeltaOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDistinctOperator;
@@ -61,12 +60,13 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPViewOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWaterlineOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
-import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.InputColumnMetadata;
 import org.dbsp.sqlCompiler.compiler.TableMetadata;
 import org.dbsp.sqlCompiler.compiler.ProgramMetadata;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.IHasSchema;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -129,7 +129,7 @@ public class ToRustVisitor extends CircuitVisitor {
     final boolean useHandles;
     final CompilerOptions options;
     final ProgramMetadata metadata;
-    final Set<String> structsGenerated;
+    final Set<ProgramIdentifier> structsGenerated;
 
     /* Example output generated when 'generateCatalog' is true:
      * pub fn test_circuit(workers: usize) -> (DBSPHandle, Catalog) {
@@ -144,9 +144,9 @@ public class ToRustVisitor extends CircuitVisitor {
      * }
      */
 
-    public ToRustVisitor(IErrorReporter reporter, IndentStream builder,
+    public ToRustVisitor(DBSPCompiler compiler, IndentStream builder,
                          CompilerOptions options, ProgramMetadata metadata) {
-        super(reporter);
+        super(compiler);
         this.options = options;
         this.builder = builder;
         this.useHandles = this.options.ioOptions.emitHandles;
@@ -158,7 +158,7 @@ public class ToRustVisitor extends CircuitVisitor {
     }
 
     ToRustInnerVisitor createInnerVisitor(IndentStream builder) {
-        return new ToRustInnerVisitor(this.errorReporter, builder, options, false);
+        return new ToRustInnerVisitor(this.compiler(), builder, options, false);
     }
 
     void generateInto(DBSPType type) {
@@ -182,7 +182,7 @@ public class ToRustVisitor extends CircuitVisitor {
     }
 
     protected void generateFromTrait(DBSPTypeStruct type) {
-        EliminateStructs es = new EliminateStructs(this.errorReporter);
+        EliminateStructs es = new EliminateStructs(this.compiler());
         DBSPTypeTuple tuple = es.apply(type).to(DBSPTypeTuple.class);
         this.builder.append("impl From<")
                 .append(type.sanitizedName)
@@ -254,7 +254,7 @@ public class ToRustVisitor extends CircuitVisitor {
         this.builder.append("deserialize_table_record!(");
         this.builder.append(type.sanitizedName)
                 .append("[")
-                .append(Utilities.doubleQuote(type.name))
+                .append(Utilities.doubleQuote(type.name.name()))
                 .append(", ")
                 .append(type.fields.size())
                 .append("] {")
@@ -266,22 +266,21 @@ public class ToRustVisitor extends CircuitVisitor {
             if (!first)
                 this.builder.append(",").newline();
             first = false;
-            String name = field.name;
-            boolean quoted = field.nameIsQuoted;
+            ProgramIdentifier name = field.name;
+            String simpleName = name.name();
             InputColumnMetadata meta = null;
             if (metadata == null) {
                 // output
-                name = this.options.canonicalName(name);
-                quoted = false;
+                simpleName = this.options.canonicalName(name);
             } else {
                 meta = metadata.getColumnMetadata(field.name);
             }
             this.builder.append("(")
                     .append(field.getSanitizedName())
                     .append(", ")
-                    .append(Utilities.doubleQuote(name))
+                    .append(Utilities.doubleQuote(simpleName))
                     .append(", ")
-                    .append(Boolean.toString(quoted))
+                    .append(Boolean.toString(name.isQuoted()))
                     .append(", ");
             field.type.accept(this.innerVisitor);
             this.builder.append(", ");
@@ -319,15 +318,16 @@ public class ToRustVisitor extends CircuitVisitor {
             if (!first)
                 this.builder.append(",").newline();
             first = false;
-            String name = field.name;
+            ProgramIdentifier name = field.name;
+            String simpleName = name.name();
             if (metadata == null) {
                 // output
                 switch (this.options.languageOptions.unquotedCasing) {
                     case "upper":
-                        name = name.toUpperCase(Locale.ENGLISH);
+                        simpleName = name.name().toUpperCase(Locale.ENGLISH);
                         break;
                     case "lower":
-                        name = name.toLowerCase(Locale.ENGLISH);
+                        simpleName = name.name().toLowerCase(Locale.ENGLISH);
                         break;
                     default:
                         break;
@@ -336,7 +336,7 @@ public class ToRustVisitor extends CircuitVisitor {
             this.builder
                     .append(field.getSanitizedName())
                     .append("[")
-                    .append(Utilities.doubleQuote(name))
+                    .append(Utilities.doubleQuote(simpleName))
                     .append("]")
                     .append(": ");
             field.type.accept(this.innerVisitor);
@@ -359,8 +359,10 @@ public class ToRustVisitor extends CircuitVisitor {
     }
 
     void generateOperator(DBSPOperator operator) {
+        /*
         String str = operator.getNode().toInternalString();
         this.writeComments(str);
+         */
         operator.accept(this);
         this.builder.newline();
     }
@@ -394,7 +396,7 @@ public class ToRustVisitor extends CircuitVisitor {
         if (!this.useHandles) {
             signature.append("Catalog");
         } else {
-            signature.append("(");
+            signature.append("(").increase();
             for (DBSPSimpleOperator input: circuit.sourceOperators.values()) {
                 DBSPType type;
                 DBSPTypeZSet zset = input.outputType.as(DBSPTypeZSet.class);
@@ -409,15 +411,15 @@ public class ToRustVisitor extends CircuitVisitor {
                             ix.elementType);
                 }
                 type.accept(inner);
-                signature.append(", ");
+                signature.append(",").newline();
             }
             for (DBSPViewBaseOperator output: circuit.sinkOperators.values()) {
                 DBSPType outputType = output.input().outputType();
                 signature.append("OutputHandle<");
                 outputType.accept(inner);
-                signature.append(">, ");
+                signature.append(">,").newline();
             }
-            signature.append(")");
+            signature.decrease().append(")");
         }
 
         this.builder
@@ -491,7 +493,7 @@ public class ToRustVisitor extends CircuitVisitor {
         this.builder.append(") = ")
                 .append("circuit.recursive(|child, (");
         for (int i = 0; i < operator.outputCount(); i++) {
-            String view = operator.outputViews.get(i);
+            ProgramIdentifier view = operator.outputViews.get(i);
             DBSPViewDeclarationOperator decl = operator.declarationByName.get(view);
             if (decl != null) {
                 this.builder.append(decl.getOutputName()).append(", ");
@@ -512,7 +514,7 @@ public class ToRustVisitor extends CircuitVisitor {
         this.builder.append("Ok((");
         for (int i = 0; i < operator.outputCount(); i++) {
             this.builder
-                    .append(operator.outputs.get(i).getOutputName())
+                    .append(operator.internalOutputs.get(i).getOutputName())
                     .append(", ");
         }
         this.builder.append("))").newline()
@@ -565,7 +567,7 @@ public class ToRustVisitor extends CircuitVisitor {
         if (!this.useHandles)
             this.generateStructHelpers(type, operator.metadata);
 
-        this.writeComments(operator)
+        this.writeComments(operator, false)
                 .append("let (")
                 .append(operator.getOutputName())
                 .append(", ")
@@ -612,16 +614,16 @@ public class ToRustVisitor extends CircuitVisitor {
             this.generateStructHelpers(type, operator.metadata);
 
         DBSPTypeStruct keyStructType = operator.getKeyStructType(
-                operator.originalRowType.sanitizedName + "_key");
+                new ProgramIdentifier(operator.originalRowType.sanitizedName + "_key", false));
         if (!this.useHandles)
             this.generateStructHelpers(keyStructType, operator.metadata);
 
         DBSPTypeStruct upsertStruct = operator.getStructUpsertType(
-                operator.originalRowType.sanitizedName + "_upsert");
+                new ProgramIdentifier(operator.originalRowType.sanitizedName + "_upsert", false));
         if (!this.useHandles)
             this.generateStructHelpers(upsertStruct, operator.metadata);
 
-        this.writeComments(operator)
+        this.writeComments(operator, false)
                 .append("let (")
                 .append(operator.getOutputName())
                 .append(", ")
@@ -716,33 +718,6 @@ public class ToRustVisitor extends CircuitVisitor {
                 .append(".")
                 .append(operator.operation)
                 .append("();");
-        return VisitDecision.STOP;
-    }
-
-    @Override
-    public VisitDecision preorder(DBSPControlledFilterOperator operator) {
-        DBSPType streamType = new DBSPTypeStream(operator.outputType);
-        this.writeComments(operator)
-                .append("let ")
-                .append(operator.getOutputName())
-                .append(": ");
-        streamType.accept(this.innerVisitor);
-        this.builder.append(" = ")
-                .append(operator.left().getOutputName());
-
-        boolean isZset = operator.getType().is(DBSPTypeZSet.class);
-        this.builder.append(".apply2(&")
-                .append(operator.right().getOutputName())
-                .append(", ");
-        this.builder.append("|d, c| ");
-        if (isZset)
-            this.builder.append("zset_");
-        else
-            this.builder.append("indexed_zset_");
-        this.builder.append("filter_comparator(d, c, ");
-        operator.getFunction().accept(this.innerVisitor);
-        this.builder.append(")");
-        this.builder.append(");");
         return VisitDecision.STOP;
     }
 
@@ -854,7 +829,7 @@ public class ToRustVisitor extends CircuitVisitor {
             IHasSchema description = this.metadata.getViewDescription(operator.viewName);
             DBSPStrLiteral json = new DBSPStrLiteral(description.asJson().toString(), false, true);
             String registerFunction = switch (operator.metadata.viewKind) {
-                case MATERIALIZED, SYSTEM -> "register_materialized_output_zset";
+                case MATERIALIZED -> "register_materialized_output_zset";
                 case LOCAL -> throw new InternalCompilerError("Sink operator for local view " + operator);
                 case STANDARD -> "register_output_zset";
             };
@@ -883,8 +858,8 @@ public class ToRustVisitor extends CircuitVisitor {
 
     @Override
     public VisitDecision preorder(DBSPSimpleOperator operator) {
-        FindComparators compFinder = new FindComparators(this.errorReporter);
-        FindStatics staticsFinder = new FindStatics(this.errorReporter);
+        FindComparators compFinder = new FindComparators(this.compiler);
+        FindStatics staticsFinder = new FindStatics(this.compiler);
         if (operator.function != null) {
             compFinder.apply(operator.getFunction());
             staticsFinder.apply(operator.getFunction());
@@ -1364,10 +1339,14 @@ public class ToRustVisitor extends CircuitVisitor {
         return this.builder.intercalate("\n", parts);
     }
 
-     IIndentStream writeComments(DBSPSimpleOperator operator) {
+    IIndentStream writeComments(DBSPSimpleOperator operator, boolean verbose) {
         return this.writeComments(operator.getClass().getSimpleName() +
                 " " + operator.getIdString() +
-                (operator.comment != null ? "\n" + operator.comment : ""));
+                (verbose ? (operator.comment != null ? "\n" + operator.comment : "") : ""));
+    }
+
+    IIndentStream writeComments(DBSPSimpleOperator operator) {
+        return this.writeComments(operator, true);
     }
 
     @Override
@@ -1395,8 +1374,8 @@ public class ToRustVisitor extends CircuitVisitor {
     static class FindComparators extends InnerVisitor {
         final List<DBSPComparatorExpression> found = new ArrayList<>();
 
-        public FindComparators(IErrorReporter reporter) {
-            super(reporter);
+        public FindComparators(DBSPCompiler compiler) {
+            super(compiler);
         }
 
         public void postorder(DBSPCustomOrdExpression expression) {
@@ -1408,8 +1387,8 @@ public class ToRustVisitor extends CircuitVisitor {
     static class FindStatics extends InnerVisitor {
         List<DBSPStaticExpression> found = new ArrayList<>();
 
-        public FindStatics(IErrorReporter reporter) {
-            super(reporter);
+        public FindStatics(DBSPCompiler compiler) {
+            super(compiler);
         }
 
         public void postorder(DBSPStaticExpression expression) {
@@ -1419,9 +1398,11 @@ public class ToRustVisitor extends CircuitVisitor {
 
     VisitDecision constantLike(DBSPSimpleOperator operator) {
         assert operator.function != null;
-        builder.append("let ")
+        this.builder.append("let ")
                 .append(operator.getOutputName())
-                .append(" = ")
+                .append(":");
+        operator.outputStreamType.accept(this.innerVisitor);
+        this.builder.append(" = ")
                 .append("circuit.add_source(Generator::new(|| ");
         this.builder.append("if Runtime::worker_index() == 0 {");
         operator.function.accept(this.innerVisitor);
@@ -1449,10 +1430,10 @@ public class ToRustVisitor extends CircuitVisitor {
         return this.constantLike(operator);
     }
 
-    public static String toRustString(IErrorReporter reporter, DBSPCircuit node, CompilerOptions options) {
+    public static String toRustString(DBSPCompiler compiler, DBSPCircuit node, CompilerOptions options) {
         StringBuilder builder = new StringBuilder();
         IndentStream stream = new IndentStream(builder);
-        ToRustVisitor visitor = new ToRustVisitor(reporter, stream, options, node.getMetadata());
+        ToRustVisitor visitor = new ToRustVisitor(compiler, stream, options, node.getMetadata());
         visitor.apply(node);
         return builder.toString();
     }

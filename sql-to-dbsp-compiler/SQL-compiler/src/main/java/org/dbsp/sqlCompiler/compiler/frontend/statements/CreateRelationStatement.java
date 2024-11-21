@@ -27,6 +27,7 @@ import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rel.type.RelRecordType;
 import org.apache.calcite.schema.impl.AbstractTable;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteCompiler;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.RelColumnMetadata;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.PropertyList;
@@ -40,17 +41,13 @@ import java.util.List;
 public abstract class CreateRelationStatement
         extends FrontEndStatement
         implements IHasSchema {
-    public final String relationName;
-    public final boolean nameIsQuoted;
+    public final ProgramIdentifier relationName;
     public final List<RelColumnMetadata> columns;
     @Nullable final PropertyList properties;
 
-    protected CreateRelationStatement(CalciteCompiler.ParsedStatement node, String relationName,
-                                      boolean nameIsQuoted,
-                                      List<RelColumnMetadata> columns,
-                                      @Nullable PropertyList properties) {
+    protected CreateRelationStatement(CalciteCompiler.ParsedStatement node, ProgramIdentifier relationName,
+                                      List<RelColumnMetadata> columns, @Nullable PropertyList properties) {
         super(node);
-        this.nameIsQuoted = nameIsQuoted;
         this.relationName = relationName;
         this.columns = columns;
         this.properties = properties;
@@ -60,7 +57,7 @@ public abstract class CreateRelationStatement
         return new CalciteTableDescription(this);
     }
 
-    public String getName() {
+    public ProgramIdentifier getName() {
         return this.relationName;
     }
 
@@ -96,11 +93,6 @@ public abstract class CreateRelationStatement
 
     public RelDataType getRowType() {
         return new RelRecordType(Linq.map(this.columns, c -> c.field));
-    }
-
-    @Override
-    public boolean nameIsQuoted() {
-        return this.nameIsQuoted;
     }
 
     public CalciteObject getNode() {

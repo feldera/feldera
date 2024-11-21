@@ -23,7 +23,8 @@
 
 package org.dbsp.sqlCompiler.compiler.visitors.inner;
 
-import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.ICompilerComponent;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitRewriter;
@@ -178,16 +179,21 @@ import java.util.List;
 
 /** Depth-first traversal of an DBSPInnerNode hierarchy. */
 @SuppressWarnings({"SameReturnValue, EmptyMethod", "unused"})
-public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId {
+public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, ICompilerComponent {
     final long id;
     static long crtId = 0;
-    public final IErrorReporter errorReporter;
+    public final DBSPCompiler compiler;
     protected final List<IDBSPInnerNode> context;
 
-    public InnerVisitor(IErrorReporter reporter) {
+    public InnerVisitor(DBSPCompiler compiler) {
         this.id = crtId++;
-        this.errorReporter = reporter;
+        this.compiler = compiler;
         this.context = new ArrayList<>();
+    }
+
+    @Override
+    public DBSPCompiler compiler() {
+        return this.compiler;
     }
 
     @Override
@@ -1372,6 +1378,6 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId {
     }
 
     public CircuitRewriter getCircuitVisitor() {
-        return new CircuitRewriter(this.errorReporter, this);
+        return new CircuitRewriter(this.compiler(), this);
     }
 }

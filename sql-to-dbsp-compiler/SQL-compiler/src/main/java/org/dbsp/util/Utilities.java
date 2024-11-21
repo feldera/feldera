@@ -32,6 +32,7 @@ import com.fasterxml.jackson.databind.json.JsonMapper;
 import org.apache.calcite.sql.SqlIdentifier;
 import org.apache.calcite.sql.parser.SqlParserPos;
 import org.apache.calcite.util.TimeString;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 
 import javax.annotation.Nullable;
 import java.io.File;
@@ -180,6 +181,15 @@ public class Utilities {
         if (result == null)
             throw new RuntimeException("Key '" + key + "' does not exist in map");
         return result;
+    }
+
+    public static ProgramIdentifier toIdentifier(SqlIdentifier id) {
+        return new ProgramIdentifier(id.getSimple(), identifierIsQuoted(id));
+    }
+
+    public static ProgramIdentifier toIdentifier(List<String> qualifiedName) {
+        String id = Utilities.last(qualifiedName);
+        return new ProgramIdentifier(id, false);
     }
 
     /** True when a simple identifier is quoted. */

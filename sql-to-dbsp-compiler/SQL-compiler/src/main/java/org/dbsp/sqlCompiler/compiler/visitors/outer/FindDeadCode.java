@@ -27,18 +27,18 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperato
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPOperatorWithError;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
-import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 import org.dbsp.util.IWritesLogs;
 import org.dbsp.util.Logger;
-import org.dbsp.util.Utilities;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -58,12 +58,11 @@ public class FindDeadCode extends CircuitVisitor implements IWritesLogs {
 
     /**
      * Run the dead code visitor.
-     * @param reporter  Report errors here.
      * @param keepAllSources  If true all sources are kept, even if they are not used.
      * @param warn      If set warn about unused tables.
      */
-    public FindDeadCode(IErrorReporter reporter, boolean keepAllSources, boolean warn) {
-        super(reporter);
+    public FindDeadCode(DBSPCompiler compiler, boolean keepAllSources, boolean warn) {
+        super(compiler);
         this.keepAllSources = keepAllSources;
         this.warn = warn;
     }
@@ -105,7 +104,7 @@ public class FindDeadCode extends CircuitVisitor implements IWritesLogs {
             this.reachable.add(op.node());
             if (op.node().is(DBSPNestedOperator.class)) {
                 DBSPNestedOperator nested = op.node().to(DBSPNestedOperator.class);
-                OutputPort internal = nested.outputs.get(op.outputNumber);
+                OutputPort internal = nested.internalOutputs.get(op.outputNumber);
                 this.keepInverseReachable(internal);
             }
             if (this.toKeep.contains(op.node()))
@@ -135,8 +134,8 @@ public class FindDeadCode extends CircuitVisitor implements IWritesLogs {
     public void endVisit() {
         for (DBSPSourceBaseOperator source: this.getCircuit().sourceOperators.values()) {
             if (!this.reachable.contains(source) && this.warn && !this.keepAllSources)
-                this.errorReporter.reportWarning(source.getSourcePosition(),
-                        "Unused", "Table " + Utilities.singleQuote(source.tableName) +
+                this.compiler.reportWarning(source.getSourcePosition(),
+                        "Unused", "Table " + source.tableName.singleQuote() +
                                 " is not used");
         }
         super.endVisit();
@@ -144,6 +143,11 @@ public class FindDeadCode extends CircuitVisitor implements IWritesLogs {
 
     @Override
     public VisitDecision preorder(DBSPSimpleOperator operator) {
+        return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPOperatorWithError operator) {
         return VisitDecision.STOP;
     }
 }

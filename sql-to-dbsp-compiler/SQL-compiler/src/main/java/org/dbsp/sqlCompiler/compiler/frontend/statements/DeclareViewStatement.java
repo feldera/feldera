@@ -1,25 +1,26 @@
 package org.dbsp.sqlCompiler.compiler.frontend.statements;
 
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteCompiler;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.RelColumnMetadata;
 
 import java.util.List;
 
 /** A statement which declares a recursive view */
 public class DeclareViewStatement extends CreateRelationStatement {
-    public DeclareViewStatement(CalciteCompiler.ParsedStatement node, String relationName,
-                                boolean nameIsQuoted, List<RelColumnMetadata> columns) {
-        super(node, relationName, nameIsQuoted, columns, null);
+    public DeclareViewStatement(CalciteCompiler.ParsedStatement node, ProgramIdentifier relationName,
+                                List<RelColumnMetadata> columns) {
+        super(node, relationName, columns, null);
     }
 
     /** Given a view name, return the name of the corresponding fake "port" view */
-    public static String inputViewName(String name) {
-        return name + "-port";
+    public static ProgramIdentifier inputViewName(ProgramIdentifier name) {
+        return new ProgramIdentifier(name.name() + "-port", name.isQuoted());
     }
 
     /** Not the actual view name, but a name for a fake temporary view */
     @Override
-    public String getName() {
+    public ProgramIdentifier getName() {
         return inputViewName(super.getName());
     }
 }

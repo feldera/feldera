@@ -1,7 +1,8 @@
 package org.dbsp.util;
 
-import org.dbsp.sqlCompiler.compiler.StderrErrorReporter;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.ToCsvVisitor;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
@@ -25,10 +26,10 @@ import java.util.Set;
 
 /** Represents the contents of a table as produced by INSERT and REMOVE statements */
 public class TableValue {
-    public final String tableName;
+    public final ProgramIdentifier tableName;
     public final DBSPZSetLiteral contents;
 
-    public TableValue(String tableName, DBSPZSetLiteral contents) {
+    public TableValue(ProgramIdentifier tableName, DBSPZSetLiteral contents) {
         this.tableName = tableName;
         this.contents = contents;
     }
@@ -36,8 +37,8 @@ public class TableValue {
     static final class HasDecimalOrDate extends InnerVisitor {
         public boolean found = false;
 
-        public HasDecimalOrDate() {
-            super(new StderrErrorReporter());
+        public HasDecimalOrDate(DBSPCompiler compiler) {
+            super(compiler);
         }
 
         @Override
@@ -73,10 +74,10 @@ public class TableValue {
      * @param connectionString  Connection string that specified whether a database should be used for the data.
      *                          If the value is 'csv' temporary files may be used.
      */
-    public static DBSPFunction createInputFunction(String name,
+    public static DBSPFunction createInputFunction(DBSPCompiler compiler, String name,
             TableValue[] tables, String directory, String connectionString) throws IOException {
         DBSPExpression[] fields = new DBSPExpression[tables.length];
-        Set<String> seen = new HashSet<>();
+        Set<ProgramIdentifier> seen = new HashSet<>();
         for (int i = 0; i < tables.length; i++) {
             fields[i] = tables[i].contents;
             if (seen.contains(tables[i].tableName))
@@ -85,7 +86,7 @@ public class TableValue {
 
             if (tables[i].contents.size() < 100)
                 continue;
-            HasDecimalOrDate hd = new HasDecimalOrDate();
+            HasDecimalOrDate hd = new HasDecimalOrDate(compiler);
             hd.apply(tables[i].contents);
             if (hd.found)
                 // Decimal values are not currently correctly serialized and deserialized.
@@ -93,10 +94,10 @@ public class TableValue {
                 continue;
 
             // If the data is large, write it to a CSV file and read it at runtime.
-            String fileName = (Paths.get(directory, tables[i].tableName)) + ".csv";
+            String fileName = (Paths.get(directory, tables[i].tableName.name())) + ".csv";
             File file = new File(fileName);
             file.deleteOnExit();
-            ToCsvVisitor.toCsv(new StderrErrorReporter(), file, tables[i].contents);
+            ToCsvVisitor.toCsv(compiler, file, tables[i].contents);
             fields[i] = new DBSPApplyExpression(CalciteObject.EMPTY, "read_csv",
                     tables[i].contents.getType(),
                     new DBSPStrLiteral(fileName));

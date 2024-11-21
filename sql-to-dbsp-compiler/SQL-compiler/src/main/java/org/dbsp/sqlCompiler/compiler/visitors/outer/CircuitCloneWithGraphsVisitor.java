@@ -1,6 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
-import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 
 /** Class extending {@link CircuitCloneVisitor} that provides access to the {@link CircuitGraphs} */
 public abstract class CircuitCloneWithGraphsVisitor extends CircuitCloneVisitor {
@@ -10,8 +10,8 @@ public abstract class CircuitCloneWithGraphsVisitor extends CircuitCloneVisitor 
         return this.graphs.getGraph(this.getParent());
     }
 
-    protected CircuitCloneWithGraphsVisitor(IErrorReporter reporter, CircuitGraphs graphs, boolean force) {
-        super(reporter, force);
+    protected CircuitCloneWithGraphsVisitor(DBSPCompiler compiler, CircuitGraphs graphs, boolean force) {
+        super(compiler, force);
         this.graphs = graphs;
     }
 }

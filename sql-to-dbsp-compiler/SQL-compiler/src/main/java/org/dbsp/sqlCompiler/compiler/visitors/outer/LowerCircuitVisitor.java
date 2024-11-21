@@ -13,6 +13,8 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateOper
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateWithWaterlineOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
@@ -47,8 +49,8 @@ import java.util.List;
 /** Lowers a circuit's representation; most changes are about
  * generating compilable Rust for operator functions. */
 public class LowerCircuitVisitor extends CircuitCloneVisitor {
-    public LowerCircuitVisitor(IErrorReporter reporter) {
-        super(reporter, false);
+    public LowerCircuitVisitor(DBSPCompiler compiler) {
+        super(compiler, false);
     }
 
     /** Rewrite a flatmap operation into a Rust method call.
@@ -243,7 +245,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
             return;
         }
 
-        DBSPExpression function = node.getAggregate().asFold(this.errorReporter);
+        DBSPExpression function = node.getAggregate().asFold(this.compiler());
         DBSPSimpleOperator result = new DBSPStreamAggregateOperator(node.getNode(),node.getOutputIndexedZSetType(),
                 function, null, this.mapped(node.input()));
         this.map(node, result);
@@ -256,7 +258,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
             super.postorder(node);
             return;
         }
-        DBSPExpression function = node.getAggregate().asFold(this.errorReporter);
+        DBSPExpression function = node.getAggregate().asFold(this.compiler());
         DBSPSimpleOperator result = new DBSPAggregateOperator(
                 node.getNode(), node.getOutputIndexedZSetType(),
                 function, null, this.mapped(node.input()));
@@ -264,7 +266,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
     }
 
     public static DBSPClosureExpression lowerJoinFilterMapFunctions(
-            IErrorReporter errorReporter, DBSPJoinFilterMapOperator node) {
+            DBSPCompiler compiler, DBSPJoinFilterMapOperator node) {
         if (node.filter == null)
             return node.getClosureFunction();
         if (node.map == null) {
@@ -278,7 +280,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
             DBSPClosureExpression expression = node.getClosureFunction();
             DBSPClosureExpression filter = node.filter.to(DBSPClosureExpression.class);
             DBSPLetStatement let = new DBSPLetStatement("tmp", expression.body);
-            DBSPExpression cond = filter.call(let.getVarReference().borrow()).reduce(errorReporter);
+            DBSPExpression cond = filter.call(let.getVarReference().borrow()).reduce(compiler);
             DBSPExpression tmp = let.getVarReference();
             DBSPIfExpression ifexp = new DBSPIfExpression(
                     node.getNode(),
@@ -298,10 +300,10 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
             DBSPClosureExpression filter = node.filter.to(DBSPClosureExpression.class);
             DBSPExpression cond = filter
                     .call(expression.body.borrow())
-                    .reduce(errorReporter);
+                    .reduce(compiler);
             DBSPExpression map = node.map.to(DBSPClosureExpression.class)
                     .call(expression.body.borrow())
-                    .reduce(errorReporter);
+                    .reduce(compiler);
             DBSPIfExpression ifexp = new DBSPIfExpression(
                     node.getNode(),
                     cond,
@@ -318,7 +320,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
             super.postorder(node);
             return;
         }
-        DBSPExpression newFunction = lowerJoinFilterMapFunctions(this.errorReporter, node);
+        DBSPExpression newFunction = lowerJoinFilterMapFunctions(this.compiler(), node);
         DBSPSimpleOperator result = new DBSPJoinFilterMapOperator(node.getNode(), node.getOutputZSetType(),
                 newFunction, null, null, node.isMultiset,
                 this.mapped(node.left()), this.mapped(node.right()))
@@ -345,7 +347,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
             super.postorder(node);
             return;
         }
-        DBSPExpression function = node.getAggregate().asFold(this.errorReporter);
+        DBSPExpression function = node.getAggregate().asFold(this.compiler());
         DBSPSimpleOperator result = new DBSPPartitionedRollingAggregateOperator(node.getNode(),
                 node.partitioningFunction, function, null, node.lower, node.upper,
                 node.getOutputIndexedZSetType(), this.mapped(node.input()));
@@ -358,7 +360,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
             super.postorder(node);
             return;
         }
-        DBSPExpression function = node.aggregate.asFold(this.errorReporter);
+        DBSPExpression function = node.aggregate.asFold(this.compiler());
         DBSPSimpleOperator result = new DBSPPartitionedRollingAggregateWithWaterlineOperator(node.getNode(),
                 node.partitioningFunction, function, null, node.lower, node.upper,
                 node.getOutputIndexedZSetType(),

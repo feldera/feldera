@@ -5,12 +5,12 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinFilterMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
-import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 
 /** Combine a Join followed by a filter into a JoinFilterMap. */
 public class FilterJoinVisitor extends CircuitCloneWithGraphsVisitor {
-    public FilterJoinVisitor(IErrorReporter reporter, CircuitGraphs graphs) {
-        super(reporter, graphs, false);
+    public FilterJoinVisitor(DBSPCompiler compiler, CircuitGraphs graphs) {
+        super(compiler, graphs, false);
     }
 
     @Override

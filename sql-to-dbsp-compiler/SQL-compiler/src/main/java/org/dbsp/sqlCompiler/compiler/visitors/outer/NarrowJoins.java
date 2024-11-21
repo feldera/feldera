@@ -8,7 +8,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
-import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.TypeCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -41,18 +41,18 @@ import java.util.Map;
 
 /** Find and remove unused fields in Join operators. */
 public class NarrowJoins extends Repeat {
-    public NarrowJoins(IErrorReporter reporter) {
-        super(reporter, new OnePass(reporter));
+    public NarrowJoins(DBSPCompiler compiler) {
+        super(compiler, new OnePass(compiler));
     }
 
     static class OnePass extends Passes {
-        OnePass(IErrorReporter reporter) {
-            super("NarrowJoins", reporter);
+        OnePass(DBSPCompiler compiler) {
+            super("NarrowJoins", compiler);
             // Moves projections from joins to their inputs
-            this.add(new RemoveJoinFields(reporter));
-            this.add(new DeadCode(reporter, true, false));
+            this.add(new RemoveJoinFields(compiler));
+            this.add(new DeadCode(compiler, true, false));
             // Merges projections into other joins if possible
-            this.add(new OptimizeWithGraph(reporter, g -> new OptimizeMaps(reporter, false, g)));
+            this.add(new OptimizeWithGraph(compiler, g -> new OptimizeMaps(compiler, false, g)));
         }
     }
 
@@ -66,10 +66,10 @@ public class NarrowJoins extends Repeat {
         @Nullable
         ReferenceMap refMap;
 
-        protected RewriteFields(IErrorReporter reporter,
+        protected RewriteFields(DBSPCompiler compiler,
                                 Substitution<DBSPParameter, DBSPParameter> newParam,
                                 Map<DBSPParameter, Map<Integer, Integer>> fieldRemap) {
-            super(reporter);
+            super(compiler);
             this.fieldRemap = fieldRemap;
             this.newParam = newParam;
         }
@@ -122,7 +122,7 @@ public class NarrowJoins extends Repeat {
 
         @Override
         public void startVisit(IDBSPInnerNode node) {
-            ResolveReferences resolve = new ResolveReferences(this.errorReporter, false);
+            ResolveReferences resolve = new ResolveReferences(this.compiler, false);
             this.refMap = resolve.reference;
             resolve.apply(node);
             super.startVisit(node);
@@ -130,8 +130,8 @@ public class NarrowJoins extends Repeat {
     }
 
     static class RemoveJoinFields extends CircuitCloneVisitor {
-        RemoveJoinFields(IErrorReporter reporter) {
-            super(reporter, false);
+        RemoveJoinFields(DBSPCompiler compiler) {
+            super(compiler, false);
         }
 
         DBSPMapIndexOperator getProjection(CalciteObject node, List<Integer> fields, OutputPort input) {
@@ -152,7 +152,7 @@ public class NarrowJoins extends Repeat {
         }
 
         boolean processJoin(DBSPJoinBaseOperator join) {
-            Projection projection = new Projection(this.errorReporter, true);
+            Projection projection = new Projection(this.compiler(), true);
             projection.apply(join.getFunction());
             if (!projection.hasIoMap()) return false;
             DBSPClosureExpression joinFunction = join.getClosureFunction();
@@ -194,7 +194,7 @@ public class NarrowJoins extends Repeat {
             Utilities.putNew(remap, joinFunction.parameters[1], leftRemap);
             Utilities.putNew(remap, joinFunction.parameters[2], rightRemap);
 
-            RewriteFields rw = new RewriteFields(this.errorReporter, subst, remap);
+            RewriteFields rw = new RewriteFields(this.compiler(), subst, remap);
             DBSPExpression newJoinFunction = rw.apply(join.getFunction()).to(DBSPExpression.class);
             DBSPSimpleOperator replacement = join.withFunction(newJoinFunction, join.outputType)
                     .withInputs(Linq.list(leftMap.outputPort(), rightMap.outputPort()), true);

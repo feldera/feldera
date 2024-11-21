@@ -3,7 +3,7 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSumOperator;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
-import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.util.Linq;
 
 import java.util.ArrayList;
@@ -11,8 +11,8 @@ import java.util.List;
 
 /** Replace Sum followed by Sum by a single Sum. */
 public class MergeSums extends CircuitCloneVisitor {
-    public MergeSums(IErrorReporter reporter) {
-        super(reporter, false);
+    public MergeSums(DBSPCompiler compiler) {
+        super(compiler, false);
     }
 
     @Override

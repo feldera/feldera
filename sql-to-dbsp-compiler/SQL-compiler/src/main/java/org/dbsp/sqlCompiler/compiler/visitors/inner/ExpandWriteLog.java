@@ -1,6 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.visitors.inner;
 
-import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -34,8 +34,8 @@ import java.util.Objects;
  * }
  */
 public class ExpandWriteLog extends InnerRewriteVisitor {
-    public ExpandWriteLog(IErrorReporter reporter) {
-        super(reporter);
+    public ExpandWriteLog(DBSPCompiler compiler) {
+        super(compiler);
     }
 
     @Override

@@ -34,7 +34,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPUpsertFeedbackOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
-import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitCloneVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity.KeyPropagation;
@@ -56,11 +56,11 @@ public class ExpandOperators extends CircuitCloneVisitor {
     public final NullablePredicate<OutputPort> isApendOnly;
     public final NullableFunction<DBSPSimpleOperator, KeyPropagation.JoinDescription> joinDescriptions;
 
-    public ExpandOperators(IErrorReporter reporter,
+    public ExpandOperators(DBSPCompiler compiler,
                            NullablePredicate<OutputPort> isApendOnly,
                            NullableFunction<DBSPSimpleOperator, KeyPropagation.JoinDescription> joinDescriptions) {
         // Force replacement so all operators are new.
-        super(reporter, true);
+        super(compiler, true);
         this.expansion = new HashMap<>();
         this.isApendOnly = isApendOnly;
         this.joinDescriptions = joinDescriptions;

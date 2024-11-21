@@ -25,6 +25,7 @@ package org.dbsp.sqlCompiler.circuit.operator;
 
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.ViewMetadata;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
@@ -33,7 +34,7 @@ import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
 import java.util.List;
 
 public final class DBSPSinkOperator extends DBSPViewBaseOperator {
-    public DBSPSinkOperator(CalciteObject node, String viewName, String query,
+    public DBSPSinkOperator(CalciteObject node, ProgramIdentifier viewName, String query,
                             DBSPTypeStruct originalRowType,
                             ViewMetadata metadata,
                             OutputPort input) {

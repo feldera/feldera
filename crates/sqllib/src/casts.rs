@@ -1658,7 +1658,7 @@ macro_rules! cast_variant_numeric {
     };
 }
 
-cast_variant!(bool, bool, Boolean);
+cast_variant!(b, bool, Boolean);
 cast_variant_numeric!(i8, i8, TinyInt);
 cast_variant_numeric!(i16, i16, SmallInt);
 cast_variant_numeric!(i32, i32, Int);

@@ -23,7 +23,7 @@
 
 package org.dbsp.sqlCompiler.compiler.backend;
 
-import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
@@ -48,8 +48,8 @@ public class ToCsvVisitor extends InnerVisitor {
     private final StringBuilder appendable;
     public final Supplier<String> nullRepresentation;
 
-    public ToCsvVisitor(IErrorReporter reporter, StringBuilder destination, Supplier<String> nullRepresentation) {
-        super(reporter);
+    public ToCsvVisitor(DBSPCompiler compiler, StringBuilder destination, Supplier<String> nullRepresentation) {
+        super(compiler);
         this.appendable = destination;
         this.nullRepresentation = nullRepresentation;
     }
@@ -190,13 +190,12 @@ public class ToCsvVisitor extends InnerVisitor {
 
     /**
      * Write a literal to a file as a csv format.
-     * @param reporter    A reference to an error reporter.
      * @param file        File to write to.
      * @param literal     Literal to write.
      */
-    public static File toCsv(IErrorReporter reporter, File file, DBSPZSetLiteral literal) throws IOException {
+    public static File toCsv(DBSPCompiler compiler, File file, DBSPZSetLiteral literal) throws IOException {
         StringBuilder builder = new StringBuilder();
-        ToCsvVisitor visitor = new ToCsvVisitor(reporter, builder, () -> "");
+        ToCsvVisitor visitor = new ToCsvVisitor(compiler, builder, () -> "");
         visitor.apply(literal);
         FileWriter writer = new FileWriter(file);
         writer.write(builder.toString());

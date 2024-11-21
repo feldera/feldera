@@ -26,7 +26,6 @@ package org.dbsp.sqlCompiler.compiler.sql;
 import org.apache.calcite.sql.SqlNode;
 import org.apache.calcite.sql.parser.SqlParseException;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
-import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.StderrErrorReporter;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateFunctionDeclaration;
@@ -43,10 +42,9 @@ import java.util.List;
 /** Test SQL parser extensions. */
 public class ParserTests {
     static final CompilerOptions options = new CompilerOptions();
-    static final IErrorReporter errorReporter = new StderrErrorReporter();
 
     CalciteCompiler getCompiler() {
-        return new CalciteCompiler(options, errorReporter);
+        return new CalciteCompiler(options, new StderrErrorReporter());
     }
 
     @Test

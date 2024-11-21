@@ -28,7 +28,9 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceTableOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewDeclarationOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewOperator;
+import org.dbsp.sqlCompiler.compiler.ICompilerComponent;
 import org.dbsp.sqlCompiler.compiler.ProgramMetadata;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitGraph;
@@ -55,9 +57,9 @@ import java.util.Set;
 public final class DBSPCircuit extends DBSPNode
         implements IDBSPOuterNode, IWritesLogs, ICircuit, DiGraph<DBSPOperator> {
     public final List<DBSPDeclaration> declarations = new ArrayList<>();
-    public final LinkedHashMap<String, DBSPSourceTableOperator> sourceOperators = new LinkedHashMap<>();
-    public final LinkedHashMap<String, DBSPViewOperator> viewOperators = new LinkedHashMap<>();
-    public final LinkedHashMap<String, DBSPSinkOperator> sinkOperators = new LinkedHashMap<>();
+    public final LinkedHashMap<ProgramIdentifier, DBSPSourceTableOperator> sourceOperators = new LinkedHashMap<>();
+    public final LinkedHashMap<ProgramIdentifier, DBSPViewOperator> viewOperators = new LinkedHashMap<>();
+    public final LinkedHashMap<ProgramIdentifier, DBSPSinkOperator> sinkOperators = new LinkedHashMap<>();
     // Should always be in topological order
     public final List<DBSPOperator> allOperators = new ArrayList<>();
     public final ProgramMetadata metadata;
@@ -72,7 +74,7 @@ public final class DBSPCircuit extends DBSPNode
 
     /** @return the names of the input tables.
      * The order of the tables corresponds to the inputs of the generated circuit. */
-    public Set<String> getInputTables() {
+    public Set<ProgramIdentifier> getInputTables() {
         return this.sourceOperators.keySet();
     }
 
@@ -80,9 +82,12 @@ public final class DBSPCircuit extends DBSPNode
         return this.sinkOperators.size();
     }
 
+    /** The circuit is expected to have a single non-system view.  Return its type */
     public DBSPType getSingleOutputType() {
-        assert this.sinkOperators.size() == 1: "Expected a single output, got " + this.sinkOperators.size();
-        return this.sinkOperators.values().iterator().next().getType();
+        List<DBSPSinkOperator> sinks = Linq.where(
+                Linq.list(this.sinkOperators.values()), o -> !o.metadata.system);
+        assert sinks.size() == 1: "Expected a single output, got " + sinks.size();
+        return sinks.get(0).getType();
     }
 
     public String getName() {
@@ -143,21 +148,21 @@ public final class DBSPCircuit extends DBSPNode
     /** Get the table with the specified name.
      * @param tableName must use the proper casing */
     @Nullable
-    public DBSPSourceTableOperator getInput(String tableName) {
+    public DBSPSourceTableOperator getInput(ProgramIdentifier tableName) {
         return this.sourceOperators.get(tableName);
     }
 
     /** Get the local view with the specified name.
      * @param viewName must use the proper casing */
     @Nullable
-    public DBSPViewOperator getView(String viewName) {
+    public DBSPViewOperator getView(ProgramIdentifier viewName) {
         return this.viewOperators.get(viewName);
     }
 
     /** Get the external view with the specified name.
      * @param viewName must use the proper casing */
     @Nullable
-    public DBSPSinkOperator getSink(String viewName) {
+    public DBSPSinkOperator getSink(ProgramIdentifier viewName) {
         return this.sinkOperators.get(viewName);
     }
 

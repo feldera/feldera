@@ -1,6 +1,6 @@
 package org.dbsp.sqlCompiler.ir.aggregate;
 
-import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -186,7 +186,7 @@ public class NonLinearAggregate extends AggregateBase {
 
     /** Combines multiple {@link NonLinearAggregate} objects into one. */
     public static NonLinearAggregate combine(
-            CalciteObject node, IErrorReporter reporter,
+            CalciteObject node, DBSPCompiler compiler,
             DBSPVariablePath rowVar, List<NonLinearAggregate> components) {
         int parts = components.size();
         DBSPExpression[] zeros = new DBSPExpression[parts];
@@ -229,7 +229,7 @@ public class NonLinearAggregate extends AggregateBase {
             DBSPExpression accumulatorField = accumulator.deref().field(i);
             DBSPExpression expr = increments[i].call(
                     accumulatorField, rowVar, weightVar);
-            BetaReduction reducer = new BetaReduction(reporter);
+            BetaReduction reducer = new BetaReduction(compiler);
             increments[i] = reducer.reduce(expr);
             DBSPExpression postAccumulatorField = postAccumulator.field(i);
             expr = posts[i].call(postAccumulatorField);

@@ -24,7 +24,7 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateOperator;
-import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 
@@ -34,8 +34,8 @@ import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
  * (but there are legit streaming query circuits which would have to include integrals).
  */
 public class NoIntegralVisitor extends CircuitVisitor {
-    public NoIntegralVisitor(IErrorReporter reporter) {
-        super(reporter);
+    public NoIntegralVisitor(DBSPCompiler compiler) {
+        super(compiler);
     }
 
     @Override

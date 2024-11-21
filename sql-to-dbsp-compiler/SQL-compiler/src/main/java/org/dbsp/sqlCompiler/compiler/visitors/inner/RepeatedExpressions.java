@@ -1,6 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.visitors.inner;
 
-import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
@@ -25,8 +25,8 @@ public class RepeatedExpressions extends InnerVisitor {
     private IDBSPInnerNode duplicate;
     private final List<IDBSPInnerNode> duplicateContext = new ArrayList<>();
 
-    public RepeatedExpressions(IErrorReporter reporter, boolean expressions) {
-        super(reporter);
+    public RepeatedExpressions(DBSPCompiler compiler, boolean expressions) {
+        super(compiler);
         this.onlyExpressions = expressions;
         this.visited = new HashSet<>();
         this.duplicate = null;

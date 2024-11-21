@@ -7,7 +7,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPNegateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSumOperator;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
-import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.TypeCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
@@ -18,8 +18,8 @@ import org.dbsp.util.Linq;
 /** Replaces the {@link DBSPAggregateZeroOperator} with a graph;
  * see the diagram in the definition of this operator. */
 public class ExpandAggregateZero extends CircuitCloneVisitor {
-    public ExpandAggregateZero(IErrorReporter reporter) {
-        super(reporter, false);
+    public ExpandAggregateZero(DBSPCompiler compiler) {
+        super(compiler, false);
     }
 
     @Override

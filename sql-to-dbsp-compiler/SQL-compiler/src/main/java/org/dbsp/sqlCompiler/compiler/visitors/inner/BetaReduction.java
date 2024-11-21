@@ -23,7 +23,7 @@
 
 package org.dbsp.sqlCompiler.compiler.visitors.inner;
 
-import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
@@ -43,10 +43,10 @@ public class BetaReduction extends InnerRewriteVisitor {
     final DeclarationValue<DBSPExpression> variableValue;
     final ResolveReferences resolver;
 
-    public BetaReduction(IErrorReporter reporter) {
-        super(reporter);
+    public BetaReduction(DBSPCompiler compiler) {
+        super(compiler);
         this.variableValue = new DeclarationValue<>();
-        this.resolver = new ResolveReferences(reporter, true);
+        this.resolver = new ResolveReferences(compiler, true);
     }
 
     @Override

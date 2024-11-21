@@ -18,9 +18,10 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamDistinctOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPUnaryOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewOperator;
-import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.InputColumnMetadata;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ForeignKey;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Projection;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
@@ -186,8 +187,8 @@ public class KeyPropagation extends CircuitVisitor {
     /** Maps each join that operates on a primary/foreign key to its description */
     public final Map<DBSPSimpleOperator, JoinDescription> joins;
 
-    public KeyPropagation(IErrorReporter errorReporter) {
-        super(errorReporter);
+    public KeyPropagation(DBSPCompiler compiler) {
+        super(compiler);
         this.keys = new HashMap<>();
         this.joins = new HashMap<>();
     }
@@ -199,7 +200,7 @@ public class KeyPropagation extends CircuitVisitor {
             return;
         }
 
-        Projection projection = new Projection(this.errorReporter, true);
+        Projection projection = new Projection(this.compiler(), true);
         projection.apply(node.getFunction());
         if (!projection.hasIoMap()) {
             super.postorder(node);
@@ -298,7 +299,7 @@ public class KeyPropagation extends CircuitVisitor {
 
         // In addition, the foreign key information is propagated through joins
         // (but not the primary key information).
-        Projection projection = new Projection(this.errorReporter, true);
+        Projection projection = new Projection(this.compiler(), true);
         projection.apply(operator.getFunction());
         if (projection.hasIoMap()) {
             Projection.IOMap ioMap = projection.getIoMap();
@@ -396,15 +397,15 @@ public class KeyPropagation extends CircuitVisitor {
             index++;
         }
         for (ForeignKey fk: operator.metadata.getForeignKeys()) {
-            assert fk.thisTable.tableName.getString().equals(operator.tableName);
-            DBSPSourceTableOperator other = this.getCircuit().getInput(fk.otherTable.tableName.getString());
+            assert fk.thisTable.tableName.toIdentifier().equals(operator.tableName);
+            DBSPSourceTableOperator other = this.getCircuit().getInput(fk.otherTable.tableName.toIdentifier());
             if (other == null)
                 // This can happen for foreign keys that refer to tables that are not in the program.
                 // This is a warning, but still a legal SQL program.
                 continue;
-            for (int i = 0; i < fk.thisTable.columns.size(); i++) {
-                String thisColumn = fk.thisTable.columns.get(i).getString();
-                String otherColumn = fk.otherTable.columns.get(i).getString();
+            for (int i = 0; i < fk.thisTable.columnNames.size(); i++) {
+                ProgramIdentifier thisColumn = fk.thisTable.columnNames.get(i).toIdentifier();
+                ProgramIdentifier otherColumn = fk.otherTable.columnNames.get(i).toIdentifier();
                 int thisColumnIndex = operator.metadata.getColumnIndex(thisColumn);
                 int otherColumnIndex = other.metadata.getColumnIndex(otherColumn);
                 ForeignKeyField fkf = new ForeignKeyField(other, otherColumnIndex, operator, thisColumnIndex);

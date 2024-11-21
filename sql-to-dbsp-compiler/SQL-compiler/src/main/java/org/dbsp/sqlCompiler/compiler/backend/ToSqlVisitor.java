@@ -1,6 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.backend;
 
-import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
@@ -24,8 +24,8 @@ import java.util.Objects;
 public class ToSqlVisitor extends InnerVisitor {
     private final StringBuilder appendable;
 
-    public ToSqlVisitor(IErrorReporter reporter, StringBuilder destination) {
-        super(reporter);
+    public ToSqlVisitor(DBSPCompiler compiler, StringBuilder destination) {
+        super(compiler);
         this.appendable = destination;
     }
 

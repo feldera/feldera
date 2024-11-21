@@ -56,7 +56,7 @@ public final class DBSPIntegrateTraceRetainKeysOperator
                 return null;
             DBSPExpression project = dataField0
                     .projectExpression(dataArg);
-            compare = DBSPControlledFilterOperator.generateTupleCompare(
+            compare = DBSPControlledKeyFilterOperator.generateTupleCompare(
                     project, controlArg.deref().field(1).field(0), DBSPOpcode.CONTROLLED_FILTER_GTE);
         } else {
             DBSPType keyType = data.getOutputZSetElementType();
@@ -65,7 +65,7 @@ public final class DBSPIntegrateTraceRetainKeysOperator
             if (!dataProjection.mayBeMonotone())
                 return null;
             DBSPExpression project = dataProjection.projectExpression(dataArg);
-            compare = DBSPControlledFilterOperator.generateTupleCompare(
+            compare = DBSPControlledKeyFilterOperator.generateTupleCompare(
                     project, controlArg.deref().field(1), DBSPOpcode.CONTROLLED_FILTER_GTE);
         }
         compare = ExpressionCompiler.makeBinaryExpression(

@@ -24,7 +24,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSumOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewOperator;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
-import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.util.Logger;
 
 import java.util.HashSet;
@@ -37,8 +37,8 @@ import java.util.Set;
 public class AppendOnly extends CircuitVisitor {
     public final Set<OutputPort> appendOnly;
 
-    public AppendOnly(IErrorReporter errorReporter) {
-        super(errorReporter);
+    public AppendOnly(DBSPCompiler compiler) {
+        super(compiler);
         this.appendOnly = new HashSet<>();
     }
 

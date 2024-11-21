@@ -1,6 +1,6 @@
 package org.dbsp.sqlCompiler.ir.aggregate;
 
-import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
@@ -69,30 +69,30 @@ public final class DBSPAggregate extends DBSPNode
         visitor.postorder(this);
     }
 
-    public DBSPExpression compact(IErrorReporter reporter) {
+    public DBSPExpression compact(DBSPCompiler compiler) {
         if (this.isLinear())
-            return this.asLinear(reporter);
+            return this.asLinear(compiler);
         else
-            return this.asFold(reporter, true);
+            return this.asFold(compiler, true);
     }
 
-    public DBSPExpression asFold(IErrorReporter reporter, boolean compact) {
+    public DBSPExpression asFold(DBSPCompiler compiler, boolean compact) {
         assert !this.isLinear();
         NonLinearAggregate combined = NonLinearAggregate.combine(
-                this.getNode(), reporter, this.rowVar,
+                this.getNode(), compiler, this.rowVar,
                 Linq.map(this.aggregates, a -> a.to(NonLinearAggregate.class)));
         return combined.asFold(compact);
     }
 
-    public LinearAggregate asLinear(IErrorReporter reporter) {
+    public LinearAggregate asLinear(DBSPCompiler compiler) {
         assert this.isLinear();
         return LinearAggregate.combine(
-                this.getNode(), reporter, this.rowVar,
+                this.getNode(), compiler, this.rowVar,
                 Linq.map(this.aggregates, a -> a.to(LinearAggregate.class)));
     }
 
-    public DBSPExpression asFold(IErrorReporter reporter) {
-        return this.asFold(reporter, false);
+    public DBSPExpression asFold(DBSPCompiler compiler) {
+        return this.asFold(compiler, false);
     }
 
     public int size() {

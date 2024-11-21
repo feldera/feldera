@@ -1,8 +1,8 @@
 package org.dbsp.sqlCompiler.compiler.visitors.inner;
 
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.ir.IDBSPDeclaration;
-import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
@@ -19,8 +19,8 @@ public class ResolveReferences extends InnerVisitor {
     /** If true allow "free variables" that have no declarations */
     public final boolean allowFreeVariables;
 
-    public ResolveReferences(IErrorReporter reporter, boolean allowFreeVariables) {
-        super(reporter);
+    public ResolveReferences(DBSPCompiler compiler, boolean allowFreeVariables) {
+        super(compiler);
         this.substitutionContext = new Scopes<>();
         this.reference = new ReferenceMap();
         this.allowFreeVariables = allowFreeVariables;

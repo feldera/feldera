@@ -24,7 +24,8 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
-import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.ICompilerComponent;
 import org.dbsp.sqlCompiler.compiler.backend.dot.ToDot;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerRewriteVisitor;
 import org.dbsp.util.IWritesLogs;
@@ -33,23 +34,28 @@ import org.dbsp.util.Logger;
 
 import java.util.List;
 
-public class Passes implements IWritesLogs, CircuitTransform {
-    final IErrorReporter errorReporter;
+public class Passes implements IWritesLogs, CircuitTransform, ICompilerComponent {
+    final DBSPCompiler compiler;
     public final List<CircuitTransform> passes;
     // Generate a new name for each dumped circuit.
     static int dumped = 0;
     final long id;
     final String name;
 
-    public Passes(String name, IErrorReporter reporter, CircuitTransform... passes) {
+    public Passes(String name, DBSPCompiler reporter, CircuitTransform... passes) {
         this(name, reporter, Linq.list(passes));
     }
 
-    public Passes(String name, IErrorReporter reporter, List<CircuitTransform> passes) {
-        this.errorReporter = reporter;
+    public Passes(String name, DBSPCompiler compiler, List<CircuitTransform> passes) {
+        this.compiler = compiler;
         this.passes = passes;
         this.id = CircuitVisitor.crtId++;
         this.name = name;
+    }
+
+    @Override
+    public DBSPCompiler compiler() {
+        return this.compiler;
     }
 
     public void add(CircuitTransform pass) {
@@ -57,7 +63,7 @@ public class Passes implements IWritesLogs, CircuitTransform {
     }
 
     public void add(InnerRewriteVisitor inner) {
-        this.passes.add(new CircuitRewriter(this.errorReporter, inner));
+        this.passes.add(new CircuitRewriter(this.compiler(), inner));
     }
 
     @Override
@@ -65,7 +71,7 @@ public class Passes implements IWritesLogs, CircuitTransform {
         int details = this.getDebugLevel();
         if (this.getDebugLevel() >= 3) {
             String name = String.format("%02d-", dumped++) + "before.png";
-            ToDot.dump(this.errorReporter, name, details, "png", circuit);
+            ToDot.dump(this.compiler, name, details, "png", circuit);
         }
         for (CircuitTransform pass: this.passes) {
             Logger.INSTANCE.belowLevel("Passes", 1)
@@ -75,7 +81,7 @@ public class Passes implements IWritesLogs, CircuitTransform {
             circuit = pass.apply(circuit);
             if (this.getDebugLevel() >= 3) {
                 String name = String.format("%02d-", dumped++) + pass.toString().replace(" ", "_") + ".png";
-                ToDot.dump(this.errorReporter, name, details, "png", circuit);
+                ToDot.dump(this.compiler, name, details, "png", circuit);
             }
         }
         return circuit;

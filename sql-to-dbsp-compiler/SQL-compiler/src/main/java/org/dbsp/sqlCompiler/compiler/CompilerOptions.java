@@ -29,6 +29,8 @@ import com.beust.jcommander.ParametersDelegate;
 import org.apache.calcite.avatica.util.Casing;
 import org.apache.calcite.config.Lex;
 import org.apache.calcite.sql.parser.SqlParserUtil;
+import org.apache.calcite.tools.Program;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.util.IDiff;
 import org.dbsp.util.SqlLexicalRulesConverter;
 import org.dbsp.util.Utilities;
@@ -135,7 +137,13 @@ public class CompilerOptions implements IDiff<CompilerOptions> {
         }
     }
 
-    public String canonicalName(String name) {
+    public String canonicalName(ProgramIdentifier name) {
+        return this.canonicalName(name.name(), name.isQuoted());
+    }
+
+    public String canonicalName(String name, boolean nameIsQuoted) {
+        if (nameIsQuoted)
+            return name;
         Casing casing = switch (this.languageOptions.unquotedCasing) {
             case "upper" -> Casing.TO_UPPER;
             case "lower" -> Casing.TO_LOWER;

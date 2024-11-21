@@ -1,6 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
-import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 
 import java.util.function.Function;
 
@@ -8,19 +8,19 @@ import java.util.function.Function;
  * repeatedly, until convergence. */
 public class OptimizeWithGraph extends Repeat {
     static CircuitTransform createOnePass(
-            IErrorReporter reporter,
+            DBSPCompiler compiler,
             Function<CircuitGraphs, CircuitTransform> optimizerFactory) {
-        Graph graph = new Graph(reporter);
+        Graph graph = new Graph(compiler);
         CircuitTransform optimizer = optimizerFactory.apply(graph.getGraphs());
-        Passes result = new Passes(optimizer.getName(), reporter);
+        Passes result = new Passes(optimizer.getName(), compiler);
         result.add(graph);
         result.add(optimizer);
-        result.add(new DeadCode(reporter, true, false));
+        result.add(new DeadCode(compiler, true, false));
         return result;
     }
 
-    public OptimizeWithGraph(IErrorReporter reporter,
+    public OptimizeWithGraph(DBSPCompiler compiler,
                              Function<CircuitGraphs, CircuitTransform> optimizerFactory) {
-        super(reporter, createOnePass(reporter, optimizerFactory));
+        super(compiler, createOnePass(compiler, optimizerFactory));
     }
 }

@@ -5,7 +5,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPHopOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
-import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.ExpressionCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.TypeCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
@@ -29,8 +29,8 @@ import java.util.List;
 
 /** Expand HopOperator into a map followed by a flat_map. */
 public class ExpandHop extends CircuitCloneVisitor {
-    public ExpandHop(IErrorReporter reporter) {
-        super(reporter, false);
+    public ExpandHop(DBSPCompiler compiler) {
+        super(compiler, false);
     }
 
     @Override

@@ -694,7 +694,7 @@ public class EndToEndTests extends BaseSQLTests {
     @Test
     public void testIllegalDecimal() {
         String query = "SELECT CAST(12.34 AS DECIMAL(1, 2))";
-        this.testNegativeQuery(query, "DECIMAL type must have scale <= precision");
+        this.queryFailingInCompilation(query, "DECIMAL type must have scale <= precision");
     }
 
     @Test

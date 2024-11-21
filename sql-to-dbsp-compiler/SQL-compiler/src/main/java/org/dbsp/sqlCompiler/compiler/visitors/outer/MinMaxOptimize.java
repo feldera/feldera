@@ -5,7 +5,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
-import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 import org.dbsp.sqlCompiler.ir.aggregate.AggregateBase;
@@ -36,20 +36,20 @@ import java.util.function.Predicate;
 public class MinMaxOptimize extends Passes {
     final AppendOnly appendOnly;
 
-    public MinMaxOptimize(IErrorReporter reporter, DBSPVariablePath weightVar) {
-        super("MinMaxOptimize", reporter);
-        this.appendOnly = new AppendOnly(reporter);
+    public MinMaxOptimize(DBSPCompiler compiler, DBSPVariablePath weightVar) {
+        super("MinMaxOptimize", compiler);
+        this.appendOnly = new AppendOnly(compiler);
         this.add(this.appendOnly);
-        this.add(new ExpandMaxAsWindow(reporter, weightVar, this.appendOnly::isAppendOnly));
+        this.add(new ExpandMaxAsWindow(compiler, weightVar, this.appendOnly::isAppendOnly));
     }
 
     static class ExpandMaxAsWindow extends CircuitCloneVisitor {
         final Predicate<OutputPort> isAppendOnly;
         final DBSPVariablePath weightVar;
 
-        public ExpandMaxAsWindow(IErrorReporter reporter, DBSPVariablePath weightVar,
+        public ExpandMaxAsWindow(DBSPCompiler compiler, DBSPVariablePath weightVar,
                                  Predicate<OutputPort> isAppendOnly) {
-            super(reporter, false);
+            super(compiler, false);
             this.isAppendOnly = isAppendOnly;
             this.weightVar = weightVar;
         }
@@ -107,7 +107,7 @@ public class MinMaxOptimize extends Passes {
                             new DBSPTupleExpression(
                                     extractAggField.call(indexClosure.body.field(1).borrow())))
                             .closure(indexClosure.parameters)
-                            .reduce(this.errorReporter)
+                            .reduce(this.compiler())
                             .to(DBSPClosureExpression.class);
 
             OutputPort indexInput = index.input();

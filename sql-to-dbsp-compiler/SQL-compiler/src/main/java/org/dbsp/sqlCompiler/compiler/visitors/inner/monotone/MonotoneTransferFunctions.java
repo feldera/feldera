@@ -1,7 +1,7 @@
 package org.dbsp.sqlCompiler.compiler.visitors.inner.monotone;
 
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
-import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
@@ -117,24 +117,24 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
     final DBSPSimpleOperator operator;
 
     /** Create a visitor to analyze the monotonicity of a closure
-     * @param reporter      Error reporter.
+     * @param compiler      Compiler.
      * @param operator      Operator whose function is analyzed.
      * @param parameterTypes Monotonicity information for the function parameters.
      *                      This information comes from the operator that is
      *                      a source for this function.
      * @param argumentKind  Describes the arguments of the analyzed function. */
-    public MonotoneTransferFunctions(IErrorReporter reporter,
+    public MonotoneTransferFunctions(DBSPCompiler compiler,
                                      DBSPSimpleOperator operator,
                                      ArgumentKind argumentKind,
                                      IMaybeMonotoneType... parameterTypes) {
-        super(reporter);
+        super(compiler);
         this.operator = operator;
         this.parameterTypes = parameterTypes;
         for (IMaybeMonotoneType p: parameterTypes)
             assert !p.is(MonotoneClosureType.class);
         this.argumentKind = argumentKind;
         this.variables = new DeclarationValue<>();
-        this.resolver = new ResolveReferences(reporter, false);
+        this.resolver = new ResolveReferences(compiler, false);
         this.constantExpressions = new ExpressionSet();
         this.positiveExpressions = new ExpressionSet();
         switch (argumentKind) {
@@ -257,7 +257,7 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
         this.push(expression);
         // Check that the expression is a pure tree; this is required by the dataflow analysis,
         // which represents monotonicity information as a key-value map indexed by expressions.
-        new RepeatedExpressions(this.errorReporter, true).apply(expression.body);
+        new RepeatedExpressions(this.compiler, true).apply(expression.body);
         expression.body.accept(this);
         this.pop(expression);
         MonotoneExpression bodyValue = this.get(expression.body);

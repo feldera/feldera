@@ -2,6 +2,7 @@ package org.dbsp.sqlCompiler.compiler.frontend.statements;
 
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rel.type.RelDataTypeField;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.RelColumnMetadata;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.PropertyList;
@@ -13,15 +14,13 @@ import java.util.List;
 /** An object that has a schema */
 public class HasSchema implements IHasSchema {
     final CalciteObject node;
-    final String name;
+    final ProgramIdentifier name;
     final List<RelColumnMetadata> columns;
-    final boolean nameIsQuoted;
 
-    public HasSchema(CalciteObject node, String name, boolean nameIsQuoted, RelDataType rowType) {
+    public HasSchema(CalciteObject node, ProgramIdentifier name, RelDataType rowType) {
         this.node = node;
         this.name = name;
         this.columns = new ArrayList<>();
-        this.nameIsQuoted = nameIsQuoted;
         for (RelDataTypeField field: rowType.getFieldList()) {
             RelColumnMetadata meta = new RelColumnMetadata(
                     CalciteObject.create(field.getType()),
@@ -37,13 +36,8 @@ public class HasSchema implements IHasSchema {
     }
 
     @Override
-    public String getName() {
-        return name;
-    }
-
-    @Override
-    public boolean nameIsQuoted() {
-        return this.nameIsQuoted;
+    public ProgramIdentifier getName() {
+        return this.name;
     }
 
     @Override

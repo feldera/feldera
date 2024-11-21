@@ -25,11 +25,12 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
 import org.dbsp.sqlCompiler.circuit.DBSPDeclaration;
 import org.dbsp.sqlCompiler.circuit.ICircuit;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.ICompilerComponent;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 import org.dbsp.sqlCompiler.circuit.operator.*;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
-import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.util.IHasId;
 import org.dbsp.util.IWritesLogs;
@@ -43,7 +44,7 @@ import java.util.Objects;
 /** Depth-first traversal of an IDBSOuterNode hierarchy. */
 @SuppressWarnings({"SameReturnValue", "BooleanMethodIsAlwaysInverted"})
 public abstract class CircuitVisitor
-        implements CircuitTransform, IWritesLogs, IHasId {
+        implements CircuitTransform, IWritesLogs, IHasId, ICompilerComponent {
     final long id;
     static long crtId = 0;
 
@@ -56,14 +57,19 @@ public abstract class CircuitVisitor
 
     @Nullable
     protected DBSPCircuit circuit = null;
-    public final IErrorReporter errorReporter;
+    public final DBSPCompiler compiler;
     /** Circuit or operator currently being visited. */
     protected final List<IDBSPOuterNode> current;
 
-    public CircuitVisitor(IErrorReporter errorReporter) {
+    public CircuitVisitor(DBSPCompiler compiler) {
         this.id = crtId++;
-        this.errorReporter = errorReporter;
+        this.compiler = compiler;
         this.current = new ArrayList<>();
+    }
+
+    @Override
+    public DBSPCompiler compiler() {
+        return this.compiler;
     }
 
     public DBSPCircuit getCircuit() {
@@ -353,10 +359,6 @@ public abstract class CircuitVisitor
         return this.preorder(node.to(DBSPBinaryOperator.class));
     }
 
-    public VisitDecision preorder(DBSPControlledFilterOperator node) {
-        return this.preorder(node.to(DBSPBinaryOperator.class));
-    }
-
     public VisitDecision preorder(DBSPControlledKeyFilterOperator node) {
         return this.preorder(node.to(DBSPOperatorWithError.class));
     }
@@ -597,10 +599,6 @@ public abstract class CircuitVisitor
     }
 
     public void postorder(DBSPWindowOperator node) {
-        this.postorder(node.to(DBSPBinaryOperator.class));
-    }
-
-    public void postorder(DBSPControlledFilterOperator node) {
         this.postorder(node.to(DBSPBinaryOperator.class));
     }
 

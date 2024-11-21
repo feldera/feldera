@@ -32,26 +32,28 @@ import org.dbsp.util.ICastable;
  * The representation is mostly at the level of RelNode, but there
  * is also some SqlNode-level information. */
 public abstract class FrontEndStatement implements ICastable {
-    public final CalciteCompiler.ParsedStatement node;
-    /** Original statement compiled. */
-    public final String statement;
+    public final CalciteCompiler.ParsedStatement parsedStatement;
 
-    protected FrontEndStatement(CalciteCompiler.ParsedStatement node, String statement) {
-        this.node = node;
-        this.statement = statement;
-    }
-
-    protected FrontEndStatement(CalciteCompiler.ParsedStatement node) {
-        this(node, node.toString());
+    protected FrontEndStatement(CalciteCompiler.ParsedStatement parsedStatement) {
+        this.parsedStatement = parsedStatement;
     }
 
     public CalciteObject getCalciteObject() {
-        return CalciteObject.create(this.node.statement());
+        return CalciteObject.create(this.parsedStatement.statement());
+    }
+
+    public String getStatement() {
+        return this.parsedStatement.toString();
+    }
+
+    /** True if this is code written by the user, false if it's system-inserted code */
+    public boolean isVisible() {
+        return this.parsedStatement.visible();
     }
 
     public SourcePositionRange getPosition() {
-        if (this.node.visible())
-            return new SourcePositionRange(this.node.statement().getParserPosition());
+        if (this.parsedStatement.visible())
+            return new SourcePositionRange(this.parsedStatement.statement().getParserPosition());
         else
             return SourcePositionRange.INVALID;
     }

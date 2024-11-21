@@ -508,23 +508,18 @@ public class FunctionsTest extends SqlIoTest {
 
     @Test
     public void testDecimalErrors() {
-        this.queryFailing("select cast(1234.1234 AS DECIMAL(6, 3))",
-                "cannot represent 1234.1234 as DECIMAL(6, 3)",
-                "cannot represent 1234.1234 as DECIMAL(6, 3)");
-
-        this.queryFailing("select cast(1234.1236 AS DECIMAL(6, 3))",
-                "cannot represent 1234.1236 as DECIMAL(6, 3)",
-                        "cannot represent 1234.1236 as DECIMAL(6, 3)");
-        this.queryFailing("select cast(143.481 as decimal(2, 1))",
-                "cannot represent 143.481 as DECIMAL(2, 1)",
-                "cannot represent 143.481 as DECIMAL(2, 1)");
+        this.runtimeConstantFail("select cast(1234.1234 AS DECIMAL(6, 3))",
+                "cannot represent 1234.123 as DECIMAL(6, 3): precision of DECIMAL type too small to represent value");
+        this.runtimeConstantFail("select cast(1234.1236 AS DECIMAL(6, 3))",
+                "cannot represent 1234.123 as DECIMAL(6, 3): precision of DECIMAL type too small to represent value");
+        this.runtimeConstantFail("select cast(143.481 as decimal(2, 1))",
+                "cannot represent 143.4 as DECIMAL(2, 1): precision of DECIMAL type too small to represent value");
         this.q("""
                 select cast(99.6 as decimal(2, 0));
                  result
                 --------
                  99""");
-        this.queryFailing("select cast(-13.4 as decimal(2,1))",
-                "cannot represent -13.4 as DECIMAL(2, 1)",
+        this.runtimeConstantFail("select cast(-13.4 as decimal(2,1))",
                 "cannot represent -13.4 as DECIMAL(2, 1)");
     }
 

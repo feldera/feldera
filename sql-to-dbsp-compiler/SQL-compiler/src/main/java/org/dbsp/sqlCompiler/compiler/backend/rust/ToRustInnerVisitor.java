@@ -25,7 +25,7 @@ package org.dbsp.sqlCompiler.compiler.backend.rust;
 
 import org.apache.calcite.util.TimeString;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
-import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
@@ -150,9 +150,9 @@ public class ToRustInnerVisitor extends InnerVisitor {
     protected final boolean compact;
     protected final CompilerOptions options;
 
-    public ToRustInnerVisitor(IErrorReporter reporter, IndentStream builder,
+    public ToRustInnerVisitor(DBSPCompiler compiler, IndentStream builder,
                               CompilerOptions options, boolean compact) {
-        super(reporter);
+        super(compiler);
         this.builder = builder;
         this.compact = compact;
         this.options = options;
@@ -906,7 +906,18 @@ public class ToRustInnerVisitor extends InnerVisitor {
                 this.builder.append(")");
                 break;
             }
-            case ARRAY_CONVERT:
+            case ARRAY_CONVERT: {
+                // Pass array by reference
+                this.builder.append(expression.operation.toString())
+                        .append(expression.left.getType().deref().nullableUnderlineSuffix())
+                        .append(expression.right.getType().nullableUnderlineSuffix())
+                        .append("(");
+                expression.left.accept(this);
+                this.builder.append(", ");
+                expression.right.accept(this);
+                this.builder.append(")");
+                break;
+            }
             case DIV_NULL:
             case SHIFT_LEFT: {
                 this.builder.append(expression.operation.toString())
@@ -1621,11 +1632,11 @@ public class ToRustInnerVisitor extends InnerVisitor {
         throw new InternalCompilerError("Should have been eliminated", implementation.getNode());
     }
 
-    public static String toRustString(IErrorReporter reporter, IDBSPInnerNode node,
+    public static String toRustString(DBSPCompiler compiler, IDBSPInnerNode node,
                                       CompilerOptions options, boolean compact) {
         StringBuilder builder = new StringBuilder();
         IndentStream stream = new IndentStream(builder);
-        ToRustInnerVisitor visitor = new ToRustInnerVisitor(reporter, stream, options, compact);
+        ToRustInnerVisitor visitor = new ToRustInnerVisitor(compiler, stream, options, compact);
         node.accept(visitor);
         return builder.toString();
     }

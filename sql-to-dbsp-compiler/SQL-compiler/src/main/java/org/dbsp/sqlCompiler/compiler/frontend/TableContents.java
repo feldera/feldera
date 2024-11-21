@@ -26,6 +26,7 @@ package org.dbsp.sqlCompiler.compiler.frontend;
 import org.dbsp.sqlCompiler.compiler.ICompilerComponent;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateTableStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.DropTableStatement;
@@ -40,19 +41,17 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-/**
- * This class keeps track of the contents of the tables as
+/** This class keeps track of the contents of the tables as
  * it exists because of the execution of simple INSERT or DELETE statements.
  * It gives an instantaneous view of the table contents, after the execution
- * of a sequence of statements.
- */
+ * of a sequence of statements. */
 public class TableContents implements ICompilerComponent {
-    public final List<String> tablesCreated = new ArrayList<>();
+    public final List<ProgramIdentifier> tablesCreated = new ArrayList<>();
     /** Remember the last statement that created each table. */
-    final Map<String, CreateTableStatement> tableCreation = new HashMap<>();
+    final Map<ProgramIdentifier, CreateTableStatement> tableCreation = new HashMap<>();
     /** Keep track of the contents of each table. */
     @Nullable
-    final Map<String, DBSPZSetLiteral> tableContents;
+    final Map<ProgramIdentifier, DBSPZSetLiteral> tableContents;
     final DBSPCompiler compiler;
 
     public TableContents(DBSPCompiler compiler, boolean trackTableContents) {
@@ -63,7 +62,7 @@ public class TableContents implements ICompilerComponent {
             this.tableContents = null;
     }
 
-    public DBSPZSetLiteral getTableContents(String tableName) {
+    public DBSPZSetLiteral getTableContents(ProgramIdentifier tableName) {
         if (this.tableContents == null)
             throw new UnsupportedException("Not keeping track of table contents", CalciteObject.EMPTY);
         return Utilities.getExists(this.tableContents, tableName);
@@ -90,18 +89,18 @@ public class TableContents implements ICompilerComponent {
         return true;
     }
 
-    public CreateTableStatement getTableDefinition(String tableName) {
+    public CreateTableStatement getTableDefinition(ProgramIdentifier tableName) {
         return Utilities.getExists(this.tableCreation, tableName);
     }
 
-    public void addToTable(String tableName, DBSPZSetLiteral value) {
+    public void addToTable(ProgramIdentifier tableName, DBSPZSetLiteral value) {
         if (this.tableContents == null)
             throw new UnsupportedException("Not keeping track of table contents", CalciteObject.EMPTY);
         DBSPZSetLiteral table = this.tableContents.get(tableName);
         table.addUsingCast(value);
     }
 
-    public int getTableIndex(String tableName) {
+    public int getTableIndex(ProgramIdentifier tableName) {
         for (int i = 0; i < this.tablesCreated.size(); i++)
             if (this.tablesCreated.get(i).equals(tableName))
                 return i;
@@ -121,12 +120,12 @@ public class TableContents implements ICompilerComponent {
     public void clear() {
         if (this.tableContents == null)
             return;
-        for (Map.Entry<String, DBSPZSetLiteral> entry: this.tableContents.entrySet()) {
+        for (Map.Entry<ProgramIdentifier, DBSPZSetLiteral> entry: this.tableContents.entrySet()) {
             entry.setValue(DBSPZSetLiteral.emptyWithElementType(entry.getValue().getElementType()));
         }
     }
 
-    public void removeTable(String name) {
+    public void removeTable(ProgramIdentifier name) {
         if (this.tableContents == null)
             return;
         this.tableContents.remove(name);
