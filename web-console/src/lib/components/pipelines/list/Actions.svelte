@@ -154,7 +154,7 @@
   {/if}
 {/snippet}
 {#snippet _start_paused()}
-  {@render start('Run', (alt) => (alt ? 'start_paused' : 'start_paused_start'), 'Starting up')}
+  {@render start('Start', (alt) => (alt ? 'start_paused' : 'start_paused_start'), 'Starting up')}
   {#if unsavedChanges}
     <Tooltip class="z-20 bg-white text-surface-950-50 dark:bg-black" placement="top">
       Save the pipeline before running
@@ -165,7 +165,7 @@
   <div class="h-9">
     <button class="{buttonClass} {longClass} disabled preset-filled-surface-900-100">
       <span class="fd fd-play_arrow {iconClass}"></span>
-      Run
+      Start
     </button>
   </div>
 {/snippet}
@@ -208,7 +208,7 @@
     }}
   >
     <span class="fd fd-stop bg-surface-50-950 {iconClass}"></span>
-    Stop
+    Shutdown
   </button>
 {/snippet}
 
