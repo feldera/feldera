@@ -5,13 +5,20 @@
   import { usePipelineList } from '$lib/compositions/pipelines/usePipelineList.svelte'
   import type { Snippet } from 'svelte'
   import PipelineStatus from '$lib/components/pipelines/list/PipelineStatus.svelte'
+  import type { PipelineThumb } from '$lib/services/pipelineManager'
 
   let {
+    preloaded,
     breadcrumbs,
     after,
     end
-  }: { breadcrumbs: { text: string; href: string }[]; after?: Snippet; end?: Snippet } = $props()
-  const pipelineList = usePipelineList()
+  }: {
+    preloaded: { pipelines: PipelineThumb[] }
+    breadcrumbs: { text: string; href: string }[]
+    after?: Snippet
+    end?: Snippet
+  } = $props()
+  const pipelineList = usePipelineList(preloaded)
 </script>
 
 <div class="flex gap-4 pb-4">

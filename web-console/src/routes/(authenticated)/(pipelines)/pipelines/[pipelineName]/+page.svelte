@@ -31,5 +31,5 @@
 </script>
 
 <div class="h-full px-8 py-4">
-  <PipelineEditLayout {pipeline}></PipelineEditLayout>
+  <PipelineEditLayout preloaded={data.preloaded} {pipeline}></PipelineEditLayout>
 </div>

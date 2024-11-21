@@ -9,6 +9,9 @@
   const pipelines = usePipelineList()
 
   const table = new TableHandler(pipelines.pipelines, { rowsPerPage: 10, selectBy: 'name' })
+  $effect(() => {
+    table.setRows(pipelines.pipelines)
+  })
 
   const statusFilter = table.createFilter('status')
   const filterStatuses: (PipelineStatusType | '')[] = ['', 'Running', 'Paused', 'Shutdown']

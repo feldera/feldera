@@ -19,7 +19,8 @@
     postPipelineAction,
     type ExtendedPipeline,
     type Pipeline,
-    type PipelineAction
+    type PipelineAction,
+    type PipelineThumb
   } from '$lib/services/pipelineManager'
   import { isPipelineIdle } from '$lib/functions/pipelines/status'
   import { nonNull } from '$lib/functions/common/function'
@@ -34,8 +35,10 @@
   import { useLocalStorage } from '$lib/compositions/localStore.svelte'
 
   let {
+    preloaded,
     pipeline
   }: {
+    preloaded: { pipelines: PipelineThumb[] }
     pipeline: {
       current: ExtendedPipeline
       patch: (pipeline: Partial<Pipeline>) => Promise<ExtendedPipeline>
@@ -174,7 +177,7 @@ example = "1.0"`
 </script>
 
 <div class="flex h-full flex-col">
-  <PipelineBreadcrumbs {breadcrumbs}>
+  <PipelineBreadcrumbs {preloaded} {breadcrumbs}>
     {#snippet after()}
       <div class="flex items-center">
         <PipelineStatus status={pipeline.current.status}></PipelineStatus>
