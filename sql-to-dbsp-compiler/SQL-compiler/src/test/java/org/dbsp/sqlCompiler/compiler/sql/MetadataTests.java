@@ -519,6 +519,43 @@ public class MetadataTests extends BaseSQLTests {
     }
 
     @Test
+    public void testFibonacci() throws IOException, SQLException {
+        String sql = """
+                create recursive view fibonacci(n INT, value INT);
+                create table input (x int);
+                
+                create view fibonacci AS
+                (
+                    -- Base case: first two Fibonacci numbers
+                    select 0 as n, 0 as value
+                    union all
+                    select 1 as n, 1 as value
+                )
+                union all
+                (
+                    -- Compute F(n)=F(n-1)+F(n-2)
+                    select
+                        prev.n + 1 as n,
+                        (prev.value + curr.value) as value
+                    from fibonacci as curr
+                    join fibonacci as prev
+                    on prev.n = curr.n - 1
+                    where curr.n < 10 and prev.n < 10
+                );
+                
+                create view fib_outputs as select * from fibonacci;""";
+        File file = createInputScript(sql);
+        File json = File.createTempFile("out", ".json", new File("."));
+        json.deleteOnExit();
+        File tmp = File.createTempFile("out", ".rs", new File(rustDirectory));
+        CompilerMessages message = CompilerMain.execute(
+                "-js", json.getPath(), "-o", tmp.getPath(), file.getPath());
+        assert message.exitCode == 0;
+        String js = Utilities.readFile(json.toPath());
+        Assert.assertFalse(js.contains("fibonacci-port"));
+    }
+
+    @Test
     public void testSchema() throws IOException, SQLException {
         String sql = """
                 CREATE TABLE T (

@@ -17,13 +17,14 @@ import org.dbsp.sqlCompiler.compiler.frontend.parser.PropertyList;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
+import org.dbsp.util.ICastable;
 import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.List;
 
 /** An interface implemented by objects which have a name and a schema */
-public interface IHasSchema extends IHasCalciteObject {
+public interface IHasSchema extends IHasCalciteObject, ICastable {
     /** The name of this object */
     String getName();
     /** True if the name is quoted */

@@ -3,6 +3,8 @@ package org.dbsp.sqlCompiler.compiler;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPViewDeclarationOperator;
+import org.dbsp.sqlCompiler.compiler.frontend.statements.DeclareViewStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.IHasSchema;
 import org.dbsp.util.Utilities;
 
@@ -22,8 +24,11 @@ public class ProgramMetadata {
     public ObjectNode asJson() {
         ObjectMapper mapper = Utilities.deterministicObjectMapper();
         ArrayNode inputs = mapper.createArrayNode();
-        for (IHasSchema input: this.inputTables.values())
+        for (IHasSchema input: this.inputTables.values()) {
+            if (input.is(DeclareViewStatement.class))
+                continue;
             inputs.add(input.asJson());
+        }
         ArrayNode outputs = mapper.createArrayNode();
         for (IHasSchema output: this.outputViews.values())
             outputs.add(output.asJson());
