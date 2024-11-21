@@ -27,7 +27,7 @@ public class CircuitToString {
             toString(child);
         }
         int index = 0;
-        for (var o: operator.outputs) {
+        for (var o: operator.internalOutputs) {
             this.builder.append(operator.id)
                     .append(":")
                     .append(index++)

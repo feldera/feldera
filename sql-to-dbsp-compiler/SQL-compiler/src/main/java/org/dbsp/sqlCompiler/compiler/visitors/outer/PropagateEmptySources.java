@@ -22,7 +22,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPUnaryOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
-import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIndexedZSetLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
@@ -37,8 +37,8 @@ import java.util.List;
 public class PropagateEmptySources extends CircuitCloneVisitor {
     final List<DBSPOperator> emptySources;
 
-    public PropagateEmptySources(IErrorReporter reporter) {
-        super(reporter, false);
+    public PropagateEmptySources(DBSPCompiler compiler) {
+        super(compiler, false);
         this.emptySources = new ArrayList<>();
     }
 

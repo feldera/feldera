@@ -49,6 +49,7 @@ import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ExternalFunction;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
@@ -1504,7 +1505,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
     }
 
     private DBSPExpression compileUdfOrConstructor(CalciteObject node, RexCall call, DBSPType type, List<DBSPExpression> ops) {
-        String function = call.op.getName();  // no lowercase applied
+        ProgramIdentifier function = new ProgramIdentifier(call.op.getName(), false);  // no lowercase applied
         boolean isConstructor = this.compiler.isStructConstructor(function);
         if (isConstructor) {
             DBSPTypeStruct struct = this.compiler.getStructByName(function);
@@ -1522,7 +1523,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
         ExternalFunction ef = this.compiler.getCustomFunctions()
                 .getSignature(function);
         if (ef == null)
-            throw new CompilationError("Function " + Utilities.singleQuote(function) + " is unknown", node);
+            throw new CompilationError("Function " + function.singleQuote() + " is unknown", node);
         List<DBSPType> operandTypes = Linq.map(ef.parameterList,
                 p -> this.typeCompiler.convertType(p.getType(), false));
         List<DBSPExpression> converted = Linq.zip(ops, operandTypes, DBSPExpression::cast);
@@ -1534,9 +1535,9 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
         // Currently, we need to unwrap.
         boolean unwrap = !ef.generated;
         if (unwrap)
-            return new DBSPApplyExpression(function, new DBSPTypeResult(type), arguments).resultUnwrap();
+            return new DBSPApplyExpression(function.name(), new DBSPTypeResult(type), arguments).resultUnwrap();
         else
-            return new DBSPApplyExpression(function, type, arguments);
+            return new DBSPApplyExpression(function.name(), type, arguments);
     }
 
     public DBSPExpression compile(RexNode expression) {

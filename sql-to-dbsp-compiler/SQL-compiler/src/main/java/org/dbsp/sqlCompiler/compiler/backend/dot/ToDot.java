@@ -1,7 +1,7 @@
 package org.dbsp.sqlCompiler.compiler.backend.dot;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
-import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.util.IndentStream;
 import org.dbsp.util.Logger;
@@ -56,7 +56,7 @@ public class ToDot {
         }
     }
 
-    public static void dump(IErrorReporter reporter, String fileName, int details,
+    public static void dump(DBSPCompiler reporter, String fileName, int details,
                             @Nullable String outputFormat, DBSPCircuit circuit) {
         dump(fileName, outputFormat, circuit,
                 stream -> new ToDotNodesVisitor(reporter, stream, details),

@@ -15,12 +15,12 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPUnaryOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWaterlineOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
-import org.dbsp.sqlCompiler.compiler.ICompilerComponent;
-import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.ExpressionCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.TypeCompiler;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
@@ -83,8 +83,8 @@ public class ImplementNow extends Passes {
         /** If true the 'found' is reset for each invocation */
         public final boolean perExpression;
 
-        public ContainsNow(IErrorReporter reporter, boolean perExpression) {
-            super(reporter);
+        public ContainsNow(DBSPCompiler compiler, boolean perExpression) {
+            super(compiler);
             this.found = false;
             this.perExpression = perExpression;
         }
@@ -136,8 +136,8 @@ public class ImplementNow extends Passes {
         @Nullable
         ReferenceMap refMap;
 
-        public RewriteNowClosure(IErrorReporter reporter) {
-            super(reporter);
+        public RewriteNowClosure(DBSPCompiler compiler) {
+            super(compiler);
             this.nowReplacement = null;
             this.parameterReplacement = null;
             this.refMap = null;
@@ -175,7 +175,7 @@ public class ImplementNow extends Passes {
             DBSPParameter newParam = new DBSPParameter(param.getName(), paramType.makeType(fields).ref());
             this.parameterReplacement = newParam.asVariable();
             this.nowReplacement = newParam.asVariable().deref().field(paramType.size());
-            ResolveReferences ref = new ResolveReferences(this.errorReporter, false);
+            ResolveReferences ref = new ResolveReferences(this.compiler, false);
             ref.apply(closure);
             this.refMap = ref.reference;
 
@@ -193,8 +193,8 @@ public class ImplementNow extends Passes {
         /** Replacement for the now() function */
         final DBSPExpression replacement;
 
-        public RewriteNowExpression(IErrorReporter reporter, DBSPExpression replacement) {
-            super(reporter);
+        public RewriteNowExpression(DBSPCompiler compiler, DBSPExpression replacement) {
+            super(compiler);
             this.replacement = replacement;
         }
 
@@ -218,11 +218,9 @@ public class ImplementNow extends Passes {
         // (actually, it's the differentiator after the index)
         @Nullable
         DBSPMapIndexOperator nowIndexed = null;
-        final ICompilerComponent compiler;
 
-        public RewriteNow(IErrorReporter reporter, ICompilerComponent compiler) {
-            super(reporter, false);
-            this.compiler = compiler;
+        public RewriteNow(DBSPCompiler compiler) {
+            super(compiler, false);
         }
 
         DBSPSimpleOperator createJoin(DBSPSimpleOperator input, DBSPUnaryOperator operator) {
@@ -255,12 +253,12 @@ public class ImplementNow extends Passes {
 
         @Override
         public void postorder(DBSPMapOperator operator) {
-            ContainsNow cn = new ContainsNow(this.errorReporter, true);
+            ContainsNow cn = new ContainsNow(this.compiler(), true);
             DBSPExpression function = operator.getFunction();
             cn.apply(function);
             if (cn.found()) {
                 DBSPSimpleOperator join = this.createJoin(operator.input().simpleNode(), operator);
-                RewriteNowClosure rn = new RewriteNowClosure(this.errorReporter);
+                RewriteNowClosure rn = new RewriteNowClosure(this.compiler());
                 function = rn.apply(function).to(DBSPExpression.class);
                 DBSPSimpleOperator result = new DBSPMapOperator(
                         operator.getNode(), function, operator.getOutputZSetType(), join.outputPort());
@@ -285,7 +283,7 @@ public class ImplementNow extends Passes {
         }
 
         record WindowBounds(
-                IErrorReporter reporter,
+                DBSPCompiler compiler,
                 @Nullable WindowBound lower,
                 @Nullable WindowBound upper,
                 DBSPExpression common) {
@@ -293,7 +291,7 @@ public class ImplementNow extends Passes {
                 DBSPType type = ContainsNow.timestampType();
                 // The input has type Tup1<Timestamp>
                 DBSPVariablePath var = new DBSPTypeTuple(type).ref().var();
-                RewriteNowExpression rn = new RewriteNowExpression(this.reporter, var.deref().field(0));
+                RewriteNowExpression rn = new RewriteNowExpression(this.compiler(), var.deref().field(0));
                 DBSPExpression lowerBound, upperBound;
                 if (this.lower != null)
                     lowerBound = rn.apply(this.lower.expression).to(DBSPExpression.class);
@@ -462,7 +460,7 @@ public class ImplementNow extends Passes {
                 return left.combine(right, lower);
             }
 
-            public WindowBounds getWindowBounds(IErrorReporter reporter) {
+            public WindowBounds getWindowBounds(DBSPCompiler compiler) {
                 WindowBound lower = null;
                 WindowBound upper = null;
                 assert !this.comparisons.isEmpty();
@@ -477,7 +475,7 @@ public class ImplementNow extends Passes {
                         upper = combine(upper, result, toLower);
                     }
                 }
-                return new WindowBounds(reporter, lower, upper, common);
+                return new WindowBounds(compiler, lower, upper, common);
             }
 
             @Override
@@ -503,7 +501,7 @@ public class ImplementNow extends Passes {
             public FindComparisons(DBSPClosureExpression closure, MonotoneTransferFunctions mono) {
                 this.mono = mono;
                 this.comparisons = new ArrayList<>();
-                this.containsNow = new ContainsNow(mono.errorReporter, true);
+                this.containsNow = new ContainsNow(mono.compiler, true);
                 this.compOpcodes = new HashSet<>() {{
                     add(DBSPOpcode.LT);
                     add(DBSPOpcode.LTE);
@@ -606,7 +604,7 @@ public class ImplementNow extends Passes {
             DBSPParameter param = function.parameters[0];
             IMaybeMonotoneType nonMonotone = NonMonotoneType.nonMonotone(param.getType().deref());
             MonotoneTransferFunctions mono = new MonotoneTransferFunctions(
-                    this.errorReporter, operator, MonotoneTransferFunctions.ArgumentKind.ZSet, nonMonotone);
+                    this.compiler(), operator, MonotoneTransferFunctions.ArgumentKind.ZSet, nonMonotone);
             mono.apply(function);
 
             FindComparisons analyzer = new FindComparisons(function, mono);
@@ -672,7 +670,7 @@ public class ImplementNow extends Passes {
                                                    TemporalFilterList comparisons) {
             // Now input comes from here
             DBSPSimpleOperator flattenNow = this.flattenNow();
-            WindowBounds bounds = comparisons.getWindowBounds(this.errorReporter);
+            WindowBounds bounds = comparisons.getWindowBounds(this.compiler());
             DBSPClosureExpression makeWindow = bounds.makeWindow();
             DBSPSimpleOperator windowBounds = new DBSPApplyOperator(operator.getNode(),
                     makeWindow, flattenNow.outputPort(), null);
@@ -759,7 +757,7 @@ public class ImplementNow extends Passes {
 
         @Override
         public void postorder(DBSPFilterOperator operator) {
-            ContainsNow cn = new ContainsNow(this.errorReporter, true);
+            ContainsNow cn = new ContainsNow(this.compiler(), true);
             DBSPExpression function = operator.getFunction();
             cn.apply(function);
             if (!cn.found) {
@@ -769,7 +767,7 @@ public class ImplementNow extends Passes {
             }
 
             // This makes it easier to discover more monotone expressions
-            Simplify simplify = new Simplify(this.errorReporter);
+            Simplify simplify = new Simplify(this.compiler());
             DBSPClosureExpression closure = function.to(DBSPClosureExpression.class);
             closure = simplify.apply(closure).to(DBSPClosureExpression.class);
             List<BooleanExpression> filters = this.findTemporalFilters(operator, closure);
@@ -782,7 +780,7 @@ public class ImplementNow extends Passes {
             if (leftOver.is(NonTemporalFilter.class)) {
                 // Implement leftover as a join
                 DBSPSimpleOperator join = this.createJoin(result, operator);
-                RewriteNowClosure rn = new RewriteNowClosure(this.errorReporter);
+                RewriteNowClosure rn = new RewriteNowClosure(this.compiler());
                 function = leftOver.to(NonTemporalFilter.class).expression.closure(closure.parameters);
                 function = rn.apply(function).to(DBSPExpression.class);
                 DBSPSimpleOperator filter = new DBSPFilterOperator(operator.getNode(), function, join.outputPort());
@@ -814,7 +812,7 @@ public class ImplementNow extends Passes {
                 now = new DBSPNowOperator(node);
             } else {
                 // A table followed by a differentiator.
-                String tableName = this.compiler.compiler().canonicalName("NOW");
+                ProgramIdentifier tableName = DBSPCompiler.NOW_TABLE_NAME;
                 now = circuit.getInput(tableName);
                 if (now == null) {
                     throw new CompilationError("Declaration for table 'NOW' not found in program");
@@ -843,18 +841,19 @@ public class ImplementNow extends Passes {
         }
     }
 
-    public ImplementNow(IErrorReporter reporter, ICompilerComponent compiler) {
-        super("ImplementNow", reporter);
+    public ImplementNow(DBSPCompiler compiler) {
+        super("ImplementNow", compiler);
         boolean removeTable = !compiler.compiler().options.ioOptions.nowStream;
-        ContainsNow cn = new ContainsNow(reporter, false);
-        RewriteNow rewriteNow = new RewriteNow(reporter, compiler);
+        ContainsNow cn = new ContainsNow(compiler, false);
+        RewriteNow rewriteNow = new RewriteNow(compiler);
         this.passes.add(cn.getCircuitVisitor());
-        this.passes.add(new Conditional(reporter, rewriteNow, cn::found));
-        this.passes.add(new Conditional(reporter, new RemoveTable("now", reporter, compiler), () -> !cn.found || removeTable));
-        ContainsNow cn0 = new ContainsNow(reporter, false);
+        this.passes.add(new Conditional(compiler, rewriteNow, cn::found));
+        this.passes.add(new Conditional(compiler,
+                new RemoveTable(compiler, DBSPCompiler.NOW_TABLE_NAME), () -> !cn.found || removeTable));
+        ContainsNow cn0 = new ContainsNow(compiler, false);
         this.passes.add(cn0.getCircuitVisitor());
-        this.passes.add(new Conditional(reporter,
-                new Fail(reporter, "Instances of 'now' have not been replaced"), cn0::found));
+        this.passes.add(new Conditional(compiler,
+                new Fail(compiler, "Instances of 'now' have not been replaced"), cn0::found));
     }
 }
 

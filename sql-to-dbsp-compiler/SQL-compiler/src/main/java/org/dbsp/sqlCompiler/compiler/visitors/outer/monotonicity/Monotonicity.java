@@ -34,7 +34,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPUpsertFeedbackOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
-import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.InputColumnMetadata;
 import org.dbsp.sqlCompiler.compiler.ViewColumnMetadata;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
@@ -153,8 +153,8 @@ public class Monotonicity extends CircuitVisitor {
         return null;
     }
 
-    public Monotonicity(IErrorReporter errorReporter) {
-        super(errorReporter);
+    public Monotonicity(DBSPCompiler compiler) {
+        super(compiler);
         this.info = new MonotonicityInformation();
     }
 
@@ -195,7 +195,7 @@ public class Monotonicity extends CircuitVisitor {
         DBSPClosureExpression closure = body.closure(var);
         // Invoke inner visitor.
         MonotoneTransferFunctions analyzer = new MonotoneTransferFunctions(
-                this.errorReporter, operator, argumentType, projection);
+                this.compiler(), operator, argumentType, projection);
         return Objects.requireNonNull(analyzer.applyAnalysis(closure));
     }
 
@@ -231,7 +231,7 @@ public class Monotonicity extends CircuitVisitor {
         DBSPExpression body = new DBSPTupleExpression(fields);
         DBSPClosureExpression closure = body.closure(var);
         MonotoneTransferFunctions analyzer = new MonotoneTransferFunctions(
-                this.errorReporter, node, MonotoneTransferFunctions.ArgumentKind.ZSet, projection);
+                this.compiler(), node, MonotoneTransferFunctions.ArgumentKind.ZSet, projection);
         MonotoneExpression result = analyzer.applyAnalysis(closure);
         this.set(node, result);
     }
@@ -385,7 +385,7 @@ public class Monotonicity extends CircuitVisitor {
         IMaybeMonotoneType sourceType = getBodyType(inputFunction);
         DBSPExpression function = node.getFunction();
         MonotoneTransferFunctions mm = new MonotoneTransferFunctions(this
-                .errorReporter, node,
+                .compiler(), node,
                 MonotoneTransferFunctions.ArgumentKind.fromType(node.input().outputType()),
                 sourceType);
         MonotoneExpression result = mm.applyAnalysis(function);
@@ -421,7 +421,7 @@ public class Monotonicity extends CircuitVisitor {
 
         IMaybeMonotoneType keyType = leftKeyType.union(rightKeyType);
         MonotoneTransferFunctions mm = new MonotoneTransferFunctions(
-                this.errorReporter, node,
+                this.compiler(), node,
                 MonotoneTransferFunctions.ArgumentKind.Join,
                 keyType, leftValueType, rightValueType);
         MonotoneExpression result = mm.applyAnalysis(node.getFunction());
@@ -446,7 +446,7 @@ public class Monotonicity extends CircuitVisitor {
         if (inputFunction == null)
             return;
         MonotoneTransferFunctions mm = new MonotoneTransferFunctions(
-                this.errorReporter, node,
+                this.compiler(), node,
                 MonotoneTransferFunctions.ArgumentKind.fromType(node.input().outputType()),
                 getBodyType(inputFunction));
         MonotoneExpression result = mm.applyAnalysis(node.getFunction());
@@ -461,7 +461,7 @@ public class Monotonicity extends CircuitVisitor {
         if (inputFunction == null)
             return;
         MonotoneTransferFunctions mm = new MonotoneTransferFunctions(
-                this.errorReporter, node,
+                this.compiler(), node,
                 MonotoneTransferFunctions.ArgumentKind.fromType(node.input().outputType()),
                 getBodyType(inputFunction));
         MonotoneExpression result = mm.applyAnalysis(node.getFunction());
@@ -510,7 +510,7 @@ public class Monotonicity extends CircuitVisitor {
         if (!value.mayBeMonotone())
             return;
         MonotoneTransferFunctions mm = new MonotoneTransferFunctions(
-                this.errorReporter, node,
+                this.compiler(), node,
                 MonotoneTransferFunctions.ArgumentKind.IndexedZSet, getBodyType(inputFunction));
         MonotoneExpression result = mm.applyAnalysis(node.getFunction());
         if (result == null)
@@ -581,9 +581,10 @@ public class Monotonicity extends CircuitVisitor {
         DBSPVariablePath kx = new DBSPTypeRawTuple(inputType.keyType.ref(), inputType.elementType.ref()).var();
         DBSPExpression noExpression = new NoExpression(function.parameters[1].type);
         DBSPExpression dataPart = function.call(kx.field(1), noExpression);
-        DBSPExpression transfer = new DBSPRawTupleExpression(kx.field(0).deref(), dataPart).closure(kx).reduce(this.errorReporter);
+        DBSPExpression transfer = new DBSPRawTupleExpression(
+                kx.field(0).deref(), dataPart).closure(kx).reduce(this.compiler());
         MonotoneTransferFunctions mm = new MonotoneTransferFunctions(
-                this.errorReporter, node,
+                this.compiler(), node,
                 MonotoneTransferFunctions.ArgumentKind.IndexedZSet, projection);
         MonotoneExpression result = mm.applyAnalysis(transfer);
         if (result == null)
@@ -619,7 +620,7 @@ public class Monotonicity extends CircuitVisitor {
         IMaybeMonotoneType keyMonoType = leftKeyMonoType.union(rightKeyMonoType);
 
         // We expect ASOF joins to look like projections.
-        Projection projection = new Projection(this.errorReporter, true);
+        Projection projection = new Projection(this.compiler(), true);
         DBSPClosureExpression function = node.getClosureFunction();
         projection.apply(function);
         assert projection.isProjection && projection.hasIoMap();
@@ -684,7 +685,7 @@ public class Monotonicity extends CircuitVisitor {
         DBSPClosureExpression closure = tuple.closure(k, l, r);
 
         MonotoneTransferFunctions mm = new MonotoneTransferFunctions(
-                this.errorReporter, node,
+                this.compiler(), node,
                 MonotoneTransferFunctions.ArgumentKind.Join,
                 keyMonoType, leftValueMonoType, rightValueMonoType);
         MonotoneExpression result = mm.applyAnalysis(closure);
@@ -734,7 +735,7 @@ public class Monotonicity extends CircuitVisitor {
         DBSPClosureExpression closure = tuple.makeTuple(fields).closure(var);
         MonotoneTransferFunctions.ArgumentKind argumentType = MonotoneTransferFunctions.ArgumentKind.ZSet;
         MonotoneTransferFunctions analyzer = new MonotoneTransferFunctions(
-                this.errorReporter, node, argumentType, projection);
+                this.compiler(), node, argumentType, projection);
         MonotoneExpression output = Objects.requireNonNull(analyzer.applyAnalysis(closure));
         this.set(node, output);
     }
@@ -784,7 +785,7 @@ public class Monotonicity extends CircuitVisitor {
                 makeNoExpression(ix.elementType));
         DBSPClosureExpression closure = body.closure(var);
         MonotoneTransferFunctions analyzer = new MonotoneTransferFunctions(
-                this.errorReporter, node, MonotoneTransferFunctions.ArgumentKind.IndexedZSet, projection);
+                this.compiler(), node, MonotoneTransferFunctions.ArgumentKind.IndexedZSet, projection);
         MonotoneExpression result = analyzer.applyAnalysis(closure);
         this.set(node, Objects.requireNonNull(result));
     }
@@ -841,7 +842,7 @@ public class Monotonicity extends CircuitVisitor {
                                 makeNoExpression(outputValueType.tupFields[1]).some()));
         DBSPClosureExpression closure = body.closure(var);
         MonotoneTransferFunctions analyzer = new MonotoneTransferFunctions(
-                this.errorReporter, node, MonotoneTransferFunctions.ArgumentKind.IndexedZSet, inputProjection);
+                this.compiler(), node, MonotoneTransferFunctions.ArgumentKind.IndexedZSet, inputProjection);
         MonotoneExpression result = analyzer.applyAnalysis(closure);
         this.set(node, Objects.requireNonNull(result));
     }

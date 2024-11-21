@@ -1,6 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.visitors.inner;
 
-import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.util.IndentStream;
 import org.dbsp.util.Utilities;
@@ -55,8 +55,8 @@ public class TranslateVisitor<T> extends InnerVisitor {
 
     final TranslationMap<T> translationMap;
 
-    public TranslateVisitor(IErrorReporter reporter) {
-        super(reporter);
+    public TranslateVisitor(DBSPCompiler compiler) {
+        super(compiler);
         this.translationMap = new TranslationMap<>();
     }
 

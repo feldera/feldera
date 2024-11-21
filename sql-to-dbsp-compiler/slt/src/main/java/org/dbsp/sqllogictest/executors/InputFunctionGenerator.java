@@ -1,7 +1,9 @@
 package org.dbsp.sqllogictest.executors;
 
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.ProgramMetadata;
 import org.dbsp.sqlCompiler.compiler.backend.ToCsvVisitor;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.ir.DBSPFunction;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
@@ -41,7 +43,7 @@ class InputFunctionGenerator {
         TableValue[] inputSets = this.inputGenerator.getInputs();
         DBSPExpression[] fields = new DBSPExpression[inputSets.length];
         int totalSize = 0;
-        Set<String> seen = new HashSet<>();
+        Set<ProgramIdentifier> seen = new HashSet<>();
         for (int i = 0; i < inputSets.length; i++) {
             totalSize += inputSets[i].contents.size();
             fields[i] = inputSets[i].contents;

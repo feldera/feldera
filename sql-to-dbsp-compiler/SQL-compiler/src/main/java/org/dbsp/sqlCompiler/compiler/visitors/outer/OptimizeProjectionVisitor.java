@@ -12,7 +12,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
-import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Projection;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
@@ -32,8 +32,8 @@ import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeFunction;
  * Projections are map operations that have a function with a very simple
  * structure.  The function is analyzed using the 'Projection' visitor. */
 public class OptimizeProjectionVisitor extends CircuitCloneWithGraphsVisitor {
-    public OptimizeProjectionVisitor(IErrorReporter reporter, CircuitGraphs graphs) {
-        super(reporter, graphs, false);
+    public OptimizeProjectionVisitor(DBSPCompiler compiler, CircuitGraphs graphs) {
+        super(compiler, graphs, false);
     }
 
     @Override
@@ -41,7 +41,7 @@ public class OptimizeProjectionVisitor extends CircuitCloneWithGraphsVisitor {
         OutputPort source = this.mapped(operator.input());
         DBSPExpression function = operator.getFunction();
         int inputFanout = this.getGraph().getFanout(operator.input().node());
-        Projection projection = new Projection(this.errorReporter, true);
+        Projection projection = new Projection(this.compiler, true);
         projection.apply(function);
         if (projection.isProjection) {
             if (source.node().is(DBSPConstantOperator.class)) {
@@ -71,7 +71,7 @@ public class OptimizeProjectionVisitor extends CircuitCloneWithGraphsVisitor {
                     // We only do this if the source is a projection, because then the join function
                     // will still have a simple shape.  Subsequent analyses may care about this.
                     DBSPSimpleOperator result = mapAfterJoin(
-                            this.errorReporter, source.node().to(DBSPJoinBaseOperator.class), operator);
+                            this.compiler, source.node().to(DBSPJoinBaseOperator.class), operator);
                     this.map(operator, result);
                     return;
                 }
@@ -81,7 +81,7 @@ public class OptimizeProjectionVisitor extends CircuitCloneWithGraphsVisitor {
                     // We only do this if the source is a projection, because then the join function
                     // will still have a simple shape.  Subsequent analyses may care about this.
                     DBSPSimpleOperator result = mapAfterJoinIndex(
-                            this.errorReporter, source.node().to(DBSPJoinBaseOperator.class), operator);
+                            this.compiler, source.node().to(DBSPJoinBaseOperator.class), operator);
                     this.map(operator, result);
                     return;
                 }
@@ -96,7 +96,7 @@ public class OptimizeProjectionVisitor extends CircuitCloneWithGraphsVisitor {
         OutputPort source = this.mapped(operator.input());
         DBSPExpression function = operator.getFunction();
         int inputFanout = this.getGraph().getFanout(operator.input().node());
-        Projection projection = new Projection(this.errorReporter, true);
+        Projection projection = new Projection(this.compiler, true);
         projection.apply(function);
         if (inputFanout == 1 && projection.isProjection && projection.isShuffle()) {
             if (source.node().is(DBSPJoinOperator.class)
@@ -104,7 +104,7 @@ public class OptimizeProjectionVisitor extends CircuitCloneWithGraphsVisitor {
                     || source.node().is(DBSPJoinIndexOperator.class)
                     || source.node().is(DBSPStreamJoinIndexOperator.class)) {
                 DBSPSimpleOperator result = mapIndexAfterJoin(
-                        this.errorReporter, source.node().to(DBSPJoinBaseOperator.class), operator);
+                        this.compiler, source.node().to(DBSPJoinBaseOperator.class), operator);
                 this.map(operator, result);
                 return;
             }
@@ -113,7 +113,7 @@ public class OptimizeProjectionVisitor extends CircuitCloneWithGraphsVisitor {
     }
 
     static DBSPJoinBaseOperator mapAfterJoin(
-            IErrorReporter reporter, DBSPJoinBaseOperator source, DBSPMapOperator operator) {
+            DBSPCompiler reporter, DBSPJoinBaseOperator source, DBSPMapOperator operator) {
         DBSPClosureExpression joinFunction = source.getClosureFunction();
         DBSPExpression function = operator.getFunction();
         DBSPExpression newFunction = function.to(DBSPClosureExpression.class)
@@ -122,7 +122,7 @@ public class OptimizeProjectionVisitor extends CircuitCloneWithGraphsVisitor {
     }
 
     static DBSPJoinBaseOperator mapAfterJoinIndex(
-            IErrorReporter reporter, DBSPJoinBaseOperator source, DBSPMapOperator operator) {
+            DBSPCompiler reporter, DBSPJoinBaseOperator source, DBSPMapOperator operator) {
         DBSPJoinBaseOperator sourceJoin = source.to(DBSPJoinBaseOperator.class);
         DBSPClosureExpression joinFunction = source.getClosureFunction();
         DBSPClosureExpression function = operator.getClosureFunction();
@@ -145,7 +145,7 @@ public class OptimizeProjectionVisitor extends CircuitCloneWithGraphsVisitor {
     }
 
     static DBSPJoinBaseOperator mapIndexAfterJoin(
-            IErrorReporter reporter, DBSPJoinBaseOperator source, DBSPMapIndexOperator operator) {
+            DBSPCompiler reporter, DBSPJoinBaseOperator source, DBSPMapIndexOperator operator) {
         DBSPExpression function = operator.getFunction();
         DBSPClosureExpression joinFunction = source.getClosureFunction();
         DBSPExpression newFunction = function.to(DBSPClosureExpression.class)
@@ -162,7 +162,7 @@ public class OptimizeProjectionVisitor extends CircuitCloneWithGraphsVisitor {
     }
 
     static DBSPJoinBaseOperator mapIndexAfterJoinIndex(
-            IErrorReporter reporter, DBSPJoinBaseOperator source, DBSPMapIndexOperator operator) {
+            DBSPCompiler reporter, DBSPJoinBaseOperator source, DBSPMapIndexOperator operator) {
         DBSPClosureExpression joinFunction = source.getClosureFunction();
         DBSPClosureExpression function = operator.getClosureFunction();
         if (function.parameters.length != 1)

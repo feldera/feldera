@@ -4,19 +4,17 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperato
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
-import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
-import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitGraph;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitGraphs;
-import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitWithGraphsVisitor;
 import org.dbsp.util.graph.Port;
 
 /** The DBSP runtime will incorrectly GC a relation that has multiple Retain operators of
  * the same kind.  Check that this doesn't happen. */
 public class CheckRetain extends CircuitWithGraphsVisitor {
-    public CheckRetain(IErrorReporter errorReporter, CircuitGraphs graphs) {
-        super(errorReporter, graphs);
+    public CheckRetain(DBSPCompiler compiler, CircuitGraphs graphs) {
+        super(compiler, graphs);
     }
 
     @Override

@@ -25,6 +25,8 @@ package org.dbsp.sqlCompiler.compiler.frontend;
 
 import com.google.common.collect.ImmutableList;
 import org.apache.calcite.adapter.jdbc.JdbcTableScan;
+import org.apache.calcite.plan.RelOptTable;
+import org.apache.calcite.prepare.RelOptTableImpl;
 import org.apache.calcite.rel.RelFieldCollation;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.RelRoot;
@@ -116,12 +118,14 @@ import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteCompiler;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.RelColumnMetadata;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.PropertyList;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateView;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateTable;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlFragment;
+import org.dbsp.sqlCompiler.compiler.frontend.statements.CalciteTableDescription;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateFunctionStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateTableStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateTypeStatement;
@@ -243,8 +247,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
     final List<RelNode> ancestors;
     final ProgramMetadata metadata;
     /** Recursive views, indexed by actual view name (not rewritten name) */
-    final Map<String, DeclareViewStatement> recursiveViews = new HashMap<>();
-    final Map<String, Map<String, ViewColumnMetadata>> viewMetadata = new HashMap<>();
+    final Map<ProgramIdentifier, DeclareViewStatement> recursiveViews = new HashMap<>();
+    final Map<ProgramIdentifier, Map<ProgramIdentifier, ViewColumnMetadata>> viewMetadata = new HashMap<>();
     /** Current statement that is being compiled */
     @Nullable CreateViewStatement currentView = null;
 
@@ -839,8 +843,16 @@ public class CalciteToDBSPCompiler extends RelVisitor
 
     void visitScan(TableScan scan, boolean create) {
         CalciteObject node = CalciteObject.create(scan);
-        List<String> name = scan.getTable().getQualifiedName();
-        String tableName = name.get(name.size() - 1);
+
+        RelOptTable tbl = scan.getTable();
+        ProgramIdentifier tableName = null;
+        if (tbl instanceof RelOptTableImpl impl) {
+            CalciteTableDescription descr = impl.unwrap(CalciteTableDescription.class);
+            if (descr != null)
+                tableName = descr.getName();
+        }
+        if (tableName == null)
+            tableName = Utilities.toIdentifier(scan.getTable().getQualifiedName());
         @Nullable
         DBSPSimpleOperator source = this.circuit.getInput(tableName);
         // The inputs should have been created while parsing the CREATE TABLE statements.
@@ -864,11 +876,10 @@ public class CalciteToDBSPCompiler extends RelVisitor
                         .to(DBSPTypeStruct.class)
                         .rename(tableName);
                 DBSPType rowType = originalRowType.toTuple();
-                HasSchema withSchema = new HasSchema(CalciteObject.EMPTY, tableName, false, tableRowType);
+                HasSchema withSchema = new HasSchema(CalciteObject.EMPTY, tableName, tableRowType);
                 this.metadata.addTable(withSchema);
                 TableMetadata tableMeta = new TableMetadata(
-                        tableName,
-                        Linq.map(withSchema.getColumns(), this::convertMetadata), Linq.list(),
+                        tableName, Linq.map(withSchema.getColumns(), this::convertMetadata), Linq.list(),
                         false, false);
                 source = new DBSPSourceMultisetOperator(
                         node, CalciteObject.EMPTY,
@@ -2477,7 +2488,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         boolean isFinal = this.ancestors.isEmpty();
         String viewName = "";
         if (this.currentView != null)
-            viewName = "producing view " + Utilities.singleQuote(this.currentView.relationName) + " ";
+            viewName = "producing view " + this.currentView.relationName.singleQuote() + " ";
         this.compiler.reportWarning(node.getPositionRange(), "ORDER BY is ignored",
                 "ORDER BY clause " + viewName + "is currently ignored" +
                         (isFinal ? "" :
@@ -2669,7 +2680,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 .newline();
         this.go(rel);
         DBSPSimpleOperator op = this.getOperator(rel);
-        if (view.emitFinalColumn() >= 0 && this.options.languageOptions.optimizationLevel < 2) {
+        if (view.emitFinalColumn(this.compiler) >= 0 && this.options.languageOptions.optimizationLevel < 2) {
             PropertyList properties = Objects.requireNonNull(view.getProperties());
             SqlFragment value = Objects.requireNonNull(properties.getPropertyKey("emit_only"));
             throw new UnsupportedException("The 'emit_only' annotation can only be used with " +
@@ -2714,7 +2725,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 .rename(view.relationName);
         List<ViewColumnMetadata> additionalMetadata = new ArrayList<>();
         // Synthesize the metadata for the view's columns.
-        Map<String, ViewColumnMetadata> map = this.viewMetadata.get(view.relationName);
+        Map<ProgramIdentifier, ViewColumnMetadata> map = this.viewMetadata.get(view.relationName);
         for (DBSPTypeStruct.Field field: struct.fields.values()) {
             ViewColumnMetadata cm = null;
             if (map != null)
@@ -2733,33 +2744,35 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 if (!struct.hasField(cmeta.columnName))
                     this.compiler.reportError(cmeta.getPositionRange(),
                             "No such column",
-                            "View " + Utilities.singleQuote(view.relationName) +
+                            "View " + view.relationName.singleQuote() +
                                     " does not contain a column named " +
-                                    Utilities.singleQuote(cmeta.columnName));
+                                    cmeta.columnName.singleQuote());
             }
         }
 
-        int emitFinalIndex = view.emitFinalColumn();
+        int emitFinalIndex = view.emitFinalColumn(this.compiler);
         DeclareViewStatement declare = this.recursiveViews.get(view.relationName);
-                ViewMetadata meta = new ViewMetadata(
-                        additionalMetadata, view.viewKind, emitFinalIndex, declare != null);
-        if (view.viewKind != SqlCreateView.ViewKind.LOCAL) {
+        ViewMetadata meta = new ViewMetadata(view.relationName,
+                additionalMetadata, view.getViewKind(), emitFinalIndex,
+                // The view is a system view if it's not visible
+                declare != null, !currentView.isVisible());
+        if (view.getViewKind() != SqlCreateView.ViewKind.LOCAL) {
             this.metadata.addView(view);
             // Create two operators chained, a ViewOperator and a SinkOperator.
             DBSPViewOperator vo = new DBSPViewOperator(
-                    view.getCalciteObject(), view.relationName, view.statement,
+                    view.getCalciteObject(), view.relationName, view.getStatement(),
                     struct, meta, op.outputPort());
             this.addOperator(vo);
             o = new DBSPSinkOperator(
                     view.getCalciteObject(), view.relationName,
-                    view.statement, struct, meta, vo.outputPort());
+                    view.getStatement(), struct, meta, vo.outputPort());
         } else {
             // We may already have a node for this output
             DBSPSimpleOperator previous = this.circuit.getView(view.relationName);
             if (previous != null)
                 return previous;
             o = new DBSPViewOperator(view.getCalciteObject(), view.relationName,
-                    view.statement, struct, meta, op.outputPort());
+                    view.getStatement(), struct, meta, op.outputPort());
         }
         this.addOperator(o);
         this.currentView = previousView;
@@ -2771,10 +2784,10 @@ public class CalciteToDBSPCompiler extends RelVisitor
         boolean isInsert = modify.insert;
         SqlNodeList targetColumnList;
         if (isInsert) {
-            SqlInsert insert = (SqlInsert) modify.node.statement();
+            SqlInsert insert = (SqlInsert) modify.parsedStatement.statement();
             targetColumnList = insert.getTargetColumnList();
         } else {
-            SqlRemove remove = (SqlRemove) modify.node.statement();
+            SqlRemove remove = (SqlRemove) modify.parsedStatement.statement();
             targetColumnList = remove.getTargetColumnList();
         }
         CreateTableStatement def = this.tableContents.getTableDefinition(modify.tableName);
@@ -2783,8 +2796,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPZSetLiteral result;
         if (modify.rel instanceof LogicalTableScan scan) {
             // Support for INSERT INTO table (SELECT * FROM otherTable)
-            List<String> name = scan.getTable().getQualifiedName();
-            String sourceTable = name.get(name.size() - 1);
+            ProgramIdentifier sourceTable = Utilities.toIdentifier(scan.getTable().getQualifiedName());
             result = this.tableContents.getTableContents(sourceTable);
         } else if (modify.rel instanceof LogicalValues) {
             this.go(modify.rel);
@@ -2827,7 +2839,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             if (typeSpec.getTypeNameSpec() instanceof SqlUserDefinedTypeNameSpec) {
                 // Assume it is a reference to another struct
                 SqlIdentifier identifier = typeSpec.getTypeNameSpec().getTypeName();
-                String referred = identifier.getSimple();
+                ProgramIdentifier referred = Utilities.toIdentifier(identifier);
                 fieldType = this.compiler.getStructByName(referred);
                 if (typeSpec.getNullable() != null && typeSpec.getNullable() && fieldType != null)
                     fieldType = fieldType.withMayBeNull(true);
@@ -2839,10 +2851,9 @@ public class CalciteToDBSPCompiler extends RelVisitor
             }
             DBSPTypeStruct.Field field = new DBSPTypeStruct.Field(
                     object,
-                    attributeDef.name.getSimple(),
+                    Utilities.toIdentifier(attributeDef.name),
                     index++,
-                    fieldType,
-                    Utilities.identifierIsQuoted(attributeDef.name));
+                    fieldType);
             fields.add(field);
         }
 
@@ -2856,12 +2867,12 @@ public class CalciteToDBSPCompiler extends RelVisitor
 
     @Nullable
     DBSPNode compileCreateTable(CreateTableStatement create) {
-        String tableName = create.relationName;
+        ProgramIdentifier tableName = create.relationName;
         CreateTableStatement def = this.tableContents.getTableDefinition(tableName);
         DBSPType rowType = def.getRowTypeAsTuple(this.compiler.getTypeCompiler());
         DBSPTypeStruct originalRowType = def.getRowTypeAsStruct(this.compiler.getTypeCompiler());
         CalciteObject identifier = CalciteObject.EMPTY;
-        if (create.node.statement() instanceof SqlCreateTable sct) {
+        if (create.parsedStatement.statement() instanceof SqlCreateTable sct) {
             identifier = CalciteObject.create(sct.name);
         }
         List<InputColumnMetadata> metadata = Linq.map(create.columns, this::convertMetadata);
@@ -2869,10 +2880,11 @@ public class CalciteToDBSPCompiler extends RelVisitor
         boolean appendOnly = create.isAppendOnly() ||
                 options.languageOptions.streaming;
 
-        TableMetadata tableMeta = new TableMetadata(tableName, metadata, create.foreignKeys, materialized, appendOnly);
+        TableMetadata tableMeta = new TableMetadata(
+                tableName, metadata, create.foreignKeys, materialized, appendOnly);
         DBSPSourceMultisetOperator result = new DBSPSourceMultisetOperator(
                 create.getCalciteObject(), identifier, this.makeZSet(rowType), originalRowType,
-                tableMeta, tableName, def.statement);
+                tableMeta, tableName, def.getStatement());
         this.addOperator(result);
         this.metadata.addTable(create);
         return result;
@@ -2880,13 +2892,14 @@ public class CalciteToDBSPCompiler extends RelVisitor
 
     @Nullable
     DBSPNode compileDeclareView(DeclareViewStatement create) {
-        String tableName = create.getName();  // not the same as the declared view's name!
+        ProgramIdentifier tableName = create.getName();  // not the same as the declared view's name!
         Utilities.putNew(this.recursiveViews, create.relationName, create);
         DBSPType rowType = create.getRowTypeAsTuple(this.compiler.getTypeCompiler());
         DBSPTypeStruct originalRowType = create.getRowTypeAsStruct(this.compiler.getTypeCompiler());
         CalciteObject identifier = CalciteObject.EMPTY;
         List<InputColumnMetadata> metadata = Linq.map(create.columns, this::convertMetadata);
-        TableMetadata tableMeta = new TableMetadata(tableName, metadata, new ArrayList<>(), false, false);
+        TableMetadata tableMeta = new TableMetadata(
+                tableName, metadata, new ArrayList<>(), false, false);
         DBSPViewDeclarationOperator result = new DBSPViewDeclarationOperator(
                 create.getCalciteObject(), identifier, this.makeZSet(rowType), originalRowType,
                 tableMeta, tableName);
@@ -2917,10 +2930,11 @@ public class CalciteToDBSPCompiler extends RelVisitor
         ExpressionCompiler compiler = new ExpressionCompiler(null, null, this.compiler);
         DBSPExpression lateness = compiler.compile(stat.value);
         ViewColumnMetadata vcm = new ViewColumnMetadata(
-                stat.getCalciteObject(), stat.view.getSimple(), stat.column.getSimple(), null, lateness);
+                stat.getCalciteObject(), Utilities.toIdentifier(stat.view),
+                Utilities.toIdentifier(stat.column), null, lateness);
         if (!this.viewMetadata.containsKey(vcm.viewName))
             this.viewMetadata.put(vcm.viewName, new HashMap<>());
-        Map<String, ViewColumnMetadata> map = this.viewMetadata.get(vcm.viewName);
+        Map<ProgramIdentifier, ViewColumnMetadata> map = this.viewMetadata.get(vcm.viewName);
         if (map.containsKey(vcm.columnName)) {
             this.compiler.reportError(stat.getPosition(), "Duplicate",
                     "Lateness for " + vcm.viewName + "." + vcm.columnName + " already declared");

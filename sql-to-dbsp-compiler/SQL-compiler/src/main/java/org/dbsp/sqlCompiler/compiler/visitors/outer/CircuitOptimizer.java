@@ -27,7 +27,6 @@ import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.ICompilerComponent;
-import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.BetaReduction;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EliminateDump;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.ExpandCasts;
@@ -45,77 +44,74 @@ import java.util.List;
 public record CircuitOptimizer(DBSPCompiler compiler) implements ICompilerComponent {
     CircuitTransform getOptimizer() {
         List<CircuitTransform> passes = new ArrayList<>();
-        IErrorReporter reporter = this.compiler();
+        DBSPCompiler compiler = this.compiler();
         CompilerOptions options = this.compiler().options;
 
         // First part of optimizations may still synthesize some circuit components
 
-        passes.add(new ImplementNow(reporter, compiler));
-        passes.add(new RecursiveComponents(reporter));
+        passes.add(new ImplementNow(compiler));
+        passes.add(new RecursiveComponents(compiler));
         if (options.languageOptions.outputsAreSets)
-            passes.add(new EnsureDistinctOutputs(reporter));
-        passes.add(new MinMaxOptimize(reporter, compiler.weightVar));
-        passes.add(new ExpandAggregateZero(reporter));
-        passes.add(new MergeSums(reporter));
-        passes.add(new OptimizeWithGraph(reporter, g -> new RemoveNoops(reporter, g)));
-        passes.add(new PropagateEmptySources(reporter));
-        passes.add(new DeadCode(reporter, options.languageOptions.generateInputForEveryTable, true));
-        passes.add(new OptimizeDistinctVisitor(reporter));
+            passes.add(new EnsureDistinctOutputs(compiler));
+        passes.add(new MinMaxOptimize(compiler, compiler.weightVar));
+        passes.add(new ExpandAggregateZero(compiler));
+        passes.add(new MergeSums(compiler));
+        passes.add(new OptimizeWithGraph(compiler, g -> new RemoveNoops(compiler, g)));
+        passes.add(new PropagateEmptySources(compiler));
+        passes.add(new DeadCode(compiler, options.languageOptions.generateInputForEveryTable, true));
+        passes.add(new OptimizeDistinctVisitor(compiler));
         // This is useful even without incrementalization if we have recursion
-        passes.add(new OptimizeIncrementalVisitor(reporter));
-        passes.add(new DeadCode(reporter, true, false));
+        passes.add(new OptimizeIncrementalVisitor(compiler));
+        passes.add(new DeadCode(compiler, true, false));
         if (options.languageOptions.incrementalize) {
-            passes.add(new IncrementalizeVisitor(reporter));
+            passes.add(new IncrementalizeVisitor(compiler));
         }
-        passes.add(new OptimizeIncrementalVisitor(reporter));
-        passes.add(new RemoveIAfterD(reporter));
-        passes.add(new DeadCode(reporter, true, false));
-        passes.add(new Simplify(reporter).circuitRewriter());
-        passes.add(new OptimizeWithGraph(reporter, g -> new OptimizeProjectionVisitor(reporter, g)));
-        passes.add(new OptimizeWithGraph(reporter, g -> new OptimizeMaps(reporter, true, g)));
-        passes.add(new OptimizeWithGraph(reporter, g -> new FilterJoinVisitor(reporter, g)));
-        if (options.languageOptions.incrementalize) {
-            // Monotonicity analysis only makes sense for incremental programs
-            passes.add(new MonotoneAnalyzer(reporter));
-        }
-        passes.add(new RemoveTable(DBSPCompiler.ERROR_TABLE_NAME, reporter, this.compiler));
+        passes.add(new OptimizeIncrementalVisitor(compiler));
+        passes.add(new RemoveIAfterD(compiler));
+        passes.add(new DeadCode(compiler, true, false));
+        passes.add(new Simplify(compiler).circuitRewriter());
+        passes.add(new OptimizeWithGraph(compiler, g -> new OptimizeProjectionVisitor(compiler, g)));
+        passes.add(new OptimizeWithGraph(compiler, g -> new OptimizeMaps(compiler, true, g)));
+        passes.add(new OptimizeWithGraph(compiler, g -> new FilterJoinVisitor(compiler, g)));
+        passes.add(new MonotoneAnalyzer(compiler));
+        passes.add(new RemoveTable(compiler, DBSPCompiler.ERROR_TABLE_NAME));
 
         // The circuit is complete here, start optimizing for real.
-        passes.add(new NarrowJoins(reporter));
+        passes.add(new NarrowJoins(compiler));
         // Doing this after the monotone analysis only
         if (!options.ioOptions.emitHandles)
-            passes.add(new IndexedInputs(reporter));
-        passes.add(new OptimizeWithGraph(reporter, g -> new FilterJoinVisitor(reporter, g)));
-        passes.add(new DeadCode(reporter, true, false));
-        passes.add(new Simplify(reporter).circuitRewriter());
+            passes.add(new IndexedInputs(compiler));
+        passes.add(new OptimizeWithGraph(compiler, g -> new FilterJoinVisitor(compiler, g)));
+        passes.add(new DeadCode(compiler, true, false));
+        passes.add(new Simplify(compiler).circuitRewriter());
         // The predicate below controls which nodes have their output dumped at runtime
-        passes.add(new InstrumentDump(reporter, t -> false));
+        passes.add(new InstrumentDump(compiler, t -> false));
         if (options.languageOptions.incrementalize)
-            passes.add(new NoIntegralVisitor(reporter));
-        passes.add(new ExpandHop(reporter));
-        passes.add(new RemoveDeindexOperators(reporter));
-        passes.add(new OptimizeWithGraph(reporter, g -> new RemoveNoops(reporter, g)));
-        passes.add(new RemoveViewOperators(reporter, false));
-        passes.add(new Repeat(reporter, new ExpandCasts(reporter).circuitRewriter()));
-        passes.add(new OptimizeWithGraph(reporter, g -> new FilterMapVisitor(reporter, g)));
+            passes.add(new NoIntegralVisitor(compiler));
+        passes.add(new ExpandHop(compiler));
+        passes.add(new RemoveDeindexOperators(compiler));
+        passes.add(new OptimizeWithGraph(compiler, g -> new RemoveNoops(compiler, g)));
+        passes.add(new RemoveViewOperators(compiler, false));
+        passes.add(new Repeat(compiler, new ExpandCasts(compiler).circuitRewriter()));
+        passes.add(new OptimizeWithGraph(compiler, g -> new FilterMapVisitor(compiler, g)));
         // optimize the maps introduced by the deindex removal
-        passes.add(new OptimizeWithGraph(reporter, g -> new OptimizeMaps(reporter, false, g)));
-        passes.add(new SimplifyWaterline(reporter)
+        passes.add(new OptimizeWithGraph(compiler, g -> new OptimizeMaps(compiler, false, g)));
+        passes.add(new SimplifyWaterline(compiler)
                 .circuitRewriter(node -> node.hasAnnotation(a -> a.is(Waterline.class))));
-        passes.add(new EliminateDump(reporter).circuitRewriter());
-        passes.add(new ExpandWriteLog(reporter).circuitRewriter());
-        passes.add(new Simplify(reporter).circuitRewriter());
-        passes.add(new CSE(reporter));
-        passes.add(new RecursiveComponents.ValidateRecursiveOperators(reporter));
+        passes.add(new EliminateDump(compiler).circuitRewriter());
+        passes.add(new ExpandWriteLog(compiler).circuitRewriter());
+        passes.add(new Simplify(compiler).circuitRewriter());
+        passes.add(new CSE(compiler));
+        passes.add(new RecursiveComponents.ValidateRecursiveOperators(compiler));
         // Lowering implements aggregates and inlines some calls.
-        passes.add(new LowerCircuitVisitor(reporter));
+        passes.add(new LowerCircuitVisitor(compiler));
         // Lowering may surface additional casts that need to be expanded
-        passes.add(new Repeat(reporter, new ExpandCasts(reporter).circuitRewriter()));
+        passes.add(new Repeat(compiler, new ExpandCasts(compiler).circuitRewriter()));
         // Beta reduction after implementing aggregates.
-        passes.add(new BetaReduction(reporter).getCircuitVisitor());
-        passes.add(new RemoveViewOperators(reporter, true));
-        passes.add(new CompactNames(reporter));
-        return new Passes("optimize", reporter, passes);
+        passes.add(new BetaReduction(compiler).getCircuitVisitor());
+        passes.add(new RemoveViewOperators(compiler, true));
+        passes.add(new CompactNames(compiler));
+        return new Passes("optimize", compiler, passes);
     }
 
     public DBSPCircuit optimize(DBSPCircuit input) {

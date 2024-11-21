@@ -24,7 +24,6 @@ public class RelColumnMetadata {
     /** Default value, if declared */
     @Nullable
     public final RexNode defaultValue;
-    /** True if the column name was quoted. */
     public final boolean nameIsQuoted;
 
     public RelColumnMetadata(
@@ -51,8 +50,8 @@ public class RelColumnMetadata {
                 '}';
     }
 
-    public String getName() {
-        return this.field.getName();
+    public ProgramIdentifier getName() {
+        return new ProgramIdentifier(this.field.getName(), this.nameIsQuoted);
     }
 
     public RelDataType getType() {

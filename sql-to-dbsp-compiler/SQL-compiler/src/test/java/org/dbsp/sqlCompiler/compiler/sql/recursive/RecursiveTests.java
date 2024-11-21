@@ -204,10 +204,10 @@ public class RecursiveTests extends BaseSQLTests {
                     (select filled_this_week from filled_this_week) as filled_this_week,
                     (select currently_active_users from currently_active_users) as currently_active_users;""";
         var ccs = this.getCCS(sql);
-        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+        CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
             @Override
             public void postorder(DBSPSinkOperator operator) {
-                assert !operator.viewName.endsWith("-port");
+                assert !operator.viewName.name().endsWith("-port");
             }
         };
         visitor.apply(ccs.circuit);
@@ -433,7 +433,7 @@ public class RecursiveTests extends BaseSQLTests {
                 ------------
                  1 | 1""");
         this.addRustTestCase(ccs);
-        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+        CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
             int recursive = 0;
             @Override
             public void postorder(DBSPNestedOperator operator) {

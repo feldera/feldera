@@ -1,6 +1,6 @@
 package org.dbsp.sqlCompiler.ir.aggregate;
 
-import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -60,7 +60,7 @@ public class LinearAggregate extends AggregateBase {
     /** Given an DBSPAggregate where all Implementation objects have a linearFunction
      * component, combine these linear functions into a single one. */
     public static LinearAggregate combine(
-            CalciteObject node, IErrorReporter reporter,
+            CalciteObject node, DBSPCompiler compiler,
             DBSPVariablePath rowVar, List<LinearAggregate> aggregates) {
         // Essentially runs all the aggregates in the list in parallel
         DBSPParameter parameter = rowVar.asParameter();
@@ -79,7 +79,7 @@ public class LinearAggregate extends AggregateBase {
         }
         tuple = new DBSPTupleExpression(posts, false);
         DBSPClosureExpression post = tuple.closure(postParam)
-                .reduce(reporter).to(DBSPClosureExpression.class);
+                .reduce(compiler).to(DBSPClosureExpression.class);
         return new LinearAggregate(node, map, post, zero);
     }
 

@@ -1,6 +1,7 @@
 package org.dbsp.sqlCompiler.compiler;
 
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -12,16 +13,16 @@ import java.util.Objects;
 /** Metadata for a column belonging to a view */
 public class ViewColumnMetadata
         implements IHasLateness, IHasSourcePositionRange, IHasType {
-    public final String viewName;
+    public final ProgramIdentifier viewName;
     /** Initially the column type is unknown, but it is filled in later */
     @Nullable
     public final DBSPType type;
     public final CalciteObject node;
-    public final String columnName;
+    public final ProgramIdentifier columnName;
     @Nullable
     public final DBSPExpression lateness;
 
-    public ViewColumnMetadata(CalciteObject node, String viewName, String columnName,
+    public ViewColumnMetadata(CalciteObject node, ProgramIdentifier viewName, ProgramIdentifier columnName,
                               @Nullable DBSPType type, @Nullable DBSPExpression lateness) {
         this.node = node;
         this.type = type;
@@ -38,8 +39,7 @@ public class ViewColumnMetadata
         return this.lateness;
     }
 
-    @Override
-    public String getName() {
+    public ProgramIdentifier getName() {
         return this.columnName;
     }
 

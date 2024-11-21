@@ -240,15 +240,6 @@ public class BaseSQLTests {
         return compiler;
     }
 
-    public void testNegativeQuery(String query, String messageFragment) {
-        DBSPCompiler compiler = this.noThrowCompiler();
-        compiler.compileStatement("CREATE VIEW VV AS " + query);
-        compiler.getFinalCircuit(true);
-        Assert.assertTrue(compiler.messages.exitCode != 0);
-        String message = compiler.messages.toString();
-        Assert.assertTrue(message.contains(messageFragment));
-    }
-
     /** Runs all the tests from the testsToRun list. */
     @AfterClass
     public static void runAllTests() throws IOException, InterruptedException {

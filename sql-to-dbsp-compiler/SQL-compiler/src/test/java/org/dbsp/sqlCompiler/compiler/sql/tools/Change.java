@@ -1,7 +1,9 @@
 package org.dbsp.sqlCompiler.compiler.sql.tools;
 
-import org.dbsp.sqlCompiler.compiler.StderrErrorReporter;
+import org.apache.calcite.tools.Program;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.TableContents;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Simplify;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -19,15 +21,15 @@ public class Change {
     public Change(TableContents contents) {
         this.sets = new DBSPZSetLiteral[contents.getTableCount()];
         int index = 0;
-        for (String table: contents.tablesCreated) {
+        for (ProgramIdentifier table: contents.tablesCreated) {
             DBSPZSetLiteral data = contents.getTableContents(table);
             this.sets[index] = data;
             index++;
         }
     }
 
-    public Change simplify() {
-        Simplify simplify = new Simplify(new StderrErrorReporter());
+    public Change simplify(DBSPCompiler compiler) {
+        Simplify simplify = new Simplify(compiler);
         DBSPZSetLiteral[] simplified = Linq.map(this.sets,
                 t -> simplify.apply(t).to(DBSPZSetLiteral.class), DBSPZSetLiteral.class);
         return new Change(simplified);

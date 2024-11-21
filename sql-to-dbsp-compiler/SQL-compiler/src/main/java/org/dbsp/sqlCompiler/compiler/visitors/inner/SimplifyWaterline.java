@@ -1,6 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.visitors.inner;
 
-import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
@@ -21,8 +21,8 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
  * |v: (bool, T) -> if v.0 { clo((true, v.1)) } else { clo((false, v.1)) }
  */
 public class SimplifyWaterline extends Simplify {
-    public SimplifyWaterline(IErrorReporter reporter) {
-        super(reporter);
+    public SimplifyWaterline(DBSPCompiler compiler) {
+        super(compiler);
     }
 
     @Override
@@ -56,10 +56,10 @@ public class SimplifyWaterline extends Simplify {
         DBSPVariablePath var = type.var();
         DBSPExpression ifTrue = transformed.call(
                 tuple.makeTuple(new DBSPBoolLiteral(true), var.deref().field(1)).borrow())
-                .reduce(this.errorReporter);
+                .reduce(this.compiler);
         DBSPExpression ifFalse = transformed.call(
                 tuple.makeTuple(new DBSPBoolLiteral(false), var.deref().field(1)).borrow())
-                .reduce(this.errorReporter);
+                .reduce(this.compiler);
         result = new DBSPIfExpression(expression.getNode(),
                 var.deref().field(0), ifTrue, ifFalse).closure(var);
         this.map(expression, result);

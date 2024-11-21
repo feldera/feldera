@@ -27,9 +27,10 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.RelRoot;
-import org.apache.calcite.sql.SqlIdentifier;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteCompiler;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.RelColumnMetadata;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.PropertyList;
@@ -46,15 +47,13 @@ public class CreateViewStatement extends CreateRelationStatement {
     /** Compiled and optimized query. */
     private final RelRoot compiled;
     public final SqlCreateView createView;
-    public final SqlCreateView.ViewKind viewKind;
     public static final String EMIT_FINAL = "emit_final";
     public static final int NO_COLUMN = -1;
 
-    public CreateViewStatement(CalciteCompiler.ParsedStatement node, String tableName,
-                               boolean nameIsQuoted, List<RelColumnMetadata> columns, SqlCreateView createView,
+    public CreateViewStatement(CalciteCompiler.ParsedStatement node, ProgramIdentifier tableName,
+                               List<RelColumnMetadata> columns, SqlCreateView createView,
                                RelRoot compiled, @Nullable PropertyList properties) {
-        super(node, tableName, nameIsQuoted, columns, properties);
-        this.viewKind = createView.viewKind;
+        super(node, tableName, columns, properties);
         this.createView = createView;
         this.compiled = compiled;
     }
@@ -67,16 +66,21 @@ public class CreateViewStatement extends CreateRelationStatement {
         return this.compiled;
     }
 
+    public SqlCreateView.ViewKind getViewKind() {
+        return this.createView.viewKind;
+    }
+
     @Override
     public JsonNode asJson() {
         JsonNode node = super.asJson();
         ObjectNode object = (ObjectNode) node;
-        object.put("materialized", viewKind == SqlCreateView.ViewKind.MATERIALIZED);
+        object.put("materialized",
+                this.createView.viewKind == SqlCreateView.ViewKind.MATERIALIZED);
         return object;
     }
 
     /** Column number specified by "emit_final" annotation.  -1 if no such annotation */
-    public int emitFinalColumn() {
+    public int emitFinalColumn(DBSPCompiler compiler) {
         if (this.properties == null)
             return NO_COLUMN;
         SqlFragment val = this.properties.getPropertyValue(EMIT_FINAL);
@@ -86,11 +90,12 @@ public class CreateViewStatement extends CreateRelationStatement {
             int index = Integer.parseInt(val.getString());
             if (index >= 0 && index < this.columns.size())
                 return index;
-            throw new CompilationError("View " + Utilities.singleQuote(relationName) +
+            throw new CompilationError("View " + Utilities.singleQuote(relationName.name()) +
                     " does not have a column with number " + index,
                     CalciteObject.create(val.getParserPosition()));
         } catch (NumberFormatException ignored) {}
 
-        return this.getColumnIndex(new SqlIdentifier(val.getString(), val.getParserPosition()));
+        ProgramIdentifier canonical = compiler.canonicalName(val.getString(), false);
+        return this.getColumnIndex(canonical);
     }
 }

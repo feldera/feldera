@@ -25,14 +25,14 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.circuit.operator.*;
-import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.util.Linq;
 
 import java.util.List;
 
 public class OptimizeDistinctVisitor extends CircuitCloneVisitor {
-    public OptimizeDistinctVisitor(IErrorReporter reporter) {
-        super(reporter, false);
+    public OptimizeDistinctVisitor(DBSPCompiler compiler) {
+        super(compiler, false);
     }
 
     @Override

@@ -37,13 +37,8 @@ public class AvroSchemaWrapper implements IHasSchema {
     }
 
     @Override
-    public String getName() {
-        return this.name;
-    }
-
-    @Override
-    public boolean nameIsQuoted() {
-        return false;
+    public ProgramIdentifier getName() {
+        return new ProgramIdentifier(this.name, false);
     }
 
     @Override

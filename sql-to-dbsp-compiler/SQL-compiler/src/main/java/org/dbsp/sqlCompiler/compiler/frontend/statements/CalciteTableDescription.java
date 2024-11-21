@@ -11,6 +11,7 @@ import org.apache.calcite.schema.impl.AbstractTable;
 import org.apache.calcite.util.ImmutableBitSet;
 import org.checkerframework.checker.nullness.qual.Nullable;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.RelColumnMetadata;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.PropertyList;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlFragment;
@@ -25,6 +26,10 @@ public class CalciteTableDescription extends AbstractTable implements ScannableT
 
     public CalciteTableDescription(IHasSchema schema) {
         this.schema = schema;
+    }
+
+    public ProgramIdentifier getName() {
+        return this.schema.getName();
     }
 
     @Override

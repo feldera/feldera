@@ -26,7 +26,7 @@ package org.dbsp.sqlCompiler.compiler.visitors.inner;
 import org.apache.calcite.util.DateString;
 import org.apache.calcite.util.TimeString;
 import org.apache.commons.lang3.StringUtils;
-import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.IsIntervalLiteral;
@@ -87,8 +87,8 @@ import java.util.Objects;
 public class Simplify extends InnerRewriteVisitor {
     // You would think that Calcite has done these optimizations, but apparently not.
 
-    public Simplify(IErrorReporter reporter) {
-        super(reporter);
+    public Simplify(DBSPCompiler compiler) {
+        super(compiler);
     }
 
     @Override
@@ -173,7 +173,7 @@ public class Simplify extends InnerRewriteVisitor {
                         LocalDate.parse(str.value, dateFormatter); // executed for exception
                         result = new DBSPDateLiteral(lit.getNode(), type, new DateString(str.value));
                     } catch (DateTimeParseException ex) {
-                        this.errorReporter.reportWarning(expression.getSourcePosition(), "Not a date",
+                        this.compiler.reportWarning(expression.getSourcePosition(), "Not a date",
                                 " String " + Utilities.singleQuote(str.value) +
                                         " cannot be interpreted as a date");
                     }
@@ -182,7 +182,7 @@ public class Simplify extends InnerRewriteVisitor {
                         TimeString ts = new TimeString(str.value);
                         result = new DBSPTimeLiteral(lit.getNode(), type, ts);
                     } catch (DateTimeParseException ex) {
-                        this.errorReporter.reportWarning(expression.getSourcePosition(), "Not a number",
+                        this.compiler.reportWarning(expression.getSourcePosition(), "Not a number",
                                 " String " + Utilities.singleQuote(str.value) +
                                         " cannot be interpreted as a time");
                     }
@@ -193,7 +193,7 @@ public class Simplify extends InnerRewriteVisitor {
                         result = new DBSPDecimalLiteral(type, value);
                     } catch (NumberFormatException ex) {
                         // on parse error return 0.
-                        this.errorReporter.reportWarning(expression.getSourcePosition(), "Not a number",
+                        this.compiler.reportWarning(expression.getSourcePosition(), "Not a number",
                                 " String " + Utilities.singleQuote(str.value) +
                                         " cannot be interpreted as a DECIMAL");
                     }
@@ -223,7 +223,7 @@ public class Simplify extends InnerRewriteVisitor {
                                 result = new DBSPI8Literal(lit.getNode(), type, value);
                             } catch (NumberFormatException ex) {
                                 // SQL semantics: parsing failures return 0
-                                this.errorReporter.reportWarning(expression.getSourcePosition(), "Not a number",
+                                this.compiler.reportWarning(expression.getSourcePosition(), "Not a number",
                                         " String " + Utilities.singleQuote(str.value) +
                                                 " cannot be interpreted as a number");
                             }
@@ -235,7 +235,7 @@ public class Simplify extends InnerRewriteVisitor {
                                 value = Short.parseShort(str.value);
                                 result = new DBSPI16Literal(lit.getNode(), type, value);
                             } catch (NumberFormatException ex) {
-                                this.errorReporter.reportWarning(expression.getSourcePosition(), "Not a number",
+                                this.compiler.reportWarning(expression.getSourcePosition(), "Not a number",
                                         " String " + Utilities.singleQuote(str.value) +
                                                 " cannot be interpreted as a number");
                             }
@@ -247,7 +247,7 @@ public class Simplify extends InnerRewriteVisitor {
                                 value = Integer.parseInt(str.value);
                                 result = new DBSPI32Literal(lit.getNode(), type, value);
                             } catch (NumberFormatException ex) {
-                                this.errorReporter.reportWarning(expression.getSourcePosition(), "Not a number",
+                                this.compiler.reportWarning(expression.getSourcePosition(), "Not a number",
                                         " String " + Utilities.singleQuote(str.value) +
                                                 " cannot be interpreted as a number");
                             }
@@ -259,7 +259,7 @@ public class Simplify extends InnerRewriteVisitor {
                                 value = Long.parseLong(str.value);
                                 result = new DBSPI64Literal(lit.getNode(), type, value);
                             } catch (Exception ex) {
-                                this.errorReporter.reportWarning(expression.getSourcePosition(), "Not a number",
+                                this.compiler.reportWarning(expression.getSourcePosition(), "Not a number",
                                         " String " + Utilities.singleQuote(str.value) +
                                                 " cannot be interpreted as a number");
                             }
@@ -324,7 +324,7 @@ public class Simplify extends InnerRewriteVisitor {
                     DBSPTypeDecimal decType = type.to(DBSPTypeDecimal.class);
                     value = value.setScale(decType.scale, RoundingMode.DOWN);
                     if (value.precision() > decType.precision) {
-                        this.errorReporter.reportError(expression.getSourcePosition(),
+                        this.compiler.reportWarning(expression.getSourcePosition(),
                                 "Invalid DECIMAL",
                                 "cannot represent " + lit + " as DECIMAL(" + decType.precision + ", " + decType.scale +
                                         "): precision of DECIMAL type too small to represent value"
@@ -572,7 +572,7 @@ public class Simplify extends InnerRewriteVisitor {
                     if (iRightType.isOne(rightLit)) {
                         result = left;
                     } else if (iRightType.isZero(rightLit)) {
-                        this.errorReporter.reportWarning(expression.getSourcePosition(), "Division by zero",
+                        this.compiler.reportWarning(expression.getSourcePosition(), "Division by zero",
                                 " Division by constant zero value.");
                     }
                 }
@@ -583,7 +583,7 @@ public class Simplify extends InnerRewriteVisitor {
                     if (iRightType.isOne(rightLit)) {
                         result = iRightType.getZero();
                     } else if (iRightType.isZero(rightLit)) {
-                        this.errorReporter.reportWarning(expression.getSourcePosition(),
+                        this.compiler.reportWarning(expression.getSourcePosition(),
                                 "Division by zero",
                                 " Modulus by constant zero value as divisor."
                         );

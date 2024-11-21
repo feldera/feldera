@@ -144,7 +144,8 @@ public class PostgresTimestampTests extends SqlIoTest {
         query = "CREATE VIEW V AS " + query;
         DBSPCompiler compiler = this.compileQuery(query, true);
         CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
-        DBSPZSetLiteral input = compiler.getTableContents().getTableContents(compiler.canonicalName("TIMESTAMP_TBL"));
+        DBSPZSetLiteral input = compiler.getTableContents().getTableContents(
+                compiler.canonicalName("TIMESTAMP_TBL", false));
         InputOutputChange change = new InputOutputChange(new Change(input), expectedOutput);
         ccs.addChange(change);
         this.addRustTestCase(ccs);

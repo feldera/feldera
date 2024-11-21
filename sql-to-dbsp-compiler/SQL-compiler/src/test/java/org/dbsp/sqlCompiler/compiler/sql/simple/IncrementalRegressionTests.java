@@ -5,7 +5,6 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesOpera
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
-import org.dbsp.sqlCompiler.compiler.StderrErrorReporter;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
@@ -40,6 +39,29 @@ public class IncrementalRegressionTests extends SqlIoTest {
                 );
                 create view v as select * from t;""",
                 "Cannot subtract 5.0 from column 'x' of type VARCHAR");
+    }
+
+    @Test
+    public void issue2881() {
+        String sql = """
+                CREATE TABLE transactions (
+                    transaction_id INT NOT NULL PRIMARY KEY,
+                    transaction_timestamp TIMESTAMP NOT NULL LATENESS INTERVAL 1 WEEK,
+                    account_id INT NOT NULL,
+                    amount DECIMAL(10, 2) NOT NULL
+                );
+                
+                CREATE VIEW weekly_financial_final
+                WITH ('emit_final' = 'week')
+                AS SELECT
+                    TIMESTAMP_TRUNC(transaction_timestamp, WEEK) as week,
+                    account_id,
+                    SUM(amount) AS weekly_balance
+                FROM
+                    transactions
+                GROUP BY
+                    TIMESTAMP_TRUNC(transaction_timestamp, WEEK), account_id;""";
+        this.compileRustTestCase(sql);
     }
 
     @Test
@@ -91,7 +113,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
                 where x = 5 and ts > now();""";
         var ccs = this.getCCS(sql);
         this.addRustTestCase(ccs);
-        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+        CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
             int window = 0;
 
             @Override
@@ -139,7 +161,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
                 GROUP BY lts;""";
         var ccs = this.getCCS(sql);
         this.addRustTestCase(ccs);
-        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+        CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
             int integrateTraceKeys = 0;
             int integrateTraceValues = 0;
 
@@ -325,7 +347,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
                 select SUM(5) from v group by ts;""";
         CompilerCircuitStream ccs = this.getCCS(sql);
         this.addRustTestCase(ccs);
-        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+        CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
             int integrateTraceKeys = 0;
             int integrateTraceValues = 0;
 
@@ -345,7 +367,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
                 Assert.assertEquals(2, this.integrateTraceValues);
             }
         };
-        InnerVisitor findBoolCasts = new InnerVisitor(new StderrErrorReporter()) {
+        InnerVisitor findBoolCasts = new InnerVisitor(ccs.compiler) {
             int unsafeBoolCasts = 0;
 
             @Override

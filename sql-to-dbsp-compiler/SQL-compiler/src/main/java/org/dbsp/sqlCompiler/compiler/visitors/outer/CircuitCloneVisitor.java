@@ -27,9 +27,10 @@ import org.dbsp.sqlCompiler.circuit.DBSPDeclaration;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.ICircuit;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.ICompilerComponent;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 import org.dbsp.sqlCompiler.circuit.operator.*;
-import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.util.IWritesLogs;
 import org.dbsp.util.Linq;
@@ -46,7 +47,7 @@ import java.util.*;
  * - the 'force' flag is 'true'.
  * We expect that this is a base class for all visitors which modify a circuit.
  * This visitor is a base class for all visitors that modify circuits. */
-public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs {
+public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs, ICompilerComponent {
     /** For each {@link OutputPort} in the original circuit an {@link OutputPort} in the
      * result circuit which computes the same result. */
     protected final Map<OutputPort, OutputPort> remap;
@@ -57,8 +58,8 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs {
      * has nodes from the *old* circuit, whereas these are nodes in the *new* circuit. */
     protected final List<ICircuit> underConstruction;
 
-    public CircuitCloneVisitor(IErrorReporter reporter, boolean force) {
-        super(reporter);
+    public CircuitCloneVisitor(DBSPCompiler compiler, boolean force) {
+        super(compiler);
         this.remap = new HashMap<>();
         this.circuitRemap = new HashMap<>();
         this.force = force;
@@ -404,9 +405,6 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs {
     public void postorder(DBSPPrimitiveAggregateOperator operator) { this.replace(operator); }
 
     @Override
-    public void postorder(DBSPControlledFilterOperator operator) { this.replace(operator); }
-
-    @Override
     public void postorder(DBSPWindowOperator operator) { this.replace(operator); }
 
     @Override
@@ -420,6 +418,9 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs {
 
     @Override
     public void postorder(DBSPControlledKeyFilterOperator operator) { this.replace(operator); }
+
+    @Override
+    public void postorder(DBSPOperatorWithError operator) { this.replace(operator); }
 
     public ICircuit getUnderConstruction() {
         return Utilities.last(this.underConstruction);
@@ -451,7 +452,7 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs {
         if (result.sameCircuit(operator))
             result = operator;
         for (int i = 0; i < operator.outputCount(); i++) {
-            OutputPort originalOutput = operator.outputs.get(i);
+            OutputPort originalOutput = operator.internalOutputs.get(i);
             OutputPort newPort = this.mapped(originalOutput);
             if (result != operator) {
                 result.addOutput(operator.outputViews.get(i), newPort);

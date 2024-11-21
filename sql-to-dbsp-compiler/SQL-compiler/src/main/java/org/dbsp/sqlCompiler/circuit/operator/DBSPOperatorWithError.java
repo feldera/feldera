@@ -1,19 +1,12 @@
 package org.dbsp.sqlCompiler.circuit.operator;
 
 import org.dbsp.sqlCompiler.circuit.OutputPort;
-import org.dbsp.sqlCompiler.circuit.annotation.CompactName;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
-import org.dbsp.sqlCompiler.compiler.frontend.TypeCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
-import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeStr;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVariant;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeStream;
-import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 
 import java.util.List;
 
@@ -28,19 +21,12 @@ public abstract class DBSPOperatorWithError extends DBSPOperator {
     public final DBSPTypeStream outputStreamType;
     public final DBSPTypeStream errorStreamType;
 
-    /** Keep in sync with the ERROR */
-    public static DBSPType ERROR_SCHEMA = new DBSPTypeTuple(
-            DBSPTypeString.varchar(false),
-            DBSPTypeString.varchar(false),
-            new DBSPTypeVariant(true));
-    public static DBSPTypeZSet ERROR_TYPE = TypeCompiler.makeZSet(ERROR_SCHEMA);
-
-    protected DBSPOperatorWithError(CalciteObject node, String operation, DBSPType outputType,
+    protected DBSPOperatorWithError(CalciteObject node, String operation, DBSPType outputType, DBSPType errorType,
                                     DBSPClosureExpression function, DBSPClosureExpression error) {
         super(node);
         this.operation = operation;
         this.outputType = outputType;
-        this.errorType = ERROR_TYPE;
+        this.errorType = errorType;
         this.function = function;
         this.error = error;
         this.outputStreamType = new DBSPTypeStream(this.outputType);
@@ -82,10 +68,8 @@ public abstract class DBSPOperatorWithError extends DBSPOperator {
 
     @Override
     public String getOutputName(int outputNumber) {
-        String name = CompactName.getCompactName(this);
-        if (name != null)
-            return name;
-        return "stream" + this.getId() + "_" + outputNumber;
+        String name = this.getNodeName();
+        return name + "_" + outputNumber;
     }
 
     @Override

@@ -29,7 +29,7 @@ import static org.apache.calcite.sql.type.ReturnTypes.ARG1;
 /** Several functions that we define and add to the existing ones. */
 public class CustomFunctions {
     private final List<SqlFunction> initial;
-    private final HashMap<String, ExternalFunction> udf;
+    private final HashMap<ProgramIdentifier, ExternalFunction> udf;
 
     public CustomFunctions() {
         this.initial = new ArrayList<>();
@@ -175,19 +175,19 @@ public class CustomFunctions {
     public ExternalFunction createUDF(CalciteObject node, SqlIdentifier name,
                                       RelDataType signature, RelDataType returnType, @Nullable RexNode body) {
         List<RelDataTypeField> parameterList = signature.getFieldList();
-        String functionName = name.getSimple();
-        boolean generated = functionName.toLowerCase(Locale.ENGLISH).startsWith("jsonstring_as_") || body != null;
+        ProgramIdentifier functionName = Utilities.toIdentifier(name);
+        boolean generated = functionName.name().toLowerCase(Locale.ENGLISH).startsWith("jsonstring_as_") || body != null;
         ExternalFunction result = new ExternalFunction(name, returnType, parameterList, body, generated);
         if (this.udf.containsKey(functionName)) {
             throw new CompilationError("Function with name " +
-                    Utilities.singleQuote(functionName) + " already exists", node);
+                    functionName.singleQuote() + " already exists", node);
         }
         Utilities.putNew(this.udf, functionName, result);
         return result;
     }
 
     @Nullable
-    public ExternalFunction getSignature(String function) {
+    public ExternalFunction getSignature(ProgramIdentifier function) {
         return this.udf.get(function);
     }
 

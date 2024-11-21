@@ -28,7 +28,7 @@ public class IncrementalRecursiveTests extends BaseSQLTests {
                 ------------
                  1 | 1""");
         this.addRustTestCase(ccs);
-        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+        CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
             int recursive = 0;
             @Override
             public void postorder(DBSPNestedOperator operator) {

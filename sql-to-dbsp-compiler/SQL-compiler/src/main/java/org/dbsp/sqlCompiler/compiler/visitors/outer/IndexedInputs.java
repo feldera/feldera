@@ -3,8 +3,8 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDeindexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMapOperator;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.InputColumnMetadata;
-import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
@@ -16,8 +16,8 @@ import java.util.List;
 /** Converts DBSPSourceMultisetOperators that have a primary key
  * into DBSPSourceSetOperator followed by a DBSPDeindexOperator. */
 public class IndexedInputs extends CircuitCloneVisitor {
-    public IndexedInputs(IErrorReporter reporter) {
-        super(reporter, false);
+    public IndexedInputs(DBSPCompiler compiler) {
+        super(compiler, false);
     }
 
     @Override

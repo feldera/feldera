@@ -5,7 +5,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
-import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
@@ -15,8 +15,8 @@ import org.dbsp.util.Linq;
 
 /** Combine a map followed by a filter into a flatmap. */
 public class FilterMapVisitor extends CircuitCloneWithGraphsVisitor {
-    public FilterMapVisitor(IErrorReporter reporter, CircuitGraphs graphs) {
-        super(reporter, graphs, false);
+    public FilterMapVisitor(DBSPCompiler compiler, CircuitGraphs graphs) {
+        super(compiler, graphs, false);
     }
 
     @Override
@@ -35,7 +35,7 @@ public class FilterMapVisitor extends CircuitCloneWithGraphsVisitor {
             DBSPClosureExpression map = source.getClosureFunction();
             DBSPClosureExpression filter = operator.getClosureFunction();
             DBSPLetStatement let = new DBSPLetStatement("tmp", map.body);
-            DBSPExpression cond = filter.call(let.getVarReference().borrow()).reduce(errorReporter);
+            DBSPExpression cond = filter.call(let.getVarReference().borrow()).reduce(this.compiler());
             DBSPExpression tmp = let.getVarReference();
             DBSPIfExpression ifexp = new DBSPIfExpression(
                     operator.getNode(),

@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.circuit.operator;
 
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.IIndentStream;
@@ -31,7 +32,7 @@ import javax.annotation.Nullable;
 
 /** Base class for source operators. */
 public abstract class DBSPSourceBaseOperator extends DBSPSimpleOperator {
-    public final String tableName;
+    public final ProgramIdentifier tableName;
 
     /** Create a DBSP operator that is a source to the dataflow graph.
      *
@@ -44,12 +45,12 @@ public abstract class DBSPSourceBaseOperator extends DBSPSimpleOperator {
      * @param comment    A comment describing the operator. */
     protected DBSPSourceBaseOperator(
             CalciteObject node, String operation, DBSPType outputType, boolean isMultiset,
-            String tableName, @Nullable String comment) {
+            ProgramIdentifier tableName, @Nullable String comment) {
         super(node, operation + " " + tableName, null, outputType, isMultiset, comment);
         this.tableName = tableName;
     }
 
-    public String getTableName() {
+    public ProgramIdentifier getTableName() {
         return this.tableName;
     }
 
@@ -59,7 +60,7 @@ public abstract class DBSPSourceBaseOperator extends DBSPSimpleOperator {
                 .append("let ")
                 .append(this.getOutputName())
                 .append(" = ")
-                .append(this.tableName)
+                .append(this.tableName.toString())
                 .append("();");
     }
 

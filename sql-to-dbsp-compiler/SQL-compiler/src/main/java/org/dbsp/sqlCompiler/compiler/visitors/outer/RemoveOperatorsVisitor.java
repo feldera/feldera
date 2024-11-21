@@ -24,9 +24,10 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPOperatorWithError;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
-import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.util.Logger;
 
@@ -36,13 +37,26 @@ public class RemoveOperatorsVisitor extends CircuitCloneVisitor {
     /** Keep all operators that appear in this list. */
     public final Set<DBSPOperator> keep;
 
-    public RemoveOperatorsVisitor(IErrorReporter reporter, Set<DBSPOperator> keep) {
-        super(reporter, false);
+    public RemoveOperatorsVisitor(DBSPCompiler compiler, Set<DBSPOperator> keep) {
+        super(compiler, false);
         this.keep = keep;
     }
 
     @Override
     public VisitDecision preorder(DBSPSimpleOperator node) {
+        if (this.keep.contains(node)) {
+            this.replace(node);
+        } else {
+            Logger.INSTANCE.belowLevel(this, 2)
+                    .append("Removing ")
+                    .append(node.toString())
+                    .newline();
+        }
+        return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPOperatorWithError node) {
         if (this.keep.contains(node)) {
             this.replace(node);
         } else {

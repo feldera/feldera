@@ -227,7 +227,7 @@ public class TimeTests extends BaseSQLTests {
     @Test
     public void timestampParseIllegal() {
         String query = "SELECT DATE '1997-02-29'";
-        this.testNegativeQuery(query, "Illegal DATE literal");
+        this.queryFailingInCompilation(query, "Illegal DATE literal");
     }
 
     @Test

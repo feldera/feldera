@@ -2,6 +2,7 @@ package org.dbsp.sqlCompiler.circuit.operator;
 
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.TableMetadata;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
@@ -29,7 +30,7 @@ public final class DBSPSourceMultisetOperator
     public DBSPSourceMultisetOperator(
             CalciteObject node, CalciteObject sourceName,
             DBSPTypeZSet outputType, DBSPTypeStruct originalRowType,
-            TableMetadata metadata, String name, @Nullable String comment) {
+            TableMetadata metadata, ProgramIdentifier name, @Nullable String comment) {
         super(node, "multiset", sourceName, outputType, originalRowType, true, metadata, name, comment);
         assert metadata.getColumnCount() == originalRowType.fields.size();
         assert metadata.getColumnCount() == outputType.elementType.to(DBSPTypeTuple.class).size();

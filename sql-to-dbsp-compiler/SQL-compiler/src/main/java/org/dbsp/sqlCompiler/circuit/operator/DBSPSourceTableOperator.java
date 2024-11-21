@@ -5,6 +5,7 @@ import org.dbsp.sqlCompiler.compiler.IHasLateness;
 import org.dbsp.sqlCompiler.compiler.IHasWatermark;
 import org.dbsp.sqlCompiler.compiler.TableMetadata;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
@@ -36,7 +37,7 @@ public abstract class DBSPSourceTableOperator
     protected DBSPSourceTableOperator(
             CalciteObject node, String operation, CalciteObject sourceName,
             DBSPType outputType, DBSPTypeStruct originalRowType, boolean isMultiset,
-            TableMetadata metadata, String name, @Nullable String comment) {
+            TableMetadata metadata, ProgramIdentifier name, @Nullable String comment) {
         super(node, operation, outputType, isMultiset, name, comment);
         this.originalRowType = originalRowType;
         this.sourceName = sourceName;

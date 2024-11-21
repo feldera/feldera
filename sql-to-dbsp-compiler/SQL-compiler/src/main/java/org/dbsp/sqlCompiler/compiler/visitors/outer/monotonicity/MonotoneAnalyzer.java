@@ -2,7 +2,7 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
-import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.dot.ToDotEdgesVisitor;
 import org.dbsp.sqlCompiler.compiler.backend.dot.ToDot;
 import org.dbsp.sqlCompiler.compiler.backend.dot.ToDotNodesVisitor;
@@ -18,7 +18,7 @@ import org.dbsp.util.IndentStream;
 /** Implements a dataflow analysis for detecting values that change monotonically,
  * and inserts nodes that prune the internal circuit state where possible. */
 public class MonotoneAnalyzer implements CircuitTransform, IWritesLogs {
-    final IErrorReporter reporter;
+    final DBSPCompiler compiler;
 
     @Override
     public String getName() {
@@ -30,9 +30,9 @@ public class MonotoneAnalyzer implements CircuitTransform, IWritesLogs {
     static class MonotoneDot extends ToDotEdgesVisitor {
         final Monotonicity.MonotonicityInformation info;
 
-        public MonotoneDot(IErrorReporter reporter, IndentStream stream, int details,
+        public MonotoneDot(DBSPCompiler compiler, IndentStream stream, int details,
                            Monotonicity.MonotonicityInformation info) {
-            super(reporter, stream, details);
+            super(compiler, stream, details);
             this.info = info;
         }
 
@@ -47,8 +47,8 @@ public class MonotoneAnalyzer implements CircuitTransform, IWritesLogs {
         }
     }
 
-    public MonotoneAnalyzer(IErrorReporter reporter) {
-        this.reporter = reporter;
+    public MonotoneAnalyzer(DBSPCompiler compiler) {
+        this.compiler = compiler;
     }
 
     @Override
@@ -57,46 +57,48 @@ public class MonotoneAnalyzer implements CircuitTransform, IWritesLogs {
         final int details = this.getDebugLevel();
 
         // Insert noops between consecutive integrators
-        Graph graph = new Graph(this.reporter);
+        Graph graph = new Graph(this.compiler);
         graph.apply(circuit);
-        SeparateIntegrators separate = new SeparateIntegrators(this.reporter, graph.getGraphs());
-        circuit = separate.apply(circuit);
+        if (this.compiler.options.languageOptions.incrementalize) {
+            SeparateIntegrators separate = new SeparateIntegrators(this.compiler, graph.getGraphs());
+            circuit = separate.apply(circuit);
+        }
         // Find relations which are append-only
-        AppendOnly appendOnly = new AppendOnly(this.reporter);
+        AppendOnly appendOnly = new AppendOnly(this.compiler);
         appendOnly.apply(circuit);
         // Identify uses of primary and foreign keys
-        KeyPropagation keyPropagation = new KeyPropagation(this.reporter);
+        KeyPropagation keyPropagation = new KeyPropagation(this.compiler);
         keyPropagation.apply(circuit);
 
         if (debug)
-            ToDot.dump(this.reporter, "original.png", details, "png", circuit);
+            ToDot.dump(this.compiler, "original.png", details, "png", circuit);
 
         ExpandOperators expander = new ExpandOperators(
-                this.reporter,
+                this.compiler,
                 appendOnly.appendOnly::contains,
                 keyPropagation.joins::get);
         DBSPCircuit expanded = expander.apply(circuit);
         // ToDot.dump(this.reporter, "blowup.png", details, "png", expanded);
 
-        Monotonicity monotonicity = new Monotonicity(this.reporter);
+        Monotonicity monotonicity = new Monotonicity(this.compiler);
         expanded = monotonicity.apply(expanded);
         if (debug)
             ToDot.dump("expanded.png", "png", expanded,
-                    stream -> new ToDotNodesVisitor(reporter, stream, details),
-                    stream -> new MonotoneDot(reporter, stream, details, monotonicity.info));
+                    stream -> new ToDotNodesVisitor(compiler, stream, details),
+                    stream -> new MonotoneDot(compiler, stream, details, monotonicity.info));
 
         InsertLimiters limiters = new InsertLimiters(
-                this.reporter, expanded, monotonicity.info, expander.expansion,
+                this.compiler, expanded, monotonicity.info, expander.expansion,
                 keyPropagation.joins::get);
         // Notice that we apply the limiters to the original circuit, not to the expanded circuit!
         DBSPCircuit result = limiters.apply(circuit);
         if (debug)
-            ToDot.dump(reporter, "limited.png", details, "png", result);
+            ToDot.dump(compiler, "limited.png", details, "png", result);
 
-        CircuitTransform merger = new OptimizeWithGraph(this.reporter, g -> new MergeGC(this.reporter, g));
+        CircuitTransform merger = new OptimizeWithGraph(this.compiler, g -> new MergeGC(this.compiler, g));
         result = merger.apply(result);
         graph.apply(result);
-        CheckRetain check = new CheckRetain(this.reporter, graph.getGraphs());
+        CheckRetain check = new CheckRetain(this.compiler, graph.getGraphs());
         check.apply(result);
         return result;
     }

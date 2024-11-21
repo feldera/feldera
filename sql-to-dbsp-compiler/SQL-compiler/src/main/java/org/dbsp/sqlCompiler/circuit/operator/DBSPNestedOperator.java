@@ -4,6 +4,7 @@ import org.dbsp.sqlCompiler.circuit.DBSPDeclaration;
 import org.dbsp.sqlCompiler.circuit.ICircuit;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
@@ -24,22 +25,22 @@ import java.util.Set;
 public class DBSPNestedOperator extends DBSPOperator implements ICircuit {
     final List<DBSPOperator> allOperators;
     final Set<DBSPOperator> operators;
-    final Map<String, DBSPViewOperator> viewByName;
+    final Map<ProgramIdentifier, DBSPViewOperator> viewByName;
     /** Indexed by original view name */
-    public final Map<String, DBSPViewDeclarationOperator> declarationByName;
+    public final Map<ProgramIdentifier, DBSPViewDeclarationOperator> declarationByName;
     final List<DBSPDeltaOperator> deltaInputs;
     /** For each output port of this, the actual port of an operator inside,
      * which produces the result. */
-    public final List<OutputPort> outputs;
+    public final List<OutputPort> internalOutputs;
     /** Outputs always correspond to recursive views.  Names of these views in order */
-    public final List<String> outputViews;
+    public final List<ProgramIdentifier> outputViews;
 
     public DBSPNestedOperator(CalciteObject node) {
         super(node);
         this.allOperators = new ArrayList<>();
         this.viewByName = new HashMap<>();
         this.deltaInputs = new ArrayList<>();
-        this.outputs = new ArrayList<>();
+        this.internalOutputs = new ArrayList<>();
         this.operators = new HashSet<>();
         this.outputViews = new ArrayList<>();
         this.declarationByName = new HashMap<>();
@@ -72,11 +73,11 @@ public class DBSPNestedOperator extends DBSPOperator implements ICircuit {
         }
     }
 
-    public OutputPort addOutput(String view, OutputPort port) {
+    public OutputPort addOutput(ProgramIdentifier view, OutputPort port) {
         this.outputViews.add(view);
-        this.outputs.add(port);
+        this.internalOutputs.add(port);
         assert this.operators.contains(port.node());
-        return new OutputPort(this, this.outputs.size() - 1);
+        return new OutputPort(this, this.internalOutputs.size() - 1);
     }
 
     @Override
@@ -86,7 +87,7 @@ public class DBSPNestedOperator extends DBSPOperator implements ICircuit {
 
     @Nullable
     @Override
-    public DBSPViewOperator getView(String name) {
+    public DBSPViewOperator getView(ProgramIdentifier name) {
         return this.viewByName.get(name);
     }
 
@@ -119,17 +120,17 @@ public class DBSPNestedOperator extends DBSPOperator implements ICircuit {
 
     @Override
     public DBSPType outputType(int outputNo) {
-        return this.outputs.get(outputNo).outputType();
+        return this.internalOutputs.get(outputNo).outputType();
     }
 
     @Override
     public boolean isMultiset(int outputNumber) {
-        return this.outputs.get(outputNumber).isMultiset();
+        return this.internalOutputs.get(outputNumber).isMultiset();
     }
 
     @Override
     public String getOutputName(int outputNo) {
-        return this.outputs.get(outputNo).getOutputName();
+        return this.internalOutputs.get(outputNo).getOutputName();
     }
 
     @Override
@@ -155,12 +156,12 @@ public class DBSPNestedOperator extends DBSPOperator implements ICircuit {
 
     @Override
     public int outputCount() {
-        return this.outputs.size();
+        return this.internalOutputs.size();
     }
 
     @Override
     public DBSPType streamType(int outputNumber) {
-        OutputPort port = this.outputs.get(outputNumber);
+        OutputPort port = this.internalOutputs.get(outputNumber);
         return port.node().streamType(port.outputNumber);
     }
 }

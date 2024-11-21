@@ -2,7 +2,7 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.circuit.operator.*;
-import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
@@ -21,8 +21,8 @@ public class InstrumentDump extends CircuitCloneVisitor {
      * is instrumented with a dump. */
     public final Predicate<DBSPSimpleOperator> instrument;
 
-    public InstrumentDump(IErrorReporter reporter, Predicate<DBSPSimpleOperator> instrument) {
-        super(reporter, false);
+    public InstrumentDump(DBSPCompiler compiler, Predicate<DBSPSimpleOperator> instrument) {
+        super(compiler, false);
         this.instrument = instrument;
     }
 

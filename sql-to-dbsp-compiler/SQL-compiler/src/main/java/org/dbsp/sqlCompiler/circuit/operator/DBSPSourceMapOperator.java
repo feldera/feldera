@@ -2,6 +2,7 @@ package org.dbsp.sqlCompiler.circuit.operator;
 
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.TableMetadata;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
@@ -37,7 +38,7 @@ public final class DBSPSourceMapOperator extends DBSPSourceTableOperator {
     public DBSPSourceMapOperator(
             CalciteObject node, CalciteObject sourceName, List<Integer> keyFields,
             DBSPTypeIndexedZSet outputType, DBSPTypeStruct originalRowType,
-            TableMetadata metadata, String name, @Nullable String comment) {
+            TableMetadata metadata, ProgramIdentifier name, @Nullable String comment) {
         super(node, "map", sourceName, outputType, originalRowType, false, metadata, name, comment);
         this.keyFields = keyFields;
     }
@@ -70,7 +71,7 @@ public final class DBSPSourceMapOperator extends DBSPSourceTableOperator {
 
     /** Return a struct that contains only the key fields from the
      * originalRowType. */
-    public DBSPTypeStruct getKeyStructType(String name) {
+    public DBSPTypeStruct getKeyStructType(ProgramIdentifier name) {
         List<DBSPTypeStruct.Field> fields = new ArrayList<>();
         int current = 0;
         int keyIndexes = 0;
@@ -83,12 +84,12 @@ public final class DBSPSourceMapOperator extends DBSPSourceTableOperator {
             }
             current++;
         }
-        return new DBSPTypeStruct(this.originalRowType.getNode(), name, name, fields, false);
+        return new DBSPTypeStruct(this.originalRowType.getNode(), name, name.name(), fields, false);
     }
 
     /** Return a struct that is similar with the originalRowType, but where
      * each non-key field is wrapped in an additional Option type. */
-    public DBSPTypeStruct getStructUpsertType(String name) {
+    public DBSPTypeStruct getStructUpsertType(ProgramIdentifier name) {
         List<DBSPTypeStruct.Field> fields = new ArrayList<>();
         int current = 0;
         int keyIndexes = 0;
@@ -102,12 +103,11 @@ public final class DBSPSourceMapOperator extends DBSPSourceTableOperator {
                 // fieldType may be nullable.  The resulting Rust type will
                 // actually be Option<Option<Type>>.
                 DBSPType some = new DBSPTypeOption(fieldType);
-                fields.add(new DBSPTypeStruct.Field(
-                        field.getNode(), field.name, current, some, field.nameIsQuoted));
+                fields.add(new DBSPTypeStruct.Field(field.getNode(), field.name, current, some));
             }
             current++;
         }
-        return new DBSPTypeStruct(this.originalRowType.getNode(), name, name, fields, false);
+        return new DBSPTypeStruct(this.originalRowType.getNode(), name, name.name(), fields, false);
     }
 
     /** Return a closure that describes the key function. */

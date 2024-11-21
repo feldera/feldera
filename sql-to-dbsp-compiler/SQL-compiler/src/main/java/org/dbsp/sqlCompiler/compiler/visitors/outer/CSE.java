@@ -7,7 +7,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperatorWithError;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
-import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.util.Logger;
 import org.dbsp.util.graph.Port;
 
@@ -19,8 +19,8 @@ import java.util.Set;
 
 /** Common-subexpression elimination */
 public class CSE extends Repeat {
-    public CSE(IErrorReporter reporter) {
-        super(reporter, new OneCSEPass(reporter));
+    public CSE(DBSPCompiler compiler) {
+        super(compiler, new OneCSEPass(compiler));
     }
 
     /** One CSE pass:
@@ -31,12 +31,12 @@ public class CSE extends Repeat {
         /** Maps each operator to its canonical representative */
         final Map<DBSPOperator, DBSPOperator> canonical = new HashMap<>();
 
-        OneCSEPass(IErrorReporter reporter) {
-            super("CSE", reporter);
-            Graph graph = new Graph(reporter);
+        OneCSEPass(DBSPCompiler compiler) {
+            super("CSE", compiler);
+            Graph graph = new Graph(compiler);
             this.add(graph);
-            this.add(new FindCSE(reporter, graph.graphs, this.canonical));
-            this.add(new RemoveCSE(reporter, this.canonical));
+            this.add(new FindCSE(compiler, graph.graphs, this.canonical));
+            this.add(new RemoveCSE(compiler, this.canonical));
         }
     }
 
@@ -46,9 +46,9 @@ public class CSE extends Repeat {
         final Map<DBSPOperator, DBSPOperator> canonical;
         final Set<DBSPConstantOperator> constants;
 
-        public FindCSE(IErrorReporter errorReporter, CircuitGraphs graphs,
+        public FindCSE(DBSPCompiler compiler, CircuitGraphs graphs,
                        Map<DBSPOperator, DBSPOperator> canonical) {
-            super(errorReporter, graphs);
+            super(compiler, graphs);
             this.canonical = canonical;
             this.constants = new HashSet<>();
         }
@@ -75,7 +75,7 @@ public class CSE extends Repeat {
         }
 
         @Override
-        public void postorder(DBSPSimpleOperator operator) {
+        public void postorder(DBSPOperator operator) {
             List<Port<DBSPOperator>> destinations = this.getGraph().getSuccessors(operator);
             // Compare every pair of destinations
             for (int i = 0; i < destinations.size(); i++) {
@@ -112,8 +112,8 @@ public class CSE extends Repeat {
         /** Maps each operator to its canonical representative */
         final Map<DBSPOperator, DBSPOperator> canonical;
 
-        public RemoveCSE(IErrorReporter reporter, Map<DBSPOperator, DBSPOperator> canonical) {
-            super(reporter, false);
+        public RemoveCSE(DBSPCompiler compiler, Map<DBSPOperator, DBSPOperator> canonical) {
+            super(compiler, false);
             this.canonical = canonical;
         }
 

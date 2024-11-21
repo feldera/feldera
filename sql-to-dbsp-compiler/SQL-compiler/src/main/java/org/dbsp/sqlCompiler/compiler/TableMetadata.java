@@ -1,6 +1,7 @@
 package org.dbsp.sqlCompiler.compiler;
 
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ForeignKey;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
 
@@ -11,8 +12,8 @@ import java.util.List;
 
 /** Metadata describing an input table. */
 public class TableMetadata {
-    final String tableName;
-    final LinkedHashMap<String, InputColumnMetadata> columnMetadata;
+    final ProgramIdentifier tableName;
+    final LinkedHashMap<ProgramIdentifier, InputColumnMetadata> columnMetadata;
     final List<ForeignKey> foreignKeys;
     public final boolean materialized;
     final TableChanges changes;
@@ -25,7 +26,7 @@ public class TableMetadata {
         AppendOnly
     }
 
-    public TableMetadata(String tableName,
+    public TableMetadata(ProgramIdentifier tableName,
                          List<InputColumnMetadata> columns, List<ForeignKey> foreignKeys,
                          boolean materialized, boolean streaming) {
         this.tableName = tableName;
@@ -46,19 +47,19 @@ public class TableMetadata {
         return Linq.where(this.getColumns(), c -> c.isPrimaryKey);
     }
 
-    public int getColumnIndex(String columnName) {
+    public int getColumnIndex(ProgramIdentifier columnName) {
         int index = 0;
-        for (String colName: this.columnMetadata.keySet()) {
+        for (ProgramIdentifier colName: this.columnMetadata.keySet()) {
             if (colName.equals(columnName))
                 return index;
             index++;
         }
-        throw new RuntimeException("Column " + Utilities.singleQuote(columnName) +
-                " not found in table " + Utilities.singleQuote(this.tableName));
+        throw new RuntimeException("Column " + columnName.singleQuote() +
+                " not found in table " + this.tableName.singleQuote());
     }
 
     @Nullable
-    public InputColumnMetadata getColumnMetadata(String column) {
+    public InputColumnMetadata getColumnMetadata(ProgramIdentifier column) {
         return this.columnMetadata.get(column);
     }
 

@@ -2,6 +2,7 @@ package org.dbsp.sqlCompiler.circuit.operator;
 
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.ViewMetadata;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
@@ -13,14 +14,14 @@ import javax.annotation.Nullable;
  *  If the view is an output then it is represented by a Sink operator.
  *  Otherwise, the view is represented by a DBSPViewOperator. */
 public abstract class DBSPViewBaseOperator extends DBSPUnaryOperator {
-    public final String viewName;
+    public final ProgramIdentifier viewName;
     public final String query;
     public final DBSPTypeStruct originalRowType;
     public final ViewMetadata metadata;
 
     protected DBSPViewBaseOperator(
             CalciteObject node, String operation, @Nullable DBSPExpression function,
-            String viewName, String query, DBSPTypeStruct originalRowType,
+            ProgramIdentifier viewName, String query, DBSPTypeStruct originalRowType,
             ViewMetadata metadata, OutputPort input) {
         super(node, operation, function, input.outputType(), input.isMultiset(), input);
         this.metadata = metadata;

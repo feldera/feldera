@@ -28,6 +28,7 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ForeignKey;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.RelColumnMetadata;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.PropertyList;
 
@@ -39,11 +40,11 @@ public class CreateTableStatement extends CreateRelationStatement {
     public final List<ForeignKey> foreignKeys;
 
     public CreateTableStatement(CalciteCompiler.ParsedStatement node,
-                                String tableName, boolean nameIsQuoted,
+                                ProgramIdentifier tableName,
                                 List<RelColumnMetadata> columns,
                                 List<ForeignKey> foreignKeys,
                                 @Nullable PropertyList properties) {
-        super(node, tableName, nameIsQuoted, columns, properties);
+        super(node, tableName, columns, properties);
         this.foreignKeys = foreignKeys;
     }
 

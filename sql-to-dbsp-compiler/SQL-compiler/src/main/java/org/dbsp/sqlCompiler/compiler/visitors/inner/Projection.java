@@ -1,7 +1,7 @@
 package org.dbsp.sqlCompiler.compiler.visitors.inner;
 
 import org.apache.commons.lang3.ArrayUtils;
-import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.IDBSPDeclaration;
@@ -122,17 +122,17 @@ public class Projection extends InnerVisitor {
 
     int currentParameterIndex = -1;
 
-    public Projection(IErrorReporter reporter, boolean allowNoopCasts) {
-        super(reporter);
+    public Projection(DBSPCompiler compiler, boolean allowNoopCasts) {
+        super(compiler);
         this.isProjection = true;
         this.ioMap = new IOMap();
         this.shuffle = new ArrayList<>();
-        this.resolver = new ResolveReferences(reporter, false);
+        this.resolver = new ResolveReferences(compiler, false);
         this.allowNoopCasts = allowNoopCasts;
     }
 
-    public Projection(IErrorReporter reporter) {
-        this(reporter, false);
+    public Projection(DBSPCompiler compiler) {
+        this(compiler, false);
     }
 
     @Override
@@ -323,8 +323,8 @@ public class Projection extends InnerVisitor {
 
         Map<DBSPExpression, Long> result = new HashMap<>();
         InnerPasses inner = new InnerPasses(
-                new BetaReduction(this.errorReporter),
-                new Simplify(this.errorReporter)
+                new BetaReduction(this.compiler),
+                new Simplify(this.compiler)
         );
 
         DBSPType elementType = null;

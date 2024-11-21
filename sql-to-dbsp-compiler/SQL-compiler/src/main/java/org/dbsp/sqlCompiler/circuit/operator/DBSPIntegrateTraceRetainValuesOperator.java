@@ -46,7 +46,7 @@ public final class DBSPIntegrateTraceRetainValuesOperator
                 .getField(1)
                 .projectExpression(dataArg);
         DBSPExpression compare0 = controlArg.deref().field(0).not();
-        DBSPExpression compare = DBSPControlledFilterOperator.generateTupleCompare(
+        DBSPExpression compare = DBSPControlledKeyFilterOperator.generateTupleCompare(
                 project, controlArg.deref().field(1), DBSPOpcode.CONTROLLED_FILTER_GTE);
         compare = ExpressionCompiler.makeBinaryExpression(
                 node, compare.getType(), DBSPOpcode.OR, compare0, compare);

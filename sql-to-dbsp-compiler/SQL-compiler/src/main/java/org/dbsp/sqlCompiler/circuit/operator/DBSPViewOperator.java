@@ -5,6 +5,7 @@ import org.dbsp.sqlCompiler.compiler.IHasColumnsMetadata;
 import org.dbsp.sqlCompiler.compiler.IHasLateness;
 import org.dbsp.sqlCompiler.compiler.IHasWatermark;
 import org.dbsp.sqlCompiler.compiler.ViewMetadata;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
@@ -24,8 +25,7 @@ public final class DBSPViewOperator
         implements IHasColumnsMetadata
 {
     public DBSPViewOperator(
-            CalciteObject node,
-            String viewName, String query, DBSPTypeStruct originalRowType,
+            CalciteObject node, ProgramIdentifier viewName, String query, DBSPTypeStruct originalRowType,
             ViewMetadata metadata, OutputPort input) {
         super(node, "map", DBSPClosureExpression.id(), viewName, query,
                 originalRowType, metadata, input);

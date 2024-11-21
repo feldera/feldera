@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlFragment;
+import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlFragmentIdentifier;
 import org.dbsp.util.Utilities;
 
 import java.util.List;
@@ -24,13 +25,14 @@ public class ForeignKey {
     public static class TableAndColumns {
         // Position of the whole list of columns in source code
         public final SourcePositionRange listPos;
-        public final SqlFragment tableName;
-        public final List<SqlFragment> columns;
+        public final SqlFragmentIdentifier tableName;
+        public final List<SqlFragmentIdentifier> columnNames;
 
-        TableAndColumns(SourcePositionRange listPos, SqlFragment tableName, List<SqlFragment> columns) {
+        TableAndColumns(SourcePositionRange listPos, SqlFragmentIdentifier tableName,
+                        List<SqlFragmentIdentifier> columnNames) {
             this.listPos = listPos;
             this.tableName = tableName;
-            this.columns = columns;
+            this.columnNames = columnNames;
         }
     }
 
@@ -41,11 +43,11 @@ public class ForeignKey {
         ObjectMapper mapper = Utilities.deterministicObjectMapper();
         ObjectNode result = mapper.createObjectNode();
         ArrayNode columns = result.putArray("columns");
-        for (SqlFragment column: this.thisTable.columns)
+        for (SqlFragment column: this.thisTable.columnNames)
             columns.add(column.getString());
         result.put("refers", this.otherTable.tableName.toString());
         ArrayNode tocolumns = result.putArray("tocolumns");
-        for (SqlFragment column: this.otherTable.columns)
+        for (SqlFragment column: this.otherTable.columnNames)
             tocolumns.add(column.getString());
         return result;
     }

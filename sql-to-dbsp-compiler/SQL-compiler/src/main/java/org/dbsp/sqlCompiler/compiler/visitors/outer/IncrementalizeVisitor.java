@@ -26,15 +26,15 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.circuit.operator.*;
-import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 
 /** This visitor converts a {@link DBSPCircuit} into a new circuit which
  * computes the incremental version of the same query.
  * The generated circuit is not efficient, though, it should be
  * further optimized. */
 public class IncrementalizeVisitor extends CircuitCloneVisitor {
-    public IncrementalizeVisitor(IErrorReporter reporter) {
-        super(reporter, false);
+    public IncrementalizeVisitor(DBSPCompiler compiler) {
+        super(compiler, false);
     }
 
     public void input(DBSPSimpleOperator operator) {

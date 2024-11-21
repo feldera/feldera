@@ -19,7 +19,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
-import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateView;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitCloneWithGraphsVisitor;
@@ -32,10 +32,11 @@ import java.util.List;
 /** Insert noops between
  * - operators that may introduce consecutive integrators in the circuit
  * - before operators that share a source and have an integrator in front.
- * This will make the scope of Retain{Keys,Values} operators clear later. */
+ * This will make the scope of Retain{Keys,Values} operators clear later.
+ * This is only invoked in incremental compilation mode. */
 public class SeparateIntegrators extends CircuitCloneWithGraphsVisitor {
-    public SeparateIntegrators(IErrorReporter reporter, CircuitGraphs graphs) {
-        super(reporter, graphs, false);
+    public SeparateIntegrators(DBSPCompiler compiler, CircuitGraphs graphs) {
+        super(compiler, graphs, false);
     }
 
     public static boolean hasPostIntegrator(DBSPSimpleOperator operator) {
@@ -71,6 +72,7 @@ public class SeparateIntegrators extends CircuitCloneWithGraphsVisitor {
 
     @Override
     public void postorder(DBSPStreamAggregateOperator operator) {
+        // In incremental compilation mode this should have been eliminated
         throw new InternalCompilerError("StreamAggregate operator should have been removed " + operator);
     }
 

@@ -1,7 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.visitors.inner;
 
-import org.dbsp.sqlCompiler.compiler.IErrorReporter;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
@@ -20,8 +19,8 @@ import java.util.function.Function;
 
 /* Implement the dump() function. */
 public class EliminateDump extends InnerRewriteVisitor {
-    public EliminateDump(IErrorReporter reporter) {
-        super(reporter);
+    public EliminateDump(DBSPCompiler compiler) {
+        super(compiler);
     }
 
     @Override

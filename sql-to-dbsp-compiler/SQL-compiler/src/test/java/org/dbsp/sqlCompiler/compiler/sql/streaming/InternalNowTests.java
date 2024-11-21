@@ -39,8 +39,8 @@ public class InternalNowTests extends StreamingTestBase {
                 FROM transactions
                 WHERE tim >= (now() - INTERVAL 1 DAY)
                 GROUP BY usr;""";
-           CompilerCircuitStream ccs = this.getCCS(sql);
-        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+        CompilerCircuitStream ccs = this.getCCS(sql);
+        CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
             int window = 0;
             int waterline = 0;
 

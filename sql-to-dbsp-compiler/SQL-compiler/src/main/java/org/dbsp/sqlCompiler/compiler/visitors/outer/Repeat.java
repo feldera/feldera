@@ -1,19 +1,25 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
-import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.ICompilerComponent;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.util.IWritesLogs;
 import org.dbsp.util.Logger;
 
 /** Applies a CircuitTransform until the circuit stops changing. */
-public class Repeat implements IWritesLogs, CircuitTransform {
-    final IErrorReporter errorReporter;
+public class Repeat implements IWritesLogs, CircuitTransform, ICompilerComponent {
+    final DBSPCompiler compiler;
     public final CircuitTransform transform;
 
-    public Repeat(IErrorReporter reporter, CircuitTransform visitor) {
-        this.errorReporter = reporter;
+    public Repeat(DBSPCompiler compiler, CircuitTransform visitor) {
+        this.compiler = compiler;
         this.transform = visitor;
+    }
+
+    @Override
+    public DBSPCompiler compiler() {
+        return this.compiler;
     }
 
     @Override
@@ -37,7 +43,7 @@ public class Repeat implements IWritesLogs, CircuitTransform {
             circuit = result;
             repeats++;
             if (repeats == maxRepeats) {
-                this.errorReporter.reportError(SourcePositionRange.INVALID,
+                this.compiler.reportError(SourcePositionRange.INVALID,
                         "InfiniteLoop",
                         "Repeated optimization " + this.transform + " " +
                         repeats + " times without convergence");

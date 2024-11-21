@@ -1,7 +1,7 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
-import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.util.IWritesLogs;
 
 import java.util.function.Supplier;
@@ -9,12 +9,12 @@ import java.util.function.Supplier;
 /** Applies a CircuitTransform if some condition is true */
 public class Conditional implements IWritesLogs, CircuitTransform {
     final Supplier<Boolean> test;
-    final IErrorReporter errorReporter;
+    final DBSPCompiler compiler;
     public final CircuitTransform transform;
     final long id;
 
-    public Conditional(IErrorReporter reporter, CircuitTransform visitor, Supplier<Boolean> test) {
-        this.errorReporter = reporter;
+    public Conditional(DBSPCompiler compiler, CircuitTransform visitor, Supplier<Boolean> test) {
+        this.compiler = compiler;
         this.transform = visitor;
         this.test = test;
         this.id = CircuitVisitor.crtId++;

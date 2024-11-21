@@ -1,6 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.visitors.inner;
 
-import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
@@ -11,8 +11,8 @@ import java.util.List;
 
 /** Convert every occurrence of a TypeStruct to a TypeTuple */
 public class EliminateStructs extends InnerRewriteVisitor {
-    public EliminateStructs(IErrorReporter reporter) {
-        super(reporter);
+    public EliminateStructs(DBSPCompiler compiler) {
+        super(compiler);
     }
 
     @Override

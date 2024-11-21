@@ -26,13 +26,14 @@ package org.dbsp.sqlCompiler.compiler.frontend.statements;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.sql.SqlNode;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteCompiler;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 
 import javax.annotation.Nullable;
 
 /** Describes a SQL statements that modifies a table
  * (e.g., an INSERT or REMOVE statement). */
 public class TableModifyStatement extends FrontEndStatement {
-    public final String tableName;
+    public final ProgramIdentifier tableName;
     public final SqlNode data;
     @Nullable
     public RelNode rel;
@@ -40,7 +41,7 @@ public class TableModifyStatement extends FrontEndStatement {
     public final boolean insert;
 
     public TableModifyStatement(
-            CalciteCompiler.ParsedStatement node, boolean insert, String tableName, SqlNode data) {
+            CalciteCompiler.ParsedStatement node, boolean insert, ProgramIdentifier tableName, SqlNode data) {
         super(node);
         this.insert = insert;
         this.tableName = tableName;

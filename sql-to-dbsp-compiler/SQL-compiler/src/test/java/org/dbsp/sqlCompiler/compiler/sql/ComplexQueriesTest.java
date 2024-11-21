@@ -110,14 +110,14 @@ public class ComplexQueriesTest extends BaseSQLTests {
                  x29 | x31 | x51 | x55 | weight
                 ---------------------------------
                  table t29 row 6 | table t31 row 9 | table t51 row 5 | table t55 row 4 | 1""");
-        InnerVisitor typeWidth = new InnerVisitor(new StderrErrorReporter()) {
+        InnerVisitor typeWidth = new InnerVisitor(ccs.compiler) {
             @Override
             public void postorder(DBSPTypeTupleBase type) {
                 // Without NarrowJoins the width of the tuples can be 9
                 assert type.size() <= 5;
             }
         };
-        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+        CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
             @Override
             public void postorder(DBSPSimpleOperator operator) {
                 operator.outputType().accept(typeWidth);
@@ -233,7 +233,7 @@ public class ComplexQueriesTest extends BaseSQLTests {
         compiler.options.languageOptions.incrementalize = true;
         compiler.compileStatements(sql);
         DBSPCircuit circuit = getCircuit(compiler);
-        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+        CircuitVisitor visitor = new CircuitVisitor(compiler) {
             int count = 0;
 
             @Override

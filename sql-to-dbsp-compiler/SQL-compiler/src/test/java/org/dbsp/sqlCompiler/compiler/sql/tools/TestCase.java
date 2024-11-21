@@ -1,7 +1,9 @@
 package org.dbsp.sqlCompiler.compiler.sql.tools;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.ir.DBSPFunction;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
@@ -24,6 +26,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeFP;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVoid;
+import org.dbsp.util.Linq;
 import org.dbsp.util.TableValue;
 import org.dbsp.util.Utilities;
 
@@ -74,14 +77,15 @@ public class TestCase {
 
         int pair = 0;
         for (InputOutputChange changes : this.ccs.stream.changes) {
-            Change inputs = changes.getInputs().simplify();
-            Change outputs = changes.getOutputs().simplify();
+            Change inputs = changes.getInputs().simplify(this.ccs.compiler);
+            Change outputs = changes.getOutputs().simplify(this.ccs.compiler);
 
             TableValue[] tableValues = new TableValue[inputs.getSetCount()];
             for (int i = 0; i < inputs.getSetCount(); i++)
-                tableValues[i] = new TableValue("t" + i, inputs.getSet(i));
+                tableValues[i] = new TableValue(
+                        this.ccs.compiler.canonicalName("t" + i, false), inputs.getSet(i));
             String functionName = "input" + pair;
-            DBSPFunction inputFunction = TableValue.createInputFunction(
+            DBSPFunction inputFunction = TableValue.createInputFunction(this.ccs.compiler,
                     functionName, tableValues, codeDirectory, "csv");
             list.add(new DBSPFunctionItem(inputFunction));
             DBSPLetStatement in = new DBSPLetStatement(functionName, inputFunction.call());
@@ -105,7 +109,17 @@ public class TestCase {
                     "step", DBSPTypeAny.getDefault(), cas.getVarReference().field(0)).resultUnwrap());
             list.add(step);
 
+            boolean skipSystemViews = changes.outputs.getSetCount() < this.ccs.circuit.getOutputCount();
+            int skippedOutputs = 0;
+            List<DBSPSinkOperator> sinks = Linq.list(this.ccs.circuit.sinkOperators.values());
             for (int i = 0; i < changes.outputs.getSetCount(); i++) {
+                for (;;) {
+                    DBSPSinkOperator sink = sinks.get(i + skippedOutputs);
+                    // Skip over system views if we are not checking these
+                    if (!sink.metadata.system || !skipSystemViews)
+                        break;
+                    skippedOutputs++;
+                }
                 String message = System.lineSeparator() +
                         "mvn test -Dtest=" + this.javaTestName +
                         System.lineSeparator() + this.name;
@@ -135,7 +149,7 @@ public class TestCase {
 
                 DBSPExpression expected = outputs.getSet(i);
                 DBSPExpression actual = new DBSPApplyExpression("read_output_handle", DBSPTypeAny.getDefault(),
-                        streams.getVarReference().field(changes.inputs.getSetCount() + i).borrow());
+                        streams.getVarReference().field(changes.inputs.getSetCount() + i + skippedOutputs).borrow());
                 if (foundFp) {
                     DBSPExpression convertedValue = new DBSPTupleExpression(converted);
                     DBSPExpression converter = convertedValue.closure(var);
@@ -161,7 +175,7 @@ public class TestCase {
         annotations.add("#[test]");
         if (this.message != null)
             annotations.add("#[should_panic(expected = " + Utilities.doubleQuote(this.message) + ")]");
-        return new DBSPFunction("test" + this.ccs.circuit.id, new ArrayList<>(),
+        return new DBSPFunction("test" + testNumber, new ArrayList<>(),
                 new DBSPTypeVoid(), body, annotations);
     }
 }

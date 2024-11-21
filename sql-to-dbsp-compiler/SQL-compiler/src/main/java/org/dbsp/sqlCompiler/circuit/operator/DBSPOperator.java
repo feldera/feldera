@@ -26,6 +26,7 @@ package org.dbsp.sqlCompiler.circuit.operator;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.circuit.annotation.Annotation;
 import org.dbsp.sqlCompiler.circuit.annotation.Annotations;
+import org.dbsp.sqlCompiler.circuit.annotation.CompactName;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.ir.DBSPNode;
@@ -111,6 +112,16 @@ public abstract class DBSPOperator extends DBSPNode implements IDBSPOuterNode {
         return this.inputsDiffer(newInputs, true);
     }
 
+    public String getIdString() {
+        String name = CompactName.getCompactName(this);
+        if (name != null)
+            return name;
+        String result = Long.toString(this.id);
+        if (this.derivedFrom >= 0)
+            result += "(" + this.derivedFrom + ")";
+        return result;
+    }
+
     /** True if this is equivalent with the other operator,
      * which means that common-subexpression elimination can replace this with 'other'.
      * This implies that all inputs are the same, and the computed functions are the same. */
@@ -121,6 +132,13 @@ public abstract class DBSPOperator extends DBSPNode implements IDBSPOuterNode {
 
     /** True if the specified output is a multiset */
     public abstract boolean isMultiset(int outputNumber);
+
+    public String getNodeName() {
+        String name = CompactName.getCompactName(this);
+        if (name == null)
+            name = "stream" + this.getId();
+        return name;
+    }
 
     public abstract String getOutputName(int outputNumber);
 

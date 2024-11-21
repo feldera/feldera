@@ -36,6 +36,7 @@ import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.rust.RustFileWriter;
 import org.dbsp.sqlCompiler.compiler.frontend.TableContents;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.ir.DBSPFunction;
 import org.dbsp.sqlCompiler.ir.DBSPNode;
@@ -132,7 +133,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
         TableContents tables = compiler.getTableContents();
         TableValue[] tableValues = new TableValue[tables.tablesCreated.size()];
         for (int i = 0; i < tableValues.length; i++) {
-            String table = tables.tablesCreated.get(i);
+            ProgramIdentifier table = tables.tablesCreated.get(i);
             tableValues[i] = new TableValue(table, tables.getTableContents(table));
         }
         return tableValues;
@@ -438,7 +439,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
         list.add(inputStream);
         DBSPVariablePath loopIndex = new DBSPVariablePath("_in", DBSPTypeAny.getDefault());
         int i = 0;
-        for (String inputI: circuit.getInputTables()) {
+        for (ProgramIdentifier inputI: circuit.getInputTables()) {
             int index = contents.getTableIndex(inputI);
             list.add(new DBSPApplyExpression("append_to_collection_handle", DBSPTypeAny.getDefault(),
                     loopIndex.field(index).borrow(),

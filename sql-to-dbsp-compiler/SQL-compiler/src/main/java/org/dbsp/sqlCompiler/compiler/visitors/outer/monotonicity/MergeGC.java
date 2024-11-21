@@ -4,11 +4,9 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPNoopOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.GCOperator;
-import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CSE;
-import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitGraph;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitGraphs;
-import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitWithGraphsVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.Passes;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
@@ -33,8 +31,8 @@ public class MergeGC extends Passes {
         /** Maps each operator to its canonical representative */
         public final Map<DBSPOperator, DBSPOperator> canonical;
 
-        public FindEquivalentNoops(IErrorReporter errorReporter, CircuitGraphs graphs) {
-            super(errorReporter, graphs);
+        public FindEquivalentNoops(DBSPCompiler compiler, CircuitGraphs graphs) {
+            super(compiler, graphs);
             this.canonical = new HashMap<>();
         }
 
@@ -99,10 +97,10 @@ public class MergeGC extends Passes {
         }
     }
 
-    public MergeGC(IErrorReporter reporter, CircuitGraphs graphs) {
-        super("MergeGC", reporter);
-        FindEquivalentNoops find = new FindEquivalentNoops(reporter, graphs);
+    public MergeGC(DBSPCompiler compiler, CircuitGraphs graphs) {
+        super("MergeGC", compiler);
+        FindEquivalentNoops find = new FindEquivalentNoops(compiler, graphs);
         this.add(find);
-        this.add(new CSE.RemoveCSE(reporter, find.canonical));
+        this.add(new CSE.RemoveCSE(compiler, find.canonical));
     }
 }

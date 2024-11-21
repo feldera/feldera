@@ -30,6 +30,7 @@ import net.hydromatic.sqllogictest.TestStatistics;
 import net.hydromatic.sqllogictest.executors.JdbcExecutor;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
@@ -59,7 +60,7 @@ import java.util.regex.Pattern;
  */
 public class DbspJdbcExecutor extends DBSPExecutor {
     private final JdbcExecutor statementExecutor;
-    private final List<String> tablesCreated;
+    private final List<ProgramIdentifier> tablesCreated;
 
     /**
      * @param compilerOptions Compilation options.
@@ -78,11 +79,11 @@ public class DbspJdbcExecutor extends DBSPExecutor {
         return this.statementExecutor.getConnection();
     }
 
-    public DBSPZSetLiteral getTableContents(String table) throws SQLException {
+    public DBSPZSetLiteral getTableContents(ProgramIdentifier table) throws SQLException {
         return getTableContents(this.getStatementExecutorConnection(), table);
     }
 
-    public static DBSPZSetLiteral getTableContents(Connection connection, String table) throws SQLException {
+    public static DBSPZSetLiteral getTableContents(Connection connection, ProgramIdentifier table) throws SQLException {
         List<DBSPExpression> rows = new ArrayList<>();
         try (Statement stmt1 = connection.createStatement()) {
             ResultSet rs = stmt1.executeQuery("SELECT * FROM " + table);
@@ -157,7 +158,7 @@ public class DbspJdbcExecutor extends DBSPExecutor {
     public TableValue[] getInputSets(DBSPCompiler compiler) throws SQLException {
         TableValue[] result = new TableValue[this.tablesCreated.size()];
         int i = 0;
-        for (String table: this.tablesCreated) {
+        for (ProgramIdentifier table: this.tablesCreated) {
             DBSPZSetLiteral lit = this.getTableContents(table);
             result[i++] = new TableValue(table, lit);
         }
@@ -178,7 +179,7 @@ public class DbspJdbcExecutor extends DBSPExecutor {
      in a Calcite-friendly syntax.  This implementation does not
      preserve primary keys, but this does not seem important right now.
      */
-    public static String generateCreateStatement(Connection connection, String table) throws SQLException {
+    public static String generateCreateStatement(Connection connection, ProgramIdentifier table) throws SQLException {
         StringBuilder builder = new StringBuilder();
         builder.append("CREATE TABLE ");
         builder.append(table);
@@ -233,7 +234,7 @@ public class DbspJdbcExecutor extends DBSPExecutor {
         Matcher m = PAT_CREATE.matcher(command);
         if (!m.find())
             return null;
-        String tableName = m.group(1);
+        ProgramIdentifier tableName = new ProgramIdentifier(m.group(1), false);
         this.tablesCreated.add(tableName);
         return DbspJdbcExecutor.generateCreateStatement(this.getStatementExecutorConnection(), tableName);
     }
@@ -253,7 +254,7 @@ public class DbspJdbcExecutor extends DBSPExecutor {
             super.statement(statement);
             Matcher m = PAT_DROP.matcher(command);
             if (m.find()) {
-                String tableName = m.group(1);
+                ProgramIdentifier tableName = new ProgramIdentifier(m.group(1), false);
                 this.tablesCreated.remove(tableName);
             }
         }

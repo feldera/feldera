@@ -10,7 +10,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewDeclarationOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewOperator;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
-import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 import org.dbsp.util.Utilities;
@@ -25,8 +25,8 @@ public class Graph extends CircuitVisitor {
     /** Map each source view operator to its parent */
     final Map<DBSPViewDeclarationOperator, ICircuit> delayed = new HashMap<>();
 
-    public Graph(IErrorReporter errorReporter) {
-        super(errorReporter);
+    public Graph(DBSPCompiler compiler) {
+        super(compiler);
     }
 
     @Override
