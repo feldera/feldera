@@ -78,8 +78,9 @@ public class Graph extends CircuitVisitor {
         CircuitGraph graph = this.graphs.getGraph(circuit);
         for (var opAndParent: this.delayed.entrySet()) {
             DBSPViewOperator view = opAndParent.getKey().getCorrespondingView(opAndParent.getValue());
-            assert view != null;
-            graph.addEdge(view, opAndParent.getKey(), 0);
+            if (view != null)
+                // View can be missing if it is not defined
+                graph.addEdge(view, opAndParent.getKey(), 0);
         }
         this.delayed.clear();
     }
