@@ -1310,6 +1310,7 @@ export type ProgramSchema = {
 export type ProgramStatus =
   | 'Pending'
   | 'CompilingSql'
+  | 'SqlCompiled'
   | 'CompilingRust'
   | 'Success'
   | {

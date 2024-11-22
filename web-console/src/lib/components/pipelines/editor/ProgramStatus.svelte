@@ -14,6 +14,7 @@
     class={match(programStatus)
       .with(
         'Success',
+        'SqlCompiled',
         'CompilingRust',
         { RustError: P.any },
         () => 'fd fd-check_circle text-[24px] text-success-500'
@@ -28,13 +29,17 @@
 
 <div
   class="{match(programStatus)
-    .with('CompilingRust', { RustError: P.any }, () => 'flex')
+    .with('SqlCompiled', 'CompilingRust', { RustError: P.any }, () => 'flex')
     .with('Success', 'Pending', 'CompilingSql', P.shape({}), undefined, () => 'hidden')
     .exhaustive()} flex-nowrap gap-2 self-center whitespace-nowrap"
 >
   <span
     class={match(programStatus)
-      .with('CompilingRust', () => 'gc gc-loader-alt animate-spin pt-[0.5px] text-[24px]')
+      .with(
+        'SqlCompiled',
+        'CompilingRust',
+        () => 'gc gc-loader-alt animate-spin pt-[0.5px] text-[24px]'
+      )
       .with({ RustError: P.any }, () => 'fd fd-close_circle_outline text-[24px] text-error-500')
       .with('Success', 'Pending', 'CompilingSql', P.shape({}), undefined, () => '')
       .exhaustive()}

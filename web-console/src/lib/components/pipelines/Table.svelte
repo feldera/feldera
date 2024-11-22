@@ -3,14 +3,23 @@
   import { Datatable, TableHandler, ThSort } from '@vincjo/datatables'
   import PipelineStatus from '$lib/components/pipelines/list/PipelineStatus.svelte'
   import { type PipelineStatus as PipelineStatusType } from '$lib/services/pipelineManager'
-  import type { Snippet } from 'svelte'
+  import { type Snippet } from 'svelte'
   import { getPipelineStatusLabel } from '$lib/functions/pipelines/status'
-  let { preHeaderEnd }: { preHeaderEnd?: Snippet } = $props()
+  let {
+    preHeaderEnd,
+    selectedPipelines = $bindable()
+  }: { preHeaderEnd?: Snippet; selectedPipelines: string[] } = $props()
   const pipelines = usePipelineList()
 
   const table = new TableHandler(pipelines.pipelines, { rowsPerPage: 10, selectBy: 'name' })
   $effect(() => {
     table.setRows(pipelines.pipelines)
+  })
+  $effect(() => {
+    selectedPipelines = table.selected as string[]
+  })
+  $effect(() => {
+    table.selected = selectedPipelines
   })
 
   const statusFilter = table.createFilter('status')
