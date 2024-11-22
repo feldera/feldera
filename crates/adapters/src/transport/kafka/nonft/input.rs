@@ -24,7 +24,6 @@ use rdkafka::{
 };
 use std::num::NonZeroUsize;
 use std::sync::atomic::AtomicBool;
-use std::sync::mpsc::{channel, Receiver, Sender};
 use std::thread::{self, available_parallelism, JoinHandle, Thread};
 use std::{
     collections::HashSet,
@@ -32,6 +31,8 @@ use std::{
     thread::spawn,
     time::{Duration, Instant},
 };
+use tokio::sync::mpsc::error::TryRecvError;
+use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 
 /// Poll timeout must be low, as it bounds the amount of time it takes to resume the connector.
 const POLL_TIMEOUT: Duration = Duration::from_millis(5);
@@ -57,7 +58,7 @@ impl KafkaInputEndpoint {
 
 struct KafkaInputReader {
     _inner: Arc<KafkaInputReaderInner>,
-    command_sender: Sender<NonFtInputReaderCommand>,
+    command_sender: UnboundedSender<NonFtInputReaderCommand>,
     poller_thread: Thread,
 }
 
@@ -126,7 +127,7 @@ impl KafkaInputReaderInner {
         self: &Arc<Self>,
         consumer: &Box<dyn InputConsumer>,
         mut parser: Box<dyn Parser>,
-        command_receiver: Receiver<NonFtInputReaderCommand>,
+        mut command_receiver: UnboundedReceiver<NonFtInputReaderCommand>,
         queue: InputQueue,
     ) -> Result<(), KafkaError> {
         // Figure out the number of threads based on configuration, defaults,
@@ -139,7 +140,7 @@ impl KafkaInputReaderInner {
             .clamp(1, max_threads);
 
         let mut partition_eofs = HashSet::new();
-        let (feedback_sender, feedback_receiver) = channel();
+        let (feedback_sender, mut feedback_receiver) = unbounded_channel();
         let helper_state = Arc::new(Atomic::new(PipelineState::Paused));
         let mut threads: Vec<HelperThread> = Vec::with_capacity(n_threads - 1);
         let queue = Arc::new(queue);
@@ -162,18 +163,22 @@ impl KafkaInputReaderInner {
         let mut when_paused = Instant::now();
         const PAUSE_TIMEOUT: Duration = Duration::from_millis(0);
         loop {
-            for command in command_receiver.try_iter() {
-                match command {
-                    NonFtInputReaderCommand::Queue => queue.queue(),
-                    NonFtInputReaderCommand::Transition(PipelineState::Running) => {
+            loop {
+                match command_receiver.try_recv() {
+                    Ok(NonFtInputReaderCommand::Queue) => queue.queue(),
+                    Ok(NonFtInputReaderCommand::Transition(PipelineState::Running)) => {
                         running = true;
                     }
-                    NonFtInputReaderCommand::Transition(PipelineState::Paused) => {
+                    Ok(NonFtInputReaderCommand::Transition(PipelineState::Paused)) => {
                         running = false;
                         when_paused = Instant::now();
                         helper_state.store(PipelineState::Paused, Ordering::Release);
                     }
-                    NonFtInputReaderCommand::Transition(PipelineState::Terminated) => return Ok(()),
+                    Ok(NonFtInputReaderCommand::Transition(PipelineState::Terminated)) => {
+                        return Ok(())
+                    }
+                    Err(TryRecvError::Disconnected) => return Ok(()),
+                    Err(TryRecvError::Empty) => break,
                 }
             }
 
@@ -204,7 +209,7 @@ impl KafkaInputReaderInner {
                 self.poll(consumer, &mut parser, &feedback_sender, &queue);
             }
 
-            for feedback in feedback_receiver.try_iter() {
+            while let Ok(feedback) = feedback_receiver.try_recv() {
                 match feedback {
                     HelperFeedback::PartitionEOF(p) => {
                         // If all the partitions we're subscribed to have received
@@ -247,7 +252,7 @@ impl KafkaInputReaderInner {
         &self,
         consumer: &Box<dyn InputConsumer>,
         parser: &mut Box<dyn Parser>,
-        feedback: &Sender<HelperFeedback>,
+        feedback: &UnboundedSender<HelperFeedback>,
         queue: &InputQueue,
     ) {
         match self.kafka_consumer.poll(POLL_TIMEOUT) {
@@ -411,7 +416,7 @@ impl KafkaInputReader {
             }
         }
 
-        let (command_sender, command_receiver) = channel();
+        let (command_sender, command_receiver) = unbounded_channel();
         let poller_handle = spawn({
             let endpoint = inner.clone();
             move || {
@@ -446,7 +451,7 @@ impl HelperThread {
         consumer: Box<dyn InputConsumer>,
         mut parser: Box<dyn Parser>,
         state: Arc<Atomic<PipelineState>>,
-        feedback_sender: Sender<HelperFeedback>,
+        feedback_sender: UnboundedSender<HelperFeedback>,
         queue: Arc<InputQueue>,
     ) -> Self {
         Self {
@@ -526,6 +531,10 @@ impl InputReader for KafkaInputReader {
     fn request(&self, command: InputReaderCommand) {
         let _ = self.command_sender.send(command.as_nonft().unwrap());
         self.poller_thread.unpark();
+    }
+
+    fn is_closed(&self) -> bool {
+        self.command_sender.is_closed()
     }
 }
 

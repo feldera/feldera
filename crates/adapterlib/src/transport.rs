@@ -57,6 +57,50 @@ pub trait IntegratedInputEndpoint: InputEndpoint {
 }
 
 /// Commands for an [InputReader] to execute.
+///
+/// # Stalls
+///
+/// When the controller issues a [InputReaderCommand::Replay] or
+/// [InputReaderCommand::Queue] command to an input adapter, it waits for the
+/// input adapter to respond to them.  Until it receives a reply, the next step
+/// cannot proceed. An input adapter that does not respond to one of these
+/// commands will stall the entire pipeline.  However, the controller also uses
+/// [InputReader::is_closed] to detect that an input adapter has died due to an
+/// error or reaching end-of-input, so input adapters for which it is difficult
+/// to handle errors gracefully can report that they have died using
+/// `is_closed`, if necessary, as described in more detail below.
+///
+/// ## End-of-input handling
+///
+/// If an input adapter reaches the end of its input, and it isn't implemented
+/// to wait for and pass along further input, then it should:
+///
+/// - Make sure that it has already indicated that it has buffered all of its
+///   data, via [InputConsumer::buffered].
+///
+/// - Call [InputConsumer::eoi] to indicate that it has reached end of input.
+///
+/// - Respond to [InputReaderCommand::Queue] until it has queued all of its
+///   input and has none left.
+///
+/// - Optionally, at this point, it may exit and start returning `true` from
+///   `InputReader::is_closed`.
+///
+/// ## Error handling
+///
+/// If an input adapter encounters a fatal error that keeps it from continuing
+/// to obtain input, then it should report the error via [InputConsumer::error]
+/// with `true` for `fatal`.  Afterward, it may exit and start returning `true`
+/// from `InputReader::is_closed`.
+///
+/// ## Additional requirement
+///
+/// An input adapter should ensure that, if it flushes any records to the
+/// circuit in response to [InputReaderCommand::Replay] or
+/// [InputReaderCommand::Queue], then it finishes up and responds to the
+/// consumer using [InputConsumer::replayed] or [InputConsumer::extended],
+/// respectively.  If it instead dies mid-way, then the controller will not
+/// record the step properly and fault tolerance replay will be incorrect.
 #[derive(Debug)]
 pub enum InputReaderCommand {
     /// Tells a fault-tolerant input reader to seek past the data already read
@@ -305,6 +349,16 @@ impl InputQueue<()> {
 pub trait InputReader: Send + Sync {
     /// Requests the input reader to execute `command`.
     fn request(&self, command: InputReaderCommand);
+
+    /// Returns true if the endpoint is closed, meaning that it has already
+    /// acted on all of the commands that it ever will. A closed endpoint can be
+    /// one that came to the end of its input (and is not waiting for more to
+    /// arrive) or one that encountered a fatal error and cannot continue.
+    ///
+    /// An endpoint is often implemented in terms of a channel to a thread. In
+    /// such a case, this can be implemented in terms of `is_closed` on the
+    /// channel's sender.
+    fn is_closed(&self) -> bool;
 
     fn seek(&self, metadata: RmpValue) {
         self.request(InputReaderCommand::Seek(metadata));

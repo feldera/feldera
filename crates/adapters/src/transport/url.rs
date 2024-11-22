@@ -372,6 +372,10 @@ impl InputReader for UrlInputReader {
     fn request(&self, command: InputReaderCommand) {
         let _ = self.sender.send(command);
     }
+
+    fn is_closed(&self) -> bool {
+        self.sender.is_closed()
+    }
 }
 
 impl Drop for UrlInputReader {

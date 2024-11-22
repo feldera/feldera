@@ -184,6 +184,10 @@ impl InputReader for PubSubReader {
     fn request(&self, command: InputReaderCommand) {
         let _ = self.state_sender.send(command.as_nonft().unwrap());
     }
+
+    fn is_closed(&self) -> bool {
+        self.state_sender.is_closed()
+    }
 }
 
 /// Create `ClientConfig` from connector config.  Performs authentication when
