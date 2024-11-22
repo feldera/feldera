@@ -23,6 +23,13 @@ public class RegressionTests extends SqlIoTest {
     }
 
     @Test
+    public void recursionCrash() {
+        String sql = """
+                CREATE RECURSIVE VIEW ba (id BIGINT);""";
+        this.getCCS(sql);
+    }
+
+    @Test
     public void issue2651() {
         this.compileRustTestCase("""
                 CREATE TYPE INT32 AS INTEGER;

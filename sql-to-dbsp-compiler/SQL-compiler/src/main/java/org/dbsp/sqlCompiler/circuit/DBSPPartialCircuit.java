@@ -124,8 +124,10 @@ public final class DBSPPartialCircuit extends DBSPNode
         if (operator.is(DBSPViewDeclarationOperator.class)) {
             DBSPViewDeclarationOperator vd = operator.to(DBSPViewDeclarationOperator.class);
             DBSPViewOperator view = vd.getCorrespondingView(this);
-            assert view != null;
-            return Linq.list(new Port<>(view, 0));
+            if (view != null)
+                // Can happen if the view is declared but not defined
+                return Linq.list(new Port<>(view, 0));
+            return Linq.list();
         }
         return Linq.map(operator.inputs, i -> new Port<>(i.node(), 0));
     }
