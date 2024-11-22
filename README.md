@@ -81,6 +81,11 @@ and more.
    tolerance is a preview feature that requires support from input and
    output connectors.
 
+7. **Seamless ad-hoc queries**. You can run ad-hoc SQL queries on a running or paused pipeline to inspect or debug the
+   state of materialized views. While these queries are evaluated in batch mode using Apache Datafusion, their
+   results are consistent with the incremental engine's output for the same queries, aside from minor dialect and
+   rounding differences.
+
 ## 💻 Architecture
 
 The following diagram shows Feldera's architecture
