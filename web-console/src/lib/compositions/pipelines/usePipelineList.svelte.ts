@@ -1,7 +1,7 @@
 import { getPipelines, type PipelineThumb } from '$lib/services/pipelineManager'
 import { onMount } from 'svelte'
 
-let pipelines = $state([] as PipelineThumb[])
+let pipelines = $state<PipelineThumb[] | undefined>(undefined)
 const reload = async () => {
   pipelines = await getPipelines()
 }
@@ -9,7 +9,7 @@ const reload = async () => {
 export const useUpdatePipelineList = () => {
   return {
     updatePipelines(updater: (ps: PipelineThumb[]) => PipelineThumb[]) {
-      pipelines = updater(pipelines)
+      pipelines = updater(pipelines ?? [])
     }
   }
 }
@@ -23,15 +23,15 @@ export const useRefreshPipelineList = () => {
   })
 }
 
-export const usePipelineList = (preloaded?: { pipelines: typeof pipelines }) => {
-  if (preloaded) {
+export const usePipelineList = (preloaded?: { pipelines: PipelineThumb[] }) => {
+  if (preloaded && !pipelines) {
     pipelines = preloaded.pipelines
   }
   return {
     get pipelines() {
-      return [...pipelines]
+      return [...(pipelines ?? [])]
     },
-    set pipelines(ps: typeof pipelines) {
+    set pipelines(ps: PipelineThumb[]) {
       pipelines = ps
     }
   }

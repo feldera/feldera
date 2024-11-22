@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { goto, preloadCode } from '$app/navigation'
+  import { preloadCode } from '$app/navigation'
   import { base } from '$app/paths'
   import { useIsMobile, useIsTablet } from '$lib/compositions/layout/useIsMobile.svelte'
   import FelderaLogomarkLight from '$assets/images/feldera-modern/Feldera Logomark Color Dark.svg?component'
@@ -140,7 +140,7 @@
         <span class="fd fd-mediation text-surface-500"></span><span>Your pipelines</span>
       </div>
       {#if pipelines.pipelines.length}
-        <PipelineTable bind:selectedPipelines>
+        <PipelineTable pipelines={pipelines.pipelines} bind:selectedPipelines>
           {#snippet preHeaderEnd()}
             {#if selectedPipelines.length}
               <AvailableActions pipelines={pipelines.pipelines} bind:selectedPipelines

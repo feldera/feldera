@@ -89,7 +89,7 @@
   const buttonClass = 'btn gap-0'
   const iconClass = 'text-[28px]'
   const shortClass = 'w-9'
-  const longClass = 'w-28 justify-between pl-2'
+  const longClass = 'w-32 justify-between pl-2'
 </script>
 
 {#snippet deleteDialog()}
@@ -143,6 +143,7 @@
   >
     <span class="fd fd-play_arrow {iconClass}"></span>
     {text}
+    <span></span>
   </button>
 {/snippet}
 {#snippet _start()}
@@ -166,6 +167,7 @@
     <button class="{buttonClass} {longClass} disabled preset-filled-surface-900-100">
       <span class="fd fd-play_arrow {iconClass}"></span>
       Start
+      <span></span>
     </button>
   </div>
 {/snippet}
@@ -194,6 +196,7 @@
   >
     <span class="fd fd-pause {iconClass}"></span>
     Pause
+    <span></span>
   </button>
 {/snippet}
 {#snippet _shutdown()}
@@ -209,6 +212,7 @@
   >
     <span class="fd fd-stop bg-surface-50-950 {iconClass}"></span>
     Shutdown
+    <span></span>
   </button>
 {/snippet}
 
