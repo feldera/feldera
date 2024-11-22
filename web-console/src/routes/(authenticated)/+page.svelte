@@ -17,6 +17,7 @@
   import CreatePipelineButton from '$lib/components/pipelines/CreatePipelineButton.svelte'
   import { useLocalStorage } from '$lib/compositions/localStore.svelte'
   import { useDarkMode } from '$lib/compositions/useDarkMode.svelte'
+  import AvailableActions from '$lib/components/pipelines/table/AvailableActions.svelte'
 
   preloadCode(`${base}/pipelines/*`).then(() => preloadCode(`${base}/demos/`))
 
@@ -48,6 +49,7 @@
   let welcomed = useLocalStorage('home/welcomed', false)
   let showSuggestedDemos = useLocalStorage('home/hideSuggestedDemos', true)
   let { darkMode } = useDarkMode()
+  let selectedPipelines = $state([]) as string[]
 </script>
 
 <div class="h-full overflow-y-auto scrollbar">
@@ -138,13 +140,18 @@
         <span class="fd fd-mediation text-surface-500"></span><span>Your pipelines</span>
       </div>
       {#if pipelines.pipelines.length}
-        <PipelineTable>
+        <PipelineTable bind:selectedPipelines>
           {#snippet preHeaderEnd()}
-            <CreatePipelineButton class="max-w-64"></CreatePipelineButton>
+            {#if selectedPipelines.length}
+              <AvailableActions pipelines={pipelines.pipelines} bind:selectedPipelines
+              ></AvailableActions>
+            {:else}
+              <CreatePipelineButton class="max-w-64"></CreatePipelineButton>
+            {/if}
           {/snippet}
         </PipelineTable>
       {:else}
-        <div class="flex w-full flex-col items-center gap-4">
+        <div class="flex w-full flex-col items-center gap-4 pt-8 sm:pt-16">
           <ImageBox class="h-9 fill-surface-200-800"></ImageBox>
           <div class="text-lg">Your pipelines will appear here</div>
           <div class="relative flex gap-5">

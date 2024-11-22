@@ -233,7 +233,7 @@ const consolidatePipelineStatus = (
 ) => {
   return match([pipelineStatus, desiredStatus, pipelineError, programStatus])
     .with(['Shutdown', P.any, P.nullish, 'CompilingSql'], () => 'Compiling SQL' as const)
-    .with(['Shutdown', P.any, P.nullish, 'SqlCompiled' as any], () => 'SQL compiled' as const)
+    .with(['Shutdown', P.any, P.nullish, 'SqlCompiled'], () => 'SQL compiled' as const)
     .with(['Shutdown', P.any, P.nullish, 'Pending'], () => 'Queued' as const)
     .with(['Shutdown', P.any, P.nullish, 'CompilingRust'], () => 'Compiling binary' as const)
     .with(['Shutdown', P.any, P.nullish, { SqlError: P.select() }], (SqlError) => ({ SqlError }))
