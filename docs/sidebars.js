@@ -154,6 +154,7 @@ const sidebars = {
                         'sql/recursion',
                         'sql/ad-hoc',
                         'sql/streaming',
+                        'sql/system',
                         'sql/table',
                         'sql/udf'
                     ]

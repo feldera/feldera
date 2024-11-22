@@ -2,8 +2,8 @@
 
 ## SQL programs
 
-The compiler, which runs internally to Feldera, must be given the
-table definition first, and then the view definition. e.g.,
+A SQL program consists of the table definitions, followed by view
+definitions. e.g.:
 
 ```sql
 -- define Person table
@@ -16,8 +16,9 @@ CREATE TABLE Person
 CREATE VIEW Adult AS SELECT Person.name FROM Person WHERE Person.age > 18;
 ```
 
-The compiler generates a Rust function which implements the query as a function:
-given the input data, it produces the output data.
+Given this program as input, the SQL compiler generates a Rust
+function which implements the query as a function: given the input
+data, it produces the output data.
 
 The compiler can also generate a function which will incrementally maintain the
 view `Adult` when presented with changes to table `Person`:

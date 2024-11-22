@@ -72,7 +72,6 @@ import org.dbsp.util.IWritesLogs;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Logger;
 import org.dbsp.util.Utilities;
-import org.hsqldb.lib.ObjectComparator;
 
 import javax.annotation.Nullable;
 import java.io.IOException;
@@ -199,7 +198,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
                 CREATE VIEW ERROR_VIEW AS SELECT * FROM ERROR_TABLE;
                 """,
                 true, false);
-        // Compute them using the compiler flags
+        // Compute the names based on the compiler flags.
         NOW_TABLE_NAME = this.canonicalName("now", false);
         ERROR_TABLE_NAME = this.canonicalName("ERROR_TABLE", false);
         ERROR_VIEW_NAME = this.canonicalName("ERROR_VIEW", false);
