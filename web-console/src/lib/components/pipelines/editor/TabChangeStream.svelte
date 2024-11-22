@@ -269,7 +269,9 @@
 <div class="flex h-full flex-row">
   <PaneGroup direction="horizontal" onpaste={ingestPasted}>
     <Pane defaultSize={20} minSize={5} class="flex h-full">
-      <div class="flex w-full flex-col overflow-y-auto text-nowrap scrollbar">
+      <div
+        class="bg-white-black mr-2 mt-4 flex w-full flex-col gap-1 overflow-y-auto text-nowrap rounded p-4 scrollbar"
+      >
         {#snippet relationItem(relation: RelationInfo & ExtraType)}
           <label class="flex-none cursor-pointer overflow-hidden overflow-ellipsis">
             <input
@@ -319,9 +321,9 @@
         {/if}
       </div>
     </Pane>
-    <PaneResizer class="pane-divider-vertical bg-surface-100-900 "></PaneResizer>
+    <PaneResizer class="pane-divider-vertical"></PaneResizer>
 
-    <Pane minSize={70} class="flex h-full">
+    <Pane minSize={70} class="flex h-full pl-2 pt-4">
       {#if getChangeStream()[pipelineName]?.rows?.length}
         {#key pipelineName}
           <ChangeStream changeStream={getChangeStream()[pipelineName]}></ChangeStream>
