@@ -116,10 +116,15 @@
           {#snippet content(close)}
             <div
               transition:fade={{ duration: 100 }}
-              class="absolute left-0 z-10 flex max-h-[400px] w-[calc(100vw-100px)] max-w-[200px] flex-col justify-end overflow-y-auto rounded bg-white shadow-md dark:bg-black"
+              class="absolute left-0 z-10 flex max-h-[400px] w-[calc(100vw-100px)] max-w-[200px] flex-col justify-end gap-2 overflow-y-auto rounded bg-white p-2 shadow-md dark:bg-black"
             >
               {#each docChapters as doc}
-                <a href={doc.href}>{doc.title}</a>
+                <a
+                  href={doc.href}
+                  target="_blank"
+                  rel="noreferrer"
+                  class="rounded p-2 hover:preset-tonal-surface">{doc.title}</a
+                >
               {/each}
             </div>
           {/snippet}
@@ -139,7 +144,9 @@
               {#each communityResources as item}
                 <a
                   href={Array.isArray(item.path) ? item.path[0] : item.path}
-                  class="preset-grayout-surface flex flex-nowrap items-center justify-center"
+                  target="_blank"
+                  rel="noreferrer"
+                  class="preset-grayout-surface flex flex-nowrap items-center p-2"
                   {...item.openInNewTab ? { target: '_blank', rel: 'noreferrer' } : undefined}
                 >
                   <div class="flex w-9 justify-center">
