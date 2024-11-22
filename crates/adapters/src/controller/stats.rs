@@ -35,6 +35,7 @@ use crate::PipelineState;
 use anyhow::Error as AnyError;
 use atomic::Atomic;
 use crossbeam::sync::{ShardedLock, ShardedLockReadGuard, Unparker};
+use feldera_adapterlib::transport::InputReader;
 use feldera_types::config::PipelineConfig;
 use log::error;
 use metrics::{KeyName, SharedString as MetricString, Unit as MetricUnit};
@@ -409,19 +410,6 @@ impl ControllerStatus {
         self.global_metrics.state.store(state, Ordering::Release);
     }
 
-    /// Initialize stats for a new input endpoint.
-    pub fn add_input(
-        &self,
-        endpoint_id: &EndpointId,
-        endpoint_name: &str,
-        config: InputEndpointConfig,
-    ) {
-        self.inputs.write().unwrap().insert(
-            *endpoint_id,
-            InputEndpointStatus::new(endpoint_name, config),
-        );
-    }
-
     pub fn pause_input_endpoint(&self, endpoint: &EndpointId) {
         if let Some(ep) = self.inputs.write().unwrap().get_mut(endpoint) {
             ep.paused = true;
@@ -434,8 +422,8 @@ impl ControllerStatus {
         }
     }
 
-    pub fn remove_input(&self, endpoint_id: &EndpointId) {
-        self.inputs.write().unwrap().remove(endpoint_id);
+    pub fn remove_input(&self, endpoint_id: &EndpointId) -> Option<InputEndpointStatus> {
+        self.inputs.write().unwrap().remove(endpoint_id)
     }
 
     pub fn remove_output(&self, endpoint_id: &EndpointId) {
@@ -824,6 +812,9 @@ pub struct InputEndpointStatus {
     #[serde(skip)]
     pub progress: Mutex<StepProgress>,
 
+    #[serde(skip)]
+    pub reader: Box<dyn InputReader>,
+
     /// Endpoint has been paused by the user.
     ///
     /// When `true`, the endpoint doesn't produce any data even when the pipeline
@@ -837,7 +828,11 @@ pub struct InputEndpointStatus {
 }
 
 impl InputEndpointStatus {
-    fn new(endpoint_name: &str, config: InputEndpointConfig) -> Self {
+    pub fn new(
+        endpoint_name: &str,
+        config: InputEndpointConfig,
+        reader: Box<dyn InputReader>,
+    ) -> Self {
         let paused_by_user = config.connector_config.paused;
         Self {
             endpoint_name: endpoint_name.to_string(),
@@ -846,6 +841,7 @@ impl InputEndpointStatus {
             fatal_error: Mutex::new(None),
             progress: Mutex::new(StepProgress::NotStarted),
             paused: paused_by_user,
+            reader,
         }
     }
 

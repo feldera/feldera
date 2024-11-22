@@ -302,7 +302,7 @@ impl InputQueue<()> {
 /// Reads data from an endpoint.
 ///
 /// Use [`TransportInputEndpoint::open`] to obtain an [`InputReader`].
-pub trait InputReader: Send {
+pub trait InputReader: Send + Sync {
     /// Requests the input reader to execute `command`.
     fn request(&self, command: InputReaderCommand);
 

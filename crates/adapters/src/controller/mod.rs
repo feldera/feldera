@@ -19,7 +19,6 @@
 
 use crate::catalog::OutputCollectionHandles;
 use crate::create_integrated_output_endpoint;
-use crate::transport::InputReader;
 use crate::transport::Step;
 use crate::transport::{input_transport_config_to_endpoint, output_transport_config_to_endpoint};
 use crate::{
@@ -72,7 +71,7 @@ use std::{
     sync::OnceLock,
     sync::{
         atomic::{AtomicBool, AtomicU64, Ordering},
-        Arc, Mutex,
+        Arc,
     },
     thread::{spawn, JoinHandle},
     time::{Duration, Instant},
@@ -718,7 +717,7 @@ impl CircuitThread {
                 }
             }
             if !need_start.is_empty() {
-                let inputs = self.controller.inputs.lock().unwrap();
+                let inputs = self.controller.status.input_status();
                 for endpoint_id in need_start {
                     if let Some(descr) = inputs.get(&endpoint_id) {
                         descr.reader.queue();
@@ -876,7 +875,7 @@ impl FtState {
                     step_rw.into_reader().unwrap().seek(step - 1)?;
                 for (endpoint_name, metadata) in &prev_step_metadata.input_logs {
                     let endpoint_id = controller.input_endpoint_id_by_name(endpoint_name)?;
-                    controller.inputs.lock().unwrap()[&endpoint_id]
+                    controller.status.input_status()[&endpoint_id]
                         .reader
                         .seek(metadata.value.clone());
                 }
@@ -964,13 +963,9 @@ impl FtState {
         }
         for (endpoint_name, metadata) in &metadata.input_logs {
             let endpoint_id = controller.input_endpoint_id_by_name(endpoint_name)?;
-            *controller.status.inputs.read().unwrap()[&endpoint_id]
-                .progress
-                .lock()
-                .unwrap() = StepProgress::Started;
-            controller.inputs.lock().unwrap()[&endpoint_id]
-                .reader
-                .replay(metadata.value.clone());
+            let endpoint_status = &controller.status.input_status()[&endpoint_id];
+            *endpoint_status.progress.lock().unwrap() = StepProgress::Started;
+            endpoint_status.reader.replay(metadata.value.clone());
         }
         Ok((step_rw, Some(metadata)))
     }
@@ -1449,7 +1444,7 @@ impl BackpressureThread {
                 PipelineState::Terminated => return,
             };
 
-            for (epid, ep) in controller.inputs.lock().unwrap().iter() {
+            for (epid, ep) in controller.status.input_status().iter() {
                 let should_run = globally_running
                     && !controller.status.input_endpoint_paused_by_user(epid)
                     && !controller.status.input_endpoint_full(epid);
@@ -1478,21 +1473,6 @@ impl Drop for BackpressureThread {
         self.unparker.unpark();
         if let Some(join_handle) = self.join_handle.take() {
             let _ = join_handle.join();
-        }
-    }
-}
-
-/// State tracked by the controller for each input endpoint.
-struct InputEndpointDescr {
-    endpoint_name: String,
-    reader: Box<dyn InputReader>,
-}
-
-impl InputEndpointDescr {
-    pub fn new(endpoint_name: &str, reader: Box<dyn InputReader>) -> Self {
-        Self {
-            endpoint_name: endpoint_name.to_owned(),
-            reader,
         }
     }
 }
@@ -1690,7 +1670,6 @@ pub struct ControllerInner {
     catalog: Arc<Box<dyn CircuitCatalog>>,
     // Always lock this after the catalog is locked to avoid deadlocks
     trace_snapshot: ConsistentSnapshots,
-    inputs: Mutex<BTreeMap<EndpointId, InputEndpointDescr>>,
     next_input_id: Atomic<EndpointId>,
     outputs: ShardedLock<OutputEndpoints>,
     next_output_id: Atomic<EndpointId>,
@@ -1732,7 +1711,6 @@ impl ControllerInner {
             command_sender,
             catalog: Arc::new(catalog),
             trace_snapshot: Arc::new(TokioMutex::new(BTreeMap::new())),
-            inputs: Mutex::new(BTreeMap::new()),
             next_input_id: Atomic::new(0),
             outputs: ShardedLock::new(OutputEndpoints::new()),
             next_output_id: Atomic::new(0),
@@ -1766,7 +1744,7 @@ impl ControllerInner {
         &self,
         endpoint_name: &str,
     ) -> Result<EndpointId, ControllerError> {
-        let inputs = self.inputs.lock().unwrap();
+        let inputs = self.status.input_status();
 
         for (endpoint_id, descr) in inputs.iter() {
             if descr.endpoint_name == endpoint_name {
@@ -1846,11 +1824,8 @@ impl ControllerInner {
     pub fn disconnect_input(self: &Arc<Self>, endpoint_id: &EndpointId) {
         debug!("Disconnecting input endpoint {endpoint_id}");
 
-        let mut inputs = self.inputs.lock().unwrap();
-
-        if let Some(ep) = inputs.remove(endpoint_id) {
+        if let Some(ep) = self.status.remove_input(endpoint_id) {
             ep.reader.disconnect();
-            self.status.remove_input(endpoint_id);
             self.unpark_circuit();
             self.unpark_backpressure();
         }
@@ -1864,7 +1839,7 @@ impl ControllerInner {
     ) -> Result<EndpointId, ControllerError> {
         debug!("Adding input endpoint '{endpoint_name}'; config: {endpoint_config:?}");
 
-        let mut inputs = self.inputs.lock().unwrap();
+        let mut inputs = self.status.inputs.write().unwrap();
 
         if inputs.values().any(|ep| ep.endpoint_name == endpoint_name) {
             Err(ControllerError::duplicate_input_endpoint(endpoint_name))?;
@@ -1923,9 +1898,6 @@ impl ControllerInner {
 
                 let parser =
                     format.new_parser(endpoint_name, input_handle, &format_config.config)?;
-                // Initialize endpoint stats.
-                self.status
-                    .add_input(&endpoint_id, endpoint_name, endpoint_config);
 
                 endpoint
                     .open(probe, parser, input_handle.schema.clone())
@@ -1935,17 +1907,16 @@ impl ControllerInner {
                 let endpoint =
                     create_integrated_input_endpoint(endpoint_name, &endpoint_config, probe)?;
 
-                // Initialize endpoint stats.
-                self.status
-                    .add_input(&endpoint_id, endpoint_name, endpoint_config);
-
                 endpoint
                     .open(input_handle)
                     .map_err(|e| ControllerError::input_transport_error(endpoint_name, true, e))?
             }
         };
 
-        inputs.insert(endpoint_id, InputEndpointDescr::new(endpoint_name, reader));
+        inputs.insert(
+            endpoint_id,
+            InputEndpointStatus::new(endpoint_name, endpoint_config, reader),
+        );
 
         drop(inputs);
 
@@ -2271,7 +2242,7 @@ impl ControllerInner {
 
     fn stop(&self) {
         // Prevent nested panic when stopping the pipeline in response to a panic.
-        let Ok(mut inputs) = self.inputs.lock() else {
+        let Ok(mut inputs) = self.status.inputs.write() else {
             error!("Error shutting down the pipeline: failed to acquire a poisoned lock. This indicates that the pipeline is an inconsistent state.");
             return;
         };
