@@ -717,16 +717,31 @@ impl CircuitThread {
         let start_time = Instant::now();
         let mut warn_threshold = Duration::from_secs(10);
         loop {
-            // Process input.
+            // Process input and check for failed input adapters.
             let statuses = self.controller.status.input_status();
+            let mut failed = Vec::new();
             waiting.retain(|endpoint_id| {
                 let Some(status) = statuses.get(endpoint_id) else {
                     // Input adapter was deleted without yielding any input.
                     return false;
                 };
                 let Some(results) = mem::take(&mut *status.progress.lock().unwrap()) else {
-                    // Still waiting for this input adapter.
-                    return true;
+                    // Check for failure.
+                    //
+                    // We check for results first, because if an input adapter
+                    // queues its last input batch and then exits, we want to
+                    // take the input.
+                    if status.reader.is_closed() {
+                        if status.metrics.end_of_input.load(Ordering::Acquire) {
+                            warn!("Input endpoint {} exited", status.endpoint_name);
+                        } else {
+                            warn!("Input endpoint {} failed", status.endpoint_name);
+                        }
+                        failed.push(*endpoint_id);
+                        return false;
+                    } else {
+                        return true;
+                    }
                 };
 
                 // Input received.
@@ -742,6 +757,9 @@ impl CircuitThread {
                 false
             });
             drop(statuses);
+            for endpoint_id in failed {
+                self.controller.disconnect_input(&endpoint_id);
+            }
 
             // Are we done?
             if waiting.is_empty() {
@@ -765,7 +783,6 @@ impl CircuitThread {
             if self.controller.state() == PipelineState::Terminated {
                 return Err(());
             }
-
         }
     }
 
@@ -2395,6 +2412,14 @@ impl InputProbe {
             controller,
             max_batch_size: connector_config.max_batch_size as usize,
         }
+    }
+}
+
+impl Drop for InputProbe {
+    fn drop(&mut self) {
+        // Wake up [CircuitThread::flush_input_to_circuit] so that it recognizes
+        // that the input adapter has failed.
+        self.controller.circuit_thread_unparker.unpark();
     }
 }
 

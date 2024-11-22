@@ -13,9 +13,10 @@ use std::collections::VecDeque;
 use std::hash::Hasher;
 use std::io::{Seek, SeekFrom};
 use std::ops::Range;
-use std::sync::mpsc::{channel, Receiver, Sender};
 use std::thread::{self, Thread};
 use std::{fs::File, io::Write, thread::spawn, time::Duration};
+use tokio::sync::mpsc::error::TryRecvError;
+use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 use xxhash_rust::xxh3::Xxh3Default;
 
 const SLEEP: Duration = Duration::from_millis(200);
@@ -52,7 +53,7 @@ impl TransportInputEndpoint for FileInputEndpoint {
 }
 
 struct FileInputReader {
-    sender: Sender<InputReaderCommand>,
+    sender: UnboundedSender<InputReaderCommand>,
     thread: Thread,
 }
 
@@ -66,7 +67,7 @@ impl FileInputReader {
             AnyError::msg(format!("Failed to open input file '{}': {e}", config.path))
         })?;
 
-        let (sender, receiver) = channel();
+        let (sender, receiver) = unbounded_channel();
         let join_handle = spawn({
             let follow = config.follow;
             let path = config.path.clone();
@@ -101,7 +102,7 @@ impl FileInputReader {
         buffer_size: usize,
         consumer: &dyn InputConsumer,
         mut parser: Box<dyn Parser>,
-        receiver: Receiver<InputReaderCommand>,
+        mut receiver: UnboundedReceiver<InputReaderCommand>,
         follow: bool,
     ) -> AnyResult<()> {
         let mut splitter = StreamSplitter::new(parser.splitter());
@@ -110,15 +111,15 @@ impl FileInputReader {
         let mut extending = false;
         let mut eof = false;
         loop {
-            for command in receiver.try_iter() {
-                match command {
-                    InputReaderCommand::Extend => {
+            loop {
+                match receiver.try_recv() {
+                    Ok(InputReaderCommand::Extend) => {
                         extending = true;
                     }
-                    InputReaderCommand::Pause => {
+                    Ok(InputReaderCommand::Pause) => {
                         extending = false;
                     }
-                    InputReaderCommand::Queue => {
+                    Ok(InputReaderCommand::Queue) => {
                         let mut total = 0;
                         let mut hasher =
                             consumer.is_pipeline_fault_tolerant().then(Xxh3Default::new);
@@ -149,13 +150,13 @@ impl FileInputReader {
                             })?,
                         );
                     }
-                    InputReaderCommand::Seek(metadata) => {
+                    Ok(InputReaderCommand::Seek(metadata)) => {
                         let Metadata { offsets } = rmpv::ext::from_value(metadata)?;
                         let offset = offsets.end;
                         file.seek(SeekFrom::Start(offset))?;
                         splitter.seek(offset);
                     }
-                    InputReaderCommand::Replay(metadata) => {
+                    Ok(InputReaderCommand::Replay(metadata)) => {
                         let Metadata { offsets } = rmpv::ext::from_value(metadata)?;
                         file.seek(SeekFrom::Start(offsets.start))?;
                         splitter.seek(offsets.start);
@@ -180,7 +181,9 @@ impl FileInputReader {
                         }
                         consumer.replayed(num_records, hasher.finish());
                     }
-                    InputReaderCommand::Disconnect => return Ok(()),
+                    Ok(InputReaderCommand::Disconnect) => return Ok(()),
+                    Err(TryRecvError::Empty) => break,
+                    Err(TryRecvError::Disconnected) => return Ok(()),
                 }
             }
 
@@ -222,6 +225,10 @@ impl InputReader for FileInputReader {
     fn request(&self, command: super::InputReaderCommand) {
         let _ = self.sender.send(command);
         self.thread.unpark();
+    }
+
+    fn is_closed(&self) -> bool {
+        self.sender.is_closed()
     }
 }
 

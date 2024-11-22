@@ -144,6 +144,10 @@ impl InputReader for DeltaTableInputReader {
             NonFtInputReaderCommand::Transition(state) => drop(self.sender.send_replace(state)),
         }
     }
+
+    fn is_closed(&self) -> bool {
+        self.inner.queue.is_empty() && self.sender.is_closed()
+    }
 }
 
 impl Drop for DeltaTableInputReader {

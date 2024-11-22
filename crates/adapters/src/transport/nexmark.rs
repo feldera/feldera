@@ -107,6 +107,10 @@ impl InputReader for InputGenerator {
             },
         }
     }
+
+    fn is_closed(&self) -> bool {
+        false
+    }
 }
 
 #[derive(Serialize, Deserialize)]

@@ -758,6 +758,10 @@ impl InputReader for InputGenerator {
         let _ = self.command_sender.send(command);
         self.datagen_thread.unpark();
     }
+
+    fn is_closed(&self) -> bool {
+        self.command_sender.is_closed()
+    }
 }
 
 impl Drop for InputGenerator {

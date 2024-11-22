@@ -298,6 +298,10 @@ impl InputReader for AdHocInputEndpoint {
             InputReaderCommand::Disconnect => self.set_state(PipelineState::Terminated),
         }
     }
+
+    fn is_closed(&self) -> bool {
+        false
+    }
 }
 
 #[derive(Serialize, Deserialize)]

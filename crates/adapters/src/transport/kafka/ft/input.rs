@@ -499,6 +499,9 @@ impl InputReader for KafkaFtInputReader {
         let _ = self.command_sender.send(command);
         self.poller_thread.unpark();
     }
+    fn is_closed(&self) -> bool {
+        self.command_sender.is_closed()
+    }
 }
 
 impl Drop for KafkaFtInputReader {
