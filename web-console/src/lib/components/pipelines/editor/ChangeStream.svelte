@@ -43,7 +43,7 @@
   {tooltip.data?.text}
 </div>
 
-<div class="bg-white-black relative flex w-full flex-1 flex-col">
+<div class="bg-white-black relative flex w-full flex-1 flex-col rounded">
   {#if changeStream.totalSkippedBytes}
     <WarningBanner>
       Receiving changes faster than can be displayed. Skipping some records to keep up, {humanSize(
