@@ -44,6 +44,13 @@ import java.util.List;
 /** Tests about table and view metadata */
 public class MetadataTests extends BaseSQLTests {
     @Test
+    public void systemView() {
+        // Create a view named like a system view
+        this.statementsFailingInCompilation("CREATE VIEW ERROR_VIEW AS SELECT 2;",
+                "error: Duplicate declaration: 'error_view' already defined");
+    }
+
+    @Test
     public void propertiesTest() {
         String ddl = """
                CREATE TABLE T (
