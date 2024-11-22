@@ -1,19 +1,21 @@
 <script lang="ts">
-  import { usePipelineList } from '$lib/compositions/pipelines/usePipelineList.svelte'
   import { Datatable, TableHandler, ThSort } from '@vincjo/datatables'
   import PipelineStatus from '$lib/components/pipelines/list/PipelineStatus.svelte'
-  import { type PipelineStatus as PipelineStatusType } from '$lib/services/pipelineManager'
+  import {
+    type PipelineStatus as PipelineStatusType,
+    type PipelineThumb
+  } from '$lib/services/pipelineManager'
   import { type Snippet } from 'svelte'
   import { getPipelineStatusLabel } from '$lib/functions/pipelines/status'
   let {
+    pipelines,
     preHeaderEnd,
     selectedPipelines = $bindable()
-  }: { preHeaderEnd?: Snippet; selectedPipelines: string[] } = $props()
-  const pipelines = usePipelineList()
+  }: { pipelines: PipelineThumb[]; preHeaderEnd?: Snippet; selectedPipelines: string[] } = $props()
 
-  const table = new TableHandler(pipelines.pipelines, { rowsPerPage: 10, selectBy: 'name' })
+  const table = new TableHandler(pipelines, { rowsPerPage: 10, selectBy: 'name' })
   $effect(() => {
-    table.setRows(pipelines.pipelines)
+    table.setRows(pipelines)
   })
   $effect(() => {
     selectedPipelines = table.selected as string[]
