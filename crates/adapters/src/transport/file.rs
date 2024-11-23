@@ -7,6 +7,7 @@ use crate::{InputBuffer, Parser};
 use anyhow::{bail, Error as AnyError, Result as AnyResult};
 use feldera_types::program_schema::Relation;
 use feldera_types::transport::file::{FileInputConfig, FileOutputConfig};
+use log::error;
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::hash::Hasher;
@@ -68,6 +69,7 @@ impl FileInputReader {
         let (sender, receiver) = channel();
         let join_handle = spawn({
             let follow = config.follow;
+            let path = config.path.clone();
             let buffer_size = match config.buffer_size_bytes {
                 Some(size) if size > 0 => size,
                 _ => 8192,
@@ -75,6 +77,7 @@ impl FileInputReader {
             move || {
                 if let Err(error) = Self::worker_thread(
                     file,
+                    path,
                     buffer_size,
                     consumer.as_ref(),
                     parser,
@@ -94,6 +97,7 @@ impl FileInputReader {
 
     fn worker_thread(
         mut file: File,
+        path: String,
         buffer_size: usize,
         consumer: &dyn InputConsumer,
         mut parser: Box<dyn Parser>,
@@ -161,7 +165,8 @@ impl FileInputReader {
                         while remainder > 0 {
                             let n = splitter.read(&mut file, buffer_size, remainder)?;
                             if n == 0 {
-                                todo!();
+                                error!("{path}: file truncated since originally read");
+                                break;
                             }
                             remainder -= n;
                             while let Some(chunk) = splitter.next(remainder == 0) {
