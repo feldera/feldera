@@ -784,14 +784,10 @@ pub struct InputEndpointMetrics {
     pub end_of_input: AtomicBool,
 }
 
-pub enum StepProgress {
-    NotStarted,
-    Started,
-    Complete {
-        num_records: u64,
-        hash: u64,
-        metadata: Option<RmpValue>,
-    },
+pub struct StepResults {
+    pub num_records: u64,
+    pub hash: u64,
+    pub metadata: Option<RmpValue>,
 }
 
 /// Input endpoint status information.
@@ -810,7 +806,7 @@ pub struct InputEndpointStatus {
 
     /// Progress within the latest step.
     #[serde(skip)]
-    pub progress: Mutex<StepProgress>,
+    pub progress: Mutex<Option<StepResults>>,
 
     #[serde(skip)]
     pub reader: Box<dyn InputReader>,
@@ -839,7 +835,7 @@ impl InputEndpointStatus {
             config,
             metrics: Default::default(),
             fatal_error: Mutex::new(None),
-            progress: Mutex::new(StepProgress::NotStarted),
+            progress: Mutex::new(None),
             paused: paused_by_user,
             reader,
         }
@@ -892,11 +888,11 @@ impl InputEndpointStatus {
     }
 
     fn completed(&self, num_records: u64, hash: u64, metadata: Option<RmpValue>) {
-        *self.progress.lock().unwrap() = StepProgress::Complete {
+        *self.progress.lock().unwrap() = Some(StepResults {
             num_records,
             hash,
             metadata,
-        };
+        });
         self.metrics
             .buffered_records
             .fetch_sub(num_records, Ordering::Relaxed);

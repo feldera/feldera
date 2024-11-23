@@ -55,7 +55,6 @@ use metrics_util::{
 };
 use nonzero_ext::nonzero;
 use rmpv::Value as RmpValue;
-use stats::StepProgress;
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -691,75 +690,68 @@ impl CircuitThread {
     /// to send when the records have been processed, and the corresponding
     /// steps log entries.
     fn flush_input_to_circuit(&mut self) -> Result<FlushedInput, ()> {
+        // Collect the ids of the endpoints that we'll flush to the circuit.
+        //
+        // The set of endpoint ids could change while we're waiting, because
+        // adapters can be hot-added and hot-removed (and this really happens
+        // with HTTP and ad-hoc input adapters). We only wait for the ones that
+        // exist when we start flushing input. New ones will be processed in
+        // future steps.
+        let statuses = self.controller.status.input_status();
+        let mut waiting = HashSet::with_capacity(statuses.len());
+        for (endpoint_id, status) in statuses.iter() {
+            if !self.replaying() {
+                status.reader.queue();
+            } else {
+                // We already started the input adapters replaying. The set of
+                // input adapters can't change during replay (because we disable
+                // the APIs that could do that during replay).
+            }
+            waiting.insert(*endpoint_id);
+        }
+        drop(statuses);
+
+        let mut total_consumed = 0;
+        let mut step_metadata = HashMap::new();
+
         let start_time = Instant::now();
         let mut warn_threshold = Duration::from_secs(10);
         loop {
-            // Collect inputs that need [InputReader::queue] to be called. Then,
-            // separately, call it on each of them. We don't do it in a single
-            // step because that causes a deadlock due to nesting locks.
-            //
-            // We don't just start all of the inputs in a single pass because
-            // inputs can be added or removed (particularly HTTP inputs) when we
-            // drop the lock.
-            let mut n_incomplete = 0;
-            let mut need_start = Vec::new();
-            for (endpoint_id, status) in self.controller.status.input_status().iter() {
-                let mut progress = status.progress.lock().unwrap();
-                match *progress {
-                    StepProgress::NotStarted => {
-                        assert!(!self.replaying());
-                        need_start.push(*endpoint_id);
-                        n_incomplete += 1;
-                        *progress = StepProgress::Started;
-                    }
-                    StepProgress::Started => n_incomplete += 1,
-                    StepProgress::Complete { .. } => (),
-                }
-            }
-            if !need_start.is_empty() {
-                let inputs = self.controller.status.input_status();
-                for endpoint_id in need_start {
-                    if let Some(descr) = inputs.get(&endpoint_id) {
-                        descr.reader.queue();
-                    }
-                }
-            }
-            if n_incomplete == 0 {
-                let mut total_consumed = 0;
-                let mut step_metadata = HashMap::new();
-                for (id, status) in self.controller.status.input_status().iter() {
-                    match mem::replace(
-                        &mut *status.progress.lock().unwrap(),
-                        StepProgress::NotStarted,
-                    ) {
-                        StepProgress::Complete {
-                            num_records,
-                            hash,
-                            metadata,
-                        } => {
-                            total_consumed += num_records;
-                            step_metadata.insert(
-                                status.endpoint_name.clone(),
-                                InputLog {
-                                    value: metadata.unwrap_or(RmpValue::Nil),
-                                    num_records,
-                                    hash,
-                                },
-                            );
-                        }
-                        StepProgress::NotStarted => {
-                            info!("race adding endpoint {id}");
-                        }
-                        StepProgress::Started => unreachable!(),
-                    }
-                }
+            // Process input.
+            let statuses = self.controller.status.input_status();
+            waiting.retain(|endpoint_id| {
+                let Some(status) = statuses.get(endpoint_id) else {
+                    // Input adapter was deleted without yielding any input.
+                    return false;
+                };
+                let Some(results) = mem::take(&mut *status.progress.lock().unwrap()) else {
+                    // Still waiting for this input adapter.
+                    return true;
+                };
 
+                // Input received.
+                total_consumed += results.num_records;
+                step_metadata.insert(
+                    status.endpoint_name.clone(),
+                    InputLog {
+                        value: results.metadata.unwrap_or(RmpValue::Nil),
+                        num_records: results.num_records,
+                        hash: results.hash,
+                    },
+                );
+                false
+            });
+            drop(statuses);
+
+            // Are we done?
+            if waiting.is_empty() {
                 return Ok(FlushedInput {
                     total_consumed,
                     step_metadata,
                 });
             }
 
+            // Warn if we've waited a long time.
             if start_time.elapsed() >= warn_threshold {
                 warn!(
                     "still waiting to complete input step after {} seconds",
@@ -768,10 +760,12 @@ impl CircuitThread {
                 warn_threshold *= 2;
             }
 
+            // Wait for something to change.
             self.parker.park_timeout(Duration::from_secs(1));
             if self.controller.state() == PipelineState::Terminated {
                 return Err(());
             }
+
         }
     }
 
@@ -963,9 +957,9 @@ impl FtState {
         }
         for (endpoint_name, metadata) in &metadata.input_logs {
             let endpoint_id = controller.input_endpoint_id_by_name(endpoint_name)?;
-            let endpoint_status = &controller.status.input_status()[&endpoint_id];
-            *endpoint_status.progress.lock().unwrap() = StepProgress::Started;
-            endpoint_status.reader.replay(metadata.value.clone());
+            controller.status.input_status()[&endpoint_id]
+                .reader
+                .replay(metadata.value.clone());
         }
         Ok((step_rw, Some(metadata)))
     }
