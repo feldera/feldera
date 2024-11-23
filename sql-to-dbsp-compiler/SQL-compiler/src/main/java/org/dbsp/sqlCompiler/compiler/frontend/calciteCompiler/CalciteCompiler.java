@@ -60,6 +60,7 @@ import org.apache.calcite.runtime.MapEntry;
 import org.apache.calcite.schema.Function;
 import org.apache.calcite.schema.Schema;
 import org.apache.calcite.schema.SchemaPlus;
+import org.apache.calcite.sql.SqlAggFunction;
 import org.apache.calcite.sql.SqlBasicCall;
 import org.apache.calcite.sql.SqlBasicTypeNameSpec;
 import org.apache.calcite.sql.SqlCall;
@@ -423,6 +424,14 @@ public class CalciteCompiler implements IWritesLogs {
     public boolean functionExists(String identifier) {
         List<SqlOperator> operators = Objects.requireNonNull(this.validator).getOperatorTable().getOperatorList();
         for (SqlOperator op: operators) {
+            if (op instanceof SqlAggFunction)
+                // These names are not ambiguous
+                continue;
+            if (op.kind == SqlKind.ITEM ||
+                    op.kind == SqlKind.DOT ||
+                    op.kind == SqlKind.SEARCH)
+                // These are actually not named
+                continue;
             if (op.getName().equalsIgnoreCase(identifier)) {
                 return true;
             }
@@ -1212,6 +1221,13 @@ public class CalciteCompiler implements IWritesLogs {
         if (ct.ifNotExists)
             throw new UnsupportedException("IF NOT EXISTS not supported", object);
         ProgramIdentifier tableName = Utilities.toIdentifier(ct.name);
+        if (node.visible && this.functionExists(tableName.name())) {
+            this.errorReporter.reportError(new SourcePositionRange(ct.name.getParserPosition()),
+                    "Reserved name",
+                    "Table " + tableName.singleQuote() +
+                            " has the same name as a predefined function");
+            return null;
+        }
         List<RelColumnMetadata> cols = this.createTableColumnsMetadata(ct, ct.name, sources);
         @Nullable PropertyList properties = this.createProperties(ct.tableProperties);
         if (properties != null)

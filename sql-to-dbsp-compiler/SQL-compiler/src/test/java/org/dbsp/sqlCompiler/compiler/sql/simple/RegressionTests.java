@@ -126,10 +126,10 @@ public class RegressionTests extends SqlIoTest {
     @Test
     public void existingFunction() {
         String sql = """
-                CREATE FUNCTION regexp_extract(s VARCHAR, p VARCHAR, pos INTEGER)
+                CREATE FUNCTION regexp_replace(s VARCHAR, p VARCHAR, pos INTEGER)
                 RETURNS VARCHAR NOT NULL AS CAST('foo' as VARCHAR);""";
         this.statementsFailingInCompilation(sql,
-                "A function named 'regexp_extract' is already predefined");
+                "A function named 'regexp_replace' is already predefined");
     }
 
     @Test
@@ -178,6 +178,19 @@ public class RegressionTests extends SqlIoTest {
                 """;
         var ccs = this.getCCS(sql);
         this.addRustTestCase(ccs);
+    }
+
+    @Test
+    public void issue3006() {
+        this.statementsFailingInCompilation("""
+                CREATE TABLE user(id BIGINT);
+                CREATE TABLE t(user_id BIGINT);
+                
+                CREATE MATERIALIZED VIEW v AS
+                SELECT t.user_id
+                FROM user, t
+                WHERE user.id = t.user_id;""",
+                "Table 'user' has the same name as a predefined function");
     }
 
     @Test

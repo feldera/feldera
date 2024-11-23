@@ -1343,15 +1343,11 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
             case ARRAY_SIZE: {
                 if (call.operands.size() != 1)
                     throw operandCountError(node, operationName, call.operandCount());
-
                 // same as "cardinality"
-                String name = "cardinality";
-
+                String name = "cardinalityVec";
                 nullLiteralToNullArray(ops, 0);
-
                 if (ops.get(0).getType().mayBeNull)
                     name += "N";
-
                 return new DBSPApplyExpression(node, name, type, ops.get(0));
             }
             case ARRAY_PREPEND:
