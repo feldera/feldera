@@ -124,7 +124,7 @@ addition to the normal way of `''`.
     <td><code>ascii('x')</code> => <code>120</code></td>
   </tr>
   <tr>
-    <td><code>CHAR_LENGTH(string)</code> or <code>CHARACTER_LENGTH(string)</code></td>
+    <td><code>CHAR_LENGTH(string)</code> or <code>CHARACTER_LENGTH(string)</code> or <code>LENGTH(string)</code></td>
     <td>Returns number of characters in the string.</td>
     <td><code>char_length('josé')</code> => <code>4</code></td>
   </tr>
@@ -137,6 +137,11 @@ addition to the normal way of `''`.
     <td><code>CONCAT(</code>string1, ..., stringN<code>)</code></td>
     <td>String concatenation.  Can have any number of arguments.</td>
     <td><code>CONCAT('Post', 'greSQL', 1)</code> => <code>PostgreSQL1</code></td>
+  </tr>
+  <tr>
+    <td><code>CONCAT_WS(</code>sep, string1, ..., stringN<code>)</code></td>
+    <td>String concatenation with separator <code>sep</code>.  Can have any number of arguments.  <code>sep</code> is intercalated between all strings.  If <code>sep</code> is <code>NULL</code> result is <code>NULL</code>.  Other <code>NULL</code> arguments are ignored.</td>
+    <td><code>CONCAT_WS(',', 'Post', 'greSQL', NULL, '1')</code> => <code>Post,greSQL,,1</code></td>
   </tr>
   <tr>
     <td><code>INITCAP ( string )</code></td>

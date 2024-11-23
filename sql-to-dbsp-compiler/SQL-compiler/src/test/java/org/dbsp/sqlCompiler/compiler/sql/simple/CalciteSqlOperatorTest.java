@@ -160,4 +160,71 @@ public class CalciteSqlOperatorTest extends SqlIoTest {
                  Bruce Springsteen
                 (1 row)""");
     }
+    
+    @Test
+    public void testConcatWithSeparator() {
+        this.qs("""
+                select concat_ws(',', 'a');
+                 r
+                ---
+                 a
+                (1 row)
+                
+                select concat_ws(',', 'a', 'b', null, 'c');
+                 r
+                ---
+                 a,b,c
+                (1 row)
+                
+                select concat_ws(',', cast('a' as varchar), cast('b' as varchar));
+                 r
+                ---
+                 a,b
+                (1 row)
+                
+                select concat_ws(',', cast('a' as varchar(2)), cast('b' as varchar(1)));
+                 r
+                ---
+                 a,b
+                (1 row)
+                
+                select concat_ws(',', '', '', '');
+                 r
+                ---
+                 ,,
+                (1 row)
+                
+                select concat_ws(',', null, null, null);
+                 r
+                ----
+                \s
+                (1 row)
+                
+                -- returns null if the separator is null
+                select concat_ws(null, 'a', 'b');
+                 r
+                ---
+                NULL
+                (1 row)
+                
+                select concat_ws(null, null, null);
+                 r
+                ---
+                NULL
+                (1 row)
+                
+                select concat_ws('', cast('a' as varchar(2)), cast('b' as varchar(1)));
+                 r
+                ---
+                 ab
+                (1 row)
+                
+                select concat_ws('', '', '', '');
+                 r
+                ---
+                \s
+                (1 row)""");
+        this.statementsFailingInCompilation("create view V as SELECT concat_ws(',')",
+                "Invalid number of arguments to function 'CONCAT_WS'");
+    }
 }

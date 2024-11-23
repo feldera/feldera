@@ -14,7 +14,7 @@ import org.junit.Test;
 
 public class ExpressionTreeTests {
     @Test
-    public void testTree() throws IllegalAccessException {
+    public void testTree() {
         DBSPType i32 = new DBSPTypeInteger(CalciteObject.EMPTY, 32, true, true);
         DBSPExpression expression =
                 new DBSPTupleExpression(

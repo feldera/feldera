@@ -68,12 +68,12 @@ where
 }
 
 #[doc(hidden)]
-pub fn cardinality<T>(value: Vec<T>) -> i32 {
+pub fn cardinalityVec<T>(value: Vec<T>) -> i32 {
     value.len() as i32
 }
 
 #[doc(hidden)]
-pub fn cardinalityN<T>(value: Option<Vec<T>>) -> Option<i32> {
+pub fn cardinalityVecN<T>(value: Option<Vec<T>>) -> Option<i32> {
     let value = value?;
     Some(value.len() as i32)
 }

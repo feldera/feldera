@@ -80,6 +80,10 @@ REAL '1.23'  -- string style
     <td>Floor function: nearest integer value less than or equal to argument (result is a floating point value)</td>
   </tr>
   <tr>
+    <td><code>TRUNC(value, digits)</code></td>
+    <td>Same as <code>TRUNCATE</code>.</td>
+  </tr>
+  <tr>
     <td><code>TRUNCATE(value)</code></td>
     <td>Returns the integer portion of the number. This is true truncation, no rounding is performed.</td>
   </tr>

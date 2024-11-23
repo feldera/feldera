@@ -80,16 +80,20 @@ DECIMAL(10, 4))` if you expect 10-digit results to be possible.
      <td>Returns the number of input rows for which value is not null.  If the argument contains multiple expressions, it counts only expressions where *all* fields are non-null.</td>
   </tr>
   <tr>
+     <td><code>COUNTIF( boolean )</code></td>
+     <td>Returns the number of input rows for which the condition is true.</td>
+  </tr>
+  <tr>
      <td><code>EVERY(condition)</code></td>
      <td>Returns <code>TRUE</code> if all of the values of condition are <code>TRUE</code></td>
   </tr>
   <tr>
-     <td><code>LOGICAL_OR</code> or <code>BOOL_OR</code></td>
-     <td>Same as <code>SOME</code></td>
-  </tr>
-  <tr>
      <td><code>LOGICAL_AND</code> or <code>BOOL_AND</code></td>
      <td>Same as <code>EVERY</code></td>
+  </tr>
+  <tr>
+     <td><code>LOGICAL_OR</code> or <code>BOOL_OR</code></td>
+     <td>Same as <code>SOME</code></td>
   </tr>
   <tr>
      <td><code>MAX( [ ALL | DISTINCT ] value)</code></td>
@@ -322,14 +326,3 @@ year | desks | tables | chairs
 2023 |     1 |     2  |
 (3 rows)
 ```
-
-### Grouped auxiliary functions
-
-Grouped auxiliary functions allow you to access properties of a window
-defined by a grouped window function.
-
-| Operator syntax      | Description |
-|:-------------------- |:------------|
-| TUMBLE_END(expression, interval [, time ]) | Returns the value of *expression* at the end of the window defined by a `TUMBLE` function call |
-| TUMBLE_START(expression, interval [, time ]) | Returns the value of *expression* at the beginning of the window defined by a `TUMBLE` function call |
-

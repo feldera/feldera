@@ -305,6 +305,9 @@ computation on whole days.
 Subtraction between two dates, timestamps, or times must be followed
 by a TIMEUNIT qualifier: e.g., `(DATE '2024-01-01' - DATE '2023-12-31') DAYS`.
 
+`DATE_SUB` is a synonim for `DATE` - `INTERVAL`.  `DATE_ADD` is a
+synonim for `DATE` + `INTERVAL`.
+
 ## Timezones
 
 `DATE`, `TIME` and `TIMESTAMP` have no time zone.

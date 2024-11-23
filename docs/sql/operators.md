@@ -49,7 +49,7 @@ This table shows the operators associativity, starting from highest to lowest:
     <td>comparisons</td>
   </tr>
   <tr>
-    <td><code>IS NULL, IS FALSE, IS NOT TRUE</code></td>
+    <td><code>IS NULL, IS FALSE, IS TRUE, IS UNKNOWN, IS NOT NULL, IS NOT TRUE, IS NOT FALSE, IS NOT UNKNOWN</code></td>
     <td>unary</td>
     <td></td>
   </tr>
