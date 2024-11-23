@@ -998,22 +998,37 @@ public class PostgresStringTests extends SqlIoTest {
 
     @Test
     public void testLength() {
-        // length in postgres is equivalent to char_length
-        this.q("""
+        // added a few more aliases supported from other dialects
+        this.qs("""
                 SELECT char_length('abcdef') AS "length_6";
                  length_6
                 ----------
-                        6""");
-        this.q("""
+                        6
+                (1 row)
+                
+                SELECT length('abcdef') AS "length_6";
+                 length_6
+                ----------
+                        6
+                (1 row)
+
+                SELECT len('abcdef') AS "length_6";
+                 length_6
+                ----------
+                        6
+                (1 row)
+
                 SELECT character_length('abcdef') AS "length_6";
                  length_6
                 ----------
-                        6""");
-        this.q("""
+                        6
+                (1 row)
+        
                 SELECT character_length('josé') AS "length";
                  length
                 --------
-                       4""");
+                       4
+                (1 row)""");
     }
 
     @Test
