@@ -295,7 +295,7 @@ pub enum BatchLocation {
 ///
 /// See [crate documentation](crate::trace) for more information on batches and
 /// traces.
-pub trait BatchReader: NumEntries + Rkyv + SizeOf + 'static
+pub trait BatchReader: Debug + NumEntries + Rkyv + SizeOf + 'static
 where
     Self: Sized,
 {

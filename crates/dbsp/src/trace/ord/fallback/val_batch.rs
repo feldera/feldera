@@ -20,6 +20,7 @@ use crate::{
     },
     DBData, DBWeight, NumEntries, Timestamp,
 };
+use derive_more::Debug;
 use rand::Rng;
 use rkyv::{ser::Serializer, Archive, Archived, Deserialize, Fallible, Serialize};
 use size_of::SizeOf;
@@ -110,7 +111,7 @@ where
 
 /// An immutable collection of update tuples, from a contiguous interval of
 /// logical times.
-#[derive(SizeOf)]
+#[derive(Debug, SizeOf)]
 pub struct FallbackValBatch<K, V, T, R>
 where
     K: DataTrait + ?Sized,
@@ -119,11 +120,12 @@ where
     R: WeightTrait + ?Sized,
 {
     #[size_of(skip)]
+    #[debug(skip)]
     factories: FallbackValBatchFactories<K, V, T, R>,
     inner: Inner<K, V, T, R>,
 }
 
-#[derive(SizeOf)]
+#[derive(Debug, SizeOf)]
 enum Inner<K, V, T, R>
 where
     K: DataTrait + ?Sized,
