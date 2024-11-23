@@ -123,6 +123,7 @@
 `LEAD` (aggregate): [aggregates](aggregates.md)
 `LEAST`: [comparisons](comparisons.md)
 `LEFT`: [string](string.md)
+`LEN`: [string](string.md)
 `LENGTH`: [string](string.md)
 `LIKE`: [string](string.md)
 `LN`: [decimal](decimal.md), [float](float.md)

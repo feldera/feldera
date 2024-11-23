@@ -124,7 +124,7 @@ addition to the normal way of `''`.
     <td><code>ascii('x')</code> => <code>120</code></td>
   </tr>
   <tr>
-    <td><code>CHAR_LENGTH(string)</code> or <code>CHARACTER_LENGTH(string)</code> or <code>LENGTH(string)</code></td>
+    <td><code>CHAR_LENGTH(string)</code> or <code>CHARACTER_LENGTH(string)</code> or <code>LENGTH(string)</code> or <code>LEN(string)</code></td>
     <td>Returns number of characters in the string.</td>
     <td><code>char_length('josé')</code> => <code>4</code></td>
   </tr>
