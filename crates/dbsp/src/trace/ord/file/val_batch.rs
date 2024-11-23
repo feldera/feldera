@@ -1,12 +1,3 @@
-use dyn_clone::clone_box;
-use std::path::{Path, PathBuf};
-use std::{
-    cmp::Ordering,
-    fmt,
-    fmt::{Debug, Display, Formatter},
-    ops::DerefMut,
-};
-
 use crate::trace::cursor::{HasTimeDiffCursor, TimeDiffCursor};
 use crate::trace::{BatchLocation, TimedBuilder};
 use crate::{
@@ -27,9 +18,18 @@ use crate::{
     utils::Tup2,
     DBData, DBWeight, NumEntries, Runtime, Timestamp,
 };
+use derive_more::Debug;
+use dyn_clone::clone_box;
 use rand::{seq::index::sample, Rng};
 use rkyv::{ser::Serializer, Archive, Archived, Deserialize, Fallible, Serialize};
 use size_of::SizeOf;
+use std::path::{Path, PathBuf};
+use std::{
+    cmp::Ordering,
+    fmt,
+    fmt::{Display, Formatter},
+    ops::DerefMut,
+};
 
 pub struct FileValBatchFactories<K, V, T, R>
 where
@@ -183,7 +183,7 @@ type RawValCursor<'s, K, V, T, R> = FileCursor<
 
 /// An immutable collection of update tuples, from a contiguous interval of
 /// logical times.
-#[derive(SizeOf)]
+#[derive(SizeOf, Debug)]
 pub struct FileValBatch<K, V, T, R>
 where
     K: DataTrait + ?Sized,
@@ -192,6 +192,7 @@ where
     R: WeightTrait + ?Sized,
 {
     #[size_of(skip)]
+    #[debug(skip)]
     factories: FileValBatchFactories<K, V, T, R>,
     #[size_of(skip)]
     pub file: RawValBatch<K, V, T, R>,

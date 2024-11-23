@@ -991,6 +991,7 @@ where
     }
 }
 
+#[derive(Debug)]
 struct Column {
     root: Option<TreeNode>,
     n_rows: u64,
@@ -1035,6 +1036,7 @@ impl Column {
 }
 
 /// Encapsulates storage and a file handle.
+#[derive(Debug)]
 pub(crate) struct ImmutableFileRef {
     path: PathBuf,
     cache: Arc<BufferCache<FileCacheEntry>>,
@@ -1080,6 +1082,7 @@ impl ImmutableFileRef {
     }
 }
 
+#[derive(Debug)]
 struct ReaderInner<T> {
     file: Arc<ImmutableFileRef>,
     /// Location of the file on disk.
@@ -1129,6 +1132,7 @@ where
 ///
 /// `T` in `Reader<T>` must be a [`ColumnSpec`] that specifies the key and
 /// auxiliary data types for all of the columns in the file to be read.
+#[derive(Debug)]
 pub struct Reader<T>(Arc<ReaderInner<T>>);
 
 impl<T> Reader<T>
