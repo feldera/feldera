@@ -32,23 +32,6 @@
 //! in an untimed [`Trace`]([`crate::trace::Trace`]), i.e., a trace whose
 //! timestamp type is `()`.
 //!
-//! ## Example: [`NestedTimestamp32`]
-//!
-//! [`NestedTimestamp32`] represents nested timestamp `(c1, c2)`, but only uses
-//! 1 bit for `c1`, which is enough to distinguish data generated in the latest
-//! clock epoch from all earlier epochs.  This distinction by itself is
-//! sufficient for all existing DBSP operators.
-//!
-//! [`join`](`crate::circuit::Stream::join`) and
-//! [`distinct`](`crate::circuit::Stream::distinct`) methods compute incremental
-//! versions of `join` and `distinct` operators within nested scopes.  They need
-//! to know the exact local time in the child circuit when each key-value tuple
-//! was generated; however they do not require the exact parent clock value as
-//! long as they can distinguish between values generated during the current
-//! epoch (i.e., the current parent clock cycle) from older values.  They
-//! therefore take advantage of the lossy timestamp representation implemented
-//! by [`NestedTimestamp32`].
-//!
 //! # Comparing times
 //!
 //! Timestamps partially order logical time.  Multidimensional timestamps, in
@@ -59,7 +42,7 @@
 //! sorting.
 
 mod antichain;
-mod nested_ts32;
+//mod nested_ts32;
 mod product;
 
 use crate::{
@@ -77,7 +60,7 @@ use std::{fmt::Debug, hash::Hash};
 
 use crate::dynamic::DynUnit;
 pub use antichain::{Antichain, AntichainRef};
-pub use nested_ts32::NestedTimestamp32;
+//pub use nested_ts32::NestedTimestamp32;
 pub use product::Product;
 
 /// Logical timestamp.
@@ -260,7 +243,7 @@ impl Timestamp for UnitTimestamp {
 }
 
 impl Timestamp for () {
-    type Nested = NestedTimestamp32;
+    type Nested = Product<u32, u32>;
 
     type MemValBatch<K: DataTrait + ?Sized, V: DataTrait + ?Sized, R: WeightTrait + ?Sized> =
         OrdIndexedWSet<K, V, R>;
@@ -281,7 +264,7 @@ impl Timestamp for () {
 }
 
 impl Timestamp for u32 {
-    type Nested = NestedTimestamp32;
+    type Nested = Product<u32, u32>;
 
     type MemValBatch<K: DataTrait + ?Sized, V: DataTrait + ?Sized, R: WeightTrait + ?Sized> =
         OrdValBatch<K, V, Self, R>;
