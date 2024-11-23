@@ -1089,6 +1089,15 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                         validateArgCount(node, opName, ops.size(), 1);
                         String name = opName;
                         nullLiteralToNullArray(ops, 0);
+                        DBSPType arg0Type = ops.get(0).getType();
+                        if (arg0Type.is(DBSPTypeVec.class))
+                            name += "Vec";
+                        else if (arg0Type.is(DBSPTypeMap.class))
+                            name += "Map";
+                        else
+                            throw new UnimplementedException("Support for operation/function " +
+                                    Utilities.singleQuote(opName) + " on type " +
+                                    arg0Type.asSqlString() + " not yet implemented", 1265, node);
                         if (ops.get(0).getType().mayBeNull)
                             name += "N";
                         return new DBSPApplyExpression(node, name, type, ops.get(0));
@@ -1113,7 +1122,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                     }
                     case "substring": {
                         if (ops.isEmpty())
-                            throw  operandCountError(node, operationName, call.operandCount());
+                            throw operandCountError(node, operationName, call.operandCount());
                         String module_prefix;
                         if (ops.get(0).type.is(DBSPTypeBinary.class)) {
                             module_prefix = "binary::";
@@ -1127,6 +1136,16 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                         return new DBSPVecLiteral(node, type, Linq.list());
                     case "concat":
                         return makeBinaryExpressions(node, type, DBSPOpcode.CONCAT, ops);
+                    case "concat_ws": {
+                        DBSPExpression sep = ops.get(0);
+                        if (ops.size() == 1)
+                            return sep.cast(type);
+                        DBSPExpression accumulator = DBSPStringLiteral.none(type.withMayBeNull(true));
+                        for (int i = 1; i < ops.size(); i++)
+                            accumulator = compileFunction(
+                                    call, node, type, Linq.list(sep, accumulator, ops.get(i)), 3);
+                        return accumulator.cast(type);
+                    }
                     case "now":
                     case "variantnull":
                         return compileFunction(call, node, type, ops, 0);
@@ -1143,7 +1162,6 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                     case "sequence":
                         for (int i = 0; i < ops.size(); i++)
                             this.ensureInteger(ops, i, 32);
-
                         return compileFunction(call, node, type, ops, 2);
                     case "regexp_replace": {
                         validateArgCount(node, operationName, ops.size(), 2, 3);

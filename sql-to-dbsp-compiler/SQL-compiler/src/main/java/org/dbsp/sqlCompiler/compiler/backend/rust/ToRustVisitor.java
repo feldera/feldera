@@ -1385,7 +1385,7 @@ public class ToRustVisitor extends CircuitVisitor {
 
     /** Collects all {@link DBSPStaticExpression}s that appear in an expression */
     static class FindStatics extends InnerVisitor {
-        List<DBSPStaticExpression> found = new ArrayList<>();
+        final List<DBSPStaticExpression> found = new ArrayList<>();
 
         public FindStatics(DBSPCompiler compiler) {
             super(compiler);

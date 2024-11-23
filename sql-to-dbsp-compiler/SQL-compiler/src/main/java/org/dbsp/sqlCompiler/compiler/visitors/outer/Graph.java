@@ -20,7 +20,7 @@ import java.util.Map;
 
 /** Build a {@link CircuitGraphs} structure from a {@link DBSPCircuit} */
 public class Graph extends CircuitVisitor {
-    CircuitGraphs graphs = new CircuitGraphs();
+    final CircuitGraphs graphs = new CircuitGraphs();
 
     /** Map each source view operator to its parent */
     final Map<DBSPViewDeclarationOperator, ICircuit> delayed = new HashMap<>();

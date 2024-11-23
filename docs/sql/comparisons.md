@@ -142,4 +142,12 @@ with `NULL` values are compared smaller than any other value.
     <td><code>COALESCE(value, value [, value ]*)</code></td>
     <td>Provides a value if the first value is NULL. For example, <code>COALESCE(NULL, 5)</code> returns 5.</td>
   </tr>
+  <tr>
+    <td><code>GREATEST( expr [, expr ]* )</code></td>
+    <td>The largest of a number of expressions.</td>
+  </tr>
+  <tr>
+    <td><code>LEAST( expr [, expr ]* )</code></td>
+    <td>The smallest of a number of expressions.</td>
+  </tr>
 </table>

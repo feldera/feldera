@@ -135,3 +135,14 @@ where
         Some(value) => map_index_N_(value, map_index),
     }
 }
+
+#[doc(hidden)]
+pub fn cardinalityMap<I, T>(value: BTreeMap<I, T>) -> i32 {
+    value.len() as i32
+}
+
+#[doc(hidden)]
+pub fn cardinalityMapN<I, T>(value: Option<BTreeMap<I, T>>) -> Option<i32> {
+    let value = value?;
+    Some(cardinalityMap(value))
+}

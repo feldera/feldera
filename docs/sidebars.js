@@ -156,7 +156,8 @@ const sidebars = {
                         'sql/streaming',
                         'sql/system',
                         'sql/table',
-                        'sql/udf'
+                        'sql/udf',
+                        'sql/function-index'
                     ]
                 },
                 {

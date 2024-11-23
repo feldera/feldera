@@ -230,6 +230,7 @@ select
 tablePrimary
   :   tableName '(' TABLE tableName ')'
   |   tablePrimary '(' columnDecl [, columnDecl ]* ')'
+  |   [ LATERAL ] '(' query ')'
   |   UNNEST '(' expression ')' [ WITH ORDINALITY ]
   |   TABLE '(' functionName '(' expression [, expression ]* ')' ')'
 

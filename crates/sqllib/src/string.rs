@@ -489,3 +489,65 @@ pub fn regexp_replaceC2N_(str: Option<String>, re: &Option<Regex>) -> Option<Str
     let str = str?;
     Some(regexp_replaceC3___(str, re, "".to_string()))
 }
+
+#[doc(hidden)]
+pub fn concat_ws___(sep: String, mut left: String, right: String) -> String {
+    left.reserve(right.len() + sep.len());
+    left.push_str(&sep);
+    left.push_str(&right);
+    left
+}
+
+#[doc(hidden)]
+pub fn concat_wsN__(sep: Option<String>, left: String, right: String) -> Option<String> {
+    let sep = sep?;
+    Some(concat_ws___(sep, left, right))
+}
+
+#[doc(hidden)]
+pub fn concat_ws_N_(sep: String, left: Option<String>, right: String) -> String {
+    match left {
+        None => right,
+        Some(left) => concat_ws___(sep, left, right),
+    }
+}
+
+#[doc(hidden)]
+pub fn concat_ws_NN(sep: String, left: Option<String>, right: Option<String>) -> String {
+    match (left, right) {
+        (None, None) => "".to_string(),
+        (None, Some(right)) => right,
+        (Some(left), None) => left,
+        (Some(left), Some(right)) => concat_ws___(sep, left, right),
+    }
+}
+
+#[doc(hidden)]
+pub fn concat_wsNN_(sep: Option<String>, left: Option<String>, right: String) -> Option<String> {
+    let sep = sep?;
+    Some(concat_ws_N_(sep, left, right))
+}
+
+#[doc(hidden)]
+pub fn concat_ws__N(sep: String, left: String, right: Option<String>) -> String {
+    match right {
+        None => left,
+        Some(right) => concat_ws___(sep, left, right),
+    }
+}
+
+#[doc(hidden)]
+pub fn concat_wsN_N(sep: Option<String>, left: String, right: Option<String>) -> Option<String> {
+    let sep = sep?;
+    Some(concat_ws__N(sep, left, right))
+}
+
+#[doc(hidden)]
+pub fn concat_wsNNN(
+    sep: Option<String>,
+    left: Option<String>,
+    right: Option<String>,
+) -> Option<String> {
+    let sep = sep?;
+    Some(concat_ws_NN(sep, left, right))
+}

@@ -70,6 +70,14 @@ public class MapTests extends BaseSQLTests {
     }
 
     @Test
+    public void mapCardinalityTest() {
+        String query = "SELECT CARDINALITY(MAP['hi',2])";
+        this.testQuery(query, new DBSPZSetLiteral(
+                new DBSPTupleExpression(
+                        new DBSPI32Literal(1))));
+    }
+
+    @Test
     public void testMapSubquery() {
         String ddl = "CREATE TABLE T(v varchar, x int)";
         String query = "SELECT MAP(SELECT * FROM T)";

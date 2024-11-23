@@ -84,8 +84,6 @@ import org.apache.calcite.sql.ddl.SqlColumnDeclaration;
 import org.apache.calcite.sql.ddl.SqlCreateType;
 import org.apache.calcite.sql.ddl.SqlDropTable;
 import org.apache.calcite.sql.ddl.SqlKeyConstraint;
-import org.apache.calcite.sql.fun.SqlLibrary;
-import org.apache.calcite.sql.fun.SqlLibraryOperatorTableFactory;
 import org.apache.calcite.sql.parser.SqlParseException;
 import org.apache.calcite.sql.parser.SqlParser;
 import org.apache.calcite.sql.parser.SqlParserPos;
@@ -145,7 +143,6 @@ import org.dbsp.util.Utilities;
 import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -382,15 +379,7 @@ public class CalciteCompiler implements IWritesLogs {
 
     SqlOperatorTable createOperatorTable() {
         return SqlOperatorTables.chain(
-                SqlLibraryOperatorTableFactory.INSTANCE.getOperatorTable(
-                        // Libraries of functions supported.
-                        EnumSet.of(SqlLibrary.STANDARD,
-                                SqlLibrary.MYSQL,
-                                SqlLibrary.POSTGRESQL,
-                                SqlLibrary.BIG_QUERY,
-                                SqlLibrary.SPARK,
-                                SqlLibrary.REDSHIFT,
-                                SqlLibrary.SPATIAL)),
+                CalciteFunctions.INSTANCE.getFunctions(),
                 SqlOperatorTables.of(this.customFunctions.getInitialFunctions())
         );
     }
@@ -1087,10 +1076,10 @@ public class CalciteCompiler implements IWritesLogs {
 
     /** Replaces references to a recursive view's name by references to another view */
     static class ReplaceRecursiveViews extends SqlShuttle {
-        Set<ProgramIdentifier> usedViews = new HashSet<>();
+        final Set<ProgramIdentifier> usedViews = new HashSet<>();
 
         static class CallAndChild {
-            SqlCall call;
+            final SqlCall call;
             int childIndex;
 
             public CallAndChild(SqlCall call) {
