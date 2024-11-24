@@ -3,6 +3,7 @@ from tests.aggregate_tests.aggtst_base import TstTable
 
 # Left to add dates before the Gregorian calendar
 
+
 class arithtst_date_table(TstTable):
     """Define the table used by DATE tests"""
 
