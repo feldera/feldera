@@ -15,12 +15,12 @@ class arithtst_date_minus_date_seconds(TstView):
     def __init__(self):
         # Validated on Postgres
         self.data = [
-            {'id': 0, 'c1_minus_c2_seconds': 318211200},
-            {'id': 1, 'c1_minus_c2_seconds': -84672000},
-            {'id': 2, 'c1_minus_c2_seconds': 648518400}
+            {"id": 0, "c1_minus_c2_seconds": 318211200},
+            {"id": 1, "c1_minus_c2_seconds": -84672000},
+            {"id": 2, "c1_minus_c2_seconds": 648518400},
         ]
         self.sql = """CREATE MATERIALIZED VIEW date_minus_date_seconds AS SELECT
-                      id, 
+                      id,
                       CAST((c1_minus_c2) AS BIGINT) AS c1_minus_c2_seconds
                       FROM date_minus_date"""
 
@@ -42,9 +42,9 @@ class arithtst_date_minus_interval(TstView):
     def __init__(self):
         # Validated on Postgres
         self.data = [
-            {'id': 0, 'c1': '2024-11-05', 'c2': '2013-11-05'},
-            {'id': 1, 'c1': '2020-05-22', 'c2': '2022-02-26'},
-            {'id': 2, 'c1': '1969-05-22', 'c2': '1947-12-03'}
+            {"id": 0, "c1": "2024-11-05", "c2": "2013-11-05"},
+            {"id": 1, "c1": "2020-05-22", "c2": "2022-02-26"},
+            {"id": 2, "c1": "1969-05-22", "c2": "1947-12-03"},
         ]
         self.sql = """CREATE MATERIALIZED VIEW date_minus_interval AS SELECT
                       id,
@@ -57,9 +57,9 @@ class arithtst_date_plus_interval(TstView):
     def __init__(self):
         # Validated on Postgres
         self.data = [
-            {'id': 0, 'c1': '2024-12-06', 'c2': '2015-11-05'},
-            {'id': 1, 'c1': '2020-06-22', 'c2': '2024-02-26'},
-            {'id': 2, 'c1': '1969-06-22', 'c2': '1949-12-02'}
+            {"id": 0, "c1": "2024-12-06", "c2": "2015-11-05"},
+            {"id": 1, "c1": "2020-06-22", "c2": "2024-02-26"},
+            {"id": 2, "c1": "1969-06-22", "c2": "1949-12-02"},
         ]
         self.sql = """CREATE MATERIALIZED VIEW date_plus_interval AS SELECT
                       id,
@@ -69,7 +69,7 @@ class arithtst_date_plus_interval(TstView):
 
 
 # Equivalent SQL for Postgres
-# SELECT 
+# SELECT
 #     id,
 #     (c1 + INTERVAL '86400 second') AS c1_with_seconds,
 #     (c2 + INTERVAL '31536000 second') AS c2_with_seconds
