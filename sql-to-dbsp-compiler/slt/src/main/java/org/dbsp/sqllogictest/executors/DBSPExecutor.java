@@ -32,6 +32,7 @@ import net.hydromatic.sqllogictest.SqlTestQueryOutputDescription;
 import net.hydromatic.sqllogictest.TestStatistics;
 import net.hydromatic.sqllogictest.executors.SqlSltTestExecutor;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.rust.RustFileWriter;
@@ -288,20 +289,28 @@ public class DBSPExecutor extends SqlSltTestExecutor {
         }
         compiler.compileStatement(dbspQuery);
         compiler.throwIfErrorsOccurred();
-        DBSPCircuit dbsp = compiler.getFinalCircuit(false);
+        DBSPCircuit circuit = compiler.getFinalCircuit(false);
+        circuit.setName("circuit" + suffix);
         DBSPNode.done();
 
-        if (dbsp.getOutputCount() != 1)
-            throw new RuntimeException(
-                    "Didn't expect a query to have " + dbsp.getOutputCount() + " outputs");
-        DBSPTypeZSet outputType = dbsp.getSingleOutputType().to(DBSPTypeZSet.class);
+        List<DBSPSinkOperator> sinks = Linq.list(circuit.sinkOperators.values());
+        int outputNumber = 0;
+        DBSPSinkOperator sink = null;
+        for (; outputNumber < circuit.getOutputCount(); outputNumber++) {
+            sink = sinks.get(outputNumber);
+            // Skip over system views if we are not checking these
+            if (!sink.metadata.system)
+                break;
+        }
+        assert sink != null;
+        DBSPTypeZSet outputType = sink.outputType.to(DBSPTypeZSet.class);
         DBSPZSetLiteral expectedOutput = null;
         if (testQuery.outputDescription.hash == null) {
             expectedOutput = DBSPExecutor.convert(testQuery.outputDescription.getQueryResults(), outputType);
         }
 
         return createTesterCode(
-                    "tester" + suffix, dbsp,
+                    "tester" + suffix, circuit, outputNumber,
                     gen.getInputFunction(),
                     compiler.getTableContents(),
                     expectedOutput, testQuery.outputDescription);
@@ -410,12 +419,14 @@ public class DBSPExecutor extends SqlSltTestExecutor {
      * @param circuit     DBSP circuit that will be tested.
      * @param output      Expected data from the circuit.
      * @param description Description of the expected outputs.
+     * @param outputNumber  Position of data output in output vector.
      * @return The code for a function that runs the circuit with the specified
      * input and tests the produced output.
      */
     static ProgramAndTester createTesterCode(
             String name,
             DBSPCircuit circuit,
+            int outputNumber,
             DBSPFunction inputGeneratingFunction,
             TableContents contents,
             @Nullable DBSPZSetLiteral output,
@@ -430,7 +441,9 @@ public class DBSPExecutor extends SqlSltTestExecutor {
         DBSPLetStatement streams = new DBSPLetStatement("streams", cas.getVarReference().field(1));
         list.add(streams);
 
-        DBSPType circuitOutputType = circuit.getSingleOutputType();
+        List<DBSPSinkOperator> sinks = Linq.list(circuit.sinkOperators.values());
+        DBSPSinkOperator sink = sinks.get(outputNumber);
+        DBSPType circuitOutputType = sink.outputType;
         // True if the output is a zset of vectors (generated for order by queries)
         boolean isVector = circuitOutputType.to(DBSPTypeZSet.class).elementType.is(DBSPTypeVec.class);
 
@@ -455,7 +468,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
         DBSPLetStatement outputStatement =
                 new DBSPLetStatement("out",
                         new DBSPApplyExpression("read_output_handle", DBSPTypeAny.getDefault(),
-                                streams.getVarReference().field(circuit.getInputTables().size()).borrow()));
+                                streams.getVarReference().field(circuit.getInputTables().size() + outputNumber).borrow()));
         list.add(outputStatement);
         DBSPExpression sort = new DBSPEnumValue("SortOrder", description.getOrder().toString());
 
