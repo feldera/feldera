@@ -211,9 +211,7 @@ public class BaseSQLTests {
 
     public static int testsExecuted = 0;
 
-    /**
-     * Collect here all the tests to run and execute them using a single Rust compilation.
-     */
+    /** Collect here all the tests to run and execute them using a single Rust compilation. */
     static final List<TestCase> testsToRun = new ArrayList<>();
 
     @BeforeClass
