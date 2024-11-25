@@ -489,8 +489,6 @@ where
     fn begin_merge(&self, other: &Self, dst_hint: Option<BatchLocation>) -> Self::Merger {
         VecIndexedWSetMerger::new_merger(self, other, dst_hint)
     }
-
-    fn recede_to(&mut self, _frontier: &()) {}
 }
 
 /// State for an in-progress merge.
@@ -555,6 +553,7 @@ where
         source2: &VecIndexedWSet<K, V, R, O>,
         key_filter: &Option<Filter<K>>,
         value_filter: &Option<Filter<V>>,
+        _frontier: &(),
         fuel: &mut isize,
     ) {
         // Use the more expensive `push_merge_truncate_values_fueled`
@@ -566,6 +565,7 @@ where
                     (&source2.layer, &mut self.lower2, self.upper2),
                     key_filter,
                     value_filter,
+                    None,
                     fuel,
                 );
             }
@@ -574,6 +574,7 @@ where
                     (&source1.layer, &mut self.lower1, self.upper1),
                     (&source2.layer, &mut self.lower2, self.upper2),
                     key_filter,
+                    None,
                     fuel,
                 );
             }
@@ -583,6 +584,7 @@ where
                     (&source2.layer, &mut self.lower2, self.upper2),
                     &|_| true,
                     value_filter,
+                    None,
                     fuel,
                 );
             }
@@ -590,6 +592,7 @@ where
                 self.result.push_merge_fueled(
                     (&source1.layer, &mut self.lower1, self.upper1),
                     (&source2.layer, &mut self.lower2, self.upper2),
+                    None,
                     fuel,
                 );
             }

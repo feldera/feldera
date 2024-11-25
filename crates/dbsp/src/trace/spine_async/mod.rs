@@ -154,6 +154,8 @@ where
     key_filter: Option<Filter<B::Key>>,
     #[size_of(skip)]
     value_filter: Option<Filter<B::Val>>,
+    #[size_of(skip)]
+    frontier: B::Time,
     slots: [Slot<B>; MAX_LEVELS],
     #[size_of(skip)]
     request_exit: bool,
@@ -169,6 +171,7 @@ where
         Self {
             key_filter: None,
             value_filter: None,
+            frontier: B::Time::minimum(),
             slots: std::array::from_fn(|_| Slot::default()),
             request_exit: false,
             merge_stats: MergeStats::default(),
@@ -370,6 +373,10 @@ where
         self.state.lock().unwrap().value_filter = Some(value_filter.clone());
     }
 
+    fn set_frontier(&self, frontier: &B::Time) {
+        self.state.lock().unwrap().frontier = frontier.clone();
+    }
+
     /// Adds `batch` to the shared merging state and wakes up the merger.
     fn add_batch(&self, batch: Arc<B>) {
         debug_assert!(!batch.is_empty());
@@ -489,11 +496,15 @@ where
         no_backpressure: &Arc<Condvar>,
     ) -> WorkerStatus {
         // Run in-progress merges.
-        let (key_filter, value_filter) = state.lock().unwrap().get_filters();
+        let ((key_filter, value_filter), frontier) = {
+            let shared = state.lock().unwrap();
+            (shared.get_filters(), shared.frontier.clone())
+        };
+
         for (level, m) in mergers.iter_mut().enumerate() {
             if let Some((merger, [a, b])) = m.as_mut() {
                 let mut fuel = 10_000;
-                merger.work(a, b, &key_filter, &value_filter, &mut fuel);
+                merger.work(a, b, &key_filter, &value_filter, &frontier, &mut fuel);
                 if fuel > 0 {
                     let (merger, _batches) = m.take().unwrap();
                     let new_batch = Arc::new(merger.done());
@@ -997,18 +1008,8 @@ where
         Self::with_effort(factories, 1)
     }
 
-    fn recede_to(&mut self, frontier: &B::Time) {
-        let batches = self
-            .merger
-            .pause()
-            .into_iter()
-            .map(|batch| {
-                let mut batch = Arc::into_inner(batch).unwrap();
-                batch.recede_to(frontier);
-                Arc::new(batch)
-            })
-            .collect::<Vec<_>>();
-        self.merger.resume(batches);
+    fn set_frontier(&mut self, frontier: &B::Time) {
+        self.merger.set_frontier(frontier)
     }
 
     fn exert(&mut self, _effort: &mut isize) {}

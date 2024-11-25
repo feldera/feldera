@@ -851,6 +851,7 @@ where
         source2: &TestBatch<K, V, T, R>,
         key_filter: &Option<Filter<K>>,
         value_filter: &Option<Filter<V>>,
+        _frontier: &T,
         _fuel: &mut isize,
     ) {
         self.data = source1
@@ -1231,25 +1232,6 @@ where
             .collect::<Vec<_>>();
         Self::from_tuples(time, tuples)
     }*/
-
-    fn recede_to(&mut self, frontier: &Self::Time) {
-        let data = self
-            .data
-            .iter()
-            .map(|((k, v, t), r)| {
-                (
-                    (
-                        clone_box(k.as_ref()),
-                        clone_box(v.as_ref()),
-                        t.meet(frontier),
-                    ),
-                    clone_box(r.as_ref()),
-                )
-            })
-            .collect::<Vec<_>>();
-
-        self.data = Self::from_data(&data).data;
-    }
 }
 
 impl<K, V, T, R> Trace for TestBatch<K, V, T, R>
@@ -1270,8 +1252,8 @@ where
         }
     }
 
-    fn recede_to(&mut self, frontier: &Self::Time) {
-        Batch::recede_to(self, frontier);
+    fn set_frontier(&mut self, _frontier: &Self::Time) {
+        // Ok to do nothing here, since frontiers are an optimization and are meant to be applied lazily during merging.
     }
 
     fn exert(&mut self, _effort: &mut isize) {}

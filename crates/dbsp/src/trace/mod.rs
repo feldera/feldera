@@ -204,17 +204,15 @@ pub trait Trace: BatchReader {
     /// Allocates a new empty trace.
     fn new(factories: &Self::Factories) -> Self;
 
-    /// Pushes all timestamps in the trace back to `frontier` or less, by
-    /// replacing each timestamp `t` in the trace by `t.meet(frontier)`.  This
-    /// has no effect on timestamps that are already less than or equal to
-    /// `frontier`.  For later timestamps, it reduces the number of distinct
-    /// timestamps in the trace, which in turn allows the trace to combine
-    /// tuples that now have the same key, value, and time by adding their
-    /// weights, reducing memory consumption.
+    /// Sets a compaction frontier, i.e., a timestamp such that timestamps
+    /// below the frontier are indistinguishable to DBSP, therefore any `ts`
+    /// in the trace can be safely replaced with `ts.join(frontier)` without
+    /// affecting the output of the circuit.  By applying this replacement,
+    /// updates to the same (key, value) pairs applied during different steps
+    /// can be merged or discarded.
     ///
-    /// See [`NestedTimestamp`](crate::time::NestedTimestamp32) for information
-    /// on how DBSP can take advantage of its usage of time.
-    fn recede_to(&mut self, frontier: &Self::Time);
+    /// The compaction is performed lazily at merge time.
+    fn set_frontier(&mut self, frontier: &Self::Time);
 
     /// Exert merge effort, even without updates.
     fn exert(&mut self, effort: &mut isize);
@@ -422,12 +420,8 @@ where
 /// ([`Self::Batcher`]), or by merging traces of like types ([`Self::Merger`]),
 /// plus some convenient methods for using those types.
 ///
-/// A `Batch` is mostly immutable, with the exception of [`recede_to`].
-///
 /// See [crate documentation](crate::trace) for more information on batches and
 /// traces.
-///
-/// [`recede_to`]: Self::recede_to
 pub trait Batch: BatchReader + Clone + Send + Sync
 where
     Self: Sized,
@@ -535,7 +529,14 @@ where
     ) -> Self {
         let mut fuel = isize::MAX;
         let mut merger = Self::Merger::new_merger(self, other, Some(BatchLocation::Memory));
-        merger.work(self, other, key_filter, value_filter, &mut fuel);
+        merger.work(
+            self,
+            other,
+            key_filter,
+            value_filter,
+            &Self::Time::minimum(),
+            &mut fuel,
+        );
         merger.done()
     }
 
@@ -543,11 +544,6 @@ where
     fn dyn_empty(factories: &Self::Factories) -> Self {
         Self::Builder::new_builder(factories, Self::Time::default()).done()
     }
-
-    /// Pushes all timestamps in the trace back to `frontier` or less, by
-    /// replacing each timestamp `t` in the trace by `t.meet(frontier)`.  See
-    /// [`Batch::recede_to`].
-    fn recede_to(&mut self, frontier: &Self::Time);
 
     /// Returns elements from `self` that satisfy a predicate.
     fn filter(&self, predicate: &dyn Fn(&Self::Key, &Self::Val) -> bool) -> Self
@@ -717,6 +713,7 @@ where
         source2: &Output,
         key_filter: &Option<Filter<K>>,
         value_filter: &Option<Filter<V>>,
+        frontier: &T,
         fuel: &mut isize,
     );
 

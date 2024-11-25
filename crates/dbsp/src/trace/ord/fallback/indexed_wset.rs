@@ -381,8 +381,6 @@ where
         FallbackIndexedWSetMerger::new_merger(self, other, dst_hint)
     }
 
-    fn recede_to(&mut self, _frontier: &()) {}
-
     fn persisted(&self) -> Option<Self> {
         match &self.inner {
             Inner::Vec(vec) => {
@@ -462,15 +460,21 @@ where
                 (BatchLocation::Memory, Inner::Vec(vec1), Inner::Vec(vec2)) => {
                     MergerInner::AllVec(VecIndexedWSetMerger::new_merger(vec1, vec2, dst_hint))
                 }
-                (BatchLocation::Memory, _, _) => {
-                    MergerInner::ToVec(GenericMerger::new(&batch1.factories.vec, batch1, batch2))
-                }
+                (BatchLocation::Memory, _, _) => MergerInner::ToVec(GenericMerger::new(
+                    &batch1.factories.vec,
+                    None,
+                    batch1,
+                    batch2,
+                )),
                 (BatchLocation::Storage, Inner::File(file1), Inner::File(file2)) => {
                     MergerInner::AllFile(FileIndexedWSetMerger::new_merger(file1, file2, dst_hint))
                 }
-                (BatchLocation::Storage, _, _) => {
-                    MergerInner::ToFile(GenericMerger::new(&batch1.factories.file, batch1, batch2))
-                }
+                (BatchLocation::Storage, _, _) => MergerInner::ToFile(GenericMerger::new(
+                    &batch1.factories.file,
+                    None,
+                    batch1,
+                    batch2,
+                )),
             },
         }
     }
@@ -494,6 +498,7 @@ where
         source2: &FallbackIndexedWSet<K, V, R>,
         key_filter: &Option<Filter<K>>,
         value_filter: &Option<Filter<V>>,
+        _frontier: &(),
         fuel: &mut isize,
     ) {
         match &mut self.inner {
@@ -502,6 +507,7 @@ where
                 source2.inner.as_file().unwrap(),
                 key_filter,
                 value_filter,
+                &(),
                 fuel,
             ),
             MergerInner::AllVec(merger) => merger.work(
@@ -509,31 +515,36 @@ where
                 source2.inner.as_vec().unwrap(),
                 key_filter,
                 value_filter,
+                &(),
                 fuel,
             ),
             MergerInner::ToVec(merger) => match (&source1.inner, &source2.inner) {
                 (Inner::File(a), Inner::File(b)) => {
-                    merger.work(a, b, key_filter, value_filter, fuel)
+                    merger.work(a, b, key_filter, value_filter, &(), fuel)
                 }
                 (Inner::Vec(a), Inner::File(b)) => {
-                    merger.work(a, b, key_filter, value_filter, fuel)
+                    merger.work(a, b, key_filter, value_filter, &(), fuel)
                 }
                 (Inner::File(a), Inner::Vec(b)) => {
-                    merger.work(a, b, key_filter, value_filter, fuel)
+                    merger.work(a, b, key_filter, value_filter, &(), fuel)
                 }
-                (Inner::Vec(a), Inner::Vec(b)) => merger.work(a, b, key_filter, value_filter, fuel),
+                (Inner::Vec(a), Inner::Vec(b)) => {
+                    merger.work(a, b, key_filter, value_filter, &(), fuel)
+                }
             },
             MergerInner::ToFile(merger) => match (&source1.inner, &source2.inner) {
                 (Inner::File(a), Inner::File(b)) => {
-                    merger.work(a, b, key_filter, value_filter, fuel)
+                    merger.work(a, b, key_filter, value_filter, &(), fuel)
                 }
                 (Inner::Vec(a), Inner::File(b)) => {
-                    merger.work(a, b, key_filter, value_filter, fuel)
+                    merger.work(a, b, key_filter, value_filter, &(), fuel)
                 }
                 (Inner::File(a), Inner::Vec(b)) => {
-                    merger.work(a, b, key_filter, value_filter, fuel)
+                    merger.work(a, b, key_filter, value_filter, &(), fuel)
                 }
-                (Inner::Vec(a), Inner::Vec(b)) => merger.work(a, b, key_filter, value_filter, fuel),
+                (Inner::Vec(a), Inner::Vec(b)) => {
+                    merger.work(a, b, key_filter, value_filter, &(), fuel)
+                }
             },
         }
     }

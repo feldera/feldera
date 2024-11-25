@@ -106,7 +106,7 @@ macro_rules! leaf_benches {
                         || (left.cursor(), right.cursor()),
                         |(left, right)| {
                             let mut builder = <$layer<_,_> as Trie>::MergeBuilder::new(&factories);
-                            builder.push_merge(left, right);
+                            builder.push_merge(left, right, None);
                         },
                         BatchSize::PerIteration,
                     );

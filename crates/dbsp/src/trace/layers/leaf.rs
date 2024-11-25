@@ -1,7 +1,7 @@
 use crate::{
     algebra::{NegByRef, ZRingValue},
     dynamic::{DataTrait, DynPair, DynVec, Factory, WeightTrait, WeightTraitTyped, WithFactory},
-    utils::cursor_position_oob,
+    utils::{cursor_position_oob, ConsolidatePairedSlices},
     DBData, DBWeight, NumEntries,
 };
 use rand::Rng;
@@ -29,6 +29,7 @@ pub struct LeafFactories<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> {
     pub diff: &'static dyn Factory<R>,
     pub diffs: &'static dyn Factory<DynVec<R>>,
     pub paired: &'static dyn Factory<DynPair<K, R>>,
+    pub consolidate_weights: &'static dyn ConsolidatePairedSlices<K, R>,
 }
 
 impl<K, R> LeafFactories<K, R>
@@ -47,6 +48,7 @@ where
             diff: WithFactory::<RType>::FACTORY,
             diffs: WithFactory::<LeanVec<RType>>::FACTORY,
             paired: WithFactory::<Tup2<KType, RType>>::FACTORY,
+            consolidate_weights: <dyn ConsolidatePairedSlices<_, _>>::factory::<KType, RType>(),
         }
     }
 }
@@ -59,6 +61,7 @@ impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> Clone for LeafFactories<K, 
             diff: self.diff,
             diffs: self.diffs,
             paired: self.paired,
+            consolidate_weights: self.consolidate_weights,
         }
     }
 }
@@ -120,10 +123,6 @@ impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> Leaf<K, R> {
         result
     }
 
-    pub(crate) fn columns_mut(&mut self) -> (&mut DynVec<K>, &mut DynVec<R>) {
-        (self.keys.as_mut(), self.diffs.as_mut())
-    }
-
     // FIXME: We need to do some extra stuff for zsts
     pub fn len(&self) -> usize {
         debug_assert_eq!(self.keys.len(), self.diffs.len());
@@ -145,7 +144,7 @@ impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> Leaf<K, R> {
     /// # Safety
     ///
     /// The key and diff types of both layers must be the same
-    unsafe fn extend_from_range(&mut self, source: &Self, lower: usize, upper: usize) {
+    fn extend_from_range(&mut self, source: &Self, lower: usize, upper: usize) {
         debug_assert!(lower <= source.len() && upper <= source.len());
         if lower == upper {
             return;
@@ -214,7 +213,7 @@ impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> Leaf<K, R> {
                     let bound = &rhs.keys[lower2];
                     let step = 1 + lhs.keys.advance_to(lower1 + 1, upper1, bound);
 
-                    unsafe { self.extend_from_range(lhs, lower1, lower1 + step) };
+                    self.extend_from_range(lhs, lower1, lower1 + step);
 
                     lower1 += step;
                 }
@@ -239,22 +238,57 @@ impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> Leaf<K, R> {
                     let bound = &lhs.keys[lower1];
                     let step = 1 + rhs.keys.advance_to(lower2 + 1, upper2, bound);
 
-                    unsafe { self.extend_from_range(rhs, lower2, lower2 + step) };
+                    self.extend_from_range(rhs, lower2, lower2 + step);
 
                     lower2 += step;
                 }
             }
         }
 
-        unsafe {
-            if lower1 < upper1 {
-                self.extend_from_range(lhs, lower1, upper1);
-            }
-
-            if lower2 < upper2 {
-                self.extend_from_range(rhs, lower2, upper2);
-            }
+        if lower1 < upper1 {
+            self.extend_from_range(lhs, lower1, upper1);
         }
+
+        if lower2 < upper2 {
+            self.extend_from_range(rhs, lower2, upper2);
+        }
+
+        self.len()
+    }
+
+    /// Like `push_merge`, but also applies `f` to each `key`.
+    /// Since `f` can be not-monotonic, this requires sorting
+    /// and consolidating the output on each invocation.
+    fn push_map_merge(
+        &mut self,
+        lhs: &Self,
+        (lower1, upper1): (usize, usize),
+        rhs: &Self,
+        (lower2, upper2): (usize, usize),
+        f: &dyn Fn(&mut K),
+    ) -> usize {
+        let reserved = (upper1 - lower1) + (upper2 - lower2);
+        self.reserve(reserved);
+        let base = self.len();
+
+        self.extend_from_range(lhs, lower1, upper1);
+        self.extend_from_range(rhs, lower2, upper2);
+
+        let end = self.len();
+
+        for i in base..end {
+            f(&mut self.keys[i]);
+        }
+
+        let consolidated_len = self
+            .factories
+            .consolidate_weights
+            .consolidate_paired_slices(
+                (self.keys.as_mut(), base, end),
+                (self.diffs.as_mut(), base, end),
+            );
+
+        self.truncate(base + consolidated_len);
 
         self.len()
     }
@@ -293,6 +327,7 @@ impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> Trie for Leaf<K, R> {
 
     type MergeBuilder = LeafBuilder<K, R>;
     type TupleBuilder = LeafBuilder<K, R>;
+    type LeafKey = K;
 
     fn keys(&self) -> usize {
         self.len()
@@ -587,7 +622,7 @@ impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> MergeBuilder for LeafBuilde
 
     fn copy_range(&mut self, other: &Self::Trie, lower: usize, upper: usize) {
         // Safety: The current builder's layer and the trie layer types are the same
-        unsafe { self.layer.extend_from_range(other, lower, upper) };
+        self.layer.extend_from_range(other, lower, upper);
     }
 
     fn copy_range_retain_keys<'a, F>(
@@ -616,11 +651,17 @@ impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> MergeBuilder for LeafBuilde
         &'a mut self,
         lhs_cursor: <Self::Trie as Trie>::Cursor<'a>,
         rhs_cursor: <Self::Trie as Trie>::Cursor<'a>,
+        map_func: Option<&dyn Fn(&mut <<Self as Builder>::Trie as Trie>::LeafKey)>,
     ) {
         let (lhs, rhs) = (lhs_cursor.storage(), rhs_cursor.storage());
         let lhs_bounds = (lhs_cursor.position(), lhs_cursor.bounds().1);
         let rhs_bounds = (rhs_cursor.position(), rhs_cursor.bounds().1);
-        self.layer.push_merge(lhs, lhs_bounds, rhs, rhs_bounds);
+        if let Some(map_func) = map_func {
+            self.layer
+                .push_map_merge(lhs, lhs_bounds, rhs, rhs_bounds, map_func);
+        } else {
+            self.layer.push_merge(lhs, lhs_bounds, rhs, rhs_bounds);
+        }
     }
 
     fn push_merge_retain_keys<'a, F>(
@@ -628,10 +669,16 @@ impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> MergeBuilder for LeafBuilde
         cursor1: <Self::Trie as Trie>::Cursor<'a>,
         cursor2: <Self::Trie as Trie>::Cursor<'a>,
         filter: &F,
+        _map_func: Option<&dyn Fn(&mut <<Self as Builder>::Trie as Trie>::LeafKey)>,
     ) where
         F: Fn(&<<Self::Trie as Trie>::Cursor<'a> as Cursor<'a>>::Key) -> bool,
     {
         //unsafe { self.assume_invariants() }
+
+        // `map_func` is currently only used to implement timestamp compaction, which
+        // only makes sense for batches with timestamps, which are implemented as `Layer`,
+        // not `Leaf`.
+        debug_assert!(_map_func.is_none(),);
 
         let (trie1, trie2) = (cursor1.storage(), cursor2.storage());
         /*unsafe {

@@ -92,6 +92,9 @@ pub trait Trie: Sized {
     /// The type used to assemble instances of the type from its `Item`s.
     type TupleBuilder: TupleBuilder<Trie = Self>;
 
+    /// The key type of the leaf sub-trie of this trie.
+    type LeafKey: ?Sized;
+
     /// The number of distinct keys, as distinct from the total number of
     /// tuples.
     fn keys(&self) -> usize;
@@ -122,7 +125,7 @@ pub trait Trie: Sized {
     fn merge(&self, other: &Self) -> Self {
         let mut merger = Self::MergeBuilder::with_capacity(self, other);
         // println!("{:?} and {:?}", self.keys(), other.keys());
-        merger.push_merge(self.cursor(), other.cursor());
+        merger.push_merge(self.cursor(), other.cursor(), None);
         merger.done()
     }
 }
@@ -174,12 +177,19 @@ pub trait MergeBuilder: Builder {
         F: Fn(&<<Self::Trie as Trie>::Cursor<'a> as Cursor<'a>>::Key) -> bool;
 
     /// Merges two sub-collections into one sub-collection.
+    ///
+    /// Optionally applies `map_func` to each key in the leaf of the trie.
+    /// This is used to implement timestamp compaction where multiple timestamps
+    /// are merged into one during merging.  This function does not
+    /// have to be monotonic and therefore requires sorting and consolidating
+    /// items in the leaf.
     fn push_merge<'a>(
         &'a mut self,
         other1: <Self::Trie as Trie>::Cursor<'a>,
         other2: <Self::Trie as Trie>::Cursor<'a>,
+        map_func: Option<&dyn Fn(&mut <<Self as Builder>::Trie as Trie>::LeafKey)>,
     ) {
-        self.push_merge_retain_keys(other1, other2, &|_| true)
+        self.push_merge_retain_keys(other1, other2, &|_| true, map_func)
     }
 
     /// Merges two sub-collections into one sub-collection, only
@@ -189,6 +199,7 @@ pub trait MergeBuilder: Builder {
         other1: <Self::Trie as Trie>::Cursor<'a>,
         other2: <Self::Trie as Trie>::Cursor<'a>,
         filter: &F,
+        map_func: Option<&dyn Fn(&mut <<Self as Builder>::Trie as Trie>::LeafKey)>,
     ) where
         F: Fn(&<<Self::Trie as Trie>::Cursor<'a> as Cursor<'a>>::Key) -> bool;
 }
@@ -287,6 +298,7 @@ impl Trie for () {
     type MergeBuilder = ();
     type TupleBuilder = ();
     type Factories = ();
+    type LeafKey = ();
 
     fn keys(&self) -> usize {
         0
@@ -335,6 +347,7 @@ impl MergeBuilder for () {
         &mut self,
         _other1: <Self::Trie as Trie>::Cursor<'static>,
         _other2: <Self::Trie as Trie>::Cursor<'static>,
+        _map_func: Option<&dyn Fn(&mut <<Self as Builder>::Trie as Trie>::LeafKey)>,
     ) {
     }
 
@@ -343,6 +356,7 @@ impl MergeBuilder for () {
         _other1: <Self::Trie as Trie>::Cursor<'static>,
         _other2: <Self::Trie as Trie>::Cursor<'static>,
         _filter: &F,
+        _map_func: Option<&dyn Fn(&mut <<Self as Builder>::Trie as Trie>::LeafKey)>,
     ) where
         F: Fn(&<<Self::Trie as Trie>::Cursor<'a> as Cursor<'a>>::Key) -> bool,
     {

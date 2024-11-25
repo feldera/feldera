@@ -805,10 +805,10 @@ where
     fn clock_end(&mut self, scope: Scope) {
         if scope + 1 == self.root_scope && !self.reset_on_clock_start {
             if let Some(tr) = self.trace.as_mut() {
-                tr.recede_to(&self.time.epoch_end(self.root_scope).recede(self.root_scope));
+                tr.set_frontier(&self.time.epoch_start(scope));
             }
         }
-        self.time.advance(scope + 1);
+        self.time = self.time.advance(scope + 1);
     }
 
     fn init(&mut self, global_id: &GlobalNodeId) {

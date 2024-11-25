@@ -19,11 +19,8 @@ use crate::{
 use rand::Rng;
 use rkyv::{Archive, Deserialize, Serialize};
 use size_of::SizeOf;
+use std::fmt::{self, Debug, Display};
 use std::path::PathBuf;
-use std::{
-    fmt::{self, Debug, Display},
-    ops::DerefMut,
-};
 
 use crate::trace::ord::merge_batcher::MergeBatcher;
 
@@ -345,86 +342,6 @@ where
     fn begin_merge(&self, other: &Self, dst_hint: Option<BatchLocation>) -> Self::Merger {
         Self::Merger::new_merger(self, other, dst_hint)
     }
-
-    fn recede_to(&mut self, frontier: &T) {
-        // Nothing to do if the batch is entirely before the frontier.
-        if !self.upper().less_equal(frontier) {
-            // TODO: Optimize case where self.upper()==self.lower().
-            self.do_recede_to(frontier);
-        }
-    }
-}
-
-impl<K, T, R, O> VecKeyBatch<K, T, R, O>
-where
-    K: DataTrait + ?Sized,
-    T: Timestamp,
-    R: WeightTrait + ?Sized,
-    O: OrdOffset,
-{
-    fn do_recede_to(&mut self, frontier: &T) {
-        // We will zip through the time leaves, calling advance on each,
-        //    then zip through the value layer, sorting and collapsing each,
-        //    then zip through the key layer, collapsing each .. ?
-
-        // 1. For each (time, diff) pair, advance the time.
-        for time in self.layer.vals.columns_mut().0.deref_mut().as_mut_slice() {
-            time.meet_assign(frontier);
-        }
-
-        // for time_diff in self.layer.vals.vals.iter_mut() {
-        //     time_diff.0 = time_diff.0.advance_by(frontier);
-        // }
-
-        // 2. For each `(val, off)` pair, sort the range, compact, and rewrite `off`.
-        //    This may leave `val` with an empty range; filtering happens in step 3.
-        let mut write_position = 0;
-        for i in 0..self.layer.keys.len() {
-            // NB: batch.layer.vals.offs[i+1] will be used next iteration, and should not be
-            // changed.     we will change batch.layer.vals.offs[i] in this
-            // iteration, from `write_position`'s     initial value.
-
-            let lower: usize = self.layer.offs[i].into_usize();
-            let upper: usize = self.layer.offs[i + 1].into_usize();
-
-            self.layer.offs[i] = O::from_usize(write_position);
-
-            let (times, diffs) = (&mut self.layer.vals.keys, &mut self.layer.vals.diffs);
-
-            // sort the range by the times (ignore the diffs; they will collapse).
-            let count = self
-                .factories
-                .consolidate_weights
-                .consolidate_paired_slices(
-                    (times.as_mut(), lower, upper),
-                    (diffs.as_mut(), lower, upper),
-                );
-
-            for index in lower..(lower + count) {
-                times.swap(write_position, index);
-                diffs.swap(write_position, index);
-                write_position += 1;
-            }
-        }
-        self.layer.vals.truncate(write_position);
-        self.layer.offs[self.layer.keys.len()] = O::from_usize(write_position);
-
-        // 4. Remove empty keys.
-        let mut write_position = 0;
-        for i in 0..self.layer.keys.len() {
-            let lower: usize = self.layer.offs[i].into_usize();
-            let upper: usize = self.layer.offs[i + 1].into_usize();
-
-            if lower < upper {
-                self.layer.keys.swap(write_position, i);
-                // batch.layer.offs updated via `dedup` below; keeps me sane.
-                write_position += 1;
-            }
-        }
-        self.layer.offs.dedup();
-        self.layer.keys.truncate(write_position);
-        self.layer.offs.truncate(write_position + 1);
-    }
 }
 
 /// State for an in-progress merge.
@@ -495,19 +412,30 @@ where
         source2: &VecKeyBatch<K, T, R, O>,
         key_filter: &Option<Filter<K>>,
         _value_filter: &Option<Filter<DynUnit>>,
+        frontier: &T,
         fuel: &mut isize,
     ) {
+        let advance_func = |t: &mut DynDataTyped<T>| t.join_assign(frontier);
+
+        let time_map_func = if frontier == &T::minimum() {
+            None
+        } else {
+            Some(&advance_func as &dyn Fn(&mut DynDataTyped<T>))
+        };
+
         if let Some(key_filter) = key_filter {
             self.result.push_merge_retain_keys_fueled(
                 (&source1.layer, &mut self.lower1, self.upper1),
                 (&source2.layer, &mut self.lower2, self.upper2),
                 key_filter,
+                time_map_func,
                 fuel,
             );
         } else {
             self.result.push_merge_fueled(
                 (&source1.layer, &mut self.lower1, self.upper1),
                 (&source2.layer, &mut self.lower2, self.upper2),
+                time_map_func,
                 fuel,
             );
         }
