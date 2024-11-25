@@ -13,7 +13,7 @@
     after,
     end
   }: {
-    preloaded: { pipelines: PipelineThumb[] }
+    preloaded?: { pipelines: PipelineThumb[] }
     breadcrumbs: { text: string; href: string }[]
     after?: Snippet
     end?: Snippet
@@ -35,9 +35,11 @@
       {#snippet content(close)}
         <div
           transition:fade={{ duration: 100 }}
-          class="bg-white-black absolute left-0 z-10 max-h-[500px] w-[calc(100vw-100px)] max-w-[360px] overflow-y-auto rounded p-2 shadow-md scrollbar"
+          class="absolute left-0 z-10 flex max-h-[calc(100vh-150px)] w-[calc(100vw-100px)] max-w-[360px]"
         >
-          <div class="flex flex-col justify-end">
+          <div
+            class="bg-white-black w-full flex-col justify-end gap-0 overflow-y-auto rounded p-2 shadow-md scrollbar"
+          >
             {#each pipelineList.pipelines as pipeline}
               <a
                 onclick={close}
