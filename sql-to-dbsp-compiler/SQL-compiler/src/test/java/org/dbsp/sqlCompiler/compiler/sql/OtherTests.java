@@ -36,7 +36,7 @@ import org.dbsp.sqlCompiler.compiler.backend.ToCsvVisitor;
 import org.dbsp.sqlCompiler.compiler.backend.rust.RustFileWriter;
 import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteCompiler;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteFunctions;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.FunctionDocumentation;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.sql.simple.EndToEndTests;
 import org.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests;
@@ -148,7 +148,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         // When invoked it generates documentation for the supported functions and operators
         // in the specified file.
         String file = "../../docs/sql/function-index.md";
-        CalciteFunctions.INSTANCE.generateIndex(file);
+        FunctionDocumentation.generateIndex(file);
     }
 
     @Test
