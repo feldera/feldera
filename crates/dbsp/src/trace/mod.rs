@@ -52,7 +52,7 @@ pub mod ord;
 pub mod spine_async;
 pub use spine_async::{Spine, SpineSnapshot};
 
-mod spine_fueled;
+// mod spine_fueled;
 #[cfg(test)]
 pub mod test;
 
@@ -97,6 +97,17 @@ pub trait DBData:
 impl<T> DBData for T where
     T: Default + Clone + Eq + Ord + Hash + SizeOf + Send + Sync + Debug + ArchivedDBData + 'static /* as ArchivedDBData>::Repr: Ord + PartialOrd<T>, */
 {
+}
+
+/// A spine that is serialized to a file.
+#[derive(rkyv::Serialize, rkyv::Deserialize, rkyv::Archive)]
+pub(crate) struct CommittedSpine<B: Batch + Send + Sync> {
+    pub batches: Vec<String>,
+    pub merged: Vec<(String, String)>,
+    pub lower: Vec<B::Time>,
+    pub upper: Vec<B::Time>,
+    pub effort: u64,
+    pub dirty: bool,
 }
 
 /// Trait for data that can be serialized and deserialized with [`rkyv`].
