@@ -140,21 +140,6 @@ pub trait Timestamp: DBData + PartialOrder + Lattice {
     /// level of the circuit whose clock is ticking. `0` refers to the
     /// innermost circuit.  `1` is its parent circuit, etc.
     ///
-    /// While time does not normally flow backward in DBSP, it is sometimes
-    /// useful to push values back in time in order to "forget" the
-    /// distinction between multiple older timestamps. See
-    /// [`Trace::recede_to`](`crate::trace::Trace::recede_to`) for more details.
-    ///
-    /// # Example
-    ///
-    /// Assume a two-dimensional time modeled as (parent time, child time)
-    /// tuple.
-    ///
-    /// ```ignore
-    /// assert_eq!((2, 3).recede(0), (2, 2));
-    /// assert_eq!((2, 3).recede(1), (1, 3));
-    /// ```
-    ///
     /// # Panics
     ///
     /// Panics if the clock at the `scope` nesting level is equal to zero

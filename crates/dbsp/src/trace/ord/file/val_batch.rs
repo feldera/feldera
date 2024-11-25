@@ -28,7 +28,6 @@ use std::{
     cmp::Ordering,
     fmt,
     fmt::{Display, Formatter},
-    ops::DerefMut,
 };
 
 pub struct FileValBatchFactories<K, V, T, R>
@@ -40,7 +39,7 @@ where
 {
     factories0: FileFactories<K, DynUnit>,
     factories1: FileFactories<V, DynWeightedPairs<DynDataTyped<T>, R>>,
-    timediff_factory: &'static dyn Factory<DynWeightedPairs<DynDataTyped<T>, R>>,
+    pub timediff_factory: &'static dyn Factory<DynWeightedPairs<DynDataTyped<T>, R>>,
     weight_factory: &'static dyn Factory<R>,
     optkey_factory: &'static dyn Factory<DynOpt<K>>,
     keys_factory: &'static dyn Factory<DynVec<K>>,
@@ -339,46 +338,6 @@ where
         FileValMerger::new_merger(self, other, dst_hint)
     }
 
-    fn recede_to(&mut self, frontier: &T) {
-        self.factories.timediff_factory.with(&mut |td| {
-            self.factories.factories1.key_factory.with(&mut |val| {
-                self.factories.factories0.key_factory.with(&mut |key| {
-                    // Nothing to do if the batch is entirely before the frontier.
-                    if !self.upper().less_equal(frontier) {
-                        let mut writer = Writer2::new(
-                            &self.factories.factories0,
-                            &self.factories.factories1,
-                            &Runtime::storage(),
-                            Parameters::default(),
-                        )
-                        .unwrap();
-                        let mut key_cursor = self.file.rows().first().unwrap();
-                        while key_cursor.has_value() {
-                            let mut val_cursor = key_cursor.next_column().unwrap().first().unwrap();
-                            let mut n_vals = 0;
-                            while val_cursor.has_value() {
-                                let td = unsafe { val_cursor.aux(td) }.unwrap();
-                                recede_times(td, frontier);
-                                if !td.is_empty() {
-                                    let val = unsafe { val_cursor.key(val) }.unwrap();
-                                    writer.write1((val, td)).unwrap();
-                                    n_vals += 1;
-                                }
-                                val_cursor.move_next().unwrap();
-                            }
-                            if n_vals > 0 {
-                                let key = unsafe { key_cursor.key(key) }.unwrap();
-                                writer.write0((key, ().erase())).unwrap();
-                            }
-                            key_cursor.move_next().unwrap();
-                        }
-                        self.file = writer.into_reader().unwrap();
-                    }
-                })
-            })
-        })
-    }
-
     fn checkpoint_path(&self) -> Option<PathBuf> {
         self.file.mark_for_checkpoint();
         Some(self.file.path())
@@ -395,17 +354,6 @@ where
             upper: Antichain::new(),
         })
     }
-}
-
-fn recede_times<T, R>(td: &mut DynWeightedPairs<DynDataTyped<T>, R>, frontier: &T)
-where
-    T: Timestamp,
-    R: WeightTrait + ?Sized,
-{
-    for timediff in td.dyn_iter_mut() {
-        timediff.fst_mut().deref_mut().meet_assign(frontier);
-    }
-    td.consolidate();
 }
 
 /// State for an in-progress merge.
@@ -491,6 +439,28 @@ fn merge_times<T, R>(
     output.extend_from_range(b.as_vec(), j, b.len());
 }
 
+// Like `merge_times`, but additionally applied `map_func` to each timestamp.
+// Sorts and consolidates the resulting array of time/diff pairs.
+fn merge_map_times<T, R>(
+    a: &mut DynWeightedPairs<DynDataTyped<T>, R>,
+    b: &mut DynWeightedPairs<DynDataTyped<T>, R>,
+    map_func: &dyn Fn(&mut DynDataTyped<T>),
+    output: &mut DynWeightedPairs<DynDataTyped<T>, R>,
+) where
+    T: Timestamp,
+    R: WeightTrait + ?Sized,
+{
+    output.clear();
+    output.append(a.as_vec_mut());
+    output.append(b.as_vec_mut());
+
+    for i in 0..output.len() {
+        map_func(unsafe { output.index_mut_unchecked(i) }.fst_mut());
+    }
+
+    output.consolidate();
+}
+
 impl<K, V, T, R> FileValMerger<K, V, T, R>
 where
     K: DataTrait + ?Sized,
@@ -545,6 +515,7 @@ where
         cursor1: &mut RawValCursor<'_, K, V, T, R>,
         cursor2: &mut RawValCursor<'_, K, V, T, R>,
         value_filter: &Option<Filter<V>>,
+        map_func: Option<&dyn Fn(&mut DynDataTyped<T>)>,
     ) -> bool {
         let mut n = 0;
 
@@ -578,10 +549,15 @@ where
                                     Ordering::Less => self.copy_value(output, cursor1, value1),
                                     Ordering::Equal => {
                                         let td1 = unsafe { cursor1.aux(td1) }.unwrap();
-                                        td1.sort_unstable();
                                         let td2 = unsafe { cursor2.aux(td2) }.unwrap();
-                                        td2.sort_unstable();
-                                        merge_times(td1, td2, td, tmp_w);
+                                        if let Some(map_func) = &map_func {
+                                            merge_map_times(td1, td2, map_func, td);
+                                        } else {
+                                            td1.sort_unstable();
+                                            td2.sort_unstable();
+
+                                            merge_times(td1, td2, td, tmp_w);
+                                        }
                                         cursor1.move_next().unwrap();
                                         cursor2.move_next().unwrap();
                                         if td.is_empty() {
@@ -608,7 +584,16 @@ where
         source2: &FileValBatch<K, V, T, R>,
         key_filter: &Option<Filter<K>>,
         value_filter: &Option<Filter<V>>,
+        frontier: &T,
     ) -> RawValBatch<K, V, T, R> {
+        let advance_func = |t: &mut DynDataTyped<T>| t.join_assign(frontier);
+
+        let time_map_func = if frontier == &T::minimum() {
+            None
+        } else {
+            Some(&advance_func as &dyn Fn(&mut DynDataTyped<T>))
+        };
+
         let mut output = Writer2::new(
             &source1.factories.factories0,
             &source1.factories().factories1,
@@ -645,6 +630,7 @@ where
                                 &mut cursor1.next_column().unwrap().first().unwrap(),
                                 &mut cursor2.next_column().unwrap().first().unwrap(),
                                 value_filter,
+                                time_map_func,
                             ) {
                                 output.write0((key1, &())).unwrap();
                             }
@@ -701,11 +687,12 @@ where
         source2: &FileValBatch<K, V, T, R>,
         key_filter: &Option<Filter<K>>,
         value_filter: &Option<Filter<V>>,
+        frontier: &T,
         fuel: &mut isize,
     ) {
         debug_assert!(*fuel > 0);
         if self.result.is_none() {
-            self.result = Some(self.merge(source1, source2, key_filter, value_filter));
+            self.result = Some(self.merge(source1, source2, key_filter, value_filter, frontier));
         }
     }
 }

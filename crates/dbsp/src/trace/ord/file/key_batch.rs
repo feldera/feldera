@@ -36,6 +36,7 @@ where
 {
     key_factory: &'static dyn Factory<K>,
     weight_factory: &'static dyn Factory<R>,
+    weights_factory: &'static dyn Factory<DynVec<R>>,
     keys_factory: &'static dyn Factory<DynVec<K>>,
     item_factory: &'static dyn Factory<DynPair<K, DynUnit>>,
     factories0: FileFactories<K, DynUnit>,
@@ -43,6 +44,7 @@ where
     opt_key_factory: &'static dyn Factory<DynOpt<K>>,
     weighted_item_factory: &'static dyn Factory<WeightedItem<K, DynUnit, R>>,
     weighted_items_factory: &'static dyn Factory<DynWeightedPairs<DynPair<K, DynUnit>, R>>,
+    pub timediff_factory: &'static dyn Factory<DynWeightedPairs<DynDataTyped<T>, R>>,
 }
 
 impl<K, T, R> Clone for FileKeyBatchFactories<K, T, R>
@@ -55,6 +57,7 @@ where
         Self {
             key_factory: self.key_factory,
             weight_factory: self.weight_factory,
+            weights_factory: self.weights_factory,
             keys_factory: self.keys_factory,
             item_factory: self.item_factory,
             factories0: self.factories0.clone(),
@@ -62,6 +65,7 @@ where
             opt_key_factory: self.opt_key_factory,
             weighted_item_factory: self.weighted_item_factory,
             weighted_items_factory: self.weighted_items_factory,
+            timediff_factory: self.timediff_factory,
         }
     }
 }
@@ -81,6 +85,7 @@ where
         Self {
             key_factory: WithFactory::<KType>::FACTORY,
             weight_factory: WithFactory::<RType>::FACTORY,
+            weights_factory: WithFactory::<LeanVec<RType>>::FACTORY,
             keys_factory: WithFactory::<LeanVec<KType>>::FACTORY,
             item_factory: WithFactory::<Tup2<KType, ()>>::FACTORY,
             factories0: FileFactories::new::<KType, ()>(),
@@ -88,6 +93,7 @@ where
             opt_key_factory: WithFactory::<Option<KType>>::FACTORY,
             weighted_item_factory: WithFactory::<Tup2<Tup2<KType, ()>, RType>>::FACTORY,
             weighted_items_factory: WithFactory::<LeanVec<Tup2<Tup2<KType, ()>, RType>>>::FACTORY,
+            timediff_factory: WithFactory::<LeanVec<Tup2<T, RType>>>::FACTORY,
         }
     }
 
@@ -305,14 +311,6 @@ where
         Self::Merger::new_merger(self, other, dst_hint)
     }
 
-    fn recede_to(&mut self, frontier: &T) {
-        // Nothing to do if the batch is entirely before the frontier.
-        if !self.upper().less_equal(frontier) {
-            // TODO: Optimize case where self.upper()==self.lower().
-            self.do_recede_to(frontier);
-        }
-    }
-
     fn checkpoint_path(&self) -> Option<PathBuf> {
         self.file.mark_for_checkpoint();
         Some(self.file.path())
@@ -329,17 +327,6 @@ where
             lower: Antichain::new(),
             upper: Antichain::new(),
         })
-    }
-}
-
-impl<K, T, R> FileKeyBatch<K, T, R>
-where
-    K: DataTrait + ?Sized,
-    T: Timestamp,
-    R: WeightTrait + ?Sized,
-{
-    fn do_recede_to(&mut self, _frontier: &T) {
-        todo!()
     }
 }
 
@@ -364,6 +351,8 @@ where
     // Output so far.
     #[size_of(skip)]
     writer: Writer2<K, DynUnit, DynDataTyped<T>, R>,
+
+    time_diffs: Box<DynWeightedPairs<DynDataTyped<T>, R>>,
 }
 
 impl<K, T, R> FileKeyMerger<K, T, R>
@@ -392,7 +381,7 @@ where
         cursor.step_key();
     }
 
-    fn merge_values<'a>(
+    fn merge_times<'a>(
         &mut self,
         cursor1: &mut FileKeyCursor<'a, K, T, R>,
         cursor2: &mut FileKeyCursor<'a, K, T, R>,
@@ -452,6 +441,53 @@ where
         }
         n > 0
     }
+
+    // Like `merge_times`, but additionally applied `map_func` to each timestamp.
+    // Sorts and consolidates the resulting array of time/diff pairs.
+    fn merge_map_times<'a>(
+        &mut self,
+        cursor1: &mut FileKeyCursor<'a, K, T, R>,
+        cursor2: &mut FileKeyCursor<'a, K, T, R>,
+        map_func: &dyn Fn(&mut DynDataTyped<T>),
+        fuel: &mut isize,
+    ) -> bool {
+        self.time_diffs.clear();
+
+        let mut subcursor1 = cursor1.cursor.next_column().unwrap().first().unwrap();
+        let mut subcursor2 = cursor2.cursor.next_column().unwrap().first().unwrap();
+
+        while subcursor1.has_value() {
+            let (time, diff) =
+                unsafe { subcursor1.item((cursor1.time.as_mut(), &mut cursor1.diff)) }.unwrap();
+            map_func(time);
+            self.time_diffs.push_refs((time, diff));
+
+            subcursor1.move_next().unwrap();
+        }
+
+        while subcursor2.has_value() {
+            let (time, diff) =
+                unsafe { subcursor2.item((cursor2.time.as_mut(), &mut cursor2.diff)) }.unwrap();
+            map_func(time);
+            self.time_diffs.push_refs((time, diff));
+
+            subcursor2.move_next().unwrap();
+        }
+
+        self.time_diffs.consolidate();
+
+        let len = self.time_diffs.len();
+
+        for i in 0..len {
+            let (t, w) = unsafe { self.time_diffs.index_unchecked(i) }.split();
+
+            self.writer.write1((t, w)).unwrap();
+        }
+
+        *fuel -= len as isize;
+
+        len > 0
+    }
 }
 
 impl<K, T, R> Merger<K, DynUnit, T, R, FileKeyBatch<K, T, R>> for FileKeyMerger<K, T, R>
@@ -479,6 +515,7 @@ where
                 Parameters::default(),
             )
             .unwrap(),
+            time_diffs: batch1.factories.timediff_factory.default_box(),
         }
     }
 
@@ -497,11 +534,20 @@ where
         source2: &FileKeyBatch<K, T, R>,
         key_filter: &Option<Filter<K>>,
         value_filter: &Option<Filter<DynUnit>>,
+        frontier: &T,
         fuel: &mut isize,
     ) {
         if !filter(value_filter, &()) {
             return;
         }
+
+        let advance_func = |t: &mut DynDataTyped<T>| t.join_assign(frontier);
+
+        let time_map_func = if frontier == &T::minimum() {
+            None
+        } else {
+            Some(&advance_func as &dyn Fn(&mut DynDataTyped<T>))
+        };
 
         let mut cursor1 = FileKeyCursor::new_from(source1, self.lower1);
         let mut cursor2 = FileKeyCursor::new_from(source2, self.lower2);
@@ -512,12 +558,17 @@ where
                     self.copy_values_if(&mut cursor1, key_filter, fuel);
                 }
                 Ordering::Equal => {
-                    if filter(key_filter, cursor1.key.as_ref())
-                        && self.merge_values(&mut cursor1, &mut cursor2, &mut sum, fuel)
-                    {
-                        self.writer
-                            .write0((cursor1.key.as_ref(), ().erase()))
-                            .unwrap();
+                    if filter(key_filter, cursor1.key.as_ref()) {
+                        let non_zero = if let Some(time_map_func) = &time_map_func {
+                            self.merge_map_times(&mut cursor1, &mut cursor2, time_map_func, fuel)
+                        } else {
+                            self.merge_times(&mut cursor1, &mut cursor2, &mut sum, fuel)
+                        };
+                        if non_zero {
+                            self.writer
+                                .write0((cursor1.key.as_ref(), ().erase()))
+                                .unwrap();
+                        }
                     }
                     *fuel -= 1;
                     cursor1.step_key();

@@ -407,8 +407,6 @@ where
         FileWSetMerger::new_merger(self, other, dst_hint)
     }
 
-    fn recede_to(&mut self, _frontier: &()) {}
-
     fn checkpoint_path(&self) -> Option<PathBuf> {
         self.file.mark_for_checkpoint();
         Some(self.file.path())
@@ -482,6 +480,7 @@ where
         source2: &FileWSet<K, R>,
         key_filter: &Option<Filter<K>>,
         value_filter: &Option<Filter<DynUnit>>,
+        _frontier: &(),
         fuel: &mut isize,
     ) {
         if !filter(value_filter, &()) {

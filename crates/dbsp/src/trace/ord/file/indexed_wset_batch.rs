@@ -411,8 +411,6 @@ where
         FileIndexedWSetMerger::new_merger(self, other, dst_hint)
     }
 
-    fn recede_to(&mut self, _frontier: &()) {}
-
     fn checkpoint_path(&self) -> Option<PathBuf> {
         self.file.mark_for_checkpoint();
         Some(self.file.path())
@@ -589,6 +587,7 @@ where
         source2: &FileIndexedWSet<K, V, R>,
         key_filter: &Option<Filter<K>>,
         value_filter: &Option<Filter<V>>,
+        _frontier: &(),
         fuel: &mut isize,
     ) {
         let mut cursor1 = FileIndexedWSetCursor::new_from(source1, self.lower1);

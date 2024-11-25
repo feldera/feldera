@@ -282,6 +282,7 @@ where
         L: 's;
     type MergeBuilder = LayerBuilder<K, L::MergeBuilder, O>;
     type TupleBuilder = LayerBuilder<K, L::TupleBuilder, O>;
+    type LeafKey = L::LeafKey;
 
     fn keys(&self) -> usize {
         unsafe { self.assume_invariants() }
@@ -373,6 +374,7 @@ where
         &mut self,
         (trie1, lower1, upper1): (&Layer<K, L::Trie, O>, &mut usize, usize),
         (trie2, lower2, upper2): (&Layer<K, L::Trie, O>, &mut usize, usize),
+        map_func: Option<&dyn Fn(&mut <<Self as Builder>::Trie as Trie>::LeafKey)>,
     ) where
         L: MergeBuilder,
         O: OrdOffset,
@@ -400,6 +402,7 @@ where
                         trie2.offs[*lower2].into_usize(),
                         trie2.offs[*lower2 + 1].into_usize(),
                     ),
+                    map_func,
                 );
                 if self.vals.keys() > lower {
                     self.keys.push_ref(&trie1.keys[*lower1]);
@@ -427,6 +430,7 @@ where
         (trie1, lower1, upper1): (&<Self as Builder>::Trie, &mut usize, usize),
         (trie2, lower2, upper2): (&<Self as Builder>::Trie, &mut usize, usize),
         filter: &F,
+        map_func: Option<&dyn Fn(&mut <<Self as Builder>::Trie as Trie>::LeafKey)>,
     ) where
         L: MergeBuilder,
         O: OrdOffset,
@@ -456,6 +460,7 @@ where
                             trie2.offs[*lower2].into_usize(),
                             trie2.offs[*lower2 + 1].into_usize(),
                         ),
+                        map_func,
                     );
                     if self.vals.keys() > lower {
                         self.keys.push_ref(&trie1.keys[*lower1]);
@@ -588,6 +593,7 @@ where
         &mut self,
         (source1, lower1, upper1): (&<Self as Builder>::Trie, &mut usize, usize),
         (source2, lower2, upper2): (&<Self as Builder>::Trie, &mut usize, usize),
+        map_func: Option<&dyn Fn(&mut <<Self as Builder>::Trie as Trie>::LeafKey)>,
         fuel: &mut isize,
     ) {
         let starting_updates = self.vals.keys();
@@ -595,7 +601,11 @@ where
 
         // while both mergees are still active
         while *lower1 < upper1 && *lower2 < upper2 && effort < *fuel {
-            self.merge_step((source1, lower1, upper1), (source2, lower2, upper2));
+            self.merge_step(
+                (source1, lower1, upper1),
+                (source2, lower2, upper2),
+                map_func,
+            );
             effort = (self.vals.keys() - starting_updates) as isize;
         }
 
@@ -631,6 +641,7 @@ where
         (source1, lower1, upper1): (&<Self as Builder>::Trie, &mut usize, usize),
         (source2, lower2, upper2): (&<Self as Builder>::Trie, &mut usize, usize),
         filter: &F,
+        map_func: Option<&dyn Fn(&mut <<Self as Builder>::Trie as Trie>::LeafKey)>,
         fuel: &mut isize,
     ) where
         F: Fn(&K) -> bool,
@@ -644,6 +655,7 @@ where
                 (source1, lower1, upper1),
                 (source2, lower2, upper2),
                 filter,
+                map_func,
             );
             effort = (self.vals.keys() - starting_updates) as isize;
         }
@@ -773,6 +785,7 @@ where
         (source2, lower2, upper2): (&<Self as Builder>::Trie, &mut usize, usize),
         key_filter: &KF,
         value_filter: &VF,
+        map_func: Option<&dyn Fn(&mut <<Self as Builder>::Trie as Trie>::LeafKey)>,
         fuel: &mut isize,
     ) where
         KF: Fn(&K) -> bool,
@@ -788,6 +801,7 @@ where
                 (source2, lower2, upper2),
                 key_filter,
                 value_filter,
+                map_func,
                 usize::MAX,
             );
             // TODO: account for filtered out keys.
@@ -838,6 +852,7 @@ where
         (trie2, lower2, upper2): (&<Self as Builder>::Trie, &mut usize, usize),
         key_filter: &KF,
         value_filter: &VF,
+        map_func: Option<&dyn Fn(&mut <<Self as Builder>::Trie as Trie>::LeafKey)>,
         fuel: usize,
     ) where
         KF: Fn(&K) -> bool,
@@ -875,7 +890,7 @@ where
                 if key_filter(&trie1.keys[*lower1]) {
                     // record vals_length so we can tell if anything was pushed.
                     self.vals
-                        .push_merge_retain_keys(cursor1, cursor2, value_filter);
+                        .push_merge_retain_keys(cursor1, cursor2, value_filter, map_func);
 
                     if self.vals.keys() > lower {
                         self.keys.push_ref(&trie1.keys[*lower1]);
@@ -1047,6 +1062,7 @@ where
         &'a mut self,
         cursor1: <Self::Trie as Trie>::Cursor<'a>,
         cursor2: <Self::Trie as Trie>::Cursor<'a>,
+        map_func: Option<&dyn Fn(&mut <<Self as Builder>::Trie as Trie>::LeafKey)>,
     ) {
         let (mut lower1, upper1) = cursor1.bounds;
         let (mut lower2, upper2) = cursor2.bounds;
@@ -1060,6 +1076,7 @@ where
             self.merge_step(
                 (cursor1.storage, &mut lower1, upper1),
                 (cursor2.storage, &mut lower2, upper2),
+                map_func,
             );
         }
 
@@ -1076,6 +1093,7 @@ where
         cursor1: <Self::Trie as Trie>::Cursor<'a>,
         cursor2: <Self::Trie as Trie>::Cursor<'a>,
         filter: &F,
+        map_func: Option<&dyn Fn(&mut <<Self as Builder>::Trie as Trie>::LeafKey)>,
     ) where
         F: Fn(&<<Self::Trie as Trie>::Cursor<'a> as Cursor<'a>>::Key) -> bool,
     {
@@ -1092,6 +1110,7 @@ where
                 (cursor1.storage, &mut lower1, upper1),
                 (cursor2.storage, &mut lower2, upper2),
                 filter,
+                map_func,
             );
         }
 

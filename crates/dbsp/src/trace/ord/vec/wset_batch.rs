@@ -384,8 +384,6 @@ impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> Batch for VecWSet<K, R> {
     fn begin_merge(&self, other: &Self, dst_hint: Option<BatchLocation>) -> Self::Merger {
         VecWSetMerger::new_merger(self, other, dst_hint)
     }
-
-    fn recede_to(&mut self, _frontier: &()) {}
 }
 
 /// State for an in-progress merge.
@@ -435,6 +433,7 @@ where
         source2: &VecWSet<K, R>,
         key_filter: &Option<Filter<K>>,
         _value_filter: &Option<Filter<DynUnit>>,
+        _frontier: &(),
         fuel: &mut isize,
     ) {
         let initial_size = self.result.keys();
@@ -444,10 +443,11 @@ where
                 source1.layer.cursor(),
                 source2.layer.cursor(),
                 key_filter,
+                None,
             );
         } else {
             self.result
-                .push_merge(source1.layer.cursor(), source2.layer.cursor());
+                .push_merge(source1.layer.cursor(), source2.layer.cursor(), None);
         }
         let effort = self.result.keys() - initial_size;
         *fuel -= effort as isize;
