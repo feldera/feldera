@@ -33,14 +33,14 @@ public class CustomFunctions {
 
     public CustomFunctions() {
         this.initial = new ArrayList<>();
-        this.initial.add(new RlikeFunction());
-        this.initial.add(new GunzipFunction());
-        this.initial.add(new WriteLogFunction());
-        this.initial.add(new SequenceFunction());
-        this.initial.add(new ToIntFunction());
-        this.initial.add(new NowFunction());
-        this.initial.add(new ParseJsonFunction());
-        this.initial.add(new UnparseJsonFunction());
+        this.initial.add(RlikeFunction.INSTANCE);
+        this.initial.add(GunzipFunction.INSTANCE);
+        this.initial.add(WriteLogFunction.INSTANCE);
+        this.initial.add(SequenceFunction.INSTANCE);
+        this.initial.add(ToIntFunction.INSTANCE);
+        this.initial.add(NowFunction.INSTANCE);
+        this.initial.add(ParseJsonFunction.INSTANCE);
+        this.initial.add(ToJsonFunction.INSTANCE);
         this.udf = new HashMap<>();
     }
 
@@ -77,72 +77,84 @@ public class CustomFunctions {
     }
 
     static class ParseJsonFunction extends NonOptimizedFunction {
-        public ParseJsonFunction() {
+        private ParseJsonFunction() {
             super("PARSE_JSON",
                     ReturnTypes.VARIANT.andThen(SqlTypeTransforms.TO_NULLABLE),
                     OperandTypes.STRING,
                     SqlFunctionCategory.STRING);
         }
+
+        public static final ParseJsonFunction INSTANCE = new ParseJsonFunction();
     }
 
-    static class UnparseJsonFunction extends NonOptimizedFunction {
-        public UnparseJsonFunction() {
+    static class ToJsonFunction extends NonOptimizedFunction {
+        private ToJsonFunction() {
             super("TO_JSON",
                     ReturnTypes.VARCHAR.andThen(SqlTypeTransforms.FORCE_NULLABLE),
                     OperandTypes.VARIANT,
                     SqlFunctionCategory.STRING);
         }
+
+        public static final ToJsonFunction INSTANCE = new ToJsonFunction();
     }
 
     /** RLIKE used as a function.  RLIKE in SQL uses infix notation */
     static class RlikeFunction extends NonOptimizedFunction {
-        public RlikeFunction() {
+        private RlikeFunction() {
             super("RLIKE",
                     SqlKind.RLIKE,
                     ReturnTypes.BOOLEAN_NULLABLE,
                     OperandTypes.STRING_STRING,
                     SqlFunctionCategory.STRING);
         }
+
+        public static final RlikeFunction INSTANCE = new RlikeFunction();
     }
 
     static class NowFunction extends NonOptimizedFunction {
-        public NowFunction() {
+        private NowFunction() {
             super("NOW",
                     ReturnTypes.TIMESTAMP,
                     OperandTypes.NILADIC,
                     SqlFunctionCategory.TIMEDATE);
         }
+
+        public static final NowFunction INSTANCE = new NowFunction();
     }
 
     /** GUNZIP(binary) returns the string that results from decompressing the
      * input binary using the GZIP algorithm.  The input binary must be a
      * valid GZIP binary string. */
     public static class GunzipFunction extends NonOptimizedFunction {
-        public GunzipFunction() {
+        private GunzipFunction() {
             super("GUNZIP",
                     ReturnTypes.VARCHAR
                             .andThen(SqlTypeTransforms.TO_NULLABLE),
                     OperandTypes.BINARY,
                     SqlFunctionCategory.USER_DEFINED_FUNCTION);
         }
+
+        public static final GunzipFunction INSTANCE = new GunzipFunction();
     }
 
     /** WRITELOG(format, arg) returns its argument 'arg' unchanged but also logs
      * its value to stdout.  Used for debugging.  In the format string
      * each occurrence of %% is replaced with the arg */
     public static class WriteLogFunction extends NonOptimizedFunction {
-        public WriteLogFunction() {
+        private WriteLogFunction() {
             super("WRITELOG",
                     ARG1,
                     family(SqlTypeFamily.CHARACTER, SqlTypeFamily.ANY),
                     SqlFunctionCategory.USER_DEFINED_FUNCTION);
         }
+
+        public static final WriteLogFunction INSTANCE = new WriteLogFunction();
     }
 
     /** SEQUENCE(start, end) returns an array of integers from start to end (inclusive).
      * The array is empty if start > end. */
     public static class SequenceFunction extends NonOptimizedFunction {
-        public SequenceFunction() {
+        private SequenceFunction() {
             super("SEQUENCE",
                     ReturnTypes.INTEGER
                             .andThen(SqlTypeTransforms.TO_ARRAY)
@@ -150,18 +162,22 @@ public class CustomFunctions {
                     family(SqlTypeFamily.INTEGER, SqlTypeFamily.INTEGER),
                     SqlFunctionCategory.USER_DEFINED_FUNCTION);
         }
+
+        public static final SequenceFunction INSTANCE = new SequenceFunction();
     }
 
     /** TO_INT(BINARY) returns an integers from a BINARY object which has less than 4 bytes.
      * For VARBINARY objects it converts only the first 4 bytes. */
     public static class ToIntFunction extends NonOptimizedFunction {
-        public ToIntFunction() {
+        private ToIntFunction() {
             super("TO_INT",
                     ReturnTypes.INTEGER
                             .andThen(SqlTypeTransforms.TO_NULLABLE),
                     OperandTypes.BINARY,
                     SqlFunctionCategory.USER_DEFINED_FUNCTION);
         }
+
+        public static final ToIntFunction INSTANCE = new ToIntFunction();
     }
 
     /**

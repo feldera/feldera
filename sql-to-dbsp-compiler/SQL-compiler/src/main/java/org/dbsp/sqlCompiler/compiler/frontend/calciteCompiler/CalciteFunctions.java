@@ -7,27 +7,20 @@ import org.apache.calcite.sql.fun.SqlLibraryOperatorTableFactory;
 import org.apache.calcite.sql.fun.SqlLibraryOperators;
 import org.apache.calcite.sql.fun.SqlStdOperatorTable;
 import org.apache.calcite.sql.util.SqlOperatorTables;
-import org.dbsp.util.Linq;
-import org.dbsp.util.Utilities;
 
-import java.io.File;
-import java.io.IOException;
-import java.io.PrintWriter;
-import java.nio.file.Paths;
 import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Set;
 
 /** Handle the loading of the functions from the Calcite library.
  * We create a custom SqlOperatorTable rather than loading all existing functions in each library,
  * to control which functions are visible among the many overloads available.
  * We support a mix of functions from various libraries. */
-public class CalciteFunctions {
+public class CalciteFunctions implements FunctionDocumentation.FunctionRegistry {
+    @Override
+    public List<FunctionDocumentation.FunctionDescription> getDescriptions() {
+        return List.of(toLoad);
+    }
+
     /** Describes information about a Calcite function.
      *
      * @param function      Reference to function
@@ -37,7 +30,7 @@ public class CalciteFunctions {
      *                      May not exist if the function is internal to Calcite.
      * @param aggregate     True if this is an aggregate function */
     record Func(SqlOperator function, String functionName, SqlLibrary library,
-                String documentation, boolean aggregate) {}
+                String documentation, boolean aggregate) implements FunctionDocumentation.FunctionDescription { }
 
     final Func[] toLoad = {
             // Standard operators from SqlStdOperatorTable
@@ -314,56 +307,6 @@ public class CalciteFunctions {
     private CalciteFunctions() {}
 
     public static final CalciteFunctions INSTANCE = new CalciteFunctions();
-
-    /** Generate documentation with an index of all functions supported */
-    public void generateIndex(String file) throws IOException {
-        File f = new File(file);
-        File dir = f.getParentFile();
-        Set<String> docFiles = new HashSet<>(Linq.list(Objects.requireNonNull(dir.list())));
-
-        PrintWriter writer = new PrintWriter(f.getAbsolutePath());
-        writer.println("# Index of functions and SQL constructs supported in Feldera SQL");
-        writer.println();
-        List<Func> sorted = new ArrayList<>(Linq.list(this.toLoad));
-        sorted.sort(Comparator.comparing(f2 -> f2.functionName));
-        Map<String, String> fileContents = new HashMap<>();
-
-        Func previous = null;
-        for (Func func : sorted) {
-            if (func.documentation.isEmpty())
-                continue;
-            if (previous != null && func.functionName.equals(previous.functionName))
-                continue;
-            previous = func;
-            String[] files = func.documentation.split(",");
-            writer.print("`" + func.functionName + "`");
-            if (func.aggregate)
-                writer.print(" (aggregate)");
-            writer.print(": ");
-            boolean first = true;
-            for (String doc: files) {
-                String docFile = doc + ".md";
-                if (!docFiles.contains(docFile))
-                    // Check that the file exists
-                    throw new RuntimeException("File `" + docFile + "` not found for function " + func.functionName);
-                if (!fileContents.containsKey(docFile)) {
-                    // Cache the file's contents
-                    String contents = Utilities.readFile(Paths.get(dir.getPath(), docFile));
-                    Utilities.putNew(fileContents, docFile, contents);
-                }
-                String contents = Utilities.getExists(fileContents, docFile);
-                if (!contents.contains(func.functionName))
-                    // Check that the file does indeed mention this function
-                    throw new RuntimeException("Function `" + func.functionName + "` does not appear in file " + docFile);
-                if (!first)
-                    writer.print(", ");
-                first = false;
-                writer.print("[" + doc + "](" + docFile + ")");
-            }
-            writer.println();
-        }
-        writer.close();
-    }
 
     /** Return all the functions supported from Calcite's libraries */
     public SqlOperatorTable getFunctions() {
