@@ -89,7 +89,8 @@ use crate::{
     dynamic::{DynVec, Factory, Weight},
     time::{Antichain, AntichainRef, Timestamp},
     trace::{
-        cursor::CursorList, Batch, BatchReader, BatchReaderFactories, Cursor, Filter, Merger, Trace,
+        cursor::CursorList, Batch, BatchReader, BatchReaderFactories, CommittedSpine, Cursor,
+        Filter, Merger, Trace,
     },
     Error, NumEntries,
 };
@@ -111,17 +112,6 @@ use std::{
 };
 use textwrap::indent;
 use uuid::Uuid;
-
-/// A spine that is serialized to a file.
-#[derive(rkyv::Serialize, rkyv::Deserialize, rkyv::Archive)]
-pub(crate) struct CommittedSpine<B: Batch + Send + Sync> {
-    pub batches: Vec<String>,
-    pub merged: Vec<(String, String)>,
-    pub lower: Vec<B::Time>,
-    pub upper: Vec<B::Time>,
-    pub effort: u64,
-    pub dirty: bool,
-}
 
 impl<B: Batch + Send + Sync> From<&Spine<B>> for CommittedSpine<B> {
     fn from(value: &Spine<B>) -> Self {

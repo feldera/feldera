@@ -20,7 +20,7 @@ use crate::{
 use crate::storage::file::to_bytes;
 use crate::storage::{checkpoint_path, write_commit_metadata};
 pub use crate::trace::spine_async::snapshot::SpineSnapshot;
-use crate::trace::spine_fueled::CommittedSpine;
+use crate::trace::CommittedSpine;
 use crate::trace::Merger;
 use ouroboros::self_referencing;
 use rand::Rng;
