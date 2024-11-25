@@ -34,7 +34,7 @@ Message 2:
 CREATE TABLE INPUT (
    ... -- columns omitted
 ) WITH (
-  'connectors = '[
+  'connectors' = '[
     {
       "transport": {
           "name": "kafka_input",
