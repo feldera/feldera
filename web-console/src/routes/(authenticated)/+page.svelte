@@ -18,6 +18,7 @@
   import { useLocalStorage } from '$lib/compositions/localStore.svelte'
   import { useDarkMode } from '$lib/compositions/useDarkMode.svelte'
   import AvailableActions from '$lib/components/pipelines/table/AvailableActions.svelte'
+  import AppHeader from '$lib/components/layout/AppHeader.svelte'
 
   preloadCode(`${base}/pipelines/*`).then(() => preloadCode(`${base}/demos/`))
 
@@ -52,6 +53,7 @@
   let selectedPipelines = $state([]) as string[]
 </script>
 
+<AppHeader></AppHeader>
 <div class="h-full overflow-y-auto scrollbar">
   <div class="flex flex-col gap-8 p-8">
     {#if !welcomed.value}
