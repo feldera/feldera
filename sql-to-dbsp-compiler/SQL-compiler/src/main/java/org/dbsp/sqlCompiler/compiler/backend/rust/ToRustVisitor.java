@@ -481,7 +481,9 @@ public class ToRustVisitor extends CircuitVisitor {
                 .append(delta.getOutputName())
                 .append(" = ")
                 .append(delta.input().getOutputName())
-                .append(".delta0(child);")
+                .append(".delta0(child)")
+                .append(this.markDistinct(delta))
+                .append(";")
                 .newline();
         return VisitDecision.STOP;
     }
@@ -740,7 +742,9 @@ public class ToRustVisitor extends CircuitVisitor {
                 .append(operator.input().getOutputName())
                 .append(".")
                 .append(operator.operation)
-                .append("();");
+                .append("()")
+                .append(this.markDistinct(operator))
+                .append(";");
         return VisitDecision.STOP;
     }
 
@@ -813,7 +817,9 @@ public class ToRustVisitor extends CircuitVisitor {
                 .append(operator.upperInclusive)
                 .append("), &")
                 .append(operator.right().getOutputName())
-                .append(");");
+                .append(")")
+                .append(this.markDistinct(operator))
+                .append(";");
         return VisitDecision.STOP;
     }
 
@@ -903,22 +909,24 @@ public class ToRustVisitor extends CircuitVisitor {
         streamType.accept(this.innerVisitor);
         this.builder.append(" = ");
         if (!operator.inputs.isEmpty())
-            builder.append(operator.inputs.get(0).getOutputName())
+            this.builder.append(operator.inputs.get(0).getOutputName())
                     .append(".");
-        builder.append(operator.operation)
+        this.builder.append(operator.operation)
                 .append("(");
         for (int i = 1; i < operator.inputs.size(); i++) {
             if (i > 1)
-                builder.append(",");
-            builder.append("&")
+                this.builder.append(",");
+            this.builder.append("&")
                     .append(operator.inputs.get(i).getOutputName());
         }
         if (operator.function != null) {
             if (operator.inputs.size() > 1)
-                builder.append(", ");
+                this.builder.append(", ");
             operator.function.accept(this.innerVisitor);
         }
-        builder.append(");");
+        this.builder.append(")")
+                .append(this.markDistinct(operator))
+                .append(";");
         return VisitDecision.STOP;
     }
 
@@ -938,7 +946,9 @@ public class ToRustVisitor extends CircuitVisitor {
         operator.init.accept(this.innerVisitor);
         this.builder.append(", ");
         operator.getFunction().accept(this.innerVisitor);
-        builder.append(");");
+        this.builder.append(")")
+                .append(this.markDistinct(operator))
+                .append(";");
         return VisitDecision.STOP;
     }
 
@@ -1133,8 +1143,20 @@ public class ToRustVisitor extends CircuitVisitor {
             this.builder.append(", ");
             operator.outputProducer.accept(this.innerVisitor);
         }
-        builder.append(");");
+        this.builder.append(")")
+                .append(this.markDistinct(operator))
+                .append(";");
         return VisitDecision.STOP;
+    }
+
+    String markDistinct(DBSPOperator operator, int outputNo) {
+        if (!operator.isMultiset(outputNo))
+            return ".mark_distinct()";
+        return "";
+    }
+
+    String markDistinct(DBSPSimpleOperator operator) {
+        return this.markDistinct(operator, 0);
     }
 
     @Override
@@ -1154,11 +1176,13 @@ public class ToRustVisitor extends CircuitVisitor {
                 .append(", ")
                 .newline();
         operator.getFunction().accept(this.innerVisitor);
-        builder.append(", ");
+        this.builder.append(", ");
         operator.leftTimestamp.accept(this.innerVisitor);
-        builder.append(", ");
+        this.builder.append(", ");
         operator.rightTimestamp.accept(this.innerVisitor);
-        builder.append(");");
+        this.builder.append(")")
+                .append(this.markDistinct(operator))
+                .append(";");
         return VisitDecision.STOP;
     }
 
@@ -1182,7 +1206,9 @@ public class ToRustVisitor extends CircuitVisitor {
         DBSPClosureExpression closure = operator.getClosureFunction();
         closure = closure.body.some().closure(closure.parameters);
         closure.accept(this.innerVisitor);
-        builder.append(");");
+        this.builder.append(")")
+                .append(this.markDistinct(operator))
+                .append(";");
         return VisitDecision.STOP;
     }
 
@@ -1220,7 +1246,9 @@ public class ToRustVisitor extends CircuitVisitor {
         operator.projection.accept(this.innerVisitor);
         this.builder.append(", ");
         operator.getFunction().accept(this.innerVisitor);
-        builder.append(");");
+        this.builder.append(")")
+                .append(this.markDistinct(operator))
+                .append(";");
         return VisitDecision.STOP;
     }
 
@@ -1252,9 +1280,9 @@ public class ToRustVisitor extends CircuitVisitor {
         this.emitWindowBound(operator.lower);
         this.builder.append(",").newline();
         this.emitWindowBound(operator.upper);
-        this.builder.decrease().append(")")
-                .append(");")
-                .newline();
+        this.builder.decrease().append("))")
+                .append(this.markDistinct(operator))
+                .append(";");
         return VisitDecision.STOP;
     }
 
@@ -1279,9 +1307,9 @@ public class ToRustVisitor extends CircuitVisitor {
         this.emitWindowBound(operator.lower);
         this.builder.append(", ");
         this.emitWindowBound(operator.upper);
-        this.builder.append(")");
-        this.builder.append(");")
-                .newline();
+        this.builder.append("))")
+                .append(this.markDistinct(operator))
+                .append(";");
         return VisitDecision.STOP;
     }
 
@@ -1294,12 +1322,14 @@ public class ToRustVisitor extends CircuitVisitor {
                 .append(": ");
         streamType.accept(this.innerVisitor);
         this.builder.append(" = ");
-        builder.append(operator.input().getOutputName())
+        this.builder.append(operator.input().getOutputName())
                     .append(".");
-        builder.append(operator.operation)
+        this.builder.append(operator.operation)
                 .append("(");
         operator.getFunction().accept(this.innerVisitor);
-        builder.append(");");
+        this.builder.append(")")
+                .append(this.markDistinct(operator))
+                .append(";");
         return VisitDecision.STOP;
     }
 
@@ -1312,14 +1342,16 @@ public class ToRustVisitor extends CircuitVisitor {
                 .append(": ");
         streamType.accept(this.innerVisitor);
         this.builder.append(" = ");
-        builder.append(operator.input().getOutputName())
+        this.builder.append(operator.input().getOutputName())
                 .append(".");
-        builder.append(operator.operation)
+        this.builder.append(operator.operation)
                 .append("(");
         operator.getFunction().accept(this.innerVisitor);
-        builder.append(", ");
+        this.builder.append(", ");
         operator.postProcess.accept(this.innerVisitor);
-        builder.append(");");
+        this.builder.append(")")
+                .append(this.markDistinct(operator))
+                .append(";");
         return VisitDecision.STOP;
     }
 
@@ -1352,7 +1384,10 @@ public class ToRustVisitor extends CircuitVisitor {
                 this.builder.append(", ");
             this.builder.append("&").append(operator.inputs.get(i).getOutputName());
         }
-        this.builder.append("]);");
+        this.builder.append("]");
+        this.builder.append(")")
+                .append(this.markDistinct(operator))
+                .append(";");
         return VisitDecision.STOP;
     }
 
@@ -1390,7 +1425,9 @@ public class ToRustVisitor extends CircuitVisitor {
         this.builder.append(operator.right().getOutputName());
         this.builder.append(", ");
         operator.getFunction().accept(this.innerVisitor);
-        this.builder.append(");");
+        this.builder.append(")")
+                .append(this.markDistinct(operator))
+                .append(";");
         return VisitDecision.STOP;
     }
 
