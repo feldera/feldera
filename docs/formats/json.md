@@ -220,10 +220,7 @@ is equivalent to
 ## Encoding multiple changes
 
 Data change events are exchanged as data streams transmitted over transports such
-as HTTP or Kafka.  We use newline-delimited JSON (NDJSON) to assemble individual
-data change events into a stream.  In NDJSON, each line within the data stream
-represents a self-contained and valid JSON document, in this case, a data change
-event:
+as HTTP or Kafka.  We use a stream of JSON objects, each representing an event:
 
 ```json
 {"delete": {"part": 1, "vendor": 2, "price": 10000}}
@@ -233,8 +230,7 @@ event:
 ```
 
 A stream of data change events can be [configured](#configuring-json-event-streams)
-to combine multiple events into JSON arrays.  This format still uses NDJSON,
-where each line contains an array of data change events:
+to combine multiple events into JSON arrays of data change events:
 
 ```json
 [{"delete": {"part": 1, "vendor": 2, "price": 10000}}, {"insert": {"part": 1, "vendor": 2, "price": 30000}}]
@@ -271,8 +267,9 @@ create table PART (
 );
 ```
 
-- `update_format`: Choose data change event format for this connector. Supported values are `insert_delete` and `raw`.
-- `array`: Enable or disable array encoding.
+- `update_format`: Choose data change event format for this connector. Supported values are `insert_delete` and `raw`. The default is `insert_delete`.
+- `array`: Whether to enable array encoding. The default is `false`.
+- `lines`: How many input lines may be part of a JSON value. The default, `multiple`, allows individual JSON values to span multiple lines. Specify `single` to limit support to newline-delimited JSON (NDJSON), a subset of JSON which does not allow a new-line inside a value.
 
 See also the [input/output connector tutorial](/tutorials/basics/part3.md).
 

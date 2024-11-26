@@ -756,6 +756,11 @@ export type IntervalUnit =
   | 'YearToMonth'
 
 /**
+ * Whether JSON values can span multiple lines.
+ */
+export type JsonLines = 'multiple' | 'single'
+
+/**
  * Supported JSON data change event formats.
  *
  * Each element in a JSON-formatted input stream specifies

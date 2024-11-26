@@ -206,6 +206,7 @@ The program version is used internally by the compiler to know when to recompile
         feldera_types::query::AdhocQueryArgs,
         feldera_types::query::AdHocResultFormat,
         feldera_types::format::json::JsonUpdateFormat,
+        feldera_types::format::json::JsonLines,
         feldera_types::program_schema::ProgramSchema,
         feldera_types::program_schema::Relation,
         feldera_types::program_schema::SqlType,

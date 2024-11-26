@@ -1108,6 +1108,12 @@ would yield \`Day\`, \`DayToHour\`, \`DayToMinute\`, as the \`IntervalUnit\` res
   ]
 } as const
 
+export const $JsonLines = {
+  type: 'string',
+  description: 'Whether JSON values can span multiple lines.',
+  enum: ['multiple', 'single']
+} as const
+
 export const $JsonUpdateFormat = {
   type: 'string',
   description: `Supported JSON data change event formats.

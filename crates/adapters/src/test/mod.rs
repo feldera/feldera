@@ -48,7 +48,7 @@ pub use data::{
 };
 use dbsp::circuit::CircuitConfig;
 use dbsp::utils::Tup2;
-use feldera_types::format::json::{JsonFlavor, JsonParserConfig, JsonUpdateFormat};
+use feldera_types::format::json::{JsonFlavor, JsonLines, JsonParserConfig, JsonUpdateFormat};
 use feldera_types::program_schema::{Field, Relation};
 pub use mock_dezset::{wait_for_output_ordered, wait_for_output_unordered, MockDeZSet, MockUpdate};
 pub use mock_input_consumer::{MockInputConsumer, MockInputParser};
@@ -149,6 +149,7 @@ where
             update_format: JsonUpdateFormat::Raw,
             json_flavor: JsonFlavor::Datagen,
             array: true,
+            lines: JsonLines::Multiple,
         })
         .unwrap(),
     };

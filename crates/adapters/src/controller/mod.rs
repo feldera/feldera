@@ -39,6 +39,7 @@ use dbsp::{
     profile::GraphProfile,
     DBSPHandle,
 };
+use feldera_types::format::json::JsonLines;
 use governor::DefaultDirectRateLimiter;
 use governor::Quota;
 use governor::RateLimiter;
@@ -1898,6 +1899,7 @@ impl ControllerInner {
                             update_format: JsonUpdateFormat::Raw,
                             json_flavor: JsonFlavor::Datagen,
                             array: true,
+                            lines: JsonLines::Multiple,
                         })
                         .unwrap(),
                     }

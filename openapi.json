@@ -2935,6 +2935,14 @@
           "YearToMonth"
         ]
       },
+      "JsonLines": {
+        "type": "string",
+        "description": "Whether JSON values can span multiple lines.",
+        "enum": [
+          "multiple",
+          "single"
+        ]
+      },
       "JsonUpdateFormat": {
         "type": "string",
         "description": "Supported JSON data change event formats.\n\nEach element in a JSON-formatted input stream specifies\nan update to one or more records in an input table.  We support\nseveral different ways to represent such updates.",
