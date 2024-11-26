@@ -33,6 +33,11 @@
   import PipelineStatus from '$lib/components/pipelines/list/PipelineStatus.svelte'
   import TabAdHocQuery from '$lib/components/pipelines/editor/TabAdHocQuery.svelte'
   import { useLocalStorage } from '$lib/compositions/localStore.svelte'
+  import AppHeader from '$lib/components/layout/AppHeader.svelte'
+  import Popup from '$lib/components/common/Popup.svelte'
+  import { fade } from 'svelte/transition'
+  import { Switch } from '@skeletonlabs/skeleton-svelte'
+  import PipelineToolbarMenu from '$lib/components/layout/pipelines/PipelineToolbarMenu.svelte'
 
   let {
     preloaded,
@@ -166,7 +171,7 @@ example = "1.0"`
   })
 
   let breadcrumbs = $derived([
-    { text: 'Home', href: `${base}/` },
+    // { text: 'Home', href: `${base}/` },
     {
       text: pipelineName,
       href: `${base}/pipelines/${pipelineName}/`
@@ -174,26 +179,19 @@ example = "1.0"`
   ])
   let separateAdHocTab = useLocalStorage('layout/pipelines/separateAdHoc', false)
   let downstreamChanged = $state(false)
+  const autoSavePipeline = useLocalStorage('layout/pipelines/autosave', true)
 </script>
 
 <div class="flex h-full flex-col">
-  <PipelineBreadcrumbs {preloaded} {breadcrumbs}>
-    {#snippet after()}
-      <div class="flex items-center">
+  <AppHeader>
+    <PipelineBreadcrumbs {preloaded} {breadcrumbs}>
+      {#snippet after()}
         <PipelineStatus status={pipeline.current.status}></PipelineStatus>
-      </div>
-    {/snippet}
-    {#snippet end()}
-      <PipelineActions
-        {pipeline}
-        onDeletePipeline={handleDeletePipeline}
-        pipelineBusy={editDisabled}
-        unsavedChanges={downstreamChanged}
-        onActionSuccess={handleActionSuccess}
-      ></PipelineActions>
-    {/snippet}
-  </PipelineBreadcrumbs>
-  <PaneGroup direction="vertical" class="!overflow-visible">
+      {/snippet}
+      {#snippet end()}{/snippet}
+    </PipelineBreadcrumbs>
+  </AppHeader>
+  <PaneGroup direction="vertical" class="!overflow-visible px-8 pb-4">
     <CodeEditor
       path={pipelineName}
       {files}
@@ -201,14 +199,11 @@ example = "1.0"`
       bind:currentFileName={currentPipelineFile[pipelineName]}
       bind:downstreamChanged
     >
-      {#snippet codeEditor(textEditor, statusBar, isReadOnly)}
+      {#snippet codeEditor(textEditor, statusBar)}
         {#snippet editor()}
           <div class="flex h-full flex-col rounded-container px-4 pb-4 pt-2 bg-surface-50-950">
             {@render textEditor()}
-            <div
-              class:bg-white-black={!isReadOnly}
-              class="flex flex-wrap items-center gap-x-8 border-t-[1px] pr-2 border-surface-100-900"
-            >
+            <div class="flex flex-wrap items-center gap-x-8 pt-4 border-surface-100-900">
               {@render statusBar()}
             </div>
           </div>
@@ -222,10 +217,10 @@ example = "1.0"`
               <PaneResizer class="pane-divider-vertical mx-2"></PaneResizer>
               <Pane defaultSize={40} minSize={20} class="!overflow-visible">
                 <div class="flex h-full flex-col rounded-container p-4 bg-surface-50-950">
-                  <div class="flex justify-between">
+                  <div class="flex h-8 items-start justify-between">
                     <span>Ad-Hoc Queries</span>
                     <button
-                      class="fd fd-close btn btn-icon btn-icon-lg"
+                      class="fd fd-close btn btn-icon btn-icon-lg !h-6"
                       onclick={() => (separateAdHocTab.value = false)}
                       aria-label="Close"
                     ></button>
@@ -242,19 +237,41 @@ example = "1.0"`
         </Pane>
         <PaneResizer class="pane-divider-horizontal my-2" />
       {/snippet}
+      {#snippet toolBarEnd({ saveFile })}
+        <div class="flex flex-nowrap items-center gap-2">
+          <PipelineToolbarMenu
+            {pipeline}
+            {pipelineName}
+            {saveFile}
+            pipelineBusy={editDisabled}
+            {downstreamChanged}
+            {autoSavePipeline}
+            onDeletePipeline={handleDeletePipeline}
+          ></PipelineToolbarMenu>
+          <button
+            class="btn p-2 text-surface-700-300 hover:preset-tonal-surface"
+            onclick={() => (separateAdHocTab.value = !separateAdHocTab.value)}
+          >
+            {#if !separateAdHocTab.value}
+              Ad-Hoc Queries
+            {/if}
+            <IconLayputPanelRight
+              class={separateAdHocTab.value ? 'fill-primary-500' : 'fill-surface-700-300'}
+            ></IconLayputPanelRight>
+          </button>
+        </div>
+      {/snippet}
       {#snippet statusBarCenter()}
         <ProgramStatus programStatus={pipeline.current.programStatus}></ProgramStatus>
       {/snippet}
-      {#snippet toolBarEnd()}
-        <button
-          class="btn p-2 text-surface-700-300 hover:preset-tonal-surface"
-          onclick={() => (separateAdHocTab.value = !separateAdHocTab.value)}
-        >
-          Ad-Hoc Queries
-          <IconLayputPanelRight
-            class={separateAdHocTab.value ? 'fill-primary-500' : 'fill-surface-700-300'}
-          ></IconLayputPanelRight>
-        </button>
+      {#snippet statusBarEnd()}
+        <PipelineActions
+          {pipeline}
+          onDeletePipeline={handleDeletePipeline}
+          pipelineBusy={editDisabled}
+          unsavedChanges={downstreamChanged}
+          onActionSuccess={handleActionSuccess}
+        ></PipelineActions>
       {/snippet}
       {#snippet fileTab(text, onClick, isCurrent)}
         <button

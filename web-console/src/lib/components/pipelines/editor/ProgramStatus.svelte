@@ -9,7 +9,7 @@
   } = $props()
 </script>
 
-<div class="flex w-20 flex-nowrap justify-end gap-2 self-center">
+<div class="flex flex-nowrap justify-end gap-2 self-center">
   <span
     class={match(programStatus)
       .with(
