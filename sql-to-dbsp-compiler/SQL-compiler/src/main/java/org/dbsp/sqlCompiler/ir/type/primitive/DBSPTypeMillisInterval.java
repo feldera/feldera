@@ -31,7 +31,8 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntervalMillisLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.IHasZero;
-import org.dbsp.sqlCompiler.ir.type.IsDateType;
+import org.dbsp.sqlCompiler.ir.type.IsIntervalType;
+import org.dbsp.sqlCompiler.ir.type.IsTimeRelatedType;
 
 import java.util.Objects;
 
@@ -41,7 +42,7 @@ import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.INTERVAL_SHORT;
  * Always stores the interval value in milliseconds. */
 public class DBSPTypeMillisInterval
         extends DBSPTypeBaseType
-        implements IsDateType, IHasZero {
+        implements IsTimeRelatedType, IHasZero, IsIntervalType {
     public DBSPTypeMillisInterval(CalciteObject node, boolean mayBeNull) {
         super(node, INTERVAL_SHORT, mayBeNull);
     }

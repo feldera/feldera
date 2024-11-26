@@ -1202,48 +1202,6 @@ where
 }
 
 #[doc(hidden)]
-pub fn times_ShortInterval_i64(left: ShortInterval, right: i64) -> ShortInterval {
-    left * right
-}
-
-some_polymorphic_function2!(times, ShortInterval, ShortInterval, i64, i64, ShortInterval);
-
-#[doc(hidden)]
-pub fn times_i64_ShortInterval(left: i64, right: ShortInterval) -> ShortInterval {
-    right * left
-}
-
-some_polymorphic_function2!(times, i64, i64, ShortInterval, ShortInterval, ShortInterval);
-
-#[doc(hidden)]
-pub fn times_ShortInterval_i32(left: ShortInterval, right: i32) -> ShortInterval {
-    left * (right as i64)
-}
-
-some_polymorphic_function2!(times, ShortInterval, ShortInterval, i32, i32, ShortInterval);
-
-#[doc(hidden)]
-pub fn times_i32_ShortInterval(left: i32, right: ShortInterval) -> ShortInterval {
-    right * (left as i64)
-}
-
-some_polymorphic_function2!(times, i32, i32, ShortInterval, ShortInterval, ShortInterval);
-
-#[doc(hidden)]
-pub fn times_i32_LongInterval(left: i32, right: LongInterval) -> LongInterval {
-    right * left
-}
-
-some_polymorphic_function2!(times, i32, i32, LongInterval, LongInterval, LongInterval);
-
-#[doc(hidden)]
-pub fn times_LongInterval_i32(left: LongInterval, right: i32) -> LongInterval {
-    left * right
-}
-
-some_polymorphic_function2!(times, LongInterval, LongInterval, i32, i32, LongInterval);
-
-#[doc(hidden)]
 #[inline(always)]
 pub fn truncate_d(left: F64, right: i32) -> F64 {
     let mut left = left.into_inner() * 10.0_f64.pow(right);

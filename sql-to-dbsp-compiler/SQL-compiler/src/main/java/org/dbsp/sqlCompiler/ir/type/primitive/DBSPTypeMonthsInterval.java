@@ -32,7 +32,8 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.IHasZero;
-import org.dbsp.sqlCompiler.ir.type.IsDateType;
+import org.dbsp.sqlCompiler.ir.type.IsIntervalType;
+import org.dbsp.sqlCompiler.ir.type.IsTimeRelatedType;
 
 import java.util.Objects;
 
@@ -40,7 +41,7 @@ import java.util.Objects;
  * Always stores the interval value in days. */
 public class DBSPTypeMonthsInterval
         extends DBSPTypeBaseType
-        implements IsDateType, IHasZero {
+        implements IsTimeRelatedType, IHasZero, IsIntervalType {
     public DBSPTypeMonthsInterval(CalciteObject node, boolean mayBeNull) {
         super(node, DBSPTypeCode.INTERVAL_LONG, mayBeNull);
     }

@@ -950,6 +950,8 @@ public class Monotonicity extends CircuitVisitor {
 
         static DBSPOpcode inverse(DBSPOpcode opcode) {
             return switch (opcode) {
+                case TS_ADD -> DBSPOpcode.TS_SUB;
+                case TS_SUB -> DBSPOpcode.TS_ADD;
                 case ADD -> DBSPOpcode.SUB;
                 case SUB -> DBSPOpcode.ADD;
                 case LT -> DBSPOpcode.GTE;
@@ -968,7 +970,8 @@ public class Monotonicity extends CircuitVisitor {
             DBSPBinaryExpression binary = larger.as(DBSPBinaryExpression.class);
             if (binary == null)
                 return false;
-            if (binary.operation != DBSPOpcode.ADD && binary.operation != DBSPOpcode.SUB)
+            if (binary.operation != DBSPOpcode.ADD && binary.operation != DBSPOpcode.SUB &&
+                binary.operation != DBSPOpcode.TS_ADD && binary.operation != DBSPOpcode.TS_SUB)
                 return false;
             DBSPOpcode inverse = inverse(binary.operation);
             int column = isColumn(binary.left, param);
@@ -982,7 +985,7 @@ public class Monotonicity extends CircuitVisitor {
                 return true;
             }
 
-            if (binary.operation != DBSPOpcode.ADD)
+            if ((binary.operation == DBSPOpcode.SUB) || (binary.operation == DBSPOpcode.TS_SUB))
                 return false;
 
             // constant + col

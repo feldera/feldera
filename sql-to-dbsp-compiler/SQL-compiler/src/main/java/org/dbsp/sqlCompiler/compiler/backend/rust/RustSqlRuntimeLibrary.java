@@ -82,9 +82,10 @@ public class RustSqlRuntimeLibrary {
         this.arithmeticFunctions.put(DBSPOpcode.CONTROLLED_FILTER_GTE.toString(),
                 DBSPOpcode.CONTROLLED_FILTER_GTE);
 
-        this.dateFunctions.put("plus", DBSPOpcode.ADD);
-        this.dateFunctions.put("minus", DBSPOpcode.SUB);
-        this.dateFunctions.put("times", DBSPOpcode.MUL);
+        this.dateFunctions.put("plus", DBSPOpcode.TS_ADD);
+        this.dateFunctions.put("minus", DBSPOpcode.TS_SUB);
+        this.dateFunctions.put("times", DBSPOpcode.INTERVAL_MUL);
+        this.dateFunctions.put("div", DBSPOpcode.INTERVAL_DIV);
         this.dateFunctions.put(DBSPOpcode.CONTROLLED_FILTER_GTE.toString(), DBSPOpcode.CONTROLLED_FILTER_GTE);
 
         this.stringFunctions.put("concat", DBSPOpcode.CONCAT);
@@ -165,12 +166,10 @@ public class RustSqlRuntimeLibrary {
             map = this.universalFunctions;
         } else if (ltype.as(DBSPTypeBool.class) != null) {
             map = this.booleanFunctions;
-        } else if (ltype.is(IsDateType.class)) {
+        } else if (ltype.is(IsTimeRelatedType.class)) {
             map = this.dateFunctions;
-            if (opcode == DBSPOpcode.SUB || opcode == DBSPOpcode.ADD) {
-                if (ltype.is(DBSPTypeTimestamp.class) ||
-                        ltype.is(DBSPTypeDate.class) ||
-                        ltype.is(DBSPTypeTime.class)) {
+            if (opcode == DBSPOpcode.TS_SUB || opcode == DBSPOpcode.TS_ADD) {
+                if (ltype.is(IsTimeRelatedType.class)) {
                     assert rtype != null;
                     suffixReturn = "_" + expectedReturnType.baseTypeWithSuffix();
                     if (rtype.is(IsNumericType.class))
@@ -185,8 +184,8 @@ public class RustSqlRuntimeLibrary {
         } else if (ltype.is(DBSPTypeBinary.class) || ltype.is(DBSPTypeVariant.class)) {
             map = this.otherFunctions;
         }
-        if (rtype != null && rtype.is(IsDateType.class)) {
-            if (opcode.equals(DBSPOpcode.MUL)) {
+        if (rtype != null && rtype.is(IsIntervalType.class)) {
+            if (opcode == DBSPOpcode.INTERVAL_MUL || opcode == DBSPOpcode.INTERVAL_DIV) {
                 // e.g., 10 * INTERVAL
                 map = this.dateFunctions;
             }
