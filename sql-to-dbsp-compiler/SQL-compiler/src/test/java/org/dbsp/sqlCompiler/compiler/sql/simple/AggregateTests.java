@@ -63,7 +63,7 @@ public class AggregateTests extends SqlIoTest {
                 -------------------------
                  0 | 2  | 0  | NULL | 0
                  1 | 3  | 1  | NULL | 1
-                (1 row)""");
+                (2 rows)""");
     }
 
     @Test
@@ -85,7 +85,7 @@ public class AggregateTests extends SqlIoTest {
                  10 | { 3, 5 }
                  20 | { 3, 5 }
                  30 | { 3, 5 }
-                (2 rows)""");
+                (6 rows)""");
     }
 
     @Test

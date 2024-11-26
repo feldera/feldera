@@ -3,7 +3,10 @@
 
 use crate::{
     operators::{eq, gt, gte, lt, lte, neq},
-    some_existing_operator, some_operator, some_polymorphic_function2, Decimal,
+    polymorphic_return_function2, some_existing_operator, some_operator,
+    some_polymorphic_function1, some_polymorphic_function2,
+    timestamp::{extract_epoch_Date, extract_quarter_Date, plus_Date_LongInterval_Date},
+    Date, Decimal,
 };
 use dbsp::{algebra::F64, num_entries_scalar};
 use feldera_types::serde_with_context::{
@@ -14,11 +17,11 @@ use serde::{de::Error as _, ser::Error as _, Deserialize, Serialize};
 use size_of::SizeOf;
 use std::{
     fmt::Debug,
-    ops::{Div, Mul},
+    ops::{Add, Div, Mul, Neg, Sub},
 };
 
 #[cfg(doc)]
-use crate::{Date, Time, Timestamp};
+use crate::{Time, Timestamp};
 
 /// A ShortInterval can express a difference between two [Time]
 /// values, two [Date] values, or two [Timestamp] values.  The
@@ -190,6 +193,48 @@ impl Div<Decimal> for ShortInterval {
     }
 }
 
+/// Add two `ShortInterval`s
+impl Add<ShortInterval> for ShortInterval {
+    type Output = Self;
+
+    fn add(self, rhs: ShortInterval) -> Self {
+        Self {
+            milliseconds: self
+                .milliseconds
+                .checked_add(rhs.milliseconds)
+                .expect("Overflow during ShortInterval addition"),
+        }
+    }
+}
+
+/// Subtract two `ShortInterval`s
+impl Sub<ShortInterval> for ShortInterval {
+    type Output = Self;
+
+    fn sub(self, rhs: ShortInterval) -> Self {
+        Self {
+            milliseconds: self
+                .milliseconds
+                .checked_sub(rhs.milliseconds)
+                .expect("Overflow during ShortInterval subtraction"),
+        }
+    }
+}
+
+/// Negate a `ShortInterval`
+impl Neg for ShortInterval {
+    type Output = Self;
+
+    fn neg(self) -> Self {
+        Self {
+            milliseconds: self
+                .milliseconds
+                .checked_neg()
+                .expect("Overflow during ShortInterval negation"),
+        }
+    }
+}
+
 /// Create a `ShortInterval` from a numeric value that is interpreted as
 /// a number of milliseconds.
 impl<T> From<T> for ShortInterval
@@ -243,6 +288,98 @@ some_operator!(eq, ShortInterval, ShortInterval, bool);
 some_operator!(neq, ShortInterval, ShortInterval, bool);
 some_operator!(gte, ShortInterval, ShortInterval, bool);
 some_operator!(lte, ShortInterval, ShortInterval, bool);
+
+#[doc(hidden)]
+pub fn div_ShortInterval_decimal(left: ShortInterval, right: Decimal) -> ShortInterval {
+    left / right
+}
+
+some_polymorphic_function2!(
+    div,
+    ShortInterval,
+    ShortInterval,
+    decimal,
+    Decimal,
+    ShortInterval
+);
+
+#[doc(hidden)]
+pub fn times_ShortInterval_i64(left: ShortInterval, right: i64) -> ShortInterval {
+    left * right
+}
+
+some_polymorphic_function2!(times, ShortInterval, ShortInterval, i64, i64, ShortInterval);
+
+#[doc(hidden)]
+pub fn times_ShortInterval_d(left: ShortInterval, right: F64) -> ShortInterval {
+    left * right
+}
+
+some_polymorphic_function2!(times, ShortInterval, ShortInterval, d, F64, ShortInterval);
+
+#[doc(hidden)]
+pub fn times_ShortInterval_decimal(left: ShortInterval, right: Decimal) -> ShortInterval {
+    left * right
+}
+
+some_polymorphic_function2!(
+    times,
+    ShortInterval,
+    ShortInterval,
+    decimal,
+    Decimal,
+    ShortInterval
+);
+
+#[doc(hidden)]
+pub fn div_ShortInterval_d(left: ShortInterval, right: F64) -> ShortInterval {
+    left / right
+}
+
+some_polymorphic_function2!(div, ShortInterval, ShortInterval, d, F64, ShortInterval);
+
+#[doc(hidden)]
+pub fn div_ShortInterval_i64(left: ShortInterval, right: i64) -> ShortInterval {
+    left / right
+}
+
+some_polymorphic_function2!(div, ShortInterval, ShortInterval, i64, i64, ShortInterval);
+
+#[doc(hidden)]
+pub fn plus_ShortInterval_ShortInterval_ShortInterval(
+    left: ShortInterval,
+    right: ShortInterval,
+) -> ShortInterval {
+    left + right
+}
+
+polymorphic_return_function2!(
+    plus,
+    ShortInterval,
+    ShortInterval,
+    ShortInterval,
+    ShortInterval,
+    ShortInterval,
+    ShortInterval
+);
+
+#[doc(hidden)]
+pub fn minus_ShortInterval_ShortInterval_ShortInterval(
+    left: ShortInterval,
+    right: ShortInterval,
+) -> ShortInterval {
+    left - right
+}
+
+polymorphic_return_function2!(
+    minus,
+    ShortInterval,
+    ShortInterval,
+    ShortInterval,
+    ShortInterval,
+    ShortInterval,
+    ShortInterval
+);
 
 /////////////////////////
 
@@ -406,19 +543,54 @@ impl<'de> DeserializeWithContext<'de, SqlSerdeConfig> for LongInterval {
     }
 }
 
+/// Add two `LongInterval`s
+impl Add<LongInterval> for LongInterval {
+    type Output = Self;
+
+    fn add(self, rhs: LongInterval) -> Self {
+        Self {
+            months: self
+                .months
+                .checked_add(rhs.months)
+                .expect("Overflow during LongInterval addition"),
+        }
+    }
+}
+
+/// Subtract two `LongInterval`s
+impl Sub<LongInterval> for LongInterval {
+    type Output = Self;
+
+    fn sub(self, rhs: LongInterval) -> Self {
+        Self {
+            months: self
+                .months
+                .checked_sub(rhs.months)
+                .expect("Overflow during LongInterval subtraction"),
+        }
+    }
+}
+
+/// Negate a `LongInterval`
+impl Neg for LongInterval {
+    type Output = Self;
+
+    fn neg(self) -> Self {
+        Self {
+            months: self
+                .months
+                .checked_neg()
+                .expect("Overflow during LongInterval negation"),
+        }
+    }
+}
+
 some_operator!(lt, LongInterval, LongInterval, bool);
 some_operator!(gt, LongInterval, LongInterval, bool);
 some_operator!(eq, LongInterval, LongInterval, bool);
 some_operator!(neq, LongInterval, LongInterval, bool);
 some_operator!(gte, LongInterval, LongInterval, bool);
 some_operator!(lte, LongInterval, LongInterval, bool);
-
-#[doc(hidden)]
-pub fn times_ShortInterval_i64(left: ShortInterval, right: i64) -> ShortInterval {
-    left * right
-}
-
-some_polymorphic_function2!(times, ShortInterval, ShortInterval, i64, i64, ShortInterval);
 
 #[doc(hidden)]
 pub fn times_LongInterval_i32(left: LongInterval, right: i32) -> LongInterval {
@@ -428,32 +600,11 @@ pub fn times_LongInterval_i32(left: LongInterval, right: i32) -> LongInterval {
 some_polymorphic_function2!(times, LongInterval, LongInterval, i32, i32, LongInterval);
 
 #[doc(hidden)]
-pub fn times_ShortInterval_d(left: ShortInterval, right: F64) -> ShortInterval {
-    left * right
-}
-
-some_polymorphic_function2!(times, ShortInterval, ShortInterval, d, F64, ShortInterval);
-
-#[doc(hidden)]
 pub fn times_LongInterval_d(left: LongInterval, right: F64) -> LongInterval {
     left * right
 }
 
 some_polymorphic_function2!(times, LongInterval, LongInterval, d, F64, LongInterval);
-
-#[doc(hidden)]
-pub fn times_ShortInterval_decimal(left: ShortInterval, right: Decimal) -> ShortInterval {
-    left * right
-}
-
-some_polymorphic_function2!(
-    times,
-    ShortInterval,
-    ShortInterval,
-    decimal,
-    Decimal,
-    ShortInterval
-);
 
 #[doc(hidden)]
 pub fn times_LongInterval_decimal(left: LongInterval, right: Decimal) -> LongInterval {
@@ -470,13 +621,6 @@ some_polymorphic_function2!(
 );
 
 #[doc(hidden)]
-pub fn div_ShortInterval_i64(left: ShortInterval, right: i64) -> ShortInterval {
-    left / right
-}
-
-some_polymorphic_function2!(div, ShortInterval, ShortInterval, i64, i64, ShortInterval);
-
-#[doc(hidden)]
 pub fn div_LongInterval_i32(left: LongInterval, right: i32) -> LongInterval {
     left / right
 }
@@ -484,32 +628,11 @@ pub fn div_LongInterval_i32(left: LongInterval, right: i32) -> LongInterval {
 some_polymorphic_function2!(div, LongInterval, LongInterval, i32, i32, LongInterval);
 
 #[doc(hidden)]
-pub fn div_ShortInterval_d(left: ShortInterval, right: F64) -> ShortInterval {
-    left / right
-}
-
-some_polymorphic_function2!(div, ShortInterval, ShortInterval, d, F64, ShortInterval);
-
-#[doc(hidden)]
 pub fn div_LongInterval_d(left: LongInterval, right: F64) -> LongInterval {
     left / right
 }
 
 some_polymorphic_function2!(div, LongInterval, LongInterval, d, F64, LongInterval);
-
-#[doc(hidden)]
-pub fn div_ShortInterval_decimal(left: ShortInterval, right: Decimal) -> ShortInterval {
-    left / right
-}
-
-some_polymorphic_function2!(
-    div,
-    ShortInterval,
-    ShortInterval,
-    decimal,
-    Decimal,
-    ShortInterval
-);
 
 #[doc(hidden)]
 pub fn div_LongInterval_decimal(left: LongInterval, right: Decimal) -> LongInterval {
@@ -524,3 +647,172 @@ some_polymorphic_function2!(
     Decimal,
     LongInterval
 );
+
+#[doc(hidden)]
+pub fn plus_LongInterval_LongInterval_LongInterval(
+    left: LongInterval,
+    right: LongInterval,
+) -> LongInterval {
+    left + right
+}
+
+polymorphic_return_function2!(
+    plus,
+    LongInterval,
+    LongInterval,
+    LongInterval,
+    LongInterval,
+    LongInterval,
+    LongInterval
+);
+
+#[doc(hidden)]
+pub fn minus_LongInterval_LongInterval_LongInterval(
+    left: LongInterval,
+    right: LongInterval,
+) -> LongInterval {
+    left - right
+}
+
+polymorphic_return_function2!(
+    minus,
+    LongInterval,
+    LongInterval,
+    LongInterval,
+    LongInterval,
+    LongInterval,
+    LongInterval
+);
+
+#[doc(hidden)]
+pub fn extract_year_LongInterval(value: LongInterval) -> i64 {
+    (value.months / 12).into()
+}
+
+#[doc(hidden)]
+pub fn extract_month_LongInterval(value: LongInterval) -> i64 {
+    (value.months % 12).into()
+}
+
+#[doc(hidden)]
+pub fn extract_quarter_LongInterval(value: LongInterval) -> i64 {
+    let dt = Date::from(0);
+    let dt = plus_Date_LongInterval_Date(dt, value);
+    extract_quarter_Date(dt)
+}
+
+#[doc(hidden)]
+pub fn extract_decade_LongInterval(value: LongInterval) -> i64 {
+    let year = extract_year_LongInterval(value);
+    year / 10
+}
+
+#[doc(hidden)]
+pub fn extract_millennium_LongInterval(value: LongInterval) -> i64 {
+    let year = extract_year_LongInterval(value);
+    year / 1000 // seems to be a different formula than dates
+}
+
+#[doc(hidden)]
+pub fn extract_century_LongInterval(value: LongInterval) -> i64 {
+    let year = extract_year_LongInterval(value);
+    year / 100 // seems to be a different formula than dates
+}
+
+#[doc(hidden)]
+pub fn extract_day_LongInterval(_value: LongInterval) -> i64 {
+    0
+}
+
+#[doc(hidden)]
+pub fn extract_epoch_LongInterval(value: LongInterval) -> i64 {
+    let dt = Date::from(0);
+    let dt = plus_Date_LongInterval_Date(dt, value);
+    // I think this is right and Postgres is wrong
+    extract_epoch_Date(dt)
+}
+
+#[doc(hidden)]
+pub fn extract_millisecond_LongInterval(_value: LongInterval) -> i64 {
+    0
+}
+
+#[doc(hidden)]
+pub fn extract_microsecond_LongInterval(_value: LongInterval) -> i64 {
+    0
+}
+
+#[doc(hidden)]
+pub fn extract_second_LongInterval(_value: LongInterval) -> i64 {
+    0
+}
+
+#[doc(hidden)]
+pub fn extract_minute_LongInterval(_value: LongInterval) -> i64 {
+    0
+}
+
+#[doc(hidden)]
+pub fn extract_hour_LongInterval(_value: LongInterval) -> i64 {
+    0
+}
+
+///////////
+
+#[doc(hidden)]
+pub fn extract_day_ShortInterval(value: ShortInterval) -> i64 {
+    value.milliseconds() / 86_400_000
+}
+
+#[doc(hidden)]
+pub fn extract_epoch_ShortInterval(value: ShortInterval) -> i64 {
+    value.milliseconds() / 1000
+}
+
+#[doc(hidden)]
+pub fn extract_millisecond_ShortInterval(value: ShortInterval) -> i64 {
+    value.milliseconds() % 60_000
+}
+
+#[doc(hidden)]
+pub fn extract_microsecond_ShortInterval(value: ShortInterval) -> i64 {
+    extract_millisecond_ShortInterval(value) * 1000
+}
+
+#[doc(hidden)]
+pub fn extract_second_ShortInterval(value: ShortInterval) -> i64 {
+    (value.milliseconds() / 1000) % 60
+}
+
+#[doc(hidden)]
+pub fn extract_minute_ShortInterval(value: ShortInterval) -> i64 {
+    (value.milliseconds() / 60000) % 60
+}
+
+#[doc(hidden)]
+pub fn extract_hour_ShortInterval(value: ShortInterval) -> i64 {
+    (value.milliseconds() / (60 * 60 * 1000)) % 24
+}
+
+some_polymorphic_function1!(extract_year, LongInterval, LongInterval, i64);
+some_polymorphic_function1!(extract_month, LongInterval, LongInterval, i64);
+some_polymorphic_function1!(extract_quarter, LongInterval, LongInterval, i64);
+some_polymorphic_function1!(extract_decade, LongInterval, LongInterval, i64);
+some_polymorphic_function1!(extract_century, LongInterval, LongInterval, i64);
+some_polymorphic_function1!(extract_millennium, LongInterval, LongInterval, i64);
+
+some_polymorphic_function1!(extract_day, LongInterval, LongInterval, i64);
+some_polymorphic_function1!(extract_epoch, LongInterval, LongInterval, i64);
+some_polymorphic_function1!(extract_millisecond, LongInterval, LongInterval, i64);
+some_polymorphic_function1!(extract_microsecond, LongInterval, LongInterval, i64);
+some_polymorphic_function1!(extract_second, LongInterval, LongInterval, i64);
+some_polymorphic_function1!(extract_minute, LongInterval, LongInterval, i64);
+some_polymorphic_function1!(extract_hour, LongInterval, LongInterval, i64);
+
+some_polymorphic_function1!(extract_day, ShortInterval, ShortInterval, i64);
+some_polymorphic_function1!(extract_epoch, ShortInterval, ShortInterval, i64);
+some_polymorphic_function1!(extract_millisecond, ShortInterval, ShortInterval, i64);
+some_polymorphic_function1!(extract_microsecond, ShortInterval, ShortInterval, i64);
+some_polymorphic_function1!(extract_second, ShortInterval, ShortInterval, i64);
+some_polymorphic_function1!(extract_minute, ShortInterval, ShortInterval, i64);
+some_polymorphic_function1!(extract_hour, ShortInterval, ShortInterval, i64);
