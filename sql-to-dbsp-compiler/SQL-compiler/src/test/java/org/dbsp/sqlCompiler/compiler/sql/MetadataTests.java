@@ -18,6 +18,7 @@ import org.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.util.HSQDBManager;
+import org.dbsp.util.NameGen;
 import org.dbsp.util.Utilities;
 import org.hsqldb.server.ServerAcl;
 import org.junit.Assert;
@@ -122,6 +123,40 @@ public class MetadataTests extends BaseSQLTests {
                     }
                   }
                 }""", str);
+    }
+
+    @Test
+    public void stripConnectors() throws IOException, SQLException {
+        // Test that the connectors property is stripped from the generated Rust
+        NameGen.reset();
+        String sql = """
+               CREATE TABLE T (
+                  COL1 INT
+               ) WITH (
+                  'connectors' = '[{
+                    "name": "kafka",
+                    "url": "localhost"
+                  }]'
+               );
+               CREATE VIEW V WITH (
+                  'connectors' = '[{
+                     "name": "file_input",
+                     "path": "/tmp/x"
+                  }]'
+               ) AS SELECT * FROM T;""";
+        File file = createInputScript(sql);
+        CompilerMain.execute("-o", BaseSQLTests.testFilePath, file.getPath());
+        String rust = Utilities.readFile(Paths.get(BaseSQLTests.testFilePath));
+        Assert.assertFalse(rust.contains("connectors"));
+
+        NameGen.reset();
+        sql = """
+               CREATE TABLE T (COL1 INT);
+               CREATE VIEW V AS SELECT * FROM T;""";
+        file = createInputScript(sql);
+        CompilerMain.execute("-o", BaseSQLTests.testFilePath, file.getPath());
+        String rust0 = Utilities.readFile(Paths.get(BaseSQLTests.testFilePath));
+        Assert.assertEquals(rust, rust0);
     }
 
     @Test

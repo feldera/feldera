@@ -86,9 +86,5 @@ public abstract class DBSPOperatorWithError extends DBSPOperator {
         throw new InternalCompilerError("No output " + outputNumber);
     }
     
-    public OutputPort getOutput(int outputNo) {
-        return new OutputPort(this, outputNo);
-    }
-
     public abstract DBSPOperatorWithError withInputs(List<OutputPort> sources, boolean force);
 }
