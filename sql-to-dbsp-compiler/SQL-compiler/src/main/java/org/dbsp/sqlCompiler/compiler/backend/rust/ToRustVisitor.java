@@ -23,7 +23,10 @@
 
 package org.dbsp.sqlCompiler.compiler.backend.rust;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
+import org.dbsp.sqlCompiler.circuit.annotation.CompactName;
 import org.dbsp.sqlCompiler.circuit.annotation.Recursive;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperator;
@@ -368,7 +371,10 @@ public class ToRustVisitor extends CircuitVisitor {
     }
 
     String handleName(DBSPSimpleOperator operator) {
-        return "handle" + operator.id;
+        String compactName = CompactName.getCompactName(operator);
+        if (compactName == null)
+            compactName = Long.toString(operator.id);
+        return "handle" + compactName;
     }
 
     @Override
@@ -561,6 +567,21 @@ public class ToRustVisitor extends CircuitVisitor {
         }
     }
 
+    /** Remove properties.connectors from a json tree.
+     * If the properties become empty, remove them too. */
+    JsonNode stripConnectors(JsonNode json) {
+        if (!json.isObject())
+            return json;
+        ObjectNode j = (ObjectNode) json;
+        ObjectNode props = (ObjectNode) j.get("properties");
+        if (props != null) {
+            props.remove("connectors");
+            if (props.isEmpty())
+                j.remove("properties");
+        }
+        return json;
+    }
+
     @Override
     public VisitDecision preorder(DBSPSourceMultisetOperator operator) {
         DBSPTypeStruct type = operator.originalRowType;
@@ -584,7 +605,9 @@ public class ToRustVisitor extends CircuitVisitor {
                     .append(registerFunction)
                     .append("::<_, ");
             IHasSchema tableDescription = this.metadata.getTableDescription(operator.tableName);
-            DBSPStrLiteral json = new DBSPStrLiteral(tableDescription.asJson().toString(), false, true);
+            JsonNode j = tableDescription.asJson();
+            j = this.stripConnectors(j);
+            DBSPStrLiteral json = new DBSPStrLiteral(j.toString(), false, true);
             operator.originalRowType.accept(this.innerVisitor);
             this.builder.append(">(")
                     .append(operator.getOutputName())
@@ -827,7 +850,9 @@ public class ToRustVisitor extends CircuitVisitor {
             this.generateStructHelpers(type, null);
         if (!this.useHandles) {
             IHasSchema description = this.metadata.getViewDescription(operator.viewName);
-            DBSPStrLiteral json = new DBSPStrLiteral(description.asJson().toString(), false, true);
+            JsonNode j = description.asJson();
+            j = this.stripConnectors(j);
+            DBSPStrLiteral json = new DBSPStrLiteral(j.toString(), false, true);
             String registerFunction = switch (operator.metadata.viewKind) {
                 case MATERIALIZED -> "register_materialized_output_zset";
                 case LOCAL -> throw new InternalCompilerError("Sink operator for local view " + operator);

@@ -1,7 +1,6 @@
 package org.dbsp.sqlCompiler.circuit.annotation;
 
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 
 import javax.annotation.Nullable;
 import java.util.List;
