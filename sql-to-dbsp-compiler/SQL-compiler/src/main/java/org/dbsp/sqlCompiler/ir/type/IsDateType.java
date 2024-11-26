@@ -23,5 +23,10 @@
 
 package org.dbsp.sqlCompiler.ir.type;
 
-/** interface implemented by types that look like dates. */
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDate;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTime;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
+
+/** interface implemented by {@link DBSPTypeTimestamp}, {@link DBSPTypeDate}, 
+ * {@link DBSPTypeTime}. */
 public interface IsDateType extends IsBoundedType {}

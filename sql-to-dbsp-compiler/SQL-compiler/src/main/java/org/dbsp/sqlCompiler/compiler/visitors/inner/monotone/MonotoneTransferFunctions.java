@@ -531,7 +531,8 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
 
         // Assume type is not monotone
         IMaybeMonotoneType resultType = new NonMonotoneType(expression.type);
-        if (expression.operation == DBSPOpcode.ADD && lm && rm) {
+        if ((expression.operation == DBSPOpcode.ADD || expression.operation == DBSPOpcode.TS_ADD)
+                && lm && rm) {
             // The addition of two monotone expressions is monotone
             resultType = new MonotoneType(expression.type);
             reduced = expression.replaceSources(
@@ -560,7 +561,9 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
                     right.getReducedExpression());
         }
         // Some expressions are monotone if some of their operands are constant
-        if (left.mayBeMonotone() && expression.operation == DBSPOpcode.SUB) {
+        if (left.mayBeMonotone() &&
+                (expression.operation == DBSPOpcode.SUB ||
+                        expression.operation == DBSPOpcode.TS_SUB)) {
             // Subtracting a constant from a monotone expression produces a monotone result
             if (this.constantExpressions.contains(expression.right)) {
                 resultType = left.copyMonotonicity(expression.type);
@@ -569,7 +572,10 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
             }
         }
         if (left.mayBeMonotone() &&
-                (expression.operation == DBSPOpcode.DIV || expression.operation == DBSPOpcode.MUL)) {
+                (expression.operation == DBSPOpcode.DIV ||
+                        expression.operation == DBSPOpcode.MUL ||
+                        expression.operation == DBSPOpcode.INTERVAL_MUL ||
+                        expression.operation == DBSPOpcode.INTERVAL_DIV)) {
             // Multiplying or dividing a monotone expression by
             // a positive constant produces a monotone result
             // TODO: multiplication is commutative.

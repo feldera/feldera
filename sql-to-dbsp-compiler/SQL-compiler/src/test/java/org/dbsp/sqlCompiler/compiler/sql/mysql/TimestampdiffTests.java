@@ -4,6 +4,15 @@ import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
 import org.junit.Test;
 
 public class TimestampdiffTests extends SqlIoTest {
+    @Test
+    public void issue3021() {
+        this.compileRustTestCase("""
+                CREATE TABLE time_tbl(c1 TIME);
+                CREATE MATERIALIZED VIEW v AS SELECT
+                c1 - INTERVAL '10' MINUTE AS f_c1
+                FROM time_tbl;""");
+    }
+
     // Test data obtained from
     // https://github.com/mysql/mysql-server/blob/mysql-test/r/func_time.result#L715
     @Test

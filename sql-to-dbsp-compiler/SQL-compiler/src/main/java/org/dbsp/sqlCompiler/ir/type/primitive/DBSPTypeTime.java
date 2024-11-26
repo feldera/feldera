@@ -31,12 +31,13 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimeLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.IsDateType;
+import org.dbsp.sqlCompiler.ir.type.IsTimeRelatedType;
 
 import java.util.Objects;
 
 import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.TIME;
 
-public class DBSPTypeTime extends DBSPTypeBaseType implements IsDateType {
+public class DBSPTypeTime extends DBSPTypeBaseType implements IsDateType, IsTimeRelatedType {
     public DBSPTypeTime(CalciteObject node, boolean mayBeNull) {
         super(node, TIME, mayBeNull);
     }

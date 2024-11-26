@@ -30,13 +30,14 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimestampLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.IsDateType;
+import org.dbsp.sqlCompiler.ir.type.IsTimeRelatedType;
 
 import java.util.Objects;
 
 import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.TIMESTAMP;
 
 public class DBSPTypeTimestamp extends DBSPTypeBaseType
-        implements IsDateType {
+        implements IsDateType, IsTimeRelatedType {
     public DBSPTypeTimestamp(CalciteObject node, boolean mayBeNull) {
         super(node, TIMESTAMP, mayBeNull);
     }

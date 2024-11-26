@@ -50,6 +50,13 @@ public enum DBSPOpcode {
     // Shift amount may be negative
     SHIFT_LEFT("shift_left", false),
 
+    // Timestamp-based operations
+    TS_ADD("+", false),
+    TS_SUB("-", false),
+    // Interval-based operations
+    INTERVAL_MUL("*", false),
+    INTERVAL_DIV("/", false),
+
     // Aggregate operations.  These operations
     // handle NULL values differently from standard
     // arithmetic operations, following SQL semantics.

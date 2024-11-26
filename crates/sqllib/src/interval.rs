@@ -3,16 +3,19 @@
 
 use crate::{
     operators::{eq, gt, gte, lt, lte, neq},
-    some_existing_operator, some_operator,
+    some_existing_operator, some_operator, some_polymorphic_function2, Decimal,
 };
-use dbsp::num_entries_scalar;
+use dbsp::{algebra::F64, num_entries_scalar};
 use feldera_types::serde_with_context::{
     DeserializeWithContext, SerializeWithContext, SqlSerdeConfig,
 };
 use num::PrimInt;
 use serde::{de::Error as _, ser::Error as _, Deserialize, Serialize};
 use size_of::SizeOf;
-use std::{fmt::Debug, ops::Mul};
+use std::{
+    fmt::Debug,
+    ops::{Div, Mul},
+};
 
 #[cfg(doc)]
 use crate::{Date, Time, Timestamp};
@@ -116,18 +119,73 @@ pub fn to_bound_ShortInterval_Time_u64(value: &ShortInterval) -> u64 {
     (value.milliseconds * 1_000_000) as u64
 }
 
-/// Multiply a `ShortInterval` by a numeric value, producing a
-/// `ShortInterval`.
-impl<T> Mul<T> for ShortInterval
-where
-    T: PrimInt,
-    i64: Mul<T, Output = i64>,
-{
+/// Multiply a `ShortInterval` by a numeric value, producing a `ShortInterval`.
+impl Mul<i64> for ShortInterval {
     type Output = Self;
 
-    fn mul(self, rhs: T) -> Self {
+    /// Multiply a short interval by an long integer
+    fn mul(self, rhs: i64) -> Self {
         Self {
             milliseconds: self.milliseconds * rhs,
+        }
+    }
+}
+
+/// Multiply a `ShortInterval` by a numeric value, producing a `ShortInterval`.
+impl Mul<F64> for ShortInterval {
+    type Output = Self;
+
+    fn mul(self, rhs: F64) -> Self {
+        Self {
+            milliseconds: (F64::from(self.milliseconds as f64) * rhs).into_inner() as i64,
+        }
+    }
+}
+
+/// Multiply a `ShortInterval` by a numeric value, producing a `ShortInterval`.
+impl Mul<Decimal> for ShortInterval {
+    type Output = Self;
+
+    fn mul(self, rhs: Decimal) -> Self {
+        Self {
+            milliseconds: (Decimal::from(self.milliseconds) * rhs)
+                .try_into()
+                .expect("overflow in short interval multiplication"),
+        }
+    }
+}
+
+/// Divide a `ShortInterval` by a numeric value, producing a `ShortInterval`.
+impl Div<i64> for ShortInterval {
+    type Output = Self;
+
+    fn div(self, rhs: i64) -> Self {
+        Self {
+            milliseconds: self.milliseconds / rhs,
+        }
+    }
+}
+
+/// Divide a `ShortInterval` by a numeric value, producing a `ShortInterval`.
+impl Div<F64> for ShortInterval {
+    type Output = Self;
+
+    fn div(self, rhs: F64) -> Self {
+        Self {
+            milliseconds: (F64::from(self.milliseconds as f64) / rhs).into_inner() as i64,
+        }
+    }
+}
+
+/// Divide a `ShortInterval` by a numeric value, producing a `ShortInterval`.
+impl Div<Decimal> for ShortInterval {
+    type Output = Self;
+
+    fn div(self, rhs: Decimal) -> Self {
+        Self {
+            milliseconds: (Decimal::from(self.milliseconds) / rhs)
+                .try_into()
+                .expect("overflow in short interval division"),
         }
     }
 }
@@ -230,17 +288,72 @@ impl LongInterval {
     }
 }
 
-impl<T> Mul<T> for LongInterval
-where
-    T: PrimInt,
-    i32: Mul<T, Output = i32>,
-{
+/// Multiply a `LongInterval` by an integer producing a `LongInterval`
+impl Mul<i32> for LongInterval {
     type Output = Self;
 
-    /// Multiply a long interval by an integer.
-    fn mul(self, rhs: T) -> Self {
+    fn mul(self, rhs: i32) -> Self {
         Self {
             months: self.months * rhs,
+        }
+    }
+}
+
+/// Multiply a `LongInterval` by a numeric value producing a `LongInterval`
+impl Mul<F64> for LongInterval {
+    type Output = Self;
+
+    fn mul(self, rhs: F64) -> Self {
+        Self {
+            months: (F64::from(self.months as f64) * rhs).into_inner() as i32,
+        }
+    }
+}
+
+/// Multiply a `LongInterval` by a numeric value producing a `LongInterval`
+impl Mul<Decimal> for LongInterval {
+    type Output = Self;
+
+    fn mul(self, rhs: Decimal) -> Self {
+        Self {
+            months: (Decimal::from(self.months) * rhs)
+                .try_into()
+                .expect("overflow in long interval multiplication"),
+        }
+    }
+}
+
+/// Divide a `LongInterval` by an integer producing a `LongInterval`
+impl Div<i32> for LongInterval {
+    type Output = Self;
+
+    fn div(self, rhs: i32) -> Self {
+        Self {
+            months: self.months / rhs,
+        }
+    }
+}
+
+/// Divide a `LongInterval` by a numeric value producing a `LongInterval`
+impl Div<F64> for LongInterval {
+    type Output = Self;
+
+    fn div(self, rhs: F64) -> Self {
+        Self {
+            months: (F64::from(self.months as f64) / rhs).into_inner() as i32,
+        }
+    }
+}
+
+/// Divide a `LongInterval` by a numeric value producing a `LongInterval`
+impl Div<Decimal> for LongInterval {
+    type Output = Self;
+
+    fn div(self, rhs: Decimal) -> Self {
+        Self {
+            months: (Decimal::from(self.months) / rhs)
+                .try_into()
+                .expect("overflow in long interval division"),
         }
     }
 }
@@ -299,3 +412,115 @@ some_operator!(eq, LongInterval, LongInterval, bool);
 some_operator!(neq, LongInterval, LongInterval, bool);
 some_operator!(gte, LongInterval, LongInterval, bool);
 some_operator!(lte, LongInterval, LongInterval, bool);
+
+#[doc(hidden)]
+pub fn times_ShortInterval_i64(left: ShortInterval, right: i64) -> ShortInterval {
+    left * right
+}
+
+some_polymorphic_function2!(times, ShortInterval, ShortInterval, i64, i64, ShortInterval);
+
+#[doc(hidden)]
+pub fn times_LongInterval_i32(left: LongInterval, right: i32) -> LongInterval {
+    left * right
+}
+
+some_polymorphic_function2!(times, LongInterval, LongInterval, i32, i32, LongInterval);
+
+#[doc(hidden)]
+pub fn times_ShortInterval_d(left: ShortInterval, right: F64) -> ShortInterval {
+    left * right
+}
+
+some_polymorphic_function2!(times, ShortInterval, ShortInterval, d, F64, ShortInterval);
+
+#[doc(hidden)]
+pub fn times_LongInterval_d(left: LongInterval, right: F64) -> LongInterval {
+    left * right
+}
+
+some_polymorphic_function2!(times, LongInterval, LongInterval, d, F64, LongInterval);
+
+#[doc(hidden)]
+pub fn times_ShortInterval_decimal(left: ShortInterval, right: Decimal) -> ShortInterval {
+    left * right
+}
+
+some_polymorphic_function2!(
+    times,
+    ShortInterval,
+    ShortInterval,
+    decimal,
+    Decimal,
+    ShortInterval
+);
+
+#[doc(hidden)]
+pub fn times_LongInterval_decimal(left: LongInterval, right: Decimal) -> LongInterval {
+    left * right
+}
+
+some_polymorphic_function2!(
+    times,
+    LongInterval,
+    LongInterval,
+    decimal,
+    Decimal,
+    LongInterval
+);
+
+#[doc(hidden)]
+pub fn div_ShortInterval_i64(left: ShortInterval, right: i64) -> ShortInterval {
+    left / right
+}
+
+some_polymorphic_function2!(div, ShortInterval, ShortInterval, i64, i64, ShortInterval);
+
+#[doc(hidden)]
+pub fn div_LongInterval_i32(left: LongInterval, right: i32) -> LongInterval {
+    left / right
+}
+
+some_polymorphic_function2!(div, LongInterval, LongInterval, i32, i32, LongInterval);
+
+#[doc(hidden)]
+pub fn div_ShortInterval_d(left: ShortInterval, right: F64) -> ShortInterval {
+    left / right
+}
+
+some_polymorphic_function2!(div, ShortInterval, ShortInterval, d, F64, ShortInterval);
+
+#[doc(hidden)]
+pub fn div_LongInterval_d(left: LongInterval, right: F64) -> LongInterval {
+    left / right
+}
+
+some_polymorphic_function2!(div, LongInterval, LongInterval, d, F64, LongInterval);
+
+#[doc(hidden)]
+pub fn div_ShortInterval_decimal(left: ShortInterval, right: Decimal) -> ShortInterval {
+    left / right
+}
+
+some_polymorphic_function2!(
+    div,
+    ShortInterval,
+    ShortInterval,
+    decimal,
+    Decimal,
+    ShortInterval
+);
+
+#[doc(hidden)]
+pub fn div_LongInterval_decimal(left: LongInterval, right: Decimal) -> LongInterval {
+    left / right
+}
+
+some_polymorphic_function2!(
+    div,
+    LongInterval,
+    LongInterval,
+    decimal,
+    Decimal,
+    LongInterval
+);

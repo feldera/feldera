@@ -802,7 +802,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
 
         functionName = "cast_to_" + destType.baseTypeWithSuffix() +
                 "_" + sourceType.baseTypeWithSuffix();
-        this.builder.append(functionName).append("(").increase();
+        this.builder.append(functionName).append("(");
         expression.source.accept(this);
         DBSPTypeDecimal dec = destType.as(DBSPTypeDecimal.class);
         if (dec != null) {
@@ -820,7 +820,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
                     .append(", ")
                     .append(Boolean.toString(str.fixed));
         }
-        this.builder.decrease().append(")");
+        this.builder.append(")");
         return VisitDecision.STOP;
     }
 
@@ -937,11 +937,11 @@ public class ToRustInnerVisitor extends InnerVisitor {
                         expression.getType(),
                         expression.left.getType(),
                         expression.right.getType());
-                this.builder.append(function).append("(").increase();
+                this.builder.append(function).append("(");
                 expression.left.accept(this);
-                this.builder.append(",").newline();
+                this.builder.append(", ");
                 expression.right.accept(this);
-                this.builder.decrease().append(")");
+                this.builder.append(")");
                 break;
             }
         }
@@ -1401,7 +1401,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
             return this.doNullExpression(expression);
         if (expression.getType().mayBeNull)
             this.builder.append("Some(");
-        boolean newlines = this.compact && expression.fields.length > 2;
+        boolean newlines = !this.compact && expression.fields.length > 2;
         this.builder.append(DBSPTypeCode.TUPLE.rustName)
                 .append(expression.size())
                 .append("::new(");

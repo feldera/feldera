@@ -68,7 +68,7 @@ public class TableParser {
     static final SimpleDateFormat DATE_OUTPUT_FORMAT = new SimpleDateFormat("yyyy-MM-dd");
     static final Pattern YEAR = Pattern.compile("^(\\d+) years?(.*)");
     static final Pattern MONTHS = Pattern.compile("^\\s*(\\d+) months?(.*)");
-    static final Pattern MINUS = Pattern.compile("^-(.*)");
+    static final Pattern MINUS = Pattern.compile("^-\\s*(.*)");
     static final Pattern DAYS = Pattern.compile("^(\\d+) days?(.*)");
     static final Pattern HOURS = Pattern.compile("^\\s*(\\d+) hours?(.*)");
     static final Pattern MINUTES = Pattern.compile("\\s*(\\d+) mins?(.*)");
@@ -194,22 +194,26 @@ public class TableParser {
             } else {
                 m = HOURS.matcher(interval);
                 if (m.matches()) {
-                    long h = Integer.parseInt(m.group(1));
+                    long h = Long.parseLong(m.group(1));
                     result += h * 3600_000;
                     interval = m.group(2);
                 }
 
                 m = MINUTES.matcher(interval);
                 if (m.matches()) {
-                    long mm = Integer.parseInt(m.group(1));
+                    long mm = Long.parseLong(m.group(1));
                     result += mm * 60_000;
                     interval = m.group(2);
                 }
 
                 m = SECONDS.matcher(interval);
                 if (m.matches()) {
-                    long s = Integer.parseInt(m.group(1));
+                    long s = Long.parseLong(m.group(1));
                     result += s * 1000;
+                    if (m.group(3) != null) {
+                        String msec = m.group(3) + "000";
+                        result += Long.parseLong(msec.substring(0, 3));
+                    }
                     interval = m.group(4);
                 }
             }

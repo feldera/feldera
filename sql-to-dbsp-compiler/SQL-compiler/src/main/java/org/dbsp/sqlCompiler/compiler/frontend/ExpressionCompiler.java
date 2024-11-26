@@ -86,9 +86,12 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVecLiteral;
 import org.dbsp.sqlCompiler.ir.path.DBSPPath;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.IsDateType;
+import org.dbsp.sqlCompiler.ir.type.IsIntervalType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRef;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVariant;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeMap;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeResult;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
@@ -96,7 +99,7 @@ import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeUser;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeVec;
-import org.dbsp.sqlCompiler.ir.type.IsDateType;
+import org.dbsp.sqlCompiler.ir.type.IsTimeRelatedType;
 import org.dbsp.sqlCompiler.ir.type.IsNumericType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBinary;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
@@ -357,8 +360,8 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
     public static boolean needCommonType(DBSPOpcode opcode, DBSPType result, DBSPType left, DBSPType right) {
         if (opcode == DBSPOpcode.CONCAT) return false;
         // Dates can be mixed with other types in a binary operation
-        if (left.is(IsDateType.class)) return false;
-        if (right.is(IsDateType.class)) return false;
+        if (left.is(IsTimeRelatedType.class)) return false;
+        if (right.is(IsTimeRelatedType.class)) return false;
         // Allow arithmetic on different DECIMAL types
         if (left.is(DBSPTypeDecimal.class) && right.is(DBSPTypeDecimal.class))
             return false;
@@ -401,6 +404,16 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 return new DBSPUnaryExpression(node, resultType, DBSPOpcode.INDICATOR, argument.borrow());
             }
         }
+    }
+
+    static DBSPOpcode timestampOperation(DBSPOpcode opcode) {
+        return switch (opcode) {
+            case ADD -> DBSPOpcode.TS_ADD;
+            case SUB -> DBSPOpcode.TS_SUB;
+            case MUL -> DBSPOpcode.INTERVAL_MUL;
+            case DIV -> DBSPOpcode.INTERVAL_DIV;
+            default -> throw new InternalCompilerError("Unexpected opcode " + opcode);
+        };
     }
 
     public static DBSPExpression makeBinaryExpression(
@@ -452,14 +465,57 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 // Result is always NULL - evaluate to the NULL literal directly
                 return DBSPLiteral.none(type);
             }
+            if (opcode == DBSPOpcode.MUL || opcode == DBSPOpcode.DIV) {
+                // Multiplication between an interval and a numeric value.
+                if (leftType.is(IsIntervalType.class) || rightType.is(IsIntervalType.class)) {
+                    opcode = timestampOperation(opcode);
+                    // swap operands so that the numeric operand is always right
+                    if (opcode == DBSPOpcode.INTERVAL_MUL || opcode == DBSPOpcode.INTERVAL_DIV) {
+                        if (rightType.is(IsIntervalType.class)) {
+                            if (leftType.is(IsIntervalType.class)) {
+                                throw new CompilationError("Operation " + opcode + " between intervals not supported", node);
+                            }
+                            DBSPExpression tmp = left;
+                            left = right;
+                            right = tmp;
+
+                            leftType = left.getType();
+                            rightType = right.getType();
+                        }
+
+                        assert rightType.is(IsNumericType.class);
+                        // Canonicalize the type on the right without information loss
+                        if (rightType.is(DBSPTypeInteger.class)) {
+                            if (leftType.is(DBSPTypeMillisInterval.class)) {
+                                right = right.cast(new DBSPTypeInteger(rightType.getNode(), 64, true, rightType.mayBeNull));
+                            } else {
+                                right = right.cast(new DBSPTypeInteger(rightType.getNode(), 32, true, rightType.mayBeNull));
+                            }
+                        } else if (rightType.is(DBSPTypeReal.class)) {
+                            right = right.cast(new DBSPTypeDouble(rightType.getNode(), rightType.mayBeNull));
+                        }
+                        rightType = right.getType();
+                    }
+                }
+            }
             if (opcode == DBSPOpcode.SUB || opcode == DBSPOpcode.ADD) {
-                if (leftType.is(DBSPTypeTimestamp.class) || leftType.is(DBSPTypeDate.class)) {
+                // Addition involving a date
+                if (leftType.is(IsTimeRelatedType.class) || rightType.is(IsTimeRelatedType.class)) {
                     if (rightType.is(IsNumericType.class))
                         throw new CompilationError("Cannot apply operation " + Utilities.singleQuote(opcode.toString()) +
                                 " to arguments of type " + leftType.asSqlString() + " and " + rightType.asSqlString(), node);
+                    opcode = timestampOperation(opcode);
+                    if (leftType.is(IsIntervalType.class) && !rightType.is(IsIntervalType.class)) {
+                        // Move the interval to the right when computing a date +/- interval
+                        DBSPExpression tmp = left;
+                        left = right;
+                        right = tmp;
+                        leftType = left.getType();
+                        rightType = right.getType();
+                    }
                 }
             }
-            if (leftType.is(IsDateType.class) || rightType.is(IsDateType.class))
+            if (leftType.is(IsTimeRelatedType.class) || rightType.is(IsTimeRelatedType.class))
                 expressionResultType = typeWithNull;
             else if (leftType.is(DBSPTypeString.class) && rightType.is(DBSPTypeString.class))
                 expressionResultType = typeWithNull;
