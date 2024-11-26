@@ -51,6 +51,30 @@ pub struct JsonParserConfig {
     /// [{"b": true, "i": 0},{"b": false, "i": 100, "s": "foo"}]
     /// ```
     pub array: bool,
+
+    /// Whether JSON elements can span multiple lines.
+    ///
+    /// This only affects JSON input.
+    pub lines: JsonLines,
+}
+
+/// Whether JSON values can span multiple lines.
+#[derive(Deserialize, Serialize, Clone, Debug, Default, PartialEq, Eq, ToSchema)]
+pub enum JsonLines {
+    /// JSON values may span multiple lines.
+    ///
+    /// This supports general-purpose JSON input.
+    #[default]
+    #[serde(rename = "multiple")]
+    Multiple,
+
+    /// A given JSON value never contains a new-line.
+    ///
+    /// Suitable for parsing [NDJSON](https://github.com/ndjson/ndjson-spec).
+    /// Lines are allowed to contain multiple JSON values.  The parser ignores
+    /// empty lines.
+    #[serde(rename = "single")]
+    Single,
 }
 
 /// Supported JSON data change event formats.
