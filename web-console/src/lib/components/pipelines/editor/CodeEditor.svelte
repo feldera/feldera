@@ -105,7 +105,7 @@
     codeEditor: Snippet<[textEditor: Snippet, statusBar: Snippet, isReadOnly: boolean]>
     statusBarCenter?: Snippet
     statusBarEnd?: Snippet<[downstreamChanged: boolean]>
-    toolBarEnd?: Snippet
+    toolBarEnd?: Snippet<[{ saveFile: () => void }]>
     fileTab: Snippet<[text: string, onclick: () => void, isCurrent: boolean]>
     downstreamChanged?: boolean
   } = $props()
@@ -286,7 +286,7 @@
 {@render codeEditor(textEditor, statusBar, isReadOnly)}
 {#snippet textEditor()}
   <div class="flex h-full flex-col">
-    <div class="flex flex-wrap">
+    <div class="flex flex-wrap items-center">
       {#each files as file}
         {@render fileTab(
           file.name,
@@ -295,7 +295,7 @@
         )}
       {/each}
       <div class="ml-auto"></div>
-      {@render toolBarEnd?.()}
+      {@render toolBarEnd?.({ saveFile: () => openFiles[filePath].sync.push() })}
     </div>
     <div class="relative flex-1">
       <div class="absolute h-full w-full">
@@ -362,7 +362,12 @@
     ></PipelineEditorStatusBar> -->
     {@render statusBarCenter?.()}
   </div>
-  <div class=" ml-auto flex flex-nowrap gap-x-8">
+  <div class="ml-auto flex flex-nowrap gap-x-2">
+    <button
+      class="fd fd-settings btn btn-icon text-[24px] preset-tonal-surface"
+      aria-label="Editor settings"
+    >
+    </button>
     {@render statusBarEnd?.(openFiles[filePath].sync.downstreamChanged)}
   </div>
 {/snippet}

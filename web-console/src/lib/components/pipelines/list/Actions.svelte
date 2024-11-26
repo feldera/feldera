@@ -61,8 +61,8 @@
   const active = $derived(
     match(pipeline.current.status)
       .returnType<(keyof typeof actions)[]>()
-      .with('Shutdown', () => ['_delete', '_spacer_long', '_start_paused'])
-      .with('Queued', () => ['_delete', '_spacer_long', '_start_pending'])
+      .with('Shutdown', () => ['_spacer_short', '_spacer_long', '_start_paused'])
+      .with('Queued', () => ['_spacer_short', '_spacer_long', '_start_pending'])
       .with('Starting up', () => ['_spinner', '_shutdown', '_spacer_long'])
       .with('Initializing', () => ['_spinner', '_shutdown', '_spacer_long'])
       .with('Running', () => ['_spacer_short', '_shutdown', '_pause'])
@@ -72,14 +72,13 @@
       .with('ShuttingDown', () => ['_spinner', '_spacer_long', '_spacer_long'])
       .with({ PipelineError: P.any }, () => ['_spacer_short', '_shutdown', '_spacer_long'])
       .with('Compiling SQL', 'SQL compiled', 'Compiling binary', () => [
-        '_delete',
+        '_spacer_short',
         '_spacer_long',
         '_start_pending'
       ])
       .with('Unavailable', () => ['_spinner', '_shutdown', '_spacer_long'])
       .with({ SqlError: P.any }, { RustError: P.any }, { SystemError: P.any }, () => [
-        '_delete',
-
+        '_spacer_short',
         '_spacer_long',
         '_start_error'
       ])
@@ -106,7 +105,6 @@
 {/snippet}
 
 <div class={'flex flex-nowrap gap-2 ' + _class}>
-  {@render _configureResources()}
   {#each active as name}
     {@render actions[name]()}
   {/each}
@@ -209,7 +207,7 @@
       })
     }}
   >
-    <span class="fd fd-stop bg-surface-50-950 {iconClass}"></span>
+    <span class="fd fd-stop {iconClass}"></span>
     Shutdown
     <span></span>
   </button>
