@@ -383,12 +383,12 @@ public class TableParser {
                 Linq.list(outputType.to(DBSPTypeZSet.class).elementType.to(DBSPTypeTuple.class).tupFields);
         extraFields.add(new DBSPTypeInteger(CalciteObject.EMPTY, 64, true, false));
         DBSPType extraOutputType = new DBSPTypeTuple(extraFields);
-        Change change = parseTable(table, new DBSPTypeZSet(extraOutputType));
+        Change change = parseTable(table, new DBSPTypeZSet(extraOutputType), -1);
         DBSPZSetLiteral[] extracted = Linq.map(change.sets, SqlIoTest::extractWeight, DBSPZSetLiteral.class);
         return new Change(extracted);
     }
 
-    public static Change parseTable(String table, DBSPType outputType) {
+    public static Change parseTable(String table, DBSPType outputType, int rowCount) {
         DBSPTypeZSet zset = outputType.to(DBSPTypeZSet.class);
         DBSPZSetLiteral result = DBSPZSetLiteral.emptyWithElementType(zset.elementType);
         DBSPTypeTuple tuple = zset.elementType.to(DBSPTypeTuple.class);
@@ -419,6 +419,7 @@ public class TableParser {
         String[] lines = table.split("\n", -1);
         boolean inHeader = true;
         int horizontalLines = 0;
+        int rowsFound = 0;
         for (String line: lines) {
             if (inHeader) {
                 if (line.isEmpty())
@@ -450,7 +451,10 @@ public class TableParser {
                 line = line.substring(1, line.length() - 1);
             DBSPExpression row = parseRow(line, tuple, separator);
             result.add(row);
+            rowsFound++;
         }
+        if (rowCount >= 0 && rowCount != rowsFound)
+            throw new RuntimeException("Expected " + rowCount + " rows, found " + rowsFound + ": " + table);
         if (inHeader)
             throw new RuntimeException("Could not find end of header for table " + table);
         return new Change(result);

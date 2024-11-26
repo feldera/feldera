@@ -116,7 +116,7 @@ public class PostgresCaseTests extends SqlIoTest {
                         0
                         0
                         0
-                        (3 rows)
+                        (4 rows)
 
                         -- Test for cases involving untyped literals in test expression
                         SELECT CASE 'a' WHEN 'a' THEN 1 ELSE 2 END;

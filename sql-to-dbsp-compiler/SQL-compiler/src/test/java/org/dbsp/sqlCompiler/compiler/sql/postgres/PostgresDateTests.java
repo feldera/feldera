@@ -32,11 +32,8 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
 import org.dbsp.util.Linq;
 import org.junit.Test;
 
-/**
- * Tests manually adapted from
- * https://github.com/postgres/postgres/blob/master/src/test/regress/expected/date.out
- */
-@SuppressWarnings("JavadocLinkAsPlainText")
+/* Tests manually adapted from
+ * https://github.com/postgres/postgres/blob/master/src/test/regress/expected/date.out */
 public class PostgresDateTests extends SqlIoTest {
     @Override
     public void prepareInputs(DBSPCompiler compiler) {
@@ -936,7 +933,7 @@ public class PostgresDateTests extends SqlIoTest {
                 new DBSPZSetLiteral(Linq.map(results,
                         l -> new DBSPTupleExpression(new DBSPIntervalMillisLiteral(
                                 l * 86400 * 1000, true)), DBSPExpression.class));
-        this.compare(query, result, true);
+        this.compare(query, result, true, results.length);
     }
 
     // There is no 'epoch' date in Calcite

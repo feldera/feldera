@@ -15,6 +15,38 @@ import org.junit.Test;
 
 public class RegressionTests extends SqlIoTest {
     @Test
+    public void issue3030() {
+        this.compileRustTestCase("""
+                CREATE TABLE timestamp_tbl(c1 TIMESTAMP, c2 TIMESTAMP);
+                
+                CREATE LOCAL VIEW atbl_interval AS SELECT
+                (c1 - c2) YEAR AS c1_minus_c2
+                FROM timestamp_tbl;
+                
+                CREATE LOCAL VIEW interval_minus_interval AS SELECT
+                ((c1_minus_c2) - INTERVAL '2' YEAR) AS c1
+                FROM atbl_interval;
+                
+                CREATE MATERIALIZED VIEW interval_minus_interval_seconds AS SELECT
+                CAST((c1) AS BIGINT) AS f_c1
+                FROM interval_minus_interval;""");
+    }
+
+    @Test
+    public void issue3031() {
+        this.compileRustTestCase("""
+                CREATE TABLE time_tbl(c1 TIME, c2 TIME);
+                
+                CREATE LOCAL VIEW atbl_interval AS SELECT
+                (c1 - c2)MINUTE AS c1_minus_c2
+                FROM time_tbl;
+                
+                CREATE MATERIALIZED VIEW interval_negation AS SELECT
+                '18:30:00':: TIME + (-c1_minus_c2) AS c1
+                FROM atbl_interval;""");
+    }
+
+    @Test
     public void issue2943() {
         this.compileRustTestCase("""
                 CREATE TABLE x(c1 TIMESTAMP, c2 TIMESTAMP);

@@ -127,8 +127,7 @@ public class PostgresWindowTests extends SqlIoTest {
                  sales     |     3 |   4800 | 14600
                  sales     |     4 |   4800 | 14600
                  sales     |     1 |   5000 | 14600
-                (10 rows)
-                """);
+                (10 rows)""");
     }
 
     @Test

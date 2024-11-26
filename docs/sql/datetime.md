@@ -268,6 +268,10 @@ To specify an interval value with more than 2 digits you must specify
 an increased precision for the corresponding type, e.g.:
 `INTERVAL '100' HOUR(3)`
 
+`EXTRACT(unit FROM interval)` extracts the specified value from an `INTERVAL`.
+Short intervals support EXTRACT of values between DAYS and MILLISECONDS.
+Long intervals support EXTRACT of values MILLENIUM and MONTHS.
+
 ## Other date/time/timestamp/time interval operations
 
 The following arithmetic operations are supported:

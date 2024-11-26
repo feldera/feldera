@@ -123,7 +123,7 @@ public abstract class SqlIoTest extends BaseSQLTests {
         return new Change(inputs);
     }
 
-    public void compare(String query, DBSPZSetLiteral expected, boolean optimize) {
+    public void compare(String query, DBSPZSetLiteral expected, boolean optimize, int rowCount) {
         DBSPCompiler compiler = this.testCompiler(optimize);
         this.prepareInputs(compiler);
         compiler.compileStatement("CREATE VIEW VV AS " + query);
@@ -139,7 +139,7 @@ public abstract class SqlIoTest extends BaseSQLTests {
         this.addRustTestCase(ccs);
     }
 
-    public void compare(String query, String expected, boolean optimize) {
+    public void compare(String query, String expected, boolean optimize, int rowCount) {
         DBSPCompiler compiler = this.testCompiler(optimize);
         this.prepareInputs(compiler);
         compiler.compileStatement("CREATE VIEW VV AS " + query);
@@ -148,7 +148,7 @@ public abstract class SqlIoTest extends BaseSQLTests {
         if (!compiler.options.languageOptions.throwOnError)
             compiler.throwIfErrorsOccurred();
         DBSPType outputType = ccs.circuit.getSingleOutputType();
-        Change result = TableParser.parseTable(expected, outputType);
+        Change result = TableParser.parseTable(expected, outputType, rowCount);
         InputOutputChange change = new InputOutputChange(
                 this.getPreparedInputs(compiler),
                 result
@@ -191,21 +191,22 @@ public abstract class SqlIoTest extends BaseSQLTests {
      *
      * @param twoWays if true, runs two test cases, one with optimizations and one without.
      *                Otherwise, it runs only with optimizations.
+     * @param rowCount Expected row count.  -1 if unknown.
      */
-    public void q(String queryAndOutput, boolean twoWays) {
+    public void q(String queryAndOutput, boolean twoWays, int rowCount) {
         queryAndOutput = this.removeComments(queryAndOutput);
         int semicolon = queryAndOutput.indexOf(';');
         if (semicolon < 0)
             throw new RuntimeException("Could not parse query and output");
         String query = queryAndOutput.substring(0, semicolon);
         String expected = queryAndOutput.substring(semicolon + 1);
-        this.compare(query, expected, true);
+        this.compare(query, expected, true, rowCount);
         if (twoWays)
-            this.compare(query, expected, false);
+            this.compare(query, expected, false, rowCount);
     }
 
     public void q(String queryAndOutput) {
-        this.q(queryAndOutput, true);
+        this.q(queryAndOutput, true, -1);
     }
 
     /** Run a query that is expected to fail in compilation.
@@ -245,13 +246,15 @@ public abstract class SqlIoTest extends BaseSQLTests {
     public void qs(String queriesWithOutputs, boolean twoWays) {
         String[] parts = queriesWithOutputs.split("\n\n");
         // From each part drop the last line (N rows) *and* its last newline.
-        Pattern regex = Pattern.compile("^(.*)\\n\\(\\d+ rows?\\)$", Pattern.DOTALL);
+        Pattern regex = Pattern.compile("^(.*)\\n\\((\\d+) rows?\\)$", Pattern.DOTALL);
         int index = 0;
         for (String part: parts) {
             Matcher regexMatcher = regex.matcher(part);
             if (regexMatcher.find()) {
                 String result = regexMatcher.group(1);
-                this.q(result, twoWays);
+                String rows = regexMatcher.group(2);
+                int rowCount = Integer.parseInt(rows);
+                this.q(result, twoWays, rowCount);
             } else {
                 throw new RuntimeException("Could not understand test #" + index + ": " + part);
             }
