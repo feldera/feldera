@@ -10,7 +10,6 @@
 #![warn(missing_docs)]
 
 use feldera_types::config::StorageCacheConfig;
-use log::{trace, warn};
 use serde::{ser::SerializeStruct, Serialize, Serializer};
 use std::{
     fs::OpenOptions,
@@ -22,6 +21,7 @@ use std::{
 };
 use tempfile::TempDir;
 use thiserror::Error;
+use tracing::{trace, warn};
 use uuid::Uuid;
 
 use crate::storage::buffer_cache::FBuf;

@@ -7,8 +7,8 @@ use std::path::Path;
 
 use anyhow::{anyhow, Result as AnyResult};
 use feldera_types::secret_ref::MaybeSecretRef;
-use log::debug;
 use regex::Regex;
+use tracing::debug;
 
 /// Enumeration which holds a simple string or a resolved secret's string.
 ///

@@ -10,7 +10,6 @@ use erased_serde::Serialize as ErasedSerialize;
 use feldera_types::config::{ConnectorConfig, TransportConfig};
 use feldera_types::format::avro::{AvroEncoderConfig, AvroUpdateFormat, SubjectNameStrategy};
 use feldera_types::program_schema::{Relation, SqlIdentifier};
-use log::{debug, error};
 use schema_registry_converter::blocking::schema_registry::post_schema;
 use schema_registry_converter::blocking::schema_registry::SrSettings;
 use schema_registry_converter::schema_registry_common::{SchemaType, SuppliedSchema};
@@ -18,6 +17,7 @@ use serde::Deserialize;
 use serde_urlencoded::Deserializer as UrlDeserializer;
 use std::borrow::Cow;
 use std::collections::HashMap;
+use tracing::{debug, error};
 
 // TODOs:
 // - Add options to specify schema by id or subject name and retrieve it from the registry.

@@ -5,7 +5,6 @@ use crate::transport::secret_resolver::resolve_secret;
 use crate::{AsyncErrorCallback, OutputEndpoint};
 use anyhow::{anyhow, bail, Error as AnyError, Result as AnyResult};
 use feldera_types::transport::kafka::KafkaOutputConfig;
-use log::debug;
 use rdkafka::message::OwnedHeaders;
 use rdkafka::{
     config::FromClientConfigAndContext,
@@ -15,6 +14,7 @@ use rdkafka::{
     ClientConfig, ClientContext,
 };
 use std::{sync::RwLock, time::Duration};
+use tracing::debug;
 
 const DEFAULT_MAX_MESSAGE_SIZE: usize = 1_000_000;
 

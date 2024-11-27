@@ -24,7 +24,6 @@ use deltalake::kernel::{DataType, StructField};
 use deltalake::operations::create::CreateBuilder;
 use deltalake::protocol::SaveMode;
 use deltalake::{DeltaOps, DeltaTable, DeltaTableBuilder};
-use env_logger::Env;
 use feldera_types::config::PipelineConfig;
 use feldera_types::program_schema::{Field, Relation};
 use feldera_types::serde_with_context::serialize::SerializeWithContextWrapper;
@@ -33,7 +32,6 @@ use feldera_types::serde_with_context::{
     TimestampFormat,
 };
 use feldera_types::transport::delta_table::DeltaTableIngestMode;
-use log::{debug, info, trace};
 use parquet::file::reader::Length;
 use proptest::collection::vec;
 use proptest::prelude::{Arbitrary, ProptestConfig, Strategy};
@@ -53,6 +51,10 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tempfile::{tempdir, NamedTempFile, TempDir};
 use tokio::time::sleep;
+use tracing::{debug, info, trace};
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::util::SubscriberInitExt;
+use tracing_subscriber::EnvFilter;
 use uuid::Uuid;
 
 fn delta_output_serde_config() -> SqlSerdeConfig {
@@ -192,9 +194,7 @@ where
         + for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
         + Sync,
 {
-    let _ = env_logger::Builder::from_env(Env::default().default_filter_or("info"))
-        .is_test(true)
-        .try_init();
+    init_logging();
 
     let mut storage_options = String::new();
     for (key, val) in config.iter() {
@@ -319,9 +319,7 @@ fn delta_table_output_test(
     object_store_config: &HashMap<String, String>,
     verify: bool,
 ) {
-    let _ = env_logger::Builder::from_env(Env::default().default_filter_or("info"))
-        .is_test(true)
-        .try_init();
+    init_logging();
 
     let buffer_size = 2000;
 
@@ -427,6 +425,17 @@ outputs:
     println!("delta_table_output_test: success");
 }
 
+fn init_logging() {
+    let _ = tracing_subscriber::registry()
+        .with(tracing_subscriber::fmt::layer().with_test_writer())
+        .with(
+            EnvFilter::try_from_default_env()
+                .or_else(|_| EnvFilter::try_new("info"))
+                .unwrap(),
+        )
+        .try_init();
+}
+
 /// Read delta table in follow mode, write data to another delta table.
 ///
 /// ```text
@@ -449,9 +458,7 @@ async fn test_follow(
     buffer_size: u64,
     buffer_timeout_ms: u64,
 ) {
-    let _ = env_logger::Builder::from_env(Env::default().default_filter_or("info"))
-        .is_test(true)
-        .try_init();
+    init_logging();
 
     let datafusion = SessionContext::new();
 

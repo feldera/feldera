@@ -15,9 +15,9 @@ use google_cloud_pubsub::{
     subscription::SubscriptionConfig,
     topic::Topic,
 };
-use log::info;
 use proptest::prelude::*;
 use serde::Serialize;
+use tracing::info;
 
 static EMULATOR_PROJECT_ID: &str = "feldera-test";
 

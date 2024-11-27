@@ -18,6 +18,9 @@ use parquet::file::properties::WriterProperties;
 use parquet::file::serialized_reader::SerializedFileReader;
 use pretty_assertions::assert_eq;
 use tempfile::NamedTempFile;
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::util::SubscriberInitExt;
+use tracing_subscriber::EnvFilter;
 
 use crate::{
     catalog::SerBatchReader,
@@ -192,7 +195,10 @@ fn debug_parquet_buffer(buffer: Vec<u8>) {
     use bytes::Bytes;
     use parquet::file::reader::FileReader;
 
-    let _r = env_logger::try_init();
+    let _ = tracing_subscriber::registry()
+        .with(tracing_subscriber::fmt::layer().with_test_writer())
+        .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::default()))
+        .try_init();
     let buffer_copy = Bytes::from(buffer);
     let reader = SerializedFileReader::new(buffer_copy).expect("Reader creation should succeed");
     let row_iter = reader
@@ -200,6 +206,6 @@ fn debug_parquet_buffer(buffer: Vec<u8>) {
         .expect("Row iterator creation should succeed");
     for maybe_record in row_iter {
         let record = maybe_record.expect("Record should be read successfully");
-        log::info!("record = {:?}", record.to_string());
+        tracing::info!("record = {:?}", record.to_string());
     }
 }

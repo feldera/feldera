@@ -7,7 +7,6 @@ use crate::{InputBuffer, Parser};
 use anyhow::{bail, Error as AnyError, Result as AnyResult};
 use feldera_types::program_schema::Relation;
 use feldera_types::transport::file::{FileInputConfig, FileOutputConfig};
-use log::error;
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::hash::Hasher;
@@ -17,6 +16,7 @@ use std::thread::{self, Thread};
 use std::{fs::File, io::Write, thread::spawn, time::Duration};
 use tokio::sync::mpsc::error::TryRecvError;
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
+use tracing::error;
 use xxhash_rust::xxh3::Xxh3Default;
 
 const SLEEP: Duration = Duration::from_millis(200);
