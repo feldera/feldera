@@ -14,9 +14,9 @@ use crate::{
 use anyhow::{bail, Result as AnyResult};
 use dbsp::circuit::tokio::TOKIO;
 use feldera_types::program_schema::Relation;
-use log::error;
 #[cfg(test)]
 use mockall::automock;
+use tracing::error;
 
 use crate::transport::InputEndpoint;
 use feldera_types::transport::s3::S3InputConfig;

@@ -39,14 +39,13 @@
 //! [`PipelineError`], which allows [`PipelineError`] to be returned as an error
 //! type by HTTP endpoints.
 
-use crate::{ControllerError, ParseError};
+use crate::{dyn_event, ControllerError, ParseError};
 use actix_web::{
     body::BoxBody, http::StatusCode, HttpResponse, HttpResponseBuilder, ResponseError,
 };
 use anyhow::Error as AnyError;
 use datafusion::error::DataFusionError;
 use dbsp::DetailedError;
-use log::{error, log, warn, Level};
 use parquet::errors::ParquetError;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value as JsonValue};
@@ -56,6 +55,7 @@ use std::{
     fmt::{Display, Error as FmtError, Formatter},
     sync::Arc,
 };
+use tracing::{error, warn, Level};
 use utoipa::ToSchema;
 
 pub const MAX_REPORTED_PARSE_ERRORS: usize = 1_000;
@@ -105,7 +105,7 @@ impl ErrorResponse {
     {
         let result = Self::from_error_nolog(error);
 
-        log!(
+        dyn_event!(
             error.log_level(),
             "[HTTP error response] {}: {}",
             result.error_code,
@@ -270,10 +270,10 @@ impl DetailedError for PipelineError {
 
     fn log_level(&self) -> Level {
         match self {
-            Self::Initializing => Level::Info,
-            Self::Terminating => Level::Info,
+            Self::Initializing => Level::INFO,
+            Self::Terminating => Level::INFO,
             Self::ControllerError { error } => error.log_level(),
-            _ => Level::Error,
+            _ => Level::ERROR,
         }
     }
 }

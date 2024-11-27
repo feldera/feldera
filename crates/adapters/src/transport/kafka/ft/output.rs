@@ -5,7 +5,6 @@ use crate::{
 };
 use anyhow::{anyhow, bail, Context, Error as AnyError, Result as AnyResult};
 use feldera_types::transport::kafka::KafkaOutputConfig;
-use log::{debug, info, warn};
 use rdkafka::message::OwnedHeaders;
 use rdkafka::{
     config::FromClientConfigAndContext,
@@ -17,6 +16,7 @@ use rdkafka::{
 };
 use serde::{Deserialize, Serialize};
 use std::{cmp::max, sync::RwLock, time::Duration};
+use tracing::{debug, info, warn};
 
 use super::{count_partitions_in_topic, CommonConfig, Ctp, DataConsumerContext};
 

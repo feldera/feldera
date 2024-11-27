@@ -13,7 +13,6 @@ use circular_queue::CircularQueue;
 use feldera_types::program_schema::Relation;
 use feldera_types::transport::http::HttpInputConfig;
 use futures_util::StreamExt;
-use log::debug;
 use rmpv::Value as RmpValue;
 use serde::{Deserialize, Serialize};
 use serde_bytes::ByteBuf;
@@ -26,6 +25,7 @@ use tokio::{
     sync::watch,
     time::{sleep, timeout},
 };
+use tracing::debug;
 use xxhash_rust::xxh3::Xxh3Default;
 
 #[derive(Clone, Debug, Deserialize)]

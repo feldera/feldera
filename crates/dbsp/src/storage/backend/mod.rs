@@ -11,7 +11,6 @@
 
 use dashmap::DashMap;
 use feldera_types::config::StorageCacheConfig;
-use log::{trace, warn};
 use metrics::counter;
 use serde::{ser::SerializeStruct, Serialize, Serializer};
 use std::fs::{remove_file, File};
@@ -26,6 +25,7 @@ use std::{
 };
 use tempfile::TempDir;
 use thiserror::Error;
+use tracing::{trace, warn};
 use uuid::Uuid;
 
 use crate::circuit::metrics::FILES_DELETED;

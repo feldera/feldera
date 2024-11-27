@@ -8,7 +8,6 @@ use crate::{
     Controller, PipelineConfig,
 };
 use feldera_types::program_schema::Relation;
-use log::info;
 use parquet::data_type::AsBytes;
 use proptest::prelude::*;
 use rdkafka::message::{BorrowedMessage, Header, Headers};
@@ -21,6 +20,7 @@ use std::{
     thread::sleep,
     time::Duration,
 };
+use tracing::info;
 
 #[test]
 fn test_kafka_output_errors() {

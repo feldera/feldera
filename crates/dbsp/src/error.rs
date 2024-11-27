@@ -1,6 +1,5 @@
 use crate::{storage::backend::StorageError, RuntimeError, SchedulerError};
 use anyhow::Error as AnyError;
-use log::Level;
 use serde::{ser::SerializeStruct, Serialize, Serializer};
 use std::{
     borrow::Cow,
@@ -8,11 +7,12 @@ use std::{
     fmt::{Display, Error as FmtError, Formatter},
     io::Error as IOError,
 };
+use tracing::Level;
 
 pub trait DetailedError: StdError + Serialize {
     fn error_code(&self) -> Cow<'static, str>;
     fn log_level(&self) -> Level {
-        Level::Error
+        Level::ERROR
     }
 }
 

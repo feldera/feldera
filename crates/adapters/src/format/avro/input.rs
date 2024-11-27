@@ -17,7 +17,6 @@ use feldera_types::{
         DateFormat, SqlSerdeConfig, TimeFormat, TimestampFormat,
     },
 };
-use log::{debug, info};
 use schema_registry_converter::blocking::schema_registry::{get_schema_by_id, SrSettings};
 use serde::Deserialize;
 use serde_urlencoded::Deserializer as UrlDeserializer;
@@ -27,6 +26,7 @@ use std::{
     collections::HashMap,
     sync::{Arc, Mutex},
 };
+use tracing::{debug, info};
 
 // TODO: Error handling here is a bit of a mess. Schema parsing and validation happens
 // as part of message processing; however since input_XXX methods must return `ParseError`,

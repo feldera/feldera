@@ -13,16 +13,13 @@ use crate::{InputBuffer, InputReader, Parser, TransportInputEndpoint};
 use anyhow::Error as AnyError;
 use crossbeam::sync::{Parker, Unparker};
 use csv::ReaderBuilder as CsvReaderBuilder;
-use env_logger::Env;
 use feldera_types::program_schema::Relation;
-use log::info;
 use rmpv::Value as RmpValue;
 use std::hash::Hasher;
 use std::ops::Range;
 use std::sync::atomic::AtomicUsize;
 use std::thread::sleep;
 use std::{
-    io::Write,
     mem,
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -31,20 +28,19 @@ use std::{
     time::{Duration, Instant},
 };
 use tempfile::TempDir;
+use tracing::info;
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::util::SubscriberInitExt;
+use tracing_subscriber::EnvFilter;
 
 fn init_test_logger() {
-    let _ = env_logger::Builder::from_env(Env::default().default_filter_or("debug"))
-        .is_test(true)
-        .format(move |buf, record| {
-            let t = chrono::Utc::now();
-            let t = format!("{}", t.format("%Y-%m-%d %H:%M:%S%.6f"));
-            writeln!(
-                buf,
-                "{t} {} {}",
-                buf.default_styled_level(record.level()),
-                record.args()
-            )
-        })
+    let _ = tracing_subscriber::registry()
+        .with(tracing_subscriber::fmt::layer().with_test_writer())
+        .with(
+            EnvFilter::try_from_default_env()
+                .or_else(|_| EnvFilter::try_new("debug"))
+                .unwrap(),
+        )
         .try_init();
 }
 

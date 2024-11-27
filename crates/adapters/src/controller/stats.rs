@@ -37,7 +37,6 @@ use atomic::Atomic;
 use crossbeam::sync::{ShardedLock, ShardedLockReadGuard, Unparker};
 use feldera_adapterlib::transport::InputReader;
 use feldera_types::config::PipelineConfig;
-use log::error;
 use metrics::{KeyName, SharedString as MetricString, Unit as MetricUnit};
 use metrics_util::{
     debugging::{DebugValue, Snapshot},
@@ -58,6 +57,7 @@ use std::{
     },
     time::Duration,
 };
+use tracing::error;
 
 #[derive(Default, Serialize)]
 pub struct GlobalControllerMetrics {

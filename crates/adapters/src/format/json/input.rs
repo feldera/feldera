@@ -393,8 +393,8 @@ mod test {
         program_schema::Relation,
         serde_with_context::{DeserializeWithContext, SqlSerdeConfig},
     };
-    use log::trace;
     use std::{borrow::Cow, fmt::Debug, hash::Hash, panic::Location};
+    use tracing::trace;
 
     #[derive(PartialEq, Debug, Eq, Hash)]
     struct TestStruct {

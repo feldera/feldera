@@ -14,7 +14,6 @@ use atomic::Atomic;
 use crossbeam::queue::ArrayQueue;
 use feldera_types::program_schema::Relation;
 use feldera_types::transport::kafka::KafkaInputConfig;
-use log::debug;
 use rdkafka::config::RDKafkaLogLevel;
 use rdkafka::{
     config::FromClientConfigAndContext,
@@ -33,6 +32,7 @@ use std::{
 };
 use tokio::sync::mpsc::error::TryRecvError;
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
+use tracing::debug;
 
 /// Poll timeout must be low, as it bounds the amount of time it takes to resume the connector.
 const POLL_TIMEOUT: Duration = Duration::from_millis(5);

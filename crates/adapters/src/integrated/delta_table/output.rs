@@ -22,12 +22,12 @@ use deltalake::protocol::{DeltaOperation, SaveMode};
 use deltalake::DeltaTable;
 use feldera_types::transport::delta_table::DeltaTableWriteMode;
 use feldera_types::{program_schema::Relation, transport::delta_table::DeltaTableWriterConfig};
-use log::{debug, error, info, trace};
 use serde_arrow::schema::SerdeArrowSchema;
 use serde_arrow::ArrayBuilder;
 use std::cmp::min;
 use std::sync::{Arc, Weak};
 use tokio::sync::mpsc::{channel, Receiver, Sender};
+use tracing::{debug, error, info, trace};
 
 struct DeltaTableWriterInner {
     endpoint_id: EndpointId,
