@@ -999,9 +999,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                             right = right.cast(new DBSPTypeInteger(right.getNode(), 32, true, rightType.mayBeNull));
                         }
 
-                        String function = opName + "_" +
-                                leftType.baseTypeWithSuffix();
-                        return new DBSPApplyExpression(node, function, type, left, right);
+                        return compilePolymorphicFunction(call, node, type, Linq.list(left, right), 2);
                     }
                     case "numeric_inc":
                     case "sign":

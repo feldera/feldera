@@ -38,11 +38,8 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.util.Linq;
 import org.junit.Test;
 
-/**
- * Tests manually adapted from
- * https://github.com/postgres/postgres/blob/master/src/test/regress/expected/timestamp.out
- */
-@SuppressWarnings("JavadocLinkAsPlainText")
+/* Tests manually adapted from
+ * https://github.com/postgres/postgres/blob/master/src/test/regress/expected/timestamp.out */
 public class PostgresTimestampTests extends SqlIoTest {
     // Cannot use non-deterministic values:
     // INSERT INTO TIMESTAMP_TBL VALUES ('today');

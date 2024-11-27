@@ -15,6 +15,22 @@ import org.junit.Test;
 
 public class RegressionTests extends SqlIoTest {
     @Test
+    public void issue3035() {
+        this.compileRustTestCase("""
+                CREATE TABLE t0(c0 INT) with ('materialized' = 'true');
+                CREATE TABLE t4(c0 DOUBLE) with ('materialized' = 'true');
+                CREATE MATERIALIZED VIEW v11_optimized AS (SELECT COUNT(*) FROM t0, t4 WHERE IS_INF(ROUND(t4.c0, t0.c0)));""");
+    }
+
+    @Test
+    public void issue3042() {
+        this.compileRustTestCase("""
+                CREATE TABLE t3(c0 DOUBLE) with ('materialized' = 'true');
+                CREATE TABLE t4(c0 VARCHAR, c1 INT, c2 VARCHAR, c3 BOOLEAN, c4 BOOLEAN) with ('materialized' = 'true');
+                CREATE MATERIALIZED VIEW v29_optimized AS (SELECT AVG(TRUNCATE((t3.c0::DOUBLE), t4.c1)) FROM t4, t3);""");
+    }
+
+    @Test
     public void issue3030() {
         this.compileRustTestCase("""
                 CREATE TABLE timestamp_tbl(c1 TIMESTAMP, c2 TIMESTAMP);
