@@ -5,11 +5,8 @@ import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
 import org.junit.Ignore;
 import org.junit.Test;
 
-/**
- * Tests manually adopted from
- * https://github.com/postgres/postgres/blob/master/src/test/regress/expected/int4.out
- */
-@SuppressWarnings("JavadocLinkAsPlainText")
+/* Tests manually adopted from
+ * https://github.com/postgres/postgres/blob/master/src/test/regress/expected/int4.out */
 public class PostgresInt4Tests extends SqlIoTest {
     @Override
     public void prepareInputs(DBSPCompiler compiler) {

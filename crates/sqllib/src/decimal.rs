@@ -19,7 +19,7 @@ pub fn new_decimal(s: &str, precision: u32, scale: u32) -> Option<Decimal> {
 
 #[doc(hidden)]
 #[inline(always)]
-pub fn round_decimal(left: Decimal, right: i32) -> Decimal {
+pub fn round_decimal_i32(left: Decimal, right: i32) -> Decimal {
     // Rust decimal doesn't support rounding with negative values
     // but Calcite does
     if right.is_negative() {
@@ -32,15 +32,11 @@ pub fn round_decimal(left: Decimal, right: i32) -> Decimal {
     left.round_dp(u32::try_from(right).unwrap())
 }
 
-#[doc(hidden)]
-#[inline(always)]
-pub fn round_decimalN(left: Option<Decimal>, right: i32) -> Option<Decimal> {
-    left.map(|x| round_decimal(x, right))
-}
+some_polymorphic_function2!(round, decimal, Decimal, i32, i32, Decimal);
 
 #[doc(hidden)]
 #[inline(always)]
-pub fn truncate_decimal(left: Decimal, right: i32) -> Decimal {
+pub fn truncate_decimal_i32(left: Decimal, right: i32) -> Decimal {
     // Rust decimal doesn't support rounding with negative values
     // but Calcite does
     if right.is_negative() {
@@ -53,11 +49,7 @@ pub fn truncate_decimal(left: Decimal, right: i32) -> Decimal {
     left.trunc_with_scale(u32::try_from(right).unwrap())
 }
 
-#[doc(hidden)]
-#[inline(always)]
-pub fn truncate_decimalN(left: Option<Decimal>, right: i32) -> Option<Decimal> {
-    left.map(|x| truncate_decimal(x, right))
-}
+some_polymorphic_function2!(truncate, decimal, Decimal, i32, i32, Decimal);
 
 #[doc(hidden)]
 pub fn power_i32_decimal(left: i32, right: Decimal) -> F64 {
