@@ -117,6 +117,8 @@ from tests.aggregate_tests.test_interval_max import *  # noqa: F403
 from tests.aggregate_tests.test_interval_min import *  # noqa: F403
 from tests.aggregate_tests.test_interval_every import *  # noqa: F403
 from tests.aggregate_tests.test_interval_some import *  # noqa: F403
+from tests.aggregate_tests.test_array_tbl import *  # noqa: F403
+from tests.aggregate_tests.test_array_arr_agg import *  # noqa: F403
 
 
 def register_tests_in_module(module, ta: TstAccumulator):
