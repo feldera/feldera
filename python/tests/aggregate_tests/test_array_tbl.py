@@ -6,8 +6,8 @@ class aggtst_array_tbl(TstTable):
 
     def __init__(self):
         self.sql = """CREATE TABLE array_tbl(
-                      id INT, 
-                      c1 INT ARRAY NOT NULL, 
+                      id INT,
+                      c1 INT ARRAY NOT NULL,
                       c2 INT ARRAY)"""
         self.data = [
             {"id": 0, "c1": [12, 22], "c2": None},
