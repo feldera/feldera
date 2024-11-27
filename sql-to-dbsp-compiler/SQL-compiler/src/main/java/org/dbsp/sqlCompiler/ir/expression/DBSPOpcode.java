@@ -98,7 +98,6 @@ public enum DBSPOpcode {
         // Some things like AGG_GTE are not listed as comparisons, since
         // their return type follows different rules
         return this.equals(LT) || this.equals(GT) || this.equals(LTE)
-                || this.equals(GTE) || this.equals(EQ) || this.equals(NEQ)
-                || this.equals(IS_DISTINCT) || this.equals(IS_NOT_DISTINCT);
+                || this.equals(GTE) || this.equals(EQ) || this.equals(NEQ);
     }
 }

@@ -162,7 +162,8 @@ public class RustSqlRuntimeLibrary {
         if (opcode.isComparison() ||
             opcode == DBSPOpcode.MAX || opcode == DBSPOpcode.MIN ||
             opcode == DBSPOpcode.AGG_GTE || opcode == DBSPOpcode.AGG_LTE ||
-            opcode == DBSPOpcode.AGG_MIN || opcode == DBSPOpcode.AGG_MAX) {
+            opcode == DBSPOpcode.AGG_MIN || opcode == DBSPOpcode.AGG_MAX ||
+            opcode == DBSPOpcode.IS_DISTINCT || opcode == DBSPOpcode.IS_NOT_DISTINCT) {
             map = this.universalFunctions;
         } else if (ltype.as(DBSPTypeBool.class) != null) {
             map = this.booleanFunctions;

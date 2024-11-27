@@ -846,7 +846,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
 
     @Override
     public VisitDecision preorder(DBSPBinaryExpression expression) {
-        switch (expression.operation) {
+        switch (expression.opcode) {
             case MUL_WEIGHT: {
                 expression.left.accept(this);
                 this.builder.append(".mul_by_ref(&");
@@ -908,7 +908,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
             }
             case ARRAY_CONVERT: {
                 // Pass array by reference
-                this.builder.append(expression.operation.toString())
+                this.builder.append(expression.opcode.toString())
                         .append(expression.left.getType().deref().nullableUnderlineSuffix())
                         .append(expression.right.getType().nullableUnderlineSuffix())
                         .append("(");
@@ -920,7 +920,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
             }
             case DIV_NULL:
             case SHIFT_LEFT: {
-                this.builder.append(expression.operation.toString())
+                this.builder.append(expression.opcode.toString())
                         .append(expression.left.getType().nullableUnderlineSuffix())
                         .append(expression.right.getType().nullableUnderlineSuffix())
                         .append("(");
@@ -933,7 +933,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
             default: {
                 String function = RustSqlRuntimeLibrary.INSTANCE.getFunctionName(
                         expression.getNode(),
-                        expression.operation,
+                        expression.opcode,
                         expression.getType(),
                         expression.left.getType(),
                         expression.right.getType());

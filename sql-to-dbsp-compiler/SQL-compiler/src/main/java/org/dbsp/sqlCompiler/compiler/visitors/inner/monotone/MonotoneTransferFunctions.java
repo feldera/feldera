@@ -531,14 +531,14 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
 
         // Assume type is not monotone
         IMaybeMonotoneType resultType = new NonMonotoneType(expression.type);
-        if ((expression.operation == DBSPOpcode.ADD || expression.operation == DBSPOpcode.TS_ADD)
+        if ((expression.opcode == DBSPOpcode.ADD || expression.opcode == DBSPOpcode.TS_ADD)
                 && lm && rm) {
             // The addition of two monotone expressions is monotone
             resultType = new MonotoneType(expression.type);
             reduced = expression.replaceSources(
                     left.getReducedExpression(), right.getReducedExpression());
         }
-        if (expression.operation == DBSPOpcode.MAX && (lm || rm)) {
+        if (expression.opcode == DBSPOpcode.MAX && (lm || rm)) {
             // The result of MAX is monotone if either expression is monotone
             resultType = new MonotoneType(expression.type);
             if (!lm) {
@@ -553,7 +553,7 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
                         left.getReducedExpression(),
                         right.getReducedExpression());
             }
-        } else if (expression.operation == DBSPOpcode.MIN && lm && rm) {
+        } else if (expression.opcode == DBSPOpcode.MIN && lm && rm) {
             // The result of MIN is monotone if both expressions are monotone
             resultType = new MonotoneType(expression.type);
             reduced = expression.replaceSources(
@@ -562,8 +562,8 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
         }
         // Some expressions are monotone if some of their operands are constant
         if (left.mayBeMonotone() &&
-                (expression.operation == DBSPOpcode.SUB ||
-                        expression.operation == DBSPOpcode.TS_SUB)) {
+                (expression.opcode == DBSPOpcode.SUB ||
+                        expression.opcode == DBSPOpcode.TS_SUB)) {
             // Subtracting a constant from a monotone expression produces a monotone result
             if (this.constantExpressions.contains(expression.right)) {
                 resultType = left.copyMonotonicity(expression.type);
@@ -572,10 +572,10 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
             }
         }
         if (left.mayBeMonotone() &&
-                (expression.operation == DBSPOpcode.DIV ||
-                        expression.operation == DBSPOpcode.MUL ||
-                        expression.operation == DBSPOpcode.INTERVAL_MUL ||
-                        expression.operation == DBSPOpcode.INTERVAL_DIV)) {
+                (expression.opcode == DBSPOpcode.DIV ||
+                        expression.opcode == DBSPOpcode.MUL ||
+                        expression.opcode == DBSPOpcode.INTERVAL_MUL ||
+                        expression.opcode == DBSPOpcode.INTERVAL_DIV)) {
             // Multiplying or dividing a monotone expression by
             // a positive constant produces a monotone result
             // TODO: multiplication is commutative.
