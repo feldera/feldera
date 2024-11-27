@@ -694,7 +694,9 @@ public class ToRustVisitor extends CircuitVisitor {
         this.builder.decrease().append(");").newline();
         if (!this.useHandles) {
             IHasSchema tableDescription = this.metadata.getTableDescription(operator.tableName);
-            DBSPStrLiteral json = new DBSPStrLiteral(tableDescription.asJson().toString(), false, true);
+            JsonNode j = tableDescription.asJson();
+            j = this.stripConnectors(j);
+            DBSPStrLiteral json = new DBSPStrLiteral(j.toString(), false, true);
             String registerFunction = operator.metadata.materialized ?
                     "register_materialized_input_map" : "register_input_map";
             this.builder.append("catalog.")

@@ -126,6 +126,95 @@ public class MetadataTests extends BaseSQLTests {
     }
 
     @Test
+    public void stripConnectors2() throws IOException, SQLException {
+        NameGen.reset();
+        String sql = """
+                CREATE TABLE CUSTOMER (
+                    cc_num BIGINT NOT NULL PRIMARY KEY, -- Credit card number
+                    name varchar,                       -- Customer name
+                    lat DOUBLE,                         -- Customer home address latitude
+                    long DOUBLE                         -- Customer home address longitude
+                ) WITH (
+                    'materialized' = 'true',
+                    -- Configure the random data generator to generate 100000 customer records.
+                    -- (see https://www.feldera.com/docs/connectors/sources/datagen)
+                    'connectors' = '[{
+                      "transport": {
+                        "name": "datagen",
+                        "config": {
+                          "plan": [{
+                            "limit": 100000,
+                            "fields": {
+                              "name": { "strategy": "name" },
+                              "cc_num": { "range": [ 100000000000000, 100000000100000 ] },
+                              "lat": { "strategy": "uniform", "range": [ 25, 50 ] },
+                              "long": { "strategy": "uniform", "range": [ -126, -67 ] }
+                            }
+                          }]
+                        }
+                      }
+                    }]'
+                );
+                
+                CREATE TABLE TRANSACTION (
+                    ts TIMESTAMP LATENESS INTERVAL 10 MINUTES, -- Transaction time
+                    amt DOUBLE,                                -- Transaction amount
+                    cc_num BIGINT NOT NULL,                    -- Credit card number
+                    shipping_lat DOUBLE,                       -- Shipping address latitude
+                    shipping_long DOUBLE,                      -- Shipping address longitude
+                    FOREIGN KEY (cc_num) REFERENCES CUSTOMER(cc_num)
+                ) WITH (
+                    'materialized' = 'true',
+                    -- Configure the random data generator to generate 1M transactions at the rate of 1000 transactions/s.
+                    'connectors' = '[{
+                      "transport": {
+                      "name": "datagen",
+                        "config": {
+                          "plan": [{
+                            "limit": 1000000,
+                            "rate": 1000,
+                            "fields": {
+                              "ts": { "strategy": "increment", "scale": 1000, "range": [1722063600000,2226985200000] },
+                              "amt": { "strategy": "zipf", "range": [ 1, 10000 ] },
+                              "cc_num": { "strategy": "uniform", "range": [ 100000000000000, 100000000100000 ] },
+                              "shipping_lat": { "strategy": "uniform", "range": [ 25, 50 ] },
+                              "shipping_long": { "strategy": "uniform", "range": [ -126, -67 ] }
+                            }
+                          }]
+                        }
+                      }
+                    }]'
+                );
+                
+                CREATE VIEW TRANSACTION_WITH_DISTANCE AS
+                    SELECT
+                        t.*,
+                        ST_DISTANCE(ST_POINT(shipping_long, shipping_lat), ST_POINT(long,lat)) AS distance
+                    FROM
+                        TRANSACTION as t
+                        LEFT JOIN CUSTOMER as c
+                        ON t.cc_num = c.cc_num;
+                
+                -- Compute two rolling aggregates over a 1-day time window for each transaction:
+                -- 1. Average spend per transaction.
+                -- 2. The number of transactions whose shipping address is more than 50,000 meters away from
+                --    the card holder's home address.
+                CREATE VIEW TRANSACTION_WITH_AGGREGATES AS
+                SELECT
+                   *,
+                   AVG(amt) OVER window_1_day as avg_1day,
+                   SUM(case when distance > 50000 then 1 else 0 end) OVER window_1_day as count_1day
+                FROM
+                  TRANSACTION_WITH_DISTANCE
+                WINDOW window_1_day AS (PARTITION BY cc_num ORDER BY ts RANGE BETWEEN INTERVAL 1 DAYS PRECEDING AND CURRENT ROW);
+                """;
+        File file = createInputScript(sql);
+        CompilerMain.execute("-o", BaseSQLTests.testFilePath, file.getPath());
+        String rust = Utilities.readFile(Paths.get(BaseSQLTests.testFilePath));
+        Assert.assertFalse(rust.contains("connectors"));
+    }
+
+    @Test
     public void stripConnectors() throws IOException, SQLException {
         // Test that the connectors property is stripped from the generated Rust
         NameGen.reset();
