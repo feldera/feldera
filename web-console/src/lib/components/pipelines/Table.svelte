@@ -13,7 +13,7 @@
     selectedPipelines = $bindable()
   }: { pipelines: PipelineThumb[]; preHeaderEnd?: Snippet; selectedPipelines: string[] } = $props()
 
-  const table = new TableHandler(pipelines, { rowsPerPage: 10, selectBy: 'name' })
+  const table = new TableHandler(pipelines, { rowsPerPage: undefined, selectBy: 'name' })
   $effect(() => {
     table.setRows(pipelines)
   })

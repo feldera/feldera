@@ -35,18 +35,20 @@
       {#snippet content(close)}
         <div
           transition:fade={{ duration: 100 }}
-          class="absolute left-0 z-10 flex max-h-[400px] w-[calc(100vw-100px)] max-w-[360px] flex-col justify-end gap-0 overflow-y-auto rounded bg-white p-2 shadow-md dark:bg-black"
+          class="bg-white-black absolute left-0 z-10 max-h-[500px] w-[calc(100vw-100px)] max-w-[360px] overflow-y-auto rounded p-2 shadow-md scrollbar"
         >
-          {#each pipelineList.pipelines as pipeline}
-            <a
-              onclick={close}
-              href="{base}/pipelines/{pipeline.name}/"
-              class="flex justify-between rounded p-2 hover:preset-tonal-surface"
-            >
-              {pipeline.name}
-              <PipelineStatus status={pipeline.status} class=""></PipelineStatus>
-            </a>
-          {/each}
+          <div class="flex flex-col justify-end">
+            {#each pipelineList.pipelines as pipeline}
+              <a
+                onclick={close}
+                href="{base}/pipelines/{pipeline.name}/"
+                class="flex justify-between rounded p-2 hover:preset-tonal-surface"
+              >
+                {pipeline.name}
+                <PipelineStatus status={pipeline.status} class=""></PipelineStatus>
+              </a>
+            {/each}
+          </div>
         </div>
       {/snippet}
     </Popup>
