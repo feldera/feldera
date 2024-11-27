@@ -1020,7 +1020,60 @@ where
     time: T,
     #[size_of(skip)]
     writer: Writer2<K, DynUnit, V, DynWeightedPairs<DynDataTyped<T>, R>>,
-    cur_key: Box<DynOpt<K>>,
+    cur: Option<BuilderState<K, V, T, R>>,
+}
+
+#[derive(SizeOf)]
+struct BuilderState<K, V, T, R>
+where
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    T: Timestamp,
+    R: WeightTrait + ?Sized,
+{
+    key: Box<K>,
+    val: Box<V>,
+    timediffs: Box<DynWeightedPairs<DynDataTyped<T>, R>>,
+}
+
+impl<K, V, T, R> BuilderState<K, V, T, R>
+where
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    T: Timestamp,
+    R: WeightTrait + ?Sized,
+{
+    fn new(
+        key: &K,
+        val: &V,
+        time: &T,
+        weight: &R,
+        factories: &FileValBatchFactories<K, V, T, R>,
+    ) -> Self {
+        let mut timediffs = factories.timediff_factory.default_box();
+        timediffs.push_refs((time.erase(), weight));
+        Self {
+            key: clone_box(key),
+            val: clone_box(val),
+            timediffs,
+        }
+    }
+
+    fn flush_val(
+        &mut self,
+        writer: &mut Writer2<K, DynUnit, V, DynWeightedPairs<DynDataTyped<T>, R>>,
+    ) {
+        writer.write1((&self.val, self.timediffs.as_ref())).unwrap();
+        self.timediffs.clear();
+    }
+
+    fn flush_keyval(
+        &mut self,
+        writer: &mut Writer2<K, DynUnit, V, DynWeightedPairs<DynDataTyped<T>, R>>,
+    ) {
+        self.flush_val(writer);
+        writer.write0((&self.key, ().erase())).unwrap();
+    }
 }
 
 impl<K, V, T, R> TimedBuilder<FileValBatch<K, V, T, R>> for FileValBuilder<K, V, T, R>
@@ -1031,17 +1084,29 @@ where
     R: WeightTrait + ?Sized,
 {
     fn push_time(&mut self, key: &K, val: &V, time: &T, weight: &R) {
-        if let Some(cur_key) = self.cur_key.get() {
-            if key != cur_key {
-                self.writer.write0((cur_key, ().erase())).unwrap();
-                self.cur_key.from_ref(key);
+        debug_assert!(!weight.is_zero());
+        if let Some(cur) = &mut self.cur {
+            if &*cur.key != key {
+                // Key differs from previous, so write the old (V, timediffs) to
+                // column 1 and the old key to column 0, and then save the new
+                // key and value as the new current.
+                cur.flush_keyval(&mut self.writer);
+                key.clone_to(&mut cur.key);
+                val.clone_to(&mut cur.val);
+            } else if &*cur.val != val {
+                // Value differs from previous, but the key is the same, so
+                // write the old (V, timediffs) to column 1 and save the new
+                // value as the new current.
+                cur.flush_val(&mut self.writer);
+                val.clone_to(&mut cur.val);
+            } else {
+                // Same key and value, so we're just appending the new timediff.
             }
+            cur.timediffs.push_refs((time.erase(), weight));
         } else {
-            self.cur_key.from_ref(key);
+            // First (K, V, T, R).
+            self.cur = Some(BuilderState::new(key, val, time, weight, &self.factories));
         }
-        let mut timediffs = self.factories.timediff_factory.default_box();
-        timediffs.push_refs((time.erase(), weight));
-        self.writer.write1((val, timediffs.as_ref())).unwrap();
     }
 
     fn done_with_bounds(
@@ -1049,8 +1114,8 @@ where
         lower: Antichain<T>,
         upper: Antichain<T>,
     ) -> FileValBatch<K, V, T, R> {
-        if let Some(cur_key) = self.cur_key.get() {
-            self.writer.write0((cur_key, ().erase())).unwrap();
+        if let Some(cur) = &mut self.cur {
+            cur.flush_keyval(&mut self.writer);
         }
         FileValBatch {
             factories: self.factories,
@@ -1080,7 +1145,7 @@ where
                 Parameters::default(),
             )
             .unwrap(),
-            cur_key: factories.optkey_factory.default_box(),
+            cur: None,
         }
     }
 
@@ -1107,8 +1172,8 @@ where
     }
 
     fn done(mut self) -> FileValBatch<K, V, T, R> {
-        if let Some(cur_key) = self.cur_key.get() {
-            self.writer.write0((cur_key, ().erase())).unwrap();
+        if let Some(cur) = &mut self.cur {
+            cur.flush_keyval(&mut self.writer);
         }
         let time_next = self.time.advance(0);
         let upper = if time_next <= self.time {
