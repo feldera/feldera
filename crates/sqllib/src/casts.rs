@@ -138,7 +138,20 @@ pub fn cast_to_b_s(value: String) -> bool {
 #[doc(hidden)]
 #[inline]
 pub fn cast_to_b_sN(value: Option<String>) -> bool {
-    value.unwrap().trim().parse().unwrap_or(false)
+    cast_to_b_s(value.unwrap())
+}
+
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_bN_sN(value: Option<String>) -> Option<bool> {
+    let value = value?;
+    Some(cast_to_b_s(value))
+}
+
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_bN_s(value: String) -> Option<bool> {
+    Some(cast_to_b_s(value))
 }
 
 /////////// cast to bN
