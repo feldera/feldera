@@ -1,11 +1,17 @@
 <script lang="ts">
-  import { Datatable, TableHandler, ThSort } from '@vincjo/datatables'
+  import {
+    Datatable,
+    TableHandler,
+    type TableHandlerInterface,
+    type Field
+  } from '@vincjo/datatables'
   import PipelineStatus from '$lib/components/pipelines/list/PipelineStatus.svelte'
   import {
     type PipelineStatus as PipelineStatusType,
     type PipelineThumb
   } from '$lib/services/pipelineManager'
   import { type Snippet } from 'svelte'
+  import ThSort from '$lib/components/pipelines/table/ThSort.svelte'
   import { getPipelineStatusLabel } from '$lib/functions/pipelines/status'
   let {
     pipelines,
@@ -28,21 +34,29 @@
   const filterStatuses: (PipelineStatusType | '')[] = ['', 'Running', 'Paused', 'Shutdown']
 </script>
 
-<div class="relative mb-6 mt-2 flex h-10 items-center justify-end gap-4 md:-mt-8 md:mb-0">
-  <select class="select w-44" bind:value={statusFilter.value} onchange={() => statusFilter.set()}>
+<div
+  class="relative mb-6 mt-16 flex h-10 flex-col items-center justify-end gap-4 sm:mt-2 sm:flex-row md:-mt-8 md:mb-0"
+>
+  <select
+    class="select ml-auto w-44 sm:ml-0"
+    bind:value={statusFilter.value}
+    onchange={() => statusFilter.set()}
+  >
     {#each filterStatuses as status (status)}
       <option value={status}
         >{status === '' ? 'All pipelines' : getPipelineStatusLabel(status)}</option
       >
     {/each}
   </select>
-  {@render preHeaderEnd?.()}
+  <div class="ml-auto flex gap-4 sm:ml-0">
+    {@render preHeaderEnd?.()}
+  </div>
 </div>
-<Datatable {table}>
-  <table>
+<Datatable headless {table}>
+  <table class="p-1">
     <thead>
       <tr>
-        <th class="w-12 text-left"
+        <th class="w-10 px-2 text-left"
           ><input
             class="checkbox"
             type="checkbox"
@@ -50,17 +64,18 @@
             onclick={() => table.selectAll()}
           /></th
         >
-
-        <ThSort {table} field="name"
-          ><span class="text-base font-normal">Pipeline name</span></ThSort
+        <ThSort class="py-1" {table} field="name"
+          ><span class="text-base font-normal text-surface-950-50">Pipeline name</span></ThSort
         >
-        <ThSort {table} field="status"><span class="text-base font-normal">Status</span></ThSort>
+        <ThSort {table} class="py-1" field="status"
+          ><span class="text-base font-normal text-surface-950-50">Status</span></ThSort
+        >
       </tr>
     </thead>
     <tbody>
       {#each table.rows as pipeline}
-        <tr class="hover:!bg-surface-50 dark:hover:!bg-surface-950">
-          <td>
+        <tr class="group"
+          ><td class="px-2 border-surface-100-900 group-hover:bg-surface-50-950">
             <input
               class="checkbox"
               type="checkbox"
@@ -68,10 +83,28 @@
               onclick={() => table.select(pipeline.name)}
             />
           </td>
-          <td><a href="/pipelines/{pipeline.name}/">{pipeline.name}</a></td>
-          <td><PipelineStatus status={pipeline.status}></PipelineStatus></td>
+          <td class="relative border-surface-100-900 group-hover:bg-surface-50-950"
+            ><a
+              class=" absolute top-2 w-full overflow-hidden overflow-ellipsis whitespace-nowrap"
+              href="/pipelines/{pipeline.name}/">{pipeline.name}</a
+            ></td
+          >
+          <td class="border-surface-100-900 group-hover:bg-surface-50-950"
+            ><PipelineStatus status={pipeline.status}></PipelineStatus></td
+          >
+        </tr>
+      {:else}
+        <tr>
+          <td></td>
+          <td colspan={99} class="py-1">No pipelines with the specified status</td>
         </tr>
       {/each}
     </tbody>
   </table>
 </Datatable>
+
+<style lang="sass">
+
+  td
+    @apply py-1 text-base border-t-[0.5px]
+</style>

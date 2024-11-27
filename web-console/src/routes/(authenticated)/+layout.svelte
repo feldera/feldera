@@ -5,18 +5,24 @@
   import type { LayoutData } from './$types'
   import { useRefreshPipelineList } from '$lib/compositions/pipelines/usePipelineList.svelte'
   import { SvelteKitTopLoader } from 'sveltekit-top-loader'
+  import { useDrawer } from '$lib/compositions/layout/useDrawer.svelte'
+  import ModalDrawer from '$lib/components/layout/ModalDrawer.svelte'
+  import Drawer from '$lib/components/layout/Drawer.svelte'
   import AppHeader from '$lib/components/layout/AppHeader.svelte'
+  import NavigationExtras from '$lib/components/layout/NavigationExtras.svelte'
+  import CreatePipelineButton from '$lib/components/pipelines/CreatePipelineButton.svelte'
 
   const dialog = useGlobalDialog()
 
   let { children, data }: { children: Snippet; data: LayoutData } = $props()
 
   useRefreshPipelineList()
+  const drawer = useDrawer()
 </script>
 
 <SvelteKitTopLoader height={2} color={'rgb(var(--color-primary-500))'} showSpinner={false}
 ></SvelteKitTopLoader>
-<div class="flex h-full">
+<div class="h-full w-full">
   <!-- <Drawer width="w-[22rem]" bind:open={showDrawer.value} side="left">
     <div class="flex h-full w-full flex-col gap-1">
       <span class="mx-5 my-4 flex items-end justify-center">
@@ -34,5 +40,20 @@
   <div class="flex h-full w-full flex-col">
     {@render children()}
   </div>
+  <ModalDrawer
+    width="w-72"
+    bind:open={drawer.value}
+    side="right"
+    class="bg-white-black flex flex-col gap-2 p-4"
+  >
+    <div class="relative my-2 mt-4">
+      <CreatePipelineButton
+        onSuccess={() => {
+          drawer.value = false
+        }}
+      ></CreatePipelineButton>
+    </div>
+    <NavigationExtras inline></NavigationExtras>
+  </ModalDrawer>
 </div>
 <GlobalModal dialog={dialog.dialog} onClose={() => (dialog.dialog = null)}></GlobalModal>

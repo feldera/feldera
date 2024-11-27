@@ -6,7 +6,7 @@
   const tryPipeline = useTryPipeline()
 </script>
 
-<div class="card flex flex-col border p-4">
+<div class="card flex flex-col border p-4 border-surface-100-900">
   <div class="text-sm text-surface-700-300">{demo.type}</div>
   <button class="text-left" onclick={() => tryPipeline(demo)}>
     <span class="py-2 text-lg">{demo.title}</span>

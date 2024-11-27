@@ -1,9 +1,9 @@
 <script lang="ts">
   import PipelineNameInput from '$lib/components/pipelines/PipelineNameInput.svelte'
-  let { class: _class }: { class?: string } = $props()
+  let { class: _class, onSuccess }: { class?: string; onSuccess?: () => void } = $props()
 </script>
 
-<PipelineNameInput inputClass="input h-9 {_class}">
+<PipelineNameInput inputClass="input h-9 {_class}" {onSuccess}>
   {#snippet createButton(onclick)}
     <div class="flex justify-center">
       <button class="btn preset-filled-primary-500" {onclick}>
