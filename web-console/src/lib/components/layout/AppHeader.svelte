@@ -11,12 +11,12 @@
   import AuthButton from '$lib/components/auth/AuthButton.svelte'
   import { useRefreshPipelineList } from '$lib/compositions/pipelines/usePipelineList.svelte'
   import { base } from '$app/paths'
-  import { SvelteKitTopLoader } from 'sveltekit-top-loader'
   import { useDrawer } from '$lib/compositions/layout/useDrawer.svelte'
   import Popup from '$lib/components/common/Popup.svelte'
   import { fade } from 'svelte/transition'
   import { page } from '$app/stores'
   import { fromStore } from 'svelte/store'
+  import NavigationExtras from './NavigationExtras.svelte'
 
   const dialog = useGlobalDialog()
 
@@ -25,46 +25,12 @@
   let showDrawer = useDrawer()
 
   useRefreshPipelineList()
-  const communityResources = [
-    {
-      title: 'Discord',
-      path: 'https://discord.com/invite/s6t5n9UzHE',
-      class: 'font-brands fa-discord w-6  before:-ml-0.5',
-      openInNewTab: true,
-      testid: 'button-vertical-nav-discord'
-    },
-    {
-      title: 'Slack',
-      path: 'https://felderacommunity.slack.com',
-      class: 'font-brands fa-slack w-6 before:ml-0.5',
-      openInNewTab: true,
-      testid: 'button-vertical-nav-slack'
-    }
-  ]
-  const docChapters = [
-    {
-      title: 'SQL Reference',
-      href: 'https://docs.feldera.com/sql/types'
-    },
-    {
-      title: 'Connectors',
-      href: 'https://docs.feldera.com/connectors/sources/'
-    },
-    {
-      title: 'UDFs',
-      href: 'https://docs.feldera.com/sql/udf'
-    },
-    {
-      title: 'Feldera 101',
-      href: 'https://docs.feldera.com/tutorials/basics/part1'
-    }
-  ]
 
-  const _page = fromStore(page)
+  const drawer = useDrawer()
 </script>
 
-<div class="flex items-center justify-between gap-2 px-2 py-2">
-  <a class="px-8 pb-6" href="{base}/">
+<div class="flex w-full flex-row items-center justify-between gap-4 px-2 py-2 md:px-8">
+  <a class="py-2 sm:pb-6 sm:pr-6 sm:pt-0" href="{base}/">
     <span class="hidden sm:block">
       {#if darkMode.value === 'dark'}
         <FelderaModernLogoColorLight class="h-12"></FelderaModernLogoColorLight>
@@ -74,73 +40,30 @@
     </span>
     <span class="inline sm:hidden">
       {#if darkMode.value === 'dark'}
-        <FelderaModernLogomarkColorLight class="h-9"></FelderaModernLogomarkColorLight>
+        <FelderaModernLogomarkColorLight class="h-8"></FelderaModernLogomarkColorLight>
       {:else}
-        <FelderaModernLogomarkColorDark class="h-9"></FelderaModernLogomarkColorDark>
+        <FelderaModernLogomarkColorDark class="h-8"></FelderaModernLogomarkColorDark>
       {/if}
     </span>
   </a>
   {@render children?.()}
-  <!-- <div class="flex"></div> -->
-  <div class="ml-auto"></div>
-  <div class="flex h-9 gap-2">
-    {#if _page.current.url.pathname !== `${base}/`}
+  <!-- <div class="flex flex-1"></div> -->
+  <div class="-mr-4 ml-auto"></div>
+  {#if drawer.isMobileDrawer}
+    <button
+      onclick={() => (drawer.value = !drawer.value)}
+      class="fd fd-menu btn-icon flex text-[24px] preset-tonal-surface xl:hidden"
+      aria-label="Pipelines list"
+    >
+    </button>
+    <AuthButton compactBreakpoint="xl:"></AuthButton>
+  {:else}
+    <div class="hidden h-9 gap-2 xl:flex">
       <div class="relative">
         <CreatePipelineButton></CreatePipelineButton>
       </div>
-    {/if}
-    <Popup>
-      {#snippet trigger(toggle)}
-        <button onclick={toggle} class="btn">
-          <span class="hidden sm:inline">Documentation</span>
-          <span class="inline sm:hidden">Docs</span>
-        </button>
-      {/snippet}
-      {#snippet content(close)}
-        <div
-          transition:fade={{ duration: 100 }}
-          class="absolute left-0 z-10 flex max-h-[400px] w-[calc(100vw-100px)] max-w-[200px] flex-col justify-end gap-2 overflow-y-auto rounded bg-white p-2 shadow-md dark:bg-black"
-        >
-          {#each docChapters as doc}
-            <a
-              href={doc.href}
-              target="_blank"
-              rel="noreferrer"
-              class="rounded p-2 hover:preset-tonal-surface">{doc.title}</a
-            >
-          {/each}
-        </div>
-      {/snippet}
-    </Popup>
-    <Popup>
-      {#snippet trigger(toggle)}
-        <button onclick={toggle} class="btn">
-          <span class="hidden sm:inline">Community resources</span>
-          <span class="inline sm:hidden">Community</span>
-        </button>
-      {/snippet}
-      {#snippet content(close)}
-        <div
-          transition:fade={{ duration: 100 }}
-          class="absolute right-0 z-10 max-h-[400px] w-[calc(100vw-100px)] max-w-[200px] justify-end overflow-y-auto rounded bg-white shadow-md dark:bg-black"
-        >
-          {#each communityResources as item}
-            <a
-              href={Array.isArray(item.path) ? item.path[0] : item.path}
-              target="_blank"
-              rel="noreferrer"
-              class="preset-grayout-surface flex flex-nowrap items-center p-2"
-              {...item.openInNewTab ? { target: '_blank', rel: 'noreferrer' } : undefined}
-            >
-              <div class="flex w-9 justify-center">
-                <div class={item.class + ' text-[24px]'}></div>
-              </div>
-              <span class="">{item.title}</span>
-            </a>
-          {/each}
-        </div>
-      {/snippet}
-    </Popup>
-    <AuthButton compactBreakpoint="xl:"></AuthButton>
-  </div>
+      <NavigationExtras></NavigationExtras>
+      <AuthButton compactBreakpoint="xl:"></AuthButton>
+    </div>
+  {/if}
 </div>

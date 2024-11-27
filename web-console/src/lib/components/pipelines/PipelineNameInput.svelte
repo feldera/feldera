@@ -10,20 +10,24 @@
     onShowInput,
     createButton,
     afterInput,
-    inputClass
+    inputClass,
+    assistCreatingPipeline,
+    onHideInput,
+    onSuccess
   }: {
     onShowInput?: () => void
     createButton: Snippet<[onclick: () => void]>
     afterInput?: Snippet<[error?: string]>
     inputClass?: string
+    assistCreatingPipeline?: boolean
+    onHideInput?: () => void
+    onSuccess?: () => void
   } = $props()
 
-  let assistCreatingPipeline = $derived($page.url.hash === '#new')
-  const stopAssisting = () => {
-    goto('')
-  }
+  let showInput = $state(false)
+
   $effect(() => {
-    if (assistCreatingPipeline) {
+    if (showInput) {
       onShowInput?.()
       createPipelineInputRef.focus()
     }
@@ -79,19 +83,21 @@
   let newPipelineError = $state<string>()
 </script>
 
-{#if assistCreatingPipeline}
+{#if showInput}
   <input
     bind:this={createPipelineInputRef}
     onblur={(e) => {
       e.currentTarget.value = ''
       newPipelineError = undefined
-      stopAssisting()
+      showInput = false
+      onHideInput?.()
     }}
     onkeydown={async (e) => {
       if (e.key === 'Enter') {
         await createPipeline(e.currentTarget.value).then(
           () => {
             e.currentTarget?.blur()
+            onSuccess?.()
           },
           (e) => {
             if ('message' in e) {
@@ -107,5 +113,5 @@
   />
   {@render afterInput?.(newPipelineError)}
 {:else}
-  {@render createButton(() => goto('#new'))}
+  {@render createButton(() => (showInput = true))}
 {/if}

@@ -73,7 +73,7 @@
 <Popup>
   {#snippet trigger(toggle)}
     <button
-      class="fd fd-more_horiz btn btn-icon btn-icon-lg preset-tonal-surface"
+      class="fd fd-more_horiz btn btn-icon text-[24px] preset-tonal-surface"
       onclick={toggle}
       aria-label="Pipeline actions"
     ></button>

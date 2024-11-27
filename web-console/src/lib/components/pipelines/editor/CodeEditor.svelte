@@ -294,7 +294,6 @@
           file.name === currentFileName
         )}
       {/each}
-      <div class="ml-auto"></div>
       {@render toolBarEnd?.({ saveFile: () => openFiles[filePath].sync.push() })}
     </div>
     <div class="relative flex-1">
@@ -363,11 +362,6 @@
     {@render statusBarCenter?.()}
   </div>
   <div class="ml-auto flex flex-nowrap gap-x-2">
-    <button
-      class="fd fd-settings btn btn-icon text-[24px] preset-tonal-surface"
-      aria-label="Editor settings"
-    >
-    </button>
     {@render statusBarEnd?.(openFiles[filePath].sync.downstreamChanged)}
   </div>
 {/snippet}

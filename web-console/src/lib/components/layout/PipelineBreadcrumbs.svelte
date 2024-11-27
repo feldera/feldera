@@ -1,67 +1,21 @@
 <script lang="ts">
-  import Popup from '$lib/components/common/Popup.svelte'
-  import { base } from '$app/paths'
-  import { fade } from 'svelte/transition'
-  import { usePipelineList } from '$lib/compositions/pipelines/usePipelineList.svelte'
-  import type { Snippet } from 'svelte'
-  import PipelineStatus from '$lib/components/pipelines/list/PipelineStatus.svelte'
-  import type { PipelineThumb } from '$lib/services/pipelineManager'
-
   let {
-    preloaded,
-    breadcrumbs,
-    after,
-    end
+    breadcrumbs
   }: {
-    preloaded?: { pipelines: PipelineThumb[] }
-    breadcrumbs: { text: string; href: string }[]
-    after?: Snippet
-    end?: Snippet
+    breadcrumbs: { text: string; href?: string; onclick?: () => void }[]
   } = $props()
-  const pipelineList = usePipelineList(preloaded)
 </script>
 
-<div class="flex flex-nowrap gap-1.5">
-  <Popup>
-    {#snippet trigger(toggle)}
-      <button
-        onclick={toggle}
-        class="fd fd-menu btn-icon text-[24px] preset-tonal-surface"
-        aria-label="Pipelines list"
-      >
-      </button>
-    {/snippet}
-    {#snippet content(close)}
-      <div
-        transition:fade={{ duration: 100 }}
-        class="absolute left-0 z-10 flex max-h-[calc(100vh-150px)] w-[calc(100vw-100px)] max-w-[360px]"
-      >
-        <div
-          class="bg-white-black w-full flex-col justify-end gap-0 overflow-y-auto rounded p-2 shadow-md scrollbar"
-        >
-          {#each pipelineList.pipelines as pipeline}
-            <a
-              onclick={close}
-              href="{base}/pipelines/{pipeline.name}/"
-              class="flex justify-between rounded p-2 hover:preset-tonal-surface"
-            >
-              {pipeline.name}
-              <PipelineStatus status={pipeline.status} class=""></PipelineStatus>
-            </a>
-          {/each}
-        </div>
-      </div>
-    {/snippet}
-  </Popup>
-  <div></div>
+<div class="overflow-hidden overflow-ellipsis whitespace-nowrap">
   {#each breadcrumbs as breadcrumb}
     <a
-      class="h5 self-center whitespace-nowrap font-medium [&:not(:nth-last-child(2))]:text-surface-500"
-      href={breadcrumb.href}>{breadcrumb.text}</a
+      class="h6 inline cursor-pointer self-center font-medium sm:h5 sm:inline sm:font-medium [&:not(:nth-last-child(2))]:text-surface-500"
+      href={breadcrumb.href}
+      onclick={breadcrumb.onclick}>{breadcrumb.text}</a
     >
-    <span class="h5 self-center font-medium last:hidden">/</span>
+    <span
+      class="h6 inline self-center px-2 font-medium !text-surface-500 sm:h5 last:hidden sm:inline"
+      >/</span
+    >
   {/each}
 </div>
-{@render after?.()}
-<span class="ml-auto"></span>
-{@render end?.()}

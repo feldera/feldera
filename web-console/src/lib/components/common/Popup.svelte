@@ -1,7 +1,11 @@
 <script lang="ts">
   import type { Snippet } from 'svelte'
 
-  const { trigger, content }: { trigger: Snippet<[() => void]>; content: Snippet<[() => void]> } =
+  const {
+    trigger,
+    content,
+    wrapperClass
+  }: { trigger: Snippet<[() => void]>; content: Snippet<[() => void]>; wrapperClass?: string } =
     $props()
   let show = $state(false)
   let onClose = () => {
@@ -29,7 +33,7 @@
   })
 </script>
 
-<div class="relative">
+<div class="relative {wrapperClass}">
   {@render trigger(() => {
     show = !show
   })}

@@ -36,8 +36,8 @@
 
   let tabs = $derived(
     [
-      tuple('Errors' as const, TabPipelineErrors, PanelPipelineErrors),
-      tuple('Performance' as const, undefined, PanelPerformance),
+      tuple('Errors' as const, TabControlPipelineErrors, PanelPipelineErrors),
+      tuple('Performance' as const, TabControlPerformance, PanelPerformance),
       separateAdHocTab ? null : tuple('Ad-Hoc Queries' as const, TabControlAdhoc, PanelAdHocQuery),
       tuple('Changes Stream' as const, TabControlChangeStream, PanelChangeStream),
       tuple('Logs' as const, undefined, PanelLogs)
@@ -88,7 +88,7 @@
   let errors = $derived([...programErrors, ...pipelineErrors, ...xgressErrors])
 </script>
 
-{#snippet TabPipelineErrors(pipeline: ExtendedPipeline)}
+{#snippet TabControlPipelineErrors(pipeline: ExtendedPipeline)}
   {@const warningCount = count(errors, (w) => w.cause.warning)}
   {@const errorCount = errors.length - warningCount}
   <span class="pr-1">Errors</span>
@@ -102,6 +102,11 @@
       {errorCount}
     </span>
   {/if}
+{/snippet}
+
+{#snippet TabControlPerformance()}
+  <span class="inline sm:hidden"> Perf </span>
+  <span class="hidden sm:inline"> Performance </span>
 {/snippet}
 
 {#snippet TabControlAdhoc()}
