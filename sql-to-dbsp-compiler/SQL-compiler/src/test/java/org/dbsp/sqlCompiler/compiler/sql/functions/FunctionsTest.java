@@ -1992,4 +1992,53 @@ public class FunctionsTest extends SqlIoTest {
                 """
         );
     }
+
+    @Test
+    public void testBlackboxFunction() {
+        this.qs("""
+                SELECT blackbox(1);
+                 blackbox
+                ----------
+                 1
+                (1 row)
+                
+                SELECT blackbox('blah');
+                 blackbox
+                ----------
+                 blah
+                (1 row)
+                
+                SELECT blackbox(true);
+                 blackbox
+                ----------
+                 true
+                (1 row)
+                
+                SELECT blackbox(1e0);
+                 blackbox
+                ----------
+                 1e0
+                (1 row)
+                
+                SELECT blackbox(1.0);
+                 blackbox
+                ----------
+                 1.0
+                (1 row)
+                
+                SELECT blackbox(vals) from arr_table;
+                 blackbox
+                ----------
+                 {1,2,3}
+                 {1,2,3}
+                (2 rows)
+                
+                SELECT blackbox(1.0) as c0, blackbox(true) as c1;
+                  c0 | c1
+                -----+-----
+                 1.0 | true
+                (1 row)
+                """
+        );
+    }
 }

@@ -70,6 +70,20 @@ public class MapTests extends BaseSQLTests {
     }
 
     @Test
+    public void mapBlackboxTest() {
+        String query = "SELECT blackbox(MAP['hi',2])";
+        DBSPType str = DBSPTypeString.varchar(false);
+        this.testQuery(query, new DBSPZSetLiteral(
+                new DBSPTupleExpression(new DBSPMapLiteral(
+                        new DBSPTypeMap(
+                                str,
+                                new DBSPTypeInteger(CalciteObject.EMPTY, 32, true, false),
+                                false),
+                        Linq.list(new DBSPStringLiteral(CalciteObject.EMPTY, str, "hi", Charset.defaultCharset()),
+                                new DBSPI32Literal(2))))));
+    }
+
+    @Test
     public void mapCardinalityTest() {
         String query = "SELECT CARDINALITY(MAP['hi',2])";
         this.testQuery(query, new DBSPZSetLiteral(

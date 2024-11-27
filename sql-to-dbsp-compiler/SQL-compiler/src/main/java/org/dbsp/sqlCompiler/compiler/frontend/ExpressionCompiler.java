@@ -1219,6 +1219,9 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                         for (int i = 0; i < ops.size(); i++)
                             this.ensureInteger(ops, i, 32);
                         return compileFunction(call, node, type, ops, 2);
+                    case "blackbox":
+                        assert ops.size() == 1: "expected one argument for blackbox function";
+                        return new DBSPApplyExpression(node, "blackbox", ops.get(0).type, ops.toArray(new DBSPExpression[0]));
                     case "regexp_replace": {
                         validateArgCount(node, operationName, ops.size(), 2, 3);
                         for (int i = 0; i < ops.size(); i++)

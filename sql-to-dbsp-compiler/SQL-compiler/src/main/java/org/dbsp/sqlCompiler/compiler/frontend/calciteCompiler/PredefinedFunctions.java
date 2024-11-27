@@ -37,7 +37,8 @@ public class PredefinedFunctions implements FunctionDocumentation.FunctionRegist
                 new PredefinedFunction(CustomFunctions.ToIntFunction.INSTANCE, "binary"),
                 new PredefinedFunction(CustomFunctions.NowFunction.INSTANCE, "datetime"),
                 new PredefinedFunction(CustomFunctions.ParseJsonFunction.INSTANCE, "json"),
-                new PredefinedFunction(CustomFunctions.ToJsonFunction.INSTANCE, "json")
+                new PredefinedFunction(CustomFunctions.ToJsonFunction.INSTANCE, "json"),
+                new PredefinedFunction(CustomFunctions.BlackboxFunction.INSTANCE, "blackbox")
         );
     }
 }

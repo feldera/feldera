@@ -349,3 +349,7 @@ where
 }
 
 for_all_compare!(min, T, T where Ord);
+
+pub fn blackbox<T>(value: T) -> T {
+    value
+}
