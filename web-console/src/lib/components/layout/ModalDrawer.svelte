@@ -39,7 +39,7 @@
 
 <div
   role="presentation"
-  class="relative z-30"
+  class="relative z-40"
   onclick={() => {
     open = !open
   }}

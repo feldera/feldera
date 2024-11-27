@@ -36,7 +36,7 @@
     },
     {
       title: 'Slack',
-      path: 'https://felderacommunity.slack.com',
+      path: 'https://felderacommunity.slack.com/join/shared_invite/zt-222bq930h-dgsu5IEzAihHg8nQt~dHzA',
       class: 'font-brands fa-slack w-6 before:ml-0.5',
       openInNewTab: true,
       testid: 'button-vertical-nav-slack'
@@ -116,7 +116,7 @@
           {#snippet content(close)}
             <div
               transition:fade={{ duration: 100 }}
-              class="absolute left-0 z-10 flex max-h-[400px] w-[calc(100vw-100px)] max-w-[200px] flex-col justify-end gap-2 overflow-y-auto rounded bg-white p-2 shadow-md dark:bg-black"
+              class="absolute left-0 z-30 flex max-h-[400px] w-[calc(100vw-100px)] max-w-[200px] flex-col justify-end gap-2 overflow-y-auto rounded bg-white p-2 shadow-md dark:bg-black"
             >
               {#each docChapters as doc}
                 <a
@@ -139,7 +139,7 @@
           {#snippet content(close)}
             <div
               transition:fade={{ duration: 100 }}
-              class="absolute right-0 z-10 max-h-[400px] w-[calc(100vw-100px)] max-w-[200px] justify-end overflow-y-auto rounded bg-white shadow-md dark:bg-black"
+              class="absolute right-0 z-30 max-h-[400px] w-[calc(100vw-100px)] max-w-[200px] justify-end overflow-y-auto rounded bg-white shadow-md dark:bg-black"
             >
               {#each communityResources as item}
                 <a

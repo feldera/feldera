@@ -156,10 +156,10 @@
           <div class="text-lg">Your pipelines will appear here</div>
           <div class="relative flex gap-5">
             <CreatePipelineButton></CreatePipelineButton>
-            <button class="btn text-sm preset-tonal-surface">
+            <a class="btn text-sm preset-tonal-surface" href="https://docs.feldera.com">
               <span class="fd fd-book text-2xl"></span>
               Documentation
-            </button>
+            </a>
           </div>
         </div>
       {/if}

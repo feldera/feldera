@@ -106,7 +106,6 @@
 {/snippet}
 
 <div class={'flex flex-nowrap gap-2 ' + _class}>
-  {@render _configureProgram()}
   {@render _configureResources()}
   {#each active as name}
     {@render actions[name]()}
