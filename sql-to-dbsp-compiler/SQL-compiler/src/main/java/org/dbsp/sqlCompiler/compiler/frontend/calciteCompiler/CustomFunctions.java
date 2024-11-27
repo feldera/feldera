@@ -41,6 +41,7 @@ public class CustomFunctions {
         this.initial.add(NowFunction.INSTANCE);
         this.initial.add(ParseJsonFunction.INSTANCE);
         this.initial.add(ToJsonFunction.INSTANCE);
+        this.initial.add(BlackboxFunction.INSTANCE);
         this.udf = new HashMap<>();
     }
 
@@ -178,6 +179,17 @@ public class CustomFunctions {
         }
 
         public static final ToIntFunction INSTANCE = new ToIntFunction();
+    }
+
+    public static class BlackboxFunction extends NonOptimizedFunction {
+        private BlackboxFunction() {
+            super("BLACKBOX",
+                    ReturnTypes.ARG0,
+                    OperandTypes.ANY,
+                    SqlFunctionCategory.USER_DEFINED_FUNCTION);
+        }
+
+        public static final BlackboxFunction INSTANCE = new BlackboxFunction();
     }
 
     /**
