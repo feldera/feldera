@@ -38,6 +38,7 @@
   import { fade } from 'svelte/transition'
   import { Switch } from '@skeletonlabs/skeleton-svelte'
   import PipelineToolbarMenu from '$lib/components/layout/pipelines/PipelineToolbarMenu.svelte'
+  import PipelineListPopup from './PipelineListPopup.svelte'
 
   let {
     preloaded,
@@ -170,28 +171,30 @@ example = "1.0"`
     currentPipelineFile[pipelineName] ??= 'program.sql'
   })
 
-  let breadcrumbs = $derived([
-    // { text: 'Home', href: `${base}/` },
-    {
-      text: pipelineName,
-      href: `${base}/pipelines/${pipelineName}/`
-    }
-  ])
   let separateAdHocTab = useLocalStorage('layout/pipelines/separateAdHoc', false)
   let downstreamChanged = $state(false)
   const autoSavePipeline = useLocalStorage('layout/pipelines/autosave', true)
 </script>
 
-<div class="flex h-full flex-col">
+<div class="flex h-full w-full flex-col">
   <AppHeader>
-    <PipelineBreadcrumbs {preloaded} {breadcrumbs}>
-      {#snippet after()}
-        <PipelineStatus status={pipeline.current.status}></PipelineStatus>
-      {/snippet}
-      {#snippet end()}{/snippet}
-    </PipelineBreadcrumbs>
+    <div class="flex flex-col gap-x-4 gap-y-1 sm:-mt-6 md:mt-0 md:flex-row-reverse">
+      <PipelineStatus status={pipeline.current.status}></PipelineStatus>
+      <PipelineListPopup {preloaded}>
+        {#snippet trigger(toggle)}
+          <PipelineBreadcrumbs
+            breadcrumbs={[
+              {
+                text: pipelineName,
+                onclick: toggle
+              }
+            ]}
+          ></PipelineBreadcrumbs>
+        {/snippet}
+      </PipelineListPopup>
+    </div>
   </AppHeader>
-  <PaneGroup direction="vertical" class="!overflow-visible px-8 pb-4">
+  <PaneGroup direction="vertical" class="!overflow-visible px-2 pb-4 md:px-8">
     <CodeEditor
       path={pipelineName}
       {files}
@@ -238,7 +241,7 @@ example = "1.0"`
         <PaneResizer class="pane-divider-horizontal my-2" />
       {/snippet}
       {#snippet toolBarEnd({ saveFile })}
-        <div class="flex flex-nowrap items-center gap-2">
+        <div class="ml-auto flex flex-nowrap items-center gap-2">
           <PipelineToolbarMenu
             {pipeline}
             {pipelineName}
@@ -249,7 +252,7 @@ example = "1.0"`
             onDeletePipeline={handleDeletePipeline}
           ></PipelineToolbarMenu>
           <button
-            class="btn p-2 text-surface-700-300 hover:preset-tonal-surface"
+            class="btn hidden p-2 text-surface-700-300 hover:preset-tonal-surface lg:flex"
             onclick={() => (separateAdHocTab.value = !separateAdHocTab.value)}
           >
             {#if !separateAdHocTab.value}
@@ -275,7 +278,7 @@ example = "1.0"`
       {/snippet}
       {#snippet fileTab(text, onClick, isCurrent)}
         <button
-          class="px-3 py-2 {isCurrent
+          class="px-2 py-2 sm:px-3 {isCurrent
             ? 'inset-y-2 border-b-2 pb-1.5 border-surface-950-50'
             : ' rounded hover:!bg-opacity-50 hover:bg-surface-100-900'}"
           onclick={onClick}

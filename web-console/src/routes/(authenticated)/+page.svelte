@@ -34,7 +34,7 @@
     },
     {
       title: 'Join the Conversation',
-      href: 'https://felderacommunity.slack.com',
+      href: 'https://felderacommunity.slack.com/join/shared_invite/zt-222bq930h-dgsu5IEzAihHg8nQt~dHzA',
       icon: IconSlack
     },
     {
@@ -55,7 +55,7 @@
 
 <AppHeader></AppHeader>
 <div class="h-full overflow-y-auto scrollbar">
-  <div class="flex flex-col gap-8 p-8">
+  <div class="flex flex-col gap-8 p-2 pt-0 md:p-8 md:pt-0">
     {#if !welcomed.value}
       <div class="relative flex min-h-40 w-full gap-4 p-6 sm:gap-12">
         <div class="card absolute left-0 top-0 -z-10 flex h-full w-full overflow-clip">
