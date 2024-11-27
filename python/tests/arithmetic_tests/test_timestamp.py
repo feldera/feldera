@@ -15,12 +15,12 @@ class arithtst_timestamp_minus_timestamp_seconds(TstView):
     def __init__(self):
         # Validated on Postgres
         self.data = [
-            {'id': 0, 'c1_minus_c2_seconds': 160342920},
-            {'id': 1, 'c1_minus_c2_seconds': -84686400},
-            {'id': 2, 'c1_minus_c2_seconds': 332907420}
+            {"id": 0, "c1_minus_c2_seconds": 160342920},
+            {"id": 1, "c1_minus_c2_seconds": -84686400},
+            {"id": 2, "c1_minus_c2_seconds": 332907420},
         ]
         self.sql = """CREATE MATERIALIZED VIEW timestamp_minus_timestamp_seconds AS SELECT
-                      id, 
+                      id,
                       CAST((c1_minus_c2) AS BIGINT) AS c1_minus_c2_seconds
                       FROM timestamp_minus_timestamp"""
 
@@ -42,9 +42,9 @@ class arithtst_timestamp_minus_interval(TstView):
     def __init__(self):
         # Validated on Postgres
         self.data = [
-            {'id': 0, 'c1': '2019-11-05T08:27:00', 'c2': '2013-11-05T12:45:00'},
-            {'id': 1, 'c1': '2020-05-22T14:00:00', 'c2': '2022-02-26T18:00:00'},
-            {'id': 2, 'c1': '1959-05-22T11:32:00', 'c2': '1947-12-03T09:15:00'}
+            {"id": 0, "c1": "2019-11-05T08:27:00", "c2": "2013-11-05T12:45:00"},
+            {"id": 1, "c1": "2020-05-22T14:00:00", "c2": "2022-02-26T18:00:00"},
+            {"id": 2, "c1": "1959-05-22T11:32:00", "c2": "1947-12-03T09:15:00"},
         ]
         self.sql = """CREATE MATERIALIZED VIEW timestamp_minus_interval AS SELECT
                       id,
@@ -57,9 +57,9 @@ class arithtst_timestamp_plus_interval(TstView):
     def __init__(self):
         # Validated on Postgres
         self.data = [
-            {'id': 0, 'c1': '2020-01-04T08:27:00', 'c2': '2015-11-05T12:45:00'},
-            {'id': 1, 'c1': '2020-07-21T14:00:00', 'c2': '2024-02-26T18:00:00'},
-            {'id': 2, 'c1': '1959-07-21T11:32:00', 'c2': '1949-12-02T09:15:00'}
+            {"id": 0, "c1": "2020-01-04T08:27:00", "c2": "2015-11-05T12:45:00"},
+            {"id": 1, "c1": "2020-07-21T14:00:00", "c2": "2024-02-26T18:00:00"},
+            {"id": 2, "c1": "1959-07-21T11:32:00", "c2": "1949-12-02T09:15:00"},
         ]
         self.sql = """CREATE MATERIALIZED VIEW timestamp_plus_interval AS SELECT
                       id,

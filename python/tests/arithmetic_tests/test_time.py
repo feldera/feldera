@@ -15,13 +15,14 @@ class arithtst_time_minus_time_seconds(TstView):
     def __init__(self):
         # Validated on Postgres
         self.data = [
-            {'id': 0, 'c1_minus_c2_seconds': 20700},
-            {'id': 1, 'c1_minus_c2_seconds': -21600}
+            {"id": 0, "c1_minus_c2_seconds": 20700},
+            {"id": 1, "c1_minus_c2_seconds": -21600},
         ]
         self.sql = """CREATE MATERIALIZED VIEW time_minus_time_seconds AS SELECT
-                      id, 
+                      id,
                       CAST((c1_minus_c2) AS BIGINT) AS c1_minus_c2_seconds
                       FROM time_minus_time"""
+
 
 # Equivalent SQL for Postgres
 # CREATE TABLE time_sub_time AS
@@ -40,8 +41,8 @@ class arithtst_time_minus_interval(TstView):
     def __init__(self):
         # Validated on Postgres
         self.data = [
-            {'id': 0, 'c1': '18:20:00', 'c2': '08:45:00'},
-            {'id': 1, 'c1': '07:50:00', 'c2': '10:00:00'}
+            {"id": 0, "c1": "18:20:00", "c2": "08:45:00"},
+            {"id": 1, "c1": "07:50:00", "c2": "10:00:00"},
         ]
         self.sql = """CREATE MATERIALIZED VIEW time_minus_interval AS SELECT
                       id,
@@ -54,8 +55,8 @@ class arithtst_time_plus_interval(TstView):
     def __init__(self):
         # Validated on Postgres
         self.data = [
-            {'id': 0, 'c1': '18:40:00', 'c2': '16:45:00'},
-            {'id': 1, 'c1': '08:10:00', 'c2': '18:00:00'}
+            {"id": 0, "c1": "18:40:00", "c2": "16:45:00"},
+            {"id": 1, "c1": "08:10:00", "c2": "18:00:00"},
         ]
         self.sql = """CREATE MATERIALIZED VIEW time_plus_interval AS SELECT
                       id,
