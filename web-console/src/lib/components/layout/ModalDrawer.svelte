@@ -31,7 +31,7 @@
   }: {
     open: boolean
     side: keyof typeof classNames
-    children: Snippet
+    children?: Snippet
     class: string
     width: string
   } = $props()
@@ -64,7 +64,7 @@
             aria-modal="true"
             class={'flex h-full flex-col ' + (open ? ' shadow-xl ' : '') + `${width} ` + _class}
           >
-            {@render children()}
+            {@render children?.()}
           </div>
         </div>
       </div>

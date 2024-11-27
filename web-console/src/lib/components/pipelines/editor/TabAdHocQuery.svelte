@@ -132,10 +132,10 @@
   }
 </script>
 
-<div class="flex h-full min-h-full flex-col gap-6 overflow-y-auto p-2 scrollbar">
+<div class="flex h-full min-h-full flex-col gap-6 overflow-y-auto py-2 scrollbar">
   {#if isIdle}
-    <WarningBanner class="sticky top-0 z-20 -mx-2 -mb-4 -translate-y-2">
-      Start the pipeline to be able to execute queries
+    <WarningBanner class="sticky top-0 z-20 -mb-4 -translate-y-2">
+      Start the pipeline to be able to run queries
     </WarningBanner>
   {/if}
   {#each getAdhocQueries()[pipelineName].queries as x, i}
