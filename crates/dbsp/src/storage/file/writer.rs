@@ -16,6 +16,7 @@ use binrw::{
     io::{Cursor, NoSeek},
     BinWrite,
 };
+use dyn_clone::clone_box;
 
 use crate::storage::{
     backend::{FileHandle, ImmutableFileHandle, Storage, StorageError},
@@ -1027,6 +1028,8 @@ where
     inner: Writer,
     pub(crate) factories: Factories<K0, A0>,
     _phantom: PhantomData<fn(&K0, &A0)>,
+    #[cfg(debug_assertions)]
+    prev0: Option<Box<K0>>,
 }
 
 impl<K0, A0> Writer1<K0, A0>
@@ -1044,11 +1047,25 @@ where
             factories: factories.clone(),
             inner: Writer::new(&[&factories.any_factories()], storage, parameters, 1)?,
             _phantom: PhantomData,
+            #[cfg(debug_assertions)]
+            prev0: None,
         })
     }
     /// Writes `item` to column 0.  `item.0` must be greater than passed in the
     /// previous call to this function (if any).
     pub fn write0(&mut self, item: (&K0, &A0)) -> Result<(), StorageError> {
+        #[cfg(debug_assertions)]
+        {
+            let key0 = item.0;
+            if let Some(prev0) = &self.prev0 {
+                debug_assert!(
+                    &**prev0 < key0,
+                    "can't write {prev0:?} then {key0:?} to column 0",
+                );
+            }
+            self.prev0 = Some(clone_box(key0));
+        }
+
         self.inner.write(0, item)
     }
 
@@ -1126,6 +1143,10 @@ where
     inner: Writer,
     pub(crate) factories0: Factories<K0, A0>,
     pub(crate) factories1: Factories<K1, A1>,
+    #[cfg(debug_assertions)]
+    prev0: Option<Box<K0>>,
+    #[cfg(debug_assertions)]
+    prev1: Option<Box<K1>>,
     _phantom: PhantomData<fn(&K0, &A0, &K1, &A1)>,
 }
 
@@ -1152,6 +1173,10 @@ where
                 parameters,
                 2,
             )?,
+            #[cfg(debug_assertions)]
+            prev0: None,
+            #[cfg(debug_assertions)]
+            prev1: None,
             _phantom: PhantomData,
         })
     }
@@ -1162,6 +1187,19 @@ where
     /// `item.0` must be greater than passed in the previous call to this
     /// function (if any).
     pub fn write0(&mut self, item: (&K0, &A0)) -> Result<(), StorageError> {
+        #[cfg(debug_assertions)]
+        {
+            let key0 = item.0;
+            if let Some(prev0) = &self.prev0 {
+                debug_assert!(
+                    &**prev0 < key0,
+                    "can't write {prev0:?} then {key0:?} to column 0",
+                );
+            }
+            self.prev0 = Some(clone_box(key0));
+            self.prev1 = None;
+        }
+
         self.inner.write(0, item)
     }
 
@@ -1169,6 +1207,18 @@ where
     /// previous call to this function (if any) since the last call to
     /// [`write0`](Self::write0) (if any).
     pub fn write1(&mut self, item: (&K1, &A1)) -> Result<(), StorageError> {
+        #[cfg(debug_assertions)]
+        {
+            let key1 = item.0;
+            if let Some(prev1) = &self.prev1 {
+                debug_assert!(
+                    &**prev1 < key1,
+                    "can't write {prev1:?} then {key1:?} to column 1",
+                );
+            }
+            self.prev1 = Some(clone_box(key1));
+        }
+
         self.inner.write(1, item)
     }
 
