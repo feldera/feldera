@@ -15,7 +15,6 @@ use feldera_adapterlib::transport::{InputEndpoint, InputReaderCommand};
 use feldera_types::program_schema::Relation;
 use feldera_types::transport::kafka::KafkaInputConfig;
 use indexmap::IndexSet;
-use log::debug;
 use rdkafka::config::RDKafkaLogLevel;
 use rdkafka::{
     config::FromClientConfigAndContext,
@@ -38,6 +37,7 @@ use std::{
     time::Duration,
 };
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
+use tracing::debug;
 use xxhash_rust::xxh3::Xxh3Default;
 
 /// Poll timeout must be low, as it bounds the amount of time it takes to resume the connector.

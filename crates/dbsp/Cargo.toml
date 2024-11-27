@@ -62,7 +62,6 @@ clap = { version = "4.4.14", features = ["derive", "env", "wrap_help"] }
 fdlimit = { version = "0.3.0" }
 # metrics won't display if it doesn't match the adapters metrics version!
 metrics = { version = "0.23.0" }
-log = { version = "0.4", features = [] }
 rlimit = "0.10.1"
 serde = { version = "1.0", features = ["derive"] }
 ptr_meta = "0.2.0"
@@ -73,6 +72,7 @@ lazy_static = "1.4.0"
 zip = "0.6.2"
 minitrace = "0.6"
 ouroboros = "0.18.4"
+tracing = "0.1.40"
 
 
 [dependencies.time]

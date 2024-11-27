@@ -12,7 +12,6 @@ use google_cloud_pubsub::{
     client::{google_cloud_auth::credentials::CredentialsFile, Client, ClientConfig},
     subscription::{SeekTo, Subscription},
 };
-use log::debug;
 use std::{
     sync::Arc,
     thread,
@@ -23,6 +22,7 @@ use tokio::{
     task::JoinHandle,
 };
 use tokio_util::sync::CancellationToken;
+use tracing::debug;
 
 pub struct PubSubInputEndpoint {
     config: Arc<PubSubInputConfig>,

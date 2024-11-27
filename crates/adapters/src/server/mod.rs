@@ -1,3 +1,4 @@
+use crate::dyn_event;
 use crate::format::{get_input_format, get_output_format};
 use crate::{
     adhoc::stream_adhoc_result,
@@ -20,19 +21,16 @@ use actix_web::{
     App, Error as ActixError, HttpRequest, HttpResponse, HttpServer, Responder,
 };
 use clap::Parser;
-use colored::Colorize;
+use colored::{ColoredString, Colorize};
 use dbsp::{circuit::CircuitConfig, DBSPHandle};
-use env_logger::Env;
 use feldera_types::{
     config::{default_max_batch_size, TransportConfig},
     transport::http::HttpInputConfig,
 };
 use feldera_types::{query::AdhocQueryArgs, transport::http::SERVER_PORT_FILE};
 use futures_util::FutureExt;
-use log::{debug, error, info, log, trace, warn, Level};
 use minitrace::collector::Config;
 use serde::Deserialize;
-use std::io::Write;
 use std::path::PathBuf;
 use std::{
     borrow::Cow,
@@ -50,6 +48,13 @@ use tokio::{
         oneshot,
     },
 };
+use tracing::{debug, error, info, trace, warn, Level, Subscriber};
+use tracing_subscriber::fmt::format::Format;
+use tracing_subscriber::fmt::{FormatEvent, FormatFields};
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::registry::LookupSpan;
+use tracing_subscriber::util::SubscriberInitExt;
+use tracing_subscriber::EnvFilter;
 use uuid::Uuid;
 
 pub mod error;
@@ -218,12 +223,12 @@ where
                     match &res {
                         Ok(response) => {
                             let level = if response.status().is_success() {
-                                Level::Debug
+                                Level::DEBUG
                             } else {
-                                Level::Error
+                                Level::ERROR
                             };
                             let req = response.request();
-                            log!(
+                            dyn_event!(
                                 level,
                                 "Response: {} (size: {:?}) to request {} {}",
                                 response.status(),
@@ -354,6 +359,36 @@ fn error_handler(state: &Weak<ServerState>, error: ControllerError) {
     }
 }
 
+struct PipelineFormat {
+    pipeline_name: ColoredString,
+    inner: Format,
+}
+
+impl PipelineFormat {
+    pub fn new(pipeline_name: ColoredString) -> Self {
+        Self {
+            pipeline_name,
+            inner: Format::default(),
+        }
+    }
+}
+
+impl<S, N> FormatEvent<S, N> for PipelineFormat
+where
+    S: Subscriber + for<'a> LookupSpan<'a>,
+    N: for<'a> FormatFields<'a> + 'static,
+{
+    fn format_event(
+        &self,
+        ctx: &tracing_subscriber::fmt::FmtContext<'_, S, N>,
+        mut writer: tracing_subscriber::fmt::format::Writer<'_>,
+        event: &tracing::Event<'_>,
+    ) -> std::fmt::Result {
+        write!(writer, "{} ", self.pipeline_name)?;
+        self.inner.format_event(ctx, writer, event)
+    }
+}
+
 fn do_bootstrap<F>(
     args: ServerArgs,
     circuit_factory: F,
@@ -387,20 +422,14 @@ where
     // - "feldera_types" for the feldera-types crate
     // For all others, the WARN level is used.
     // Note that this can be overridden by setting the RUST_LOG environment variable.
-    env_logger::Builder::from_env(Env::default().default_filter_or(
-        "warn,project=info,dbsp=info,dbsp_adapters=info,dbsp_nexmark=info,feldera_types=info",
-    ))
-    .format(move |buf, record| {
-        let t = chrono::Utc::now();
-        let t = format!("{}", t.format("%Y-%m-%d %H:%M:%S"));
-        writeln!(
-            buf,
-            "{t} {} {pipeline_name} {}",
-            buf.default_styled_level(record.level()),
-            record.args()
+    tracing_subscriber::registry()
+        .with(tracing_subscriber::fmt::layer().event_format(PipelineFormat::new(pipeline_name)))
+        .with(
+            EnvFilter::try_from_default_env()
+                .or_else(|_| EnvFilter::try_new("warn,project=info,dbsp=info,dbsp_adapters=info,dbsp_nexmark=info,feldera_types=info"))
+                .unwrap()
         )
-    })
-    .try_init()
+        .try_init()
     .unwrap_or_else(|e| {
         // This happens in unit tests when another test has initialized logging.
         eprintln!("Failed to initialize logging: {e}.")

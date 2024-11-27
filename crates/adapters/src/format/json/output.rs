@@ -437,12 +437,12 @@ mod test {
     use dbsp::{utils::Tup2, OrdZSet};
     use feldera_types::format::json::JsonUpdateFormat;
     use feldera_types::program_schema::Relation;
-    use log::trace;
     use proptest::prelude::*;
     use serde::Deserialize;
     use serde_json::json;
     use std::collections::BTreeMap;
     use std::{cell::RefCell, fmt::Debug, rc::Rc, sync::Arc};
+    use tracing::trace;
 
     trait OutputUpdate: Debug + for<'de> Deserialize<'de> + Eq + Ord {
         type Val;

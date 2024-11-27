@@ -1,7 +1,6 @@
 //! Implementation of the storage backend ([`Storage`] APIs using POSIX I/O.
 
 use feldera_types::config::StorageCacheConfig;
-use log::warn;
 use metrics::{counter, histogram};
 use std::{
     fs::{self, remove_file, File, OpenOptions},
@@ -15,6 +14,7 @@ use std::{
     },
     time::Instant,
 };
+use tracing::warn;
 
 use super::{
     append_to_path, tempdir_for_thread, FileId, FileReader, FileWriter, HasFileId, Storage,

@@ -52,7 +52,6 @@ use crate::{
     Error as DbspError, Error, Runtime,
 };
 use anyhow::Error as AnyError;
-use log::info;
 use serde::Serialize;
 use std::{
     any::type_name_of_val,
@@ -67,6 +66,7 @@ use std::{
     thread::panicking,
     time::{Duration, Instant},
 };
+use tracing::info;
 use typedmap::{TypedMap, TypedMapKey};
 use uuid::Uuid;
 

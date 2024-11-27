@@ -32,7 +32,6 @@ use deltalake::protocol::SaveMode;
 use deltalake::table::builder::ensure_table_uri;
 use deltalake::table::PeekCommit;
 use deltalake::{datafusion, DeltaTable, DeltaTableBuilder, Path};
-use env_logger::builder;
 use feldera_adapterlib::format::ParseError;
 use feldera_types::config::InputEndpointConfig;
 use feldera_types::format::json::JsonFlavor;
@@ -41,7 +40,6 @@ use feldera_types::transport::delta_table::{DeltaTableIngestMode, DeltaTableRead
 use feldera_types::transport::s3::S3InputConfig;
 use futures::TryFutureExt;
 use futures_util::StreamExt;
-use log::{debug, error, info, trace};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
 use std::fmt::format;
@@ -53,6 +51,8 @@ use tokio::sync::mpsc;
 use tokio::sync::watch::{channel, Receiver, Sender};
 use tokio::time::sleep;
 use tokio_util::time;
+use tracing::{debug, error, info, trace};
+use tracing_subscriber::fmt::fmt;
 use url::Url;
 use utoipa::ToSchema;
 
