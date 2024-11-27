@@ -30,6 +30,27 @@ public class RegressionTests extends SqlIoTest {
     }
 
     @Test
+    public void issue3039() {
+        this.compileRustTestCase(
+                "CREATE VIEW v1_optimized AS SELECT MIN(MOD(POWER(-1553189232, 1981020635), 1981020635))");
+    }
+
+    @Test
+    public void issue3040() {
+        this.compileRustTestCase("""
+                CREATE TABLE t5(c0 BOOLEAN, c1 INT, c2 INT) with ('materialized' = 'true');
+                CREATE MATERIALIZED VIEW v40_optimized AS (SELECT SUM(t5.c2) FROM t5 WHERE (('X')<(CHR(t5.c2))));""");
+    }
+
+    @Test
+    public void issue3043() {
+        this.compileRustTestCase("""
+                CREATE TABLE t1(c0 VARCHAR, c1 DOUBLE, c2 DOUBLE) with ('materialized' = 'true');
+                CREATE TABLE t4(c0 BOOLEAN) with ('materialized' = 'true');
+                CREATE VIEW v22_optimized AS (SELECT * FROM t4, t1 WHERE ((t4.c0)IS NOT DISTINCT FROM(IS_INF(t1.c1))));""");
+    }
+
+    @Test
     public void issue3042() {
         this.compileRustTestCase("""
                 CREATE TABLE t3(c0 DOUBLE) with ('materialized' = 'true');

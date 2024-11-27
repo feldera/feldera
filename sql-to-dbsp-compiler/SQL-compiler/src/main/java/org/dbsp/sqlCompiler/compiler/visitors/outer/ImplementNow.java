@@ -532,7 +532,7 @@ public class ImplementNow extends Passes {
                     this.comparisons.add(ntf);
                     return false;
                 }
-                if (binary.operation == DBSPOpcode.AND) {
+                if (binary.opcode == DBSPOpcode.AND) {
                     boolean foundLeft = this.analyzeConjunction(binary.left);
                     if (!foundLeft)
                         return false;
@@ -555,7 +555,7 @@ public class ImplementNow extends Passes {
                     return true;
                 }
 
-                if (!this.compOpcodes.contains(binary.operation))
+                if (!this.compOpcodes.contains(binary.opcode))
                     return false;
                 this.containsNow.apply(binary.left);
                 boolean leftHasNow = this.containsNow.found;
@@ -574,7 +574,7 @@ public class ImplementNow extends Passes {
                 if (me == null || !me.mayBeMonotone())
                     return false;
 
-                DBSPOpcode opcode = leftHasNow ? inverse(binary.operation) : binary.operation;
+                DBSPOpcode opcode = leftHasNow ? inverse(binary.opcode) : binary.opcode;
                 TemporalFilter comp = new TemporalFilter(this.parameter, withoutNow, withNow, opcode);
                 this.comparisons.add(comp);
                 return true;

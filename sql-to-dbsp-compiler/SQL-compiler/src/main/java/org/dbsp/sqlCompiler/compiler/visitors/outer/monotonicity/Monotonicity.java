@@ -970,10 +970,10 @@ public class Monotonicity extends CircuitVisitor {
             DBSPBinaryExpression binary = larger.as(DBSPBinaryExpression.class);
             if (binary == null)
                 return false;
-            if (binary.operation != DBSPOpcode.ADD && binary.operation != DBSPOpcode.SUB &&
-                binary.operation != DBSPOpcode.TS_ADD && binary.operation != DBSPOpcode.TS_SUB)
+            if (binary.opcode != DBSPOpcode.ADD && binary.opcode != DBSPOpcode.SUB &&
+                binary.opcode != DBSPOpcode.TS_ADD && binary.opcode != DBSPOpcode.TS_SUB)
                 return false;
-            DBSPOpcode inverse = inverse(binary.operation);
+            DBSPOpcode inverse = inverse(binary.opcode);
             int column = isColumn(binary.left, param);
             if (column >= 0 && binary.right.is(DBSPLiteral.class)) {
                 // col + constant, col - constant
@@ -985,7 +985,7 @@ public class Monotonicity extends CircuitVisitor {
                 return true;
             }
 
-            if ((binary.operation == DBSPOpcode.SUB) || (binary.operation == DBSPOpcode.TS_SUB))
+            if ((binary.opcode == DBSPOpcode.SUB) || (binary.opcode == DBSPOpcode.TS_SUB))
                 return false;
 
             // constant + col
@@ -1005,33 +1005,33 @@ public class Monotonicity extends CircuitVisitor {
         /** Check if `expression` is a comparison and if so add it to the list.
          * Return true if added. */
         boolean findComparison(DBSPBinaryExpression binary, DBSPParameter param) {
-            switch (binary.operation) {
+            switch (binary.opcode) {
                 case LTE:
                 case LT: {
-                    boolean added = this.addIfRightIsColumn(binary.left, binary.right, inverse(binary.operation), param);
+                    boolean added = this.addIfRightIsColumn(binary.left, binary.right, inverse(binary.opcode), param);
                     if (added)
                         return true;
-                    added = this.addIfOffsetOfColumn(binary.left, binary.right, inverse(binary.operation), param);
+                    added = this.addIfOffsetOfColumn(binary.left, binary.right, inverse(binary.opcode), param);
                     return added;
                 }
                 case GTE:
                 case GT: {
-                    boolean added = this.addIfRightIsColumn(binary.right, binary.left, binary.operation, param);
+                    boolean added = this.addIfRightIsColumn(binary.right, binary.left, binary.opcode, param);
                     if (added)
                         return true;
-                    added = this.addIfOffsetOfColumn(binary.right, binary.left, binary.operation, param);
+                    added = this.addIfOffsetOfColumn(binary.right, binary.left, binary.opcode, param);
                     return added;
                 }
                 case EQ: {
                     // add both ways
-                    boolean added = this.addIfRightIsColumn(binary.left, binary.right, binary.operation, param);
-                    added = added || this.addIfRightIsColumn(binary.right, binary.left, binary.operation, param);
+                    boolean added = this.addIfRightIsColumn(binary.left, binary.right, binary.opcode, param);
+                    added = added || this.addIfRightIsColumn(binary.right, binary.left, binary.opcode, param);
                     if (added)
                         return true;
-                    added = this.addIfOffsetOfColumn(binary.left, binary.right, binary.operation, param);
+                    added = this.addIfOffsetOfColumn(binary.left, binary.right, binary.opcode, param);
                     if (added)
                         return true;
-                    return this.addIfOffsetOfColumn(binary.right, binary.left, binary.operation, param);
+                    return this.addIfOffsetOfColumn(binary.right, binary.left, binary.opcode, param);
                 }
                 default:
                     return false;
@@ -1042,7 +1042,7 @@ public class Monotonicity extends CircuitVisitor {
             DBSPBinaryExpression binary = expression.as(DBSPBinaryExpression.class);
             if (binary == null)
                 return false;
-            if (binary.operation == DBSPOpcode.AND) {
+            if (binary.opcode == DBSPOpcode.AND) {
                 boolean foundLeft = this.analyzeConjunction(binary.left, param);
                 boolean foundRight = this.analyzeConjunction(binary.right, param);
                 return foundLeft && foundRight;

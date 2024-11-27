@@ -34,12 +34,12 @@ import org.dbsp.util.IIndentStream;
 public final class DBSPBinaryExpression extends DBSPExpression {
     public final DBSPExpression left;
     public final DBSPExpression right;
-    public final DBSPOpcode operation;
+    public final DBSPOpcode opcode;
 
-    public DBSPBinaryExpression(CalciteObject node, DBSPType type, DBSPOpcode operation,
+    public DBSPBinaryExpression(CalciteObject node, DBSPType type, DBSPOpcode opcode,
                                 DBSPExpression left, DBSPExpression right) {
         super(node, type);
-        this.operation = operation;
+        this.opcode = opcode;
         this.left = left;
         this.right = right;
     }
@@ -47,7 +47,7 @@ public final class DBSPBinaryExpression extends DBSPExpression {
     public DBSPBinaryExpression replaceSources(DBSPExpression left, DBSPExpression right) {
         assert this.left.getType().sameType(left.getType());
         assert this.right.getType().sameType(right.getType());
-        return new DBSPBinaryExpression(this.getNode(), this.type, this.operation, left, right);
+        return new DBSPBinaryExpression(this.getNode(), this.type, this.opcode, left, right);
     }
 
     @Override
@@ -69,7 +69,7 @@ public final class DBSPBinaryExpression extends DBSPExpression {
             return false;
         return this.left == o.left &&
                 this.right == o.right &&
-                this.operation == o.operation &&
+                this.opcode == o.opcode &&
                 this.hasSameType(o);
     }
 
@@ -78,7 +78,7 @@ public final class DBSPBinaryExpression extends DBSPExpression {
         return builder.append(this.left)
                 .append(" ")
                 .append(this.left.getType().mayBeNull ? "?" : "")
-                .append(this.operation.toString())
+                .append(this.opcode.toString())
                 .append(this.right.getType().mayBeNull ? "?" : "")
                 .append(" ")
                 .append(this.right);
@@ -86,7 +86,7 @@ public final class DBSPBinaryExpression extends DBSPExpression {
 
     @Override
     public DBSPExpression deepCopy() {
-        return new DBSPBinaryExpression(this.getNode(), this.getType(), this.operation,
+        return new DBSPBinaryExpression(this.getNode(), this.getType(), this.opcode,
                 this.left.deepCopy(), this.right.deepCopy());
     }
 
@@ -95,7 +95,7 @@ public final class DBSPBinaryExpression extends DBSPExpression {
         DBSPBinaryExpression otherExpression = other.as(DBSPBinaryExpression.class);
         if (otherExpression == null)
             return false;
-        return this.operation == otherExpression.operation &&
+        return this.opcode == otherExpression.opcode &&
                 context.equivalent(this.left, otherExpression.left) &&
                 context.equivalent(this.right, otherExpression.right);
     }
