@@ -8,10 +8,10 @@ use crate::{
         pair::DynPair, DataTrait, DowncastTrait, DynVec, DynWeightedPairs, Erase, Factory, Vector,
         WeightTrait,
     },
-    time::AntichainRef,
+    time::{Antichain, AntichainRef},
     trace::{
         Batch, BatchFactories, BatchLocation, BatchReader, BatchReaderFactories, Batcher, Builder,
-        Cursor, Filter, Merger, Trace,
+        Cursor, Filter, Merger, TimedBuilder, Trace,
     },
     DBData, DBWeight, NumEntries, Timestamp,
 };
@@ -758,6 +758,31 @@ where
     result: TestBatch<K, V, T, R>,
 }
 
+impl<K, V, T, R> TimedBuilder<TestBatch<K, V, T, R>> for TestBatchBuilder<K, V, T, R>
+where
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+    T: Timestamp,
+{
+    fn push_time(&mut self, key: &K, val: &V, time: &T, weight: &R) {
+        match self
+            .result
+            .data
+            .entry((clone_box(key), clone_box(val), time.clone()))
+        {
+            Entry::Occupied(mut oe) => oe.get_mut().as_mut().add_assign(weight),
+            Entry::Vacant(ve) => {
+                ve.insert(clone_box(weight));
+            }
+        }
+    }
+
+    fn done_with_bounds(self, _lower: Antichain<T>, _upper: Antichain<T>) -> TestBatch<K, V, T, R> {
+        self.done()
+    }
+}
+
 impl<K, V, T, R> Builder<TestBatch<K, V, T, R>> for TestBatchBuilder<K, V, T, R>
 where
     K: DataTrait + ?Sized,
@@ -794,16 +819,8 @@ where
     }
 
     fn push_refs(&mut self, k: &K, v: &V, r: &R) {
-        match self
-            .result
-            .data
-            .entry((clone_box(k), clone_box(v), self.time.clone()))
-        {
-            Entry::Occupied(mut oe) => oe.get_mut().as_mut().add_assign(r),
-            Entry::Vacant(ve) => {
-                let _ = ve.insert(clone_box(r));
-            }
-        }
+        let time = self.time.clone();
+        self.push_time(k, v, &time, r);
     }
 
     fn push_vals(&mut self, k: &mut K, v: &mut V, r: &mut R) {
