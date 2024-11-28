@@ -301,6 +301,7 @@ public class CalciteFunctions implements FunctionDocumentation.FunctionRegistry 
             new Func(SqlLibraryOperators.SAFE_OFFSET, "SAFE_OFFSET", SqlLibrary.BIG_QUERY, "", false),
             // new Func(SqlLibraryOperators.ORDINAL, "ORDINAL", SqlLibrary.BIG_QUERY, "array", false),
             new Func(SqlLibraryOperators.TRUNC_BIG_QUERY, "TRUNC", SqlLibrary.BIG_QUERY, "decimal,float", false),
+            new Func(SqlLibraryOperators.MAP_CONTAINS_KEY, "MAP_CONTAINS_KEY", SqlLibrary.SPARK, "map", false),
             // new Func(SqlLibraryOperators.SAFE_ORDINAL, "SAFE_ORDINAL", SqlLibrary.BIG_QUERY, "array", false),
     };
 
