@@ -36,7 +36,7 @@ ad-hoc queries that need to be taken into account:
 - Feldera SQL's `SORT_ARRAY()` is `ARRAY_SORT()` in ad-hoc queries.
 - Casting integers to timestamp conversion is interpreted as seconds in ad-hoc SQL and as milliseconds
   in Feldera SQL.
-  (`SELECT 1729595568::TIMESTAMP;` will yield `2024-10-22T11:12:48` in ad-hoc queries and 
+  (`SELECT 1729595568::TIMESTAMP;` will yield `2024-10-22T11:12:48` in ad-hoc queries and
   `1970-01-21 00:26:35` in Feldera SQL).
 - Ad-hoc SQL can not perform as-of joins.
 
