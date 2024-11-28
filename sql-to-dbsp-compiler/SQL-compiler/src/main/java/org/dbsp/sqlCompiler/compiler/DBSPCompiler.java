@@ -464,7 +464,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
             for (CalciteCompiler.ParsedStatement node: parsed) {
                 Logger.INSTANCE.belowLevel(this, 2)
                         .append("Parsing result: ")
-                        .append(node.toString())
+                        .appendSupplier(node::toString)
                         .newline();
                 SqlKind kind = node.statement().getKind();
                 if (kind == SqlKind.CREATE_TYPE) {

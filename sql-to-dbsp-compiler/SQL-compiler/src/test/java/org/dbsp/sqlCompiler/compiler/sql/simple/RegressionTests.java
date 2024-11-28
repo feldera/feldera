@@ -43,6 +43,12 @@ public class RegressionTests extends SqlIoTest {
     }
 
     @Test
+    public void issue3041() {
+        this.statementsFailingInCompilation("CREATE MATERIALIZED VIEW v199 AS SELECT TRIM();",
+                "Expression is missing some required operands");
+    }
+
+    @Test
     public void issue3043() {
         this.compileRustTestCase("""
                 CREATE TABLE t1(c0 VARCHAR, c1 DOUBLE, c2 DOUBLE) with ('materialized' = 'true');

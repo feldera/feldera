@@ -68,6 +68,7 @@ import org.apache.calcite.sql.SqlCharStringLiteral;
 import org.apache.calcite.sql.SqlDataTypeSpec;
 import org.apache.calcite.sql.SqlExplainFormat;
 import org.apache.calcite.sql.SqlExplainLevel;
+import org.apache.calcite.sql.SqlFunction;
 import org.apache.calcite.sql.SqlIdentifier;
 import org.apache.calcite.sql.SqlInsert;
 import org.apache.calcite.sql.SqlKind;
@@ -94,6 +95,7 @@ import org.apache.calcite.sql.type.MapSqlType;
 import org.apache.calcite.sql.type.SqlTypeFactoryImpl;
 import org.apache.calcite.sql.type.SqlTypeFamily;
 import org.apache.calcite.sql.type.SqlTypeName;
+import org.apache.calcite.sql.util.SqlBasicVisitor;
 import org.apache.calcite.sql.util.SqlOperatorTables;
 import org.apache.calcite.sql.util.SqlShuttle;
 import org.apache.calcite.sql.validate.SqlConformanceEnum;
@@ -184,7 +186,7 @@ public class CalciteCompiler implements IWritesLogs {
     @Nullable
     private SqlToRelConverter converter;
     @Nullable
-    private ValidateTypes validateTypes;
+    private ExtraValidation validateTypes;
     private final CalciteConnectionConfig connectionConfig;
     private final IErrorReporter errorReporter;
     private final SchemaPlus rootSchema;
@@ -349,15 +351,33 @@ public class CalciteCompiler implements IWritesLogs {
     /** Additional validation tests on top of Calcite.
      * We need to do these before conversion to Rel, because Rel
      * does not have source position information anymore. */
-    public class ValidateTypes extends SqlShuttle {
+    public class ExtraValidation extends SqlBasicVisitor<Void> {
         final IErrorReporter errorReporter;
 
-        public ValidateTypes(IErrorReporter errorReporter) {
+        public ExtraValidation(IErrorReporter errorReporter) {
             this.errorReporter = errorReporter;
         }
 
+        /** Calcite can build calls that have null operands, e.g.,
+         * <a href="https://issues.apache.org/jira/browse/CALCITE-6707">[CALCITE-6707]</a>.
+         * Find such cases and reject them. */
         @Override
-        public @org.checkerframework.checker.nullness.qual.Nullable SqlNode visit(SqlDataTypeSpec type) {
+        public Void visit(SqlCall call) {
+            SourcePositionRange position = new SourcePositionRange(call.getParserPosition());
+            SqlOperator operator = call.getOperator();
+            if (operator instanceof SqlFunction) {
+                for (SqlNode node : call.getOperandList()) {
+                    if (node == null)
+                        this.errorReporter.reportError(position,
+                                "Illegal expression",
+                                "Expression is missing some required operands");
+                }
+            }
+            return super.visit(call);
+        }
+
+        @Override
+        public Void visit(SqlDataTypeSpec type) {
             SqlTypeNameSpec typeNameSpec = type.getTypeNameSpec();
             if (typeNameSpec instanceof SqlBasicTypeNameSpec basic) {
                 // I don't know how to get the SqlTypeName otherwise
@@ -410,7 +430,7 @@ public class CalciteCompiler implements IWritesLogs {
                 this.typeFactory,
                 validatorConfig
         );
-        this.validateTypes = new ValidateTypes(errorReporter);
+        this.validateTypes = new ExtraValidation(errorReporter);
         this.converter = new SqlToRelConverter(
                 (type, query, schema, path) -> null,
                 this.validator,
@@ -470,7 +490,7 @@ public class CalciteCompiler implements IWritesLogs {
         return sqlParser;
     }
 
-    ValidateTypes getTypeValidator() {
+    ExtraValidation getExtraValidator() {
         return Objects.requireNonNull(this.validateTypes);
     }
 
@@ -488,7 +508,7 @@ public class CalciteCompiler implements IWritesLogs {
     public SqlNode parse(String sql, boolean saveLines) throws SqlParseException {
         SqlParser sqlParser = this.createSqlParser(sql, saveLines);
         SqlNode result = sqlParser.parseStmt();
-        result.accept(this.getTypeValidator());
+        result.accept(this.getExtraValidator());
         return result;
     }
 
@@ -499,7 +519,13 @@ public class CalciteCompiler implements IWritesLogs {
     public record ParsedStatement(SqlNode statement, boolean visible) {
         @Override
         public String toString() {
-            return this.statement.toString();
+            try {
+                return this.statement.toString();
+            } catch (Exception e) {
+                // This can happen if the statement is syntactically incorrect
+                // See https://issues.apache.org/jira/browse/CALCITE-6708
+                return this.statement.getKind().toString();
+            }
         }
     };
 
@@ -508,7 +534,7 @@ public class CalciteCompiler implements IWritesLogs {
         SqlParser sqlParser = this.createSqlParser(statements, saveLines);
         SqlNodeList sqlNodes = sqlParser.parseStmtList();
         for (SqlNode node: sqlNodes) {
-            node.accept(this.getTypeValidator());
+            node.accept(this.getExtraValidator());
         }
         return Linq.map(sqlNodes, n -> new ParsedStatement(n, saveLines));
     }
@@ -1270,7 +1296,7 @@ public class CalciteCompiler implements IWritesLogs {
         if (cv.getReplace())
             throw new UnsupportedException("OR REPLACE not supported", object);
         Logger.INSTANCE.belowLevel(this, 2)
-                .append(query.toString())
+                .appendSupplier(node.statement::toString)
                 .newline();
         query = this.replaceRecursiveViews(query);
         RelRoot relRoot = converter.convertQuery(query, true, true);
@@ -1326,7 +1352,7 @@ public class CalciteCompiler implements IWritesLogs {
     public FrontEndStatement compile(ParsedStatement node, SourceFileContents sources) {
         Logger.INSTANCE.belowLevel(this, 3)
                 .append("Compiling ")
-                .append(node.statement.toString())
+                .appendSupplier(node::toString)
                 .newline();
         SqlKind kind = node.statement().getKind();
         switch (kind) {
