@@ -49,19 +49,19 @@ public class RegressionTests extends SqlIoTest {
     }
 
     @Test
-    public void issue3043() {
-        this.compileRustTestCase("""
-                CREATE TABLE t1(c0 VARCHAR, c1 DOUBLE, c2 DOUBLE) with ('materialized' = 'true');
-                CREATE TABLE t4(c0 BOOLEAN) with ('materialized' = 'true');
-                CREATE VIEW v22_optimized AS (SELECT * FROM t4, t1 WHERE ((t4.c0)IS NOT DISTINCT FROM(IS_INF(t1.c1))));""");
-    }
-
-    @Test
     public void issue3042() {
         this.compileRustTestCase("""
                 CREATE TABLE t3(c0 DOUBLE) with ('materialized' = 'true');
                 CREATE TABLE t4(c0 VARCHAR, c1 INT, c2 VARCHAR, c3 BOOLEAN, c4 BOOLEAN) with ('materialized' = 'true');
                 CREATE VIEW v29_optimized AS (SELECT AVG(TRUNCATE((t3.c0::DOUBLE), t4.c1)) FROM t4, t3);""");
+    }
+
+    @Test
+    public void issue3043() {
+        this.compileRustTestCase("""
+                CREATE TABLE t1(c0 VARCHAR, c1 DOUBLE, c2 DOUBLE) with ('materialized' = 'true');
+                CREATE TABLE t4(c0 BOOLEAN) with ('materialized' = 'true');
+                CREATE VIEW v22_optimized AS (SELECT * FROM t4, t1 WHERE ((t4.c0)IS NOT DISTINCT FROM(IS_INF(t1.c1))));""");
     }
 
     @Test

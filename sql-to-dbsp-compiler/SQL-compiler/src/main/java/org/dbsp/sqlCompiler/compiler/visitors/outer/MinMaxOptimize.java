@@ -12,6 +12,7 @@ import org.dbsp.sqlCompiler.ir.aggregate.AggregateBase;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregate;
 import org.dbsp.sqlCompiler.ir.aggregate.MinMaxAggregate;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPConditionalAggregateExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
@@ -92,7 +93,10 @@ public class MinMaxOptimize extends Passes {
             DBSPType resultType = mmAggregate.type;
 
             // Need to index by (Key, Value), where Value is the value that is being aggregated.
-            DBSPConditionalAggregateExpression ca = increment.body.to(DBSPConditionalAggregateExpression.class);
+            DBSPExpression expr = increment.body;
+            if (expr.is(DBSPCastExpression.class))
+                expr = expr.to(DBSPCastExpression.class).source;
+            DBSPConditionalAggregateExpression ca = expr.to(DBSPConditionalAggregateExpression.class);
             DBSPExpression aggregatedField = ca.right;
             DBSPType aggregationInputType = aggregatedField.getType();
             // This if the function that extracts the aggregation field from the indexed row
