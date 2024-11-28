@@ -140,10 +140,6 @@ impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> Leaf<K, R> {
 
     /// Extends the current layer with elements between lower and upper from the
     /// supplied source layer
-    ///
-    /// # Safety
-    ///
-    /// The key and diff types of both layers must be the same
     fn extend_from_range(&mut self, source: &Self, lower: usize, upper: usize) {
         debug_assert!(lower <= source.len() && upper <= source.len());
         if lower == upper {
@@ -157,6 +153,36 @@ impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> Leaf<K, R> {
         // Extend with the given diffs
         self.diffs
             .extend_from_range(source.diffs.as_ref(), lower, upper);
+    }
+
+    /// Extends the current layer with elements between lower and upper from the
+    /// supplied source layer, applying `map_func` to keys and consolidating the results.
+    fn map_keys_and_extend_from_range(
+        &mut self,
+        source: &Self,
+        lower: usize,
+        upper: usize,
+        map_func: &dyn Fn(&mut K),
+    ) {
+        let base = self.len();
+
+        self.extend_from_range(source, lower, upper);
+
+        let end = self.len();
+
+        for i in base..end {
+            map_func(&mut self.keys[i]);
+        }
+
+        let consolidated_len = self
+            .factories
+            .consolidate_weights
+            .consolidate_paired_slices(
+                (self.keys.as_mut(), base, end),
+                (self.diffs.as_mut(), base, end),
+            );
+
+        self.truncate(base + consolidated_len);
     }
 
     /*fn extend<'a, I>(&mut self, tuples: I)
@@ -259,7 +285,7 @@ impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> Leaf<K, R> {
     /// Like `push_merge`, but also applies `f` to each `key`.
     /// Since `f` can be not-monotonic, this requires sorting
     /// and consolidating the output on each invocation.
-    fn push_map_merge(
+    fn map_keys_and_push_merge(
         &mut self,
         lhs: &Self,
         (lower1, upper1): (usize, usize),
@@ -620,9 +646,19 @@ impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> MergeBuilder for LeafBuilde
         self.layer.keys.len()
     }
 
-    fn copy_range(&mut self, other: &Self::Trie, lower: usize, upper: usize) {
-        // Safety: The current builder's layer and the trie layer types are the same
-        self.layer.extend_from_range(other, lower, upper);
+    fn copy_range(
+        &mut self,
+        other: &Self::Trie,
+        lower: usize,
+        upper: usize,
+        map_func: Option<&dyn Fn(&mut <<Self as Builder>::Trie as Trie>::LeafKey)>,
+    ) {
+        if let Some(map_func) = map_func {
+            self.layer
+                .map_keys_and_extend_from_range(other, lower, upper, map_func);
+        } else {
+            self.layer.extend_from_range(other, lower, upper);
+        }
     }
 
     fn copy_range_retain_keys<'a, F>(
@@ -631,10 +667,16 @@ impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> MergeBuilder for LeafBuilde
         lower: usize,
         upper: usize,
         filter: &F,
+        _map_func: Option<&dyn Fn(&mut <<Self as Builder>::Trie as Trie>::LeafKey)>,
     ) where
         F: Fn(&<<Self::Trie as Trie>::Cursor<'a> as Cursor<'a>>::Key) -> bool,
     {
         assert!(lower <= other.keys.len() && upper <= other.keys.len());
+
+        // `map_func` is currently only used to implement timestamp compaction, which
+        // only makes sense for batches with timestamps, which are implemented as `Layer`,
+        // not `Leaf`.
+        debug_assert!(_map_func.is_none(),);
 
         self.layer.keys.reserve(upper - lower);
         self.layer.diffs.reserve(upper - lower);
@@ -658,7 +700,7 @@ impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> MergeBuilder for LeafBuilde
         let rhs_bounds = (rhs_cursor.position(), rhs_cursor.bounds().1);
         if let Some(map_func) = map_func {
             self.layer
-                .push_map_merge(lhs, lhs_bounds, rhs, rhs_bounds, map_func);
+                .map_keys_and_push_merge(lhs, lhs_bounds, rhs, rhs_bounds, map_func);
         } else {
             self.layer.push_merge(lhs, lhs_bounds, rhs, rhs_bounds);
         }
@@ -704,7 +746,7 @@ impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> MergeBuilder for LeafBuilde
                     let step = 1 + trie1.keys.advance_to(1 + lower1, upper1, bound);
 
                     let step = min(step, 1000);
-                    self.copy_range_retain_keys(trie1, lower1, lower1 + step, filter);
+                    self.copy_range_retain_keys(trie1, lower1, lower1 + step, filter, None);
 
                     lower1 += step;
                 }
@@ -728,7 +770,7 @@ impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> MergeBuilder for LeafBuilde
                     let step = 1 + trie2.keys.advance_to(1 + lower2, upper2, bound);
 
                     let step = min(step, 1000);
-                    self.copy_range_retain_keys(trie2, lower2, lower2 + step, filter);
+                    self.copy_range_retain_keys(trie2, lower2, lower2 + step, filter, None);
 
                     lower2 += step;
                 }
@@ -736,10 +778,10 @@ impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> MergeBuilder for LeafBuilde
         }
 
         if lower1 < upper1 {
-            self.copy_range_retain_keys(trie1, lower1, upper1, filter);
+            self.copy_range_retain_keys(trie1, lower1, upper1, filter, None);
         }
         if lower2 < upper2 {
-            self.copy_range_retain_keys(trie2, lower2, upper2, filter);
+            self.copy_range_retain_keys(trie2, lower2, upper2, filter, None);
         }
 
         // unsafe { self.assume_invariants() }

@@ -386,7 +386,7 @@ where
                     .keys
                     .advance_to(1 + *lower1, upper1, &trie2.keys[*lower2]);
                 let step = min(step, 1_000);
-                self.copy_range(trie1, *lower1, *lower1 + step);
+                self.copy_range(trie1, *lower1, *lower1 + step, map_func);
                 *lower1 += step;
             }
 
@@ -419,7 +419,7 @@ where
                     .keys
                     .advance_to(1 + *lower2, upper2, &trie1.keys[*lower1]);
                 let step = min(step, 1_000);
-                self.copy_range(trie2, *lower2, *lower2 + step);
+                self.copy_range(trie2, *lower2, *lower2 + step, map_func);
                 *lower2 += step;
             }
         }
@@ -443,7 +443,7 @@ where
                     .keys
                     .advance_to(1 + *lower1, upper1, &trie2.keys[*lower2]);
                 let step = min(step, 1_000);
-                self.copy_range_retain_keys(trie1, *lower1, *lower1 + step, filter);
+                self.copy_range_retain_keys(trie1, *lower1, *lower1 + step, filter, map_func);
                 *lower1 += step;
             }
 
@@ -478,7 +478,7 @@ where
                     .keys
                     .advance_to(1 + *lower2, upper2, &trie1.keys[*lower1]);
                 let step = min(step, 1_000);
-                self.copy_range_retain_keys(trie2, *lower2, *lower2 + step, filter);
+                self.copy_range_retain_keys(trie2, *lower2, *lower2 + step, filter, map_func);
                 *lower2 += step;
             }
         }
@@ -596,7 +596,7 @@ where
         map_func: Option<&dyn Fn(&mut <<Self as Builder>::Trie as Trie>::LeafKey)>,
         fuel: &mut isize,
     ) {
-        let starting_updates = self.vals.keys();
+        let starting_updates = source1.offs[*lower1] + source2.offs[*lower2];
         let mut effort = 0isize;
 
         // while both mergees are still active
@@ -606,7 +606,8 @@ where
                 (source2, lower2, upper2),
                 map_func,
             );
-            effort = (self.vals.keys() - starting_updates) as isize;
+            effort = (source1.offs[*lower1] + source2.offs[*lower2] - starting_updates).into_usize()
+                as isize;
         }
 
         // Merging is complete; only copying remains.
@@ -618,21 +619,31 @@ where
                     if remaining_fuel < 1_000 {
                         remaining_fuel = 1_000;
                     }
-                    *lower1 =
-                        self.copy_range_fueled(source1, *lower1, upper1, remaining_fuel as usize);
+                    *lower1 = self.copy_range_fueled(
+                        source1,
+                        *lower1,
+                        upper1,
+                        map_func,
+                        remaining_fuel as usize,
+                    );
                 }
                 if *lower2 < upper2 {
                     if remaining_fuel < 1_000 {
                         remaining_fuel = 1_000;
                     }
-                    *lower2 =
-                        self.copy_range_fueled(source2, *lower2, upper2, remaining_fuel as usize);
+                    *lower2 = self.copy_range_fueled(
+                        source2,
+                        *lower2,
+                        upper2,
+                        map_func,
+                        remaining_fuel as usize,
+                    );
                 }
             }
         }
 
-        effort = (self.vals.keys() - starting_updates) as isize;
-
+        effort = (source1.offs[*lower1] + source2.offs[*lower2] - starting_updates).into_usize()
+            as isize;
         *fuel -= effort;
     }
 
@@ -646,7 +657,9 @@ where
     ) where
         F: Fn(&K) -> bool,
     {
-        let starting_updates = self.vals.keys();
+        // We measure effort exerted by this function in terms of the number of input
+        // values processed rather than the number of produced outputs.
+        let starting_updates = source1.offs[*lower1] + source2.offs[*lower2];
         let mut effort = 0isize;
 
         // while both mergees are still active
@@ -657,7 +670,8 @@ where
                 filter,
                 map_func,
             );
-            effort = (self.vals.keys() - starting_updates) as isize;
+            effort = (source1.offs[*lower1] + source2.offs[*lower2] - starting_updates).into_usize()
+                as isize;
         }
 
         // Merging is complete; only copying remains.
@@ -674,6 +688,7 @@ where
                         *lower1,
                         upper1,
                         filter,
+                        map_func,
                         remaining_fuel as usize,
                     );
                 }
@@ -686,15 +701,43 @@ where
                         *lower2,
                         upper2,
                         filter,
+                        map_func,
                         remaining_fuel as usize,
                     );
                 }
             }
         }
 
-        effort = (self.vals.keys() - starting_updates) as isize;
+        effort = (source1.offs[*lower1] + source2.offs[*lower2] - starting_updates).into_usize()
+            as isize;
 
         *fuel -= effort;
+    }
+
+    /// Copy the key at `index` and its associated values from `other` to `self`, applying
+    /// `map_func` to times along the way. If all values get consolidated away, the
+    /// key is not copied.
+    fn map_times_and_copy_key(
+        &mut self,
+        other: &<Self as Builder>::Trie,
+        index: usize,
+        map_func: &dyn Fn(&mut <<Self as Builder>::Trie as Trie>::LeafKey),
+    ) {
+        let val_start = self.vals.keys();
+
+        self.vals.copy_range(
+            &other.vals,
+            other.offs[index].into_usize(),
+            other.offs[index + 1].into_usize(),
+            Some(map_func),
+        );
+
+        let val_end = self.vals.keys();
+
+        if val_end > val_start {
+            self.keys.push_ref(&other.keys[index]);
+            self.offs.push(O::from_usize(val_end));
+        }
     }
 
     /// Like `copy_range`, but uses `fuel` to bound the amount of work.
@@ -708,6 +751,7 @@ where
         other: &<Self as Builder>::Trie,
         lower: usize,
         mut upper: usize,
+        map_func: Option<&dyn Fn(&mut <<Self as Builder>::Trie as Trie>::LeafKey)>,
         fuel: usize,
     ) -> usize {
         assert!(lower < upper && lower < other.offs.len() && upper < other.offs.len());
@@ -723,19 +767,27 @@ where
 
         upper = lower + keys;
 
-        self.keys
-            .extend_from_range(other.keys.as_ref(), lower, upper);
-        for index in lower..upper {
-            self.offs
-                .push((other.offs[index + 1] + self_basis) - other_basis);
+        if let Some(map_func) = map_func {
+            // Process keys one by one only keeping those keys whose values don't
+            // get compacted away.
+            for i in lower..upper {
+                self.map_times_and_copy_key(other, i, map_func);
+            }
+        } else {
+            self.keys
+                .extend_from_range(other.keys.as_ref(), lower, upper);
+            for index in lower..upper {
+                self.offs
+                    .push((other.offs[index + 1] + self_basis) - other_basis);
+            }
+
+            self.vals.copy_range(
+                &other.vals,
+                other_basis.into_usize(),
+                other.offs[upper].into_usize(),
+                None,
+            );
         }
-
-        self.vals.copy_range(
-            &other.vals,
-            other_basis.into_usize(),
-            other.offs[upper].into_usize(),
-        );
-
         upper
     }
 
@@ -745,6 +797,7 @@ where
         lower: usize,
         mut upper: usize,
         filter: &F,
+        map_func: Option<&dyn Fn(&mut <<Self as Builder>::Trie as Trie>::LeafKey)>,
         fuel: usize,
     ) -> usize
     where
@@ -762,7 +815,7 @@ where
 
         upper = lower + keys;
 
-        self.copy_range_retain_keys(other, lower, upper, filter);
+        self.copy_range_retain_keys(other, lower, upper, filter, map_func);
 
         upper
     }
@@ -791,7 +844,8 @@ where
         KF: Fn(&K) -> bool,
         VF: Fn(&V) -> bool,
     {
-        let starting_updates = self.vals.keys();
+        let starting_updates = source1.offs[*lower1] + source2.offs[*lower2];
+
         let mut effort = 0isize;
 
         // while both mergees are still active
@@ -804,8 +858,8 @@ where
                 map_func,
                 usize::MAX,
             );
-            // TODO: account for filtered out keys.
-            effort = (self.vals.keys() - starting_updates) as isize;
+            effort = (source1.offs[*lower1] + source2.offs[*lower2] - starting_updates).into_usize()
+                as isize;
         }
 
         // Merging is complete; only copying remains.
@@ -823,6 +877,7 @@ where
                         upper1,
                         key_filter,
                         value_filter,
+                        map_func,
                         remaining_fuel as usize,
                     );
                 }
@@ -836,13 +891,15 @@ where
                         upper2,
                         key_filter,
                         value_filter,
+                        map_func,
                         remaining_fuel as usize,
                     );
                 }
             }
         }
 
-        effort = (self.vals.keys() - starting_updates) as isize;
+        effort = (source1.offs[*lower1] + source2.offs[*lower2] - starting_updates).into_usize()
+            as isize;
         *fuel -= effort;
     }
 
@@ -871,6 +928,7 @@ where
                     *lower1 + step,
                     key_filter,
                     value_filter,
+                    map_func,
                     fuel,
                 );
             }
@@ -913,12 +971,14 @@ where
                     *lower2 + step,
                     key_filter,
                     value_filter,
+                    map_func,
                     fuel,
                 );
             }
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn copy_range_retain_values_fueled<KF, VF>(
         &mut self,
         other: &<Self as Builder>::Trie,
@@ -926,6 +986,7 @@ where
         upper: usize,
         key_filter: &KF,
         value_filter: &VF,
+        map_func: Option<&dyn Fn(&mut <<Self as Builder>::Trie as Trie>::LeafKey)>,
         fuel: usize,
     ) -> usize
     where
@@ -953,6 +1014,7 @@ where
                         other_basis,
                         other_end,
                         value_filter,
+                        map_func,
                     );
                     if self.vals.keys() > self_basis {
                         self.keys.push_ref(&other.keys[index]);
@@ -1012,24 +1074,37 @@ where
         self.keys.len()
     }
 
-    fn copy_range(&mut self, other: &Self::Trie, lower: usize, upper: usize) {
+    fn copy_range(
+        &mut self,
+        other: &Self::Trie,
+        lower: usize,
+        upper: usize,
+        map_func: Option<&dyn Fn(&mut <<Self as Builder>::Trie as Trie>::LeafKey)>,
+    ) {
         assert!(lower < upper && lower < other.offs.len() && upper < other.offs.len());
 
         let other_basis = other.offs[lower];
         let self_basis = self.offs.last().copied().unwrap_or_else(|| O::zero());
 
-        self.keys
-            .extend_from_range(other.keys.as_ref(), lower, upper);
-        for index in lower..upper {
-            self.offs
-                .push((other.offs[index + 1] + self_basis) - other_basis);
-        }
+        if let Some(map_func) = map_func {
+            for i in lower..upper {
+                self.map_times_and_copy_key(other, i, map_func);
+            }
+        } else {
+            self.keys
+                .extend_from_range(other.keys.as_ref(), lower, upper);
+            for index in lower..upper {
+                self.offs
+                    .push((other.offs[index + 1] + self_basis) - other_basis);
+            }
 
-        self.vals.copy_range(
-            &other.vals,
-            other_basis.into_usize(),
-            other.offs[upper].into_usize(),
-        );
+            self.vals.copy_range(
+                &other.vals,
+                other_basis.into_usize(),
+                other.offs[upper].into_usize(),
+                None,
+            );
+        }
     }
 
     fn copy_range_retain_keys<'a, F>(
@@ -1038,6 +1113,7 @@ where
         lower: usize,
         upper: usize,
         filter: &F,
+        map_func: Option<&dyn Fn(&mut <<Self as Builder>::Trie as Trie>::LeafKey)>,
     ) where
         F: Fn(&<<Self::Trie as Trie>::Cursor<'a> as Cursor<'a>>::Key) -> bool,
     {
@@ -1045,15 +1121,20 @@ where
 
         for index in lower..upper {
             if filter(&other.keys[index]) {
-                self.keys.push_ref(&other.keys[index]);
+                if let Some(map_func) = map_func {
+                    self.map_times_and_copy_key(other, index, map_func);
+                } else {
+                    self.keys.push_ref(&other.keys[index]);
 
-                self.vals.copy_range(
-                    &other.vals,
-                    other.offs[index].into_usize(),
-                    other.offs[index + 1].into_usize(),
-                );
+                    self.vals.copy_range(
+                        &other.vals,
+                        other.offs[index].into_usize(),
+                        other.offs[index + 1].into_usize(),
+                        None,
+                    );
 
-                self.offs.push(O::from_usize(self.vals.keys()));
+                    self.offs.push(O::from_usize(self.vals.keys()));
+                }
             }
         }
     }
@@ -1081,10 +1162,10 @@ where
         }
 
         if lower1 < upper1 {
-            self.copy_range(cursor1.storage, lower1, upper1);
+            self.copy_range(cursor1.storage, lower1, upper1, map_func);
         }
         if lower2 < upper2 {
-            self.copy_range(cursor2.storage, lower2, upper2);
+            self.copy_range(cursor2.storage, lower2, upper2, map_func);
         }
     }
 
@@ -1115,10 +1196,10 @@ where
         }
 
         if lower1 < upper1 {
-            self.copy_range_retain_keys(cursor1.storage, lower1, upper1, filter);
+            self.copy_range_retain_keys(cursor1.storage, lower1, upper1, filter, map_func);
         }
         if lower2 < upper2 {
-            self.copy_range_retain_keys(cursor2.storage, lower2, upper2, filter);
+            self.copy_range_retain_keys(cursor2.storage, lower2, upper2, filter, map_func);
         }
     }
 }
