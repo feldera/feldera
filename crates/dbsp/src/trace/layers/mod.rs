@@ -188,9 +188,7 @@ pub trait MergeBuilder: Builder {
         other1: <Self::Trie as Trie>::Cursor<'a>,
         other2: <Self::Trie as Trie>::Cursor<'a>,
         map_func: Option<&dyn Fn(&mut <<Self as Builder>::Trie as Trie>::LeafKey)>,
-    ) {
-        self.push_merge_retain_keys(other1, other2, &|_| true, map_func)
-    }
+    );
 
     /// Merges two sub-collections into one sub-collection, only
     /// retaining entries whose keys satisfy the `filter` condition.
