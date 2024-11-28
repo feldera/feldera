@@ -365,16 +365,38 @@ where
         &mut self,
         cursor: &mut FileKeyCursor<K, T, R>,
         key_filter: &Option<Filter<K>>,
+        map_func: Option<&dyn Fn(&mut DynDataTyped<T>)>,
         fuel: &mut isize,
     ) {
         if filter(key_filter, cursor.key.as_ref()) {
-            cursor.map_times(&mut |time, diff| {
-                self.writer.write1((time, diff)).unwrap();
-                *fuel -= 1;
-            });
-            self.writer
-                .write0((cursor.key.as_ref(), ().erase()))
-                .unwrap();
+            if let Some(map_func) = map_func {
+                self.time_diffs.clear();
+                cursor.map_times(&mut |time, diff| {
+                    let mut time = time.clone();
+                    map_func(&mut time);
+                    self.time_diffs.push_refs((&time, diff));
+                    *fuel -= 1;
+                });
+                self.time_diffs.consolidate();
+                for i in 0..self.time_diffs.len() {
+                    let (time, diff) = self.time_diffs[i].split();
+                    self.writer.write1((time, diff)).unwrap();
+                }
+
+                if !self.time_diffs.is_empty() {
+                    self.writer
+                        .write0((cursor.key.as_ref(), ().erase()))
+                        .unwrap();
+                }
+            } else {
+                cursor.map_times(&mut |time, diff| {
+                    self.writer.write1((time, diff)).unwrap();
+                    *fuel -= 1;
+                });
+                self.writer
+                    .write0((cursor.key.as_ref(), ().erase()))
+                    .unwrap();
+            }
         } else {
             *fuel -= 1;
         }
@@ -555,7 +577,7 @@ where
         while cursor1.key_valid() && cursor2.key_valid() && *fuel > 0 {
             match cursor1.key.as_ref().cmp(cursor2.key.as_ref()) {
                 Ordering::Less => {
-                    self.copy_values_if(&mut cursor1, key_filter, fuel);
+                    self.copy_values_if(&mut cursor1, key_filter, time_map_func, fuel);
                 }
                 Ordering::Equal => {
                     if filter(key_filter, cursor1.key.as_ref()) {
@@ -576,16 +598,16 @@ where
                 }
 
                 Ordering::Greater => {
-                    self.copy_values_if(&mut cursor2, key_filter, fuel);
+                    self.copy_values_if(&mut cursor2, key_filter, time_map_func, fuel);
                 }
             }
         }
 
         while cursor1.key_valid() && *fuel > 0 {
-            self.copy_values_if(&mut cursor1, key_filter, fuel);
+            self.copy_values_if(&mut cursor1, key_filter, time_map_func, fuel);
         }
         while cursor2.key_valid() && *fuel > 0 {
-            self.copy_values_if(&mut cursor2, key_filter, fuel);
+            self.copy_values_if(&mut cursor2, key_filter, time_map_func, fuel);
         }
         self.lower1 = cursor1.cursor.absolute_position() as usize;
         self.lower2 = cursor2.cursor.absolute_position() as usize;

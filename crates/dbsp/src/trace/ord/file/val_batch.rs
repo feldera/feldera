@@ -474,25 +474,22 @@ where
         key: &K,
         key_cursor: &mut RawKeyCursor<'_, K, V, T, R>,
         value_filter: &Option<Filter<V>>,
+        map_func: Option<&dyn Fn(&mut DynDataTyped<T>)>,
     ) {
         self.factories.factories1.key_factory.with(&mut |value| {
-            self.factories.timediff_factory.with(&mut |aux| {
-                let mut value_cursor = key_cursor.next_column().unwrap().first().unwrap();
-                let mut n = 0;
-                while value_cursor.has_value() {
-                    let value = unsafe { value_cursor.key(value) }.unwrap();
-                    if include(value, value_filter) {
-                        let aux = unsafe { value_cursor.aux(aux) }.unwrap();
-                        output.write1((value, aux)).unwrap();
-                        n += 1;
-                    }
-                    value_cursor.move_next().unwrap();
+            let mut value_cursor = key_cursor.next_column().unwrap().first().unwrap();
+            let mut n = 0;
+            while value_cursor.has_value() {
+                let value = unsafe { value_cursor.key(value) }.unwrap();
+                if include(value, value_filter) {
+                    n += self.copy_value(output, &mut value_cursor, value, map_func);
                 }
-                if n > 0 {
-                    output.write0((key, ().erase())).unwrap();
-                }
-                key_cursor.move_next().unwrap();
-            })
+                value_cursor.move_next().unwrap();
+            }
+            if n > 0 {
+                output.write0((key, ().erase())).unwrap();
+            }
+            key_cursor.move_next().unwrap();
         })
     }
 
@@ -501,12 +498,27 @@ where
         output: &mut Writer2<K, DynUnit, V, DynWeightedPairs<DynDataTyped<T>, R>>,
         cursor: &mut RawValCursor<'_, K, V, T, R>,
         value: &V,
-    ) {
+        map_func: Option<&dyn Fn(&mut DynDataTyped<T>)>,
+    ) -> usize {
+        let mut n = 0;
+
         self.factories.timediff_factory.with(&mut |td| {
             let td = unsafe { cursor.aux(td) }.unwrap();
-            output.write1((value, td)).unwrap();
-            cursor.move_next().unwrap();
-        })
+            if let Some(map_func) = map_func {
+                for i in 0..td.len() {
+                    map_func(td[i].fst_mut());
+                }
+                td.consolidate();
+                if !td.is_empty() {
+                    output.write1((value, td)).unwrap();
+                    n = 1;
+                }
+            } else {
+                output.write1((value, td)).unwrap();
+                n = 1;
+            }
+        });
+        n
     }
 
     fn merge_values(
@@ -530,8 +542,8 @@ where
                                     while let Some(value2) =
                                         read_filtered(cursor2, value_filter, tmp_v2)
                                     {
-                                        self.copy_value(output, cursor2, value2);
-                                        n += 1;
+                                        n += self.copy_value(output, cursor2, value2, map_func);
+                                        cursor2.move_next().unwrap();
                                     }
                                     return;
                                 };
@@ -540,21 +552,24 @@ where
                                     while let Some(value1) =
                                         read_filtered(cursor1, value_filter, tmp_v1)
                                     {
-                                        self.copy_value(output, cursor1, value1);
-                                        n += 1;
+                                        n += self.copy_value(output, cursor1, value1, map_func);
+                                        cursor1.move_next().unwrap();
                                     }
                                     return;
                                 };
                                 match value1.cmp(value2) {
-                                    Ordering::Less => self.copy_value(output, cursor1, value1),
+                                    Ordering::Less => {
+                                        n += self.copy_value(output, cursor1, value1, map_func);
+                                        cursor1.move_next().unwrap();
+                                    }
                                     Ordering::Equal => {
                                         let td1 = unsafe { cursor1.aux(td1) }.unwrap();
                                         let td2 = unsafe { cursor2.aux(td2) }.unwrap();
                                         if let Some(map_func) = &map_func {
                                             merge_map_times(td1, td2, map_func, td);
                                         } else {
-                                            td1.sort_unstable();
-                                            td2.sort_unstable();
+                                            //debug_assert!(td1.is_sorted());
+                                            //debug_assert!(td2.is_sorted());
 
                                             merge_times(td1, td2, td, tmp_w);
                                         }
@@ -564,10 +579,13 @@ where
                                             continue;
                                         }
                                         output.write1((value1, td)).unwrap();
+                                        n += 1;
                                     }
-                                    Ordering::Greater => self.copy_value(output, cursor2, value2),
+                                    Ordering::Greater => {
+                                        n += self.copy_value(output, cursor2, value2, map_func);
+                                        cursor2.move_next().unwrap();
+                                    }
                                 }
-                                n += 1;
                             })
                         })
                     })
@@ -610,19 +628,37 @@ where
                 .with(&mut |tmp_key2| loop {
                     let Some(key1) = read_filtered(&mut cursor1, key_filter, tmp_key1) else {
                         while let Some(key2) = read_filtered(&mut cursor2, key_filter, tmp_key2) {
-                            self.copy_values_if(&mut output, key2, &mut cursor2, value_filter);
+                            self.copy_values_if(
+                                &mut output,
+                                key2,
+                                &mut cursor2,
+                                value_filter,
+                                time_map_func,
+                            );
                         }
                         break;
                     };
                     let Some(key2) = read_filtered(&mut cursor2, key_filter, tmp_key2) else {
                         while let Some(key1) = read_filtered(&mut cursor1, key_filter, tmp_key1) {
-                            self.copy_values_if(&mut output, key1, &mut cursor1, value_filter);
+                            self.copy_values_if(
+                                &mut output,
+                                key1,
+                                &mut cursor1,
+                                value_filter,
+                                time_map_func,
+                            );
                         }
                         break;
                     };
                     match key1.cmp(key2) {
                         Ordering::Less => {
-                            self.copy_values_if(&mut output, key1, &mut cursor1, value_filter);
+                            self.copy_values_if(
+                                &mut output,
+                                key1,
+                                &mut cursor1,
+                                value_filter,
+                                time_map_func,
+                            );
                         }
                         Ordering::Equal => {
                             if self.merge_values(
@@ -639,7 +675,13 @@ where
                         }
 
                         Ordering::Greater => {
-                            self.copy_values_if(&mut output, key2, &mut cursor2, value_filter);
+                            self.copy_values_if(
+                                &mut output,
+                                key2,
+                                &mut cursor2,
+                                value_filter,
+                                time_map_func,
+                            );
                         }
                     }
                 })
