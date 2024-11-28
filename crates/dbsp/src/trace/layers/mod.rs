@@ -161,9 +161,13 @@ pub trait MergeBuilder: Builder {
     fn keys(&self) -> usize;
 
     /// Copy a range of `other` into this collection.
-    fn copy_range(&mut self, other: &Self::Trie, lower: usize, upper: usize) {
-        self.copy_range_retain_keys(other, lower, upper, &|_| true)
-    }
+    fn copy_range(
+        &mut self,
+        other: &Self::Trie,
+        lower: usize,
+        upper: usize,
+        map_func: Option<&dyn Fn(&mut <<Self as Builder>::Trie as Trie>::LeafKey)>,
+    );
 
     /// Copy a range of `other` into this collection, only retaining
     /// entries whose keys satisfy the `filter` condition.
@@ -173,6 +177,7 @@ pub trait MergeBuilder: Builder {
         lower: usize,
         upper: usize,
         filter: &F,
+        map_func: Option<&dyn Fn(&mut <<Self as Builder>::Trie as Trie>::LeafKey)>,
     ) where
         F: Fn(&<<Self::Trie as Trie>::Cursor<'a> as Cursor<'a>>::Key) -> bool;
 
@@ -328,7 +333,14 @@ impl MergeBuilder for () {
         0
     }
 
-    fn copy_range(&mut self, _other: &Self::Trie, _lower: usize, _upper: usize) {}
+    fn copy_range(
+        &mut self,
+        _other: &Self::Trie,
+        _lower: usize,
+        _upper: usize,
+        _map_func: Option<&dyn Fn(&mut <<Self as Builder>::Trie as Trie>::LeafKey)>,
+    ) {
+    }
 
     fn copy_range_retain_keys<'a, F>(
         &mut self,
@@ -336,6 +348,7 @@ impl MergeBuilder for () {
         _lower: usize,
         _upper: usize,
         _filter: &F,
+        _map_func: Option<&dyn Fn(&mut <<Self as Builder>::Trie as Trie>::LeafKey)>,
     ) where
         F: Fn(&<<Self::Trie as Trie>::Cursor<'a> as Cursor<'a>>::Key) -> bool,
     {
