@@ -32,6 +32,7 @@ import org.dbsp.sqlCompiler.ir.DBSPNode;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.statement.DBSPExpressionStatement;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
@@ -56,6 +57,11 @@ public abstract class DBSPExpression
     protected DBSPExpression(CalciteObject node, DBSPType type) {
         super(node);
         this.type = type;
+    }
+
+    public boolean isConstantLiteral() {
+        return this.is(DBSPLiteral.class) &&
+                this.to(DBSPLiteral.class).isConstant();
     }
 
     /** Generates an expression that calls clone() on this. */

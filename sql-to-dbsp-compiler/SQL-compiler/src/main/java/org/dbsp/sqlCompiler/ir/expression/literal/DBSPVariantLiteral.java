@@ -46,6 +46,11 @@ public class DBSPVariantLiteral extends DBSPLiteral {
     }
 
     @Override
+    public boolean isConstant() {
+        return this.isSqlNull || this.value == null || this.value.isConstantLiteral();
+    }
+
+    @Override
     public void accept(InnerVisitor visitor) {
         VisitDecision decision = visitor.preorder(this);
         if (decision.stop()) return;

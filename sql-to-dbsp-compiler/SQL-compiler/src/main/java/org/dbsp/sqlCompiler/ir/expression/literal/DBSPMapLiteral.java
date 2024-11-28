@@ -34,6 +34,11 @@ public final class DBSPMapLiteral extends DBSPLiteral {
         return result;
     }
 
+    public boolean isConstant() {
+        return (this.keys == null || Linq.all(this.keys, DBSPExpression::isConstantLiteral)) &&
+                (this.values == null || Linq.all(this.values, DBSPExpression::isConstantLiteral));
+    }
+
     public static List<DBSPExpression> getValues(List<DBSPExpression> data) {
         ArrayList<DBSPExpression> result = new ArrayList<>();
         for (int i = 1; i < data.size(); i += 2)

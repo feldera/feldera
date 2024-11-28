@@ -68,14 +68,13 @@ where
 }
 
 #[doc(hidden)]
-pub fn cardinalityVec<T>(value: Vec<T>) -> i32 {
+pub fn cardinalityVec<T>(value: &[T]) -> i32 {
     value.len() as i32
 }
 
 #[doc(hidden)]
-pub fn cardinalityVecN<T>(value: Option<Vec<T>>) -> Option<i32> {
-    let value = value?;
-    Some(value.len() as i32)
+pub fn cardinalityVecN<T>(value: &Option<Vec<T>>) -> Option<i32> {
+    value.as_ref().map(|value| value.len() as i32)
 }
 
 // 8 versions of index, depending on

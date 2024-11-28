@@ -45,6 +45,11 @@ public final class DBSPDateLiteral extends DBSPLiteral {
     }
 
     @Override
+    public boolean isConstant() {
+        return true;
+    }
+
+    @Override
     public DBSPExpression deepCopy() {
         return new DBSPDateLiteral(this.getNode(), this.type, this.value);
     }

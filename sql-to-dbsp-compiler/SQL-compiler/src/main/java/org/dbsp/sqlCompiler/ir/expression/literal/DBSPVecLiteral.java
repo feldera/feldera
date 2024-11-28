@@ -41,7 +41,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
-/** Represents a (constant) vector described by its elements. */
+/** Represents a vector described by its elements. */
 public final class DBSPVecLiteral extends DBSPLiteral implements IDBSPContainer {
     @Nullable
     public final List<DBSPExpression> data;
@@ -160,6 +160,11 @@ public final class DBSPVecLiteral extends DBSPLiteral implements IDBSPContainer 
     public DBSPExpression deepCopy() {
         return new DBSPVecLiteral(this.getNode(), this.getType(),
                 this.data != null ? Linq.map(this.data, DBSPExpression::deepCopy) : null);
+    }
+
+    @Override
+    public boolean isConstant() {
+        return this.isNull || this.data == null || Linq.all(this.data, DBSPExpression::isConstantLiteral);
     }
 
     @Override

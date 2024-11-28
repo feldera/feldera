@@ -34,6 +34,11 @@ public final class DBSPZSetLiteral extends DBSPLiteral
         return data[0].getType();
     }
 
+    @Override
+    public boolean isConstant() {
+        return Linq.all(this.data.keySet(), DBSPExpression::isConstantLiteral);
+    }
+
     /**
      * Create a ZSet literal from a set of data values.
      *
