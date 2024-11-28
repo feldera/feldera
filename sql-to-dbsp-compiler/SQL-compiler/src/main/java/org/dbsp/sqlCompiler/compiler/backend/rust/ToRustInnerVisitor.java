@@ -893,11 +893,11 @@ public class ToRustInnerVisitor extends InnerVisitor {
                 break;
             }
             case MAP_INDEX: {
-                DBSPType collectionType = expression.left.getType();
-                DBSPTypeMap vec = collectionType.to(DBSPTypeMap.class);
+                DBSPType collectionType = expression.left.getType().deref();
+                DBSPTypeMap map = collectionType.to(DBSPTypeMap.class);
                 this.builder.append("map_index")
                         .append(expression.left.getType().nullableUnderlineSuffix())
-                        .append(vec.getKeyType().nullableUnderlineSuffix())
+                        .append(map.getValueType().nullableUnderlineSuffix())
                         .append(expression.right.getType().nullableUnderlineSuffix())
                         .append("(");
                 expression.left.accept(this);

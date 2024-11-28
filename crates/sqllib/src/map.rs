@@ -46,7 +46,7 @@ where
 // nullability of index
 
 #[doc(hidden)]
-pub fn map_index___<I, T>(value: BTreeMap<I, T>, map_index: I) -> Option<T>
+pub fn map_index___<I, T>(value: &BTreeMap<I, T>, map_index: I) -> Option<T>
 where
     I: Ord,
     T: Clone,
@@ -55,7 +55,7 @@ where
 }
 
 #[doc(hidden)]
-pub fn map_index__N<I, T>(value: BTreeMap<I, T>, map_index: Option<I>) -> Option<T>
+pub fn map_index__N<I, T>(value: &BTreeMap<I, T>, map_index: Option<I>) -> Option<T>
 where
     I: Ord,
     T: Clone,
@@ -65,7 +65,7 @@ where
 }
 
 #[doc(hidden)]
-pub fn map_index_N_<I, T>(value: BTreeMap<I, Option<T>>, map_index: I) -> Option<T>
+pub fn map_index_N_<I, T>(value: &BTreeMap<I, Option<T>>, map_index: I) -> Option<T>
 where
     I: Ord,
     T: Clone,
@@ -77,7 +77,7 @@ where
 }
 
 #[doc(hidden)]
-pub fn map_index_NN<I, T>(value: BTreeMap<I, Option<T>>, map_index: Option<I>) -> Option<T>
+pub fn map_index_NN<I, T>(value: &BTreeMap<I, Option<T>>, map_index: Option<I>) -> Option<T>
 where
     I: Ord,
     T: Clone,
@@ -87,7 +87,7 @@ where
 }
 
 #[doc(hidden)]
-pub fn map_indexN__<I, T>(value: Option<BTreeMap<I, T>>, map_index: I) -> Option<T>
+pub fn map_indexN__<I, T>(value: &Option<BTreeMap<I, T>>, map_index: I) -> Option<T>
 where
     I: Ord,
     T: Clone,
@@ -99,7 +99,7 @@ where
 }
 
 #[doc(hidden)]
-pub fn map_indexN_N<I, T>(value: Option<BTreeMap<I, T>>, map_index: Option<I>) -> Option<T>
+pub fn map_indexN_N<I, T>(value: &Option<BTreeMap<I, T>>, map_index: Option<I>) -> Option<T>
 where
     I: Ord,
     T: Clone,
@@ -112,7 +112,7 @@ where
 }
 
 #[doc(hidden)]
-pub fn map_indexNN_<I, T>(value: Option<BTreeMap<I, Option<T>>>, map_index: I) -> Option<T>
+pub fn map_indexNN_<I, T>(value: &Option<BTreeMap<I, Option<T>>>, map_index: I) -> Option<T>
 where
     I: Ord,
     T: Clone,
@@ -124,7 +124,7 @@ where
 }
 
 #[doc(hidden)]
-pub fn map_indexNNN<I, T>(value: Option<BTreeMap<I, Option<T>>>, map_index: Option<I>) -> Option<T>
+pub fn map_indexNNN<I, T>(value: &Option<BTreeMap<I, Option<T>>>, map_index: Option<I>) -> Option<T>
 where
     I: Ord,
     T: Clone,
@@ -137,12 +137,49 @@ where
 }
 
 #[doc(hidden)]
-pub fn cardinalityMap<I, T>(value: BTreeMap<I, T>) -> i32 {
+pub fn cardinalityMap<I, T>(value: &BTreeMap<I, T>) -> i32 {
     value.len() as i32
 }
 
 #[doc(hidden)]
-pub fn cardinalityMapN<I, T>(value: Option<BTreeMap<I, T>>) -> Option<i32> {
-    let value = value?;
-    Some(cardinalityMap(value))
+pub fn cardinalityMapN<I, T>(value: &Option<BTreeMap<I, T>>) -> Option<i32> {
+    value.as_ref().map(|map| cardinalityMap(map))
+}
+
+#[doc(hidden)]
+pub fn map_contains_key__<I, T>(value: &BTreeMap<I, T>, key: I) -> bool
+where
+    I: Ord,
+    T: Clone,
+{
+    value.contains_key(&key)
+}
+
+#[doc(hidden)]
+pub fn map_contains_keyN_<I, T>(value: &Option<BTreeMap<I, T>>, key: I) -> Option<bool>
+where
+    I: Ord,
+    T: Clone,
+{
+    value.as_ref().map(|map| map_contains_key__(map, key))
+}
+
+#[doc(hidden)]
+pub fn map_contains_keyNN<I, T>(value: &Option<BTreeMap<I, T>>, key: Option<I>) -> Option<bool>
+where
+    I: Ord,
+    T: Clone,
+{
+    let key = key?;
+    map_contains_keyN_(value, key)
+}
+
+#[doc(hidden)]
+pub fn map_contains_key_N<I, T>(value: &BTreeMap<I, T>, key: Option<I>) -> Option<bool>
+where
+    I: Ord,
+    T: Clone,
+{
+    let key = key?;
+    Some(map_contains_key__(value, key))
 }

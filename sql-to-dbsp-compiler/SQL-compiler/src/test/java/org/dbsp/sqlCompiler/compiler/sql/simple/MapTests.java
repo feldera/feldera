@@ -36,10 +36,6 @@ public class MapTests extends BaseSQLTests {
         this.addRustTestCase(ccs);
     }
 
-    private void testQuery(String statements, String query) {
-        this.testQuery(statements, query, new InputOutputChangeStream());
-    }
-
     private void testQuery(String query, DBSPZSetLiteral literal) {
         this.testQuery("", query,
                 new InputOutputChangeStream().addChange(

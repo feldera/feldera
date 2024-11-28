@@ -51,6 +51,11 @@ public final class DBSPUSizeLiteral extends DBSPLiteral implements IsNumericLite
         return Objects.equals(value, that.value);
     }
 
+    @Override
+    public boolean isConstant() {
+        return true;
+    }
+
     public DBSPUSizeLiteral(CalciteObject node, DBSPType type, @Nullable Long value) {
         super(node, type, value == null);
         if (value != null && value < 0)

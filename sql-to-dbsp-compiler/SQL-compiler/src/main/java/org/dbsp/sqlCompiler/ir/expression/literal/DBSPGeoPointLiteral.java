@@ -63,6 +63,12 @@ public final class DBSPGeoPointLiteral extends DBSPLiteral {
     }
 
     @Override
+    public boolean isConstant() {
+        return (this.left == null || this.left.isConstantLiteral())
+                && (this.right == null || this.right.isConstantLiteral());
+    }
+
+    @Override
     public void accept(InnerVisitor visitor) {
         VisitDecision decision = visitor.preorder(this);
         if (decision.stop()) return;

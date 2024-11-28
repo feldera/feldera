@@ -53,6 +53,10 @@ public abstract class DBSPLiteral extends DBSPExpression implements ISameValue {
             throw new UnsupportedException("Type " + type + " cannot represent null", node);
     }
 
+    /** Ideally all literals are constant, but with the current representation this
+     * may not be true for vectors and maps. */
+    public abstract boolean isConstant();
+
     public boolean isNull() {
         return this.isNull;
     }

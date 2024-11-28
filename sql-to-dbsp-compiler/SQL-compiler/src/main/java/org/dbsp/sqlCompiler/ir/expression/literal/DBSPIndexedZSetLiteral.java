@@ -27,6 +27,11 @@ public final class DBSPIndexedZSetLiteral extends DBSPLiteral implements IDBSPCo
     }
 
     @Override
+    public boolean isConstant() {
+        return true;
+    }
+
+    @Override
     public DBSPExpression deepCopy() {
         return new DBSPIndexedZSetLiteral(this.getNode(), this.type);
     }

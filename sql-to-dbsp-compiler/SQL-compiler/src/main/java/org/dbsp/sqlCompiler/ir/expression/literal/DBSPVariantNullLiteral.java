@@ -18,6 +18,11 @@ public class DBSPVariantNullLiteral extends DBSPLiteral {
         assert type.is(DBSPTypeVariant.class);
     }
 
+    @Override
+    public boolean isConstant() {
+        return true;
+    }
+
     public static final DBSPVariantNullLiteral INSTANCE = new DBSPVariantNullLiteral();
 
     @Override

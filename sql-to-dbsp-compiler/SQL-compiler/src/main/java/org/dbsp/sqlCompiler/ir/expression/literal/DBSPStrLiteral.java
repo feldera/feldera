@@ -51,6 +51,11 @@ public final class DBSPStrLiteral extends DBSPLiteral {
         this(value, false, false);
     }
 
+    @Override
+    public boolean isConstant() {
+        return true;
+    }
+
     public DBSPStrLiteral(String value, boolean nullable, boolean raw) {
         this(CalciteObject.EMPTY, new DBSPTypeStr(CalciteObject.EMPTY, nullable), value, raw);
     }

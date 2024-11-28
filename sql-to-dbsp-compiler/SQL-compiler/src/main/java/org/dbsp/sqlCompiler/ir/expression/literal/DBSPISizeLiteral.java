@@ -62,6 +62,11 @@ public final class DBSPISizeLiteral extends DBSPLiteral implements IsNumericLite
     }
 
     @Override
+    public boolean isConstant() {
+        return true;
+    }
+
+    @Override
     public boolean gt0() {
         assert this.value != null;
         return this.value > 0;
