@@ -22,13 +22,43 @@ use crate::{
         },
         Batch, BatchReader, BatchReaderFactories, Spine, Trace,
     },
-    utils::Tup2,
+    utils::{Tup2, Tup3, Tup4},
     DynZWeight, ZWeight,
 };
+
+use super::{Builder, TimedBuilder};
 
 pub mod test_batch;
 
 type DynI32 = DynData;
+
+fn kvtr_batch(
+    max_key: i32,
+    max_val: i32,
+    max_time: u32,
+    max_weight: ZWeight,
+    max_tuples: usize,
+) -> BoxedStrategy<Vec<Tup4<i32, i32, u32, ZWeight>>> {
+    vec(
+        (0..max_key, 0..max_val, 0..max_time, -max_weight..max_weight)
+            .prop_map(|(k, v, t, r)| Tup4(k, v, t, r)),
+        max_tuples,
+    )
+    .boxed()
+}
+
+fn ktr_batch(
+    max_key: i32,
+    max_time: u32,
+    max_weight: ZWeight,
+    max_tuples: usize,
+) -> BoxedStrategy<Vec<Tup3<i32, u32, ZWeight>>> {
+    vec(
+        (0..max_key, 0..max_time, -max_weight..max_weight).prop_map(|(k, t, r)| Tup3(k, t, r)),
+        max_tuples,
+    )
+    .boxed()
+}
 
 fn kr_batches(
     max_key: i32,
@@ -302,6 +332,79 @@ fn test_indexed_zset_trace_spine<B: ZBatch<Key = DynI32, Val = DynI32, Time = u3
     }
 }
 
+fn timed_indexed_batch_from_tuples<B>(
+    factories: &B::Factories,
+    tuples: &[Tup4<i32, i32, u32, ZWeight>],
+) -> B
+where
+    B: ZBatch<Key = DynI32, Val = DynI32, Time = u32>,
+    B::Builder: TimedBuilder<B>,
+{
+    let mut builder = B::Builder::timed_with_capacity(factories, tuples.len());
+    for Tup4(key, val, time, diff) in tuples {
+        builder.push_time(key, val, time, diff);
+    }
+    builder.done()
+}
+
+fn test_indexed_zset_trace_builder<B>(
+    factories: &B::Factories,
+    mut tuples: Vec<Tup4<i32, i32, u32, ZWeight>>,
+    seed: u64,
+) where
+    B: ZBatch<Key = DynI32, Val = DynI32, Time = u32>,
+    B::Builder: TimedBuilder<B>,
+{
+    tuples.sort_unstable();
+    tuples.retain(|Tup4(_k, _v, _t, r)| *r != 0);
+    tuples.dedup_by_key(|Tup4(k, v, t, _r)| (*k, *v, *t));
+
+    let ref_batch = timed_indexed_batch_from_tuples::<TestBatch<DynI32, DynI32, u32, DynZWeight>>(
+        &TestBatchFactories::new(),
+        &tuples,
+    );
+
+    let batch = timed_indexed_batch_from_tuples::<B>(factories, &tuples);
+
+    assert_batch_eq(&batch, &ref_batch);
+    assert_batch_cursors_eq(batch.cursor(), &ref_batch, seed);
+}
+
+fn timed_batch_from_tuples<B>(factories: &B::Factories, tuples: &[Tup3<i32, u32, ZWeight>]) -> B
+where
+    B: ZBatch<Key = DynI32, Val = DynUnit, Time = u32>,
+    B::Builder: TimedBuilder<B>,
+{
+    let mut builder = B::Builder::timed_with_capacity(factories, tuples.len());
+    for Tup3(key, time, diff) in tuples {
+        builder.push_time(key, &(), time, diff);
+    }
+    builder.done()
+}
+
+fn test_zset_trace_builder<B>(
+    factories: &B::Factories,
+    mut tuples: Vec<Tup3<i32, u32, ZWeight>>,
+    seed: u64,
+) where
+    B: ZBatch<Key = DynI32, Val = DynUnit, Time = u32>,
+    B::Builder: TimedBuilder<B>,
+{
+    tuples.sort_unstable();
+    tuples.retain(|Tup3(_k, _t, r)| *r != 0);
+    tuples.dedup_by_key(|Tup3(k, t, _r)| (*k, *t));
+
+    let ref_batch = timed_batch_from_tuples::<TestBatch<DynI32, DynUnit, u32, DynZWeight>>(
+        &TestBatchFactories::new(),
+        &tuples,
+    );
+
+    let batch = timed_batch_from_tuples::<B>(factories, &tuples);
+
+    assert_batch_eq(&batch, &ref_batch);
+    assert_batch_cursors_eq(batch.cursor(), &ref_batch, seed);
+}
+
 fn test_zset_trace_spine<B: ZBatch<Key = DynI32, Val = DynUnit, Time = u32>>(
     factories: &B::Factories,
     batches: Vec<(Vec<Tup2<i32, ZWeight>>, i32)>,
@@ -415,7 +518,6 @@ proptest! {
         let factories = <FallbackIndexedWSetFactories<DynI32, DynI32, DynZWeight>>::new::<i32, i32, ZWeight>();
         test_indexed_zset_spine::<FallbackIndexedWSet<DynI32, DynI32, DynZWeight>>(&factories, batches, seed)
     }
-
 
     // Like `test_indexed_zset_spine` but keeps even values only.
     #[test]
@@ -572,4 +674,36 @@ proptest! {
         }
     }
 
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(1000))]
+
+    #[test]
+    fn test_vec_indexed_zset_builder(batch in kvtr_batch(5, 5, 5, 5, 20), seed in 0..u64::MAX) {
+        let factories = <OrdValBatchFactories<DynI32, DynI32, u32, DynZWeight>>::new::<i32, i32, ZWeight>();
+
+        test_indexed_zset_trace_builder::<OrdValBatch<DynI32, DynI32, u32, DynZWeight>>(&factories, batch, seed)
+    }
+
+    #[test]
+    fn test_file_indexed_zset_builder(batch in kvtr_batch(5, 5, 5, 5, 20), seed in 0..u64::MAX) {
+        let factories = <FileValBatchFactories<DynI32, DynI32, u32, DynZWeight>>::new::<i32, i32, ZWeight>();
+
+        test_indexed_zset_trace_builder::<FileValBatch<DynI32, DynI32, u32, DynZWeight>>(&factories, batch, seed)
+    }
+
+    #[test]
+    fn test_vec_zset_builder(batch in ktr_batch(5, 5, 5, 20), seed in 0..u64::MAX) {
+        let factories = <OrdKeyBatchFactories<DynI32, u32, DynZWeight>>::new::<i32, (), ZWeight>();
+
+        test_zset_trace_builder::<OrdKeyBatch<DynI32, u32, DynZWeight>>(&factories, batch, seed)
+    }
+
+    #[test]
+    fn test_file_zset_builder(batch in ktr_batch(5, 5, 5, 20), seed in 0..u64::MAX) {
+        let factories = <FileKeyBatchFactories<DynI32, u32, DynZWeight>>::new::<i32, (), ZWeight>();
+
+        test_zset_trace_builder::<FileKeyBatch<DynI32, u32, DynZWeight>>(&factories, batch, seed)
+    }
 }
