@@ -27,3 +27,5 @@ Here is an example: `SELECT MAP['hi',2]`.
 |------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------------------|
 | _map_`[`_key_`]`       | Returns the element in the map with the specified key. If there is no such key, the result is `NULL`.  | `MAP['x', 4, 'y', 3]['x']` => 4 |
 | `CARDINALITY`(map)     | Returns the number of key-value pairs in the map.                                                      | `CARDINALITY(MAP['x', 4])` => 1 |
+| `MAP_CONTAINS_KEY`(map, key) | Returns true when the map has an item with the specified key; `NULL` if any argument is `NULL`.  | `MAP_CONTAINS_KEY(MAP['x', 4], 'x')` => `true` |
+

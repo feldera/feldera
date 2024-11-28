@@ -86,12 +86,10 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVecLiteral;
 import org.dbsp.sqlCompiler.ir.path.DBSPPath;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
-import org.dbsp.sqlCompiler.ir.type.IsDateType;
 import org.dbsp.sqlCompiler.ir.type.IsIntervalType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRef;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVariant;
-import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeMap;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeResult;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
@@ -722,7 +720,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
         }
     }
 
-    String getArrayCallName(RexCall call, DBSPExpression... ops) {
+    String getArrayOrMapCallName(RexCall call, DBSPExpression... ops) {
         String method = getCallName(call);
         StringBuilder stringBuilder = new StringBuilder(method);
         for (DBSPExpression op : ops)
@@ -743,7 +741,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
      * @return  The method name with final character considering the nullability of array elements
      */
     String getArrayCallNameWithElemNullability(RexCall call, DBSPExpression... ops) {
-        String s = getArrayCallName(call, ops);
+        String s = getArrayOrMapCallName(call, ops);
 
         DBSPTypeVec vec = ops[0].type.to(DBSPTypeVec.class);
         DBSPType elemType = vec.getElementType();
@@ -1195,8 +1193,12 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                         return compileFunction(module_prefix + opName, node, type, ops, 2, 3);
                     }
                     case "array":
-                        assert ops.isEmpty();
-                        return new DBSPVecLiteral(node, type, Linq.list());
+                        if (ops.isEmpty())
+                            return new DBSPVecLiteral(node, type, Linq.list());
+                        DBSPTypeVec vec = type.to(DBSPTypeVec.class);
+                        DBSPType elemType = vec.getElementType();
+                        List<DBSPExpression> args = Linq.map(ops, o -> o.cast(elemType));
+                        return new DBSPVecLiteral(node, type, args);
                     case "concat":
                         return makeBinaryExpressions(node, type, DBSPOpcode.CONCAT, ops);
                     case "concat_ws": {
@@ -1461,11 +1463,8 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
             }
             case ARRAY_CONTAINS:
             case ARRAY_REMOVE:
-            case ARRAY_POSITION:
-            {
-                if (call.operands.size() != 2)
-                    throw operandCountError(node, operationName, call.operandCount());
-
+            case ARRAY_POSITION: {
+                validateArgCount(node, operationName, call.operandCount(), 2);
                 DBSPExpression arg0 = ops.get(0);
                 DBSPExpression arg1 = ops.get(1);
                 DBSPTypeVec vec = arg0.getType().to(DBSPTypeVec.class);
@@ -1479,7 +1478,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                     return DBSPNullLiteral.none(type);
                 }
 
-                String method = getArrayCallName(call, arg0, arg1);
+                String method = getArrayOrMapCallName(call, arg0, arg1);
 
                 // the rust code has signature: (Vec<T>, T)
                 // so if elements of the vector are nullable and T is an Option type
@@ -1504,7 +1503,30 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 }
 
                 return new DBSPApplyExpression(node, method, type, arg0, arg1);
+            }
+            case MAP_CONTAINS_KEY: {
+                validateArgCount(node, operationName, call.operandCount(), 2);
+                DBSPExpression arg0 = ops.get(0);
+                DBSPExpression arg1 = ops.get(1);
+                DBSPTypeMap map = arg0.getType().to(DBSPTypeMap.class);
+                DBSPType keyType = map.getKeyType();
 
+                // If argument is null for certain, return null
+                if (arg1.type.is(DBSPTypeNull.class)) {
+                    String warningMessage =
+                            node + ": always returns NULL";
+                    this.compiler.reportWarning(node.getPositionRange(), "unnecessary function call", warningMessage);
+                    return DBSPNullLiteral.none(type);
+                }
+
+                String method = getArrayOrMapCallName(call, arg0, arg1);
+                // the rust code has signature: (Vec<T>, T)
+                // so if elements of the vector are nullable and T is an Option type
+                // therefore we need to wrap arg1 in Some
+                if (keyType.mayBeNull) {
+                    arg1 = new DBSPApplyExpression(arg1.getNode(), "Some", arg1.type.withMayBeNull(true), arg1);
+                }
+                return new DBSPApplyExpression(node, method, type, arg0, arg1);
             }
             case ARRAY_DISTINCT: {
                 DBSPExpression arg0 = ops.get(0);
@@ -1515,13 +1537,12 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
 
                 return new DBSPApplyExpression(node, method, type, arg0);
             }
-            case ARRAY_REVERSE:
-            {
+            case ARRAY_REVERSE: {
                 if (call.operands.size() != 1)
                     throw operandCountError(node, operationName, call.operandCount());
 
                 DBSPExpression arg0 = ops.get(0);
-                String method = getArrayCallName(call, arg0);
+                String method = getArrayOrMapCallName(call, arg0);
 
                 return new DBSPApplyExpression(node, method, type, arg0);
             }
@@ -1546,7 +1567,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                     return new DBSPVecLiteral(arg0.getNode(), arg0.getType(), Linq.list());
                 }
 
-                String method = getArrayCallName(call, arg0);
+                String method = getArrayOrMapCallName(call, arg0);
                 return new DBSPApplyExpression(node, method, type, arg0);
             }
             case ARRAY_REPEAT: {
@@ -1554,7 +1575,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                     throw operandCountError(node, operationName, call.operandCount());
                 DBSPExpression op1 = ops.get(1)
                         .cast(new DBSPTypeInteger(node, 32, true, ops.get(1).getType().mayBeNull));
-                String method = getArrayCallName(call, ops.get(0), op1);
+                String method = getArrayOrMapCallName(call, ops.get(0), op1);
                 return new DBSPApplyExpression(node, method, type, ops.get(0), op1).cast(type);
             }
             case HOP:

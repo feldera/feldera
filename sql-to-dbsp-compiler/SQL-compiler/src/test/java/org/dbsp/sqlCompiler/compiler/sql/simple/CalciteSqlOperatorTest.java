@@ -227,4 +227,72 @@ public class CalciteSqlOperatorTest extends SqlIoTest {
         this.statementsFailingInCompilation("create view V as SELECT concat_ws(',')",
                 "Invalid number of arguments to function 'CONCAT_WS'");
     }
+
+    @Test
+    public void testMapContainsKey() {
+        this.qs("""
+                select map_contains_key(map[1, 'a', 2, 'b'], 1);
+                 r
+                ---
+                 t
+                (1 row)
+                
+                select map_contains_key(map[1, 'a'], 1);
+                 r
+                ---
+                 t
+                (1 row)
+                
+                select map_contains_key(map[1, 'a'], 2);
+                 r
+                ---
+                 f
+                (1 row)
+                
+                select map_contains_key(map['foo', 1], 'foo');
+                 r
+                ---
+                 t
+                (1 row)
+
+                select map_contains_key(map['foo', 1], 'bar');
+                 r
+                ---
+                 f
+                (1 row)
+
+                select map_contains_key(map[cast(1 as double), 2], cast(1 as double));
+                 r
+                ---
+                 t
+                (1 row)
+
+                select map_contains_key(map[array(1), array(2)], array(1));
+                 r
+                ---
+                 t
+                (1 row)
+
+                select map_contains_key(cast(null as map<int, varchar>), 1);
+                 r
+                ---
+                NULL
+                (1 row)
+                
+                select map_contains_key(map[1, 'a'], cast(null as integer));
+                 r
+                ---
+                NULL
+                (1 row)
+                
+                select map_contains_key(cast(null as map<int, varchar>), cast(null as integer));
+                 r
+                ---
+                NULL
+                (1 row)""");
+        this.statementsFailingInCompilation("create view v as select map_contains_key(map['foo', 1], 1)",
+                "is not comparable to INTEGER");
+        this.statementsFailingInCompilation("create view v as select map_contains_key(map[1, 1], 'foo')",
+                "INTEGER is not comparable to CHAR");
+    }
 }

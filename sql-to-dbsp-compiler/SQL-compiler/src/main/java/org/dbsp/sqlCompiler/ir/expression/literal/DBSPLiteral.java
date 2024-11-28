@@ -35,6 +35,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeMap;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeVec;
 import org.dbsp.sqlCompiler.ir.type.primitive.*;
 
@@ -98,6 +99,8 @@ public abstract class DBSPLiteral extends DBSPExpression implements ISameValue {
             return new DBSPTimeLiteral();
         } else if (type.is(DBSPTypeVec.class)) {
             return new DBSPVecLiteral(type, true);
+        } else if (type.is(DBSPTypeMap.class)) {
+            return new DBSPMapLiteral(type.to(DBSPTypeMap.class), null, null);
         } else if (type.is(DBSPTypeTuple.class)) {
             return DBSPTupleExpression.none(type.to(DBSPTypeTuple.class));
         } else if (type.is(DBSPTypeNull.class)) {
@@ -109,7 +112,7 @@ public abstract class DBSPLiteral extends DBSPExpression implements ISameValue {
         } else if (type.is(DBSPTypeVariant.class)) {
             return new DBSPVariantLiteral(null, type);
         }
-        throw new InternalCompilerError("Unexpected type for NULL literal", type);
+        throw new InternalCompilerError("Unexpected type for NULL literal " + type, type);
     }
 
     public String wrapSome(String value) {
