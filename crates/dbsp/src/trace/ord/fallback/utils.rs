@@ -149,6 +149,7 @@ where
                                 &mut cursor1,
                                 key_filter,
                                 value_filter,
+                                time_map_func,
                                 fuel,
                             ),
                             Ordering::Equal => self.merge_values_if(
@@ -167,16 +168,31 @@ where
                                 &mut cursor2,
                                 key_filter,
                                 value_filter,
+                                time_map_func,
                                 fuel,
                             ),
                         }
                     }
 
                     while cursor1.key_valid() && *fuel > 0 {
-                        self.copy_values_if(diff1, &mut cursor1, key_filter, value_filter, fuel);
+                        self.copy_values_if(
+                            diff1,
+                            &mut cursor1,
+                            key_filter,
+                            value_filter,
+                            time_map_func,
+                            fuel,
+                        );
                     }
                     while cursor2.key_valid() && *fuel > 0 {
-                        self.copy_values_if(diff1, &mut cursor2, key_filter, value_filter, fuel);
+                        self.copy_values_if(
+                            diff1,
+                            &mut cursor2,
+                            key_filter,
+                            value_filter,
+                            time_map_func,
+                            fuel,
+                        );
                     }
                 })
             })
@@ -195,13 +211,14 @@ where
         cursor: &mut C,
         key_filter: &Option<Filter<K>>,
         value_filter: &Option<Filter<V>>,
+        map_func: Option<&dyn Fn(&mut DynDataTyped<T>)>,
         fuel: &mut isize,
     ) where
         C: HasTimeDiffCursor<K, V, T, R>,
     {
         if filter(key_filter, cursor.key()) {
             while cursor.val_valid() {
-                self.copy_time_diffs_if(cursor, tmp, value_filter, fuel);
+                self.copy_time_diffs_if(cursor, tmp, value_filter, map_func, fuel);
             }
         }
         *fuel -= 1;
@@ -213,17 +230,50 @@ where
         cursor: &mut C,
         tmp: &mut R,
         value_filter: &Option<Filter<V>>,
+        map_func: Option<&dyn Fn(&mut DynDataTyped<T>)>,
         fuel: &mut isize,
     ) where
         C: HasTimeDiffCursor<K, V, T, R>,
     {
         if filter(value_filter, cursor.val()) {
-            let mut tdc = cursor.time_diff_cursor();
-            while let Some((time, diff)) = tdc.current(tmp) {
-                self.builder
-                    .push_time(cursor.key(), cursor.val(), time, diff);
-                tdc.step();
-                *fuel -= 1;
+            if let Some(map_func) = map_func {
+                let mut tdc = cursor.time_diff_cursor();
+
+                let Some(time_diffs) = self.time_diffs.as_mut() else {
+                    panic!("generic merger created without time_diff factory");
+                };
+
+                time_diffs.clear();
+
+                loop {
+                    let Some((time, diff)) = tdc.current(tmp) else {
+                        break;
+                    };
+                    *fuel -= 1;
+
+                    let mut time: T = time.clone();
+                    map_func(&mut time);
+
+                    time_diffs.push_refs((&time, diff));
+                    tdc.step();
+                }
+
+                time_diffs.consolidate();
+
+                for i in 0..time_diffs.len() {
+                    let (time, diff) = time_diffs.index(i).split();
+
+                    self.builder
+                        .push_time(cursor.key(), cursor.val(), time, diff);
+                }
+            } else {
+                let mut tdc = cursor.time_diff_cursor();
+                while let Some((time, diff)) = tdc.current(tmp) {
+                    self.builder
+                        .push_time(cursor.key(), cursor.val(), time, diff);
+                    tdc.step();
+                    *fuel -= 1;
+                }
             }
         }
         *fuel -= 1;
@@ -249,10 +299,12 @@ where
         if filter(key_filter, cursor1.key()) {
             while cursor1.val_valid() && cursor2.val_valid() {
                 match cursor1.val().cmp(cursor2.val()) {
-                    Ordering::Less => self.copy_time_diffs_if(cursor1, tmp1, value_filter, fuel),
+                    Ordering::Less => {
+                        self.copy_time_diffs_if(cursor1, tmp1, value_filter, map_func, fuel)
+                    }
                     Ordering::Equal => {
                         if let Some(map_func) = map_func {
-                            self.merge_map_time_diffs_if(
+                            self.map_time_and_merge_diffs_if(
                                 cursor1,
                                 cursor2,
                                 tmp1,
@@ -272,14 +324,16 @@ where
                             )
                         }
                     }
-                    Ordering::Greater => self.copy_time_diffs_if(cursor2, tmp1, value_filter, fuel),
+                    Ordering::Greater => {
+                        self.copy_time_diffs_if(cursor2, tmp1, value_filter, map_func, fuel)
+                    }
                 }
             }
             while cursor1.val_valid() {
-                self.copy_time_diffs_if(cursor1, tmp1, value_filter, fuel);
+                self.copy_time_diffs_if(cursor1, tmp1, value_filter, map_func, fuel);
             }
             while cursor2.val_valid() {
-                self.copy_time_diffs_if(cursor2, tmp2, value_filter, fuel);
+                self.copy_time_diffs_if(cursor2, tmp2, value_filter, map_func, fuel);
             }
         }
         *fuel -= 1;
@@ -357,7 +411,7 @@ where
     // Like `merge_time_diffs_if`, but additionally applies `map_func` to each timestamp.
     // Sorts and consolidate the resulting set of time/weight pairs.
     #[allow(clippy::too_many_arguments)]
-    fn merge_map_time_diffs_if<C1, C2>(
+    fn map_time_and_merge_diffs_if<C1, C2>(
         &mut self,
         cursor1: &mut C1,
         cursor2: &mut C2,
