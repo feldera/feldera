@@ -60,7 +60,7 @@ public final class DBSPViewDeclarationOperator
 
     public ProgramIdentifier originalViewName() {
         return new ProgramIdentifier(
-                this.tableName.name().replace("-port", ""),
+                this.tableName.name().replace("-decl", ""),
                 this.tableName.isQuoted());
     }
 

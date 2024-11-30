@@ -14,6 +14,7 @@ import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.TestUtil;
 import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
+import org.dbsp.sqlCompiler.compiler.frontend.statements.DeclareViewStatement;
 import org.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
@@ -697,7 +698,7 @@ public class MetadataTests extends BaseSQLTests {
                 "-js", json.getPath(), "-o", tmp.getPath(), file.getPath());
         assert message.exitCode == 0;
         String js = Utilities.readFile(json.toPath());
-        Assert.assertFalse(js.contains("fibonacci-port"));
+        Assert.assertFalse(js.contains("fibonacci" + DeclareViewStatement.declSuffix));
     }
 
     @Test

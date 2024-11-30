@@ -91,27 +91,27 @@ public class IncrementalRecursiveTests extends BaseSQLTests {
     @Test
     public void transitiveClosure() {
         String sql = """
-                CREATE TABLE E(x int, y int);
+                CREATE TABLE EDGES(x int, y int);
                 CREATE RECURSIVE VIEW CLOSURE(x int, y int);
                 CREATE LOCAL VIEW STEP AS
-                SELECT E.x, CLOSURE.y FROM
-                E JOIN CLOSURE ON e.y = CLOSURE.x;
-                CREATE MATERIALIZED VIEW CLOSURE AS (SELECT * FROM E) UNION (SELECT * FROM STEP);
+                SELECT EDGES.x, CLOSURE.y FROM
+                EDGES JOIN CLOSURE ON EDGES.y = CLOSURE.x;
+                CREATE MATERIALIZED VIEW CLOSURE AS (SELECT * FROM EDGES) UNION (SELECT * FROM STEP);
                 """;
         var ccs = this.getCCS(sql);
         ccs.step("", """
                  x | y | weight
                 ----------------""");
-        ccs.step("INSERT INTO E VALUES(0, 1);", """
+        ccs.step("INSERT INTO EDGES VALUES(0, 1);", """
                  x | y | weight
                 ----------------
                  0 | 1 | 1""");
-        ccs.step("INSERT INTO E VALUES(1, 2);", """
+        ccs.step("INSERT INTO EDGES VALUES(1, 2);", """
                 x | y | weight
                 ---------------
                 1 | 2 | 1
                 0 | 2 | 1""");
-        ccs.step("REMOVE FROM E VALUES(0, 1);", """
+        ccs.step("REMOVE FROM EDGES VALUES(0, 1);", """
                 x | y | weight
                 ---------------
                 0 | 1 | -1

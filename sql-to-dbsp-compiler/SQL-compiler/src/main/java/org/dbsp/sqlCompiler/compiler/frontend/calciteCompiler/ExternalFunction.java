@@ -195,9 +195,13 @@ public class ExternalFunction extends SqlFunction {
             DBSPType returnType = typeCompiler.convertType(this.returnType, true);
             DBSPExpression functionBody = generator.compile(this.body);
             if (!returnType.sameType(functionBody.getType())) {
-                throw new CompilationError("Function " + Utilities.singleQuote(this.getName()) +
-                        " should return " + Utilities.singleQuote(this.returnType.getFullTypeString()) +
-                        " but returns " + Utilities.singleQuote(this.body.getType().getFullTypeString()), this.node);
+                if (returnType.sameType(functionBody.getType().withMayBeNull(true))) {
+                    functionBody = functionBody.cast(returnType);
+                } else {
+                    throw new CompilationError("Function " + Utilities.singleQuote(this.getName()) +
+                            " should return " + Utilities.singleQuote(this.returnType.getFullTypeString()) +
+                            " but returns " + Utilities.singleQuote(this.body.getType().getFullTypeString()), this.node);
+                }
             }
             return new DBSPFunction(this.getName(), parameters, returnType, functionBody, Linq.list());
         }

@@ -52,6 +52,8 @@ import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /** Base class for SQL-based tests. */
 public class BaseSQLTests {
@@ -97,29 +99,44 @@ public class BaseSQLTests {
         this.statementsFailingInCompilation("CREATE VIEW VV AS " + query, messageFragment);
     }
 
+    void shouldMatch(String messages, String regex, boolean isRegex) {
+        if (isRegex) {
+            Pattern pattern = Pattern.compile(".*" + regex + ".*", Pattern.DOTALL);
+            Matcher matcher = pattern.matcher(messages);
+            if (!matcher.matches())
+                Assert.fail("Error message\n" + Utilities.singleQuote(messages) +
+                        "\ndoes not contain the expected fragment\n" +
+                        Utilities.singleQuote(regex));
+        } else {
+            if (!messages.contains(regex))
+                Assert.fail("Error message\n" + Utilities.singleQuote(messages) +
+                        "\ndoes not contain the expected fragment\n" +
+                        Utilities.singleQuote(regex));
+        }
+    }
+
     /** Run one or more statements that are expected to fail in compilation.
-     * @param statements        Statements to compile.
-     * @param messageFragment   This fragment should appear in the error message. */
-    public void statementsFailingInCompilation(String statements, String messageFragment) {
+     * @param statements Statements to compile.
+     * @param regex      Regular expression that should match the error message. */
+    public void statementsFailingInCompilation(String statements, String regex, boolean isRegex) {
         DBSPCompiler compiler = this.testCompiler();
         compiler.options.languageOptions.throwOnError = false;
         this.prepareInputs(compiler);
         compiler.compileStatements(statements);
         getCircuit(compiler);
         Assert.assertTrue(compiler.messages.exitCode != 0);
-        // compiler.options.ioOptions.emitJsonErrors = true;
         String message = compiler.messages.toString();
-        // System.out.println(message);
-        boolean contains = message.contains(messageFragment);
-        if (!contains)
-            Assert.fail("Error message\n" + Utilities.singleQuote(message) +
-                    "\ndoes not contain the expected fragment\n" + Utilities.singleQuote(messageFragment));
+        this.shouldMatch(message, regex, isRegex);
+    }
+
+    public void statementsFailingInCompilation(String statements, String regex) {
+        this.statementsFailingInCompilation(statements, regex, false);
     }
 
     /** Compile a set of statements that are expected to give a warning at compile time.
-     * @param statements        Statement to run.
-     * @param messageFragment   This fragment should appear in the warning message. */
-    public void shouldWarn(String statements, String messageFragment) {
+     * @param statements  Statement to run.
+     * @param regex       This regular expression should match the warning message. */
+    public void shouldWarn(String statements, String regex) {
         DBSPCompiler compiler = this.testCompiler();
         compiler.options.languageOptions.throwOnError = false;
         this.prepareInputs(compiler);
@@ -128,10 +145,7 @@ public class BaseSQLTests {
         Assert.assertTrue(compiler.hasWarnings);
         String warnings = compiler.messages.messages.stream()
                 .filter(error -> error.warning).toList().toString();
-        boolean contains = warnings.contains(messageFragment);
-        if (!contains)
-            Assert.fail("Error message\n" + Utilities.singleQuote(warnings) +
-                    "\ndoes not contain the expected fragment\n" + Utilities.singleQuote(messageFragment));
+        this.shouldMatch(warnings, regex, true);
     }
 
     /** Helper class for testing.  Holds together
@@ -230,12 +244,6 @@ public class BaseSQLTests {
     public static File createInputScript(String contents) throws IOException {
         File result = File.createTempFile("script", ".sql", new File(rustDirectory));
         return createInputFile(result, contents);
-    }
-
-    DBSPCompiler noThrowCompiler() {
-        DBSPCompiler compiler = this.testCompiler();
-        compiler.options.languageOptions.throwOnError = false;
-        return compiler;
     }
 
     /** Runs all the tests from the testsToRun list. */

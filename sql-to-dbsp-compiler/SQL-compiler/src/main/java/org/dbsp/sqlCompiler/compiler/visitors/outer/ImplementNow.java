@@ -846,12 +846,12 @@ public class ImplementNow extends Passes {
         boolean removeTable = !compiler.compiler().options.ioOptions.nowStream;
         ContainsNow cn = new ContainsNow(compiler, false);
         RewriteNow rewriteNow = new RewriteNow(compiler);
-        this.passes.add(cn.getCircuitVisitor());
+        this.passes.add(cn.getCircuitVisitor(false));
         this.passes.add(new Conditional(compiler, rewriteNow, cn::found));
         this.passes.add(new Conditional(compiler,
                 new RemoveTable(compiler, DBSPCompiler.NOW_TABLE_NAME), () -> !cn.found || removeTable));
         ContainsNow cn0 = new ContainsNow(compiler, false);
-        this.passes.add(cn0.getCircuitVisitor());
+        this.passes.add(cn0.getCircuitVisitor(false));
         this.passes.add(new Conditional(compiler,
                 new Fail(compiler, "Instances of 'now' have not been replaced"), cn0::found));
     }

@@ -27,6 +27,7 @@ import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.ICompilerComponent;
+import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.BetaReduction;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EliminateDump;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.ExpandCasts;
@@ -35,6 +36,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.Simplify;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.SimplifyWaterline;
 import org.dbsp.sqlCompiler.circuit.annotation.Waterline;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity.MonotoneAnalyzer;
+import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -42,14 +44,28 @@ import java.util.List;
 /** Very high level circuit-level optimizations.
  * Does not really look at the functions inside the circuit. */
 public record CircuitOptimizer(DBSPCompiler compiler) implements ICompilerComponent {
+    static class StopOnError extends CircuitVisitor {
+        public StopOnError(DBSPCompiler compiler) {
+            super(compiler);
+        }
+
+        @Override
+        public Token startVisit(IDBSPOuterNode node) {
+            if (this.compiler().hasErrors())
+                throw new CompilationError("Stopping compilation");
+            return super.startVisit(node);
+        }
+    }
+
     CircuitTransform getOptimizer() {
         List<CircuitTransform> passes = new ArrayList<>();
         DBSPCompiler compiler = this.compiler();
         CompilerOptions options = this.compiler().options;
 
         // First part of optimizations may still synthesize some circuit components
-
         passes.add(new ImplementNow(compiler));
+        passes.add(new DeterministicInitializers(compiler));
+        passes.add(new StopOnError(compiler));
         passes.add(new RecursiveComponents(compiler));
         if (options.languageOptions.outputsAreSets)
             passes.add(new EnsureDistinctOutputs(compiler));
@@ -69,7 +85,7 @@ public record CircuitOptimizer(DBSPCompiler compiler) implements ICompilerCompon
         passes.add(new OptimizeIncrementalVisitor(compiler));
         passes.add(new RemoveIAfterD(compiler));
         passes.add(new DeadCode(compiler, true, false));
-        passes.add(new Simplify(compiler).circuitRewriter());
+        passes.add(new Simplify(compiler).circuitRewriter(true));
         passes.add(new OptimizeWithGraph(compiler, g -> new OptimizeProjectionVisitor(compiler, g)));
         passes.add(new OptimizeWithGraph(compiler, g -> new OptimizeMaps(compiler, true, g)));
         passes.add(new OptimizeWithGraph(compiler, g -> new FilterJoinVisitor(compiler, g)));
@@ -83,7 +99,7 @@ public record CircuitOptimizer(DBSPCompiler compiler) implements ICompilerCompon
             passes.add(new IndexedInputs(compiler));
         passes.add(new OptimizeWithGraph(compiler, g -> new FilterJoinVisitor(compiler, g)));
         passes.add(new DeadCode(compiler, true, false));
-        passes.add(new Simplify(compiler).circuitRewriter());
+        passes.add(new Simplify(compiler).circuitRewriter(true));
         // The predicate below controls which nodes have their output dumped at runtime
         passes.add(new InstrumentDump(compiler, t -> false));
         if (options.languageOptions.incrementalize)
@@ -92,23 +108,23 @@ public record CircuitOptimizer(DBSPCompiler compiler) implements ICompilerCompon
         passes.add(new RemoveDeindexOperators(compiler));
         passes.add(new OptimizeWithGraph(compiler, g -> new RemoveNoops(compiler, g)));
         passes.add(new RemoveViewOperators(compiler, false));
-        passes.add(new Repeat(compiler, new ExpandCasts(compiler).circuitRewriter()));
+        passes.add(new Repeat(compiler, new ExpandCasts(compiler).circuitRewriter(true)));
         passes.add(new OptimizeWithGraph(compiler, g -> new FilterMapVisitor(compiler, g)));
         // optimize the maps introduced by the deindex removal
         passes.add(new OptimizeWithGraph(compiler, g -> new OptimizeMaps(compiler, false, g)));
         passes.add(new SimplifyWaterline(compiler)
                 .circuitRewriter(node -> node.hasAnnotation(a -> a.is(Waterline.class))));
-        passes.add(new EliminateDump(compiler).circuitRewriter());
-        passes.add(new ExpandWriteLog(compiler).circuitRewriter());
-        passes.add(new Simplify(compiler).circuitRewriter());
+        passes.add(new EliminateDump(compiler).circuitRewriter(false));
+        passes.add(new ExpandWriteLog(compiler).circuitRewriter(false));
+        passes.add(new Simplify(compiler).circuitRewriter(true));
         passes.add(new CSE(compiler));
         passes.add(new RecursiveComponents.ValidateRecursiveOperators(compiler));
         // Lowering implements aggregates and inlines some calls.
         passes.add(new LowerCircuitVisitor(compiler));
         // Lowering may surface additional casts that need to be expanded
-        passes.add(new Repeat(compiler, new ExpandCasts(compiler).circuitRewriter()));
+        passes.add(new Repeat(compiler, new ExpandCasts(compiler).circuitRewriter(true)));
         // Beta reduction after implementing aggregates.
-        passes.add(new BetaReduction(compiler).getCircuitVisitor());
+        passes.add(new BetaReduction(compiler).getCircuitVisitor(false));
         passes.add(new RemoveViewOperators(compiler, true));
         passes.add(new CompactNames(compiler));
         return new Passes("optimize", compiler, passes);

@@ -1306,12 +1306,12 @@ public abstract class InnerRewriteVisitor
 
     /** Given a visitor for inner nodes returns a visitor
      * that optimizes an entire circuit. */
-    public CircuitRewriter circuitRewriter() {
-        return new CircuitRewriter(this.compiler, this);
+    public CircuitRewriter circuitRewriter(boolean processDeclarations) {
+        return new CircuitRewriter(this.compiler, this, processDeclarations);
     }
 
     /** Create a circuit rewriter with a predicate that selects which node to optimize */
     public CircuitRewriter circuitRewriter(Predicate<DBSPOperator> toOptimize) {
-        return new CircuitRewriter(this.compiler, this, toOptimize);
+        return new CircuitRewriter(this.compiler, this, false, toOptimize);
     }
 }

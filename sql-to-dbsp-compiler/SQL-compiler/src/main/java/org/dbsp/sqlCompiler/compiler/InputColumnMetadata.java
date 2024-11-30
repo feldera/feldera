@@ -28,10 +28,13 @@ public class InputColumnMetadata
     /** Default value, if declared.  Should be a constant expression */
     @Nullable
     public final DBSPExpression defaultValue;
+    @Nullable
+    public final SourcePositionRange defaultValuePosition;
 
     public InputColumnMetadata(CalciteObject node, ProgramIdentifier name, DBSPType type, boolean isPrimaryKey,
                                @Nullable DBSPExpression lateness, @Nullable DBSPExpression watermark,
-                               @Nullable DBSPExpression defaultValue) {
+                               @Nullable DBSPExpression defaultValue,
+                               @Nullable SourcePositionRange defaultValuePosition) {
         this.node = node;
         this.name = name;
         this.type = type;
@@ -39,6 +42,7 @@ public class InputColumnMetadata
         this.lateness = lateness;
         this.watermark = watermark;
         this.defaultValue = defaultValue;
+        this.defaultValuePosition = defaultValuePosition;
     }
 
     public ProgramIdentifier getName() {

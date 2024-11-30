@@ -76,22 +76,26 @@ public class CircuitRewriter extends CircuitCloneVisitor {
     public final IRTransform transform;
     /** Only optimize functions for nodes where this predicate returns 'true'.
      * By default, optimize all nodes. */
-    Predicate<DBSPOperator> toOptimize = o -> true;
+    Predicate<DBSPOperator> toOptimize;
+    final boolean processDeclarations;
 
-    public CircuitRewriter(DBSPCompiler compiler, IRTransform transform) {
-        super(compiler, false);
-        this.transform = transform;
+    public CircuitRewriter(DBSPCompiler compiler, IRTransform transform, boolean processDeclarations) {
+        this(compiler, transform, processDeclarations, o -> true);
     }
 
     /** Create a CircuitRewriter.
      *
      * @param compiler    Compiler.
      * @param transform   Function to apply to optimize each node's functions.
+     * @param processDeclarations  If true, process declarations as well.
      * @param toOptimize  Predicate which returns 'true' for the nodes to optimize. */
-    public CircuitRewriter(DBSPCompiler compiler, IRTransform transform, Predicate<DBSPOperator> toOptimize) {
+    public CircuitRewriter(DBSPCompiler compiler, IRTransform transform,
+                           boolean processDeclarations,
+                           Predicate<DBSPOperator> toOptimize) {
         super(compiler, false);
         this.transform = transform;
         this.toOptimize = toOptimize;
+        this.processDeclarations = processDeclarations;
     }
 
     public DBSPExpression transform(DBSPExpression expression) {
@@ -568,7 +572,9 @@ public class CircuitRewriter extends CircuitCloneVisitor {
 
     @Override
     public void postorder(DBSPDeclaration decl) {
-        DBSPItem rewritten = this.transform.apply(decl.item).to(DBSPItem.class);
+        DBSPItem rewritten = decl.item;
+        if (this.processDeclarations)
+            rewritten = this.transform.apply(decl.item).to(DBSPItem.class);
         this.getUnderConstruction().addDeclaration(new DBSPDeclaration(rewritten));
     }
 

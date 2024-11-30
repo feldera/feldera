@@ -2665,10 +2665,12 @@ public class CalciteToDBSPCompiler extends RelVisitor
             }
         }
         DBSPExpression defaultValue = null;
-        if (metadata.defaultValue != null)
-            defaultValue = expressionCompiler.compile(metadata.defaultValue).cast(type);
+        if (metadata.defaultValue != null) {
+            defaultValue = expressionCompiler.compile(metadata.defaultValue);
+            defaultValue = defaultValue.cast(type);
+        }
         return new InputColumnMetadata(metadata.getNode(), metadata.getName(), type,
-                metadata.isPrimaryKey, lateness, watermark, defaultValue);
+                metadata.isPrimaryKey, lateness, watermark, defaultValue, metadata.defaultValuePosition);
     }
 
     DBSPNode compileCreateView(CreateViewStatement view) {
