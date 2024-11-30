@@ -385,7 +385,7 @@ public class RustFileWriter {
     public void write(DBSPCompiler compiler) {
         List<IDBSPNode> objects = new ArrayList<>();
         FindResources findResources = new FindResources(compiler);
-        CircuitRewriter findCircuitResources = findResources.getCircuitVisitor();
+        CircuitRewriter findCircuitResources = findResources.getCircuitVisitor(true);
 
         for (IDBSPNode node: this.toWrite) {
             IDBSPInnerNode inner = node.as(IDBSPInnerNode.class);

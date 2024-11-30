@@ -25,7 +25,7 @@ public class HasSchema implements IHasSchema {
             RelColumnMetadata meta = new RelColumnMetadata(
                     CalciteObject.create(field.getType()),
                     field, false, true,
-                    null, null, null);
+                    null, null, null, null);
             this.columns.add(meta);
         }
     }

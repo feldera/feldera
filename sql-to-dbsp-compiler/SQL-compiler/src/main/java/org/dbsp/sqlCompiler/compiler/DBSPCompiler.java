@@ -653,10 +653,10 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
     void postCompilationChecks() {
         // Check that all views mentioned in LATENESS statements exist
         for (LatenessStatement late: this.lateness) {
-            String view = late.view.getSimple();
+            ProgramIdentifier view = Utilities.toIdentifier(late.view);
             if (!this.views.containsKey(view)) {
                 this.compiler().reportWarning(late.getPosition(), "No such view",
-                        "No view named " + Utilities.singleQuote(view) + " found");
+                        "No view named " + view.singleQuote() + " found");
             }
         }
     }

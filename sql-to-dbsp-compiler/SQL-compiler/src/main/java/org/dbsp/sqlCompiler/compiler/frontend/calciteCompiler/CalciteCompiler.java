@@ -72,7 +72,6 @@ import org.apache.calcite.sql.SqlFunction;
 import org.apache.calcite.sql.SqlIdentifier;
 import org.apache.calcite.sql.SqlInsert;
 import org.apache.calcite.sql.SqlKind;
-import org.apache.calcite.sql.SqlLiteral;
 import org.apache.calcite.sql.SqlNode;
 import org.apache.calcite.sql.SqlNodeList;
 import org.apache.calcite.sql.SqlOperator;
@@ -86,6 +85,7 @@ import org.apache.calcite.sql.ddl.SqlColumnDeclaration;
 import org.apache.calcite.sql.ddl.SqlCreateType;
 import org.apache.calcite.sql.ddl.SqlDropTable;
 import org.apache.calcite.sql.ddl.SqlKeyConstraint;
+import org.apache.calcite.sql.dialect.OracleSqlDialect;
 import org.apache.calcite.sql.parser.SqlParseException;
 import org.apache.calcite.sql.parser.SqlParser;
 import org.apache.calcite.sql.parser.SqlParserPos;
@@ -699,7 +699,7 @@ public class CalciteCompiler implements IWritesLogs {
         try {
             /* We generate the following SQL:
               CREATE TABLE T(... column WATERMARK expression ...);
-              SELECT column - expression FROM tmp;
+              SELECT column - value FROM tmp;
               and validate it. */
             String sql = "CREATE TABLE TMP(" +
                     column.name + " " +
@@ -757,6 +757,51 @@ public class CalciteCompiler implements IWritesLogs {
                 column.dataType, CalciteObject.create(value));
     }
 
+    RexNode validateConstantExpression(SqlExtendedColumnDeclaration column,
+                                       SqlNode value, SourceFileContents sources) {
+        try {
+            /* We generate the following SQL:
+              CREATE VIEW V AS SELECT expression;
+              and validate it. */
+            String sql = "CREATE VIEW V AS SELECT " + value.toSqlString(OracleSqlDialect.DEFAULT) + ";";
+            Logger.INSTANCE.belowLevel(this, 2)
+                    .newline()
+                    .append(sql)
+                    .newline();
+            CalciteCompiler clone = new CalciteCompiler(this);
+            List<ParsedStatement> list = clone.parseStatements(sql, false);
+            FrontEndStatement lastStatement = null;
+            for (ParsedStatement node : list) {
+                lastStatement = clone.compile(node, sources);
+            }
+            assert lastStatement != null;
+            assert lastStatement instanceof CreateViewStatement;
+            CreateViewStatement cv = (CreateViewStatement) lastStatement;
+            RelNode node = cv.getRelNode();
+            if (node instanceof LogicalValues) {
+                assert this.converter != null;
+                return this.converter.convertExpression(value);
+            }
+            if (node instanceof LogicalProject project) {
+                List<RexNode> projects = project.getProjects();
+                if (projects.size() == 1) {
+                    return projects.get(0);
+                }
+            }
+        } catch (CalciteContextException e) {
+            SqlParserPos pos = value.getParserPosition();
+            @SuppressWarnings("DataFlowIssue")
+            CalciteContextException ex = new CalciteContextException(e.getMessage(), e.getCause());
+            ex.setPosition(pos.getLineNum(), pos.getColumnNum(), pos.getEndLineNum(), pos.getEndColumnNum());
+            throw ex;
+        } catch (SqlParseException e) {
+            // Do we need to rewrite other exceptions?
+            throw new RuntimeException(e);
+        }
+        throw new CompilationError("Cannot use " + value + " as default value for " +
+                Utilities.singleQuote(column.name.getSimple()), CalciteObject.create(value));
+    }
+
     List<RelColumnMetadata> createTableColumnsMetadata(
             SqlCreateTable ct, SqlIdentifier table, SourceFileContents sources) {
         SqlNodeList list = ct.columnsOrForeignKeys;
@@ -810,6 +855,7 @@ public class CalciteCompiler implements IWritesLogs {
             RexNode lateness = null;
             RexNode watermark = null;
             RexNode defaultValue = null;
+            SourcePositionRange defaultValueRange = null;
             if (col instanceof SqlColumnDeclaration cd) {
                 name = cd.name;
                 typeSpec = cd.dataType;
@@ -836,15 +882,8 @@ public class CalciteCompiler implements IWritesLogs {
                     watermark = this.validateLatenessOrWatermark(cd, cd.watermark, sources);
                 }
                 if (cd.defaultValue != null) {
-                    // workaround for https://issues.apache.org/jira/browse/CALCITE-6129
-                    if (cd.defaultValue instanceof SqlLiteral literal) {
-                        if (literal.getTypeName() == SqlTypeName.NULL) {
-                            RelDataType type = literal.createSqlType(converter.getCluster().getTypeFactory());
-                            defaultValue = converter.getRexBuilder().makeLiteral(null, type);
-                        }
-                    }
-                    if (defaultValue == null)
-                        defaultValue = converter.convertExpression(cd.defaultValue);
+                    defaultValueRange = new SourcePositionRange(cd.defaultValue.getParserPosition());
+                    defaultValue = this.validateConstantExpression(cd, cd.defaultValue, sources);
                 }
             } else if (col instanceof SqlKeyConstraint ||
                        col instanceof SqlForeignKey) {
@@ -894,7 +933,7 @@ public class CalciteCompiler implements IWritesLogs {
                     name.getSimple(), index++, type);
             RelColumnMetadata meta = new RelColumnMetadata(
                     CalciteObject.create(col), field, isPrimaryKey, Utilities.identifierIsQuoted(name),
-                    lateness, watermark, defaultValue);
+                    lateness, watermark, defaultValue, defaultValueRange);
             result.add(meta);
         }
 
@@ -995,7 +1034,7 @@ public class CalciteCompiler implements IWritesLogs {
             }
             colByName.put(actualColumnName, field);
             RelColumnMetadata meta = new RelColumnMetadata(node,
-                    field, false, nameIsQuoted, null, null, null);
+                    field, false, nameIsQuoted, null, null, null, null);
             if (kind != SqlCreateView.ViewKind.LOCAL && !this.options.languageOptions.unrestrictedIOTypes)
                 this.validateColumnType(true, position, field.getType(), field.getName(), viewName);
             columns.add(meta);
@@ -1401,7 +1440,7 @@ public class CalciteCompiler implements IWritesLogs {
             RelDataType type = this.specToRel(cd.dataType, false);
             RelDataTypeField field = new RelDataTypeFieldImpl(name, index++, type);
             var meta = new RelColumnMetadata(CalciteObject.create(n), field, false,
-                    Utilities.identifierIsQuoted(cd.name), null, null, null);
+                    Utilities.identifierIsQuoted(cd.name), null, null, null, null);
             columns.add(meta);
         }
         var result = new DeclareViewStatement(node, Utilities.toIdentifier(cv.name), columns);

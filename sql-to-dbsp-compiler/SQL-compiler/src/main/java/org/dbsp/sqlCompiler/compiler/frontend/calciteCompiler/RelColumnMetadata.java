@@ -3,6 +3,7 @@ package org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rel.type.RelDataTypeField;
 import org.apache.calcite.rex.RexNode;
+import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 
 import javax.annotation.Nullable;
@@ -24,11 +25,14 @@ public class RelColumnMetadata {
     /** Default value, if declared */
     @Nullable
     public final RexNode defaultValue;
+    @Nullable
+    public final SourcePositionRange defaultValuePosition;
     public final boolean nameIsQuoted;
 
     public RelColumnMetadata(
             CalciteObject node, RelDataTypeField field, boolean isPrimaryKey, boolean nameIsQuoted,
-            @Nullable RexNode lateness, @Nullable RexNode watermark, @Nullable RexNode defaultValue) {
+            @Nullable RexNode lateness, @Nullable RexNode watermark, @Nullable RexNode defaultValue,
+            @Nullable SourcePositionRange defaultValuePosition) {
         this.node = node;
         this.isPrimaryKey = isPrimaryKey;
         this.nameIsQuoted = nameIsQuoted;
@@ -36,6 +40,7 @@ public class RelColumnMetadata {
         this.lateness = lateness;
         this.watermark = watermark;
         this.defaultValue = defaultValue;
+        this.defaultValuePosition = defaultValuePosition;
     }
 
     @Override

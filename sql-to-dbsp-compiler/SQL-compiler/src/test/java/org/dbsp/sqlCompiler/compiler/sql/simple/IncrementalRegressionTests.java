@@ -384,7 +384,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
             }
         };
         visitor.apply(ccs.circuit);
-        findBoolCasts.getCircuitVisitor().apply(ccs.circuit);
+        findBoolCasts.getCircuitVisitor(false).apply(ccs.circuit);
     }
 
     @Test

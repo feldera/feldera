@@ -62,10 +62,6 @@ public class Passes implements IWritesLogs, CircuitTransform, ICompilerComponent
         this.passes.add(pass);
     }
 
-    public void add(InnerRewriteVisitor inner) {
-        this.passes.add(new CircuitRewriter(this.compiler(), inner));
-    }
-
     @Override
     public DBSPCircuit apply(DBSPCircuit circuit) {
         int details = this.getDebugLevel();

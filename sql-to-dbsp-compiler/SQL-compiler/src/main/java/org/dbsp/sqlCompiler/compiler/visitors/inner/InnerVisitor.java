@@ -1377,7 +1377,7 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
         return node;
     }
 
-    public CircuitRewriter getCircuitVisitor() {
-        return new CircuitRewriter(this.compiler(), this);
+    public CircuitRewriter getCircuitVisitor(boolean processDeclarations) {
+        return new CircuitRewriter(this.compiler(), this, processDeclarations);
     }
 }
