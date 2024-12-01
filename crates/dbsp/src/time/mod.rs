@@ -42,7 +42,6 @@
 //! sorting.
 
 mod antichain;
-//mod nested_ts32;
 mod product;
 
 use crate::{

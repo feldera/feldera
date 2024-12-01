@@ -466,7 +466,7 @@ where
 
     // Like `merge_times`, but additionally applied `map_func` to each timestamp.
     // Sorts and consolidates the resulting array of time/diff pairs.
-    fn merge_map_times<'a>(
+    fn map_and_merge_times<'a>(
         &mut self,
         cursor1: &mut FileKeyCursor<'a, K, T, R>,
         cursor2: &mut FileKeyCursor<'a, K, T, R>,
@@ -582,7 +582,12 @@ where
                 Ordering::Equal => {
                     if filter(key_filter, cursor1.key.as_ref()) {
                         let non_zero = if let Some(time_map_func) = &time_map_func {
-                            self.merge_map_times(&mut cursor1, &mut cursor2, time_map_func, fuel)
+                            self.map_and_merge_times(
+                                &mut cursor1,
+                                &mut cursor2,
+                                time_map_func,
+                                fuel,
+                            )
                         } else {
                             self.merge_times(&mut cursor1, &mut cursor2, &mut sum, fuel)
                         };
