@@ -5,7 +5,8 @@ use std::{borrow::Cow, sync::Arc};
 use actix_web::HttpRequest;
 use anyhow::{bail, Result as AnyResult};
 use arrow::datatypes::{
-    DataType, Field as ArrowField, Fields, IntervalUnit as ArrowIntervalUnit, Schema, TimeUnit,
+    DataType, Field as ArrowField, FieldRef, Fields, IntervalUnit as ArrowIntervalUnit, Schema,
+    TimeUnit,
 };
 use bytes::Bytes;
 use erased_serde::Serialize as ErasedSerialize;
@@ -321,7 +322,7 @@ pub fn relation_to_parquet_schema(
 ) -> Result<SerdeArrowSchema, ControllerError> {
     let fields = relation_to_arrow_fields(fields, delta_lake);
 
-    SerdeArrowSchema::from_arrow_fields(&fields).map_err(|e| ControllerError::SchemaParseError {
+    SerdeArrowSchema::try_from(fields.as_slice()).map_err(|e| ControllerError::SchemaParseError {
         error: format!("Unable to convert schema to parquet/arrow: {e}"),
     })
 }
@@ -362,7 +363,10 @@ impl Encoder for ParquetEncoder {
     fn encode(&mut self, batch: &dyn SerBatchReader) -> AnyResult<()> {
         let mut buffer = take(&mut self.buffer);
         let props = WriterProperties::builder().build();
-        let schema = Arc::new(Schema::new(self.parquet_schema.to_arrow_fields()?));
+        let fields =
+            <Vec<FieldRef> as TryFrom<SerdeArrowSchema>>::try_from(self.parquet_schema.clone())?;
+        let schema = Arc::new(Schema::new(fields));
+
         let mut builder = ArrayBuilder::new(self.parquet_schema.clone())?;
 
         let mut num_records = 0;

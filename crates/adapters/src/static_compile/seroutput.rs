@@ -251,7 +251,7 @@ impl BytesSerializer<SqlSerdeConfig> for ParquetSerializer {
         T: SerializeWithContext<SqlSerdeConfig>,
     {
         //let fields = Vec::<Field>::from_type::<T>(TracingOptions::default())?;
-        builder.push(&SerializeWithContextWrapper::new(val, &self.context))?;
+        builder.push(SerializeWithContextWrapper::new(val, &self.context))?;
         Ok(())
     }
 }

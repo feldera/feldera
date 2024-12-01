@@ -10,6 +10,8 @@ use crate::{
     TransportInputEndpoint,
 };
 use anyhow::{anyhow, Result as AnyResult};
+use datafusion::prelude::SessionConfig;
+use datafusion::scalar::ScalarValue;
 use dbsp::circuit::tokio::TOKIO;
 use dbsp::InputHandle;
 use deltalake::datafusion::common::Column;
@@ -171,11 +173,18 @@ impl DeltaTableInputEndpointInner {
         consumer: Box<dyn InputConsumer>,
     ) -> Self {
         let queue = InputQueue::new(consumer.clone());
+        // Configure datafusion not to generate Utf8View arrow types, which are not yet
+        // supported by the `serde_arrow` crate.
+        let session_config = SessionConfig::new().set_bool(
+            "datafusion.execution.parquet.schema_force_view_types",
+            false,
+        );
+
         Self {
             endpoint_name: endpoint_name.to_string(),
             config,
             consumer,
-            datafusion: SessionContext::new(),
+            datafusion: SessionContext::new_with_config(session_config),
             queue,
         }
     }

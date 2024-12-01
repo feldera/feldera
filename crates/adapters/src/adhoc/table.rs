@@ -16,6 +16,7 @@ use datafusion::common::{exec_err, not_impl_err, plan_err, SchemaExt};
 use datafusion::datasource::TableType;
 use datafusion::error::DataFusionError;
 use datafusion::execution::{SendableRecordBatchStream, TaskContext};
+use datafusion::logical_expr::dml::InsertOp;
 use datafusion::logical_expr::Expr;
 use datafusion::physical_expr::EquivalenceProperties;
 use datafusion::physical_plan::insert::{DataSink, DataSinkExec};
@@ -67,6 +68,17 @@ pub struct AdHocTable {
     /// determine if the table is materialized and return an error on
     /// scans if not.
     snapshots: ConsistentSnapshots,
+}
+
+impl Debug for AdHocTable {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.debug_struct("AdHocTable")
+            .field("controller", &self.controller)
+            .field("name", &self.name)
+            .field("materialized", &self.materialized)
+            .field("schema", &self.schema)
+            .finish()
+    }
 }
 
 impl AdHocTable {
@@ -138,7 +150,7 @@ impl TableProvider for AdHocTable {
         &self,
         _state: &dyn Session,
         input: Arc<dyn ExecutionPlan>,
-        overwrite: bool,
+        overwrite: InsertOp,
     ) -> datafusion::common::Result<Arc<dyn ExecutionPlan>> {
         if !self
             .schema()
@@ -147,7 +159,7 @@ impl TableProvider for AdHocTable {
             return plan_err!("Inserting query must have the same schema with the table.");
         }
 
-        if overwrite {
+        if overwrite != InsertOp::Append {
             return not_impl_err!("Overwrite not implemented for AdHocTable yet");
         }
 
