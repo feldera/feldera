@@ -185,7 +185,7 @@ pub trait MergeBuilder: Builder {
     ///
     /// Optionally applies `map_func` to each key in the leaf of the trie.
     /// This is used to implement timestamp compaction where multiple timestamps
-    /// are merged into one during merging.  This function does not
+    /// are merged into one during merging.  `map_func` does not
     /// have to be monotonic and therefore requires sorting and consolidating
     /// items in the leaf.
     fn push_merge<'a>(

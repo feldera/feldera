@@ -52,7 +52,6 @@ pub mod ord;
 pub mod spine_async;
 pub use spine_async::{Spine, SpineSnapshot};
 
-// mod spine_fueled;
 #[cfg(test)]
 pub mod test;
 
