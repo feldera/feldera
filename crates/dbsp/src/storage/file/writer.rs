@@ -16,6 +16,7 @@ use binrw::{
     io::{Cursor, NoSeek},
     BinWrite,
 };
+#[cfg(debug_assertions)]
 use dyn_clone::clone_box;
 
 use crate::storage::{
