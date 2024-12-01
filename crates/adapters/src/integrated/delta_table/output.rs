@@ -72,7 +72,7 @@ impl DeltaTableWriter {
 
         // Create serde arrow schema.
         let serde_arrow_schema =
-            SerdeArrowSchema::from_arrow_fields(&arrow_fields).map_err(|e| {
+            SerdeArrowSchema::try_from(arrow_fields.as_slice()).map_err(|e| {
                 ControllerError::SchemaParseError {
                     error: format!("Unable to convert schema to parquet/arrow: {e}"),
                 }
