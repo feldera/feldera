@@ -23,7 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.type.derived;
 
-import org.apache.commons.lang3.NotImplementedException;
+import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -239,7 +239,7 @@ public class DBSPTypeStruct extends DBSPType {
 
     @Override
     public DBSPExpression defaultValue() {
-        throw new NotImplementedException();
+        throw new UnimplementedException();
     }
 
     /** Generate a tuple type by ignoring the struct and field names, recursively. */

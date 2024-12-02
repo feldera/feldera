@@ -23,7 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.type.user;
 
-import org.apache.commons.lang3.NotImplementedException;
+import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
@@ -62,7 +62,7 @@ public class DBSPTypeUser extends DBSPType {
 
     @Override
     public DBSPExpression defaultValue() {
-        throw new NotImplementedException();
+        throw new UnimplementedException();
     }
 
     @Override

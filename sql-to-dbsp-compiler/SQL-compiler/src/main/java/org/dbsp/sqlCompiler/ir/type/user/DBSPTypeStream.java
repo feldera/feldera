@@ -23,7 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.type.user;
 
-import org.apache.commons.lang3.NotImplementedException;
+import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
@@ -50,7 +50,7 @@ public class DBSPTypeStream extends DBSPType {
 
     @Override
     public DBSPExpression defaultValue() {
-        throw new NotImplementedException();
+        throw new UnimplementedException();
     }
 
     @Override
