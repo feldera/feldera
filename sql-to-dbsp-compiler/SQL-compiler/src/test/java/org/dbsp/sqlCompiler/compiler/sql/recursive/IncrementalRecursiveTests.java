@@ -20,7 +20,7 @@ public class IncrementalRecursiveTests extends BaseSQLTests {
     @Test
     public void testRecursive() {
         String sql = """
-                CREATE RECURSIVE VIEW V(v INT);
+                DECLARE RECURSIVE VIEW V(v INT);
                 CREATE VIEW V AS SELECT v FROM V UNION SELECT 1;""";
         var ccs = this.getCCS(sql);
         ccs.step("", """
@@ -45,7 +45,7 @@ public class IncrementalRecursiveTests extends BaseSQLTests {
     @Test
     public void testRecursive2() {
         String sql = """
-                CREATE RECURSIVE VIEW V(v INT);
+                DECLARE RECURSIVE VIEW V(v INT);
                 CREATE TABLE T(v INT);
                 CREATE VIEW V AS SELECT v FROM V UNION SELECT * FROM T;""";
         var ccs = this.getCCS(sql);
@@ -70,7 +70,7 @@ public class IncrementalRecursiveTests extends BaseSQLTests {
         String sql = """
                 CREATE TABLE T(v INT);
                 CREATE LOCAL VIEW X AS SELECT v/2 FROM T;
-                CREATE RECURSIVE VIEW V(v INT);
+                DECLARE RECURSIVE VIEW V(v INT);
                 CREATE LOCAL VIEW V AS SELECT v FROM V UNION SELECT * FROM X;
                 CREATE VIEW O AS SELECT v+1 FROM V;""";
         var ccs = this.getCCS(sql);
@@ -92,7 +92,7 @@ public class IncrementalRecursiveTests extends BaseSQLTests {
     public void transitiveClosure() {
         String sql = """
                 CREATE TABLE EDGES(x int, y int);
-                CREATE RECURSIVE VIEW CLOSURE(x int, y int);
+                DECLARE RECURSIVE VIEW CLOSURE(x int, y int);
                 CREATE LOCAL VIEW STEP AS
                 SELECT EDGES.x, CLOSURE.y FROM
                 EDGES JOIN CLOSURE ON EDGES.y = CLOSURE.x;
@@ -123,7 +123,7 @@ public class IncrementalRecursiveTests extends BaseSQLTests {
     public void factorial() {
         // Three tests adapted from https://www.geeksforgeeks.org/postgresql-create-recursive-views/
         String sql = """
-                CREATE RECURSIVE VIEW fact(n int, factorial int);
+                DECLARE RECURSIVE VIEW fact(n int, factorial int);
                 CREATE VIEW fact AS
                    SELECT 1 as n, 5 as factorial
                    UNION ALL SELECT n+1, factorial*n FROM fact WHERE n < 5;""";
@@ -142,7 +142,7 @@ public class IncrementalRecursiveTests extends BaseSQLTests {
     @Test
     public void testSequence() {
         String sql = """
-                CREATE RECURSIVE VIEW tens(n int);
+                DECLARE RECURSIVE VIEW tens(n int);
                 CREATE VIEW tens AS
                     SELECT 1 as n
                  UNION ALL
@@ -173,7 +173,7 @@ public class IncrementalRecursiveTests extends BaseSQLTests {
                   manager_id INT
                 );
                 
-                CREATE RECURSIVE VIEW subordinates(emp_id int NOT NULL, manager_id int, emp_name varchar, level int);
+                DECLARE RECURSIVE VIEW subordinates(emp_id int NOT NULL, manager_id int, emp_name varchar, level int);
                 CREATE VIEW subordinates AS
                   SELECT emp_id, manager_id, emp_name, 0 AS level
                   FROM emp

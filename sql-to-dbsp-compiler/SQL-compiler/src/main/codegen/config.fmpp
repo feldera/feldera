@@ -895,6 +895,7 @@ data: {
     statementParserMethods: [
         "RemoveStatement()"
         "LatenessStatement()"
+        "SqlDeclareView()"
     ]
 
     # List of methods for parsing custom literals.
@@ -921,7 +922,6 @@ data: {
     # Each must accept arguments "(SqlParserPos pos, boolean replace)".
     createStatementParserMethods: [
       "SqlCreateView"
-      "SqlDeclareView"
       "SqlCreateExtendedTable"
       "SqlCreateType"
       "SqlCreateFunction"

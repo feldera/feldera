@@ -106,7 +106,7 @@ public class RegressionTests extends SqlIoTest {
     @Test
     public void recursionCrash() {
         // View defined but not used was producing a compiler crash
-        String sql = "CREATE RECURSIVE VIEW ba (id BIGINT);";
+        String sql = "DECLARE RECURSIVE VIEW ba (id BIGINT);";
         this.getCCS(sql);
     }
 

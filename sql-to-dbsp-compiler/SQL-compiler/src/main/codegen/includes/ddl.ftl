@@ -296,21 +296,21 @@ SqlCreate SqlCreateExtendedTable(Span s, boolean replace) :
     }
 }
 
-SqlCreate SqlDeclareView(Span s, boolean replace) :
+SqlDeclareView SqlDeclareView() :
 {
     final SqlIdentifier id;
     List<SqlNode> columns = new ArrayList<SqlNode>();
-    Span e;
+    Span s, e;
 }
 {
-   <RECURSIVE> <VIEW> { e = span(); }
+   <DECLARE> { s = span(); } <RECURSIVE> <VIEW> { e = span(); }
    id = CompoundIdentifier() <LPAREN>
    ColumnDeclaration(columns)
    (
        <COMMA> ColumnDeclaration(columns)
    )*
    <RPAREN> {
-        return new SqlDeclareView(s.end(this), replace, id, new SqlNodeList(columns, e.end(this)));
+        return new SqlDeclareView(s.end(this), id, new SqlNodeList(columns, e.end(this)));
    }
 }
 

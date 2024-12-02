@@ -16,20 +16,17 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import java.util.List;
 import java.util.Objects;
 
-/** Parse tree for {@code CREATE RECURSIVE VIEW} statement. */
+/** Parse tree for {@code DECLARE RECURSIVE VIEW} statement. */
 public class SqlDeclareView extends SqlCreate {
     public final SqlIdentifier name;
     /** The column list can also contain foreign key declarations */
     public final SqlNodeList columns;
 
     private static final SqlOperator OPERATOR =
-            new SqlSpecialOperator("CREATE RECURSIVE VIEW", SqlKind.OTHER);
+            new SqlSpecialOperator("DECLARE RECURSIVE VIEW", SqlKind.OTHER);
 
-    public SqlDeclareView(SqlParserPos pos, boolean replace, SqlIdentifier name, SqlNodeList columns) {
+    public SqlDeclareView(SqlParserPos pos, SqlIdentifier name, SqlNodeList columns) {
         super(OPERATOR, pos, false, false);
-        if (replace)
-            throw new UnsupportedException("REPLACE not supported in RECURSIVE VIEW declarations",
-                    CalciteObject.create(pos));
         this.name = Objects.requireNonNull(name, "name");
         this.columns = columns;
     }
@@ -40,7 +37,7 @@ public class SqlDeclareView extends SqlCreate {
     }
 
     @Override public void unparse(SqlWriter writer, int leftPrec, int rightPrec) {
-        writer.keyword("CREATE");
+        writer.keyword("DECLARE");
         writer.keyword("RECURSIVE");
         writer.keyword("VIEW");
         name.unparse(writer, leftPrec, rightPrec);

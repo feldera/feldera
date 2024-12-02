@@ -667,7 +667,7 @@ public class MetadataTests extends BaseSQLTests {
     @Test
     public void testFibonacci() throws IOException, SQLException {
         String sql = """
-                create recursive view fibonacci(n INT, value INT);
+                DECLARE RECURSIVE view fibonacci(n INT, value INT);
                 create table input (x int);
                 
                 create view fibonacci AS

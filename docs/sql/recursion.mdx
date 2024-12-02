@@ -29,7 +29,7 @@ when a view references itself or another view before their definition.
 A forward declaration specifies the view's name, column names, and column types.
 
 ```sql
-CREATE RECURSIVE VIEW CLOSURE(x INT, y INT);
+DECLARE RECURSIVE VIEW CLOSURE(x INT, y INT);
 ```
 
 This forward declaration states that `CLOSURE` is a recursive view with two columns, `x` and `y`, both of type `INT`.
@@ -117,7 +117,7 @@ create a view that computes all Fibonacci numbers. However, this program will fa
 it reaches values that do not fit into a 32-bit integer:
 
 ```sql
-create recursive view fibonacci(n int, value int);
+declare recursive view fibonacci(n int, value int);
 
 create view fibonacci as
 (
@@ -150,7 +150,7 @@ prints each invocation of the fibonacci view during recursion:
   <TabItem value="program.sql" label="program.sql" default>
     ```sql
     create function logger(n int not null, value int not null) returns int not null;
-    create recursive view fibonacci(n int not null, value int not null);
+    declare recursive view fibonacci(n int not null, value int not null);
 
     create view fibonacci as
     (
@@ -204,7 +204,7 @@ The 46-th fibonacci value is the last one that fits in a 32-bit integer.
 The fix is to bound the recursion depth, e.g., by adding a `WHERE` clause to the `fibonacci` view:
 
 ```sql
-create recursive view fibonacci(n int not null, value int not null);
+declare recursive view fibonacci(n int not null, value int not null);
 
 create view fibonacci as
 (
