@@ -86,9 +86,9 @@ io-uring = "0.6.3"
 
 [dev-dependencies]
 rand = "0.8.5"
-proptest-derive = { version = "0.4.0" }
-proptest = { version = "1.4.0" }
-proptest-state-machine = { version = "0.1.0" }
+proptest-derive = { version = "0.5.0" }
+proptest = { version = "1.5.0" }
+proptest-state-machine = { version = "0.3.0" }
 futures = { version = "0.3.30", features = ["executor"] }
 pretty_assertions = { version = "1.4" }
 csv = "1.2.2"

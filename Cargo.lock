@@ -3662,7 +3662,7 @@ dependencies = [
  "pretty_assertions",
  "priority-queue",
  "proptest",
- "proptest-derive 0.4.0",
+ "proptest-derive 0.5.0",
  "proptest-state-machine",
  "ptr_meta 0.2.0",
  "rand",
@@ -3757,6 +3757,7 @@ dependencies = [
  "pretty_assertions",
  "proptest",
  "proptest-derive 0.3.0",
+ "proptest-derive 0.5.0",
  "psutil",
  "rand",
  "rdkafka",
@@ -4654,7 +4655,7 @@ dependencies = [
  "libc",
  "log",
  "proptest",
- "proptest-derive 0.3.0",
+ "proptest-derive 0.5.0",
  "rust_decimal_macros",
  "serde",
  "serde_json",
@@ -7569,17 +7570,6 @@ dependencies = [
 
 [[package]]
 name = "proptest-derive"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9cf16337405ca084e9c78985114633b6827711d22b9e6ef6c6c0d665eb3f0b6e"
-dependencies = [
- "proc-macro2 1.0.92",
- "quote 1.0.37",
- "syn 1.0.109",
-]
-
-[[package]]
-name = "proptest-derive"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6ff7ff745a347b87471d859a377a9a404361e7efc2a971d73424a6d183c0fc77"
@@ -7591,9 +7581,9 @@ dependencies = [
 
 [[package]]
 name = "proptest-state-machine"
-version = "0.1.0"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b52a714915de2d16a5289616d2265a934780f50a9dd30359322b687403fa2ac2"
+checksum = "28278d6a11102264b0c569c33dbe5286ba00d2dd6d96ff2a94296e0e5b3d1e04"
 dependencies = [
  "proptest",
 ]
