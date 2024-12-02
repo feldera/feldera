@@ -2407,12 +2407,12 @@
           },
           "snapshot_filter": {
             "type": "string",
-            "description": "Optional row filter.\n\nThis option is only valid when `mode` is set to `snapshot` or `snapshot_and_follow`.\n\nWhen specified, only rows that satisfy the filter condition are included in the\nsnapshot.  The condition must be a valid SQL Boolean expression that can be used in\nthe `where` clause of the `select * from snapshot where ...` query.\n\nThis option can be used to specify the range of event times to include in the snapshot,\ne.g.: `ts BETWEEN '2005-01-01 00:00:00' AND '2010-12-31 23:59:59'`.",
+            "description": "Optional row filter.\n\nThis option is only valid when `mode` is set to `snapshot` or `snapshot_and_follow`.\n\nWhen specified, only rows that satisfy the filter condition are included in the\nsnapshot.  The condition must be a valid SQL Boolean expression that can be used in\nthe `where` clause of the `select * from snapshot where ...` query.\n\nThis option can be used to specify the range of event times to include in the snapshot,\ne.g.: `ts BETWEEN TIMESTAMP '2005-01-01 00:00:00' AND TIMESTAMP '2010-12-31 23:59:59'`.",
             "nullable": true
           },
           "timestamp_column": {
             "type": "string",
-            "description": "Table column that serves as an event timestamp.\n\n\nWhen this option is specified, and `mode` is one of `snapshot` or `snapshot_and_follow`,\nthe snapshot of the table is ingested in the timestamp order.  This setting is required\nfor tables declared with the\n[`LATENESS`](https://docs.feldera.com/sql/streaming#lateness-expressions) attribute\nin Feldera SQL. It impacts the performance of the connector, since data must be sorted\nbefore pushing it to the pipeline; therefore it is not recommended to use this\nsettings for tables without `LATENESS`.",
+            "description": "Table column that serves as an event timestamp.\n\nWhen this option is specified, and `mode` is one of `snapshot` or `snapshot_and_follow`,\ntable rows are ingested in the timestamp order, respecting the\n[`LATENESS`](https://docs.feldera.com/sql/streaming#lateness-expressions)\nproperty of the column: each ingested row has a timestamp no more than `LATENESS`\ntime units earlier than the most recent timestamp of any previously ingested row.\nThe ingestion is performed by partitioning the table into timestamp ranges of width\n`LATENESS`. Each range is processed sequentially, in increasing timestamp order.\n\n# Example\n\nConsider a table with timestamp column of type `TIMESTAMP` and lateness attribute\n`INTERVAL 1 DAY`. Assuming that the oldest timestamp in the table is\n`2024-01-01T00:00:00``, the connector will fetch all records with timestamps\nfrom `2024-01-01`, then all records for `2024-01-02`, `2024-01-03`, etc., until all records\nin the table have been ingested.\n\n# Requirements\n\n* The timestamp column must be of a supported type: integer, `DATE`, or `TIMESTAMP`.\n* The timestamp column must be declared with non-zero `LATENESS`.\n* For efficient ingest, the table must be optimized for timestamp-based\nqueries using partitioning, Z-ordering, or liquid clustering.",
             "nullable": true
           },
           "uri": {
@@ -2786,6 +2786,18 @@
             "properties": {
               "columntype": {
                 "$ref": "#/components/schemas/ColumnType"
+              },
+              "default": {
+                "type": "string",
+                "nullable": true
+              },
+              "lateness": {
+                "type": "string",
+                "nullable": true
+              },
+              "watermark": {
+                "type": "string",
+                "nullable": true
               }
             }
           }

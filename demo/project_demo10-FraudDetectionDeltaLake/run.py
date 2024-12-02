@@ -273,7 +273,7 @@ def build_program(
         category STRING,
         amt DOUBLE,
         trans_num STRING,
-        unix_time BIGINT,
+        unix_time BIGINT LATENESS 3600 * 24 * 30,
         merch_lat DOUBLE,
         merch_long DOUBLE,
         is_fraud BIGINT

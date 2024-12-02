@@ -6,10 +6,12 @@ use crate::transport::{
     InputEndpoint, InputQueue, InputReaderCommand, IntegratedInputEndpoint, NonFtInputReaderCommand,
 };
 use crate::{
-    ControllerError, InputConsumer, InputReader, ParseError, PipelineState, RecordFormat,
+    ControllerError, InputConsumer, InputReader, PipelineState, RecordFormat,
     TransportInputEndpoint,
 };
-use anyhow::{anyhow, Result as AnyResult};
+use anyhow::{anyhow, Error as AnyError, Result as AnyResult};
+use datafusion::common::arrow::array::{AsArray, RecordBatch};
+use datafusion::logical_expr::sqlparser::parser::ParserError;
 use datafusion::prelude::SessionConfig;
 use datafusion::scalar::ScalarValue;
 use dbsp::circuit::tokio::TOKIO;
@@ -31,11 +33,13 @@ use deltalake::table::builder::ensure_table_uri;
 use deltalake::table::PeekCommit;
 use deltalake::{datafusion, DeltaTable, DeltaTableBuilder, Path};
 use env_logger::builder;
+use feldera_adapterlib::format::ParseError;
 use feldera_types::config::InputEndpointConfig;
 use feldera_types::format::json::JsonFlavor;
-use feldera_types::program_schema::Relation;
+use feldera_types::program_schema::{ColumnType, Field, Relation, SqlType};
 use feldera_types::transport::delta_table::{DeltaTableIngestMode, DeltaTableReaderConfig};
 use feldera_types::transport::s3::S3InputConfig;
+use futures::TryFutureExt;
 use futures_util::StreamExt;
 use log::{debug, error, info, trace};
 use serde::{Deserialize, Serialize};
@@ -48,6 +52,7 @@ use tokio::select;
 use tokio::sync::mpsc;
 use tokio::sync::watch::{channel, Receiver, Sender};
 use tokio::time::sleep;
+use tokio_util::time;
 use url::Url;
 use utoipa::ToSchema;
 
@@ -115,11 +120,12 @@ impl DeltaTableInputReader {
         let input_stream = input_handle
             .handle
             .configure_arrow_deserializer(delta_input_serde_config())?;
+        let schema = input_handle.schema.clone();
 
         std::thread::spawn(move || {
             TOKIO.block_on(async {
                 let _ = endpoint_clone
-                    .worker_task(input_stream, receiver_clone, init_status_sender)
+                    .worker_task(input_stream, schema, receiver_clone, init_status_sender)
                     .await;
             })
         });
@@ -192,12 +198,13 @@ impl DeltaTableInputEndpointInner {
     async fn worker_task(
         self: Arc<Self>,
         input_stream: Box<dyn ArrowStream>,
+        schema: Relation,
         receiver: Receiver<PipelineState>,
         init_status_sender: mpsc::Sender<Result<(), ControllerError>>,
     ) {
         let mut receiver_clone = receiver.clone();
         select! {
-            _ = Self::worker_task_inner(self.clone(), input_stream, receiver, init_status_sender) => {
+            _ = Self::worker_task_inner(self.clone(), input_stream,schema, receiver, init_status_sender) => {
                 debug!("delta_table {}: worker task terminated",
                     &self.endpoint_name,
                 );
@@ -210,9 +217,191 @@ impl DeltaTableInputEndpointInner {
         }
     }
 
+    /// Load the entire table snapshot as a single "select * where <filter>" query.
+    async fn read_unordered_snapshot(
+        &self,
+        input_stream: &mut dyn ArrowStream,
+        receiver: &mut Receiver<PipelineState>,
+    ) {
+        // Execute the snapshot query; push snapshot data to the circuit.
+        info!(
+            "delta_table {}: reading initial snapshot",
+            &self.endpoint_name,
+        );
+
+        let mut snapshot_query = "select * from snapshot".to_string();
+        if let Some(filter) = &self.config.snapshot_filter {
+            snapshot_query = format!("{snapshot_query} where {filter}");
+        }
+
+        self.execute_snapshot_query(&snapshot_query, "initial snapshot", input_stream, receiver)
+            .await;
+
+        //let _ = self.datafusion.deregister_table("snapshot");
+        info!(
+            "delta_table {}: finished reading initial snapshot",
+            &self.endpoint_name,
+        );
+    }
+
+    /// Load the initial snapshot by issuing a sequence of queries for monotonically
+    /// increasing timestamp ranges.
+    async fn read_ordered_snapshot(
+        &self,
+        input_stream: &mut dyn ArrowStream,
+        schema: &Relation,
+        receiver: &mut Receiver<PipelineState>,
+    ) {
+        self.read_ordered_snapshot_inner(input_stream, schema, receiver)
+            .await
+            .unwrap_or_else(|e| self.consumer.error(true, e));
+    }
+
+    async fn read_ordered_snapshot_inner(
+        &self,
+        input_stream: &mut dyn ArrowStream,
+        schema: &Relation,
+        receiver: &mut Receiver<PipelineState>,
+    ) -> Result<(), AnyError> {
+        let timestamp_column = self.config.timestamp_column.as_ref().unwrap();
+
+        let timestamp_field = schema.field(timestamp_column).unwrap();
+
+        // The following unwraps are safe, as validated in `validate_timestamp_column`.
+        let lateness = timestamp_field.lateness.as_ref().unwrap();
+
+        // Query the table for min and max values of the timestamp column that satisfy the filter.
+        let bounds_query =
+            format!("select * from (select cast(min({timestamp_column}) as string) as start_ts, cast(max({timestamp_column}) as string) as end_ts from snapshot {}) where start_ts is not null",
+            if let Some(filter) = &self.config.snapshot_filter {
+                format!("where {filter}")
+            } else {
+                String::new()
+            });
+
+        let bounds = self.execute_query_collect(&bounds_query).await?;
+
+        info!(
+            "delta_table {}: querying the table for min and max timestamp values",
+            &self.endpoint_name,
+        );
+
+        if bounds.len() != 1 || bounds[0].num_rows() != 1 {
+            info!(
+                "delta_table {}: initial snapshot is empty; the Delta table contains no records{}",
+                &self.endpoint_name,
+                if let Some(filter) = &self.config.snapshot_filter {
+                    format!(" that satisfy the filter condition '{filter}'")
+                } else {
+                    String::new()
+                }
+            );
+            return Ok(());
+        }
+
+        if bounds[0].num_columns() != 2 {
+            // Should never happen.
+            return Err(anyhow!(
+                    "internal error: query '{bounds_query}' returned a result with {} columns; expected 2 columns",
+                    bounds[0].num_columns()
+                ));
+        }
+
+        let min = bounds[0]
+            .column(0)
+            .as_string_opt::<i32>()
+            .ok_or_else(|| anyhow!("internal error: cannot retrieve the output of query '{bounds_query}' as a string"))?
+            .value(0)
+            .to_string();
+
+        let max = bounds[0].column(1).as_string::<i32>().value(0).to_string();
+
+        info!(
+            "delta_table {}: reading table snapshot in the range '{min} <= {timestamp_column} <= {max}'",
+            &self.endpoint_name,
+        );
+
+        let min = Self::timestamp_to_sql_expression(&timestamp_field.columntype, &min);
+        let max = Self::timestamp_to_sql_expression(&timestamp_field.columntype, &max);
+
+        let mut start = min.clone();
+        let mut done = "false".to_string();
+
+        while &done != "true" {
+            // Evaluate SQL expression for the new end of the interval.
+            let end = self
+                .execute_singleton_query(&format!("select cast(({start} + {lateness}) as string)"))
+                .await?;
+            let end = Self::timestamp_to_sql_expression(&timestamp_field.columntype, &end);
+
+            // Query the table for the range.
+            let mut range_query =
+                format!("select * from snapshot where {timestamp_column} >= {start} and {timestamp_column} < {end}");
+            if let Some(filter) = &self.config.snapshot_filter {
+                range_query = format!("{range_query} and {filter}");
+            }
+
+            self.execute_snapshot_query(&range_query, "range", input_stream, receiver)
+                .await;
+
+            start = end.clone();
+
+            done = self
+                .execute_singleton_query(&format!("select cast({start} > {max} as string)"))
+                .await?;
+        }
+
+        Ok(())
+    }
+
+    /// Execute a SQL query and collect all results in a vector of `RecordBatch`'s.
+    async fn execute_query_collect(&self, query: &str) -> Result<Vec<RecordBatch>, AnyError> {
+        let options = SQLOptions::new()
+            .with_allow_ddl(false)
+            .with_allow_dml(false);
+
+        let df = self
+            .datafusion
+            .sql_with_options(query, options)
+            .await
+            .map_err(|e| anyhow!("error compiling query '{query}': {e}"))?;
+
+        df.collect()
+            .await
+            .map_err(|e| anyhow!("error executing query '{query}': e"))
+    }
+
+    /// Execute a SQL query that returns a reault with exactly one row and column of type `string`.
+    async fn execute_singleton_query(&self, query: &str) -> Result<String, AnyError> {
+        let result = self.execute_query_collect(query).await?;
+        if result.len() != 1 {
+            return Err(anyhow!(
+                "internal error: query '{query}' returned {} batches; expected: 1",
+                result.len()
+            ));
+        }
+
+        if result[0].num_rows() != 1 {
+            return Err(anyhow!(
+                "internal error: query '{query}' returned {} rows; expected: 1",
+                result[0].num_rows()
+            ));
+        }
+
+        if result[0].num_columns() != 1 {
+            return Err(anyhow!(
+                "internal error: query '{query}' returned {} columns; expected: 1",
+                result[0].num_columns()
+            ));
+        }
+
+        Ok(result[0].column(0).as_string::<i32>().value(0).to_string())
+    }
+
     async fn worker_task_inner(
         self: Arc<Self>,
         mut input_stream: Box<dyn ArrowStream>,
+        schema: Relation,
         mut receiver: Receiver<PipelineState>,
         init_status_sender: mpsc::Sender<Result<(), ControllerError>>,
     ) {
@@ -226,12 +415,9 @@ impl DeltaTableInputEndpointInner {
 
         let table = Arc::new(table);
 
-        let snapshot_df = match self.prepare_snapshot_query(&table).await {
-            Err(e) => {
-                let _ = init_status_sender.send(Err(e)).await;
-                return;
-            }
-            Ok(snapshot_df) => snapshot_df,
+        if let Err(e) = self.prepare_snapshot_query(&table, &schema).await {
+            let _ = init_status_sender.send(Err(e)).await;
+            return;
         };
 
         // Code before this point is part of endpoint initialization.
@@ -239,28 +425,15 @@ impl DeltaTableInputEndpointInner {
         // shutdown command from the controller.
         let _ = init_status_sender.send(Ok(())).await;
 
-        // Execute the snapshot query; push snapshot data to the circuit.
-        if let Some(snapshot_df) = snapshot_df {
-            info!(
-                "delta_table {}: reading initial snapshot",
-                &self.endpoint_name,
-            );
-
-            self.execute_df(
-                snapshot_df,
-                true,
-                "initial snapshot",
-                input_stream.as_mut(),
-                &mut receiver,
-            )
-            .await;
-
-            //let _ = self.datafusion.deregister_table("snapshot");
-            info!(
-                "delta_table {}: finished reading initial snapshot",
-                &self.endpoint_name,
-            );
-        }
+        if self.config.snapshot() && self.config.timestamp_column.is_none() {
+            // Read snapshot chunk-by-chunk.
+            self.read_unordered_snapshot(input_stream.as_mut(), &mut receiver)
+                .await;
+        } else if self.config.snapshot() {
+            // Read the entire snapshot in one query.
+            self.read_ordered_snapshot(input_stream.as_mut(), &schema, &mut receiver)
+                .await;
+        };
 
         // Start following the table if required by the configuration.
         if self.config.follow() {
@@ -368,7 +541,7 @@ impl DeltaTableInputEndpointInner {
             .runtime_env()
             .register_object_store(url, delta_table.log_store().object_store());
 
-        debug!(
+        info!(
             "delta_table {}: opened delta table '{}' (current table version {})",
             &self.endpoint_name,
             &self.config.uri,
@@ -382,7 +555,140 @@ impl DeltaTableInputEndpointInner {
         Ok(delta_table)
     }
 
-    /// Prepare a dataframe to read initial snapshot, if required by endpoint configuration.
+    /// Register `table` as a Datafusion table named "snapshot".
+    async fn register_snapshot_table(
+        &self,
+        table: &Arc<DeltaTable>,
+    ) -> Result<(), ControllerError> {
+        trace!(
+            "delta_table {}: registering table with Datafusion",
+            &self.endpoint_name,
+        );
+
+        self.datafusion
+            .register_table("snapshot", table.clone())
+            .map_err(|e| {
+                ControllerError::input_transport_error(
+                    &self.endpoint_name,
+                    true,
+                    anyhow!("failed to register table snapshot with datafusion: {e}"),
+                )
+            })?;
+
+        Ok(())
+    }
+
+    /// Parse expression only to validate it.
+    fn validate_sql_expression(expr: &str) -> Result<(), ParserError> {
+        let mut parser = Parser::new(&GenericDialect).try_with_sql(expr)?;
+        parser.parse_expr()?;
+
+        Ok(())
+    }
+
+    /// Convert a value of the timestamp column returned by a SQL query into a valid
+    /// SQL expression.
+    fn timestamp_to_sql_expression(column_type: &ColumnType, expr: &str) -> String {
+        match column_type.typ {
+            SqlType::Timestamp => format!("timestamp '{expr}'"),
+            SqlType::Date => format!("date '{expr}'"),
+            _ => expr.to_string(),
+        }
+    }
+
+    /// Check that the `timestamp` field has one of supported types.
+    fn validate_timestamp_type(&self, timestamp: &Field) -> Result<(), ControllerError> {
+        if !timestamp.columntype.is_integral_type()
+            && !matches!(
+                &timestamp.columntype.typ,
+                SqlType::Date | SqlType::Timestamp
+            )
+        {
+            return Err(ControllerError::invalid_transport_configuration(
+                &self.endpoint_name,
+                &format!(
+                    "timestamp column '{}' has unsupported type {}; supported types for 'timestamp_column' are integer types, DATE, and TIMESTAMP; see DeltaLake connector documentation: https://docs.feldera.com/connectors/sources/delta",
+                    timestamp.name,
+                    serde_json::to_string(&timestamp.columntype).unwrap()
+                ),
+            ));
+        }
+
+        Ok(())
+    }
+
+    /// Validate the filter expression specified in the 'snapshot_filter' parameter.
+    fn validate_snapshot_filter(&self) -> Result<(), ControllerError> {
+        if let Some(filter) = &self.config.snapshot_filter {
+            Self::validate_sql_expression(filter).map_err(|e| {
+                ControllerError::invalid_transport_configuration(
+                    &self.endpoint_name,
+                    &format!("error parsing 'snapshot_filter' expression '{filter}': {e}"),
+                )
+            })?;
+        }
+
+        Ok(())
+    }
+
+    /// Validate 'timestamp_column' if specified.
+    async fn validate_timestamp_column(&self, schema: &Relation) -> Result<(), ControllerError> {
+        let Some(timestamp_column) = &self.config.timestamp_column else {
+            return Ok(());
+        };
+
+        // Lookup column in the schema.
+        let Some(field) = schema.field(timestamp_column) else {
+            return Err(ControllerError::invalid_transport_configuration(
+                &self.endpoint_name,
+                &format!("timestamp column '{timestamp_column}' not found in table schema"),
+            ));
+        };
+
+        // Field must have a supported type.
+        self.validate_timestamp_type(field)?;
+
+        // Column must have lateness.
+        let Some(lateness) = &field.lateness else {
+            return Err(ControllerError::invalid_transport_configuration(
+                &self.endpoint_name,
+                &format!(
+                    "timestamp column '{timestamp_column}' does not have a LATENESS attribute; see DeltaLake connector documentation: https://docs.feldera.com/connectors/sources/delta"
+                ),
+            ));
+        };
+
+        // Validate lateness expression.
+        Self::validate_sql_expression(lateness).map_err(|e|
+            ControllerError::invalid_transport_configuration(
+                &self.endpoint_name,
+                &format!("error parsing LATENESS attribute '{lateness}' of the timestamp column '{timestamp_column}': {e}; see DeltaLake connector documentation for more details: https://docs.feldera.com/connectors/sources/delta"),
+            ),
+        )?;
+
+        // Lateness has to be >0. Zero would mean that we need to ingest data strictly in order. If we need to support this case in the future,
+        // we could revert to our old (and very costly) strategy of issuing a single `select *` query with the 'ORDER BY timestamp_column' clause,
+        // which requires storing and sorting the entire collection locally.
+        let is_zero = self
+            .execute_singleton_query(&format!(
+                "select cast(({lateness} + {lateness}) = {lateness} as string)"
+            ))
+            .map_err(|e| {
+                ControllerError::invalid_transport_configuration(
+                    &self.endpoint_name,
+                    &e.to_string(),
+                )
+            })
+            .await?;
+
+        if &is_zero == "true" {
+            return Err(ControllerError::invalid_transport_configuration(&self.endpoint_name, &format!("invalid LATENESS attribute '{lateness}' of the timestamp column '{timestamp_column}': LATENESS must be greater than zero; see DeltaLake connector documentation for more details: https://docs.feldera.com/connectors/sources/delta")));
+        }
+
+        Ok(())
+    }
+
+    /// Prepare to read initial snapshot, if required by endpoint configuration.
     ///
     /// This function runs as part of endpoint initialization.  The query will be actually
     /// executed after initialization. The goal is to catch as many configuration errors as
@@ -398,83 +704,48 @@ impl DeltaTableInputEndpointInner {
     async fn prepare_snapshot_query(
         &self,
         table: &Arc<DeltaTable>,
-    ) -> Result<Option<DataFrame>, ControllerError> {
+        schema: &Relation,
+    ) -> Result<(), ControllerError> {
         if !self.config.snapshot() {
-            return Ok(None);
+            return Ok(());
         }
 
-        trace!(
-            "delta_table {}: preparing initial snapshot query",
+        self.register_snapshot_table(table).await?;
+        self.validate_snapshot_filter()?;
+        self.validate_timestamp_column(schema).await?;
+
+        Ok(())
+    }
+
+    /// Execute a SQL query to load a complete or partial snapshot of the DeltaTable.
+    async fn execute_snapshot_query(
+        &self,
+        query: &str,
+        descr: &str,
+        input_stream: &mut dyn ArrowStream,
+        receiver: &mut Receiver<PipelineState>,
+    ) {
+        let descr = format!("{descr} query '{query}'");
+        debug!(
+            "delta_table {}: retrieving data from the Delta table snapshot using {descr}",
             &self.endpoint_name,
         );
 
-        self.datafusion
-            .register_table("snapshot", table.clone())
-            .map_err(|e| {
-                ControllerError::input_transport_error(
-                    &self.endpoint_name,
-                    true,
-                    anyhow!("failed to register table snapshot with datafusion: {e}"),
-                )
-            })?;
-
-        let mut snapshot_query = "select * from snapshot".to_string();
-
-        if let Some(filter) = &self.config.snapshot_filter {
-            // Parse expression only to validate it.
-            let mut parser = Parser::new(&GenericDialect)
-                .try_with_sql(filter)
-                .map_err(|e| {
-                    ControllerError::invalid_transport_configuration(
-                        &self.endpoint_name,
-                        &format!("error parsing filter expression '{filter}': {e}"),
-                    )
-                })?;
-            parser.parse_expr().map_err(|e| {
-                ControllerError::invalid_transport_configuration(
-                    &self.endpoint_name,
-                    &format!("invalid filter expression '{filter}': {e}"),
-                )
-            })?;
-
-            snapshot_query = format!("{snapshot_query} where {filter}");
-        }
-
-        if let Some(timestamp_column) = &self.config.timestamp_column {
-            // Parse expression only to validate it.
-            let mut parser = Parser::new(&GenericDialect)
-                .try_with_sql(timestamp_column)
-                .map_err(|e| {
-                    ControllerError::invalid_transport_configuration(
-                        &self.endpoint_name,
-                        &format!("error parsing timestamp expression '{timestamp_column}': {e}"),
-                    )
-                })?;
-            parser.parse_expr().map_err(|e| {
-                ControllerError::invalid_transport_configuration(
-                    &self.endpoint_name,
-                    &format!("invalid timestamp expression '{timestamp_column}': {e}"),
-                )
-            })?;
-
-            snapshot_query = format!("{snapshot_query} order by {timestamp_column}");
-        }
-
-        let options = SQLOptions::new()
+        let options: SQLOptions = SQLOptions::new()
             .with_allow_ddl(false)
             .with_allow_dml(false);
-        let snapshot = self
-            .datafusion
-            .sql_with_options(&snapshot_query, options)
-            .await
-            .map_err(|e| {
-                ControllerError::invalid_transport_configuration(
-                    &self.endpoint_name,
-                    &format!("error compiling snapshot query '{snapshot_query}': {e}"),
-                )
-            })?;
 
-        Ok(Some(snapshot))
+        let df = match self.datafusion.sql_with_options(query, options).await {
+            Ok(df) => df,
+            Err(e) => {
+                self.consumer
+                    .error(true, anyhow!("error compiling query '{query}': {e}"));
+                return;
+            }
+        };
+
+        self.execute_df(df, true, &descr, input_stream, receiver)
+            .await;
     }
 
     /// Execute a prepared dataframe and push data from it to the circuit.

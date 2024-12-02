@@ -66,6 +66,7 @@ fn delta_output_serde_config() -> SqlSerdeConfig {
 /// Read a snapshot of a delta table with records of type `T` to a temporary JSON file.
 fn delta_table_snapshot_to_json<T>(
     table_uri: &str,
+    schema: &[Field],
     config: &HashMap<String, String>,
 ) -> NamedTempFile
 where
@@ -86,6 +87,7 @@ where
 
     let input_pipeline = delta_table_input_pipeline::<T>(
         table_uri,
+        schema,
         &config,
         &json_file.path().display().to_string(),
     );
@@ -180,6 +182,7 @@ async fn create_table(
 /// Build a pipeline that reads from a delta table and writes to a JSON file.
 fn delta_table_input_pipeline<T>(
     table_uri: &str,
+    schema: &[Field],
     config: &HashMap<String, String>,
     output_file_path: &str,
 ) -> Controller
@@ -227,9 +230,10 @@ inputs:
     );
 
     let config: PipelineConfig = serde_yaml::from_str(&config_str).unwrap();
+    let schema = schema.to_vec();
 
     Controller::with_config(
-        |workers| Ok(test_circuit::<T>(workers, &TestStruct2::schema())),
+        move |workers| Ok(test_circuit::<T>(workers, &schema)),
         &config,
         Box::new(move |e| panic!("delta_table_input_test: error: {e}")),
     )
@@ -698,6 +702,7 @@ proptest! {
         // Read delta table unordered.
         let mut json_file = delta_table_snapshot_to_json::<TestStruct2>(
             &table_uri,
+            &TestStruct2::schema(),
             &HashMap::new());
 
         let expected_zset = OrdZSet::from_tuples((), data.clone().into_iter().map(|x| Tup2(Tup2(x,()),1)).collect());
@@ -707,22 +712,50 @@ proptest! {
         // Order delta table by `id` (which should be its natural order).
         let mut json_file_ordered_by_id = delta_table_snapshot_to_json::<TestStruct2>(
             &table_uri,
+            &TestStruct2::schema_with_lateness(),
             &HashMap::from([("timestamp_column".to_string(), "id".to_string())]));
 
         let zset = file_to_zset::<TestStruct2>(json_file_ordered_by_id.as_file_mut(), "json", r#"update_format: "insert_delete""#);
         assert_eq!(zset, expected_zset);
 
-        // Order delta table by `timestamp` (which is generated in random order, so this requires actual sorting).
+        // Order delta table by `id`, specify id range.
+        let mut json_file_ordered_filtered = delta_table_snapshot_to_json::<TestStruct2>(
+            &table_uri,
+            &TestStruct2::schema_with_lateness(),
+            &HashMap::from([("timestamp_column".to_string(), "id".to_string()), ("snapshot_filter".to_string(), "id >= 10000 ".to_string())]));
+
+        let expected_filtered_zset = OrdZSet::from_tuples(
+                (),
+                data.clone().into_iter()
+                    .filter(|x| x.field >= 10000)
+                    .map(|x| Tup2(Tup2(x,()),1)).collect()
+                );
+
+            let zset = file_to_zset::<TestStruct2>(json_file_ordered_filtered.as_file_mut(), "json", r#"update_format: "insert_delete""#);
+            assert_eq!(zset, expected_filtered_zset);
+
+        // Order delta table by `timestamp`.
         let mut json_file_ordered_by_ts = delta_table_snapshot_to_json::<TestStruct2>(
             &table_uri,
+            &TestStruct2::schema_with_lateness(),
             &HashMap::from([("timestamp_column".to_string(), "ts".to_string())]));
 
         let zset = file_to_zset::<TestStruct2>(json_file_ordered_by_ts.as_file_mut(), "json", r#"update_format: "insert_delete""#);
         assert_eq!(zset, expected_zset);
 
+        // Order delta table by `timestamp`; specify an empty filter condition
+        let mut json_file_ordered_by_ts = delta_table_snapshot_to_json::<TestStruct2>(
+            &table_uri,
+            &TestStruct2::schema_with_lateness(),
+            &HashMap::from([("timestamp_column".to_string(), "ts".to_string()), ("snapshot_filter".to_string(), "ts < timestamp '2005-01-01T00:00:00'".to_string())]));
+
+        let zset = file_to_zset::<TestStruct2>(json_file_ordered_by_ts.as_file_mut(), "json", r#"update_format: "insert_delete""#);
+        assert_eq!(zset, OrdZSet::empty());
+
         // Filter delta table by id
         let mut json_file_filtered_by_id = delta_table_snapshot_to_json::<TestStruct2>(
             &table_uri,
+            &TestStruct2::schema(),
             &HashMap::from([("snapshot_filter".to_string(), "id >= 10000 ".to_string())]));
 
         let expected_filtered_zset = OrdZSet::from_tuples(
@@ -738,6 +771,7 @@ proptest! {
         // Filter delta table by timestamp.
         let mut json_file_filtered_by_ts = delta_table_snapshot_to_json::<TestStruct2>(
             &table_uri,
+            &TestStruct2::schema(),
             &HashMap::from([("snapshot_filter".to_string(), "ts >= '2005-01-01 00:00:00'".to_string())]));
 
         let start = NaiveDate::from_ymd_opt(2005, 1, 1)
@@ -786,6 +820,7 @@ proptest! {
 
         let mut json_file = delta_table_snapshot_to_json::<TestStruct2>(
             &table_uri,
+            &TestStruct2::schema(),
             &object_store_config);
 
         let expected_zset = OrdZSet::from_tuples((), data.into_iter().map(|x| Tup2(Tup2(x,()),1)).collect());
@@ -835,8 +870,11 @@ fn delta_table_s3_people_2m() {
 
     //let table_uri = "s3://databricks-workspace-stack-d437e-bucket/unity-catalog/5496131495366467/__unitystorage/catalogs/d1e3a643-f243-4798-8554-d32bf5a7205a/tables/cee86cb4-a525-41b9-82fe-616ae62287fc/";
     let table_uri = "s3://databricks-workspace-stack-d437e-bucket/unity-catalog/5496131495366467/__unitystorage/catalogs/d1e3a643-f243-4798-8554-d32bf5a7205a/tables/90cc5aba-25cd-4ed7-a498-8d08f0ddaa21/";
-    let mut json_file =
-        delta_table_snapshot_to_json::<DatabricksPeople>(table_uri, &object_store_config);
+    let mut json_file = delta_table_snapshot_to_json::<DatabricksPeople>(
+        table_uri,
+        &DatabricksPeople::schema(),
+        &object_store_config,
+    );
 
     println!("reading output file");
     let zset = file_to_zset::<DatabricksPeople>(

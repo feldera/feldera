@@ -238,7 +238,8 @@ impl Arbitrary for TestStruct2 {
             i64::arbitrary(),
             String::arbitrary(),
             bool::arbitrary(),
-            u32::arbitrary(),
+            // Generate timestamps within a 1-year range
+            1704070800u32..1735693200,
             0u32..100_000,
             // (0u64..24 * 60 * 60 * 1_000_000),
             EmbeddedStruct::arbitrary_with(()),
@@ -369,6 +370,27 @@ impl TestStruct2 {
                 ColumnType::map(false, ColumnType::varchar(false), ColumnType::bigint(false)),
             ),
         ]
+    }
+
+    pub fn schema_with_lateness() -> Vec<Field> {
+        let mut fields = vec![
+            Field::new("id".into(), ColumnType::bigint(false)).with_lateness("1000"),
+            Field::new("name".into(), ColumnType::varchar(true)),
+            Field::new("b".into(), ColumnType::boolean(false)),
+            Field::new("ts".into(), ColumnType::timestamp(false))
+                .with_lateness("interval '10 days'"),
+            Field::new("dt".into(), ColumnType::date(false)),
+            Field::new(
+                "es".into(),
+                ColumnType::structure(false, &[Field::new("a".into(), ColumnType::boolean(false))]),
+            ),
+            Field::new(
+                "m".into(),
+                ColumnType::map(false, ColumnType::varchar(false), ColumnType::bigint(false)),
+            ),
+        ];
+
+        fields
     }
 
     pub fn relation_schema() -> Relation {
