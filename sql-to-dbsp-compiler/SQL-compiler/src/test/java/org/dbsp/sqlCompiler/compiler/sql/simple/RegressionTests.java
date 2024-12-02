@@ -15,6 +15,16 @@ import org.junit.Test;
 
 public class RegressionTests extends SqlIoTest {
     @Test
+    public void issue3063() {
+        this.getCCS("""
+                CREATE TABLE array_tbl(c1 INT ARRAY, c2 INT ARRAY);
+                CREATE MATERIALIZED VIEW v AS SELECT
+                ARG_MIN(c1, c2) AS arg_min,
+                ARG_MAX(c1, c2) AS arg_max
+                FROM array_tbl;""");
+    }
+
+    @Test
     public void issue3035() {
         this.compileRustTestCase("""
                 CREATE TABLE t0(c0 INT) with ('materialized' = 'true');
