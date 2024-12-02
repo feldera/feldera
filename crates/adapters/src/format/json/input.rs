@@ -28,7 +28,7 @@ trait UpdateFormat {
     fn apply(self, parser: &mut JsonParser) -> Result<usize, ParseError>;
 }
 
-impl<'a> UpdateFormat for InsDelUpdate<&'a RawValue> {
+impl UpdateFormat for InsDelUpdate<&'_ RawValue> {
     fn error() -> &'static str {
         "error deserializing JSON string as a single-row update"
     }
@@ -67,7 +67,7 @@ impl<'a> UpdateFormat for InsDelUpdate<&'a RawValue> {
     }
 }
 
-impl<'a> UpdateFormat for DebeziumUpdate<&'a RawValue> {
+impl UpdateFormat for DebeziumUpdate<&'_ RawValue> {
     fn error() -> &'static str {
         "error deserializing JSON string as a Debezium CDC event"
     }
@@ -121,7 +121,7 @@ impl<'a> UpdateFormat for DebeziumUpdate<&'a RawValue> {
     }
 }
 
-impl<'a> UpdateFormat for WeightedUpdate<&'a RawValue> {
+impl UpdateFormat for WeightedUpdate<&'_ RawValue> {
     fn error() -> &'static str {
         "error deserializing JSON string as a weighted record"
     }
@@ -143,7 +143,7 @@ impl<'a> UpdateFormat for WeightedUpdate<&'a RawValue> {
     }
 }
 
-impl<'a> UpdateFormat for &'a RawValue {
+impl UpdateFormat for &'_ RawValue {
     fn error() -> &'static str {
         "failed to parse JSON string"
     }

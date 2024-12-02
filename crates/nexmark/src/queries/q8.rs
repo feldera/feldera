@@ -7,7 +7,10 @@ use dbsp::{
     OrdIndexedZSet, OrdZSet, RootCircuit, Stream,
 };
 
-///
+type Q8Stream = Stream<RootCircuit, OrdZSet<Tup3<u64, String, u64>>>;
+
+const TUMBLE_SECONDS: u64 = 10;
+
 /// Query 8: Monitor New Users
 ///
 /// Select people who have entered the system and created auctions in the last
@@ -44,11 +47,6 @@ use dbsp::{
 /// ) A
 /// ON P.id = A.seller AND P.starttime = A.starttime AND P.endtime = A.endtime;
 /// ```
-
-type Q8Stream = Stream<RootCircuit, OrdZSet<Tup3<u64, String, u64>>>;
-
-const TUMBLE_SECONDS: u64 = 10;
-
 pub fn q8(_circuit: &mut RootCircuit, input: NexmarkStream) -> Q8Stream {
     // People indexed by the date they entered the system.
     let people_by_time = input.flat_map_index(|event| match event {

@@ -382,8 +382,6 @@ where
     }
 }
 
-/// `MulByRef<isize>`
-
 impl MulByRef<isize> for i8 {
     type Output = Self;
 

@@ -5,6 +5,11 @@ use dbsp::{
     OrdZSet, RootCircuit, Stream,
 };
 
+const STATES_OF_INTEREST: &[&str] = &["OR", "ID", "CA"];
+const CATEGORY_OF_INTEREST: u64 = 10;
+
+type Q3Stream = Stream<RootCircuit, OrdZSet<Tup4<String, String, String, u64>>>;
+
 /// Local Item Suggestion
 ///
 /// Who is selling in OR, ID or CA in category 10, and for what auction ids?
@@ -29,12 +34,6 @@ use dbsp::{
 /// WHERE
 ///     A.category = 10 and (P.state = 'OR' OR P.state = 'ID' OR P.state =
 /// 'CA');
-
-const STATES_OF_INTEREST: &[&str] = &["OR", "ID", "CA"];
-const CATEGORY_OF_INTEREST: u64 = 10;
-
-type Q3Stream = Stream<RootCircuit, OrdZSet<Tup4<String, String, String, u64>>>;
-
 pub fn q3(_circuit: &mut RootCircuit, input: NexmarkStream) -> Q3Stream {
     // Select auctions of interest and index them by seller id.
     let auction_by_seller = input.flat_map_index(|event| match event {

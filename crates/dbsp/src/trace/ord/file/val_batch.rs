@@ -758,7 +758,7 @@ where
     weight: Box<R>,
 }
 
-impl<'s, K, V, T, R> Debug for FileValCursor<'s, K, V, T, R>
+impl<K, V, T, R> Debug for FileValCursor<'_, K, V, T, R>
 where
     K: DataTrait + ?Sized,
     V: DataTrait + ?Sized,
@@ -778,7 +778,7 @@ where
     }
 }
 
-impl<'s, K, V, T, R> Clone for FileValCursor<'s, K, V, T, R>
+impl<K, V, T, R> Clone for FileValCursor<'_, K, V, T, R>
 where
     K: DataTrait + ?Sized,
     V: DataTrait + ?Sized,
@@ -851,7 +851,7 @@ where
     }
 }
 
-impl<'s, K, V, T, R> Cursor<K, V, T, R> for FileValCursor<'s, K, V, T, R>
+impl<K, V, T, R> Cursor<K, V, T, R> for FileValCursor<'_, K, V, T, R>
 where
     K: DataTrait + ?Sized,
     V: DataTrait + ?Sized,
@@ -1014,7 +1014,7 @@ where
     }
 }
 
-impl<'s, K, V, T, R> HasTimeDiffCursor<K, V, T, R> for FileValCursor<'s, K, V, T, R>
+impl<K, V, T, R> HasTimeDiffCursor<K, V, T, R> for FileValCursor<'_, K, V, T, R>
 where
     K: DataTrait + ?Sized,
     V: DataTrait + ?Sized,

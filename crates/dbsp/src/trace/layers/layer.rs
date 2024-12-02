@@ -1316,7 +1316,7 @@ where
     }
 }
 
-impl<'s, K, L, O> LayerCursor<'s, K, L, O>
+impl<K, L, O> LayerCursor<'_, K, L, O>
 where
     K: DataTrait + ?Sized,
     L: Trie,

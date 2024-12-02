@@ -153,7 +153,7 @@ where
     }
 }
 
-impl<'a, K, V, T, R, C1, C2> Cursor<K, V, T, R> for CursorPair<'a, K, V, T, R, C1, C2>
+impl<K, V, T, R, C1, C2> Cursor<K, V, T, R> for CursorPair<'_, K, V, T, R, C1, C2>
 where
     C1: Cursor<K, V, T, R>,
     C2: Cursor<K, V, T, R>,

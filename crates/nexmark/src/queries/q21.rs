@@ -3,7 +3,9 @@ use crate::model::Event;
 use dbsp::{utils::Tup5, OrdZSet, RootCircuit, Stream};
 use regex::Regex;
 
-///
+type Q21Set = OrdZSet<Tup5<u64, u64, u64, String, String>>;
+type Q21Stream = Stream<RootCircuit, Q21Set>;
+
 /// -- Query 21: Add channel id (Not in original suite)
 ///
 /// -- Add a channel_id column to the bid table.
@@ -34,10 +36,6 @@ use regex::Regex;
 ///     where REGEXP_EXTRACT(url, '(&|^)channel_id=([^&]*)', 2) is not null or
 ///           lower(channel) in ('apple', 'google', 'facebook', 'baidu');
 /// ```
-
-type Q21Set = OrdZSet<Tup5<u64, u64, u64, String, String>>;
-type Q21Stream = Stream<RootCircuit, Q21Set>;
-
 pub fn q21(_circuit: &mut RootCircuit, input: NexmarkStream) -> Q21Stream {
     let channel_regex = Regex::new(r"channel_id=([^&]*)").unwrap();
 

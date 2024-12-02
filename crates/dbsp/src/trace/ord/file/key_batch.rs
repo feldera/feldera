@@ -660,7 +660,7 @@ where
     pub(crate) diff: Box<R>,
 }
 
-impl<'s, K, T, R> Clone for FileKeyCursor<'s, K, T, R>
+impl<K, T, R> Clone for FileKeyCursor<'_, K, T, R>
 where
     K: DataTrait + ?Sized,
     T: Timestamp,
@@ -721,7 +721,7 @@ where
     }
 }
 
-impl<'s, K, T, R> Cursor<K, DynUnit, T, R> for FileKeyCursor<'s, K, T, R>
+impl<K, T, R> Cursor<K, DynUnit, T, R> for FileKeyCursor<'_, K, T, R>
 where
     K: DataTrait + ?Sized,
     T: Timestamp,
@@ -865,7 +865,7 @@ where
     T: Timestamp,
     R: WeightTrait + ?Sized,
 {
-    fn current<'b>(&'b mut self, tmp: &'b mut R) -> Option<(&T, &R)> {
+    fn current<'b>(&'b mut self, tmp: &'b mut R) -> Option<(&'b T, &'b R)> {
         if unsafe { self.cursor.item((&mut self.time, tmp)) }.is_some() {
             Some((&self.time, tmp))
         } else {
@@ -878,7 +878,7 @@ where
     }
 }
 
-impl<'s, K, T, R> HasTimeDiffCursor<K, DynUnit, T, R> for FileKeyCursor<'s, K, T, R>
+impl<K, T, R> HasTimeDiffCursor<K, DynUnit, T, R> for FileKeyCursor<'_, K, T, R>
 where
     K: DataTrait + ?Sized,
     T: Timestamp,

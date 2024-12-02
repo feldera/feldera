@@ -345,7 +345,7 @@ where
     V: ?Sized,
     R: ?Sized;
 
-impl<'s, K, V, T, R> Clone for DelegatingCursor<'s, K, V, T, R>
+impl<K, V, T, R> Clone for DelegatingCursor<'_, K, V, T, R>
 where
     K: ?Sized,
     V: ?Sized,
@@ -356,7 +356,7 @@ where
     }
 }
 
-impl<'s, K, V, T, R> Cursor<K, V, T, R> for DelegatingCursor<'s, K, V, T, R>
+impl<K, V, T, R> Cursor<K, V, T, R> for DelegatingCursor<'_, K, V, T, R>
 where
     K: ?Sized,
     V: ?Sized,
@@ -488,7 +488,7 @@ where
 {
     /// Returns the current time-diff pair, if there is one, or `None` if the
     /// cursor has been exhausted.
-    fn current<'b>(&'b mut self, tmp: &'b mut R) -> Option<(&T, &R)>;
+    fn current<'b>(&'b mut self, tmp: &'b mut R) -> Option<(&'b T, &'b R)>;
 
     /// Advances to the next time-diff pair.
     fn step(&mut self);

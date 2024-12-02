@@ -38,7 +38,7 @@ struct BufferWriter<'a> {
     buffer: &'a mut Vec<u8>,
 }
 
-impl<'a> AsyncFileWriter for BufferWriter<'a> {
+impl AsyncFileWriter for BufferWriter<'_> {
     fn write(&mut self, bs: Bytes) -> BoxFuture<'_, parquet::errors::Result<()>> {
         self.buffer.extend(bs);
         async move { Ok(()) }.boxed()

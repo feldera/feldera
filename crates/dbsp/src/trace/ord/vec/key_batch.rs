@@ -455,7 +455,7 @@ where
     cursor: LayerCursor<'s, K, Leaf<DynDataTyped<T>, R>, O>,
 }
 
-impl<'s, K, T, R, O> Clone for ValKeyCursor<'s, K, T, R, O>
+impl<K, T, R, O> Clone for ValKeyCursor<'_, K, T, R, O>
 where
     K: DataTrait + ?Sized,
     T: Timestamp,
@@ -470,7 +470,7 @@ where
     }
 }
 
-impl<'s, K, T, R, O> Cursor<K, DynUnit, T, R> for ValKeyCursor<'s, K, T, R, O>
+impl<K, T, R, O> Cursor<K, DynUnit, T, R> for ValKeyCursor<'_, K, T, R, O>
 where
     K: DataTrait + ?Sized,
     T: Timestamp,
@@ -641,7 +641,7 @@ where
     }
 }
 
-impl<'s, K, T, R, O> HasTimeDiffCursor<K, DynUnit, T, R> for ValKeyCursor<'s, K, T, R, O>
+impl<K, T, R, O> HasTimeDiffCursor<K, DynUnit, T, R> for ValKeyCursor<'_, K, T, R, O>
 where
     K: DataTrait + ?Sized,
     T: Timestamp,

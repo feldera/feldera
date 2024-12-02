@@ -2,35 +2,6 @@ use super::{process_time, NexmarkStream};
 use crate::model::Event;
 use dbsp::{utils::Tup4, OrdZSet, RootCircuit, Stream};
 
-///
-/// Query 12: Processing Time Windows (Not in original suite)
-///
-/// How many bids does a user make within a fixed processing time limit?
-/// Illustrates working in processing time window.
-///
-/// Group bids by the same user into processing time windows of 10 seconds.
-/// Emit the count of bids per window.
-///
-/// ```sql
-/// CREATE TABLE discard_sink (
-///   bidder BIGINT,
-///   bid_count BIGINT,
-///   starttime TIMESTAMP(3),
-///   endtime TIMESTAMP(3)
-/// ) WITH (
-///   'connector' = 'blackhole'
-/// );
-///
-/// INSERT INTO discard_sink
-/// SELECT
-///     B.bidder,
-///     count(*) as bid_count,
-///     TUMBLE_START(B.p_time, INTERVAL '10' SECOND) as starttime,
-///     TUMBLE_END(B.p_time, INTERVAL '10' SECOND) as endtime
-/// FROM (SELECT *, PROCTIME() as p_time FROM bid) B
-/// GROUP BY B.bidder, TUMBLE(B.p_time, INTERVAL '10' SECOND);
-/// ```
-
 type Q12Stream = Stream<RootCircuit, OrdZSet<Tup4<u64, u64, u64, u64>>>;
 const TUMBLE_SECONDS: u64 = 10;
 
@@ -61,6 +32,33 @@ where
         })
 }
 
+/// Query 12: Processing Time Windows (Not in original suite)
+///
+/// How many bids does a user make within a fixed processing time limit?
+/// Illustrates working in processing time window.
+///
+/// Group bids by the same user into processing time windows of 10 seconds.
+/// Emit the count of bids per window.
+///
+/// ```sql
+/// CREATE TABLE discard_sink (
+///   bidder BIGINT,
+///   bid_count BIGINT,
+///   starttime TIMESTAMP(3),
+///   endtime TIMESTAMP(3)
+/// ) WITH (
+///   'connector' = 'blackhole'
+/// );
+///
+/// INSERT INTO discard_sink
+/// SELECT
+///     B.bidder,
+///     count(*) as bid_count,
+///     TUMBLE_START(B.p_time, INTERVAL '10' SECOND) as starttime,
+///     TUMBLE_END(B.p_time, INTERVAL '10' SECOND) as endtime
+/// FROM (SELECT *, PROCTIME() as p_time FROM bid) B
+/// GROUP BY B.bidder, TUMBLE(B.p_time, INTERVAL '10' SECOND);
+/// ```
 pub fn q12(_circuit: &mut RootCircuit, input: NexmarkStream) -> Q12Stream {
     q12_for_process_time(input, process_time)
 }

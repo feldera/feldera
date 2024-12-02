@@ -40,7 +40,7 @@ where
     }
 }
 
-impl<'c, K, V, T, R, C> Cursor<V, DynUnit, T, R> for CursorGroup<'c, K, T, R, C>
+impl<K, V, T, R, C> Cursor<V, DynUnit, T, R> for CursorGroup<'_, K, T, R, C>
 where
     K: DataTrait + ?Sized,
     V: DataTrait + ?Sized,

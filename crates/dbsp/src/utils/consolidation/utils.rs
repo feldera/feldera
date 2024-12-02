@@ -431,7 +431,7 @@ pub(super) trait Payload<'a> {
     unsafe fn deref_mut(payload: Self::Ptr) -> Self::ItemRefMut;
 }
 
-impl<'a> Payload<'a> for () {
+impl Payload<'_> for () {
     type Len = ();
     type Ptr = ();
     type ItemRefMut = ();

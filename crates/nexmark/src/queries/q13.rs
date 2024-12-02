@@ -11,6 +11,27 @@ use std::{
     io::{BufReader, Read, Result},
 };
 
+type Q13Stream = Stream<RootCircuit, OrdZSet<Tup5<u64, u64, u64, u64, String>>>;
+
+const Q13_SIDE_INPUT_CSV: &str = "benches/nexmark/data/side_input.txt";
+
+fn read_side_input<R: Read>(reader: R) -> Result<Vec<(u64, String)>> {
+    let reader = BufReader::new(reader);
+    let mut csv_reader = csv::ReaderBuilder::new()
+        .has_headers(false)
+        .from_reader(reader);
+    Ok(csv_reader.deserialize().map(|r| r.unwrap()).collect())
+}
+
+pub fn q13_side_input() -> Vec<Tup2<Tup3<u64, String, u64>, ZWeight>> {
+    let p_time = process_time();
+    read_side_input(File::open(Q13_SIDE_INPUT_CSV).unwrap())
+        .unwrap()
+        .into_iter()
+        .map(|(k, v)| Tup2(Tup3(k, v, p_time), 1))
+        .collect()
+}
+
 /// Query 13: Bounded Side Input Join (Not in original suite)
 ///
 /// Joins a stream to a bounded side input, modeling basic stream enrichment.
@@ -63,28 +84,6 @@ use std::{
 /// So, although Flink supports monitoring the side-loaded file for updates, a
 /// simple static file is used for this bounded side-input for the Nexmark tests
 /// and that is also what is tested here.
-
-type Q13Stream = Stream<RootCircuit, OrdZSet<Tup5<u64, u64, u64, u64, String>>>;
-
-const Q13_SIDE_INPUT_CSV: &str = "benches/nexmark/data/side_input.txt";
-
-fn read_side_input<R: Read>(reader: R) -> Result<Vec<(u64, String)>> {
-    let reader = BufReader::new(reader);
-    let mut csv_reader = csv::ReaderBuilder::new()
-        .has_headers(false)
-        .from_reader(reader);
-    Ok(csv_reader.deserialize().map(|r| r.unwrap()).collect())
-}
-
-pub fn q13_side_input() -> Vec<Tup2<Tup3<u64, String, u64>, ZWeight>> {
-    let p_time = process_time();
-    read_side_input(File::open(Q13_SIDE_INPUT_CSV).unwrap())
-        .unwrap()
-        .into_iter()
-        .map(|(k, v)| Tup2(Tup3(k, v, p_time), 1))
-        .collect()
-}
-
 pub fn q13(circuit: &mut RootCircuit, input: NexmarkStream) -> Q13Stream {
     let (side_input, side_input_handle) = circuit.add_input_zset::<Tup3<u64, String, u64>>();
 

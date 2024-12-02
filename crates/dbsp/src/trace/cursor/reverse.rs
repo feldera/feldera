@@ -29,8 +29,8 @@ where
     }
 }
 
-impl<'a, C, K: ?Sized, V: ?Sized, R: WeightTrait + ?Sized> Cursor<K, V, (), R>
-    for ReverseKeyCursor<'a, C, K, V, R>
+impl<C, K: ?Sized, V: ?Sized, R: WeightTrait + ?Sized> Cursor<K, V, (), R>
+    for ReverseKeyCursor<'_, C, K, V, R>
 where
     C: Cursor<K, V, (), R> + ?Sized,
 {

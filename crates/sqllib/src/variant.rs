@@ -226,7 +226,7 @@ impl<'de> DeserializeSeed<'de> for KeyClassifier {
 const DECIMAL_KEY_TOKEN: &str = "$serde_json::private::Number";
 
 #[doc(hidden)]
-impl<'de> Visitor<'de> for KeyClassifier {
+impl Visitor<'_> for KeyClassifier {
     type Value = KeyClass;
 
     #[doc(hidden)]
@@ -271,7 +271,7 @@ impl<'de> de::Deserialize<'de> for NumberFromString {
     {
         struct Visitor;
 
-        impl<'de> de::Visitor<'de> for Visitor {
+        impl de::Visitor<'_> for Visitor {
             type Value = NumberFromString;
 
             fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {

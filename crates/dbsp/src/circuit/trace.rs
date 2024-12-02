@@ -548,7 +548,7 @@ impl<'a> SchedulerEvent<'a> {
     }
 }
 
-impl<'a> Display for SchedulerEvent<'a> {
+impl Display for SchedulerEvent<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::EvalStart { node } => {

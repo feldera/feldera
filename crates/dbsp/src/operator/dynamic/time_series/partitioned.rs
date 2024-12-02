@@ -87,7 +87,7 @@ where
     }
 }
 
-impl<'b, C, PK, K, V, R> Cursor<K, V, (), R> for PartitionCursor<'b, PK, K, V, R, C>
+impl<C, PK, K, V, R> Cursor<K, V, (), R> for PartitionCursor<'_, PK, K, V, R, C>
 where
     C: Cursor<PK, DynPair<K, V>, (), R>,
     PK: DataTrait + ?Sized,

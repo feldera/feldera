@@ -252,7 +252,7 @@ where
 }
 
 /// Consumer, topic, and partition.
-impl<'a, T: Consumer<C> + AsKafkaClient<C>, C: ClientContext + ConsumerContext> Ctp<'a, T, C> {
+impl<T: Consumer<C> + AsKafkaClient<C>, C: ClientContext + ConsumerContext> Ctp<'_, T, C> {
     /// Assigns this consumer to read this topic and partition starting at
     /// `offset`.
     ///
@@ -363,7 +363,7 @@ impl<'a, C: ClientContext + ConsumerContext> Ctp<'a, BaseConsumer<C>, C> {
     }
 }
 
-impl<'a, T, C> Display for Ctp<'a, T, C>
+impl<T, C> Display for Ctp<'_, T, C>
 where
     T: AsKafkaClient<C>,
     C: ClientContext,

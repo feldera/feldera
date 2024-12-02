@@ -2,12 +2,13 @@ use super::NexmarkStream;
 use crate::model::{Bid, Event};
 use dbsp::{algebra::UnimplementedSemigroup, operator::Fold, OrdZSet, RootCircuit, Stream};
 
-//
-// Query 18: Find last bid (Not in original suite)
-//
-// What's a's last bid for bidder to auction?
-// Illustrates a Deduplicate query.
-//
+type Q18Stream = Stream<RootCircuit, OrdZSet<Bid>>;
+
+/// Query 18: Find last bid (Not in original suite)
+///
+/// What's a's last bid for bidder to auction?
+/// Illustrates a Deduplicate query.
+///
 /// ```sql
 /// CREATE TABLE discard_sink (
 ///     auction  BIGINT,
@@ -27,9 +28,6 @@ use dbsp::{algebra::UnimplementedSemigroup, operator::Fold, OrdZSet, RootCircuit
 ///        FROM bid)
 ///  WHERE rank_number <= 1;
 /// ```
-
-type Q18Stream = Stream<RootCircuit, OrdZSet<Bid>>;
-
 pub fn q18(_circuit: &mut RootCircuit, input: NexmarkStream) -> Q18Stream {
     let bids_by_auction_bidder = input.flat_map_index(|event| match event {
         Event::Bid(b) => Some(((b.auction, b.bidder), b.clone())),

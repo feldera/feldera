@@ -67,7 +67,7 @@ impl<'a, C, T> SerializeWithContextWrapper<'a, C, T> {
     }
 }
 
-impl<'a, C, T> Serialize for SerializeWithContextWrapper<'a, C, T>
+impl<C, T> Serialize for SerializeWithContextWrapper<'_, C, T>
 where
     T: SerializeWithContext<C>,
 {
@@ -158,7 +158,7 @@ impl<'se, C, T> SerializationContext<'se, C, T> {
     }
 }
 
-impl<'se, C, T> Serialize for SerializationContext<'se, C, T>
+impl<C, T> Serialize for SerializationContext<'_, C, T>
 where
     T: SerializeWithContext<C>,
 {

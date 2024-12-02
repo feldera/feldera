@@ -436,7 +436,7 @@ pub struct LeafCursor<'a, K: DataTrait + ?Sized, R: WeightTrait + ?Sized> {
     bounds: (usize, usize),
 }
 
-impl<'a, K: DataTrait + ?Sized, R: WeightTrait + ?Sized> Clone for LeafCursor<'a, K, R> {
+impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> Clone for LeafCursor<'_, K, R> {
     fn clone(&self) -> Self {
         Self {
             pos: self.pos,
@@ -446,7 +446,7 @@ impl<'a, K: DataTrait + ?Sized, R: WeightTrait + ?Sized> Clone for LeafCursor<'a
     }
 }
 
-impl<'a, K: DataTrait + ?Sized, R: WeightTrait + ?Sized> Display for LeafCursor<'a, K, R> {
+impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> Display for LeafCursor<'_, K, R> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut cursor: LeafCursor<K, R> = self.clone();
 

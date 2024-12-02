@@ -8,7 +8,11 @@ use dbsp::{
     OrdIndexedZSet, OrdZSet, RootCircuit, Stream,
 };
 
-///
+type Q7Output = Tup5<u64, u64, u64, u64, String>;
+type Q7Stream = Stream<RootCircuit, OrdZSet<Q7Output>>;
+
+const TUMBLE_SECONDS: u64 = 10;
+
 /// Query 7: Highest Bid
 ///
 /// What are the highest bids per period?
@@ -38,12 +42,6 @@ use dbsp::{
 /// ON B.price = B1.maxprice
 /// WHERE B.dateTime BETWEEN B1.dateTime  - INTERVAL '10' SECOND AND B1.dateTime;
 /// ```
-
-type Q7Output = Tup5<u64, u64, u64, u64, String>;
-type Q7Stream = Stream<RootCircuit, OrdZSet<Q7Output>>;
-
-const TUMBLE_SECONDS: u64 = 10;
-
 pub fn q7(_circuit: &mut RootCircuit, input: NexmarkStream) -> Q7Stream {
     // All bids indexed by date time to be able to window the result.
     let bids_by_time: Stream<_, OrdIndexedZSet<u64, _>> =

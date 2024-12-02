@@ -5,6 +5,11 @@ use dbsp::{
     RootCircuit, Stream,
 };
 
+type Q5Stream = Stream<RootCircuit, OrdZSet<Tup2<u64, u64>>>;
+
+const WINDOW_WIDTH_SECONDS: u64 = 10;
+const TUMBLE_SECONDS: u64 = 2;
+
 /// Query 5: Hot Items
 ///
 /// Which auctions have seen the most bids in the last period?
@@ -59,7 +64,7 @@ use dbsp::{
 ///     AuctionBids.endtime = MaxBids.endtime AND
 ///     AuctionBids.num >= MaxBids.maxn;
 /// ```
-
+///
 /// If I am reading [Flink docs](https://nightlies.apache.org/flink/flink-docs-stable/docs/dev/datastream/operators/windows/)
 /// correctly, its default behavior is to trigger computation on
 /// a window once the watermark passes the end of the window. Furthermore, since
@@ -67,12 +72,6 @@ use dbsp::{
 /// updated once the watermark passes the end of the window.  In other words, it
 /// will aggregate within each window exactly once, which is what we implement
 /// here.
-
-type Q5Stream = Stream<RootCircuit, OrdZSet<Tup2<u64, u64>>>;
-
-const WINDOW_WIDTH_SECONDS: u64 = 10;
-const TUMBLE_SECONDS: u64 = 2;
-
 pub fn q5(_circuit: &mut RootCircuit, input: NexmarkStream) -> Q5Stream {
     // All bids indexed by date time to be able to window the result.
     let bids_by_time: Stream<_, OrdIndexedZSet<u64, u64>> =

@@ -8,11 +8,47 @@ use dbsp::{
 use rkyv::{Archive, Deserialize, Serialize};
 use size_of::SizeOf;
 
+#[derive(
+    Eq,
+    Clone,
+    Default,
+    Debug,
+    Hash,
+    PartialEq,
+    PartialOrd,
+    Ord,
+    SizeOf,
+    Archive,
+    Serialize,
+    Deserialize,
+)]
+#[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
+#[archive(compare(PartialEq, PartialOrd))]
+pub struct Q9Output(
+    u64,
+    String,
+    String,
+    u64,
+    u64,
+    u64,
+    u64,
+    u64,
+    u64,
+    String,
+    u64,
+    u64,
+    u64,
+    u64,
+    String,
+);
+
+type Q9Stream = Stream<RootCircuit, OrdZSet<Q9Output>>;
+
 /// Query 9: Winning Bids (Not in original suite)
 ///
 /// Find the winning bid for each auction.
 ///
-/// From https://github.com/nexmark/nexmark/blob/master/nexmark-flink/src/main/resources/queries/q9.sql
+/// From <https://github.com/nexmark/nexmark/blob/master/nexmark-flink/src/main/resources/queries/q9.sql>.
 ///
 /// TODO: streaming join doesn't support rowtime attribute in input, this should
 /// be fixed by FLINK-18651. As a workaround, we re-create a new view without
@@ -56,43 +92,6 @@ use size_of::SizeOf;
 /// )
 /// WHERE rownum <= 1;
 /// ```
-
-#[derive(
-    Eq,
-    Clone,
-    Default,
-    Debug,
-    Hash,
-    PartialEq,
-    PartialOrd,
-    Ord,
-    SizeOf,
-    Archive,
-    Serialize,
-    Deserialize,
-)]
-#[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
-#[archive(compare(PartialEq, PartialOrd))]
-pub struct Q9Output(
-    u64,
-    String,
-    String,
-    u64,
-    u64,
-    u64,
-    u64,
-    u64,
-    u64,
-    String,
-    u64,
-    u64,
-    u64,
-    u64,
-    String,
-);
-
-type Q9Stream = Stream<RootCircuit, OrdZSet<Q9Output>>;
-
 pub fn q9(_circuit: &mut RootCircuit, input: NexmarkStream) -> Q9Stream {
     // Select auctions and index by auction id.
     let auctions_by_id = input.flat_map_index(|event| match event {

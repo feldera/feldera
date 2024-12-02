@@ -5,7 +5,6 @@ use crate::dynamic::{Factory, WeightTrait};
 use super::Cursor;
 
 /// Cursor that contains no data.
-
 pub struct CursorEmpty<K: ?Sized, V: ?Sized, T, R: WeightTrait + ?Sized> {
     weight_factory: &'static dyn Factory<R>,
     phantom: PhantomData<fn(&K, &V, T, &R)>,

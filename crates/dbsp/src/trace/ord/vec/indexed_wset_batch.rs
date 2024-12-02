@@ -631,7 +631,7 @@ where
         }
     }
 }
-impl<'s, K, V, R, O> Clone for VecIndexedWSetCursor<'s, K, V, R, O>
+impl<K, V, R, O> Clone for VecIndexedWSetCursor<'_, K, V, R, O>
 where
     K: DataTrait + ?Sized,
     V: DataTrait + ?Sized,
@@ -645,7 +645,7 @@ where
     }
 }
 
-impl<'s, K, V, R, O> Cursor<K, V, (), R> for VecIndexedWSetCursor<'s, K, V, R, O>
+impl<K, V, R, O> Cursor<K, V, (), R> for VecIndexedWSetCursor<'_, K, V, R, O>
 where
     K: DataTrait + ?Sized,
     V: DataTrait + ?Sized,
@@ -767,7 +767,7 @@ where
     }
 }
 
-impl<'s, K, V, R> HasTimeDiffCursor<K, V, (), R> for VecIndexedWSetCursor<'s, K, V, R>
+impl<K, V, R> HasTimeDiffCursor<K, V, (), R> for VecIndexedWSetCursor<'_, K, V, R>
 where
     K: DataTrait + ?Sized,
     V: DataTrait + ?Sized,

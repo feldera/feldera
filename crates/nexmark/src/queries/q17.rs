@@ -11,7 +11,10 @@ use time::{
     Date, OffsetDateTime,
 };
 
-///
+type Q17Output = Tup10<u64, String, ZWeight, ZWeight, ZWeight, ZWeight, u64, u64, ZWeight, ZWeight>;
+
+type Q17Stream = Stream<RootCircuit, OrdZSet<Q17Output>>;
+
 /// Query 17: Auction Statistics Report (Not in original suite)
 ///
 /// How many bids on an auction made a day and what is the price?
@@ -48,11 +51,6 @@ use time::{
 /// FROM bid
 /// GROUP BY auction, DATE_FORMAT(dateTime, 'yyyy-MM-dd');
 /// ```
-
-type Q17Output = Tup10<u64, String, ZWeight, ZWeight, ZWeight, ZWeight, u64, u64, ZWeight, ZWeight>;
-
-type Q17Stream = Stream<RootCircuit, OrdZSet<Q17Output>>;
-
 pub fn q17(_circuit: &mut RootCircuit, input: NexmarkStream) -> Q17Stream {
     let iso8601_day_format = &Iso8601::<
         {

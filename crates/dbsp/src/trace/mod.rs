@@ -112,7 +112,7 @@ pub(crate) struct CommittedSpine<B: Batch + Send + Sync> {
 /// Trait for data that can be serialized and deserialized with [`rkyv`].
 ///
 /// This trait doesn't have any extra bounds on Deserializable.
-
+///
 /// Deserializes `bytes` as type `T` using `rkyv`, tolerating `bytes` being
 /// misaligned.
 pub fn unaligned_deserialize<T: Deserializable>(bytes: &[u8]) -> T {

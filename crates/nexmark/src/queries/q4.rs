@@ -6,6 +6,8 @@ use dbsp::{
     OrdIndexedZSet, OrdZSet, RootCircuit, Stream, ZWeight,
 };
 
+type Q4Stream = Stream<RootCircuit, OrdZSet<Tup2<u64, u64>>>;
+
 /// Query 4: Average Price for a Category
 ///
 /// Select the average of the wining bid prices for all auctions in each
@@ -38,9 +40,6 @@ use dbsp::{
 /// ) Q
 /// GROUP BY Q.category;
 /// ```
-
-type Q4Stream = Stream<RootCircuit, OrdZSet<Tup2<u64, u64>>>;
-
 pub fn q4(_circuit: &mut RootCircuit, input: NexmarkStream) -> Q4Stream {
     // Select auctions and index by auction id.
     let auctions_by_id = input.flat_map_index(|event| match event {

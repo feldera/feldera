@@ -240,7 +240,7 @@ where
     }
 }
 
-impl<'a, T> AntichainRef<'a, T>
+impl<T> AntichainRef<'_, T>
 where
     T: Lattice + Clone,
 {

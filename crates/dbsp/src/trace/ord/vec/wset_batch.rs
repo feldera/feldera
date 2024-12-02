@@ -463,7 +463,7 @@ pub struct VecWSetCursor<'s, K: DataTrait + ?Sized, R: WeightTrait + ?Sized> {
     pub(crate) cursor: LeafCursor<'s, K, R>,
 }
 
-impl<'s, K, R> Clone for VecWSetCursor<'s, K, R>
+impl<K, R> Clone for VecWSetCursor<'_, K, R>
 where
     K: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
@@ -476,8 +476,8 @@ where
     }
 }
 
-impl<'s, K: DataTrait + ?Sized, R: WeightTrait + ?Sized> Cursor<K, DynUnit, (), R>
-    for VecWSetCursor<'s, K, R>
+impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> Cursor<K, DynUnit, (), R>
+    for VecWSetCursor<'_, K, R>
 {
     // fn key_factory(&self) -> &'static Factory<K> {
     //     self.cursor.storage.vtables.key
@@ -601,7 +601,7 @@ impl<'s, K: DataTrait + ?Sized, R: WeightTrait + ?Sized> Cursor<K, DynUnit, (), 
     }
 }
 
-impl<'s, K, R> HasTimeDiffCursor<K, DynUnit, (), R> for VecWSetCursor<'s, K, R>
+impl<K, R> HasTimeDiffCursor<K, DynUnit, (), R> for VecWSetCursor<'_, K, R>
 where
     K: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
