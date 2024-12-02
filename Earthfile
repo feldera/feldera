@@ -213,12 +213,17 @@ test-adapters:
     ARG DELTA_TABLE_TEST_AWS_ACCESS_KEY_ID
     ARG DELTA_TABLE_TEST_AWS_SECRET_ACCESS_KEY
     WITH DOCKER --pull redpandadata/redpanda:v23.3.21
-        RUN --mount=$EARTHLY_RUST_CARGO_HOME_CACHE --mount=$EARTHLY_RUST_TARGET_CACHE docker run -p 9092:9092 --rm -itd redpandadata/redpanda:v23.3.21 \
+        RUN --mount=$EARTHLY_RUST_CARGO_HOME_CACHE --mount=$EARTHLY_RUST_TARGET_CACHE docker run -p 9092:9092 --name redpanda --rm -itd redpandadata/redpanda:v23.3.21 \
             redpanda start --smp 2  && \
             (google-cloud-sdk/bin/gcloud beta emulators pubsub start --project=feldera-test --host-port=127.0.0.1:8685 &) && \
+	    docker ps && \
             sleep 5 && \
-            RUST_BACKTRACE=1 cargo test --package dbsp_adapters --features "pubsub-emulator-test" --package feldera-sqllib
+            RUST_BACKTRACE=1 cargo test --package dbsp_adapters --features "pubsub-emulator-test" --package feldera-sqllib; \
+            status=$?; \
+            docker logs redpanda > redpanda-logs.txt; \
+            exit $status
     END
+    SAVE ARTIFACT redpanda-logs.txt AS LOCAL redpanda-log.txt
 
 test-manager:
     FROM +build-manager
