@@ -571,7 +571,7 @@ where
     cursor: LayerCursor<'s, K, Layer<V, Leaf<DynDataTyped<T>, R>, O>, O>,
 }
 
-impl<'s, K, V, T, R, O> Clone for VecValCursor<'s, K, V, T, R, O>
+impl<K, V, T, R, O> Clone for VecValCursor<'_, K, V, T, R, O>
 where
     K: DataTrait + ?Sized,
     V: DataTrait + ?Sized,
@@ -586,7 +586,7 @@ where
     }
 }
 
-impl<'s, K, V, T, R, O> Cursor<K, V, T, R> for VecValCursor<'s, K, V, T, R, O>
+impl<K, V, T, R, O> Cursor<K, V, T, R> for VecValCursor<'_, K, V, T, R, O>
 where
     K: DataTrait + ?Sized,
     V: DataTrait + ?Sized,
@@ -731,7 +731,7 @@ where
     }
 }
 
-impl<'s, K, V, T, R, O> HasTimeDiffCursor<K, V, T, R> for VecValCursor<'s, K, V, T, R, O>
+impl<K, V, T, R, O> HasTimeDiffCursor<K, V, T, R> for VecValCursor<'_, K, V, T, R, O>
 where
     K: DataTrait + ?Sized,
     V: DataTrait + ?Sized,

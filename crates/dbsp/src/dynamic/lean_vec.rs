@@ -329,7 +329,7 @@ impl RawVec {
             &'a dyn Fn(*const u8, &mut fmt::Formatter) -> fmt::Result,
         );
 
-        impl<'a> Debug for DebugErased<'a> {
+        impl Debug for DebugErased<'_> {
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
                 (self.1)(self.0, f)
             }
@@ -366,7 +366,7 @@ impl RawVec {
             vec: &'a mut RawVec,
         }
 
-        impl<'a> Drop for FillGapOnDrop<'a> {
+        impl Drop for FillGapOnDrop<'_> {
             fn drop(&mut self) {
                 // This code gets executed when `same_bucket` panics
 
@@ -815,7 +815,7 @@ impl<'a> RawIter<'a> {
     }
 }
 
-impl<'a> Iterator for RawIter<'a> {
+impl Iterator for RawIter<'_> {
     type Item = *const u8;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -857,7 +857,7 @@ impl<'a> Iterator for RawIter<'a> {
     }
 }
 
-impl<'a> DoubleEndedIterator for RawIter<'a> {
+impl DoubleEndedIterator for RawIter<'_> {
     fn next_back(&mut self) -> Option<Self::Item> {
         if self.end == self.start {
             None
@@ -879,7 +879,7 @@ impl<'a> DoubleEndedIterator for RawIter<'a> {
     }
 }
 
-impl<'a> ExactSizeIterator for RawIter<'a> {
+impl ExactSizeIterator for RawIter<'_> {
     fn len(&self) -> usize {
         self.iter_len()
     }
@@ -888,7 +888,7 @@ impl<'a> ExactSizeIterator for RawIter<'a> {
     // it's currently unstable
 }
 
-impl<'a> FusedIterator for RawIter<'a> {}
+impl FusedIterator for RawIter<'_> {}
 
 // FIXME: properly implement rkyv traits for LeanVec
 pub struct LeanVec<T> {
@@ -897,7 +897,6 @@ pub struct LeanVec<T> {
 }
 
 /// An archived [`LeanVec`]
-
 // The code for `ArchivedLeanVec` is copied out of `rkyv`, which has the
 // following license statement:
 //

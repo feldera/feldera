@@ -178,7 +178,7 @@ impl<'a> StructSerializer<'a> {
     }
 }
 
-impl<'a> SerializeStruct for StructSerializer<'a> {
+impl SerializeStruct for StructSerializer<'_> {
     type Ok = AvroValue;
     type Error = AvroSerializerError;
 
@@ -244,7 +244,7 @@ impl<'a> SeqSerializer<'a> {
     }
 }
 
-impl<'a> SerializeSeq for SeqSerializer<'a> {
+impl SerializeSeq for SeqSerializer<'_> {
     type Ok = AvroValue;
     type Error = AvroSerializerError;
 
@@ -298,7 +298,7 @@ impl<'a> MapSerializer<'a> {
     }
 }
 
-impl<'a> SerializeMap for MapSerializer<'a> {
+impl SerializeMap for MapSerializer<'_> {
     type Ok = AvroValue;
     type Error = AvroSerializerError;
 

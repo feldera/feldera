@@ -1179,7 +1179,7 @@ some_polymorphic_function2!(datediff_day, Date, Date, Date, Date, i32);
 
 #[doc(hidden)]
 pub fn format_date__(format: String, date: Date) -> String {
-    return date.to_dateTime().format(&format).to_string();
+    date.to_dateTime().format(&format).to_string()
 }
 
 some_function2!(format_date, String, Date, String);

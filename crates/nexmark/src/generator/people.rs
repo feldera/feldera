@@ -37,7 +37,7 @@ const LAST_NAMES: &[&str] = &[
     "Shultz", "Abrams", "Spencer", "White", "Bartels", "Walton", "Smith", "Jones", "Noris",
 ];
 
-impl<'a, R: Rng> GeneratorContext<'a, R> {
+impl<R: Rng> GeneratorContext<'_, R> {
     // Generate and return a random person with next available id.
     pub fn next_person(&mut self, next_event_id: u64, timestamp: u64) -> Person {
         let id = self.last_base0_person_id(next_event_id) + config::FIRST_PERSON_ID;

@@ -32,7 +32,7 @@ pub trait Set<T: DataTrait + ?Sized>: Data {
     fn insert_ref(&mut self, val: &T);
 
     /// Return an iterator over items in `self`.
-    fn dyn_iter<'a>(&'a self) -> Box<dyn Iterator<Item = &T> + 'a>;
+    fn dyn_iter<'a>(&'a self) -> Box<dyn Iterator<Item = &'a T> + 'a>;
 
     /// Cast any trait object that implements this trait to `&DynSet`.
     ///
@@ -149,7 +149,7 @@ where
         self.insert(val);
     }
 
-    fn dyn_iter<'a>(&'a self) -> Box<dyn Iterator<Item = &Trait> + 'a> {
+    fn dyn_iter<'a>(&'a self) -> Box<dyn Iterator<Item = &'a Trait> + 'a> {
         Box::new(SetIter::new(self.iter()))
     }
 

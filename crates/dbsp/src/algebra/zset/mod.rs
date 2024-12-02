@@ -207,7 +207,7 @@ where
     }
 }
 
-impl<'a, Z> Iterator for IndexedZSetIterator<'a, Z>
+impl<Z> Iterator for IndexedZSetIterator<'_, Z>
 where
     Z: IndexedZSet,
 {

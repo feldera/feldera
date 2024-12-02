@@ -2,7 +2,10 @@ use super::NexmarkStream;
 use crate::model::{Auction, Bid, Event};
 use dbsp::{utils::Tup2, OrdZSet, RootCircuit, Stream};
 
-///
+type Q20Stream = Stream<RootCircuit, OrdZSet<Tup2<Bid, Auction>>>;
+
+const FILTERED_CATEGORY: u64 = 10;
+
 /// Query 20: Expand bid with auction (Not in original suite)
 ///
 /// Get bids with the corresponding auction information where category is 10.
@@ -46,11 +49,6 @@ use dbsp::{utils::Tup2, OrdZSet, RootCircuit, Stream};
 //     bid AS B INNER JOIN auction AS A on B.auction = A.id
 // WHERE A.category = 10;
 //
-
-type Q20Stream = Stream<RootCircuit, OrdZSet<Tup2<Bid, Auction>>>;
-
-const FILTERED_CATEGORY: u64 = 10;
-
 pub fn q20(_circuit: &mut RootCircuit, input: NexmarkStream) -> Q20Stream {
     let bids_by_auction = input.flat_map_index(|event| match event {
         Event::Bid(b) => Some((b.auction, b.clone())),

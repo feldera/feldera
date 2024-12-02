@@ -2,7 +2,9 @@ use super::NexmarkStream;
 use crate::model::Event;
 use dbsp::{utils::Tup7, OrdZSet, RootCircuit, Stream};
 
-///
+type Q22Set = OrdZSet<Tup7<u64, u64, u64, String, String, String, String>>;
+type Q22Stream = Stream<RootCircuit, Q22Set>;
+
 /// Query 22: Get URL Directories (Not in original suite)
 ///
 /// What is the directory structure of the URL?
@@ -28,10 +30,6 @@ use dbsp::{utils::Tup7, OrdZSet, RootCircuit, Stream};
 ///     SPLIT_INDEX(url, '/', 4) as dir2,
 ///     SPLIT_INDEX(url, '/', 5) as dir3 FROM bid;
 /// ```
-
-type Q22Set = OrdZSet<Tup7<u64, u64, u64, String, String, String, String>>;
-type Q22Stream = Stream<RootCircuit, Q22Set>;
-
 pub fn q22(_circuit: &mut RootCircuit, input: NexmarkStream) -> Q22Stream {
     input.flat_map(|event| match event {
         Event::Bid(b) => {

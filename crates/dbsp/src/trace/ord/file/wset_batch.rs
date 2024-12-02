@@ -564,7 +564,7 @@ where
     valid: bool,
 }
 
-impl<'s, K, R> Clone for FileWSetCursor<'s, K, R>
+impl<K, R> Clone for FileWSetCursor<'_, K, R>
 where
     K: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
@@ -618,7 +618,7 @@ where
     }
 }
 
-impl<'s, K, R> Cursor<K, DynUnit, (), R> for FileWSetCursor<'s, K, R>
+impl<K, R> Cursor<K, DynUnit, (), R> for FileWSetCursor<'_, K, R>
 where
     K: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
@@ -730,7 +730,7 @@ where
     }
 }
 
-impl<'s, K, R> HasTimeDiffCursor<K, DynUnit, (), R> for FileWSetCursor<'s, K, R>
+impl<K, R> HasTimeDiffCursor<K, DynUnit, (), R> for FileWSetCursor<'_, K, R>
 where
     K: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,

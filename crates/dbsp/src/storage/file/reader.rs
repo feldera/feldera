@@ -1298,7 +1298,7 @@ where
     _phantom: PhantomData<fn(&K, &A, N)>,
 }
 
-impl<'a, K, A, N, T> Clone for RowGroup<'a, K, A, N, T>
+impl<K, A, N, T> Clone for RowGroup<'_, K, A, N, T>
 where
     K: DataTrait + ?Sized,
     A: DataTrait + ?Sized,
@@ -1314,7 +1314,7 @@ where
     }
 }
 
-impl<'a, K, A, N, T> Debug for RowGroup<'a, K, A, N, T>
+impl<K, A, N, T> Debug for RowGroup<'_, K, A, N, T>
 where
     K: DataTrait + ?Sized,
     A: DataTrait + ?Sized,
@@ -1518,7 +1518,7 @@ where
     position: Position<K, A>,
 }
 
-impl<'a, K, A, N, T> Clone for Cursor<'a, K, A, N, T>
+impl<K, A, N, T> Clone for Cursor<'_, K, A, N, T>
 where
     K: DataTrait + ?Sized,
     A: DataTrait + ?Sized,
@@ -1532,7 +1532,7 @@ where
     }
 }
 
-impl<'a, K, A, N, T> Debug for Cursor<'a, K, A, N, T>
+impl<K, A, N, T> Debug for Cursor<'_, K, A, N, T>
 where
     K: DataTrait + ?Sized,
     A: DataTrait + ?Sized,

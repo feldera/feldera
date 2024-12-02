@@ -658,7 +658,7 @@ where
     pub(crate) diff: Box<R>,
 }
 
-impl<'s, K, V, R> Clone for FileIndexedWSetCursor<'s, K, V, R>
+impl<K, V, R> Clone for FileIndexedWSetCursor<'_, K, V, R>
 where
     K: DataTrait + ?Sized,
     V: DataTrait + ?Sized,
@@ -729,7 +729,7 @@ where
     }
 }
 
-impl<'s, K, V, R> Cursor<K, V, (), R> for FileIndexedWSetCursor<'s, K, V, R>
+impl<K, V, R> Cursor<K, V, (), R> for FileIndexedWSetCursor<'_, K, V, R>
 where
     K: DataTrait + ?Sized,
     V: DataTrait + ?Sized,
@@ -844,7 +844,7 @@ where
     }
 }
 
-impl<'s, K, V, R> HasTimeDiffCursor<K, V, (), R> for FileIndexedWSetCursor<'s, K, V, R>
+impl<K, V, R> HasTimeDiffCursor<K, V, (), R> for FileIndexedWSetCursor<'_, K, V, R>
 where
     K: DataTrait + ?Sized,
     V: DataTrait + ?Sized,

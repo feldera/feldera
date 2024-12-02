@@ -7,6 +7,10 @@ use dbsp::{
     OrdIndexedZSet, OrdZSet, RootCircuit, Stream,
 };
 
+type Q6Stream = Stream<RootCircuit, OrdIndexedZSet<u64, u64>>;
+
+const NUM_AUCTIONS_PER_SELLER: usize = 10;
+
 /// Query 6: Average Selling Price by Seller
 ///
 /// What is the average selling price per seller for their last 10 closed
@@ -37,11 +41,6 @@ use dbsp::{
 ///     GROUP BY A.id, A.seller
 /// ) AS Q;
 /// ```
-
-type Q6Stream = Stream<RootCircuit, OrdIndexedZSet<u64, u64>>;
-
-const NUM_AUCTIONS_PER_SELLER: usize = 10;
-
 pub fn q6(_circuit: &mut RootCircuit, input: NexmarkStream) -> Q6Stream {
     // Select auctions sellers and index by auction id.
     let auctions_by_id = input.flat_map_index(|event| match event {

@@ -117,7 +117,6 @@ impl From<()> for Tup0 {
 }
 
 #[allow(clippy::from_over_into)]
-
 impl Into<()> for Tup0 {
     fn into(self) {}
 }

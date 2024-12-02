@@ -4,7 +4,10 @@ use dbsp::{
     algebra::UnimplementedSemigroup, operator::Fold, utils::Tup2, OrdZSet, RootCircuit, Stream,
 };
 
-///
+type Q19Stream = Stream<RootCircuit, OrdZSet<Bid>>;
+
+const TOP_BIDS: usize = 10;
+
 /// Query 19: Auction TOP-10 Price (Not in original suite)
 ///
 /// What's the top price 10 bids of an auction?
@@ -29,11 +32,6 @@ use dbsp::{
 /// (SELECT *, ROW_NUMBER() OVER (PARTITION BY auction ORDER BY price DESC) AS rank_number FROM bid)
 /// WHERE rank_number <= 10;
 /// ```
-
-type Q19Stream = Stream<RootCircuit, OrdZSet<Bid>>;
-
-const TOP_BIDS: usize = 10;
-
 pub fn q19(_circuit: &mut RootCircuit, input: NexmarkStream) -> Q19Stream {
     let bids_by_auction = input.flat_map_index(|event| match event {
         Event::Bid(b) => Some((b.auction, Tup2(b.price, b.clone()))),

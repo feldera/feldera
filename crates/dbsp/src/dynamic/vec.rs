@@ -199,10 +199,10 @@ pub trait Vector<T: DataTrait + ?Sized>: Data {
     fn dedup(&mut self);
 
     /// Return a read-only iterator over the vector.
-    fn dyn_iter<'a>(&'a self) -> Box<dyn DoubleEndedIterator<Item = &T> + 'a>;
+    fn dyn_iter<'a>(&'a self) -> Box<dyn DoubleEndedIterator<Item = &'a T> + 'a>;
 
     /// Return a mutable iterator over the vector.
-    fn dyn_iter_mut<'a>(&'a mut self) -> Box<dyn DoubleEndedIterator<Item = &mut T> + 'a>;
+    fn dyn_iter_mut<'a>(&'a mut self) -> Box<dyn DoubleEndedIterator<Item = &'a mut T> + 'a>;
 
     /// Compute a uniform random sample of a range of the vector.
     fn sample_slice(
@@ -428,11 +428,11 @@ where
     fn dedup(&mut self) {
         LeanVec::dedup(self);
     }
-    fn dyn_iter<'a>(&'a self) -> Box<dyn DoubleEndedIterator<Item = &Trait> + 'a> {
+    fn dyn_iter<'a>(&'a self) -> Box<dyn DoubleEndedIterator<Item = &'a Trait> + 'a> {
         Box::new(VecIter::new(self))
     }
 
-    fn dyn_iter_mut<'a>(&'a mut self) -> Box<dyn DoubleEndedIterator<Item = &mut Trait> + 'a> {
+    fn dyn_iter_mut<'a>(&'a mut self) -> Box<dyn DoubleEndedIterator<Item = &'a mut Trait> + 'a> {
         Box::new(VecIterMut::new(self))
     }
 

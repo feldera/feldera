@@ -128,8 +128,8 @@ where
     rng: &'a mut R,
 }
 
+#[cfg(test)]
 impl<'a, R: Rng> GeneratorContext<'a, R> {
-    #[cfg(test)]
     fn new(core: &'a GeneratorCore, rng: &'a mut R) -> Self {
         Self {
             config: &core.config,

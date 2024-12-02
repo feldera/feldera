@@ -393,7 +393,7 @@ impl<'a> CursorWithPolarity<'a> {
     }
 }
 
-impl<'a> SerCursor for CursorWithPolarity<'a> {
+impl SerCursor for CursorWithPolarity<'_> {
     fn key_valid(&self) -> bool {
         self.cursor.key_valid()
     }

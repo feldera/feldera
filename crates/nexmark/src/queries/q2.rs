@@ -2,6 +2,8 @@ use super::NexmarkStream;
 use crate::model::Event;
 use dbsp::{utils::Tup2, OrdZSet, RootCircuit, Stream};
 
+const AUCTION_ID_MODULO: u64 = 123;
+
 /// Selection
 ///
 /// Find bids with specific auction ids and show their bid price.
@@ -17,8 +19,6 @@ use dbsp::{utils::Tup2, OrdZSet, RootCircuit, Stream};
 ///
 /// INSERT INTO discard_sink
 /// SELECT auction, price FROM bid WHERE MOD(auction, 123) = 0;
-const AUCTION_ID_MODULO: u64 = 123;
-
 pub fn q2(
     _circuit: &mut RootCircuit,
     input: NexmarkStream,

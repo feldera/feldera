@@ -513,7 +513,7 @@ where
     }
 }
 
-impl<'a, T> Eq for AntichainRef<'a, T> where T: Eq {}
+impl<T> Eq for AntichainRef<'_, T> where T: Eq {}
 
 impl<'a, T> PartialOrder for AntichainRef<'a, T>
 where
@@ -526,16 +526,16 @@ where
     }
 }
 
-impl<'a, T> TotalOrder for AntichainRef<'a, T> where T: TotalOrder {}
+impl<T> TotalOrder for AntichainRef<'_, T> where T: TotalOrder {}
 
-impl<'a, T> AsRef<[T]> for AntichainRef<'a, T> {
+impl<T> AsRef<[T]> for AntichainRef<'_, T> {
     #[inline]
     fn as_ref(&self) -> &[T] {
         self.frontier
     }
 }
 
-impl<'a, T> Deref for AntichainRef<'a, T> {
+impl<T> Deref for AntichainRef<'_, T> {
     type Target = [T];
 
     #[inline]

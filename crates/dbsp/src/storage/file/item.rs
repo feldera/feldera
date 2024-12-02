@@ -53,7 +53,7 @@ where
     fn equal(&self, other: &dyn ArchivedItem<'a, K, A>) -> bool;
 }
 
-impl<'a, K, A> PartialEq for dyn ArchivedItem<'a, K, A>
+impl<K, A> PartialEq for dyn ArchivedItem<'_, K, A>
 where
     K: DataTrait + ?Sized,
     A: DataTrait + ?Sized,
@@ -63,7 +63,7 @@ where
     }
 }
 
-impl<'a, K, A> Eq for dyn ArchivedItem<'a, K, A>
+impl<K, A> Eq for dyn ArchivedItem<'_, K, A>
 where
     K: DataTrait + ?Sized,
     A: DataTrait + ?Sized,
@@ -109,7 +109,7 @@ where
     K: DBData,
     A: DBData;
 
-impl<'a, K, A> SerializeDyn for RefTup2<'a, K, A>
+impl<K, A> SerializeDyn for RefTup2<'_, K, A>
 where
     K: DBData,
     A: DBData,

@@ -389,7 +389,7 @@ impl TupleBuilder for () {
     }
 }
 
-impl<'s> Cursor<'s> for () {
+impl Cursor<'_> for () {
     type Key = ();
     type Item<'k> = &'k ();
 
