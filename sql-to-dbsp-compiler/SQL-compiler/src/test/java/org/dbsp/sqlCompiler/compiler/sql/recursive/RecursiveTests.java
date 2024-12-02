@@ -21,7 +21,7 @@ public class RecursiveTests extends BaseSQLTests {
                 create function mentions(cell varchar(64)) returns bigint array;
                 
                 -- Forward declaration of spreadsheet view
-                create recursive view spreadsheet_view (
+                declare recursive view spreadsheet_view (
                     id bigint not null,
                     raw_value varchar(64) not null,
                     background integer not null,
@@ -29,15 +29,6 @@ public class RecursiveTests extends BaseSQLTests {
                     mentions_values varchar(64) array,
                     computed_value varchar(64)
                 );
-                
-                -- Forward declaration of mentions_with_values view
-                -- create recursive view mentions_with_values (
-                --     id BIGINT NOT NULL,
-                --     raw_value VARCHAR(64) NOT NULL,
-                --     background INTEGER NOT NULL,
-                --     mentioned_id BIGINT,
-                --     mentioned_value VARCHAR(64)
-                -- );
                 
                 -- Raw spreadsheet cell data coming from backend/user, updates
                 -- are inserted as new entries with newer timestamps
@@ -217,7 +208,7 @@ public class RecursiveTests extends BaseSQLTests {
     public void issue2978() {
         String sql = """
                 -- Forward declaration of spreadsheet view
-                create recursive view spreadsheet_view (
+                DECLARE RECURSIVE view spreadsheet_view (
                     id bigint not null,
                     raw_value varchar(64) not null,
                     background integer not null,
@@ -225,7 +216,7 @@ public class RecursiveTests extends BaseSQLTests {
                 );
                 
                 -- Forward declaration of mentions_with_values view
-                create recursive view mentions_with_values (
+                DECLARE RECURSIVE view mentions_with_values (
                     id BIGINT NOT NULL,
                     raw_value VARCHAR(64) NOT NULL,
                     background INTEGER NOT NULL
@@ -317,7 +308,7 @@ public class RecursiveTests extends BaseSQLTests {
                 create function mentions(cell varchar(64)) returns bigint array not null as CAST(array(null) AS BIGINT ARRAY);
                 
                 -- Forward declaration of spreadsheet view
-                create recursive view spreadsheet_view (
+                DECLARE RECURSIVE view spreadsheet_view (
                     id bigint not null,
                     raw_value varchar(64) not null,
                     background integer not null,
@@ -327,7 +318,7 @@ public class RecursiveTests extends BaseSQLTests {
                 );
                 
                 -- Forward declaration of mentions_with_values view
-                create recursive view mentions_with_values (
+                DECLARE RECURSIVE view mentions_with_values (
                     id BIGINT NOT NULL,
                     raw_value VARCHAR(64) NOT NULL,
                     background INTEGER NOT NULL,
@@ -425,7 +416,7 @@ public class RecursiveTests extends BaseSQLTests {
     @Test
     public void testRecursive() {
         String sql = """
-                CREATE RECURSIVE VIEW V(v INT);
+                DECLARE RECURSIVE VIEW V(v INT);
                 CREATE VIEW V AS SELECT v FROM V UNION SELECT 1;""";
         var ccs = this.getCCS(sql);
         ccs.step("", """
@@ -451,7 +442,7 @@ public class RecursiveTests extends BaseSQLTests {
     public void testRecursive2() {
         // Non-incremental test
         String sql = """
-                CREATE RECURSIVE VIEW V(v INT);
+                DECLARE RECURSIVE VIEW V(v INT);
                 CREATE TABLE T(v INT);
                 CREATE VIEW V AS SELECT v FROM V UNION SELECT * FROM T;""";
         var ccs = this.getCCS(sql);
@@ -476,7 +467,7 @@ public class RecursiveTests extends BaseSQLTests {
         String sql = """
                 CREATE TABLE T(v INT);
                 CREATE LOCAL VIEW X AS SELECT v/2 FROM T;
-                CREATE RECURSIVE VIEW V(v INT);
+                DECLARE RECURSIVE VIEW V(v INT);
                 CREATE LOCAL VIEW V AS SELECT v FROM V UNION SELECT * FROM X;
                 CREATE VIEW O AS SELECT v+1 FROM V;""";
         var ccs = this.getCCS(sql);
@@ -498,7 +489,7 @@ public class RecursiveTests extends BaseSQLTests {
     public void illegalRecursiveTests() {
         String sql = """
                 CREATE TABLE E(x int, y int);
-                CREATE RECURSIVE VIEW CLOSURE(x int, y int);
+                DECLARE RECURSIVE VIEW CLOSURE(x int, y int);
                 CREATE VIEW STEP AS
                 SELECT E.x, CLOSURE.y FROM
                 E JOIN CLOSURE ON e.y = CLOSURE.x;
@@ -509,7 +500,7 @@ public class RecursiveTests extends BaseSQLTests {
 
         sql = """
                 CREATE TABLE E(x int, y int);
-                CREATE RECURSIVE VIEW CLOSURE(x int, y int);
+                DECLARE RECURSIVE VIEW CLOSURE(x int, y int);
                 CREATE MATERIALIZED VIEW CLOSURE AS (SELECT * FROM E) UNION
                     (SELECT lag(x) OVER (PARTITION BY x ORDER BY y), x FROM CLOSURE);
                 """;
@@ -521,24 +512,24 @@ public class RecursiveTests extends BaseSQLTests {
     public void typeMismatchTest() {
         // Declared type does not match
         String sql = """
-                CREATE RECURSIVE VIEW V(v INT);
+                DECLARE RECURSIVE VIEW V(v INT);
                 CREATE VIEW V AS SELECT CAST(V.v AS VARCHAR) FROM V UNION SELECT '1';""";
         this.statementsFailingInCompilation(sql, "does not match the declared type");
 
         // Declared column name does not match
         sql = """
-                CREATE RECURSIVE VIEW V(v INT);
+                DECLARE RECURSIVE VIEW V(v INT);
                 CREATE VIEW V (v0) AS SELECT DISTINCT v FROM V UNION SELECT 1;""";
         this.statementsFailingInCompilation(sql, "does not match the declared type");
 
         // Declared recursive view not used anywhere
         sql = """
-                CREATE RECURSIVE VIEW V(v INT);""";
+                DECLARE RECURSIVE VIEW V(v INT);""";
         this.shouldWarn(sql, "Unused view declaration");
 
         // Recursive view is not recursive
         sql = """
-                CREATE RECURSIVE VIEW V(v INT NOT NULL);
+                DECLARE RECURSIVE VIEW V(v INT NOT NULL);
                 CREATE VIEW V AS SELECT 1 AS v;""";
         this.shouldWarn(sql, "is declared recursive, but is not used in any recursive computation");
     }
@@ -546,7 +537,7 @@ public class RecursiveTests extends BaseSQLTests {
     @Test
     public void unsupportedRecursive() {
         String sql = """
-                CREATE RECURSIVE VIEW V(v BIGINT NOT NULL);
+                DECLARE RECURSIVE VIEW V(v BIGINT NOT NULL);
                 CREATE TABLE T(v BIGINT);
                 CREATE LOCAL VIEW W AS SELECT * FROM V UNION SELECT * FROM T;
                 CREATE VIEW V AS SELECT COUNT(*) OVER (ORDER BY v) v FROM W;""";

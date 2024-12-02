@@ -87,7 +87,7 @@ public class ParserTests {
     public void parseRecursive() throws SqlParseException {
         CalciteCompiler compiler = this.getCompiler();
         List<CalciteCompiler.ParsedStatement> node = compiler.parseStatements("""
-                CREATE RECURSIVE VIEW V(x INT);
+                DECLARE RECURSIVE VIEW V(x INT);
                 CREATE VIEW V AS SELECT * FROM V;
                 """);
         Assert.assertNotNull(node);
