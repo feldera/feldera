@@ -240,6 +240,11 @@ impl Field {
             watermark: None,
         }
     }
+
+    pub fn with_lateness(mut self, lateness: &str) -> Self {
+        self.lateness = Some(lateness.to_string());
+        self
+    }
 }
 
 /// Thanks to the brain-dead Calcite schema, if we are deserializing a field, the type options
