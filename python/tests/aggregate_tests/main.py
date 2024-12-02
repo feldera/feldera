@@ -119,6 +119,10 @@ from tests.aggregate_tests.test_interval_every import *  # noqa: F403
 from tests.aggregate_tests.test_interval_some import *  # noqa: F403
 from tests.aggregate_tests.test_array_tbl import *  # noqa: F403
 from tests.aggregate_tests.test_array_arr_agg import *  # noqa: F403
+from tests.aggregate_tests.test_array_count import *  # noqa: F403
+from tests.aggregate_tests.test_array_count_col import *  # noqa: F403
+from tests.aggregate_tests.test_array_every import *  # noqa: F403
+from tests.aggregate_tests.test_array_some import *  # noqa: F403
 from tests.aggregate_tests.test_array_max import *  # noqa: F403
 from tests.aggregate_tests.test_array_min import *  # noqa: F403
 
