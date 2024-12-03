@@ -161,37 +161,6 @@ specified.
 See [Delta Lake output connector documentation](/connectors/sinks/delta)
 for an example of configuring the output buffer.
 
-## Fault tolerance
-
-As a preview feature in the enterprise edition only, Feldera supports
-fault tolerance, meaning that it can gracefully restart from the exact
-point of an abrupt shutdown or crash, picking up from where it left
-off without dropping or duplicating input or output.  To enable fault
-tolerance on a pipeline, set `"fault_tolerance": {}` in the pipeline
-configuration (optional configuration for fault tolerance may be
-specified inside `{}`).
-
-When a fault-tolerant pipeline restarts, it loads its state from the
-most recent checkpoint, then it replays any data from input connectors
-previously processed beyond that checkpoint.  If replay produces
-output that was previously sent to output connectors, it discards that
-output.  After replay completes, the pipeline continues with new input
-that has not previously been processed.
-
-For Feldera to run a pipeline in fault-tolerant mode, all of its input
-connectors must support fault tolerance.  Some input adapters do not
-yet support fault tolerance and therefore may not be part of a
-fault-tolerant pipeline.  See the documentation for individual input
-connectors for details.
-
-For a pipeline to be fully fault tolerant, a pipeline's output
-connectors must also be fault tolerant.  Only the [Kafka output
-connector](sinks/kafka.md) supports fault tolerance as of now.  If a
-pipeline configured to be fault-tolerant includes non-fault-tolerant
-output connectors, then in the event of a crash and restart, Feldera
-may send duplicate output to those connectors, but it will not drop
-output.
-
 ## Additional resources
 
 For more information, see:

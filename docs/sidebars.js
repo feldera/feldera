@@ -122,7 +122,7 @@ const sidebars = {
         },
         {
             type: 'category',
-            label: 'Write SQL Pipelines',
+            label: 'Pipelines',
             collapsed: false,
             link: {
                 type: 'doc',
@@ -131,7 +131,7 @@ const sidebars = {
             items: [
                 {
                     type: 'category',
-                    label: 'SQL Reference',
+                    label: 'Feldera SQL',
                     items: [
                         'sql/grammar',
                         'sql/identifiers',
@@ -269,6 +269,7 @@ const sidebars = {
                         'formats/csv',
                     ],
                 },
+		"fault-tolerance"
             ]
         }
         ,
