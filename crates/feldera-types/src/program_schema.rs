@@ -225,6 +225,21 @@ pub struct Field {
     #[serde(flatten)]
     pub name: SqlIdentifier,
     pub columntype: ColumnType,
+    pub lateness: Option<String>,
+    pub default: Option<String>,
+    pub watermark: Option<String>,
+}
+
+impl Field {
+    pub fn new(name: SqlIdentifier, columntype: ColumnType) -> Self {
+        Self {
+            name,
+            columntype,
+            lateness: None,
+            default: None,
+            watermark: None,
+        }
+    }
 }
 
 /// Thanks to the brain-dead Calcite schema, if we are deserializing a field, the type options
@@ -254,6 +269,9 @@ impl<'de> Deserialize<'de> for Field {
             scale: Option<i64>,
             component: Option<Box<ColumnType>>,
             fields: Option<serde_json::Value>,
+            default: Option<String>,
+            lateness: Option<String>,
+            watermark: Option<String>,
         }
 
         fn helper_to_field(helper: FieldHelper) -> Field {
@@ -297,6 +315,9 @@ impl<'de> Deserialize<'de> for Field {
             Field {
                 name: SqlIdentifier::new(helper.name.unwrap(), helper.case_sensitive),
                 columntype,
+                default: helper.default,
+                lateness: helper.lateness,
+                watermark: helper.watermark,
             }
         }
 
@@ -632,6 +653,32 @@ impl ColumnType {
         }
     }
 
+    pub fn double(nullable: bool) -> Self {
+        ColumnType {
+            typ: SqlType::Double,
+            nullable,
+            precision: None,
+            scale: None,
+            component: None,
+            fields: None,
+            key: None,
+            value: None,
+        }
+    }
+
+    pub fn real(nullable: bool) -> Self {
+        ColumnType {
+            typ: SqlType::Real,
+            nullable,
+            precision: None,
+            scale: None,
+            component: None,
+            fields: None,
+            key: None,
+            value: None,
+        }
+    }
+
     pub fn varchar(nullable: bool) -> Self {
         ColumnType {
             typ: SqlType::Varchar,
@@ -643,6 +690,103 @@ impl ColumnType {
             key: None,
             value: None,
         }
+    }
+
+    pub fn varbinary(nullable: bool) -> Self {
+        ColumnType {
+            typ: SqlType::Varbinary,
+            nullable,
+            precision: None,
+            scale: None,
+            component: None,
+            fields: None,
+            key: None,
+            value: None,
+        }
+    }
+
+    pub fn date(nullable: bool) -> Self {
+        ColumnType {
+            typ: SqlType::Date,
+            nullable,
+            precision: None,
+            scale: None,
+            component: None,
+            fields: None,
+            key: None,
+            value: None,
+        }
+    }
+
+    pub fn time(nullable: bool) -> Self {
+        ColumnType {
+            typ: SqlType::Time,
+            nullable,
+            precision: None,
+            scale: None,
+            component: None,
+            fields: None,
+            key: None,
+            value: None,
+        }
+    }
+
+    pub fn timestamp(nullable: bool) -> Self {
+        ColumnType {
+            typ: SqlType::Timestamp,
+            nullable,
+            precision: None,
+            scale: None,
+            component: None,
+            fields: None,
+            key: None,
+            value: None,
+        }
+    }
+
+    pub fn structure(nullable: bool, fields: &[Field]) -> Self {
+        ColumnType {
+            typ: SqlType::Struct,
+            nullable,
+            precision: None,
+            scale: None,
+            component: None,
+            fields: Some(fields.to_vec()),
+            key: None,
+            value: None,
+        }
+    }
+
+    pub fn map(nullable: bool, key: ColumnType, val: ColumnType) -> Self {
+        ColumnType {
+            typ: SqlType::Map,
+            nullable,
+            precision: None,
+            scale: None,
+            component: None,
+            fields: None,
+            key: Some(Box::new(key)),
+            value: Some(Box::new(val)),
+        }
+    }
+
+    pub fn is_integral_type(&self) -> bool {
+        matches!(
+            &self.typ,
+            SqlType::TinyInt | SqlType::SmallInt | SqlType::Int | SqlType::BigInt
+        )
+    }
+
+    pub fn is_fp_type(&self) -> bool {
+        matches!(&self.typ, SqlType::Double | SqlType::Real)
+    }
+
+    pub fn is_decimal_type(&self) -> bool {
+        matches!(&self.typ, SqlType::Decimal)
+    }
+
+    pub fn is_numeric_type(&self) -> bool {
+        self.is_integral_type() || self.is_fp_type() || self.is_decimal_type()
     }
 }
 
