@@ -561,36 +561,41 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
             } else {
                 this.messages.reportError(e);
             }
-            if (this.options.languageOptions.throwOnError) {
-                this.printMessages(currentView);
-                throw new RuntimeException(e);
-            }
+            this.rethrow(new RuntimeException(e), currentView);
         } catch (CalciteContextException e) {
             this.messages.reportError(e);
-            if (this.options.languageOptions.throwOnError) {
-                this.printMessages(currentView);
-                throw new RuntimeException(e);
-            }
+            this.rethrow(e, currentView);
         } catch (CalciteException e) {
             this.messages.reportError(e);
-            if (this.options.languageOptions.throwOnError) {
-                this.printMessages(currentView);
-                throw new RuntimeException(e);
-            }
+            this.rethrow(e, currentView);
         } catch (BaseCompilerException e) {
             this.messages.reportError(e);
-            if (this.options.languageOptions.throwOnError) {
-                this.printMessages(currentView);
-                throw e;
+            this.rethrow(e, currentView);
+        } catch (RuntimeException e) {
+            Throwable current = e;
+            while (current.getCause() != null) {
+                // Try to find a nicer cause
+                Throwable t = current.getCause();
+                if (t instanceof CalciteException ex) {
+                    this.messages.reportError(ex);
+                    this.rethrow(ex, currentView);
+                }
+                current = t;
             }
+            this.messages.reportError(e);
+            this.rethrow(e, currentView);
         } catch (Throwable e) {
             this.messages.reportError(e);
-            if (this.options.languageOptions.throwOnError) {
-                this.printMessages(currentView);
-                throw e;
-            }
+            this.rethrow(new RuntimeException(e), currentView);
         } finally {
             this.toCompile.clear();
+        }
+    }
+
+    void rethrow(RuntimeException e, @Nullable CreateViewStatement currentView) {
+        if (this.options.languageOptions.throwOnError) {
+            this.printMessages(currentView);
+            throw e;
         }
     }
 
