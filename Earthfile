@@ -219,10 +219,11 @@ test-adapters:
 	    docker ps && \
             sleep 5 && \
             RUST_BACKTRACE=1 cargo test --package dbsp_adapters --features "pubsub-emulator-test" --package feldera-sqllib; \
-            status=$?; \
-            docker logs redpanda > redpanda-logs.txt; \
+            status=$?; echo "status=$status"; \
+            docker logs redpanda > redpanda-logs.txt; echo "docker logs done"; \
             exit $status
     END
+    RUN echo "docker done"
     SAVE ARTIFACT redpanda-logs.txt AS LOCAL redpanda-log.txt
 
 test-manager:
