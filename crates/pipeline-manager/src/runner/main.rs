@@ -1,4 +1,6 @@
+use crate::api::error::ApiError;
 use crate::api::parse_string_param;
+use crate::config::CommonConfig;
 use crate::db::storage_postgres::StoragePostgres;
 use crate::db::types::pipeline::PipelineId;
 use crate::db_notifier::{DbNotification, Operation};
@@ -101,13 +103,12 @@ async fn get_logs(
 ) -> Result<impl Responder, ManagerError> {
     // Parse pipeline identifier
     let pipeline_id = parse_string_param(&req, "pipeline_id")?;
-    let pipeline_id =
-        PipelineId(
-            Uuid::from_str(&pipeline_id).map_err(|e| ManagerError::InvalidUuidParam {
-                value: pipeline_id.clone(),
-                error: e.to_string(),
-            })?,
-        );
+    let pipeline_id = PipelineId(Uuid::from_str(&pipeline_id).map_err(|e| {
+        ManagerError::from(ApiError::InvalidUuidParam {
+            value: pipeline_id.clone(),
+            error: e.to_string(),
+        })
+    })?);
 
     // Attempt to follow the logs and return them in a streaming response
     match data.lock().await.get(&pipeline_id) {
@@ -175,6 +176,8 @@ async fn wait_for_http_server_ready(port: u16) -> bool {
 pub async fn runner_main<E: PipelineExecutor + 'static>(
     // Database handle
     db: Arc<Mutex<StoragePostgres>>,
+    // Common configuration
+    common_config: CommonConfig,
     // Pipeline executor configuration
     config: E::Config,
     // Main HTTP server port.
@@ -210,7 +213,7 @@ pub async fn runner_main<E: PipelineExecutor + 'static>(
     );
 
     // Launch the reconciliation loop
-    reconcile::<E>(db, pipelines, config).await
+    reconcile::<E>(db, pipelines, common_config, config).await
 }
 
 /// Continuous reconciliation loop between what is stored about the pipelines in the database and
@@ -219,6 +222,7 @@ pub async fn runner_main<E: PipelineExecutor + 'static>(
 async fn reconcile<E: PipelineExecutor + 'static>(
     db: Arc<Mutex<StoragePostgres>>,
     pipelines: Arc<Mutex<PipelinesState>>,
+    common_config: CommonConfig,
     config: E::Config,
 ) -> Result<(), ManagerError> {
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
@@ -244,6 +248,7 @@ async fn reconcile<E: PipelineExecutor + 'static>(
                                 E::new(pipeline_id, config.clone(), follow_request_receiver);
                             spawn(
                                 PipelineAutomaton::new(
+                                    &common_config.platform_version,
                                     pipeline_id,
                                     tenant_id,
                                     db.clone(),

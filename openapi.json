@@ -368,9 +368,13 @@
                     "description": "Description of the pipeline example1",
                     "id": "67e55044-10b1-426f-9247-bb680e5fe0c8",
                     "name": "example1",
+                    "platform_version": "v0",
+                    "program_binary_integrity_checksum": null,
+                    "program_binary_source_checksum": null,
                     "program_binary_url": null,
                     "program_code": null,
                     "program_config": {
+                      "cache": true,
                       "profile": "optimized"
                     },
                     "program_info": null,
@@ -412,9 +416,13 @@
                     "description": "Description of the pipeline example2",
                     "id": "67e55044-10b1-426f-9247-bb680e5fe0c9",
                     "name": "example2",
+                    "platform_version": "v0",
+                    "program_binary_integrity_checksum": null,
+                    "program_binary_source_checksum": null,
                     "program_binary_url": null,
                     "program_code": null,
                     "program_config": {
+                      "cache": true,
                       "profile": "unoptimized"
                     },
                     "program_info": null,
@@ -483,6 +491,7 @@
                 "name": "example1",
                 "program_code": "CREATE TABLE table1 ( col1 INT );",
                 "program_config": {
+                  "cache": true,
                   "profile": "optimized"
                 },
                 "runtime_config": {
@@ -531,9 +540,13 @@
                   "description": "Description of the pipeline example1",
                   "id": "67e55044-10b1-426f-9247-bb680e5fe0c8",
                   "name": "example1",
+                  "platform_version": "v0",
+                  "program_binary_integrity_checksum": null,
+                  "program_binary_source_checksum": null,
                   "program_binary_url": null,
                   "program_code": "CREATE TABLE table1 ( col1 INT );",
                   "program_config": {
+                    "cache": true,
                     "profile": "optimized"
                   },
                   "program_info": null,
@@ -627,9 +640,13 @@
                   "description": "Description of the pipeline example1",
                   "id": "67e55044-10b1-426f-9247-bb680e5fe0c8",
                   "name": "example1",
+                  "platform_version": "v0",
+                  "program_binary_integrity_checksum": null,
+                  "program_binary_source_checksum": null,
                   "program_binary_url": null,
                   "program_code": "CREATE TABLE table1 ( col1 INT );",
                   "program_config": {
+                    "cache": true,
                     "profile": "optimized"
                   },
                   "program_info": null,
@@ -715,6 +732,7 @@
                 "name": "example1",
                 "program_code": "CREATE TABLE table1 ( col1 INT );",
                 "program_config": {
+                  "cache": true,
                   "profile": "optimized"
                 },
                 "runtime_config": {
@@ -763,9 +781,13 @@
                   "description": "Description of the pipeline example1",
                   "id": "67e55044-10b1-426f-9247-bb680e5fe0c8",
                   "name": "example1",
+                  "platform_version": "v0",
+                  "program_binary_integrity_checksum": null,
+                  "program_binary_source_checksum": null,
                   "program_binary_url": null,
                   "program_code": "CREATE TABLE table1 ( col1 INT );",
                   "program_config": {
+                    "cache": true,
                     "profile": "optimized"
                   },
                   "program_info": null,
@@ -817,9 +839,13 @@
                   "description": "Description of the pipeline example1",
                   "id": "67e55044-10b1-426f-9247-bb680e5fe0c8",
                   "name": "example1",
+                  "platform_version": "v0",
+                  "program_binary_integrity_checksum": null,
+                  "program_binary_source_checksum": null,
                   "program_binary_url": null,
                   "program_code": "CREATE TABLE table1 ( col1 INT );",
                   "program_config": {
+                    "cache": true,
                     "profile": "optimized"
                   },
                   "program_info": null,
@@ -1005,9 +1031,13 @@
                   "description": "Description of the pipeline example1",
                   "id": "67e55044-10b1-426f-9247-bb680e5fe0c8",
                   "name": "example1",
+                  "platform_version": "v0",
+                  "program_binary_integrity_checksum": null,
+                  "program_binary_source_checksum": null,
                   "program_binary_url": null,
                   "program_code": "CREATE TABLE table1 ( col1 INT );",
                   "program_config": {
+                    "cache": true,
                     "profile": "optimized"
                   },
                   "program_info": null,
@@ -1919,23 +1949,15 @@
                         "action": "dance"
                       },
                       "error_code": "InvalidPipelineAction",
-                      "message": "Invalid pipeline action 'dance'; valid actions are: 'deploy', 'start', 'pause', or 'shutdown'"
+                      "message": "Invalid pipeline action 'dance'; valid actions are: 'start', 'pause', or 'shutdown'"
                     }
                   },
                   "Program failed compilation": {
                     "description": "Program failed compilation",
                     "value": {
                       "details": null,
-                      "error_code": "ProgramFailedToCompile",
-                      "message": "The program did not compile successfully"
-                    }
-                  },
-                  "Program not (yet) compiled": {
-                    "description": "Program has not (yet) been compiled",
-                    "value": {
-                      "details": null,
-                      "error_code": "ProgramNotYetCompiled",
-                      "message": "The program hasn't been compiled yet"
+                      "error_code": "StartFailedDueToFailedCompilation",
+                      "message": "Not possible to start the pipeline because the program failed to compile"
                     }
                   }
                 }
@@ -2490,8 +2512,9 @@
           "id",
           "name",
           "description",
-          "version",
           "created_at",
+          "version",
+          "platform_version",
           "runtime_config",
           "program_code",
           "udf_rust",
@@ -2553,6 +2576,20 @@
             "type": "string",
             "description": "Pipeline name."
           },
+          "platform_version": {
+            "type": "string",
+            "description": "Pipeline platform version."
+          },
+          "program_binary_integrity_checksum": {
+            "type": "string",
+            "description": "Checksum of the binary file itself.",
+            "nullable": true
+          },
+          "program_binary_source_checksum": {
+            "type": "string",
+            "description": "Combined checksum of all the inputs that influenced Rust compilation to a binary.",
+            "nullable": true
+          },
           "program_binary_url": {
             "type": "string",
             "description": "URL where to download the program binary from.",
@@ -2607,8 +2644,9 @@
           "id",
           "name",
           "description",
-          "version",
           "created_at",
+          "version",
+          "platform_version",
           "runtime_config",
           "program_config",
           "program_version",
@@ -2661,6 +2699,17 @@
           },
           "name": {
             "type": "string"
+          },
+          "platform_version": {
+            "type": "string"
+          },
+          "program_binary_integrity_checksum": {
+            "type": "string",
+            "nullable": true
+          },
+          "program_binary_source_checksum": {
+            "type": "string",
+            "nullable": true
           },
           "program_binary_url": {
             "type": "string",
@@ -3449,6 +3498,10 @@
         "type": "object",
         "description": "Program configuration.",
         "properties": {
+          "cache": {
+            "type": "boolean",
+            "description": "If `true` (default), when a prior compilation with the same checksum\nalready exists, the output of that (i.e., binary) is used.\nSet `false` to always trigger a new compilation, which might take longer\nand as well can result in overriding an existing binary."
+          },
           "profile": {
             "allOf": [
               {
@@ -3461,7 +3514,7 @@
       },
       "ProgramInfo": {
         "type": "object",
-        "description": "Program information generated by the SQL compiler which includes schema, input connectors and output connectors.",
+        "description": "Program information is the output of the SQL compiler.\n\nIt includes information needed for Rust compilation (e.g., generated Rust code)\nas well as only for runtime (e.g., schema, input/output connectors).",
         "required": [
           "schema",
           "input_connectors",
@@ -3475,6 +3528,10 @@
               "$ref": "#/components/schemas/InputEndpointConfig"
             }
           },
+          "main_rust": {
+            "type": "string",
+            "description": "Generated main program Rust code: main.rs"
+          },
           "output_connectors": {
             "type": "object",
             "description": "Output connectors derived from the schema.",
@@ -3487,7 +3544,7 @@
           },
           "udf_stubs": {
             "type": "string",
-            "description": "UDF stubs."
+            "description": "Generated user defined function (UDF) stubs Rust code: stubs.rs"
           }
         }
       },
@@ -3517,28 +3574,35 @@
         "oneOf": [
           {
             "type": "string",
-            "description": "Compilation request received from the user; program has been placed\nin the queue.",
+            "description": "Awaiting to be picked up for SQL compilation.",
             "enum": [
               "Pending"
             ]
           },
           {
             "type": "string",
-            "description": "Compilation of SQL -> Rust in progress.",
+            "description": "Compilation of SQL is ongoing.",
             "enum": [
               "CompilingSql"
             ]
           },
           {
             "type": "string",
-            "description": "Compiling Rust -> executable in progress.",
+            "description": "Compilation of SQL has been completed; awaiting to be picked up for Rust compilation.",
+            "enum": [
+              "SqlCompiled"
+            ]
+          },
+          {
+            "type": "string",
+            "description": "Compilation of Rust is ongoing.",
             "enum": [
               "CompilingRust"
             ]
           },
           {
             "type": "string",
-            "description": "Compilation succeeded.",
+            "description": "Compilation (both SQL and Rust) succeeded.",
             "enum": [
               "Success"
             ]
@@ -3554,7 +3618,7 @@
                 "items": {
                   "$ref": "#/components/schemas/SqlCompilerMessage"
                 },
-                "description": "SQL compiler returned an error."
+                "description": "SQL compiler returned one or more errors."
               }
             }
           },

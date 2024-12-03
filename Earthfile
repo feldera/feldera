@@ -285,7 +285,7 @@ test-python:
     WITH DOCKER --pull postgres
         RUN docker run --shm-size=512MB -p 5432:5432 -e POSTGRES_HOST_AUTH_METHOD=trust -e PGDATA=/dev/shm -d postgres && \
             sleep 10 && \
-            (./pipeline-manager --bind-address=0.0.0.0 --api-server-working-directory=/working-dir --compiler-working-directory=/working-dir --runner-working-directory=/working-dir --sql-compiler-home=/dbsp/sql-to-dbsp-compiler --dbsp-override-path=/dbsp --db-connection-string=postgresql://postgres:postgres@localhost:5432 --compilation-profile=unoptimized &) && \
+            (./pipeline-manager --bind-address=0.0.0.0 --compiler-working-directory=/working-dir/compiler --runner-working-directory=/working-dir/local-runner --sql-compiler-home=/dbsp/sql-to-dbsp-compiler --dbsp-override-path=/dbsp --db-connection-string=postgresql://postgres:postgres@localhost:5432 --compilation-profile=unoptimized &) && \
             sleep 5 && \
             PYTHONPATH=`pwd` python3 ./tests/aggregate_tests/main.py && \
             if [ $ALL = "1" ]; then \
@@ -555,7 +555,7 @@ benchmark:
     WITH DOCKER --pull postgres
         RUN docker run --shm-size=512MB -p 5432:5432 -e POSTGRES_HOST_AUTH_METHOD=trust -e PGDATA=/dev/shm -d postgres && \
             sleep 10 && \
-            (./pipeline-manager --bind-address=0.0.0.0 --api-server-working-directory=/working-dir --compiler-working-directory=/working-dir --runner-working-directory=/working-dir --sql-compiler-home=/dbsp/sql-to-dbsp-compiler --dbsp-override-path=/dbsp --db-connection-string=postgresql://postgres:postgres@localhost:5432 --compilation-profile=optimized &) && \
+            (./pipeline-manager --bind-address=0.0.0.0 --compiler-working-directory=/working-dir/compiler --runner-working-directory=/working-dir/local-runner --sql-compiler-home=/dbsp/sql-to-dbsp-compiler --dbsp-override-path=/dbsp --db-connection-string=postgresql://postgres:postgres@localhost:5432 --compilation-profile=optimized &) && \
             sleep 5 && \
             docker run --name redpanda -p 9092:9092 --rm -itd redpandadata/redpanda:v23.3.21 redpanda start --smp 2 \
             && bash scripts/bench.bash

@@ -1,5 +1,5 @@
 #[cfg(feature = "pg-embed")]
-use crate::config::ApiServerConfig;
+use crate::config::PgEmbedConfig;
 use crate::db::error::DBError;
 use crate::db::operations;
 #[cfg(feature = "pg-embed")]
@@ -155,13 +155,21 @@ impl Storage for StoragePostgres {
         &self,
         tenant_id: TenantId,
         new_id: Uuid,
+        platform_version: &str,
         pipeline: PipelineDescr,
     ) -> Result<ExtendedPipelineDescr, DBError> {
         let mut client = self.pool.get().await?;
         let txn = client.transaction().await?;
 
         // Create new pipeline
-        operations::pipeline::new_pipeline(&txn, tenant_id, new_id, pipeline.clone()).await?;
+        operations::pipeline::new_pipeline(
+            &txn,
+            tenant_id,
+            new_id,
+            platform_version,
+            pipeline.clone(),
+        )
+        .await?;
 
         // Fetch newly created pipeline
         let extended_pipeline =
@@ -176,6 +184,7 @@ impl Storage for StoragePostgres {
         tenant_id: TenantId,
         new_id: Uuid,
         original_name: &str,
+        platform_version: &str,
         pipeline: PipelineDescr,
     ) -> Result<(bool, ExtendedPipelineDescr), DBError> {
         let mut client = self.pool.get().await?;
@@ -188,10 +197,12 @@ impl Storage for StoragePostgres {
                 // Pipeline already exists, as such update it
                 operations::pipeline::update_pipeline(
                     &txn,
+                    false, // Done by user
                     tenant_id,
                     original_name,
                     &Some(pipeline.name.clone()),
                     &Some(pipeline.description.clone()),
+                    platform_version,
                     &Some(pipeline.runtime_config.clone()),
                     &Some(pipeline.program_code.clone()),
                     &Some(pipeline.udf_rust.clone()),
@@ -206,8 +217,14 @@ impl Storage for StoragePostgres {
                 if original_name != pipeline.name {
                     return Err(DBError::CannotRenameNonExistingPipeline);
                 }
-                operations::pipeline::new_pipeline(&txn, tenant_id, new_id, pipeline.clone())
-                    .await?;
+                operations::pipeline::new_pipeline(
+                    &txn,
+                    tenant_id,
+                    new_id,
+                    platform_version,
+                    pipeline.clone(),
+                )
+                .await?;
                 true
             }
             Err(e) => {
@@ -232,6 +249,7 @@ impl Storage for StoragePostgres {
         original_name: &str,
         name: &Option<String>,
         description: &Option<String>,
+        platform_version: &str,
         runtime_config: &Option<RuntimeConfig>,
         program_code: &Option<String>,
         udf_rust: &Option<String>,
@@ -244,10 +262,12 @@ impl Storage for StoragePostgres {
         // Update existing pipeline
         operations::pipeline::update_pipeline(
             &txn,
+            false, // Done by user
             tenant_id,
             original_name,
             name,
             description,
+            platform_version,
             runtime_config,
             program_code,
             udf_rust,
@@ -294,6 +314,8 @@ impl Storage for StoragePostgres {
             &ProgramStatus::Pending,
             &None,
             &None,
+            &None,
+            &None,
         )
         .await?;
         txn.commit().await?;
@@ -316,13 +338,15 @@ impl Storage for StoragePostgres {
             &ProgramStatus::CompilingSql,
             &None,
             &None,
+            &None,
+            &None,
         )
         .await?;
         txn.commit().await?;
         Ok(())
     }
 
-    async fn transit_program_status_to_compiling_rust(
+    async fn transit_program_status_to_sql_compiled(
         &self,
         tenant_id: TenantId,
         pipeline_id: PipelineId,
@@ -336,8 +360,34 @@ impl Storage for StoragePostgres {
             tenant_id,
             pipeline_id,
             program_version_guard,
-            &ProgramStatus::CompilingRust,
+            &ProgramStatus::SqlCompiled,
             &Some(program_info.clone()),
+            &None,
+            &None,
+            &None,
+        )
+        .await?;
+        txn.commit().await?;
+        Ok(())
+    }
+
+    async fn transit_program_status_to_compiling_rust(
+        &self,
+        tenant_id: TenantId,
+        pipeline_id: PipelineId,
+        program_version_guard: Version,
+    ) -> Result<(), DBError> {
+        let mut client = self.pool.get().await?;
+        let txn = client.transaction().await?;
+        operations::pipeline::set_program_status(
+            &txn,
+            tenant_id,
+            pipeline_id,
+            program_version_guard,
+            &ProgramStatus::CompilingRust,
+            &None,
+            &None,
+            &None,
             &None,
         )
         .await?;
@@ -350,6 +400,8 @@ impl Storage for StoragePostgres {
         tenant_id: TenantId,
         pipeline_id: PipelineId,
         program_version_guard: Version,
+        program_binary_source_checksum: &str,
+        program_binary_integrity_checksum: &str,
         program_binary_url: &str,
     ) -> Result<(), DBError> {
         let mut client = self.pool.get().await?;
@@ -361,6 +413,8 @@ impl Storage for StoragePostgres {
             program_version_guard,
             &ProgramStatus::Success,
             &None,
+            &Some(program_binary_source_checksum.to_string()),
+            &Some(program_binary_integrity_checksum.to_string()),
             &Some(program_binary_url.to_string()),
         )
         .await?;
@@ -383,6 +437,8 @@ impl Storage for StoragePostgres {
             pipeline_id,
             program_version_guard,
             &ProgramStatus::SqlError(internal_sql_error),
+            &None,
+            &None,
             &None,
             &None,
         )
@@ -408,6 +464,8 @@ impl Storage for StoragePostgres {
             &ProgramStatus::RustError(internal_rust_error.to_string()),
             &None,
             &None,
+            &None,
+            &None,
         )
         .await?;
         txn.commit().await?;
@@ -429,6 +487,8 @@ impl Storage for StoragePostgres {
             pipeline_id,
             program_version_guard,
             &ProgramStatus::SystemError(internal_system_error.to_string()),
+            &None,
+            &None,
             &None,
             &None,
         )
@@ -682,44 +742,146 @@ impl Storage for StoragePostgres {
         Ok(pipelines)
     }
 
-    async fn get_next_pipeline_program_to_compile(
+    async fn clear_ongoing_sql_compilation(&self, platform_version: &str) -> Result<(), DBError> {
+        let mut client = self.pool.get().await?;
+        let txn = client.transaction().await?;
+        let pipelines = operations::pipeline::list_pipelines_across_all_tenants(&txn).await?;
+        for (tenant_id, pipeline) in pipelines {
+            if pipeline.deployment_status == PipelineStatus::Shutdown {
+                if pipeline.platform_version == platform_version {
+                    if pipeline.program_status == ProgramStatus::CompilingSql {
+                        operations::pipeline::set_program_status(
+                            &txn,
+                            tenant_id,
+                            pipeline.id,
+                            pipeline.program_version,
+                            &ProgramStatus::Pending,
+                            &None,
+                            &None,
+                            &None,
+                            &None,
+                        )
+                        .await?;
+                    }
+                } else if pipeline.program_status == ProgramStatus::Pending
+                    || pipeline.program_status == ProgramStatus::CompilingSql
+                {
+                    operations::pipeline::update_pipeline(
+                        &txn,
+                        true, // Done by compiler
+                        tenant_id,
+                        &pipeline.name,
+                        &None,
+                        &None,
+                        platform_version,
+                        &None,
+                        &None,
+                        &None,
+                        &None,
+                        &None,
+                    )
+                    .await?;
+                }
+            }
+        }
+        txn.commit().await?;
+        Ok(())
+    }
+
+    async fn get_next_sql_compilation(
         &self,
+        platform_version: &str,
     ) -> Result<Option<(TenantId, ExtendedPipelineDescr)>, DBError> {
         let mut client = self.pool.get().await?;
         let txn = client.transaction().await?;
         let next_pipeline_program =
-            operations::pipeline::get_next_pipeline_program_to_compile(&txn).await?;
+            operations::pipeline::get_next_sql_compilation(&txn, platform_version).await?;
         txn.commit().await?;
         Ok(next_pipeline_program)
     }
 
-    async fn is_pipeline_program_in_use(
-        &self,
-        pipeline_id: PipelineId,
-        program_version: Version,
-    ) -> Result<bool, DBError> {
+    async fn clear_ongoing_rust_compilation(&self, platform_version: &str) -> Result<(), DBError> {
         let mut client = self.pool.get().await?;
         let txn = client.transaction().await?;
-        let is_used =
-            operations::pipeline::is_pipeline_program_in_use(&txn, pipeline_id, program_version)
-                .await?;
+        let pipelines = operations::pipeline::list_pipelines_across_all_tenants(&txn).await?;
+        for (tenant_id, pipeline) in pipelines {
+            if pipeline.deployment_status == PipelineStatus::Shutdown {
+                if pipeline.platform_version == platform_version {
+                    if pipeline.program_status == ProgramStatus::CompilingRust {
+                        operations::pipeline::set_program_status(
+                            &txn,
+                            tenant_id,
+                            pipeline.id,
+                            pipeline.program_version,
+                            &ProgramStatus::SqlCompiled,
+                            &Some(pipeline.program_info.clone().expect(
+                                "program_info must be present if current status is CompilingRust",
+                            )),
+                            &None,
+                            &None,
+                            &None,
+                        )
+                        .await?;
+                    }
+                } else if pipeline.program_status == ProgramStatus::SqlCompiled
+                    || pipeline.program_status == ProgramStatus::CompilingRust
+                {
+                    operations::pipeline::update_pipeline(
+                        &txn,
+                        true, // Done by compiler
+                        tenant_id,
+                        &pipeline.name,
+                        &None,
+                        &None,
+                        platform_version,
+                        &None,
+                        &None,
+                        &None,
+                        &None,
+                        &None,
+                    )
+                    .await?;
+                }
+            }
+        }
         txn.commit().await?;
-        Ok(is_used)
+        Ok(())
+    }
+
+    async fn get_next_rust_compilation(
+        &self,
+        platform_version: &str,
+    ) -> Result<Option<(TenantId, ExtendedPipelineDescr)>, DBError> {
+        let mut client = self.pool.get().await?;
+        let txn = client.transaction().await?;
+        let next_pipeline_program =
+            operations::pipeline::get_next_rust_compilation(&txn, platform_version).await?;
+        txn.commit().await?;
+        Ok(next_pipeline_program)
+    }
+
+    async fn list_pipeline_programs_across_all_tenants(
+        &self,
+    ) -> Result<Vec<(PipelineId, Version, String, String)>, DBError> {
+        let mut client = self.pool.get().await?;
+        let txn = client.transaction().await?;
+        let pipeline_programs =
+            operations::pipeline::list_pipeline_programs_across_all_tenants(&txn).await?;
+        txn.commit().await?;
+        Ok(pipeline_programs)
     }
 }
 
 impl StoragePostgres {
     pub async fn connect(
         db_config: &DatabaseConfig,
-        #[cfg(feature = "pg-embed")] api_config: Option<&ApiServerConfig>,
+        #[cfg(feature = "pg-embed")] pg_embed_config: PgEmbedConfig,
     ) -> Result<Self, DBError> {
         let connection_str = db_config.database_connection_string();
 
         #[cfg(feature = "pg-embed")]
         if connection_str.starts_with("postgres-embed") {
-            let database_dir = api_config
-                .expect("ApiServerConfig needs to be provided when using pg-embed")
-                .postgres_embed_data_dir();
+            let database_dir = pg_embed_config.pg_embed_data_dir();
             let pg_inst = pg_setup::install(database_dir, true, Some(8082)).await?;
             let connection_string = pg_inst.db_uri.to_string();
             return Self::connect_inner(connection_string.as_str(), Some(pg_inst)).await;

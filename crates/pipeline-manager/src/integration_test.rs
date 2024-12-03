@@ -51,11 +51,14 @@ use tokio::{
     time::{sleep, timeout},
 };
 
+use crate::compiler::main::{compiler_main, compiler_precompile};
+use crate::config::CommonConfig;
+#[cfg(feature = "pg-embed")]
+use crate::config::PgEmbedConfig;
 use crate::db::storage_postgres::StoragePostgres;
 use crate::db::types::program::{CompilationProfile, ProgramStatus};
 use crate::runner::local_runner::LocalRunner;
 use crate::{
-    compiler::Compiler,
     config::{ApiServerConfig, CompilerConfig, DatabaseConfig, LocalRunnerConfig},
     db::types::pipeline::PipelineStatus,
 };
@@ -92,27 +95,26 @@ async fn initialize_local_pipeline_manager_instance() -> TempDir {
         .unwrap();
     tokio::time::sleep(Duration::from_millis(5000)).await;
     let tmp_dir = TempDir::new().unwrap();
-    let workdir = tmp_dir.path().to_str().unwrap();
+    let workdir = tmp_dir.path().to_owned();
+    let common_config = CommonConfig {
+        platform_version: "v0".to_string(),
+    };
     let database_config = DatabaseConfig {
         db_connection_string: "postgresql://postgres:postgres@localhost:6666".to_owned(),
     };
     let api_config = ApiServerConfig {
         port: TEST_DBSP_DEFAULT_PORT,
         bind_address: "0.0.0.0".to_owned(),
-        api_server_working_directory: workdir.to_owned(),
         auth_provider: crate::config::AuthProviderType::None,
         dev_mode: false,
         dump_openapi: false,
-        config_file: None,
         allowed_origins: None,
         demos_dir: vec![],
         telemetry: "".to_string(),
         runner_hostname_port: "127.0.0.1:8089".to_string(),
-    }
-    .canonicalize()
-    .unwrap();
+    };
     let compiler_config = CompilerConfig {
-        compiler_working_directory: workdir.to_owned(),
+        compiler_working_directory: workdir.join("compiler").to_string_lossy().to_string(),
         sql_compiler_home: "../../sql-to-dbsp-compiler".to_owned(),
         dbsp_override_path: "../../".to_owned(),
         compilation_profile: CompilationProfile::Unoptimized,
@@ -124,14 +126,14 @@ async fn initialize_local_pipeline_manager_instance() -> TempDir {
     .unwrap();
     let local_runner_config = LocalRunnerConfig {
         runner_main_port: 8089,
-        runner_working_directory: workdir.to_owned(),
+        runner_working_directory: workdir.join("local-runner").to_string_lossy().to_string(),
         pipeline_host: "127.0.0.1".to_owned(),
     }
     .canonicalize()
     .unwrap();
     println!("Using ApiServerConfig: {:?}", api_config);
     println!("Issuing Compiler::precompile_dependencies(). This will be slow.");
-    Compiler::precompile_dependencies(&compiler_config)
+    compiler_precompile(common_config.clone(), compiler_config.clone())
         .await
         .unwrap();
     println!("Completed Compiler::precompile_dependencies().");
@@ -152,22 +154,30 @@ async fn initialize_local_pipeline_manager_instance() -> TempDir {
                 let db = StoragePostgres::connect(
                     &database_config,
                     #[cfg(feature = "pg-embed")]
-                    Some(&api_config),
+                    PgEmbedConfig {
+                        pg_embed_working_directory: workdir
+                            .join("data")
+                            .to_string_lossy()
+                            .to_string(),
+                    },
                 )
                 .await
                 .unwrap();
                 db.run_migrations().await.unwrap();
                 let db = Arc::new(Mutex::new(db));
                 let db_clone = db.clone();
+                let common_config_clone = common_config.clone();
                 let _compiler = tokio::spawn(async move {
-                    Compiler::run(&compiler_config.clone(), db_clone)
+                    compiler_main(common_config_clone, compiler_config, db_clone)
                         .await
                         .unwrap();
                 });
                 let db_clone = db.clone();
+                let common_config_clone = common_config.clone();
                 let _local_runner = tokio::spawn(async move {
                     crate::runner::main::runner_main::<LocalRunner>(
                         db_clone,
+                        common_config_clone,
                         local_runner_config.clone(),
                         local_runner_config.runner_main_port,
                     )
@@ -175,7 +185,9 @@ async fn initialize_local_pipeline_manager_instance() -> TempDir {
                     .unwrap();
                 });
                 // The api-server blocks forever
-                crate::api::run(db, api_config).await.unwrap();
+                crate::api::run(db, common_config, api_config)
+                    .await
+                    .unwrap();
             })
     });
     tokio::time::sleep(Duration::from_millis(3000)).await;
@@ -428,6 +440,7 @@ impl TestConfig {
             // Check program status
             if pipeline["program_status"] == json!(ProgramStatus::Pending)
                 || pipeline["program_status"] == json!(ProgramStatus::CompilingSql)
+                || pipeline["program_status"] == json!(ProgramStatus::SqlCompiled)
                 || pipeline["program_status"] == json!(ProgramStatus::CompilingRust)
             {
                 // Continue waiting
@@ -1008,7 +1021,7 @@ async fn pipeline_runtime_configuration() {
 }
 
 /// Attempt to start a pipeline without it having finished its compilation fully.
-/// Related issue: https://github.com/feldera/feldera/issues/1057
+/// This tests the early start mechanism.
 #[actix_web::test]
 #[serial]
 async fn pipeline_start_without_compiling() {
@@ -1043,7 +1056,16 @@ async fn pipeline_start_without_compiling() {
 
     // Attempt to start the pipeline
     let resp = config.post_no_body("/v0/pipelines/test/start").await;
-    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(resp.status(), StatusCode::ACCEPTED);
+
+    // Wait for it to actually start
+    config
+        .wait_for_deployment_status(
+            "test",
+            PipelineStatus::Running,
+            Duration::from_millis(60_000),
+        )
+        .await;
 }
 
 #[actix_web::test]

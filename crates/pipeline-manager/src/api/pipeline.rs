@@ -1,6 +1,9 @@
 use super::ManagerError;
+use crate::api::error::ApiError;
 use crate::api::ServerState;
 use crate::api::{examples, parse_string_param};
+#[cfg(not(feature = "feldera-enterprise"))]
+use crate::common_error::CommonError;
 use crate::db::error::DBError;
 use crate::db::storage::Storage;
 use crate::db::types::common::Version;
@@ -34,8 +37,9 @@ pub struct ExtendedPipelineDescrOptionalCode {
     pub id: PipelineId,
     pub name: String,
     pub description: String,
-    pub version: Version,
     pub created_at: DateTime<Utc>,
+    pub version: Version,
+    pub platform_version: String,
     pub runtime_config: RuntimeConfig,
     pub program_code: Option<String>,
     pub udf_rust: Option<String>,
@@ -45,6 +49,8 @@ pub struct ExtendedPipelineDescrOptionalCode {
     pub program_status: ProgramStatus,
     pub program_status_since: DateTime<Utc>,
     pub program_info: Option<ProgramInfo>,
+    pub program_binary_source_checksum: Option<String>,
+    pub program_binary_integrity_checksum: Option<String>,
     pub program_binary_url: Option<String>,
     pub deployment_status: PipelineStatus,
     pub deployment_status_since: DateTime<Utc>,
@@ -60,8 +66,9 @@ impl ExtendedPipelineDescrOptionalCode {
             id: extended_pipeline.id,
             name: extended_pipeline.name,
             description: extended_pipeline.description,
-            version: extended_pipeline.version,
             created_at: extended_pipeline.created_at,
+            version: extended_pipeline.version,
+            platform_version: extended_pipeline.platform_version,
             runtime_config: extended_pipeline.runtime_config,
             program_code: if include_code {
                 Some(extended_pipeline.program_code)
@@ -83,6 +90,8 @@ impl ExtendedPipelineDescrOptionalCode {
             program_status: extended_pipeline.program_status,
             program_status_since: extended_pipeline.program_status_since,
             program_info: extended_pipeline.program_info,
+            program_binary_source_checksum: extended_pipeline.program_binary_source_checksum,
+            program_binary_integrity_checksum: extended_pipeline.program_binary_integrity_checksum,
             program_binary_url: extended_pipeline.program_binary_url,
             deployment_status: extended_pipeline.deployment_status,
             deployment_status_since: extended_pipeline.deployment_status_since,
@@ -223,7 +232,12 @@ pub(crate) async fn post_pipeline(
         .db
         .lock()
         .await
-        .new_pipeline(*tenant_id, Uuid::now_v7(), body.into_inner())
+        .new_pipeline(
+            *tenant_id,
+            Uuid::now_v7(),
+            &state.common_config.platform_version,
+            body.into_inner(),
+        )
         .await?;
 
     info!("Created pipeline {} (tenant: {})", pipeline.id, *tenant_id);
@@ -279,6 +293,7 @@ async fn put_pipeline(
             *tenant_id,
             Uuid::now_v7(),
             &pipeline_name,
+            &state.common_config.platform_version,
             body.into_inner(),
         )
         .await?;
@@ -348,6 +363,7 @@ pub(crate) async fn patch_pipeline(
             &pipeline_name,
             &body.name,
             &body.description,
+            &state.common_config.platform_version,
             &body.runtime_config,
             &body.program_code,
             &body.udf_rust,
@@ -409,7 +425,9 @@ pub(crate) async fn delete_pipeline(
 /// Parses the action to take on the pipeline.
 fn parse_pipeline_action(req: &HttpRequest) -> Result<&str, ManagerError> {
     match req.match_info().get("action") {
-        None => Err(ManagerError::MissingUrlEncodedParam { param: "action" }),
+        None => Err(ManagerError::from(ApiError::MissingUrlEncodedParam {
+            param: "action",
+        })),
         Some(action) => Ok(action),
     }
 }
@@ -446,7 +464,6 @@ fn parse_pipeline_action(req: &HttpRequest) -> Result<&str, ManagerError> {
             , description = "Unable to accept action"
             , body = ErrorResponse
             , examples(
-                ("Program not (yet) compiled" = (description = "Program has not (yet) been compiled", value = json!(examples::error_program_not_yet_compiled()))),
                 ("Program failed compilation" = (description = "Program failed compilation", value = json!(examples::error_program_failed_compilation()))),
                 ("Illegal action" = (description = "Action is not applicable in the current state", value = json!(examples::error_illegal_pipeline_action()))),
                 ("Invalid action" = (description = "Invalid action specified", value = json!(examples::error_invalid_pipeline_action()))),
@@ -488,9 +505,9 @@ pub(crate) async fn post_pipeline_action(
                 .set_deployment_desired_status_shutdown(*tenant_id, &pipeline_name)
                 .await?
         }
-        _ => Err(ManagerError::InvalidPipelineAction {
+        _ => Err(ManagerError::from(ApiError::InvalidPipelineAction {
             action: action.to_string(),
-        })?,
+        }))?,
     }
 
     info!(
@@ -716,7 +733,7 @@ pub(crate) async fn checkpoint_pipeline(
     #[cfg(not(feature = "feldera-enterprise"))]
     {
         let _ = (state, tenant_id, request);
-        Err(ManagerError::EnterpriseFeature("checkpoint"))
+        Err(CommonError::EnterpriseFeature("checkpoint").into())
     }
 
     #[cfg(feature = "feldera-enterprise")]
@@ -834,7 +851,7 @@ pub(crate) async fn pipeline_adhoc_sql(
 fn check_runtime_config(config: &RuntimeConfig) -> Result<(), ManagerError> {
     #[cfg(not(feature = "feldera-enterprise"))]
     if config.fault_tolerance.is_some() {
-        return Err(ManagerError::EnterpriseFeature("fault tolerance"));
+        return Err(CommonError::EnterpriseFeature("fault tolerance").into());
     }
 
     #[cfg(feature = "feldera-enterprise")]

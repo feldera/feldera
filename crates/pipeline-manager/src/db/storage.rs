@@ -75,6 +75,7 @@ pub(crate) trait Storage {
         &self,
         tenant_id: TenantId,
         new_id: Uuid,
+        platform_version: &str,
         pipeline: PipelineDescr,
     ) -> Result<ExtendedPipelineDescr, DBError>;
 
@@ -86,6 +87,7 @@ pub(crate) trait Storage {
         tenant_id: TenantId,
         new_id: Uuid, // Only used if the pipeline happens to not exist
         original_name: &str,
+        platform_version: &str,
         pipeline: PipelineDescr,
     ) -> Result<(bool, ExtendedPipelineDescr), DBError>;
 
@@ -97,6 +99,7 @@ pub(crate) trait Storage {
         original_name: &str,
         name: &Option<String>,
         description: &Option<String>,
+        platform_version: &str,
         runtime_config: &Option<RuntimeConfig>,
         program_code: &Option<String>,
         udf_rust: &Option<String>,
@@ -127,13 +130,21 @@ pub(crate) trait Storage {
         program_version_guard: Version,
     ) -> Result<(), DBError>;
 
+    /// Transitions program status to `SqlCompiled`.
+    async fn transit_program_status_to_sql_compiled(
+        &self,
+        tenant_id: TenantId,
+        pipeline_id: PipelineId,
+        program_version_guard: Version,
+        program_info: &ProgramInfo,
+    ) -> Result<(), DBError>;
+
     /// Transitions program status to `CompilingRust`.
     async fn transit_program_status_to_compiling_rust(
         &self,
         tenant_id: TenantId,
         pipeline_id: PipelineId,
         program_version_guard: Version,
-        program_info: &ProgramInfo,
     ) -> Result<(), DBError>;
 
     /// Transitions program status to `Success`.
@@ -142,6 +153,8 @@ pub(crate) trait Storage {
         tenant_id: TenantId,
         pipeline_id: PipelineId,
         program_version_guard: Version,
+        program_binary_source_checksum: &str,
+        program_binary_integrity_checksum: &str,
         program_binary_url: &str,
     ) -> Result<(), DBError>;
 
@@ -262,18 +275,43 @@ pub(crate) trait Storage {
         &self,
     ) -> Result<Vec<(TenantId, ExtendedPipelineDescr)>, DBError>;
 
-    /// Retrieves the pipeline whose program has been Pending for the longest.
-    /// Returns `None` if there are no pending programs.
-    async fn get_next_pipeline_program_to_compile(
+    /// Determines what to do with pipelines that are `Pending` and `CompilingSql`.
+    ///
+    /// If the platform version is the current one, only `CompilingSql` is reset to `Pending`
+    /// such that the SQL compiler can pick it up again.
+    ///
+    /// If the platform version is not the current one, its `platform_version` will be updated and
+    /// the `program_status` will be set back to `Pending` (if not already) such that the SQL
+    /// compiler can pick it up again.
+    async fn clear_ongoing_sql_compilation(&self, platform_version: &str) -> Result<(), DBError>;
+
+    /// Retrieves the pipeline which is shutdown, whose program status has been Pending
+    /// for the longest, and is of the current platform version. Returns `None` if none is found.
+    async fn get_next_sql_compilation(
         &self,
+        platform_version: &str,
     ) -> Result<Option<(TenantId, ExtendedPipelineDescr)>, DBError>;
 
-    /// Checks whether the provided pipeline program version is in use.
-    /// It is in use if the pipeline exists and the program version provided is the current one.
-    /// If the pipeline does not exist or the program version is not the latest, false is returned.
-    async fn is_pipeline_program_in_use(
+    /// Determines what to do with pipelines that are `SqlCompiled` and `CompilingRust`.
+    ///
+    /// If the platform version is the current one, only `CompilingRust` is reset to `SqlCompiled`
+    /// such that the Rust compiler can pick it up again.
+    ///
+    /// If the platform version is not the current one, its `platform_version` will be updated and
+    /// the `program_status` will be set back to `Pending` such that the Rust compiler can pick it
+    /// up again.
+    async fn clear_ongoing_rust_compilation(&self, platform_version: &str) -> Result<(), DBError>;
+
+    /// Retrieves the pipeline which is shutdown, whose program status has been SqlCompiled
+    /// for the longest, and is of the current platform version. Returns `None` if none is found.
+    async fn get_next_rust_compilation(
         &self,
-        pipeline_id: PipelineId,
-        program_version: Version,
-    ) -> Result<bool, DBError>;
+        platform_version: &str,
+    ) -> Result<Option<(TenantId, ExtendedPipelineDescr)>, DBError>;
+
+    /// Retrieves the list of fully compiled pipeline programs (pipeline identifier, program version,
+    /// program binary source checksum, program binary integrity checksum) across all tenants.
+    async fn list_pipeline_programs_across_all_tenants(
+        &self,
+    ) -> Result<Vec<(PipelineId, Version, String, String)>, DBError>;
 }

@@ -6,6 +6,7 @@ use actix_web::{
 };
 use log::debug;
 
+use crate::api::error::ApiError;
 use crate::api::{examples, parse_string_param};
 use crate::db::types::tenant::TenantId;
 
@@ -86,9 +87,9 @@ async fn http_input(
     let pipeline_name = parse_string_param(&req, "pipeline_name")?;
     let table_name = match req.match_info().get("table_name") {
         None => {
-            return Err(ManagerError::MissingUrlEncodedParam {
+            return Err(ManagerError::from(ApiError::MissingUrlEncodedParam {
                 param: "table_name",
-            });
+            }));
         }
         Some(table_name) => table_name,
     };
@@ -175,9 +176,9 @@ async fn http_output(
     let pipeline_name = parse_string_param(&req, "pipeline_name")?;
     let table_name = match req.match_info().get("table_name") {
         None => {
-            return Err(ManagerError::MissingUrlEncodedParam {
+            return Err(ManagerError::from(ApiError::MissingUrlEncodedParam {
                 param: "table_name",
-            });
+            }));
         }
         Some(table_name) => table_name,
     };

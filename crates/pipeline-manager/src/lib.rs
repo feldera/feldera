@@ -7,6 +7,7 @@ mod auth;
 mod integration_test;
 
 pub mod api;
+pub mod common_error;
 pub mod compiler;
 pub mod config;
 pub mod db;

@@ -18,13 +18,15 @@
 
 mod api_key;
 mod config_api;
+pub mod error;
 mod examples;
 mod http_io;
 mod metrics;
 mod pipeline;
 
+use crate::api::error::ApiError;
 use crate::auth::JwkCache;
-use crate::config::ApiServerConfig;
+use crate::config::{ApiServerConfig, CommonConfig};
 use crate::db::storage_postgres::StoragePostgres;
 use crate::demo::{read_demos_from_directories, Demo};
 use crate::error::ManagerError;
@@ -311,12 +313,14 @@ pub(crate) fn parse_string_param(
     param_name: &'static str,
 ) -> Result<String, ManagerError> {
     match req.match_info().get(param_name) {
-        None => Err(ManagerError::MissingUrlEncodedParam { param: param_name }),
+        None => Err(ManagerError::from(ApiError::MissingUrlEncodedParam {
+            param: param_name,
+        })),
         Some(id) => match id.parse::<String>() {
-            Err(e) => Err(ManagerError::InvalidNameParam {
+            Err(e) => Err(ManagerError::from(ApiError::InvalidNameParam {
                 value: id.to_string(),
                 error: e.to_string(),
-            }),
+            })),
             Ok(id) => Ok(id),
         },
     }
@@ -329,6 +333,7 @@ pub(crate) struct ServerState {
     // requests.
     pub db: Arc<Mutex<StoragePostgres>>,
     runner: RunnerInteraction,
+    common_config: CommonConfig,
     _config: ApiServerConfig,
     pub jwk_cache: Arc<Mutex<JwkCache>>,
     probe: Arc<Mutex<Probe>>,
@@ -336,13 +341,18 @@ pub(crate) struct ServerState {
 }
 
 impl ServerState {
-    pub async fn new(config: ApiServerConfig, db: Arc<Mutex<StoragePostgres>>) -> AnyResult<Self> {
+    pub async fn new(
+        common_config: CommonConfig,
+        config: ApiServerConfig,
+        db: Arc<Mutex<StoragePostgres>>,
+    ) -> AnyResult<Self> {
         let runner = RunnerInteraction::new(config.clone(), db.clone());
         let db_copy = db.clone();
         let demos = read_demos_from_directories(&config.demos_dir);
         Ok(Self {
             db,
             runner,
+            common_config,
             _config: config,
             jwk_cache: Arc::new(Mutex::new(JwkCache::new())),
             probe: Probe::new(db_copy).await,
@@ -400,9 +410,13 @@ pub fn log_response(
     res
 }
 
-pub async fn run(db: Arc<Mutex<StoragePostgres>>, api_config: ApiServerConfig) -> AnyResult<()> {
+pub async fn run(
+    db: Arc<Mutex<StoragePostgres>>,
+    common_config: CommonConfig,
+    api_config: ApiServerConfig,
+) -> AnyResult<()> {
     let listener = create_listener(&api_config)?;
-    let state = WebData::new(ServerState::new(api_config.clone(), db).await?);
+    let state = WebData::new(ServerState::new(common_config, api_config.clone(), db).await?);
     let bind_address = api_config.bind_address.clone();
     let port = api_config.port;
     let auth_configuration = match api_config.auth_provider {

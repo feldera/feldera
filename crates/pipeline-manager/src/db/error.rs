@@ -95,16 +95,21 @@ pub enum DBError {
         pipeline_name: String,
     },
     CannotUpdateNonShutdownPipeline,
+    CannotUpdateProgramStatusOfNonShutdownPipeline,
     CannotDeleteNonShutdownPipeline,
     CannotRenameNonExistingPipeline,
     OutdatedProgramVersion {
+        outdated_version: Version,
         latest_version: Version,
     },
     InvalidConnectorTransport {
         reason: String,
     },
-    ProgramNotYetCompiled,
-    ProgramFailedToCompile,
+    StartFailedDueToFailedCompilation,
+    TransitionRequiresCompiledProgram {
+        current: PipelineStatus,
+        transition_to: PipelineStatus,
+    },
     InvalidProgramStatusTransition {
         current: ProgramStatus,
         transition_to: ProgramStatus,
@@ -386,26 +391,44 @@ impl Display for DBError {
             DBError::CannotUpdateNonShutdownPipeline => {
                 write!(f, "Cannot update a pipeline which is not fully shutdown. Shutdown the pipeline first by invoking the '/shutdown' endpoint.")
             }
+            DBError::CannotUpdateProgramStatusOfNonShutdownPipeline => {
+                write!(
+                    f,
+                    "Cannot update the program status of a pipeline which is not shutdown."
+                )
+            }
             DBError::CannotDeleteNonShutdownPipeline => {
                 write!(f, "Cannot delete a pipeline which is not fully shutdown. Shutdown the pipeline first by invoking the '/shutdown' endpoint.")
             }
             DBError::CannotRenameNonExistingPipeline => {
                 write!(f, "The pipeline name in the request body does not match the one provided in the URL path. This is not allowed when no pipeline with the name provided in the URL path exists.")
             }
-            DBError::OutdatedProgramVersion { latest_version } => {
+            DBError::OutdatedProgramVersion {
+                outdated_version,
+                latest_version,
+            } => {
                 write!(
                     f,
-                    "Outdated program version. Latest version: '{latest_version}'"
+                    "Program version ({outdated_version}) is outdated by latest ({latest_version})"
                 )
             }
             DBError::InvalidConnectorTransport { reason } => {
                 write!(f, "Invalid connector transport: '{reason}'")
             }
-            DBError::ProgramNotYetCompiled => {
-                write!(f, "The program hasn't been compiled yet")
+            DBError::StartFailedDueToFailedCompilation => {
+                write!(
+                    f,
+                    "Not possible to start the pipeline because the program failed to compile"
+                )
             }
-            DBError::ProgramFailedToCompile => {
-                write!(f, "The program did not compile successfully")
+            DBError::TransitionRequiresCompiledProgram {
+                current,
+                transition_to,
+            } => {
+                write!(
+                    f,
+                    "Transition from '{current:?}' to '{transition_to:?}' requires a successfully compiled program"
+                )
             }
             DBError::InvalidProgramStatusTransition {
                 current,
@@ -466,6 +489,9 @@ impl DetailedError for DBError {
             Self::CannotUpdateNonShutdownPipeline { .. } => {
                 Cow::from("CannotUpdateNonShutdownPipeline")
             }
+            Self::CannotUpdateProgramStatusOfNonShutdownPipeline { .. } => {
+                Cow::from("CannotUpdateProgramStatusOfNonShutdownPipeline")
+            }
             Self::CannotDeleteNonShutdownPipeline { .. } => {
                 Cow::from("CannotDeleteNonShutdownPipeline")
             }
@@ -474,8 +500,12 @@ impl DetailedError for DBError {
             }
             Self::OutdatedProgramVersion { .. } => Cow::from("OutdatedProgramVersion"),
             Self::InvalidConnectorTransport { .. } => Cow::from("InvalidConnectorTransport"),
-            Self::ProgramNotYetCompiled { .. } => Cow::from("ProgramNotYetCompiled"),
-            Self::ProgramFailedToCompile { .. } => Cow::from("ProgramFailedToCompile"),
+            Self::StartFailedDueToFailedCompilation { .. } => {
+                Cow::from("StartFailedDueToFailedCompilation")
+            }
+            Self::TransitionRequiresCompiledProgram { .. } => {
+                Cow::from("TransitionRequiresCompiledProgram")
+            }
             Self::InvalidProgramStatusTransition { .. } => {
                 Cow::from("InvalidProgramStatusTransition")
             }
@@ -515,12 +545,13 @@ impl ResponseError for DBError {
             Self::UnknownPipeline { .. } => StatusCode::NOT_FOUND,
             Self::UnknownPipelineName { .. } => StatusCode::NOT_FOUND,
             Self::CannotUpdateNonShutdownPipeline { .. } => StatusCode::BAD_REQUEST,
+            Self::CannotUpdateProgramStatusOfNonShutdownPipeline { .. } => StatusCode::BAD_REQUEST,
             Self::CannotDeleteNonShutdownPipeline { .. } => StatusCode::BAD_REQUEST,
             Self::CannotRenameNonExistingPipeline { .. } => StatusCode::BAD_REQUEST,
             Self::OutdatedProgramVersion { .. } => StatusCode::CONFLICT,
             Self::InvalidConnectorTransport { .. } => StatusCode::BAD_REQUEST,
-            Self::ProgramNotYetCompiled => StatusCode::BAD_REQUEST, // User trying to start a pipeline whose program has not yet finished compilation
-            Self::ProgramFailedToCompile => StatusCode::BAD_REQUEST, // User trying to start a pipeline whose program failed to compile
+            Self::StartFailedDueToFailedCompilation => StatusCode::BAD_REQUEST,
+            Self::TransitionRequiresCompiledProgram { .. } => StatusCode::INTERNAL_SERVER_ERROR, // Runner error
             Self::InvalidProgramStatusTransition { .. } => StatusCode::INTERNAL_SERVER_ERROR, // Compiler error
             Self::InvalidDeploymentStatusTransition { .. } => StatusCode::INTERNAL_SERVER_ERROR, // Runner error
             Self::IllegalPipelineStateTransition { .. } => StatusCode::BAD_REQUEST, // User trying to set a deployment desired status which is not valid

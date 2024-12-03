@@ -41,7 +41,7 @@ impl Drop for DbHandle {
     #[cfg(feature = "pg-embed")]
     fn drop(&mut self) {
         // We drop `pg` before the temp dir gets deleted (which will
-        // shutdown postgres). Otherwise postgres log an error that the
+        // shut down postgres). Otherwise, postgres logs an error that the
         // directory is already gone during shutdown which could be
         // confusing for a developer.
         if let Some(pg) = self.db.pg_inst.as_mut() {
@@ -57,7 +57,7 @@ impl Drop for DbHandle {
             let db_name = self.config.get_dbname().unwrap_or("");
 
             // This command cannot be executed while connected to the target
-            // database. Thus we make a new connection.
+            // database. Thus, we make a new connection.
             let mut config = self.config.clone();
             config.dbname("");
             let (client, conn) = config.connect(tokio_postgres::NoTls).await.unwrap();
@@ -162,19 +162,19 @@ pub(crate) async fn setup_pg() -> (StoragePostgres, tokio_postgres::Config) {
 //////////////////////////////////////////////////////////////////////////////
 /////                        DATA GENERATORS                             /////
 
-/// Generate UUIDs but limits the the randomness to the first bits.
+/// Generates UUIDs but limits the randomness to the first bits.
 ///
 /// This ensures that we have a good chance of generating a UUID that is already
 /// in the database -- useful for testing error conditions.
 pub(crate) fn limited_uuid() -> impl Strategy<Value = Uuid> {
     vec![any::<u8>()].prop_map(|mut bytes| {
         // prepend a bunch of zero bytes so the buffer is big enough for
-        // building a uuid
+        // building an uuid
         bytes.resize(16, 0);
-        // restrict the any::<u8> (0..255) to 1..4 this enforces more
+        // restrict any::<u8> (0..255) to 1..4 this enforces more
         // interesting scenarios for testing (and we start at 1 because shaving
         bytes[0] &= 0b11;
-        // a uuid of 0 is invalid and postgres will treat it as NULL
+        // an uuid of 0 is invalid and postgres will treat it as NULL
         bytes[0] |= 0b1;
         Uuid::from_bytes(
             bytes
@@ -208,7 +208,7 @@ struct RuntimeConfigPropVal {
     val13: Option<usize>,
     val14: Option<u64>,
 }
-type ProgramConfigPropVal = (bool, bool);
+type ProgramConfigPropVal = (bool, bool, bool);
 type ProgramInfoPropVal = ();
 
 /// Generates a limited pipeline name.
@@ -255,6 +255,7 @@ fn map_val_to_limited_program_config(val: ProgramConfigPropVal) -> ProgramConfig
         } else {
             Some(CompilationProfile::Optimized)
         },
+        cache: val.2,
     }
 }
 
@@ -264,9 +265,41 @@ fn map_val_to_limited_program_info(_val: ProgramInfoPropVal) -> ProgramInfo {
 }
 
 /// Generates pipeline name limited to only 5 variants.
-/// This is prevent that only the "pipeline not found" is encountered.
+/// This is to prevent that only the "pipeline not found" is encountered.
 fn limited_pipeline_name() -> impl Strategy<Value = String> {
     any::<PipelineNamePropVal>().prop_map(map_val_to_limited_pipeline_name)
+}
+
+/// Generates platform version limited to only 3 possibilities (v0, v1, v2).
+/// This is to prevent that platform versions being very often different,
+/// which is not the usual case.
+fn limited_platform_version() -> impl Strategy<Value = String> {
+    any::<u8>().prop_map(|val| {
+        let val1 = val % 10; // Map to 0, 1, ..., 9
+        if val1 < 8 {
+            // Approximately 80% of the time it is "v0"
+            "v0".to_string()
+        } else {
+            // Then 10% for "v1" and 10% for "v2"
+            format!("v{}", val1 - 7)
+        }
+    })
+}
+
+/// Generates program binary source checksum limited to 4 values
+/// such that it is possible they sometimes collide.
+fn limited_program_binary_source_checksum() -> impl Strategy<Value = String> {
+    any::<u8>().prop_map(|val| {
+        format!("source_checksum_{}", val % 4) // 0, 1, 2, 3
+    })
+}
+
+/// Generates program binary integrity checksum limited to 4 values
+/// such that it is possible they sometimes collide.
+fn limited_program_binary_integrity_checksum() -> impl Strategy<Value = String> {
+    any::<u8>().prop_map(|val| {
+        format!("integrity_checksum_{}", val % 4) // 0, 1, 2, 3
+    })
 }
 
 /// Generates different runtime configurations.
@@ -441,11 +474,12 @@ async fn pipeline_creation() {
         udf_toml: "".to_string(),
         program_config: ProgramConfig {
             profile: Some(CompilationProfile::Unoptimized),
+            cache: false,
         },
     };
     let new_result = handle
         .db
-        .new_pipeline(tenant_id, Uuid::now_v7(), new_descriptor.clone())
+        .new_pipeline(tenant_id, Uuid::now_v7(), "v0", new_descriptor.clone())
         .await
         .unwrap();
     let rows = handle.db.list_pipelines(tenant_id).await.unwrap();
@@ -517,6 +551,7 @@ async fn pipeline_retrieval() {
         .new_pipeline(
             tenant_id,
             Uuid::now_v7(),
+            "v0",
             PipelineDescr {
                 name: "test1".to_string(),
                 description: "d1".to_string(),
@@ -526,6 +561,7 @@ async fn pipeline_retrieval() {
                 udf_toml: "t1".to_string(),
                 program_config: ProgramConfig {
                     profile: Some(CompilationProfile::Unoptimized),
+                    cache: true,
                 },
             },
         )
@@ -556,6 +592,7 @@ async fn pipeline_retrieval() {
         .new_pipeline(
             tenant_id,
             Uuid::now_v7(),
+            "v0",
             PipelineDescr {
                 name: "test2".to_string(),
                 description: "d2".to_string(),
@@ -565,6 +602,7 @@ async fn pipeline_retrieval() {
                 udf_toml: "t2".to_string(),
                 program_config: ProgramConfig {
                     profile: Some(CompilationProfile::Unoptimized),
+                    cache: false,
                 },
             },
         )
@@ -643,6 +681,7 @@ async fn pipeline_versioning() {
         .new_pipeline(
             tenant_id,
             Uuid::now_v7(),
+            "v0",
             PipelineDescr {
                 name: "example".to_string(),
                 description: "d1".to_string(),
@@ -665,7 +704,7 @@ async fn pipeline_versioning() {
     handle
         .db
         .update_pipeline(
-            tenant_id, "example", &None, &None, &None, &None, &None, &None, &None,
+            tenant_id, "example", &None, &None, "v0", &None, &None, &None, &None, &None,
         )
         .await
         .unwrap();
@@ -681,6 +720,7 @@ async fn pipeline_versioning() {
             "example",
             &None,
             &None,
+            "v0",
             &None,
             &Some("c1".to_string()),
             &Some("r1".to_string()),
@@ -701,6 +741,7 @@ async fn pipeline_versioning() {
             "example",
             &None,
             &Some("d1".to_string()),
+            "v0",
             &None,
             &None,
             &None,
@@ -721,6 +762,7 @@ async fn pipeline_versioning() {
             "example",
             &None,
             &None,
+            "v0",
             &None,
             &Some("c2".to_string()),
             &None,
@@ -742,6 +784,7 @@ async fn pipeline_versioning() {
             "example",
             &None,
             &None,
+            "v0",
             &None,
             &None,
             &Some("r2".to_string()),
@@ -763,6 +806,7 @@ async fn pipeline_versioning() {
             "example",
             &None,
             &None,
+            "v0",
             &None,
             &None,
             &None,
@@ -784,6 +828,7 @@ async fn pipeline_versioning() {
             "example",
             &None,
             &Some("d2".to_string()),
+            "v0",
             &None,
             &None,
             &None,
@@ -800,6 +845,7 @@ async fn pipeline_versioning() {
     // Edit program configuration -> increment version and program version
     let new_program_config = ProgramConfig {
         profile: Some(CompilationProfile::Dev),
+        cache: false,
     };
     handle
         .db
@@ -808,6 +854,7 @@ async fn pipeline_versioning() {
             "example",
             &None,
             &None,
+            "v0",
             &None,
             &None,
             &None,
@@ -829,6 +876,7 @@ async fn pipeline_versioning() {
             "example",
             &Some("example2".to_string()),
             &None,
+            "v0",
             &None,
             &None,
             &None,
@@ -855,6 +903,7 @@ async fn pipeline_versioning() {
             "example2",
             &None,
             &None,
+            "v0",
             &Some(new_runtime_config.clone()),
             &None,
             &None,
@@ -879,6 +928,7 @@ async fn pipeline_duplicate() {
         .new_pipeline(
             tenant_id,
             Uuid::now_v7(),
+            "v0",
             PipelineDescr {
                 name: "example".to_string(),
                 description: "d1".to_string(),
@@ -897,6 +947,7 @@ async fn pipeline_duplicate() {
         .new_pipeline(
             tenant_id,
             Uuid::now_v7(),
+            "v0",
             PipelineDescr {
                 name: "example".to_string(),
                 description: "d2".to_string(),
@@ -921,11 +972,11 @@ async fn pipeline_program_compilation() {
 
     // There is no program to compile
     assert_eq!(
-        handle
-            .db
-            .get_next_pipeline_program_to_compile()
-            .await
-            .unwrap(),
+        handle.db.get_next_sql_compilation("v0").await.unwrap(),
+        None
+    );
+    assert_eq!(
+        handle.db.get_next_rust_compilation("v0").await.unwrap(),
         None
     );
 
@@ -935,6 +986,7 @@ async fn pipeline_program_compilation() {
         .new_pipeline(
             tenant_id,
             Uuid::now_v7(),
+            "v0",
             PipelineDescr {
                 name: "example1".to_string(),
                 description: "d1".to_string(),
@@ -952,6 +1004,7 @@ async fn pipeline_program_compilation() {
         .new_pipeline(
             tenant_id,
             Uuid::now_v7(),
+            "v0",
             PipelineDescr {
                 name: "example2".to_string(),
                 description: "d2".to_string(),
@@ -967,11 +1020,7 @@ async fn pipeline_program_compilation() {
 
     // Initially, the next program to compile is the one with program status being pending the longest
     assert_eq!(
-        handle
-            .db
-            .get_next_pipeline_program_to_compile()
-            .await
-            .unwrap(),
+        handle.db.get_next_sql_compilation("v0").await.unwrap(),
         Some((tenant_id, pipeline1.clone()))
     );
 
@@ -983,7 +1032,7 @@ async fn pipeline_program_compilation() {
         .unwrap();
     handle
         .db
-        .transit_program_status_to_compiling_rust(
+        .transit_program_status_to_sql_compiled(
             tenant_id,
             pipeline1.id,
             Version(1),
@@ -991,19 +1040,31 @@ async fn pipeline_program_compilation() {
         )
         .await
         .unwrap();
+    assert_eq!(
+        handle
+            .db
+            .get_next_rust_compilation("v0")
+            .await
+            .unwrap()
+            .unwrap()
+            .1
+            .id,
+        pipeline1.id
+    );
     handle
         .db
-        .transit_program_status_to_success(tenant_id, pipeline1.id, Version(1), "")
+        .transit_program_status_to_compiling_rust(tenant_id, pipeline1.id, Version(1))
+        .await
+        .unwrap();
+    handle
+        .db
+        .transit_program_status_to_success(tenant_id, pipeline1.id, Version(1), "abc", "123", "abc")
         .await
         .unwrap();
 
     // Next up, it should be pipeline2
     assert_eq!(
-        handle
-            .db
-            .get_next_pipeline_program_to_compile()
-            .await
-            .unwrap(),
+        handle.db.get_next_sql_compilation("v0").await.unwrap(),
         Some((tenant_id, pipeline2.clone()))
     );
 
@@ -1021,11 +1082,11 @@ async fn pipeline_program_compilation() {
 
     // There should be nothing left to compile
     assert_eq!(
-        handle
-            .db
-            .get_next_pipeline_program_to_compile()
-            .await
-            .unwrap(),
+        handle.db.get_next_sql_compilation("v0").await.unwrap(),
+        None
+    );
+    assert_eq!(
+        handle.db.get_next_rust_compilation("v0").await.unwrap(),
         None
     );
 }
@@ -1040,6 +1101,7 @@ async fn pipeline_deployment() {
         .new_pipeline(
             tenant_id,
             Uuid::now_v7(),
+            "v0",
             PipelineDescr {
                 name: "example1".to_string(),
                 description: "d1".to_string(),
@@ -1061,7 +1123,7 @@ async fn pipeline_deployment() {
         .unwrap();
     handle
         .db
-        .transit_program_status_to_compiling_rust(
+        .transit_program_status_to_sql_compiled(
             tenant_id,
             pipeline1.id,
             Version(1),
@@ -1071,7 +1133,19 @@ async fn pipeline_deployment() {
         .unwrap();
     handle
         .db
-        .transit_program_status_to_success(tenant_id, pipeline1.id, Version(1), "")
+        .transit_program_status_to_compiling_rust(tenant_id, pipeline1.id, Version(1))
+        .await
+        .unwrap();
+    handle
+        .db
+        .transit_program_status_to_success(
+            tenant_id,
+            pipeline1.id,
+            Version(1),
+            "def",
+            "123",
+            "abcdef",
+        )
         .await
         .unwrap();
 
@@ -1157,12 +1231,14 @@ enum StorageAction {
     NewPipeline(
         TenantId,
         #[proptest(strategy = "limited_uuid()")] Uuid,
+        #[proptest(strategy = "limited_platform_version()")] String,
         #[proptest(strategy = "limited_pipeline_descr()")] PipelineDescr,
     ),
     NewOrUpdatePipeline(
         TenantId,
         #[proptest(strategy = "limited_uuid()")] Uuid,
         #[proptest(strategy = "limited_pipeline_name()")] String,
+        #[proptest(strategy = "limited_platform_version()")] String,
         #[proptest(strategy = "limited_pipeline_descr()")] PipelineDescr,
     ),
     UpdatePipeline(
@@ -1170,6 +1246,7 @@ enum StorageAction {
         #[proptest(strategy = "limited_pipeline_name()")] String,
         #[proptest(strategy = "limited_option_pipeline_name()")] Option<String>,
         Option<String>,
+        #[proptest(strategy = "limited_platform_version()")] String,
         #[proptest(strategy = "limited_option_runtime_config()")] Option<RuntimeConfig>,
         Option<String>,
         Option<String>,
@@ -1182,13 +1259,21 @@ enum StorageAction {
     ),
     TransitProgramStatusToPending(TenantId, PipelineId, Version),
     TransitProgramStatusToCompilingSql(TenantId, PipelineId, Version),
-    TransitProgramStatusToCompilingRust(
+    TransitProgramStatusToSqlCompiled(
         TenantId,
         PipelineId,
         Version,
         #[proptest(strategy = "limited_program_info()")] ProgramInfo,
     ),
-    TransitProgramStatusToSuccess(TenantId, PipelineId, Version, String),
+    TransitProgramStatusToCompilingRust(TenantId, PipelineId, Version),
+    TransitProgramStatusToSuccess(
+        TenantId,
+        PipelineId,
+        Version,
+        #[proptest(strategy = "limited_program_binary_source_checksum()")] String,
+        #[proptest(strategy = "limited_program_binary_integrity_checksum()")] String,
+        String,
+    ),
     TransitProgramStatusToSqlError(TenantId, PipelineId, Version, Vec<SqlCompilerMessage>),
     TransitProgramStatusToRustError(TenantId, PipelineId, Version, String),
     TransitProgramStatusToSystemError(TenantId, PipelineId, Version, String),
@@ -1222,8 +1307,11 @@ enum StorageAction {
     ),
     ListPipelineIdsAcrossAllTenants,
     ListPipelinesAcrossAllTenants,
-    GetNextPipelineProgramToCompile,
-    IsPipelineProgramInUse(PipelineId, Version),
+    ClearOngoingSqlCompilation(#[proptest(strategy = "limited_platform_version()")] String),
+    GetNextSqlCompilation(#[proptest(strategy = "limited_platform_version()")] String),
+    ClearOngoingRustCompilation(#[proptest(strategy = "limited_platform_version()")] String),
+    GetNextRustCompilation(#[proptest(strategy = "limited_platform_version()")] String),
+    ListPipelineProgramsAcrossAllTenants,
 }
 
 /// Alias for a result from the database.
@@ -1251,7 +1339,7 @@ fn check_responses<T: Debug + PartialEq>(
     match (result_model, result_impl) {
         (Ok(val_model), Ok(val_impl)) => assert_eq!(
             val_model, val_impl,
-            "mismatch detected with model (left) and right (impl)"
+            "mismatch detected with model (left) and impl (right)"
         ),
         (Err(err_model), Ok(val_impl)) => {
             panic!("step({step}): model returned error: {err_model:?}, but impl returned result: {val_impl:?}");
@@ -1428,7 +1516,7 @@ fn db_impl_behaves_like_model() {
     // `proptest!` it was very difficult to get drop() called on `handle` (I
     // tried putting it in Tokio OnceCell, std OnceCell, and static_init with
     // Finaly); none of those options called drop on handle when the program
-    // ended which meant the DB would not shut-down after this test.
+    // ended which meant the DB would not shut down after this test.
     let mut config = Config::default();
     config.max_shrink_iters = u32::MAX;
     config.source_file = Some("src/db/test.rs");
@@ -1508,22 +1596,22 @@ fn db_impl_behaves_like_model() {
                                 let impl_response = handle.db.get_pipeline_by_id(tenant_id, pipeline_id).await;
                                 check_response_pipeline(i, model_response, impl_response);
                             }
-                            StorageAction::NewPipeline(tenant_id, new_id, pipeline_descr) => {
+                            StorageAction::NewPipeline(tenant_id, new_id, platform_version, pipeline_descr) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
-                                let model_response = model.new_pipeline(tenant_id, new_id, pipeline_descr.clone()).await;
-                                let impl_response = handle.db.new_pipeline(tenant_id, new_id, pipeline_descr.clone()).await;
+                                let model_response = model.new_pipeline(tenant_id, new_id, &platform_version, pipeline_descr.clone()).await;
+                                let impl_response = handle.db.new_pipeline(tenant_id, new_id, &platform_version, pipeline_descr.clone()).await;
                                 check_response_pipeline(i, model_response, impl_response);
                             }
-                            StorageAction::NewOrUpdatePipeline(tenant_id, new_id, original_name, pipeline_descr) => {
+                            StorageAction::NewOrUpdatePipeline(tenant_id, new_id, original_name, platform_version, pipeline_descr) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
-                                let model_response = model.new_or_update_pipeline(tenant_id, new_id, &original_name, pipeline_descr.clone()).await;
-                                let impl_response = handle.db.new_or_update_pipeline(tenant_id, new_id, &original_name, pipeline_descr.clone()).await;
+                                let model_response = model.new_or_update_pipeline(tenant_id, new_id, &original_name, &platform_version, pipeline_descr.clone()).await;
+                                let impl_response = handle.db.new_or_update_pipeline(tenant_id, new_id, &original_name, &platform_version, pipeline_descr.clone()).await;
                                 check_response_pipeline_with_created(i, model_response, impl_response);
                             }
-                            StorageAction::UpdatePipeline(tenant_id, original_name, name, description, runtime_config, program_code, udf_rust, udf_toml, program_config) => {
+                            StorageAction::UpdatePipeline(tenant_id, original_name, name, description, platform_version, runtime_config, program_code, udf_rust, udf_toml, program_config) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
-                                let model_response = model.update_pipeline(tenant_id, &original_name, &name, &description, &runtime_config, &program_code, &udf_rust, &udf_toml, &program_config).await;
-                                let impl_response = handle.db.update_pipeline(tenant_id, &original_name, &name, &description, &runtime_config, &program_code, &udf_rust, &udf_toml, &program_config).await;
+                                let model_response = model.update_pipeline(tenant_id, &original_name, &name, &description, &platform_version, &runtime_config, &program_code, &udf_rust, &udf_toml, &program_config).await;
+                                let impl_response = handle.db.update_pipeline(tenant_id, &original_name, &name, &description, &platform_version, &runtime_config, &program_code, &udf_rust, &udf_toml, &program_config).await;
                                 check_response_pipeline(i, model_response, impl_response);
                             }
                             StorageAction::DeletePipeline(tenant_id, pipeline_name) => {
@@ -1544,16 +1632,22 @@ fn db_impl_behaves_like_model() {
                                 let impl_response = handle.db.transit_program_status_to_compiling_sql(tenant_id, pipeline_id, program_version_guard).await;
                                 check_responses(i, model_response, impl_response);
                             }
-                            StorageAction::TransitProgramStatusToCompilingRust(tenant_id, pipeline_id, program_version_guard, program_info) => {
+                            StorageAction::TransitProgramStatusToSqlCompiled(tenant_id, pipeline_id, program_version_guard, program_info) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
-                                let model_response = model.transit_program_status_to_compiling_rust(tenant_id, pipeline_id, program_version_guard, &program_info).await;
-                                let impl_response = handle.db.transit_program_status_to_compiling_rust(tenant_id, pipeline_id, program_version_guard, &program_info).await;
+                                let model_response = model.transit_program_status_to_sql_compiled(tenant_id, pipeline_id, program_version_guard, &program_info).await;
+                                let impl_response = handle.db.transit_program_status_to_sql_compiled(tenant_id, pipeline_id, program_version_guard, &program_info).await;
                                 check_responses(i, model_response, impl_response);
                             }
-                            StorageAction::TransitProgramStatusToSuccess(tenant_id, pipeline_id, program_version_guard, program_binary_url) => {
+                            StorageAction::TransitProgramStatusToCompilingRust(tenant_id, pipeline_id, program_version_guard) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
-                                let model_response = model.transit_program_status_to_success(tenant_id, pipeline_id, program_version_guard, &program_binary_url).await;
-                                let impl_response = handle.db.transit_program_status_to_success(tenant_id, pipeline_id, program_version_guard, &program_binary_url).await;
+                                let model_response = model.transit_program_status_to_compiling_rust(tenant_id, pipeline_id, program_version_guard).await;
+                                let impl_response = handle.db.transit_program_status_to_compiling_rust(tenant_id, pipeline_id, program_version_guard).await;
+                                check_responses(i, model_response, impl_response);
+                            }
+                            StorageAction::TransitProgramStatusToSuccess(tenant_id, pipeline_id, program_version_guard, program_binary_source_checksum, program_binary_integrity_checksum, program_binary_url) => {
+                                create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
+                                let model_response = model.transit_program_status_to_success(tenant_id, pipeline_id, program_version_guard, &program_binary_source_checksum, &program_binary_integrity_checksum, &program_binary_url).await;
+                                let impl_response = handle.db.transit_program_status_to_success(tenant_id, pipeline_id, program_version_guard, &program_binary_source_checksum, &program_binary_integrity_checksum, &program_binary_url).await;
                                 check_responses(i, model_response, impl_response);
                             }
                             StorageAction::TransitProgramStatusToSqlError(tenant_id, pipeline_id, program_version_guard, internal_sql_error) => {
@@ -1650,14 +1744,29 @@ fn db_impl_behaves_like_model() {
                                 let impl_response = handle.db.list_pipelines_across_all_tenants().await;
                                 check_response_pipelines_with_tenant_id(i, model_response, impl_response);
                             }
-                            StorageAction::GetNextPipelineProgramToCompile => {
-                                let model_response = model.get_next_pipeline_program_to_compile().await;
-                                let impl_response = handle.db.get_next_pipeline_program_to_compile().await;
+                            StorageAction::ClearOngoingSqlCompilation(platform_version) => {
+                                let model_response = model.clear_ongoing_sql_compilation(&platform_version).await;
+                                let impl_response = handle.db.clear_ongoing_sql_compilation(&platform_version).await;
+                                check_responses(i, model_response, impl_response);
+                            }
+                            StorageAction::GetNextSqlCompilation(platform_version) => {
+                                let model_response = model.get_next_sql_compilation(&platform_version).await;
+                                let impl_response = handle.db.get_next_sql_compilation(&platform_version).await;
                                 check_response_optional_pipeline_with_tenant_id(i, model_response, impl_response);
                             }
-                            StorageAction::IsPipelineProgramInUse(pipeline_id, program_version) => {
-                                let model_response = model.is_pipeline_program_in_use(pipeline_id, program_version).await;
-                                let impl_response = handle.db.is_pipeline_program_in_use(pipeline_id, program_version).await;
+                            StorageAction::ClearOngoingRustCompilation(platform_version) => {
+                                let model_response = model.clear_ongoing_rust_compilation(&platform_version).await;
+                                let impl_response = handle.db.clear_ongoing_rust_compilation(&platform_version).await;
+                                check_responses(i, model_response, impl_response);
+                            }
+                            StorageAction::GetNextRustCompilation(platform_version) => {
+                                let model_response = model.get_next_rust_compilation(&platform_version).await;
+                                let impl_response = handle.db.get_next_rust_compilation(&platform_version).await;
+                                check_response_optional_pipeline_with_tenant_id(i, model_response, impl_response);
+                            }
+                            StorageAction::ListPipelineProgramsAcrossAllTenants => {
+                                let model_response = model.list_pipeline_programs_across_all_tenants().await;
+                                let impl_response = handle.db.list_pipeline_programs_across_all_tenants().await;
                                 check_responses(i, model_response, impl_response);
                             }
                         }
@@ -1682,6 +1791,22 @@ struct DbModel {
 
 #[async_trait]
 trait ModelHelpers {
+    #[allow(clippy::too_many_arguments)]
+    async fn help_update_pipeline(
+        &self,
+        is_compiler_update: bool,
+        tenant_id: TenantId,
+        original_name: &str,
+        name: &Option<String>,
+        description: &Option<String>,
+        platform_version: &str,
+        runtime_config: &Option<RuntimeConfig>,
+        program_code: &Option<String>,
+        udf_rust: &Option<String>,
+        udf_toml: &Option<String>,
+        program_config: &Option<ProgramConfig>,
+    ) -> Result<ExtendedPipelineDescr, DBError>;
+
     /// Fetches the existing pipeline, checks the version guard matches,
     /// checks the transition is valid. Returns the pipeline.
     async fn help_transit_program_status(
@@ -1713,6 +1838,129 @@ trait ModelHelpers {
 
 #[async_trait]
 impl ModelHelpers for Mutex<DbModel> {
+    async fn help_update_pipeline(
+        &self,
+        is_compiler_update: bool,
+        tenant_id: TenantId,
+        original_name: &str,
+        name: &Option<String>,
+        description: &Option<String>,
+        platform_version: &str,
+        runtime_config: &Option<RuntimeConfig>,
+        program_code: &Option<String>,
+        udf_rust: &Option<String>,
+        udf_toml: &Option<String>,
+        program_config: &Option<ProgramConfig>,
+    ) -> Result<ExtendedPipelineDescr, DBError> {
+        if let Some(name) = name {
+            validate_name(name)?;
+        }
+
+        // Fetch existing pipeline
+        let mut pipeline = self.get_pipeline(tenant_id, original_name).await?;
+
+        // Pipeline must be shutdown
+        if pipeline.deployment_status != PipelineStatus::Shutdown
+            || (!is_compiler_update
+                && pipeline.deployment_desired_status != PipelineDesiredStatus::Shutdown)
+        {
+            return Err(DBError::CannotUpdateNonShutdownPipeline);
+        }
+
+        // Update the base fields
+        let mut version_increment = false;
+        let mut program_version_increment = false;
+        if let Some(name) = name {
+            // Constraint: name is unique
+            if self
+                .lock()
+                .await
+                .pipelines
+                .iter()
+                .filter(|((tid, _), _)| *tid == tenant_id)
+                .map(|(_, p)| p)
+                .any(|p| p.name == *name && p.id != pipeline.id)
+            {
+                return Err(DBError::DuplicateName);
+            }
+
+            if *name != pipeline.name {
+                version_increment = true;
+            }
+            pipeline.name = name.clone();
+        }
+        if let Some(description) = description {
+            if *description != pipeline.description {
+                version_increment = true;
+            }
+            pipeline.description = description.clone();
+        }
+        if *platform_version != pipeline.platform_version {
+            version_increment = true;
+            program_version_increment = true;
+        }
+        pipeline.platform_version = platform_version.to_string();
+        if let Some(runtime_config) = runtime_config {
+            if *runtime_config != pipeline.runtime_config {
+                version_increment = true;
+            }
+            pipeline.runtime_config = runtime_config.clone();
+        }
+        if let Some(program_code) = program_code {
+            if *program_code != pipeline.program_code {
+                version_increment = true;
+                program_version_increment = true;
+            }
+            pipeline.program_code = program_code.clone();
+        }
+        if let Some(udf_rust) = udf_rust {
+            if *udf_rust != pipeline.udf_rust {
+                version_increment = true;
+                program_version_increment = true;
+            }
+            pipeline.udf_rust = udf_rust.clone();
+        }
+        if let Some(udf_toml) = udf_toml {
+            if *udf_toml != pipeline.udf_toml {
+                version_increment = true;
+                program_version_increment = true;
+            }
+            pipeline.udf_toml = udf_toml.clone();
+        }
+        if let Some(program_config) = program_config {
+            if *program_config != pipeline.program_config {
+                version_increment = true;
+                program_version_increment = true;
+            }
+            pipeline.program_config = program_config.clone();
+        }
+
+        // Next, update any fields that are a consequence of base field changes
+
+        // Version changed: increment it
+        if version_increment {
+            pipeline.version = Version(pipeline.version.0 + 1);
+        }
+
+        // Program changed
+        if program_version_increment {
+            pipeline.program_version = Version(pipeline.program_version.0 + 1);
+            pipeline.program_status = ProgramStatus::Pending;
+            pipeline.program_status_since = Utc::now();
+            pipeline.program_info = None;
+            pipeline.program_binary_url = None;
+        }
+
+        // Insert into state (will overwrite)
+        self.lock()
+            .await
+            .pipelines
+            .insert((tenant_id, pipeline.id), pipeline.clone());
+
+        // Return the final extended pipeline descriptor
+        Ok(pipeline)
+    }
+
     async fn help_transit_program_status(
         &self,
         tenant_id: TenantId,
@@ -1724,13 +1972,14 @@ impl ModelHelpers for Mutex<DbModel> {
         let pipeline = self.get_pipeline_by_id(tenant_id, pipeline_id).await?;
 
         // Pipeline must be shutdown
-        if !pipeline.is_fully_shutdown() {
-            return Err(DBError::CannotUpdateNonShutdownPipeline);
+        if pipeline.deployment_status != PipelineStatus::Shutdown {
+            return Err(DBError::CannotUpdateProgramStatusOfNonShutdownPipeline);
         }
 
         // Check version guard
         if pipeline.program_version != program_version_guard {
             return Err(DBError::OutdatedProgramVersion {
+                outdated_version: program_version_guard,
                 latest_version: pipeline.program_version,
             });
         }
@@ -1751,12 +2000,18 @@ impl ModelHelpers for Mutex<DbModel> {
         // Fetch existing pipeline
         let pipeline = self.get_pipeline_by_id(tenant_id, pipeline_id).await?;
 
-        // Check program is compiled
-        if pipeline.program_status.has_failed_to_compile() {
-            return Err(DBError::ProgramFailedToCompile);
-        }
-        if !pipeline.program_status.is_fully_compiled() {
-            return Err(DBError::ProgramNotYetCompiled);
+        // Check program is compiled if needed
+        if !matches!(
+            (pipeline.deployment_status, new_status),
+            (PipelineStatus::Shutdown, PipelineStatus::Failed)
+                | (PipelineStatus::Failed, PipelineStatus::ShuttingDown)
+                | (PipelineStatus::ShuttingDown, PipelineStatus::Shutdown)
+        ) && pipeline.program_status != ProgramStatus::Success
+        {
+            return Err(DBError::TransitionRequiresCompiledProgram {
+                current: pipeline.deployment_status,
+                transition_to: *new_status,
+            });
         }
 
         // Check transition
@@ -1781,16 +2036,6 @@ impl ModelHelpers for Mutex<DbModel> {
             &pipeline.deployment_desired_status,
             new_desired_status,
         )?;
-
-        // Check program is compiled
-        if *new_desired_status != PipelineDesiredStatus::Shutdown {
-            if pipeline.program_status.has_failed_to_compile() {
-                return Err(DBError::ProgramFailedToCompile);
-            }
-            if !pipeline.program_status.is_fully_compiled() {
-                return Err(DBError::ProgramNotYetCompiled);
-            }
-        }
 
         // Return fetched pipeline
         Ok(pipeline)
@@ -1947,6 +2192,7 @@ impl Storage for Mutex<DbModel> {
         &self,
         tenant_id: TenantId,
         new_id: Uuid,
+        platform_version: &str,
         pipeline: PipelineDescr,
     ) -> Result<ExtendedPipelineDescr, DBError> {
         let mut state = self.lock().await;
@@ -1976,8 +2222,9 @@ impl Storage for Mutex<DbModel> {
             id: pipeline_id,
             name: pipeline.name,
             description: pipeline.description,
-            version: Version(1),
             created_at: now,
+            version: Version(1),
+            platform_version: platform_version.to_string(),
             runtime_config: pipeline.runtime_config,
             program_code: pipeline.program_code,
             udf_rust: pipeline.udf_rust,
@@ -1987,6 +2234,8 @@ impl Storage for Mutex<DbModel> {
             program_status: ProgramStatus::Pending,
             program_status_since: now,
             program_info: None,
+            program_binary_source_checksum: None,
+            program_binary_integrity_checksum: None,
             program_binary_url: None,
             deployment_status: PipelineStatus::Shutdown,
             deployment_status_since: now,
@@ -2010,6 +2259,7 @@ impl Storage for Mutex<DbModel> {
         tenant_id: TenantId,
         new_id: Uuid,
         original_name: &str,
+        platform_version: &str,
         pipeline: PipelineDescr,
     ) -> Result<(bool, ExtendedPipelineDescr), DBError> {
         match self.get_pipeline(tenant_id, original_name).await {
@@ -2020,6 +2270,7 @@ impl Storage for Mutex<DbModel> {
                     original_name,
                     &Some(pipeline.name),
                     &Some(pipeline.description),
+                    platform_version,
                     &Some(pipeline.runtime_config),
                     &Some(pipeline.program_code),
                     &Some(pipeline.udf_rust),
@@ -2033,7 +2284,11 @@ impl Storage for Mutex<DbModel> {
                     if original_name != pipeline.name {
                         return Err(DBError::CannotRenameNonExistingPipeline);
                     }
-                    Ok((true, self.new_pipeline(tenant_id, new_id, pipeline).await?))
+                    Ok((
+                        true,
+                        self.new_pipeline(tenant_id, new_id, platform_version, pipeline)
+                            .await?,
+                    ))
                 }
                 _ => Err(e),
             },
@@ -2046,111 +2301,27 @@ impl Storage for Mutex<DbModel> {
         original_name: &str,
         name: &Option<String>,
         description: &Option<String>,
+        platform_version: &str,
         runtime_config: &Option<RuntimeConfig>,
         program_code: &Option<String>,
         udf_rust: &Option<String>,
         udf_toml: &Option<String>,
         program_config: &Option<ProgramConfig>,
     ) -> Result<ExtendedPipelineDescr, DBError> {
-        if let Some(name) = name {
-            validate_name(name)?;
-        }
-
-        // Fetch existing pipeline
-        let mut pipeline = self.get_pipeline(tenant_id, original_name).await?;
-
-        // Pipeline must be shutdown
-        if !pipeline.is_fully_shutdown() {
-            return Err(DBError::CannotUpdateNonShutdownPipeline);
-        }
-
-        // Update the base fields
-        let mut version_increment = false;
-        let mut program_version_increment = false;
-        if let Some(name) = name {
-            // Constraint: name is unique
-            if self
-                .lock()
-                .await
-                .pipelines
-                .iter()
-                .filter(|((tid, _), _)| *tid == tenant_id)
-                .map(|(_, p)| p)
-                .any(|p| p.name == *name && p.id != pipeline.id)
-            {
-                return Err(DBError::DuplicateName);
-            }
-
-            if *name != pipeline.name {
-                version_increment = true;
-            }
-            pipeline.name = name.clone();
-        }
-        if let Some(description) = description {
-            if *description != pipeline.description {
-                version_increment = true;
-            }
-            pipeline.description = description.clone();
-        }
-        if let Some(runtime_config) = runtime_config {
-            if *runtime_config != pipeline.runtime_config {
-                version_increment = true;
-            }
-            pipeline.runtime_config = runtime_config.clone();
-        }
-        if let Some(program_code) = program_code {
-            if *program_code != pipeline.program_code {
-                version_increment = true;
-                program_version_increment = true;
-            }
-            pipeline.program_code = program_code.clone();
-        }
-        if let Some(udf_rust) = udf_rust {
-            if *udf_rust != pipeline.udf_rust {
-                version_increment = true;
-                program_version_increment = true;
-            }
-            pipeline.udf_rust = udf_rust.clone();
-        }
-        if let Some(udf_toml) = udf_toml {
-            if *udf_toml != pipeline.udf_toml {
-                version_increment = true;
-                program_version_increment = true;
-            }
-            pipeline.udf_toml = udf_toml.clone();
-        }
-        if let Some(program_config) = program_config {
-            if *program_config != pipeline.program_config {
-                version_increment = true;
-                program_version_increment = true;
-            }
-            pipeline.program_config = program_config.clone();
-        }
-
-        // Next, update any fields that are a consequence of base field changes
-
-        // Version changed: increment it
-        if version_increment {
-            pipeline.version = Version(pipeline.version.0 + 1);
-        }
-
-        // Program changed
-        if program_version_increment {
-            pipeline.program_version = Version(pipeline.program_version.0 + 1);
-            pipeline.program_status = ProgramStatus::Pending;
-            pipeline.program_status_since = Utc::now();
-            pipeline.program_info = None;
-            pipeline.program_binary_url = None;
-        }
-
-        // Insert into state (will overwrite)
-        self.lock()
-            .await
-            .pipelines
-            .insert((tenant_id, pipeline.id), pipeline.clone());
-
-        // Return the final extended pipeline descriptor
-        Ok(pipeline)
+        self.help_update_pipeline(
+            false,
+            tenant_id,
+            original_name,
+            name,
+            description,
+            platform_version,
+            runtime_config,
+            program_code,
+            udf_rust,
+            udf_toml,
+            program_config,
+        )
+        .await
     }
 
     async fn delete_pipeline(
@@ -2162,7 +2333,9 @@ impl Storage for Mutex<DbModel> {
         let pipeline = self.get_pipeline(tenant_id, pipeline_name).await?;
 
         // Pipeline must be shutdown
-        if !pipeline.is_fully_shutdown() {
+        if pipeline.deployment_status != PipelineStatus::Shutdown
+            || pipeline.deployment_desired_status != PipelineDesiredStatus::Shutdown
+        {
             return Err(DBError::CannotDeleteNonShutdownPipeline);
         }
 
@@ -2214,14 +2387,14 @@ impl Storage for Mutex<DbModel> {
         Ok(())
     }
 
-    async fn transit_program_status_to_compiling_rust(
+    async fn transit_program_status_to_sql_compiled(
         &self,
         tenant_id: TenantId,
         pipeline_id: PipelineId,
         program_version_guard: Version,
         program_info: &ProgramInfo,
     ) -> Result<(), DBError> {
-        let new_status = ProgramStatus::CompilingRust;
+        let new_status = ProgramStatus::SqlCompiled;
         let mut pipeline = self
             .help_transit_program_status(tenant_id, pipeline_id, program_version_guard, &new_status)
             .await?;
@@ -2235,11 +2408,32 @@ impl Storage for Mutex<DbModel> {
         Ok(())
     }
 
+    async fn transit_program_status_to_compiling_rust(
+        &self,
+        tenant_id: TenantId,
+        pipeline_id: PipelineId,
+        program_version_guard: Version,
+    ) -> Result<(), DBError> {
+        let new_status = ProgramStatus::CompilingRust;
+        let mut pipeline = self
+            .help_transit_program_status(tenant_id, pipeline_id, program_version_guard, &new_status)
+            .await?;
+        pipeline.program_status = new_status;
+        pipeline.program_status_since = Utc::now();
+        self.lock()
+            .await
+            .pipelines
+            .insert((tenant_id, pipeline.id), pipeline.clone());
+        Ok(())
+    }
+
     async fn transit_program_status_to_success(
         &self,
         tenant_id: TenantId,
         pipeline_id: PipelineId,
         program_version_guard: Version,
+        program_binary_source_checksum: &str,
+        program_binary_integrity_checksum: &str,
         program_binary_url: &str,
     ) -> Result<(), DBError> {
         let new_status = ProgramStatus::Success;
@@ -2248,6 +2442,9 @@ impl Storage for Mutex<DbModel> {
             .await?;
         pipeline.program_status = new_status;
         pipeline.program_status_since = Utc::now();
+        pipeline.program_binary_source_checksum = Some(program_binary_source_checksum.to_string());
+        pipeline.program_binary_integrity_checksum =
+            Some(program_binary_integrity_checksum.to_string());
         pipeline.program_binary_url = Some(program_binary_url.to_string());
         self.lock()
             .await
@@ -2523,36 +2720,81 @@ impl Storage for Mutex<DbModel> {
     async fn list_pipeline_ids_across_all_tenants(
         &self,
     ) -> Result<Vec<(TenantId, PipelineId)>, DBError> {
-        Ok(self
+        let mut result: Vec<(TenantId, PipelineId)> = self
             .lock()
             .await
             .pipelines
             .iter()
             .map(|((tid, pid), _)| (*tid, *pid))
-            .collect())
+            .collect();
+        result.sort_by(|(_, p1), (_, p2)| p1.cmp(p2));
+        Ok(result)
     }
 
     async fn list_pipelines_across_all_tenants(
         &self,
     ) -> Result<Vec<(TenantId, ExtendedPipelineDescr)>, DBError> {
-        Ok(self
+        let mut result: Vec<(TenantId, ExtendedPipelineDescr)> = self
             .lock()
             .await
             .pipelines
             .iter()
             .map(|((tid, _), pipeline)| (*tid, pipeline.clone()))
-            .collect())
+            .collect();
+        result.sort_by(|(_, p1), (_, p2)| p1.id.cmp(&p2.id));
+        Ok(result)
     }
 
-    async fn get_next_pipeline_program_to_compile(
+    async fn clear_ongoing_sql_compilation(&self, platform_version: &str) -> Result<(), DBError> {
+        let pipelines = self.list_pipelines_across_all_tenants().await?;
+        for (tid, pipeline) in pipelines {
+            if pipeline.deployment_status == PipelineStatus::Shutdown {
+                if pipeline.platform_version == platform_version {
+                    if pipeline.program_status == ProgramStatus::CompilingSql {
+                        self.transit_program_status_to_pending(
+                            tid,
+                            pipeline.id,
+                            pipeline.program_version,
+                        )
+                        .await?;
+                    }
+                } else if pipeline.program_status == ProgramStatus::Pending
+                    || pipeline.program_status == ProgramStatus::CompilingSql
+                {
+                    self.help_update_pipeline(
+                        true,
+                        tid,
+                        &pipeline.name,
+                        &None,
+                        &None,
+                        platform_version,
+                        &None,
+                        &None,
+                        &None,
+                        &None,
+                        &None,
+                    )
+                    .await?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    async fn get_next_sql_compilation(
         &self,
+        platform_version: &str,
     ) -> Result<Option<(TenantId, ExtendedPipelineDescr)>, DBError> {
         let mut pipelines: Vec<(TenantId, ExtendedPipelineDescr)> = self
             .lock()
             .await
             .pipelines
             .iter()
-            .filter(|(_, p)| p.program_status == ProgramStatus::Pending)
+            .filter(|(_, p)| {
+                p.deployment_status == PipelineStatus::Shutdown
+                    && p.program_status == ProgramStatus::Pending
+                    && p.platform_version == platform_version
+            })
             .map(|((tid, _), pipeline)| (*tid, pipeline.clone()))
             .collect();
         if pipelines.is_empty() {
@@ -2565,21 +2807,88 @@ impl Storage for Mutex<DbModel> {
         Ok(Some((chosen.0, chosen.1)))
     }
 
-    async fn is_pipeline_program_in_use(
+    async fn clear_ongoing_rust_compilation(&self, platform_version: &str) -> Result<(), DBError> {
+        let pipelines = self.list_pipelines_across_all_tenants().await?;
+        for (tid, pipeline) in pipelines {
+            if pipeline.deployment_status == PipelineStatus::Shutdown {
+                if pipeline.platform_version == platform_version {
+                    if pipeline.program_status == ProgramStatus::CompilingRust {
+                        self.transit_program_status_to_sql_compiled(
+                            tid,
+                            pipeline.id,
+                            pipeline.program_version,
+                            &pipeline.program_info.unwrap(),
+                        )
+                        .await?;
+                    }
+                } else if pipeline.program_status == ProgramStatus::SqlCompiled
+                    || pipeline.program_status == ProgramStatus::CompilingRust
+                {
+                    self.help_update_pipeline(
+                        true,
+                        tid,
+                        &pipeline.name,
+                        &None,
+                        &None,
+                        platform_version,
+                        &None,
+                        &None,
+                        &None,
+                        &None,
+                        &None,
+                    )
+                    .await?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    async fn get_next_rust_compilation(
         &self,
-        pipeline_id: PipelineId,
-        program_version: Version,
-    ) -> Result<bool, DBError> {
-        let state = self.lock().await;
-        let pipeline = state
+        platform_version: &str,
+    ) -> Result<Option<(TenantId, ExtendedPipelineDescr)>, DBError> {
+        let mut pipelines: Vec<(TenantId, ExtendedPipelineDescr)> = self
+            .lock()
+            .await
             .pipelines
             .iter()
-            .find(|((_, pid), _)| *pid == pipeline_id)
-            .map(|(_, pipeline)| pipeline);
-        if let Some(pipeline) = pipeline {
-            Ok(pipeline.program_version == program_version)
-        } else {
-            Ok(false)
+            .filter(|(_, p)| {
+                p.deployment_status == PipelineStatus::Shutdown
+                    && p.program_status == ProgramStatus::SqlCompiled
+                    && p.platform_version == platform_version
+            })
+            .map(|((tid, _), pipeline)| (*tid, pipeline.clone()))
+            .collect();
+        if pipelines.is_empty() {
+            return Ok(None);
         }
+        pipelines.sort_by(|(_, p1), (_, p2)| {
+            (p1.program_status_since, p1.id).cmp(&(p2.program_status_since, p2.id))
+        });
+        let chosen = pipelines.first().unwrap().clone(); // Already checked for empty
+        Ok(Some((chosen.0, chosen.1)))
+    }
+
+    async fn list_pipeline_programs_across_all_tenants(
+        &self,
+    ) -> Result<Vec<(PipelineId, Version, String, String)>, DBError> {
+        let mut checksums: Vec<(PipelineId, Version, String, String)> = self
+            .lock()
+            .await
+            .pipelines
+            .values()
+            .filter(|pipeline| pipeline.program_status == ProgramStatus::Success)
+            .map(|pipeline| {
+                (
+                    pipeline.id,
+                    pipeline.program_version,
+                    pipeline.program_binary_source_checksum.clone().unwrap(),
+                    pipeline.program_binary_integrity_checksum.clone().unwrap(),
+                )
+            })
+            .collect();
+        checksums.sort_by(|p1, p2| p1.0.cmp(&p2.0));
+        Ok(checksums)
     }
 }

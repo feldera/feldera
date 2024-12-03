@@ -473,7 +473,8 @@ async fn pipeline(action: PipelineAction, client: Client) {
                     .unwrap();
                 compiling = matches!(pc.program_status, ProgramStatus::Pending)
                     || matches!(pc.program_status, ProgramStatus::CompilingRust)
-                    || matches!(pc.program_status, ProgramStatus::CompilingSql);
+                    || matches!(pc.program_status, ProgramStatus::CompilingSql)
+                    || matches!(pc.program_status, ProgramStatus::SqlCompiled);
 
                 if print_every_30_seconds.elapsed().as_secs() > 30 {
                     info!("Compiling pipeline...");
@@ -1019,6 +1020,7 @@ async fn program(action: ProgramAction, client: Client) {
                 udf_toml: None,
                 program_config: Some(ProgramConfig {
                     profile: Some(profile.into()),
+                    cache: None,
                 }),
                 runtime_config: None,
             };

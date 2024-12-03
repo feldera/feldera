@@ -131,17 +131,18 @@ impl SqlCompilerMessage {
 #[derive(Debug, Deserialize, Serialize, Eq, PartialEq, ToSchema, Clone)]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub enum ProgramStatus {
-    /// Compilation request received from the user; program has been placed
-    /// in the queue.
+    /// Awaiting to be picked up for SQL compilation.
     Pending,
-    /// Compilation of SQL -> Rust in progress.
+    /// Compilation of SQL is ongoing.
     CompilingSql,
-    /// Compiling Rust -> executable in progress.
+    /// Compilation of SQL has been completed; awaiting to be picked up for Rust compilation.
+    SqlCompiled,
+    /// Compilation of Rust is ongoing.
     CompilingRust,
-    /// Compilation succeeded.
+    /// Compilation (both SQL and Rust) succeeded.
     #[cfg_attr(test, proptest(weight = 2))]
     Success,
-    /// SQL compiler returned an error.
+    /// SQL compiler returned one or more errors.
     SqlError(Vec<SqlCompilerMessage>),
     /// Rust compiler returned an error.
     RustError(String),
@@ -149,30 +150,11 @@ pub enum ProgramStatus {
     SystemError(String),
 }
 
-/// The database encodes program status using two columns: `status`, which has
-/// type `string`, but acts as an enum, and `error`, only used if `status` is
-/// one of `"sql_error"` or `"rust_error"`.
+/// The database encodes program status using two columns:
+/// - `status` which has type `string`, but acts as an enum
+/// - `error` which is only used if `status` is one of: `sql_error`,
+///   `rust_error` or `system_error`
 impl ProgramStatus {
-    /// Return true if program has been successfully compiled
-    pub(crate) fn is_fully_compiled(&self) -> bool {
-        *self == ProgramStatus::Success
-    }
-
-    /// Return true if the program has failed to compile (for any reason).
-    pub(crate) fn has_failed_to_compile(&self) -> bool {
-        matches!(
-            self,
-            ProgramStatus::SqlError(_)
-                | ProgramStatus::RustError(_)
-                | ProgramStatus::SystemError(_)
-        )
-    }
-
-    /// Return true if program is currently compiling.
-    pub(crate) fn is_compiling(&self) -> bool {
-        *self == ProgramStatus::CompilingRust || *self == ProgramStatus::CompilingSql
-    }
-
     /// Decode `ProgramStatus` from the values of `error` and `status` columns.
     pub fn from_columns(
         status_string: &str,
@@ -182,6 +164,7 @@ impl ProgramStatus {
             "success" => Ok(Self::Success),
             "pending" => Ok(Self::Pending),
             "compiling_sql" => Ok(Self::CompilingSql),
+            "sql_compiled" => Ok(Self::SqlCompiled),
             "compiling_rust" => Ok(Self::CompilingRust),
             "sql_error" => {
                 let error = error_string.unwrap_or_default();
@@ -202,6 +185,7 @@ impl ProgramStatus {
             ProgramStatus::Success => (Some("success".to_string()), None),
             ProgramStatus::Pending => (Some("pending".to_string()), None),
             ProgramStatus::CompilingSql => (Some("compiling_sql".to_string()), None),
+            ProgramStatus::SqlCompiled => (Some("sql_compiled".to_string()), None),
             ProgramStatus::CompilingRust => (Some("compiling_rust".to_string()), None),
             ProgramStatus::SqlError(error) => {
                 if let Ok(error_string) = serde_json::to_string(&error) {
@@ -231,14 +215,20 @@ pub fn validate_program_status_transition(
         (ProgramStatus::Pending, ProgramStatus::CompilingSql)
             | (ProgramStatus::Pending, ProgramStatus::SystemError(_))
             | (ProgramStatus::CompilingSql, ProgramStatus::Pending)
-            | (ProgramStatus::CompilingSql, ProgramStatus::CompilingRust)
+            | (ProgramStatus::CompilingSql, ProgramStatus::SqlCompiled)
             | (ProgramStatus::CompilingSql, ProgramStatus::SqlError(_))
             | (ProgramStatus::CompilingSql, ProgramStatus::SystemError(_))
+            | (ProgramStatus::SqlCompiled, ProgramStatus::Pending)
+            | (ProgramStatus::SqlCompiled, ProgramStatus::CompilingRust)
             | (ProgramStatus::CompilingRust, ProgramStatus::Pending)
+            | (ProgramStatus::CompilingRust, ProgramStatus::SqlCompiled)
             | (ProgramStatus::CompilingRust, ProgramStatus::Success)
             | (ProgramStatus::CompilingRust, ProgramStatus::RustError(_))
             | (ProgramStatus::CompilingRust, ProgramStatus::SystemError(_))
             | (ProgramStatus::Success, ProgramStatus::Pending)
+            | (ProgramStatus::SqlError(_), ProgramStatus::Pending)
+            | (ProgramStatus::RustError(_), ProgramStatus::Pending)
+            | (ProgramStatus::SystemError(_), ProgramStatus::Pending)
     ) {
         Ok(())
     } else {
@@ -249,12 +239,24 @@ pub fn validate_program_status_transition(
     }
 }
 
+/// Default value for program configuration: cache.
+fn default_program_config_cache() -> bool {
+    true
+}
+
 /// Program configuration.
 #[derive(Clone, Debug, Eq, PartialEq, Default, Serialize, Deserialize, ToSchema)]
 pub struct ProgramConfig {
     /// Compilation profile.
     /// If none is specified, the compiler default compilation profile is used.
     pub profile: Option<CompilationProfile>,
+
+    /// If `true` (default), when a prior compilation with the same checksum
+    /// already exists, the output of that (i.e., binary) is used.
+    /// Set `false` to always trigger a new compilation, which might take longer
+    /// and as well can result in overriding an existing binary.
+    #[serde(default = "default_program_config_cache")]
+    pub cache: bool,
 }
 
 impl ProgramConfig {
@@ -440,13 +442,20 @@ fn convert_connectors_with_unique_names(
     Ok(result)
 }
 
-/// Program information generated by the SQL compiler which includes schema, input connectors and output connectors.
+/// Program information is the output of the SQL compiler.
+///
+/// It includes information needed for Rust compilation (e.g., generated Rust code)
+/// as well as only for runtime (e.g., schema, input/output connectors).
 #[derive(Default, Deserialize, Serialize, ToSchema, Eq, PartialEq, Debug, Clone)]
 pub struct ProgramInfo {
-    /// Schema of the compiled SQL program.
+    /// Schema of the compiled SQL.
     pub schema: ProgramSchema,
 
-    /// UDF stubs.
+    /// Generated main program Rust code: main.rs
+    #[serde(default)]
+    pub main_rust: String,
+
+    /// Generated user defined function (UDF) stubs Rust code: stubs.rs
     #[serde(default)]
     pub udf_stubs: String,
 
@@ -471,6 +480,7 @@ impl ProgramInfo {
 /// The info includes the schema and the input/output connectors derived from it.
 pub fn generate_program_info(
     program_schema: ProgramSchema,
+    main_rust: String,
     udf_stubs: String,
 ) -> Result<ProgramInfo, ConnectorGenerationError> {
     // Input connectors
@@ -571,6 +581,7 @@ pub fn generate_program_info(
     Ok(ProgramInfo {
         schema: program_schema,
         udf_stubs,
+        main_rust,
         input_connectors: inputs,
         output_connectors: outputs,
     })
