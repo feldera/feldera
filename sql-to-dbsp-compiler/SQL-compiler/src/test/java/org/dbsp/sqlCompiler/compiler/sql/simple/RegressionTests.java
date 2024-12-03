@@ -23,9 +23,13 @@ public class RegressionTests extends SqlIoTest {
 
     @Test
     public void issue3071() {
-        this.compileRustTestCase("""
+        this.statementsFailingInCompilation("""
                 CREATE TABLE t0(c0 char) with ('materialized' = 'true');
-                CREATE MATERIALIZED VIEW v100_optimized AS (SELECT * FROM t0 WHERE (t0.c0) NOT BETWEEN ('Y') AND ('䤈'));""");
+                CREATE MATERIALIZED VIEW v100_optimized AS (SELECT * FROM t0 WHERE (t0.c0) NOT BETWEEN ('Y') AND ('䤈'));""",
+                "Failed to encode");
+        this.statementsFailingInCompilation("""
+                CREATE MATERIALIZED VIEW v73_optimized AS SELECT 'a'>'헊';""",
+                "Failed to encode");
     }
 
     @Test
@@ -44,12 +48,6 @@ public class RegressionTests extends SqlIoTest {
         this.compileRustTestCase("""
                 CREATE MATERIALIZED VIEW v10_optimized AS
                 SELECT SOME(('2059-10-5 5:3:37') NOT BETWEEN ('2171-1-14 22:23:8') AND ((-7::TINYINT)::TIMESTAMP));""");
-    }
-
-    @Test
-    public void issue3074() {
-        this.compileRustTestCase("""
-                CREATE MATERIALIZED VIEW v73_optimized AS SELECT 'a'>'헊';""");
     }
 
     @Test

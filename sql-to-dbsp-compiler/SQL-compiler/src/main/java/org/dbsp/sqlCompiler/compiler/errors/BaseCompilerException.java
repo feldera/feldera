@@ -5,9 +5,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 
 import javax.annotation.Nullable;
 
-/**
- * Base class for exceptions which are thrown by the compiler.
- */
+/** Base class for exceptions which are thrown by the compiler. */
 public abstract class BaseCompilerException
         extends RuntimeException
         implements IHasSourcePositionRange {
