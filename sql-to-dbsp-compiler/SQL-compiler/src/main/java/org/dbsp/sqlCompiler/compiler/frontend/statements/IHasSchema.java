@@ -13,6 +13,7 @@ import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.TypeCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.RelColumnMetadata;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.PropertyList;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
@@ -75,6 +76,15 @@ public interface IHasSchema extends IHasCalciteObject, ICastable {
                 column.set("columntype", repr);
             } catch (JsonProcessingException e) {
                 throw new RuntimeException(e);
+            }
+            if (col.defaultValue != null) {
+                column.put("default", CalciteRelNode.toSqlString(col.defaultValue));
+            }
+            if (col.lateness != null) {
+                column.put("lateness", CalciteRelNode.toSqlString(col.lateness));
+            }
+            if (col.watermark != null) {
+                column.put("watermark", CalciteRelNode.toSqlString(col.watermark));
             }
         }
         if (hasKey)

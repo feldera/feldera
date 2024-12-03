@@ -706,10 +706,11 @@ public class MetadataTests extends BaseSQLTests {
         String sql = """
                 CREATE TABLE T (
                 COL1 INT NOT NULL
-                , COL2 DOUBLE NOT NULL FOREIGN KEY REFERENCES S(COL0)
+                , COL2 DOUBLE NOT NULL FOREIGN KEY REFERENCES S(COL0) DEFAULT 1e0
                 , COL3 VARCHAR(3) NOT NULL PRIMARY KEY
                 , COL4 VARCHAR(3) ARRAY
                 , COL5 MAP<INT, INT>
+                , COL6 TIMESTAMP LATENESS INTERVAL '5 10:10' DAYS TO MINUTES
                 );
                 CREATE VIEW V AS SELECT COL1 AS "xCol" FROM T;
                 CREATE VIEW V1 ("yCol") AS SELECT COL1 FROM T;""";
@@ -748,7 +749,8 @@ public class MetadataTests extends BaseSQLTests {
                       "columntype" : {
                         "nullable" : false,
                         "type" : "DOUBLE"
-                      }
+                      },
+                      "default" : "1.0E0"
                     }, {
                       "name" : "col3",
                       "case_sensitive" : false,
@@ -784,6 +786,15 @@ public class MetadataTests extends BaseSQLTests {
                           "type" : "INTEGER"
                         }
                       }
+                    }, {
+                      "name" : "col6",
+                      "case_sensitive" : false,
+                      "columntype" : {
+                        "nullable" : true,
+                        "precision" : 0,
+                        "type" : "TIMESTAMP"
+                      },
+                      "lateness" : "INTERVAL '5 10:10' DAY TO MINUTE"
                     } ],
                     "primary_key" : [ "col3" ],
                     "materialized" : false,
