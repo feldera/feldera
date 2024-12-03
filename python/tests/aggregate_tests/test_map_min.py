@@ -48,7 +48,7 @@ class aggtst_map_min_distinct_gby(TstView):
 class aggtst_map_min_where(TstView):
     def __init__(self):
         # checked manually
-        self.data = [{'c1': {'q': 11, 'v': 66}, 'c2': {'q': 22}}]
+        self.data = [{"c1": {"q": 11, "v": 66}, "c2": {"q": 22}}]
         self.sql = """CREATE MATERIALIZED VIEW map_min_where AS SELECT
                       MIN(c1) FILTER(WHERE c1 < c2) AS c1, MIN(c2) FILTER(WHERE c1 < c2) AS c2
                       FROM map_tbl"""
@@ -58,8 +58,8 @@ class aggtst_map_min_where_gby(TstView):
     def __init__(self):
         # checked manually
         self.data = [
-            {"id": 0, "c1": {'q': 11, 'v': 66}, "c2": {"q": 22}},
-            {"id": 1, "c1": None, "c2": None}
+            {"id": 0, "c1": {"q": 11, "v": 66}, "c2": {"q": 22}},
+            {"id": 1, "c1": None, "c2": None},
         ]
         self.sql = """CREATE MATERIALIZED VIEW map_min_where_gby AS SELECT
                       id, MIN(c1) FILTER(WHERE c1 < c2) AS c1, MIN(c2) FILTER(WHERE c1 < c2) AS c2
