@@ -970,6 +970,11 @@ public class PostgresStringTests extends SqlIoTest {
     public void testConcatConversions() {
         // In Postgres concatenation converts to text, whereas Calcite does not.
         this.q("""
+                SELECT 'text'::text || ' and characters'::char(20) || 'x' AS "Concat text to char";
+                 Concat text to char
+                ---------------------
+                 text and characters     x""");
+        this.q("""
                 SELECT 'unknown' || ' and unknown' AS "Concat unknown types";
                  Concat unknown types
                 ----------------------
@@ -984,11 +989,6 @@ public class PostgresStringTests extends SqlIoTest {
                  Concat char to unknown type
                 -----------------------------
                  characters           and text""");
-        this.q("""
-                SELECT 'text'::text || ' and characters'::char(20) AS "Concat text to char";
-                 Concat text to char
-                ---------------------
-                 text and characters    \s""");
         this.q("""
                 SELECT 'text'::text || ' and varchar'::varchar AS "Concat text to varchar";
                  Concat text to varchar

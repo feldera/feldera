@@ -83,7 +83,7 @@ public class MonotoneAnalyzer implements CircuitTransform, IWritesLogs {
         Monotonicity monotonicity = new Monotonicity(this.compiler);
         expanded = monotonicity.apply(expanded);
         if (debug)
-            ToDot.dump("expanded.png", "png", expanded,
+            ToDot.customDump("expanded.png", "png", expanded,
                     stream -> new ToDotNodesVisitor(compiler, stream, details),
                     stream -> new MonotoneDot(compiler, stream, details, monotonicity.info));
 

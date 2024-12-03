@@ -59,24 +59,24 @@ public class AggScottTests extends ScottBaseTests {
                 +--------+-----------+----+---+---+---+
                 | DEPTNO | JOB       | C  | D | J | X |
                 +--------+-----------+----+---+---+---+
-                |     10 | CLERK|       1 | 0 | 0 | 0 |
-                |     10 | MANAGER|     1 | 0 | 0 | 0 |
-                |     10 | PRESIDENT|   1 | 0 | 0 | 0 |
-                |     10 |NULL|         3 | 0 | 1 | 1 |
-                |     20 | ANALYST|     2 | 0 | 0 | 0 |
-                |     20 | CLERK|       2 | 0 | 0 | 0 |
-                |     20 | MANAGER|     1 | 0 | 0 | 0 |
-                |     20 |NULL|         5 | 0 | 1 | 1 |
-                |     30 | CLERK|       1 | 0 | 0 | 0 |
-                |     30 | MANAGER|     1 | 0 | 0 | 0 |
-                |     30 | SALESMAN|    4 | 0 | 0 | 0 |
-                |     30 |NULL|         6 | 0 | 1 | 1 |
-                |        | ANALYST|     2 | 1 | 0 | 2 |
-                |        | CLERK|       4 | 1 | 0 | 2 |
-                |        | MANAGER|     3 | 1 | 0 | 2 |
-                |        | PRESIDENT|   1 | 1 | 0 | 2 |
-                |        | SALESMAN|    4 | 1 | 0 | 2 |
-                |        |NULL|        14 | 1 | 1 | 3 |
+                |     10 | CLERK     |  1 | 0 | 0 | 0 |
+                |     10 | MANAGER   |  1 | 0 | 0 | 0 |
+                |     10 | PRESIDENT |  1 | 0 | 0 | 0 |
+                |     10 |NULL       |  3 | 0 | 1 | 1 |
+                |     20 | ANALYST   |  2 | 0 | 0 | 0 |
+                |     20 | CLERK     |  2 | 0 | 0 | 0 |
+                |     20 | MANAGER   |  1 | 0 | 0 | 0 |
+                |     20 |NULL       |  5 | 0 | 1 | 1 |
+                |     30 | CLERK     |  1 | 0 | 0 | 0 |
+                |     30 | MANAGER   |  1 | 0 | 0 | 0 |
+                |     30 | SALESMAN  |  4 | 0 | 0 | 0 |
+                |     30 |NULL       |  6 | 0 | 1 | 1 |
+                |        | ANALYST   |  2 | 1 | 0 | 2 |
+                |        | CLERK     |  4 | 1 | 0 | 2 |
+                |        | MANAGER   |  3 | 1 | 0 | 2 |
+                |        | PRESIDENT |  1 | 1 | 0 | 2 |
+                |        | SALESMAN  |  4 | 1 | 0 | 2 |
+                |        |NULL       | 14 | 1 | 1 | 3 |
                 +--------+-----------+----+---+---+---+
                 (18 rows)""");
     }
@@ -173,33 +173,33 @@ public class AggScottTests extends ScottBaseTests {
                 +--------+-----------+-------+--------+----------+-----------------------------------+
                 | DEPTNO | JOB       | EMPNO | ENAME  | SUMSAL   | GR_TEXT                           |
                 +--------+-----------+-------+--------+----------+-----------------------------------+
-                |     10 | CLERK|       7934 | MILLER|   1300.00 | grouped by deptno,job,empno,ename|
-                |     10 | CLERK|            |NULL|      1300.00 | grouped by deptno,job|
-                |     10 | MANAGER|     7782 | CLARK|    2450.00 | grouped by deptno,job,empno,ename|
-                |     10 | MANAGER|          |NULL|      2450.00 | grouped by deptno,job|
-                |     10 | PRESIDENT|   7839 | KING|     5000.00 | grouped by deptno,job,empno,ename|
-                |     10 | PRESIDENT|        |NULL|      5000.00 | grouped by deptno,job|
-                |     10 |NULL|              |NULL|      8750.00 | grouped by deptno|
-                |     20 | ANALYST|     7788 | SCOTT|    3000.00 | grouped by deptno,job,empno,ename|
-                |     20 | ANALYST|     7902 | FORD|     3000.00 | grouped by deptno,job,empno,ename|
-                |     20 | ANALYST|          |NULL|      6000.00 | grouped by deptno,job|
-                |     20 | CLERK|       7369 | SMITH|     800.00 | grouped by deptno,job,empno,ename|
-                |     20 | CLERK|       7876 | ADAMS|    1100.00 | grouped by deptno,job,empno,ename|
-                |     20 | CLERK|            |NULL|      1900.00 | grouped by deptno,job|
-                |     20 | MANAGER|     7566 | JONES|    2975.00 | grouped by deptno,job,empno,ename|
-                |     20 | MANAGER|          |NULL|      2975.00 | grouped by deptno,job|
-                |     20 |NULL|              |NULL|     10875.00 | grouped by deptno|
-                |     30 | CLERK|       7900 | JAMES|     950.00 | grouped by deptno,job,empno,ename|
-                |     30 | CLERK|            |NULL|       950.00 | grouped by deptno,job|
-                |     30 | MANAGER|     7698 | BLAKE|    2850.00 | grouped by deptno,job,empno,ename|
-                |     30 | MANAGER|          |NULL|      2850.00 | grouped by deptno,job|
-                |     30 | SALESMAN|    7499 | ALLEN|    1600.00 | grouped by deptno,job,empno,ename|
-                |     30 | SALESMAN|    7521 | WARD|     1250.00 | grouped by deptno,job,empno,ename|
-                |     30 | SALESMAN|    7654 | MARTIN|   1250.00 | grouped by deptno,job,empno,ename|
-                |     30 | SALESMAN|    7844 | TURNER|   1500.00 | grouped by deptno,job,empno,ename|
-                |     30 | SALESMAN|         |NULL|      5600.00 | grouped by deptno,job|
-                |     30 |NULL|              |NULL|      9400.00 | grouped by deptno|
-                |        |NULL|              |NULL|     29025.00 | grouped by ()|
+                |     10 | CLERK     |  7934 | MILLER |  1300.00 | grouped by deptno,job,empno,ename |
+                |     10 | CLERK     |       |NULL    |  1300.00 | grouped by deptno,job             |
+                |     10 | MANAGER   |  7782 | CLARK  |  2450.00 | grouped by deptno,job,empno,ename |
+                |     10 | MANAGER   |       |NULL    |  2450.00 | grouped by deptno,job             |
+                |     10 | PRESIDENT |  7839 | KING   |  5000.00 | grouped by deptno,job,empno,ename |
+                |     10 | PRESIDENT |       |NULL    |  5000.00 | grouped by deptno,job             |
+                |     10 |NULL       |       |NULL    |  8750.00 | grouped by deptno                 |
+                |     20 | ANALYST   |  7788 | SCOTT  |  3000.00 | grouped by deptno,job,empno,ename |
+                |     20 | ANALYST   |  7902 | FORD   |  3000.00 | grouped by deptno,job,empno,ename |
+                |     20 | ANALYST   |       |NULL    |  6000.00 | grouped by deptno,job             |
+                |     20 | CLERK     |  7369 | SMITH  |   800.00 | grouped by deptno,job,empno,ename |
+                |     20 | CLERK     |  7876 | ADAMS  |  1100.00 | grouped by deptno,job,empno,ename |
+                |     20 | CLERK     |       |NULL    |  1900.00 | grouped by deptno,job             |
+                |     20 | MANAGER   |  7566 | JONES  |  2975.00 | grouped by deptno,job,empno,ename |
+                |     20 | MANAGER   |       |NULL    |  2975.00 | grouped by deptno,job             |
+                |     20 |NULL       |       |NULL    | 10875.00 | grouped by deptno                 |
+                |     30 | CLERK     |  7900 | JAMES  |   950.00 | grouped by deptno,job,empno,ename |
+                |     30 | CLERK     |       |NULL    |   950.00 | grouped by deptno,job             |
+                |     30 | MANAGER   |  7698 | BLAKE  |  2850.00 | grouped by deptno,job,empno,ename |
+                |     30 | MANAGER   |       |NULL    |  2850.00 | grouped by deptno,job             |
+                |     30 | SALESMAN  |  7499 | ALLEN  |  1600.00 | grouped by deptno,job,empno,ename |
+                |     30 | SALESMAN  |  7521 | WARD   |  1250.00 | grouped by deptno,job,empno,ename |
+                |     30 | SALESMAN  |  7654 | MARTIN |  1250.00 | grouped by deptno,job,empno,ename |
+                |     30 | SALESMAN  |  7844 | TURNER |  1500.00 | grouped by deptno,job,empno,ename |
+                |     30 | SALESMAN  |       |NULL    |  5600.00 | grouped by deptno,job             |
+                |     30 |NULL       |       |NULL    |  9400.00 | grouped by deptno                 |
+                |        |NULL       |       |NULL    | 29025.00 | grouped by ()                     |
                 +--------+-----------+-------+--------+----------+-----------------------------------+
                 (27 rows)
 
@@ -230,37 +230,37 @@ public class AggScottTests extends ScottBaseTests {
                 +--------+-----------+-------+--------+----------+-----------------------------------+
                 | DEPTNO | JOB       | EMPNO | ENAME  | SUMSAL   | GR_TEXT                           |
                 +--------+-----------+-------+--------+----------+-----------------------------------+
-                |     10 | CLERK|       7934 | MILLER|   1300.00 | grouped by deptno,job,empno,ename|
-                |     10 | CLERK|            |NULL|      1300.00 | grouped by deptno,job|
-                |     10 | MANAGER|     7782 | CLARK|    2450.00 | grouped by deptno,job,empno,ename|
-                |     10 | MANAGER|          |NULL|      2450.00 | grouped by deptno,job|
-                |     10 | PRESIDENT|   7839 | KING|     5000.00 | grouped by deptno,job,empno,ename|
-                |     10 | PRESIDENT|        |NULL|      5000.00 | grouped by deptno,job|
-                |     10 |NULL|              |NULL|      8750.00 | grouped by deptno, grouping set 3|
-                |     10 |NULL|              |NULL|      8750.00 | grouped by deptno, grouping set 4|
-                |     20 | ANALYST|     7788 | SCOTT|    3000.00 | grouped by deptno,job,empno,ename|
-                |     20 | ANALYST|     7902 | FORD|     3000.00 | grouped by deptno,job,empno,ename|
-                |     20 | ANALYST|          |NULL|      6000.00 | grouped by deptno,job|
-                |     20 | CLERK|  7369      | SMITH|     800.00 | grouped by deptno,job,empno,ename|
-                |     20 | CLERK|  7876      | ADAMS|    1100.00 | grouped by deptno,job,empno,ename|
-                |     20 | CLERK|            |NULL|      1900.00 | grouped by deptno,job|
-                |     20 | MANAGER|  7566    | JONES|    2975.00 | grouped by deptno,job,empno,ename|
-                |     20 | MANAGER|          |NULL|      2975.00 | grouped by deptno,job|
-                |     20 |NULL|              |NULL|     10875.00 | grouped by deptno, grouping set 3|
-                |     20 |NULL|              |NULL|     10875.00 | grouped by deptno, grouping set 4|
-                |     30 | CLERK|  7900      | JAMES|     950.00 | grouped by deptno,job,empno,ename|
-                |     30 | CLERK|            |NULL|       950.00 | grouped by deptno,job|
-                |     30 | MANAGER|  7698    | BLAKE|    2850.00 | grouped by deptno,job,empno,ename|
-                |     30 | MANAGER|          |NULL|      2850.00 | grouped by deptno,job|
-                |     30 | SALESMAN|  7499   | ALLEN|    1600.00 | grouped by deptno,job,empno,ename|
-                |     30 | SALESMAN|  7521   | WARD|     1250.00 | grouped by deptno,job,empno,ename|
-                |     30 | SALESMAN|  7654   | MARTIN|   1250.00 | grouped by deptno,job,empno,ename|
-                |     30 | SALESMAN|  7844   | TURNER|   1500.00 | grouped by deptno,job,empno,ename|
-                |     30 | SALESMAN|         |NULL|      5600.00 | grouped by deptno,job|
-                |     30 |NULL|              |NULL|      9400.00 | grouped by deptno, grouping set 3|
-                |     30 |NULL|              |NULL|      9400.00 | grouped by deptno, grouping set 4|
-                |        |NULL|              |NULL|     29025.00 | grouped by (), grouping set 5|
-                |        |NULL|              |NULL|     29025.00 | grouped by (), grouping set 6|
+                |     10 | CLERK     |  7934 | MILLER |  1300.00 | grouped by deptno,job,empno,ename |
+                |     10 | CLERK     |       |NULL    |  1300.00 | grouped by deptno,job             |
+                |     10 | MANAGER   |  7782 | CLARK  |  2450.00 | grouped by deptno,job,empno,ename |
+                |     10 | MANAGER   |       |NULL    |  2450.00 | grouped by deptno,job             |
+                |     10 | PRESIDENT |  7839 | KING   |  5000.00 | grouped by deptno,job,empno,ename |
+                |     10 | PRESIDENT |       |NULL    |  5000.00 | grouped by deptno,job             |
+                |     10 |NULL       |       |NULL    |  8750.00 | grouped by deptno, grouping set 3 |
+                |     10 |NULL       |       |NULL    |  8750.00 | grouped by deptno, grouping set 4 |
+                |     20 | ANALYST   |  7788 | SCOTT  |  3000.00 | grouped by deptno,job,empno,ename |
+                |     20 | ANALYST   |  7902 | FORD   |  3000.00 | grouped by deptno,job,empno,ename |
+                |     20 | ANALYST   |       |NULL    |  6000.00 | grouped by deptno,job             |
+                |     20 | CLERK     |  7369 | SMITH  |   800.00 | grouped by deptno,job,empno,ename |
+                |     20 | CLERK     |  7876 | ADAMS  |  1100.00 | grouped by deptno,job,empno,ename |
+                |     20 | CLERK     |       |NULL    |  1900.00 | grouped by deptno,job             |
+                |     20 | MANAGER   |  7566 | JONES  |  2975.00 | grouped by deptno,job,empno,ename |
+                |     20 | MANAGER   |       |NULL    |  2975.00 | grouped by deptno,job             |
+                |     20 |NULL       |       |NULL    | 10875.00 | grouped by deptno, grouping set 3 |
+                |     20 |NULL       |       |NULL    | 10875.00 | grouped by deptno, grouping set 4 |
+                |     30 | CLERK     |  7900 | JAMES  |   950.00 | grouped by deptno,job,empno,ename |
+                |     30 | CLERK     |       |NULL    |   950.00 | grouped by deptno,job             |
+                |     30 | MANAGER   |  7698 | BLAKE  |  2850.00 | grouped by deptno,job,empno,ename |
+                |     30 | MANAGER   |       |NULL    |  2850.00 | grouped by deptno,job             |
+                |     30 | SALESMAN  |  7499 | ALLEN  |  1600.00 | grouped by deptno,job,empno,ename |
+                |     30 | SALESMAN  |  7521 | WARD   |  1250.00 | grouped by deptno,job,empno,ename |
+                |     30 | SALESMAN  |  7654 | MARTIN |  1250.00 | grouped by deptno,job,empno,ename |
+                |     30 | SALESMAN  |  7844 | TURNER |  1500.00 | grouped by deptno,job,empno,ename |
+                |     30 | SALESMAN  |       |NULL    |  5600.00 | grouped by deptno,job             |
+                |     30 |NULL       |       |NULL    |  9400.00 | grouped by deptno, grouping set 3 |
+                |     30 |NULL       |       |NULL    |  9400.00 | grouped by deptno, grouping set 4 |
+                |        |NULL       |       |NULL    | 29025.00 | grouped by (), grouping set 5     |
+                |        |NULL       |       |NULL    | 29025.00 | grouped by (), grouping set 6     |
                 +--------+-----------+-------+--------+----------+-----------------------------------+
                 (31 rows)
 
@@ -388,38 +388,38 @@ public class AggScottTests extends ScottBaseTests {
                   group by grouping sets ((job, deptno, comm is null),
                     (job, deptno), (job, comm is null), (job, comm is null))
                   order by g, i, s desc;
-                  +----+---+---+---------+---+---+
-                  |  D | C | J | S       | G | I |
-                  +----+---+---+---------+---+---+
-                  | 20 | T | ANALYST| 6000.00 | 0 | 0 |
-                  | 30 | F | SALESMAN| 5600.00 | 0 | 0 |
-                  | 10 | T | PRESIDENT| 5000.00 | 0 | 0 |
-                  | 20 | T | MANAGER| 2975.00 | 0 | 0 |
-                  | 30 | T | MANAGER| 2850.00 | 0 | 0 |
-                  | 10 | T | MANAGER| 2450.00 | 0 | 0 |
-                  | 20 | T | CLERK| 1900.00 | 0 | 0 |
-                  | 10 | T | CLERK| 1300.00 | 0 | 0 |
-                  | 30 | T | CLERK|  950.00 | 0 | 0 |
-                  |    | T | MANAGER| 8275.00 | 2 | 1 |
-                  |    | T | ANALYST| 6000.00 | 2 | 1 |
-                  |    | F | SALESMAN| 5600.00 | 2 | 1 |
-                  |    | T | PRESIDENT| 5000.00 | 2 | 1 |
-                  |    | T | CLERK| 4150.00 | 2 | 1 |
-                  | 20 |   | ANALYST| 6000.00 | 1 | 0 |
-                  | 30 |   | SALESMAN| 5600.00 | 1 | 0 |
-                  | 10 |   | PRESIDENT| 5000.00 | 1 | 0 |
-                  | 20 |   | MANAGER| 2975.00 | 1 | 0 |
-                  | 30 |   | MANAGER| 2850.00 | 1 | 0 |
-                  | 10 |   | MANAGER| 2450.00 | 1 | 0 |
-                  | 20 |   | CLERK| 1900.00 | 1 | 0 |
-                  | 10 |   | CLERK| 1300.00 | 1 | 0 |
-                  | 30 |   | CLERK|  950.00 | 1 | 0 |
-                  |    | T | MANAGER| 8275.00 | 2 | 0 |
-                  |    | T | ANALYST| 6000.00 | 2 | 0 |
-                  |    | F | SALESMAN| 5600.00 | 2 | 0 |
-                  |    | T | PRESIDENT| 5000.00 | 2 | 0 |
-                  |    | T | CLERK| 4150.00 | 2 | 0 |
-                  +----+---+---------+---+---+
+                  +----+---+-----------+---------+---+---+
+                  |  D | C |         J | S       | G | I |
+                  +----+---+-----------+---------+---+---+
+                  | 20 | T | ANALYST   | 6000.00 | 0 | 0 |
+                  | 30 | F | SALESMAN  | 5600.00 | 0 | 0 |
+                  | 10 | T | PRESIDENT | 5000.00 | 0 | 0 |
+                  | 20 | T | MANAGER   | 2975.00 | 0 | 0 |
+                  | 30 | T | MANAGER   | 2850.00 | 0 | 0 |
+                  | 10 | T | MANAGER   | 2450.00 | 0 | 0 |
+                  | 20 | T | CLERK     | 1900.00 | 0 | 0 |
+                  | 10 | T | CLERK     | 1300.00 | 0 | 0 |
+                  | 30 | T | CLERK     |  950.00 | 0 | 0 |
+                  |    | T | MANAGER   | 8275.00 | 2 | 1 |
+                  |    | T | ANALYST   | 6000.00 | 2 | 1 |
+                  |    | F | SALESMAN  | 5600.00 | 2 | 1 |
+                  |    | T | PRESIDENT | 5000.00 | 2 | 1 |
+                  |    | T | CLERK     | 4150.00 | 2 | 1 |
+                  | 20 |   | ANALYST   | 6000.00 | 1 | 0 |
+                  | 30 |   | SALESMAN  | 5600.00 | 1 | 0 |
+                  | 10 |   | PRESIDENT | 5000.00 | 1 | 0 |
+                  | 20 |   | MANAGER   | 2975.00 | 1 | 0 |
+                  | 30 |   | MANAGER   | 2850.00 | 1 | 0 |
+                  | 10 |   | MANAGER   | 2450.00 | 1 | 0 |
+                  | 20 |   | CLERK     | 1900.00 | 1 | 0 |
+                  | 10 |   | CLERK     | 1300.00 | 1 | 0 |
+                  | 30 |   | CLERK     |  950.00 | 1 | 0 |
+                  |    | T | MANAGER   | 8275.00 | 2 | 0 |
+                  |    | T | ANALYST   | 6000.00 | 2 | 0 |
+                  |    | F | SALESMAN  | 5600.00 | 2 | 0 |
+                  |    | T | PRESIDENT | 5000.00 | 2 | 0 |
+                  |    | T | CLERK     | 4150.00 | 2 | 0 |
+                  +----+---+-----------+---------+---+---+
                   (28 rows)""");
     }
 
@@ -1399,7 +1399,7 @@ public class AggScottTests extends ScottBaseTests {
                 +-------+-------+
                 | MI    | MA    |
                 +-------+-------+
-                | MILLER| WARD|
+                | MILLER| WARD  |
                 +-------+-------+
                 (1 row)
 
@@ -1409,7 +1409,7 @@ public class AggScottTests extends ScottBaseTests {
                 +-------+-------+
                 | MI    | MA    |
                 +-------+-------+
-                | MILLER| WARD|
+                | MILLER| WARD  |
                 +-------+-------+
                 (1 row)
 
@@ -1420,7 +1420,7 @@ public class AggScottTests extends ScottBaseTests {
                 +-------+-------+
                 | MI    | MA    |
                 +-------+-------+
-                | MILLER| SMITH|
+                | MILLER| SMITH |
                 +-------+-------+
                 (1 row)
 
@@ -1443,9 +1443,9 @@ public class AggScottTests extends ScottBaseTests {
                 +--------+-------+--------+
                 | DEPTNO | MI    | MA     |
                 +--------+-------+--------+
-                |     10 | CLARK| MILLER|
-                |     20 | ADAMS| SMITH|
-                |     30 | ALLEN| WARD|
+                |     10 | CLARK| MILLER  |
+                |     20 | ADAMS| SMITH   |
+                |     30 | ALLEN| WARD    |
                 +--------+-------+--------+
                 (3 rows)
 
@@ -1482,19 +1482,19 @@ public class AggScottTests extends ScottBaseTests {
                    +--------+-----------+----+
                    | DEPTNO | JOB       | C  |
                    +--------+-----------+----+
-                   |     10 | CLERK|  1 |
-                   |     10 | MANAGER|  1 |
-                   |     10 | PRESIDENT|  1 |
-                   |     10 |NULL|  3 |
-                   |     20 | ANALYST|  2 |
-                   |     20 | CLERK|  2 |
-                   |     20 | MANAGER|  1 |
-                   |     20 |NULL|  5 |
-                   |     30 | CLERK|  1 |
-                   |     30 | MANAGER|  1 |
-                   |     30 | SALESMAN|  4 |
-                   |     30 |NULL|  6 |
-                   |        |NULL| 14 |
+                   |     10 | CLERK     |  1 |
+                   |     10 | MANAGER   |  1 |
+                   |     10 | PRESIDENT |  1 |
+                   |     10 |NULL       |  3 |
+                   |     20 | ANALYST   |  2 |
+                   |     20 | CLERK     |  2 |
+                   |     20 | MANAGER   |  1 |
+                   |     20 |NULL       |  5 |
+                   |     30 | CLERK     |  1 |
+                   |     30 | MANAGER   |  1 |
+                   |     30 | SALESMAN  |  4 |
+                   |     30 |NULL       |  6 |
+                   |        |NULL       | 14 |
                    +--------+-----------+----+
                    (13 rows)
 
@@ -1560,7 +1560,7 @@ public class AggScottTests extends ScottBaseTests {
                 | 29025.00 |                    3 |     8750.00 |    10875.00 |         6 |         0 |           |           |              |           14 |         5 |
                 +----------+----------------------+-------------+-------------+-----------+-----------+-----------+-----------+--------------+--------------+-----------+
                 (1 row)
-                
+
                 -- Check that SUM produces NULL on empty set, COUNT produces 0.
                 select
                  sum(sal) as sum_sal,
@@ -1584,7 +1584,7 @@ public class AggScottTests extends ScottBaseTests {
                 |         |                    0 |             |             |           |         0 |           |           |              |              |         0 |
                 +---------+----------------------+-------------+-------------+-----------+-----------+-----------+-----------+--------------+--------------+-----------+
                 (1 row)
-                
+
                 -- [CALCITE-4609] AggregateRemoveRule throws while handling AVG
                 -- Note that the outer GROUP BY is a no-op, and therefore
                 -- AggregateRemoveRule kicks in.
@@ -1603,7 +1603,7 @@ public class AggScottTests extends ScottBaseTests {
                 | SALESMAN|  1400.00  |
                 +----------+----------+
                 (3 rows)
-                
+
                 -- Same, using WITH
                 WITH EmpAnalytics AS (
                     SELECT deptno, job, AVG(sal) AS avg_sal
@@ -1634,7 +1634,7 @@ public class AggScottTests extends ScottBaseTests {
                 |     14 |     14 | 800.00 | 5000.00 |
                 +--------+--------+--------+---------+
                 (1 row)
-                
+
                 -- [CALCITE-1930] AggregateExpandDistinctAggregateRules should handle multiple aggregate calls with same input ref
                 select count(distinct DEPTNO), COUNT(JOB), MIN(SAL), MAX(SAL) from emp;
                 +--------+--------+--------+---------+
@@ -1643,7 +1643,7 @@ public class AggScottTests extends ScottBaseTests {
                 |      3 |     14 | 800.00 | 5000.00 |
                 +--------+--------+--------+---------+
                 (1 row)
-                
+
                 -- [CALCITE-1930] AggregateExpandDistinctAggregateRules should handle multiple aggregate calls with same input ref
                 select MGR, count(distinct DEPTNO), COUNT(JOB), MIN(SAL), MAX(SAL) from emp group by MGR;
                 +------+--------+--------+---------+---------+
@@ -1658,7 +1658,7 @@ public class AggScottTests extends ScottBaseTests {
                 |      |      1 |      1 | 5000.00 | 5000.00 |
                 +------+--------+--------+---------+---------+
                 (7 rows)
-                
+
                 -- [CALCITE-1930] AggregateExpandDistinctAggregateRules should handle multiple aggregate calls with same input ref
                 select MGR, count(distinct DEPTNO, JOB), MIN(SAL), MAX(SAL) from emp group by MGR;
                 +------+--------+---------+---------+
@@ -1688,7 +1688,7 @@ public class AggScottTests extends ScottBaseTests {
                 |                     4 |                     14 |
                 +-----------------------+------------------------+
                 (1 row)
-                
+
                 -- [CALCITE-1776, CALCITE-2402] REGR_SXX, REGR_SXY, REGR_SYY
                 SELECT
                   regr_sxx(COMM, SAL) as "REGR_SXX(COMM, SAL)",
@@ -1702,7 +1702,7 @@ public class AggScottTests extends ScottBaseTests {
                 |          95000.0000 |        1090000.0000 |        1090000.0000 |          95000.0000 |
                 +---------------------+---------------------+---------------------+---------------------+
                 (1 row)
-                
+
                 -- [CALCITE-1776, CALCITE-2402] COVAR_POP, COVAR_SAMP, VAR_SAMP, VAR_POP
                 SELECT
                   covar_pop(COMM, COMM) as "COVAR_POP(COMM, COMM)",
@@ -1729,7 +1729,7 @@ public class AggScottTests extends ScottBaseTests {
                 |      0 |     30 |     30 |
                 +--------+--------+--------+
                 (1 row)
-                
+
                 select deptno, bit_and(empno), bit_or(empno), bit_xor(empno) from emp group by deptno;
                 +--------+--------+--------+--------+
                 | DEPTNO | EXPR$1 | EXPR$2 | EXPR$3 |

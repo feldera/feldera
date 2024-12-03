@@ -109,12 +109,13 @@ public class PostgresWindowTests extends SqlIoTest {
         this.insertFromResource("tenk1_2_small", compiler);
     }
 
-    @Test @Ignore("Requires ORDER BY")
+    @Test
     public void testWindow() {
         this.qs("""
                 SELECT depname, empno, salary, sum(salary)
                 OVER (PARTITION BY depname)
-                FROM empsalary ORDER BY depname, salary;
+                FROM empsalary -- ORDER BY depname, salary
+                ;
                   depname  | empno | salary |  sum
                 -----------+-------+--------+-------
                  develop   |     7 |   4200 | 25100

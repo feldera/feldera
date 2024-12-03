@@ -1224,7 +1224,7 @@ with year_total as (
  limit 100
 ;
 
-/* sql_12.sql
+/* sql_12.sql */
 CREATE VIEW sql_12 AS
 select i_item_id
       ,i_item_desc
@@ -1258,7 +1258,6 @@ order by
         ,revenueratio
 limit 100
 ;
-*/
 
 /* sql_13.sql */
 CREATE VIEW sql_13 AS
@@ -1676,7 +1675,7 @@ select i_brand_id brand_id, i_brand brand, i_manufact_id, i_manufact,
  limit 100
  ;
 
-/* sql_20.sql
+/* sql_20.sql */
 CREATE VIEW sql_20 AS
 select i_item_id
        ,i_item_desc
@@ -1706,7 +1705,6 @@ select i_item_id
          ,revenueratio
  limit 100
 ;
-*/
 
 /* sql_21.sql */
 CREATE VIEW sql_21 AS
@@ -3041,7 +3039,7 @@ select dt.d_year
  limit 100
  ;
 
-/* sql_53.sql
+/* sql_53.sql */
 CREATE VIEW sql_53 AS
 select * from
 (select i_manufact_id,
@@ -3069,7 +3067,6 @@ order by avg_quarterly_sales,
 	 i_manufact_id
 limit 100
 ;
-*/
 
 /* sql_54.sql */
 CREATE VIEW sql_54 AS
@@ -3533,7 +3530,7 @@ order by substring(w_warehouse_name,1,20)
 limit 100
 ;
 
-/* sql_63.sql
+/* sql_63.sql */
 CREATE VIEW sql_63 AS
 select *
 from (select i_manager_id
@@ -3562,7 +3559,6 @@ order by i_manager_id
         ,sum_sales
 limit 100
 ;
-*/
 
 /* sql_64.sql */
 CREATE VIEW sql_64 AS
@@ -5025,7 +5021,7 @@ from
      and store.s_store_name = 'ese') s8
 ;
 
-/* sql_89.sql
+/* sql_89.sql */
 CREATE VIEW sql_89 AS
 select *
 from(
@@ -5053,7 +5049,6 @@ where case when (avg_monthly_sales <> 0) then (abs(sum_sales - avg_monthly_sales
 order by sum_sales - avg_monthly_sales, s_store_name
 limit 100
 ;
-*/
 
 /* sql_90.sql */
 CREATE VIEW sql_90 AS

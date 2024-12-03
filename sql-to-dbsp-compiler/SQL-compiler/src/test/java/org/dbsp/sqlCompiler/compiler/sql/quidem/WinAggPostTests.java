@@ -26,7 +26,7 @@ public class WinAggPostTests extends PostBaseTests {
                 |        | Wilma | F |
                 +--------+-------+---+
                 (9 rows)
-
+                
                 -- [CALCITE-5283] Add ARG_MIN, ARG_MAX aggregate function
                 -- ARG_MIN, ARG_MAX function without ORDER BY.
                 select gender,
@@ -69,7 +69,7 @@ public class WinAggPostTests extends PostBaseTests {
                 |      6 |      1 |  180 |      |
                 +--------+--------+------+------+
                 (9 rows)
-
+                
                 -- Window Aggregate and group-by.
                 select min(deptno) as x, rank() over (order by ename) as y,
                   max(ename) over (partition by deptno) as z
@@ -157,7 +157,7 @@ public class WinAggPostTests extends PostBaseTests {
                 (6 rows)""", false);
     }
 
-    @Test @Ignore("No ORDER BY https://github.com/feldera/feldera/issues/457")
+    @Test
     public void test0() {
         this.qs("""
                 -- [CALCITE-1540] Support multiple columns in PARTITION BY clause of window function
@@ -167,15 +167,15 @@ public class WinAggPostTests extends PostBaseTests {
                 +--------+--------+--------+
                 | GENDER | DEPTNO | COUNT1 |
                 +--------+--------+--------+
-                | F      |     10 |      1 |
-                | F      |     30 |      2 |
-                | F      |     30 |      2 |
-                | F      |     50 |      1 |
-                | F      |     60 |      1 |
-                | F      |        |      1 |
-                | M      |     10 |      1 |
-                | M      |     20 |      1 |
-                | M      |     50 |      1 |
+                | F|           10 |      1 |
+                | F|           30 |      2 |
+                | F|           30 |      2 |
+                | F|           50 |      1 |
+                | F|           60 |      1 |
+                | F|              |      1 |
+                | M|           10 |      1 |
+                | M|           20 |      1 |
+                | M|           50 |      1 |
                 +--------+--------+--------+
                 (9 rows)
 
@@ -187,33 +187,22 @@ public class WinAggPostTests extends PostBaseTests {
                 +--------+--------+--------+
                 | GENDER | DEPTNO | COUNT1 |
                 +--------+--------+--------+
-                | F      |     10 |      6 |
-                | F      |     30 |      6 |
-                | F      |     30 |      6 |
-                | F      |     50 |      6 |
-                | F      |     60 |      6 |
-                | F      |        |      6 |
-                | M      |     10 |      3 |
-                | M      |     20 |      3 |
-                | M      |     50 |      3 |
+                | F|           10 |      6 |
+                | F|           30 |      6 |
+                | F|           30 |      6 |
+                | F|           50 |      6 |
+                | F|           60 |      6 |
+                | F|              |      6 |
+                | M|           10 |      3 |
+                | M|           20 |      3 |
+                | M|           50 |      3 |
                 +--------+--------+--------+
                 (9 rows)""");
     }
 
-    @Test @Ignore("ORDER BY is required")
-    public void test1() {
+    @Test @Ignore("First_value aggregate")
+    public void test2() {
         this.qs("""
-                select * from (
-                  select "empid", count(*) over () c
-                    from "emps"
-                ) where "empid"=100;
-                +-------+---+
-                | empid | C |
-                +-------+---+
-                |   100 | 4 |
-                +-------+---+
-                (1 row)
-
                 select *, first_value(deptno) over () from emp;
                  ename | deptno | gender | first_value
                 -------+--------+--------+-------------
@@ -277,25 +266,12 @@ public class WinAggPostTests extends PostBaseTests {
                  Adam  |     50 | M      | Adam
                  Eve   |     50 | F      | Adam
                  Grace |     60 | F      | Grace
-                (8 rows)
+                (8 rows)""");
+    }
 
-                -- Without ORDER BY
-                select *, count(*) over (partition by deptno) as c from emp;
-                +-------+--------+--------+---+
-                | ENAME | DEPTNO | GENDER | C |
-                +-------+--------+--------+---+
-                | Adam  |     50 | M      | 2 |
-                | Alice |     30 | F      | 2 |
-                | Bob   |     10 | M      | 2 |
-                | Eric  |     20 | M      | 1 |
-                | Eve   |     50 | F      | 2 |
-                | Grace |     60 | F      | 1 |
-                | Jane  |     10 | F      | 2 |
-                | Susan |     30 | F      | 2 |
-                | Wilma |        | F      | 1 |
-                +-------+--------+--------+---+
-                (9 rows)
-
+    @Test
+    public void test3() {
+        this.qs("""
                 -- No ORDER BY, windows defined in WINDOW clause.
                 select deptno, gender, min(gender) over w1 as a, min(gender) over w2 as d
                 from emp
@@ -304,16 +280,33 @@ public class WinAggPostTests extends PostBaseTests {
                 +--------+--------+---+---+
                 | DEPTNO | GENDER | A | D |
                 +--------+--------+---+---+
-                |     10 | F      | F | F |
-                |     10 | M      | F | F |
-                |     20 | M      | F | M |
-                |     30 | F      | F | F |
-                |     30 | F      | F | F |
-                |     50 | F      | F | F |
-                |     50 | M      | F | F |
-                |     60 | F      | F | F |
-                |        | F      | F | F |
+                |     10 | F| F| F|
+                |     10 | M| F| F|
+                |     20 | M| F| M|
+                |     30 | F| F| F|
+                |     30 | F| F| F|
+                |     50 | F| F| F|
+                |     50 | M| F| F|
+                |     60 | F| F| F|
+                |        | F| F| F|
                 +--------+--------+---+---+
+                (9 rows)
+
+                -- Without ORDER BY
+                select *, count(*) over (partition by deptno) as c from emp;
+                +-------+--------+--------+---+
+                | ENAME | DEPTNO | GENDER | C |
+                +-------+--------+--------+---+
+                | Adam  |     50 | M| 2       |
+                | Alice |     30 | F| 2       |
+                | Bob   |     10 | M| 2       |
+                | Eric  |     20 | M| 1       |
+                | Eve   |     50 | F| 2       |
+                | Grace |     60 | F| 1       |
+                | Jane  |     10 | F| 2       |
+                | Susan |     30 | F| 2       |
+                | Wilma |        | F| 1       |
+                +-------+--------+--------+---+
                 (9 rows)
 
                 -- Composite COUNT.
@@ -323,18 +316,22 @@ public class WinAggPostTests extends PostBaseTests {
                 +--------+--------+---+
                 | DEPTNO | GENDER | A |
                 +--------+--------+---+
-                |     10 | F      | 8 |
-                |     10 | M      | 8 |
-                |     20 | M      | 8 |
-                |     30 | F      | 8 |
-                |     30 | F      | 8 |
-                |     50 | F      | 8 |
-                |     50 | M      | 8 |
-                |     60 | F      | 8 |
-                |        | F      | 8 |
+                |     10 | F| 8       |
+                |     10 | M| 8       |
+                |     20 | M| 8       |
+                |     30 | F| 8       |
+                |     30 | F| 8       |
+                |     50 | F| 8       |
+                |     50 | M| 8       |
+                |     60 | F| 8       |
+                |        | F| 8       |
                 +--------+--------+---+
-                (9 rows)
+                (9 rows)""");
+    }
 
+    @Test @Ignore("unsupported aggregate functions")
+    public void test4() {
+        this.qs("""
                 -- NTH_VALUE
                 select emp."ENAME", emp."DEPTNO",
                  nth_value(emp."DEPTNO", 1) over() as "first_value",
@@ -506,15 +503,15 @@ public class WinAggPostTests extends PostBaseTests {
                 select *, count(*) over (order by deptno) as c from emp;
                  ENAME | DEPTNO | GENDER | C
                 -------+--------+--------+---
-                 Jane|       10 | F| 2
-                 Bob|        10 | M| 2
-                 Eric|       20 | M| 3
-                 Susan|      30 | F| 5
-                 Alice|      30 | F| 5
-                 Adam|       50 | M| 7
-                 Eve|        50 | F| 7
-                 Grace|      60 | F| 8
-                 Wilma|         | F| 9
+                 Jane  |     10 | F| 2
+                 Bob   |     10 | M| 2
+                 Eric  |     20 | M| 3
+                 Susan |     30 | F| 5
+                 Alice |     30 | F| 5
+                 Adam  |     50 | M| 7
+                 Eve   |     50 | F| 7
+                 Grace |     60 | F| 8
+                 Wilma |        | F| 9
                 (9 rows)""", false);
     }
 
