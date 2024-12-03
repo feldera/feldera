@@ -79,7 +79,7 @@ class FelderaClient:
         return [Pipeline.from_dict(pipeline) for pipeline in resp]
 
     def __wait_for_compilation(self, name: str):
-        wait = ["Pending", "CompilingSql", "CompilingRust"]
+        wait = ["Pending", "CompilingSql", "SqlCompiled", "CompilingRust"]
 
         while True:
             p = self.get_pipeline(name)

@@ -6,6 +6,9 @@ use feldera_types::error::{DetailedError, ErrorResponse};
 use serde::Serialize;
 use std::{borrow::Cow, error::Error as StdError, fmt, fmt::Display, time::Duration};
 
+/// The [`RunnerError`] encompasses runner-related errors, which primarily will show up
+/// in the runner, but are also used by the API server in interaction with runner-internal API
+/// to provide meaningful errors.
 #[derive(Debug, Serialize)]
 #[serde(untagged)]
 pub enum RunnerError {

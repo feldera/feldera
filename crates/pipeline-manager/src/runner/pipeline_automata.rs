@@ -4,7 +4,7 @@ use crate::db::storage_postgres::StoragePostgres;
 use crate::db::types::pipeline::{
     ExtendedPipelineDescr, PipelineDesiredStatus, PipelineId, PipelineStatus,
 };
-use crate::db::types::program::generate_pipeline_config;
+use crate::db::types::program::{generate_pipeline_config, ProgramStatus};
 use crate::db::types::tenant::TenantId;
 use crate::error::ManagerError;
 use crate::runner::error::RunnerError;
@@ -73,6 +73,7 @@ pub struct PipelineAutomaton<T>
 where
     T: PipelineExecutor,
 {
+    platform_version: String,
     pipeline_id: PipelineId,
     tenant_id: TenantId,
     pipeline_handle: T,
@@ -111,6 +112,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
     /// Creates a new automaton for a given pipeline.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
+        platform_version: &str,
         pipeline_id: PipelineId,
         tenant_id: TenantId,
         db: Arc<Mutex<StoragePostgres>>,
@@ -121,6 +123,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         shutdown_poll_period: Duration,
     ) -> Self {
         Self {
+            platform_version: platform_version.to_string(),
             pipeline_id,
             tenant_id,
             pipeline_handle,
@@ -169,7 +172,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
 
                     // By leaving the run loop, the automata will consume itself.
                     // As such, the pipeline_handle it owns will be dropped,
-                    // which in turn will shutdown by itself as a consequence.
+                    // which in turn will shut down by itself as a consequence.
                     return Err(ManagerError::from(e));
                 }
             }
@@ -207,7 +210,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             (
                 PipelineStatus::Shutdown,
                 PipelineDesiredStatus::Paused | PipelineDesiredStatus::Running,
-            ) => self.transit_shutdown_to_paused_or_running(pipeline).await,
+            ) => self.transit_shutdown_to_paused_or_running(pipeline).await?,
 
             // Provisioning
             (PipelineStatus::Provisioning, PipelineDesiredStatus::Shutdown) => {
@@ -441,8 +444,8 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                 if status == StatusCode::OK {
                     // Only fatal errors are if the state cannot be retrieved or is not Paused/Running
                     let Some(global_metrics) = body.get("global_metrics") else {
-                        return StatusCheckResult::Error(ErrorResponse::from(
-                            RunnerError::PipelineEndpointInvalidResponse {
+                        return StatusCheckResult::Error(ErrorResponse::from_error_nolog(
+                            &RunnerError::PipelineEndpointInvalidResponse {
                                 pipeline_id,
                                 error: format!(
                                     "Missing 'global_metrics' field in /stats response: {body}"
@@ -451,7 +454,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                         ));
                     };
                     let Some(serde_json::Value::String(state)) = global_metrics.get("state") else {
-                        return StatusCheckResult::Error(ErrorResponse::from(RunnerError::PipelineEndpointInvalidResponse {
+                        return StatusCheckResult::Error(ErrorResponse::from_error_nolog(&RunnerError::PipelineEndpointInvalidResponse {
                             pipeline_id,
                             error: format!("Missing or non-string type of 'global_metrics.state' field in /stats response: {body}")
                         }));
@@ -462,7 +465,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                         StatusCheckResult::Running
                     } else {
                         // Notably: "Terminated"
-                        return StatusCheckResult::Error(ErrorResponse::from(RunnerError::PipelineEndpointInvalidResponse {
+                        return StatusCheckResult::Error(ErrorResponse::from_error_nolog(&RunnerError::PipelineEndpointInvalidResponse {
                             pipeline_id,
                             error: format!("Pipeline is not in Running or Paused state, but in {state} state")
                         }));
@@ -499,16 +502,68 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
     async fn transit_shutdown_to_paused_or_running(
         &mut self,
         pipeline: &ExtendedPipelineDescr,
-    ) -> State {
+    ) -> Result<State, DBError> {
+        // If the pipeline program errored during compilation, immediately transition to `Failed`
+        if matches!(
+            pipeline.program_status,
+            ProgramStatus::SqlError(_)
+                | ProgramStatus::RustError(_)
+                | ProgramStatus::SystemError(_)
+        ) {
+            return Ok(State::TransitionToFailed {
+                error: ErrorResponse::from_error_nolog(&DBError::StartFailedDueToFailedCompilation),
+            });
+        }
+
+        // The runner is unable to run a pipeline program compiled under an outdated platform.
+        // As such, it requests the compiler to recompile it again by setting the program_status back to `Pending`.
+        // The runner is able to do this as it got ownership of the pipeline when the user set the desired deployment status to `Running`/`Paused`.
+        // It does not do the platform version bump by itself, because it is the compiler's responsibility
+        // to generate only binaries that are of the current platform version.
+        if self.platform_version != pipeline.platform_version
+            && pipeline.program_status == ProgramStatus::Success
+        {
+            info!("Runner re-initiates program compilation of pipeline {} because its platform version ({}) is outdated by current ({})", pipeline.id, pipeline.platform_version, self.platform_version);
+            self.db
+                .lock()
+                .await
+                .transit_program_status_to_pending(
+                    self.tenant_id,
+                    pipeline.id,
+                    pipeline.program_version,
+                )
+                .await?;
+            return Ok(State::Unchanged);
+        }
+
+        // Early start: await ongoing compilation
+        if pipeline.program_status == ProgramStatus::Pending
+            || pipeline.program_status == ProgramStatus::CompilingSql
+            || pipeline.program_status == ProgramStatus::SqlCompiled
+            || pipeline.program_status == ProgramStatus::CompilingRust
+        {
+            return Ok(State::Unchanged);
+        }
+
+        // All other program statuses (errors and ongoing) have already been checked for,
+        // as such it must be successfully compiled at this point, and as well for the
+        // current platform. The program status will not change anymore till the pipeline
+        // is shutdown, because the runner will not do so and is the only one who can initiate
+        // recompilation if the pipeline is not fully shutdown and the program status is success.
+        assert_eq!(pipeline.program_status, ProgramStatus::Success);
+        assert_eq!(self.platform_version, pipeline.platform_version);
+
         // Input and output connectors
         let (inputs, outputs) = match pipeline.program_info.clone() {
             None => {
-                return State::TransitionToFailed {
-                    error: ErrorResponse::from(RunnerError::PipelineMissingProgramInfo {
-                        pipeline_name: pipeline.name.clone(),
-                        pipeline_id: pipeline.id,
-                    }),
-                };
+                return Ok(State::TransitionToFailed {
+                    error: ErrorResponse::from_error_nolog(
+                        &RunnerError::PipelineMissingProgramInfo {
+                            pipeline_name: pipeline.name.clone(),
+                            pipeline_id: pipeline.id,
+                        },
+                    ),
+                });
             }
             Some(program_info) => (
                 program_info.input_connectors,
@@ -525,7 +580,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             None
         };
 
-        State::TransitionToProvisioning { deployment_config }
+        Ok(State::TransitionToProvisioning { deployment_config })
     }
 
     /// Start and await the pipeline provisioning.
@@ -537,10 +592,12 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         let deployment_config = match pipeline.deployment_config.clone() {
             None => {
                 return State::TransitionToFailed {
-                    error: ErrorResponse::from(RunnerError::PipelineMissingDeploymentConfig {
-                        pipeline_id: pipeline.id,
-                        pipeline_name: pipeline.name.clone(),
-                    }),
+                    error: ErrorResponse::from_error_nolog(
+                        &RunnerError::PipelineMissingDeploymentConfig {
+                            pipeline_id: pipeline.id,
+                            pipeline_name: pipeline.name.clone(),
+                        },
+                    ),
                 }
             }
             Some(deployment_config) => deployment_config,
@@ -548,10 +605,12 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         let program_binary_url = match pipeline.program_binary_url.clone() {
             None => {
                 return State::TransitionToFailed {
-                    error: ErrorResponse::from(RunnerError::PipelineMissingProgramBinaryUrl {
-                        pipeline_id: pipeline.id,
-                        pipeline_name: pipeline.name.clone(),
-                    }),
+                    error: ErrorResponse::from_error_nolog(
+                        &RunnerError::PipelineMissingProgramBinaryUrl {
+                            pipeline_id: pipeline.id,
+                            pipeline_name: pipeline.name.clone(),
+                        },
+                    ),
                 }
             }
             Some(program_binary_url) => program_binary_url,
@@ -580,7 +639,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                     State::Unchanged
                 }
                 Err(e) => State::TransitionToFailed {
-                    error: ErrorResponse::from(&e),
+                    error: ErrorResponse::from_error_nolog(&e),
                 },
             }
         } else {
@@ -618,7 +677,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                         pipeline.id
                     );
                     State::TransitionToFailed {
-                        error: ErrorResponse::from(&e),
+                        error: ErrorResponse::from_error_nolog(&e),
                     }
                 }
             }
@@ -635,7 +694,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         // Check deployment when initialized
         if let Err(e) = self.pipeline_handle.check().await {
             return State::TransitionToFailed {
-                error: ErrorResponse::from(&e),
+                error: ErrorResponse::from_error_nolog(&e),
             };
         }
 
@@ -644,7 +703,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             Ok(deployment_location) => deployment_location,
             Err(e) => {
                 return State::TransitionToFailed {
-                    error: ErrorResponse::from(&e),
+                    error: ErrorResponse::from_error_nolog(&e),
                 };
             }
         };
@@ -699,7 +758,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             Ok(deployment_location) => deployment_location,
             Err(e) => {
                 return State::TransitionToFailed {
-                    error: ErrorResponse::from(&e),
+                    error: ErrorResponse::from_error_nolog(&e),
                 };
             }
         };
@@ -707,7 +766,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         // Check deployment when initialized
         if let Err(e) = self.pipeline_handle.check().await {
             return State::TransitionToFailed {
-                error: ErrorResponse::from(&e),
+                error: ErrorResponse::from_error_nolog(&e),
             };
         }
 
@@ -755,7 +814,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         // Check deployment when initialized
         if let Err(e) = self.pipeline_handle.check().await {
             return State::TransitionToFailed {
-                error: ErrorResponse::from(&e),
+                error: ErrorResponse::from_error_nolog(&e),
             };
         }
 
@@ -764,7 +823,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             Ok(deployment_location) => deployment_location,
             Err(e) => {
                 return State::TransitionToFailed {
-                    error: ErrorResponse::from(&e),
+                    error: ErrorResponse::from_error_nolog(&e),
                 };
             }
         };
@@ -969,6 +1028,7 @@ mod test {
             .new_pipeline(
                 tenant_id,
                 pipeline_id.0,
+                "v0",
                 PipelineDescr {
                     name: "example1".to_string(),
                     description: "Description of example1".to_string(),
@@ -978,6 +1038,7 @@ mod test {
                     udf_toml: "".to_string(),
                     program_config: ProgramConfig {
                         profile: Some(CompilationProfile::Unoptimized),
+                        cache: false,
                     },
                 },
             )
@@ -992,7 +1053,7 @@ mod test {
             .unwrap();
         db.lock()
             .await
-            .transit_program_status_to_compiling_rust(
+            .transit_program_status_to_sql_compiled(
                 tenant_id,
                 pipeline_id,
                 Version(1),
@@ -1002,10 +1063,17 @@ mod test {
             .unwrap();
         db.lock()
             .await
+            .transit_program_status_to_compiling_rust(tenant_id, pipeline_id, Version(1))
+            .await
+            .unwrap();
+        db.lock()
+            .await
             .transit_program_status_to_success(
                 tenant_id,
                 pipeline_id,
                 Version(1),
+                "not-used-program-binary-source-checksum",
+                "not-used-program-binary-integrity-checksum",
                 "not-used-program-binary-url",
             )
             .await
@@ -1014,6 +1082,7 @@ mod test {
         // Construct the automaton
         let notifier = Arc::new(Notify::new());
         let automaton = PipelineAutomaton::new(
+            "v0",
             pipeline_id,
             tenant_id,
             db.clone(),

@@ -4,9 +4,11 @@ use clap::{Args, Command, FromArgMatches};
 
 use colored::Colorize;
 use pipeline_manager::api::ApiDoc;
-use pipeline_manager::compiler::Compiler;
+use pipeline_manager::compiler::main::{compiler_main, compiler_precompile};
+#[cfg(feature = "pg-embed")]
+use pipeline_manager::config::PgEmbedConfig;
 use pipeline_manager::config::{
-    ApiServerConfig, CompilerConfig, DatabaseConfig, LocalRunnerConfig,
+    ApiServerConfig, CommonConfig, CompilerConfig, DatabaseConfig, LocalRunnerConfig,
 };
 use pipeline_manager::db::storage_postgres::StoragePostgres;
 use pipeline_manager::runner::local_runner::LocalRunner;
@@ -26,29 +28,28 @@ async fn main() -> anyhow::Result<()> {
     pipeline_manager::logging::init_logging(name);
 
     let cli = Command::new("Pipeline manager CLI");
+    let cli = CommonConfig::augment_args(cli);
+    #[cfg(feature = "pg-embed")]
+    let cli = PgEmbedConfig::augment_args(cli);
     let cli = DatabaseConfig::augment_args(cli);
     let cli = ApiServerConfig::augment_args(cli);
     let cli = CompilerConfig::augment_args(cli);
     let cli = LocalRunnerConfig::augment_args(cli);
     let matches = cli.get_matches();
-
-    let mut api_config = ApiServerConfig::from_arg_matches(&matches)
+    let common_config = CommonConfig::from_arg_matches(&matches)
+        .map_err(|err| err.exit())
+        .unwrap();
+    #[cfg(feature = "pg-embed")]
+    let pg_embed_config = PgEmbedConfig::from_arg_matches(&matches)
+        .map_err(|err| err.exit())
+        .unwrap();
+    let api_config = ApiServerConfig::from_arg_matches(&matches)
         .map_err(|err| err.exit())
         .unwrap();
     if api_config.dump_openapi {
         let openapi_json = ApiDoc::openapi().to_pretty_json()?;
         tokio::fs::write("openapi.json", openapi_json.as_bytes()).await?;
         return Ok(());
-    }
-
-    if let Some(config_file) = &api_config.config_file {
-        let config_yaml = tokio::fs::read(config_file).await.map_err(|e| {
-            anyhow::Error::msg(format!("error reading config file '{config_file}': {e}"))
-        })?;
-        let config_yaml = String::from_utf8_lossy(&config_yaml);
-        api_config = serde_yaml::from_str(&config_yaml).map_err(|e| {
-            anyhow::Error::msg(format!("error parsing config file '{config_file}': {e}"))
-        })?;
     }
     let compiler_config = CompilerConfig::from_arg_matches(&matches)
         .map_err(|err| err.exit())
@@ -57,13 +58,15 @@ async fn main() -> anyhow::Result<()> {
         .map_err(|err| err.exit())
         .unwrap();
 
-    let api_config = api_config.canonicalize()?;
+    #[cfg(feature = "pg-embed")]
+    let pg_embed_config = pg_embed_config.canonicalize()?;
+    // `api_config` currently does not have any paths
     let compiler_config = compiler_config.canonicalize()?;
     let local_runner_config = local_runner_config.canonicalize()?;
 
     let metrics_handle = pipeline_manager::metrics::init();
     if compiler_config.precompile {
-        Compiler::precompile_dependencies(&compiler_config).await?;
+        compiler_precompile(common_config, compiler_config).await?;
         return Ok(());
     }
     let database_config = DatabaseConfig::from_arg_matches(&matches)
@@ -72,7 +75,7 @@ async fn main() -> anyhow::Result<()> {
     let db: StoragePostgres = StoragePostgres::connect(
         &database_config,
         #[cfg(feature = "pg-embed")]
-        Some(&api_config),
+        pg_embed_config,
     )
     .await
     .expect("Could not open connection to database");
@@ -81,15 +84,18 @@ async fn main() -> anyhow::Result<()> {
     db.run_migrations().await?;
     let db = Arc::new(Mutex::new(db));
     let db_clone = db.clone();
+    let common_config_clone = common_config.clone();
     let _compiler = tokio::spawn(async move {
-        Compiler::run(&compiler_config.clone(), db_clone)
+        compiler_main(common_config_clone, compiler_config, db_clone)
             .await
             .expect("Compiler server main failed");
     });
     let db_clone = db.clone();
+    let common_config_clone = common_config.clone();
     let _local_runner = tokio::spawn(async move {
         runner_main::<LocalRunner>(
             db_clone,
+            common_config_clone,
             local_runner_config.clone(),
             local_runner_config.runner_main_port,
         )
@@ -98,7 +104,7 @@ async fn main() -> anyhow::Result<()> {
     });
     pipeline_manager::metrics::create_endpoint(metrics_handle, db.clone()).await;
     // The api-server blocks forever
-    pipeline_manager::api::run(db, api_config)
+    pipeline_manager::api::run(db, common_config, api_config)
         .await
         .expect("API server main failed");
     Ok(())

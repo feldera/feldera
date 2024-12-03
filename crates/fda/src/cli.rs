@@ -190,6 +190,7 @@ impl Into<ProgramConfig> for Profile {
     fn into(self) -> ProgramConfig {
         ProgramConfig {
             profile: Some(self.into()),
+            cache: None,
         }
     }
 }

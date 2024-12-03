@@ -403,12 +403,15 @@ pub struct ExtendedPipelineDescr {
     /// Pipeline description.
     pub description: String,
 
-    /// Pipeline version, incremented every time name, description, runtime_config, program_code or
-    /// program_config is/are modified.
-    pub version: Version,
-
     /// Timestamp when the pipeline was originally created.
     pub created_at: DateTime<Utc>,
+
+    /// Pipeline version, incremented every time name, description, runtime_config, program_code,
+    /// program_config or platform_version is/are modified.
+    pub version: Version,
+
+    /// Pipeline platform version.
+    pub platform_version: String,
 
     /// Pipeline runtime configuration.
     pub runtime_config: RuntimeConfig,
@@ -425,7 +428,8 @@ pub struct ExtendedPipelineDescr {
     /// Program compilation configuration.
     pub program_config: ProgramConfig,
 
-    /// Program version, incremented every time program_code or program_config is modified.
+    /// Program version, incremented every time program_code, udf_rust,
+    /// udf_toml, program_config or platform_version is modified.
     pub program_version: Version,
 
     /// Program compilation status.
@@ -438,6 +442,12 @@ pub struct ExtendedPipelineDescr {
     /// It is set once SQL compilation has been successfully completed
     /// (i.e., the `program_status` field reaches >= `ProgramStatus::CompilingRust`).
     pub program_info: Option<ProgramInfo>,
+
+    /// Combined checksum of all the inputs that influenced Rust compilation to a binary.
+    pub program_binary_source_checksum: Option<String>,
+
+    /// Checksum of the binary file itself.
+    pub program_binary_integrity_checksum: Option<String>,
 
     /// URL where to download the program binary from.
     pub program_binary_url: Option<String>,
@@ -466,13 +476,4 @@ pub struct ExtendedPipelineDescr {
     /// Location where the pipeline can be reached at runtime
     /// (e.g., a TCP port number or a URI).
     pub deployment_location: Option<String>,
-}
-
-impl ExtendedPipelineDescr {
-    /// Returns true if the pipeline is fully shutdown, which means both
-    /// its current deployment status and desired status are `Shutdown`.
-    pub(crate) fn is_fully_shutdown(&self) -> bool {
-        self.deployment_status == PipelineStatus::Shutdown
-            && self.deployment_desired_status == PipelineDesiredStatus::Shutdown
-    }
 }

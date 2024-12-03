@@ -294,6 +294,7 @@ export const postPipelineAction = async (
     const ignoreStatuses = [
       'Initializing',
       'Compiling binary',
+      'SQL compiled',
       'Compiling SQL',
       'Queued',
       'Starting up'

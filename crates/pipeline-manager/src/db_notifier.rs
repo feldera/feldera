@@ -232,6 +232,7 @@ mod test {
                 .new_pipeline(
                     tenant_id,
                     pipeline_id.0,
+                    "v0",
                     PipelineDescr {
                         name: format!("example{i}"),
                         description: "Description of example".to_string(),
@@ -241,6 +242,7 @@ mod test {
                         udf_toml: "".to_string(),
                         program_config: ProgramConfig {
                             profile: Some(CompilationProfile::Unoptimized),
+                            cache: true,
                         },
                     },
                 )
@@ -263,6 +265,7 @@ mod test {
                     &format!("example{i}"),
                     &Some(format!("example{i}-renamed")),
                     &Some("Description of example2".to_string()),
+                    "v0",
                     &None,
                     &Some("CREATE TABLE example ( col1 VARCHAR );".to_string()),
                     &None,
@@ -309,6 +312,7 @@ mod test {
             .new_pipeline(
                 tenant_id,
                 pipeline_id.0,
+                "v0",
                 PipelineDescr {
                     name: "example1".to_string(),
                     description: "Description of example1".to_string(),
@@ -318,6 +322,7 @@ mod test {
                     udf_toml: "".to_string(),
                     program_config: ProgramConfig {
                         profile: Some(CompilationProfile::Unoptimized),
+                        cache: true,
                     },
                 },
             )

@@ -1,6 +1,7 @@
 //! A local runner that watches for pipeline objects in the API
 //! and instantiates them locally as processes.
 
+use crate::common_error::CommonError;
 use crate::config::LocalRunnerConfig;
 use crate::db::types::common::Version;
 use crate::db::types::pipeline::PipelineId;
@@ -11,6 +12,7 @@ use crate::runner::pipeline_executor::{LogMessage, PipelineExecutor};
 use async_trait::async_trait;
 use feldera_types::config::{PipelineConfig, StorageCacheConfig, StorageConfig};
 use log::{debug, error, info};
+use reqwest::StatusCode;
 use std::path::Path;
 use std::process::Stdio;
 use std::time::Duration;
@@ -60,6 +62,15 @@ pub async fn fetch_binary_ref(
             let resp = reqwest::get(binary_ref).await;
             match resp {
                 Ok(resp) => {
+                    if resp.status() != StatusCode::OK {
+                        return Err(RunnerError::BinaryFetchError {
+                            pipeline_id,
+                            error: format!(
+                                "response status of retrieving {} is {} instead of expected {}",
+                                binary_ref, resp.status(), StatusCode::OK
+                            ),
+                        }.into());
+                    }
                     let resp = resp.bytes().await.expect("Binary reference should be accessible as bytes");
                     let resp_ref = resp.as_ref();
                     let path = config.binary_file_path(pipeline_id, program_version);
@@ -72,22 +83,22 @@ pub async fn fetch_binary_ref(
                         .open(path.clone())
                         .await
                         .map_err(|e|
-                            ManagerError::io_error(
+                            ManagerError::from(CommonError::io_error(
                                 format!("File creation failed ({:?}) while saving {pipeline_id} binary fetched from '{}'", path, parsed.path()),
                                 e,
-                            )
+                            ))
                         )?;
                     file.write_all(resp_ref).await.map_err(|e|
-                        ManagerError::io_error(
+                        ManagerError::from(CommonError::io_error(
                             format!("File write failed ({:?}) while saving binary file for {pipeline_id} fetched from '{}'", path, parsed.path()),
                             e,
-                        )
+                        ))
                     )?;
                     file.flush().await.map_err(|e|
-                        ManagerError::io_error(
+                        ManagerError::from(CommonError::io_error(
                             format!("File flush() failed ({:?}) while saving binary file for {pipeline_id} fetched from '{}'", path, parsed.path()),
                             e,
-                        )
+                        ))
                     )?;
                     Ok(path.into_os_string().into_string().expect("Path should be valid Unicode"))
                 }
@@ -313,7 +324,7 @@ impl PipelineExecutor for LocalRunner {
     }
 
     /// Storage is located at:
-    /// `<working-directory>/pipelines/pipeline<pipeline_id>/storage`
+    /// `<working-directory>/pipeline-<pipeline_id>/storage`
     async fn generate_storage_config(&self) -> StorageConfig {
         let pipeline_dir = self.config.pipeline_dir(self.pipeline_id);
         let pipeline_storage_dir = pipeline_dir.join("storage");
@@ -340,26 +351,26 @@ impl PipelineExecutor for LocalRunner {
         let pipeline_dir = self.config.pipeline_dir(self.pipeline_id);
         let _ = remove_dir_all(&pipeline_dir).await;
         create_dir_all(&pipeline_dir).await.map_err(|e| {
-            ManagerError::io_error(
+            ManagerError::from(CommonError::io_error(
                 format!(
-                    "Unable to create pipeline working directory: {}",
+                    "create pipeline working directory '{}'",
                     pipeline_dir.display()
                 ),
                 e,
-            )
+            ))
         })?;
 
         // (Re-)create pipeline storage directory
         if let Some(storage_config) = &deployment_config.storage_config {
             let _ = remove_dir_all(&storage_config.path).await;
             create_dir_all(&storage_config.path).await.map_err(|e| {
-                ManagerError::io_error(
+                ManagerError::from(CommonError::io_error(
                     format!(
-                        "Unable to create pipeline storage directory: {}",
+                        "create pipeline storage directory '{}'",
                         storage_config.path
                     ),
                     e,
-                )
+                ))
             })?;
         }
 
@@ -370,13 +381,10 @@ impl PipelineExecutor for LocalRunner {
         fs::write(&config_file_path, &expanded_config)
             .await
             .map_err(|e| {
-                ManagerError::io_error(
-                    format!(
-                        "Unable to write config file '{}'",
-                        config_file_path.display()
-                    ),
+                ManagerError::from(CommonError::io_error(
+                    format!("write config file '{}'", config_file_path.display()),
                     e,
-                )
+                ))
             })?;
 
         // Delete port file (which will only exist if we are restarting from a
@@ -516,14 +524,16 @@ impl PipelineExecutor for LocalRunner {
         }
 
         // Remove the pipeline working directory
-        match remove_dir_all(self.config.pipeline_dir(self.pipeline_id)).await {
-            Ok(_) => (),
-            Err(e) => {
-                log::warn!(
-                    "Failed to delete pipeline working directory for pipeline {}: {}",
-                    self.pipeline_id,
-                    e
-                );
+        if self.config.pipeline_dir(self.pipeline_id).exists() {
+            match remove_dir_all(self.config.pipeline_dir(self.pipeline_id)).await {
+                Ok(_) => (),
+                Err(e) => {
+                    log::warn!(
+                        "Runner failed to delete pipeline working directory for pipeline {}: {}",
+                        self.pipeline_id,
+                        e
+                    );
+                }
             }
         }
 

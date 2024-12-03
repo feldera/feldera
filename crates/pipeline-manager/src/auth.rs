@@ -626,6 +626,8 @@ mod test {
     use tokio::sync::Mutex;
     use uuid::Uuid;
 
+    use super::AuthError;
+    use crate::config::CommonConfig;
     use crate::db::types::api_key::ApiPermission;
     use crate::{
         api::ServerState,
@@ -635,8 +637,6 @@ mod test {
         config::ApiServerConfig,
         db::storage::Storage,
     };
-
-    use super::AuthError;
 
     async fn setup(claim: AwsCognitoClaim) -> (String, DecodingKey) {
         let rsa = openssl::rsa::Rsa::generate(2048).unwrap();
@@ -712,14 +712,16 @@ mod test {
         let closure = auth::auth_validator;
         let auth_middleware = HttpAuthentication::with_fn(closure);
 
+        let common_config = CommonConfig {
+            platform_version: "v0".to_string(),
+        };
+
         let manager_config = ApiServerConfig {
             port: 0,
             bind_address: "0.0.0.0".to_owned(),
-            api_server_working_directory: "".to_owned(),
             auth_provider: crate::config::AuthProviderType::AwsCognito,
             dev_mode: false,
             dump_openapi: false,
-            config_file: None,
             allowed_origins: None,
             demos_dir: vec![],
             telemetry: "".to_owned(),
@@ -747,7 +749,11 @@ mod test {
             .unwrap();
         }
         let db = Arc::new(Mutex::new(conn));
-        let state = actix_web::web::Data::new(ServerState::new(manager_config, db).await.unwrap());
+        let state = actix_web::web::Data::new(
+            ServerState::new(common_config, manager_config, db)
+                .await
+                .unwrap(),
+        );
         if decoding_key.is_some() {
             state
                 .jwk_cache

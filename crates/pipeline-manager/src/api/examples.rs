@@ -1,4 +1,5 @@
 // Example errors for use in OpenAPI docs.
+use crate::api::error::ApiError;
 use crate::api::pipeline::{ExtendedPipelineDescrOptionalCode, PatchPipeline};
 use crate::db::error::DBError;
 use crate::db::types::common::Version;
@@ -17,10 +18,10 @@ pub(crate) fn error_duplicate_name() -> ErrorResponse {
 }
 
 pub(crate) fn error_invalid_uuid_param() -> ErrorResponse {
-    ErrorResponse::from_error_nolog(&ManagerError::InvalidUuidParam {
+    ErrorResponse::from_error_nolog(&ManagerError::from(ApiError::InvalidUuidParam {
         value: "not_a_uuid".to_string(),
         error: "invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `n` at 1".to_string()
-    })
+    }))
 }
 
 pub(crate) fn error_unknown_api_key() -> ErrorResponse {
@@ -53,6 +54,7 @@ pub(crate) fn pipeline_1() -> PipelineDescr {
         udf_toml: "".to_string(),
         program_config: ProgramConfig {
             profile: Some(CompilationProfile::Optimized),
+            cache: true,
         },
     }
 }
@@ -62,8 +64,9 @@ pub(crate) fn extended_pipeline_1() -> ExtendedPipelineDescr {
         id: PipelineId(uuid!("67e55044-10b1-426f-9247-bb680e5fe0c8")),
         name: "example1".to_string(),
         description: "Description of the pipeline example1".to_string(),
-        version: Version(4),
         created_at: Default::default(),
+        version: Version(4),
+        platform_version: "v0".to_string(),
         runtime_config: RuntimeConfig {
             workers: 16,
             tracing_endpoint_jaeger: "".to_string(),
@@ -74,11 +77,14 @@ pub(crate) fn extended_pipeline_1() -> ExtendedPipelineDescr {
         udf_toml: "".to_string(),
         program_config: ProgramConfig {
             profile: Some(CompilationProfile::Optimized),
+            cache: true,
         },
         program_version: Version(2),
         program_info: None,
         program_status: ProgramStatus::Pending,
         program_status_since: Default::default(),
+        program_binary_source_checksum: None,
+        program_binary_integrity_checksum: None,
         program_binary_url: None,
         deployment_config: None,
         deployment_location: None,
@@ -94,8 +100,9 @@ pub(crate) fn extended_pipeline_2() -> ExtendedPipelineDescr {
         id: PipelineId(uuid!("67e55044-10b1-426f-9247-bb680e5fe0c9")),
         name: "example2".to_string(),
         description: "Description of the pipeline example2".to_string(),
-        version: Version(1),
         created_at: Default::default(),
+        version: Version(1),
+        platform_version: "v0".to_string(),
         runtime_config: RuntimeConfig {
             workers: 10,
             storage: true,
@@ -121,11 +128,14 @@ pub(crate) fn extended_pipeline_2() -> ExtendedPipelineDescr {
         udf_toml: "".to_string(),
         program_config: ProgramConfig {
             profile: Some(CompilationProfile::Unoptimized),
+            cache: true,
         },
         program_version: Version(1),
         program_info: None,
         program_status: ProgramStatus::Pending,
         program_status_since: Default::default(),
+        program_binary_source_checksum: None,
+        program_binary_integrity_checksum: None,
         program_binary_url: None,
         deployment_config: None,
         deployment_location: None,
@@ -176,18 +186,14 @@ pub(crate) fn error_pipeline_not_running_or_paused() -> ErrorResponse {
     })
 }
 
-pub(crate) fn error_program_not_yet_compiled() -> ErrorResponse {
-    ErrorResponse::from_error_nolog(&DBError::ProgramNotYetCompiled)
-}
-
 pub(crate) fn error_program_failed_compilation() -> ErrorResponse {
-    ErrorResponse::from_error_nolog(&DBError::ProgramFailedToCompile)
+    ErrorResponse::from_error_nolog(&DBError::StartFailedDueToFailedCompilation)
 }
 
 pub(crate) fn error_invalid_pipeline_action() -> ErrorResponse {
-    ErrorResponse::from_error_nolog(&ManagerError::InvalidPipelineAction {
+    ErrorResponse::from_error_nolog(&ManagerError::from(ApiError::InvalidPipelineAction {
         action: "dance".to_string(),
-    })
+    }))
 }
 
 pub(crate) fn error_illegal_pipeline_action() -> ErrorResponse {
