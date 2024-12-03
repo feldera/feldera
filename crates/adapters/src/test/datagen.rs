@@ -6,7 +6,7 @@ use dbsp::algebra::F64;
 use feldera_sqllib::binary::ByteArray;
 use feldera_sqllib::{Date, Time, Timestamp};
 use feldera_types::config::{InputEndpointConfig, TransportConfig};
-use feldera_types::program_schema::{ColumnType, Field, Relation, SqlType};
+use feldera_types::program_schema::{ColumnType, Field, Relation};
 use feldera_types::serde_with_context::{DeserializeWithContext, SqlSerdeConfig};
 use feldera_types::transport::datagen::GenerationPlan;
 use feldera_types::{deserialize_table_record, serialize_table_record};
@@ -40,19 +40,7 @@ struct ByteStruct {
 
 impl ByteStruct {
     pub fn schema() -> Vec<Field> {
-        vec![Field {
-            name: "bs".into(),
-            columntype: ColumnType {
-                typ: SqlType::Varbinary,
-                nullable: false,
-                precision: None,
-                scale: None,
-                component: None,
-                fields: None,
-                key: None,
-                value: None,
-            },
-        }]
+        vec![Field::new("bs".into(), ColumnType::varbinary(false))]
     }
 }
 serialize_table_record!(ByteStruct[1]{
@@ -87,19 +75,7 @@ struct RealStruct {
 
 impl RealStruct {
     pub fn schema() -> Vec<Field> {
-        vec![Field {
-            name: "double".into(),
-            columntype: ColumnType {
-                typ: SqlType::Double,
-                nullable: false,
-                precision: None,
-                scale: None,
-                component: None,
-                fields: None,
-                key: None,
-                value: None,
-            },
-        }]
+        vec![Field::new("double".into(), ColumnType::double(false))]
     }
 }
 serialize_table_record!(RealStruct[1]{
@@ -608,45 +584,9 @@ struct TimeStuff {
 impl TimeStuff {
     pub fn schema() -> Vec<Field> {
         vec![
-            Field {
-                name: "ts".into(),
-                columntype: ColumnType {
-                    typ: SqlType::Timestamp,
-                    nullable: false,
-                    precision: None,
-                    scale: None,
-                    component: None,
-                    fields: None,
-                    key: None,
-                    value: None,
-                },
-            },
-            Field {
-                name: "dt".into(),
-                columntype: ColumnType {
-                    typ: SqlType::Date,
-                    nullable: false,
-                    precision: None,
-                    scale: None,
-                    component: None,
-                    fields: None,
-                    key: None,
-                    value: None,
-                },
-            },
-            Field {
-                name: "\"t\"".into(),
-                columntype: ColumnType {
-                    typ: SqlType::Time,
-                    nullable: false,
-                    precision: None,
-                    scale: None,
-                    component: None,
-                    fields: None,
-                    key: None,
-                    value: None,
-                },
-            },
+            Field::new("ts".into(), ColumnType::timestamp(false)),
+            Field::new("dt".into(), ColumnType::date(false)),
+            Field::new("\"t\"".into(), ColumnType::time(false)),
         ]
     }
 }

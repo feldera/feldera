@@ -5,7 +5,7 @@ use arrow::array::{
 use arrow::datatypes::{DataType, Schema, TimeUnit};
 use dbsp::utils::Tup2;
 use feldera_sqllib::{Date, Timestamp};
-use feldera_types::program_schema::{ColumnType, Field, Relation, SqlIdentifier, SqlType};
+use feldera_types::program_schema::{ColumnType, Field, Relation, SqlIdentifier};
 use feldera_types::{
     deserialize_table_record, deserialize_without_context, serialize_struct, serialize_table_record,
 };
@@ -51,58 +51,10 @@ impl TestStruct {
     }
     pub fn schema() -> Vec<Field> {
         vec![
-            Field {
-                name: "id".into(),
-                columntype: ColumnType {
-                    typ: SqlType::BigInt,
-                    nullable: false,
-                    precision: None,
-                    scale: None,
-                    component: None,
-                    fields: None,
-                    key: None,
-                    value: None,
-                },
-            },
-            Field {
-                name: "b".into(),
-                columntype: ColumnType {
-                    typ: SqlType::Boolean,
-                    nullable: false,
-                    precision: None,
-                    scale: None,
-                    component: None,
-                    fields: None,
-                    key: None,
-                    value: None,
-                },
-            },
-            Field {
-                name: "i".into(),
-                columntype: ColumnType {
-                    typ: SqlType::BigInt,
-                    nullable: true,
-                    precision: None,
-                    scale: None,
-                    component: None,
-                    fields: None,
-                    key: None,
-                    value: None,
-                },
-            },
-            Field {
-                name: "s".into(),
-                columntype: ColumnType {
-                    typ: SqlType::Varchar,
-                    nullable: false,
-                    precision: None,
-                    scale: None,
-                    component: None,
-                    fields: None,
-                    key: None,
-                    value: None,
-                },
-            },
+            Field::new("id".into(), ColumnType::bigint(false)),
+            Field::new("b".into(), ColumnType::boolean(false)),
+            Field::new("i".into(), ColumnType::bigint(true)),
+            Field::new("s".into(), ColumnType::varchar(false)),
         ]
     }
 
@@ -403,120 +355,19 @@ impl TestStruct2 {
 
     pub fn schema() -> Vec<Field> {
         vec![
-            Field {
-                name: "id".into(),
-                columntype: ColumnType {
-                    typ: SqlType::BigInt,
-                    nullable: false,
-                    precision: None,
-                    scale: None,
-                    component: None,
-                    fields: None,
-                    key: None,
-                    value: None,
-                },
-            },
-            Field {
-                name: "name".into(),
-                columntype: ColumnType {
-                    typ: SqlType::Varchar,
-                    nullable: true,
-                    precision: None,
-                    scale: None,
-                    component: None,
-                    fields: None,
-                    key: None,
-                    value: None,
-                },
-            },
-            Field {
-                name: "b".into(),
-                columntype: ColumnType {
-                    typ: SqlType::Boolean,
-                    nullable: false,
-                    precision: None,
-                    scale: None,
-                    component: None,
-                    fields: None,
-                    key: None,
-                    value: None,
-                },
-            },
-            Field {
-                name: "ts".into(),
-                columntype: ColumnType {
-                    typ: SqlType::Timestamp,
-                    nullable: false,
-                    precision: None,
-                    scale: None,
-                    component: None,
-                    fields: None,
-                    key: None,
-                    value: None,
-                },
-            },
-            Field {
-                name: "dt".into(),
-                columntype: ColumnType {
-                    typ: SqlType::Date,
-                    nullable: false,
-                    precision: None,
-                    scale: None,
-                    component: None,
-                    fields: None,
-                    key: None,
-                    value: None,
-                },
-            },
-            /*Field {
-                name: "t".into(),
-                columntype: ColumnType {
-                    typ: SqlType::Time,
-                    nullable: false,
-                    precision: None,
-                    scale: None,
-                    component: None,
-                    fields: None,
-                },
-            },*/
-            Field {
-                name: "es".into(),
-                columntype: ColumnType {
-                    typ: SqlType::Struct,
-                    nullable: false,
-                    precision: None,
-                    scale: None,
-                    component: None,
-                    fields: Some(vec![Field {
-                        name: "a".into(),
-                        columntype: ColumnType {
-                            typ: SqlType::Boolean,
-                            nullable: false,
-                            precision: None,
-                            scale: None,
-                            component: None,
-                            fields: None,
-                            key: None,
-                            value: None,
-                        },
-                    }]),
-                    key: None,
-                    value: None,
-                },
-            },
-            Field {
-                name: "m".into(),
-                columntype: ColumnType {
-                    typ: SqlType::Map,
-                    nullable: false,
-                    precision: None,
-                    scale: None,
-                    component: None,
-                    fields: None,
-                    key: Some(Box::new(ColumnType::varchar(false))),
-                    value: Some(Box::new(ColumnType::bigint(false))),
-                },
-            },
+            Field::new("id".into(), ColumnType::bigint(false)),
+            Field::new("name".into(), ColumnType::varchar(true)),
+            Field::new("b".into(), ColumnType::boolean(false)),
+            Field::new("ts".into(), ColumnType::timestamp(false)),
+            Field::new("dt".into(), ColumnType::date(false)),
+            Field::new(
+                "es".into(),
+                ColumnType::structure(false, &[Field::new("a".into(), ColumnType::boolean(false))]),
+            ),
+            Field::new(
+                "m".into(),
+                ColumnType::map(false, ColumnType::varchar(false), ColumnType::bigint(false)),
+            ),
         ]
     }
 
@@ -642,110 +493,14 @@ pub struct DatabricksPeople {
 impl DatabricksPeople {
     pub fn schema() -> Vec<Field> {
         vec![
-            Field {
-                name: "id".into(),
-                columntype: ColumnType {
-                    typ: SqlType::Int,
-                    nullable: false,
-                    precision: None,
-                    scale: None,
-                    component: None,
-                    fields: None,
-                    key: None,
-                    value: None,
-                },
-            },
-            Field {
-                name: "firstName".into(),
-                columntype: ColumnType {
-                    typ: SqlType::Varchar,
-                    nullable: true,
-                    precision: None,
-                    scale: None,
-                    component: None,
-                    fields: None,
-                    key: None,
-                    value: None,
-                },
-            },
-            Field {
-                name: "middleName".into(),
-                columntype: ColumnType {
-                    typ: SqlType::Varchar,
-                    nullable: true,
-                    precision: None,
-                    scale: None,
-                    component: None,
-                    fields: None,
-                    key: None,
-                    value: None,
-                },
-            },
-            Field {
-                name: "lastName".into(),
-                columntype: ColumnType {
-                    typ: SqlType::Varchar,
-                    nullable: true,
-                    precision: None,
-                    scale: None,
-                    component: None,
-                    fields: None,
-                    key: None,
-                    value: None,
-                },
-            },
-            Field {
-                name: "gender".into(),
-                columntype: ColumnType {
-                    typ: SqlType::Varchar,
-                    nullable: true,
-                    precision: None,
-                    scale: None,
-                    component: None,
-                    fields: None,
-                    key: None,
-                    value: None,
-                },
-            },
-            Field {
-                name: "birthDate".into(),
-                columntype: ColumnType {
-                    typ: SqlType::Timestamp,
-                    nullable: true,
-                    precision: None,
-                    scale: None,
-                    component: None,
-                    fields: None,
-                    key: None,
-                    value: None,
-                },
-            },
-            Field {
-                name: "ssn".into(),
-                columntype: ColumnType {
-                    typ: SqlType::Varchar,
-                    nullable: true,
-                    precision: None,
-                    scale: None,
-                    component: None,
-                    fields: None,
-                    key: None,
-                    value: None,
-                },
-            },
-            Field {
-                name: "salary".into(),
-                columntype: ColumnType {
-                    typ: SqlType::Int,
-                    nullable: true,
-                    precision: None,
-                    scale: None,
-                    component: None,
-                    fields: None,
-                    key: None,
-                    value: None,
-                },
-            },
+            Field::new("id".into(), ColumnType::int(false)),
+            Field::new("firstName".into(), ColumnType::varchar(true)),
+            Field::new("middleName".into(), ColumnType::varchar(true)),
+            Field::new("lastName".into(), ColumnType::varchar(true)),
+            Field::new("gender".into(), ColumnType::varchar(true)),
+            Field::new("birthDate".into(), ColumnType::timestamp(true)),
+            Field::new("ssn".into(), ColumnType::varchar(true)),
+            Field::new("salary".into(), ColumnType::int(true)),
         ]
     }
 }
