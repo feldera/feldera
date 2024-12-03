@@ -93,6 +93,16 @@ public class RegressionTests extends SqlIoTest {
     }
 
     @Test
+    public void issue457() {
+        String sql = """
+                create table t (id int, x int);
+                create view v as
+                select max(t.x) OVER (PARTITION BY t.id)
+                from t;""";
+        this.compileRustTestCase(sql);
+    }
+
+    @Test
     public void issue3031() {
         this.compileRustTestCase("""
                 CREATE TABLE time_tbl(c1 TIME, c2 TIME);

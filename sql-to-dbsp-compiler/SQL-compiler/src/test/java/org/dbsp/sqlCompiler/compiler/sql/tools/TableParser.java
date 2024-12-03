@@ -278,7 +278,7 @@ public class TableParser {
             // If there is no space in front of the string, we expect a NULL.
             // This is how we distinguish empty strings from nulls.
             if (!data.startsWith(" ")) {
-                if (data.equals("NULL"))
+                if (data.startsWith("NULL"))
                     result = DBSPLiteral.none(fieldType);
                 else
                     throw new RuntimeException("Expected NULL or a space: " +
@@ -287,6 +287,9 @@ public class TableParser {
                 // replace \\n with \n, otherwise we can't represent it
                 data = data.substring(1);
                 data = data.replace("\\n", "\n");
+                DBSPTypeString type = fieldType.to(DBSPTypeString.class);
+                if (!type.fixed)
+                    data = Utilities.trimRight(data);
                 result = new DBSPStringLiteral(CalciteObject.EMPTY, fieldType, data, StandardCharsets.UTF_8);
             }
         } else if (fieldType.is(DBSPTypeBool.class)) {

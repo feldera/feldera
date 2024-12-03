@@ -53,4 +53,19 @@ public class HRWinAggTests extends HrBaseTests {
                 +-------+--------+------------+-----+-----+
                 (4 rows)""");
     }
+
+    @Test
+    public void test1() {
+        this.qs("""
+                select * from (
+                  select "empid", count(*) over () c
+                    from "emps"
+                ) where "empid"=100;
+                +-------+---+
+                | empid | C |
+                +-------+---+
+                |   100 | 4 |
+                +-------+---+
+                (1 row)""");
+    }
 }

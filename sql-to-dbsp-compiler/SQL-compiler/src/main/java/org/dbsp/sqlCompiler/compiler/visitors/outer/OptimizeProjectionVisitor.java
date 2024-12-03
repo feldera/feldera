@@ -90,7 +90,6 @@ public class OptimizeProjectionVisitor extends CircuitCloneWithGraphsVisitor {
         super.postorder(operator);
     }
 
-
     @Override
     public void postorder(DBSPMapIndexOperator operator) {
         OutputPort source = this.mapped(operator.input());

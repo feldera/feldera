@@ -2,6 +2,7 @@ package org.dbsp.sqlCompiler.compiler.backend.dot;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitTransform;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.util.IndentStream;
 import org.dbsp.util.Logger;
@@ -14,7 +15,7 @@ import java.io.PrintWriter;
 
 /** Dump a graph in the graphviz dot format */
 public class ToDot {
-    public static void dump(String fileName, @Nullable String outputFormat,
+    public static void customDump(String fileName, @Nullable String outputFormat,
                             DBSPCircuit circuit,
                             ToDotEdgesVisitor.VisitorConstructor nodesVisitor,
                             ToDotEdgesVisitor.VisitorConstructor edgesVisitor) {
@@ -56,10 +57,27 @@ public class ToDot {
         }
     }
 
-    public static void dump(DBSPCompiler reporter, String fileName, int details,
+    public static void dump(DBSPCompiler compiler, String fileName, int details,
                             @Nullable String outputFormat, DBSPCircuit circuit) {
-        dump(fileName, outputFormat, circuit,
-                stream -> new ToDotNodesVisitor(reporter, stream, details),
-                stream -> new ToDotEdgesVisitor(reporter, stream, details));
+        customDump(fileName, outputFormat, circuit,
+                stream -> new ToDotNodesVisitor(compiler, stream, details),
+                stream -> new ToDotEdgesVisitor(compiler, stream, details));
+    }
+
+    /** Returns a circuit transform which can be inserted in the CircuitOptimizer to dump the
+     * circuit at some point */
+    public static CircuitTransform dumper(DBSPCompiler compiler, String file, int details) {
+        return new CircuitTransform() {
+            @Override
+            public String getName() {
+                return "toDot";
+            }
+
+            @Override
+            public DBSPCircuit apply(DBSPCircuit circuit) {
+                ToDot.dump(compiler, file, details, "png", circuit);
+                return circuit;
+            }
+        };
     }
 }

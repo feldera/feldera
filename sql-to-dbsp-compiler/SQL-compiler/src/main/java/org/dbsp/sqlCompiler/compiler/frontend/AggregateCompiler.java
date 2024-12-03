@@ -498,7 +498,8 @@ public class AggregateCompiler implements ICompilerComponent {
                         node, DBSPTypeBool.create(false), DBSPOpcode.AND, filter, agg);
             else
                 condition = agg;
-            DBSPExpression first = new DBSPIfExpression(node, condition, this.getAggregatedValue(), zero);
+            DBSPExpression first = new DBSPIfExpression(
+                    node, condition, this.getAggregatedValue().cast(zero.getType()), zero);
             DBSPExpression mapBody = new DBSPTupleExpression(first, one);
             DBSPVariablePath postVar = mapBody.getType().var();
             // post = |x| x.0

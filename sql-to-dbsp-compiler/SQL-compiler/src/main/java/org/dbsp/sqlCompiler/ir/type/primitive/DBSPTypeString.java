@@ -38,10 +38,8 @@ import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.STRING;
 public class DBSPTypeString extends DBSPTypeBaseType {
     public static final int UNLIMITED_PRECISION = -1;
 
-    /**
-     * If true the width is fixed, i.e., this is a CHAR type.
-     * Otherwise, this is a VARCHAR.
-     */
+    /** If true the width is fixed, i.e., this is a CHAR type.
+     * Otherwise, this is a VARCHAR. */
     public final boolean fixed;
     /**
      * Number of characters.  If UNLIMITED_PRECISION it means "unlimited".
