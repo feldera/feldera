@@ -40,6 +40,7 @@ import org.apache.calcite.sql.fun.SqlSumEmptyIsZeroAggFunction;
 import org.apache.calcite.util.ImmutableBitSet;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.ICompilerComponent;
+import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.ir.aggregate.AggregateBase;
@@ -66,6 +67,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBinary;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDouble;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeNull;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeUser;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeVec;
 import org.dbsp.util.ICastable;
@@ -130,6 +132,10 @@ public class AggregateCompiler implements ICompilerComponent {
         } else if (argList.size() == 1) {
             int fieldNumber = call.getArgList().get(0);
             this.aggArgument = this.v.deref().field(fieldNumber);
+            if (this.aggArgument.getType().is(DBSPTypeNull.class)) {
+                throw new CompilationError("Argument of aggregate has NULL type",
+                        CalciteObject.create(call.getParserPosition()));
+            }
         } else {
             List<DBSPExpression> fields = Linq.map(call.getArgList(),
                     a -> this.v.deref().field(a).applyCloneIfNeeded());

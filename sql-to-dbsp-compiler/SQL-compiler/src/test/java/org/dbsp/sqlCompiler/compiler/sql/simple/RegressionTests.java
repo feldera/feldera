@@ -52,8 +52,9 @@ public class RegressionTests extends SqlIoTest {
 
     @Test
     public void issue3076() {
-        this.compileRustTestCase("""
-                CREATE MATERIALIZED VIEW v72_optimized AS SELECT SUM(NULL);""");
+        this.statementsFailingInCompilation("CREATE VIEW v AS SELECT SUM(NULL);",
+                "Argument of aggregate has NULL type");
+        this.compileRustTestCase("CREATE VIEW V AS SELECT SUM(CAST(NULL AS INTEGER));");
     }
 
     @Test
