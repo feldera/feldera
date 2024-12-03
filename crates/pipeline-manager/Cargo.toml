@@ -59,7 +59,7 @@ metrics = "0.23"
 metrics-exporter-prometheus = "0.15.3"
 # Make sure this is the same rustls version used by other crated in the dependency tree.
 # See the `ensure_default_crypto_provider` function at the root of this crate.
-rustls = "0.23.12"
+rustls = "0.23.18"
 regex = "1.10.2"
 fdlimit = "0.3.0"
 termbg = "0.5.1"
