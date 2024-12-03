@@ -75,6 +75,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.statements.IHasSchema;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EliminateStructs;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitRewriter;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
@@ -451,6 +452,17 @@ public class ToRustVisitor extends CircuitVisitor {
         for (IDBSPNode node : circuit.getAllOperators())
             if (node.is(DBSPSourceBaseOperator.class))
                 this.processNode(node);
+
+        FindComparators compFinder = new FindComparators(this.compiler);
+        FindStatics staticsFinder = new FindStatics(this.compiler);
+        compFinder.getCircuitVisitor(false).apply(circuit);
+        staticsFinder.getCircuitVisitor(false).apply(circuit);
+
+        for (DBSPComparatorExpression comparator: compFinder.found)
+            this.generateCmpFunc(comparator);
+        for (DBSPStaticExpression comparator: staticsFinder.found)
+            this.generateStatic(comparator);
+
         for (IDBSPNode node : circuit.getAllOperators())
             if (!node.is(DBSPSourceBaseOperator.class))
                 this.processNode(node);
@@ -891,18 +903,6 @@ public class ToRustVisitor extends CircuitVisitor {
 
     @Override
     public VisitDecision preorder(DBSPSimpleOperator operator) {
-        FindComparators compFinder = new FindComparators(this.compiler);
-        FindStatics staticsFinder = new FindStatics(this.compiler);
-        if (operator.function != null) {
-            compFinder.apply(operator.getFunction());
-            staticsFinder.apply(operator.getFunction());
-        }
-
-        for (DBSPComparatorExpression comparator: compFinder.found)
-            this.generateCmpFunc(comparator);
-        for (DBSPStaticExpression comparator: staticsFinder.found)
-            this.generateStatic(comparator);
-
         DBSPType streamType = new DBSPTypeStream(operator.outputType);
         this.writeComments(operator)
                 .append("let ")

@@ -15,6 +15,50 @@ import org.junit.Test;
 
 public class RegressionTests extends SqlIoTest {
     @Test
+    public void issue3070() {
+        this.compileRustTestCase("""
+                CREATE TABLE t0(c0 INT);
+                CREATE MATERIALIZED VIEW v20_optimized AS (SELECT ASCII(CHR(t0.c0)) FROM t0);""");
+    }
+
+    @Test
+    public void issue3071() {
+        this.compileRustTestCase("""
+                CREATE TABLE t0(c0 char) with ('materialized' = 'true');
+                CREATE MATERIALIZED VIEW v100_optimized AS (SELECT * FROM t0 WHERE (t0.c0) NOT BETWEEN ('Y') AND ('䤈'));""");
+    }
+
+    @Test
+    public void issue3072() {
+        this.compileRustTestCase("""
+                CREATE TABLE t0(c0 VARCHAR);
+                CREATE VIEW v271_optimized AS
+                SELECT COUNT(RLIKE(t0.c0, '0.5123590946084831')) FROM t0;""");
+        this.compileRustTestCase("""
+                CREATE TABLE t0(c0 DOUBLE, c1 INT, c2 BIGINT);
+                CREATE MATERIALIZED VIEW v293_optimized AS SELECT COUNT(RLIKE(SUBSTRING('', t0.c1), '')) FROM t0;""");
+    }
+
+    @Test
+    public void issue3073() {
+        this.compileRustTestCase("""
+                CREATE MATERIALIZED VIEW v10_optimized AS
+                SELECT SOME(('2059-10-5 5:3:37') NOT BETWEEN ('2171-1-14 22:23:8') AND ((-7::TINYINT)::TIMESTAMP));""");
+    }
+
+    @Test
+    public void issue3074() {
+        this.compileRustTestCase("""
+                CREATE MATERIALIZED VIEW v73_optimized AS SELECT 'a'>'헊';""");
+    }
+
+    @Test
+    public void issue3076() {
+        this.compileRustTestCase("""
+                CREATE MATERIALIZED VIEW v72_optimized AS SELECT SUM(NULL);""");
+    }
+
+    @Test
     public void issue3063() {
         this.getCCS("""
                 CREATE TABLE array_tbl(c1 INT ARRAY, c2 INT ARRAY);
