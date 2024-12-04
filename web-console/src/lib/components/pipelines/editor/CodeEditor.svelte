@@ -76,6 +76,7 @@
   import { effectMonacoContentPlaceholder } from '$lib/components/monacoEditor/effectMonacoContentPlaceholder.svelte'
   import { GenericOverlayWidget } from '$lib/components/monacoEditor/GenericOverlayWidget'
   import { usePipelineActionCallbacks } from '$lib/compositions/pipelines/usePipelineActionCallbacks.svelte'
+  import { useCodeEditorSettings } from '$lib/compositions/pipelines/useCodeEditorSettings.svelte'
 
   void MonacoImports // Explicitly import all monaco-editor esm modules
 
@@ -89,7 +90,8 @@
     statusBarEnd,
     toolBarEnd,
     fileTab,
-    downstreamChanged: _downstreamChanged = $bindable()
+    downstreamChanged: _downstreamChanged = $bindable(),
+    saveFile: _saveFile = $bindable(() => {})
   }: {
     path: string
     files: {
@@ -108,12 +110,12 @@
     toolBarEnd?: Snippet<[{ saveFile: () => void }]>
     fileTab: Snippet<[text: string, onclick: () => void, isCurrent: boolean]>
     downstreamChanged?: boolean
+    saveFile?: () => void
   } = $props()
 
   let editorRef: editor.IStandaloneCodeEditor = $state()!
-  const autoSavePipeline = useLocalStorage('layout/pipelines/autosave', true)
-  const showMinimap = useLocalStorage('layout/pipelines/editor/minimap', true)
-  const showStickyScroll = useLocalStorage('layout/pipelines/editor/stickyScroll', true)
+  const { editorFontSize, autoSavePipeline, showMinimap, showStickyScroll } =
+    useCodeEditorSettings()
 
   let wait = $derived(autoSavePipeline.value ? 2000 : ('decoupled' as const))
   let file = $derived(files.find((f) => f.name === currentFileName)!)
@@ -254,6 +256,10 @@
     _downstreamChanged = openFiles[filePath].sync.downstreamChanged
   })
 
+  $effect(() => {
+    _saveFile = () => openFiles[filePath].sync.push()
+  })
+
   let conflictWidgetRef: HTMLElement = $state(undefined!)
   const mode = useDarkMode()
   const theme = useSkeletonTheme()
@@ -294,7 +300,7 @@
           file.name === currentFileName
         )}
       {/each}
-      {@render toolBarEnd?.({ saveFile: () => openFiles[filePath].sync.push() })}
+      {@render toolBarEnd?.({ saveFile: _saveFile })}
     </div>
     <div class="relative flex-1">
       <div class="absolute h-full w-full">
@@ -322,7 +328,7 @@
                 : 'Cannot edit a compiler-generated file'
             },
             fontFamily: theme.config.monospaceFontFamily,
-            fontSize: 16,
+            fontSize: editorFontSize.value,
             theme: [
               'feldera-dark-disabled',
               'feldera-dark',

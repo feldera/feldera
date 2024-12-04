@@ -54,6 +54,7 @@
     _spacer_short,
     _spacer_long,
     _spinner,
+    _status_spinner,
     _configureProgram,
     _configureResources
   }
@@ -61,24 +62,22 @@
   const active = $derived(
     match(pipeline.current.status)
       .returnType<(keyof typeof actions)[]>()
-      .with('Shutdown', () => ['_spacer_short', '_spacer_long', '_start_paused'])
-      .with('Queued', () => ['_spacer_short', '_spacer_long', '_start_pending'])
-      .with('Starting up', () => ['_spinner', '_shutdown', '_spacer_long'])
-      .with('Initializing', () => ['_spinner', '_shutdown', '_spacer_long'])
-      .with('Running', () => ['_spacer_short', '_shutdown', '_pause'])
-      .with('Pausing', () => ['_spinner', '_shutdown', '_spacer_long'])
-      .with('Resuming', () => ['_spinner', '_shutdown', '_spacer_long'])
-      .with('Paused', () => ['_spacer_short', '_shutdown', '_start'])
-      .with('ShuttingDown', () => ['_spinner', '_spacer_long', '_spacer_long'])
-      .with({ PipelineError: P.any }, () => ['_spacer_short', '_shutdown', '_spacer_long'])
+      .with('Shutdown', () => ['_spacer_long', '_start_paused'])
+      .with('Queued', () => ['_spacer_long', '_start_pending'])
+      .with('Starting up', () => ['_shutdown', '_status_spinner'])
+      .with('Initializing', () => ['_shutdown', '_status_spinner'])
+      .with('Running', () => ['_shutdown', '_pause'])
+      .with('Pausing', () => ['_shutdown', '_status_spinner'])
+      .with('Resuming', () => ['_shutdown', '_status_spinner'])
+      .with('Paused', () => ['_shutdown', '_start'])
+      .with('ShuttingDown', () => ['_status_spinner', '_spacer_long'])
+      .with({ PipelineError: P.any }, () => ['_shutdown', '_spacer_long'])
       .with('Compiling SQL', 'SQL compiled', 'Compiling binary', () => [
-        '_spacer_short',
         '_spacer_long',
         '_start_pending'
       ])
       .with('Unavailable', () => ['_spinner', '_shutdown', '_spacer_long'])
       .with({ SqlError: P.any }, { RustError: P.any }, { SystemError: P.any }, () => [
-        '_spacer_short',
         '_spacer_long',
         '_start_error'
       ])
@@ -275,4 +274,10 @@
 {/snippet}
 {#snippet _spinner()}
   <div class="gc gc-loader-alt pointer-events-none h-9 w-9 animate-spin !text-[36px]"></div>
+{/snippet}
+{#snippet _status_spinner()}
+  <button class="{buttonClass} {longClass} pointer-events-none bg-surface-50-950">
+    <span class="gc gc-loader-alt animate-spin {iconClass}"></span>
+    <span></span>
+  </button>
 {/snippet}
