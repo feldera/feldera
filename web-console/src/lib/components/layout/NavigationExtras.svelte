@@ -53,7 +53,8 @@
 </script>
 
 {#snippet header(full: string, short: string)}
-  {#if inline}{full}
+  {#if inline}
+    {full}
   {:else}
     <span class="hidden sm:inline">{full}</span>
     <span class="inline sm:hidden">{short}</span>
@@ -104,7 +105,7 @@
     {@render docsButton()}
   </span>
   {@render docsItems()}
-  <div></div>
+  <!-- <div></div> -->
   <span class="flex flex-col text-surface-500">
     {@render communityButton()}
   </span>
