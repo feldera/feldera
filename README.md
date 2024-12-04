@@ -94,22 +94,19 @@ The following diagram shows Feldera's architecture
 
 ## ⚡️ Quick start with Docker
 
-First, make sure you have [Docker Compose](https://docs.docker.com/compose/) installed.
-
-Next, run the following command to download a Docker Compose file, and use it to bring up
-a Feldera Platform deployment suitable for demos, development and testing:
+First, make sure you have [Docker](https://docs.docker.com/) installed. Then run the
+following command:
 
 ```text
-curl -L https://github.com/feldera/feldera/releases/latest/download/docker-compose.yml | \
-docker compose -f - up
+docker run -p 8080:8080 --tty --rm -it ghcr.io/feldera/pipeline-manager:0.31.1
 ```
 
-It can take some time for the container images to be downloaded. About ten seconds after that, the Feldera
-web console will become available. Visit [http://localhost:8080](http://localhost:8080) on your browser
-to bring it up. We suggest going through our [tutorial](https://docs.feldera.com/tutorials/basics/) next.
+Once the container image downloads and you see the Feldera logo on your terminal, visit 
+the WebConsole at [http://localhost:8080](http://localhost:8080).
+We suggest going through our [tutorial](https://docs.feldera.com/tutorials/basics/) next.
 
-Our [Getting Started](https://docs.feldera.com/get-started) guide has more detailed instructions on running the
-demo.
+We also have instructions to run Feldera using [Docker Compose](https://docs.feldera.com/get-started), 
+if you'd like to experiment with Kafka and other auxiliary services. 
 
 ## ⚙️ Running Feldera from sources
 
