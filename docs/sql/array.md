@@ -61,15 +61,9 @@ column.
 
 Comparison operations (`=`, `<>`, `!=`, `>`, `<`, `>=`, `<=`) in arrays occur **lexicographically**, from left to right. The elements are compared one by one until a difference is found. Arrays can be compared even if they are different in size.
 
-- **Numerical Arrays** : Elements are compared numerically.
-    - `n_arr1 = [45] > n_arr2 = [22]`
-
-- **String Arrays** : Elements are compared alphabetically.
-    - `s_arr1 = ['fred'] > s_arr2 = ['feldera', 'sql']`
-
-- **Map Arrays** : Keys are compared first. If the keys are equal, the comparison is applied to their values.
-    - `m_arr1 = [{"q": 22}] > m_arr2 = [{"q": 12}]`
-
+**Examples:**
+- `n_arr1 = [45] > n_arr2 = [22]`
+- `n_arr1 =[23, 56, 16] > n_arr = [23, None]`
 
 ## Predefined functions on array values
 

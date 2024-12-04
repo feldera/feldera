@@ -21,6 +21,15 @@ maps's values are nullable `INT` values.
 Map literals have the syntax `MAP[`key `,` value ( `,` key `,` value )* `]`.
 Here is an example: `SELECT MAP['hi',2]`.
 
+## Comparison Operations on Maps
+
+Comparison operations (`=`, `<>`, `!=`, `>`, `<`, `>=`, `<=`) can be applied to maps. First, the keys are sorted in lexicographical order. The comparison occurs on the keys first. If the keys are equal, their corresponding values are compared next.
+
+Given a table `T` with columns `map1` and `map2` where `map1 = {"v": 11, "q": 66}` and `map2 = {"v": 22}`:
+  - `SELECT map1 FROM T WHERE map1 < map2;` returns:
+    - `'map1': {'q': 66, 'v': 11}`
+
+
 ## Predefined functions on map values
 
 | Function               | Description                                                                                           | Example                                                              |
