@@ -117,8 +117,8 @@ required to return `false`).  Our compiler diverges from the standard,
 returning `false` for `ROW(null) is null`.
 
 Comparison operations (`=`, `<>`, `!=`, `<`, `>`, `<=`, `>=`, `<=>`,
-`IS NULL`, `IS NOT NULL`) are defined on all data types, even
-recursive data types (including `ARRAY`, `MAP`, `ROW`, `VARIANT`,
+`IS NULL`, `IS NOT NULL`) are defined on all data types, even generic
+and recursive data types (including `ARRAY`, `MAP`, `ROW`, `VARIANT`,
 user-defined types).  For complex types, comparisons are performed
 lexicographically on the type structure.  In such comparisons fields
 with `NULL` values are compared smaller than any other value.

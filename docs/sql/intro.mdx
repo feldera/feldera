@@ -70,9 +70,6 @@ Differences between DBSP and a database:
   multi-version concurrency control, do not make sense for a system
   like DBSP.
 
-- Currently the SQL compiler does not support recursive queries, or
-  graph queries, but we plan to add support for these
-
 ## Supported SQL Constructs
 
 Feldera offers a powerful set of features:
@@ -83,6 +80,9 @@ Feldera offers a powerful set of features:
 - Arbitrary SQL queries, including the standard relational algebra,
   `GROUP BY`, aggregations, user-defined functions, joins of several
   flavors, `UNNEST`, and window queries
+
+- Feldera uses a different syntax (and semantics!) than standard SQL
+  for [recursive queries](recursion.mdx).
 
 - Feldera provides some small extensions to SQL which make writing
   programs for [streaming](streaming.md) data more convenient
