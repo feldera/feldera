@@ -1140,14 +1140,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                         }
                         return compileFunction(module_prefix + getCallName(call), node, type, ops, 3, 4);
                     }
-                    case "chr": {
-                        // workaround https://issues.apache.org/jira/browse/CALCITE-6707
-                        validateArgCount(node, opName, ops.size(), 1);
-                        if (ops.get(0).getType().mayBeNull) {
-                            type = type.withMayBeNull(true);
-                        }
-                        // fall through
-                    }
+                    case "chr":
                     case "ascii":
                     case "lower":
                     case "upper":

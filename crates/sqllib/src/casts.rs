@@ -1533,7 +1533,7 @@ macro_rules! cast_ts {
 
             cast_function!($type_name, $arg_type, Timestamp, Timestamp);
         }
-    }
+    };
 }
 
 cast_ts!(i32, i32);
