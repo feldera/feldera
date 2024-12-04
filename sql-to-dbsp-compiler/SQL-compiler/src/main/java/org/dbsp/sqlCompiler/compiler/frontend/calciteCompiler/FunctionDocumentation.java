@@ -54,7 +54,7 @@ public class FunctionDocumentation {
                 continue;
             previous = func;
             String[] files = func.documentation().split(",");
-            writer.print("`" + func.functionName() + "`");
+            writer.print("* `" + func.functionName() + "`");
             if (func.aggregate())
                 writer.print(" (aggregate)");
             writer.print(": ");

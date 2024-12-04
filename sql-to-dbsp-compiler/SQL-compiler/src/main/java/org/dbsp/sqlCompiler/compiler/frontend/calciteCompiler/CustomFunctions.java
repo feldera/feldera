@@ -42,6 +42,9 @@ public class CustomFunctions {
         this.initial.add(ParseJsonFunction.INSTANCE);
         this.initial.add(ToJsonFunction.INSTANCE);
         this.initial.add(BlackboxFunction.INSTANCE);
+        this.initial.add(ParseTimeFunction.INSTANCE);
+        this.initial.add(ParseDateFunction.INSTANCE);
+        this.initial.add(ParseTimestampFunction.INSTANCE);
         this.udf = new HashMap<>();
     }
 
@@ -97,6 +100,33 @@ public class CustomFunctions {
         }
 
         public static final ToJsonFunction INSTANCE = new ToJsonFunction();
+    }
+
+    static class ParseTimeFunction extends NonOptimizedFunction {
+        private ParseTimeFunction() {
+            super("PARSE_TIME", ReturnTypes.TIME.andThen(SqlTypeTransforms.FORCE_NULLABLE),
+                    OperandTypes.STRING_STRING, SqlFunctionCategory.TIMEDATE);
+        }
+
+        public static final ParseTimeFunction INSTANCE = new ParseTimeFunction();
+    }
+
+    static class ParseDateFunction extends NonOptimizedFunction {
+        private ParseDateFunction() {
+            super("PARSE_DATE", ReturnTypes.DATE.andThen(SqlTypeTransforms.FORCE_NULLABLE),
+                    OperandTypes.STRING_STRING, SqlFunctionCategory.TIMEDATE);
+        }
+
+        public static final ParseDateFunction INSTANCE = new ParseDateFunction();
+    }
+
+    static class ParseTimestampFunction extends NonOptimizedFunction {
+        private ParseTimestampFunction() {
+            super("PARSE_TIMESTAMP", ReturnTypes.TIMESTAMP.andThen(SqlTypeTransforms.FORCE_NULLABLE),
+                    OperandTypes.STRING_STRING, SqlFunctionCategory.TIMEDATE);
+        }
+
+        public static final ParseTimestampFunction INSTANCE = new ParseTimestampFunction();
     }
 
     /** RLIKE used as a function.  RLIKE in SQL uses infix notation */

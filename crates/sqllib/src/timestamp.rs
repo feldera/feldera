@@ -5,6 +5,7 @@ use crate::{
     interval::{LongInterval, ShortInterval},
     FromInteger, ToInteger,
 };
+use chrono::format::ParseErrorKind;
 use chrono::{
     DateTime, Datelike, Days, Duration, Months, NaiveDate, NaiveDateTime, NaiveTime, TimeZone,
     Timelike, Utc,
@@ -822,6 +823,36 @@ pub fn hop_TimestampN_ShortInterval_ShortInterval_ShortInterval(
     }
 }
 
+#[doc(hidden)]
+pub fn parse_timestamp__(format: String, st: String) -> Option<Timestamp> {
+    let nt = NaiveDateTime::parse_from_str(&st, &format);
+    match nt {
+        Ok(nt) => Some(Timestamp::from_naiveDateTime(nt)),
+        Err(e) => match e.kind() {
+            ParseErrorKind::BadFormat | ParseErrorKind::NotEnough | ParseErrorKind::Impossible => {
+                panic!("Invalid format in PARSE_TIMESTAMP")
+            }
+            _ => None,
+        },
+    }
+}
+
+pub fn parse_timestampN_(format: Option<String>, st: String) -> Option<Timestamp> {
+    let format = format?;
+    parse_timestamp__(format, st)
+}
+
+pub fn parse_timestamp_N(format: String, st: Option<String>) -> Option<Timestamp> {
+    let st = st?;
+    parse_timestamp__(format, st)
+}
+
+pub fn parse_timestampNN(format: Option<String>, st: Option<String>) -> Option<Timestamp> {
+    let st = st?;
+    let format = format?;
+    parse_timestamp__(format, st)
+}
+
 //////////////////////////// Date
 
 /// A representation of a Date in the Gregorian calendar.
@@ -1202,6 +1233,36 @@ pub fn format_date__(format: String, date: Date) -> String {
 some_function2!(format_date, String, Date, String);
 
 #[doc(hidden)]
+pub fn parse_date__(format: String, st: String) -> Option<Date> {
+    let nd = NaiveDate::parse_from_str(&st, &format);
+    match nd {
+        Ok(nd) => Some(Date::from_date(nd)),
+        Err(e) => match e.kind() {
+            ParseErrorKind::BadFormat | ParseErrorKind::NotEnough | ParseErrorKind::Impossible => {
+                panic!("Invalid format in PARSE_DATE")
+            }
+            _ => None,
+        },
+    }
+}
+
+pub fn parse_dateN_(format: Option<String>, st: String) -> Option<Date> {
+    let format = format?;
+    parse_date__(format, st)
+}
+
+pub fn parse_date_N(format: String, st: Option<String>) -> Option<Date> {
+    let st = st?;
+    parse_date__(format, st)
+}
+
+pub fn parse_dateNN(format: Option<String>, st: Option<String>) -> Option<Date> {
+    let st = st?;
+    let format = format?;
+    parse_date__(format, st)
+}
+
+#[doc(hidden)]
 pub fn date_trunc_millennium_Timestamp(timestamp: Timestamp) -> Timestamp {
     let dt = timestamp.get_date();
     let dt = date_trunc_millennium_Date(dt);
@@ -1352,7 +1413,6 @@ pub fn date_trunc_century_Date(date: Date) -> Date {
 pub fn date_trunc_decade_Date(date: Date) -> Date {
     let date = date.to_dateTime();
     let rounded = NaiveDate::from_ymd_opt((date.year() / 10) * 10, 1, 1).unwrap();
-    println!("{:?} {:?}", date, rounded);
     Date::from_date(rounded)
 }
 
@@ -1635,6 +1695,36 @@ pub fn extract_minute_Time(value: Time) -> i64 {
 pub fn extract_hour_Time(value: Time) -> i64 {
     let time = value.to_time();
     time.hour().into()
+}
+
+#[doc(hidden)]
+pub fn parse_time__(format: String, st: String) -> Option<Time> {
+    let nt = NaiveTime::parse_from_str(&st, &format);
+    match nt {
+        Ok(nt) => Some(Time::from_time(nt)),
+        Err(e) => match e.kind() {
+            ParseErrorKind::BadFormat | ParseErrorKind::NotEnough | ParseErrorKind::Impossible => {
+                panic!("Invalid format in PARSE_TIME")
+            }
+            _ => None,
+        },
+    }
+}
+
+pub fn parse_timeN_(format: Option<String>, st: String) -> Option<Time> {
+    let format = format?;
+    parse_time__(format, st)
+}
+
+pub fn parse_time_N(format: String, st: Option<String>) -> Option<Time> {
+    let st = st?;
+    parse_time__(format, st)
+}
+
+pub fn parse_timeNN(format: Option<String>, st: Option<String>) -> Option<Time> {
+    let st = st?;
+    let format = format?;
+    parse_time__(format, st)
 }
 
 #[cfg(test)]

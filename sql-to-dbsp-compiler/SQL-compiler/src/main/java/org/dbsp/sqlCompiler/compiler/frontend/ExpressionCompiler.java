@@ -1244,6 +1244,14 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                         }
                         return compileFunction(call, node, type, ops, 2, 3);
                     }
+                    case "parse_date":
+                    case "parse_time":
+                    case "parse_timestamp": {
+                        validateArgCount(node, operationName, ops.size(), 2);
+                        ensureString(ops, 0);
+                        ensureString(ops, 1);
+                        return compileFunction(call, node, type, ops, 2);
+                    }
                     case "timestamp_trunc":
                     case "time_trunc":
                         // Like DATE_TRUNC
