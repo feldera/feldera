@@ -63,6 +63,7 @@ public class BaseSQLTests {
 
     public CompilerCircuitStream getCCS(String sql) {
         DBSPCompiler compiler = this.testCompiler();
+        this.prepareInputs(compiler);
         compiler.compileStatements(sql);
         return new CompilerCircuitStream(compiler);
     }

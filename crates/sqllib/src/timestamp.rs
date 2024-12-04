@@ -249,6 +249,14 @@ impl Timestamp {
         // Is this right for negative timestamps?
         Date::new((self.milliseconds / 86_400_000i64) as i32)
     }
+
+    /// Check if the timestamp is legal; panic if it isn't
+    pub fn check_legal(&self) {
+        let date = self.to_naiveDateTime();
+        if date.year() < 1 || date.year() > 9999 {
+            panic!("Timestamp out of range");
+        }
+    }
 }
 
 #[doc(hidden)]

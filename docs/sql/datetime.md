@@ -160,6 +160,11 @@ The following operations are available on timestamps:
 
 ### Operations on timestamps
 
+A cast from a numeric value to a `TIMESTAMP` interprets the numeric
+value as an (big integer) number of milliseconds since the Unix epoch.
+Conversely, a cast from a `TIMESTAMP` to a numeric value retrieves the
+number of milliseconds since the Unix epoch from the timestamp.
+
 `DATE_TRUNC(timestamp, <unit>)`, where `<unit>` is a time unit, as
 described above, between `MILLENNIUM` and `DAY`.  Result is a
 `TIMESTAMP`.  Rounds down the timestamp to the specified time unit.

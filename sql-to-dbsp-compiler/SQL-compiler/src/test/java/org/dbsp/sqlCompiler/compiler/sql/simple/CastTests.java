@@ -28,10 +28,12 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests;
 import org.dbsp.sqlCompiler.compiler.sql.tools.Change;
 import org.dbsp.sqlCompiler.compiler.sql.tools.InputOutputChange;
+import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDecimalLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDoubleLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI64Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
@@ -40,22 +42,21 @@ import org.junit.Test;
 
 import java.math.BigDecimal;
 
-public class CastTests extends BaseSQLTests {
+public class CastTests extends SqlIoTest {
     final DBSPTypeDecimal tenTwo = new DBSPTypeDecimal(CalciteObject.EMPTY, 10, 2, true);
     final DBSPTypeDecimal tenFour = new DBSPTypeDecimal(CalciteObject.EMPTY, 10, 4, false);
 
-    public DBSPCompiler compileQuery(String query) {
-        DBSPCompiler compiler = this.testCompiler();
+    @Override
+    public void prepareInputs(DBSPCompiler compiler) {
         String ddl = "CREATE TABLE T (\n" +
                 "COL1 INT NOT NULL" +
                 ", COL2 DOUBLE NOT NULL" +
                 ", COL3 VARCHAR NOT NULL" +
                 ", COL4 DECIMAL(10,2)" +
                 ", COL5 DECIMAL(10,4) NOT NULL" +
-                ")";
-        compiler.compileStatement(ddl);
-        compiler.compileStatement(query);
-        return compiler;
+                ");" +
+                "INSERT INTO T VALUES(10, 12.0, 100100, NULL, 100103);";
+        compiler.compileStatements(ddl);
     }
 
     public Change createInput() {
@@ -68,9 +69,8 @@ public class CastTests extends BaseSQLTests {
     }
 
     public void testQuery(String query, DBSPZSetLiteral expectedOutput) {
-        query = "CREATE VIEW V AS " + query;
-        DBSPCompiler compiler = this.compileQuery(query);
-        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
+        query = "CREATE VIEW V AS " + query + ";";
+        CompilerCircuitStream ccs = this.getCCS(query);
         InputOutputChange change = new InputOutputChange(this.createInput(), new Change(expectedOutput));
         ccs.addChange(change);
         this.addRustTestCase(ccs);
@@ -119,5 +119,75 @@ public class CastTests extends BaseSQLTests {
         this.runtimeFail("SELECT CAST(100103123 AS DECIMAL(10, 4))",
                 "cannot represent 100103123 as DECIMAL(10, 4)",
                 this.streamWithEmptyChanges());
+    }
+
+    @Test
+    public void testFpCasts() {
+        this.testQuery("SELECT CAST(T.COL2 AS BIGINT) FROM T", new DBSPZSetLiteral(new DBSPTupleExpression(new DBSPI64Literal(12))));
+    }
+
+    @Test
+    public void timeCastTests() {
+        this.qs("""
+                SELECT CAST(1000 AS TIMESTAMP);
+                 t
+                ---
+                 1970-01-01 00:00:01
+                (1 row)
+                
+                SELECT CAST(3600000 AS TIMESTAMP);
+                 t
+                ---
+                 1970-01-01 01:00:00
+                (1 row)
+                
+                SELECT CAST(-1000 AS TIMESTAMP);
+                 t
+                ---
+                 1969-12-31 23:59:59
+                (1 row)
+                
+                SELECT CAST(TIMESTAMP '1970-01-01 00:00:01.234' AS INTEGER);
+                 i
+                ---
+                 1234
+                (1 row)
+                
+                SELECT CAST(T.COL1 * 1000 AS TIMESTAMP) FROM T;
+                 t
+                ---
+                 1970-01-01 00:00:10
+                (1 row)
+                
+                SELECT CAST(T.COL2 * 1000 AS TIMESTAMP) FROM T;
+                 t
+                ---
+                 1970-01-01 00:00:12
+                (1 row)
+                
+                SELECT CAST(CAST(T.COL2 * 1000 AS TIMESTAMP) AS INTEGER) FROM T;
+                 i
+                ---
+                 12000
+                (1 row)
+                
+                SELECT CAST(CAST(T.COL2 / 10 AS TIMESTAMP) AS DOUBLE) FROM T;
+                 i
+                ---
+                 1
+                (1 row)""");
+    }
+
+    @Test
+    public void testFailingTimeCasts() {
+        this.statementsFailingInCompilation("CREATE VIEW V AS SELECT CAST(1000 AS TIME)",
+                "Cast function cannot convert value of type INTEGER to type TIME");
+        this.statementsFailingInCompilation("CREATE VIEW V AS SELECT CAST(TIME '10:00:00' AS INTEGER)",
+                "Cast function cannot convert value of type TIME(0) to type INTEGER");
+
+        this.statementsFailingInCompilation("CREATE VIEW V AS SELECT CAST(1000 AS DATE)",
+                "Cast function cannot convert value of type INTEGER to type DATE");
+        this.statementsFailingInCompilation("CREATE VIEW V AS SELECT CAST(DATE '2024-01-01' AS INTEGER)",
+                "Cast function cannot convert value of type DATE to type INTEGER");
     }
 }

@@ -1498,6 +1498,50 @@ pub fn cast_to_Timestamp_Timestamp(value: Timestamp) -> Timestamp {
 
 cast_function!(Timestamp, Timestamp, Timestamp, Timestamp);
 
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_Timestamp_i64(value: i64) -> Timestamp {
+    Timestamp::new(value)
+}
+
+cast_function!(Timestamp, Timestamp, i64, i64);
+
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_i64_Timestamp(value: Timestamp) -> i64 {
+    value.milliseconds()
+}
+
+cast_function!(i64, i64, Timestamp, Timestamp);
+
+macro_rules! cast_ts {
+    ($type_name: ident, $arg_type: ty) => {
+        ::paste::paste! {
+            #[doc(hidden)]
+            #[inline]
+            pub fn [<cast_to_Timestamp_ $type_name>](value: $arg_type) -> Timestamp {
+                cast_to_Timestamp_i64([< cast_to_i64_ $type_name >](value))
+            }
+
+            cast_function!(Timestamp, Timestamp, $type_name, $arg_type);
+
+            #[doc(hidden)]
+            #[inline]
+            pub fn [<cast_to_ $type_name _Timestamp>](value: Timestamp) -> $arg_type {
+                [< cast_to_ $type_name _i64 >] (cast_to_i64_Timestamp(value))
+            }
+
+            cast_function!($type_name, $arg_type, Timestamp, Timestamp);
+        }
+    }
+}
+
+cast_ts!(i32, i32);
+cast_ts!(i16, i16);
+cast_ts!(i8, i8);
+cast_ts!(f, F32);
+cast_ts!(d, F64);
+
 //////////////////// Other casts
 
 #[doc(hidden)]
