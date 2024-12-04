@@ -40,7 +40,8 @@
   import PipelineToolbarMenu from '$lib/components/layout/pipelines/PipelineToolbarMenu.svelte'
   import PipelineListPopup from './PipelineListPopup.svelte'
   import EditorOptionsPopup from './EditorOptionsPopup.svelte'
-    import { useIsTablet } from '$lib/compositions/layout/useIsMobile.svelte'
+  import { useIsTablet } from '$lib/compositions/layout/useIsMobile.svelte'
+  import CreatePipelineButton from '$lib/components/pipelines/CreatePipelineButton.svelte'
 
   let {
     preloaded,
@@ -206,16 +207,21 @@ example = "1.0"`
 
 <div class="flex h-full w-full flex-col">
   <AppHeader>
-    <div class="flex flex-col gap-x-4 gap-y-1 md:flex-row-reverse lg:mt-0">
-      <PipelineStatus status={pipeline.current.status}></PipelineStatus>
+    <div class="flex flex-col gap-x-4 gap-y-1 2xl:flex-row-reverse">
+      <PipelineStatus class="mt-0 lg:-mt-6 2xl:mt-0" status={pipeline.current.status}
+      ></PipelineStatus>
       <PipelineListPopup {preloaded}>
         {#snippet trigger(toggle)}
           <PipelineBreadcrumbs
             breadcrumbs={[
-              ...isTablet.current ? [] : [{
-                text: 'Home',
-                href: `${base}/`
-              }],
+              ...(isTablet.current
+                ? []
+                : [
+                    {
+                      text: 'Home',
+                      href: `${base}/`
+                    }
+                  ]),
               {
                 text: pipelineName,
                 onclick: toggle
@@ -227,6 +233,11 @@ example = "1.0"`
     </div>
     {#snippet beforeEnd()}
       {@render pipelineActions({ class: 'hidden lg:flex' })}
+      {#if !isTablet.current}
+        <div class="relative">
+          <CreatePipelineButton></CreatePipelineButton>
+        </div>
+      {/if}
     {/snippet}
 
     <!--  -->
@@ -264,7 +275,7 @@ example = "1.0"`
                   <div class="flex h-8 items-start justify-between">
                     <span>Ad-Hoc Queries</span>
                     <button
-                      class="fd fd-close btn btn-icon btn-icon-lg !h-6"
+                      class="fd fd-x btn btn-icon btn-icon-lg !h-6"
                       onclick={() => (separateAdHocTab.value = false)}
                       aria-label="Close"
                     ></button>

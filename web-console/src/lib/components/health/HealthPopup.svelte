@@ -12,7 +12,7 @@
     {#snippet trigger(toggle)}
       <button
         onclick={toggle}
-        class="fd fd-warning_amber btn-icon cursor-pointer text-[24px] !text-warning-500 preset-tonal-surface"
+        class="fd fd-triangle-alert btn-icon cursor-pointer text-[24px] !text-warning-500 preset-tonal-surface"
       >
       </button>
       <span class="badge-icon absolute -right-2 -top-2 text-sm preset-filled-error-500">
@@ -29,7 +29,8 @@
     {/snippet}
   </Popup>
 {:else}
-  <button class="fd fd-check_circle btn-icon cursor-default text-[24px] text-success-500"> </button>
+  <button class="fd fd-circle-check-big btn-icon cursor-default text-[24px] text-success-500">
+  </button>
   <Tooltip class="bg-white text-surface-950-50 dark:bg-black" placement="left">
     No errors detected in Feldera deployment
   </Tooltip>

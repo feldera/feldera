@@ -23,7 +23,7 @@
         <span class="hidden {compactBreakpoint}block">Logged in</span>
         <div class="hidden {compactBreakpoint}block w-1"></div>
 
-        <div class="fd fd-person btn-icon text-[32px]">
+        <div class="fd fd-user btn-icon text-[32px]">
           <div class="hidden {compactBreakpoint}block w-2"></div>
         </div>
       </button>
@@ -38,7 +38,7 @@
     {/snippet}
   </Popup>
 {:else}
-  <!-- <button class="fd fd-lock_open btn-icon cursor-default text-[24px] text-surface-600-400"></button>
+  <!-- <button class="fd fd-lock-open btn-icon cursor-default text-[24px] text-surface-600-400"></button>
   <Tooltip class="bg-white text-surface-950-50 dark:bg-black" placement="left">
     Authentication is disabled
   </Tooltip> -->
@@ -47,7 +47,7 @@
     {#snippet trigger(toggle)}
       <button
         onclick={toggle}
-        class="fd fd-lock_open btn btn-icon text-[24px] preset-tonal-surface"
+        class="fd fd-lock-open btn btn-icon text-[24px] preset-tonal-surface"
         aria-label="Open settings popup"
       >
       </button>
@@ -62,7 +62,7 @@
         <button
           onclick={toggleDarkMode}
           class="preset-grayout-surface btn-icon text-[24px]
-          {darkMode.value === 'dark' ? 'fd fd-brightness_5' : 'fd fd-brightness_2'}"
+          {darkMode.value === 'dark' ? 'fd fd-sun' : 'fd fd-moon'}"
           aria-label="Toggle dark mode"
         ></button>
       </div>

@@ -34,7 +34,7 @@
     {@render title()}
     <button
       onclick={onClose}
-      class="preset-grayout-surface fd fd-close text-[24px]"
+      class="preset-grayout-surface fd fd-x text-[24px]"
       aria-label="Close dialog"
     ></button>
   </div>

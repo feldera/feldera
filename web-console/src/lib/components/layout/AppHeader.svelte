@@ -63,30 +63,30 @@
     >
     </button>
   {:else}
-    <div class="hidden h-9 gap-4 xl:flex">
+    <!-- <div class="hidden h-9 gap-4 xl:flex">
       <div class="relative">
         <CreatePipelineButton></CreatePipelineButton>
-      </div>
+      </div> -->
 
-      <Popup>
-        {#snippet trigger(onclick)}
-          <button
-            {onclick}
-            class="fd fd-menu btn-icon flex text-[24px] preset-tonal-surface"
-            aria-label="Pipelines list"
-          >
-          </button>
-        {/snippet}
-        {#snippet content()}
-          <div
-            transition:fade={{ duration: 100 }}
-            class="bg-white-black absolute right-0 top-12 z-30 flex max-h-[400px] w-[calc(100vw-100px)] max-w-[260px] flex-col rounded p-2 shadow-md"
-          >
-            <NavigationExtras inline></NavigationExtras>
-          </div>
-        {/snippet}
-      </Popup>
-    </div>
+    <Popup>
+      {#snippet trigger(onclick)}
+        <button
+          {onclick}
+          class="fd fd-menu btn-icon flex text-[24px] preset-tonal-surface"
+          aria-label="Pipelines list"
+        >
+        </button>
+      {/snippet}
+      {#snippet content()}
+        <div
+          transition:fade={{ duration: 100 }}
+          class="bg-white-black absolute right-0 z-30 flex max-h-[400px] w-[calc(100vw-100px)] max-w-[260px] flex-col rounded p-2 shadow-md"
+        >
+          <NavigationExtras inline></NavigationExtras>
+        </div>
+      {/snippet}
+    </Popup>
+    <!-- </div> -->
   {/if}
   <AuthButton compactBreakpoint="xl:"></AuthButton>
 </div>

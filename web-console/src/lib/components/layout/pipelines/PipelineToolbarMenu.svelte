@@ -79,7 +79,7 @@
   {#snippet content(close)}
     <div
       transition:fade={{ duration: 100 }}
-      class="absolute left-0 z-20 max-h-[400px] w-[calc(100vw-100px)] max-w-[300px]"
+      class="absolute left-0 z-30 max-h-[400px] w-[calc(100vw-100px)] max-w-[300px]"
     >
       <div
         class="bg-white-black flex flex-col justify-center gap-2 rounded-container p-2 shadow-md"
@@ -103,7 +103,7 @@
           </button>
         </div>
         {#if pipelineBusy}
-          <Tooltip class="z-20 bg-white text-surface-950-50 dark:bg-black" placement="top">
+          <Tooltip class="z-10 bg-white text-surface-950-50 dark:bg-black" placement="top">
             Stop the pipeline to <br /> change compilation profile
           </Tooltip>
         {/if}
@@ -117,7 +117,7 @@
           </button>
         </div>
         {#if pipelineBusy}
-          <Tooltip class="z-20 bg-white text-surface-950-50 dark:bg-black" placement="top">
+          <Tooltip class="z-10 bg-white text-surface-950-50 dark:bg-black" placement="top">
             Stop the pipeline to <br /> allocate runtime resources
           </Tooltip>
         {/if}

@@ -268,7 +268,7 @@
 <div class="hidden" bind:this={conflictWidgetRef}>
   <div class="relative flex flex-col gap-4 p-4 bg-surface-50-950">
     <div>
-      <span class="fd fd-warning_amber text-[24px] text-warning-500"> </span>
+      <span class="fd fd-triangle-alert text-[24px] text-warning-500"> </span>
       The pipeline code was changed outside this window since you started editing.<br />
       Please resolve the conflict to save your changes.
     </div>
