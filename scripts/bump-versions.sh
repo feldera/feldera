@@ -64,8 +64,9 @@ release() {
     sed -i.backup "s/pipeline-manager\:${old_version}/pipeline-manager\:${new_version}/g" ../Earthfile
     sed -i.backup "s/demo-container\:${old_version}/demo-container\:${new_version}/g" ../Earthfile
 
-    # Patch the latest stable pipeline manager version in the documentation
+    # Patch the latest stable pipeline manager version in the documentation and README
     sed -i.backup "s/pipeline-manager\:${old_version}/pipeline-manager\:${new_version}/g" ../docs/docker.md
+    sed -i.backup "s/pipeline-manager\:${old_version}/pipeline-manager\:${new_version}/g" ../README.md
 }
 
 release "$@"
