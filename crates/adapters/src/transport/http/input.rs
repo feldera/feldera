@@ -25,7 +25,7 @@ use tokio::{
     sync::watch,
     time::{sleep, timeout},
 };
-use tracing::debug;
+use tracing::{debug, info_span};
 use xxhash_rust::xxh3::Xxh3Default;
 
 #[derive(Clone, Debug, Deserialize)]
@@ -265,6 +265,7 @@ impl TransportInputEndpoint for HttpInputEndpoint {
 
 impl InputReader for HttpInputEndpoint {
     fn request(&self, command: InputReaderCommand) {
+        let _guard = info_span!("http_input").entered();
         match command {
             InputReaderCommand::Seek(_) => (),
             InputReaderCommand::Replay(metadata) => {

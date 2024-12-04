@@ -37,7 +37,8 @@ use std::{
     time::Duration,
 };
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
-use tracing::debug;
+use tracing::span::EnteredSpan;
+use tracing::{debug, info_span};
 use xxhash_rust::xxh3::Xxh3Default;
 
 /// Poll timeout must be low, as it bounds the amount of time it takes to resume the connector.
@@ -407,12 +408,18 @@ impl KafkaFtInputReaderInner {
     }
 }
 
+fn span(config: &KafkaInputConfig) -> EnteredSpan {
+    info_span!("kafka_input", ft = true, topics = config.topics.join(",")).entered()
+}
+
 impl KafkaFtInputReader {
     fn new(
         config: &Arc<KafkaInputConfig>,
         consumer: Box<dyn InputConsumer>,
         parser: Box<dyn Parser>,
     ) -> AnyResult<Self> {
+        let _guard = span(config);
+
         // Create Kafka consumer configuration.
         debug!("Starting Kafka input endpoint: {:?}", config);
 
@@ -452,7 +459,9 @@ impl KafkaFtInputReader {
         let (command_sender, command_receiver) = unbounded_channel();
         let poller_handle = spawn({
             let endpoint = inner.clone();
+            let config = config.clone();
             move || {
+                let _guard = span(&config);
                 if let Err(e) = endpoint.poller_thread(
                     &consumer,
                     parser,
