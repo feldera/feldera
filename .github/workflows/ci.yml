@@ -112,6 +112,11 @@ jobs:
         run: earthly -P --ci +ci-tests
 
       - uses: actions/upload-artifact@v3
+        with:
+          name: redpanda-logs.txt
+          path: redpanda-logs.txt
+
+      - uses: actions/upload-artifact@v3
         if: always()
         with:
           name: playwright-artifacts
