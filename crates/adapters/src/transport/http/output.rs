@@ -16,7 +16,7 @@ use tokio::{
     sync::{mpsc, oneshot},
     time::timeout,
 };
-use tracing::{debug, error};
+use tracing::{debug, error, info_span};
 
 // TODO: make this configurable via endpoint config.
 const MAX_BUFFERS: usize = 100;
@@ -273,6 +273,7 @@ impl OutputEndpoint for HttpOutputEndpoint {
     }
 
     fn push_buffer(&mut self, buffer: &[u8]) -> AnyResult<()> {
+        let _guard = info_span!("http_output").entered();
         self.inner
             .push_buffer(Some(buffer), self.inner.backpressure)
     }

@@ -16,7 +16,8 @@ use rdkafka::{
 };
 use serde::{Deserialize, Serialize};
 use std::{cmp::max, sync::RwLock, time::Duration};
-use tracing::{debug, info, warn};
+use tracing::span::EnteredSpan;
+use tracing::{debug, info, info_span, warn};
 
 use super::{count_partitions_in_topic, CommonConfig, Ctp, DataConsumerContext};
 
@@ -83,8 +84,13 @@ pub struct KafkaOutputEndpoint {
     state: State,
 }
 
+fn span(topic: &str) -> EnteredSpan {
+    info_span!("kafka_output", ft = true, topic = String::from(topic)).entered()
+}
+
 impl KafkaOutputEndpoint {
     pub fn new(config: KafkaOutputConfig) -> AnyResult<Self> {
+        let _guard = span(&config.topic);
         let ft = config.fault_tolerance.unwrap_or_default();
         let mut common = CommonConfig::new(
             &config.kafka_options,
@@ -196,6 +202,7 @@ impl KafkaOutputEndpoint {
 impl OutputEndpoint for KafkaOutputEndpoint {
     fn connect(&mut self, async_error_callback: AsyncErrorCallback) -> AnyResult<()> {
         debug_assert_eq!(self.state, State::New);
+        let _guard = span(&self.topic);
         self.state = State::Connected;
 
         *self
@@ -212,6 +219,7 @@ impl OutputEndpoint for KafkaOutputEndpoint {
     }
 
     fn push_buffer(&mut self, buffer: &[u8]) -> AnyResult<()> {
+        let _guard = span(&self.topic);
         let State::BatchOpen(OutputPosition { step, substep }) = self.state else {
             unreachable!(
                 "state should be BatchOpen (not {:?}) in `push_buffer()`",
@@ -246,6 +254,7 @@ impl OutputEndpoint for KafkaOutputEndpoint {
     }
 
     fn batch_end(&mut self) -> AnyResult<()> {
+        let _guard = span(&self.topic);
         let State::BatchOpen(position) = self.state else {
             unreachable!(
                 "state should be BatchOpen (not {:?}) in `batch_end()`",
@@ -262,6 +271,7 @@ impl OutputEndpoint for KafkaOutputEndpoint {
     }
 
     fn batch_start(&mut self, step: Step) -> AnyResult<()> {
+        let _guard = span(&self.topic);
         let first_step = match self.state {
             State::New => unreachable!("connect() should be called first"),
             State::Connected => true,

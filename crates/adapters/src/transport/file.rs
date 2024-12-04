@@ -16,7 +16,7 @@ use std::thread::{self, Thread};
 use std::{fs::File, io::Write, thread::spawn, time::Duration};
 use tokio::sync::mpsc::error::TryRecvError;
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
-use tracing::error;
+use tracing::{error, info_span};
 use xxhash_rust::xxh3::Xxh3Default;
 
 const SLEEP: Duration = Duration::from_millis(200);
@@ -76,9 +76,9 @@ impl FileInputReader {
                 _ => 8192,
             };
             move || {
+                let _guard = info_span!("file_input", path).entered();
                 if let Err(error) = Self::worker_thread(
                     file,
-                    path,
                     buffer_size,
                     consumer.as_ref(),
                     parser,
@@ -98,7 +98,6 @@ impl FileInputReader {
 
     fn worker_thread(
         mut file: File,
-        path: String,
         buffer_size: usize,
         consumer: &dyn InputConsumer,
         mut parser: Box<dyn Parser>,
@@ -166,7 +165,7 @@ impl FileInputReader {
                         while remainder > 0 {
                             let n = splitter.read(&mut file, buffer_size, remainder)?;
                             if n == 0 {
-                                error!("{path}: file truncated since originally read");
+                                error!("file truncated since originally read");
                                 break;
                             }
                             remainder -= n;

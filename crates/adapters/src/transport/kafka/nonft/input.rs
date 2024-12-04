@@ -32,7 +32,8 @@ use std::{
 };
 use tokio::sync::mpsc::error::TryRecvError;
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
-use tracing::debug;
+use tracing::span::EnteredSpan;
+use tracing::{debug, info_span};
 
 /// Poll timeout must be low, as it bounds the amount of time it takes to resume the connector.
 const POLL_TIMEOUT: Duration = Duration::from_millis(5);
@@ -320,6 +321,10 @@ impl KafkaInputReaderInner {
     }
 }
 
+fn span(config: &KafkaInputConfig) -> EnteredSpan {
+    info_span!("kafka_input", ft = false, topics = config.topics.join(",")).entered()
+}
+
 impl KafkaInputReader {
     fn new(
         config: &Arc<KafkaInputConfig>,
@@ -327,6 +332,8 @@ impl KafkaInputReader {
         mut parser: Box<dyn Parser>,
         endpoint_name: &str,
     ) -> AnyResult<Self> {
+        let _guard = span(config);
+
         // Create Kafka consumer configuration.
         debug!("Starting Kafka input endpoint: {:?}", config);
 
@@ -420,6 +427,7 @@ impl KafkaInputReader {
         let poller_handle = spawn({
             let endpoint = inner.clone();
             move || {
+                let _guard = span(&endpoint.config);
                 if let Err(e) = endpoint.poller_thread(&consumer, parser, command_receiver, queue) {
                     let (_fatal, e) = endpoint.refine_error(e);
                     consumer.error(true, e);
@@ -457,13 +465,16 @@ impl HelperThread {
         Self {
             state: state.clone(),
             join_handle: {
-                Some(spawn(move || loop {
-                    match state.load(Ordering::Acquire) {
-                        PipelineState::Paused => thread::park(),
-                        PipelineState::Running => {
-                            endpoint.poll(&consumer, &mut parser, &feedback_sender, &queue)
+                Some(spawn(move || {
+                    let _guard = span(&endpoint.config);
+                    loop {
+                        match state.load(Ordering::Acquire) {
+                            PipelineState::Paused => thread::park(),
+                            PipelineState::Running => {
+                                endpoint.poll(&consumer, &mut parser, &feedback_sender, &queue)
+                            }
+                            PipelineState::Terminated => break,
                         }
-                        PipelineState::Terminated => break,
                     }
                 }))
             },

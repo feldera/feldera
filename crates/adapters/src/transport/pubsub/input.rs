@@ -22,7 +22,7 @@ use tokio::{
     task::JoinHandle,
 };
 use tokio_util::sync::CancellationToken;
-use tracing::debug;
+use tracing::{debug, info_span, Instrument};
 
 pub struct PubSubInputEndpoint {
     config: Arc<PubSubInputConfig>,
@@ -71,13 +71,15 @@ impl PubSubReader {
         consumer: Box<dyn InputConsumer>,
         parser: Box<dyn Parser>,
     ) -> AnyResult<Self> {
+        let span = info_span!("pub_sub_input", subscription = config.subscription.clone());
         let (state_sender, state_receiver) = unbounded_channel();
-        let subscription = TOKIO.block_on(Self::subscribe(&config))?;
+        let subscription = TOKIO.block_on(Self::subscribe(&config).instrument(span.clone()))?;
         thread::spawn({
             move || {
                 let consumer_clone = consumer.clone();
                 TOKIO.block_on(async {
                     Self::worker_task(subscription, consumer_clone, parser, state_receiver)
+                        .instrument(span)
                         .await
                         .unwrap_or_else(|e| consumer.error(true, e));
                 })
