@@ -363,59 +363,114 @@ result.  A conjunction of such terms is also accepted if all terms
 involve the same expression (e.g.: `T.ts >= NOW() - INTERVAL 1 DAYS
 AND T.ts <= NOW() + INTERVAL 1 DAYS`).
 
-## Date formatting
+## Date parsing and formatting
 
-We support the following functions for formatting date-like values:
+We support the following functions for formatting and parsing date-like values:
 
-| Operation     | Arguments           | Example                              |
+| Operation     | Arguments           | Result | Example                              |
 |---------------|---------------------|--------------------------------------|
-| `FORMAT_DATE` | string_format, date | `FORMAT_DATE("%Y=%m", d)` => 2020-10 |
+| `FORMAT_DATE` | string_format, date | string | `FORMAT_DATE("%Y-%m", d)` => 2020-10 |
+| `PARSE_DATE`  | string_format, string | DATE | `PARSE_DATE(" %Y-%m-%d", '   2020-10-01')` => `2020-10-01` |
+| `PARSE_TIME`  | string_format, string | TIME | `PARSE_TIME("%H:%m", '10:10')` => `10:10:00` |
+| `PARSE_TIMESTAMP`  | string_format, string | TIMESTAMP | `PARSE_TIMESTAMP("%Y-%m", '2020-10')` => `2020-10-01 00:00:00` |
 
-These functions are similar to the BigQuery functions:
-https://cloud.google.com/bigquery/docs/reference/standard-sql/format-elements#format_elements_date_time
+If the string cannot be parsed according to the specified format:
 
-The format string recognizes the following format specifiers:
-(the Types column encodes the following types: D=Date, TS=TIMESTAMP, T=TIME
+- a runtime error is produced if the format is incorrect for producing
+  a value of the required type
+- the result is `NULL` if string cannot be parsed according to the format
 
-| Element | Types | Description                                                                                                                                                                                                                                                                                     | Example                  |
-|---------|-------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|--------------------------|
-| %A      | D,TS  | The full weekday name (English)                                                                                                                                                                                                                                                                 | Wednesday                |
-| %a      | D,TS  | The abbreviated weekday name (English)                                                                                                                                                                                                                                                          | Wed                      |
-| %B      | D,TS  | The full month name (English)                                                                                                                                                                                                                                                                   | January                  |
-| %b      | D,TS  | The abbreviated month name (English)                                                                                                                                                                                                                                                            | Jan                      |
-| %C      | D,TS  | The century (a year divided by 100 and truncated to an integer) as a decimal number (00-99)                                                                                                                                                                                                     | 20                       |
-| %c      | TS    | The date and time representation (English)                                                                                                                                                                                                                                                      | Wed Jan 20 21:47:00 2021 |
-| %D      | D, TS | The date in the format %m/%d/%y                                                                                                                                                                                                                                                                 | 01/20/21                 |
-| %d      | D, TS | The day of the month as a decimal number (01-31)                                                                                                                                                                                                                                                | 20                       |
-| %e      | D, TS | The day of the month as a decimal number (1-31); single digits are preceded by a space                                                                                                                                                                                                          | 20                       |
-| %F      | D, TS | The date in the format %Y-%m-%d                                                                                                                                                                                                                                                                 | 2021-01-20               |
-| %G      | D, TS | The ISO 8601 year with century as a decimal number. Each ISO year begins on the Monday before the first Thursday of the Gregorian calendar year. Note that %G and %Y may produce different results near Gregorian year boundaries, where the Gregorian year and ISO year can diverge            | 2021                     |
-| %g      | D, TS | The ISO 8601 year without century as a decimal number (00-99). Each ISO year begins on the Monday before the first Thursday of the Gregorian calendar year. Note that %g and %y may produce different results near Gregorian year boundaries, where the Gregorian year and ISO year can diverge | 21                       |
-| %H      | TS, T | The hour (24-hour clock) as a decimal number (00-23)                                                                                                                                                                                                                                            | 21                       |
-| %h      | D, TS | Same as %b                                                                                                                                                                                                                                                                                      | Jan                      |
-| %I      | TS, T | The hour (12-hour clock) as a decimal number (01-12)                                                                                                                                                                                                                                            | 09                       |
-| %j      | D, TS | The day of the year as a decimal number (001-366)                                                                                                                                                                                                                                               | 020                      |
-| %k      | TS, T | The hour (24-hour clock) as a decimal number (0-23); single digits are preceded by a space.                                                                                                                                                                                                     | 21                       |
-| %l      | TS, T | The hour (12-hour clock) as a decimal number (1-12); single digits are preceded by a space.                                                                                                                                                                                                     | 9                        |
-| %M      | TS, T | The minute as a decimal number (00-59)                                                                                                                                                                                                                                                          | 47                       |
-| %m      | D, TS | The month as a decimal number (01-12)                                                                                                                                                                                                                                                           | 01                       |
-| %P      | TS, T | When formatting, this is either am or pm. This cannot be used with parsing. Instead, use %p.                                                                                                                                                                                                    | pm                       |
-| %p      | TS, T | When formatting, this is either AM or PM. When parsing, this can be used with am, pm, AM, or PM.                                                                                                                                                                                                | PM                       |
-| %R      | TS, T | The time in the format %H:%M                                                                                                                                                                                                                                                                    | 21:47                    |
-| %S      | TS, T | The second as a decimal number (00-60)                                                                                                                                                                                                                                                          | 00                       |
-| %s      | TS, T | The number of seconds since 1970-01-01 00:00:00.                                                                                                                                                                                                                                                | 1611179220               |
-| %T      | TS, T | The time in the format %H:%M:%S                                                                                                                                                                                                                                                                 | 21:47:00                 |
-| %U      | D, TS | The week number of the year (Sunday as the first day of the week) as a decimal number (00-53)                                                                                                                                                                                                   | 03                       |
-| %u      | D, TS | The weekday (Monday as the first day of the week) as a decimal number (1-7)                                                                                                                                                                                                                     | 3                        |
-| %V      | D, TS | The ISO 8601 week number of the year (Monday as the first day of the week) as a decimal number (01-53). If the week containing January 1 has four or more days in the new year, then it is week 1; otherwise it is week 53 of the previous year, and the next week is week 1                    | 03                       |
-| %W      | D, TS | The week number of the year (Monday as the first day of the week) as a decimal number (00-53)                                                                                                                                                                                                   | 03                       |
-| %w      | D, TS | The weekday (Sunday as the first day of the week) as a decimal number (0-6)                                                                                                                                                                                                                     | 3                        |
-| %X      | TS, T | The time representation in HH:MM:SS format                                                                                                                                                                                                                                                      | 21:47:00                 |
-| %x      | D, TS | The date representation in MM/DD/YY format                                                                                                                                                                                                                                                      | 01/20/21                 |
-| %Y      | D, TS | The year with century as a decimal number                                                                                                                                                                                                                                                       | 2021                     |
-| %y      | D, TS | The year without century as a decimal number (00-99), with an optional leading zero.                                                                                                                                                                                                            | 21                       |
-| %Z      | TS    | The time zone name                                                                                                                                                                                                                                                                              | UTC-5                    |
-| %z      | TS    | The offset from the Prime Meridian in the format +HHMM or -HHMM as appropriate, with positive values representing locations east of Greenwich                                                                                                                                                   | -0500                    |
-| %n      |       | A newline character.                                                                                                                                                                                                                                                                            |                          |
-| %t      |       | A tab character                                                                                                                                                                                                                                                                                 |                          |
-| %%      |       | A single % character                                                                                                                                                                                                                                                                            | %                        |
+For the parsing functions the format string must have enough elements
+to obtain all elements required for building the result.  For example,
+`PARSE_TIME('%I:%M:%S', '10:00:00')` will produce a runtime error,
+since the `%I` element does not have enough information to infer
+whether the hour is AM or PM (an extra `%p` element is needed).
+
+The format string recognizes the following format specifiers; this
+definition follows the Rust `strftime` spec:
+https://docs.rs/chrono/latest/chrono/format/strftime/index.html
+
+## Date Specifiers
+
+|Spec. | Example | Description |
+|------|---------|-------------|
+| %Y   |2001     |The full proleptic Gregorian year, zero-padded to 4 digits. chrono supports years from -262144 to 262143. Note: years before 1 BCE or after 9999 CE, require an initial sign (+/-). |
+| %C   |20       |The proleptic Gregorian year divided by 100, zero-padded to 2 digits. |
+| %y   |01       |The proleptic Gregorian year modulo 100, zero-padded to 2 digits. |
+| %m   |07       |Month number (01–12), zero-padded to 2 digits. |
+| %b   |Jul      |Abbreviated month name. Always 3 letters. |
+| %B   |July     |Full month name. Also accepts corresponding abbreviation in parsing. |
+| %h   |Jul      |Same as %b. |
+| %d   |08       |Day number (01–31), zero-padded to 2 digits. |
+| %e   | 8       |Same as %d but space-padded. Same as %_d. |
+| %a   |Sun      |Abbreviated weekday name. Always 3 letters. |
+| %A   |Sunday   |Full weekday name. Also accepts corresponding abbreviation in parsing. |
+| %w   |0        |Sunday = 0, Monday = 1, …, Saturday = 6. |
+| %u   |7        |Monday = 1, Tuesday = 2, …, Sunday = 7. (ISO 8601) |
+| %U   |28       |Week number starting with Sunday (00–53), zero-padded to 2 digits. |
+| %W   |27       |Same as %U, but week 1 starts with the first Monday in that year instead. |
+| %G   |2001     |Same as %Y but uses the year number in ISO 8601 week date. |
+| %g   |01       |Same as %y but uses the year number in ISO 8601 week date. |
+| %V   |27       |Same as %U but uses the week number in ISO 8601 week date (01–53). |
+| %j   |189      |Day of the year (001–366), zero-padded to 3 digits. |
+| %D   |07/08/01 |      Month-day-year format. Same as %m/%d/%y. |
+| %F   |2001-07-08|     Year-month-day format (ISO 8601). Same as %Y-%m-%d. |
+| %v   |8-Jul-2001|    Day-month-year format. Same as %e-%b-%Y. |
+
+## Time Specifiers
+
+|Spec. | Example | Description |
+|------|---------|-------------|
+| %H   |00       |Hour number (00–23), zero-padded to 2 digits. |
+| %k   | 0       |Same as %H but space-padded. Same as %_H. |
+| %I   |12       |Hour number in 12-hour clocks (01–12), zero-padded to 2 digits. |
+| %l   |12       |Same as %I but space-padded. Same as %_I. |
+| %P   |am       |am or pm in 12-hour clocks. |
+| %p   |AM       |AM or PM in 12-hour clocks. |
+| %M   |34       |Minute number (00–59), zero-padded to 2 digits. |
+| %S   |60       |Second number (00–60), zero-padded to 2 digits. |
+| %f   |26490000 |Number of nanoseconds since last whole second.  |
+| %.f  |.026490  |Decimal fraction of a second. Consumes the leading dot. |
+| %.3f |.026     |Decimal fraction of a second with a fixed length of 3. |
+| %.6f |.026490  |Decimal fraction of a second with a fixed length of 6. |
+| %.9f |.026490000|Decimal fraction of a second with a fixed length of 9. |
+| %3f  |026      |Decimal fraction of a second like %.3f but without the leading dot. |
+| %6f  |026490   |Decimal fraction of a second like %.6f but without the leading dot. |
+| %9f  |026490000|Decimal fraction of a second like %.9f but without the leading dot. |
+| %R   |00:34    |Hour-minute format. Same as %H:%M. |
+| %T   |00:34:60 |Hour-minute-second format. Same as %H:%M:%S. |
+
+## Time Zone Specifiers
+
+These are currently unused
+
+|Spec. | Example | Description |
+|------|---------|-------------|
+| %Z   |ACST     |Local time zone name. Skips all non-whitespace characters during parsing. Identical to %:z when formatting. |
+| %z   |+0930    |Offset from the local time to UTC (with UTC being +0000). |
+| %:z  |+09:30   |Same as %z but with a colon. |
+| %::z |+09:30:00|Offset from the local time to UTC with seconds. |
+| %:::z|+09      |Offset from the local time to UTC without minutes. |
+| %#z  |+09      |Parsing only: Same as %z but allows minutes to be missing or present. |
+
+## Timestamp Specifiers
+
+|Spec. | Example | Description |
+|------|---------|-------------|
+| %+   |2001-07-08T00:34:60.026490+09:30 |      ISO 8601 / RFC 3339 date & time format. |
+| %s   |994518299|      UNIX timestamp, the number of seconds since 1970-01-01 00:00 UTC. |
+
+## Special Specifiers
+
+|Spec. | Example | Description |
+|------|---------|-------------|
+| %t   |         |Literal tab (\t). |
+| %n   |         |Literal newline (\n). |
+| %%   |         |Literal percent sign. |
+
+It is possible to override the default padding behavior of numeric specifiers %?. This is not allowed for other specifiers.
+|Modifier |      Description |
+|---------|------------------|
+|%-?      |Suppresses any padding including spaces and zeroes. (e.g. %j = 012, %-j = 12) |
+|%_?      |Uses spaces as a padding. (e.g. %j = 012, %_j =  12) |
+|%0?      |Uses zeroes as a padding. (e.g. %e =  9, %0e = 09) |

@@ -38,6 +38,51 @@ public class DateFormatsTests extends SqlIoTest {
     }
 
     @Test
+    public void testParseDate() {
+        this.qs("""
+                SELECT PARSE_DATE('%Y-%m-%d', '2020-10-01');
+                 d
+                ---
+                2020-10-01
+                (1 row)
+               
+                -- This works because elements on both sides match.
+                SELECT PARSE_DATE('%A %b %e %Y', 'Thursday Dec 25 2008');
+                 d
+                ---
+                2008-12-25
+                (1 row)
+                
+                -- This works because %F can find all matching elements in date_string.
+                SELECT PARSE_DATE('%F', '2000-12-30');
+                 d
+                ---
+                2000-12-30
+                (1 row)
+                
+                -- This works because %F can find all matching elements in date_string.
+                SELECT PARSE_DATE(' %F ', '   2000-12-30   ');
+                 d
+                ---
+                2000-12-30
+                (1 row)
+       
+                -- Parse error because one of the year is in the wrong place.
+                SELECT PARSE_DATE('%Y %A %b %e', 'Thursday Dec 25 2008');
+                 d
+                ---
+                NULL
+                (1 row)
+                
+                -- Parse error because one of the year elements is missing.
+                SELECT PARSE_DATE('%A %b %e', 'Thursday Dec 25 2008');
+                 d
+                ---
+                NULL
+                (1 row)""");
+    }
+
+    @Test
     public void testIncorrectOrder() {
         // Returns NULL in MySQL
         this.runtimeConstantFail("SELECT format_date(1151414896, '%Y-%m-%d %H:%i:%s')",
@@ -56,10 +101,8 @@ public class DateFormatsTests extends SqlIoTest {
                  Thursday (Thu),  1 January (Jan) 2004""");
     }
 
-    @Test @Ignore("https://github.com/feldera/feldera/issues/2275")
+    @Test
     public void testCorners() {
-        // This test is broken because it returns different results
-        // with and without optimizations, due to https://github.com/feldera/feldera/issues/2275
         // Year 0 is not legal, replaced with year 1
         // %Y in MySql is %y
         this.qs("""
