@@ -76,6 +76,7 @@
   import { effectMonacoContentPlaceholder } from '$lib/components/monacoEditor/effectMonacoContentPlaceholder.svelte'
   import { GenericOverlayWidget } from '$lib/components/monacoEditor/GenericOverlayWidget'
   import { usePipelineActionCallbacks } from '$lib/compositions/pipelines/usePipelineActionCallbacks.svelte'
+  import { useCodeEditorSettings } from '$lib/compositions/pipelines/useCodeEditorSettings.svelte'
 
   void MonacoImports // Explicitly import all monaco-editor esm modules
 
@@ -89,7 +90,8 @@
     statusBarEnd,
     toolBarEnd,
     fileTab,
-    downstreamChanged: _downstreamChanged = $bindable()
+    downstreamChanged: _downstreamChanged = $bindable(),
+    saveFile: _saveFile = $bindable(() => {})
   }: {
     path: string
     files: {
@@ -105,15 +107,15 @@
     codeEditor: Snippet<[textEditor: Snippet, statusBar: Snippet, isReadOnly: boolean]>
     statusBarCenter?: Snippet
     statusBarEnd?: Snippet<[downstreamChanged: boolean]>
-    toolBarEnd?: Snippet
+    toolBarEnd?: Snippet<[{ saveFile: () => void }]>
     fileTab: Snippet<[text: string, onclick: () => void, isCurrent: boolean]>
     downstreamChanged?: boolean
+    saveFile?: () => void
   } = $props()
 
   let editorRef: editor.IStandaloneCodeEditor = $state()!
-  const autoSavePipeline = useLocalStorage('layout/pipelines/autosave', true)
-  const showMinimap = useLocalStorage('layout/pipelines/editor/minimap', true)
-  const showStickyScroll = useLocalStorage('layout/pipelines/editor/stickyScroll', true)
+  const { editorFontSize, autoSavePipeline, showMinimap, showStickyScroll } =
+    useCodeEditorSettings()
 
   let wait = $derived(autoSavePipeline.value ? 2000 : ('decoupled' as const))
   let file = $derived(files.find((f) => f.name === currentFileName)!)
@@ -254,6 +256,10 @@
     _downstreamChanged = openFiles[filePath].sync.downstreamChanged
   })
 
+  $effect(() => {
+    _saveFile = () => openFiles[filePath].sync.push()
+  })
+
   let conflictWidgetRef: HTMLElement = $state(undefined!)
   const mode = useDarkMode()
   const theme = useSkeletonTheme()
@@ -262,7 +268,7 @@
 <div class="hidden" bind:this={conflictWidgetRef}>
   <div class="relative flex flex-col gap-4 p-4 bg-surface-50-950">
     <div>
-      <span class="fd fd-warning_amber text-[24px] text-warning-500"> </span>
+      <span class="fd fd-triangle-alert text-[24px] text-warning-500"> </span>
       The pipeline code was changed outside this window since you started editing.<br />
       Please resolve the conflict to save your changes.
     </div>
@@ -286,7 +292,7 @@
 {@render codeEditor(textEditor, statusBar, isReadOnly)}
 {#snippet textEditor()}
   <div class="flex h-full flex-col">
-    <div class="flex flex-wrap">
+    <div class="flex flex-wrap items-center">
       {#each files as file}
         {@render fileTab(
           file.name,
@@ -294,8 +300,7 @@
           file.name === currentFileName
         )}
       {/each}
-      <div class="ml-auto"></div>
-      {@render toolBarEnd?.()}
+      {@render toolBarEnd?.({ saveFile: _saveFile })}
     </div>
     <div class="relative flex-1">
       <div class="absolute h-full w-full">
@@ -323,7 +328,7 @@
                 : 'Cannot edit a compiler-generated file'
             },
             fontFamily: theme.config.monospaceFontFamily,
-            fontSize: 16,
+            fontSize: editorFontSize.value,
             theme: [
               'feldera-dark-disabled',
               'feldera-dark',
@@ -362,7 +367,7 @@
     ></PipelineEditorStatusBar> -->
     {@render statusBarCenter?.()}
   </div>
-  <div class=" ml-auto flex flex-nowrap gap-x-8">
+  <div class="ml-auto flex flex-nowrap gap-x-2">
     {@render statusBarEnd?.(openFiles[filePath].sync.downstreamChanged)}
   </div>
 {/snippet}

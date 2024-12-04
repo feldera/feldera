@@ -5,6 +5,7 @@
   import type { Snippet } from 'svelte'
   import { Tooltip } from '$lib/components/common/Tooltip.svelte'
   import { useSkeletonTheme } from '$lib/compositions/useSkeletonTheme.svelte'
+  import { useCodeEditorSettings } from '$lib/compositions/pipelines/useCodeEditorSettings.svelte'
   let {
     json,
     onApply,
@@ -25,6 +26,7 @@
     value = json
   })
   const apply = (value: string) => onApply(value).then(onClose)
+  const { editorFontSize } = useCodeEditorSettings()
 </script>
 
 <div class="flex flex-col gap-4 p-4">
@@ -32,7 +34,7 @@
     {@render title()}
     <button
       onclick={onClose}
-      class="preset-grayout-surface fd fd-close text-[24px]"
+      class="preset-grayout-surface fd fd-x text-[24px]"
       aria-label="Close dialog"
     ></button>
   </div>
@@ -49,7 +51,7 @@
       }}
       options={{
         fontFamily: theme.config.monospaceFontFamily,
-        fontSize: 16,
+        fontSize: editorFontSize.value,
         theme: mode.darkMode.value === 'dark' ? 'feldera-dark' : 'feldera-light',
         automaticLayout: true,
         lineNumbersMinChars: 2,

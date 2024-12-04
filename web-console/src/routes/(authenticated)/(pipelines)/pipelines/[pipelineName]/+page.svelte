@@ -30,6 +30,4 @@
   )
 </script>
 
-<div class="h-full px-8 py-4">
-  <PipelineEditLayout preloaded={data.preloaded} {pipeline}></PipelineEditLayout>
-</div>
+<PipelineEditLayout preloaded={data.preloaded} {pipeline}></PipelineEditLayout>

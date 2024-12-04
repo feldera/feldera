@@ -54,6 +54,7 @@
     _spacer_short,
     _spacer_long,
     _spinner,
+    _status_spinner,
     _configureProgram,
     _configureResources
   }
@@ -61,25 +62,22 @@
   const active = $derived(
     match(pipeline.current.status)
       .returnType<(keyof typeof actions)[]>()
-      .with('Shutdown', () => ['_delete', '_spacer_long', '_start_paused'])
-      .with('Queued', () => ['_delete', '_spacer_long', '_start_pending'])
-      .with('Starting up', () => ['_spinner', '_shutdown', '_spacer_long'])
-      .with('Initializing', () => ['_spinner', '_shutdown', '_spacer_long'])
-      .with('Running', () => ['_spacer_short', '_shutdown', '_pause'])
-      .with('Pausing', () => ['_spinner', '_shutdown', '_spacer_long'])
-      .with('Resuming', () => ['_spinner', '_shutdown', '_spacer_long'])
-      .with('Paused', () => ['_spacer_short', '_shutdown', '_start'])
-      .with('ShuttingDown', () => ['_spinner', '_spacer_long', '_spacer_long'])
-      .with({ PipelineError: P.any }, () => ['_spacer_short', '_shutdown', '_spacer_long'])
+      .with('Shutdown', () => ['_spacer_long', '_start_paused'])
+      .with('Queued', () => ['_spacer_long', '_start_pending'])
+      .with('Starting up', () => ['_shutdown', '_status_spinner'])
+      .with('Initializing', () => ['_shutdown', '_status_spinner'])
+      .with('Running', () => ['_shutdown', '_pause'])
+      .with('Pausing', () => ['_shutdown', '_status_spinner'])
+      .with('Resuming', () => ['_shutdown', '_status_spinner'])
+      .with('Paused', () => ['_shutdown', '_start'])
+      .with('ShuttingDown', () => ['_status_spinner', '_spacer_long'])
+      .with({ PipelineError: P.any }, () => ['_shutdown', '_spacer_long'])
       .with('Compiling SQL', 'SQL compiled', 'Compiling binary', () => [
-        '_delete',
         '_spacer_long',
         '_start_pending'
       ])
       .with('Unavailable', () => ['_spinner', '_shutdown', '_spacer_long'])
       .with({ SqlError: P.any }, { RustError: P.any }, { SystemError: P.any }, () => [
-        '_delete',
-
         '_spacer_long',
         '_start_error'
       ])
@@ -87,9 +85,9 @@
   )
 
   const buttonClass = 'btn gap-0'
-  const iconClass = 'text-[28px]'
+  const iconClass = 'text-[24px]'
   const shortClass = 'w-9'
-  const longClass = 'w-32 justify-between pl-2'
+  const longClass = 'w-36 justify-between pl-2'
 </script>
 
 {#snippet deleteDialog()}
@@ -105,8 +103,7 @@
   ></DeleteDialog>
 {/snippet}
 
-<div class={'flex flex-nowrap gap-2 ' + _class}>
-  {@render _configureResources()}
+<div class={'flex flex-nowrap gap-4 ' + _class}>
   {#each active as name}
     {@render actions[name]()}
   {/each}
@@ -114,7 +111,7 @@
 
 {#snippet _delete()}
   <button
-    class="{buttonClass} {shortClass} fd fd-delete bg-surface-50-950 {iconClass}"
+    class="{buttonClass} {shortClass} fd fd-trash-2 bg-surface-50-950 {iconClass}"
     onclick={() => (globalDialog.dialog = deleteDialog)}
   >
   </button>
@@ -140,7 +137,7 @@
       onActionSuccess?.(pipelineName, _action)
     }}
   >
-    <span class="fd fd-play_arrow {iconClass}"></span>
+    <span class="fd fd-play {iconClass}"></span>
     {text}
     <span></span>
   </button>
@@ -164,7 +161,7 @@
 {#snippet _start_disabled()}
   <div class="h-9">
     <button class="{buttonClass} {longClass} disabled preset-filled-surface-900-100">
-      <span class="fd fd-play_arrow {iconClass}"></span>
+      <span class="fd fd-play {iconClass}"></span>
       Start
       <span></span>
     </button>
@@ -209,7 +206,7 @@
       })
     }}
   >
-    <span class="fd fd-stop bg-surface-50-950 {iconClass}"></span>
+    <span class="fd fd-square {iconClass}"></span>
     Shutdown
     <span></span>
   </button>
@@ -248,7 +245,7 @@
 {#snippet _configureResources()}
   <button
     onclick={() => (globalDialog.dialog = resourcesDialog)}
-    class="{buttonClass} {shortClass} fd fd-settings_input_component bg-surface-50-950 {iconClass}"
+    class="{buttonClass} {shortClass} fd fd-sliders-horizontal bg-surface-50-950 {iconClass}"
   >
   </button>
   {#if pipelineBusy}
@@ -277,4 +274,10 @@
 {/snippet}
 {#snippet _spinner()}
   <div class="gc gc-loader-alt pointer-events-none h-9 w-9 animate-spin !text-[36px]"></div>
+{/snippet}
+{#snippet _status_spinner()}
+  <button class="{buttonClass} {longClass} pointer-events-none bg-surface-50-950">
+    <span class="gc gc-loader-alt animate-spin {iconClass}"></span>
+    <span></span>
+  </button>
 {/snippet}

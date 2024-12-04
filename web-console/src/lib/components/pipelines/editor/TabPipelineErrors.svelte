@@ -18,8 +18,8 @@
         >
           <span
             class=" text-[20px] {systemError.cause.warning
-              ? 'fd fd-warning_amber text-warning-500'
-              : 'fd fd-close_circle_outline text-error-500'}"
+              ? 'fd fd-triangle-alert text-warning-500'
+              : 'fd fd-circle-x text-error-500'}"
           >
           </span></a
         >
