@@ -17,10 +17,10 @@
         'SqlCompiled',
         'CompilingRust',
         { RustError: P.any },
-        () => 'fd fd-check_circle text-[24px] text-success-500'
+        () => 'fd fd-circle-check-big text-[24px] text-success-500'
       )
       .with('Pending', 'CompilingSql', undefined, () => 'gc gc-loader-alt animate-spin text-[24px]')
-      .with(P.shape({}), () => 'fd fd-close_circle_outline inline-block text-[24px] text-error-500')
+      .with(P.shape({}), () => 'fd fd-circle-x inline-block text-[24px] text-error-500')
       .exhaustive()}
   >
   </span>
@@ -40,7 +40,7 @@
         'CompilingRust',
         () => 'gc gc-loader-alt animate-spin pt-[0.5px] text-[24px]'
       )
-      .with({ RustError: P.any }, () => 'fd fd-close_circle_outline text-[24px] text-error-500')
+      .with({ RustError: P.any }, () => 'fd fd-circle-x text-[24px] text-error-500')
       .with('Success', 'Pending', 'CompilingSql', P.shape({}), undefined, () => '')
       .exhaustive()}
   >

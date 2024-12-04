@@ -104,7 +104,7 @@
           class="btn-icon flex-none"
           use:clipboard={key}
           use:clickedClass={{
-            base: 'fd fd-content_copy',
+            base: 'fd fd-copy',
             clicked: 'fd fd-check text-success-500 text-[20px] pointer-events-none'
           }}
           aria-label="Copy to clipboard"

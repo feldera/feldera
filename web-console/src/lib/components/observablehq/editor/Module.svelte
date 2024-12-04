@@ -68,12 +68,12 @@
     onclick={() => {
       // modules[pipelineName][i].expanded = !module.expanded
       expanded = !expanded
-    }}><div class="fd fd-expand_more" class:-rotate-90={expanded}></div></button
+    }}><div class="fd fd-chevron-down" class:-rotate-90={expanded}></div></button
   >
   <div class="-mt-1 flex h-auto flex-col text-transparent">
-    <!-- <button class="fd fd-add group-hover:text-surface-400-600 text-[20px]"></button> -->
+    <!-- <button class="fd fd fd-plus group-hover:text-surface-400-600 text-[20px]"></button> -->
     <div class="w-5 flex-1 group-hover:bg-surface-50-950">z</div>
-    <!-- <button class="fd fd-add group-hover:text-surface-400-600 -mb-5 text-[20px]"></button> -->
+    <!-- <button class="fd fd fd-plus group-hover:text-surface-400-600 -mb-5 text-[20px]"></button> -->
   </div>
   <div class="w-full">
     {#each cells as { ref, name }, j}
@@ -89,7 +89,7 @@
     <button
       class:text-transparent={isLast}
       class:pointer-events-none={isLast}
-      class="fd fd-delete self-start p-2 text-[24px]"
+      class="fd fd-trash-2 self-start p-2 text-[24px]"
       aria-label="delete"
       onclick={onDelete}
     ></button>
