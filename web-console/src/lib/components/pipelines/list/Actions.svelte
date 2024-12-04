@@ -85,9 +85,9 @@
   )
 
   const buttonClass = 'btn gap-0'
-  const iconClass = 'text-[28px]'
+  const iconClass = 'text-[24px]'
   const shortClass = 'w-9'
-  const longClass = 'w-32 justify-between pl-2'
+  const longClass = 'w-36 justify-between pl-2'
 </script>
 
 {#snippet deleteDialog()}
@@ -103,7 +103,7 @@
   ></DeleteDialog>
 {/snippet}
 
-<div class={'flex flex-nowrap gap-2 ' + _class}>
+<div class={'flex flex-nowrap gap-4 ' + _class}>
   {#each active as name}
     {@render actions[name]()}
   {/each}
@@ -111,7 +111,7 @@
 
 {#snippet _delete()}
   <button
-    class="{buttonClass} {shortClass} fd fd-delete bg-surface-50-950 {iconClass}"
+    class="{buttonClass} {shortClass} fd fd-trash-2 bg-surface-50-950 {iconClass}"
     onclick={() => (globalDialog.dialog = deleteDialog)}
   >
   </button>
@@ -137,7 +137,7 @@
       onActionSuccess?.(pipelineName, _action)
     }}
   >
-    <span class="fd fd-play_arrow {iconClass}"></span>
+    <span class="fd fd-play {iconClass}"></span>
     {text}
     <span></span>
   </button>
@@ -161,7 +161,7 @@
 {#snippet _start_disabled()}
   <div class="h-9">
     <button class="{buttonClass} {longClass} disabled preset-filled-surface-900-100">
-      <span class="fd fd-play_arrow {iconClass}"></span>
+      <span class="fd fd-play {iconClass}"></span>
       Start
       <span></span>
     </button>
@@ -206,7 +206,7 @@
       })
     }}
   >
-    <span class="fd fd-stop {iconClass}"></span>
+    <span class="fd fd-square {iconClass}"></span>
     Shutdown
     <span></span>
   </button>
@@ -245,7 +245,7 @@
 {#snippet _configureResources()}
   <button
     onclick={() => (globalDialog.dialog = resourcesDialog)}
-    class="{buttonClass} {shortClass} fd fd-settings_input_component bg-surface-50-950 {iconClass}"
+    class="{buttonClass} {shortClass} fd fd-sliders-horizontal bg-surface-50-950 {iconClass}"
   >
   </button>
   {#if pipelineBusy}

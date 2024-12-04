@@ -7,7 +7,7 @@
   {#snippet createButton(onclick)}
     <div class="flex justify-center">
       <button class="btn preset-filled-primary-500" {onclick}>
-        <span class="fd fd-add text-2xl"></span>
+        <span class="fd fd fd-plus text-2xl"></span>
         New Pipeline
       </button>
     </div>

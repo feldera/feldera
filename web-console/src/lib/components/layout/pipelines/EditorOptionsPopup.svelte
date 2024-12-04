@@ -26,7 +26,7 @@
   {#snippet content(close)}
     <div
       transition:fade={{ duration: 100 }}
-      class="absolute left-0 z-10 max-h-[400px] w-[calc(100vw-100px)] max-w-[300px]"
+      class="absolute left-0 z-30 max-h-[400px] w-[calc(100vw-100px)] max-w-[300px]"
     >
       <div
         class="bg-white-black flex flex-col justify-center gap-2 rounded-container p-2 shadow-md"

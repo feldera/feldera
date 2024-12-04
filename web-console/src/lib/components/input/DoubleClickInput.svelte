@@ -54,7 +54,7 @@
     {@render children?.()}
     <button
       onclick={() => (showInput = true)}
-      class="fd fd-edit text-[20px] text-surface-400-600 group-hover:text-surface-950-50"
+      class="fd fd-pencil-line text-[20px] text-surface-400-600 group-hover:text-surface-950-50"
       aria-label="Edit pipeline name"
     >
     </button>

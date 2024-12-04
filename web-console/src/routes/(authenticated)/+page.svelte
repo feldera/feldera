@@ -4,7 +4,7 @@
   import { useIsMobile, useIsTablet } from '$lib/compositions/layout/useIsMobile.svelte'
   import FelderaLogomarkLight from '$assets/images/feldera-modern/Feldera Logomark Color Dark.svg?component'
   import FelderaLogomarkDark from '$assets/images/feldera-modern/Feldera Logomark Color Light.svg?component'
-  import IconBook from '$assets/icons/feldera-material-icons/book.svg?component'
+  import IconBook from '$assets/icons/feldera-material-icons/book-marked.svg?component'
   import IconDiscord from '$assets/icons/vendors/discord-logomark-color.svg?component'
   import ImageBox from '$assets/images/generic/package.svg?component'
   import IconSlack from '$assets/icons/vendors/slack-logomark-color.svg?component'
@@ -75,7 +75,7 @@
           <div class="flex flex-nowrap justify-between">
             <div class="h5">Explore our communities and documentation</div>
             <button
-              class="fd fd-close btn-icon-lg"
+              class="fd fd-x btn-icon-lg"
               aria-label="Close"
               onclick={() => (welcomed.value = !welcomed.value)}
             ></button>
@@ -102,7 +102,7 @@
               role="presentation"
             >
               <div
-                class={'fd fd-expand_more text-[24px] transition-transform ' +
+                class={'fd fd-chevron-down text-[24px] transition-transform ' +
                   (open ? 'rotate-180' : '')}
               ></div>
 
@@ -128,7 +128,7 @@
                   <div class="text-sm text-surface-500">&nbsp;</div>
                   <a class="text-left text-primary-500" href="{base}/demos/">
                     <span class="py-2 text-lg">Discover More Examples and Tutorials</span>
-                    <!-- <span class="fd fd-arrow_forward inline-block w-2 text-[24px]"></span> -->
+                    <!-- <span class="fd fd-arrow-right inline-block w-2 text-[24px]"></span> -->
                   </a>
                 </div>
               </div>
@@ -139,7 +139,7 @@
     {/if}
     <div class="min-h-96">
       <div class="h5 flex flex-nowrap items-center gap-4">
-        <span class="fd fd-mediation text-surface-500"></span><span>Your pipelines</span>
+        <span class="fd fd-network text-surface-500"></span><span>Your pipelines</span>
       </div>
       {#if pipelines.pipelines.length}
         <PipelineTable pipelines={pipelines.pipelines} bind:selectedPipelines>
@@ -159,7 +159,7 @@
           <div class="relative flex gap-5">
             <CreatePipelineButton></CreatePipelineButton>
             <a class="btn text-sm preset-tonal-surface" href="https://docs.feldera.com">
-              <span class="fd fd-book text-2xl"></span>
+              <span class="fd fd-book-marked text-2xl"></span>
               Documentation
             </a>
           </div>
