@@ -3,10 +3,8 @@
 </script>
 
 <script lang="ts">
-  import { PaneGroup, Pane, PaneResizer } from 'paneforge'
+  import { PaneGroup, Pane, PaneResizer, type PaneAPI } from 'paneforge'
   import InteractionsPanel from '$lib/components/pipelines/editor/InteractionsPanel.svelte'
-  import DeploymentStatus from '$lib/components/pipelines/list/DeploymentStatus.svelte'
-  import IconLayputPanelRight from '$assets/icons/generic/layout-panel-right.svg?component'
   import PipelineActions from '$lib/components/pipelines/list/Actions.svelte'
   import { base } from '$app/paths'
   import {
@@ -34,14 +32,13 @@
   import TabAdHocQuery from '$lib/components/pipelines/editor/TabAdHocQuery.svelte'
   import { useLocalStorage } from '$lib/compositions/localStore.svelte'
   import AppHeader from '$lib/components/layout/AppHeader.svelte'
-  import Popup from '$lib/components/common/Popup.svelte'
-  import { fade } from 'svelte/transition'
-  import { Switch } from '@skeletonlabs/skeleton-svelte'
   import PipelineToolbarMenu from '$lib/components/layout/pipelines/PipelineToolbarMenu.svelte'
   import PipelineListPopup from './PipelineListPopup.svelte'
   import EditorOptionsPopup from './EditorOptionsPopup.svelte'
   import { useIsTablet } from '$lib/compositions/layout/useIsMobile.svelte'
   import CreatePipelineButton from '$lib/components/pipelines/CreatePipelineButton.svelte'
+  import PipelineList from '$lib/components/pipelines/List.svelte'
+  import { usePipelineList } from '$lib/compositions/pipelines/usePipelineList.svelte'
 
   let {
     preloaded,
@@ -174,11 +171,32 @@ example = "1.0"`
     currentPipelineFile[pipelineName] ??= 'program.sql'
   })
 
+  let showPipelinesPanel = useLocalStorage('layout/pipelines/pipelinesPanel/show', false)
+  let showMonitoringPanel = useLocalStorage('layout/pipelines/monitoringPanel', true)
   let separateAdHocTab = useLocalStorage('layout/pipelines/separateAdHoc', false)
   let downstreamChanged = $state(false)
+  let isDraggingPipelineListResizer = $state(false)
   let saveFile = $state(() => {})
 
   const isTablet = useIsTablet()
+
+  const pipelineList = usePipelineList(preloaded)
+  let pipelineListPane = $state<PaneAPI>()
+  $effect(() => {
+    if (!pipelineListPane) {
+      return
+    }
+    if (showPipelinesPanel.value) {
+      pipelineListPane.expand()
+    } else {
+      pipelineListPane.collapse()
+    }
+  })
+  $effect(() => {
+    if (isTablet.current) {
+      showPipelinesPanel.value = false
+    }
+  })
 </script>
 
 {#snippet pipelineActions(props?: { class: string })}
@@ -210,26 +228,21 @@ example = "1.0"`
     <div class="flex flex-col gap-x-4 gap-y-1 2xl:flex-row-reverse">
       <PipelineStatus class="mt-0 lg:-mt-6 2xl:mt-0" status={pipeline.current.status}
       ></PipelineStatus>
-      <PipelineListPopup {preloaded}>
-        {#snippet trigger(toggle)}
-          <PipelineBreadcrumbs
-            breadcrumbs={[
-              ...(isTablet.current
-                ? []
-                : [
-                    {
-                      text: 'Home',
-                      href: `${base}/`
-                    }
-                  ]),
-              {
-                text: pipelineName,
-                onclick: toggle
-              }
-            ]}
-          ></PipelineBreadcrumbs>
-        {/snippet}
-      </PipelineListPopup>
+      <PipelineBreadcrumbs
+        breadcrumbs={[
+          ...(isTablet.current
+            ? []
+            : [
+                {
+                  text: 'Home',
+                  href: `${base}/`
+                }
+              ]),
+          {
+            text: pipelineName
+          }
+        ]}
+      ></PipelineBreadcrumbs>
     </div>
     {#snippet beforeEnd()}
       {@render pipelineActions({ class: 'hidden lg:flex' })}
@@ -239,94 +252,139 @@ example = "1.0"`
         </div>
       {/if}
     {/snippet}
-
-    <!--  -->
   </AppHeader>
   <div class="flex w-full justify-end gap-4 px-2 pb-4 md:px-8 lg:hidden">
     {@render pipelineActions()}
   </div>
-  <PaneGroup direction="vertical" class="!overflow-visible px-2 pb-4 md:px-8">
-    <CodeEditor
-      path={pipelineName}
-      {files}
-      {editDisabled}
-      bind:currentFileName={currentPipelineFile[pipelineName]}
-      bind:downstreamChanged
-      bind:saveFile
+  <PaneGroup direction="horizontal" class="!overflow-visible p-2 pb-4 md:pl-3 md:pr-8">
+    <Pane
+      defaultSize={15}
+      minSize={10}
+      class="relative h-full"
+      bind:pane={pipelineListPane}
+      collapsible
+      onCollapse={() => {
+        if (showPipelinesPanel.value) {
+          showPipelinesPanel.value = false
+        }
+      }}
+      onExpand={() => {
+        if (!isDraggingPipelineListResizer) {
+          return
+        }
+        if (!showPipelinesPanel.value) {
+          showPipelinesPanel.value = true
+        }
+      }}
     >
-      {#snippet codeEditor(textEditor, statusBar)}
-        {#snippet editor()}
-          <div class="flex h-full flex-col rounded-container px-4 py-2 bg-surface-50-950">
-            {@render textEditor()}
-            <div class="flex flex-wrap items-center gap-x-8 pt-2 border-surface-100-900">
-              {@render statusBar()}
-            </div>
-          </div>
-        {/snippet}
-        <Pane defaultSize={60} minSize={15} class="!overflow-visible">
-          <PaneGroup direction="horizontal" class="!overflow-visible">
-            <Pane minSize={30} class="!overflow-visible">
-              {@render editor()}
-            </Pane>
-            {#if separateAdHocTab.value}
-              <PaneResizer class="pane-divider-vertical mx-2"></PaneResizer>
-              <Pane defaultSize={40} minSize={20} class="!overflow-visible">
-                <div class="flex h-full flex-col rounded-container p-4 bg-surface-50-950">
-                  <div class="flex h-8 items-start justify-between">
-                    <span>Ad-Hoc Queries</span>
-                    <button
-                      class="fd fd-x btn btn-icon btn-icon-lg !h-6"
-                      onclick={() => (separateAdHocTab.value = false)}
-                      aria-label="Close"
-                    ></button>
-                  </div>
-                  <div class="relative flex-1 overflow-y-auto scrollbar">
-                    <div class="absolute left-0 h-full w-full">
-                      <TabAdHocQuery {pipeline}></TabAdHocQuery>
-                    </div>
-                  </div>
-                </div>
-              </Pane>
-            {/if}
-          </PaneGroup>
-        </Pane>
-        <PaneResizer class="pane-divider-horizontal my-2" />
-      {/snippet}
-      {#snippet toolBarEnd()}
-        <div class="ml-auto flex flex-nowrap items-center gap-2">
+      <div class="absolute flex h-full w-full flex-col">
+        <div class="flex justify-between p-4 pr-0">
+          <span class="h6">Pipelines</span>
           <button
-            class="btn hidden p-2 text-surface-700-300 hover:preset-tonal-surface lg:flex"
-            onclick={() => (separateAdHocTab.value = !separateAdHocTab.value)}
-          >
-            {#if !separateAdHocTab.value}
-              Ad-Hoc Queries
-            {/if}
-            <IconLayputPanelRight
-              class={separateAdHocTab.value ? 'fill-primary-500' : 'fill-surface-700-300'}
-            ></IconLayputPanelRight>
-          </button>
+            onclick={() => (showPipelinesPanel.value = false)}
+            class="fd fd-x btn btn-icon btn-icon-lg"
+            aria-label="Close pipelines list"
+          ></button>
         </div>
-      {/snippet}
-      {#snippet statusBarCenter()}
-        <ProgramStatus programStatus={pipeline.current.programStatus}></ProgramStatus>
-      {/snippet}
-      {#snippet statusBarEnd()}{/snippet}
-      {#snippet fileTab(text, onClick, isCurrent)}
-        <button
-          class="px-2 py-2 sm:px-3 {isCurrent
-            ? 'inset-y-2 border-b-2 pb-1.5 border-surface-950-50'
-            : ' rounded hover:!bg-opacity-50 hover:bg-surface-100-900'}"
-          onclick={onClick}
+        <PipelineList pipelines={pipelineList.pipelines}></PipelineList>
+      </div>
+    </Pane>
+    {#if !isTablet.current}
+      <PaneResizer
+        class="pane-divider-vertical mx-2"
+        onDraggingChange={(isDragging) => {
+          isDraggingPipelineListResizer = isDragging
+        }}
+      ></PaneResizer>
+    {/if}
+
+    <Pane class="!overflow-visible">
+      <PaneGroup direction="vertical" class="!overflow-visible">
+        <CodeEditor
+          path={pipelineName}
+          {files}
+          {editDisabled}
+          bind:currentFileName={currentPipelineFile[pipelineName]}
+          bind:downstreamChanged
+          bind:saveFile
         >
-          {text}
-        </button>
-      {/snippet}
-    </CodeEditor>
-    <Pane minSize={15} class="flex flex-col !overflow-visible">
-      {#if pipeline.current.name}
-        <InteractionsPanel {pipeline} {metrics} separateAdHocTab={separateAdHocTab.value}
-        ></InteractionsPanel>
-      {/if}
+          {#snippet codeEditor(textEditor, statusBar)}
+            {#snippet editor()}
+              <div class="flex h-full flex-col rounded-container px-4 py-2 bg-surface-50-950">
+                {@render textEditor()}
+                <div class="flex flex-wrap items-center gap-x-8 pt-2 border-surface-100-900">
+                  {@render statusBar()}
+                </div>
+              </div>
+            {/snippet}
+            <Pane defaultSize={60} minSize={15} class="!overflow-visible">
+              <PaneGroup direction="horizontal" class="!overflow-visible">
+                <Pane minSize={30} class="!overflow-visible">
+                  {@render editor()}
+                </Pane>
+                {#if separateAdHocTab.value}
+                  <PaneResizer class="pane-divider-vertical mx-2"></PaneResizer>
+                  <Pane defaultSize={40} minSize={20} class="!overflow-visible">
+                    <div class="flex h-full flex-col rounded-container p-4 bg-surface-50-950">
+                      <div class="flex h-8 items-start justify-between">
+                        <span>Ad-Hoc Queries</span>
+                        <button
+                          class="fd fd-x btn btn-icon btn-icon-lg !h-6"
+                          onclick={() => (separateAdHocTab.value = false)}
+                          aria-label="Close"
+                        ></button>
+                      </div>
+                      <div class="relative flex-1 overflow-y-auto scrollbar">
+                        <div class="absolute left-0 h-full w-full">
+                          <TabAdHocQuery {pipeline}></TabAdHocQuery>
+                        </div>
+                      </div>
+                    </div>
+                  </Pane>
+                {/if}
+              </PaneGroup>
+            </Pane>
+          {/snippet}
+          {#snippet toolBarEnd()}{/snippet}
+          {#snippet statusBarCenter()}
+            <ProgramStatus programStatus={pipeline.current.programStatus}></ProgramStatus>
+          {/snippet}
+          {#snippet statusBarEnd()}
+            <div class="ml-auto flex flex-nowrap items-center gap-2">
+              {#each [{ icon: 'fd fd-panel-left', text: 'Pipelines', value: showPipelinesPanel, show: !isTablet.current }, { icon: 'fd fd-panel-bottom', text: 'Monitoring', value: showMonitoringPanel }, { icon: 'fd fd-panel-right', text: 'Ad-Hoc Queries', value: separateAdHocTab }] as { icon, text, value, show }}
+                {#if show !== false}
+                  <button
+                    class="btn hidden p-2 text-surface-700-300 hover:preset-tonal-surface lg:flex"
+                    onclick={() => (value.value = !value.value)}
+                  >
+                    <span class="hidden sm:inline">
+                      {text}
+                    </span>
+                    <div class="{icon} text-[24px] {value.value ? 'text-primary-500' : ''}"></div>
+                  </button>
+                {/if}
+              {/each}
+            </div>
+          {/snippet}
+          {#snippet fileTab(text, onClick, isCurrent)}
+            <button
+              class="px-2 py-2 sm:px-3 {isCurrent
+                ? 'inset-y-2 border-b-2 pb-1.5 border-surface-950-50'
+                : ' rounded hover:!bg-opacity-50 hover:bg-surface-100-900'}"
+              onclick={onClick}
+            >
+              {text}
+            </button>
+          {/snippet}
+        </CodeEditor>
+        {#if showMonitoringPanel.value && pipeline.current.name}
+          <PaneResizer class="pane-divider-horizontal my-2" />
+          <Pane minSize={15} class="flex flex-col !overflow-visible">
+            <InteractionsPanel {pipeline} {metrics} separateAdHocTab={separateAdHocTab.value}
+            ></InteractionsPanel>
+          </Pane>
+        {/if}
+      </PaneGroup>
     </Pane>
   </PaneGroup>
 </div>
