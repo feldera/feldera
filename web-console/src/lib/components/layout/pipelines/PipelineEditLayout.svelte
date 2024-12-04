@@ -39,6 +39,8 @@
   import { Switch } from '@skeletonlabs/skeleton-svelte'
   import PipelineToolbarMenu from '$lib/components/layout/pipelines/PipelineToolbarMenu.svelte'
   import PipelineListPopup from './PipelineListPopup.svelte'
+  import EditorOptionsPopup from './EditorOptionsPopup.svelte'
+    import { useIsTablet } from '$lib/compositions/layout/useIsMobile.svelte'
 
   let {
     preloaded,
@@ -173,17 +175,47 @@ example = "1.0"`
 
   let separateAdHocTab = useLocalStorage('layout/pipelines/separateAdHoc', false)
   let downstreamChanged = $state(false)
-  const autoSavePipeline = useLocalStorage('layout/pipelines/autosave', true)
+  let saveFile = $state(() => {})
+
+  const isTablet = useIsTablet()
 </script>
+
+{#snippet pipelineActions(props?: { class: string })}
+  <div class={props?.class}>
+    <EditorOptionsPopup></EditorOptionsPopup>
+  </div>
+  <div class={props?.class}>
+    <PipelineToolbarMenu
+      {pipeline}
+      {pipelineName}
+      {saveFile}
+      pipelineBusy={editDisabled}
+      {downstreamChanged}
+      onDeletePipeline={handleDeletePipeline}
+    ></PipelineToolbarMenu>
+  </div>
+  <PipelineActions
+    class={props?.class}
+    {pipeline}
+    onDeletePipeline={handleDeletePipeline}
+    pipelineBusy={editDisabled}
+    unsavedChanges={downstreamChanged}
+    onActionSuccess={handleActionSuccess}
+  ></PipelineActions>
+{/snippet}
 
 <div class="flex h-full w-full flex-col">
   <AppHeader>
-    <div class="flex flex-col gap-x-4 gap-y-1 sm:-mt-6 md:mt-0 md:flex-row-reverse">
+    <div class="flex flex-col gap-x-4 gap-y-1 md:flex-row-reverse lg:mt-0">
       <PipelineStatus status={pipeline.current.status}></PipelineStatus>
       <PipelineListPopup {preloaded}>
         {#snippet trigger(toggle)}
           <PipelineBreadcrumbs
             breadcrumbs={[
+              ...isTablet.current ? [] : [{
+                text: 'Home',
+                href: `${base}/`
+              }],
               {
                 text: pipelineName,
                 onclick: toggle
@@ -193,7 +225,15 @@ example = "1.0"`
         {/snippet}
       </PipelineListPopup>
     </div>
+    {#snippet beforeEnd()}
+      {@render pipelineActions({ class: 'hidden lg:flex' })}
+    {/snippet}
+
+    <!--  -->
   </AppHeader>
+  <div class="flex w-full justify-end gap-4 px-2 pb-4 md:px-8 lg:hidden">
+    {@render pipelineActions()}
+  </div>
   <PaneGroup direction="vertical" class="!overflow-visible px-2 pb-4 md:px-8">
     <CodeEditor
       path={pipelineName}
@@ -201,12 +241,13 @@ example = "1.0"`
       {editDisabled}
       bind:currentFileName={currentPipelineFile[pipelineName]}
       bind:downstreamChanged
+      bind:saveFile
     >
       {#snippet codeEditor(textEditor, statusBar)}
         {#snippet editor()}
-          <div class="flex h-full flex-col rounded-container px-4 pb-4 pt-2 bg-surface-50-950">
+          <div class="flex h-full flex-col rounded-container px-4 py-2 bg-surface-50-950">
             {@render textEditor()}
-            <div class="flex flex-wrap items-center gap-x-8 pt-4 border-surface-100-900">
+            <div class="flex flex-wrap items-center gap-x-8 pt-2 border-surface-100-900">
               {@render statusBar()}
             </div>
           </div>
@@ -240,17 +281,8 @@ example = "1.0"`
         </Pane>
         <PaneResizer class="pane-divider-horizontal my-2" />
       {/snippet}
-      {#snippet toolBarEnd({ saveFile })}
+      {#snippet toolBarEnd()}
         <div class="ml-auto flex flex-nowrap items-center gap-2">
-          <PipelineToolbarMenu
-            {pipeline}
-            {pipelineName}
-            {saveFile}
-            pipelineBusy={editDisabled}
-            {downstreamChanged}
-            {autoSavePipeline}
-            onDeletePipeline={handleDeletePipeline}
-          ></PipelineToolbarMenu>
           <button
             class="btn hidden p-2 text-surface-700-300 hover:preset-tonal-surface lg:flex"
             onclick={() => (separateAdHocTab.value = !separateAdHocTab.value)}
@@ -267,15 +299,7 @@ example = "1.0"`
       {#snippet statusBarCenter()}
         <ProgramStatus programStatus={pipeline.current.programStatus}></ProgramStatus>
       {/snippet}
-      {#snippet statusBarEnd()}
-        <PipelineActions
-          {pipeline}
-          onDeletePipeline={handleDeletePipeline}
-          pipelineBusy={editDisabled}
-          unsavedChanges={downstreamChanged}
-          onActionSuccess={handleActionSuccess}
-        ></PipelineActions>
-      {/snippet}
+      {#snippet statusBarEnd()}{/snippet}
       {#snippet fileTab(text, onClick, isCurrent)}
         <button
           class="px-2 py-2 sm:px-3 {isCurrent
