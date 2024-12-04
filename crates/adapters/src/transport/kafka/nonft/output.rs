@@ -174,11 +174,7 @@ impl OutputEndpoint for KafkaOutputEndpoint {
         }
 
         record = record.headers(self.headers.clone());
-
-        self.kafka_producer
-            .send(record)
-            .map_err(|(err, _record)| err)?;
-        Ok(())
+        kafka_send(&self.kafka_producer, &self.config.topic, record)
     }
 
     fn is_fault_tolerant(&self) -> bool {
