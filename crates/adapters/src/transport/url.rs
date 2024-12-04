@@ -30,6 +30,7 @@ use tokio::{
     sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender},
     time::{sleep_until, Instant},
 };
+use tracing::info_span;
 use xxhash_rust::xxh3::Xxh3Default;
 
 pub(crate) struct UrlInputEndpoint {
@@ -213,6 +214,7 @@ impl UrlInputReader {
         spawn({
             let config = config.clone();
             move || {
+                let _guard = info_span!("url_input", path = config.path.clone()).entered();
                 System::new().block_on(async move {
                     if let Err(error) =
                         Self::worker_thread(config, &mut parser, receiver, consumer.as_ref()).await

@@ -48,7 +48,7 @@ use tokio::{
         oneshot,
     },
 };
-use tracing::{debug, error, info, trace, warn, Level, Subscriber};
+use tracing::{debug, error, info, info_span, trace, warn, Instrument, Level, Subscriber};
 use tracing_subscriber::fmt::format::Format;
 use tracing_subscriber::fmt::{FormatEvent, FormatFields};
 use tracing_subscriber::layer::SubscriberExt;
@@ -773,7 +773,10 @@ async fn input_endpoint(
     };
 
     // Call endpoint to complete request.
-    let response = endpoint.complete_request(payload).await;
+    let response = endpoint
+        .complete_request(payload)
+        .instrument(info_span!("http_input"))
+        .await;
     drop(endpoint);
 
     // Delete endpoint on completion/error.

@@ -39,6 +39,7 @@ use serde_arrow::schema::SerdeArrowSchema;
 use serde_arrow::ArrayBuilder;
 use serde_yaml::Value as YamlValue;
 use tokio::sync::mpsc::Sender;
+use tracing::{info_span, Instrument};
 use uuid::Uuid;
 
 pub const fn datafusion_arrow_serde_config() -> &'static SqlSerdeConfig {
@@ -282,6 +283,7 @@ impl DataSink for AdHocTableSink {
         // Call endpoint to complete request.
         let result = endpoint
             .complete_request(data, arrow_inserter, &self.schema)
+            .instrument(info_span!("adhoc_output"))
             .await
             .map_err(|e| DataFusionError::External(e.into()));
         drop(endpoint);
