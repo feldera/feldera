@@ -18,7 +18,7 @@
       {#if user.picture}
         <img class="h-10 w-10 rounded-full" src={user.picture} alt="User avatar" />
       {:else}
-        <div class="fd fd-account_circle h-10 w-10 rounded-full text-[40px]"></div>
+        <div class="fd fd-circle-user h-10 w-10 rounded-full text-[40px]"></div>
       {/if}
       <div>
         <div class="h4 font-normal" class:italic={!user.name}>{user.name || 'anonymous'}</div>
@@ -39,13 +39,13 @@
       class="btn text-surface-800-200 preset-outlined-surface-50-950 hover:preset-filled-surface-50-950"
       onclick={async () => {
         await signOut({ callbackUrl: undefined! })
-      }}><span class="fd fd-arrow_forward text-[24px]"></span> Logout</button
+      }}><span class="fd fd-arrow-right text-[24px]"></span> Logout</button
     >
 
     <button
       onclick={toggleDarkMode}
       class="preset-grayout-surface btn-icon text-[24px]
-      {darkMode.value === 'dark' ? 'fd fd-brightness_5' : 'fd fd-brightness_2'}"
+      {darkMode.value === 'dark' ? 'fd fd-sun' : 'fd fd-moon'}"
     ></button>
   </div>
 </div>

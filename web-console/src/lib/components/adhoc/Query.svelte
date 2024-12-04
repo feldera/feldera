@@ -115,21 +115,21 @@
           <div class="flex h-10 flex-none">
             {#if progress}
               <button
-                class="fd fd-stop w-10 p-2 text-[24px]"
+                class="fd fd-square w-10 p-2 text-[24px]"
                 onclick={onCancelQuery}
                 aria-label="Stop query"
               ></button>
             {:else}
               <button
                 {disabled}
-                class="fd fd-play_arrow -ml-1 -mt-1 mb-1 mr-1 w-10 p-2 text-[32px]"
+                class="fd fd-play -ml-1 -mt-1 mb-1 mr-1 w-10 p-2 text-[32px]"
                 onclick={() => onSubmitQuery(query)}
                 aria-label="Run query"
               ></button>
             {/if}
             {#if !isLastQuery}
               <button
-                class="fd fd-delete w-10 p-2 text-[24px]"
+                class="fd fd-trash-2 w-10 p-2 text-[24px]"
                 onclick={onDeleteQuery}
                 aria-label="Delete query"
               ></button>
