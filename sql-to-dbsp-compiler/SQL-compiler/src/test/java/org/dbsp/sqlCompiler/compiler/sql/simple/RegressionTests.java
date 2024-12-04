@@ -98,7 +98,7 @@ public class RegressionTests extends SqlIoTest {
     @Test
     public void issue3041() {
         this.statementsFailingInCompilation("CREATE MATERIALIZED VIEW v199 AS SELECT TRIM();",
-                "Expression is missing some required operands");
+                "Error parsing SQL: Encountered \")\" at line 1");
     }
 
     @Test

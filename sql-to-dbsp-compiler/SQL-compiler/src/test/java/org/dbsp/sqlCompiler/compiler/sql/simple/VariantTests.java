@@ -47,9 +47,7 @@ public class VariantTests extends BaseSQLTests {
     public DBSPCompiler testCompiler() {
         // Do not optimize, esp in Calcite
         CompilerOptions options = this.testOptions(false, false);
-        DBSPCompiler compiler = new DBSPCompiler(options);
-        this.prepareInputs(compiler);
-        return compiler;
+        return new DBSPCompiler(options);
     }
 
     @Override
