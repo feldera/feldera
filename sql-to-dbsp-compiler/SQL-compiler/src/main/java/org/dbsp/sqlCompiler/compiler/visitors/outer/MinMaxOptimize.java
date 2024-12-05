@@ -124,13 +124,14 @@ public class MinMaxOptimize extends Passes {
 
             DBSPVariablePath inputVar = new DBSPTypeTuple(aggregationInputType).ref().var();
             DBSPClosureExpression init = new DBSPTupleExpression(
-                    inputVar.deref().field(0).cast(resultType))
+                    inputVar.deref().field(0).applyCloneIfNeeded().cast(resultType))
                     .closure(inputVar, this.weightVar);
 
             DBSPVariablePath acc = new DBSPTypeTuple(resultType).var();
             DBSPClosureExpression comparison =
                     new DBSPTupleExpression(new DBSPBinaryExpression(operator.getNode(),
-                            resultType, code, acc.field(0), inputVar.deref().field(0))
+                            resultType, code, acc.field(0).applyCloneIfNeeded(),
+                            inputVar.deref().field(0).applyCloneIfNeeded())
                             .cast(resultType))
                             .closure(acc, inputVar, this.weightVar);
 
