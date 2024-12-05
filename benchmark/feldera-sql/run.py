@@ -409,6 +409,7 @@ def main():
             elif (
                 status != "Pending"
                 and status != "CompilingRust"
+                and status != "SqlCompiled"
                 and status != "CompilingSql"
             ):
                 raise RuntimeError(f"Failed program compilation with status {status}")
