@@ -50,6 +50,10 @@ public class OptimizeMaps extends CircuitCloneWithGraphsVisitor {
     public void postorder(DBSPMapIndexOperator operator) {
         OutputPort source = this.mapped(operator.input());
         int inputFanout = this.getGraph().getFanout(operator.input().node());
+        if (inputFanout != 1) {
+            super.postorder(operator);
+            return;
+        }
         if (source.node().is(DBSPMapOperator.class)) {
             // mapindex(map) = mapindex
             DBSPClosureExpression expression = source.simpleNode().getClosureFunction();
@@ -75,7 +79,7 @@ public class OptimizeMaps extends CircuitCloneWithGraphsVisitor {
                     operator.getNode(), newFunction, operator.getOutputIndexedZSetType(), source.node().inputs.get(0));
             this.map(operator, result);
             return;
-        } else if (inputFanout == 1) {
+        } else {
             Projection projection = new Projection(this.compiler());
             projection.apply(operator.getFunction());
             if (!this.onlyProjections || projection.isProjection) {
@@ -132,7 +136,7 @@ public class OptimizeMaps extends CircuitCloneWithGraphsVisitor {
         int inputFanout = this.getGraph().getFanout(operator.input().node());
         Projection projection = new Projection(this.compiler());
         projection.apply(operator.getFunction());
-        if (source.node().is(DBSPJoinFilterMapOperator.class)) {
+        if (source.node().is(DBSPJoinFilterMapOperator.class) && inputFanout == 1) {
             if (!this.onlyProjections || projection.isProjection) {
                 // map(joinfilter) = joinfilter
                 DBSPJoinFilterMapOperator jfm = source.node().to(DBSPJoinFilterMapOperator.class);
@@ -167,7 +171,7 @@ public class OptimizeMaps extends CircuitCloneWithGraphsVisitor {
                 this.map(operator, result);
                 return;
             }
-        } else if (source.node().is(DBSPMapOperator.class)) {
+        } else if (source.node().is(DBSPMapOperator.class) && inputFanout == 1) {
             DBSPClosureExpression expression = source.simpleNode().getClosureFunction();
             DBSPClosureExpression newFunction = operator.getClosureFunction()
                     .applyAfter(this.compiler(), expression);
