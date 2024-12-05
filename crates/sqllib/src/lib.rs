@@ -877,38 +877,53 @@ pub fn wrap_bool(b: Option<bool>) -> bool {
 
 #[doc(hidden)]
 #[inline(always)]
-pub fn or_b_b(left: bool, right: bool) -> bool {
-    left || right
+pub fn or_b_b<F>(left: bool, right: F) -> bool
+where
+    F: Fn() -> bool,
+{
+    left || right()
 }
 
 #[doc(hidden)]
 #[inline(always)]
-pub fn or_bN_b(left: Option<bool>, right: bool) -> Option<bool> {
-    match (left, right) {
-        (Some(l), r) => Some(l || r),
-        (_, true) => Some(true),
-        (_, _) => None::<bool>,
+pub fn or_bN_b<F>(left: Option<bool>, right: F) -> Option<bool>
+where
+    F: Fn() -> bool,
+{
+    match left {
+        Some(l) => Some(l || right()),
+        None => match right() {
+            true => Some(true),
+            _ => None,
+        },
     }
 }
 
 #[doc(hidden)]
 #[inline(always)]
-pub fn or_b_bN(left: bool, right: Option<bool>) -> Option<bool> {
-    match (left, right) {
-        (l, Some(r)) => Some(l || r),
-        (true, _) => Some(true),
-        (_, _) => None::<bool>,
+pub fn or_b_bN<F>(left: bool, right: F) -> Option<bool>
+where
+    F: Fn() -> Option<bool>,
+{
+    match left {
+        false => right(),
+        true => Some(true),
     }
 }
 
 #[doc(hidden)]
 #[inline(always)]
-pub fn or_bN_bN(left: Option<bool>, right: Option<bool>) -> Option<bool> {
-    match (left, right) {
-        (Some(l), Some(r)) => Some(l || r),
-        (Some(true), _) => Some(true),
-        (_, Some(true)) => Some(true),
-        (_, _) => None::<bool>,
+pub fn or_bN_bN<F>(left: Option<bool>, right: F) -> Option<bool>
+where
+    F: Fn() -> Option<bool>,
+{
+    match left {
+        None => match right() {
+            Some(true) => Some(true),
+            _ => None,
+        },
+        Some(false) => right(),
+        Some(true) => Some(true),
     }
 }
 
@@ -916,38 +931,54 @@ pub fn or_bN_bN(left: Option<bool>, right: Option<bool>) -> Option<bool> {
 
 #[doc(hidden)]
 #[inline(always)]
-pub fn and_b_b(left: bool, right: bool) -> bool {
-    left && right
+pub fn and_b_b<F>(left: bool, right: F) -> bool
+where
+    F: Fn() -> bool,
+{
+    left && right()
 }
 
 #[doc(hidden)]
 #[inline(always)]
-pub fn and_bN_b(left: Option<bool>, right: bool) -> Option<bool> {
-    match (left, right) {
-        (Some(l), r) => Some(l && r),
-        (_, false) => Some(false),
-        (_, _) => None::<bool>,
+pub fn and_bN_b<F>(left: Option<bool>, right: F) -> Option<bool>
+where
+    F: Fn() -> bool,
+{
+    match left {
+        Some(false) => Some(false),
+        Some(true) => Some(right()),
+        None => match right() {
+            false => Some(false),
+            _ => None,
+        },
     }
 }
 
 #[doc(hidden)]
 #[inline(always)]
-pub fn and_b_bN(left: bool, right: Option<bool>) -> Option<bool> {
-    match (left, right) {
-        (l, Some(r)) => Some(l && r),
-        (false, _) => Some(false),
-        (_, _) => None::<bool>,
+pub fn and_b_bN<F>(left: bool, right: F) -> Option<bool>
+where
+    F: Fn() -> Option<bool>,
+{
+    match left {
+        false => Some(false),
+        true => right(),
     }
 }
 
 #[doc(hidden)]
 #[inline(always)]
-pub fn and_bN_bN(left: Option<bool>, right: Option<bool>) -> Option<bool> {
-    match (left, right) {
-        (Some(l), Some(r)) => Some(l && r),
-        (Some(false), _) => Some(false),
-        (_, Some(false)) => Some(false),
-        (_, _) => None::<bool>,
+pub fn and_bN_bN<F>(left: Option<bool>, right: F) -> Option<bool>
+where
+    F: Fn() -> Option<bool>,
+{
+    match left {
+        Some(false) => Some(false),
+        Some(true) => right(),
+        None => match right() {
+            Some(false) => Some(false),
+            _ => None,
+        },
     }
 }
 
