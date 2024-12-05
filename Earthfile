@@ -224,7 +224,7 @@ test-adapters:
             exit $status
     END
     RUN echo "docker done"
-    SAVE ARTIFACT redpanda-logs.txt AS LOCAL redpanda-log.txt
+    SAVE ARTIFACT redpanda-logs.txt AS LOCAL redpanda-logs.txt
 
 test-manager:
     FROM +build-manager
