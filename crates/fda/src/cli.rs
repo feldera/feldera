@@ -35,7 +35,11 @@ fn pipeline_names(current: &std::ffi::OsStr) -> Vec<CompletionCandidate> {
 }
 
 #[derive(Parser)]
-#[command(name = "fda", about = "A CLI to interact with the Feldera REST API.")]
+#[command(
+    name = "fda",
+    about = "A CLI to interact with the Feldera REST API.",
+    version
+)]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Commands,
