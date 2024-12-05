@@ -930,6 +930,22 @@ public class ToRustInnerVisitor extends InnerVisitor {
                 this.builder.append(")");
                 break;
             }
+            case OR:
+            case AND: {
+                String function = RustSqlRuntimeLibrary.INSTANCE.getFunctionName(
+                        expression.getNode(),
+                        expression.opcode,
+                        expression.getType(),
+                        expression.left.getType(),
+                        expression.right.getType());
+                this.builder.append(function).append("(");
+                expression.left.accept(this);
+                // lazy in the right argument, make it a closure
+                this.builder.append(", || (");
+                expression.right.accept(this);
+                this.builder.append("))");
+                break;
+            }
             default: {
                 String function = RustSqlRuntimeLibrary.INSTANCE.getFunctionName(
                         expression.getNode(),
