@@ -481,8 +481,16 @@ polymorphic_return_function2!(minus, Date, Date, LongInterval, LongInterval, Dat
 
 #[doc(hidden)]
 pub fn minus_Timestamp_Timestamp_LongInterval(left: Timestamp, right: Timestamp) -> LongInterval {
-    let ldate = left.to_dateTime();
-    let rdate = right.to_dateTime();
+    let swap = left < right;
+    let ldate;
+    let rdate;
+    if swap {
+        rdate = left.to_dateTime();
+        ldate = right.to_dateTime();
+    } else {
+        ldate = left.to_dateTime();
+        rdate = right.to_dateTime();
+    }
     let ly = ldate.year();
     let lm = ldate.month() as i32;
     let ld = ldate.day() as i32;
@@ -496,7 +504,8 @@ pub fn minus_Timestamp_Timestamp_LongInterval(left: Timestamp, right: Timestamp)
         // the full month is not yet elapsed
         rm += 1;
     }
-    LongInterval::from((ly - ry) * 12 + lm - rm)
+    let months = (ly - ry) * 12 + lm - rm;
+    LongInterval::from(if swap { -months } else { months })
 }
 
 polymorphic_return_function2!(
