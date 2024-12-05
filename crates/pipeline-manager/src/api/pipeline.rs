@@ -218,7 +218,11 @@ pub(crate) async fn get_pipeline(
         (status = CONFLICT
             , description = "Cannot create pipeline as the name already exists"
             , body = ErrorResponse
-            , example = json!(examples::error_duplicate_name()))
+            , example = json!(examples::error_duplicate_name())),
+        (status = BAD_REQUEST
+            , description = "Invalid name specified"
+            , body = ErrorResponse
+            , example = json!(examples::error_invalid_name()))
     ),
     tag = "Pipelines"
 )]

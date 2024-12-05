@@ -17,6 +17,12 @@ pub(crate) fn error_duplicate_name() -> ErrorResponse {
     ErrorResponse::from_error_nolog(&DBError::DuplicateName)
 }
 
+pub(crate) fn error_invalid_name() -> ErrorResponse {
+    ErrorResponse::from_error_nolog(&DBError::NameDoesNotMatchPattern {
+        name: "invalid-name.db".to_string(),
+    })
+}
+
 pub(crate) fn error_invalid_uuid_param() -> ErrorResponse {
     ErrorResponse::from_error_nolog(&ManagerError::from(ApiError::InvalidUuidParam {
         value: "not_a_uuid".to_string(),
