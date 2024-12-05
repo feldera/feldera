@@ -57,8 +57,8 @@ log = "0.4.20"
 size-of = { version = "0.1.5", package = "feldera-size-of", features = ["time-std", "ordered-float"], optional = true }
 futures = { version = "0.3.28" }
 futures-util = { version = "0.3.28" }
-proptest = { version = "1.0.0", optional = true }
-proptest-derive = { version = "0.3.0", optional = true }
+proptest = { version = "1.5.0", optional = true }
+proptest-derive = { version = "0.5.0", optional = true }
 env_logger = "0.10.0"
 clap = { version = "4.0.32", features = ["derive"] }
 tokio = { version = "1.25.0", features = ["sync", "macros", "fs", "rt"] }
