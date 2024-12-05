@@ -101,12 +101,12 @@ following command:
 docker run -p 8080:8080 --tty --rm -it ghcr.io/feldera/pipeline-manager:0.31.1
 ```
 
-Once the container image downloads and you see the Feldera logo on your terminal, visit 
+Once the container image downloads and you see the Feldera logo on your terminal, visit
 the WebConsole at [http://localhost:8080](http://localhost:8080).
 We suggest going through our [tutorial](https://docs.feldera.com/tutorials/basics/) next.
 
-We also have instructions to run Feldera using [Docker Compose](https://docs.feldera.com/get-started), 
-if you'd like to experiment with Kafka and other auxiliary services. 
+We also have instructions to run Feldera using [Docker Compose](https://docs.feldera.com/get-started),
+if you'd like to experiment with Kafka and other auxiliary services.
 
 ## ⚙️ Running Feldera from sources
 
