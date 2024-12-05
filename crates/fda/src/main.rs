@@ -159,7 +159,7 @@ fn handle_errors_fatal(
 ) -> Box<dyn Fn(Error<ErrorResponse>) -> Infallible + Send> {
     assert_ne!(exit_code, 0, "Exit code must not be 0");
     Box::new(move |err: Error<ErrorResponse>| -> Infallible {
-        match &err {
+        match err {
             Error::ErrorResponse(e) => {
                 eprintln!("{}", e.message);
                 debug!("Details: {:#?}", e.details);
@@ -194,7 +194,7 @@ fn handle_errors_fatal(
                 error!("Unable to parse the detailed response returned from {server}");
                 if !b.is_empty() {
                     debug!("Parse Error: {:?}", e.to_string());
-                    debug!("Response payload: {:?}", String::from_utf8_lossy(b));
+                    debug!("Response payload: {:?}", String::from_utf8_lossy(&b));
                 }
                 error!("{}", UGPRADE_NOTICE);
             }
@@ -208,9 +208,26 @@ fn handle_errors_fatal(
                         eprintln!("Did you mean to use https?");
                     }
                 } else {
-                    eprintln!("{}: ", msg);
-                    error!("Unexpected response from {server}: {:?}", r);
-                    error!("{}", UGPRADE_NOTICE);
+                    warn!(
+                        "Unexpected error response from {server} -- this can happen if you're running different fda and feldera versions."
+                    );
+                    warn!("{}", UGPRADE_NOTICE);
+
+                    eprint!("{}", msg);
+                    let h = Handle::current();
+                    // This spawns a separate thread because it's very hard to make this function async, I tried.
+                    let st = std::thread::spawn(move || {
+                        if let Ok(body) = h.block_on(r.text()) {
+                            if let Ok(error) = serde_json::from_str::<ErrorResponse>(&body) {
+                                eprintln!(": {}", error.message);
+                            } else {
+                                eprintln!(": {body}");
+                            }
+                        } else {
+                            eprintln!();
+                        }
+                    });
+                    st.join().unwrap();
                 }
             }
             Error::PreHookError(e) => {
