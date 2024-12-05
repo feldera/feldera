@@ -596,6 +596,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
                 compilerOptions.languageOptions.throwOnError = options.stopAtFirstError;
                 compilerOptions.languageOptions.lenient = true;
                 compilerOptions.languageOptions.generateInputForEveryTable = true;
+                compilerOptions.ioOptions.verbosity = options.verbosity;
                 DBSPExecutor result = new DBSPExecutor(options, compilerOptions);
                 result.skip(skip.get());
                 Set<String> bugs = options.readBugsFile();
