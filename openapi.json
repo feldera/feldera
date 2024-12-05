@@ -580,6 +580,23 @@
               }
             }
           },
+          "400": {
+            "description": "Invalid name specified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "details": {
+                    "name": "invalid-name.db"
+                  },
+                  "error_code": "NameDoesNotMatchPattern",
+                  "message": "Name 'invalid-name.db' contains characters which are not lowercase (a-z), uppercase (A-Z), numbers (0-9), underscores (_) or hyphens (-)"
+                }
+              }
+            }
+          },
           "409": {
             "description": "Cannot create pipeline as the name already exists",
             "content": {
