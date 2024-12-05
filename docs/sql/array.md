@@ -62,8 +62,8 @@ column.
 Comparison operations (`=`, `<>`, `!=`, `>`, `<`, `>=`, `<=`) in arrays occur **lexicographically**, from left to right. The elements are compared one by one until a difference is found. Arrays can be compared even if they are different in size.
 
 **Examples:**
-- `n_arr1 = [45] > n_arr2 = [22]`
-- `n_arr1 =[23, 56, 16] > n_arr = [23, None]`
+- `[45] > [22]`
+- `[23, 56, 16] > [23, NULL]`
 
 ## Predefined functions on array values
 

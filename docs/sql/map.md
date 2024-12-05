@@ -23,11 +23,22 @@ Here is an example: `SELECT MAP['hi',2]`.
 
 ## Comparison Operations on Maps
 
-Comparison operations (`=`, `<>`, `!=`, `>`, `<`, `>=`, `<=`) can be applied to maps. First, the keys are sorted in lexicographical order. The comparison occurs on the keys first. If the keys are equal, their corresponding values are compared next.
+Comparison operations (`=`, `<>`, `!=`, `>`, `<`, `>=`, `<=`) can be applied to maps and work as follows:
 
-Given a table `T` with columns `map1` and `map2` where `map1 = {"v": 11, "q": 66}` and `map2 = {"v": 22}`:
-  - `SELECT map1 FROM T WHERE map1 < map2;` returns:
-    - `'map1': {'q': 66, 'v': 11}`
+1. The keys are first sorted **lexicographically**.
+2. If the keys are not equal, the result is determined by their lexicographical order.
+3. If the keys are equal, their corresponding values are compared next.
+4. If the values are also equal, the comparison moves to the next key-value pair until a difference is found.
+
+#### Examples:
+
+1. Given a table `T` with columns `c1 = MAP['v', 11, 'q', 66]` and `c2 = MAP['v': 22]`:
+   - `SELECT c1 FROM T WHERE c1 < c2;` returns:
+     -  `MAP['q', 66, 'v', 11]`
+
+2. Given two maps where previously compared key-value pairs are equal, such as:
+   - `MAP['f', 1, 'v', 0]` and `MAP['f': 1]`
+   - The map with more elements, `MAP['f', 1, 'v', 0]`, is considered larger.
 
 
 ## Predefined functions on map values
