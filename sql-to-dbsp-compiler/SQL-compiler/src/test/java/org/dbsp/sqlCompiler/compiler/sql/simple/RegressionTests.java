@@ -8,7 +8,9 @@ import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.TestUtil;
 import org.dbsp.sqlCompiler.compiler.backend.rust.ToRustVisitor;
 import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
+import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.junit.Assert;
 import org.junit.Ignore;
 import org.junit.Test;
@@ -37,14 +39,38 @@ public class RegressionTests extends SqlIoTest {
                 (c1_minus_c2) = -(c2_minus_c1) AS eq
                 FROM atbl_interval_months;""");
         ccs.step("""
-                 INSERT INTO timestamp_tbl VALUES('2019-12-05 08:27:00', '2014-11-05 12:45:00');
-                 INSERT INTO timestamp_tbl VALUES('2020-06-21 14:00:00', '2023-02-26 18:00:00');""",
+                        INSERT INTO timestamp_tbl VALUES('2019-12-05 08:27:00', '2014-11-05 12:45:00');
+                        INSERT INTO timestamp_tbl VALUES('2020-06-21 14:00:00', '2023-02-26 18:00:00');""",
                 """ 
-                  eq   | weight
-                 ------------------
-                  true | 1
-                  true | 1""");
+                         eq   | weight
+                        ------------------
+                         true | 1
+                         true | 1""");
         this.addRustTestCase(ccs);
+    }
+
+    @Test
+    public void issue3095() {
+        var ccs = this.getCCS("""
+                CREATE FUNCTION udf(input INT) RETURNS INT;
+                CREATE TABLE T (p int);
+                
+                CREATE LOCAL VIEW V0 AS
+                SELECT udf(p) as f FROM T;
+                
+                CREATE VIEW V1 AS
+                SELECT f+1, f+2 FROM V0;""");
+        int[] functionCalls = new int[] { 0 };
+        InnerVisitor visitor = new InnerVisitor(ccs.compiler) {
+            @Override
+            public void postorder(DBSPApplyExpression node) {
+                ++functionCalls[0];
+            }
+        };
+        visitor.getCircuitVisitor(false).apply(ccs.circuit);
+        // TODO: make this "1"
+        // https://github.com/feldera/feldera/issues/3095
+        assert functionCalls[0] == 2;
     }
 
     @Test
