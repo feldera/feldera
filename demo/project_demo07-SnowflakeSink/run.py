@@ -191,6 +191,7 @@ def prepare_feldera(api_url):
         elif (
             status != "Pending"
             and status != "CompilingRust"
+            and status != "SqlCompiled"
             and status != "CompilingSql"
         ):
             raise RuntimeError(f"Failed program compilation with status {status}")
