@@ -2,7 +2,10 @@ package org.dbsp.sqlCompiler.ir.type.user;
 
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPMapLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.util.Linq;
 
 import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.MAP;
 
@@ -41,6 +44,13 @@ public class DBSPTypeMap extends DBSPTypeUser {
         if (mayBeNull == this.mayBeNull)
             return this;
         return new DBSPTypeMap(this.getKeyType(), this.getValueType(), mayBeNull);
+    }
+
+    @Override
+    public DBSPExpression defaultValue() {
+        if (this.mayBeNull)
+            return this.none();
+        return new DBSPMapLiteral(this, Linq.list());
     }
 
     // sameType and hashCode inherited from TypeUser.
