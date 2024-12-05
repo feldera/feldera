@@ -324,8 +324,8 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                     return left.withMayBeNull(anyNull);
             }
             if (rd != null) {
-                // FLOAT op DECIMAL, convert to FLOAT
-                return lf;
+                // FLOAT op DECIMAL, convert to DOUBLE
+                return new DBSPTypeDouble(left.getNode(), anyNull);
             }
         }
         if (ld != null) {
@@ -335,8 +335,8 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                         Math.max(ln.getPrecision(), rn.getPrecision()), ld.scale, anyNull);
             }
             if (rf != null) {
-                // DECIMAL op FLOAT, convert to FLOAT
-                return rf;
+                // DECIMAL op FLOAT, convert to DOUBLE
+                return new DBSPTypeDouble(right.getNode(), anyNull);
             }
             // DECIMAL op DECIMAL does not convert to a common type.
         }
@@ -441,6 +441,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                     opcode == DBSPOpcode.SUB || opcode == DBSPOpcode.MUL) {
                 // Use the inferred Calcite type for the output as the common type
                 commonBase = typeWithNull;
+                expressionResultType = commonBase;
             }
             if (opcode.isComparison()) {
                 expressionResultType = DBSPTypeBool.create(anyNull);
