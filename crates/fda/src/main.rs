@@ -16,6 +16,7 @@ use tabled::builder::Builder;
 use tabled::settings::Style;
 use tempfile::tempfile;
 use tokio::process::Command;
+use tokio::runtime::Handle;
 use tokio::time::{sleep, timeout, Duration};
 
 mod cli;
@@ -67,6 +68,88 @@ pub(crate) fn make_client(
 
     let client = client_builder.build()?;
     Ok(Client::new_with_client(host.as_str(), client))
+}
+
+/// A helper struct that temporarily disables the cache for a pipeline
+/// as long as it is in scope.
+struct TemporaryCacheDisable {
+    name: String,
+    client: Client,
+    original_pc: ProgramConfig,
+}
+
+impl TemporaryCacheDisable {
+    async fn new(name: String, client: Client, original_pc: ProgramConfig) -> Self {
+        TemporaryCacheDisable::set_cache_flag_disabled(
+            client.clone(),
+            name.clone(),
+            original_pc.clone(),
+            true,
+        )
+        .await;
+
+        Self {
+            name,
+            client,
+            original_pc,
+        }
+    }
+
+    async fn set_cache_flag_disabled(
+        client: Client,
+        name: String,
+        original_pc: ProgramConfig,
+        disable: bool,
+    ) {
+        let pc = if disable {
+            let mut disabled_cache_pc = original_pc.clone();
+            disabled_cache_pc.cache = Some(false);
+            disabled_cache_pc
+        } else {
+            original_pc.clone()
+        };
+
+        client
+            .patch_pipeline()
+            .pipeline_name(name.clone())
+            .body(PatchPipeline {
+                description: None,
+                name: None,
+                program_code: None,
+                udf_rust: None,
+                udf_toml: None,
+                program_config: Some(pc),
+                runtime_config: None,
+            })
+            .send()
+            .await
+            .map_err(handle_errors_fatal(
+                client.baseurl.clone(),
+                "Failed to enable/disable compilation cache",
+                1,
+            ))
+            .unwrap();
+    }
+}
+
+impl Drop for TemporaryCacheDisable {
+    fn drop(&mut self) {
+        if let Ok(handle) = Handle::try_current() {
+            debug!("TemporaryCacheDisable::drop reset cache value to original setting");
+            let client = self.client.clone();
+            let name = self.name.clone();
+            let original_pc = self.original_pc.clone();
+            handle.spawn(TemporaryCacheDisable::set_cache_flag_disabled(
+                client,
+                name,
+                original_pc,
+                false,
+            ));
+        } else {
+            // This shouldn't happen the way we currently run things
+            unreachable!("No Tokio runtime available for re-enabling the cache.");
+        }
+    }
 }
 
 fn handle_errors_fatal(
@@ -414,20 +497,27 @@ async fn pipeline(action: PipelineAction, client: Client) {
             recompile,
             no_wait,
         } => {
-            if recompile {
-                // Force recompilation by adding/removing a space at the end of the program code.
-                let pc = client
-                    .get_pipeline()
-                    .pipeline_name(name.clone())
-                    .send()
-                    .await
-                    .map_err(handle_errors_fatal(
-                        client.baseurl.clone(),
-                        "Failed to get program config",
-                        1,
-                    ))
-                    .unwrap();
+            // Force recompilation by adding/removing a space at the end of the program code
+            // and disabling the compilation cache
+            let pc = client
+                .get_pipeline()
+                .pipeline_name(name.clone())
+                .send()
+                .await
+                .map_err(handle_errors_fatal(
+                    client.baseurl.clone(),
+                    "Failed to get program config",
+                    1,
+                ))
+                .unwrap();
 
+            let _cd = if recompile {
+                let cd = TemporaryCacheDisable::new(
+                    name.clone(),
+                    client.clone(),
+                    pc.program_config.clone(),
+                )
+                .await;
                 let new_program = if pc.program_code.ends_with(|c: char| c.is_whitespace()) {
                     pc.program_code.trim().to_string()
                 } else {
@@ -455,7 +545,10 @@ async fn pipeline(action: PipelineAction, client: Client) {
                     ))
                     .unwrap();
                 info!("Forcing recompilation this may take a few seconds...");
-            }
+                Some(cd)
+            } else {
+                None
+            };
 
             let mut print_every_30_seconds = tokio::time::Instant::now();
             let mut compiling = true;
