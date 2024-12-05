@@ -573,17 +573,21 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
             this.rethrow(e, currentView);
         } catch (RuntimeException e) {
             Throwable current = e;
+            boolean handled = false;
             while (current.getCause() != null) {
                 // Try to find a nicer cause
                 Throwable t = current.getCause();
                 if (t instanceof CalciteException ex) {
                     this.messages.reportError(ex);
                     this.rethrow(ex, currentView);
+                    handled = true;
                 }
                 current = t;
             }
-            this.messages.reportError(e);
-            this.rethrow(e, currentView);
+            if (!handled) {
+                this.messages.reportError(e);
+                this.rethrow(e, currentView);
+            }
         } catch (Throwable e) {
             this.messages.reportError(e);
             this.rethrow(new RuntimeException(e), currentView);
