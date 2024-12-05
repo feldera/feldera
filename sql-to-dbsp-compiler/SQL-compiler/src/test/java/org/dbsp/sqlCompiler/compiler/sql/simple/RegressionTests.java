@@ -1159,4 +1159,19 @@ public class RegressionTests extends SqlIoTest {
         visitor.apply(circuit);
         this.compileRustTestCase(sql);
     }
+
+    @Test
+    public void issue3093() {
+        this.compileRustTestCase("""
+                CREATE TABLE t1(c0 REAL);
+                CREATE VIEW v0 AS
+                SELECT t1.c0 + 0.42331, t1.c0 * 0.42331, .42331 * t1.c0 FROM t1;""");
+    }
+
+    @Test
+    public void issue3094() {
+        this.compileRustTestCase("""
+                CREATE TABLE t1(c0 REAL, c1 VARCHAR, c2 CHAR);
+                CREATE VIEW v2_optimized AS SELECT MIN(t1.c1) FROM t1 WHERE (1 IS NOT DISTINCT FROM 2);""");
+    }
 }
