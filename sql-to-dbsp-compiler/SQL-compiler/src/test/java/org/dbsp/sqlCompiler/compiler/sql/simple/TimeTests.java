@@ -70,9 +70,7 @@ public class TimeTests extends BaseSQLTests {
     public void issue1843() {
         String sql = """
                 create table credit_card_transactions(transaction_time timestamp);
-
-                create table my_timer(t timestamp);\s
-
+                create table my_timer(t timestamp);
                 create view recent_transactions as
                 SELECT * FROM credit_card_transactions
                 WHERE transaction_time >= (SELECT t FROM my_timer) - INTERVAL 1 DAY;""";
@@ -83,7 +81,7 @@ public class TimeTests extends BaseSQLTests {
     public void issue1844() {
         String sql = """
                 create table credit_card_transactions(transaction_time timestamp);
-                create table my_timer(id int NOT NULL primary key, t timestamp);\s
+                create table my_timer(id int NOT NULL primary key, t timestamp);
 
                 create view recent_transactions as
                 SELECT * FROM credit_card_transactions

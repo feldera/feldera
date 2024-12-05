@@ -25,6 +25,29 @@ public class RegressionTests extends SqlIoTest {
     }
 
     @Test
+    public void issue3083() {
+        var ccs = this.getCCS("""
+                CREATE TABLE timestamp_tbl(c1 TIMESTAMP, c2 TIMESTAMP);
+                CREATE LOCAL VIEW atbl_interval_months AS SELECT
+                (c1 - c2)MONTH AS c1_minus_c2,
+                (c2 - c1)MONTH AS c2_minus_c1
+                FROM timestamp_tbl;
+                
+                CREATE VIEW atbl_interval_months_res AS SELECT
+                (c1_minus_c2) = -(c2_minus_c1) AS eq
+                FROM atbl_interval_months;""");
+        ccs.step("""
+                 INSERT INTO timestamp_tbl VALUES('2019-12-05 08:27:00', '2014-11-05 12:45:00');
+                 INSERT INTO timestamp_tbl VALUES('2020-06-21 14:00:00', '2023-02-26 18:00:00');""",
+                """ 
+                  eq   | weight
+                 ------------------
+                  true | 1
+                  true | 1""");
+        this.addRustTestCase(ccs);
+    }
+
+    @Test
     public void issue3070() {
         this.compileRustTestCase("""
                 CREATE TABLE t0(c0 INT);
