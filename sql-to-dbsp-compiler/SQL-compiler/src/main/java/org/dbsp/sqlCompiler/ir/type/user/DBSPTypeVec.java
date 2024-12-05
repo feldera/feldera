@@ -44,6 +44,8 @@ public class DBSPTypeVec extends DBSPTypeUser implements ICollectionType {
 
     @Override
     public DBSPExpression defaultValue() {
+        if (this.mayBeNull)
+            return this.none();
         return new DBSPVecLiteral(this, false);
     }
 
