@@ -5,7 +5,6 @@ use crate::transport::secret_resolver::resolve_secret;
 use crate::{AsyncErrorCallback, OutputEndpoint};
 use anyhow::{anyhow, bail, Error as AnyError, Result as AnyResult};
 use feldera_types::transport::kafka::KafkaOutputConfig;
-use log::debug;
 use rdkafka::message::OwnedHeaders;
 use rdkafka::{
     config::FromClientConfigAndContext,
@@ -15,6 +14,8 @@ use rdkafka::{
     ClientConfig, ClientContext,
 };
 use std::{sync::RwLock, time::Duration};
+use tracing::span::EnteredSpan;
+use tracing::{debug, info_span};
 
 const DEFAULT_MAX_MESSAGE_SIZE: usize = 1_000_000;
 
@@ -83,8 +84,13 @@ pub struct KafkaOutputEndpoint {
     max_message_size: usize,
 }
 
+fn span(config: &KafkaOutputConfig) -> EnteredSpan {
+    info_span!("kafka_output", ft = false, topic = config.topic.clone()).entered()
+}
+
 impl KafkaOutputEndpoint {
     pub fn new(mut config: KafkaOutputConfig, endpoint_name: &str) -> AnyResult<Self> {
+        let _guard = span(&config);
         // Create Kafka producer configuration.
         config.validate()?;
         debug!("Starting Kafka output endpoint: {config:?}");
@@ -137,6 +143,7 @@ impl OutputEndpoint for KafkaOutputEndpoint {
         // retry indefinitely.
         //
         // We don't actually care about the metadata.
+        let _guard = span(&self.config);
         self.kafka_producer
             .context()
             .deferred_logging
@@ -160,6 +167,7 @@ impl OutputEndpoint for KafkaOutputEndpoint {
     }
 
     fn push_buffer(&mut self, buffer: &[u8]) -> AnyResult<()> {
+        let _guard = span(&self.config);
         let record = <BaseRecord<(), [u8], ()>>::to(&self.config.topic)
             .payload(buffer)
             .headers(self.headers.clone());
@@ -167,6 +175,7 @@ impl OutputEndpoint for KafkaOutputEndpoint {
     }
 
     fn push_key(&mut self, key: &[u8], val: Option<&[u8]>) -> AnyResult<()> {
+        let _guard = span(&self.config);
         let mut record = <BaseRecord<[u8], [u8], ()>>::to(&self.config.topic).key(key);
 
         if let Some(val) = val {
@@ -174,11 +183,7 @@ impl OutputEndpoint for KafkaOutputEndpoint {
         }
 
         record = record.headers(self.headers.clone());
-
-        self.kafka_producer
-            .send(record)
-            .map_err(|(err, _record)| err)?;
-        Ok(())
+        kafka_send(&self.kafka_producer, &self.config.topic, record)
     }
 
     fn is_fault_tolerant(&self) -> bool {

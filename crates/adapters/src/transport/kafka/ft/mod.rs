@@ -10,7 +10,6 @@ mod output;
 
 use anyhow::{anyhow, bail, Context, Error as AnyError, Result as AnyResult};
 use feldera_types::transport::kafka::{default_redpanda_server, KafkaLogLevel};
-use log::{debug, error, warn};
 use rdkafka::{
     client::Client as KafkaClient,
     config::RDKafkaLogLevel,
@@ -30,6 +29,7 @@ use std::{
     sync::Arc,
     time::Duration,
 };
+use tracing::{debug, error, warn};
 use uuid::Uuid;
 
 pub use input::KafkaFtInputEndpoint;

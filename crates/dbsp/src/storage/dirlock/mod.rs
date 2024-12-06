@@ -4,7 +4,6 @@
 //! using the same data directory.
 
 use libc::{c_int, c_short};
-use log::{error, info};
 use std::collections::HashSet;
 use std::fs::{self, File};
 use std::io::{Error as IoError, ErrorKind};
@@ -15,6 +14,7 @@ use std::process;
 use std::sync::{LazyLock, Mutex};
 use std::thread::sleep;
 use std::time::{Duration, Instant};
+use tracing::{error, info};
 
 use crate::storage::backend::StorageError;
 

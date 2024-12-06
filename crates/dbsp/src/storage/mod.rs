@@ -11,10 +11,10 @@ pub mod file;
 mod test;
 
 use fdlimit::{raise_fd_limit, Outcome::LimitRaised};
-use log::{info, warn};
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use tracing::{info, warn};
 
 use crate::{Error, Runtime};
 use std::sync::Once;

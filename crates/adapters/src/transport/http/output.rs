@@ -3,8 +3,6 @@ use actix_web::{http::header::ContentType, web::Bytes, HttpResponse};
 use anyhow::{anyhow, bail, Result as AnyResult};
 use async_stream::stream;
 use crossbeam::sync::ShardedLock;
-use log::debug;
-use log::error;
 use serde::{ser::SerializeStruct, Serializer};
 use serde_json::value::RawValue;
 use std::{
@@ -18,6 +16,7 @@ use tokio::{
     sync::{mpsc, oneshot},
     time::timeout,
 };
+use tracing::{debug, error, info_span};
 
 // TODO: make this configurable via endpoint config.
 const MAX_BUFFERS: usize = 100;
@@ -274,6 +273,7 @@ impl OutputEndpoint for HttpOutputEndpoint {
     }
 
     fn push_buffer(&mut self, buffer: &[u8]) -> AnyResult<()> {
+        let _guard = info_span!("http_output").entered();
         self.inner
             .push_buffer(Some(buffer), self.inner.backpressure)
     }

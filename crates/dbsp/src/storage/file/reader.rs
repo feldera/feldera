@@ -1077,7 +1077,7 @@ impl ImmutableFileRef {
         if let Some(file_handle) = self.file_handle.as_ref() {
             self.cache.mark_for_checkpoint(file_handle);
         } else {
-            log::error!("file_handle was None?")
+            tracing::error!("file_handle was None?")
         }
     }
 }

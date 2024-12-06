@@ -43,7 +43,6 @@ use feldera_types::format::json::JsonLines;
 use governor::DefaultDirectRateLimiter;
 use governor::Quota;
 use governor::RateLimiter;
-use log::{debug, error, info, trace, warn};
 use metadata::Checkpoint;
 use metadata::InputLog;
 use metadata::StepMetadata;
@@ -78,6 +77,7 @@ use std::{
 };
 use tokio::sync::oneshot;
 use tokio::sync::Mutex as TokioMutex;
+use tracing::{debug, error, info, trace, warn};
 use uuid::Uuid;
 
 mod error;

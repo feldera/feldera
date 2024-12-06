@@ -14,9 +14,9 @@ use crate::{
 use anyhow::{bail, Result as AnyResult};
 use dbsp::circuit::tokio::TOKIO;
 use feldera_types::program_schema::Relation;
-use log::error;
 #[cfg(test)]
 use mockall::automock;
+use tracing::{error, info_span, Instrument};
 
 use crate::transport::InputEndpoint;
 use feldera_types::transport::s3::S3InputConfig;
@@ -209,11 +209,13 @@ impl S3InputReader {
         s3_client: Box<dyn S3Api>,
     ) -> S3InputReader {
         let (sender, receiver) = unbounded_channel();
-        let config_clone = config.clone();
         std::thread::spawn({
+            let config = config.clone();
             move || {
+                let span = info_span!("s3_input", bucket = config.bucket_name.clone());
                 TOKIO.block_on(async {
-                    let _ = Self::worker_task(s3_client, config_clone, consumer, parser, receiver)
+                    let _ = Self::worker_task(s3_client, config, consumer, parser, receiver)
+                        .instrument(span)
                         .await;
                 })
             }

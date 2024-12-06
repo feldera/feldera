@@ -7,12 +7,10 @@ use crate::{
 };
 use anyhow::Result as AnyResult;
 use dbsp::{DBData, DBSPHandle, OrdZSet, Runtime};
-use env_logger::Env;
 use feldera_adapterlib::format::InputBuffer;
 use feldera_types::serde_with_context::{
     DeserializeWithContext, SerializeWithContext, SqlSerdeConfig,
 };
-use log::{Log, Metadata, Record};
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::ffi::OsStr;
@@ -21,10 +19,12 @@ use std::hash::Hash;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::{
-    io::Write,
     thread::sleep,
     time::{Duration, Instant},
 };
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::util::SubscriberInitExt;
+use tracing_subscriber::EnvFilter;
 
 mod data;
 
@@ -54,23 +54,7 @@ pub use mock_dezset::{wait_for_output_ordered, wait_for_output_unordered, MockDe
 pub use mock_input_consumer::{MockInputConsumer, MockInputParser};
 pub use mock_output_consumer::MockOutputConsumer;
 
-pub struct TestLogger;
-
-pub static TEST_LOGGER: TestLogger = TestLogger;
-
 pub static DEFAULT_TIMEOUT_MS: u128 = 600_000;
-
-impl Log for TestLogger {
-    fn enabled(&self, _metadata: &Metadata) -> bool {
-        true
-    }
-
-    fn log(&self, record: &Record) {
-        println!("{} - {}", record.level(), record.args());
-    }
-
-    fn flush(&self) {}
-}
 
 /// Wait for `predicate` to become `true`.
 ///
@@ -283,17 +267,12 @@ where
 }
 
 pub(crate) fn init_test_logger() {
-    let _ = env_logger::Builder::from_env(Env::default().default_filter_or("info"))
-        .is_test(true)
-        .format(move |buf, record| {
-            let t = chrono::Utc::now();
-            let t = format!("{}", t.format("%Y-%m-%d %H:%M:%S"));
-            writeln!(
-                buf,
-                "{t} {} {}",
-                buf.default_styled_level(record.level()),
-                record.args()
-            )
-        })
+    let _ = tracing_subscriber::registry()
+        .with(tracing_subscriber::fmt::layer().with_test_writer())
+        .with(
+            EnvFilter::try_from_default_env()
+                .or_else(|_| EnvFilter::try_new("info"))
+                .unwrap(),
+        )
         .try_init();
 }
