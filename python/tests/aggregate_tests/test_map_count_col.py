@@ -42,7 +42,7 @@ class aggtst_map_count_col_distinct_gby(TstView):
 class aggtst_map_count_col_where(TstView):
     def __init__(self):
         # checked manually
-        self.data = [{"c1": 1, "c2": 1}]
+        self.data = [{"c1": 2, "c2": 2}]
         self.sql = """CREATE MATERIALIZED VIEW map_count_col_where AS SELECT
                       COUNT(c1) FILTER(WHERE c1 < c2) AS c1, COUNT(c2) FILTER(WHERE c1 < c2) AS c2
                       FROM map_tbl"""
@@ -51,7 +51,7 @@ class aggtst_map_count_col_where(TstView):
 class aggtst_map_count_where_groupby(TstView):
     def __init__(self):
         # checked manually
-        self.data = [{"id": 0, "c1": 1, "c2": 1}, {"id": 1, "c1": 0, "c2": 0}]
+        self.data = [{"id": 0, "c1": 1, "c2": 1}, {"id": 1, "c1": 1, "c2": 1}]
         self.sql = """CREATE MATERIALIZED VIEW map_count_col_where_gby AS SELECT
                       id, COUNT(c1) FILTER(WHERE c1 < c2) AS c1, COUNT(c2) FILTER(WHERE c1 < c2) AS c2
                       FROM map_tbl

@@ -15,7 +15,7 @@ class aggtst_map_some_groupby(TstView):
         # checked manually
         self.data = [
             {"id": 0, "c1": False, "c2": True},
-            {"id": 1, "c1": True, "c2": False},
+            {"id": 1, "c1": True, "c2": True},
         ]
         self.sql = """CREATE MATERIALIZED VIEW map_some_gby AS SELECT
                       id, SOME(c1 > c2) AS c1, SOME(c2 > c1) AS c2
@@ -37,7 +37,7 @@ class aggtst_map_some_distinct_gby(TstView):
         # checked manually
         self.data = [
             {"id": 0, "c1": False, "c2": True},
-            {"id": 1, "c1": True, "c2": False},
+            {"id": 1, "c1": True, "c2": True},
         ]
         self.sql = """CREATE MATERIALIZED VIEW map_some_distinct_gby AS SELECT
                       id, SOME(DISTINCT c1 > c2) AS c1, SOME(DISTINCT c2 > c1) AS c2
@@ -59,7 +59,7 @@ class aggtst_map_some_where_groupby(TstView):
         # checked manually
         self.data = [
             {"id": 0, "c1": False, "c2": True},
-            {"id": 1, "c1": True, "c2": False},
+            {"id": 1, "c1": True, "c2": True},
         ]
         self.sql = """CREATE MATERIALIZED VIEW map_some_where_gby AS SELECT
                       id, SOME(c1 > c2) FILTER(WHERE c2 IS NOT NULL) AS c1, SOME(c2 > c1) FILTER(WHERE c2 IS NOT NULL) AS c2
