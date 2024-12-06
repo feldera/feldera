@@ -15,7 +15,7 @@ class aggtst_map_max_gby(TstView):
         # checked manually
         self.data = [
             {"id": 0, "c1": {"q": 11, "v": 66}, "c2": {"q": 22}},
-            {"id": 1, "c1": {"x": 8, "y": 6}, "c2": {"i": 5, "j": 66}},
+            {"id": 1, "c1": {"x": 8, "y": 6}, "c2": {'q': 11, 'v': 66, 'x': None}},
         ]
         self.sql = """CREATE MATERIALIZED VIEW map_max_gby AS SELECT
                       id, MAX(c1) AS c1, MAX(c2) AS c2
@@ -37,7 +37,7 @@ class aggtst_map_max_distinct_gby(TstView):
         # checked manually
         self.data = [
             {"id": 0, "c1": {"q": 11, "v": 66}, "c2": {"q": 22}},
-            {"id": 1, "c1": {"x": 8, "y": 6}, "c2": {"i": 5, "j": 66}},
+            {"id": 1, "c1": {"x": 8, "y": 6}, "c2": {'q': 11, 'v': 66, 'x': None}},
         ]
         self.sql = """CREATE MATERIALIZED VIEW map_max_distinct_gby AS SELECT
                       id, MAX(DISTINCT c1) AS c1, MAX(DISTINCT c2) AS c2
@@ -59,7 +59,7 @@ class aggtst_map_max_where_gby(TstView):
         # checked manually
         self.data = [
             {"id": 0, "c1": {"q": 11, "v": 66}, "c2": {"q": 22}},
-            {"id": 1, "c1": None, "c2": None},
+            {"id": 1, "c1": {'q': 11, 'v': 66}, "c2": {'q': 11, 'v': 66, 'x': None}},
         ]
         self.sql = """CREATE MATERIALIZED VIEW map_max_where_gby AS SELECT
                       id, MAX(c1) FILTER(WHERE c1 < c2) AS c1, MAX(c2) FILTER(WHERE c1 < c2) AS c2
