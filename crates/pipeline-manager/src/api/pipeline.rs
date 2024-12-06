@@ -509,19 +509,28 @@ pub(crate) async fn post_pipeline_action(
     Ok(HttpResponse::Accepted().finish())
 }
 
-/// Start (resume) or pause the processing of data for an input connector.
+/// Start (resume) or pause the input connector.
 ///
-/// The following values of the `action` argument are accepted by this endpoint:
-/// - 'start': Resume processing data.
-/// - 'pause': Pause processing data.
+/// The following values of the `action` argument are accepted: `start` and `pause`.
 ///
-/// By default, the input connectors are `Running` upon pipeline deployment.
+/// Input connectors can be in either the `Running` or `Paused` state. By default,
+/// connectors are initialized in the `Running` state when a pipeline is deployed.
+/// In this state, the connector actively fetches data from its configured data
+/// source and forwards it to the pipeline. If needed, a connector can be created
+/// in the `Paused` state by setting its
+/// [`paused`](https://docs.feldera.com/connectors/#generic-attributes) property
+/// to `true`. When paused, the connector remains idle until reactivated using the
+/// `start` command. Conversely, a connector in the `Running` state can be paused
+/// at any time by issuing the `pause` command.
+///
+/// The current connector state can be retrieved via the
+/// `GET /v0/pipelines/{pipeline_name}/stats` endpoint.
 ///
 /// Note that only if both the pipeline *and* the connector state is `Running`,
-/// is data of an input connector being processed:
+/// is the input connector active.
 /// ```text
-/// Pipeline state    Connector state    Connector data is being processed?
-/// --------------    ---------------    ----------------------------------
+/// Pipeline state    Connector state    Connector is active?
+/// --------------    ---------------    --------------------
 /// Paused            Paused             No
 /// Paused            Running            No
 /// Running           Paused             No
@@ -568,15 +577,13 @@ pub(crate) async fn post_pipeline_input_connector_action(
 
     // Formulate and URL encode endpoint name to account for special characters.
     // Only tables names surrounded by double quotes are case-sensitive.
-    // Case-insensitive table names are converted to lower case in the endpoints names.
-    let endpoint_name = format!(
-        "{}.{connector_name}",
-        if table_name.starts_with("\"") && table_name.ends_with("\"") {
-            table_name.clone()
-        } else {
-            table_name.to_lowercase()
-        }
-    );
+    // Case-insensitive table names are converted to lowercase.
+    let final_table_name = if table_name.starts_with("\"") && table_name.ends_with("\"") {
+        table_name.clone()
+    } else {
+        table_name.to_lowercase()
+    };
+    let endpoint_name = format!("{final_table_name}.{connector_name}");
     let encoded_endpoint_name = urlencoding::encode(&endpoint_name).to_string();
 
     // Forward the action request to the pipeline
