@@ -116,7 +116,7 @@ public class OptimizeProjectionVisitor extends CircuitCloneWithGraphsVisitor {
         DBSPClosureExpression joinFunction = source.getClosureFunction();
         DBSPExpression function = operator.getFunction();
         DBSPExpression newFunction = function.to(DBSPClosureExpression.class)
-                .applyAfter(reporter, joinFunction);
+                .applyAfter(reporter, joinFunction, true);
         return source.withFunction(newFunction, operator.outputType).to(DBSPJoinBaseOperator.class);
     }
 
@@ -148,7 +148,7 @@ public class OptimizeProjectionVisitor extends CircuitCloneWithGraphsVisitor {
         DBSPExpression function = operator.getFunction();
         DBSPClosureExpression joinFunction = source.getClosureFunction();
         DBSPExpression newFunction = function.to(DBSPClosureExpression.class)
-                .applyAfter(reporter, joinFunction);
+                .applyAfter(reporter, joinFunction, true);
         if (source.is(DBSPJoinOperator.class)) {
             return new DBSPJoinIndexOperator(source.getNode(), operator.getOutputIndexedZSetType(),
                     newFunction, operator.isMultiset, source.left(), source.right());

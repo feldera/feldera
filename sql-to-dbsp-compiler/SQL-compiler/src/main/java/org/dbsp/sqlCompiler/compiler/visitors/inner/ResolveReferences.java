@@ -8,6 +8,7 @@ import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPLetExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 
@@ -59,6 +60,12 @@ public class ResolveReferences extends InnerVisitor {
     @Override
     public void postorder(DBSPLetStatement statement) {
         this.substitutionContext.substitute(statement.variable, statement);
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPLetExpression expression) {
+        this.substitutionContext.substitute(expression.variable.variable, expression);
+        return VisitDecision.CONTINUE;
     }
 
     @Override

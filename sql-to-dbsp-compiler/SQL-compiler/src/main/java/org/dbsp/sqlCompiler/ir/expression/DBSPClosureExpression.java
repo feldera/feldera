@@ -141,12 +141,19 @@ public final class DBSPClosureExpression extends DBSPExpression {
     /** Compose this closure by applying it after the 'before'
      * closure expression.  This closure must have exactly 1
      * parameter, while the before one can have multiple ones.
-     * @param before Closure to compose. */
+     * @param before Closure to compose.
+     * @param inline If true, inline the call, otherwise use a temporary variable. */
     public DBSPClosureExpression applyAfter(
-            DBSPCompiler compiler, DBSPClosureExpression before) {
+            DBSPCompiler compiler, DBSPClosureExpression before, boolean inline) {
         if (this.parameters.length != 1)
             throw new InternalCompilerError("Expected closure with 1 parameter", this);
-        DBSPExpression apply = this.call(before.body.borrow());
-        return apply.closure(before.parameters).reduce(compiler).to(DBSPClosureExpression.class);
+        if (inline) {
+            DBSPExpression apply = this.call(before.body.borrow());
+            return apply.closure(before.parameters).reduce(compiler).to(DBSPClosureExpression.class);
+        } else {
+            DBSPLetExpression let = new DBSPLetExpression(this.parameters[0].asVariable(),
+                    before.body.borrow(), this.body);
+            return let.closure(before.parameters);
+        }
     }
 }

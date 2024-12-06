@@ -60,6 +60,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPFieldExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPForExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPIfExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPIsNullExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPLetExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPNoComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPPathExpression;
@@ -961,6 +962,21 @@ public class ToRustInnerVisitor extends InnerVisitor {
                 break;
             }
         }
+        return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPLetExpression expression) {
+        this.builder.increase()
+                .append("{")
+                .newline()
+                .append("let ")
+                .append(expression.variable.variable)
+                .append(" = ");
+        expression.initializer.accept(this);
+        this.builder.append(";").newline();
+        expression.consumer.accept(this);
+        this.builder.decrease().append("}");
         return VisitDecision.STOP;
     }
 

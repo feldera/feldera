@@ -36,6 +36,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPFlatmap;
 import org.dbsp.sqlCompiler.ir.expression.DBSPForExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPIfExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPIsNullExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPLetExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPNoComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPPathExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPQualifyTypeExpression;
@@ -915,6 +916,17 @@ public abstract class InnerRewriteVisitor
         DBSPExpression source = this.transform(expression.expression);
         this.pop(expression);
         DBSPExpression result = new DBSPDerefExpression(source);
+        this.map(expression, result);
+        return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPLetExpression expression) {
+        this.push(expression);
+        DBSPExpression initializer = this.transform(expression.initializer);
+        DBSPExpression consumer = this.transform(expression.consumer);
+        this.pop(expression);
+        DBSPExpression result = new DBSPLetExpression(expression.variable, initializer, consumer);
         this.map(expression, result);
         return VisitDecision.STOP;
     }

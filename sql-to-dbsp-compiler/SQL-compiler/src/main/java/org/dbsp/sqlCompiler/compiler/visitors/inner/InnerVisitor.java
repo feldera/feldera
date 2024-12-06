@@ -61,6 +61,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPFlatmap;
 import org.dbsp.sqlCompiler.ir.expression.DBSPForExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPIfExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPIsNullExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPLetExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPNoComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPPathExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPQualifyTypeExpression;
@@ -574,6 +575,10 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
     }
 
     public VisitDecision preorder(DBSPDerefExpression node) {
+        return this.preorder(node.to(DBSPExpression.class));
+    }
+
+    public VisitDecision preorder(DBSPLetExpression node) {
         return this.preorder(node.to(DBSPExpression.class));
     }
 
@@ -1136,6 +1141,10 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
     }
 
     public void postorder(DBSPDerefExpression node) {
+        this.postorder(node.to(DBSPExpression.class));
+    }
+
+    public void postorder(DBSPLetExpression node) {
         this.postorder(node.to(DBSPExpression.class));
     }
 

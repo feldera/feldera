@@ -24,6 +24,7 @@
 package org.dbsp.sqlCompiler.ir.type.primitive;
 
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -44,7 +45,7 @@ public abstract class DBSPTypeBaseType extends DBSPType {
     }
 
     @Override
-    public DBSPExpression caster(DBSPType to) {
+    public DBSPClosureExpression caster(DBSPType to) {
         DBSPVariablePath var = this.var();
         return var.cast(to).applyCloneIfNeeded().closure(var);
     }

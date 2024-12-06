@@ -29,6 +29,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.ir.DBSPNode;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
+import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPPathExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
@@ -172,7 +173,7 @@ public abstract class DBSPType extends DBSPNode implements IDBSPInnerNode {
     }
 
     /** Returns a lambda which casts the current type to the specified type. */
-    public DBSPExpression caster(DBSPType to) {
+    public DBSPClosureExpression caster(DBSPType to) {
         if (this.sameType(to)) {
             DBSPVariablePath var = this.ref().var();
             return var.deref().applyCloneIfNeeded().closure(var);
