@@ -2310,11 +2310,15 @@ async fn basic_orchestration_info(
         .unwrap()
         .iter()
         .find(|input| {
-            if table_name.starts_with("\"") && table_name.ends_with("\"") {
-                input["endpoint_name"] == format!("{table_name}.{connector_name}")
-            } else {
-                input["endpoint_name"] == format!("{}.{connector_name}", table_name.to_lowercase())
-            }
+            input["endpoint_name"]
+                == format!(
+                    "{}.{connector_name}",
+                    if table_name.starts_with("\"") && table_name.ends_with("\"") {
+                        table_name.to_string()
+                    } else {
+                        table_name.to_lowercase()
+                    }
+                )
         })
         .unwrap()
         .clone()["paused"]
@@ -2461,6 +2465,8 @@ async fn pipeline_orchestration_errors() {
     for endpoint in [
         "/v0/pipelines/test/tables/numbers1/connectors/c1/start",
         "/v0/pipelines/test/tables/numbers1/connectors/c1/pause",
+        "/v0/pipelines/test/tables/Numbers1/connectors/c1/pause",
+        "/v0/pipelines/test/tables/NUMBERS1/connectors/c1/pause",
     ] {
         assert_eq!(
             config.post_no_body(endpoint).await.status(),
@@ -2472,7 +2478,9 @@ async fn pipeline_orchestration_errors() {
     // BAD REQUEST
     for endpoint in [
         "/v0/pipelines/test/action2", // Invalid pipeline action
+        "/v0/pipelines/test/Start",   // Invalid pipeline action (case-sensitive)
         "/v0/pipelines/test/tables/numbers1/connectors/c1/action2", // Invalid connector action
+        "/v0/pipelines/test/tables/numbers1/connectors/c1/START", // Invalid connector action (case-sensitive)
     ] {
         assert_eq!(
             config.post_no_body(endpoint).await.status(),
@@ -2486,6 +2494,7 @@ async fn pipeline_orchestration_errors() {
         "/v0/pipelines/test2/start", // Pipeline not found
         "/v0/pipelines/test2/tables/numbers1/connectors/c1/start", // Pipeline not found
         "/v0/pipelines/test/tables/numbers1/connectors/c2/start", // Connector not found
+        "/v0/pipelines/test/tables/numbers1/connectors/C1/start", // Connector not found (case-sensitive)
         "/v0/pipelines/test/tables/numbers2/connectors/c1/start", // Table not found
         "/v0/pipelines/test/tables/numbers2/connectors/c2/start", // Table and connector not found
     ] {
