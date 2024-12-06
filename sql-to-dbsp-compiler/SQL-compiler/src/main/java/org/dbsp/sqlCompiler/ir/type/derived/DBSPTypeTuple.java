@@ -27,6 +27,7 @@ import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
@@ -134,7 +135,7 @@ public class DBSPTypeTuple extends DBSPTypeTupleBase {
     /** Returns a lambda which casts every field of a tuple
      * to the corresponding field of this type. */
     @Override
-    public DBSPExpression caster(DBSPType to) {
+    public DBSPClosureExpression caster(DBSPType to) {
         if (!to.is(DBSPTypeTuple.class))
             return super.caster(to);  // throw
         DBSPTypeTuple tuple = to.to(DBSPTypeTuple.class);
@@ -144,7 +145,7 @@ public class DBSPTypeTuple extends DBSPTypeTupleBase {
         DBSPExpression[] casts = new DBSPExpression[this.tupFields.length];
         for (int i = 0; i < this.tupFields.length; i++) {
             casts[i] = this.tupFields[i].caster(tuple.tupFields[i]);
-            casts[i] = casts[i].call(var.deref().field(i));
+            casts[i] = casts[i].call(var.deepCopy().deref().field(i));
         }
         return new DBSPTupleExpression(casts).closure(var);
     }

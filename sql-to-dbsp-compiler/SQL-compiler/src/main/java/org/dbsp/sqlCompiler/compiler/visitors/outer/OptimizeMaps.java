@@ -58,7 +58,7 @@ public class OptimizeMaps extends CircuitCloneWithGraphsVisitor {
             // mapindex(map) = mapindex
             DBSPClosureExpression expression = source.simpleNode().getClosureFunction();
             DBSPClosureExpression newFunction = operator.getClosureFunction()
-                    .applyAfter(this.compiler(), expression);
+                    .applyAfter(this.compiler(), expression, false);
             DBSPSimpleOperator result = new DBSPMapIndexOperator(
                     operator.getNode(), newFunction, operator.getOutputIndexedZSetType(), source.node().inputs.get(0));
             this.map(operator, result);
@@ -120,7 +120,7 @@ public class OptimizeMaps extends CircuitCloneWithGraphsVisitor {
             // apply(apply) = apply
             DBSPClosureExpression expression = apply.getClosureFunction();
             DBSPClosureExpression newFunction = operator.getClosureFunction()
-                    .applyAfter(this.compiler(), expression);
+                    .applyAfter(this.compiler(), expression, true);
             DBSPSimpleOperator result = new DBSPApplyOperator(
                     operator.getNode(), newFunction, operator.outputType,
                     apply.inputs.get(0), apply.comment);
@@ -143,7 +143,7 @@ public class OptimizeMaps extends CircuitCloneWithGraphsVisitor {
                 DBSPExpression newMap = operator.getFunction();
                 if (jfm.map != null) {
                     newMap = operator.getClosureFunction()
-                            .applyAfter(this.compiler(), jfm.map.to(DBSPClosureExpression.class));
+                            .applyAfter(this.compiler(), jfm.map.to(DBSPClosureExpression.class), true);
                 }
                 DBSPSimpleOperator result = new DBSPJoinFilterMapOperator(
                         jfm.getNode(), operator.getOutputZSetType(), jfm.getFunction(),
@@ -174,7 +174,7 @@ public class OptimizeMaps extends CircuitCloneWithGraphsVisitor {
         } else if (source.node().is(DBSPMapOperator.class) && inputFanout == 1) {
             DBSPClosureExpression expression = source.simpleNode().getClosureFunction();
             DBSPClosureExpression newFunction = operator.getClosureFunction()
-                    .applyAfter(this.compiler(), expression);
+                    .applyAfter(this.compiler(), expression, false);
             DBSPSimpleOperator result = source.simpleNode().withFunction(newFunction, operator.outputType);
             this.map(operator, result);
             return;

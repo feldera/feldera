@@ -26,6 +26,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPDerefExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFieldExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFlatmap;
+import org.dbsp.sqlCompiler.ir.expression.DBSPLetExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPPathExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
@@ -506,6 +507,39 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
         } else {
             result = new MonotoneExpression(expression, new NonMonotoneType(expression.type), null);
         }
+        this.set(expression, result);
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPLetExpression expression) {
+        // We do this in preorder, because we have to set the
+        // variable value after visiting the initializer.
+        this.push(expression);
+        expression.initializer.accept(this);
+        MonotoneExpression value = this.get(expression.initializer);
+        this.variables.put(expression, value);
+
+        expression.consumer.accept(this);
+        MonotoneExpression result = this.get(expression.consumer);
+        if (this.constantExpressions.contains(expression.consumer))
+            this.constantExpressions.add(expression);
+        if (this.positiveExpressions.contains(expression.consumer))
+            this.positiveExpressions.add(expression);
+        this.pop(expression);
+        this.set(expression, result);
+        return VisitDecision.STOP;
+    }
+
+    @Override
+    public void postorder(DBSPLetExpression expression) {
+        MonotoneExpression value = this.get(expression.initializer);
+        this.variables.put(expression, value);
+
+        MonotoneExpression result = this.get(expression.consumer);
+        if (this.constantExpressions.contains(expression.consumer))
+            this.constantExpressions.add(expression);
+        if (this.positiveExpressions.contains(expression.consumer))
+            this.positiveExpressions.add(expression);
         this.set(expression, result);
     }
 

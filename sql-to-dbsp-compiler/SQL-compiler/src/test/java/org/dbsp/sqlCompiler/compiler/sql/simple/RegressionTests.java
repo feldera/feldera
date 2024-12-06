@@ -39,13 +39,13 @@ public class RegressionTests extends SqlIoTest {
                 (c1_minus_c2) = -(c2_minus_c1) AS eq
                 FROM atbl_interval_months;""");
         ccs.step("""
-                        INSERT INTO timestamp_tbl VALUES('2019-12-05 08:27:00', '2014-11-05 12:45:00');
-                        INSERT INTO timestamp_tbl VALUES('2020-06-21 14:00:00', '2023-02-26 18:00:00');""",
+                INSERT INTO timestamp_tbl VALUES('2019-12-05 08:27:00', '2014-11-05 12:45:00');
+                INSERT INTO timestamp_tbl VALUES('2020-06-21 14:00:00', '2023-02-26 18:00:00');""",
                 """ 
-                         eq   | weight
-                        ------------------
-                         true | 1
-                         true | 1""");
+                 eq   | weight
+                ------------------
+                 true | 1
+                 true | 1""");
         this.addRustTestCase(ccs);
     }
 
@@ -68,9 +68,7 @@ public class RegressionTests extends SqlIoTest {
             }
         };
         visitor.getCircuitVisitor(false).apply(ccs.circuit);
-        // TODO: make this "1"
-        // https://github.com/feldera/feldera/issues/3095
-        assert functionCalls[0] == 2;
+        assert functionCalls[0] == 1;
     }
 
     @Test

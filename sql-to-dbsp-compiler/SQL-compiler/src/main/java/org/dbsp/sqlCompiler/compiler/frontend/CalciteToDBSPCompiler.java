@@ -517,7 +517,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
 
         DBSPExpression[] results = new DBSPExpression[inputRowType.size() + 2];
         for (int i = 0; i < inputRowType.size(); i++) {
-            results[i] = row.deref().field(i).applyCloneIfNeeded();
+            results[i] = row.deepCopy().deref().field(i).applyCloneIfNeeded();
         }
         int nextIndex = inputRowType.size();
 
@@ -530,7 +530,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         results[nextIndex] = ExpressionCompiler.compilePolymorphicFunction(
                 "tumble", node, tumbleType, tumbleArguments, 2, 3);
         results[nextIndex + 1] = ExpressionCompiler.makeBinaryExpression(node,
-                tumbleType, DBSPOpcode.ADD, results[nextIndex], interval);
+                tumbleType, DBSPOpcode.ADD, results[nextIndex].deepCopy(), interval.deepCopy());
 
         DBSPClosureExpression func = new DBSPTupleExpression(results).closure(row);
         DBSPMapOperator result = new DBSPMapOperator(node, func, makeZSet(type), opInput.outputPort());
@@ -949,7 +949,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPType inputElementType = operator.getOutputZSetElementType();
         if (inputElementType.sameType(outputElementType))
             return operator;
-        DBSPExpression function = inputElementType.caster(outputElementType);
+        DBSPExpression function = inputElementType.caster(outputElementType).reduce(this.compiler);
         DBSPSimpleOperator map = new DBSPMapOperator(
                 node, function, this.makeZSet(outputElementType), operator.outputPort());
         this.addOperator(map);
@@ -2158,7 +2158,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
             DBSPClosureExpression makeKeys =
                     new DBSPRawTupleExpression(
                             new DBSPTupleExpression(
-                                    Linq.map(this.partitionKeys, p -> rowVar.deref().field(p)), false),
+                                    Linq.map(this.partitionKeys,
+                                            p -> rowVar.deref().field(p).applyCloneIfNeeded()), false),
                             new DBSPTupleExpression(this.node,
                                     lastOperator.getOutputZSetElementType().to(DBSPTypeTuple.class),
                                     Objects.requireNonNull(flattened.fields)))
