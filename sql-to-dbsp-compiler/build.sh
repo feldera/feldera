@@ -18,7 +18,7 @@ else
     # Switch to this script when testing a branch in mihaibudiu's fork that
     # hasn't been merged yet
     CALCITE_REPO="https://github.com/mihaibudiu/calcite.git"
-    CALCITE_BRANCH="variant"
+    CALCITE_BRANCH="stable-variant"
     CALCITE_NEXT_COMMIT="6317e1cbf1914390a6c1062c8563187b65468729"
 fi
 CALCITE_NEXT="1.39.0"
