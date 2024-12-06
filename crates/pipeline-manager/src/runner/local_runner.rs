@@ -505,7 +505,8 @@ impl PipelineExecutor for LocalRunner {
             // No process handle
             return Err(ManagerError::from(RunnerError::PipelineDeploymentError {
                 pipeline_id: self.pipeline_id,
-                error: "Pipeline process is no longer owned by runner".to_string(),
+                error: "The pipeline-manager and this pipeline were previously terminated"
+                    .to_string(),
             }));
         };
 
