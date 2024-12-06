@@ -2,7 +2,7 @@
 
 use crate::Runtime;
 use std::cell::RefCell;
-use std::mem::{replace, take};
+use std::mem::replace;
 use std::sync::{Arc, Mutex, Weak};
 use std::thread::{Builder, Thread};
 use std::thread_local;
@@ -21,7 +21,7 @@ pub enum WorkerStatus {
 }
 
 struct Inner {
-    new_workers: Vec<Box<dyn FnMut() -> WorkerStatus + Send>>,
+    new_workers: Vec<WorkerConstructorFn>,
     exiting: bool,
     thread: Option<Thread>,
 }
@@ -52,8 +52,23 @@ thread_local! {
     static THREAD: RefCell<Weak<BackgroundThread>> = const { RefCell::new(Weak::new()) };
 }
 
+/// A function that returns a [WorkerFn].
+///
+/// This exists because the [WorkerFn] that we use constructs a merger, which
+/// are not required to be `Send` and in practice are not (because our storage
+/// implementations are thread-specific).  This means that the caller of
+/// [BackgroundThread::add_worker] can't construct a merger for the worker,
+/// because it would then be moved from the caller's thread to the background
+/// thread. Thus, instead, the `WorkerConstructorFn` is called once in the
+/// background thread to do the construction.
+type WorkerConstructorFn = Box<dyn FnOnce() -> WorkerFn + Send>;
+
+/// The worker function, which is called repeatedly until it reports that it is
+/// done.
+type WorkerFn = Box<dyn FnMut() -> WorkerStatus>;
+
 impl BackgroundThread {
-    pub fn add_worker(worker: Box<dyn FnMut() -> WorkerStatus + Send>) {
+    pub fn add_worker(worker: WorkerConstructorFn) {
         THREAD.with_borrow_mut(|thread| {
             if let Some(thread) = thread.upgrade() {
                 let mut inner = thread.0.lock().unwrap();
@@ -66,7 +81,7 @@ impl BackgroundThread {
         });
     }
 
-    fn new(worker: Box<dyn FnMut() -> WorkerStatus + Send>) -> Weak<Self> {
+    fn new(worker: WorkerConstructorFn) -> Weak<Self> {
         let bg = Arc::new(Self(Mutex::new(Inner {
             new_workers: vec![worker],
             exiting: false,
@@ -101,7 +116,9 @@ impl BackgroundThread {
         loop {
             // Gather newly submitted workers.
             let mut inner = self.0.lock().unwrap();
-            workers.extend(take(&mut inner.new_workers));
+            for new_worker in inner.new_workers.drain(..) {
+                workers.push(new_worker());
+            }
             if workers.is_empty() {
                 inner.exiting = true;
                 return;
