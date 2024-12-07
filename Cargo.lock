@@ -1136,7 +1136,7 @@ dependencies = [
  "percent-encoding",
  "pin-project-lite",
  "rand",
- "rustls 0.23.14",
+ "rustls 0.23.18",
  "serde",
  "serde_json",
  "serde_urlencoded",
@@ -3767,7 +3767,7 @@ dependencies = [
  "rmp-serde",
  "rmpv",
  "rust_decimal_macros",
- "rustls 0.23.14",
+ "rustls 0.23.18",
  "schema_registry_converter",
  "serde",
  "serde_arrow",
@@ -5501,7 +5501,7 @@ dependencies = [
  "hyper 1.5.0",
  "hyper-util",
  "log",
- "rustls 0.23.14",
+ "rustls 0.23.18",
  "rustls-native-certs 0.8.0",
  "rustls-pki-types",
  "tokio",
@@ -7175,7 +7175,7 @@ dependencies = [
  "refinery",
  "regex",
  "reqwest 0.11.27",
- "rustls 0.23.14",
+ "rustls 0.23.18",
  "serde",
  "serde_json",
  "serde_yaml",
@@ -7767,7 +7767,7 @@ dependencies = [
  "quinn-proto",
  "quinn-udp",
  "rustc-hash 2.0.0",
- "rustls 0.23.14",
+ "rustls 0.23.18",
  "socket2",
  "thiserror 1.0.64",
  "tokio",
@@ -7784,7 +7784,7 @@ dependencies = [
  "rand",
  "ring 0.17.8",
  "rustc-hash 2.0.0",
- "rustls 0.23.14",
+ "rustls 0.23.18",
  "slab",
  "thiserror 1.0.64",
  "tinyvec",
@@ -8182,7 +8182,7 @@ dependencies = [
  "percent-encoding",
  "pin-project-lite",
  "quinn",
- "rustls 0.23.14",
+ "rustls 0.23.18",
  "rustls-native-certs 0.8.0",
  "rustls-pemfile 2.2.0",
  "rustls-pki-types",
@@ -8529,9 +8529,9 @@ dependencies = [
 
 [[package]]
 name = "rustls"
-version = "0.23.14"
+version = "0.23.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "415d9944693cb90382053259f89fbb077ea730ad7273047ec63b19bc9b160ba8"
+checksum = "9c9cc1d47e243d655ace55ed38201c19ae02c148ae56412ab8750e8f0166ab7f"
 dependencies = [
  "aws-lc-rs",
  "log",
@@ -9875,7 +9875,7 @@ version = "0.26.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0c7bc40d0e5a97695bb96e27995cd3a08538541b0a846f65bba7a359f36700d4"
 dependencies = [
- "rustls 0.23.14",
+ "rustls 0.23.18",
  "rustls-pki-types",
  "tokio",
 ]
