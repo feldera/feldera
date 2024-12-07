@@ -978,6 +978,9 @@ impl<'a> RecordGenerator<'a> {
             let arr_field = Field {
                 name: SqlIdentifier::from("array_element"),
                 columntype,
+                lateness: None,
+                watermark: None,
+                default: None,
             };
 
             if let Some(nl) = Self::maybe_null(field, settings, rng) {
