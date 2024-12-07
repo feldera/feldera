@@ -373,7 +373,7 @@ impl TestStruct2 {
     }
 
     pub fn schema_with_lateness() -> Vec<Field> {
-        let mut fields = vec![
+        let fields = vec![
             Field::new("id".into(), ColumnType::bigint(false)).with_lateness("1000"),
             Field::new("name".into(), ColumnType::varchar(true)),
             Field::new("b".into(), ColumnType::boolean(false)),
