@@ -228,7 +228,7 @@ public class ImplementNow extends Passes {
             DBSPVariablePath var = inputType.ref().var();
             DBSPExpression indexFunction = new DBSPRawTupleExpression(
                     new DBSPTupleExpression(),
-                    var.deref().applyClone());
+                    DBSPTupleExpression.flatten(var.deref()));
             DBSPMapIndexOperator index = new DBSPMapIndexOperator(
                     operator.getNode(), indexFunction.closure(var),
                     TypeCompiler.makeIndexedZSet(new DBSPTypeTuple(), inputType), input.outputPort());
