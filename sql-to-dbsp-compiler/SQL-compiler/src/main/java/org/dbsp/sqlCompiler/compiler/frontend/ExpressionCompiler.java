@@ -832,14 +832,18 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
         List<DBSPExpression> ops = Linq.map(call.operands, e -> e.accept(this));
         String operationName = call.op.kind.sql;
         switch (call.op.kind) {
+            case CHECKED_TIMES:
             case TIMES:
                 return makeBinaryExpression(node, type, DBSPOpcode.MUL, ops);
+            case CHECKED_DIVIDE:
             case DIVIDE:
                 return makeBinaryExpression(node, type, DBSPOpcode.DIV, ops);
             case MOD:
                 return makeBinaryExpression(node, type, DBSPOpcode.MOD, ops);
+            case CHECKED_PLUS:
             case PLUS:
                 return makeBinaryExpressions(node, type, DBSPOpcode.ADD, ops);
+            case CHECKED_MINUS:
             case MINUS:
                 return makeBinaryExpression(node, type, DBSPOpcode.SUB, ops);
             case LESS_THAN:
@@ -874,6 +878,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 return makeUnaryExpression(node, type, DBSPOpcode.IS_NOT_FALSE, ops);
             case PLUS_PREFIX:
                 return makeUnaryExpression(node, type, DBSPOpcode.UNARY_PLUS, ops);
+            case CHECKED_MINUS_PREFIX:
             case MINUS_PREFIX:
                 return makeUnaryExpression(node, type, DBSPOpcode.NEG, ops);
             case BIT_AND:
