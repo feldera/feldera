@@ -20,7 +20,7 @@ use binrw::{
 use dyn_clone::clone_box;
 
 use crate::storage::{
-    backend::{FileHandle, ImmutableFileHandle, Storage, StorageError},
+    backend::{FileReader, FileWriter, Storage, StorageError},
     buffer_cache::{FBuf, FBufSerializer},
     file::{
         format::{
@@ -865,12 +865,12 @@ impl IndexBlockBuilder {
 
 struct BlockWriter {
     cache: Arc<FileCache>,
-    file_handle: Option<FileHandle>,
+    file_handle: Option<Box<dyn FileWriter>>,
     offset: u64,
 }
 
 impl BlockWriter {
-    fn new(cache: &Arc<FileCache>, file_handle: FileHandle) -> Self {
+    fn new(cache: &Arc<FileCache>, file_handle: Box<dyn FileWriter>) -> Self {
         Self {
             cache: cache.clone(),
             file_handle: Some(file_handle),
@@ -878,8 +878,8 @@ impl BlockWriter {
         }
     }
 
-    fn complete(mut self) -> Result<(ImmutableFileHandle, PathBuf), StorageError> {
-        self.cache.complete(self.file_handle.take().unwrap())
+    fn complete(mut self) -> Result<(Arc<dyn FileReader>, PathBuf), StorageError> {
+        self.file_handle.take().unwrap().complete()
     }
 
     fn write_block(&mut self, mut block: FBuf) -> Result<BlockLocation, StorageError> {
@@ -887,17 +887,12 @@ impl BlockWriter {
 
         let location = BlockLocation::new(self.offset, block.len()).unwrap();
         self.offset += block.len() as u64;
-        self.cache
-            .write(self.file_handle.as_ref().unwrap(), location.offset, block)?;
+        self.cache.write(
+            self.file_handle.as_mut().unwrap().as_mut(),
+            location.offset,
+            block,
+        )?;
         Ok(location)
-    }
-}
-
-impl Drop for BlockWriter {
-    fn drop(&mut self) {
-        self.file_handle
-            .take()
-            .map(|file_handle| self.cache.delete_mut(file_handle));
     }
 }
 
@@ -971,7 +966,7 @@ impl Writer {
         Ok(())
     }
 
-    pub fn close(mut self) -> Result<(ImmutableFileHandle, PathBuf), StorageError> {
+    pub fn close(mut self) -> Result<(Arc<dyn FileReader>, PathBuf), StorageError> {
         debug_assert_eq!(self.cws.len(), self.finished_columns.len());
 
         // Write the file trailer block.
@@ -1077,7 +1072,7 @@ where
 
     /// Finishes writing the layer file and returns the writer passed to
     /// [`new`](Self::new).
-    pub fn close(mut self) -> Result<(ImmutableFileHandle, PathBuf), StorageError> {
+    pub fn close(mut self) -> Result<(Arc<dyn FileReader>, PathBuf), StorageError> {
         self.inner.finish_column::<K0, A0>(0)?;
         self.inner.close()
     }
@@ -1233,7 +1228,7 @@ where
     ///
     /// This function will panic if [`write1`](Self::write1) has been called
     /// without a subsequent call to [`write0`](Self::write0).
-    pub fn close(mut self) -> Result<(ImmutableFileHandle, PathBuf), StorageError> {
+    pub fn close(mut self) -> Result<(Arc<dyn FileReader>, PathBuf), StorageError> {
         self.inner.finish_column::<K0, A0>(0)?;
         self.inner.finish_column::<K1, A1>(1)?;
         self.inner.close()

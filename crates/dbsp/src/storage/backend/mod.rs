@@ -9,26 +9,21 @@
 //! The API also prevents reading from a file that is not completed.
 #![warn(missing_docs)]
 
-use dashmap::DashMap;
 use feldera_types::config::StorageCacheConfig;
 use log::{trace, warn};
-use metrics::counter;
 use serde::{ser::SerializeStruct, Serialize, Serializer};
-use std::fs::{remove_file, File};
-use std::sync::atomic::AtomicBool;
 use std::{
     fs::OpenOptions,
     path::{Path, PathBuf},
     sync::{
-        atomic::{AtomicI64, Ordering},
-        Arc, OnceLock,
+        atomic::{AtomicU64, Ordering},
+        Arc,
     },
 };
 use tempfile::TempDir;
 use thiserror::Error;
 use uuid::Uuid;
 
-use crate::circuit::metrics::FILES_DELETED;
 use crate::storage::buffer_cache::FBuf;
 
 #[cfg(target_os = "linux")]
@@ -37,7 +32,7 @@ pub mod memory_impl;
 pub mod posixio_impl;
 
 #[cfg(test)]
-pub(crate) mod tests;
+mod tests;
 
 /// Extension added to files that are incomplete/being written to.
 ///
@@ -48,160 +43,11 @@ const MUTABLE_EXTENSION: &str = ".mut";
 /// Extension for batch files used by the engine.
 const CREATE_FILE_EXTENSION: &str = ".feldera";
 
-/// A global counter for default backends that are initiated per-core.
-static NEXT_FILE_HANDLE: OnceLock<Arc<AtomicIncrementOnlyI64>> = OnceLock::new();
-
-static IMMUTABLE_FILE_METADATA: OnceLock<Arc<ImmutableFiles>> = OnceLock::new();
-
 /// Helper function that appends to a [`PathBuf`].
 fn append_to_path(p: PathBuf, s: &str) -> PathBuf {
     let mut p = p.into_os_string();
     p.push(s);
     p.into()
-}
-
-/// An Increment Only Atomic.
-///
-/// Usable as a global counter to get unique identifiers for file-handles.
-///
-/// Because the buffer cache can be shared among multiple threads.
-#[derive(Debug, Default)]
-pub struct AtomicIncrementOnlyI64 {
-    value: AtomicI64,
-}
-
-impl AtomicIncrementOnlyI64 {
-    /// Creates a new counter with an initial value of 0.
-    pub const fn new() -> Self {
-        Self {
-            value: AtomicI64::new(0),
-        }
-    }
-
-    fn increment(&self) -> i64 {
-        self.value.fetch_add(1, Ordering::Relaxed)
-    }
-}
-
-/// A file-descriptor we can write to.
-
-#[derive(Eq, PartialEq, Debug, Hash)]
-pub struct FileHandle(i64);
-
-impl From<&FileHandle> for i64 {
-    fn from(fd: &FileHandle) -> Self {
-        fd.0
-    }
-}
-
-/// A file-descriptor we can read or prefetch from.
-#[derive(Eq, PartialEq, Debug, Hash)]
-pub struct ImmutableFileHandle(i64);
-
-impl Drop for ImmutableFileHandle {
-    fn drop(&mut self) {
-        if let Some(iftable) = IMMUTABLE_FILE_METADATA.get() {
-            iftable.remove(self.0);
-        }
-    }
-}
-
-impl From<&ImmutableFileHandle> for i64 {
-    fn from(fd: &ImmutableFileHandle) -> Self {
-        fd.0
-    }
-}
-
-/// This struct stores the open files in a way
-/// so that is globally accessible by all backends.
-pub struct ImmutableFiles {
-    inner: DashMap<i64, Arc<FileMetaData>>,
-}
-
-impl ImmutableFiles {
-    fn insert(&self, fd: i64, imf: Arc<FileMetaData>) {
-        let r = self.inner.insert(fd, imf);
-        assert!(r.is_none());
-    }
-
-    fn get(&self, fd: i64) -> Option<Arc<FileMetaData>> {
-        self.inner.get(&fd).map(|v| v.value().clone())
-    }
-
-    fn remove(&self, fd: i64) {
-        self.inner.remove(&fd);
-    }
-
-    fn disable_drop_deletion(&self, fd: i64) {
-        if let Some(imf) = self.inner.get(&fd) {
-            if imf.delete_on_drop.load(Ordering::Relaxed) {
-                imf.delete_on_drop.store(false, Ordering::Relaxed);
-            }
-        }
-    }
-}
-
-impl Default for ImmutableFiles {
-    fn default() -> Self {
-        Self {
-            inner: DashMap::with_capacity(1024),
-        }
-    }
-}
-
-/// We use this to keep track of the files that are currently open
-/// for reading (and may be read by multiple threads).
-pub struct FileMetaData {
-    /// The file.
-    file: File,
-    /// File name.
-    path: PathBuf,
-    /// File size.
-    ///
-    /// -1 if the file size is unknown.
-    size: AtomicI64,
-    /// Delete on drop.
-    ///
-    /// Should this file be deleted when dropped?
-    /// - If files are part of a checkpoint already, they should not be deleted on drop
-    ///   instead they get cleaned up when the checkpoint is deleted.
-    /// - If files are created and become obsolete (e.g., get merged) within the same
-    ///   checkpoint, they can be safely deleted on drop.
-    delete_on_drop: AtomicBool,
-}
-
-impl FileMetaData {
-    pub(self) fn new(file: File, path: PathBuf, delete_on_drop: bool) -> Arc<Self> {
-        Arc::new(Self {
-            file,
-            path,
-            size: AtomicI64::new(-1),
-            delete_on_drop: AtomicBool::new(delete_on_drop),
-        })
-    }
-
-    pub(crate) fn size(&self) -> u64 {
-        let sz = self.size.load(Ordering::Relaxed);
-        if sz >= 0 {
-            sz as u64
-        } else {
-            let sz = self.file.metadata().map_or(0, |m| m.len());
-            self.size.store(sz.try_into().unwrap(), Ordering::Relaxed);
-            sz
-        }
-    }
-}
-
-impl Drop for FileMetaData {
-    fn drop(&mut self) {
-        if self.delete_on_drop.load(Ordering::Relaxed) {
-            if let Err(e) = remove_file(&self.path) {
-                warn!("Unable to delete file {:?}: {:?}", self.path, e);
-            } else {
-                counter!(FILES_DELETED).increment(1);
-            }
-        }
-    }
 }
 
 /// An error that can occur when using the storage backend.
@@ -299,57 +145,95 @@ impl PartialEq for StorageError {
 #[cfg(test)]
 impl Eq for StorageError {}
 
+/// A unique identifier for a [FileReader] or [FileWriter].
+///
+/// The buffer cache uses this ID for indexing.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct FileId(u64);
+
+impl FileId {
+    /// Creates a fresh unique identifier.
+    #[allow(clippy::new_without_default)]
+    pub fn new() -> Self {
+        static NEXT_FILE_ID: AtomicU64 = AtomicU64::new(0);
+        Self(NEXT_FILE_ID.fetch_add(1, Ordering::Relaxed))
+    }
+
+    pub(crate) fn after(&self) -> Self {
+        Self(self.0 + 1)
+    }
+}
+
+/// An object that has a unique ID.
+pub trait HasFileId {
+    /// Returns the object's unique ID.
+    fn file_id(&self) -> FileId;
+}
+
+/// A file being written.
+///
+/// The file can't be read until it is completed with
+/// [FileWriter::complete]. Until then, the file is temporary and will be
+/// deleted if it is dropped.
+pub trait FileWriter: HasFileId {
+    /// Writes `data` at the given byte `offset`.  `offset` must be a multiple
+    /// of 512 and `size` must be a power of 2 and at least 512.  Returns the
+    /// data that was written encapsulated in an `Arc`.
+    fn write_block(&mut self, offset: u64, data: FBuf) -> Result<Arc<FBuf>, StorageError>;
+
+    /// Completes writing of a file and returns a reader for the file and the
+    /// file's path. The file is treated as temporary and will be deleted if the
+    /// reader is dropped without first calling
+    /// [FileReader::mark_for_checkpoint].
+    fn complete(self: Box<Self>) -> Result<(Arc<dyn FileReader>, PathBuf), StorageError>;
+}
+
+/// A readable file.
+pub trait FileReader: Send + Sync + HasFileId {
+    /// Marks a file to be part of a checkpoint.
+    ///
+    /// This is used to prevent the file from being deleted when it is dropped.
+    /// This is only useful for files obtained via [FileWriter::complete],
+    /// because files that were opened with [Storage::open] are never deleted on
+    /// drop.
+    fn mark_for_checkpoint(&self);
+
+    /// Reads a `size`-byte block of data from a file starting at the given byte
+    /// `offset`.  `offset` must be a multiple of 512 and `size` must be a power
+    /// of 2 and at least 512.
+    ///
+    /// If successful, the result will be exactly `size` bytes long; that is,
+    /// this API treats read past EOF as an error.
+    fn read_block(&self, offset: u64, size: usize) -> Result<Arc<FBuf>, StorageError>;
+
+    /// Returns the file's size in bytes.
+    fn get_size(&self) -> Result<u64, StorageError>;
+}
+
 /// A storage backend.
 pub trait Storage {
-    /// Create a new file. See also [`create`](Self::create).
-    fn create_named(&self, name: &Path) -> Result<FileHandle, StorageError>;
+    /// Create a new file with the given `name`, which is relative to the
+    /// backend's base directory.
+    fn create_named(&self, name: &Path) -> Result<Box<dyn FileWriter>, StorageError>;
 
-    /// Creates a new persistent file used for writing data.
-    ///
-    /// Returns a file-descriptor that can be used for writing data.  Note that
-    /// it is not possible to read from this file until [`Storage::complete`] is
-    /// called and the [`FileHandle`] is converted to an
-    /// [`ImmutableFileHandle`].
-    fn create(&self) -> Result<FileHandle, StorageError> {
+    /// Creates a new persistent file used for writing data. The backend selects
+    /// a name.
+    fn create(&self) -> Result<Box<dyn FileWriter>, StorageError> {
         self.create_with_prefix("")
     }
 
     /// Creates a new persistent file used for writing data, giving the file's
     /// name the specified `prefix`. See also [`create`](Self::create).
-    fn create_with_prefix(&self, prefix: &str) -> Result<FileHandle, StorageError> {
+    fn create_with_prefix(&self, prefix: &str) -> Result<Box<dyn FileWriter>, StorageError> {
         let uuid = Uuid::now_v7();
         let name = format!("{}{}{}", prefix, uuid, CREATE_FILE_EXTENSION);
         let name_path = Path::new(&name);
         self.create_named(name_path)
     }
 
-    /// Marks a file to be part of a checkpoint.
-    ///
-    /// This is used to prevent the file from being deleted when it is dropped.
-    fn mark_for_checkpoint(&self, fd: &ImmutableFileHandle);
-
-    /// Opens a file for reading.
-    ///
-    /// # Arguments
-    /// - `name` is the name of the file to open. It is relative to the base of
-    ///   the storage backend.
-    fn open(&self, name: &Path) -> Result<ImmutableFileHandle, StorageError>;
-
-    /// Deletes a previously created but not completely written file.
-    ///
-    /// This removes the file from the storage backend and makes it unavailable
-    /// for writing.
-    fn delete_mut(&self, fd: FileHandle) -> Result<(), StorageError>;
-
-    /// Evicts in-memory, cached contents for a file.
-    ///
-    /// This is useful if we're sure that a file is not going to be read again
-    /// during this run of the program, and we want to free up memory.
-    ///
-    /// This is a no-op for storage backends that do not cache data.
-    fn evict(&self, _fd: ImmutableFileHandle) -> Result<(), StorageError> {
-        Ok(())
-    }
+    /// Opens a file for reading.  The file `name` is relative to the base of
+    /// the storage backend.
+    fn open(&self, name: &Path) -> Result<Arc<dyn FileReader>, StorageError>;
 
     /// Returns the root of the storage backend.
     fn base(&self) -> PathBuf;
@@ -359,145 +243,22 @@ pub trait Storage {
     fn allocate_buffer(&self, sz: usize) -> FBuf {
         FBuf::with_capacity(sz)
     }
-
-    /// Writes a block of data to a file.
-    ///
-    /// ## Arguments
-    /// - `fd` is the file-handle to write to.
-    /// - `offset` is the offset in the file to write to.
-    /// - `data` is the data to write.
-    ///
-    /// ## Preconditions
-    /// - `offset.is_power_of_two()`
-    /// - `data.len() >= 512 && data.len().is_power_of_two()`
-    ///
-    /// ## Returns
-    /// A reference to the (now cached) buffer.
-    ///
-    /// API returns an error if any of the above preconditions are not met.
-    fn write_block(
-        &self,
-        fd: &FileHandle,
-        offset: u64,
-        data: FBuf,
-    ) -> Result<Arc<FBuf>, StorageError>;
-
-    /// Completes writing of a file.
-    ///
-    /// This makes the file available for reading by returning a file-descriptor
-    /// that can be used for reading data.
-    ///
-    /// ## Arguments
-    /// - `fd` is the file-handle to complete.
-    ///
-    /// ## Returns
-    /// - A file-descriptor that can be used for reading data.
-    /// - The on-disk location of the file.
-    fn complete(&self, fd: FileHandle) -> Result<(ImmutableFileHandle, PathBuf), StorageError>;
-
-    /// Prefetches a block of data from a file.
-    ///
-    /// This is an hronous operation that will be completed in the
-    /// background. The data is likely available for reading from DRAM once the
-    /// prefetch operation has completed.
-    /// The implementation is free to choose how to prefetch the data. This may
-    /// not be implemented for all storage backends.
-    ///
-    /// ## Arguments
-    /// - `fd` is the file-handle to prefetch from.
-    /// - `offset` is the offset in the file to prefetch from.
-    /// - `size` is the size of the block to prefetch.
-    ///
-    /// ## Pre-conditions
-    /// - `offset.is_power_of_two()`
-    /// - `size >= 512 && size.is_power_of_two()`
-    fn prefetch(&self, fd: &ImmutableFileHandle, offset: u64, size: usize);
-
-    /// Reads a block of data from a file.
-    ///
-    /// ## Arguments
-    /// - `fd` is the file-handle to read from.
-    /// - `offset` is the offset in the file to read from.
-    /// - `size` is the size of the block to read.
-    ///
-    /// ## Pre-conditions
-    /// - `offset.is_power_of_two()`
-    /// - `size >= 512 && size.is_power_of_two()`
-    ///
-    /// ## Post-conditions
-    /// - `result.len() == size`: In case we read less than the required size,
-    ///   we return [`UnexpectedEof`], as opposed to a partial result.
-    ///
-    /// API returns an error if any of the above pre/post-conditions are not
-    /// met.
-    ///
-    /// ## Returns
-    /// A [`FBuf`] containing the data read from the file.
-    ///
-    /// [`UnexpectedEof`]: std::io::ErrorKind::UnexpectedEof
-    fn read_block(
-        &self,
-        fd: &ImmutableFileHandle,
-        offset: u64,
-        size: usize,
-    ) -> Result<Arc<FBuf>, StorageError>;
-
-    /// Returns the file's size in bytes.
-    fn get_size(&self, fd: &ImmutableFileHandle) -> Result<u64, StorageError>;
 }
 
 impl<S> Storage for Box<S>
 where
     S: Storage + ?Sized,
 {
-    fn create_named(&self, name: &Path) -> Result<FileHandle, StorageError> {
+    fn create_named(&self, name: &Path) -> Result<Box<dyn FileWriter>, StorageError> {
         (**self).create_named(name)
     }
 
-    fn open(&self, name: &Path) -> Result<ImmutableFileHandle, StorageError> {
+    fn open(&self, name: &Path) -> Result<Arc<dyn FileReader>, StorageError> {
         (**self).open(name)
-    }
-
-    fn mark_for_checkpoint(&self, fd: &ImmutableFileHandle) {
-        (**self).mark_for_checkpoint(fd)
-    }
-
-    fn delete_mut(&self, fd: FileHandle) -> Result<(), StorageError> {
-        (**self).delete_mut(fd)
     }
 
     fn base(&self) -> PathBuf {
         (**self).base()
-    }
-
-    fn write_block(
-        &self,
-        fd: &FileHandle,
-        offset: u64,
-        data: FBuf,
-    ) -> Result<Arc<FBuf>, StorageError> {
-        (**self).write_block(fd, offset, data)
-    }
-
-    fn complete(&self, fd: FileHandle) -> Result<(ImmutableFileHandle, PathBuf), StorageError> {
-        (**self).complete(fd)
-    }
-
-    fn prefetch(&self, fd: &ImmutableFileHandle, offset: u64, size: usize) {
-        (**self).prefetch(fd, offset, size)
-    }
-
-    fn read_block(
-        &self,
-        fd: &ImmutableFileHandle,
-        offset: u64,
-        size: usize,
-    ) -> Result<Arc<FBuf>, StorageError> {
-        (**self).read_block(fd, offset, size)
-    }
-
-    fn get_size(&self, fd: &ImmutableFileHandle) -> Result<u64, StorageError> {
-        (**self).get_size(fd)
     }
 }
 
@@ -531,7 +292,7 @@ pub fn new_default_backend(tempdir: PathBuf, cache: StorageCacheConfig) -> Backe
     }
 
     #[cfg(target_os = "linux")]
-    match io_uring_impl::IoUringBackend::with_base(&tempdir, cache) {
+    match io_uring_impl::IoUringBackend::new(&tempdir, cache) {
         Ok(backend) => return Box::new(backend),
         Err(error) => {
             static ONCE: std::sync::Once = std::sync::Once::new();
@@ -541,7 +302,7 @@ pub fn new_default_backend(tempdir: PathBuf, cache: StorageCacheConfig) -> Backe
         }
     }
 
-    Box::new(posixio_impl::PosixBackend::with_base(tempdir, cache))
+    Box::new(posixio_impl::PosixBackend::new(tempdir, cache))
 }
 
 trait StorageCacheFlags {

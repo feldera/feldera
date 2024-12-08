@@ -70,7 +70,6 @@ feldera-types = { path = "../feldera-types", version = "0.32.0" }
 libc = "0.2.153"
 static_assertions = "1.1.0"
 lazy_static = "1.4.0"
-dashmap = "5"
 zip = "0.6.2"
 minitrace = "0.6"
 ouroboros = "0.18.4"
