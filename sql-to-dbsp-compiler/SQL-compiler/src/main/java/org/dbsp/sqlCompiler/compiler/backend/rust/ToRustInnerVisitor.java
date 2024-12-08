@@ -1433,7 +1433,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
             return this.doNullExpression(expression);
         if (expression.getType().mayBeNull)
             this.builder.append("Some(");
-        boolean newlines = !this.compact && expression.fields.length > 2;
+        boolean newlines = expression.fields.length > 2;
         this.builder.append(DBSPTypeCode.TUPLE.rustName)
                 .append(expression.size())
                 .append("::new(");

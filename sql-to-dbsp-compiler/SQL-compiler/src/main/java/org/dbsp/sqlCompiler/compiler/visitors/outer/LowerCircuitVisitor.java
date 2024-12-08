@@ -131,7 +131,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
                 // If e is a tuple type, unpack its fields here
                 DBSPTypeTupleBase tuple = e.getType().to(DBSPTypeTupleBase.class);
                 for (int ei = 0; ei < tuple.size(); ei++)
-                    resultColumns.add(e.field(ei).applyCloneIfNeeded());
+                    resultColumns.add(e.field(ei));
             } else {
                 // e
                 resultColumns.add(e);
@@ -173,7 +173,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
                 .closure(e);
         DBSPExpression iter = new DBSPApplyMethodExpression(flatmap.getNode(), "into_iter",
                 DBSPTypeAny.getDefault(),
-                statement.getVarReference().applyClone());
+                statement.getVarReference());
         if (flatmap.ordinalityIndexType != null) {
             iter = new DBSPApplyMethodExpression(flatmap.getNode(), "enumerate",
                     DBSPTypeAny.getDefault(), iter);

@@ -186,7 +186,7 @@ public class CalciteCompiler implements IWritesLogs {
     @Nullable
     private SqlToRelConverter converter;
     @Nullable
-    private ExtraValidation validateTypes;
+    private ExtraValidation extraValidate;
     private final CalciteConnectionConfig connectionConfig;
     private final IErrorReporter errorReporter;
     private final SchemaPlus rootSchema;
@@ -271,7 +271,7 @@ public class CalciteCompiler implements IWritesLogs {
                 // e.g., AggScottTests.testAggregates4
                 .withExpand(true);
         this.validator = null;
-        this.validateTypes = null;
+        this.extraValidate = null;
         this.converter = null;
         this.usedViewDeclarations = new HashSet<>();
         this.declaredViews = new HashMap<>();
@@ -388,6 +388,12 @@ public class CalciteCompiler implements IWritesLogs {
                         this.errorReporter.reportError(position,
                                 "Illegal type", "DECIMAL type must have scale <= precision");
                     }
+                    if (basic.getPrecision() > DBSPTypeDecimal.MAX_PRECISION) {
+                        SourcePositionRange position = new SourcePositionRange(typeNameSpec.getParserPos());
+                        this.errorReporter.reportError(position,
+                                "Illegal type",
+                                "Maximum precision supported for DECIMAL is " + DBSPTypeDecimal.MAX_PRECISION);
+                    }
                 } else if (relDataType.getSqlTypeName() == SqlTypeName.FLOAT) {
                     SourcePositionRange position = new SourcePositionRange(typeNameSpec.getParserPos());
                     this.errorReporter.reportError(position,
@@ -430,7 +436,7 @@ public class CalciteCompiler implements IWritesLogs {
                 this.typeFactory,
                 validatorConfig
         );
-        this.validateTypes = new ExtraValidation(errorReporter);
+        this.extraValidate = new ExtraValidation(errorReporter);
         this.converter = new SqlToRelConverter(
                 (type, query, schema, path) -> null,
                 this.validator,
@@ -491,7 +497,7 @@ public class CalciteCompiler implements IWritesLogs {
     }
 
     ExtraValidation getExtraValidator() {
-        return Objects.requireNonNull(this.validateTypes);
+        return Objects.requireNonNull(this.extraValidate);
     }
 
     SqlValidator getValidator() {
@@ -874,7 +880,6 @@ public class CalciteCompiler implements IWritesLogs {
                 isPrimaryKey = cd.primaryKey || declaredPrimary;
                 if (declaredPrimary)
                     primaryKeys.remove(name.getSimple());
-                SqlToRelConverter converter = this.getConverter();
                 if (cd.lateness != null) {
                     lateness = this.validateLatenessOrWatermark(cd, cd.lateness, sources);
                 }

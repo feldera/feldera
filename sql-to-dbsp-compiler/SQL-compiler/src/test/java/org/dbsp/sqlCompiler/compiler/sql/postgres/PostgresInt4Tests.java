@@ -11,16 +11,13 @@ public class PostgresInt4Tests extends SqlIoTest {
     @Override
     public void prepareInputs(DBSPCompiler compiler) {
         String createTable = "CREATE TABLE INT4_TBL(f1 int4)";
-
-        String insert =
-                """
+        String insert ="""
                         INSERT INTO INT4_TBL(f1) VALUES
                           ('0'),
                           ('123456'),
                           ('-123456'),
                           ('2147483647'),
                           ('-2147483647');""";
-
         compiler.compileStatement(createTable);
         compiler.compileStatements(insert);
     }
