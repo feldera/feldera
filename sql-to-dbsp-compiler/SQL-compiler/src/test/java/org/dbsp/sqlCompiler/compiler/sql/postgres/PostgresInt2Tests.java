@@ -10,7 +10,6 @@ public class PostgresInt2Tests extends SqlIoTest {
     @Override
     public void prepareInputs(DBSPCompiler compiler) {
         String createTable = "CREATE TABLE INT2_TBL(f1 int2)";
-
         String insert = """
                 INSERT INTO INT2_TBL(f1) VALUES
                   (0),
@@ -18,7 +17,6 @@ public class PostgresInt2Tests extends SqlIoTest {
                   (-1234),
                   (32767),
                   (-32767);""";
-
         compiler.compileStatement(createTable);
         compiler.compileStatements(insert);
     }
