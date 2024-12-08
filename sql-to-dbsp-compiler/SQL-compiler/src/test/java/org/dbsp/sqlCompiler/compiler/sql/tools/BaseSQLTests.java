@@ -272,6 +272,8 @@ public class BaseSQLTests {
             test.ccs.circuit.setName("circuit" + testNumber);
             pt = new ProgramAndTester(test.ccs.circuit, test.createTesterCode(testNumber, rustDirectory));
             BaseSQLTests.testsExecuted++;
+            // Filter here tests
+            // if (pt.program() != null && !pt.program().toString().contains(".flatmap")) continue;
             writer.add(pt);
             testNumber++;
         }

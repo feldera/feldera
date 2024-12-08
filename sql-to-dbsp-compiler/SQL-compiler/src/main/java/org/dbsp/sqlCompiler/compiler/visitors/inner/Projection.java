@@ -26,7 +26,6 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBaseType;
 import org.dbsp.util.ExplicitShuffle;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Shuffle;
@@ -244,10 +243,6 @@ public class Projection extends InnerVisitor {
 
     @Override
     public VisitDecision preorder(DBSPCloneExpression expression) {
-        if (!expression.getType().is(DBSPTypeBaseType.class)) {
-            this.notProjection();
-            return VisitDecision.CONTINUE;
-        }
         return VisitDecision.CONTINUE;
     }
 
