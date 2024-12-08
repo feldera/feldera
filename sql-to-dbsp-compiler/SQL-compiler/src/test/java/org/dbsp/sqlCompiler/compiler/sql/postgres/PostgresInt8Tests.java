@@ -11,7 +11,6 @@ public class PostgresInt8Tests extends SqlIoTest {
     @Override
     public void prepareInputs(DBSPCompiler compiler) {
         String createTable = "CREATE TABLE INT8_TBL(q1 bigint, q2 bigint)";
-
         String insert = """
                 INSERT INTO INT8_TBL VALUES
                   ('123','456'),
