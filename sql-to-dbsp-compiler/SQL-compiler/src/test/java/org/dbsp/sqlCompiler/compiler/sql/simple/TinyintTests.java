@@ -342,7 +342,7 @@ public class TinyintTests extends SqlIoTest {
         );
     }
 
-    @Test @Ignore("fails for Calcite optimized version")
+    @Test
     public void testTINYINTMINOverflowError() {
         this.qf("SELECT (-128)::tinyint * (-1)::tinyint", "attempt to multiply with overflow");
         this.qf("SELECT (-128)::tinyint / (-1)::tinyint", "attempt to divide with overflow");
