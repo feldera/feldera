@@ -1,40 +1,197 @@
 //! Implementation of the storage backend ([`Storage`] APIs using POSIX I/O.
 
 use feldera_types::config::StorageCacheConfig;
+use log::warn;
 use metrics::{counter, histogram};
 use std::{
-    cell::RefCell,
-    collections::HashMap,
-    fs::{self, File, OpenOptions},
+    fs::{self, remove_file, File, OpenOptions},
     io::Error as IoError,
+    os::unix::fs::MetadataExt,
     path::{Path, PathBuf},
     rc::Rc,
-    sync::Arc,
+    sync::{
+        atomic::{AtomicBool, AtomicI64, Ordering},
+        Arc,
+    },
     time::Instant,
 };
 
 use super::{
-    append_to_path, tempdir_for_thread, AtomicIncrementOnlyI64, FileHandle, FileMetaData,
-    ImmutableFileHandle, ImmutableFiles, Storage, StorageCacheFlags, StorageError,
-    IMMUTABLE_FILE_METADATA, MUTABLE_EXTENSION,
+    append_to_path, tempdir_for_thread, FileId, FileReader, FileWriter, HasFileId, Storage,
+    StorageCacheFlags, StorageError, MUTABLE_EXTENSION,
 };
 use crate::circuit::metrics::{
-    FILES_CREATED, FILES_DELETED, READS_FAILED, READS_SUCCESS, READ_LATENCY, TOTAL_BYTES_READ,
-    TOTAL_BYTES_WRITTEN, WRITES_SUCCESS, WRITE_LATENCY,
+    FILES_CREATED, FILES_DELETED, TOTAL_BYTES_WRITTEN, WRITES_SUCCESS, WRITE_LATENCY,
 };
-use crate::storage::{backend::NEXT_FILE_HANDLE, buffer_cache::FBuf, init};
+use crate::storage::{buffer_cache::FBuf, init};
+
+pub(super) struct PosixReader {
+    file: Arc<File>,
+    file_id: FileId,
+    drop: DeleteOnDrop,
+    /// File size.
+    ///
+    /// -1 if the file size is unknown.
+    size: AtomicI64,
+}
+
+impl PosixReader {
+    pub(super) fn new(file: Arc<File>, file_id: FileId, path: PathBuf, keep: bool) -> Self {
+        Self {
+            file,
+            file_id,
+            drop: DeleteOnDrop::new(path, keep),
+            size: AtomicI64::new(-1),
+        }
+    }
+    pub(super) fn open(
+        path: PathBuf,
+        cache: StorageCacheConfig,
+    ) -> Result<Arc<dyn FileReader>, StorageError> {
+        let file = OpenOptions::new()
+            .read(true)
+            .cache_flags(&cache)
+            .open(&path)?;
+
+        Ok(Arc::new(Self::new(
+            Arc::new(file),
+            FileId::new(),
+            path,
+            true,
+        )))
+    }
+}
+
+impl HasFileId for PosixReader {
+    fn file_id(&self) -> FileId {
+        self.file_id
+    }
+}
+
+impl FileReader for PosixReader {
+    fn mark_for_checkpoint(&self) {
+        self.drop.keep();
+    }
+
+    fn read_block(&self, offset: u64, size: usize) -> Result<Arc<FBuf>, StorageError> {
+        let mut buffer = FBuf::with_capacity(size);
+
+        match buffer.read_exact_at(&self.file, offset, size) {
+            Ok(()) => Ok(Arc::new(buffer)),
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    fn get_size(&self) -> Result<u64, StorageError> {
+        let sz = self.size.load(Ordering::Relaxed);
+        if sz >= 0 {
+            Ok(sz as u64)
+        } else {
+            let sz = self.file.metadata()?.size();
+            self.size.store(sz.try_into().unwrap(), Ordering::Relaxed);
+            Ok(sz)
+        }
+    }
+}
+
+struct DeleteOnDrop {
+    path: PathBuf,
+    keep: AtomicBool,
+}
+
+impl Drop for DeleteOnDrop {
+    fn drop(&mut self) {
+        if !self.keep.load(Ordering::Relaxed) {
+            if let Err(e) = remove_file(&self.path) {
+                warn!("Unable to delete file {:?}: {:?}", self.path, e);
+            } else {
+                counter!(FILES_DELETED).increment(1);
+            }
+        }
+    }
+}
+
+impl DeleteOnDrop {
+    fn new(path: PathBuf, keep: bool) -> Self {
+        Self {
+            path,
+            keep: AtomicBool::new(keep),
+        }
+    }
+    fn keep(&self) {
+        self.keep.store(true, Ordering::Relaxed);
+    }
+}
 
 /// Meta-data we keep per file we created.
-struct MutableFileMetaData {
+struct PosixWriter {
+    file_id: FileId,
     file: File,
-    path: PathBuf,
+    drop: DeleteOnDrop,
 
     buffers: Vec<Arc<FBuf>>,
     offset: u64,
     len: u64,
 }
 
-impl MutableFileMetaData {
+impl HasFileId for PosixWriter {
+    fn file_id(&self) -> FileId {
+        self.file_id
+    }
+}
+
+impl FileWriter for PosixWriter {
+    fn write_block(&mut self, offset: u64, data: FBuf) -> Result<Arc<FBuf>, StorageError> {
+        let block = Arc::new(data);
+        let request_start = Instant::now();
+        self.write_at(&block, offset)?;
+
+        counter!(TOTAL_BYTES_WRITTEN).increment(block.len() as u64);
+        counter!(WRITES_SUCCESS).increment(1);
+        histogram!(WRITE_LATENCY).record(request_start.elapsed().as_secs_f64());
+
+        Ok(block)
+    }
+
+    fn complete(mut self: Box<Self>) -> Result<(Arc<dyn FileReader>, PathBuf), StorageError> {
+        self.flush()?;
+        self.file.sync_all()?;
+
+        // Remove the .mut extension from the file.
+        let finalized_path = self.path().with_extension("");
+        let mut ppath = self.path().clone();
+        ppath.pop();
+        fs::rename(self.path(), &finalized_path)?;
+        self.drop.keep();
+
+        Ok((
+            Arc::new(PosixReader::new(
+                Arc::new(self.file),
+                self.file_id,
+                finalized_path.clone(),
+                false,
+            )),
+            finalized_path,
+        ))
+    }
+}
+
+impl PosixWriter {
+    fn new(file: File, path: PathBuf) -> Self {
+        Self {
+            file_id: FileId::new(),
+            file,
+            drop: DeleteOnDrop::new(path, false),
+            buffers: Vec::new(),
+            offset: 0,
+            len: 0,
+        }
+    }
+
+    fn path(&self) -> &PathBuf {
+        &self.drop.path
+    }
+
     #[cfg(target_os = "linux")]
     fn flush(&mut self) -> Result<(), IoError> {
         use nix::sys::uio::pwritev;
@@ -83,12 +240,7 @@ impl MutableFileMetaData {
 pub struct PosixBackend {
     /// Directory in which we keep the files.
     base: PathBuf,
-    /// Meta-data of all files we are currently writing to.
-    files: RefCell<HashMap<i64, MutableFileMetaData>>,
-    /// All files which are completed and can read from.
-    immutable_files: Arc<ImmutableFiles>,
-    /// A global counter to get unique identifiers for file-handles.
-    next_file_id: Arc<AtomicIncrementOnlyI64>,
+
     /// Cache configuration.
     cache: StorageCacheConfig,
 }
@@ -98,40 +250,13 @@ impl PosixBackend {
     ///
     /// ## Parameters
     /// - `base`: Directory in which we keep the files.
-    /// - `next_file_id`: A counter to get unique identifiers for file-handles.
-    ///   Note that in case we use a global buffer cache, this counter should be
     ///   shared among all instances of the backend.
-    /// - `immutable_files`: The storage for meta-data of immutable files
-    ///   which can be read from all threads.
-    pub fn new<P: AsRef<Path>>(
-        base: P,
-        cache: StorageCacheConfig,
-        next_file_id: Arc<AtomicIncrementOnlyI64>,
-        immutable_files: Arc<ImmutableFiles>,
-    ) -> Self {
+    pub fn new<P: AsRef<Path>>(base: P, cache: StorageCacheConfig) -> Self {
         init();
         Self {
             base: base.as_ref().to_path_buf(),
-            files: RefCell::new(HashMap::new()),
-            immutable_files,
-            next_file_id,
             cache,
         }
-    }
-
-    /// See [`PosixBackend::new`]. This function is a convenience function that
-    /// creates a new backend with global unique file-handle counter.
-    pub fn with_base<P: AsRef<Path>>(base: P, cache: StorageCacheConfig) -> Self {
-        Self::new(
-            base,
-            cache,
-            NEXT_FILE_HANDLE
-                .get_or_init(|| Arc::new(Default::default()))
-                .clone(),
-            IMMUTABLE_FILE_METADATA
-                .get_or_init(|| Arc::new(Default::default()))
-                .clone(),
-        )
     }
 
     /// Returns the directory in which the backend creates files.
@@ -143,12 +268,6 @@ impl PosixBackend {
         Rc::new(PosixBackend::new(
             tempdir_for_thread(),
             StorageCacheConfig::default(),
-            NEXT_FILE_HANDLE
-                .get_or_init(|| Arc::new(Default::default()))
-                .clone(),
-            IMMUTABLE_FILE_METADATA
-                .get_or_init(|| Arc::new(Default::default()))
-                .clone(),
         ))
     }
 
@@ -162,131 +281,94 @@ impl PosixBackend {
 }
 
 impl Storage for PosixBackend {
-    fn create_named(&self, name: &Path) -> Result<FileHandle, StorageError> {
+    fn create_named(&self, name: &Path) -> Result<Box<dyn FileWriter>, StorageError> {
         let path = append_to_path(self.base.join(name), MUTABLE_EXTENSION);
-        let file_counter = self.next_file_id.increment();
         let file = OpenOptions::new()
             .create_new(true)
             .write(true)
             .read(true)
             .cache_flags(&self.cache)
             .open(&path)?;
-        let mut files = self.files.borrow_mut();
-        files.insert(
-            file_counter,
-            MutableFileMetaData {
-                file,
-                path,
-                buffers: Vec::new(),
-                offset: 0,
-                len: 0,
-            },
-        );
         counter!(FILES_CREATED).increment(1);
-
-        Ok(FileHandle(file_counter))
+        Ok(Box::new(PosixWriter::new(file, path)))
     }
 
-    fn open(&self, name: &Path) -> Result<ImmutableFileHandle, StorageError> {
-        let path = self.base.join(name);
-
-        let file = OpenOptions::new()
-            .read(true)
-            .cache_flags(&self.cache)
-            .open(&path)?;
-
-        let file_counter = self.next_file_id.increment();
-        self.immutable_files
-            .insert(file_counter, FileMetaData::new(file, path.clone(), false));
-
-        Ok(ImmutableFileHandle(file_counter))
-    }
-
-    fn mark_for_checkpoint(&self, fd: &ImmutableFileHandle) {
-        self.immutable_files.disable_drop_deletion(fd.0);
-    }
-
-    fn delete_mut(&self, fd: FileHandle) -> Result<(), StorageError> {
-        let MutableFileMetaData { path, .. } = self.files.borrow_mut().remove(&fd.0).unwrap();
-        fs::remove_file(path)?;
-        counter!(FILES_DELETED).increment(1);
-        Ok(())
+    fn open(&self, name: &Path) -> Result<Arc<dyn FileReader>, StorageError> {
+        PosixReader::open(self.base.join(name), self.cache)
     }
 
     fn base(&self) -> PathBuf {
         self.base.clone()
     }
+}
 
-    fn write_block(
-        &self,
-        fd: &FileHandle,
-        offset: u64,
-        data: FBuf,
-    ) -> Result<Arc<FBuf>, StorageError> {
-        let block = Arc::new(data);
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
 
-        let mut files = self.files.borrow_mut();
-        let request_start = Instant::now();
-        let fm = files.get_mut(&fd.0).unwrap();
-        fm.write_at(&block, offset)?;
+    use feldera_types::config::StorageCacheConfig;
 
-        counter!(TOTAL_BYTES_WRITTEN).increment(block.len() as u64);
-        counter!(WRITES_SUCCESS).increment(1);
-        histogram!(WRITE_LATENCY).record(request_start.elapsed().as_secs_f64());
+    use crate::storage::backend::{
+        tests::{random_sizes, test_backend},
+        Backend,
+    };
 
-        Ok(block)
+    use super::PosixBackend;
+
+    fn create_posix_backend(path: &Path) -> Backend {
+        Box::new(PosixBackend::new(path, StorageCacheConfig::default()))
     }
 
-    fn complete(&self, fd: FileHandle) -> Result<(ImmutableFileHandle, PathBuf), StorageError> {
-        let mut files = self.files.borrow_mut();
-        let mut fm = files.remove(&fd.0).unwrap();
-        fm.flush()?;
-        fm.file.sync_all()?;
-
-        // Remove the .mut extension from the file.
-        let finalized_path = fm.path.with_extension("");
-        let mut ppath = fm.path.clone();
-        ppath.pop();
-        fs::rename(&fm.path, &finalized_path)?;
-        fm.path = finalized_path;
-        let path = fm.path.clone();
-
-        let imf = FileMetaData::new(fm.file, path.clone(), true);
-        self.immutable_files.insert(fd.0, imf);
-
-        Ok((ImmutableFileHandle(fd.0), path))
+    /// Write 10 MiB total in 1 KiB chunks.  `VectoredWrite` flushes its buffer when it
+    /// reaches 1 MiB of sequential data, and we limit the amount of queued work
+    /// to 4 MiB, so this has a chance to trigger both limits.
+    #[test]
+    fn sequential_1024() {
+        test_backend(
+            Box::new(create_posix_backend),
+            &[1024; 1024 * 10],
+            true,
+            true,
+        )
     }
 
-    fn prefetch(&self, _fd: &ImmutableFileHandle, _offset: u64, _size: usize) {
-        unimplemented!()
+    /// Write 10 MiB total in 1 KiB chunks.  We skip over a chunk occasionally,
+    /// which leaves a "hole" in the file that is all zeros and has the side effect
+    /// of forcing `VectoredWrite` to flush its buffer.  Our actual btree writer
+    /// never leaves holes but it seems best to test this anyhow.
+    #[test]
+    fn holes_1024() {
+        test_backend(
+            Box::new(create_posix_backend),
+            &[1024; 1024 * 10],
+            false,
+            true,
+        )
     }
 
-    fn read_block(
-        &self,
-        fd: &ImmutableFileHandle,
-        offset: u64,
-        size: usize,
-    ) -> Result<Arc<FBuf>, StorageError> {
-        let mut buffer = FBuf::with_capacity(size);
-
-        let imf = self.immutable_files.get(fd.0).unwrap();
-        let request_start = Instant::now();
-        match buffer.read_exact_at(&imf.file, offset, size) {
-            Ok(()) => {
-                counter!(TOTAL_BYTES_READ).increment(buffer.len() as u64);
-                histogram!(READ_LATENCY).record(request_start.elapsed().as_secs_f64());
-                counter!(READS_SUCCESS).increment(1);
-                Ok(Arc::new(buffer))
-            }
-            Err(e) => {
-                counter!(READS_FAILED).increment(1);
-                Err(e.into())
-            }
-        }
+    /// Verify that files get deleted if not marked for a checkpoint.
+    #[test]
+    fn delete_1024() {
+        test_backend(
+            Box::new(create_posix_backend),
+            &[1024; 1024 * 10],
+            true,
+            false,
+        )
     }
 
-    fn get_size(&self, fd: &ImmutableFileHandle) -> Result<u64, StorageError> {
-        let imf = self.immutable_files.get(fd.0).unwrap();
-        Ok(imf.size())
+    #[test]
+    fn sequential_random() {
+        test_backend(Box::new(create_posix_backend), &random_sizes(), true, true);
+    }
+
+    #[test]
+    fn holes_random() {
+        test_backend(Box::new(create_posix_backend), &random_sizes(), false, true);
+    }
+
+    #[test]
+    fn empty() {
+        test_backend(Box::new(create_posix_backend), &[], true, true);
     }
 }

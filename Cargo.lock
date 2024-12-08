@@ -3628,7 +3628,6 @@ dependencies = [
  "crossbeam",
  "crossbeam-utils",
  "csv",
- "dashmap 5.5.3",
  "derive_more 1.0.0",
  "dyn-clone",
  "env_logger 0.11.5",
