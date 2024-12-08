@@ -1710,13 +1710,13 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPVariablePath t = inputRowType.ref().var();
         DBSPClosureExpression entireKey =
                 new DBSPRawTupleExpression(
-                        t.deref().applyClone(),
+                        DBSPTupleExpression.flatten(t.deref()),
                         new DBSPTupleExpression()).closure(t);
         DBSPVariablePath l = new DBSPTypeTuple().ref().var();
         DBSPVariablePath r = new DBSPTypeTuple().ref().var();
         DBSPVariablePath k = inputRowType.ref().var();
 
-        DBSPClosureExpression closure = k.deref().applyClone().closure(k, l, r);
+        DBSPClosureExpression closure = DBSPTupleExpression.flatten(k.deref()).closure(k, l, r);
         for (int i = 1; i < inputs.size(); i++) {
             DBSPSimpleOperator previousIndex = new DBSPMapIndexOperator(
                     node, entireKey,

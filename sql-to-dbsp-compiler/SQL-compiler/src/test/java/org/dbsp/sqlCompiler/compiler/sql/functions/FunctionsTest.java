@@ -467,7 +467,7 @@ public class FunctionsTest extends SqlIoTest {
                 (1 row)
 
                 -- the following tests are from mysql
-                select cast('1.00000001335143196001808973960578441619873046875E-10' as decimal(30,15));
+                select cast('1.00000001335143196001808973960578441619873046875E-10' as decimal(28,15));
                      decimal
                 -------------------
                  0.000000000100000

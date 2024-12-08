@@ -78,6 +78,8 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
+import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPApplyMethodExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPComparatorExpression;
@@ -87,6 +89,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFieldComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPNoComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
+import org.dbsp.sqlCompiler.ir.expression.DBSPPathExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPStaticExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.DBSPWindowBoundExpression;
@@ -439,9 +442,17 @@ public class ToRustVisitor extends CircuitVisitor {
         if (!this.useHandles)
             this.builder.append("let mut catalog = Catalog::new();").newline();
 
+        FindFunctions funcFinder = new FindFunctions(this.compiler);
+        funcFinder.getCircuitVisitor(true).apply(circuit);
+
         for (DBSPDeclaration item: circuit.declarations) {
             // Generate functions used locally
             if (item.item.is(DBSPFunctionItem.class)) {
+                DBSPFunctionItem func = item.item.to(DBSPFunctionItem.class);
+                // Do not generate code for functions not used.
+                // TODO: does not work, need to compute the transitive closure
+                // if (!funcFinder.found.contains(func.function.name)) continue;
+
                 item.accept(this);
                 this.builder.newline().newline();
             }
@@ -1441,8 +1452,35 @@ public class ToRustVisitor extends CircuitVisitor {
             super(compiler);
         }
 
+        @Override
         public void postorder(DBSPCustomOrdExpression expression) {
             this.found.add(expression.comparator);
+        }
+    }
+
+    /** Collects all {@link DBSPComparatorExpression} that appear in some
+     * {@link DBSPCustomOrdExpression}. */
+    static class FindFunctions extends InnerVisitor {
+        final Set<String> found = new HashSet<>();
+
+        public FindFunctions(DBSPCompiler compiler) {
+            super(compiler);
+        }
+
+        void add(DBSPExpression function) {
+            if (function.is(DBSPPathExpression.class)) {
+                String name = function.to(DBSPPathExpression.class).toString();
+                this.found.add(name);
+            }
+        }
+
+        @Override
+        public void postorder(DBSPApplyExpression expression) {
+            this.add(expression.function);
+        }
+
+        public void postorder(DBSPApplyMethodExpression expression) {
+            this.add(expression.function);
         }
     }
 
@@ -1454,6 +1492,7 @@ public class ToRustVisitor extends CircuitVisitor {
             super(compiler);
         }
 
+        @Override
         public void postorder(DBSPStaticExpression expression) {
             this.found.add(expression);
         }
