@@ -3,6 +3,7 @@ package org.dbsp.sqlCompiler.compiler.sql.simple;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinFilterMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateWithWaterlineOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.TestUtil;
@@ -16,6 +17,32 @@ import org.junit.Ignore;
 import org.junit.Test;
 
 public class RegressionTests extends SqlIoTest {
+    @Test
+    public void issue3109() {
+        var ccs = this.getCCS("""
+                CREATE TYPE other_type AS (s string);
+                
+                CREATE TYPE my_type AS (
+                    // COMMENTING THIS OUT FIXES THE ISSUE
+                    other other_type ARRAY,
+                    s string
+                );
+                
+                CREATE TABLE t (content my_type ARRAY);
+                
+                create view v as (
+                    select content_flat.*
+                    from t, unnest(t.content) as content_flat
+                );""");
+        CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
+            @Override
+            public void postorder(DBSPMapOperator operator) {
+                throw new RuntimeException("Map operator should have been eliminated");
+            }
+        };
+        visitor.apply(ccs.circuit);
+    }
+
     @Test
     public void issue3086() {
         this.getCCS("""

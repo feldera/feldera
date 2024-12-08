@@ -61,7 +61,8 @@ public record CircuitOptimizer(DBSPCompiler compiler) implements ICompilerCompon
         List<CircuitTransform> passes = new ArrayList<>();
         DBSPCompiler compiler = this.compiler();
         CompilerOptions options = this.compiler().options;
-
+        // Example dumping circuit to a png file
+        // passes.add(ToDot.dumper(compiler, "x.png", 4));
         // First part of optimizations may still synthesize some circuit components
         passes.add(new ImplementNow(compiler));
         passes.add(new DeterministicInitializers(compiler));
