@@ -39,7 +39,7 @@ public class VarbinaryTests extends SqlIoTest {
                 "Binary literal string must contain only characters '0' - '9', 'A' - 'F'");
     }
 
-    @Test @Ignore("Calcite does not yet support bitwise functions https://issues.apache.org/jira/browse/CALCITE-5087")
+    @Test @Ignore("HEX and binary functions not yet implemented")
     public void testHex() {
         this.q("""
                 SELECT
