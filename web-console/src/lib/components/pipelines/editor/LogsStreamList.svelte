@@ -8,7 +8,7 @@
   let { logs }: { logs: { rows: string[]; totalSkippedBytes: number } } = $props()
 </script>
 
-<div class="relative flex h-full flex-1 flex-col bg-white dark:bg-black">
+<div class="relative flex h-full flex-1 flex-col rounded pt-4">
   {#if logs.totalSkippedBytes}
     <WarningBanner>
       Receiving logs faster than can be displayed. Skipping some logs to keep up, {humanSize(
@@ -16,7 +16,7 @@
       )} in total.
     </WarningBanner>
   {/if}
-  <ReverseScrollList items={logs.rows} class="pl-2 scrollbar">
+  <ReverseScrollList items={logs.rows} class="bg-white-black pl-2 scrollbar">
     {#snippet item(item)}
       <div class="whitespace-pre-wrap" style="font-family: {theme.config.monospaceFontFamily};">
         <!-- TODO: Re-enable line numbers when they get reported by backend -->

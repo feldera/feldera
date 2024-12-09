@@ -15,6 +15,8 @@
   import { goto } from '$app/navigation'
   import { base } from '$app/paths'
   import Tooltip from '$lib/components/common/Tooltip.svelte'
+  import PipelineConfigurationsPopup from '$lib/components/layout/pipelines/PipelineConfigurationsPopup.svelte'
+  import IconLoader from '$assets/icons/generic/loader-alt.svg?component'
 
   let {
     pipeline,
@@ -22,6 +24,7 @@
     pipelineBusy,
     unsavedChanges,
     onActionSuccess,
+    saveFile,
     class: _class = ''
   }: {
     pipeline: {
@@ -33,6 +36,7 @@
     pipelineBusy: boolean
     unsavedChanges: boolean
     onActionSuccess?: (pipelineName: string, action: PipelineAction | 'start_paused_start') => void
+    saveFile: () => void
     class?: string
   } = $props()
 
@@ -54,42 +58,44 @@
     _spacer_short,
     _spacer_long,
     _spinner,
+    _status_spinner,
+    _configurations,
     _configureProgram,
-    _configureResources
+    _configureResources,
+    _saveFile
   }
 
   const active = $derived(
     match(pipeline.current.status)
       .returnType<(keyof typeof actions)[]>()
-      .with('Shutdown', () => ['_delete', '_spacer_long', '_start_paused'])
-      .with('Queued', () => ['_delete', '_spacer_long', '_start_pending'])
-      .with('Starting up', () => ['_spinner', '_shutdown', '_spacer_long'])
-      .with('Initializing', () => ['_spinner', '_shutdown', '_spacer_long'])
-      .with('Running', () => ['_spacer_short', '_shutdown', '_pause'])
-      .with('Pausing', () => ['_spinner', '_shutdown', '_spacer_long'])
-      .with('Resuming', () => ['_spinner', '_shutdown', '_spacer_long'])
-      .with('Paused', () => ['_spacer_short', '_shutdown', '_start'])
-      .with('ShuttingDown', () => ['_spinner', '_spacer_long', '_spacer_long'])
-      .with({ PipelineError: P.any }, () => ['_spacer_short', '_shutdown', '_spacer_long'])
+      .with('Shutdown', () => ['_saveFile', '_start_paused'])
+      .with('Queued', () => ['_saveFile', '_start_pending'])
+      .with('Starting up', () => ['_shutdown', '_status_spinner'])
+      .with('Initializing', () => ['_shutdown', '_status_spinner'])
+      .with('Running', () => ['_shutdown', '_pause'])
+      .with('Pausing', () => ['_shutdown', '_status_spinner'])
+      .with('Resuming', () => ['_shutdown', '_status_spinner'])
+      .with('Paused', () => ['_shutdown', '_start'])
+      .with('ShuttingDown', () => ['_status_spinner', '_spacer_long'])
+      .with({ PipelineError: P.any }, () => ['_shutdown', '_spacer_long'])
       .with('Compiling SQL', 'SQL compiled', 'Compiling binary', () => [
-        '_delete',
-        '_spacer_long',
+        '_saveFile',
         '_start_pending'
       ])
-      .with('Unavailable', () => ['_spinner', '_shutdown', '_spacer_long'])
+      .with('Unavailable', () => ['_shutdown', '_status_spinner'])
       .with({ SqlError: P.any }, { RustError: P.any }, { SystemError: P.any }, () => [
-        '_delete',
-
-        '_spacer_long',
+        '_saveFile',
         '_start_error'
       ])
       .exhaustive()
   )
 
   const buttonClass = 'btn gap-0'
-  const iconClass = 'text-[28px]'
+  const iconClass = 'text-[20px]'
   const shortClass = 'w-9'
-  const longClass = 'w-32 justify-between pl-2'
+  const longClass = 'w-32 sm:w-36 justify-between pl-2 text-sm sm:text-base'
+  const basicBtnColor = 'preset-filled-surface-800-200'
+  const importantBtnColor = 'preset-filled-primary-500'
 </script>
 
 {#snippet deleteDialog()}
@@ -105,16 +111,17 @@
   ></DeleteDialog>
 {/snippet}
 
-<div class={'flex flex-nowrap gap-2 ' + _class}>
-  {@render _configureResources()}
+<div class={'flex flex-nowrap gap-2 sm:gap-4 ' + _class}>
   {#each active as name}
     {@render actions[name]()}
   {/each}
+  {@render _configurations()}
+  {@render _delete()}
 </div>
 
 {#snippet _delete()}
   <button
-    class="{buttonClass} {shortClass} fd fd-delete bg-surface-50-950 {iconClass}"
+    class="{buttonClass} {shortClass} fd fd-trash-2 preset-filled-error-50-950 {iconClass}"
     onclick={() => (globalDialog.dialog = deleteDialog)}
   >
   </button>
@@ -127,7 +134,7 @@
   <button
     aria-label={action(false)}
     class:disabled={unsavedChanges}
-    class="{buttonClass} {longClass} preset-filled-surface-900-100"
+    class="{buttonClass} {longClass} {importantBtnColor}"
     onclick={async (e) => {
       const _action = action(e.ctrlKey || e.shiftKey || e.metaKey)
       const pipelineName = pipeline.current.name
@@ -140,7 +147,7 @@
       onActionSuccess?.(pipelineName, _action)
     }}
   >
-    <span class="fd fd-play_arrow {iconClass}"></span>
+    <span class="fd fd-play {iconClass}"></span>
     {text}
     <span></span>
   </button>
@@ -163,8 +170,8 @@
 {/snippet}
 {#snippet _start_disabled()}
   <div class="h-9">
-    <button class="{buttonClass} {longClass} disabled preset-filled-surface-900-100">
-      <span class="fd fd-play_arrow {iconClass}"></span>
+    <button class="{buttonClass} {longClass} disabled {importantBtnColor}">
+      <span class="fd fd-play {iconClass}"></span>
       Start
       <span></span>
     </button>
@@ -184,7 +191,7 @@
 {/snippet}
 {#snippet _pause()}
   <button
-    class="{buttonClass} {longClass} bg-surface-50-950"
+    class="{buttonClass} {longClass} {basicBtnColor}"
     onclick={() => {
       const pipelineName = pipeline.current.name
       postPipelineAction(pipelineName, 'pause').then(() => {
@@ -200,7 +207,7 @@
 {/snippet}
 {#snippet _shutdown()}
   <button
-    class="{buttonClass} {longClass} bg-surface-50-950"
+    class="{buttonClass} {longClass} {basicBtnColor}"
     onclick={() => {
       const pipelineName = pipeline.current.name
       postPipelineAction(pipelineName, 'shutdown').then(() => {
@@ -209,10 +216,26 @@
       })
     }}
   >
-    <span class="fd fd-stop bg-surface-50-950 {iconClass}"></span>
+    <span class="fd fd-square {iconClass}"></span>
     Shutdown
     <span></span>
   </button>
+{/snippet}
+{#snippet _saveFile()}
+  <div>
+    <button
+      class="{buttonClass} {longClass} {basicBtnColor}"
+      class:disabled={!unsavedChanges}
+      onclick={saveFile}
+    >
+      <span class="fd fd-save {iconClass}"></span>
+      {unsavedChanges ? 'Save' : 'Saved'}
+      <span></span>
+    </button>
+  </div>
+  <Tooltip class="bg-white-black z-20 rounded text-surface-950-50" placement="top">
+    Ctrl + S
+  </Tooltip>
 {/snippet}
 
 {#snippet pipelineResourcesDialog(dialogTitle: string, field: keyof typeof pipeline.current)}
@@ -248,7 +271,7 @@
 {#snippet _configureResources()}
   <button
     onclick={() => (globalDialog.dialog = resourcesDialog)}
-    class="{buttonClass} {shortClass} fd fd-settings_input_component bg-surface-50-950 {iconClass}"
+    class="{buttonClass} {shortClass} fd fd-sliders-horizontal {basicBtnColor} {iconClass}"
   >
   </button>
   {#if pipelineBusy}
@@ -260,7 +283,7 @@
 {#snippet _configureProgram()}
   <button
     onclick={() => (globalDialog.dialog = compilationDialog)}
-    class="{buttonClass} {shortClass} fd fd-settings bg-surface-50-950 {iconClass}"
+    class="{buttonClass} {shortClass} fd fd-settings {basicBtnColor} {iconClass}"
   >
   </button>
   {#if pipelineBusy}
@@ -269,6 +292,9 @@
     </Tooltip>
   {/if}
 {/snippet}
+{#snippet _configurations()}
+  <PipelineConfigurationsPopup {pipeline} {pipelineBusy}></PipelineConfigurationsPopup>
+{/snippet}
 {#snippet _spacer_short()}
   <div class={shortClass}></div>
 {/snippet}
@@ -276,5 +302,12 @@
   <div class={longClass}></div>
 {/snippet}
 {#snippet _spinner()}
-  <div class="gc gc-loader-alt pointer-events-none h-9 w-9 animate-spin !text-[36px]"></div>
+  <IconLoader class="pointer-events-none h-9 w-9 animate-spin {iconClass} fill-surface-50-950"
+  ></IconLoader>
+{/snippet}
+{#snippet _status_spinner()}
+  <button class="{buttonClass} {longClass} pointer-events-none {basicBtnColor}">
+    <IconLoader class="animate-spin {iconClass} fill-surface-50-950"></IconLoader>
+    <span></span>
+  </button>
 {/snippet}

@@ -1,8 +1,15 @@
 <script lang="ts">
   import type { Snippet } from 'svelte'
 
-  const { trigger, content }: { trigger: Snippet<[() => void]>; content: Snippet<[() => void]> } =
-    $props()
+  const {
+    trigger,
+    content,
+    wrapperClass
+  }: {
+    trigger: Snippet<[toggle: () => void, isOpen: boolean]>
+    content: Snippet<[close: () => void]>
+    wrapperClass?: string
+  } = $props()
   let show = $state(false)
   let onClose = () => {
     setTimeout(() => {
@@ -29,10 +36,10 @@
   })
 </script>
 
-<div class="relative">
+<div class="relative {wrapperClass}">
   {@render trigger(() => {
     show = !show
-  })}
+  }, show)}
   {#if show}
     <div bind:this={contentNode}>
       {@render content(() => (show = false))}

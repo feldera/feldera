@@ -102,7 +102,7 @@
   }}
 >
   <div class="w-full">
-    <div class="flex max-w-[1000px] flex-col rounded border p-2">
+    <div class="flex max-w-[1000px] flex-col rounded border p-2 border-surface-100-900">
       <div class="flex w-full flex-col gap-2">
         <textarea
           bind:value={query}
@@ -115,21 +115,21 @@
           <div class="flex h-10 flex-none">
             {#if progress}
               <button
-                class="fd fd-stop w-10 p-2 text-[24px]"
+                class="fd fd-square w-10 p-2 text-[20px]"
                 onclick={onCancelQuery}
                 aria-label="Stop query"
               ></button>
             {:else}
               <button
                 {disabled}
-                class="fd fd-play_arrow -ml-1 -mt-1 mb-1 mr-1 w-10 p-2 text-[32px]"
+                class="fd fd-play w-10 p-2 text-[20px]"
                 onclick={() => onSubmitQuery(query)}
                 aria-label="Run query"
               ></button>
             {/if}
             {#if !isLastQuery}
               <button
-                class="fd fd-delete w-10 p-2 text-[24px]"
+                class="fd fd-trash-2 w-10 p-2 text-[20px]"
                 onclick={onDeleteQuery}
                 aria-label="Delete query"
               ></button>
