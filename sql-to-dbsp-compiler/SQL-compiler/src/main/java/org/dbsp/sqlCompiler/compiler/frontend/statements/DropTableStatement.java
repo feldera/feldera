@@ -23,13 +23,13 @@
 
 package org.dbsp.sqlCompiler.compiler.frontend.statements;
 
-import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteCompiler;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ParsedStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 
-public class DropTableStatement extends FrontEndStatement {
+public class DropTableStatement extends RelStatement {
     public final ProgramIdentifier tableName;
 
-    public DropTableStatement(CalciteCompiler.ParsedStatement node, ProgramIdentifier tableName) {
+    public DropTableStatement(ParsedStatement node, ProgramIdentifier tableName) {
         super(node);
         this.tableName = tableName;
     }

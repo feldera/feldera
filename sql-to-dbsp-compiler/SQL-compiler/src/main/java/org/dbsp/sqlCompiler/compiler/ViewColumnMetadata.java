@@ -48,11 +48,6 @@ public class ViewColumnMetadata
         return this.getNode().getPositionRange();
     }
 
-    public ViewColumnMetadata withType(DBSPType type) {
-        assert this.type == null;
-        return new ViewColumnMetadata(this.node, this.viewName, this.columnName, type, this.lateness);
-    }
-
     @Override
     public String toString() {
         return this.viewName + "." + this.columnName +

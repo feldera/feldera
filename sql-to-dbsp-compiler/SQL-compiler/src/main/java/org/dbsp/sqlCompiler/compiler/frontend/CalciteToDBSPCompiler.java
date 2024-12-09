@@ -119,7 +119,7 @@ import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteCompiler;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.SqlToRelCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.RelColumnMetadata;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
@@ -134,9 +134,8 @@ import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateTypeStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateViewStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.DeclareViewStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.DropTableStatement;
-import org.dbsp.sqlCompiler.compiler.frontend.statements.FrontEndStatement;
+import org.dbsp.sqlCompiler.compiler.frontend.statements.RelStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.HasSchema;
-import org.dbsp.sqlCompiler.compiler.frontend.statements.LatenessStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlRemove;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.TableModifyStatement;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Simplify;
@@ -250,7 +249,6 @@ public class CalciteToDBSPCompiler extends RelVisitor
     final ProgramMetadata metadata;
     /** Recursive views, indexed by actual view name (not rewritten name) */
     final Map<ProgramIdentifier, DeclareViewStatement> recursiveViews = new HashMap<>();
-    final Map<ProgramIdentifier, Map<ProgramIdentifier, ViewColumnMetadata>> viewMetadata = new HashMap<>();
     /** Current statement that is being compiled */
     @Nullable CreateViewStatement currentView = null;
 
@@ -881,7 +879,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
 
                 // Create external tables table
                 JdbcTableScan jscan = (JdbcTableScan) scan;
-                RelDataType tableRowType = jscan.jdbcTable.getRowType(this.compiler.frontend.typeFactory);
+                RelDataType tableRowType = jscan.jdbcTable.getRowType(this.compiler.sqlToRelCompiler.typeFactory);
                 DBSPTypeStruct originalRowType = this.convertType(tableRowType, true)
                         .to(DBSPTypeStruct.class)
                         .rename(tableName);
@@ -2760,12 +2758,12 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 metadata.isPrimaryKey, lateness, watermark, defaultValue, metadata.defaultValuePosition);
     }
 
-    DBSPNode compileCreateView(CreateViewStatement view) {
+    private DBSPNode compileCreateView(CreateViewStatement view) {
         CreateViewStatement previousView = this.currentView;
         this.currentView = view;
         RelNode rel = view.getRelNode();
         Logger.INSTANCE.belowLevel(this, 2)
-                .append(CalciteCompiler.getPlan(rel, false))
+                .append(SqlToRelCompiler.getPlan(rel, false))
                 .newline();
         this.go(rel);
         DBSPSimpleOperator op = this.getOperator(rel);
@@ -2812,37 +2810,19 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPSimpleOperator o;
         DBSPTypeStruct struct = view.getRowTypeAsStruct(this.compiler().typeCompiler)
                 .rename(view.relationName);
-        List<ViewColumnMetadata> additionalMetadata = new ArrayList<>();
+        List<ViewColumnMetadata> columnMetadata = new ArrayList<>();
         // Synthesize the metadata for the view's columns.
-        Map<ProgramIdentifier, ViewColumnMetadata> map = this.viewMetadata.get(view.relationName);
-        for (DBSPTypeStruct.Field field: struct.fields.values()) {
-            ViewColumnMetadata cm = null;
-            if (map != null)
-                cm = map.get(field.name);
-            if (cm == null) {
-                cm = new ViewColumnMetadata(view.getCalciteObject(), view.relationName,
-                        field.name, field.getType(), null);
-            } else {
-                cm = cm.withType(field.getType());
-            }
-            additionalMetadata.add(cm);
-        }
-        // Validate in the other direction: every declared metadata field must be used
-        if (map != null) {
-            for (ViewColumnMetadata cmeta: map.values()) {
-                if (!struct.hasField(cmeta.columnName))
-                    this.compiler.reportError(cmeta.getPositionRange(),
-                            "No such column",
-                            "View " + view.relationName.singleQuote() +
-                                    " does not contain a column named " +
-                                    cmeta.columnName.singleQuote());
-            }
+        for (RelColumnMetadata meta: view.columns) {
+            InputColumnMetadata colMeta = this.convertMetadata(meta);
+            ViewColumnMetadata cm = new ViewColumnMetadata(view.getCalciteObject(), view.relationName,
+                        meta.getName(), colMeta.type, colMeta.lateness);
+            columnMetadata.add(cm);
         }
 
         int emitFinalIndex = view.emitFinalColumn(this.compiler);
         DeclareViewStatement declare = this.recursiveViews.get(view.relationName);
         ViewMetadata meta = new ViewMetadata(view.relationName,
-                additionalMetadata, view.getViewKind(), emitFinalIndex,
+                columnMetadata, view.getViewKind(), emitFinalIndex,
                 // The view is a system view if it's not visible
                 declare != null, !currentView.isVisible());
         if (view.getViewKind() != SqlCreateView.ViewKind.LOCAL) {
@@ -3014,30 +2994,9 @@ public class CalciteToDBSPCompiler extends RelVisitor
         }
     }
 
-    @Nullable
-    DBSPNode compileLateness(LatenessStatement stat) {
-        ExpressionCompiler compiler = new ExpressionCompiler(null, null, this.compiler);
-        DBSPExpression lateness = compiler.compile(stat.value);
-        ViewColumnMetadata vcm = new ViewColumnMetadata(
-                stat.getCalciteObject(), Utilities.toIdentifier(stat.view),
-                Utilities.toIdentifier(stat.column), null, lateness);
-        if (!this.viewMetadata.containsKey(vcm.viewName))
-            this.viewMetadata.put(vcm.viewName, new HashMap<>());
-        Map<ProgramIdentifier, ViewColumnMetadata> map = this.viewMetadata.get(vcm.viewName);
-        if (map.containsKey(vcm.columnName)) {
-            this.compiler.reportError(stat.getPosition(), "Duplicate",
-                    "Lateness for " + vcm.viewName + "." + vcm.columnName + " already declared");
-            this.compiler.reportError(map.get(vcm.columnName).getNode().getPositionRange(), "Duplicate",
-                    "Location of the previous declaration", true);
-        } else {
-            map.put(vcm.columnName, vcm);
-        }
-        return null;
-    }
-
     @SuppressWarnings("UnusedReturnValue")
     @Nullable
-    public DBSPNode compile(FrontEndStatement statement) {
+    public DBSPNode compile(RelStatement statement) {
         if (statement.is(CreateViewStatement.class)) {
             CreateViewStatement view = statement.to(CreateViewStatement.class);
             return this.compileCreateView(view);
@@ -3061,9 +3020,6 @@ public class CalciteToDBSPCompiler extends RelVisitor
         } else if (statement.is(CreateFunctionStatement.class)) {
             CreateFunctionStatement stat = statement.to(CreateFunctionStatement.class);
             return this.compileCreateFunction(stat);
-        } else if (statement.is(LatenessStatement.class)) {
-            LatenessStatement stat = statement.to(LatenessStatement.class);
-            return this.compileLateness(stat);
         } else if (statement.is(DeclareViewStatement.class)) {
             DeclareViewStatement decl = statement.to(DeclareViewStatement.class);
             return this.compileDeclareView(decl);

@@ -710,7 +710,7 @@ public class StreamingTests extends StreamingTestBase {
     @Test
     public void testViewLateness() {
         String query = """
-                LATENESS V.COL1 INTERVAL 1 HOUR;
+                LATENESS V.COL1 1;
                 -- no view called W
                 LATENESS W.COL2 INTERVAL 1 HOUR;
                 CREATE VIEW V AS SELECT T.COL1, T.COL2 FROM T;
@@ -736,7 +736,7 @@ public class StreamingTests extends StreamingTestBase {
             }
         };
         visitor.apply(circuit);
-        TestUtil.assertMessagesContain(compiler, "No view named 'w' found");
+        TestUtil.assertMessagesContain(compiler, "View 'w' used in LATENESS statement not found");
     }
 
     @Test
@@ -1242,16 +1242,12 @@ public class StreamingTests extends StreamingTestBase {
     @Test
     public void issue1964() {
         String sql = """
-                CREATE TABLE event(
-                    start   TIMESTAMP NOT NULL LATENESS INTERVAL 1 HOURS
-                );
-
+                CREATE TABLE event(start TIMESTAMP NOT NULL LATENESS INTERVAL 1 HOURS);
                 LATENESS slotted_events.start 96;
-
                 CREATE VIEW slotted_events AS
                 SELECT start
                 FROM event;""";
-        this.statementsFailingInCompilation(sql, "Cannot apply operation '-'");
+        this.statementsFailingInCompilation(sql, "Cannot apply '-'");
     }
 
     @Test

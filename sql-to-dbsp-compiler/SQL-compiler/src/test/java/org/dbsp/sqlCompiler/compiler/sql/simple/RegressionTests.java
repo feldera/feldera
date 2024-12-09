@@ -18,12 +18,36 @@ import org.junit.Test;
 
 public class RegressionTests extends SqlIoTest {
     @Test
+    public void issue3114() {
+        this.compileRustTestCase("""
+                CREATE TABLE T(x integer);
+                LATENESS V.x 1;
+                CREATE VIEW V
+                    AS SELECT
+                        x,
+                        MAP['x', x] AS map,
+                        ARRAY[1, x] as a,
+                        ROW(1, x) as r
+                    FROM T;""");
+    }
+
+    @Test
+    public void latenessType() {
+        this.statementsFailingInCompilation("""
+                CREATE TABLE T(x integer);
+                LATENESS V.x INTERVAL '10' SECONDS;
+                CREATE VIEW V AS SELECT
+                   x,
+                   MAP['x', x] AS map
+                FROM T;""", "Cannot apply '-' to arguments of type '<INTEGER> - <INTERVAL SECOND>'");
+    }
+
+    @Test
     public void issue3109() {
         var ccs = this.getCCS("""
                 CREATE TYPE other_type AS (s string);
                 
                 CREATE TYPE my_type AS (
-                    // COMMENTING THIS OUT FIXES THE ISSUE
                     other other_type ARRAY,
                     s string
                 );

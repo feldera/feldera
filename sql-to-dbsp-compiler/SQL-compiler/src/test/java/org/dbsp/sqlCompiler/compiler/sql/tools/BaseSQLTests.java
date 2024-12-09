@@ -28,7 +28,7 @@ import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.rust.RustFileWriter;
 import org.dbsp.sqlCompiler.compiler.frontend.TableContents;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteCompiler;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.SqlToRelCompiler;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.LowerCircuitVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity.MonotoneAnalyzer;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -70,7 +70,7 @@ public class BaseSQLTests {
 
     @SuppressWarnings("unused")
     protected void showPlan() {
-        Logger.INSTANCE.setLoggingLevel(CalciteCompiler.class, 2);
+        Logger.INSTANCE.setLoggingLevel(SqlToRelCompiler.class, 2);
     }
 
     @SuppressWarnings("unused")
@@ -125,7 +125,7 @@ public class BaseSQLTests {
         this.prepareInputs(compiler);
         compiler.compileStatements(statements);
         getCircuit(compiler);
-        Assert.assertTrue(compiler.messages.exitCode != 0);
+        assert compiler.messages.exitCode != 0 : "Program was expected to fail";
         String message = compiler.messages.toString();
         this.shouldMatch(message, regex, isRegex);
     }

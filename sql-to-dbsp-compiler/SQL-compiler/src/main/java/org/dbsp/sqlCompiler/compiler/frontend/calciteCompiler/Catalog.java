@@ -31,7 +31,7 @@ import org.apache.calcite.schema.Table;
 import org.apache.calcite.schema.impl.AbstractSchema;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateRelationStatement;
-import org.dbsp.sqlCompiler.compiler.frontend.statements.FrontEndStatement;
+import org.dbsp.sqlCompiler.compiler.frontend.statements.RelStatement;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -41,7 +41,7 @@ import java.util.Map;
 public class Catalog extends AbstractSchema {
     public final String schemaName;
     private final Map<String, Table> tableMap;
-    private final Map<String, FrontEndStatement> definition;
+    private final Map<String, RelStatement> definition;
     private final Multimap<String, Function> functionMap;
     private final Map<String, RelProtoDataType> typeMap;
 
@@ -61,12 +61,12 @@ public class Catalog extends AbstractSchema {
         this.functionMap = ArrayListMultimap.create(other.functionMap);
     }
 
-    boolean addDefinition(ProgramIdentifier id, IErrorReporter reporter, FrontEndStatement statement) {
+    boolean addDefinition(ProgramIdentifier id, IErrorReporter reporter, RelStatement statement) {
         String name = id.name();
         if (this.definition.containsKey(name)) {
             reporter.reportError(statement.getPosition(), "Duplicate declaration",
                     id.singleQuote() + " already defined");
-            FrontEndStatement previous = this.definition.get(name);
+            RelStatement previous = this.definition.get(name);
             reporter.reportError(previous.getPosition(), "Duplicate declaration",
                     "Location of previous definition", true);
             return false;
@@ -102,7 +102,7 @@ public class Catalog extends AbstractSchema {
         this.tableMap.remove(tableName.name());
     }
 
-    public boolean addType(ProgramIdentifier name, IErrorReporter reporter, FrontEndStatement statement) {
+    public boolean addType(ProgramIdentifier name, IErrorReporter reporter, RelStatement statement) {
         // Does not insert in the typeMap.
         return this.addDefinition(name, reporter, statement);
     }

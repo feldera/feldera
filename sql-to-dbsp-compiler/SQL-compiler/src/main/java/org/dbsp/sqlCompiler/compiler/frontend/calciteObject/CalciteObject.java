@@ -8,7 +8,7 @@ import org.apache.calcite.sql.SqlOperator;
 import org.apache.calcite.sql.parser.SqlParserPos;
 import org.dbsp.sqlCompiler.compiler.IHasSourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteCompiler;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ParsedStatement;
 import org.dbsp.util.ICastable;
 
 import javax.annotation.Nullable;
@@ -44,7 +44,7 @@ public class CalciteObject implements ICastable, IHasSourcePositionRange {
         return new CalciteSqlNode(node);
     }
 
-    public static CalciteObject create(CalciteCompiler.ParsedStatement node) {
+    public static CalciteObject create(ParsedStatement node) {
         return new CalciteSqlNode(node.statement());
     }
 

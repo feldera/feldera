@@ -38,6 +38,7 @@ import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStatement;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeResult;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
@@ -194,8 +195,12 @@ public class ExternalFunction extends SqlFunction {
             FunctionBodyGenerator generator = new FunctionBodyGenerator(compiler, parameters);
             DBSPType returnType = typeCompiler.convertType(this.returnType, true);
             DBSPExpression functionBody = generator.compile(this.body);
-            if (!returnType.sameType(functionBody.getType())) {
-                if (returnType.sameType(functionBody.getType().withMayBeNull(true))) {
+
+            DBSPType functionType = functionBody.getType();
+            if (!returnType.sameType(functionType)) {
+                if (returnType.is(DBSPTypeString.class)) {
+                    functionBody = functionBody.cast(returnType);
+                } else if (returnType.sameType(functionType.withMayBeNull(true))) {
                     functionBody = functionBody.cast(returnType);
                 } else {
                     throw new CompilationError("Function " + Utilities.singleQuote(this.getName()) +

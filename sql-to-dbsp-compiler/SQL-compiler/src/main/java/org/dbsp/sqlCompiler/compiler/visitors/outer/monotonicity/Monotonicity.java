@@ -272,7 +272,7 @@ public class Monotonicity extends CircuitVisitor {
             // This code parallels DBSPSourceMultisetOperator
             List<IMaybeMonotoneType> fields = new ArrayList<>();
             for (ViewColumnMetadata metadata: node.metadata.columns) {
-                IMaybeMonotoneType columnType = new NonMonotoneType(metadata.getType());
+                IMaybeMonotoneType columnType = NonMonotoneType.nonMonotone(metadata.getType());
                 if (metadata.lateness != null)
                     columnType = new MonotoneType(metadata.getType());
                 fields.add(columnType);

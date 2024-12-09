@@ -24,17 +24,17 @@
 package org.dbsp.sqlCompiler.compiler.frontend.statements;
 
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteCompiler;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ParsedStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.util.ICastable;
 
 /** Base class for statements produced by the compiler front-end.
  * The representation is mostly at the level of RelNode, but there
  * is also some SqlNode-level information. */
-public abstract class FrontEndStatement implements ICastable {
-    public final CalciteCompiler.ParsedStatement parsedStatement;
+public abstract class RelStatement implements ICastable {
+    public final ParsedStatement parsedStatement;
 
-    protected FrontEndStatement(CalciteCompiler.ParsedStatement parsedStatement) {
+    protected RelStatement(ParsedStatement parsedStatement) {
         this.parsedStatement = parsedStatement;
     }
 

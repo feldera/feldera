@@ -1363,7 +1363,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
                 new DBSPStringLiteral(tableOrViewName.toString()),
                 new DBSPStringLiteral(DBSPControlledKeyFilterOperator.LATE_ERROR),
                 dataArg.cast(new DBSPTypeVariant(false))).closure(
-                controlArg.asParameter(), dataParam, valArg.asParameter(), weightArg.asParameter());
+                        controlArg.asParameter(), dataParam, valArg.asParameter(), weightArg.asParameter());
         DBSPControlledKeyFilterOperator result = new DBSPControlledKeyFilterOperator(node, closure, error, data, control);
         this.errorStreams.add(result.getOutput(1));
         return result;

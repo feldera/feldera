@@ -1,6 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.frontend.statements;
 
-import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteCompiler;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ParsedStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.RelColumnMetadata;
 
@@ -10,7 +10,7 @@ import java.util.List;
 public class DeclareViewStatement extends CreateRelationStatement {
     public static final String declSuffix = "-decl";
 
-    public DeclareViewStatement(CalciteCompiler.ParsedStatement node, ProgramIdentifier relationName,
+    public DeclareViewStatement(ParsedStatement node, ProgramIdentifier relationName,
                                 List<RelColumnMetadata> columns) {
         super(node, relationName, columns, null);
     }
