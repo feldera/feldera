@@ -30,7 +30,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateTableStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.DropTableStatement;
-import org.dbsp.sqlCompiler.compiler.frontend.statements.FrontEndStatement;
+import org.dbsp.sqlCompiler.compiler.frontend.statements.RelStatement;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
 import org.dbsp.util.Utilities;
@@ -70,7 +70,7 @@ public class TableContents implements ICompilerComponent {
 
     /** "Execute" a DDL statement.
      * @return True on success. */
-    public boolean execute(FrontEndStatement statement) {
+    public boolean execute(RelStatement statement) {
         if (statement.is(CreateTableStatement.class)) {
             CreateTableStatement create = statement.to(CreateTableStatement.class);
             Utilities.putNew(this.tableCreation, create.relationName, create);

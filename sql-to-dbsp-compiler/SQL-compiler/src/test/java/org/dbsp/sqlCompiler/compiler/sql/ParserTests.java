@@ -27,7 +27,8 @@ import org.apache.calcite.sql.SqlNode;
 import org.apache.calcite.sql.parser.SqlParseException;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.StderrErrorReporter;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteCompiler;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ParsedStatement;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.SqlToRelCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateFunctionDeclaration;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateView;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlDeclareView;
@@ -43,13 +44,13 @@ import java.util.List;
 public class ParserTests {
     static final CompilerOptions options = new CompilerOptions();
 
-    CalciteCompiler getCompiler() {
-        return new CalciteCompiler(options, new StderrErrorReporter());
+    SqlToRelCompiler getCompiler() {
+        return new SqlToRelCompiler(options, new StderrErrorReporter());
     }
 
     @Test
     public void ddlTest() throws SqlParseException {
-        CalciteCompiler calcite = this.getCompiler();
+        SqlToRelCompiler calcite = this.getCompiler();
         String ddl = "CREATE TABLE T (\n" +
                 "COL1 INT" +
                 ", COL2 DOUBLE" +
@@ -85,8 +86,8 @@ public class ParserTests {
 
     @Test
     public void parseRecursive() throws SqlParseException {
-        CalciteCompiler compiler = this.getCompiler();
-        List<CalciteCompiler.ParsedStatement> node = compiler.parseStatements("""
+        SqlToRelCompiler compiler = this.getCompiler();
+        List<ParsedStatement> node = compiler.parseStatements("""
                 DECLARE RECURSIVE VIEW V(x INT);
                 CREATE VIEW V AS SELECT * FROM V;
                 """);
@@ -98,7 +99,7 @@ public class ParserTests {
 
     @Test
     public void connectorTest() throws SqlParseException {
-        CalciteCompiler calcite = this.getCompiler();
+        SqlToRelCompiler calcite = this.getCompiler();
         String table = """
                CREATE TABLE T (
                COL1 INT
@@ -134,24 +135,24 @@ public class ParserTests {
 
     @Test
     public void createFunctionTest() throws SqlParseException {
-        CalciteCompiler calcite = this.getCompiler();
+        SqlToRelCompiler calcite = this.getCompiler();
         String ddl = """
                 CREATE FUNCTION to_json(data VARCHAR) RETURNS VARBINARY;
                 CREATE FUNCTION from_json(data VARBINARY) RETURNS VARCHAR;
                 CREATE FUNCTION no_args() RETURNS TIMESTAMP AS TIMESTAMP '2024-01-01 00:00:00';
                 """;
-        List<CalciteCompiler.ParsedStatement> list = calcite.parseStatements(ddl);
+        List<ParsedStatement> list = calcite.parseStatements(ddl);
         Assert.assertNotNull(list);
         Assert.assertEquals(3, list.size());
     }
 
     @Test
     public void createFunctionBodyTest() throws SqlParseException {
-        CalciteCompiler calcite = this.getCompiler();
+        SqlToRelCompiler calcite = this.getCompiler();
         String ddl = """
                 CREATE FUNCTION dbl(n INTEGER) RETURNS INTEGER AS n * 2;
                 """;
-        List<CalciteCompiler.ParsedStatement> list = calcite.parseStatements(ddl);
+        List<ParsedStatement> list = calcite.parseStatements(ddl);
         Assert.assertNotNull(list);
         Assert.assertEquals(1, list.size());
         SqlNode first = list.get(0).statement();
@@ -162,7 +163,7 @@ public class ParserTests {
 
     @Test
     public void createTypeTest() throws SqlParseException {
-        CalciteCompiler calcite = this.getCompiler();
+        SqlToRelCompiler calcite = this.getCompiler();
         String ddl = """
                 CREATE TYPE address_typ AS (
                    street          VARCHAR(30),
@@ -174,24 +175,24 @@ public class ParserTests {
                    lastname        VARCHAR(30),
                    address         ADDRESS_TYP);
                 CREATE TABLE T(p PERSON_TYPE);""";
-        List<CalciteCompiler.ParsedStatement> node = calcite.parseStatements(ddl);
+        List<ParsedStatement> node = calcite.parseStatements(ddl);
         Assert.assertNotNull(node);
     }
 
     @Test
     public void mapTypeTest() throws SqlParseException {
-        CalciteCompiler calcite = this.getCompiler();
+        SqlToRelCompiler calcite = this.getCompiler();
         String ddl = """
                 CREATE TABLE T (
                    data     MAP<INT, INT>
                 );""";
-        List<CalciteCompiler.ParsedStatement> node = calcite.parseStatements(ddl);
+        List<ParsedStatement> node = calcite.parseStatements(ddl);
         Assert.assertNotNull(node);
     }
 
     @Test
     public void latenessTest() throws SqlParseException {
-        CalciteCompiler calcite = this.getCompiler();
+        SqlToRelCompiler calcite = this.getCompiler();
         String ddl = """
                 CREATE TABLE st(
                    ts       TIMESTAMP LATENESS INTERVAL '5:00' HOURS TO MINUTES,
@@ -207,7 +208,7 @@ public class ParserTests {
 
     @Test
     public void watermarkTest() throws SqlParseException {
-        CalciteCompiler calcite = this.getCompiler();
+        SqlToRelCompiler calcite = this.getCompiler();
         String ddl = """
                 CREATE TABLE st(
                    ts       TIMESTAMP WATERMARK INTERVAL '5:00' HOURS TO MINUTES,
@@ -224,7 +225,7 @@ public class ParserTests {
     @Test
     public void sourceNameTest() throws SqlParseException {
         // Tests that a table can be named 'source'.
-        CalciteCompiler calcite = this.getCompiler();
+        SqlToRelCompiler calcite = this.getCompiler();
         String ddl = "CREATE TABLE SOURCE (COL INT)";
         SqlNode node = calcite.parse(ddl);
         Assert.assertNotNull(node);
@@ -233,7 +234,7 @@ public class ParserTests {
     @Test
     public void removeTest() throws SqlParseException {
         // Tests the newly added REMOVE statement
-        CalciteCompiler calcite = this.getCompiler();
+        SqlToRelCompiler calcite = this.getCompiler();
         String ddl = "REMOVE FROM SOURCE VALUES(1, 2, 3)";
         SqlNode node = calcite.parse(ddl);
         Assert.assertNotNull(node);
@@ -242,7 +243,7 @@ public class ParserTests {
     @Test
     public void latenessStatementTest() throws SqlParseException {
         // Tests the LATENESS statement
-        CalciteCompiler calcite = this.getCompiler();
+        SqlToRelCompiler calcite = this.getCompiler();
         String ddl = "LATENESS V.COL1 INTERVAL '1:00' HOUR TO MINUTES";
         SqlNode node = calcite.parse(ddl);
         Assert.assertNotNull(node);
@@ -251,7 +252,7 @@ public class ParserTests {
     @Test
     public void testNumber() throws SqlParseException {
         // Tests that 'NUMBER' can be used as a type
-        CalciteCompiler calcite = this.getCompiler();
+        SqlToRelCompiler calcite = this.getCompiler();
         String ddl = "CREATE TABLE SOURCE (COL NUMBER)";
         SqlNode node = calcite.parse(ddl);
         Assert.assertNotNull(node);
@@ -260,7 +261,7 @@ public class ParserTests {
     @Test
     public void oneLetterTest() throws SqlParseException {
         // Tests that 'G' can be used as a column name
-        CalciteCompiler calcite = this.getCompiler();
+        SqlToRelCompiler calcite = this.getCompiler();
         String ddl = "CREATE TABLE SOURCE (A CHAR, D CHAR, G CHAR, OF CHAR, M CHAR)";
         SqlNode node = calcite.parse(ddl);
         Assert.assertNotNull(node);
@@ -268,7 +269,7 @@ public class ParserTests {
 
     @Test
     public void DropTest() throws SqlParseException {
-        CalciteCompiler calcite = this.getCompiler();
+        SqlToRelCompiler calcite = this.getCompiler();
         String ddl = "DROP TABLE T";
         SqlNode node = calcite.parse(ddl);
         Assert.assertNotNull(node);
@@ -297,8 +298,8 @@ public class ParserTests {
                 SELECT * FROM T
                 */
                 CREATE VIEW V AS SELECT 0""";
-        CalciteCompiler calcite = this.getCompiler();
-        List<CalciteCompiler.ParsedStatement> node = calcite.parseStatements(query);
+        SqlToRelCompiler calcite = this.getCompiler();
+        List<ParsedStatement> node = calcite.parseStatements(query);
         Assert.assertNotNull(node);
     }
 
@@ -310,8 +311,8 @@ public class ParserTests {
                 create table git_commit (
                     git_commit_id bigint not null primary key
                 )""";
-        CalciteCompiler calcite = this.getCompiler();
-        List<CalciteCompiler.ParsedStatement> node = calcite.parseStatements(query);
+        SqlToRelCompiler calcite = this.getCompiler();
+        List<ParsedStatement> node = calcite.parseStatements(query);
         Assert.assertNotNull(node);
     }
 
@@ -324,8 +325,8 @@ public class ParserTests {
                     git_commit_id bigint not null,
                     PRIMARY KEY (git_commit_id)
                 )""";
-        CalciteCompiler calcite = this.getCompiler();
-        List<CalciteCompiler.ParsedStatement> node = calcite.parseStatements(query);
+        SqlToRelCompiler calcite = this.getCompiler();
+        List<ParsedStatement> node = calcite.parseStatements(query);
         Assert.assertNotNull(node);
     }
 
@@ -345,8 +346,8 @@ public class ParserTests {
                     git_commit_id bigint not null foreign key references git_commit(git_commit_id),
                     pipeline_id bigint not null
                 )""";
-        CalciteCompiler calcite = this.getCompiler();
-        List<CalciteCompiler.ParsedStatement> node = calcite.parseStatements(query);
+        SqlToRelCompiler calcite = this.getCompiler();
+        List<ParsedStatement> node = calcite.parseStatements(query);
         Assert.assertNotNull(node);
         Assert.assertEquals(2, node.size());
         SqlNode table = node.get(1).statement();
@@ -367,8 +368,8 @@ public class ParserTests {
                     id BIGINT NOT NULL PRIMARY KEY,
                     FOREIGN KEY (id) REFERENCES inventoryitem_t (id)
                 );""";
-        CalciteCompiler calcite = this.getCompiler();
-        List<CalciteCompiler.ParsedStatement> node = calcite.parseStatements(query);
+        SqlToRelCompiler calcite = this.getCompiler();
+        List<ParsedStatement> node = calcite.parseStatements(query);
         Assert.assertNotNull(node);
         Assert.assertEquals(1, node.size());
         SqlNode table = node.get(0).statement();
@@ -394,8 +395,8 @@ public class ParserTests {
                     id BIGINT DEFAULT NULL,
                     str VARCHAR DEFAULT ''
                 );""";
-        CalciteCompiler calcite = this.getCompiler();
-        List<CalciteCompiler.ParsedStatement> node = calcite.parseStatements(query);
+        SqlToRelCompiler calcite = this.getCompiler();
+        List<ParsedStatement> node = calcite.parseStatements(query);
         Assert.assertNotNull(node);
     }
 
@@ -405,8 +406,8 @@ public class ParserTests {
                 CREATE TABLE productvariant_t (
                     id BIGINT NOT NULL PRIMARY KEY FOREIGN KEY REFERENCES inventoryitem_t (id)
                 );""";
-        CalciteCompiler calcite = this.getCompiler();
-        List<CalciteCompiler.ParsedStatement> node = calcite.parseStatements(query);
+        SqlToRelCompiler calcite = this.getCompiler();
+        List<ParsedStatement> node = calcite.parseStatements(query);
         Assert.assertNotNull(node);
     }
 
@@ -417,8 +418,8 @@ public class ParserTests {
                 create table git_commit (
                     git_commit_id bigint not null FOREIGN KEY REFERENCES other(other) FOREIGN KEY REFERENCES other2(other2)
                 )""";
-        CalciteCompiler calcite = this.getCompiler();
-        List<CalciteCompiler.ParsedStatement> node = calcite.parseStatements(query);
+        SqlToRelCompiler calcite = this.getCompiler();
+        List<ParsedStatement> node = calcite.parseStatements(query);
         Assert.assertNotNull(node);
     }
 }

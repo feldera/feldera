@@ -34,6 +34,7 @@ import org.apache.calcite.sql.SqlKind;
 import org.apache.calcite.sql.SqlNode;
 import org.apache.calcite.sql.SqlOperatorTable;
 import org.apache.calcite.sql.parser.SqlParseException;
+import org.apache.calcite.sql.parser.SqlParserPos;
 import org.apache.calcite.sql.util.SqlOperatorTables;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceTableOperator;
@@ -46,22 +47,23 @@ import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.TypeCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ForeignKey;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ParsedStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteToDBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.TableContents;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteCompiler;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.SqlToRelCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CustomFunctions;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.PropertyList;
+import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateView;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlFragment;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlFragmentIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateFunctionStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateTableStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateViewStatement;
-import org.dbsp.sqlCompiler.compiler.frontend.statements.FrontEndStatement;
+import org.dbsp.sqlCompiler.compiler.frontend.statements.RelStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.IHasSchema;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlLateness;
-import org.dbsp.sqlCompiler.compiler.frontend.statements.LatenessStatement;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitOptimizer;
 import org.dbsp.sqlCompiler.ir.DBSPFunction;
 import org.dbsp.sqlCompiler.ir.DBSPNode;
@@ -127,8 +129,8 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
     /** Variable that refers to the weight of the row in the z-set. */
     public final DBSPVariablePath weightVar;
 
-    public final CalciteCompiler frontend;
-    final CalciteToDBSPCompiler midend;
+    public final SqlToRelCompiler sqlToRelCompiler;
+    final CalciteToDBSPCompiler relToDBSPCompiler;
     public final CompilerOptions options;
     public final CompilerMessages messages;
     public final SourceFileContents sources;
@@ -137,9 +139,10 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
 
     public final TypeCompiler typeCompiler;
     public boolean hasWarnings;
+    // For each view the list of columns declared with lateness
+    final Map<ProgramIdentifier, Map<ProgramIdentifier, SqlLateness>> viewLateness = new HashMap<>();
 
     final Map<ProgramIdentifier, CreateViewStatement> views = new HashMap<>();
-    final List<LatenessStatement> lateness = new ArrayList<>();
     /** All UDFs from the SQL program.  The ones in Rust have no bodies */
     public final List<DBSPFunction> functions = new ArrayList<>();
 
@@ -152,8 +155,8 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         // Setting these first allows errors to be reported
         this.messages = new CompilerMessages(this);
         this.metadata = new ProgramMetadata();
-        this.frontend = new CalciteCompiler(options, this);
-        this.midend = new CalciteToDBSPCompiler(true, options,
+        this.sqlToRelCompiler = new SqlToRelCompiler(options, this);
+        this.relToDBSPCompiler = new CalciteToDBSPCompiler(true, options,
                 this, this.metadata);
         this.sources = new SourceFileContents();
         this.circuit = null;
@@ -176,7 +179,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
             first = false;
             jsonPlan.append("\"").append(Utilities.escapeDoubleQuotes(e.name())).append("\"");
             jsonPlan.append(":");
-            String json = CalciteCompiler.getPlan(cv.getRelNode(), true);
+            String json = SqlToRelCompiler.getPlan(cv.getRelNode(), true);
             jsonPlan.append(json);
         }
         jsonPlan.append(System.lineSeparator()).append("}");
@@ -209,7 +212,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
     }
 
     public CustomFunctions getCustomFunctions() {
-        return this.frontend.getCustomFunctions();
+        return this.sqlToRelCompiler.getCustomFunctions();
     }
 
     @Override
@@ -267,7 +270,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
 
     /** Add a new source which can provide schema information about input tables */
     public void addSchemaSource(String name, Schema schema) {
-        this.frontend.addSchemaSource(name, schema);
+        this.sqlToRelCompiler.addSchemaSource(name, schema);
     }
 
     record SqlStatements(String statement, boolean many, boolean visible) {}
@@ -383,12 +386,11 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         }
     }
 
-    void printMessages(@Nullable CreateViewStatement statement) {
+    void printMessages(@Nullable SqlParserPos pos) {
         System.err.println(this.messages);
-        if (statement != null) {
+        if (pos != null) {
             System.err.println("While compiling");
-            System.err.println(this.sources.getFragment(
-                    new SourcePositionRange(statement.createView.getParserPosition()), true));
+            System.err.println(this.sources.getFragment(new SourcePositionRange(pos), true));
         }
     }
 
@@ -437,75 +439,101 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         }
     }
 
-    void runAllCompilerStages() {
-        CreateViewStatement currentView = null;
-        try {
-            // Parse using Calcite
-            List<CalciteCompiler.ParsedStatement> parsed = new ArrayList<>();
-            // across all tables
-            List<ForeignKey> foreignKeys = new ArrayList<>();
-
-            for (SqlStatements stat: this.toCompile) {
+    List<ParsedStatement> runParser() {
+        // Parse using Calcite
+        List<ParsedStatement> parsed = new ArrayList<>();
+        for (SqlStatements stat : this.toCompile) {
+            try {
                 if (stat.many) {
                     if (stat.statement.isEmpty())
                         continue;
-                    parsed.addAll(this.frontend.parseStatements(stat.statement, stat.visible));
+                    parsed.addAll(this.sqlToRelCompiler.parseStatements(stat.statement, stat.visible));
                 } else {
-                    SqlNode node = this.frontend.parse(stat.statement, stat.visible);
-                    parsed.add(new CalciteCompiler.ParsedStatement(node, stat.visible));
+                    SqlNode node = this.sqlToRelCompiler.parse(stat.statement, stat.visible);
+                    parsed.add(new ParsedStatement(node, stat.visible));
                 }
                 if (this.hasErrors())
-                    return;
+                    break;
+            } catch (SqlParseException e) {
+                if (e.getCause() instanceof BaseCompilerException) {
+                    // Exceptions we throw in parser validation code are caught
+                    // by the Calcite parser and wrapped in SqlParseException.
+                    // Unwrap them to retrieve source position...
+                    this.messages.reportError((BaseCompilerException) e.getCause());
+                } else {
+                    this.messages.reportError(e);
+                }
+            } catch (Throwable e) {
+                this.messages.reportError(e);
+                this.printMessages(SqlParserPos.ZERO);
             }
+        }
+        this.toCompile.clear();
+        return parsed;
+    }
 
+    void runAllCompilerStages() {
+        List<ParsedStatement> parsed = this.runParser();
+        if (this.hasErrors())
+            return;
+        SqlParserPos currentViewPosition = SqlParserPos.ZERO;
+        try {
+            // across all tables
+            List<ForeignKey> foreignKeys = new ArrayList<>();
             // All UDFs which have no bodies in SQL
             final List<SqlFunction> rustFunctions = new ArrayList<>();
+
             // Compile first the statements that define functions, types, and lateness
-            for (CalciteCompiler.ParsedStatement node: parsed) {
+            for (ParsedStatement node: parsed) {
                 Logger.INSTANCE.belowLevel(this, 2)
                         .append("Parsing result: ")
                         .appendSupplier(node::toString)
                         .newline();
                 SqlKind kind = node.statement().getKind();
                 if (kind == SqlKind.CREATE_TYPE) {
-                    FrontEndStatement fe = this.frontend.compile(node, this.sources);
+                    RelStatement fe = this.sqlToRelCompiler.compileCreateType(node);
                     if (fe == null)
                         // error during compilation
                         continue;
-                    this.midend.compile(fe);
+                    this.relToDBSPCompiler.compile(fe);
                     continue;
                 }
                 if (kind == SqlKind.CREATE_FUNCTION) {
-                    FrontEndStatement fe = this.frontend.compile(node, this.sources);
-                    if (fe == null)
-                        continue;
-                    CreateFunctionStatement stat = fe.to(CreateFunctionStatement.class);
-                    boolean exists = this.frontend.functionExists(stat.function.getName());
+                    CreateFunctionStatement stat = this.sqlToRelCompiler.compileCreateFunction(node, this.sources);
+                    boolean exists = this.sqlToRelCompiler.functionExists(stat.function.getName());
                     if (exists) {
                         throw new CompilationError("A function named " + Utilities.singleQuote(stat.function.getName()) +
                                 " is already predefined, or the name is reserved.\nPlease consider using a " +
                                 "different name for the user-defined function",
-                                fe.getCalciteObject());
+                                stat.getCalciteObject());
                     }
                     SqlFunction function = stat.function;
                     if (!stat.function.isSqlFunction()) {
                         rustFunctions.add(function);
                     } else {
                         // Reload the operator table to include the newly defined SQL function.
-                        // This allows the functions ot be used in other function definitions.
+                        // This allows the functions to be used in other function definitions.
                         // There should be a better way to do this.
                         SqlOperatorTable newFunctions = SqlOperatorTables.of(Linq.list(function));
-                        this.frontend.addOperatorTable(newFunctions);
+                        this.sqlToRelCompiler.addOperatorTable(newFunctions);
                     }
-                    DBSPNode func = this.midend.compile(fe);
+                    DBSPNode func = this.relToDBSPCompiler.compile(stat);
                     this.functions.add(Objects.requireNonNull(func).to(DBSPFunction.class));
                 }
-                if (node.statement() instanceof SqlLateness) {
-                    FrontEndStatement fe = this.frontend.compile(node, this.sources);
-                    if (fe == null)
-                        continue;
-                    this.lateness.add(fe.to(LatenessStatement.class));
-                    this.midend.compile(fe);
+                if (node.statement() instanceof SqlLateness lateness) {
+                    ProgramIdentifier view = Utilities.toIdentifier(lateness.getView());
+                    ProgramIdentifier column = Utilities.toIdentifier(lateness.getColumn());
+                    Map<ProgramIdentifier, SqlLateness> perView = this.viewLateness.computeIfAbsent(view, (k) -> new HashMap<>());
+                    if (perView.containsKey(column)) {
+                        SourcePositionRange range = new SourcePositionRange(lateness.getParserPosition());
+                        this.reportError(range, "Duplicate",
+                                "Lateness for " + view + "." + column + " already declared");
+                        this.reportError(new SourcePositionRange(perView.get(column).getLateness().getParserPosition()),
+                                "Duplicate", "Location of the previous declaration", true);
+                    } else {
+                        Utilities.putNew(perView, column, lateness);
+                    }
+                    // This information will be used when compiling SqlCreateView
                 }
             }
 
@@ -513,26 +541,36 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
                 // Reload the operator table to include the newly defined Rust function.
                 // These we can load all at the end, since they can't depend on each other.
                 SqlOperatorTable newFunctions = SqlOperatorTables.of(rustFunctions);
-                this.frontend.addOperatorTable(newFunctions);
+                this.sqlToRelCompiler.addOperatorTable(newFunctions);
             }
 
             // Compile all statements which do not define functions or types
-            for (CalciteCompiler.ParsedStatement node : parsed) {
+            for (ParsedStatement node : parsed) {
+                currentViewPosition = SqlParserPos.ZERO;
                 SqlKind kind = node.statement().getKind();
                 if (kind == SqlKind.CREATE_FUNCTION || kind == SqlKind.CREATE_TYPE)
                     continue;
                 if (node.statement() instanceof SqlLateness)
                     continue;
-                FrontEndStatement fe = this.frontend.compile(node, this.sources);
+
+                RelStatement fe;
+                if (node.statement() instanceof SqlCreateView cv) {
+                    ProgramIdentifier viewName = Utilities.toIdentifier(cv.name);
+                    Map<ProgramIdentifier, SqlLateness> late = this.viewLateness.getOrDefault(viewName, new HashMap<>());
+                    fe = this.sqlToRelCompiler.compileCreateView(node, late, this.sources);
+                } else {
+                    fe = this.sqlToRelCompiler.compile(node, this.sources);
+                }
                 if (fe == null)
                     // error during compilation
                     continue;
+
                 if (fe.is(CreateViewStatement.class)) {
                     CreateViewStatement cv = fe.to(CreateViewStatement.class);
                     PropertyList properties = cv.getProperties();
                     if (properties != null)
                         properties.checkKnownProperties(this::validateViewProperty);
-                    currentView = cv;
+                    currentViewPosition = cv.createView.getParserPosition();
                     this.views.put(cv.getName(), cv);
                 } else if (fe.is(CreateTableStatement.class)) {
                     CreateTableStatement ct = fe.to(CreateTableStatement.class);
@@ -541,36 +579,25 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
                         properties.checkKnownProperties(this::validateTableProperty);
                     foreignKeys.addAll(ct.foreignKeys);
                 }
-                this.midend.compile(fe);
-                currentView = null;
+                this.relToDBSPCompiler.compile(fe);
             }
 
-            this.frontend.endCompilation(this.compiler());
-            this.circuit = this.midend.getFinalCircuit();
+            this.sqlToRelCompiler.endCompilation(this.compiler());
+            this.circuit = this.relToDBSPCompiler.getFinalCircuit();
             if (this.getDebugLevel() > 1)
                 ToDot.dump(this, "initial.png", this.getDebugLevel(), "png", this.circuit);
 
             this.validateForeignKeys(this.circuit, foreignKeys);
             this.optimize();
-        } catch (SqlParseException e) {
-            if (e.getCause() instanceof BaseCompilerException) {
-                // Exceptions we throw in parser validation code are caught
-                // by the Calcite parser and wrapped in SqlParseException.
-                // Unwrap them to retrieve source position...
-                this.messages.reportError((BaseCompilerException) e.getCause());
-            } else {
-                this.messages.reportError(e);
-            }
-            this.rethrow(new RuntimeException(e), currentView);
         } catch (CalciteContextException e) {
             this.messages.reportError(e);
-            this.rethrow(e, currentView);
+            this.rethrow(e, currentViewPosition);
         } catch (CalciteException e) {
             this.messages.reportError(e);
-            this.rethrow(e, currentView);
+            this.rethrow(e, currentViewPosition);
         } catch (BaseCompilerException e) {
             this.messages.reportError(e);
-            this.rethrow(e, currentView);
+            this.rethrow(e, currentViewPosition);
         } catch (RuntimeException e) {
             Throwable current = e;
             boolean handled = false;
@@ -579,26 +606,24 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
                 Throwable t = current.getCause();
                 if (t instanceof CalciteException ex) {
                     this.messages.reportError(ex);
-                    this.rethrow(ex, currentView);
+                    this.rethrow(ex, currentViewPosition);
                     handled = true;
                 }
                 current = t;
             }
             if (!handled) {
                 this.messages.reportError(e);
-                this.rethrow(e, currentView);
+                this.rethrow(e, currentViewPosition);
             }
         } catch (Throwable e) {
             this.messages.reportError(e);
-            this.rethrow(new RuntimeException(e), currentView);
-        } finally {
-            this.toCompile.clear();
+            this.rethrow(new RuntimeException(e), currentViewPosition);
         }
     }
 
-    void rethrow(RuntimeException e, @Nullable CreateViewStatement currentView) {
+    void rethrow(RuntimeException e, SqlParserPos pos) {
         if (this.options.languageOptions.throwOnError) {
-            this.printMessages(currentView);
+            this.printMessages(pos);
             throw e;
         }
     }
@@ -624,7 +649,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
 
     void optimize() {
         if (this.circuit == null) {
-            this.circuit = this.midend.getFinalCircuit();
+            this.circuit = this.relToDBSPCompiler.getFinalCircuit();
         }
         CircuitOptimizer optimizer = new CircuitOptimizer(this);
         this.circuit = optimizer.optimize(this.circuit);
@@ -632,7 +657,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
 
     public void removeTable(ProgramIdentifier name) {
         this.metadata.removeTable(name);
-        this.midend.getTableContents().removeTable(name);
+        this.relToDBSPCompiler.getTableContents().removeTable(name);
     }
 
     public void compileStatement(String statement) {
@@ -661,11 +686,13 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
     /** Perform checks that can only be made after all the statements have been compiled */
     void postCompilationChecks() {
         // Check that all views mentioned in LATENESS statements exist
-        for (LatenessStatement late: this.lateness) {
-            ProgramIdentifier view = Utilities.toIdentifier(late.view);
+        for (ProgramIdentifier view: this.viewLateness.keySet()) {
             if (!this.views.containsKey(view)) {
-                this.compiler().reportWarning(late.getPosition(), "No such view",
-                        "No view named " + view.singleQuote() + " found");
+                for (SqlLateness late : this.viewLateness.get(view).values()) {
+                    this.compiler().reportWarning(
+                            new SourcePositionRange(late.getParserPosition()), "No such view",
+                            "View " + view.singleQuote() + " used in LATENESS statement not found");
+                }
             }
         }
     }
@@ -676,7 +703,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
     public DBSPCircuit getFinalCircuit(boolean temporary) {
         this.runAllCompilerStages();
         if (this.circuit == null)
-            this.circuit = this.midend.getFinalCircuit();
+            this.circuit = this.relToDBSPCompiler.getFinalCircuit();
         this.postCompilationChecks();
 
         DBSPCircuit result = this.circuit;
@@ -690,12 +717,12 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
     /** Get the contents of the tables as a result of all the INSERT statements compiled. */
     public TableContents getTableContents() {
         this.runAllCompilerStages();
-        return this.midend.getTableContents();
+        return this.relToDBSPCompiler.getTableContents();
     }
 
     /** Empty the contents of all tables that were populated by INSERT or DELETE statements */
     public void clearTables() {
-        this.midend.clearTables();
+        this.relToDBSPCompiler.clearTables();
     }
 
     public void showErrors(PrintStream stream) {

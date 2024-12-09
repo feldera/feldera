@@ -26,7 +26,7 @@ package org.dbsp.sqlCompiler.compiler.frontend.statements;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteCompiler;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ParsedStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ForeignKey;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.RelColumnMetadata;
@@ -39,7 +39,7 @@ import java.util.List;
 public class CreateTableStatement extends CreateRelationStatement {
     public final List<ForeignKey> foreignKeys;
 
-    public CreateTableStatement(CalciteCompiler.ParsedStatement node,
+    public CreateTableStatement(ParsedStatement node,
                                 ProgramIdentifier tableName,
                                 List<RelColumnMetadata> columns,
                                 List<ForeignKey> foreignKeys,

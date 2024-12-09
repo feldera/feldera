@@ -35,7 +35,7 @@ import org.dbsp.sqlCompiler.compiler.TestUtil;
 import org.dbsp.sqlCompiler.compiler.backend.ToCsvVisitor;
 import org.dbsp.sqlCompiler.compiler.backend.rust.RustFileWriter;
 import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteCompiler;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.SqlToRelCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.FunctionDocumentation;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.sql.simple.EndToEndTests;
@@ -189,14 +189,14 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
                 CREATE TABLE T (COL1 INT NOT NULL, COL2 DOUBLE NOT NULL);
                 CREATE VIEW V AS SELECT COL1 FROM T;""";
         File file = createInputScript(sql);
-        CompilerMain.execute("-TCalciteCompiler=2", "-TPasses=2",
+        CompilerMain.execute("-TSqlToRelCompiler=2", "-TPasses=2",
                 "-o", BaseSQLTests.testFilePath, file.getPath());
         Utilities.compileAndTestRust(BaseSQLTests.rustDirectory, true);
         Logger.INSTANCE.setDebugStream(save);
         String messages = builder.toString();
         Assert.assertTrue(messages.contains("After optimizer"));
         Assert.assertTrue(messages.contains("MergeSums"));
-        Logger.INSTANCE.setLoggingLevel(CalciteCompiler.class, 0);
+        Logger.INSTANCE.setLoggingLevel(SqlToRelCompiler.class, 0);
         Logger.INSTANCE.setLoggingLevel(Passes.class, 0);
     }
 
