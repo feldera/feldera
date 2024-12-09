@@ -40,7 +40,7 @@
           <div class="text-sm">{key.id}</div>
         </div>
         <button
-          class="fd fd-trash-2 btn-icon text-[24px]"
+          class="fd fd-trash-2 btn-icon text-[20px]"
           aria-label="Delete {key.name} API key"
           onclick={() => (globalDialog.dialog = deleteDialog)}
         ></button>

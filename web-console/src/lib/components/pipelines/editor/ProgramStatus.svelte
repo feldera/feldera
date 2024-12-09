@@ -9,7 +9,7 @@
     programStatus: ProgramStatus | undefined
   } = $props()
 
-  const spinnerClass = 'animate-spin text-[24px] w-6 fill-surface-950-50'
+  const spinnerClass = 'animate-spin text-[24px] fill-surface-950-50'
   let sqlClass = $derived(
     match(programStatus)
       .with(
@@ -20,14 +20,16 @@
         () => 'fd fd-circle-check-big text-[24px] text-success-500'
       )
       .with('Pending', 'CompilingSql', undefined, () => 'spinner')
-      .with(P.shape({}), () => 'fd fd-circle-x inline-block text-[24px] text-error-500')
+      .with(P.shape({}), () => 'fd fd-circle-x inline-block text-[20px] text-error-500')
       .exhaustive()
   )
-  let rustClass = match(programStatus)
-    .with('SqlCompiled', 'CompilingRust', () => 'spinner')
-    .with({ RustError: P.any }, () => 'fd fd-circle-x text-[24px] text-error-500')
-    .with('Success', 'Pending', 'CompilingSql', P.shape({}), undefined, () => '')
-    .exhaustive()
+  let rustClass = $derived(
+    match(programStatus)
+      .with('SqlCompiled', 'CompilingRust', () => 'spinner')
+      .with({ RustError: P.any }, () => 'fd fd-circle-x text-[20px] text-error-500')
+      .with('Success', 'Pending', 'CompilingSql', P.shape({}), undefined, () => '')
+      .exhaustive()
+  )
 </script>
 
 <div class="flex flex-nowrap justify-end gap-2 self-center">

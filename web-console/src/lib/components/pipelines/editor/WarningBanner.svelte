@@ -5,7 +5,7 @@
 </script>
 
 <div class="flex gap-1 p-1 preset-tonal-warning {classes}">
-  <span class="fd fd-triangle-alert text-[24px]"></span>
+  <span class="fd fd-triangle-alert text-[20px]"></span>
   <span>
     {@render children()}
   </span>

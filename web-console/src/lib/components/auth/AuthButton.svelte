@@ -35,7 +35,7 @@
     {/snippet}
   </Popup>
 {:else}
-  <!-- <button class="fd fd-lock-open btn-icon cursor-default text-[24px] text-surface-600-400"></button>
+  <!-- <button class="fd fd-lock-open btn-icon cursor-default text-[20px] text-surface-600-400"></button>
   <Tooltip class="bg-white text-surface-950-50 dark:bg-black" placement="left">
     Authentication is disabled
   </Tooltip> -->
@@ -44,7 +44,7 @@
     {#snippet trigger(toggle)}
       <button
         onclick={toggle}
-        class="fd fd-lock-open btn btn-icon text-[24px] preset-tonal-surface"
+        class="fd fd-lock-open btn btn-icon text-[20px] preset-tonal-surface"
         aria-label="Open settings popup"
       >
       </button>
