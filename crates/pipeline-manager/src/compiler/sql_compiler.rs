@@ -49,7 +49,7 @@ const COMPILATION_CHECK_INTERVAL: Duration = Duration::from_millis(250);
 const CLEANUP_INTERVAL: Duration = Duration::from_secs(60);
 
 /// SQL compilation task that wakes up periodically.
-/// Sleeps inbetween cycles which affects the response time of SQL compilation.
+/// Sleeps inbetween ticks which affects the response time of SQL compilation.
 /// Note that the logic in this task assumes only one is run at a time.
 /// This task cannot fail, and any internal errors are caught and written to log if need-be.
 pub async fn sql_compiler_task(
@@ -137,7 +137,7 @@ pub async fn sql_compiler_task(
 /// - The pipeline no longer exists
 /// - The pipeline program is detected to be updated (it became outdated)
 /// - The database cannot be reached
-async fn attempt_end_to_end_sql_compilation(
+pub(crate) async fn attempt_end_to_end_sql_compilation(
     common_config: &CommonConfig,
     config: &CompilerConfig,
     db: Arc<Mutex<StoragePostgres>>,
@@ -250,6 +250,7 @@ async fn attempt_end_to_end_sql_compilation(
 }
 
 /// SQL compilation possible error outcomes.
+#[derive(Debug)]
 pub enum SqlCompilationError {
     /// In the meanwhile the pipeline was already updated, as such the
     /// SQL compilation is outdated and no longer useful.
@@ -279,7 +280,7 @@ impl From<CommonError> for SqlCompilationError {
 /// - Call the SQL-to-DBSP compiler executable via a process
 /// - Returns the outcome from the output
 #[allow(clippy::too_many_arguments)]
-pub async fn perform_sql_compilation(
+pub(crate) async fn perform_sql_compilation(
     common_config: &CommonConfig,
     config: &CompilerConfig,
     db: Option<Arc<Mutex<StoragePostgres>>>,
@@ -476,7 +477,8 @@ pub async fn perform_sql_compilation(
 }
 
 /// SQL compilation cleanup possible error outcomes.
-enum SqlCompilationCleanupError {
+#[derive(Debug)]
+pub(crate) enum SqlCompilationCleanupError {
     /// Database error occurred (e.g., lost connectivity).
     DBError(DBError),
     /// Filesystem problem occurred (e.g., I/O error)
@@ -497,7 +499,7 @@ impl From<CommonError> for SqlCompilationCleanupError {
 
 /// Cleans up the SQL compilation working directory by removing directories of
 /// pipelines that no longer exist.
-async fn cleanup_sql_compilation(
+pub(crate) async fn cleanup_sql_compilation(
     config: &CompilerConfig,
     db: Arc<Mutex<StoragePostgres>>,
 ) -> Result<(), SqlCompilationCleanupError> {
@@ -542,4 +544,507 @@ async fn cleanup_sql_compilation(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod test {
+    use crate::auth::TenantRecord;
+    use crate::compiler::test::CompilerTest;
+    use crate::compiler::util::{create_new_file, list_content, recreate_dir};
+    use crate::db::types::common::Version;
+    use crate::db::types::program::ProgramStatus;
+    use feldera_types::config::TransportConfig;
+    use feldera_types::program_schema::{SqlIdentifier, SqlType};
+    use indoc::formatdoc;
+
+    /// Tests the compilation of several of the most basic SQL programs succeeds.
+    #[tokio::test]
+    async fn basics() {
+        let test = CompilerTest::new().await;
+        let tenant_id = TenantRecord::default().id;
+        for program_code in [
+            "",                            // Empty
+            "CREATE TABLE t1 (val1 INT);", // One table
+            "CREATE VIEW v1 AS SELECT 1;", // One view
+            // One table and one view (unrelated)
+            &formatdoc! {"
+                CREATE TABLE t1 (val1 INT);
+                CREATE VIEW v1 AS SELECT 1;
+            "},
+            // One table and one view (related)
+            &formatdoc! {"
+                CREATE TABLE t1 (val1 INT);
+                CREATE VIEW v1 AS SELECT * FROM t1;
+            "},
+        ] {
+            test.sql_compiler_tick().await;
+            let pipeline_id = test
+                .create_pipeline(tenant_id, "p1", "v0", program_code)
+                .await;
+            test.sql_compiler_tick().await;
+            test.check_outcome_sql_compiled(tenant_id, pipeline_id, program_code)
+                .await;
+            test.delete_pipeline(tenant_id, pipeline_id, "p1").await;
+            test.sql_compiler_tick().await;
+            test.sql_compiler_check_is_empty().await;
+            test.sql_compiler_tick().await;
+        }
+    }
+
+    /// Tests the compilation a table and view with a large coverage of the SQL types from:
+    /// https://docs.feldera.com/sql/types
+    #[tokio::test]
+    async fn type_coverage() {
+        let test = CompilerTest::new().await;
+        let tenant_id = TenantRecord::default().id;
+        let program_code = &formatdoc! {r#"
+            CREATE TYPE CUSTOM_TYPE AS (
+                v1 INT, v2 VARBINARY
+            );
+            CREATE TABLE t_all (
+                val_boolean BOOLEAN,
+                val_tinyint TINYINT,
+                val_smallint SMALLINT,
+                val_integer INTEGER,
+                val_bigint BIGINT,
+                val_decimal_p_s DECIMAL(2, 1),
+                val_real REAL,
+                val_double DOUBLE,
+                val_varchar_n VARCHAR(3),
+                val_char_n CHAR(4),
+                val_varchar VARCHAR,
+                val_binary_n BINARY(5),
+                val_varbinary VARBINARY,
+                val_time TIME,
+                val_timestamp TIMESTAMP,
+                val_date DATE,
+                val_row ROW(l INT NULL, r VARCHAR),
+                val_array INT ARRAY,
+                val_map MAP<BIGINT, INT>,
+                val_variant VARIANT,
+                val_custom CUSTOM_TYPE
+            );
+            CREATE VIEW v_all AS SELECT * FROM t_all;
+        "#};
+
+        // Create and compile
+        let pipeline_id = test
+            .create_pipeline(tenant_id, "p1", "v0", program_code)
+            .await;
+        test.sql_compiler_tick().await;
+        let (pipeline_descr, _, _, _, _, _, _) = test
+            .check_outcome_sql_compiled(tenant_id, pipeline_id, program_code)
+            .await;
+
+        // Check the types of the table and view
+        let program_info = pipeline_descr.program_info.unwrap();
+        let table = program_info.schema.inputs.first().unwrap();
+        assert_eq!(table.name, SqlIdentifier::new("t_all", false));
+        let view = program_info.schema.outputs.get(1).unwrap();
+        assert_eq!(view.name, SqlIdentifier::new("v_all", false));
+        for relation in [table, view] {
+            assert!(!relation.materialized);
+            assert!(relation.properties.is_empty());
+            assert_eq!(relation.fields.len(), 21);
+
+            // BOOLEAN, TINYINT, SMALLINT, INTEGER, BIGINT
+            assert_eq!(
+                relation.field("val_boolean").unwrap().columntype.typ,
+                SqlType::Boolean
+            );
+            assert_eq!(
+                relation.field("val_tinyint").unwrap().columntype.typ,
+                SqlType::TinyInt
+            );
+            assert_eq!(
+                relation.field("val_smallint").unwrap().columntype.typ,
+                SqlType::SmallInt
+            );
+            assert_eq!(
+                relation.field("val_integer").unwrap().columntype.typ,
+                SqlType::Int
+            );
+            assert_eq!(
+                relation.field("val_bigint").unwrap().columntype.typ,
+                SqlType::BigInt
+            );
+
+            // DECIMAL(p, s)
+            let decimal_column_type = relation
+                .field("val_decimal_p_s")
+                .unwrap()
+                .clone()
+                .columntype;
+            assert_eq!(decimal_column_type.typ, SqlType::Decimal);
+            assert_eq!(decimal_column_type.precision, Some(2));
+            assert_eq!(decimal_column_type.scale, Some(1));
+            assert!(decimal_column_type.nullable);
+
+            // REAL, DOUBLE
+            assert_eq!(
+                relation.field("val_real").unwrap().columntype.typ,
+                SqlType::Real
+            );
+            assert_eq!(
+                relation.field("val_double").unwrap().columntype.typ,
+                SqlType::Double
+            );
+
+            // VARCHAR(n)
+            let varchar_n_column_type = relation.field("val_varchar_n").unwrap().clone().columntype;
+            assert_eq!(varchar_n_column_type.typ, SqlType::Varchar);
+            assert_eq!(varchar_n_column_type.precision, Some(3));
+            assert_eq!(varchar_n_column_type.scale, None);
+            assert!(varchar_n_column_type.nullable);
+
+            // CHAR(n)
+            let char_n_column_type = relation.field("val_char_n").unwrap().clone().columntype;
+            assert_eq!(char_n_column_type.typ, SqlType::Char);
+            assert_eq!(char_n_column_type.precision, Some(4));
+            assert_eq!(char_n_column_type.scale, None);
+            assert!(char_n_column_type.nullable);
+
+            // VARCHAR
+            assert_eq!(
+                relation.field("val_varchar").unwrap().columntype.typ,
+                SqlType::Varchar
+            );
+
+            // BINARY(n)
+            let binary_n_column_type = relation.field("val_binary_n").unwrap().clone().columntype;
+            assert_eq!(binary_n_column_type.typ, SqlType::Binary);
+            assert_eq!(binary_n_column_type.precision, Some(5));
+            assert_eq!(binary_n_column_type.scale, None);
+            assert!(binary_n_column_type.nullable);
+
+            // VARBINARY, TIME, TIMESTAMP, DATE
+            assert_eq!(
+                relation.field("val_varbinary").unwrap().columntype.typ,
+                SqlType::Varbinary
+            );
+            assert_eq!(
+                relation.field("val_time").unwrap().columntype.typ,
+                SqlType::Time
+            );
+            assert_eq!(
+                relation.field("val_timestamp").unwrap().columntype.typ,
+                SqlType::Timestamp
+            );
+            assert_eq!(
+                relation.field("val_date").unwrap().columntype.typ,
+                SqlType::Date
+            );
+
+            // ROW
+            let row_column_type = relation.field("val_row").unwrap().clone().columntype;
+            assert_eq!(row_column_type.typ, SqlType::Struct);
+            let subfields = row_column_type.fields.unwrap();
+            assert_eq!(subfields.len(), 2);
+            assert_eq!(subfields[0].columntype.typ, SqlType::Int);
+            assert!(subfields[0].columntype.nullable);
+            assert_eq!(subfields[1].columntype.typ, SqlType::Varchar);
+            assert!(!subfields[1].columntype.nullable);
+
+            // ARRAY
+            let array_column_type = relation.field("val_array").unwrap().clone().columntype;
+            assert_eq!(array_column_type.typ, SqlType::Array);
+            assert_eq!(array_column_type.component.unwrap().typ, SqlType::Int);
+
+            // MAP
+            let map_column_type = relation.field("val_map").unwrap().clone().columntype;
+            assert_eq!(map_column_type.typ, SqlType::Map);
+            assert_eq!(map_column_type.key.unwrap().typ, SqlType::BigInt);
+            assert_eq!(map_column_type.value.unwrap().typ, SqlType::Int);
+
+            // CUSTOM TYPE
+            let custom_column_type = relation.field("val_custom").unwrap().clone().columntype;
+            assert_eq!(custom_column_type.typ, SqlType::Struct);
+            let subfields = custom_column_type.fields.unwrap();
+            assert_eq!(subfields.len(), 2);
+            assert_eq!(subfields[0].name.name(), "v1");
+            assert_eq!(subfields[0].columntype.typ, SqlType::Int);
+            assert!(subfields[0].columntype.nullable);
+            assert_eq!(subfields[1].name.name(), "v2");
+            assert_eq!(subfields[1].columntype.typ, SqlType::Varbinary);
+            assert!(subfields[1].columntype.nullable);
+        }
+
+        // Clean up
+        test.delete_pipeline(tenant_id, pipeline_id, "p1").await;
+        test.sql_compiler_tick().await;
+        test.sql_compiler_check_is_empty().await;
+        test.sql_compiler_tick().await;
+    }
+
+    /// Tests whether tables/views are correctly marked as materialized when applicable.
+    #[tokio::test]
+    async fn materialized() {
+        let test = CompilerTest::new().await;
+        let tenant_id = TenantRecord::default().id;
+        let program_code = &formatdoc! {r#"
+            CREATE TABLE t1 (val INT);
+            CREATE TABLE t2 (val INT) WITH ( 'materialized' = 'true' );
+            CREATE TABLE t3 (val INT) WITH ( 'materialized' = 'false' );
+            CREATE VIEW v1 AS SELECT * FROM t1;
+            CREATE LOCAL VIEW v2 AS SELECT * FROM t1;
+            CREATE MATERIALIZED VIEW v3 AS SELECT * FROM t1;
+        "#};
+
+        // Create and compile
+        let pipeline_id = test
+            .create_pipeline(tenant_id, "p1", "v0", program_code)
+            .await;
+        test.sql_compiler_tick().await;
+        let (pipeline_descr, _, _, _, _, _, _) = test
+            .check_outcome_sql_compiled(tenant_id, pipeline_id, program_code)
+            .await;
+
+        // Check materialized outcome
+        let program_info = pipeline_descr.program_info.unwrap();
+        assert_eq!(program_info.schema.inputs.len(), 3);
+        for table in program_info.schema.inputs {
+            match table.name.name().as_str() {
+                "t1" => assert!(!table.materialized),
+                "t2" => assert!(table.materialized),
+                "t3" => assert!(!table.materialized),
+                t => panic!("Unknown table: {t}"),
+            }
+        }
+        assert_eq!(program_info.schema.outputs.len(), 3);
+        for view in program_info.schema.outputs {
+            match view.name.name().as_str() {
+                "v1" => assert!(!view.materialized),
+                // v2 is a LOCAL VIEW and should not be an output
+                "v3" => assert!(view.materialized),
+                "error_view" => assert!(!view.materialized),
+                v => panic!("Unknown view: {v}"),
+            }
+        }
+    }
+
+    /// Tests whether compilation succeeds when an input connector is defined.
+    #[tokio::test]
+    async fn input_connector() {
+        let test = CompilerTest::new().await;
+        let tenant_id = TenantRecord::default().id;
+        let program_code = &formatdoc! {r#"
+            CREATE TABLE t1 (
+                val INT
+            ) WITH (
+                'connectors' = '[{{
+                    "name": "c1",
+                    "transport": {{
+                        "name": "datagen",
+                        "config": {{
+                            "plan": [{{
+                                "rate": 1000,
+                                "fields": {{
+                                    "val": {{
+                                        "range": [0, 1000],
+                                        "strategy": "uniform"
+                                    }}
+                                }}
+                            }}]
+                        }}
+                    }}
+                }}]'
+            )
+        "#};
+
+        // Compile
+        let pipeline_id = test
+            .create_pipeline(tenant_id, "p1", "v0", program_code)
+            .await;
+        test.sql_compiler_tick().await;
+
+        // Check result
+        let (pipeline_descr, _, _, _, _, _, _) = test
+            .check_outcome_sql_compiled(tenant_id, pipeline_id, program_code)
+            .await;
+        let input_connectors = pipeline_descr
+            .program_info
+            .clone()
+            .unwrap()
+            .input_connectors;
+        assert_eq!(input_connectors.len(), 1);
+        let connector_config = input_connectors
+            .get("t1.c1")
+            .unwrap()
+            .connector_config
+            .clone();
+        assert!(matches!(
+            connector_config.transport,
+            TransportConfig::Datagen(_)
+        ));
+    }
+
+    /// Tests that SQL compiler recovers from an incorrect platform version.
+    #[tokio::test]
+    async fn recover_from_incorrect_platform_version() {
+        let test = CompilerTest::new().await;
+        let tenant_id = TenantRecord::default().id;
+        let program_code = "";
+        let pipeline_id = test
+            .create_pipeline(tenant_id, "p1", "v1", program_code)
+            .await;
+        // Pipeline is detected to be of an incorrect platform version, which is updated, and compiled
+        test.sql_compiler_tick().await;
+        let pipeline_descr = test.get_pipeline(tenant_id, pipeline_id).await;
+        assert_eq!(pipeline_descr.program_status, ProgramStatus::SqlCompiled);
+        assert_eq!(pipeline_descr.program_version, Version(2));
+        assert_eq!(pipeline_descr.platform_version, "v0");
+    }
+
+    /// Tests the compilation order which is generally first-come-first-serve.
+    #[tokio::test]
+    async fn compilation_order() {
+        let test = CompilerTest::new().await;
+        let tenant_id = TenantRecord::default().id;
+        let program_code = "";
+        let pipeline_id1 = test
+            .create_pipeline(tenant_id, "p1", "v0", program_code)
+            .await;
+        let pipeline_id2 = test
+            .create_pipeline(tenant_id, "p2", "v0", program_code)
+            .await;
+        test.sql_compiler_tick().await;
+        assert_eq!(
+            test.get_pipeline(tenant_id, pipeline_id1)
+                .await
+                .program_status,
+            ProgramStatus::SqlCompiled
+        );
+        assert_eq!(
+            test.get_pipeline(tenant_id, pipeline_id2)
+                .await
+                .program_status,
+            ProgramStatus::Pending
+        );
+        let pipeline_id3 = test
+            .create_pipeline(tenant_id, "p3", "v0", program_code)
+            .await;
+        test.sql_compiler_tick().await;
+        assert_eq!(
+            test.get_pipeline(tenant_id, pipeline_id2)
+                .await
+                .program_status,
+            ProgramStatus::SqlCompiled
+        );
+        assert_eq!(
+            test.get_pipeline(tenant_id, pipeline_id3)
+                .await
+                .program_status,
+            ProgramStatus::Pending
+        );
+        test.sql_compiler_tick().await;
+        assert_eq!(
+            test.get_pipeline(tenant_id, pipeline_id3)
+                .await
+                .program_status,
+            ProgramStatus::SqlCompiled
+        );
+    }
+
+    /// Tests that compilation fails with invalid SQL.
+    #[tokio::test]
+    async fn invalid_sql() {
+        let test = CompilerTest::new().await;
+        let tenant_id = TenantRecord::default().id;
+        let program_code = &formatdoc! {r#"
+            This is not valid SQL.
+        "#};
+        let pipeline_id = test
+            .create_pipeline(tenant_id, "p1", "v0", program_code)
+            .await;
+        test.sql_compiler_tick().await;
+        let pipeline_descr = test.get_pipeline(tenant_id, pipeline_id).await;
+        assert!(matches!(
+            pipeline_descr.program_status,
+            ProgramStatus::SqlError(errors)
+            if errors.len() == 1 && errors[0].to_owned().error_type == "Error parsing SQL"
+        ));
+    }
+
+    /// Tests that compilation fails with an invalid connector.
+    #[tokio::test]
+    async fn invalid_connector() {
+        let test = CompilerTest::new().await;
+        let tenant_id = TenantRecord::default().id;
+        let program_code = &formatdoc! {r#"
+            CREATE TABLE t1 (
+                val INT
+            ) WITH (
+                'connectors' = 'These are not valid connectors.'
+            )
+        "#};
+        let pipeline_id = test
+            .create_pipeline(tenant_id, "p1", "v0", program_code)
+            .await;
+        test.sql_compiler_tick().await;
+        let pipeline_descr = test.get_pipeline(tenant_id, pipeline_id).await;
+        assert!(matches!(
+            pipeline_descr.program_status,
+            ProgramStatus::SqlError(errors)
+            if errors.len() == 1 && errors[0].to_owned().error_type == "ConnectorGenerationError"
+        ));
+    }
+
+    /// Tests that the cleanup ignores files and directories that do not follow the pattern.
+    #[tokio::test]
+    async fn cleanup_ignore() {
+        let test = CompilerTest::new().await;
+        let tenant_id = TenantRecord::default().id;
+
+        // Compile two pipeline programs
+        let pipeline_id1 = test.create_pipeline(tenant_id, "p1", "v0", "").await;
+        let pipeline_id2 = test.create_pipeline(tenant_id, "p2", "v0", "").await;
+        test.sql_compiler_tick().await;
+        test.sql_compiler_tick().await;
+
+        // Check directory content
+        let mut content: Vec<String> = list_content(&test.sql_workdir)
+            .await
+            .unwrap()
+            .iter()
+            .map(|(_, name)| name.clone().unwrap())
+            .collect();
+        content.sort();
+        let mut expected = vec![
+            format!("pipeline-{pipeline_id1}"),
+            format!("pipeline-{pipeline_id2}"),
+        ];
+        expected.sort();
+        assert_eq!(content, expected);
+
+        // Create some other files and directories
+        create_new_file(&test.sql_workdir.join("example.txt"))
+            .await
+            .unwrap();
+        recreate_dir(&test.sql_workdir.join("example2"))
+            .await
+            .unwrap();
+        recreate_dir(&test.sql_workdir.join("pipeline-does-not-exist"))
+            .await
+            .unwrap();
+
+        // Delete pipeline 2
+        test.delete_pipeline(tenant_id, pipeline_id2, "p2").await;
+        test.sql_compiler_tick().await;
+
+        // Check directory content afterward
+        let mut content: Vec<String> = list_content(&test.sql_workdir)
+            .await
+            .unwrap()
+            .iter()
+            .map(|(_, name)| name.clone().unwrap())
+            .collect();
+        content.sort();
+        let mut expected = vec![
+            "example.txt".to_string(),
+            "example2".to_string(),
+            format!("pipeline-{pipeline_id1}"),
+        ];
+        expected.sort();
+        assert_eq!(content, expected);
+    }
 }
