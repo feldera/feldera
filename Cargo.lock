@@ -7160,6 +7160,7 @@ dependencies = [
  "futures-util",
  "hex",
  "indoc",
+ "itertools 0.13.0",
  "jsonwebtoken 8.3.0",
  "log",
  "metrics",
