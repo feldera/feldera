@@ -3,7 +3,10 @@
   import type { Snippet } from 'svelte'
   import { useGlobalDialog } from '$lib/compositions/useGlobalDialog.svelte'
   import type { LayoutData } from './$types'
-  import { useRefreshPipelineList } from '$lib/compositions/pipelines/usePipelineList.svelte'
+  import {
+    usePipelineList,
+    useRefreshPipelineList
+  } from '$lib/compositions/pipelines/usePipelineList.svelte'
   import { SvelteKitTopLoader } from 'sveltekit-top-loader'
   import { useDrawer } from '$lib/compositions/layout/useDrawer.svelte'
   import ModalDrawer from '$lib/components/layout/ModalDrawer.svelte'
@@ -11,13 +14,19 @@
   import AppHeader from '$lib/components/layout/AppHeader.svelte'
   import NavigationExtras from '$lib/components/layout/NavigationExtras.svelte'
   import CreatePipelineButton from '$lib/components/pipelines/CreatePipelineButton.svelte'
+  import PipelineList from '$lib/components/pipelines/List.svelte'
+  import { useLocalStorage } from '$lib/compositions/localStore.svelte'
+  import { useIsTablet } from '$lib/compositions/layout/useIsMobile.svelte'
 
   const dialog = useGlobalDialog()
 
   let { children, data }: { children: Snippet; data: LayoutData } = $props()
 
   useRefreshPipelineList()
-  const drawer = useDrawer()
+  const rightDrawer = useDrawer('right')
+  const leftDrawer = useLocalStorage('layout/pipelines/pipelinesPanel/show', false) // useDrawer('left')
+  const pipelineList = usePipelineList(data.preloaded)
+  const isTablet = useIsTablet()
 </script>
 
 <SvelteKitTopLoader height={2} color={'rgb(var(--color-primary-500))'} showSpinner={false}
@@ -40,16 +49,34 @@
   <div class="flex h-full w-full flex-col">
     {@render children()}
   </div>
+  {#if isTablet.current}
+    <ModalDrawer
+      width="w-72"
+      bind:open={leftDrawer.value}
+      side="left"
+      class="bg-white-black flex flex-col gap-2 p-4"
+    >
+      <PipelineList
+        pipelines={pipelineList.pipelines}
+        onclose={() => {
+          leftDrawer.value = false
+        }}
+        onaction={() => {
+          leftDrawer.value = false
+        }}
+      ></PipelineList>
+    </ModalDrawer>
+  {/if}
   <ModalDrawer
     width="w-72"
-    bind:open={drawer.value}
+    bind:open={rightDrawer.value}
     side="right"
     class="bg-white-black flex flex-col gap-2 p-4"
   >
     <div class="relative my-2 mt-4">
       <CreatePipelineButton
         onSuccess={() => {
-          drawer.value = false
+          rightDrawer.value = false
         }}
       ></CreatePipelineButton>
     </div>

@@ -35,7 +35,7 @@
   import PipelineToolbarMenu from '$lib/components/layout/pipelines/PipelineToolbarMenu.svelte'
   import PipelineListPopup from './PipelineListPopup.svelte'
   import EditorOptionsPopup from './EditorOptionsPopup.svelte'
-  import { useIsTablet } from '$lib/compositions/layout/useIsMobile.svelte'
+  import { useIsTablet, useIsScreenLg } from '$lib/compositions/layout/useIsMobile.svelte'
   import CreatePipelineButton from '$lib/components/pipelines/CreatePipelineButton.svelte'
   import PipelineList from '$lib/components/pipelines/List.svelte'
   import { usePipelineList } from '$lib/compositions/pipelines/usePipelineList.svelte'
@@ -181,7 +181,8 @@ example = "1.0"`
   let saveFile = $state(() => {})
 
   const isTablet = useIsTablet()
-  const drawer = useDrawer()
+  const isScreenLg = useIsScreenLg()
+  const drawer = useDrawer('right')
 
   const pipelineList = usePipelineList(preloaded)
   let pipelineListPane = $state<PaneAPI>()
@@ -190,14 +191,25 @@ example = "1.0"`
       return
     }
     if (showPipelinesPanel.value) {
-      pipelineListPane.expand()
+      // pipelineListPane.expand()
     } else {
       pipelineListPane.collapse()
     }
   })
   $effect(() => {
+    if (!pipelineListPane) {
+      return
+    }
+    void showPipelinesPanel.value
     if (isTablet.current) {
-      showPipelinesPanel.value = false
+      pipelineListPane.collapse()
+    } else if (showPipelinesPanel.value) {
+      pipelineListPane.expand()
+    }
+  })
+  $effect(() => {
+    if (isScreenLg.current) {
+      separateAdHocTab.value = false
     }
   })
 </script>
@@ -211,9 +223,6 @@ example = "1.0"`
     unsavedChanges={downstreamChanged}
     onActionSuccess={handleActionSuccess}
   ></PipelineActions>
-  <div class={props?.class}>
-    <EditorOptionsPopup></EditorOptionsPopup>
-  </div>
   <div class={props?.class}>
     <PipelineToolbarMenu
       {pipeline}
@@ -279,7 +288,7 @@ example = "1.0"`
       bind:pane={pipelineListPane}
       collapsible
       onCollapse={() => {
-        if (showPipelinesPanel.value) {
+        if (showPipelinesPanel.value && !isTablet.current) {
           showPipelinesPanel.value = false
         }
       }}
@@ -293,15 +302,12 @@ example = "1.0"`
       }}
     >
       <div class="absolute flex h-full w-full flex-col">
-        <div class="flex justify-between p-4 pr-0">
-          <span class="h6">Pipelines</span>
-          <button
-            onclick={() => (showPipelinesPanel.value = false)}
-            class="fd fd-x btn btn-icon btn-icon-lg"
-            aria-label="Close pipelines list"
-          ></button>
-        </div>
-        <PipelineList pipelines={pipelineList.pipelines}></PipelineList>
+        <PipelineList
+          pipelines={pipelineList.pipelines}
+          onclose={() => {
+            showPipelinesPanel.value = false
+          }}
+        ></PipelineList>
       </div>
     </Pane>
     {#if !isTablet.current}
@@ -327,7 +333,9 @@ example = "1.0"`
             {#snippet editor()}
               <div class="flex h-full flex-col rounded-container px-4 py-2 bg-surface-50-950">
                 {@render textEditor()}
-                <div class="flex flex-wrap items-center gap-x-8 pt-2 border-surface-100-900">
+                <div
+                  class="bg-white-black mb-2 flex flex-wrap items-center gap-x-8 rounded-b border-t p-2 pl-4 border-surface-50-950"
+                >
                   {@render statusBar()}
                 </div>
               </div>
@@ -366,10 +374,10 @@ example = "1.0"`
           {/snippet}
           {#snippet statusBarEnd()}
             <div class="ml-auto flex flex-nowrap items-center gap-2">
-              {#each [{ icon: 'fd fd-panel-left', text: 'Pipelines', value: showPipelinesPanel, show: !isTablet.current }, { icon: 'fd fd-panel-bottom', text: 'Monitoring', value: showMonitoringPanel }, { icon: 'fd fd-panel-right', text: 'Ad-Hoc Queries', value: separateAdHocTab }] as { icon, text, value, show }}
+              {#each [{ icon: 'fd fd-panel-left', text: 'Pipelines', value: showPipelinesPanel }, { icon: 'fd fd-panel-bottom', text: 'Monitoring', value: showMonitoringPanel }, { icon: 'fd fd-panel-right', text: 'Ad-Hoc Queries', value: separateAdHocTab, show: !isScreenLg.current }] as { icon, text, value, show }}
                 {#if show !== false}
                   <button
-                    class="btn hidden p-2 text-surface-700-300 hover:preset-tonal-surface lg:flex"
+                    class="btn p-2 !brightness-100 text-surface-700-300 hover:preset-tonal-surface"
                     onclick={() => (value.value = !value.value)}
                   >
                     <span class="hidden sm:inline">
@@ -380,6 +388,7 @@ example = "1.0"`
                 {/if}
               {/each}
             </div>
+            <EditorOptionsPopup></EditorOptionsPopup>
           {/snippet}
           {#snippet fileTab(text, onClick, isCurrent)}
             <button

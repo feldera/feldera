@@ -9,10 +9,11 @@
   import { page } from '$app/stores'
   import { useDrawer } from '$lib/compositions/layout/useDrawer.svelte'
 
-  let { pipelines = $bindable() }: { pipelines: PipelineThumb[] } = $props()
-
-  let showDrawer = useDrawer()
-
+  let {
+    pipelines = $bindable(),
+    onclose,
+    onaction
+  }: { pipelines: PipelineThumb[]; onclose?: () => void; onaction?: () => void } = $props()
   const bindScrollY = (node: HTMLElement, val: { scrollY: number }) => {
     $effect(() => {
       node.scrollTop = scrollY
@@ -27,6 +28,14 @@
   }
 </script>
 
+<div class="flex justify-between p-4 pr-0">
+  <span class="h6">Pipelines</span>
+  <button
+    onclick={onclose}
+    class="fd fd-x btn btn-icon btn-icon-lg"
+    aria-label="Close pipelines list"
+  ></button>
+</div>
 <div class="relative flex flex-col gap-2 overflow-y-auto scrollbar" use:bindScrollY={{ scrollY }}>
   {#each pipelines as pipeline}
     <a
@@ -34,11 +43,7 @@
         .pipelineName === pipeline.name
         ? 'bg-surface-50-950'
         : 'hover:bg-surface-50-950'}"
-      onclick={() => {
-        if (showDrawer.isMobileDrawer) {
-          showDrawer.value = false
-        }
-      }}
+      onclick={onaction}
       href={`${base}/pipelines/` + encodeURI(pipeline.name) + '/'}
     >
       <div class="min-w-0 overflow-hidden overflow-ellipsis whitespace-nowrap py-1">

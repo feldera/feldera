@@ -1,10 +1,10 @@
 import { useLocalStorage } from '$lib/compositions/localStore.svelte'
 import { useIsTablet } from './useIsMobile.svelte'
 
-export const useDrawer = () => {
+export const useDrawer = (type: 'left' | 'right') => {
   const isTablet = useIsTablet()
 
-  const showDrawer = useLocalStorage('layout/drawer', !isTablet)
+  const showDrawer = useLocalStorage(`layout/drawer/${type}`, !isTablet)
 
   $effect(() => {
     if (!isTablet.current) {

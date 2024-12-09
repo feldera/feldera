@@ -51,9 +51,9 @@
   const pipelines = usePipelineList(data.preloaded)
   let welcomed = useLocalStorage('home/welcomed', false)
   let showSuggestedDemos = useLocalStorage('home/hideSuggestedDemos', true)
-  let { darkMode } = useDarkMode()
+  let darkMode = useDarkMode()
   let selectedPipelines = $state([]) as string[]
-  const drawer = useDrawer()
+  const drawer = useDrawer('right')
 </script>
 
 <AppHeader>
@@ -86,7 +86,7 @@
             class="w-1/2 bg-gradient-to-tr from-orange-300 via-amber-50 to-amber-50 dark:from-orange-700 dark:via-amber-950 dark:to-amber-950"
           ></div>
         </div>
-        {#if darkMode === 'dark'}
+        {#if darkMode.current === 'dark'}
           <FelderaLogomarkDark class="hidden h-full max-h-28 sm:inline"></FelderaLogomarkDark>
         {:else}
           <FelderaLogomarkLight class="hidden h-full max-h-28 sm:inline"></FelderaLogomarkLight>
