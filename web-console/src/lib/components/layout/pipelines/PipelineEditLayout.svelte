@@ -259,7 +259,7 @@ example = "1.0"`
                   goto(newUrl, { replaceState: true })
                 })
               }}
-              class="input -mb-1 -ml-2 mr-2 inline w-64 py-0 pl-2 text-xl"
+              class="input -mb-1 -ml-2 mr-2 inline w-64 max-w-full py-0 pl-2 text-xl"
             >
               <span class="text-xl">
                 {pipeline.current.name}
@@ -279,7 +279,7 @@ example = "1.0"`
       {#if drawer.isMobileDrawer}
         <button
           onclick={() => (drawer.value = !drawer.value)}
-          class="fd fd-book-marked btn-icon flex text-[20px] preset-tonal-surface"
+          class="fd fd-menu btn-icon flex text-[20px] preset-tonal-surface"
           aria-label="Open extras drawer"
         >
         </button>
