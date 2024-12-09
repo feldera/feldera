@@ -1,11 +1,9 @@
 /// API to create and delete API keys
 use super::{ManagerError, ServerState};
+use crate::api::util::parse_url_parameter;
 use crate::db::types::api_key::{ApiKeyId, ApiPermission};
 use crate::db::types::tenant::TenantId;
-use crate::{
-    api::{examples, parse_string_param},
-    db::storage::Storage,
-};
+use crate::{api::examples, db::storage::Storage};
 use actix_web::{
     delete, get,
     http::header::{CacheControl, CacheDirective},
@@ -92,7 +90,7 @@ pub(crate) async fn get_api_key(
     tenant_id: ReqData<TenantId>,
     req: HttpRequest,
 ) -> Result<HttpResponse, ManagerError> {
-    let name = parse_string_param(&req, "api_key_name")?;
+    let name = parse_url_parameter(&req, "api_key_name")?;
     let api_key = state.db.lock().await.get_api_key(*tenant_id, &name).await?;
     Ok(HttpResponse::Ok()
         .insert_header(CacheControl(vec![CacheDirective::NoCache]))
@@ -169,7 +167,7 @@ pub(crate) async fn delete_api_key(
     tenant_id: ReqData<TenantId>,
     req: HttpRequest,
 ) -> Result<HttpResponse, ManagerError> {
-    let name = parse_string_param(&req, "api_key_name")?;
+    let name = parse_url_parameter(&req, "api_key_name")?;
     let resp = state
         .db
         .lock()
