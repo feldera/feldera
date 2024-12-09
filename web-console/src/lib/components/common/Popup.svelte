@@ -5,8 +5,11 @@
     trigger,
     content,
     wrapperClass
-  }: { trigger: Snippet<[() => void]>; content: Snippet<[() => void]>; wrapperClass?: string } =
-    $props()
+  }: {
+    trigger: Snippet<[toggle: () => void, isOpen: boolean]>
+    content: Snippet<[close: () => void]>
+    wrapperClass?: string
+  } = $props()
   let show = $state(false)
   let onClose = () => {
     setTimeout(() => {
@@ -36,7 +39,7 @@
 <div class="relative {wrapperClass}">
   {@render trigger(() => {
     show = !show
-  })}
+  }, show)}
   {#if show}
     <div bind:this={contentNode}>
       {@render content(() => (show = false))}

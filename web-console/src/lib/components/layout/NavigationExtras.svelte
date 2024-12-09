@@ -1,5 +1,4 @@
 <script lang="ts">
-  import CreatePipelineButton from '$lib/components/pipelines/CreatePipelineButton.svelte'
   import { useRefreshPipelineList } from '$lib/compositions/pipelines/usePipelineList.svelte'
   import { base } from '$app/paths'
   import Popup from '$lib/components/common/Popup.svelte'
@@ -52,24 +51,26 @@
   const _page = fromStore(page)
 </script>
 
-{#snippet header(full: string, short: string)}
+{#snippet header(full: string, short: string, isOpen?: boolean)}
   {#if inline}
     {full}
   {:else}
     <span class="hidden sm:inline">{full}</span>
     <span class="inline sm:hidden">{short}</span>
+    <span class="fd fd-chevron-down text-[20px] transition-transform" class:rotate-180={isOpen}
+    ></span>
   {/if}
 {/snippet}
 
-{#snippet docsButton(toggle?: () => void)}
-  <button onclick={toggle} class="btn {toggle ? '' : 'cursor-default'}">
-    {@render header('Documentation', 'Docs')}
+{#snippet docsButton(toggle?: () => void, isOpen?: boolean)}
+  <button onclick={toggle} class="btn {toggle ? '' : 'cursor-default'} ">
+    {@render header('Documentation', 'Docs', isOpen)}
   </button>
 {/snippet}
 
-{#snippet communityButton(toggle?: () => void)}
+{#snippet communityButton(toggle?: () => void, isOpen?: boolean)}
   <button onclick={toggle} class="btn {toggle ? '' : 'cursor-default'}">
-    {@render header('Community resources', 'Community')}
+    {@render header('Community Resources', 'Community', isOpen)}
   </button>
 {/snippet}
 
@@ -115,7 +116,7 @@
     {#snippet content(close)}
       <div
         transition:fade={{ duration: 100 }}
-        class="absolute left-0 z-30 flex max-h-[400px] w-[calc(100vw-100px)] max-w-[200px] flex-col justify-end gap-2 overflow-y-auto rounded bg-white p-2 shadow-md dark:bg-black"
+        class="bg-white-black absolute left-0 z-30 flex max-h-[400px] w-[calc(100vw-100px)] max-w-[200px] flex-col justify-end gap-2 overflow-y-auto rounded-container p-2 shadow-md"
       >
         {@render docsItems()}
       </div>
@@ -125,7 +126,7 @@
     {#snippet content(close)}
       <div
         transition:fade={{ duration: 100 }}
-        class="absolute right-0 z-30 max-h-[400px] w-[calc(100vw-100px)] max-w-[200px] justify-end overflow-y-auto rounded bg-white shadow-md dark:bg-black"
+        class="bg-white-black absolute right-0 z-30 flex max-h-[400px] w-[calc(100vw-100px)] max-w-[200px] flex-col justify-end gap-2 overflow-y-auto rounded-container p-2 shadow-md"
       >
         {@render communityItems()}
       </div>
