@@ -16,6 +16,7 @@
   import { base } from '$app/paths'
   import Tooltip from '$lib/components/common/Tooltip.svelte'
   import PipelineConfigurationsPopup from '$lib/components/layout/pipelines/PipelineConfigurationsPopup.svelte'
+  import IconLoader from '$assets/icons/generic/loader-alt.svg?component'
 
   let {
     pipeline,
@@ -301,11 +302,12 @@
   <div class={longClass}></div>
 {/snippet}
 {#snippet _spinner()}
-  <div class="gc gc-loader-alt pointer-events-none h-9 w-9 animate-spin !text-[36px]"></div>
+  <IconLoader class="pointer-events-none h-9 w-9 animate-spin {iconClass} fill-surface-50-950"
+  ></IconLoader>
 {/snippet}
 {#snippet _status_spinner()}
   <button class="{buttonClass} {longClass} pointer-events-none {basicBtnColor}">
-    <span class="gc gc-loader-alt animate-spin {iconClass}"></span>
+    <IconLoader class="animate-spin {iconClass} fill-surface-50-950"></IconLoader>
     <span></span>
   </button>
 {/snippet}
