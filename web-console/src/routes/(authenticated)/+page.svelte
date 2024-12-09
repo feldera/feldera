@@ -61,7 +61,7 @@
     {#if drawer.isMobileDrawer}
       <button
         onclick={() => (drawer.value = !drawer.value)}
-        class="fd fd-menu btn-icon flex text-[24px] preset-tonal-surface"
+        class="fd fd-book-marked btn-icon flex text-[24px] preset-tonal-surface"
         aria-label="Open extras drawer"
       >
       </button>
@@ -168,7 +168,8 @@
               <AvailableActions pipelines={pipelines.pipelines} bind:selectedPipelines
               ></AvailableActions>
             {:else}
-              <CreatePipelineButton class="max-w-64"></CreatePipelineButton>
+              <CreatePipelineButton class="max-w-64" btnClass="preset-filled-surface-50-950"
+              ></CreatePipelineButton>
             {/if}
           {/snippet}
         </PipelineTable>
@@ -177,7 +178,7 @@
           <ImageBox class="h-9 fill-surface-200-800"></ImageBox>
           <div class="text-lg">Your pipelines will appear here</div>
           <div class="relative flex gap-5">
-            <CreatePipelineButton></CreatePipelineButton>
+            <CreatePipelineButton btnClass="preset-filled-surface-50-950"></CreatePipelineButton>
             <a class="btn text-sm preset-tonal-surface" href="https://docs.feldera.com">
               <span class="fd fd-book-marked text-2xl"></span>
               Documentation
