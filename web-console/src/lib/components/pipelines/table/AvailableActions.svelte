@@ -92,25 +92,25 @@
 
 {#snippet btnStart()}
   <button class="btn preset-tonal-surface" onclick={() => postPipelinesAction('start')}>
-    <span class="fd fd-play text-[24px]"></span>
+    <span class="fd fd-play text-[20px]"></span>
     Start
   </button>
 {/snippet}
 {#snippet btnPause()}
   <button class="btn preset-tonal-surface" onclick={() => postPipelinesAction('pause')}>
-    <span class="fd fd-pause text-[24px]"></span>
+    <span class="fd fd-pause text-[20px]"></span>
     Pause
   </button>
 {/snippet}
 {#snippet btnShutdown()}
   <button class="btn preset-tonal-surface" onclick={() => postPipelinesAction('shutdown')}>
-    <span class="fd fd-square text-[24px]"></span>
+    <span class="fd fd-square text-[20px]"></span>
     Shutdown
   </button>
 {/snippet}
 {#snippet btnDelete()}
   <button class="btn preset-tonal-surface" onclick={() => (globalDialog.dialog = deleteDialog)}>
-    <span class="fd fd-trash-2 text-[24px]"></span>
+    <span class="fd fd-trash-2 text-[20px]"></span>
     Delete
   </button>
 {/snippet}

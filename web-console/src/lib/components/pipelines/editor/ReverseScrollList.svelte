@@ -69,7 +69,7 @@
 {#if !stickToBottom}
   <button
     transition:scale={{ duration: 200 }}
-    class="fd fd-arrow-down absolute bottom-4 right-4 rounded-full p-2 text-[24px] preset-filled-primary-500"
+    class="fd fd-arrow-down absolute bottom-4 right-4 rounded-full p-2 text-[20px] preset-filled-primary-500"
     onclick={() => {
       stickToBottom = true
       scrollToBottom()

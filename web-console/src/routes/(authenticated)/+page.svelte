@@ -61,7 +61,7 @@
     {#if drawer.isMobileDrawer}
       <button
         onclick={() => (drawer.value = !drawer.value)}
-        class="fd fd-book-marked btn-icon flex text-[24px] preset-tonal-surface"
+        class="fd fd-book-marked btn-icon flex text-[20px] preset-tonal-surface"
         aria-label="Open extras drawer"
       >
       </button>
@@ -122,7 +122,7 @@
               role="presentation"
             >
               <div
-                class={'fd fd-chevron-down text-[24px] transition-transform ' +
+                class={'fd fd-chevron-down text-[20px] transition-transform ' +
                   (open ? 'rotate-180' : '')}
               ></div>
 
@@ -148,7 +148,7 @@
                   <div class="text-sm text-surface-500">&nbsp;</div>
                   <a class="text-left text-primary-500" href="{base}/demos/">
                     <span class="py-2 text-lg">Discover More Examples and Tutorials</span>
-                    <!-- <span class="fd fd-arrow-right inline-block w-2 text-[24px]"></span> -->
+                    <!-- <span class="fd fd-arrow-right inline-block w-2 text-[20px]"></span> -->
                   </a>
                 </div>
               </div>

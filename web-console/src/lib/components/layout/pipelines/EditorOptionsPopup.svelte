@@ -18,7 +18,7 @@
 <Popup>
   {#snippet trigger(toggle)}
     <button
-      class="fd fd-more_horiz btn btn-icon text-[24px] !brightness-100 hover:preset-tonal-surface"
+      class="fd fd-more_horiz btn btn-icon text-[20px] !brightness-100 hover:preset-tonal-surface"
       onclick={toggle}
       aria-label="Editor settings"
     ></button>
