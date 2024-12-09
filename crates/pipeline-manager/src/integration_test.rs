@@ -456,9 +456,9 @@ impl TestConfig {
 
             // Print an update every 60 seconds approximately
             if last_update.elapsed().as_secs() >= 60 {
-                println!("Pipeline:\n{pipeline:#?}");
+                // println!("Pipeline:\n{pipeline:#?}");
                 println!(
-                    "Waiting for compilation since {} seconds, status: {:?}",
+                    "Waiting for compilation since {} seconds, current program status: {:?}",
                     start.elapsed().as_secs(),
                     pipeline["program_status"]
                 );
@@ -2274,4 +2274,104 @@ async fn pipeline_deleted_during_program_compilation() {
 
     // Validate the compiler still works correctly by fully compiling a program
     create_and_deploy_test_pipeline(&config, "").await;
+}
+
+/// Checks that Rust compilation is cached in the face of non-impactful
+/// edits (e.g., comments, whitespace, connectors).
+#[actix_web::test]
+#[serial]
+async fn pipeline_rust_compilation_is_cached() {
+    let config = setup().await;
+    let mut source_checksums = vec![];
+    for request_body in vec![
+        json!({
+            "name": "test-1",
+            "description": "Description of test-1",
+            "runtime_config": {},
+            "program_code": "CREATE TABLE t1 ( c1 INT );",
+            "program_config": {}
+        }),
+        json!({
+            "name": "test-2",
+            "description": "Description of test-2",
+            "runtime_config": {},
+            "program_code": "CREATE TABLE t1 ( c1 INT );",
+            "program_config": {}
+        }),
+        json!({
+            "name": "test-3",
+            "description": "Description of test-3",
+            "runtime_config": {},
+            "program_code": "CREATE TABLE t1 ( c1 INT ); -- Comments",
+            "program_config": {}
+        }),
+        json!({
+            "name": "test-4",
+            "description": "Description of test-4",
+            "runtime_config": {},
+            "program_code": "CREATE TABLE t1  ( c1 INT );", // Extra whitespace
+            "program_config": {}
+        }),
+        json!({
+            "name": "test-5",
+            "description": "Description of test-5",
+            "runtime_config": {},
+            "program_code": "CREATE TABLE t1 ( c1 INT ) WITH (
+                'connectors' = '[{
+                    \"name\": \"c1\",
+                    \"transport\": {
+                        \"name\": \"url_input\",
+                        \"config\": {\"path\": \"https://feldera.com/example.json\"}
+                    }
+                }]'
+            );", // With a connector
+            "program_config": {}
+        }),
+        json!({
+            "name": "test-6",
+            "description": "Description of test-6",
+            "runtime_config": {},
+            "program_code": "CREATE TABLE t2 ( c1 INT );", // Different table name will trigger recompilation
+            "program_config": {}
+        }),
+    ] {
+        let pipeline_name = request_body["name"].as_str().unwrap().to_string();
+
+        // Create pipeline
+        let response = config.post("/v0/pipelines", &request_body).await;
+        assert_eq!(response.status(), StatusCode::CREATED);
+
+        // Wait for its program compilation completion
+        config
+            .wait_for_compilation(&pipeline_name, 1, config.compilation_timeout)
+            .await;
+
+        // Get its source checksum
+        let mut response = config.get(format!("/v0/pipelines/{pipeline_name}")).await;
+        let response_body = response.body().await.unwrap();
+        let response_str = String::from_utf8(response_body.to_vec()).unwrap();
+        let response_json: Value = serde_json::from_str(&response_str).unwrap();
+        let source_checksum = response_json["program_binary_source_checksum"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        source_checksums.push(source_checksum);
+    }
+
+    // Compare checksums
+    assert_eq!(source_checksums[0], source_checksums[1]);
+    assert_eq!(source_checksums[0], source_checksums[2]);
+    assert_eq!(source_checksums[0], source_checksums[3]);
+    assert_eq!(source_checksums[0], source_checksums[4]);
+    assert_ne!(source_checksums[0], source_checksums[5]);
+    assert_eq!(source_checksums[1], source_checksums[2]);
+    assert_eq!(source_checksums[1], source_checksums[3]);
+    assert_eq!(source_checksums[1], source_checksums[4]);
+    assert_ne!(source_checksums[1], source_checksums[5]);
+    assert_eq!(source_checksums[2], source_checksums[3]);
+    assert_eq!(source_checksums[2], source_checksums[4]);
+    assert_ne!(source_checksums[2], source_checksums[5]);
+    assert_eq!(source_checksums[3], source_checksums[4]);
+    assert_ne!(source_checksums[3], source_checksums[5]);
+    assert_ne!(source_checksums[4], source_checksums[5]);
 }
