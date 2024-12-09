@@ -86,6 +86,7 @@ aws-sdk-cognitoidentityprovider = "0.28.0"
 aws-config = "0.55.3"
 wiremock = "0.6"
 feldera-types = { path = "../feldera-types", features = ["testing"] }
+itertools = "0.13.0"
 
 # Used in integration tests
 [dev-dependencies.tokio]

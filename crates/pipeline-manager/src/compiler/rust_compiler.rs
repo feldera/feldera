@@ -1092,8 +1092,8 @@ mod test {
 
     /// Tests the calculation of the source checksum.
     #[tokio::test]
-    #[rustfmt::skip]
     async fn source_checksum_calculation() {
+        // Calling with different input yields a different checksum
         let config_1 = CompilerConfig {
             compiler_working_directory: "".to_string(),
             compilation_profile: CompilationProfile::Dev,
@@ -1135,33 +1135,54 @@ mod test {
             cache: false,
         };
         let mut seen = HashSet::<String>::new();
-        for platform_version in ["", "v1", "v2"] {
-            for profile in [CompilationProfile::Dev, CompilationProfile::Optimized, CompilationProfile::Unoptimized] {
-                for config in [config_1.clone(), config_2.clone(), config_3.clone(), config_4.clone()] {
-                    for program_config in [program_config_1.clone()] {
-                        for main_rust in ["", "a", "aa", "b", "c", "d", "e"] {
-                            for udf_stubs in ["", "a", "aa", "b", "c", "d", "e"] {
-                                for udf_rust in ["", "a", "aa", "b", "c", "d", "e"] {
-                                    for udf_toml in ["", "a", "aa", "b", "c", "d", "e"] {
-                                         let source_checksum = calculate_source_checksum(
-                                            platform_version,
-                                            &profile,
-                                            &config,
-                                            &program_config,
-                                            main_rust,
-                                            udf_stubs,
-                                            udf_rust,
-                                            udf_toml
-                                        );
-                                        assert!(!seen.contains(&source_checksum), "checksum {source_checksum} has a duplicate");
-                                        seen.insert(source_checksum);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+        let platform_versions = ["", "v1", "v2"];
+        let profiles = [
+            CompilationProfile::Dev,
+            CompilationProfile::Optimized,
+            CompilationProfile::Unoptimized,
+        ];
+        let configs = [
+            config_1.clone(),
+            config_2.clone(),
+            config_3.clone(),
+            config_4.clone(),
+        ];
+        let program_configs = [program_config_1.clone()];
+        let content = ["", "a", "aa", "b", "c", "d", "e"];
+        for (
+            platform_version,
+            profile,
+            config,
+            program_config,
+            main_rust,
+            udf_stubs,
+            udf_rust,
+            udf_toml,
+        ) in itertools::iproduct!(
+            platform_versions,
+            profiles,
+            configs,
+            program_configs,
+            content,
+            content,
+            content,
+            content
+        ) {
+            let source_checksum = calculate_source_checksum(
+                platform_version,
+                &profile,
+                &config,
+                &program_config,
+                main_rust,
+                udf_stubs,
+                udf_rust,
+                udf_toml,
+            );
+            assert!(
+                !seen.contains(&source_checksum),
+                "checksum {source_checksum} has a duplicate"
+            );
+            seen.insert(source_checksum);
         }
 
         // Calling with the same input yields the same checksum
@@ -1173,7 +1194,7 @@ mod test {
             "main_rust",
             "udf_stubs",
             "udf_rust",
-            "udf_toml"
+            "udf_toml",
         );
         let checksum2 = calculate_source_checksum(
             "v0",
@@ -1183,7 +1204,7 @@ mod test {
             "main_rust",
             "udf_stubs",
             "udf_rust",
-            "udf_toml"
+            "udf_toml",
         );
         assert_eq!(checksum1, checksum2);
 
@@ -1199,7 +1220,7 @@ mod test {
             "main_rust",
             "udf_stubs",
             "udf_rust",
-            "udf_toml"
+            "udf_toml",
         );
         let checksum2 = calculate_source_checksum(
             "v0",
@@ -1212,7 +1233,7 @@ mod test {
             "main_rust",
             "udf_stubs",
             "udf_rust",
-            "udf_toml"
+            "udf_toml",
         );
         assert_eq!(checksum1, checksum2);
     }
