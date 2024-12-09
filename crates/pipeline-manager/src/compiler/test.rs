@@ -16,11 +16,12 @@ use uuid::Uuid;
 /// boilerplate code of setting up configuration and database, as well as
 /// common database interactions and in general checks.
 pub(crate) struct CompilerTest {
-    common_config: CommonConfig,
-    compiler_config: CompilerConfig,
-    db: Arc<Mutex<StoragePostgres>>,
+    pub(crate) common_config: CommonConfig,
+    pub(crate) compiler_config: CompilerConfig,
+    pub(crate) db: Arc<Mutex<StoragePostgres>>,
     pub(crate) sql_workdir: PathBuf,
-    _sql_compiler_tempdir: TempDir,
+    pub(crate) rust_workdir: PathBuf,
+    _compiler_tempdir: TempDir,
     #[cfg(feature = "pg-embed")]
     _db_tempdir: TempDir,
 }
@@ -28,8 +29,8 @@ pub(crate) struct CompilerTest {
 impl CompilerTest {
     pub(crate) async fn new() -> CompilerTest {
         // Test configuration
-        let sql_compiler_tempdir = TempDir::new().unwrap();
-        let workdir = sql_compiler_tempdir.path().to_str().unwrap();
+        let compiler_tempdir = TempDir::new().unwrap();
+        let workdir = compiler_tempdir.path().to_str().unwrap();
         let platform_version = "v0";
         let common_config = CommonConfig {
             platform_version: platform_version.to_string(),
@@ -53,12 +54,18 @@ impl CompilerTest {
             .join("sql-compilation")
             .to_path_buf();
 
+        // Path of the Rust compiler working directory
+        let rust_workdir = Path::new(&compiler_config.compiler_working_directory)
+            .join("rust-compilation")
+            .to_path_buf();
+
         Self {
             common_config,
             compiler_config,
             db,
             sql_workdir,
-            _sql_compiler_tempdir: sql_compiler_tempdir,
+            rust_workdir,
+            _compiler_tempdir: compiler_tempdir,
             #[cfg(feature = "pg-embed")]
             _db_tempdir,
         }
@@ -180,13 +187,7 @@ impl CompilerTest {
         assert_eq!(list, vec![(pipeline_dir.clone(), Some(pipeline_dir_name))]);
 
         // Get content of pipeline SQL compilation directory
-        let mut content_pipeline_dir: Vec<String> = list_content(&pipeline_dir)
-            .await
-            .unwrap()
-            .iter()
-            .map(|(_, name)| name.clone().unwrap())
-            .collect();
-        content_pipeline_dir.sort();
+        let content_pipeline_dir: Vec<String> = list_content_as_sorted_names(&pipeline_dir).await;
         assert_eq!(
             content_pipeline_dir,
             vec![
@@ -239,4 +240,20 @@ impl CompilerTest {
             content_stubs_rs,
         )
     }
+}
+
+/// Lists the content of a directory as the names therein (sorted).
+/// Panics if the directory content cannot be retrieved or an entry does not possess a name.
+pub(crate) async fn list_content_as_sorted_names(dir: &Path) -> Vec<String> {
+    let mut content: Vec<String> = list_content(dir)
+        .await
+        .expect("Unable to retrieve directory content")
+        .iter()
+        .map(|(path, name)| {
+            name.clone()
+                .unwrap_or_else(|| panic!("Path {path:?} does not have a name"))
+        })
+        .collect();
+    content.sort();
+    content
 }

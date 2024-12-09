@@ -273,7 +273,7 @@ fn calculate_source_checksum(
     udf_stubs: &str,
     udf_rust: &str,
     udf_toml: &str,
-) -> Result<String, RustCompilationError> {
+) -> String {
     let mut hasher = sha::Sha256::new();
     for (name, data) in [
         // Not used because already included in profile:
@@ -311,10 +311,11 @@ fn calculate_source_checksum(
             hex::encode(checksum)
         );
     }
-    Ok(hex::encode(hasher.finish()))
+    hex::encode(hasher.finish())
 }
 
 /// Rust compilation possible error outcomes.
+#[derive(Debug)]
 pub enum RustCompilationError {
     /// In the meanwhile the pipeline was already updated, as such the
     /// Rust compilation is outdated and no longer useful.
@@ -397,7 +398,7 @@ pub async fn perform_rust_compilation(
         udf_stubs,
         udf_rust,
         udf_toml,
-    )?;
+    );
     trace!("Rust compilation: calculated source checksum: {source_checksum}");
 
     // The compilation is cached if cache is enabled AND a binary exists with that source checksum
@@ -612,6 +613,19 @@ async fn prepare_workspace(
     config: &CompilerConfig,
     source_checksum: &str,
 ) -> Result<(), RustCompilationError> {
+    // Ensure the rust-compilation directory exists in
+    // which to create the workspace-level Cargo.toml
+    let rust_compilation_dir = config.working_dir().join("rust-compilation");
+    fs::create_dir_all(&rust_compilation_dir)
+        .await
+        .map_err(|e| {
+            CommonError::io_error(
+                format!("creating directory '{}'", rust_compilation_dir.display()),
+                e,
+            )
+        })?;
+
+    // Create the workspace-level Cargo.toml
     let cargo_toml = formatdoc! {"
         [workspace]
         members = [ \"projects/project-{source_checksum}\" ]
@@ -1062,4 +1076,251 @@ async fn cleanup_rust_compilation(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod test {
+    use crate::compiler::rust_compiler::{
+        calculate_source_checksum, decide_cleanup, prepare_project,
+    };
+    use crate::compiler::rust_compiler::{prepare_workspace, MAIN_FUNCTION};
+    use crate::compiler::test::{list_content_as_sorted_names, CompilerTest};
+    use crate::compiler::util::{read_file_content, CleanupDecision};
+    use crate::config::CompilerConfig;
+    use crate::db::types::program::{CompilationProfile, ProgramConfig};
+    use std::collections::HashSet;
+
+    /// Tests the calculation of the source checksum.
+    #[tokio::test]
+    #[rustfmt::skip]
+    async fn source_checksum_calculation() {
+        let config_1 = CompilerConfig {
+            compiler_working_directory: "".to_string(),
+            compilation_profile: CompilationProfile::Dev,
+            sql_compiler_home: "".to_string(),
+            dbsp_override_path: "".to_string(),
+            precompile: false,
+            binary_ref_host: "".to_string(),
+            binary_ref_port: 0,
+        };
+        let config_2 = CompilerConfig {
+            compiler_working_directory: "a".to_string(),
+            compilation_profile: CompilationProfile::Dev,
+            sql_compiler_home: "".to_string(),
+            dbsp_override_path: "".to_string(),
+            precompile: false,
+            binary_ref_host: "".to_string(),
+            binary_ref_port: 0,
+        };
+        let config_3 = CompilerConfig {
+            compiler_working_directory: "".to_string(),
+            compilation_profile: CompilationProfile::Dev,
+            sql_compiler_home: "b".to_string(),
+            dbsp_override_path: "".to_string(),
+            precompile: false,
+            binary_ref_host: "".to_string(),
+            binary_ref_port: 0,
+        };
+        let config_4 = CompilerConfig {
+            compiler_working_directory: "".to_string(),
+            compilation_profile: CompilationProfile::Dev,
+            sql_compiler_home: "".to_string(),
+            dbsp_override_path: "c".to_string(),
+            precompile: false,
+            binary_ref_host: "".to_string(),
+            binary_ref_port: 0,
+        };
+        let program_config_1 = ProgramConfig {
+            profile: None,
+            cache: false,
+        };
+        let mut seen = HashSet::<String>::new();
+        for platform_version in ["", "v1", "v2"] {
+            for profile in [CompilationProfile::Dev, CompilationProfile::Optimized, CompilationProfile::Unoptimized] {
+                for config in [config_1.clone(), config_2.clone(), config_3.clone(), config_4.clone()] {
+                    for program_config in [program_config_1.clone()] {
+                        for main_rust in ["", "a", "aa", "b", "c", "d", "e"] {
+                            for udf_stubs in ["", "a", "aa", "b", "c", "d", "e"] {
+                                for udf_rust in ["", "a", "aa", "b", "c", "d", "e"] {
+                                    for udf_toml in ["", "a", "aa", "b", "c", "d", "e"] {
+                                         let source_checksum = calculate_source_checksum(
+                                            platform_version,
+                                            &profile,
+                                            &config,
+                                            &program_config,
+                                            main_rust,
+                                            udf_stubs,
+                                            udf_rust,
+                                            udf_toml
+                                        );
+                                        assert!(!seen.contains(&source_checksum), "checksum {source_checksum} has a duplicate");
+                                        seen.insert(source_checksum);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Calling with the same input yields the same checksum
+        let checksum1 = calculate_source_checksum(
+            "v0",
+            &CompilationProfile::Optimized,
+            &config_1,
+            &program_config_1,
+            "main_rust",
+            "udf_stubs",
+            "udf_rust",
+            "udf_toml"
+        );
+        let checksum2 = calculate_source_checksum(
+            "v0",
+            &CompilationProfile::Optimized,
+            &config_1,
+            &program_config_1,
+            "main_rust",
+            "udf_stubs",
+            "udf_rust",
+            "udf_toml"
+        );
+        assert_eq!(checksum1, checksum2);
+
+        // Program configuration currently does not impact the checksum
+        let checksum1 = calculate_source_checksum(
+            "v0",
+            &CompilationProfile::Optimized,
+            &config_1,
+            &ProgramConfig {
+                profile: None,
+                cache: false,
+            },
+            "main_rust",
+            "udf_stubs",
+            "udf_rust",
+            "udf_toml"
+        );
+        let checksum2 = calculate_source_checksum(
+            "v0",
+            &CompilationProfile::Optimized,
+            &config_1,
+            &ProgramConfig {
+                profile: None,
+                cache: true,
+            },
+            "main_rust",
+            "udf_stubs",
+            "udf_rust",
+            "udf_toml"
+        );
+        assert_eq!(checksum1, checksum2);
+    }
+
+    /// Tests the project preparation helper function.
+    #[tokio::test]
+    async fn project_preparation() {
+        let test = CompilerTest::new().await;
+        let project_dir = test
+            .rust_workdir
+            .join("projects")
+            .join("project-abcdef123456");
+
+        // Project directory does not exist initially
+        assert!(!project_dir.is_dir());
+
+        // Prepare project directory
+        prepare_project(
+            &test.compiler_config,
+            "abcdef123456",
+            "main_rust",
+            "udf_stubs",
+            "udf_rust",
+            "udf_toml",
+        )
+        .await
+        .unwrap();
+
+        // Check project directory exists and its content
+        assert!(project_dir.is_dir());
+        let project_dir_content = list_content_as_sorted_names(&project_dir).await;
+        assert_eq!(project_dir_content, vec!["Cargo.toml", "src"]);
+
+        // Check src directory and its content
+        let src_dir = project_dir.join("src");
+        let src_dir_content = list_content_as_sorted_names(&src_dir).await;
+        assert_eq!(src_dir_content, vec!["main.rs", "stubs.rs", "udf.rs"]);
+        assert_eq!(
+            read_file_content(&src_dir.join("main.rs")).await.unwrap(),
+            format!("main_rust{MAIN_FUNCTION}")
+        );
+        assert_eq!(
+            read_file_content(&src_dir.join("stubs.rs")).await.unwrap(),
+            "udf_stubs"
+        );
+        assert_eq!(
+            read_file_content(&src_dir.join("udf.rs")).await.unwrap(),
+            "udf_rust"
+        );
+
+        // Check Cargo.toml
+        assert!(read_file_content(&project_dir.join("Cargo.toml"))
+            .await
+            .unwrap()
+            .contains("udf_toml"));
+    }
+
+    /// Tests the workspace preparation helper function.
+    #[tokio::test]
+    async fn workspace_preparation() {
+        let test = CompilerTest::new().await;
+        let project_toml_file = test.rust_workdir.join("Cargo.toml");
+
+        // Project TOML does not exist initially
+        assert!(!project_toml_file.is_file());
+
+        // Prepare workspace directory
+        prepare_workspace(&test.compiler_config, "abcdef123456")
+            .await
+            .unwrap();
+
+        // Check project TOML exists and its content
+        assert!(project_toml_file.is_file());
+        assert!(read_file_content(&project_toml_file)
+            .await
+            .unwrap()
+            .contains("members = [ \"projects/project-abcdef123456\" ]"));
+    }
+
+    /// Tests the cleanup decision helper function.
+    #[tokio::test]
+    #[rustfmt::skip]
+    async fn cleanup_decision_helper() {
+        for (i, (name, project_separator, remainder_separator, keep_checksums, expected)) in [
+            // No remainder separator
+            ("example", '-', None, vec![], CleanupDecision::Ignore), // does not start with "example"
+            ("project-a", '-', None, vec![], CleanupDecision::Remove),
+            ("project-a", '-', None, vec!["a".to_string()], CleanupDecision::Keep),
+            ("project-a_b", '-', None, vec!["a".to_string()], CleanupDecision::Remove), // "a_b" is not in checksums to keep
+            ("project-a_b", '-', None, vec!["a_b".to_string()], CleanupDecision::Keep),
+            // Optional remainder separator
+            ("example", '-', Some((false, '_')), vec![], CleanupDecision::Ignore),
+            ("project-a", '-', Some((false, '_')), vec![], CleanupDecision::Remove),
+            ("project-a", '-', Some((false, '_')), vec!["a".to_string()], CleanupDecision::Keep),
+            ("project-a_b", '-', Some((false, '_')), vec!["a".to_string()], CleanupDecision::Keep),
+            ("project-a_b", '-', Some((false, '_')), vec!["a_b".to_string()], CleanupDecision::Remove), // "a" is not in checksums to keep
+            // Mandatory remainder separator
+            ("example", '-', Some((true, '_')), vec![], CleanupDecision::Ignore),
+            ("project-a", '-', Some((true, '_')), vec![], CleanupDecision::Ignore),
+            ("project-a", '-', Some((true, '_')), vec!["a".to_string()], CleanupDecision::Ignore),
+            ("project-a_b", '-', Some((true, '_')), vec!["a".to_string()], CleanupDecision::Keep),
+            ("project-a_b", '-', Some((true, '_')), vec!["a_b".to_string()], CleanupDecision::Remove), // "a" is not in checksums to keep
+        ].iter().enumerate() {
+            assert_eq!(
+                decide_cleanup(name, *project_separator, *remainder_separator, keep_checksums),
+                *expected,
+                "test case {i} (zero-based index) fails"
+            );
+        }
+    }
 }

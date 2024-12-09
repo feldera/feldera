@@ -549,8 +549,8 @@ pub(crate) async fn cleanup_sql_compilation(
 #[cfg(test)]
 mod test {
     use crate::auth::TenantRecord;
-    use crate::compiler::test::CompilerTest;
-    use crate::compiler::util::{create_new_file, list_content, recreate_dir};
+    use crate::compiler::test::{list_content_as_sorted_names, CompilerTest};
+    use crate::compiler::util::{create_new_file, recreate_dir};
     use crate::db::types::common::Version;
     use crate::db::types::program::ProgramStatus;
     use feldera_types::config::TransportConfig;
@@ -1002,13 +1002,7 @@ mod test {
         test.sql_compiler_tick().await;
 
         // Check directory content
-        let mut content: Vec<String> = list_content(&test.sql_workdir)
-            .await
-            .unwrap()
-            .iter()
-            .map(|(_, name)| name.clone().unwrap())
-            .collect();
-        content.sort();
+        let content: Vec<String> = list_content_as_sorted_names(&test.sql_workdir).await;
         let mut expected = vec![
             format!("pipeline-{pipeline_id1}"),
             format!("pipeline-{pipeline_id2}"),
@@ -1032,13 +1026,7 @@ mod test {
         test.sql_compiler_tick().await;
 
         // Check directory content afterward
-        let mut content: Vec<String> = list_content(&test.sql_workdir)
-            .await
-            .unwrap()
-            .iter()
-            .map(|(_, name)| name.clone().unwrap())
-            .collect();
-        content.sort();
+        let content: Vec<String> = list_content_as_sorted_names(&test.sql_workdir).await;
         let mut expected = vec![
             "example.txt".to_string(),
             "example2".to_string(),
