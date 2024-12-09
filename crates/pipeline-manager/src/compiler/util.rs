@@ -131,6 +131,7 @@ pub(crate) async fn list_content(
     Ok(content)
 }
 
+#[derive(Debug, PartialEq, Eq)]
 pub enum CleanupDecision {
     Keep,
     Remove,
