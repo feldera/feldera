@@ -32,8 +32,6 @@
   import TabAdHocQuery from '$lib/components/pipelines/editor/TabAdHocQuery.svelte'
   import { useLocalStorage } from '$lib/compositions/localStore.svelte'
   import AppHeader from '$lib/components/layout/AppHeader.svelte'
-  import PipelineConfigurationsPopup from '$lib/components/layout/pipelines/PipelineConfigurationsPopup.svelte'
-  import PipelineListPopup from './PipelineListPopup.svelte'
   import EditorOptionsPopup from './EditorOptionsPopup.svelte'
   import { useIsTablet, useIsScreenLg } from '$lib/compositions/layout/useIsMobile.svelte'
   import CreatePipelineButton from '$lib/components/pipelines/CreatePipelineButton.svelte'
@@ -224,6 +222,7 @@ example = "1.0"`
     pipelineBusy={editDisabled}
     unsavedChanges={downstreamChanged}
     onActionSuccess={handleActionSuccess}
+    {saveFile}
   ></PipelineActions>
 {/snippet}
 
@@ -406,14 +405,15 @@ example = "1.0"`
             </div>
             <EditorOptionsPopup></EditorOptionsPopup>
           {/snippet}
-          {#snippet fileTab(text, onClick, isCurrent)}
+          {#snippet fileTab(text, onClick, isCurrent, isSaved)}
             <button
-              class="px-2 py-2 sm:px-3 {isCurrent
+              class="flex flex-nowrap py-2 pl-2 pr-4 sm:pl-3 {isCurrent
                 ? 'inset-y-2 border-b-2 pb-1.5 border-surface-950-50'
                 : ' rounded hover:!bg-opacity-50 hover:bg-surface-100-900'}"
               onclick={onClick}
             >
               {text}
+              <div class="-ml-3 -mt-3 h-0 w-4 text-5xl {isSaved ? '' : 'fd fd-dot'}"></div>
             </button>
           {/snippet}
         </CodeEditor>
