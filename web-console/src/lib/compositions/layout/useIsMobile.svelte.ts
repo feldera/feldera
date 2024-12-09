@@ -10,3 +10,11 @@ export const useIsMobile = () => {
   return new Store(listen('(max-width: 640px)'))
   // const isMobile = new MediaQuery('(max-width: 640px)')
 }
+
+export const useIsScreenMd = () => {
+  return new Store(listen('(max-width: 768px)'))
+}
+
+export const useIsScreenLg = () => {
+  return new Store(listen('(max-width: 1024px)'))
+}
