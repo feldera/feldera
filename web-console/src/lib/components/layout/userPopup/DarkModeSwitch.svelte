@@ -10,7 +10,7 @@
   <Segment
     bind:value={darkMode.current}
     base="flex items-stretch overflow-hidden"
-    background="preset-filled-surface-50-950 h-12"
+    background="preset-filled-surface-50-950 h-12 w-fit"
     indicatorBg="bg-white-black shadow "
     indicatorText=""
     border="px-3 py-1"
@@ -19,7 +19,7 @@
   >
     <Segment.Item
       value="light"
-      base="btn cursor-pointer z-[1] px-12 h-auto"
+      base="btn cursor-pointer z-[1] px-4 sm:px-12 h-auto"
       labelClasses="flex items-center flex-nowrap gap-3 transition-none"
     >
       <span class="fd fd-sun text-[20px]"></span>
@@ -27,7 +27,7 @@
     </Segment.Item>
     <Segment.Item
       value="dark"
-      base="btn cursor-pointer z-[1] px-12 h-auto"
+      base="btn cursor-pointer z-[1] px-4 sm:px-12 h-auto"
       labelClasses="flex items-center flex-nowrap gap-3 transition-none"
     >
       <span class="fd fd-moon text-[20px]"></span>

@@ -32,7 +32,7 @@
   import TabAdHocQuery from '$lib/components/pipelines/editor/TabAdHocQuery.svelte'
   import { useLocalStorage } from '$lib/compositions/localStore.svelte'
   import AppHeader from '$lib/components/layout/AppHeader.svelte'
-  import PipelineToolbarMenu from '$lib/components/layout/pipelines/PipelineToolbarMenu.svelte'
+  import PipelineConfigurationsPopup from '$lib/components/layout/pipelines/PipelineConfigurationsPopup.svelte'
   import PipelineListPopup from './PipelineListPopup.svelte'
   import EditorOptionsPopup from './EditorOptionsPopup.svelte'
   import { useIsTablet, useIsScreenLg } from '$lib/compositions/layout/useIsMobile.svelte'
@@ -41,6 +41,8 @@
   import { usePipelineList } from '$lib/compositions/pipelines/usePipelineList.svelte'
   import { useDrawer } from '$lib/compositions/layout/useDrawer.svelte'
   import NavigationExtrasPopup from '$lib/components/layout/NavigationExtrasPopup.svelte'
+  import DoubleClickInput from '$lib/components/input/DoubleClickInput.svelte'
+  import { goto } from '$app/navigation'
 
   let {
     preloaded,
@@ -223,25 +225,18 @@ example = "1.0"`
     unsavedChanges={downstreamChanged}
     onActionSuccess={handleActionSuccess}
   ></PipelineActions>
-  <div class={props?.class}>
-    <PipelineToolbarMenu
-      {pipeline}
-      {pipelineName}
-      {saveFile}
-      pipelineBusy={editDisabled}
-      {downstreamChanged}
-      onDeletePipeline={handleDeletePipeline}
-    ></PipelineToolbarMenu>
-  </div>
 {/snippet}
 
 <div class="flex h-full w-full flex-col">
   <AppHeader>
     {#snippet afterStart()}
-      <div class="flex flex-col gap-x-4 gap-y-1 2xl:flex-row-reverse">
-        <PipelineStatus class="mt-0 lg:-mt-6 2xl:mt-0" status={pipeline.current.status}
+      <div
+        class="flex min-w-0 flex-1 flex-col gap-x-4 gap-y-1 2xl:flex-row-reverse 2xl:justify-end"
+      >
+        <PipelineStatus class="mt-0 h-6 lg:-mt-4 2xl:mt-2" status={pipeline.current.status}
         ></PipelineStatus>
         <PipelineBreadcrumbs
+          class="-ml-3 py-1 pl-3"
           breadcrumbs={[
             ...(isTablet.current
               ? []
@@ -250,25 +245,42 @@ example = "1.0"`
                     text: 'Home',
                     href: `${base}/`
                   }
-                ]),
-            {
-              text: pipelineName
-            }
+                ])
           ]}
-        ></PipelineBreadcrumbs>
+        >
+          {#snippet last()}
+            <DoubleClickInput
+              value={pipeline.current.name}
+              onvalue={(name) => {
+                if (name === pipeline.current.name) {
+                  return
+                }
+                const newUrl = `${base}/pipelines/${encodeURIComponent(name)}/`
+                pipeline.patch({ name }).then(() => {
+                  goto(newUrl, { replaceState: true })
+                })
+              }}
+              class="input -mb-1 -ml-2 mr-2 inline w-64 py-0 pl-2 text-xl"
+            >
+              <span class="text-xl">
+                {pipeline.current.name}
+              </span>
+            </DoubleClickInput>
+          {/snippet}
+        </PipelineBreadcrumbs>
       </div>
     {/snippet}
     {#snippet beforeEnd()}
-      {@render pipelineActions({ class: 'hidden lg:flex' })}
+      <!-- {@render pipelineActions({ class: 'hidden lg:flex' })} -->
       {#if !isTablet.current}
         <div class="relative">
-          <CreatePipelineButton></CreatePipelineButton>
+          <CreatePipelineButton btnClass="preset-filled-surface-50-950"></CreatePipelineButton>
         </div>
       {/if}
       {#if drawer.isMobileDrawer}
         <button
           onclick={() => (drawer.value = !drawer.value)}
-          class="fd fd-menu btn-icon flex text-[24px] preset-tonal-surface"
+          class="fd fd-book-marked btn-icon flex text-[24px] preset-tonal-surface"
           aria-label="Open extras drawer"
         >
         </button>
@@ -277,10 +289,10 @@ example = "1.0"`
       {/if}
     {/snippet}
   </AppHeader>
-  <div class="flex w-full justify-end gap-4 px-2 pb-4 md:px-8 lg:hidden">
+  <!-- <div class="flex w-full justify-end gap-4 px-2 pb-4 md:px-8 lg:hidden">
     {@render pipelineActions()}
-  </div>
-  <PaneGroup direction="horizontal" class="!overflow-visible p-2 pb-4 md:pl-3 md:pr-8">
+  </div> -->
+  <PaneGroup direction="horizontal" class="!overflow-visible p-2 pb-4 md:pl-8 md:pr-8 xl:pl-4">
     <Pane
       defaultSize={15}
       minSize={10}
@@ -312,7 +324,7 @@ example = "1.0"`
     </Pane>
     {#if !isTablet.current}
       <PaneResizer
-        class="pane-divider-vertical mx-2"
+        class="pane-divider-vertical ml-1.5 mr-2"
         onDraggingChange={(isDragging) => {
           isDraggingPipelineListResizer = isDragging
         }}
@@ -368,7 +380,11 @@ example = "1.0"`
               </PaneGroup>
             </Pane>
           {/snippet}
-          {#snippet toolBarEnd()}{/snippet}
+          {#snippet toolBarEnd()}
+            <div class="flex justify-end gap-4 py-2">
+              {@render pipelineActions()}
+            </div>
+          {/snippet}
           {#snippet statusBarCenter()}
             <ProgramStatus programStatus={pipeline.current.programStatus}></ProgramStatus>
           {/snippet}
