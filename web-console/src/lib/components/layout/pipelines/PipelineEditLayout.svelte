@@ -279,7 +279,7 @@ example = "1.0"`
       {#if drawer.isMobileDrawer}
         <button
           onclick={() => (drawer.value = !drawer.value)}
-          class="fd fd-book-marked btn-icon flex text-[24px] preset-tonal-surface"
+          class="fd fd-book-marked btn-icon flex text-[20px] preset-tonal-surface"
           aria-label="Open extras drawer"
         >
         </button>
@@ -398,7 +398,7 @@ example = "1.0"`
                     <span class="hidden sm:inline">
                       {text}
                     </span>
-                    <div class="{icon} text-[24px] {value.value ? 'text-primary-500' : ''}"></div>
+                    <div class="{icon} text-[20px] {value.value ? 'text-primary-500' : ''}"></div>
                   </button>
                 {/if}
               {/each}

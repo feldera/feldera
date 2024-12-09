@@ -20,7 +20,7 @@
 </script>
 
 <button
-  class="fd fd-settings btn btn-icon text-[24px] preset-tonal-surface"
+  class="fd fd-settings btn btn-icon text-[20px] preset-tonal-surface"
   onclick={() => (globalDialog.dialog = pipelineConfigurationsDialog)}
   aria-label="Pipeline actions"
 ></button>

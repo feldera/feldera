@@ -62,7 +62,7 @@
 <div class="group flex flex-nowrap overflow-hidden pr-8 pt-0.5 sm:pr-16">
   <button
     aria-label="expand"
-    class="bg-red flex w-full max-w-8 justify-start text-[24px] group-hover:text-surface-400-600 hover:group-hover:text-surface-950-50 {expanded
+    class="bg-red flex w-full max-w-8 justify-start text-[20px] group-hover:text-surface-400-600 hover:group-hover:text-surface-950-50 {expanded
       ? 'text-transparent'
       : 'text-surface-400-600'}"
     onclick={() => {
@@ -89,7 +89,7 @@
     <button
       class:text-transparent={isLast}
       class:pointer-events-none={isLast}
-      class="fd fd-trash-2 self-start p-2 text-[24px]"
+      class="fd fd-trash-2 self-start p-2 text-[20px]"
       aria-label="delete"
       onclick={onDelete}
     ></button>

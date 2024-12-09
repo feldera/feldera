@@ -9,7 +9,7 @@
     <div
       class="mx-auto flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-error-50-950 sm:mx-0 sm:h-10 sm:w-10"
     >
-      <div class="fd fd-triangle-alert text-[24px] text-error-500"></div>
+      <div class="fd fd-triangle-alert text-[20px] text-error-500"></div>
     </div>
     <div class="mt-3 text-center sm:ml-4 sm:mt-0 sm:text-left">
       <h3 class="text-base font-semibold leading-6 text-surface-900-100" id="modal-title">

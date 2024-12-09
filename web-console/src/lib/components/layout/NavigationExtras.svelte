@@ -94,8 +94,8 @@
       class="flex h-10 flex-nowrap items-center gap-4 rounded p-2 hover:preset-tonal-surface"
       {...item.openInNewTab ? { target: '_blank', rel: 'noreferrer' } : undefined}
     >
-      <item.icon class="{item.class} text-[24px]" />
-      <!-- <div class="{item.class} text-[24px]"></div> -->
+      <item.icon class="{item.class} text-[20px]" />
+      <!-- <div class="{item.class} text-[20px]"></div> -->
       <span class="">{item.title}</span>
     </a>
   {/each}

@@ -91,7 +91,7 @@
   )
 
   const buttonClass = 'btn gap-0'
-  const iconClass = 'text-[24px]'
+  const iconClass = 'text-[20px]'
   const shortClass = 'w-9'
   const longClass = 'w-32 sm:w-36 justify-between pl-2 text-sm sm:text-base'
   const basicBtnColor = 'preset-filled-surface-800-200'
