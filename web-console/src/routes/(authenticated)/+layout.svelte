@@ -75,6 +75,7 @@
   >
     <div class="relative my-2 mt-4">
       <CreatePipelineButton
+        btnClass="preset-filled-surface-50-950"
         onSuccess={() => {
           rightDrawer.value = false
         }}

@@ -292,15 +292,17 @@
 {@render codeEditor(textEditor, statusBar, isReadOnly)}
 {#snippet textEditor()}
   <div class="flex h-full flex-col">
-    <div class="flex flex-wrap items-center">
-      {#each files as file}
-        {@render fileTab(
-          file.name,
-          () => (currentFileName = file.name),
-          file.name === currentFileName
-        )}
-      {/each}
+    <div class="flex flex-row-reverse flex-wrap items-end">
       {@render toolBarEnd?.({ saveFile: _saveFile })}
+      <div class="mr-auto flex flex-nowrap items-center justify-end">
+        {#each files as file}
+          {@render fileTab(
+            file.name,
+            () => (currentFileName = file.name),
+            file.name === currentFileName
+          )}
+        {/each}
+      </div>
     </div>
     <div class="relative flex-1">
       <div class="absolute h-full w-full">

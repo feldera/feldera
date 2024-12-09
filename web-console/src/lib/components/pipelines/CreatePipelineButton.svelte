@@ -2,7 +2,7 @@
   import PipelineNameInput from '$lib/components/pipelines/PipelineNameInput.svelte'
   let {
     class: _class,
-    btnClass = 'preset-filled-primary-500',
+    btnClass,
     onSuccess
   }: { class?: string; btnClass?: string; onSuccess?: () => void } = $props()
 </script>

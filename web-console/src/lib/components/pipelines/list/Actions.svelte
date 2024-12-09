@@ -15,6 +15,7 @@
   import { goto } from '$app/navigation'
   import { base } from '$app/paths'
   import Tooltip from '$lib/components/common/Tooltip.svelte'
+  import PipelineConfigurationsPopup from '$lib/components/layout/pipelines/PipelineConfigurationsPopup.svelte'
 
   let {
     pipeline,
@@ -55,6 +56,7 @@
     _spacer_long,
     _spinner,
     _status_spinner,
+    _configurations,
     _configureProgram,
     _configureResources
   }
@@ -87,7 +89,9 @@
   const buttonClass = 'btn gap-0'
   const iconClass = 'text-[24px]'
   const shortClass = 'w-9'
-  const longClass = 'w-36 justify-between pl-2'
+  const longClass = 'w-32 sm:w-36 justify-between pl-2 text-sm sm:text-base'
+  const basicBtnColor = 'preset-filled-surface-800-200'
+  const importantBtnColor = 'preset-filled-primary-500'
 </script>
 
 {#snippet deleteDialog()}
@@ -103,15 +107,17 @@
   ></DeleteDialog>
 {/snippet}
 
-<div class={'flex flex-nowrap gap-4 ' + _class}>
+<div class={'flex flex-nowrap gap-2 sm:gap-4 ' + _class}>
   {#each active as name}
     {@render actions[name]()}
   {/each}
+  {@render _configurations()}
+  {@render _delete()}
 </div>
 
 {#snippet _delete()}
   <button
-    class="{buttonClass} {shortClass} fd fd-trash-2 bg-surface-50-950 {iconClass}"
+    class="{buttonClass} {shortClass} fd fd-trash-2 preset-filled-error-50-950 {iconClass}"
     onclick={() => (globalDialog.dialog = deleteDialog)}
   >
   </button>
@@ -124,7 +130,7 @@
   <button
     aria-label={action(false)}
     class:disabled={unsavedChanges}
-    class="{buttonClass} {longClass} preset-filled-surface-900-100"
+    class="{buttonClass} {longClass} {importantBtnColor}"
     onclick={async (e) => {
       const _action = action(e.ctrlKey || e.shiftKey || e.metaKey)
       const pipelineName = pipeline.current.name
@@ -160,7 +166,7 @@
 {/snippet}
 {#snippet _start_disabled()}
   <div class="h-9">
-    <button class="{buttonClass} {longClass} disabled preset-filled-surface-900-100">
+    <button class="{buttonClass} {longClass} disabled {importantBtnColor}">
       <span class="fd fd-play {iconClass}"></span>
       Start
       <span></span>
@@ -181,7 +187,7 @@
 {/snippet}
 {#snippet _pause()}
   <button
-    class="{buttonClass} {longClass} bg-surface-50-950"
+    class="{buttonClass} {longClass} {basicBtnColor}"
     onclick={() => {
       const pipelineName = pipeline.current.name
       postPipelineAction(pipelineName, 'pause').then(() => {
@@ -197,7 +203,7 @@
 {/snippet}
 {#snippet _shutdown()}
   <button
-    class="{buttonClass} {longClass} bg-surface-50-950"
+    class="{buttonClass} {longClass} {basicBtnColor}"
     onclick={() => {
       const pipelineName = pipeline.current.name
       postPipelineAction(pipelineName, 'shutdown').then(() => {
@@ -245,7 +251,7 @@
 {#snippet _configureResources()}
   <button
     onclick={() => (globalDialog.dialog = resourcesDialog)}
-    class="{buttonClass} {shortClass} fd fd-sliders-horizontal bg-surface-50-950 {iconClass}"
+    class="{buttonClass} {shortClass} fd fd-sliders-horizontal {basicBtnColor} {iconClass}"
   >
   </button>
   {#if pipelineBusy}
@@ -257,7 +263,7 @@
 {#snippet _configureProgram()}
   <button
     onclick={() => (globalDialog.dialog = compilationDialog)}
-    class="{buttonClass} {shortClass} fd fd-settings bg-surface-50-950 {iconClass}"
+    class="{buttonClass} {shortClass} fd fd-settings {basicBtnColor} {iconClass}"
   >
   </button>
   {#if pipelineBusy}
@@ -265,6 +271,9 @@
       Stop the pipeline to edit configuration
     </Tooltip>
   {/if}
+{/snippet}
+{#snippet _configurations()}
+  <PipelineConfigurationsPopup {pipeline} {pipelineBusy}></PipelineConfigurationsPopup>
 {/snippet}
 {#snippet _spacer_short()}
   <div class={shortClass}></div>
@@ -276,7 +285,7 @@
   <div class="gc gc-loader-alt pointer-events-none h-9 w-9 animate-spin !text-[36px]"></div>
 {/snippet}
 {#snippet _status_spinner()}
-  <button class="{buttonClass} {longClass} pointer-events-none bg-surface-50-950">
+  <button class="{buttonClass} {longClass} pointer-events-none {basicBtnColor}">
     <span class="gc gc-loader-alt animate-spin {iconClass}"></span>
     <span></span>
   </button>
