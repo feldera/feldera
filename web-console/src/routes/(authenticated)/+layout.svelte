@@ -46,7 +46,7 @@
       <PipelinesList bind:pipelines={pipelines.pipelines}></PipelinesList>
     </div>
   </Drawer> -->
-  <div class="flex h-full w-full flex-col">
+  <div class="flex h-full w-full flex-col max-w-[3200px] place-self-center">
     {@render children()}
   </div>
   {#if isTablet.current}
