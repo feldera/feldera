@@ -20,7 +20,7 @@
     disabled?: boolean
   } = $props()
   const theme = useSkeletonTheme()
-  const mode = useDarkMode()
+  const darkMode = useDarkMode()
   let value = $state(json)
   $effect(() => {
     value = json
@@ -52,7 +52,7 @@
       options={{
         fontFamily: theme.config.monospaceFontFamily,
         fontSize: editorFontSize.value,
-        theme: mode.darkMode.value === 'dark' ? 'feldera-dark' : 'feldera-light',
+        theme: darkMode.current === 'dark' ? 'feldera-dark' : 'feldera-light',
         automaticLayout: true,
         lineNumbersMinChars: 2,
         overviewRulerLanes: 0,

@@ -39,6 +39,8 @@
   import CreatePipelineButton from '$lib/components/pipelines/CreatePipelineButton.svelte'
   import PipelineList from '$lib/components/pipelines/List.svelte'
   import { usePipelineList } from '$lib/compositions/pipelines/usePipelineList.svelte'
+  import { useDrawer } from '$lib/compositions/layout/useDrawer.svelte'
+  import NavigationExtrasPopup from '$lib/components/layout/NavigationExtrasPopup.svelte'
 
   let {
     preloaded,
@@ -179,6 +181,7 @@ example = "1.0"`
   let saveFile = $state(() => {})
 
   const isTablet = useIsTablet()
+  const drawer = useDrawer()
 
   const pipelineList = usePipelineList(preloaded)
   let pipelineListPane = $state<PaneAPI>()
@@ -200,6 +203,14 @@ example = "1.0"`
 </script>
 
 {#snippet pipelineActions(props?: { class: string })}
+  <PipelineActions
+    class={props?.class}
+    {pipeline}
+    onDeletePipeline={handleDeletePipeline}
+    pipelineBusy={editDisabled}
+    unsavedChanges={downstreamChanged}
+    onActionSuccess={handleActionSuccess}
+  ></PipelineActions>
   <div class={props?.class}>
     <EditorOptionsPopup></EditorOptionsPopup>
   </div>
@@ -213,43 +224,47 @@ example = "1.0"`
       onDeletePipeline={handleDeletePipeline}
     ></PipelineToolbarMenu>
   </div>
-  <PipelineActions
-    class={props?.class}
-    {pipeline}
-    onDeletePipeline={handleDeletePipeline}
-    pipelineBusy={editDisabled}
-    unsavedChanges={downstreamChanged}
-    onActionSuccess={handleActionSuccess}
-  ></PipelineActions>
 {/snippet}
 
 <div class="flex h-full w-full flex-col">
   <AppHeader>
-    <div class="flex flex-col gap-x-4 gap-y-1 2xl:flex-row-reverse">
-      <PipelineStatus class="mt-0 lg:-mt-6 2xl:mt-0" status={pipeline.current.status}
-      ></PipelineStatus>
-      <PipelineBreadcrumbs
-        breadcrumbs={[
-          ...(isTablet.current
-            ? []
-            : [
-                {
-                  text: 'Home',
-                  href: `${base}/`
-                }
-              ]),
-          {
-            text: pipelineName
-          }
-        ]}
-      ></PipelineBreadcrumbs>
-    </div>
+    {#snippet afterStart()}
+      <div class="flex flex-col gap-x-4 gap-y-1 2xl:flex-row-reverse">
+        <PipelineStatus class="mt-0 lg:-mt-6 2xl:mt-0" status={pipeline.current.status}
+        ></PipelineStatus>
+        <PipelineBreadcrumbs
+          breadcrumbs={[
+            ...(isTablet.current
+              ? []
+              : [
+                  {
+                    text: 'Home',
+                    href: `${base}/`
+                  }
+                ]),
+            {
+              text: pipelineName
+            }
+          ]}
+        ></PipelineBreadcrumbs>
+      </div>
+    {/snippet}
     {#snippet beforeEnd()}
       {@render pipelineActions({ class: 'hidden lg:flex' })}
       {#if !isTablet.current}
         <div class="relative">
           <CreatePipelineButton></CreatePipelineButton>
         </div>
+      {/if}
+      {#if drawer.isMobileDrawer}
+        <button
+          onclick={() => (drawer.value = !drawer.value)}
+          class="fd fd-menu btn-icon flex text-[24px] preset-tonal-surface"
+          aria-label="Open extras drawer"
+        >
+        </button>
+      {:else}
+        <NavigationExtrasPopup></NavigationExtrasPopup>
       {/if}
     {/snippet}
   </AppHeader>
