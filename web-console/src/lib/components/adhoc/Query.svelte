@@ -102,7 +102,7 @@
   }}
 >
   <div class="w-full">
-    <div class="flex max-w-[1000px] flex-col rounded border p-2">
+    <div class="flex max-w-[1000px] flex-col rounded border p-2 border-surface-100-900">
       <div class="flex w-full flex-col gap-2">
         <textarea
           bind:value={query}
