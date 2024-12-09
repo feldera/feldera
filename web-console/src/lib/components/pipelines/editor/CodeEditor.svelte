@@ -108,7 +108,7 @@
     statusBarCenter?: Snippet
     statusBarEnd?: Snippet<[downstreamChanged: boolean]>
     toolBarEnd?: Snippet<[{ saveFile: () => void }]>
-    fileTab: Snippet<[text: string, onclick: () => void, isCurrent: boolean]>
+    fileTab: Snippet<[text: string, onclick: () => void, isCurrent: boolean, isSaved: boolean]>
     downstreamChanged?: boolean
     saveFile?: () => void
   } = $props()
@@ -125,7 +125,8 @@
   }
   let isReadOnly = $derived(editDisabled || isReadonlyProperty(file.access, 'current'))
 
-  let filePath = $derived(path + '/' + file.name)
+  const getFilePath = (file: { name: string }) => path + '/' + file.name
+  let filePath = $derived(getFilePath(file))
   let previousFilePath = $state<string | undefined>(undefined)
 
   $effect.pre(() => {
@@ -299,7 +300,8 @@
           {@render fileTab(
             file.name,
             () => (currentFileName = file.name),
-            file.name === currentFileName
+            file.name === currentFileName,
+            !(openFiles[getFilePath(file)]?.sync.downstreamChanged ?? false)
           )}
         {/each}
       </div>
