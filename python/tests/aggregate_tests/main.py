@@ -128,6 +128,9 @@ from tests.aggregate_tests.test_array_some import *  # noqa: F403
 from tests.aggregate_tests.test_array_max import *  # noqa: F403
 from tests.aggregate_tests.test_array_min import *  # noqa: F403
 from tests.aggregate_tests.test_map_tbl import *  # noqa: F403
+from tests.aggregate_tests.test_map_arg_max import *  # noqa: F403
+from tests.aggregate_tests.test_map_arg_min import *  # noqa: F403
+from tests.aggregate_tests.test_map_arr_agg import *  # noqa: F403
 from tests.aggregate_tests.test_map_count import *  # noqa: F403
 from tests.aggregate_tests.test_map_count_col import *  # noqa: F403
 from tests.aggregate_tests.test_map_max import *  # noqa: F403
