@@ -363,7 +363,7 @@
 {/snippet}
 
 {#snippet statusBar()}
-  <div class="flex h-9 flex-nowrap gap-2">
+  <div class="flex h-9 flex-nowrap gap-3">
     <!-- <PipelineEditorStatusBar
       {autoSavePipeline}
       downstreamChanged={openFiles[filePath].sync.downstreamChanged}
