@@ -53,7 +53,7 @@
           To: "opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
       -->
         <div
-          class="relative transform overflow-hidden overflow-y-auto rounded-lg text-left shadow-xl transition-all bg-surface-50-950 sm:my-8 sm:w-full sm:max-w-lg"
+          class="bg-white-black relative transform overflow-hidden overflow-y-auto rounded-container text-left shadow-xl transition-all scrollbar sm:my-8 sm:w-full sm:max-w-2xl"
           role="presentation"
           onclick={(e) => {
             e.stopPropagation()

@@ -19,6 +19,8 @@
   import { useDarkMode } from '$lib/compositions/useDarkMode.svelte'
   import AvailableActions from '$lib/components/pipelines/table/AvailableActions.svelte'
   import AppHeader from '$lib/components/layout/AppHeader.svelte'
+  import NavigationExtras from '$lib/components/layout/NavigationExtras.svelte'
+  import { useDrawer } from '$lib/compositions/layout/useDrawer.svelte'
 
   preloadCode(`${base}/pipelines/*`).then(() => preloadCode(`${base}/demos/`))
 
@@ -51,9 +53,27 @@
   let showSuggestedDemos = useLocalStorage('home/hideSuggestedDemos', true)
   let { darkMode } = useDarkMode()
   let selectedPipelines = $state([]) as string[]
+  const drawer = useDrawer()
 </script>
 
-<AppHeader></AppHeader>
+<AppHeader>
+  {#snippet beforeEnd()}
+    {#if drawer.isMobileDrawer}
+      <button
+        onclick={() => (drawer.value = !drawer.value)}
+        class="fd fd-menu btn-icon flex text-[24px] preset-tonal-surface"
+        aria-label="Open extras drawer"
+      >
+      </button>
+    {:else}
+      <NavigationExtras></NavigationExtras>
+      <div class="relative">
+        <CreatePipelineButton class="max-w-64" btnClass="preset-filled-surface-50-950"
+        ></CreatePipelineButton>
+      </div>
+    {/if}
+  {/snippet}
+</AppHeader>
 <div class="h-full overflow-y-auto scrollbar">
   <div class="flex flex-col gap-8 p-2 pt-0 md:p-8 md:pt-0">
     {#if !welcomed.value}
@@ -66,7 +86,7 @@
             class="w-1/2 bg-gradient-to-tr from-orange-300 via-amber-50 to-amber-50 dark:from-orange-700 dark:via-amber-950 dark:to-amber-950"
           ></div>
         </div>
-        {#if darkMode.value === 'dark'}
+        {#if darkMode === 'dark'}
           <FelderaLogomarkDark class="hidden h-full max-h-28 sm:inline"></FelderaLogomarkDark>
         {:else}
           <FelderaLogomarkLight class="hidden h-full max-h-28 sm:inline"></FelderaLogomarkLight>

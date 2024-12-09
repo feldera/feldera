@@ -1,26 +1,26 @@
 <script lang="ts">
   import { deleteApiKey, getApiKeys } from '$lib/services/pipelineManager'
   import { asyncReadable } from '@square/svelte-store'
-  import CreateApiKeyMenu from './CreateApiKeyForm.svelte'
   import { useGlobalDialog } from '$lib/compositions/useGlobalDialog.svelte'
   import DeleteDialog, { deleteDialogProps } from '$lib/components/dialogs/DeleteDialog.svelte'
+  import NewApiKeyForm from '$lib/components/apiKey/NewApiKeyForm.svelte'
 
-  const apiKeys = asyncReadable([], getApiKeys)
+  const apiKeys = asyncReadable([], getApiKeys, { reloadable: true })
 
   const globalDialog = useGlobalDialog()
   let thisDialog = globalDialog.dialog
 </script>
 
-<div class="flex flex-col">
-  <div class="sticky top-0 flex flex-col gap-4 p-4 bg-surface-50-950">
-    <div class="h5 font-normal">API keys</div>
-
-    <button
-      class="btn w-full preset-outlined-primary-500"
-      onclick={() => (globalDialog.dialog = createAiKeyDialog)}
-    >
-      Generate new key
-    </button>
+<div class="flex h-fit max-h-[90vh] flex-col sm:p-4">
+  <div class="bg-white-black sticky top-0 flex flex-col gap-4 p-4">
+    <div class="flex flex-nowrap justify-between">
+      <div class="h5 font-medium">Manage API keys</div>
+      <button
+        class="fd fd-x btn btn-icon text-[20px]"
+        aria-label="Close"
+        onclick={() => (globalDialog.dialog = null)}
+      ></button>
+    </div>
   </div>
   <div class="flex flex-col gap-2 p-4 pt-0">
     {#each $apiKeys as key}
@@ -49,10 +49,16 @@
       No generated API keys
     {/each}
   </div>
+  <NewApiKeyForm
+    onSuccess={() => {
+      apiKeys.reload?.()
+      console.log('zzzz')
+    }}
+  ></NewApiKeyForm>
+  <!-- <button
+    class="btn w-full preset-outlined-primary-500"
+    onclick={() => (globalDialog.dialog = createAiKeyDialog)}
+  >
+    Generate new key
+  </button> -->
 </div>
-
-{#snippet createAiKeyDialog()}
-  <div class="h-96">
-    <CreateApiKeyMenu onClose={() => (globalDialog.dialog = thisDialog)}></CreateApiKeyMenu>
-  </div>
-{/snippet}

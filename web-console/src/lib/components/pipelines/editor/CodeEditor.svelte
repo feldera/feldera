@@ -261,7 +261,7 @@
   })
 
   let conflictWidgetRef: HTMLElement = $state(undefined!)
-  const mode = useDarkMode()
+  const darkMode = useDarkMode()
   const theme = useSkeletonTheme()
 </script>
 
@@ -334,7 +334,7 @@
               'feldera-dark',
               'feldera-light-disabled',
               'feldera-light'
-            ][+(mode.darkMode.value === 'light') * 2 + +!isReadOnly],
+            ][+(darkMode.current === 'light') * 2 + +!isReadOnly],
             automaticLayout: true,
             lineNumbersMinChars: 3,
             ...isMonacoEditorDisabled(isReadOnly),

@@ -1,12 +1,16 @@
 <script lang="ts">
   import PipelineNameInput from '$lib/components/pipelines/PipelineNameInput.svelte'
-  let { class: _class, onSuccess }: { class?: string; onSuccess?: () => void } = $props()
+  let {
+    class: _class,
+    btnClass = 'preset-filled-primary-500',
+    onSuccess
+  }: { class?: string; btnClass?: string; onSuccess?: () => void } = $props()
 </script>
 
 <PipelineNameInput inputClass="input h-9 {_class}" {onSuccess}>
   {#snippet createButton(onclick)}
     <div class="flex justify-center">
-      <button class="btn preset-filled-primary-500" {onclick}>
+      <button class="btn {btnClass}" {onclick}>
         <span class="fd fd fd-plus text-2xl"></span>
         New Pipeline
       </button>

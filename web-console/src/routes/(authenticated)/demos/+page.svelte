@@ -27,7 +27,11 @@
   let demosType = $state<(typeof typeLabels)[number]>('All')
 </script>
 
-<AppHeader><PipelineBreadcrumbs {breadcrumbs}></PipelineBreadcrumbs></AppHeader>
+<AppHeader>
+  {#snippet afterStart()}
+    <PipelineBreadcrumbs {breadcrumbs}></PipelineBreadcrumbs>
+  {/snippet}
+</AppHeader>
 <div class="px-2 pb-5 md:px-8">
   <Segment
     bind:value={demosType}
