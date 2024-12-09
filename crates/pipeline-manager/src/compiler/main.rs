@@ -6,7 +6,7 @@ use crate::compiler::rust_compiler::{
 use crate::compiler::sql_compiler::{
     perform_sql_compilation, sql_compiler_task, SqlCompilationError,
 };
-use crate::compiler::util::recreate_dir;
+use crate::compiler::util::{recreate_dir, validate_is_sha256_checksum};
 use crate::config::{CommonConfig, CompilerConfig};
 use crate::db::storage_postgres::StoragePostgres;
 use crate::db::types::common::Version;
@@ -33,36 +33,8 @@ fn decode_url_encoded_parameter(
         None => Err(ManagerError::from(ApiError::MissingUrlEncodedParam {
             param,
         })),
-        Some(checksum) => Ok(checksum.to_string()),
+        Some(value) => Ok(value.to_string()),
     }
-}
-
-/// Validates the provided string is a hex-encoded SHA256 checksum.
-fn validate_is_sha256_checksum(s: &str) -> Result<(), ManagerError> {
-    if s.len() != 64 {
-        return Err(ApiError::InvalidChecksumParam {
-            value: s.to_string(),
-            error: format!("{} characters long instead of expected 64", s.len()),
-        }
-        .into());
-    };
-    for c in s.chars() {
-        if !c.is_ascii_digit()
-            && c != 'a'
-            && c != 'b'
-            && c != 'c'
-            && c != 'd'
-            && c != 'e'
-            && c != 'f'
-        {
-            return Err(ApiError::InvalidChecksumParam {
-                value: s.to_string(),
-                error: format!("character '{c}' is not hexadecimal (0-9, a-f)"),
-            }
-            .into());
-        }
-    }
-    Ok(())
 }
 
 /// Retrieves the binary executable.
@@ -99,8 +71,18 @@ async fn get_binary(
                 error: e.to_string(),
             })?,
         );
-    validate_is_sha256_checksum(&source_checksum)?;
-    validate_is_sha256_checksum(&integrity_checksum)?;
+    validate_is_sha256_checksum(&source_checksum).map_err(|e| {
+        ManagerError::from(ApiError::InvalidChecksumParam {
+            value: source_checksum.to_string(),
+            error: e,
+        })
+    })?;
+    validate_is_sha256_checksum(&integrity_checksum).map_err(|e| {
+        ManagerError::from(ApiError::InvalidChecksumParam {
+            value: integrity_checksum.to_string(),
+            error: e,
+        })
+    })?;
 
     // Form file path
     let binary_file_path = config
@@ -265,4 +247,78 @@ pub async fn compiler_main(
     let _ = join!(sql_task, rust_task, http_server);
     error!("Compiler task threads all exited unexpectedly");
     Ok(())
+}
+
+#[cfg(test)]
+mod test {
+    use crate::api::error::ApiError;
+    use crate::compiler::main::{
+        create_working_directory_if_not_exists, decode_url_encoded_parameter,
+    };
+    use crate::config::CompilerConfig;
+    use crate::db::types::program::CompilationProfile;
+    use crate::error::ManagerError;
+    use tokio::fs;
+
+    #[test]
+    fn decoding_url_encoded_parameter() {
+        assert!(matches!(
+                decode_url_encoded_parameter("example", Some("val1")),
+                Ok(s) if s == "val1"
+        ));
+        assert!(matches!(
+            decode_url_encoded_parameter("example", None),
+            Err(ManagerError::ApiError {
+                api_error: ApiError::MissingUrlEncodedParam {
+                    param
+                }
+            }) if param == "example"
+        ));
+    }
+
+    #[tokio::test]
+    async fn creating_working_directory() {
+        // Two directories:
+        // - <temp>/existing which is created in advance with a file in it
+        // - <temp/non-existing which is not created beforehand
+        let tempdir = tempfile::tempdir().unwrap();
+        let path = tempdir.path().to_path_buf();
+        let existing_path = path.join("existing");
+        fs::create_dir(&existing_path).await.unwrap();
+        let existing_file = existing_path.join("example.txt");
+        fs::write(&existing_file, "abc".as_bytes()).await.unwrap();
+        let non_existing_path = path.join("non-existing");
+
+        // If it already exists, it should not empty it
+        assert!(existing_path.is_dir());
+        assert!(existing_file.is_file());
+        create_working_directory_if_not_exists(&CompilerConfig {
+            compiler_working_directory: existing_path.to_string_lossy().to_string(),
+            compilation_profile: CompilationProfile::Optimized,
+            sql_compiler_home: "".to_string(),
+            dbsp_override_path: "".to_string(),
+            precompile: false,
+            binary_ref_host: "".to_string(),
+            binary_ref_port: 0,
+        })
+        .await
+        .unwrap();
+        assert!(existing_path.is_dir());
+        assert!(existing_file.is_file());
+
+        // If it does not exist, it should create a new empty one
+        assert!(!non_existing_path.is_dir());
+        create_working_directory_if_not_exists(&CompilerConfig {
+            compiler_working_directory: non_existing_path.to_string_lossy().to_string(),
+            compilation_profile: CompilationProfile::Optimized,
+            sql_compiler_home: "".to_string(),
+            dbsp_override_path: "".to_string(),
+            precompile: false,
+            binary_ref_host: "".to_string(),
+            binary_ref_port: 0,
+        })
+        .await
+        .unwrap();
+        assert!(non_existing_path.is_dir());
+    }
 }

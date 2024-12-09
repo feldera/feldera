@@ -96,7 +96,7 @@ pub struct SqlCompilerMessage {
     end_line_number: usize,
     end_column: usize,
     warning: bool,
-    error_type: String,
+    pub(crate) error_type: String,
     message: String,
     snippet: Option<String>,
 }

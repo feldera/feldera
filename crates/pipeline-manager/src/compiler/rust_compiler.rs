@@ -2,7 +2,7 @@ use crate::common_error::CommonError;
 use crate::compiler::util::{
     cleanup_specific_directories, cleanup_specific_files, copy_file, create_new_file,
     create_new_file_with_content, read_file_content, read_file_content_bytes, recreate_dir,
-    recreate_file, recreate_file_with_content, truncate_sha256_checksum, CleanupDecision,
+    recreate_file_with_content, truncate_sha256_checksum, CleanupDecision,
 };
 use crate::config::{CommonConfig, CompilerConfig};
 use crate::db::error::DBError;
@@ -49,7 +49,7 @@ const COMPILATION_CHECK_INTERVAL: Duration = Duration::from_millis(250);
 const CLEANUP_INTERVAL: Duration = Duration::from_secs(60);
 
 /// Rust compilation task that wakes up periodically.
-/// Sleeps inbetween cycles which affects the response time of Rust compilation.
+/// Sleeps inbetween ticks which affects the response time of Rust compilation.
 /// Note that the logic in this task assumes only one is run at a time.
 /// This task cannot fail, and any internal errors are caught and written to log if need-be.
 pub async fn rust_compiler_task(
@@ -464,7 +464,6 @@ pub async fn perform_rust_compilation(
             target_file_path.display()
         );
     }
-    recreate_file(&target_file_path).await?;
 
     // Copy file from binaries directory to pipeline-binaries directory
     copy_file(&binary_file_path, &target_file_path).await?;
@@ -784,7 +783,6 @@ async fn call_compiler(
                 );
             }
         }
-        recreate_file(&target_file_path).await?;
 
         // Copy binary from Cargo target profile directory to the binaries directory
         copy_file(&source_file_path, &target_file_path).await?;
