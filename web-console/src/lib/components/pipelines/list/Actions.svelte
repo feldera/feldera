@@ -23,6 +23,7 @@
     pipelineBusy,
     unsavedChanges,
     onActionSuccess,
+    saveFile,
     class: _class = ''
   }: {
     pipeline: {
@@ -34,6 +35,7 @@
     pipelineBusy: boolean
     unsavedChanges: boolean
     onActionSuccess?: (pipelineName: string, action: PipelineAction | 'start_paused_start') => void
+    saveFile: () => void
     class?: string
   } = $props()
 
@@ -58,14 +60,15 @@
     _status_spinner,
     _configurations,
     _configureProgram,
-    _configureResources
+    _configureResources,
+    _saveFile
   }
 
   const active = $derived(
     match(pipeline.current.status)
       .returnType<(keyof typeof actions)[]>()
-      .with('Shutdown', () => ['_spacer_long', '_start_paused'])
-      .with('Queued', () => ['_spacer_long', '_start_pending'])
+      .with('Shutdown', () => ['_saveFile', '_start_paused'])
+      .with('Queued', () => ['_saveFile', '_start_pending'])
       .with('Starting up', () => ['_shutdown', '_status_spinner'])
       .with('Initializing', () => ['_shutdown', '_status_spinner'])
       .with('Running', () => ['_shutdown', '_pause'])
@@ -75,12 +78,12 @@
       .with('ShuttingDown', () => ['_status_spinner', '_spacer_long'])
       .with({ PipelineError: P.any }, () => ['_shutdown', '_spacer_long'])
       .with('Compiling SQL', 'SQL compiled', 'Compiling binary', () => [
-        '_spacer_long',
+        '_saveFile',
         '_start_pending'
       ])
-      .with('Unavailable', () => ['_spinner', '_shutdown', '_spacer_long'])
+      .with('Unavailable', () => ['_shutdown', '_status_spinner'])
       .with({ SqlError: P.any }, { RustError: P.any }, { SystemError: P.any }, () => [
-        '_spacer_long',
+        '_saveFile',
         '_start_error'
       ])
       .exhaustive()
@@ -216,6 +219,22 @@
     Shutdown
     <span></span>
   </button>
+{/snippet}
+{#snippet _saveFile()}
+  <div>
+    <button
+      class="{buttonClass} {longClass} {basicBtnColor}"
+      class:disabled={!unsavedChanges}
+      onclick={saveFile}
+    >
+      <span class="fd fd-save {iconClass}"></span>
+      {unsavedChanges ? 'Save' : 'Saved'}
+      <span></span>
+    </button>
+  </div>
+  <Tooltip class="bg-white-black z-20 rounded text-surface-950-50" placement="top">
+    Ctrl + S
+  </Tooltip>
 {/snippet}
 
 {#snippet pipelineResourcesDialog(dialogTitle: string, field: keyof typeof pipeline.current)}

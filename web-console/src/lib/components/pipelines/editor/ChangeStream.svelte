@@ -74,7 +74,7 @@
         bind:clientHeight={_height.current}
         bind:this={ref.current}
       >
-        <table style:height>
+        <table style:height class="">
           <tbody>
             {@render children()}
           </tbody>
