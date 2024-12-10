@@ -42,7 +42,7 @@ public class FunctionDocumentation {
         writer.println();
         List<FunctionDescription> sorted = new ArrayList<>();
         sorted.addAll(CalciteFunctions.INSTANCE.getDescriptions());
-        sorted.addAll(PredefinedFunctions.INSTANCE.getDescriptions());
+        sorted.addAll(CustomFunctions.getInitialDescriptions());
         sorted.sort(Comparator.comparing(FunctionDescription::functionName));
         Map<String, String> fileContents = new HashMap<>();
 

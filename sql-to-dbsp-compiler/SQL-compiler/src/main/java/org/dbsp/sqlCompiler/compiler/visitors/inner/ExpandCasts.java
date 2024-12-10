@@ -152,7 +152,10 @@ public class ExpandCasts extends InnerRewriteVisitor {
                     return new DBSPVecLiteral(type, false);
                 }
                 DBSPVariablePath var = sourceVecType.getElementType().ref().var();
-                DBSPExpression convert = var.deref().cast(type.getElementType()).closure(var);
+                DBSPExpression convert = var.deref();
+                if (convert.getType().is(DBSPTypeBaseType.class))
+                    convert = convert.applyClone().applyCloneIfNeeded();
+                convert = convert.cast(type.getElementType()).closure(var);
                 source = new DBSPBinaryExpression(source.getNode(),
                         new DBSPTypeVec(type.getElementType(), sourceType.mayBeNull),
                         DBSPOpcode.ARRAY_CONVERT, source.borrow(), convert);
