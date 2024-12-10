@@ -108,20 +108,20 @@ public class DateFormatsTests extends SqlIoTest {
                 SELECT format_date('%A %d %B %Y', '0001-01-01') as valid_date;
                 valid_date
                 ------------
-                 Monday 01 January 1
+                 Monday 01 January 0001
                 (1 row)
 
                 SELECT format_date('%A %d %B %Y', '0001-02-28') as valid_date;
                 valid_date
                 ------------
-                 Wednesday 28 February 1
+                 Wednesday 28 February 0001
                 (1 row)
 
                 SELECT format_date('%A %d %B %Y', '2009-01-01') as valid_date;
                 valid_date
                 -------------
                  Thursday 01 January 2009
-                (1 row)""", false);
+                (1 row)""");
     }
 
     @Test
