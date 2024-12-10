@@ -25,6 +25,7 @@ use actix_web::{
 use chrono::{DateTime, Utc};
 use feldera_types::config::{PipelineConfig, RuntimeConfig};
 use feldera_types::error::ErrorResponse;
+use feldera_types::program_schema::SqlIdentifier;
 use log::info;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
@@ -575,15 +576,12 @@ pub(crate) async fn post_pipeline_input_connector_action(
         return Err(ApiError::InvalidConnectorAction { action }.into());
     }
 
-    // Formulate and URL encode endpoint name to account for special characters.
-    // Only tables names surrounded by double quotes are case-sensitive.
-    // Case-insensitive table names are converted to lowercase.
-    let final_table_name = if table_name.starts_with("\"") && table_name.ends_with("\"") {
-        table_name.clone()
-    } else {
-        table_name.to_lowercase()
-    };
-    let endpoint_name = format!("{final_table_name}.{connector_name}");
+    // The table name provided by the user is interpreted as
+    // a SQL identifier to account for case (in-)sensitivity
+    let actual_table_name = SqlIdentifier::from(&table_name).name();
+    let endpoint_name = format!("{actual_table_name}.{connector_name}");
+
+    // URL encode endpoint name to account for special characters
     let encoded_endpoint_name = urlencoding::encode(&endpoint_name).to_string();
 
     // Forward the action request to the pipeline

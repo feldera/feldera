@@ -63,6 +63,7 @@ use crate::{
     db::types::pipeline::PipelineStatus,
 };
 use anyhow::{bail, Result as AnyResult};
+use feldera_types::program_schema::SqlIdentifier;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -2413,11 +2414,7 @@ async fn basic_orchestration_info(
             input["endpoint_name"]
                 == format!(
                     "{}.{connector_name}",
-                    if table_name.starts_with("\"") && table_name.ends_with("\"") {
-                        table_name.to_string()
-                    } else {
-                        table_name.to_lowercase()
-                    }
+                    SqlIdentifier::from(&table_name).name()
                 )
         })
         .unwrap()
@@ -2567,6 +2564,7 @@ async fn pipeline_orchestration_errors() {
         "/v0/pipelines/test/tables/numbers1/connectors/c1/pause",
         "/v0/pipelines/test/tables/Numbers1/connectors/c1/pause",
         "/v0/pipelines/test/tables/NUMBERS1/connectors/c1/pause",
+        "/v0/pipelines/test/tables/%22numbers1%22/connectors/c1/pause",
     ] {
         assert_eq!(
             config.post_no_body(endpoint).await.status(),
@@ -2597,6 +2595,7 @@ async fn pipeline_orchestration_errors() {
         "/v0/pipelines/test/tables/numbers1/connectors/C1/start", // Connector not found (case-sensitive)
         "/v0/pipelines/test/tables/numbers2/connectors/c1/start", // Table not found
         "/v0/pipelines/test/tables/numbers2/connectors/c2/start", // Table and connector not found
+        "/v0/pipelines/test/tables/%22Numbers1%22/connectors/c1/pause", // Table not found (case-sensitive due to double quotes)
     ] {
         assert_eq!(
             config.post_no_body(endpoint).await.status(),
