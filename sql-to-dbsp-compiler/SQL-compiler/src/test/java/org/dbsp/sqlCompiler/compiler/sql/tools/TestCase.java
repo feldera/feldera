@@ -3,6 +3,7 @@ package org.dbsp.sqlCompiler.compiler.sql.tools;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.ir.DBSPFunction;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
@@ -25,7 +26,10 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeFP;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVoid;
+import org.dbsp.util.ExplicitShuffle;
+import org.dbsp.util.IdShuffle;
 import org.dbsp.util.Linq;
+import org.dbsp.util.Shuffle;
 import org.dbsp.util.TableValue;
 import org.dbsp.util.Utilities;
 
@@ -40,13 +44,13 @@ public class TestCase {
     public final String name;
     /** Name of the Java test that is being run. */
     public final String javaTestName;
-    public final BaseSQLTests.CompilerCircuitStream ccs;
+    public final CompilerCircuitStream ccs;
     /** Non-null if the test is supposed to panic.  In that case this
      * contains the expected panic message. */
     @Nullable
     public final String message;
 
-    TestCase(String name, String javaTestName, BaseSQLTests.CompilerCircuitStream ccs, @Nullable String message) {
+    TestCase(String name, String javaTestName, CompilerCircuitStream ccs, @Nullable String message) {
         this.name = name;
         this.javaTestName = javaTestName;
         this.ccs = ccs;
@@ -75,9 +79,24 @@ public class TestCase {
         list.add(streams);
 
         int pair = 0;
+        Shuffle inputShuffle = new IdShuffle();
+        Shuffle outputShuffle = new IdShuffle();
+        List<String> inputOrder = this.ccs.stream.inputTables;
+        if (!inputOrder.isEmpty()) {
+            List<String> inputs = Linq.map(Linq.list(this.ccs.circuit.getInputTables()), ProgramIdentifier::name);
+            assert inputOrder.size() == inputs.size() :
+                "Change has " + inputOrder.size() + " inputs, but circuit has " + inputs.size();
+            inputShuffle = ExplicitShuffle.computePermutation(inputOrder, inputs);
+        }
+        List<String> outputOrder = this.ccs.stream.outputTables;
+        if (!outputOrder.isEmpty()) {
+            List<String> outputs = Linq.map(Linq.list(this.ccs.circuit.getOutputViews()), ProgramIdentifier::name);
+            outputShuffle = ExplicitShuffle.computePermutation(outputOrder, outputs);
+        }
+
         for (InputOutputChange changes : this.ccs.stream.changes) {
-            Change inputs = changes.getInputs().simplify(this.ccs.compiler);
-            Change outputs = changes.getOutputs().simplify(this.ccs.compiler);
+            Change inputs = changes.getInputs().shuffle(inputShuffle).simplify(this.ccs.compiler);
+            Change outputs = changes.getOutputs().shuffle(outputShuffle).simplify(this.ccs.compiler);
 
             TableValue[] tableValues = new TableValue[inputs.getSetCount()];
             for (int i = 0; i < inputs.getSetCount(); i++)
@@ -141,10 +160,9 @@ public class TestCase {
                             converted[index] = var.deref().field(index).applyCloneIfNeeded();
                         }
                     }
-                } else {
-                    // TODO: handle Vec<> values with FP values inside.
-                    // Currently we don't have any tests with this case.
                 }
+                // else: TODO: handle Vec<> values with FP values inside.
+                // Currently we don't have any tests with this case.
 
                 DBSPExpression expected = outputs.getSet(i);
                 DBSPExpression actual = new DBSPApplyExpression("read_output_handle", DBSPTypeAny.getDefault(),
