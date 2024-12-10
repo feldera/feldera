@@ -2,18 +2,27 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.dot.ToDotEdgesVisitor;
 import org.dbsp.sqlCompiler.compiler.backend.dot.ToDot;
 import org.dbsp.sqlCompiler.compiler.backend.dot.ToDotNodesVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.MonotoneExpression;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.AppendOnly;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitGraph;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitTransform;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.Graph;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.OptimizeWithGraph;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.ExpandOperators;
 import org.dbsp.util.IWritesLogs;
 import org.dbsp.util.IndentStream;
+import org.dbsp.util.graph.Port;
+
+import java.util.Comparator;
+import java.util.HashSet;
+import java.util.LinkedList;
+import java.util.Set;
+import java.util.function.Function;
 
 /** Implements a dataflow analysis for detecting values that change monotonically,
  * and inserts nodes that prune the internal circuit state where possible. */
@@ -51,6 +60,28 @@ public class MonotoneAnalyzer implements CircuitTransform, IWritesLogs {
         this.compiler = compiler;
     }
 
+    /** Compute and return the set of operators that receive an input directly or
+     * indirectly from the ERROR_TABLE_NAME (which only feeds the error view at this point). */
+    private Set<DBSPOperator> reachableFromError(DBSPCircuit circuit, CircuitGraph graph) {
+        LinkedList<DBSPOperator> queue = new LinkedList<>();
+        DBSPOperator errorTable = circuit.getInput(DBSPCompiler.ERROR_TABLE_NAME);
+        if (errorTable != null)
+            queue.add(errorTable);
+
+        Set<DBSPOperator> result = new HashSet<>();
+        while (!queue.isEmpty()) {
+            DBSPOperator operator = queue.removeFirst();
+            if (result.contains(operator))
+                continue;
+            result.add(operator);
+            for (Port<DBSPOperator> successor : graph.getSuccessors(operator)) {
+                queue.add(successor.node());
+            }
+        }
+
+        return result;
+    }
+
     @Override
     public DBSPCircuit apply(DBSPCircuit circuit) {
         final boolean debug = this.getDebugLevel() >= 1;
@@ -62,13 +93,23 @@ public class MonotoneAnalyzer implements CircuitTransform, IWritesLogs {
         if (this.compiler.options.languageOptions.incrementalize) {
             SeparateIntegrators separate = new SeparateIntegrators(this.compiler, graph.getGraphs());
             circuit = separate.apply(circuit);
+            // Recompute graph
+            graph.apply(circuit);
         }
+
         // Find relations which are append-only
         AppendOnly appendOnly = new AppendOnly(this.compiler);
         appendOnly.apply(circuit);
         // Identify uses of primary and foreign keys
         KeyPropagation keyPropagation = new KeyPropagation(this.compiler);
         keyPropagation.apply(circuit);
+
+        CircuitGraph outerGraph = graph.getGraphs().getGraph(circuit);
+        Set<DBSPOperator> reachableFromError = this.reachableFromError(circuit, outerGraph);
+        // Sort the nodes in the internal array so that the nodes that depend on
+        // the error view come after all other nodes.
+        Function<Boolean, Integer> bi = b -> b ? 1 : -1;
+        circuit.sortOperators(Comparator.comparing(o -> bi.apply(reachableFromError.contains(o))));
 
         if (debug)
             ToDot.dump(this.compiler, "original.png", details, "png", circuit);
@@ -78,7 +119,6 @@ public class MonotoneAnalyzer implements CircuitTransform, IWritesLogs {
                 appendOnly.appendOnly::contains,
                 keyPropagation.joins::get);
         DBSPCircuit expanded = expander.apply(circuit);
-        // ToDot.dump(this.reporter, "blowup.png", details, "png", expanded);
 
         Monotonicity monotonicity = new Monotonicity(this.compiler);
         expanded = monotonicity.apply(expanded);
@@ -89,7 +129,8 @@ public class MonotoneAnalyzer implements CircuitTransform, IWritesLogs {
 
         InsertLimiters limiters = new InsertLimiters(
                 this.compiler, expanded, monotonicity.info, expander.expansion,
-                keyPropagation.joins::get);
+                keyPropagation.joins::get, reachableFromError);
+
         // Notice that we apply the limiters to the original circuit, not to the expanded circuit!
         DBSPCircuit result = limiters.apply(circuit);
         if (debug)

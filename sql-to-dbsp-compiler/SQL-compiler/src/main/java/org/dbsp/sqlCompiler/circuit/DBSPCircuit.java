@@ -48,6 +48,7 @@ import org.dbsp.util.graph.Port;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -72,10 +73,22 @@ public final class DBSPCircuit extends DBSPNode
         this.metadata = metadata;
     }
 
+    /** Use a stable sort to resort the operators in the circuit.
+     * The sort must produce a legal topological order. */
+    public void sortOperators(Comparator<DBSPOperator> comparator) {
+        this.allOperators.sort(comparator);
+    }
+
     /** @return the names of the input tables.
      * The order of the tables corresponds to the inputs of the generated circuit. */
     public Set<ProgramIdentifier> getInputTables() {
         return this.sourceOperators.keySet();
+    }
+
+    /** @return the names of the output views.
+     * The order of the tables corresponds to the outputs of the generated circuit. */
+    public Set<ProgramIdentifier> getOutputViews() {
+        return this.sinkOperators.keySet();
     }
 
     public int getOutputCount() {

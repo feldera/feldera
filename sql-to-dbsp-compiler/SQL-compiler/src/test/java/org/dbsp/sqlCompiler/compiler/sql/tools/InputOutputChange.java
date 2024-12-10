@@ -24,4 +24,9 @@ public class InputOutputChange {
     public Change getOutputs() {
         return this.outputs;
     }
+
+    public boolean compatible(InputOutputChange change) {
+        return this.inputs.compatible(change.inputs) &&
+                this.outputs.compatible(change.outputs);
+    }
 }

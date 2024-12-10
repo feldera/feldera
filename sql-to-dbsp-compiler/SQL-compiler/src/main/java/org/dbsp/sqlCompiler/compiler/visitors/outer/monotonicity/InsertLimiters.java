@@ -107,6 +107,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
 /** As a result of the Monotonicity analysis, this pass inserts new operators:
  * - apply operators that compute the bounds that drive the controlled filters
@@ -145,12 +146,15 @@ public class InsertLimiters extends CircuitCloneVisitor {
     // Debugging aid, normally 'true'
     static final boolean INSERT_RETAIN_KEYS = true;
     final List<OutputPort> errorStreams;
+    /** These operators use the error view as a source */
+    final Set<DBSPOperator> reachableFromError;
 
     public InsertLimiters(DBSPCompiler compiler,
                           DBSPCircuit expandedCircuit,
                           Monotonicity.MonotonicityInformation expansionMonotoneValues,
                           Map<DBSPSimpleOperator, OperatorExpansion> expandedInto,
-                          NullableFunction<DBSPBinaryOperator, KeyPropagation.JoinDescription> joinInformation) {
+                          NullableFunction<DBSPBinaryOperator, KeyPropagation.JoinDescription> joinInformation,
+                          Set<DBSPOperator> reachableFromError) {
         super(compiler, false);
         this.expandedCircuit = expandedCircuit;
         this.expansionMonotoneValues = expansionMonotoneValues;
@@ -158,6 +162,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
         this.joinInformation = joinInformation;
         this.bound = new HashMap<>();
         this.errorStreams = new ArrayList<>();
+        this.reachableFromError = reachableFromError;
     }
 
     void markBound(OutputPort operator, OutputPort bound) {
@@ -1364,7 +1369,13 @@ public class InsertLimiters extends CircuitCloneVisitor {
                 dataArg.cast(new DBSPTypeVariant(false))).closure(
                         controlArg.asParameter(), dataParam, valArg.asParameter(), weightArg.asParameter());
         DBSPControlledKeyFilterOperator result = new DBSPControlledKeyFilterOperator(node, closure, error, data, control);
-        this.errorStreams.add(result.getOutput(1));
+
+        OutputPort errorPort = result.getOutput(1);
+        if (!this.reachableFromError.contains(data.operator)) {
+            // This would create a cycle, so skip.
+            this.errorStreams.add(errorPort);
+            // TODO: connect through a delay.
+        }
         return result;
     }
 
@@ -1598,6 +1609,32 @@ public class InsertLimiters extends CircuitCloneVisitor {
 
     @Override
     public void postorder(DBSPViewOperator operator) {
+        if (operator.viewName.equals(DBSPCompiler.ERROR_VIEW_NAME)) {
+            // Unhook from the error table and hook input to all the
+            // error streams generated so far.
+            // Since in a prior pass we have reordered the operators
+            // such that this view comes after all other operators,
+            // we know that all possible error streams have at this point
+            // been already computed.
+            OutputPort collected;
+            if (this.errorStreams.isEmpty()) {
+                DBSPSimpleOperator c = new DBSPConstantOperator(operator.getNode(),
+                        DBSPZSetLiteral.emptyWithElementType(operator.getOutputZSetElementType()), false, false);
+                this.addOperator(c);
+                collected = c.outputPort();
+            } else if (this.errorStreams.size() > 1) {
+                DBSPSumOperator sum = new DBSPSumOperator(operator.getNode(), this.errorStreams);
+                this.addOperator(sum);
+                collected = sum.outputPort();
+            } else {
+                collected = this.errorStreams.get(0);
+            }
+            DBSPSimpleOperator newView = operator.withInputs(Linq.list(collected), false);
+            this.map(operator, newView);
+            // No lateness to propagate for error view
+            return;
+        }
+
         if (operator.hasLateness()) {
             ReplacementExpansion expanded = this.getReplacement(operator);
             // Treat like a source operator
@@ -1617,11 +1654,6 @@ public class InsertLimiters extends CircuitCloneVisitor {
 
     @Override
     public void postorder(DBSPSinkOperator operator) {
-        if (operator.viewName.equals(DBSPCompiler.ERROR_VIEW_NAME)) {
-            // Do not insert now, it will be inserted in endVisit.
-            return;
-        }
-
         int monotoneFieldIndex = operator.metadata.emitFinalColumn;
         if (monotoneFieldIndex >= 0) {
             ReplacementExpansion expanded = this.getReplacement(operator);
@@ -1698,31 +1730,5 @@ public class InsertLimiters extends CircuitCloneVisitor {
                     "'emit_final' annotation", operator.getNode());
         }
         super.postorder(operator);
-    }
-
-    @Override
-    public void postorder(DBSPCircuit circuit) {
-        DBSPSinkOperator sink = circuit.getSink(DBSPCompiler.ERROR_VIEW_NAME);
-        if (sink != null) {
-            // sink can be null if the circuit is empty, as generated when compiling an INSERT statement.
-            OutputPort collected;
-            if (this.errorStreams.isEmpty()) {
-                DBSPSimpleOperator c = new DBSPConstantOperator(circuit.getNode(),
-                        DBSPZSetLiteral.emptyWithElementType(sink.getOutputZSetElementType()), false, false);
-                this.addOperator(c);
-                collected = c.outputPort();
-            } else if (this.errorStreams.size() > 1) {
-                DBSPSumOperator sum = new DBSPSumOperator(circuit.getNode(), this.errorStreams);
-                this.addOperator(sum);
-                collected = sum.outputPort();
-            } else {
-                collected = this.errorStreams.get(0);
-            }
-            DBSPSimpleOperator newSink = sink.withInputs(Linq.list(collected), false);
-            // Cannot call map directly
-            this.addOperator(newSink);
-            Utilities.putNew(this.remap, sink.outputPort(), newSink.outputPort());
-        }
-        super.postorder(circuit);
     }
 }
