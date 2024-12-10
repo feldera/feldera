@@ -1319,8 +1319,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
         extend.addAnnotation(new Waterline());
         this.addOperator(extend);
 
-        if (operator != replacement)
-            this.markBound(operator.outputPort(), extend.outputPort());
+        this.markBound(operator.outputPort(), extend.outputPort());
         if (operator != expansion)
             this.markBound(expansion.outputPort(), extend.outputPort());
         return this.createControlledKeyFilter(
