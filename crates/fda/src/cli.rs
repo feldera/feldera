@@ -361,15 +361,17 @@ pub enum PipelineAction {
         #[arg(value_hint = ValueHint::Other, add = ArgValueCompleter::new(pipeline_names))]
         name: String,
     },
-    /// Control an endpoint of a pipeline.
-    Endpoint {
+    /// Control an input connector belonging to a table of a pipeline.
+    TableConnector {
         /// The name of the pipeline.
         #[arg(value_hint = ValueHint::Other, add = ArgValueCompleter::new(pipeline_names))]
         name: String,
-        /// The name of the pipeline endpoint.
-        endpoint_name: String,
+        /// The name of the table.
+        table_name: String,
+        /// The name of the connector.
+        connector_name: String,
         #[command(subcommand)]
-        action: EndpointAction,
+        action: ConnectorAction,
     },
     /// Obtains a heap profile for a pipeline.
     ///
@@ -503,7 +505,7 @@ pub enum ProgramAction {
 }
 
 #[derive(Subcommand)]
-pub enum EndpointAction {
+pub enum ConnectorAction {
     Start,
     Pause,
 }
