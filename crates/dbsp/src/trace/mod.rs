@@ -432,7 +432,7 @@ where
     type Builder: Builder<Self>;
 
     /// A type used to progressively merge batches.
-    type Merger: Merger<Self::Key, Self::Val, Self::Time, Self::R, Self> + Send + Sync;
+    type Merger: Merger<Self::Key, Self::Val, Self::Time, Self::R, Self>;
 
     /// Assemble an unordered vector of weighted items into a batch.
     #[allow(clippy::type_complexity)]

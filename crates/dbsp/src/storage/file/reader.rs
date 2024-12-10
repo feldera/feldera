@@ -15,7 +15,10 @@ use std::{
     sync::Arc,
 };
 
-use crate::dynamic::{DataTrait, DeserializeDyn, Factory};
+use crate::{
+    dynamic::{DataTrait, DeserializeDyn, Factory},
+    storage::backend::FileReader,
+};
 use binrw::{
     io::{self},
     BinRead, Error as BinError,
@@ -23,7 +26,7 @@ use binrw::{
 use thiserror::Error as ThisError;
 
 use crate::storage::{
-    backend::{ImmutableFileHandle, Storage, StorageError},
+    backend::{Storage, StorageError},
     buffer_cache::{BufferCache, FBuf},
     file::format::{
         DataBlockHeader, FileTrailerColumn, IndexBlockHeader, NodeType, Varint, VERSION_NUMBER,
@@ -416,7 +419,7 @@ impl InnerDataBlock {
 
     fn new(file: &ImmutableFileRef, node: &TreeNode) -> Result<Arc<Self>, Error> {
         file.cache.read_data_block(
-            file.file_handle.as_ref().unwrap(),
+            file.file_handle.as_ref().unwrap().as_ref(),
             node.location.offset,
             node.location.size,
         )
@@ -735,7 +738,7 @@ impl InnerIndexBlock {
 
     fn new(file: &ImmutableFileRef, node: &TreeNode) -> Result<Arc<Self>, Error> {
         file.cache.read_index_block(
-            file.file_handle.as_ref().unwrap(),
+            file.file_handle.as_ref().unwrap().as_ref(),
             node.location.offset,
             node.location.size,
         )
@@ -1036,18 +1039,24 @@ impl Column {
 }
 
 /// Encapsulates storage and a file handle.
-#[derive(Debug)]
 pub(crate) struct ImmutableFileRef {
     path: PathBuf,
     cache: Arc<BufferCache<FileCacheEntry>>,
-    file_handle: Option<Arc<ImmutableFileHandle>>,
+    file_handle: Option<Arc<dyn FileReader>>,
 }
 
+impl Debug for ImmutableFileRef {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        f.debug_struct("ImmutableFileRef")
+            .field("path", &self.path)
+            .finish()
+    }
+}
 impl Drop for ImmutableFileRef {
     fn drop(&mut self) {
         let ifh = self.file_handle.take().unwrap();
-        if let Some(file_handle) = Arc::into_inner(ifh) {
-            let _ = self.cache.evict(file_handle);
+        if Arc::strong_count(&ifh) == 1 {
+            self.cache.evict(ifh.as_ref());
         }
     }
 }
@@ -1055,13 +1064,13 @@ impl Drop for ImmutableFileRef {
 impl ImmutableFileRef {
     pub(crate) fn new(
         cache: &Arc<BufferCache<FileCacheEntry>>,
-        file_handle: ImmutableFileHandle,
+        file_handle: Arc<dyn FileReader>,
         path: PathBuf,
     ) -> Self {
         Self {
             cache: Arc::clone(cache),
             path,
-            file_handle: Some(Arc::new(file_handle)),
+            file_handle: Some(file_handle),
         }
     }
 
@@ -1075,7 +1084,7 @@ impl ImmutableFileRef {
 
     pub fn mark_for_checkpoint(&self) {
         if let Some(file_handle) = self.file_handle.as_ref() {
-            self.cache.mark_for_checkpoint(file_handle);
+            file_handle.mark_for_checkpoint();
         } else {
             log::error!("file_handle was None?")
         }
@@ -1144,10 +1153,10 @@ where
         factories: &[&AnyFactories],
         file: Arc<ImmutableFileRef>,
     ) -> Result<Self, Error> {
-        let file_size = file.cache.get_size(file.file_handle.as_ref().unwrap())?;
+        let file_size = file.file_handle.as_ref().unwrap().get_size()?;
 
         let file_trailer = file.cache.read_file_trailer_block(
-            file.file_handle.as_ref().unwrap(),
+            file.file_handle.as_ref().unwrap().as_ref(),
             file_size - 4096,
             4096,
         )?;
@@ -1202,7 +1211,7 @@ where
     /// fail with an I/O error.
     pub fn empty(cache: &Arc<BufferCache<FileCacheEntry>>) -> Result<Self, Error> {
         let file_handle = cache.create()?;
-        let (file_handle, path) = cache.complete(file_handle)?;
+        let (file_handle, path) = file_handle.complete()?;
         Ok(Self(Arc::new(ReaderInner {
             file: Arc::new(ImmutableFileRef::new(cache, file_handle, path)),
             columns: (0..T::n_columns()).map(|_| Column::empty()).collect(),
@@ -1250,11 +1259,7 @@ where
 
     /// Returns the size of the underlying file in bytes.
     pub fn byte_size(&self) -> Result<u64, Error> {
-        Ok(self
-            .0
-            .file
-            .cache
-            .get_size(self.0.file.file_handle.as_ref().unwrap())?)
+        Ok(self.0.file.file_handle.as_ref().unwrap().get_size()?)
     }
 }
 

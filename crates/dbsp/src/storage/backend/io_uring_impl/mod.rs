@@ -3,12 +3,13 @@
 
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::fs::OpenOptions;
+use std::fs::{File, OpenOptions};
 use std::io::{Error as IoError, ErrorKind};
 use std::mem::ManuallyDrop;
 use std::os::fd::AsRawFd;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::rc::Weak;
+use std::{rc::Rc, sync::Arc};
 
 use feldera_types::config::StorageCacheConfig;
 use io_uring::squeue::Entry;
@@ -16,24 +17,35 @@ use io_uring::{opcode, types::Fd, IoUring};
 use libc::{c_void, iovec};
 use metrics::counter;
 
-use crate::circuit::metrics::{FILES_CREATED, FILES_DELETED};
-use crate::storage::backend::{
-    AtomicIncrementOnlyI64, FileHandle, FileMetaData, ImmutableFileHandle, ImmutableFiles, Storage,
-    IMMUTABLE_FILE_METADATA, NEXT_FILE_HANDLE,
-};
+use crate::circuit::metrics::FILES_CREATED;
+use crate::storage::backend::Storage;
 use crate::storage::buffer_cache::FBuf;
 use crate::storage::init;
 
-use super::{StorageCacheFlags, StorageError};
+use super::posixio_impl::PosixReader;
+use super::{FileId, FileReader, FileWriter, HasFileId, StorageCacheFlags, StorageError};
 
 #[cfg(test)]
 mod tests;
 
 /// Meta-data we keep per file we created.
-struct MutableFileMetaData {
-    /// The file we're writing to.
-    pub file: Arc<FileMetaData>,
+struct IoUringWriter {
+    backend: Rc<RefCell<Inner>>,
 
+    file_id: FileId,
+    path: PathBuf,
+
+    status: Rc<RefCell<WorkStatus>>,
+
+    /// The file we're writing.
+    file: Arc<File>,
+
+    /// Write operation we're currently accumulating.
+    write: VectoredWrite,
+}
+
+#[derive(Default)]
+struct WorkStatus {
     /// Total of the `work` elements in the [`Request`]s that reference this
     /// file within [`Inner::requests`].
     queued_work: u64,
@@ -43,14 +55,141 @@ struct MutableFileMetaData {
     /// is happening for a file other than the one we're currently working on,
     /// so we have to save the error and report it for the correct file.
     error: Option<ErrorKind>,
-
-    /// Write operation we're currently accumulating.
-    write: VectoredWrite,
 }
 
-impl MutableFileMetaData {
+impl IoUringWriter {
+    fn new(backend: Rc<RefCell<Inner>>, file: Arc<File>, path: PathBuf) -> Self {
+        Self {
+            backend,
+            file,
+            file_id: FileId::new(),
+            path,
+            status: Rc::new(RefCell::new(WorkStatus::default())),
+            write: VectoredWrite::default(),
+        }
+    }
     fn error(&self) -> Result<(), IoError> {
-        self.error.map_or(Ok(()), |kind| Err(kind.into()))
+        self.status
+            .borrow()
+            .error
+            .map_or(Ok(()), |kind| Err(kind.into()))
+    }
+
+    /// If this file has any pending writes, submits them for processing.
+    fn flush(&mut self) -> Result<(), IoError> {
+        let write = self.write.take();
+        if write.len == 0 {
+            return Ok(());
+        }
+
+        let iovec = write
+            .buffers
+            .iter()
+            .map(|buf| iovec {
+                iov_base: buf.as_ptr() as *mut c_void,
+                iov_len: buf.len(),
+            })
+            .collect::<Vec<_>>();
+        let entry = opcode::Writev::new(
+            Fd(self.file.as_raw_fd()),
+            iovec.as_ptr(),
+            iovec.len() as u32,
+        )
+        .offset(write.offset)
+        .build();
+
+        self.backend.borrow_mut().submit_request(
+            &self.status,
+            entry,
+            write.len,
+            write.len as i32,
+            RequestResources {
+                iovec,
+                buffers: write.buffers,
+                file: self.file.clone(),
+            },
+        )?;
+        Ok(())
+    }
+
+    /// Blocks until `fd` has no more than `max_queued_work` units of work in
+    /// flight.
+    fn limit_queued_work(&mut self, max_queued_work: u64) -> Result<(), IoError> {
+        loop {
+            self.error()?;
+            if self.status.borrow().queued_work <= max_queued_work {
+                return Ok(());
+            }
+
+            if self.backend.borrow_mut().run_completions() == 0 {
+                self.backend.borrow().io_uring.submit_and_wait(1)?;
+            }
+        }
+    }
+}
+
+impl HasFileId for IoUringWriter {
+    fn file_id(&self) -> FileId {
+        self.file_id
+    }
+}
+
+impl FileWriter for IoUringWriter {
+    fn write_block(&mut self, offset: u64, data: FBuf) -> Result<Arc<FBuf>, StorageError> {
+        let block = Arc::new(data);
+        self.error()?;
+
+        if self.write.append(&block, offset).is_err() {
+            self.flush()?;
+            self.limit_queued_work(4 * 1024 * 1024)?;
+            self.write.append(&block, offset).unwrap();
+        }
+
+        Ok(block)
+    }
+
+    fn complete(mut self: Box<Self>) -> Result<(Arc<dyn FileReader>, PathBuf), StorageError> {
+        // Submit any pending writes and then wait for the writes to complete.
+        //
+        // This has two purposes.  First, it means that, on the read side, we
+        // don't have to be prepared to service uncompleted reads ourselves
+        // through an internal cache lookup (although we could put the
+        // `IO_DRAIN` flag on the first "read" operation as a barrier).
+        //
+        // Second, it ensures that we don't allow reads of data that might
+        // encounter an error before they make it to disk.  This property might
+        // not be important.
+        self.flush()?;
+        self.limit_queued_work(0)?;
+
+        // Submit an `fsync` request for the file.  This ensures that the
+        // metadata (and data, but we probably used `O_DIRECT`) for the file
+        // will be committed "soon".  It also ensures that we can make sure that
+        // everything we've written is on stable storage for the purpose of a
+        // checkpoint (which we don't do yet) simply by waiting for the entire
+        // io_uring to drain.
+        self.backend.borrow_mut().submit_request(
+            &self.status,
+            opcode::Fsync::new(Fd(self.file.as_raw_fd())).build(),
+            0,
+            0,
+            RequestResources {
+                iovec: Vec::new(),
+                buffers: Vec::new(),
+                file: self.file.clone(),
+            },
+        )?;
+        self.limit_queued_work(0)?;
+
+        Ok((
+            Arc::new(PosixReader::new(
+                self.file.clone(),
+                self.file_id,
+                self.path.clone(),
+                false,
+            )),
+            self.path.clone(),
+        ))
     }
 }
 
@@ -110,13 +249,13 @@ struct RequestResources {
 
     /// Needs to be kept until request submission (but it's easier to just keep
     /// it until completion).
-    file: Arc<FileMetaData>,
+    file: Arc<File>,
 }
 
 /// A "write" or "fsync" request passed to the kernel via `io_uring`.
 struct Request {
     /// Handle from `FileHandle`.
-    fd: i64,
+    status: Weak<RefCell<WorkStatus>>,
 
     /// A measure of the amount of work done by this request.  We limit the
     /// total amount of queued work per-file because of the resource cost,
@@ -150,12 +289,6 @@ struct Inner {
     /// Kernel `io_uring` structure.
     io_uring: IoUring,
 
-    /// All files we can read from.
-    immutable_files: Arc<ImmutableFiles>,
-
-    /// Files we're currently writing to on this thread.
-    files: HashMap<i64, MutableFileMetaData>,
-
     /// All requests that have been submitted to `io_uring` and not yet
     /// completed.
     requests: HashMap<u64, Request>,
@@ -166,16 +299,10 @@ struct Inner {
     /// kernel passes them back in completion queue entries to identify the
     /// request that completed.
     next_request_id: u64,
-
-    /// A global counter to get unique identifiers for file-handles.
-    next_file_id: Arc<AtomicIncrementOnlyI64>,
 }
 
 impl Inner {
-    fn new(
-        next_file_id: Arc<AtomicIncrementOnlyI64>,
-        immutable_files: Arc<ImmutableFiles>,
-    ) -> Result<Self, IoError> {
+    fn new() -> Result<Self, IoError> {
         // Create our io_uring.
         //
         // We specify a submission queue size of 1 because the kernel sizes the
@@ -194,16 +321,9 @@ impl Inner {
 
         Ok(Self {
             io_uring,
-            immutable_files,
-            files: HashMap::new(),
             requests: HashMap::new(),
             next_request_id: 0,
-            next_file_id,
         })
-    }
-
-    fn mark_for_checkpoint(&self, fd: &ImmutableFileHandle) {
-        self.immutable_files.disable_drop_deletion(fd.0);
     }
 
     /// Processes all of the entries in the completion queue.
@@ -214,12 +334,12 @@ impl Inner {
         let n = cq.len();
         for entry in cq {
             let request = self.requests.remove(&entry.user_data()).unwrap();
-            if let Some(fm) = self.files.get_mut(&request.fd) {
-                fm.queued_work -= request.work;
+            if let Some(status) = request.status.upgrade() {
+                status.borrow_mut().queued_work -= request.work;
                 if request.expected_result != entry.result()
-                    && matches!(&fm.error, None | Some(ErrorKind::WriteZero))
+                    && matches!(&status.borrow().error, None | Some(ErrorKind::WriteZero))
                 {
-                    fm.error = if entry.result() < 0 {
+                    status.borrow_mut().error = if entry.result() < 0 {
                         Some(IoError::from_raw_os_error(-entry.result()).kind())
                     } else {
                         // Short write.
@@ -238,8 +358,7 @@ impl Inner {
                     }
                 }
             } else {
-                // The file was deleted with `delete_mut` without ever calling
-                // `complete`.
+                // The file was dropped.
             }
             unsafe { request.complete() };
         }
@@ -253,7 +372,7 @@ impl Inner {
     /// before completion.
     fn submit_request(
         &mut self,
-        fd: i64,
+        status: &Rc<RefCell<WorkStatus>>,
         entry: Entry,
         work: u64,
         expected_result: i32,
@@ -269,262 +388,38 @@ impl Inner {
         unsafe { self.io_uring.submission().push(&entry) }.unwrap();
         self.io_uring.submit()?;
 
+        status.borrow_mut().queued_work += work;
         self.requests.insert(
             request_id,
             Request {
-                fd,
+                status: Rc::downgrade(status),
                 work,
                 expected_result,
                 resources: ManuallyDrop::new(resources),
             },
         );
-
-        self.files.get_mut(&fd).unwrap().queued_work += work;
-        Ok(())
-    }
-
-    /// If `fd` has any pending writes, submits them for processing.
-    fn flush(&mut self, fd: i64) -> Result<(), IoError> {
-        let fm = self.files.get_mut(&fd).unwrap();
-        let write = fm.write.take();
-        if write.len == 0 {
-            return Ok(());
-        }
-
-        let file = fm.file.clone();
-        let iovec = write
-            .buffers
-            .iter()
-            .map(|buf| iovec {
-                iov_base: buf.as_ptr() as *mut c_void,
-                iov_len: buf.len(),
-            })
-            .collect::<Vec<_>>();
-        let entry = opcode::Writev::new(
-            Fd(file.file.as_raw_fd()),
-            iovec.as_ptr(),
-            iovec.len() as u32,
-        )
-        .offset(write.offset)
-        .build();
-
-        self.submit_request(
-            fd,
-            entry,
-            write.len,
-            write.len as i32,
-            RequestResources {
-                iovec,
-                buffers: write.buffers,
-                file,
-            },
-        )?;
-        Ok(())
-    }
-
-    /// Blocks until `fd` has no more than `max_queued_work` units of work in
-    /// flight.
-    fn limit_queued_work(&mut self, fd: i64, max_queued_work: u64) -> Result<(), IoError> {
-        loop {
-            let file = self.files.get(&fd).unwrap();
-            file.error()?;
-            if file.queued_work <= max_queued_work {
-                return Ok(());
-            }
-
-            if self.run_completions() == 0 {
-                self.io_uring.submit_and_wait(1)?;
-            }
-        }
-    }
-
-    fn create_named(
-        &mut self,
-        path: PathBuf,
-        cache: StorageCacheConfig,
-    ) -> Result<FileHandle, StorageError> {
-        let file = OpenOptions::new()
-            .create_new(true)
-            .write(true)
-            .read(true)
-            .cache_flags(&cache)
-            .open(&path)?;
-
-        let file_counter = self.next_file_id.increment();
-        self.files.insert(
-            file_counter,
-            MutableFileMetaData {
-                file: FileMetaData::new(file, path, true),
-                queued_work: 0,
-                error: None,
-                write: VectoredWrite::default(),
-            },
-        );
-        counter!(FILES_CREATED).increment(1);
-
-        Ok(FileHandle(file_counter))
-    }
-
-    fn open(
-        &mut self,
-        path: PathBuf,
-        cache: StorageCacheConfig,
-    ) -> Result<ImmutableFileHandle, StorageError> {
-        let file = OpenOptions::new()
-            .read(true)
-            .cache_flags(&cache)
-            .open(&path)?;
-
-        let file_counter = self.next_file_id.increment();
-
-        let imf = FileMetaData::new(file, path, false);
-        self.immutable_files.insert(file_counter, imf);
-
-        Ok(ImmutableFileHandle(file_counter))
-    }
-
-    fn write_block(
-        &mut self,
-        fd: &FileHandle,
-        offset: u64,
-        block: Arc<FBuf>,
-    ) -> Result<Arc<FBuf>, StorageError> {
-        let fm = self.files.get_mut(&fd.0).expect("File state for writing should exist. Accidentally shared a mutable file across threads?");
-        fm.error()?;
-
-        if fm.write.append(&block, offset).is_err() {
-            self.flush(fd.0)?;
-            self.limit_queued_work(fd.0, 4 * 1024 * 1024)?;
-
-            let fm = self.files.get_mut(&fd.0).unwrap();
-            fm.write.append(&block, offset).unwrap();
-        }
-
-        Ok(block)
-    }
-
-    fn do_complete(&mut self, fd: i64) -> Result<(ImmutableFileHandle, PathBuf), StorageError> {
-        // Submit any pending writes and then wait for the writes to complete.
-        //
-        // This has two purposes.  First, it means that, on the read side, we
-        // don't have to be prepared to service uncompleted reads ourselves
-        // through an internal cache lookup (although we could put the
-        // `IO_DRAIN` flag on the first "read" operation as a barrier).
-        //
-        // Second, it ensures that we don't allow reads of data that might
-        // encounter an error before they make it to disk.  This property might
-        // not be important.
-        self.flush(fd)?;
-        self.limit_queued_work(fd, 0)?;
-
-        {
-            let fm = self.files.get(&fd).unwrap();
-            // Submit an `fsync` request for the file.
-            // This ensures that the metadata (and data, but we probably
-            // used `O_DIRECT`) for the file will be committed "soon".  It also
-            // ensures that we can make sure that everything we've written is on
-            // stable storage for the purpose of a checkpoint (which we don't do
-            // yet) simply by waiting for the entire io_uring to drain.
-            self.submit_request(
-                fd,
-                opcode::Fsync::new(Fd(fm.file.file.as_raw_fd())).build(),
-                0,
-                0,
-                RequestResources {
-                    iovec: Vec::new(),
-                    buffers: Vec::new(),
-                    file: fm.file.clone(),
-                },
-            )?;
-            self.limit_queued_work(fd, 0)?;
-        }
-
-        let fm = self.files.remove(&fd).unwrap();
-        let path = fm.file.path.clone();
-        self.immutable_files.insert(fd, fm.file);
-
-        Ok((ImmutableFileHandle(fd), path))
-    }
-
-    fn complete(&mut self, fd: i64) -> Result<(ImmutableFileHandle, PathBuf), StorageError> {
-        let retval = self.do_complete(fd);
-        self.files.remove(&fd);
-        retval
-    }
-
-    fn read_block(&self, fd: i64, offset: u64, size: usize) -> Result<Arc<FBuf>, StorageError> {
-        let mut buffer = FBuf::with_capacity(size);
-
-        let fm = self.immutable_files.get(fd).unwrap();
-        match buffer.read_exact_at(&fm.file, offset, size) {
-            Ok(()) => Ok(Arc::new(buffer)),
-            Err(e) => Err(e.into()),
-        }
-    }
-
-    fn delete_mut(&mut self, fd: FileHandle) -> Result<(), StorageError> {
-        self.files.remove(&fd.0).unwrap();
-        counter!(FILES_DELETED).increment(1);
-        Ok(())
-    }
-
-    fn checkpoint(&mut self) -> Result<(), StorageError> {
-        let fds = self.files.keys().copied().collect::<Vec<_>>();
-        for fd in fds {
-            self.flush(fd)?;
-        }
-        while !self.requests.is_empty() {
-            if self.run_completions() == 0 {
-                self.io_uring.submit_and_wait(1)?;
-            }
-        }
         Ok(())
     }
 }
 
 /// State of the backend needed to satisfy the storage APIs.
 pub struct IoUringBackend {
-    inner: RefCell<Inner>,
+    inner: Rc<RefCell<Inner>>,
     cache: StorageCacheConfig,
     /// Directory in which we keep the files.
     base: PathBuf,
 }
 
 impl IoUringBackend {
-    /// Instantiates a new backend.
-    ///
-    /// ## Parameters
-    /// - `base`: Directory in which we keep the files.
-    /// - `next_file_id`: A counter to get unique identifiers for file-handles.
-    ///   Note that in case we use a global buffer cache, this counter should be
-    ///   shared among all instances of the backend.
-    pub fn new<P: AsRef<Path>>(
-        base: P,
-        cache: StorageCacheConfig,
-        next_file_id: Arc<AtomicIncrementOnlyI64>,
-        immutable_files: Arc<ImmutableFiles>,
-    ) -> Result<Self, IoError> {
+    /// Instantiates a new backend in directory `base` with cache behavior
+    /// `cache`.
+    pub fn new<P: AsRef<Path>>(base: P, cache: StorageCacheConfig) -> Result<Self, IoError> {
         init();
         Ok(Self {
             base: base.as_ref().to_path_buf(),
             cache,
-            inner: RefCell::new(Inner::new(next_file_id, immutable_files)?),
+            inner: Rc::new(RefCell::new(Inner::new()?)),
         })
-    }
-
-    /// See [`IoUringBackend::new`]. This function is a convenience function
-    /// that creates a new backend with global unique file-handle counter.
-    pub fn with_base<P: AsRef<Path>>(base: P, cache: StorageCacheConfig) -> Result<Self, IoError> {
-        Self::new(
-            base,
-            cache,
-            NEXT_FILE_HANDLE
-                .get_or_init(|| Arc::new(Default::default()))
-                .clone(),
-            IMMUTABLE_FILE_METADATA
-                .get_or_init(|| Arc::new(Default::default()))
-                .clone(),
-        )
     }
 
     /// Returns the directory in which the backend creates files.
@@ -534,67 +429,33 @@ impl IoUringBackend {
 
     /// Flushes all data and waits for it to reach stable storage.
     pub fn checkpoint(&self) -> Result<(), StorageError> {
-        self.inner.borrow_mut().checkpoint()
+        // There is nothing to do because the current implementation always
+        // flushes data on `complete`, and any data that is in an uncompleted
+        // file can't be read back anyway.
+        Ok(())
     }
 }
 
 impl Storage for IoUringBackend {
-    fn create_named(&self, name: &Path) -> Result<FileHandle, StorageError> {
-        self.inner
-            .borrow_mut()
-            .create_named(self.base.join(name), self.cache)
+    fn create_named(&self, name: &Path) -> Result<Box<dyn FileWriter>, StorageError> {
+        let path = self.base.join(name);
+        let file = OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .read(true)
+            .cache_flags(&self.cache)
+            .open(&path)?;
+
+        counter!(FILES_CREATED).increment(1);
+        Ok(Box::new(IoUringWriter::new(
+            self.inner.clone(),
+            Arc::new(file),
+            path,
+        )))
     }
 
-    fn open(&self, name: &Path) -> Result<ImmutableFileHandle, StorageError> {
-        self.inner
-            .borrow_mut()
-            .open(self.base.join(name), self.cache)
-    }
-
-    fn mark_for_checkpoint(&self, fd: &ImmutableFileHandle) {
-        self.inner.borrow_mut().mark_for_checkpoint(fd);
-    }
-
-    fn delete_mut(&self, fd: FileHandle) -> Result<(), StorageError> {
-        self.inner.borrow_mut().delete_mut(fd)
-    }
-
-    fn write_block(
-        &self,
-        fd: &FileHandle,
-        offset: u64,
-        data: FBuf,
-    ) -> Result<Arc<FBuf>, StorageError> {
-        self.inner
-            .borrow_mut()
-            .write_block(fd, offset, Arc::new(data))
-    }
-
-    fn complete(&self, fd: FileHandle) -> Result<(ImmutableFileHandle, PathBuf), StorageError> {
-        self.inner.borrow_mut().complete(fd.0)
-    }
-
-    fn prefetch(&self, _fd: &ImmutableFileHandle, _offset: u64, _size: usize) {
-        unimplemented!()
-    }
-
-    fn read_block(
-        &self,
-        fd: &ImmutableFileHandle,
-        offset: u64,
-        size: usize,
-    ) -> Result<Arc<FBuf>, StorageError> {
-        self.inner.borrow().read_block(fd.0, offset, size)
-    }
-
-    fn get_size(&self, fd: &ImmutableFileHandle) -> Result<u64, StorageError> {
-        Ok(self
-            .inner
-            .borrow()
-            .immutable_files
-            .get(fd.0)
-            .unwrap()
-            .size())
+    fn open(&self, name: &Path) -> Result<Arc<dyn FileReader>, StorageError> {
+        PosixReader::open(self.base.join(name), self.cache)
     }
 
     fn base(&self) -> PathBuf {

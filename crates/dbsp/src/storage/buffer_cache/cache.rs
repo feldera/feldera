@@ -3,23 +3,16 @@
 //! This is a layer over a storage backend that adds a cache of a
 //! client-provided function of the blocks.
 use std::fmt::Debug;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
-use std::{
-    collections::BTreeMap,
-    ops::Range,
-    path::{Path, PathBuf},
-};
+use std::{collections::BTreeMap, ops::Range};
 
 use crc32c::crc32c;
 
-use crate::storage::backend::Backend;
+use crate::storage::backend::{Backend, FileId, FileReader, FileWriter, Storage};
 use crate::storage::file::reader::{CorruptionError, Error};
-use crate::{
-    storage::backend::{FileHandle, ImmutableFileHandle, Storage, StorageError},
-    storage::buffer_cache::FBuf,
-    Runtime,
-};
+use crate::{storage::backend::StorageError, storage::buffer_cache::FBuf, Runtime};
 
 /// A key for the block cache.
 ///
@@ -31,37 +24,23 @@ use crate::{
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 struct CacheKey {
     /// File being cached.
-    fd: i64,
+    file_id: FileId,
 
     /// Offset in file.
     offset: u64,
 }
 
 impl CacheKey {
+    fn new(file_id: FileId, offset: u64) -> Self {
+        Self { file_id, offset }
+    }
+
     /// Returns a range that would contain all of the blocks for the specified
     /// `fd`.
-    fn fd_range(fd: i64) -> Range<CacheKey> {
-        Self { fd, offset: 0 }..Self {
-            fd: fd + 1,
+    fn file_range(file_id: FileId) -> Range<CacheKey> {
+        Self { file_id, offset: 0 }..Self {
+            file_id: file_id.after(),
             offset: 0,
-        }
-    }
-}
-
-impl From<(&FileHandle, u64)> for CacheKey {
-    fn from(source: (&FileHandle, u64)) -> Self {
-        Self {
-            fd: source.0.into(),
-            offset: source.1,
-        }
-    }
-}
-
-impl From<(&ImmutableFileHandle, u64)> for CacheKey {
-    fn from(source: (&ImmutableFileHandle, u64)) -> Self {
-        Self {
-            fd: source.0.into(),
-            offset: source.1,
         }
     }
 }
@@ -151,17 +130,17 @@ where
         self.check_invariants()
     }
 
-    fn delete_file(&mut self, fd: i64) {
+    fn delete_file(&mut self, file_id: FileId) {
         let offsets: Vec<_> = self
             .cache
-            .range(CacheKey::fd_range(fd))
+            .range(CacheKey::file_range(file_id))
             .map(|(k, v)| (k.offset, v.serial))
             .collect();
         for (offset, serial) in offsets {
             self.lru.remove(&serial).unwrap();
             self.cur_cost -= self
                 .cache
-                .remove(&CacheKey { fd, offset })
+                .remove(&CacheKey::new(file_id, offset))
                 .unwrap()
                 .aux
                 .cost();
@@ -260,7 +239,7 @@ where
 
     pub fn read<F, T>(
         &self,
-        fd: &ImmutableFileHandle,
+        file: &dyn FileReader,
         offset: u64,
         size: usize,
         convert: F,
@@ -268,13 +247,13 @@ where
     where
         F: Fn(&E) -> Result<T, ()>,
     {
-        let key = CacheKey::from((fd, offset));
+        let key = CacheKey::new(file.file_id(), offset);
         if let Some(aux) = self.inner.lock().unwrap().get(key) {
             return convert(aux)
                 .map_err(|_| Error::Corruption(CorruptionError::BadBlockType { offset, size }));
         }
 
-        let block = Self::backend().read_block(fd, offset, size)?;
+        let block = file.read_block(offset, size)?;
         let aux = E::from_read(block, offset, size)?;
         let retval = convert(&aux)
             .map_err(|_| Error::Corruption(CorruptionError::BadBlockType { offset, size }));
@@ -282,18 +261,27 @@ where
         retval
     }
 
-    pub fn write(&self, fd: &FileHandle, offset: u64, mut data: FBuf) -> Result<(), StorageError> {
+    pub fn write(
+        &self,
+        file: &mut dyn FileWriter,
+        offset: u64,
+        mut data: FBuf,
+    ) -> Result<(), StorageError> {
         let checksum = crc32c(&data[4..]).to_le_bytes();
         data[..4].copy_from_slice(checksum.as_slice());
 
-        let data = Self::backend().write_block(fd, offset, data)?;
+        let data = file.write_block(offset, data)?;
         let size = data.len();
         let aux = E::from_write(data, offset, size).unwrap();
         self.inner
             .lock()
             .unwrap()
-            .insert(CacheKey::from((fd, offset)), aux);
+            .insert(CacheKey::new(file.file_id(), offset), aux);
         Ok(())
+    }
+
+    pub fn evict(&self, file: &dyn FileReader) {
+        self.inner.lock().unwrap().delete_file(file.file_id());
     }
 }
 
@@ -301,69 +289,18 @@ impl<E> Storage for BufferCache<E>
 where
     E: CacheEntry,
 {
-    fn create(&self) -> Result<FileHandle, StorageError> {
+    fn create(&self) -> Result<Box<dyn FileWriter>, StorageError> {
         Self::backend().create()
     }
-    fn create_named(&self, name: &Path) -> Result<FileHandle, StorageError> {
+    fn create_named(&self, name: &Path) -> Result<Box<dyn FileWriter>, StorageError> {
         Self::backend().create_named(name)
     }
 
-    fn open(&self, name: &Path) -> Result<ImmutableFileHandle, StorageError> {
+    fn open(&self, name: &Path) -> Result<Arc<dyn FileReader>, StorageError> {
         Self::backend().open(name)
-    }
-
-    fn mark_for_checkpoint(&self, fd: &ImmutableFileHandle) {
-        Self::backend().mark_for_checkpoint(fd);
-    }
-
-    fn delete_mut(&self, fd: FileHandle) -> Result<(), StorageError> {
-        self.inner.lock().unwrap().delete_file((&fd).into());
-        Self::backend().delete_mut(fd)
-    }
-
-    fn evict(&self, fd: ImmutableFileHandle) -> Result<(), StorageError> {
-        self.inner.lock().unwrap().delete_file((&fd).into());
-        Ok(())
     }
 
     fn base(&self) -> PathBuf {
         Self::backend().base()
-    }
-
-    fn write_block(
-        &self,
-        fd: &FileHandle,
-        offset: u64,
-        data: FBuf,
-    ) -> Result<Arc<FBuf>, StorageError> {
-        let data = Self::backend().write_block(fd, offset, data)?;
-        let size = data.len();
-        let aux = E::from_write(data.clone(), offset, size).unwrap();
-        self.inner
-            .lock()
-            .unwrap()
-            .insert(CacheKey::from((fd, offset)), aux);
-        Ok(data)
-    }
-
-    fn complete(&self, fd: FileHandle) -> Result<(ImmutableFileHandle, PathBuf), StorageError> {
-        Self::backend().complete(fd)
-    }
-
-    fn prefetch(&self, fd: &ImmutableFileHandle, offset: u64, size: usize) {
-        Self::backend().prefetch(fd, offset, size)
-    }
-
-    fn read_block(
-        &self,
-        fd: &ImmutableFileHandle,
-        offset: u64,
-        size: usize,
-    ) -> Result<Arc<FBuf>, StorageError> {
-        Self::backend().read_block(fd, offset, size)
-    }
-
-    fn get_size(&self, fd: &ImmutableFileHandle) -> Result<u64, StorageError> {
-        Self::backend().get_size(fd)
     }
 }

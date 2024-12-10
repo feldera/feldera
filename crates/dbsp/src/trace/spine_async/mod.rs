@@ -357,8 +357,10 @@ where
             let state = Arc::clone(&state);
             let idle = Arc::clone(&idle);
             let no_backpressure = Arc::clone(&no_backpressure);
-            let mut mergers = std::array::from_fn(|_| None);
-            Box::new(move || Self::run(&mut mergers, &state, &idle, &no_backpressure))
+            Box::new(|| {
+                let mut mergers = std::array::from_fn(|_| None);
+                Box::new(move || Self::run(&mut mergers, &state, &idle, &no_backpressure))
+            })
         });
         Self {
             state,

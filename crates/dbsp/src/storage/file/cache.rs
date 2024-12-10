@@ -14,7 +14,7 @@ use binrw::{
 use lazy_static::lazy_static;
 
 use crate::storage::{
-    backend::ImmutableFileHandle,
+    backend::FileReader,
     buffer_cache::{BufferCache, CacheEntry, FBuf},
     file::BlockLocation,
 };
@@ -125,32 +125,32 @@ impl BufferCache<FileCacheEntry> {
     /// to `InnerDataBlock`.
     pub(super) fn read_data_block(
         &self,
-        fd: &ImmutableFileHandle,
+        file: &dyn FileReader,
         offset: u64,
         size: usize,
     ) -> Result<Arc<InnerDataBlock>, Error> {
-        self.read(fd, offset, size, FileCacheEntry::as_data_block)
+        self.read(file, offset, size, FileCacheEntry::as_data_block)
     }
 
     /// Reads a `size`-byte block at `offset` in `fd` and returns it converted
     /// to `InnerIndexBlock`.
     pub(super) fn read_index_block(
         &self,
-        fd: &ImmutableFileHandle,
+        file: &dyn FileReader,
         offset: u64,
         size: usize,
     ) -> Result<Arc<InnerIndexBlock>, Error> {
-        self.read(fd, offset, size, FileCacheEntry::as_index_block)
+        self.read(file, offset, size, FileCacheEntry::as_index_block)
     }
 
     /// Reads a `size`-byte file trailer block at `offset` in `fd` and returns
     /// it converted to `FileTrailer`.
     pub(super) fn read_file_trailer_block(
         &self,
-        fd: &ImmutableFileHandle,
+        file: &dyn FileReader,
         offset: u64,
         size: usize,
     ) -> Result<Arc<FileTrailer>, Error> {
-        self.read(fd, offset, size, FileCacheEntry::as_file_trailer)
+        self.read(file, offset, size, FileCacheEntry::as_file_trailer)
     }
 }
