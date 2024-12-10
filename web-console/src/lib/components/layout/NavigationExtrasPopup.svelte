@@ -8,7 +8,7 @@
   {#snippet trigger(onclick)}
     <button
       {onclick}
-      class="fd fd-book-marked btn-icon flex text-[20px] preset-tonal-surface"
+      class="fd fd-message-circle-question btn-icon flex text-[20px] preset-tonal-surface"
       aria-label="Open extras popup"
     >
     </button>

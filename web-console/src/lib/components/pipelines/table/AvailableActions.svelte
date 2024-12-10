@@ -103,7 +103,7 @@
   </button>
 {/snippet}
 {#snippet btnShutdown()}
-  <button class="btn preset-tonal-surface" onclick={() => postPipelinesAction('shutdown')}>
+  <button class="btn preset-tonal-surface" onclick={() => (globalDialog.dialog = shutdownDialog)}>
     <span class="fd fd-square text-[20px]"></span>
     Shutdown
   </button>
@@ -128,6 +128,25 @@
           ? '1 pipeline'
           : selectedPipelines.length.toFixed() + ' pipelines',
       deletePipelines
+    )()}
+    onClose={() => (globalDialog.dialog = null)}
+  ></DeleteDialog>
+{/snippet}
+
+{#snippet shutdownDialog()}
+  <DeleteDialog
+    {...deleteDialogProps(
+      'Shutdown',
+      () =>
+        selectedPipelines.length === 1
+          ? '1 pipeline'
+          : selectedPipelines.length.toFixed() + ' pipelines',
+      () => {
+        return postPipelinesAction('shutdown')
+      },
+      selectedPipelines.length === 1
+      ? 'The internal state of the pipeline will be reset.'
+      : 'The internal state of these pipelines will be reset.'
     )()}
     onClose={() => (globalDialog.dialog = null)}
   ></DeleteDialog>
