@@ -15,12 +15,12 @@
 {#if typeof auth === 'object' && 'logout' in auth}
   <Popup>
     {#snippet trigger(toggle)}
-      <button onclick={toggle} class=" ml-2 flex items-center gap-2 rounded font-semibold">
+      <button onclick={toggle} class="flex items-center gap-2 rounded font-semibold">
         <div class="hidden {compactBreakpoint}block w-2"></div>
         <span class="hidden {compactBreakpoint}block">Logged in</span>
         <div class="hidden {compactBreakpoint}block w-1"></div>
 
-        <div class="fd fd-circle-user btn-icon text-[32px]">
+        <div class="btn fd fd-circle-user btn-icon preset-tonal-surface text-[20px]">
           <div class="hidden {compactBreakpoint}block w-2"></div>
         </div>
       </button>

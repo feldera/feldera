@@ -236,6 +236,7 @@ example = "1.0"`
         ></PipelineStatus>
         <PipelineBreadcrumbs
           class="-ml-3 py-1 pl-3"
+          textClass="text-base sm:text-lg"
           breadcrumbs={[
             ...(isTablet.current
               ? []
@@ -259,9 +260,9 @@ example = "1.0"`
                   goto(newUrl, { replaceState: true })
                 })
               }}
-              class="input -mb-1 -ml-2 mr-2 inline w-64 max-w-full py-0 pl-2 text-xl"
+              class="input -mb-1 -ml-2 mr-2 inline w-64 max-w-full py-0 pl-2 text-base sm:text-lg"
             >
-              <span class="text-xl">
+              <span class="text-base sm:text-lg">
                 {pipeline.current.name}
               </span>
             </DoubleClickInput>
@@ -291,7 +292,7 @@ example = "1.0"`
   <!-- <div class="flex w-full justify-end gap-4 px-2 pb-4 md:px-8 lg:hidden">
     {@render pipelineActions()}
   </div> -->
-  <PaneGroup direction="horizontal" class="!overflow-visible p-2 pb-4 md:pl-8 md:pr-8 xl:pl-4">
+  <PaneGroup direction="horizontal" class="!overflow-visible px-2 pb-4 md:pl-8 md:pr-8 xl:pl-4">
     <Pane
       defaultSize={15}
       minSize={10}
@@ -380,7 +381,7 @@ example = "1.0"`
             </Pane>
           {/snippet}
           {#snippet toolBarEnd()}
-            <div class="flex justify-end gap-4 py-2">
+            <div class="flex justify-end gap-4 pb-2">
               {@render pipelineActions()}
             </div>
           {/snippet}
@@ -388,11 +389,11 @@ example = "1.0"`
             <ProgramStatus programStatus={pipeline.current.programStatus}></ProgramStatus>
           {/snippet}
           {#snippet statusBarEnd()}
-            <div class="ml-auto flex flex-nowrap items-center gap-2">
+            <div class="ml-auto flex flex-nowrap items-center gap-1">
               {#each [{ icon: 'fd fd-panel-left', text: 'Pipelines', value: showPipelinesPanel }, { icon: 'fd fd-panel-bottom', text: 'Monitoring', value: showMonitoringPanel }, { icon: 'fd fd-panel-right', text: 'Ad-Hoc Queries', value: separateAdHocTab, show: !isScreenLg.current }] as { icon, text, value, show }}
                 {#if show !== false}
                   <button
-                    class="btn p-2 !brightness-100 text-surface-700-300 hover:preset-tonal-surface"
+                    class="btn gap-2 p-2 !brightness-100 text-surface-700-300 hover:preset-tonal-surface"
                     onclick={() => (value.value = !value.value)}
                   >
                     <span class="hidden sm:inline">
@@ -400,6 +401,7 @@ example = "1.0"`
                     </span>
                     <div class="{icon} text-[20px] {value.value ? 'text-primary-500' : ''}"></div>
                   </button>
+                  <div class="w-0 pointer-events-none -translate-x-0.5">|</div>
                 {/if}
               {/each}
             </div>

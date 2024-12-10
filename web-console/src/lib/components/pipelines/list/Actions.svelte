@@ -68,23 +68,23 @@
   const active = $derived(
     match(pipeline.current.status)
       .returnType<(keyof typeof actions)[]>()
-      .with('Shutdown', () => ['_saveFile', '_start_paused'])
-      .with('Queued', () => ['_saveFile', '_start_pending'])
+      .with('Shutdown', () => ['_spacer_long', '_start_paused'])
+      .with('Queued', () => ['_spacer_long', '_start_pending'])
       .with('Starting up', () => ['_shutdown', '_status_spinner'])
       .with('Initializing', () => ['_shutdown', '_status_spinner'])
       .with('Running', () => ['_shutdown', '_pause'])
       .with('Pausing', () => ['_shutdown', '_status_spinner'])
       .with('Resuming', () => ['_shutdown', '_status_spinner'])
       .with('Paused', () => ['_shutdown', '_start'])
-      .with('ShuttingDown', () => ['_status_spinner', '_spacer_long'])
+      .with('ShuttingDown', () => ['_spacer_long', '_status_spinner'])
       .with({ PipelineError: P.any }, () => ['_shutdown', '_spacer_long'])
       .with('Compiling SQL', 'SQL compiled', 'Compiling binary', () => [
-        '_saveFile',
+        '_spacer_long',
         '_start_pending'
       ])
       .with('Unavailable', () => ['_shutdown', '_status_spinner'])
       .with({ SqlError: P.any }, { RustError: P.any }, { SystemError: P.any }, () => [
-        '_saveFile',
+        '_spacer_long',
         '_start_error'
       ])
       .exhaustive()
@@ -93,8 +93,8 @@
   const buttonClass = 'btn gap-0'
   const iconClass = 'text-[20px]'
   const shortClass = 'w-9'
-  const longClass = 'w-32 sm:w-36 justify-between pl-2 text-sm sm:text-base'
-  const basicBtnColor = 'preset-filled-surface-800-200'
+  const longClass = 'w-28 sm:w-32 justify-between pl-2 gap-2 text-sm sm:text-base'
+  const basicBtnColor = 'preset-filled-surface-50-950'
   const importantBtnColor = 'preset-filled-primary-500'
 </script>
 
@@ -111,17 +111,35 @@
   ></DeleteDialog>
 {/snippet}
 
+{#snippet shutdownDialog()}
+  <DeleteDialog
+    {...deleteDialogProps(
+      'Shutdown',
+      (name) => `${name} pipeline`,
+      (pipelineName: string) => {
+        return postPipelineAction(pipelineName, 'shutdown').then(() => {
+        onActionSuccess?.(pipelineName, 'shutdown')
+        pipeline.optimisticUpdate({ status: 'ShuttingDown' })
+      })
+      },
+      'The internal state of the pipeline will be reset.'
+    )(pipeline.current.name)}
+    onClose={() => (globalDialog.dialog = null)}
+  ></DeleteDialog>
+{/snippet}
+
 <div class={'flex flex-nowrap gap-2 sm:gap-4 ' + _class}>
   {#each active as name}
     {@render actions[name]()}
   {/each}
+  {@render _saveFile()}
   {@render _configurations()}
   {@render _delete()}
 </div>
 
 {#snippet _delete()}
   <button
-    class="{buttonClass} {shortClass} fd fd-trash-2 preset-filled-error-50-950 {iconClass}"
+    class="{buttonClass} {shortClass} fd fd-trash-2 preset-tonal-surface {iconClass}"
     onclick={() => (globalDialog.dialog = deleteDialog)}
   >
   </button>
@@ -209,11 +227,7 @@
   <button
     class="{buttonClass} {longClass} {basicBtnColor}"
     onclick={() => {
-      const pipelineName = pipeline.current.name
-      postPipelineAction(pipelineName, 'shutdown').then(() => {
-        onActionSuccess?.(pipelineName, 'shutdown')
-        pipeline.optimisticUpdate({ status: 'ShuttingDown' })
-      })
+      globalDialog.dialog = shutdownDialog
     }}
   >
     <span class="fd fd-square {iconClass}"></span>
@@ -224,17 +238,19 @@
 {#snippet _saveFile()}
   <div>
     <button
-      class="{buttonClass} {longClass} {basicBtnColor}"
+      class="{buttonClass} {shortClass} {basicBtnColor} fd fd-save {iconClass}"
       class:disabled={!unsavedChanges}
       onclick={saveFile}
     >
-      <span class="fd fd-save {iconClass}"></span>
-      {unsavedChanges ? 'Save' : 'Saved'}
-      <span></span>
+    <span class=""></span>
     </button>
   </div>
   <Tooltip class="bg-white-black z-20 rounded text-surface-950-50" placement="top">
-    Ctrl + S
+    {#if unsavedChanges}
+      Save file: Ctrl + S
+    {:else}
+      File saved
+    {/if}
   </Tooltip>
 {/snippet}
 
@@ -302,12 +318,12 @@
   <div class={longClass}></div>
 {/snippet}
 {#snippet _spinner()}
-  <IconLoader class="pointer-events-none h-9 w-9 animate-spin {iconClass} fill-surface-50-950"
+  <IconLoader class="pointer-events-none h-9 w-9 animate-spin {iconClass} fill-surface-950-50"
   ></IconLoader>
 {/snippet}
 {#snippet _status_spinner()}
   <button class="{buttonClass} {longClass} pointer-events-none {basicBtnColor}">
-    <IconLoader class="animate-spin {iconClass} fill-surface-50-950"></IconLoader>
+    <IconLoader class="animate-spin {iconClass} fill-surface-950-50"></IconLoader>
     <span></span>
   </button>
 {/snippet}
