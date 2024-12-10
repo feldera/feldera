@@ -218,7 +218,8 @@ impl HttpInputEndpoint {
         // queue would get destroyed when the caller drops us, which could lead
         // to some of our records never getting processed.
         while self.queue_len() > 0 {
-            sleep(Duration::from_millis(100)).await;
+            //sleep(Duration::from_millis(100)).await;
+            sleep(Duration::from_micros(50)).await;
         }
 
         debug!(

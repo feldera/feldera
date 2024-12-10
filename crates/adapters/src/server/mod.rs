@@ -242,6 +242,7 @@ where
             state,
         )
     })
+    .workers(4)
     // Set timeout for graceful shutdown of workers.
     // The default in actix is 30s. We may consider making this configurable.
     .shutdown_timeout(10)

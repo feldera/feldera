@@ -34,7 +34,7 @@ use super::{EndpointId, InputEndpointConfig, OutputEndpointConfig};
 use crate::PipelineState;
 use anyhow::Error as AnyError;
 use atomic::Atomic;
-use crossbeam::sync::{ShardedLock, ShardedLockReadGuard, Unparker};
+use crossbeam::sync::Unparker;
 use feldera_adapterlib::transport::InputReader;
 use feldera_types::config::PipelineConfig;
 use log::error;
@@ -49,6 +49,7 @@ use psutil::process::{Process, ProcessError};
 use rand::{seq::index::sample, thread_rng};
 use rmpv::Value as RmpValue;
 use serde::{ser::SerializeStruct, Serialize, Serializer};
+use std::sync::{RwLock, RwLockReadGuard};
 use std::{
     cmp::min,
     collections::BTreeMap,
@@ -168,12 +169,12 @@ impl GlobalControllerMetrics {
     }
 }
 
-// `ShardedLock` is a read/write lock optimized for fast reads.
+// `RwLock` is a read/write lock optimized for fast reads.
 // Write access is only required when adding or removing an endpoint.
 // Regular stats updates only require a read lock thanks to the use of
 // atomics.
-type InputsStatus = ShardedLock<BTreeMap<EndpointId, InputEndpointStatus>>;
-type OutputsStatus = ShardedLock<BTreeMap<EndpointId, OutputEndpointStatus>>;
+type InputsStatus = RwLock<BTreeMap<EndpointId, InputEndpointStatus>>;
+type OutputsStatus = RwLock<BTreeMap<EndpointId, OutputEndpointStatus>>;
 
 // Serialize inputs as a vector of `InputEndpointStatus`.
 fn serialize_inputs<S>(inputs: &InputsStatus, serializer: S) -> Result<S::Ok, S::Error>
@@ -396,8 +397,8 @@ impl ControllerStatus {
         Self {
             pipeline_config,
             global_metrics: GlobalControllerMetrics::new(processed_records),
-            inputs: ShardedLock::new(BTreeMap::new()),
-            outputs: ShardedLock::new(BTreeMap::new()),
+            inputs: RwLock::new(BTreeMap::new()),
+            outputs: RwLock::new(BTreeMap::new()),
             metrics: Mutex::new(Vec::new()),
         }
     }
@@ -469,14 +470,12 @@ impl ControllerStatus {
     }
 
     /// Input endpoint stats.
-    pub fn input_status(&self) -> ShardedLockReadGuard<BTreeMap<EndpointId, InputEndpointStatus>> {
+    pub fn input_status(&self) -> RwLockReadGuard<BTreeMap<EndpointId, InputEndpointStatus>> {
         self.inputs.read().unwrap()
     }
 
     /// Output endpoint stats.
-    pub fn output_status(
-        &self,
-    ) -> ShardedLockReadGuard<BTreeMap<EndpointId, OutputEndpointStatus>> {
+    pub fn output_status(&self) -> RwLockReadGuard<BTreeMap<EndpointId, OutputEndpointStatus>> {
         self.outputs.read().unwrap()
     }
 
