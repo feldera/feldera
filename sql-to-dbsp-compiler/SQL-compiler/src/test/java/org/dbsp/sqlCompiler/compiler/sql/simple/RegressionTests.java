@@ -1113,6 +1113,13 @@ public class RegressionTests extends SqlIoTest {
     }
 
     @Test
+    public void issue3128() {
+        this.compileRustTestCase("""
+                CREATE TABLE t2(c2 VARCHAR) with ('materialized' = 'true');
+                CREATE MATERIALIZED VIEW v106_optimized AS (SELECT SUBSTRING(t2.c2, 1.36683) FROM t2);""");
+    }
+
+    @Test
     public void missingCast() {
         String sql = """
                 create table TRANSACTION (unix_time BIGINT LATENESS 0);

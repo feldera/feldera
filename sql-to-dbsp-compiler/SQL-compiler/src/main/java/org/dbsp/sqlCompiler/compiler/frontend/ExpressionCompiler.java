@@ -1132,13 +1132,15 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                         return compileFunction(call, node, type, ops, 3);
                     }
                     case "overlay": {
-                        // case "regexp_replace":
                         String module_prefix;
                         if (ops.get(0).type.is(DBSPTypeBinary.class)) {
                             module_prefix = "binary::";
                         } else {
                             module_prefix = "string::";
                         }
+                        this.ensureInteger(ops, 2, 32);
+                        if (ops.size() == 4)
+                            this.ensureInteger(ops, 3, 32);
                         return compileFunction(module_prefix + getCallName(call), node, type, ops, 3, 4);
                     }
                     case "chr":
@@ -1173,6 +1175,8 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                         return new DBSPApplyExpression(node, opName, type, ops.get(0), ops.get(1));
                     case "repeat":
                     case "left":
+                        this.ensureInteger(ops, 1, 32);
+                        // Fall through
                     case "format_date":
                         return compileFunction(call, node, type, ops, 2);
                     case "replace":
@@ -1188,8 +1192,10 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                         return new DBSPApplyExpression(node, method, type, arg);
                     }
                     case "substring": {
-                        if (ops.isEmpty())
-                            throw operandCountError(node, operationName, call.operandCount());
+                        validateArgCount(node, opName, ops.size(), 2, 3);
+                        this.ensureInteger(ops, 1, 32);
+                        if (ops.size() == 3)
+                            this.ensureInteger(ops, 2, 32);
                         String module_prefix;
                         if (ops.get(0).type.is(DBSPTypeBinary.class)) {
                             module_prefix = "binary::";
