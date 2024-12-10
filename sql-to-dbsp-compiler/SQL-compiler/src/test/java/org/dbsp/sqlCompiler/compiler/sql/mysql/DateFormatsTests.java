@@ -2,7 +2,6 @@ package org.dbsp.sqlCompiler.compiler.sql.mysql;
 
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
-import org.junit.Ignore;
 import org.junit.Test;
 
 // https://github.com/mysql/mysql-server/blob/trunk/mysql-test/r/date_formats.result
@@ -125,11 +124,10 @@ public class DateFormatsTests extends SqlIoTest {
                 (1 row)""", false);
     }
 
-    @Test @Ignore("https://issues.apache.org/jira/browse/CALCITE-6253")
+    @Test
     public void testAllFormat() {
         // Test all format flags that can be applied to a DATE.
         // not testing %n, difficult using the q function
-        // Tested with the BigQuery playground
         this.q("""
                 SELECT format_date('%A,%a,%B,%b,%C,%D,%d,%e,%F,%G,%g,%h,%j,%m,%U,%u,%V,%W,%w,%x,%Y,%y,%t,%%','2024-02-07');
                 result
