@@ -47,7 +47,7 @@
     "@tailwindcss/typography": "^0.5.15",
     "@types/eslint": "^8.56.12",
     "@types/node": "^20.17.6",
-    "@vincjo/datatables": "^2.0.5",
+    "@vincjo/datatables": "^2.2.0",
     "add": "^2.0.6",
     "array-join": "^3.2.1",
     "autoprefixer": "^10.4.20",
