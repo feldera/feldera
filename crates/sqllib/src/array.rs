@@ -643,3 +643,277 @@ where
     let index = index?;
     indexV__(value, index)
 }
+
+#[doc(hidden)]
+pub fn array_concat__<T>(mut left: Vec<T>, right: Vec<T>) -> Vec<T> {
+    left.extend(right);
+    left
+}
+
+#[doc(hidden)]
+pub fn array_concatN_<T>(left: Option<Vec<T>>, right: Vec<T>) -> Option<Vec<T>> {
+    let left = left?;
+    Some(array_concat__(left, right))
+}
+
+#[doc(hidden)]
+pub fn array_concat_N<T>(left: Vec<T>, right: Option<Vec<T>>) -> Option<Vec<T>> {
+    let right = right?;
+    Some(array_concat__(left, right))
+}
+
+#[doc(hidden)]
+pub fn array_concatNN<T>(left: Option<Vec<T>>, right: Option<Vec<T>>) -> Option<Vec<T>> {
+    let left = left?;
+    let right = right?;
+    Some(array_concat__(left, right))
+}
+
+fn to_set<T>(v: &[T]) -> HashSet<T>
+where
+    T: Eq + Clone + Hash + Ord,
+{
+    v.iter().cloned().collect()
+}
+
+#[doc(hidden)]
+pub fn array_except__<T>(left: Vec<T>, right: Vec<T>) -> Vec<T>
+where
+    T: Eq + Clone + Hash + Ord,
+{
+    let left = to_set(&left);
+    let right = to_set(&right);
+    let result = left.difference(&right);
+    let mut result = result.cloned().collect::<Vec<T>>();
+    result.sort();
+    result
+}
+
+#[doc(hidden)]
+pub fn array_exceptN_<T>(left: Option<Vec<T>>, right: Vec<T>) -> Option<Vec<T>>
+where
+    T: Eq + Clone + Hash + Ord,
+{
+    let left = left?;
+    Some(array_except__(left, right))
+}
+
+#[doc(hidden)]
+pub fn array_except_N<T>(left: Vec<T>, right: Option<Vec<T>>) -> Option<Vec<T>>
+where
+    T: Eq + Clone + Hash + Ord,
+{
+    let right = right?;
+    Some(array_except__(left, right))
+}
+
+#[doc(hidden)]
+pub fn array_exceptNN<T>(left: Option<Vec<T>>, right: Option<Vec<T>>) -> Option<Vec<T>>
+where
+    T: Eq + Clone + Hash + Ord,
+{
+    let left = left?;
+    let right = right?;
+    Some(array_except__(left, right))
+}
+
+#[doc(hidden)]
+pub fn array_union__<T>(left: Vec<T>, right: Vec<T>) -> Vec<T>
+where
+    T: Eq + Clone + Hash + Ord,
+{
+    let left = to_set(&left);
+    let right = to_set(&right);
+    let result = left.union(&right);
+    let mut result = result.cloned().collect::<Vec<T>>();
+    result.sort();
+    result
+}
+
+#[doc(hidden)]
+pub fn array_unionN_<T>(left: Option<Vec<T>>, right: Vec<T>) -> Option<Vec<T>>
+where
+    T: Eq + Clone + Hash + Ord,
+{
+    let left = left?;
+    Some(array_union__(left, right))
+}
+
+#[doc(hidden)]
+pub fn array_union_N<T>(left: Vec<T>, right: Option<Vec<T>>) -> Option<Vec<T>>
+where
+    T: Eq + Clone + Hash + Ord,
+{
+    let right = right?;
+    Some(array_union__(left, right))
+}
+
+#[doc(hidden)]
+pub fn array_unionNN<T>(left: Option<Vec<T>>, right: Option<Vec<T>>) -> Option<Vec<T>>
+where
+    T: Eq + Clone + Hash + Ord,
+{
+    let left = left?;
+    let right = right?;
+    Some(array_union__(left, right))
+}
+
+#[doc(hidden)]
+pub fn array_intersect__<T>(left: Vec<T>, right: Vec<T>) -> Vec<T>
+where
+    T: Eq + Clone + Hash + Ord,
+{
+    let left = to_set(&left);
+    let right = to_set(&right);
+    let result = left.intersection(&right);
+    let mut result = result.cloned().collect::<Vec<T>>();
+    result.sort();
+    result
+}
+
+#[doc(hidden)]
+pub fn array_intersectN_<T>(left: Option<Vec<T>>, right: Vec<T>) -> Option<Vec<T>>
+where
+    T: Eq + Clone + Hash + Ord,
+{
+    let left = left?;
+    Some(array_intersect__(left, right))
+}
+
+#[doc(hidden)]
+pub fn array_intersect_N<T>(left: Vec<T>, right: Option<Vec<T>>) -> Option<Vec<T>>
+where
+    T: Eq + Clone + Hash + Ord,
+{
+    let right = right?;
+    Some(array_intersect__(left, right))
+}
+
+#[doc(hidden)]
+pub fn array_intersectNN<T>(left: Option<Vec<T>>, right: Option<Vec<T>>) -> Option<Vec<T>>
+where
+    T: Eq + Clone + Hash + Ord,
+{
+    let left = left?;
+    let right = right?;
+    Some(array_intersect__(left, right))
+}
+
+// The result type must always be Vec<Option<T>>
+// The result type must always be Vec<Option<T>>
+#[doc(hidden)]
+pub fn array_insert____<T>(array: Vec<T>, pos: i32, value: T) -> Vec<Option<T>>
+where
+    T: Clone,
+{
+    array_insert___N(array, pos, Some(value))
+}
+
+#[doc(hidden)]
+#[allow(clippy::needless_range_loop)]
+pub fn array_insert___N<T>(array: Vec<T>, pos: i32, value: Option<T>) -> Vec<Option<T>>
+where
+    T: Clone,
+{
+    const MAX_ARRAY_LENGTH: usize = (i32::MAX) as usize - 15;
+    let mut abs = num::abs(pos) as usize;
+
+    if pos == 0 {
+        panic!("Index of 0 for 'array_insert");
+    }
+    if abs > MAX_ARRAY_LENGTH {
+        panic!("Index {} too large for 'array_index'", pos);
+    }
+
+    let len = array.len();
+    if pos <= 0 {
+        if abs < len {
+            // Insert inside array
+            abs = len - abs;
+        } else {
+            // extend array and insert at the beginning
+            let mut result: Vec<Option<T>> = Vec::with_capacity(abs + 1);
+            result[0] = value;
+            for index in 1..(abs + 1 - len) {
+                result[index] = None;
+            }
+            let mut index = abs + 1 - len;
+            for element in array.iter() {
+                result[index] = Some(element.clone());
+                index += 1;
+            }
+            return result;
+        }
+    } else if abs > len {
+        // extend the array and insert at end
+        let mut result = Vec::<Option<T>>::with_capacity(abs);
+        for (index, element) in array.iter().enumerate() {
+            result[index] = Some(element.clone());
+        }
+        for index in len..(abs - 1) {
+            result[index] = None;
+        }
+        result[abs] = value;
+        return result;
+    }
+
+    let mut result = Vec::with_capacity(len + 1);
+    for index in 0..(abs - 1) {
+        result[index] = Some(array[index].clone());
+    }
+    result[abs] = value;
+    for index in abs..len {
+        result[index] = Some(array[index - 1].clone())
+    }
+    result
+}
+
+#[doc(hidden)]
+pub fn array_insertN___<T>(array: Option<Vec<T>>, pos: i32, value: T) -> Option<Vec<Option<T>>>
+where
+    T: Clone,
+{
+    let array = array?;
+    Some(array_insert___N(array, pos, Some(value)))
+}
+
+#[doc(hidden)]
+pub fn array_insertN_N_<T>(
+    array: Option<Vec<T>>,
+    pos: Option<i32>,
+    value: T,
+) -> Option<Vec<Option<T>>>
+where
+    T: Clone,
+{
+    let array = array?;
+    let pos = pos?;
+    Some(array_insert____(array, pos, value))
+}
+
+#[doc(hidden)]
+pub fn array_insertN__N<T>(
+    array: Option<Vec<T>>,
+    pos: i32,
+    value: Option<T>,
+) -> Option<Vec<Option<T>>>
+where
+    T: Clone,
+{
+    let array = array?;
+    Some(array_insert___N(array, pos, value))
+}
+
+#[doc(hidden)]
+pub fn array_insertN_NN<T>(
+    array: Option<Vec<T>>,
+    pos: Option<i32>,
+    value: Option<T>,
+) -> Option<Vec<Option<T>>>
+where
+    T: Clone,
+{
+    let array = array?;
+    let pos = pos?;
+    Some(array_insert___N(array, pos, value))
+}
