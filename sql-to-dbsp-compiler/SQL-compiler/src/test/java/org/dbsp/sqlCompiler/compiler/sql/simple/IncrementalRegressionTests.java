@@ -26,6 +26,24 @@ public class IncrementalRegressionTests extends SqlIoTest {
     }
 
     @Test
+    public void issue3125() {
+        this.getCCS("""
+                CREATE TABLE purchase0 (
+                   customer_id INT,
+                   ts TIMESTAMP NOT NULL LATENESS INTERVAL 1 HOURS,
+                   amount BIGINT
+                );
+                
+                CREATE TABLE purchase1 (
+                   customer_id INT,
+                   ts TIMESTAMP NOT NULL,
+                   amount BIGINT
+                );
+                
+                CREATE MATERIALIZED VIEW late_records AS (SELECT * FROM purchase1 EXCEPT SELECT * FROM purchase0);""");
+    }
+
+    @Test
     public void wrongLateness() {
         this.statementsFailingInCompilation("""
                 create table t (
