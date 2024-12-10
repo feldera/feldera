@@ -1425,6 +1425,21 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 op0 = this.makeStaticConstant(op0);
                 return new DBSPApplyExpression(node, name, type, op0.borrow());
             }
+            case ARRAY_EXCEPT:
+            case ARRAY_UNION:
+            case ARRAY_INTERSECT:
+            case ARRAY_CONCAT: {
+                int operands = ops.size();
+                DBSPExpression result = ops.get(0).cast(type);
+                for (int i = 1; i < operands; i++) {
+                    DBSPExpression op = ops.get(i).cast(type);
+                    String name = call.op.getName().toLowerCase();
+                    name += result.type.nullableUnderlineSuffix();
+                    name += op.type.nullableUnderlineSuffix();
+                    result = new DBSPApplyExpression(node, name, type, result, op);
+                }
+                return result;
+            }
             case ARRAY_PREPEND:
             case ARRAY_APPEND: {
                 if (call.operands.size() != 2)
@@ -1578,9 +1593,15 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 String method = getArrayOrMapCallName(call, arg0);
                 return new DBSPApplyExpression(node, method, type, arg0);
             }
+            case ARRAY_INSERT: {
+                validateArgCount(node, operationName, ops.size(), 3);
+                DBSPExpression op1 = ops.get(1)
+                        .cast(new DBSPTypeInteger(node, 32, true, ops.get(1).getType().mayBeNull));
+                String method = getArrayCallNameWithElemNullability(call, ops.get(0), op1, ops.get(2));
+                return new DBSPApplyExpression(node, method, type, ops.get(0), op1, ops.get(2)).cast(type);
+            }
             case ARRAY_REPEAT: {
-                if (call.operands.size() != 2)
-                    throw operandCountError(node, operationName, call.operandCount());
+                validateArgCount(node, operationName, ops.size(), 2);
                 DBSPExpression op1 = ops.get(1)
                         .cast(new DBSPTypeInteger(node, 32, true, ops.get(1).getType().mayBeNull));
                 String method = getArrayOrMapCallName(call, ops.get(0), op1);
