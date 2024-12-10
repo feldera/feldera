@@ -48,7 +48,7 @@ pub struct ExtendedPipelineDescrOptionalCode {
     pub program_version: Version,
     pub program_status: ProgramStatus,
     pub program_status_since: DateTime<Utc>,
-    pub program_info: Option<ProgramInfo>,
+    pub program_info: Option<Option<ProgramInfo>>,
     pub program_binary_source_checksum: Option<String>,
     pub program_binary_integrity_checksum: Option<String>,
     pub program_binary_url: Option<String>,
@@ -89,7 +89,11 @@ impl ExtendedPipelineDescrOptionalCode {
             program_version: extended_pipeline.program_version,
             program_status: extended_pipeline.program_status,
             program_status_since: extended_pipeline.program_status_since,
-            program_info: extended_pipeline.program_info,
+            program_info: if include_code {
+                Some(extended_pipeline.program_info)
+            } else {
+                None
+            },
             program_binary_source_checksum: extended_pipeline.program_binary_source_checksum,
             program_binary_integrity_checksum: extended_pipeline.program_binary_integrity_checksum,
             program_binary_url: extended_pipeline.program_binary_url,
