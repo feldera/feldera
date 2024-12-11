@@ -16,7 +16,7 @@
       )} in total.
     </WarningBanner>
   {/if}
-  <ReverseScrollList items={logs.rows} class="bg-white-black pl-2 scrollbar">
+  <ReverseScrollList items={logs.rows} class="bg-white-dark pl-2 scrollbar">
     {#snippet item(item)}
       <div class="whitespace-pre-wrap" style="font-family: {theme.config.monospaceFontFamily};">
         <!-- TODO: Re-enable line numbers when they get reported by backend -->

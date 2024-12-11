@@ -33,7 +33,7 @@
 </script>
 
 <div
-  class="bg-white-black absolute m-0 w-max max-w-lg -translate-x-[4.5px] -translate-y-[2.5px] whitespace-break-spaces break-words border border-surface-500 px-2 py-1 text-right text-surface-950-50"
+  class="bg-white-dark absolute m-0 w-max max-w-lg -translate-x-[4.5px] -translate-y-[2.5px] whitespace-break-spaces break-words border border-surface-500 px-2 py-1 text-right text-surface-950-50"
   popover="manual"
   bind:this={popupRef}
   style={tooltip.data
@@ -43,7 +43,7 @@
   {tooltip.data?.text}
 </div>
 
-<div class="bg-white-black relative flex w-full flex-1 flex-col rounded">
+<div class="bg-white-dark relative flex w-full flex-1 flex-col rounded">
   {#if changeStream.totalSkippedBytes}
     <WarningBanner>
       Receiving changes faster than can be displayed. Skipping some records to keep up, {humanSize(
@@ -90,11 +90,11 @@
         </tr>
       {:else if 'columns' in row}
         <tr class="h-7" style="{style} {padding}">
-          <th class="pl-2 font-normal {isSticky ? 'bg-white-black sticky top-0 z-10' : ''}"
+          <th class="pl-2 font-normal {isSticky ? 'bg-white-dark sticky top-0 z-10' : ''}"
             >{row.relationName}</th
           >
           {#each row.columns as column}
-            <SqlColumnHeader {column} {isSticky} class="bg-white-black px-2"></SqlColumnHeader>
+            <SqlColumnHeader {column} {isSticky} class="bg-white-dark px-2"></SqlColumnHeader>
           {/each}
         </tr>
       {:else}

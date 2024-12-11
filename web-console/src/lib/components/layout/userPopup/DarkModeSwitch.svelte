@@ -11,7 +11,7 @@
     bind:value={darkMode.current}
     base="flex items-stretch overflow-hidden"
     background="preset-filled-surface-50-950 h-12 w-fit"
-    indicatorBg="bg-white-black shadow "
+    indicatorBg="bg-white-dark shadow "
     indicatorText=""
     border="px-3 py-1"
     rounded="rounded"

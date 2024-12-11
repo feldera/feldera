@@ -20,14 +20,12 @@
   {#snippet afterInput(error)}
     <div class="absolute top-10 z-10">
       {#if error}
-        <div
-          class="bg-white-black bg-white-black rounded-container px-2 py-2 text-error-500 shadow"
-        >
+        <div class="bg-white-dark bg-white-dark rounded-container px-2 py-2 text-error-500 shadow">
           {error}
         </div>
       {:else}
         <div
-          class="bg-white-black whitespace-pre rounded-container px-2 py-2 shadow text-surface-600-400"
+          class="bg-white-dark whitespace-pre rounded-container px-2 py-2 shadow text-surface-600-400"
         >
           Press Enter to create
         </div>

@@ -19,6 +19,9 @@ const config = {
       fontFamily: {
         brands: '"Font Awesome 6 Brands"',
         'dm-mono': '"DM Mono"'
+      },
+      colors: {
+        dark: 'rgb(24 24 24)'
       }
     },
     screens: {

@@ -27,7 +27,7 @@
       class="absolute left-0 z-10 -ml-16 flex max-h-[calc(100vh-150px)] w-[calc(100vw-50px)] max-w-[480px] sm:-ml-4"
     >
       <div
-        class="bg-white-black w-full flex-col justify-end gap-0 overflow-y-auto rounded p-2 shadow-md scrollbar"
+        class="bg-white-dark w-full flex-col justify-end gap-0 overflow-y-auto rounded p-2 shadow-md scrollbar"
       >
         {#each pipelineList.pipelines as pipeline}
           <a

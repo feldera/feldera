@@ -78,7 +78,7 @@
 </script>
 
 <div
-  class="bg-white-black absolute m-0 w-max max-w-lg -translate-x-[4.5px] -translate-y-[2.5px] whitespace-break-spaces break-words border border-surface-500 px-2 py-1 text-surface-950-50"
+  class="bg-white-dark absolute m-0 w-max max-w-lg -translate-x-[4.5px] -translate-y-[2.5px] whitespace-break-spaces break-words border border-surface-500 px-2 py-1 text-surface-950-50"
   popover="manual"
   bind:this={popupRef}
   style={tooltip.data
@@ -103,7 +103,7 @@
         <textarea
           bind:value={query}
           style="font-family: {theme.config.monospaceFontFamily}; field-sizing: content"
-          class="bg-white-black w-full overflow-auto rounded border-0 !ring-0 !ring-primary-500 text-surface-950-50 scrollbar"
+          class="bg-white-dark w-full overflow-auto rounded border-0 !ring-0 !ring-primary-500 text-surface-950-50 scrollbar"
           placeholder="SELECT * FROM ..."
           onkeydown={handleKeyDown(onSubmitQuery, disabled)}
         ></textarea>
@@ -179,7 +179,7 @@
                 >
                   <table style:height class="w-fit" use:keepMaxWidth>
                     {#if result.columns.length}
-                      <thead class="bg-white-black sticky top-0 z-10 !mb-0 h-7">
+                      <thead class="bg-white-dark sticky top-0 z-10 !mb-0 h-7">
                         <tr>
                           {#each result.columns as column}
                             <SqlColumnHeader {column}></SqlColumnHeader>

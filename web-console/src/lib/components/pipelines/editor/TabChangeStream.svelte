@@ -270,13 +270,13 @@
   <PaneGroup direction="horizontal" onpaste={ingestPasted}>
     <Pane defaultSize={20} minSize={5} class="flex h-full">
       <div
-        class="bg-white-black mr-2 mt-4 flex w-full flex-col gap-1 overflow-y-auto text-nowrap rounded p-4 scrollbar"
+        class="bg-white-dark mr-2 mt-4 flex w-full flex-col gap-1 overflow-y-auto text-nowrap rounded p-4 scrollbar"
       >
         {#snippet relationItem(relation: RelationInfo & ExtraType)}
           <label class="flex-none cursor-pointer overflow-hidden overflow-ellipsis">
             <input
               type="checkbox"
-              class="bg-white-black checkbox m-1"
+              class="bg-white-dark checkbox m-1"
               checked={relation.selected}
               onchange={(e) => {
                 const follow = e.currentTarget.checked

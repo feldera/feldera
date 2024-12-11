@@ -25,12 +25,12 @@
   @apply z-[1] w-[2px] transition-colors before:-ml-[3px] before:flex before:h-full before:w-[8px] hover:bg-primary-500 active:bg-primary-500;
 }
 
-.bg-white-black {
-  @apply bg-white dark:bg-black;
+.bg-white-dark {
+  @apply dark:bg-dark bg-white;
 }
 
-.bg-black-white {
-  @apply bg-black dark:bg-white;
+.bg-dark-white {
+  @apply bg-dark dark:bg-white;
 }
 
 /* Skeleton UI overrides */
@@ -39,9 +39,14 @@
   gap: calc(0.5rem * var(--space-scale-factor));
 }
 
+.btn:hover:where(.dark, .dark *),
+.btn-icon:hover:where(.dark, .dark *) {
+  --tw-brightness: brightness(1.4);
+}
+
 .checkbox,
 .radio {
-  @apply bg-white-black border-none;
+  @apply bg-white-dark border-none;
 }
 
 .btn-icon-lg {

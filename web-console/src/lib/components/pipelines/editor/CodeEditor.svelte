@@ -8,12 +8,19 @@
     }
   > = {}
 
+  const rgbToHex = (rgb: string) => {
+    const [r, g, b] = Array.from(rgb.match(/\d+/g) ?? []).map((v) => parseInt(v))
+    return '#' + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)
+  }
+
   MonacoImports.editor.defineTheme('feldera-light', {
     base: 'vs',
     inherit: true,
     rules: [{ token: 'string.sql', foreground: '#7a3d00' }],
     colors: {
-      'editor.background': '#ffffff'
+      'editor.background': rgbToHex(
+        getComputedStyle(document.body).getPropertyValue('--body-background-color').trim()
+      )
     }
   })
 
@@ -22,7 +29,9 @@
     inherit: true,
     rules: [{ token: 'string.sql', foreground: '#d9731a' }],
     colors: {
-      'editor.background': '#000000'
+      'editor.background': rgbToHex(
+        getComputedStyle(document.body).getPropertyValue('--body-background-color-dark').trim()
+      )
     }
   })
 
@@ -31,7 +40,9 @@
     inherit: true,
     rules: [{ token: 'string.sql', foreground: '#7a3d00' }],
     colors: {
-      'editor.background': '#f2f2f2'
+      'editor.background': rgbToHex(
+        getComputedStyle(document.body).getPropertyValue('--color-surface-50').trim()
+      )
     }
   })
 
@@ -40,7 +51,9 @@
     inherit: true,
     rules: [{ token: 'string.sql', foreground: '#d9731a' }],
     colors: {
-      'editor.background': '#212121'
+      'editor.background': rgbToHex(
+        getComputedStyle(document.body).getPropertyValue('--color-surface-950').trim()
+      )
     }
   })
 
