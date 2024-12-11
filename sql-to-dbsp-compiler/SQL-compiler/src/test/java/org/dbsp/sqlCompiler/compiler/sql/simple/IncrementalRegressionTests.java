@@ -5,6 +5,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesOpera
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.sql.tools.CompilerCircuitStream;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
@@ -23,6 +24,29 @@ public class IncrementalRegressionTests extends SqlIoTest {
         // Without the following ORDER BY causes failures
         options.languageOptions.ignoreOrderBy = true;
         return new DBSPCompiler(options);
+    }
+
+    @Test
+    public void issue3126() {
+        this.getCCS("CREATE VIEW e AS SELECT * FROM error_view;");
+    }
+
+    @Test
+    public void issue3125() {
+        this.getCCS("""
+                CREATE TABLE purchase0 (
+                   customer_id INT,
+                   ts TIMESTAMP NOT NULL LATENESS INTERVAL 1 HOURS,
+                   amount BIGINT
+                );
+                
+                CREATE TABLE purchase1 (
+                   customer_id INT,
+                   ts TIMESTAMP NOT NULL,
+                   amount BIGINT
+                );
+                
+                CREATE MATERIALIZED VIEW late_records AS (SELECT * FROM purchase1 EXCEPT SELECT * FROM purchase0);""");
     }
 
     @Test

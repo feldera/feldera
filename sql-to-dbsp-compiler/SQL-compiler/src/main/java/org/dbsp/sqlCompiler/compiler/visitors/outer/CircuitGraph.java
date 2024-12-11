@@ -23,7 +23,7 @@ public class CircuitGraph implements DiGraph<DBSPOperator>, IHasId {
     private final List<DBSPOperator> nodes = new ArrayList<>();
     private final Map<DBSPOperator, List<Port<DBSPOperator>>> edges = new HashMap<>();
     /** Circuit whose graph is represented */
-    private final ICircuit circuit;
+    public final ICircuit circuit;
 
     public CircuitGraph(ICircuit circuit) {
         this.circuit = circuit;

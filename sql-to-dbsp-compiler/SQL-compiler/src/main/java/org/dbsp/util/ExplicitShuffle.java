@@ -17,4 +17,16 @@ public class ExplicitShuffle implements Shuffle {
             result.add(data.get(index));
         return result;
     }
+
+    public static <T> Shuffle computePermutation(List<T> input, List<T> output) {
+        List<Integer> shuffle = new ArrayList<>();
+        for (int i = 0; i < input.size(); i++) {
+            T in = input.get(i);
+            int index = output.indexOf(in);
+            assert index >= 0 : "Input " + in + " not found in output";
+            assert !shuffle.contains(index) : "Input " + in + " appears twice";
+            shuffle.add(index);
+        }
+        return new ExplicitShuffle(shuffle);
+    }
 }

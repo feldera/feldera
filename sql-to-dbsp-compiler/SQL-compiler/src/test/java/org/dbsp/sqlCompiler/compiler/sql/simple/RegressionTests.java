@@ -8,6 +8,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateWith
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.TestUtil;
 import org.dbsp.sqlCompiler.compiler.backend.rust.ToRustVisitor;
+import org.dbsp.sqlCompiler.compiler.sql.tools.CompilerCircuitStream;
 import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
@@ -1110,6 +1111,13 @@ public class RegressionTests extends SqlIoTest {
             }
         };
         visitor.apply(circuit);
+    }
+
+    @Test
+    public void issue3128() {
+        this.compileRustTestCase("""
+                CREATE TABLE t2(c2 VARCHAR) with ('materialized' = 'true');
+                CREATE MATERIALIZED VIEW v106_optimized AS (SELECT SUBSTRING(t2.c2, 1.36683) FROM t2);""");
     }
 
     @Test

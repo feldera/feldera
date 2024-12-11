@@ -1,6 +1,5 @@
 package org.dbsp.sqlCompiler.compiler.sql.tools;
 
-import org.apache.calcite.tools.Program;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.TableContents;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
@@ -8,6 +7,9 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.Simplify;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.Linq;
+import org.dbsp.util.Shuffle;
+
+import java.util.List;
 
 /** A Change is a collection of Z-sets literals.
  * It represents an atomic change that is applied to a set of tables or views. */
@@ -26,6 +28,14 @@ public class Change {
             this.sets[index] = data;
             index++;
         }
+    }
+
+    /** Return a change that has the sets in this one shuffled */
+    public Change shuffle(Shuffle shuffle) {
+        List<DBSPZSetLiteral> data = Linq.list(this.sets);
+        data = shuffle.shuffle(data);
+        DBSPZSetLiteral[] shuffled = data.toArray(new DBSPZSetLiteral[0]);
+        return new Change(shuffled);
     }
 
     public Change simplify(DBSPCompiler compiler) {
@@ -68,5 +78,14 @@ public class Change {
     /** Get the type of an element of a set in the change */
     public DBSPType getSetElementType(int index) {
         return this.getSet(index).getElementType();
+    }
+
+    public boolean compatible(Change outputs) {
+        if (this.getSetCount() != outputs.getSetCount())
+            return false;
+        for (int i = 0; i < this.getSetCount(); i++)
+            if (!this.getSet(i).getType().sameType(outputs.getSet(i).getType()))
+                return false;
+        return true;
     }
 }
