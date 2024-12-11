@@ -44,19 +44,28 @@ impl InputFormat for CsvInputFormat {
         _endpoint_name: &str,
         _request: &HttpRequest,
     ) -> Result<Box<dyn ErasedSerialize>, ControllerError> {
-        Ok(Box::new(CsvParserConfig {}))
+        Ok(Box::new(CsvParserConfig::default()))
     }
 
     fn new_parser(
         &self,
-        _endpoint_name: &str,
+        endpoint_name: &str,
         input_stream: &InputCollectionHandle,
-        _config: &YamlValue,
+        config: &YamlValue,
     ) -> Result<Box<dyn Parser>, ControllerError> {
+        let config = CsvParserConfig::deserialize(config).map_err(|e| {
+            ControllerError::parser_config_parse_error(
+                endpoint_name,
+                &e,
+                &serde_yaml::to_string(config).unwrap_or_default(),
+            )
+        })?;
+
+        let headers = config.headers;
         let input_stream = input_stream
             .handle
-            .configure_deserializer(RecordFormat::Csv)?;
-        Ok(Box::new(CsvParser::new(input_stream)) as Box<dyn Parser>)
+            .configure_deserializer(RecordFormat::Csv(config))?;
+        Ok(Box::new(CsvParser::new(input_stream, headers)) as Box<dyn Parser>)
     }
 }
 
@@ -64,31 +73,37 @@ struct CsvParser {
     /// Input handle to push parsed data to.
     input_stream: Box<dyn DeCollectionStream>,
 
+    /// Whether the input starts with a header row.
+    headers: bool,
+
     last_event_number: u64,
 }
 
 impl CsvParser {
-    fn new(input_stream: Box<dyn DeCollectionStream>) -> Self {
+    fn new(input_stream: Box<dyn DeCollectionStream>, headers: bool) -> Self {
         Self {
             input_stream,
             last_event_number: 0,
+            headers,
         }
     }
 
     fn parse_record(&mut self, record: &[u8], errors: &mut Vec<ParseError>) {
-        if let Err(e) = self.input_stream.insert(record) {
-            errors.push(ParseError::text_event_error(
-                "failed to deserialize CSV record",
-                e,
-                self.last_event_number + 1,
-                Some(
-                    &std::str::from_utf8(record)
-                        .map(|s| s.to_string())
-                        .unwrap_or_else(|_| format!("{:?}", record))
-                        .to_string(),
-                ),
-                None,
-            ));
+        if !self.headers || self.last_event_number > 0 {
+            if let Err(e) = self.input_stream.insert(record) {
+                errors.push(ParseError::text_event_error(
+                    "failed to deserialize CSV record",
+                    e,
+                    self.last_event_number + 1,
+                    Some(
+                        &std::str::from_utf8(record)
+                            .map(|s| s.to_string())
+                            .unwrap_or_else(|_| format!("{:?}", record))
+                            .to_string(),
+                    ),
+                    None,
+                ));
+            }
         }
     }
 
@@ -122,11 +137,11 @@ impl CsvParser {
 
 impl Parser for CsvParser {
     fn fork(&self) -> Box<dyn Parser> {
-        Box::new(Self::new(self.input_stream.fork()))
+        Box::new(Self::new(self.input_stream.fork(), self.headers))
     }
 
     fn splitter(&self) -> Box<dyn super::Splitter> {
-        Box::new(CsvSplitter::new())
+        Box::new(CsvSplitter::new(self.headers))
     }
 
     fn parse(&mut self, mut data: &[u8]) -> (Option<Box<dyn InputBuffer>>, Vec<ParseError>) {
@@ -145,11 +160,15 @@ impl Parser for CsvParser {
 
 struct CsvSplitter {
     quoted: bool,
+    headers: bool,
 }
 
 impl CsvSplitter {
-    fn new() -> Self {
-        Self { quoted: false }
+    fn new(headers: bool) -> Self {
+        Self {
+            quoted: false,
+            headers,
+        }
     }
 }
 
@@ -168,7 +187,11 @@ impl Splitter for CsvSplitter {
             match c {
                 b'"' => self.quoted = !self.quoted,
                 b'\n' if !self.quoted => {
-                    return Some(offset + 1);
+                    if self.headers {
+                        self.headers = false;
+                    } else {
+                        return Some(offset + 1);
+                    }
                 }
                 _ => (),
             }
@@ -240,7 +263,6 @@ struct CsvEncoder {
 impl CsvEncoder {
     fn new(output_consumer: Box<dyn OutputConsumer>, config: CsvEncoderConfig) -> Self {
         let max_buffer_size = output_consumer.max_buffer_size_bytes();
-
         Self {
             output_consumer,
             config,
@@ -260,7 +282,11 @@ impl Encoder for CsvEncoder {
         //let mut writer = self.builder.from_writer(buffer);
         let mut num_records = 0;
 
-        let mut cursor = CursorWithPolarity::new(batch.cursor(RecordFormat::Csv)?);
+        let mut cursor =
+            CursorWithPolarity::new(batch.cursor(RecordFormat::Csv(CsvParserConfig {
+                delimiter: self.config.delimiter,
+                ..Default::default()
+            }))?);
 
         while cursor.key_valid() {
             if !cursor.val_valid() {

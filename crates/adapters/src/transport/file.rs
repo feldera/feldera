@@ -329,6 +329,9 @@ transport:
         buffer_size_bytes: 5
 format:
     name: csv
+    config:
+        delimiter: "|"
+        headers: true
 "#,
             temp_file.path().to_str().unwrap()
         );
@@ -336,7 +339,8 @@ format:
         println!("Config:\n{}", config_str);
 
         let mut writer = CsvWriterBuilder::new()
-            .has_headers(false)
+            .has_headers(true)
+            .delimiter(b'|')
             .from_writer(temp_file.as_file());
         for val in test_data.iter().cloned() {
             writer.serialize(val).unwrap();

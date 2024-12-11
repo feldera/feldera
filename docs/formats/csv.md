@@ -145,3 +145,36 @@ for ingress.
 The CSV format does not have native support for arrays. Arrays are expected to
 be represented in the form of a string that is a valid JSON array. e.g., a value
 for `ARRAY BIGINT` can be expressed as `'[1,2,3]'`.
+
+## Configuring CSV event streams
+
+### Configure connectors
+
+When adding a new input or output connector on a table or view,
+the data format is specified in the `format` field of the connector configuration:
+
+```sql
+create table FAILED_BANKS (
+  name varchar,
+  city varchar,
+  state varchar,
+  cert bigint,
+  acquirer varchar,
+  closing varchar,   -- needs to be translated from 'DD-MMM-YY' format
+  fund bigint
+) with (
+  'connectors' = '[{
+    "transport": {
+        "name": "url_input",
+        "config": { "path": "https://www.fdic.gov/system/files/2024-07/banklist.csv" }
+    },
+    "format": {
+        "name": "csv",
+        "config": { "headers": true }
+    }
+}]'
+);
+```
+
+- `delimiter`: A single character that delimits fields. The default is `","`.
+- `headers`: Whether the first line of input is a header line. If this is set to true, Feldera ignores the first line. This applies only to input connectors (Feldera never writes a header line for CSV output). The default is `false`.

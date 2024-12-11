@@ -125,20 +125,24 @@ where
         record_format: RecordFormat,
     ) -> Result<Box<dyn DeCollectionStream>, ControllerError> {
         match record_format {
-            RecordFormat::Csv => Ok(Box::new(
-                MockDeZSetStream::<CsvDeserializerFromBytes, T, U>::new(
-                    self.clone(),
-                    SqlSerdeConfig::default(),
-                ),
-            )),
-            RecordFormat::Json(flavor) => {
-                Ok(Box::new(
-                    MockDeZSetStream::<JsonDeserializerFromBytes, T, U>::new(
-                        self.clone(),
-                        SqlSerdeConfig::from(flavor),
-                    ),
-                ))
-            }
+            RecordFormat::Csv(delimiter) => Ok(Box::new(MockDeZSetStream::<
+                CsvDeserializerFromBytes,
+                T,
+                U,
+                _,
+            >::new(
+                self.clone(),
+                (SqlSerdeConfig::default(), delimiter),
+            ))),
+            RecordFormat::Json(flavor) => Ok(Box::new(MockDeZSetStream::<
+                JsonDeserializerFromBytes,
+                T,
+                U,
+                _,
+            >::new(
+                self.clone(),
+                SqlSerdeConfig::from(flavor),
+            ))),
             RecordFormat::Parquet(_) => {
                 todo!()
             }
@@ -219,23 +223,24 @@ where
 }
 
 #[derive(Clone)]
-pub struct MockDeZSetStream<De, T, U>
+pub struct MockDeZSetStream<De, T, U, C>
 where
     T: Send + Sync,
     U: Send + Sync,
 {
     buffer: MockDeZSetStreamBuffer<T, U>,
     deserializer: De,
-    config: SqlSerdeConfig,
+    config: C,
 }
 
-impl<De, T, U> MockDeZSetStream<De, T, U>
+impl<De, T, U, C> MockDeZSetStream<De, T, U, C>
 where
-    De: DeserializerFromBytes<SqlSerdeConfig>,
+    De: DeserializerFromBytes<C>,
     T: Send + Sync,
     U: Send + Sync,
+    C: Clone,
 {
-    pub fn new(handle: MockDeZSet<T, U>, config: SqlSerdeConfig) -> Self {
+    pub fn new(handle: MockDeZSet<T, U>, config: C) -> Self {
         Self {
             buffer: MockDeZSetStreamBuffer::new(handle),
             deserializer: De::create(config.clone()),
@@ -244,11 +249,12 @@ where
     }
 }
 
-impl<De, T, U> DeCollectionStream for MockDeZSetStream<De, T, U>
+impl<De, T, U, C> DeCollectionStream for MockDeZSetStream<De, T, U, C>
 where
     T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Hash + Send + Sync + 'static,
     U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Hash + Send + Sync + 'static,
-    De: DeserializerFromBytes<SqlSerdeConfig> + Send + Sync + 'static,
+    De: DeserializerFromBytes<C> + Send + Sync + 'static,
+    C: Clone + Send + Sync + 'static,
 {
     fn insert(&mut self, data: &[u8]) -> AnyResult<()> {
         let val = DeserializerFromBytes::deserialize::<T>(&mut self.deserializer, data)?;
@@ -279,11 +285,12 @@ where
     }
 }
 
-impl<De, T, U> InputBuffer for MockDeZSetStream<De, T, U>
+impl<De, T, U, C> InputBuffer for MockDeZSetStream<De, T, U, C>
 where
     T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Hash + Send + Sync + 'static,
     U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Hash + Send + Sync + 'static,
-    De: DeserializerFromBytes<SqlSerdeConfig> + Send + Sync + 'static,
+    De: DeserializerFromBytes<C> + Send + Sync + 'static,
+    C: Clone + Send + Sync + 'static,
 {
     fn flush(&mut self) {
         self.buffer.flush()
