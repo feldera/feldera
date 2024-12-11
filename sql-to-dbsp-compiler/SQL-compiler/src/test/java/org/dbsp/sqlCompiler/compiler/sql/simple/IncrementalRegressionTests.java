@@ -50,6 +50,23 @@ public class IncrementalRegressionTests extends SqlIoTest {
     }
 
     @Test
+    public void issue3145() {
+        this.compileRustTestCase("""
+                CREATE TABLE array_tbl(c1 INT ARRAY NOT NULL);
+                CREATE MATERIALIZED VIEW max_emp AS SELECT
+                MAX(c1) AS max FROM array_tbl WHERE FALSE;""");
+    }
+
+    @Test
+    public void issue3119() {
+        this.compileRustTestCase("""
+                CREATE TABLE row_tbl(id INT, c1 INT NOT NULL, c2 VARCHAR, c3 VARCHAR);
+                CREATE MATERIALIZED VIEW v_max AS SELECT
+                MAX(ROW(c1, c2, c3)) AS c1
+                FROM row_tbl;""");
+    }
+
+    @Test
     public void wrongLateness() {
         this.statementsFailingInCompilation("""
                 create table t (

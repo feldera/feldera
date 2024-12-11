@@ -794,11 +794,25 @@ public class ToRustInnerVisitor extends InnerVisitor {
 
         if (sourceType.is(DBSPTypeTuple.class)) {
             // should have been eliminated
-            this.unimplementedCast(expression);
+            if (!this.compact)
+                this.unimplementedCast(expression);
+            // we are dumping DOT
+            this.builder.append("(");
+            expression.type.accept(this);
+            this.builder.append(")");
+            expression.source.accept(this);
+            return VisitDecision.STOP;
         }
         if (destType.is(DBSPTypeTuple.class)) {
             // should have been eliminated
-            this.unimplementedCast(expression);
+            if (!this.compact)
+                this.unimplementedCast(expression);
+            // we are dumping DOT
+            this.builder.append("(");
+            expression.type.accept(this);
+            this.builder.append(")");
+            expression.source.accept(this);
+            return VisitDecision.STOP;
         }
 
         functionName = "cast_to_" + destType.baseTypeWithSuffix() +
