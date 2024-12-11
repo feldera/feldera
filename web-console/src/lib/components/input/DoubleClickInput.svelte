@@ -42,11 +42,11 @@
       handleSubmit(e)
     }}
     onkeydown={(e) => {
-      if (e.code !== 'Enter') {
-        return
+      if (e.key === 'Enter') {
+        handleSubmit(e)
       }
-      handleSubmit(e)
     }}
+    enterkeyhint="done"
     class={_class}
   />
 {:else}

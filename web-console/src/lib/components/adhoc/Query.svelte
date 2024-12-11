@@ -23,17 +23,13 @@
     (onSubmitQuery: (query: string) => void, disabled: boolean) => (e: KeyboardEvent) => {
       // Enter to submit, Shift + Enter to enter newline
       if (e.key === 'Enter') {
-        if (!e.shiftKey && !e.altKey && !e.ctrlKey) {
+        if (e.shiftKey || e.altKey || e.ctrlKey) {
           if (!disabled) {
             onSubmitQuery((e as any).currentTarget.value)
           }
           e.preventDefault()
           return
         }
-        if (e.shiftKey) {
-          return 'Enter'
-        }
-        e.preventDefault()
       }
     }
 </script>
