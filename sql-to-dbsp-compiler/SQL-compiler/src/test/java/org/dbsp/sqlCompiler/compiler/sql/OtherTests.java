@@ -494,7 +494,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
                         .expect("Failed to get input collection handle");
                     let mut persons_stream = persons
                         .handle
-                        .configure_deserializer(RecordFormat::Csv)
+                        .configure_deserializer(RecordFormat::Csv(Default::default()))
                         .expect("Failed to configure deserializer");
                     persons_stream
                         .insert(b"Bob,12,true")

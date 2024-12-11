@@ -9,11 +9,12 @@ use anyhow::{bail, Result as AnyResult};
 use erased_serde::Serialize as ErasedSerialize;
 use feldera_types::{
     config::ConnectorConfig,
-    format::csv::{CsvEncoderConfig, CsvParserConfig},
+    format::csv::{CsvDelimiter, CsvEncoderConfig, CsvParserConfig},
 };
 use serde::Deserialize;
 use serde_urlencoded::Deserializer as UrlDeserializer;
 use std::{borrow::Cow, mem::take};
+use tracing::warn;
 
 pub(crate) mod deserializer;
 use crate::catalog::{InputCollectionHandle, SerBatchReader};
@@ -44,18 +45,32 @@ impl InputFormat for CsvInputFormat {
         _endpoint_name: &str,
         _request: &HttpRequest,
     ) -> Result<Box<dyn ErasedSerialize>, ControllerError> {
-        Ok(Box::new(CsvParserConfig {}))
+        Ok(Box::new(CsvParserConfig::default()))
     }
 
     fn new_parser(
         &self,
-        _endpoint_name: &str,
+        endpoint_name: &str,
         input_stream: &InputCollectionHandle,
-        _config: &YamlValue,
+        config: &YamlValue,
     ) -> Result<Box<dyn Parser>, ControllerError> {
+        let config = CsvParserConfig::deserialize(config).map_err(|e| {
+            ControllerError::parser_config_parse_error(
+                endpoint_name,
+                &e,
+                &serde_yaml::to_string(config).unwrap_or_default(),
+            )
+        })?;
+        let Ok(delimiter) = u8::try_from(config.delimiter) else {
+            return Err(ControllerError::invalid_parser_configuration(
+                endpoint_name,
+                "CSV delimiter must be an ASCII character.",
+            ));
+        };
+
         let input_stream = input_stream
             .handle
-            .configure_deserializer(RecordFormat::Csv)?;
+            .configure_deserializer(RecordFormat::Csv(CsvDelimiter(delimiter)))?;
         Ok(Box::new(CsvParser::new(input_stream)) as Box<dyn Parser>)
     }
 }
@@ -233,6 +248,7 @@ struct CsvEncoder {
     output_consumer: Box<dyn OutputConsumer>,
 
     config: CsvEncoderConfig,
+    delimiter: CsvDelimiter,
     buffer: Vec<u8>,
     max_buffer_size: usize,
 }
@@ -240,10 +256,14 @@ struct CsvEncoder {
 impl CsvEncoder {
     fn new(output_consumer: Box<dyn OutputConsumer>, config: CsvEncoderConfig) -> Self {
         let max_buffer_size = output_consumer.max_buffer_size_bytes();
-
+        let delimiter = u8::try_from(config.delimiter).unwrap_or_else(|_| {
+            warn!("Invalid CSV delimiter {:?}, using comma.", config.delimiter);
+            b','
+        });
         Self {
             output_consumer,
             config,
+            delimiter: CsvDelimiter(delimiter),
             buffer: Vec::new(),
             max_buffer_size,
         }
@@ -260,7 +280,7 @@ impl Encoder for CsvEncoder {
         //let mut writer = self.builder.from_writer(buffer);
         let mut num_records = 0;
 
-        let mut cursor = CursorWithPolarity::new(batch.cursor(RecordFormat::Csv)?);
+        let mut cursor = CursorWithPolarity::new(batch.cursor(RecordFormat::Csv(self.delimiter))?);
 
         while cursor.key_valid() {
             if !cursor.val_valid() {

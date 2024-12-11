@@ -9,7 +9,7 @@
 //! Likewise, all output types must implement
 //! `SerializeWithContext<SqlSerializerConfig>`.
 
-use crate::format::json::JsonFlavor;
+use crate::format::{csv::CsvDelimiter, json::JsonFlavor};
 
 /// Representation of the SQL `TIME` type.
 #[derive(Clone, Debug)]
@@ -114,6 +114,8 @@ pub struct SqlSerdeConfig {
     pub decimal_format: DecimalFormat,
     /// `VARIANT` format
     pub variant_format: VariantFormat,
+    /// CSV delimiter (typically `b','`).
+    pub delimiter: CsvDelimiter,
 }
 
 impl SqlSerdeConfig {
@@ -143,6 +145,11 @@ impl SqlSerdeConfig {
         self.variant_format = variant_format;
         self
     }
+
+    pub fn with_delimiter(mut self, delimiter: CsvDelimiter) -> Self {
+        self.delimiter = delimiter;
+        self
+    }
 }
 
 impl From<JsonFlavor> for SqlSerdeConfig {
@@ -160,6 +167,7 @@ impl From<JsonFlavor> for SqlSerdeConfig {
                 timestamp_format: TimestampFormat::MillisSinceEpoch,
                 decimal_format: DecimalFormat::String,
                 variant_format: VariantFormat::JsonString,
+                delimiter: CsvDelimiter::default(),
             },
             JsonFlavor::DebeziumMySql => Self {
                 time_format: TimeFormat::Micros,
@@ -167,6 +175,7 @@ impl From<JsonFlavor> for SqlSerdeConfig {
                 timestamp_format: TimestampFormat::String("%Y-%m-%dT%H:%M:%S%Z"),
                 decimal_format: DecimalFormat::String,
                 variant_format: VariantFormat::JsonString,
+                delimiter: CsvDelimiter::default(),
             },
             JsonFlavor::DebeziumPostgres => Self {
                 time_format: TimeFormat::Micros,
@@ -174,6 +183,7 @@ impl From<JsonFlavor> for SqlSerdeConfig {
                 timestamp_format: TimestampFormat::MillisSinceEpoch,
                 decimal_format: DecimalFormat::String,
                 variant_format: VariantFormat::JsonString,
+                delimiter: CsvDelimiter::default(),
             },
             JsonFlavor::Snowflake => Self {
                 time_format: TimeFormat::String("%H:%M:%S%.f"),
@@ -181,6 +191,7 @@ impl From<JsonFlavor> for SqlSerdeConfig {
                 timestamp_format: TimestampFormat::String("%Y-%m-%dT%H:%M:%S%.f%:z"),
                 decimal_format: DecimalFormat::String,
                 variant_format: VariantFormat::JsonString,
+                delimiter: CsvDelimiter::default(),
             },
             JsonFlavor::Pandas => Self {
                 time_format: TimeFormat::String("%H:%M:%S%.f"),
@@ -188,6 +199,7 @@ impl From<JsonFlavor> for SqlSerdeConfig {
                 timestamp_format: TimestampFormat::MillisSinceEpoch,
                 decimal_format: DecimalFormat::String,
                 variant_format: VariantFormat::JsonString,
+                delimiter: CsvDelimiter::default(),
             },
             JsonFlavor::ParquetConverter => Self {
                 time_format: TimeFormat::Nanos,
@@ -200,7 +212,14 @@ impl From<JsonFlavor> for SqlSerdeConfig {
                 timestamp_format: TimestampFormat::String("%Y-%m-%d %H:%M:%S %:z"), // 2023-11-04 15:33:47 +00:00
                 decimal_format: DecimalFormat::String,
                 variant_format: VariantFormat::JsonString,
+                delimiter: CsvDelimiter::default(),
             },
         }
+    }
+}
+
+impl From<CsvDelimiter> for SqlSerdeConfig {
+    fn from(delimiter: CsvDelimiter) -> Self {
+        SqlSerdeConfig::default().with_delimiter(delimiter)
     }
 }

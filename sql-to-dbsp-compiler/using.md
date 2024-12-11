@@ -382,7 +382,7 @@ pub fn test() {
         .input_collection_handle(&SqlIdentifier::from("PERSON"))
         .expect("Failed to get input collection handle");
     let mut persons_stream = persons
-        .configure_deserializer(RecordFormat::Csv)
+        .configure_deserializer(RecordFormat::Csv(Default::default())
         .expect("Failed to configure deserializer");
     persons_stream
         .insert(b"Bob,12,true")

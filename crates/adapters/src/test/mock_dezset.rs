@@ -125,12 +125,14 @@ where
         record_format: RecordFormat,
     ) -> Result<Box<dyn DeCollectionStream>, ControllerError> {
         match record_format {
-            RecordFormat::Csv => Ok(Box::new(
-                MockDeZSetStream::<CsvDeserializerFromBytes, T, U>::new(
-                    self.clone(),
-                    SqlSerdeConfig::default(),
-                ),
-            )),
+            RecordFormat::Csv(delimiter) => {
+                Ok(Box::new(
+                    MockDeZSetStream::<CsvDeserializerFromBytes, T, U>::new(
+                        self.clone(),
+                        SqlSerdeConfig::from(delimiter),
+                    ),
+                ))
+            }
             RecordFormat::Json(flavor) => {
                 Ok(Box::new(
                     MockDeZSetStream::<JsonDeserializerFromBytes, T, U>::new(

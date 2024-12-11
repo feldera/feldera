@@ -49,6 +49,7 @@ impl DeserializerFromBytes<SqlSerdeConfig> for CsvDeserializerFromBytes {
             reader: csv::ReaderBuilder::new()
                 .has_headers(false)
                 .flexible(true)
+                .delimiter(config.delimiter.0)
                 .from_reader(VecDeque::new()),
             record: csv::ByteRecord::new(),
             config,
@@ -167,8 +168,8 @@ where
         record_format: RecordFormat,
     ) -> Result<Box<dyn DeScalarStream>, ControllerError> {
         match record_format {
-            RecordFormat::Csv => {
-                let config = SqlSerdeConfig::default();
+            RecordFormat::Csv(delimiter) => {
+                let config = SqlSerdeConfig::default().with_delimiter(delimiter);
                 Ok(Box::new(DeScalarStreamImpl::<
                     CsvDeserializerFromBytes,
                     T,
@@ -296,8 +297,8 @@ where
         record_format: RecordFormat,
     ) -> Result<Box<dyn DeCollectionStream>, ControllerError> {
         match record_format {
-            RecordFormat::Csv => {
-                let config = SqlSerdeConfig::default();
+            RecordFormat::Csv(delimiter) => {
+                let config = SqlSerdeConfig::from(delimiter);
                 Ok(Box::new(
                     DeZSetStream::<CsvDeserializerFromBytes, K, D, _>::new(
                         self.handle.clone(),
@@ -663,12 +664,14 @@ where
         record_format: RecordFormat,
     ) -> Result<Box<dyn DeCollectionStream>, ControllerError> {
         match record_format {
-            RecordFormat::Csv => Ok(Box::new(
-                DeSetStream::<CsvDeserializerFromBytes, K, D, _>::new(
-                    self.handle.clone(),
-                    SqlSerdeConfig::default(),
-                ),
-            )),
+            RecordFormat::Csv(delimiter) => {
+                Ok(Box::new(
+                    DeSetStream::<CsvDeserializerFromBytes, K, D, _>::new(
+                        self.handle.clone(),
+                        SqlSerdeConfig::from(delimiter),
+                    ),
+                ))
+            }
             RecordFormat::Json(flavor) => {
                 Ok(Box::new(
                     DeSetStream::<JsonDeserializerFromBytes, K, D, _>::new(
@@ -1053,7 +1056,7 @@ where
         record_format: RecordFormat,
     ) -> Result<Box<dyn DeCollectionStream>, ControllerError> {
         match record_format {
-            RecordFormat::Csv => Ok(Box::new(DeMapStream::<
+            RecordFormat::Csv(delimiter) => Ok(Box::new(DeMapStream::<
                 CsvDeserializerFromBytes,
                 K,
                 KD,
@@ -1068,7 +1071,7 @@ where
                 self.handle.clone(),
                 self.value_key_func.clone(),
                 self.update_key_func.clone(),
-                SqlSerdeConfig::default(),
+                SqlSerdeConfig::from(delimiter),
             ))),
             RecordFormat::Json(flavor) => Ok(Box::new(DeMapStream::<
                 JsonDeserializerFromBytes,
@@ -1540,7 +1543,10 @@ mod test {
         algebra::F32, utils::Tup2, DBSPHandle, OrdIndexedZSet, OrdZSet, OutputHandle, Runtime,
     };
 
-    use feldera_types::{deserialize_without_context, format::json::JsonFlavor};
+    use feldera_types::{
+        deserialize_without_context,
+        format::{csv::CsvDelimiter, json::JsonFlavor},
+    };
     use serde_json::to_string as to_json_string;
     use size_of::SizeOf;
     use std::hash::Hash;
@@ -1705,15 +1711,15 @@ mod test {
     ) {
         let mut zset_stream = input_handles
             .0
-            .configure_deserializer(RecordFormat::Csv)
+            .configure_deserializer(RecordFormat::Csv(CsvDelimiter::default()))
             .unwrap();
         let mut set_stream = input_handles
             .1
-            .configure_deserializer(RecordFormat::Csv)
+            .configure_deserializer(RecordFormat::Csv(CsvDelimiter::default()))
             .unwrap();
         let mut map_stream = input_handles
             .2
-            .configure_deserializer(RecordFormat::Csv)
+            .configure_deserializer(RecordFormat::Csv(CsvDelimiter::default()))
             .unwrap();
 
         let zset_output = &output_handles.0;

@@ -31,6 +31,7 @@ use feldera_types::config::{
     default_max_batch_size, default_max_queued_records, ConnectorConfig, FormatConfig,
     InputEndpointConfig, TransportConfig,
 };
+use feldera_types::format::csv::CsvDelimiter;
 use feldera_types::program_schema::SqlIdentifier;
 use feldera_types::serde_with_context::serde_config::{DecimalFormat, VariantFormat};
 use feldera_types::serde_with_context::{DateFormat, SqlSerdeConfig, TimeFormat, TimestampFormat};
@@ -49,6 +50,7 @@ pub const fn datafusion_arrow_serde_config() -> &'static SqlSerdeConfig {
         date_format: DateFormat::String("%Y-%m-%d"),
         decimal_format: DecimalFormat::String,
         variant_format: VariantFormat::JsonString,
+        delimiter: CsvDelimiter::DEFAULT,
     }
 }
 

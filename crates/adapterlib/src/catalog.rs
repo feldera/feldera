@@ -8,6 +8,7 @@ use anyhow::Result as AnyResult;
 use apache_avro::{schema::NamesRef, types::Value as AvroValue, Schema as AvroSchema};
 use arrow::record_batch::RecordBatch;
 use dyn_clone::DynClone;
+use feldera_types::format::csv::CsvDelimiter;
 use feldera_types::format::json::JsonFlavor;
 use feldera_types::program_schema::{Relation, SqlIdentifier};
 use feldera_types::serde_with_context::SqlSerdeConfig;
@@ -28,7 +29,7 @@ pub enum RecordFormat {
     // raw encoding of this column only.  This is particularly useful for
     // tables that store raw JSON or binary data to be parsed using SQL.
     Json(JsonFlavor),
-    Csv,
+    Csv(CsvDelimiter),
     Parquet(SerdeArrowSchema),
     #[cfg(feature = "with-avro")]
     Avro,

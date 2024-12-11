@@ -10,7 +10,10 @@ use actix_web::HttpRequest;
 use apache_avro::{from_avro_datum, types::Value as AvroValue, Schema as AvroSchema};
 use erased_serde::Serialize as ErasedSerialize;
 use feldera_types::{
-    format::avro::{AvroParserConfig, AvroUpdateFormat},
+    format::{
+        avro::{AvroParserConfig, AvroUpdateFormat},
+        csv::CsvDelimiter,
+    },
     program_schema::Relation,
     serde_with_context::{
         serde_config::{DecimalFormat, VariantFormat},
@@ -44,6 +47,7 @@ pub const fn avro_de_config() -> &'static SqlSerdeConfig {
         date_format: DateFormat::DaysSinceEpoch,
         decimal_format: DecimalFormat::String,
         variant_format: VariantFormat::JsonString,
+        delimiter: CsvDelimiter::DEFAULT,
     }
 }
 
