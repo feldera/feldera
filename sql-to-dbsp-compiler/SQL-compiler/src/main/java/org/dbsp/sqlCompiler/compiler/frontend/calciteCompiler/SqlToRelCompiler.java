@@ -86,6 +86,7 @@ import org.apache.calcite.sql.ddl.SqlCreateType;
 import org.apache.calcite.sql.ddl.SqlDropTable;
 import org.apache.calcite.sql.ddl.SqlKeyConstraint;
 import org.apache.calcite.sql.dialect.OracleSqlDialect;
+import org.apache.calcite.sql.fun.SqlDatetimeSubtractionOperator;
 import org.apache.calcite.sql.parser.SqlParseException;
 import org.apache.calcite.sql.parser.SqlParser;
 import org.apache.calcite.sql.parser.SqlParserPos;
@@ -372,6 +373,11 @@ public class SqlToRelCompiler implements IWritesLogs {
                                 "Illegal expression",
                                 "Expression is missing some required operands");
                 }
+            }
+            if (operator instanceof SqlDatetimeSubtractionOperator) {
+                this.errorReporter.reportError(position,
+                        "Unsupported operation",
+                        "DATE/TIME/TIMESTAMP subtraction not supported; consider using 'DATETIMEDIFF'");
             }
             return super.visit(call);
         }
@@ -1330,12 +1336,16 @@ public class SqlToRelCompiler implements IWritesLogs {
         return new CreateFunctionStatement(node, function);
     }
 
+    RelRoot sqlToRel(SqlNode node) {
+        SqlToRelConverter converter = this.getConverter();
+        return converter.convertQuery(node, true, true);
+    }
+
     @Nullable
     public CreateViewStatement compileCreateView(
             ParsedStatement node, Map<ProgramIdentifier, SqlLateness> lateness,
             SourceFileContents sources) {
         CalciteObject object = CalciteObject.create(node);
-        SqlToRelConverter converter = this.getConverter();
         SqlCreateView cv = (SqlCreateView) node.statement();
         SqlNode query = cv.query;
         if (cv.getReplace())
@@ -1344,7 +1354,7 @@ public class SqlToRelCompiler implements IWritesLogs {
                 .appendSupplier(node.statement()::toString)
                 .newline();
         query = this.replaceRecursiveViews(query);
-        RelRoot relRoot = converter.convertQuery(query, true, true);
+        RelRoot relRoot = this.sqlToRel(query);
         List<RelColumnMetadata> columns = this.createViewColumnsMetadata(CalciteObject.create(node),
                 cv.name, relRoot, cv.columnList, cv.viewKind, lateness, sources);
         if (columns == null)
@@ -1453,26 +1463,24 @@ public class SqlToRelCompiler implements IWritesLogs {
 
     private TableModifyStatement compileRemove(ParsedStatement node) {
         SqlRemove remove = (SqlRemove) node.statement();
-        SqlToRelConverter converter = this.getConverter();
         SqlNode table = remove.getTargetTable();
         if (!(table instanceof SqlIdentifier id))
             throw new UnimplementedException("REMOVE not supported for " + table, CalciteObject.create(table));
         TableModifyStatement stat = new TableModifyStatement(
                 node, false, Utilities.toIdentifier(id), remove.getSource());
-        RelRoot values = converter.convertQuery(stat.data, true, true);
+        RelRoot values = this.sqlToRel(stat.data);
         values = values.withRel(this.optimize(values.rel));
         stat.setTranslation(values.rel);
         return stat;
     }
 
     private TableModifyStatement compileInsert(ParsedStatement node) {
-        SqlToRelConverter converter = this.getConverter();
         SqlInsert insert = (SqlInsert) node.statement();
         SqlNode table = insert.getTargetTable();
         if (!(table instanceof SqlIdentifier id))
             throw new UnimplementedException("INSERT NOT SUPPORTED FOR " + table, CalciteObject.create(table));
         TableModifyStatement stat = new TableModifyStatement(node, true, Utilities.toIdentifier(id), insert.getSource());
-        RelRoot values = converter.convertQuery(stat.data, true, true);
+        RelRoot values = this.sqlToRel(stat.data);
         values = values.withRel(this.optimize(values.rel));
         stat.setTranslation(values.rel);
         return stat;

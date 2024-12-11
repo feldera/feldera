@@ -77,7 +77,7 @@ public class RegressionTests extends SqlIoTest {
                 FROM map_tbl;""");
     }
 
-    @Test
+    @Test @Ignore("Disabled TIMESTAMP subtraction")
     public void issue3083() {
         var ccs = this.getCCS("""
                 CREATE TABLE timestamp_tbl(c1 TIMESTAMP, c2 TIMESTAMP);
@@ -225,7 +225,7 @@ public class RegressionTests extends SqlIoTest {
                 CREATE VIEW v22_optimized AS (SELECT * FROM t4, t1 WHERE ((t4.c0)IS NOT DISTINCT FROM(IS_INF(t1.c1))));""");
     }
 
-    @Test
+    @Test @Ignore("Disabled TIMESTAMP subtraction")
     public void issue3030() {
         this.compileRustTestCase("""
                 CREATE TABLE timestamp_tbl(c1 TIMESTAMP, c2 TIMESTAMP);
@@ -253,7 +253,7 @@ public class RegressionTests extends SqlIoTest {
         this.compileRustTestCase(sql);
     }
 
-    @Test
+    @Test @Ignore("Disabled TIMESTAMP subtraction")
     public void issue3031() {
         this.compileRustTestCase("""
                 CREATE TABLE time_tbl(c1 TIME, c2 TIME);
@@ -267,7 +267,7 @@ public class RegressionTests extends SqlIoTest {
                 FROM atbl_interval;""");
     }
 
-    @Test
+    @Test @Ignore("Disabled TIMESTAMP subtraction")
     public void issue2943() {
         this.compileRustTestCase("""
                 CREATE TABLE x(c1 TIMESTAMP, c2 TIMESTAMP);

@@ -30,6 +30,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntervalMillisLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
 import org.dbsp.util.Linq;
+import org.junit.Ignore;
 import org.junit.Test;
 
 /* Tests manually adapted from
@@ -906,7 +907,7 @@ public class PostgresDateTests extends SqlIoTest {
     // date out of range: "6874898-01-01"
     //(1 row)
 
-    @Test
+    @Test @Ignore("Disabled TIMESTAMP subtraction")
     public void testDiff() {
         // SELECT f1 - date '2000-01-01' AS "Days From 2K" FROM DATE_TBL;
         String query = "SELECT (f1 - date '2000-01-01') day AS \"Days From 2K\" FROM DATE_TBL";
