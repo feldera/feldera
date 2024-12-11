@@ -94,7 +94,8 @@
   const iconClass = 'text-[20px]'
   const shortClass = 'w-9'
   const longClass = 'w-28 sm:w-32 justify-between pl-2 gap-2 text-sm sm:text-base'
-  const basicBtnColor = 'preset-filled-surface-50-950'
+  const shortColor = 'preset-tonal-surface'
+  const basicBtnColor = 'preset-filled-surface-100-900 !bg-opacity-50'
   const importantBtnColor = 'preset-filled-primary-500'
 </script>
 
@@ -118,9 +119,9 @@
       (name) => `${name} pipeline`,
       (pipelineName: string) => {
         return postPipelineAction(pipelineName, 'shutdown').then(() => {
-        onActionSuccess?.(pipelineName, 'shutdown')
-        pipeline.optimisticUpdate({ status: 'ShuttingDown' })
-      })
+          onActionSuccess?.(pipelineName, 'shutdown')
+          pipeline.optimisticUpdate({ status: 'ShuttingDown' })
+        })
       },
       'The internal state of the pipeline will be reset.'
     )(pipeline.current.name)}
@@ -139,7 +140,7 @@
 
 {#snippet _delete()}
   <button
-    class="{buttonClass} {shortClass} fd fd-trash-2 preset-tonal-surface {iconClass}"
+    class="{buttonClass} {shortClass} {shortColor} fd fd-trash-2 preset-tonal-surface {iconClass}"
     onclick={() => (globalDialog.dialog = deleteDialog)}
   >
   </button>
@@ -238,11 +239,10 @@
 {#snippet _saveFile()}
   <div>
     <button
-      class="{buttonClass} {shortClass} {basicBtnColor} fd fd-save {iconClass}"
+      class="{buttonClass} {shortClass} {shortColor} fd fd-save {iconClass}"
       class:disabled={!unsavedChanges}
       onclick={saveFile}
     >
-    <span class=""></span>
     </button>
   </div>
   <Tooltip class="bg-white-black z-20 rounded text-surface-950-50" placement="top">
@@ -287,7 +287,7 @@
 {#snippet _configureResources()}
   <button
     onclick={() => (globalDialog.dialog = resourcesDialog)}
-    class="{buttonClass} {shortClass} fd fd-sliders-horizontal {basicBtnColor} {iconClass}"
+    class="{buttonClass} {shortClass} {shortColor} fd fd-sliders-horizontal {basicBtnColor} {iconClass}"
   >
   </button>
   {#if pipelineBusy}
@@ -299,7 +299,7 @@
 {#snippet _configureProgram()}
   <button
     onclick={() => (globalDialog.dialog = compilationDialog)}
-    class="{buttonClass} {shortClass} fd fd-settings {basicBtnColor} {iconClass}"
+    class="{buttonClass} {shortClass} {shortColor} fd fd-settings {basicBtnColor} {iconClass}"
   >
   </button>
   {#if pipelineBusy}

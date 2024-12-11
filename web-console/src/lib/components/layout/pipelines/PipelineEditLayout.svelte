@@ -401,7 +401,7 @@ example = "1.0"`
                     </span>
                     <div class="{icon} text-[20px] {value.value ? 'text-primary-500' : ''}"></div>
                   </button>
-                  <div class="w-0 pointer-events-none -translate-x-0.5">|</div>
+                  <div class="pointer-events-none w-0 -translate-x-0.5">|</div>
                 {/if}
               {/each}
             </div>
