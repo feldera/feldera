@@ -1,5 +1,5 @@
 use crate::api::error::ApiError;
-use crate::api::parse_string_param;
+use crate::api::util::parse_url_parameter;
 use crate::config::CommonConfig;
 use crate::db::storage_postgres::StoragePostgres;
 use crate::db::types::pipeline::PipelineId;
@@ -102,7 +102,7 @@ async fn get_logs(
     req: HttpRequest,
 ) -> Result<impl Responder, ManagerError> {
     // Parse pipeline identifier
-    let pipeline_id = parse_string_param(&req, "pipeline_id")?;
+    let pipeline_id = parse_url_parameter(&req, "pipeline_id")?;
     let pipeline_id = PipelineId(Uuid::from_str(&pipeline_id).map_err(|e| {
         ManagerError::from(ApiError::InvalidUuidParam {
             value: pipeline_id.clone(),

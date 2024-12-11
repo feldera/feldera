@@ -23,8 +23,8 @@ mod examples;
 mod http_io;
 mod metrics;
 mod pipeline;
+pub mod util;
 
-use crate::api::error::ApiError;
 use crate::auth::JwkCache;
 use crate::config::{ApiServerConfig, CommonConfig};
 use crate::db::storage_postgres::StoragePostgres;
@@ -42,7 +42,7 @@ use actix_web::{
     get,
     web::Data as WebData,
     web::{self},
-    App, HttpRequest, HttpResponse, HttpServer,
+    App, HttpResponse, HttpServer,
 };
 use actix_web_httpauth::middleware::HttpAuthentication;
 use actix_web_static_files::ResourceFiles;
@@ -102,7 +102,7 @@ The program version is used internally by the compiler to know when to recompile
 
         // Special pipeline endpoints
         pipeline::post_pipeline_action,
-        pipeline::input_endpoint_action,
+        pipeline::post_pipeline_input_connector_action,
         pipeline::get_pipeline_logs,
         pipeline::get_pipeline_stats,
         pipeline::get_pipeline_circuit_profile,
@@ -265,7 +265,7 @@ fn api_scope() -> Scope {
         // Special pipeline endpoints
         .service(pipeline::checkpoint_pipeline)
         .service(pipeline::post_pipeline_action)
-        .service(pipeline::input_endpoint_action)
+        .service(pipeline::post_pipeline_input_connector_action)
         .service(pipeline::get_pipeline_logs)
         .service(pipeline::get_pipeline_stats)
         .service(pipeline::get_pipeline_circuit_profile)
@@ -306,24 +306,6 @@ impl Modify for SecurityAddon {
                 ),
             )
         }
-    }
-}
-
-pub(crate) fn parse_string_param(
-    req: &HttpRequest,
-    param_name: &'static str,
-) -> Result<String, ManagerError> {
-    match req.match_info().get(param_name) {
-        None => Err(ManagerError::from(ApiError::MissingUrlEncodedParam {
-            param: param_name,
-        })),
-        Some(id) => match id.parse::<String>() {
-            Err(e) => Err(ManagerError::from(ApiError::InvalidNameParam {
-                value: id.to_string(),
-                error: e.to_string(),
-            })),
-            Ok(id) => Ok(id),
-        },
     }
 }
 

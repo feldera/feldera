@@ -63,6 +63,7 @@ use crate::{
     db::types::pipeline::PipelineStatus,
 };
 use anyhow::{bail, Result as AnyResult};
+use feldera_types::program_schema::SqlIdentifier;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -344,6 +345,25 @@ impl TestConfig {
             .send_json(&json)
             .await
             .unwrap()
+    }
+
+    /// Decodes the response body as JSON.
+    async fn decode_json(mut response: ClientResponse<Decoder<Payload>>) -> Value {
+        let bytes = response
+            .body()
+            .await
+            .expect("Body should be retrievable as bytes");
+        let utf8_str = std::str::from_utf8(&bytes).expect("Bytes should be valid UTF-8 string");
+        serde_json::from_str::<Value>(utf8_str)
+            .expect("UTF-8 string should be convertible to JSON value")
+    }
+
+    /// Retrieve the stats of a pipeline as JSON value.
+    async fn stats_json(&self, name: &str) -> Value {
+        let endpoint = format!("/v0/pipelines/{name}/stats");
+        let response = self.get(endpoint).await;
+        assert_eq!(response.status(), StatusCode::OK);
+        Self::decode_json(response).await
     }
 
     async fn delta_stream_request_json(
@@ -2374,4 +2394,462 @@ async fn pipeline_rust_compilation_is_cached() {
     assert_eq!(source_checksums[3], source_checksums[4]);
     assert_ne!(source_checksums[3], source_checksums[5]);
     assert_ne!(source_checksums[4], source_checksums[5]);
+}
+
+/// Retrieves whether pipeline is paused, connector is paused, and number of processed
+/// records, which is used by the basic orchestration test.
+async fn basic_orchestration_info(
+    config: &TestConfig,
+    pipeline_name: &str,
+    table_name: &str,
+    connector_name: &str,
+) -> (bool, bool, u64) {
+    let stats = config.stats_json(pipeline_name).await;
+    let pipeline_paused = stats["global_metrics"]["state"].as_str() == Some("Paused");
+    let connector_paused = stats["inputs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|input| {
+            input["endpoint_name"]
+                == format!(
+                    "{}.{connector_name}",
+                    SqlIdentifier::from(&table_name).name()
+                )
+        })
+        .unwrap()
+        .clone()["paused"]
+        .as_bool()
+        .unwrap();
+    let num_processed = stats["global_metrics"]["total_processed_records"]
+        .as_u64()
+        .unwrap();
+    (pipeline_paused, connector_paused, num_processed)
+}
+
+/// Tests the orchestration of the pipeline, which means the starting and pausing of the
+/// pipeline itself as well as its connectors individually. This tests the basic processing
+/// of data and handling of case sensitivity and special characters.
+#[actix_web::test]
+#[serial]
+async fn pipeline_orchestration_basic() {
+    for (table_name, connector_name) in [
+        // Case-insensitive table name
+        ("numbers", "c1"),
+        // Case-insensitive table name (with some non-alphanumeric characters that do not need to be encoded)
+        ("numbersC0_", "aA0_-"),
+        // Case-sensitive table name
+        ("\"Numbers\"", "c1"),
+        // Case-sensitive table name with special characters that need to be encoded
+        ("\"numbers +C0_-,.!%()&/\"", "aA0_-"),
+    ] {
+        let encoded_table_name = urlencoding::encode(table_name).to_string();
+
+        // One table with one connector
+        let config = setup().await;
+        let sql = format!("
+            CREATE TABLE {table_name} (
+                num DOUBLE
+            ) WITH (
+                'connectors' = '[{{
+                    \"name\": \"{connector_name}\",
+                    \"transport\": {{
+                        \"name\": \"datagen\",
+                        \"config\": {{\"plan\": [{{ \"rate\": 100, \"fields\": {{ \"num\": {{ \"range\": [0, 1000], \"strategy\": \"uniform\" }} }} }}]}}
+                    }}
+                }}]'
+            );
+        ");
+        create_and_deploy_test_pipeline(&config, &sql).await;
+
+        // Pipeline is paused, connector is running
+        sleep(Duration::from_millis(500)).await;
+        let (pipeline_paused, connector_paused, num_processed) =
+            basic_orchestration_info(&config, "test", table_name, connector_name).await;
+        assert_eq!(pipeline_paused, true);
+        assert_eq!(connector_paused, false);
+        assert_eq!(num_processed, 0);
+
+        // Pause the connector
+        assert_eq!(
+            config
+                .post_no_body(format!(
+                    "/v0/pipelines/test/tables/{encoded_table_name}/connectors/{connector_name}/pause"
+                ))
+                .await
+                .status(),
+            StatusCode::OK
+        );
+
+        // Pipeline is paused, connector is paused
+        sleep(Duration::from_millis(500)).await;
+        let (pipeline_paused, connector_paused, num_processed) =
+            basic_orchestration_info(&config, "test", table_name, connector_name).await;
+        assert_eq!(pipeline_paused, true);
+        assert_eq!(connector_paused, true);
+        assert_eq!(num_processed, 0);
+
+        // Start the pipeline
+        let response = config.post_no_body("/v0/pipelines/test/start").await;
+        assert_eq!(response.status(), StatusCode::ACCEPTED);
+        config
+            .wait_for_deployment_status(
+                "test",
+                PipelineStatus::Running,
+                Duration::from_millis(1_000),
+            )
+            .await;
+
+        // Pipeline is running, connector is paused
+        sleep(Duration::from_millis(500)).await;
+        let (pipeline_paused, connector_paused, num_processed) =
+            basic_orchestration_info(&config, "test", table_name, connector_name).await;
+        assert_eq!(pipeline_paused, false);
+        assert_eq!(connector_paused, true);
+        assert_eq!(num_processed, 0);
+
+        // Start the connector
+        assert_eq!(
+            config
+                .post_no_body(format!(
+                    "/v0/pipelines/test/tables/{encoded_table_name}/connectors/{connector_name}/start"
+                ))
+                .await
+                .status(),
+            StatusCode::OK
+        );
+
+        // Pipeline is running, connector is running
+        sleep(Duration::from_millis(500)).await;
+        let (pipeline_paused, connector_paused, num_processed) =
+            basic_orchestration_info(&config, "test", table_name, connector_name).await;
+        assert_eq!(pipeline_paused, false);
+        assert_eq!(connector_paused, false);
+        assert!(num_processed > 0);
+    }
+}
+
+/// Tests for orchestration the cases where errors should be returned.
+#[actix_web::test]
+#[serial]
+async fn pipeline_orchestration_errors() {
+    let config = setup().await;
+    let sql = r#"
+        CREATE TABLE numbers1 (
+            num DOUBLE
+        ) WITH (
+            'connectors' = '[{
+                "name": "c1",
+                "transport": {
+                    "name": "datagen",
+                    "config": {"plan": [{ "rate": 100, "fields": { "num": { "range": [0, 1000], "strategy": "uniform" } } }]}
+                }
+            }]'
+        );
+    "#;
+    create_and_deploy_test_pipeline(&config, &sql).await;
+
+    // ACCEPTED
+    for endpoint in ["/v0/pipelines/test/start", "/v0/pipelines/test/pause"] {
+        assert_eq!(
+            config.post_no_body(endpoint).await.status(),
+            StatusCode::ACCEPTED,
+            "POST {endpoint}"
+        );
+    }
+
+    // OK
+    for endpoint in [
+        "/v0/pipelines/test/tables/numbers1/connectors/c1/start",
+        "/v0/pipelines/test/tables/numbers1/connectors/c1/pause",
+        "/v0/pipelines/test/tables/Numbers1/connectors/c1/pause",
+        "/v0/pipelines/test/tables/NUMBERS1/connectors/c1/pause",
+        "/v0/pipelines/test/tables/%22numbers1%22/connectors/c1/pause",
+    ] {
+        assert_eq!(
+            config.post_no_body(endpoint).await.status(),
+            StatusCode::OK,
+            "POST {endpoint}"
+        );
+    }
+
+    // BAD REQUEST
+    for endpoint in [
+        "/v0/pipelines/test/action2", // Invalid pipeline action
+        "/v0/pipelines/test/Start",   // Invalid pipeline action (case-sensitive)
+        "/v0/pipelines/test/tables/numbers1/connectors/c1/action2", // Invalid connector action
+        "/v0/pipelines/test/tables/numbers1/connectors/c1/START", // Invalid connector action (case-sensitive)
+    ] {
+        assert_eq!(
+            config.post_no_body(endpoint).await.status(),
+            StatusCode::BAD_REQUEST,
+            "POST {endpoint}"
+        );
+    }
+
+    // NOT FOUND
+    for endpoint in [
+        "/v0/pipelines/test2/start", // Pipeline not found
+        "/v0/pipelines/test2/tables/numbers1/connectors/c1/start", // Pipeline not found
+        "/v0/pipelines/test/tables/numbers1/connectors/c2/start", // Connector not found
+        "/v0/pipelines/test/tables/numbers1/connectors/C1/start", // Connector not found (case-sensitive)
+        "/v0/pipelines/test/tables/numbers2/connectors/c1/start", // Table not found
+        "/v0/pipelines/test/tables/numbers2/connectors/c2/start", // Table and connector not found
+        "/v0/pipelines/test/tables/%22Numbers1%22/connectors/c1/pause", // Table not found (case-sensitive due to double quotes)
+    ] {
+        assert_eq!(
+            config.post_no_body(endpoint).await.status(),
+            StatusCode::NOT_FOUND,
+            "POST {endpoint}"
+        );
+    }
+}
+
+#[derive(Debug)]
+enum OrchestrationTestStep {
+    StartPipeline,
+    PausePipeline,
+    StartConnector(u32),
+    PauseConnector(u32),
+}
+
+/// Tests for orchestration that the effects (i.e., pipeline and connector state) are
+/// indeed as expected after each scenario consisting of various start and pause steps.
+#[actix_web::test]
+#[serial]
+async fn pipeline_orchestration_scenarios() {
+    let config = setup().await;
+
+    // Pipeline with SQL of a table with two connectors
+    let sql = r#"
+        CREATE TABLE numbers (
+            num DOUBLE
+        ) WITH (
+            'connectors' = '[
+                {
+                    "name": "c1",
+                    "transport": {
+                        "name": "datagen",
+                        "config": {"plan": [{ "rate": 100, "fields": { "num": { "range": [0, 1000], "strategy": "uniform" } } }]}
+                    }
+                },
+                {
+                    "name": "c2",
+                    "transport": {
+                        "name": "datagen",
+                        "config": {"plan": [{ "rate": 100, "fields": { "num": { "range": [1000, 2000], "strategy": "uniform" } } }]}
+                    }
+                }
+            ]'
+        );
+    "#;
+    create_and_deploy_test_pipeline(&config, &sql).await;
+
+    // Shutdown for the first scenario
+    assert_eq!(
+        config
+            .post_no_body("/v0/pipelines/test/shutdown")
+            .await
+            .status(),
+        StatusCode::ACCEPTED
+    );
+    config
+        .wait_for_deployment_status("test", PipelineStatus::Shutdown, config.shutdown_timeout)
+        .await;
+
+    // Various scenarios (steps) and the expected outcome (what is paused)
+    for (steps, expected_pipeline_paused, expected_c1_paused, expected_c2_paused) in [
+        // All four combination when the pipeline is paused
+        (
+            vec![OrchestrationTestStep::PausePipeline],
+            true,
+            false,
+            false,
+        ),
+        (
+            vec![
+                OrchestrationTestStep::PausePipeline,
+                OrchestrationTestStep::PauseConnector(1),
+            ],
+            true,
+            true,
+            false,
+        ),
+        (
+            vec![
+                OrchestrationTestStep::PausePipeline,
+                OrchestrationTestStep::PauseConnector(2),
+            ],
+            true,
+            false,
+            true,
+        ),
+        (
+            vec![
+                OrchestrationTestStep::PausePipeline,
+                OrchestrationTestStep::PauseConnector(1),
+                OrchestrationTestStep::PauseConnector(2),
+            ],
+            true,
+            true,
+            true,
+        ),
+        // All four combinations when the pipeline is running
+        (
+            vec![OrchestrationTestStep::StartPipeline],
+            false,
+            false,
+            false,
+        ),
+        (
+            vec![
+                OrchestrationTestStep::StartPipeline,
+                OrchestrationTestStep::PauseConnector(1),
+            ],
+            false,
+            true,
+            false,
+        ),
+        (
+            vec![
+                OrchestrationTestStep::StartPipeline,
+                OrchestrationTestStep::PauseConnector(2),
+            ],
+            false,
+            false,
+            true,
+        ),
+        (
+            vec![
+                OrchestrationTestStep::StartPipeline,
+                OrchestrationTestStep::PauseConnector(1),
+                OrchestrationTestStep::PauseConnector(2),
+            ],
+            false,
+            true,
+            true,
+        ),
+        // Start then pause the pipeline
+        (
+            vec![
+                OrchestrationTestStep::StartPipeline,
+                OrchestrationTestStep::PausePipeline,
+            ],
+            true,
+            false,
+            false,
+        ),
+        // Pause then start again the connector
+        (
+            vec![
+                OrchestrationTestStep::StartPipeline,
+                OrchestrationTestStep::PauseConnector(1),
+                OrchestrationTestStep::StartConnector(1),
+            ],
+            false,
+            false,
+            false,
+        ),
+    ] {
+        // Perform the steps
+        for (i, step) in steps.iter().enumerate() {
+            match step {
+                OrchestrationTestStep::StartPipeline => {
+                    let response = config.post_no_body("/v0/pipelines/test/start").await;
+                    assert_eq!(
+                        response.status(),
+                        StatusCode::ACCEPTED,
+                        "during step {i} of steps {steps:?}"
+                    );
+                    config
+                        .wait_for_deployment_status(
+                            "test",
+                            PipelineStatus::Running,
+                            config.start_timeout,
+                        )
+                        .await;
+                }
+                OrchestrationTestStep::PausePipeline => {
+                    let response = config.post_no_body("/v0/pipelines/test/pause").await;
+                    assert_eq!(
+                        response.status(),
+                        StatusCode::ACCEPTED,
+                        "during step {i} of steps {steps:?}"
+                    );
+                    config
+                        .wait_for_deployment_status(
+                            "test",
+                            PipelineStatus::Paused,
+                            config.start_timeout,
+                        )
+                        .await;
+                }
+                OrchestrationTestStep::StartConnector(connector) => {
+                    assert_eq!(
+                        config
+                            .post_no_body(format!(
+                                "/v0/pipelines/test/tables/numbers/connectors/c{connector}/start"
+                            ))
+                            .await
+                            .status(),
+                        StatusCode::OK,
+                        "during step {i} of steps {steps:?}"
+                    );
+                }
+                OrchestrationTestStep::PauseConnector(connector) => {
+                    assert_eq!(
+                        config
+                            .post_no_body(format!(
+                                "/v0/pipelines/test/tables/numbers/connectors/c{connector}/pause"
+                            ))
+                            .await
+                            .status(),
+                        StatusCode::OK,
+                        "during step {i} of steps {steps:?}"
+                    );
+                }
+            }
+        }
+
+        // Check expected outcome
+        let stats = config.stats_json("test").await;
+        let inputs = stats["inputs"].as_array().unwrap();
+        let pipeline_paused = stats["global_metrics"]["state"].as_str() == Some("Paused");
+        let c1_paused = inputs
+            .iter()
+            .find(|input| input["endpoint_name"] == "numbers.c1")
+            .unwrap()
+            .clone()["paused"]
+            .as_bool()
+            .unwrap();
+        let c2_paused = inputs
+            .iter()
+            .find(|input| input["endpoint_name"] == "numbers.c2")
+            .unwrap()
+            .clone()["paused"]
+            .as_bool()
+            .unwrap();
+        let actual = (pipeline_paused, c1_paused, c2_paused);
+        let expected = (
+            expected_pipeline_paused,
+            expected_c1_paused,
+            expected_c2_paused,
+        );
+        assert_eq!(
+            actual, expected,
+            "Got {actual:?} but expected {expected:?} for steps {steps:?}"
+        );
+
+        // Shutdown for the next scenario
+        assert_eq!(
+            config
+                .post_no_body("/v0/pipelines/test/shutdown")
+                .await
+                .status(),
+            StatusCode::ACCEPTED
+        );
+        config
+            .wait_for_deployment_status("test", PipelineStatus::Shutdown, config.shutdown_timeout)
+            .await;
+    }
 }

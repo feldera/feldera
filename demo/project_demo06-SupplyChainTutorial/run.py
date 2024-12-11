@@ -214,7 +214,7 @@ def main():
             time.sleep(1)
         print("Starting the 'tutorial-price-redpanda' connector")
         requests.post(
-            f"{api_url}/v0/pipelines/{pipeline_name}/input_endpoints/price.tutorial-price-redpanda/start"
+            f"{api_url}/v0/pipelines/{pipeline_name}/tables/price/connectors/tutorial-price-redpanda/start"
         ).raise_for_status()
 
 
