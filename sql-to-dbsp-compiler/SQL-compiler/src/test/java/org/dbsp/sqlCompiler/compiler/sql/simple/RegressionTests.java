@@ -240,7 +240,7 @@ public class RegressionTests extends SqlIoTest {
                 CREATE TABLE timestamp_tbl(c1 TIMESTAMP, c2 TIMESTAMP);
                 
                 CREATE LOCAL VIEW atbl_interval AS SELECT
-                (c1 - c2) YEAR AS c1_minus_c2
+                (c1 - c2) MONTH AS c1_minus_c2
                 FROM timestamp_tbl;
                 
                 CREATE LOCAL VIEW interval_minus_interval AS SELECT
@@ -248,7 +248,7 @@ public class RegressionTests extends SqlIoTest {
                 FROM atbl_interval;
                 
                 CREATE MATERIALIZED VIEW interval_minus_interval_seconds AS SELECT
-                CAST((c1) AS BIGINT) AS f_c1
+                EXTRACT(MONTH FROM c1) AS f_c1
                 FROM interval_minus_interval;""");
     }
 
@@ -268,7 +268,7 @@ public class RegressionTests extends SqlIoTest {
                 CREATE TABLE time_tbl(c1 TIME, c2 TIME);
                 
                 CREATE LOCAL VIEW atbl_interval AS SELECT
-                (c1 - c2)MINUTE AS c1_minus_c2
+                (c1 - c2) SECOND AS c1_minus_c2
                 FROM time_tbl;
                 
                 CREATE MATERIALIZED VIEW interval_negation AS SELECT

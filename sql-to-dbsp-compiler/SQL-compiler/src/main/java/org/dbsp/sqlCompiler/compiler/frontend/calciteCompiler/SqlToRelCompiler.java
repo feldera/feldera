@@ -71,6 +71,7 @@ import org.apache.calcite.sql.SqlExplainLevel;
 import org.apache.calcite.sql.SqlFunction;
 import org.apache.calcite.sql.SqlIdentifier;
 import org.apache.calcite.sql.SqlInsert;
+import org.apache.calcite.sql.SqlIntervalQualifier;
 import org.apache.calcite.sql.SqlKind;
 import org.apache.calcite.sql.SqlNode;
 import org.apache.calcite.sql.SqlNodeList;
@@ -86,6 +87,7 @@ import org.apache.calcite.sql.ddl.SqlCreateType;
 import org.apache.calcite.sql.ddl.SqlDropTable;
 import org.apache.calcite.sql.ddl.SqlKeyConstraint;
 import org.apache.calcite.sql.dialect.OracleSqlDialect;
+import org.apache.calcite.sql.fun.SqlDatetimeSubtractionOperator;
 import org.apache.calcite.sql.parser.SqlParseException;
 import org.apache.calcite.sql.parser.SqlParser;
 import org.apache.calcite.sql.parser.SqlParserPos;
@@ -185,8 +187,7 @@ public class SqlToRelCompiler implements IWritesLogs {
     private SqlValidator validator;
     @Nullable
     private SqlToRelConverter converter;
-    @Nullable
-    private ExtraValidation extraValidate;
+    private final ExtraValidation extraValidator;
     private final CalciteConnectionConfig connectionConfig;
     private final IErrorReporter errorReporter;
     private final SchemaPlus rootSchema;
@@ -204,6 +205,7 @@ public class SqlToRelCompiler implements IWritesLogs {
         this.errorReporter = errorReporter;
         this.customFunctions = new CustomFunctions();
         this.definedViews = new HashSet<>();
+        this.extraValidator = new ExtraValidation(errorReporter);
 
         Casing unquotedCasing = Casing.TO_UPPER;
         switch (options.languageOptions.unquotedCasing) {
@@ -271,7 +273,6 @@ public class SqlToRelCompiler implements IWritesLogs {
                 // e.g., AggScottTests.testAggregates4
                 .withExpand(true);
         this.validator = null;
-        this.extraValidate = null;
         this.converter = null;
         this.usedViewDeclarations = new HashSet<>();
         this.declaredViews = new HashMap<>();
@@ -299,6 +300,7 @@ public class SqlToRelCompiler implements IWritesLogs {
         this.rootSchema.add(this.calciteCatalog.schemaName, this.calciteCatalog);
         this.usedViewDeclarations = new HashSet<>(source.usedViewDeclarations);
         this.definedViews = new HashSet<>(source.definedViews);
+        this.extraValidator = source.extraValidator;
         this.addOperatorTable(Objects.requireNonNull(source.validator).getOperatorTable());
     }
 
@@ -373,6 +375,47 @@ public class SqlToRelCompiler implements IWritesLogs {
                                 "Expression is missing some required operands");
                 }
             }
+            if (operator instanceof SqlDatetimeSubtractionOperator) {
+                assert call.operandCount() == 3;
+                SqlNode interval = call.getOperandList().get(2);
+                assert interval instanceof SqlIntervalQualifier;
+                SqlIntervalQualifier qual = (SqlIntervalQualifier) interval;
+                switch (qual.timeUnitRange) {
+                    case YEAR:
+                    case YEAR_TO_MONTH:
+                    case DAY_TO_HOUR:
+                    case DAY_TO_MINUTE:
+                    case DAY_TO_SECOND:
+                    case HOUR:
+                    case HOUR_TO_MINUTE:
+                    case HOUR_TO_SECOND:
+                    case MINUTE:
+                    case MINUTE_TO_SECOND:
+                    case ISOYEAR:
+                    case QUARTER:
+                    case WEEK:
+                    case MILLISECOND:
+                    case MICROSECOND:
+                    case NANOSECOND:
+                    case DOW:
+                    case ISODOW:
+                    case DOY:
+                    case EPOCH:
+                    case DECADE:
+                    case CENTURY:
+                    case MILLENNIUM:
+                        this.errorReporter.reportError(position, "Unsupported interval",
+                                "Interval type " + Utilities.singleQuote(qual.timeUnitRange.toString()) +
+                                        " not supported for difference operator; only 'MONTH' and 'SECOND' are supported;\n" +
+                                        "'DAY' is supported for 'DATE' values");
+                        break;
+                    case MONTH:
+                    case DAY:
+                    case SECOND:
+                        // DAY is OK only for dates
+                        break;
+                }
+            }
             return super.visit(call);
         }
 
@@ -436,7 +479,6 @@ public class SqlToRelCompiler implements IWritesLogs {
                 this.typeFactory,
                 validatorConfig
         );
-        this.extraValidate = new ExtraValidation(errorReporter);
         this.converter = new SqlToRelConverter(
                 (type, query, schema, path) -> null,
                 this.validator,
@@ -497,7 +539,7 @@ public class SqlToRelCompiler implements IWritesLogs {
     }
 
     ExtraValidation getExtraValidator() {
-        return Objects.requireNonNull(this.extraValidate);
+        return Objects.requireNonNull(this.extraValidator);
     }
 
     SqlValidator getValidator() {
@@ -1109,8 +1151,7 @@ public class SqlToRelCompiler implements IWritesLogs {
               is used to obtain the body of the function.
             */
             StringBuilder builder = new StringBuilder();
-            SqlWriter writer = new SqlPrettyWriter(
-                    SqlPrettyWriter.config(), builder);
+            SqlWriter writer = new SqlPrettyWriter(SqlPrettyWriter.config(), builder);
             builder.append("CREATE TABLE TMP(");
             if (decl.getParameters().isEmpty())
                 // Tables need to have at least one column, so create an unused one if needed
@@ -1239,6 +1280,35 @@ public class SqlToRelCompiler implements IWritesLogs {
         }
     }
 
+    public static String getSqlString(SqlDataTypeSpec type) {
+        StringBuilder builder = new StringBuilder();
+        SqlWriter writer = new SqlPrettyWriter(SqlPrettyWriter.config(), builder);
+        type.unparse(writer, 0, 0);
+        return builder.toString();
+    }
+
+    public static String getSqlString(RelDataType type) {
+        //SqlTypeUtil does not support all existing types...
+        switch (type.getSqlTypeName()) {
+            case INTERVAL_YEAR: return "YEAR";
+            case INTERVAL_YEAR_MONTH: return "YEAR TO MONTH";
+            case INTERVAL_MONTH: return "MONTH";
+            case INTERVAL_DAY: return "DAY";
+            case INTERVAL_DAY_HOUR: return "DAY TO HOUR";
+            case INTERVAL_DAY_MINUTE: return "DAY TO MINUTE";
+            case INTERVAL_DAY_SECOND: return "DAY TO SECOND";
+            case INTERVAL_HOUR: return "HOUR";
+            case INTERVAL_HOUR_MINUTE: return "HOUR TO MINUTE";
+            case INTERVAL_HOUR_SECOND: return "HOUR TO SECOND";
+            case INTERVAL_MINUTE: return "MINUTE";
+            case INTERVAL_MINUTE_SECOND: return "MINUTE TO SECOND";
+            case INTERVAL_SECOND: return "SECOND";
+            default: break;
+        }
+        SqlDataTypeSpec spec = SqlTypeUtil.convertTypeToSpec(type);
+        return getSqlString(spec);
+    }
+
     /** Replace references to recursive views that are not defined yet with
      *  references to some fictitious input tables. */
     SqlNode replaceRecursiveViews(SqlNode query) {
@@ -1330,12 +1400,16 @@ public class SqlToRelCompiler implements IWritesLogs {
         return new CreateFunctionStatement(node, function);
     }
 
+    RelRoot sqlToRel(SqlNode node) {
+        SqlToRelConverter converter = this.getConverter();
+        return converter.convertQuery(node, true, true);
+    }
+
     @Nullable
     public CreateViewStatement compileCreateView(
             ParsedStatement node, Map<ProgramIdentifier, SqlLateness> lateness,
             SourceFileContents sources) {
         CalciteObject object = CalciteObject.create(node);
-        SqlToRelConverter converter = this.getConverter();
         SqlCreateView cv = (SqlCreateView) node.statement();
         SqlNode query = cv.query;
         if (cv.getReplace())
@@ -1344,7 +1418,7 @@ public class SqlToRelCompiler implements IWritesLogs {
                 .appendSupplier(node.statement()::toString)
                 .newline();
         query = this.replaceRecursiveViews(query);
-        RelRoot relRoot = converter.convertQuery(query, true, true);
+        RelRoot relRoot = this.sqlToRel(query);
         List<RelColumnMetadata> columns = this.createViewColumnsMetadata(CalciteObject.create(node),
                 cv.name, relRoot, cv.columnList, cv.viewKind, lateness, sources);
         if (columns == null)
@@ -1453,26 +1527,24 @@ public class SqlToRelCompiler implements IWritesLogs {
 
     private TableModifyStatement compileRemove(ParsedStatement node) {
         SqlRemove remove = (SqlRemove) node.statement();
-        SqlToRelConverter converter = this.getConverter();
         SqlNode table = remove.getTargetTable();
         if (!(table instanceof SqlIdentifier id))
             throw new UnimplementedException("REMOVE not supported for " + table, CalciteObject.create(table));
         TableModifyStatement stat = new TableModifyStatement(
                 node, false, Utilities.toIdentifier(id), remove.getSource());
-        RelRoot values = converter.convertQuery(stat.data, true, true);
+        RelRoot values = this.sqlToRel(stat.data);
         values = values.withRel(this.optimize(values.rel));
         stat.setTranslation(values.rel);
         return stat;
     }
 
     private TableModifyStatement compileInsert(ParsedStatement node) {
-        SqlToRelConverter converter = this.getConverter();
         SqlInsert insert = (SqlInsert) node.statement();
         SqlNode table = insert.getTargetTable();
         if (!(table instanceof SqlIdentifier id))
             throw new UnimplementedException("INSERT NOT SUPPORTED FOR " + table, CalciteObject.create(table));
         TableModifyStatement stat = new TableModifyStatement(node, true, Utilities.toIdentifier(id), insert.getSource());
-        RelRoot values = converter.convertQuery(stat.data, true, true);
+        RelRoot values = this.sqlToRel(stat.data);
         values = values.withRel(this.optimize(values.rel));
         stat.setTranslation(values.rel);
         return stat;
