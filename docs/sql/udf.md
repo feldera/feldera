@@ -321,11 +321,14 @@ including only wrapper functions that call the API of this crate in
 
 ## Limitations
 
-* Currently there is no type casting or type inference performed for the
-  function arguments in the SQL program.  For example, a call such as
-  `CONTAINS_NUMBER('2010-10-20', '5')` will fail at SQL compilation time
-  because the first argument has type `CHAR(8)` instead of `VARCHAR`,
-  and the second argument has type `CHAR(1)` instead of `INTEGER`.
+* Currently only limited implicit casts are considered for the
+  function arguments and function result in the SQL program.  For
+  example, a call such as `CONTAINS_NUMBER('2010-10-20', '5')` will
+  fail at SQL compilation time because the first argument has type
+  `CHAR(8)` instead of `VARCHAR`, and the second argument has type
+  `CHAR(1)` instead of `INTEGER`.  This can be avoided by calling the
+  function using an explicit cast: `CONTAINS_NUMBER(CAST('2010-10-20'
+  AS VARCHAR), CAST('5' AS INTEGER))`.
 
 * User-defined functions cannot have names identical to standard SQL
   library function names.
