@@ -105,7 +105,7 @@
 
           <div class="flex flex-col gap-x-8 gap-y-4 lg:flex-row">
             {#each featured as link}
-              <a class="bg-white-black btn !p-6" href={link.href} target="_blank" rel="noreferrer"
+              <a class="bg-white-dark btn !p-6" href={link.href} target="_blank" rel="noreferrer"
                 ><link.icon class="h-6 w-6"></link.icon>{link.title}</a
               >
             {/each}

@@ -116,7 +116,7 @@
     {#snippet content(close)}
       <div
         transition:fade={{ duration: 100 }}
-        class="bg-white-black absolute left-0 z-30 flex max-h-[400px] w-[calc(100vw-100px)] max-w-[200px] flex-col justify-end gap-2 overflow-y-auto rounded-container p-2 shadow-md"
+        class="bg-white-dark absolute left-0 z-30 flex max-h-[400px] w-[calc(100vw-100px)] max-w-[200px] flex-col justify-end gap-2 overflow-y-auto rounded-container p-2 shadow-md"
       >
         {@render docsItems()}
       </div>
@@ -126,7 +126,7 @@
     {#snippet content(close)}
       <div
         transition:fade={{ duration: 100 }}
-        class="bg-white-black absolute right-0 z-30 flex max-h-[400px] w-[calc(100vw-100px)] max-w-[200px] flex-col justify-end gap-2 overflow-y-auto rounded-container p-2 shadow-md"
+        class="bg-white-dark absolute right-0 z-30 flex max-h-[400px] w-[calc(100vw-100px)] max-w-[200px] flex-col justify-end gap-2 overflow-y-auto rounded-container p-2 shadow-md"
       >
         {@render communityItems()}
       </div>

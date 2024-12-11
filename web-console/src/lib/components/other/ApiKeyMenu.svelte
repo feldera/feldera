@@ -12,7 +12,7 @@
 </script>
 
 <div class="flex h-fit max-h-[90vh] flex-col sm:p-4">
-  <div class="bg-white-black sticky top-0 flex flex-col gap-4 p-4">
+  <div class="bg-white-dark sticky top-0 flex flex-col gap-4 p-4">
     <div class="flex flex-nowrap justify-between">
       <div class="h5 font-medium">Manage API keys</div>
       <button

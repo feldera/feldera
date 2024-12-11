@@ -10,7 +10,7 @@
 <div class="{errors.length ? '' : ''} h-full overflow-y-auto scrollbar">
   <div class=" flex min-h-full flex-col gap-4 pt-4">
     {#each errors as systemError}
-      <div class="bg-white-black whitespace-nowrap rounded p-4">
+      <div class="bg-white-dark whitespace-nowrap rounded p-4">
         <a
           class=""
           href={systemError.cause.source}

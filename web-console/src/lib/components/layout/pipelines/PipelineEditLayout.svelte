@@ -346,7 +346,7 @@ example = "1.0"`
               <div class="flex h-full flex-col rounded-container px-4 py-2 bg-surface-50-950">
                 {@render textEditor()}
                 <div
-                  class="bg-white-black mb-2 flex flex-wrap items-center gap-x-8 rounded-b border-t p-2 pl-4 border-surface-50-950"
+                  class="bg-white-dark mb-2 flex flex-wrap items-center gap-x-8 rounded-b border-t p-2 pl-4 border-surface-50-950"
                 >
                   {@render statusBar()}
                 </div>

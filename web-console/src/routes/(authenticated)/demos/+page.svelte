@@ -58,7 +58,7 @@
   <Segment
     bind:value={demosType}
     background="preset-filled-surface-50-950"
-    indicatorBg="bg-white-black shadow"
+    indicatorBg="bg-white-dark shadow"
     indicatorText=""
     border="p-1"
     rounded="rounded"

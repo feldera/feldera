@@ -51,7 +51,7 @@ export const felderaModern = {
     '--outline-width-default': '1px',
     '--ring-width-default': '1px',
     '--body-background-color': '255 255 255',
-    '--body-background-color-dark': '9 9 9',
+    '--body-background-color-dark': '24 24 24',
     '--color-primary-50': '243 214 241',
     '--color-primary-100': '234 181 230',
     '--color-primary-200': '225 149 219',

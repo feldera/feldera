@@ -149,7 +149,7 @@
   </div>
   {#if pipelineBusy}
     <Tooltip
-      class="bg-white-black z-20 whitespace-nowrap rounded text-surface-950-50"
+      class="bg-white-dark z-20 whitespace-nowrap rounded text-surface-950-50"
       placement="top"
     >
       Shutdown the pipeline to delete it
@@ -187,7 +187,7 @@
 {#snippet _start()}
   {@render start('Resume', () => 'start', 'Resuming')}
   {#if unsavedChanges}
-    <Tooltip class="bg-white-black z-20 rounded text-surface-950-50" placement="top">
+    <Tooltip class="bg-white-dark z-20 rounded text-surface-950-50" placement="top">
       Save the program before running
     </Tooltip>
   {/if}
@@ -195,7 +195,7 @@
 {#snippet _start_paused()}
   {@render start('Start', (alt) => (alt ? 'start_paused' : 'start_paused_start'), 'Starting up')}
   {#if unsavedChanges}
-    <Tooltip class="bg-white-black z-20 rounded text-surface-950-50" placement="top">
+    <Tooltip class="bg-white-dark z-20 rounded text-surface-950-50" placement="top">
       Save the program before running
     </Tooltip>
   {/if}
@@ -211,13 +211,13 @@
 {/snippet}
 {#snippet _start_error()}
   {@render _start_disabled()}
-  <Tooltip class="bg-white-black z-20 rounded text-surface-950-50" placement="top">
+  <Tooltip class="bg-white-dark z-20 rounded text-surface-950-50" placement="top">
     Resolve errors before running
   </Tooltip>
 {/snippet}
 {#snippet _start_pending()}
   {@render _start_disabled()}
-  <Tooltip class="bg-white-black z-20 rounded text-surface-950-50" placement="top">
+  <Tooltip class="bg-white-dark z-20 rounded text-surface-950-50" placement="top">
     Wait for compilation to complete
   </Tooltip>
 {/snippet}
@@ -258,7 +258,7 @@
     >
     </button>
   </div>
-  <Tooltip class="bg-white-black z-20 rounded text-surface-950-50" placement="top">
+  <Tooltip class="bg-white-dark z-20 rounded text-surface-950-50" placement="top">
     {#if unsavedChanges}
       Save file: Ctrl + S
     {:else}

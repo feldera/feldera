@@ -81,9 +81,7 @@
       transition:fade={{ duration: 100 }}
       class="absolute right-0 z-30 max-h-[400px] w-[calc(100vw-100px)] max-w-[300px]"
     >
-      <div
-        class="bg-white-black flex flex-col justify-center gap-2 rounded-container p-2 shadow-md"
-      >
+      <div class="bg-white-dark flex flex-col justify-center gap-2 rounded-container p-2 shadow-md">
         <button
           onclick={saveFile}
           class="flex justify-between rounded p-2 hover:preset-tonal-surface {downstreamChanged

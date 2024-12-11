@@ -55,7 +55,7 @@
       width="w-72"
       bind:open={leftDrawer.value}
       side="left"
-      class="bg-white-black flex flex-col gap-2 p-4"
+      class="bg-white-dark flex flex-col gap-2 p-4"
     >
       <PipelineList
         pipelines={pipelineList.pipelines}
@@ -72,7 +72,7 @@
     width="w-72"
     bind:open={rightDrawer.value}
     side="right"
-    class="bg-white-black flex flex-col gap-2 p-4"
+    class="bg-white-dark flex flex-col gap-2 p-4"
   >
     <div class="relative my-2 mt-4">
       <CreatePipelineButton
