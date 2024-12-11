@@ -141,6 +141,14 @@ public class RegressionTests extends SqlIoTest {
     }
 
     @Test
+    public void issue3140() {
+        this.compileRustTestCase("""
+                CREATE TABLE variant_tbl(c1 INT ARRAY);
+                CREATE MATERIALIZED VIEW atbl_variant AS SELECT
+                CAST(c1 AS VARIANT) AS c1 FROM variant_tbl;""");
+    }
+
+    @Test
     public void issue3072() {
         this.compileRustTestCase("""
                 CREATE TABLE t0(c0 VARCHAR);

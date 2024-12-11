@@ -1741,6 +1741,14 @@ where
 }
 
 #[doc(hidden)]
+pub fn cast_to_VN_vec<T>(vec: Vec<T>) -> Option<Variant>
+where
+    Variant: From<T>,
+{
+    Some(vec.into())
+}
+
+#[doc(hidden)]
 pub fn cast_to_V_vecN<T>(vec: Option<Vec<T>>) -> Variant
 where
     Variant: From<T>,
@@ -1749,6 +1757,14 @@ where
         None => Variant::SqlNull,
         Some(vec) => vec.into(),
     }
+}
+
+#[doc(hidden)]
+pub fn cast_to_VN_vecN<T>(vec: Option<Vec<T>>) -> Option<Variant>
+where
+    Variant: From<T>,
+{
+    Some(cast_to_V_vecN(vec))
 }
 
 #[doc(hidden)]
