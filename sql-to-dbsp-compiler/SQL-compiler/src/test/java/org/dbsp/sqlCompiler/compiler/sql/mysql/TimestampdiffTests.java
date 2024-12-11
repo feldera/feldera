@@ -13,6 +13,13 @@ public class TimestampdiffTests extends SqlIoTest {
                 FROM time_tbl;""");
     }
 
+    @Test
+    public void issue3132() {
+        this.statementsFailingInCompilation(
+                "CREATE VIEW V AS SELECT (DATE '2020-01-01' - DATE '2019-01-01') YEAR",
+                "Unsupported interval: Interval type 'YEAR' not supported for difference operator");
+    }
+
     // Test data obtained from
     // https://github.com/mysql/mysql-server/blob/mysql-test/r/func_time.result#L715
     @Test
@@ -409,16 +416,39 @@ public class TimestampdiffTests extends SqlIoTest {
                  1 day
                 (1 row)
                 
-                 select (TIME '12:00:00' - TIME '10:00:00') MINUTES;
+                 select (TIME '12:00:00' - TIME '10:00:00') SECOND;
                  minutes
                 ---------
                  2 hours
                 (1 row)
                 
-                 select (TIMESTAMP '2024-01-01 12:00:00' - TIMESTAMP '2023-12-31 10:00:00') MINUTES;
+                 select (TIMESTAMP '2024-01-01 12:00:00' - TIMESTAMP '2023-12-31 10:00:00') SECOND;
                  minutes
                 ---------
                  1 day 2 hours
+                (1 row)""");
+    }
+
+    @Test
+    public void diffTests2() {
+        this.qs("""
+                select TIMESTAMPDIFF(DAY, DATE '2024-01-01', DATE '2023-12-31');
+                 days
+                ------
+                 -1
+                (1 row)
+                
+                select TIMESTAMPDIFF(MINUTE, TIME '12:00:00', TIME '10:00:00');
+                 minutes
+                ---------
+                 -120
+                (1 row)
+                
+                -- 24 * 60 + 120 = 1560
+                select TIMESTAMPDIFF(MINUTE, TIMESTAMP '2024-01-01 12:00:00', TIMESTAMP '2023-12-31 10:00:00');
+                 minutes
+                ---------
+                 -1560
                 (1 row)""");
     }
 }

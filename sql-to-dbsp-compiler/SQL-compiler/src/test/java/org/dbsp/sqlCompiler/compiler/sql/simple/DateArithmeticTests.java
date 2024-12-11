@@ -365,13 +365,13 @@ public class DateArithmeticTests extends SqlIoTest {
                  365 days
                 (1 row)
 
-                SELECT (date '2023-12-01' - date '2022-12-01') year;
+                SELECT (date '2023-12-01' - date '2022-12-01') month;
                  diff
                 ------
                  1 year
                 (1 row)
 
-                SELECT (date '2022-12-01' - date '2023-12-01') year;
+                SELECT (date '2022-12-01' - date '2023-12-01') month;
                  diff
                 ------
                  1 year ago

@@ -211,7 +211,6 @@ public class BaseSQLTests {
         DBSPCompiler firstCompiler = testsToRun.get(0).ccs.compiler;
         RustFileWriter writer = new RustFileWriter(outputStream);
         int testNumber = 0;
-        String[] extraArgs = new String[0];
         for (TestCase test: testsToRun) {
             if (!test.ccs.compiler.options.same(firstCompiler.options))
                 throw new RuntimeException("Test " + Utilities.singleQuote(testsToRun.get(0).javaTestName) +
@@ -228,7 +227,7 @@ public class BaseSQLTests {
             testNumber++;
         }
         writer.writeAndClose(firstCompiler);
-        Utilities.compileAndTestRust(rustDirectory, true, extraArgs);
+        Utilities.compileAndTestRust(rustDirectory, true);
         testsToRun.clear();
     }
 
