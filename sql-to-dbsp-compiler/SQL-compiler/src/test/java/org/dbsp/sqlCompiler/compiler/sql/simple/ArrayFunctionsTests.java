@@ -1,6 +1,7 @@
 package org.dbsp.sqlCompiler.compiler.sql.simple;
 
 import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
+import org.junit.Ignore;
 import org.junit.Test;
 
 public class ArrayFunctionsTests extends SqlIoTest {
@@ -32,6 +33,110 @@ public class ArrayFunctionsTests extends SqlIoTest {
                 (1 row)
                 """
         );
+    }
+
+    @Test
+    public void testArrayConcat() {
+        this.statementsFailingInCompilation("CREATE VIEW V AS SELECT array_concat()",
+                "Invalid number of arguments to function");
+        this.qs("""
+                SELECT array_concat(array[1, 2], array[2, 3]);
+                 r
+                ---
+                 {1, 2, 2, 3}
+                (1 row)
+                
+                SELECT array_concat(array[1, 2], array[2, null]);
+                 r
+                ---
+                 {1, 2, 2, NULL}
+                (1 row)
+               
+                SELECT array_concat(array['hello', 'world'], array['!'], array[cast(null as char)]);
+                 r
+                ---
+                 { hello, world, !,NULL}
+                (1 row)
+               
+                SELECT array_concat(cast(null as integer array), array[1]);
+                 r
+                ---
+                NULL
+                (1 row)""");
+    }
+
+    @Test
+    public void testArrayExcept() {
+        this.qs("""
+                SELECT array_except(array[2, 3, 3], array[2]);
+                 r
+                ---
+                 { 3 }
+                (1 row)
+                
+                SELECT array_except(array[2], array[2, 3]);
+                 r
+                ---
+                 {}
+                (1 row)
+                
+                SELECT array_except(array[2, null, 3, 3], array[1, 2, null]);
+                 r
+                ---
+                 {3}
+                (1 row)
+                
+                SELECT array_except(cast(null as integer array), array[1]);
+                 r
+                ---
+                NULL
+                (1 row)
+                
+                SELECT array_except(array[1], cast(null as integer array));
+                 r
+                ---
+                NULL
+                (1 row)
+                
+                SELECT array_except(cast(null as integer array), cast(null as integer array));
+                 r
+                ---
+                NULL
+                (1 row)""");
+    }
+    
+    @Test
+    public void testArrayUnion() {
+        this.qs("""
+                select array_union(array[2, 3, 3], array[3]);
+                 r
+                ---
+                 {2,3}
+                (1 row)
+                
+                select array_union(array[2, null, 2], array[1, 2, null]);
+                 r
+                ---
+                {NULL,1,2}
+                (1 row)
+                
+                select array_union(cast(null as integer array), array[1]);
+                 r
+                ---
+                NULL
+                (1 row)
+                
+                select array_union(array[1], cast(null as integer array));
+                 r
+                ---
+                NULL
+                (1 row)
+               
+                select array_union(cast(null as integer array), cast(null as integer array));
+                 r
+                ---
+                NULL
+                (1 row)""");
     }
 
     @Test
@@ -830,5 +935,156 @@ public class ArrayFunctionsTests extends SqlIoTest {
                 | 3  | {-2, -2, 1, 1, 2, 2, 3} |
                 +----+-------------------------+
                 (7 rows)""", false);
+    }
+    
+    @Test
+    public void testArrayIntersect() {
+        this.qs("""
+                select array_intersect(array[2, 3, 3], array[3]);
+                 r
+                ---
+                {3}
+                (1 row)
+
+                select array_intersect(array[1], array[2, 3]);
+                 r
+                ---
+                 {}
+                (1 row)
+
+                select array_intersect(array[2, null, 2], array[1, 2, null]);
+                 r
+                ---
+                {NULL,2}
+                (1 row)
+                
+                select array_intersect(cast(null as integer array), array[1]);
+                 r
+                ---
+                NULL
+                (1 row)
+                
+                select array_intersect(array[1], cast(null as integer array));
+                 r
+                ---
+                NULL
+                (1 row)
+                
+                select array_intersect(cast(null as integer array), cast(null as integer array));
+                 r
+                ---
+                NULL
+                (1 row)""");
+    }
+    
+    @Test @Ignore("https://issues.apache.org/jira/browse/CALCITE-6723")
+    public void testArrayInsert() {
+        this.qs("""
+                select array_insert(cast(null as integer array), 3, 4);
+                 r
+                ---
+                NULL
+                (1 row)
+                
+                select array_insert(array[1], cast(null as integer), 4);
+                 r
+                ---
+                NULL
+                (1 row)
+                
+                select array_insert(array[1, 2, 3], 3, 4);
+                 r
+                ---
+                {1, 2, 4, 3}
+                (1 row)
+                
+                select array_insert(array[1, 2, 3], 3, cast(null as integer));
+                 r
+                ---
+                {1, 2, null, 3}
+                (1 row)
+                
+                select array_insert(array[2, 3, 4], 1, 1);
+                 r
+                ---
+                {1, 2, 3, 4}
+                (1 row)
+                
+                select array_insert(array[1, 3, 4], -1, 2);
+                 r
+                ---
+                {1, 3, 4, 2}
+                (1 row)
+                
+                select array_insert(array[1, 3, 4], -3, 2);
+                 r
+                ---
+                {1, 2, 3, 4}
+                (1 row)
+                
+                select array_insert(array[2, 3, null, 4], -6, 1);
+                 r
+                ---
+                {1, null, 2, 3, null, 4}
+                (1 row)
+                
+                select array_insert(array(1, 2, 3), 3, cast(4 as tinyint));
+                 r
+                ---
+                {1, 2, 4, 3}
+                (1 row)
+                
+                select array_insert(array(1, 2, 3), 3, cast(4 as double));
+                 r
+                ---
+                {1.0, 2.0, 4.0, 3.0}
+                (1 row)
+                
+                select array_insert(array(1, 2, 3), 3, cast(4 as real));
+                 r
+                ---
+                {1.0, 2.0, 4.0, 3.0}
+                (1 row)
+                
+                select array_insert(array(1, 2, 3), 3, cast(4 as bigint));
+                 r
+                ---
+                {1, 2, 4, 3}
+                (1 row)
+                
+                select array_insert(array(1, 2, 3), 3, cast(null as bigint));
+                 r
+                ---
+                {1, 2, null, 3}
+                (1 row)
+                
+                select array_insert(array(1, 2, 3), 3, cast(null as real));
+                 r
+                ---
+                {1.0, 2.0, null, 3.0}
+                (1 row)
+                
+                select array_insert(array(1, 2, 3), 3, cast(null as tinyint));
+                 r
+                ---
+                {1, 2, null, 3}
+                (1 row)""");
+
+        // select array_insert(array[array[1,2]], 1, array[1])",
+        //  r
+        // ---
+        // [[1], [1, 2]]", "INTEGER NOT NULL ARRAY NOT NULL ARRAY NOT NULL");
+        // select array_insert(array[array[1,2]], -1, array[1])",
+        //  r
+        // ---
+        //     "[[1, 2], [1]]", "INTEGER NOT NULL ARRAY NOT NULL ARRAY NOT NULL");
+        // select array_insert(array[map[1, 'a']], 1, map[2, 'b'])", "[{2=b}, {1=a}]",
+        //  r
+        // ---
+        //     "(INTEGER NOT NULL, CHAR(1) NOT NULL) MAP NOT NULL ARRAY NOT NULL");
+        // select array_insert(array[map[1, 'a']], -1, map[2, 'b'])", "[{1=a}, {2=b}]",
+        //  r
+        // ---
+        //     "(INTEGER NOT NULL, CHAR(1) NOT NULL) MAP NOT NULL ARRAY NOT NULL");
     }
 }
