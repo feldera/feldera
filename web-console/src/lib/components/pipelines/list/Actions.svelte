@@ -148,7 +148,10 @@
     </button>
   </div>
   {#if pipelineBusy}
-    <Tooltip class="bg-white-black z-20 text-surface-950-50" placement="top">
+    <Tooltip
+      class="bg-white-black z-20 whitespace-nowrap rounded text-surface-950-50"
+      placement="top"
+    >
       Shutdown the pipeline to delete it
     </Tooltip>
   {/if}
@@ -158,40 +161,42 @@
   action: (alt: boolean) => PipelineAction | 'start_paused_start',
   status: PipelineStatus
 )}
-  <button
-    aria-label={action(false)}
-    class:disabled={unsavedChanges}
-    class="{buttonClass} {longClass} {importantBtnColor}"
-    onclick={async (e) => {
-      const _action = action(e.ctrlKey || e.shiftKey || e.metaKey)
-      const pipelineName = pipeline.current.name
-      const success = await postPipelineAction(
-        pipeline.current.name,
-        _action === 'start_paused_start' ? 'start_paused' : _action
-      )
-      pipeline.optimisticUpdate({ status })
-      await success()
-      onActionSuccess?.(pipelineName, _action)
-    }}
-  >
-    <span class="fd fd-play {iconClass}"></span>
-    {text}
-    <span></span>
-  </button>
+  <div>
+    <button
+      aria-label={action(false)}
+      class:disabled={unsavedChanges}
+      class="{buttonClass} {longClass} {importantBtnColor}"
+      onclick={async (e) => {
+        const _action = action(e.ctrlKey || e.shiftKey || e.metaKey)
+        const pipelineName = pipeline.current.name
+        const success = await postPipelineAction(
+          pipeline.current.name,
+          _action === 'start_paused_start' ? 'start_paused' : _action
+        )
+        pipeline.optimisticUpdate({ status })
+        await success()
+        onActionSuccess?.(pipelineName, _action)
+      }}
+    >
+      <span class="fd fd-play {iconClass}"></span>
+      {text}
+      <span></span>
+    </button>
+  </div>
 {/snippet}
 {#snippet _start()}
   {@render start('Resume', () => 'start', 'Resuming')}
   {#if unsavedChanges}
-    <Tooltip class="bg-white-black z-20 text-surface-950-50" placement="top">
-      Save the pipeline before running
+    <Tooltip class="bg-white-black z-20 rounded text-surface-950-50" placement="top">
+      Save the program before running
     </Tooltip>
   {/if}
 {/snippet}
 {#snippet _start_paused()}
   {@render start('Start', (alt) => (alt ? 'start_paused' : 'start_paused_start'), 'Starting up')}
   {#if unsavedChanges}
-    <Tooltip class="bg-white-black z-20 text-surface-950-50" placement="top">
-      Save the pipeline before running
+    <Tooltip class="bg-white-black z-20 rounded text-surface-950-50" placement="top">
+      Save the program before running
     </Tooltip>
   {/if}
 {/snippet}
@@ -206,13 +211,13 @@
 {/snippet}
 {#snippet _start_error()}
   {@render _start_disabled()}
-  <Tooltip class="z-20 bg-white text-surface-950-50 dark:bg-black" placement="top">
+  <Tooltip class="bg-white-black z-20 rounded text-surface-950-50" placement="top">
     Resolve errors before running
   </Tooltip>
 {/snippet}
 {#snippet _start_pending()}
   {@render _start_disabled()}
-  <Tooltip class="z-20 bg-white text-surface-950-50 dark:bg-black" placement="top">
+  <Tooltip class="bg-white-black z-20 rounded text-surface-950-50" placement="top">
     Wait for compilation to complete
   </Tooltip>
 {/snippet}
