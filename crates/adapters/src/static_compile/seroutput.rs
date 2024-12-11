@@ -21,8 +21,9 @@ use dbsp::trace::merge_batches;
 use dbsp::typed_batch::{DynBatchReader, DynSpine, DynTrace, Spine, TypedBatch};
 use dbsp::{trace::Cursor, Batch, BatchReader, OutputHandle, Trace};
 use feldera_types::serde_with_context::serialize::SerializeWithContextWrapper;
-use feldera_types::serde_with_context::{
-    SerializationContext, SerializeWithContext, SqlSerdeConfig,
+use feldera_types::{
+    format::csv::CsvParserConfig,
+    serde_with_context::{SerializationContext, SerializeWithContext, SqlSerdeConfig},
 };
 use serde_arrow::ArrayBuilder;
 use std::{any::Any, collections::HashSet};
@@ -119,11 +120,12 @@ impl<C> CsvSerializer<C>
 where
     C: Send,
 {
-    fn create(context: C) -> Self {
+    fn create(context: C, config: CsvParserConfig) -> Self {
         Self {
             writer: CsvWriterBuilder::new()
                 .has_headers(false)
                 .flexible(true)
+                .delimiter(config.delimiter().0)
                 .from_writer(SwappableWrite::new()),
             context,
         }
@@ -393,10 +395,10 @@ where
         record_format: RecordFormat,
     ) -> Result<Box<dyn SerCursor + Send + 'a>, ControllerError> {
         Ok(match record_format {
-            RecordFormat::Csv => {
+            RecordFormat::Csv(config) => {
                 Box::new(<SerCursorImpl<'a, CsvSerializer<_>, B, KD, VD, _>>::new(
                     &self.batch,
-                    CsvSerializer::create(SqlSerdeConfig::default()),
+                    CsvSerializer::create(SqlSerdeConfig::default(), config),
                 ))
             }
             RecordFormat::Json(json_flavor) => {

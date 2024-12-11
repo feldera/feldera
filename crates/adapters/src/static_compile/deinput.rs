@@ -17,6 +17,7 @@ use dbsp::{
     algebra::HasOne, operator::Update, utils::Tup2, DBData, InputHandle, MapHandle, SetHandle,
     ZSetHandle, ZWeight,
 };
+use feldera_types::format::csv::CsvParserConfig;
 use feldera_types::serde_with_context::{DeserializeWithContext, SqlSerdeConfig};
 use serde_arrow::Deserializer as ArrowDeserializer;
 use std::hash::Hasher;
@@ -43,15 +44,18 @@ pub struct CsvDeserializerFromBytes {
     config: SqlSerdeConfig,
 }
 
-impl DeserializerFromBytes<SqlSerdeConfig> for CsvDeserializerFromBytes {
-    fn create(config: SqlSerdeConfig) -> Self {
+impl DeserializerFromBytes<(SqlSerdeConfig, CsvParserConfig)> for CsvDeserializerFromBytes {
+    fn create((serde_config, csv_config): (SqlSerdeConfig, CsvParserConfig)) -> Self {
         CsvDeserializerFromBytes {
             reader: csv::ReaderBuilder::new()
+                // We skip the headers ourselves, without passing them to the
+                // reader, so we unconditionally turn off headers in the reader.
                 .has_headers(false)
                 .flexible(true)
+                .delimiter(csv_config.delimiter().0)
                 .from_reader(VecDeque::new()),
             record: csv::ByteRecord::new(),
-            config,
+            config: serde_config,
         }
     }
     fn deserialize<T>(&mut self, data: &[u8]) -> AnyResult<T>
@@ -167,7 +171,7 @@ where
         record_format: RecordFormat,
     ) -> Result<Box<dyn DeScalarStream>, ControllerError> {
         match record_format {
-            RecordFormat::Csv => {
+            RecordFormat::Csv(delimiter) => {
                 let config = SqlSerdeConfig::default();
                 Ok(Box::new(DeScalarStreamImpl::<
                     CsvDeserializerFromBytes,
@@ -178,7 +182,7 @@ where
                 >::new(
                     self.handle.clone(),
                     self.map_func.clone(),
-                    config,
+                    (config, delimiter),
                 )))
             }
             RecordFormat::Json(flavor) => {
@@ -296,12 +300,11 @@ where
         record_format: RecordFormat,
     ) -> Result<Box<dyn DeCollectionStream>, ControllerError> {
         match record_format {
-            RecordFormat::Csv => {
-                let config = SqlSerdeConfig::default();
+            RecordFormat::Csv(config) => {
                 Ok(Box::new(
                     DeZSetStream::<CsvDeserializerFromBytes, K, D, _>::new(
                         self.handle.clone(),
-                        config,
+                        (SqlSerdeConfig::default(), config),
                     ),
                 ))
             }
@@ -663,12 +666,14 @@ where
         record_format: RecordFormat,
     ) -> Result<Box<dyn DeCollectionStream>, ControllerError> {
         match record_format {
-            RecordFormat::Csv => Ok(Box::new(
-                DeSetStream::<CsvDeserializerFromBytes, K, D, _>::new(
-                    self.handle.clone(),
-                    SqlSerdeConfig::default(),
-                ),
-            )),
+            RecordFormat::Csv(config) => {
+                Ok(Box::new(
+                    DeSetStream::<CsvDeserializerFromBytes, K, D, _>::new(
+                        self.handle.clone(),
+                        (SqlSerdeConfig::default(), config),
+                    ),
+                ))
+            }
             RecordFormat::Json(flavor) => {
                 Ok(Box::new(
                     DeSetStream::<JsonDeserializerFromBytes, K, D, _>::new(
@@ -1053,7 +1058,7 @@ where
         record_format: RecordFormat,
     ) -> Result<Box<dyn DeCollectionStream>, ControllerError> {
         match record_format {
-            RecordFormat::Csv => Ok(Box::new(DeMapStream::<
+            RecordFormat::Csv(config) => Ok(Box::new(DeMapStream::<
                 CsvDeserializerFromBytes,
                 K,
                 KD,
@@ -1068,7 +1073,7 @@ where
                 self.handle.clone(),
                 self.value_key_func.clone(),
                 self.update_key_func.clone(),
-                SqlSerdeConfig::default(),
+                (SqlSerdeConfig::default(), config),
             ))),
             RecordFormat::Json(flavor) => Ok(Box::new(DeMapStream::<
                 JsonDeserializerFromBytes,
@@ -1705,15 +1710,15 @@ mod test {
     ) {
         let mut zset_stream = input_handles
             .0
-            .configure_deserializer(RecordFormat::Csv)
+            .configure_deserializer(RecordFormat::Csv(Default::default()))
             .unwrap();
         let mut set_stream = input_handles
             .1
-            .configure_deserializer(RecordFormat::Csv)
+            .configure_deserializer(RecordFormat::Csv(Default::default()))
             .unwrap();
         let mut map_stream = input_handles
             .2
-            .configure_deserializer(RecordFormat::Csv)
+            .configure_deserializer(RecordFormat::Csv(Default::default()))
             .unwrap();
 
         let zset_output = &output_handles.0;
