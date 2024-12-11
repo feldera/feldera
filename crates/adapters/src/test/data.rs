@@ -223,9 +223,9 @@ pub struct TestStruct2 {
     // #[serde(rename = "t")]
     // pub field_4: Time,
     #[serde(rename = "es")]
-    pub field_5: EmbeddedStruct,
+    pub field_5: Option<EmbeddedStruct>,
     #[serde(rename = "m")]
-    pub field_6: BTreeMap<String, i64>,
+    pub field_6: Option<BTreeMap<String, i64>>,
 }
 
 impl Arbitrary for TestStruct2 {
@@ -257,8 +257,8 @@ impl Arbitrary for TestStruct2 {
                 field_2: Timestamp::new(f2 as i64 * 1_000),
                 field_3: Date::new(f3 as i32),
                 // field_4: Time::new(f4 * 1000),
-                field_5: f5,
-                field_6: f6,
+                field_5: Some(f5),
+                field_6: Some(f6),
             })
             .boxed()
     }
@@ -274,8 +274,11 @@ impl TestStruct2 {
                 field_2: Timestamp::new(1000),
                 field_3: Date::new(1),
                 // field_4: Time::new(1),
-                field_5: EmbeddedStruct { field: false },
-                field_6: BTreeMap::from([("foo".to_string(), 100), ("bar".to_string(), 200)]),
+                field_5: Some(EmbeddedStruct { field: false }),
+                field_6: Some(BTreeMap::from([
+                    ("foo".to_string(), 100),
+                    ("bar".to_string(), 200),
+                ])),
             },
             TestStruct2 {
                 field: 2,
@@ -284,8 +287,8 @@ impl TestStruct2 {
                 field_2: Timestamp::new(2000),
                 field_3: Date::new(12),
                 // field_4: Time::new(1_000_000_000),
-                field_5: EmbeddedStruct { field: true },
-                field_6: BTreeMap::new(),
+                field_5: Some(EmbeddedStruct { field: true }),
+                field_6: Some(BTreeMap::new()),
             },
         ]
     }
@@ -307,7 +310,7 @@ impl TestStruct2 {
                 DataType::Struct(arrow::datatypes::Fields::from(vec![
                     arrow::datatypes::Field::new("a", DataType::Boolean, false),
                 ])),
-                false,
+                true,
             ),
             arrow::datatypes::Field::new_map(
                 "m",
@@ -315,7 +318,7 @@ impl TestStruct2 {
                 arrow::datatypes::Field::new("key", DataType::Utf8, false),
                 arrow::datatypes::Field::new("value", DataType::Int64, false),
                 false,
-                false,
+                true,
             ),
         ]))
     }
@@ -334,21 +337,21 @@ impl TestStruct2 {
                 {
                     "name": "es",
                     "type":
-                        {
+                        [{
                             "type": "record",
                             "name": "EmbeddedStruct",
                             "fields": [
                                 { "name": "a", "type": "boolean" }
                             ]
-                        }
+                        }, "null"]
                 },
                 {
                     "name": "m",
                     "type":
-                        {
+                        [{
                             "type": "map",
                             "values": "long"
-                        }
+                        }, "null"]
                 }
             ]
         }"#
@@ -363,11 +366,11 @@ impl TestStruct2 {
             Field::new("dt".into(), ColumnType::date(false)),
             Field::new(
                 "es".into(),
-                ColumnType::structure(false, &[Field::new("a".into(), ColumnType::boolean(false))]),
+                ColumnType::structure(true, &[Field::new("a".into(), ColumnType::boolean(false))]),
             ),
             Field::new(
                 "m".into(),
-                ColumnType::map(false, ColumnType::varchar(false), ColumnType::bigint(false)),
+                ColumnType::map(true, ColumnType::varchar(false), ColumnType::bigint(false)),
             ),
         ]
     }
@@ -382,11 +385,11 @@ impl TestStruct2 {
             Field::new("dt".into(), ColumnType::date(false)),
             Field::new(
                 "es".into(),
-                ColumnType::structure(false, &[Field::new("a".into(), ColumnType::boolean(false))]),
+                ColumnType::structure(true, &[Field::new("a".into(), ColumnType::boolean(false))]),
             ),
             Field::new(
                 "m".into(),
-                ColumnType::map(false, ColumnType::varchar(false), ColumnType::bigint(false)),
+                ColumnType::map(true, ColumnType::varchar(false), ColumnType::bigint(false)),
             ),
         ];
 
@@ -416,7 +419,16 @@ impl TestStruct2 {
         .map(|r| r.field_4.nanoseconds() as i64)
         .collect();*/
         let row6_field = Arc::new(arrow::datatypes::Field::new("a", DataType::Boolean, false));
-        let row6: Vec<bool> = data.iter().map(|r| r.field_5.field).collect();
+        let row6: Vec<Option<bool>> = data
+            .iter()
+            .map(|r| {
+                if let Some(emb_struct) = &r.field_5 {
+                    Some(emb_struct.field)
+                } else {
+                    None
+                }
+            })
+            .collect();
         let row6_booleans = Arc::new(BooleanArray::from(row6));
 
         let string_builder = StringBuilder::new();
@@ -437,11 +449,15 @@ impl TestStruct2 {
             false,
         ));
         for x in data.iter() {
-            for (key, val) in x.field_6.iter() {
-                map_builder.keys().append_value(key);
-                map_builder.values().append_value(*val);
+            if let Some(mp) = &x.field_6 {
+                for (key, val) in mp.iter() {
+                    map_builder.keys().append_value(key);
+                    map_builder.values().append_value(*val);
+                }
+                map_builder.append(true).unwrap()
+            } else {
+                map_builder.append(false).unwrap()
             }
-            map_builder.append(true).unwrap()
         }
         let map_array = map_builder.finish();
 
@@ -468,8 +484,8 @@ serialize_table_record!(TestStruct2[7]{
     r#field_2["ts"]: Timestamp,
     r#field_3["dt"]: Date,
     // r#field_4["t"]: Time,
-    r#field_5["es"]: EmbeddedStruct,
-    r#field_6["m"]: Map<String, i64>
+    r#field_5["es"]: Option<EmbeddedStruct>,
+    r#field_6["m"]: Option<Map<String, i64>>
 });
 
 deserialize_table_record!(TestStruct2["TestStruct", 7   ] {
@@ -479,8 +495,8 @@ deserialize_table_record!(TestStruct2["TestStruct", 7   ] {
     (r#field_2, "ts", false, Timestamp, None),
     (r#field_3, "dt", false, Date, None),
     // (r#field_4, "t", false, Time, None),
-    (r#field_5, "es", false, EmbeddedStruct, None),
-    (r#field_6, "m", false, BTreeMap<String, i64>, None)
+    (r#field_5, "es", false, Option<EmbeddedStruct>, Some(None)),
+    (r#field_6, "m", false, Option<BTreeMap<String, i64>>, Some(None))
 });
 
 /// Record in the databricks people dataset.

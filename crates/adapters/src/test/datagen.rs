@@ -133,7 +133,7 @@ transport:
         let record = upd.unwrap_insert();
         assert_eq!(record.field, idx);
         assert_eq!(record.field_1, idx % 2 == 1);
-        assert_eq!(record.field_5.field, idx % 2 == 1);
+        assert_eq!(record.field_5.as_ref().unwrap().field, idx % 2 == 1);
         idx += 1;
     }
     assert_eq!(idx, 10);

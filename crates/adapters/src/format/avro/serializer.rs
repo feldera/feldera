@@ -929,8 +929,11 @@ mod test {
             field_1: false,
             field_2: Timestamp::new(1713597703),
             field_3: Date::new(19833),
-            field_5: EmbeddedStruct { field: true },
-            field_6: BTreeMap::from([("foo".to_string(), 1), ("bar".to_string(), 2)]),
+            field_5: Some(EmbeddedStruct { field: true }),
+            field_6: Some(BTreeMap::from([
+                ("foo".to_string(), 1),
+                ("bar".to_string(), 2),
+            ])),
         };
 
         let avro2_1: AvroValue = AvroValue::Record(vec![
@@ -944,14 +947,23 @@ mod test {
             ("dt".to_string(), AvroValue::Date(19833)),
             (
                 "es".to_string(),
-                AvroValue::Record(vec![("a".to_string(), AvroValue::Boolean(true))]),
+                AvroValue::Union(
+                    0,
+                    Box::new(AvroValue::Record(vec![(
+                        "a".to_string(),
+                        AvroValue::Boolean(true),
+                    )])),
+                ),
             ),
             (
                 "m".to_string(),
-                AvroValue::Map(HashMap::from([
-                    ("foo".to_string(), AvroValue::Long(1)),
-                    ("bar".to_string(), AvroValue::Long(2)),
-                ])),
+                AvroValue::Union(
+                    0,
+                    Box::new(AvroValue::Map(HashMap::from([
+                        ("foo".to_string(), AvroValue::Long(1)),
+                        ("bar".to_string(), AvroValue::Long(2)),
+                    ]))),
+                ),
             ),
         ]);
 
