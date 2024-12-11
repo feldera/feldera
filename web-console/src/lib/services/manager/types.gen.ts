@@ -2315,6 +2315,10 @@ export type $OpenApiTs = {
          */
         '400': ErrorResponse
         /**
+         * Invalid name specified
+         */
+        '400': ErrorResponse
+        /**
          * Cannot create pipeline as the name already exists
          */
         '409': ErrorResponse
