@@ -23,7 +23,8 @@ CREATE TABLE LINEITEM (
         "config": {{ "path": "{folder}/data-large/lineitem.csv" }}
     }},
     "format": {{
-        "name": "csv"
+        "name": "csv",
+        "config": {{ "delimiter": "|" }}
     }}
 }}]');
 
@@ -43,7 +44,8 @@ CREATE TABLE ORDERS  (
         "config": {{ "path": "{folder}/data-large/orders.csv" }}
     }},
     "format": {{
-        "name": "csv"
+        "name": "csv",
+        "config": {{ "delimiter": "|" }}
     }}
 }}]');
 
@@ -63,7 +65,8 @@ CREATE TABLE PART (
         "config": {{ "path": "{folder}/data-large/part.csv" }}
     }},
     "format": {{
-        "name": "csv"
+        "name": "csv",
+        "config": {{ "delimiter": "|" }}
     }}
 }}]');
 
@@ -82,7 +85,8 @@ CREATE TABLE CUSTOMER (
         "config": {{ "path": "{folder}/data-large/customer.csv" }}
     }},
     "format": {{
-        "name": "csv"
+        "name": "csv",
+        "config": {{ "delimiter": "|" }}
     }}
 }}]');
 
@@ -100,7 +104,8 @@ CREATE TABLE SUPPLIER (
         "config": {{ "path": "{folder}/data-large/supplier.csv" }}
     }},
     "format": {{
-        "name": "csv"
+        "name": "csv",
+        "config": {{ "delimiter": "|" }}
     }}
 }}]');
 
@@ -116,7 +121,8 @@ CREATE TABLE PARTSUPP (
         "config": {{ "path": "{folder}/data-large/partsupp.csv" }}
     }},
     "format": {{
-        "name": "csv"
+        "name": "csv",
+        "config": {{ "delimiter": "|" }}
     }}
 }}]');
 
@@ -131,7 +137,8 @@ CREATE TABLE NATION  (
         "config": {{ "path": "{folder}/data-large/nation.csv" }}
     }},
     "format": {{
-        "name": "csv"
+        "name": "csv",
+        "config": {{ "delimiter": "|" }}
     }}
 }}]');
 
@@ -145,7 +152,8 @@ CREATE TABLE REGION  (
         "config": {{ "path": "{folder}/data-large/region.csv" }}
     }},
     "format": {{
-        "name": "csv"
+        "name": "csv",
+        "config": {{ "delimiter": "|" }}
     }}
 }}]');
 
