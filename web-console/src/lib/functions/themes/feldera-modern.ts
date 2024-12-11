@@ -196,7 +196,7 @@ export const felderaModern = {
     '--color-error-contrast-800': 'var(--color-error-contrast-light)',
     '--color-error-contrast-900': 'var(--color-error-contrast-light)',
     '--color-error-contrast-950': 'var(--color-error-contrast-light)',
-    '--color-surface-50': '242 242 242',
+    '--color-surface-50': '246 246 246',
     '--color-surface-100': '216 216 216',
     '--color-surface-200': '190 190 190',
     '--color-surface-300': '165 165 165',

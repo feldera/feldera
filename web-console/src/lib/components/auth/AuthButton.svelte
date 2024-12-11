@@ -20,7 +20,7 @@
         <span class="hidden {compactBreakpoint}block">Logged in</span>
         <div class="hidden {compactBreakpoint}block w-1"></div>
 
-        <div class="btn fd fd-circle-user btn-icon preset-tonal-surface text-[20px]">
+        <div class="fd fd-circle-user btn btn-icon text-[20px] preset-tonal-surface">
           <div class="hidden {compactBreakpoint}block w-2"></div>
         </div>
       </button>

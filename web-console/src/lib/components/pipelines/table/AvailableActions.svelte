@@ -145,8 +145,8 @@
         return postPipelinesAction('shutdown')
       },
       selectedPipelines.length === 1
-      ? 'The internal state of the pipeline will be reset.'
-      : 'The internal state of these pipelines will be reset.'
+        ? 'The internal state of the pipeline will be reset.'
+        : 'The internal state of these pipelines will be reset.'
     )()}
     onClose={() => (globalDialog.dialog = null)}
   ></DeleteDialog>
