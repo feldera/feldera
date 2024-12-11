@@ -445,21 +445,21 @@ fn test_non_null_to_nullable() {
             {
                 "name": "es",
                 "type":
-                    {
+                    [{
                         "type": "record",
                         "name": "EmbeddedStruct",
                         "fields": [
                             { "name": "a", "type": "boolean" }
                         ]
-                    }
+                    }, "null"]
             },
             {
                 "name": "m",
                 "type":
-                    {
+                    [{
                         "type": "map",
                         "values": "long"
-                    }
+                    }, "null"]
             }
         ]
     }"#;
