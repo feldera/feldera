@@ -15,9 +15,9 @@ development = ["pg-client-config"]
 
 [dependencies]
 feldera-types = { path = "../feldera-types" }
-actix-web = "4.3"
-actix-http = "3.8.0"
-actix-web-static-files = "4.0.0"
+actix-web = "4.9.0"
+actix-http = "3.9.0"
+actix-web-static-files = "4.0.1"
 actix-files = "0.6.2"
 awc = {version = "3.1.0", features = ["openssl"] } # Needed for auth workflows
 static-files = "0.2.3"
@@ -65,6 +65,7 @@ fdlimit = "0.3.0"
 termbg = "0.5.1"
 hex = "0.4.3"
 indoc = "2.0.5"
+urlencoding = "2.1.3"
 
 [features]
 integration-test = []

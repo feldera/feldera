@@ -7188,6 +7188,7 @@ dependencies = [
  "tokio-postgres",
  "tokio-stream",
  "url",
+ "urlencoding",
  "utoipa",
  "utoipa-swagger-ui",
  "uuid",

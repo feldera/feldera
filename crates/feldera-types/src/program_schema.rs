@@ -44,6 +44,14 @@ impl SqlIdentifier {
     }
 
     /// Return the name of the identifier in canonical form.
+    /// The result is the true case-sensitive identifying name of the table,
+    /// and can be used for example to detect duplicate table names.
+    ///
+    /// Example return values for this function:
+    /// - `CREATE TABLE t1` -> `t1`
+    /// - `CREATE TABLE T1` -> `t1`
+    /// - `CREATE TABLE "t1"` -> `t1`
+    /// - `CREATE TABLE "T1"` -> `T1`
     pub fn name(&self) -> String {
         if self.case_sensitive {
             self.name.clone()
@@ -52,7 +60,16 @@ impl SqlIdentifier {
         }
     }
 
-    /// Return the name of the identifier as it would appear in SQL.
+    /// Return the name of the identifier as it appeared originally in SQL.
+    /// This method should only be used for log or error messages as it is what
+    /// the user originally wrote, however it should not be used for identification
+    /// or disambiguation (use `name()` for that instead).
+    ///
+    /// Example return values for this function:
+    /// - `CREATE TABLE t1` -> `t1`
+    /// - `CREATE TABLE T1` -> `T1`
+    /// - `CREATE TABLE "t1"` -> `"t1"`
+    /// - `CREATE TABLE "T1"` -> `"T1"`
     pub fn sql_name(&self) -> String {
         if self.case_sensitive {
             format!("\"{}\"", self.name)
