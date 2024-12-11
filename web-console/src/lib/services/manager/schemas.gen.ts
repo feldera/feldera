@@ -495,21 +495,35 @@ snapshot.  The condition must be a valid SQL Boolean expression that can be used
 the \`where\` clause of the \`select * from snapshot where ...\` query.
 
 This option can be used to specify the range of event times to include in the snapshot,
-e.g.: \`ts BETWEEN '2005-01-01 00:00:00' AND '2010-12-31 23:59:59'\`.`,
+e.g.: \`ts BETWEEN TIMESTAMP '2005-01-01 00:00:00' AND TIMESTAMP '2010-12-31 23:59:59'\`.`,
       nullable: true
     },
     timestamp_column: {
       type: 'string',
       description: `Table column that serves as an event timestamp.
 
-
 When this option is specified, and \`mode\` is one of \`snapshot\` or \`snapshot_and_follow\`,
-the snapshot of the table is ingested in the timestamp order.  This setting is required
-for tables declared with the
-[\`LATENESS\`](https://docs.feldera.com/sql/streaming#lateness-expressions) attribute
-in Feldera SQL. It impacts the performance of the connector, since data must be sorted
-before pushing it to the pipeline; therefore it is not recommended to use this
-settings for tables without \`LATENESS\`.`,
+table rows are ingested in the timestamp order, respecting the
+[\`LATENESS\`](https://docs.feldera.com/sql/streaming#lateness-expressions)
+property of the column: each ingested row has a timestamp no more than \`LATENESS\`
+time units earlier than the most recent timestamp of any previously ingested row.
+The ingestion is performed by partitioning the table into timestamp ranges of width
+\`LATENESS\`. Each range is processed sequentially, in increasing timestamp order.
+
+# Example
+
+Consider a table with timestamp column of type \`TIMESTAMP\` and lateness attribute
+\`INTERVAL 1 DAY\`. Assuming that the oldest timestamp in the table is
+\`2024-01-01T00:00:00\`\`, the connector will fetch all records with timestamps
+from \`2024-01-01\`, then all records for \`2024-01-02\`, \`2024-01-03\`, etc., until all records
+in the table have been ingested.
+
+# Requirements
+
+* The timestamp column must be of a supported type: integer, \`DATE\`, or \`TIMESTAMP\`.
+* The timestamp column must be declared with non-zero \`LATENESS\`.
+* For efficient ingest, the table must be optimized for timestamp-based
+queries using partitioning, Z-ordering, or liquid clustering.`,
       nullable: true
     },
     uri: {
@@ -899,6 +913,18 @@ export const $Field = {
       properties: {
         columntype: {
           $ref: '#/components/schemas/ColumnType'
+        },
+        default: {
+          type: 'string',
+          nullable: true
+        },
+        lateness: {
+          type: 'string',
+          nullable: true
+        },
+        watermark: {
+          type: 'string',
+          nullable: true
         }
       }
     }
