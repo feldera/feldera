@@ -1,7 +1,8 @@
 use super::ManagerError;
 use crate::api::error::ApiError;
+use crate::api::examples;
+use crate::api::util::parse_url_parameter;
 use crate::api::ServerState;
-use crate::api::{examples, parse_string_param};
 #[cfg(not(feature = "feldera-enterprise"))]
 use crate::common_error::CommonError;
 use crate::db::error::DBError;
@@ -12,6 +13,7 @@ use crate::db::types::pipeline::{
 };
 use crate::db::types::program::{ProgramConfig, ProgramInfo, ProgramStatus};
 use crate::db::types::tenant::TenantId;
+use actix_http::StatusCode;
 use actix_web::{
     delete, get,
     http::header::{CacheControl, CacheDirective},
@@ -23,13 +25,12 @@ use actix_web::{
 use chrono::{DateTime, Utc};
 use feldera_types::config::{PipelineConfig, RuntimeConfig};
 use feldera_types::error::ErrorResponse;
+use feldera_types::program_schema::SqlIdentifier;
 use log::info;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
-
-// REGULAR ENDPOINTS
 
 /// Extended pipeline descriptor with code being optionally included.
 #[derive(Deserialize, Serialize, ToSchema, Eq, PartialEq, Debug, Clone)]
@@ -195,7 +196,7 @@ pub(crate) async fn get_pipeline(
     tenant_id: ReqData<TenantId>,
     req: HttpRequest,
 ) -> Result<HttpResponse, ManagerError> {
-    let pipeline_name = parse_string_param(&req, "pipeline_name")?;
+    let pipeline_name = parse_url_parameter(&req, "pipeline_name")?;
     let pipeline = state
         .db
         .lock()
@@ -291,7 +292,7 @@ async fn put_pipeline(
     request: HttpRequest,
     body: web::Json<PipelineDescr>,
 ) -> Result<HttpResponse, ManagerError> {
-    let pipeline_name = parse_string_param(&request, "pipeline_name")?;
+    let pipeline_name = parse_url_parameter(&request, "pipeline_name")?;
     check_runtime_config(&body.runtime_config)?;
     let (is_new, pipeline) = state
         .db
@@ -358,7 +359,7 @@ pub(crate) async fn patch_pipeline(
     request: HttpRequest,
     body: web::Json<PatchPipeline>,
 ) -> Result<HttpResponse, ManagerError> {
-    let pipeline_name = parse_string_param(&request, "pipeline_name")?;
+    let pipeline_name = parse_url_parameter(&request, "pipeline_name")?;
     if let Some(config) = &body.runtime_config {
         check_runtime_config(config)?;
     }
@@ -416,7 +417,7 @@ pub(crate) async fn delete_pipeline(
     tenant_id: ReqData<TenantId>,
     request: HttpRequest,
 ) -> Result<HttpResponse, ManagerError> {
-    let pipeline_name = parse_string_param(&request, "pipeline_name")?;
+    let pipeline_name = parse_url_parameter(&request, "pipeline_name")?;
     let pipeline_id = state
         .db
         .lock()
@@ -426,18 +427,6 @@ pub(crate) async fn delete_pipeline(
 
     info!("Deleted pipeline {} (tenant: {})", pipeline_id, *tenant_id);
     Ok(HttpResponse::Ok().finish())
-}
-
-// SPECIAL ENDPOINTS
-
-/// Parses the action to take on the pipeline.
-fn parse_pipeline_action(req: &HttpRequest) -> Result<&str, ManagerError> {
-    match req.match_info().get("action") {
-        None => Err(ManagerError::from(ApiError::MissingUrlEncodedParam {
-            param: "action",
-        })),
-        Some(action) => Ok(action),
-    }
 }
 
 /// Start, pause or shutdown a pipeline.
@@ -486,9 +475,9 @@ pub(crate) async fn post_pipeline_action(
     tenant_id: ReqData<TenantId>,
     request: HttpRequest,
 ) -> Result<HttpResponse, ManagerError> {
-    let pipeline_name = parse_string_param(&request, "pipeline_name")?;
-    let action = parse_pipeline_action(&request)?;
-    match action {
+    let pipeline_name = parse_url_parameter(&request, "pipeline_name")?;
+    let action = parse_url_parameter(&request, "action")?;
+    match action.as_str() {
         "start" => {
             state
                 .db
@@ -525,60 +514,101 @@ pub(crate) async fn post_pipeline_action(
     Ok(HttpResponse::Accepted().finish())
 }
 
-/// Change the desired state of an input endpoint.
+/// Start (resume) or pause the input connector.
 ///
-/// The following values of the `action` argument are accepted by this endpoint:
+/// The following values of the `action` argument are accepted: `start` and `pause`.
 ///
-/// - 'start': Start processing data.
-/// - 'pause': Pause the pipeline.
+/// Input connectors can be in either the `Running` or `Paused` state. By default,
+/// connectors are initialized in the `Running` state when a pipeline is deployed.
+/// In this state, the connector actively fetches data from its configured data
+/// source and forwards it to the pipeline. If needed, a connector can be created
+/// in the `Paused` state by setting its
+/// [`paused`](https://docs.feldera.com/connectors/#generic-attributes) property
+/// to `true`. When paused, the connector remains idle until reactivated using the
+/// `start` command. Conversely, a connector in the `Running` state can be paused
+/// at any time by issuing the `pause` command.
+///
+/// The current connector state can be retrieved via the
+/// `GET /v0/pipelines/{pipeline_name}/stats` endpoint.
+///
+/// Note that only if both the pipeline *and* the connector state is `Running`,
+/// is the input connector active.
+/// ```text
+/// Pipeline state    Connector state    Connector is active?
+/// --------------    ---------------    --------------------
+/// Paused            Paused             No
+/// Paused            Running            No
+/// Running           Paused             No
+/// Running           Running            Yes
+/// ```
 #[utoipa::path(
+    context_path = "/v0",
+    security(("JSON web token (JWT) or API key" = [])),
+    params(
+        ("pipeline_name" = String, Path, description = "Unique pipeline name"),
+        ("table_name" = String, Path, description = "Unique table name"),
+        ("connector_name" = String, Path, description = "Unique input connector name"),
+        ("action" = String, Path, description = "Input connector action (one of: start, pause)")
+    ),
     responses(
-        (status = ACCEPTED
-            , description = "Request accepted."),
+        (status = OK
+            , description = "Action has been processed"),
         (status = NOT_FOUND
-            , description = "Specified pipeline id does not exist."
+            , description = "Pipeline with that name does not exist"
             , body = ErrorResponse
             , example = json!(examples::error_unknown_pipeline())),
         (status = NOT_FOUND
-                , description = "Specified endpoint does not exist."
-                , body = ErrorResponse),
+            , description = "Table with that name does not exist"
+            , body = ErrorResponse),
+        (status = NOT_FOUND
+            , description = "Input connector with that name does not exist"
+            , body = ErrorResponse),
     ),
-    params(
-        ("pipeline_name" = String, Path, description = "Unique pipeline name"),
-        ("endpoint_name" = String, Path, description = "Input endpoint name"),
-        ("action" = String, Path, description = "Endpoint action [start, pause]")
-    ),
-    context_path = "/v0",
-    security(("JSON web token (JWT) or API key" = [])),
     tag = "Pipelines"
 )]
-#[post("/pipelines/{pipeline_name}/input_endpoints/{endpoint_name}/{action}")]
-pub(crate) async fn input_endpoint_action(
+#[post("/pipelines/{pipeline_name}/tables/{table_name}/connectors/{connector_name}/{action}")]
+pub(crate) async fn post_pipeline_input_connector_action(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
-    req: HttpRequest,
+    path: web::Path<(String, String, String, String)>,
 ) -> Result<HttpResponse, ManagerError> {
-    let pipeline_name = parse_string_param(&req, "pipeline_name")?;
-    let endpoint_name = parse_string_param(&req, "endpoint_name")?;
-    let action = parse_pipeline_action(&req)?;
+    // Parse the URL path parameters
+    let (pipeline_name, table_name, connector_name, action) = path.into_inner();
 
-    state
+    // Validate action
+    if action != "start" && action != "pause" {
+        return Err(ApiError::InvalidConnectorAction { action }.into());
+    }
+
+    // The table name provided by the user is interpreted as
+    // a SQL identifier to account for case (in-)sensitivity
+    let actual_table_name = SqlIdentifier::from(&table_name).name();
+    let endpoint_name = format!("{actual_table_name}.{connector_name}");
+
+    // URL encode endpoint name to account for special characters
+    let encoded_endpoint_name = urlencoding::encode(&endpoint_name).to_string();
+
+    // Forward the action request to the pipeline
+    let response = state
         .runner
         .forward_http_request_to_pipeline_by_name(
             *tenant_id,
             &pipeline_name,
             Method::GET,
-            &format!("input_endpoints/{endpoint_name}/{action}"),
+            &format!("input_endpoints/{encoded_endpoint_name}/{action}"),
             "",
             None,
         )
         .await?;
 
-    info!(
-        "Accepted '{action}' action for pipeline '{pipeline_name}', endpoint '{endpoint_name}' (tenant:{})",
-        *tenant_id
-    );
-    Ok(HttpResponse::Accepted().finish())
+    // Log only if the response indicates success
+    if response.status() == StatusCode::OK {
+        info!(
+            "Connector action: {action}: pipeline '{pipeline_name}' on table '{table_name}' on connector '{connector_name}' (tenant: {})",
+            *tenant_id
+        );
+    }
+    Ok(response)
 }
 
 /// Retrieve pipeline logs as a stream.
@@ -617,7 +647,7 @@ pub(crate) async fn get_pipeline_logs(
     tenant_id: ReqData<TenantId>,
     request: HttpRequest,
 ) -> Result<HttpResponse, ManagerError> {
-    let pipeline_name = parse_string_param(&request, "pipeline_name")?;
+    let pipeline_name = parse_url_parameter(&request, "pipeline_name")?;
     state
         .runner
         .http_streaming_logs_from_pipeline_by_name(&client, *tenant_id, &pipeline_name)
@@ -654,7 +684,7 @@ pub(crate) async fn get_pipeline_stats(
     tenant_id: ReqData<TenantId>,
     request: HttpRequest,
 ) -> Result<HttpResponse, ManagerError> {
-    let pipeline_name = parse_string_param(&request, "pipeline_name")?;
+    let pipeline_name = parse_url_parameter(&request, "pipeline_name")?;
     state
         .runner
         .forward_http_request_to_pipeline_by_name(
@@ -697,7 +727,7 @@ pub(crate) async fn get_pipeline_circuit_profile(
     tenant_id: ReqData<TenantId>,
     request: HttpRequest,
 ) -> Result<HttpResponse, ManagerError> {
-    let pipeline_name = parse_string_param(&request, "pipeline_name")?;
+    let pipeline_name = parse_url_parameter(&request, "pipeline_name")?;
     state
         .runner
         .forward_http_request_to_pipeline_by_name(
@@ -746,7 +776,7 @@ pub(crate) async fn checkpoint_pipeline(
 
     #[cfg(feature = "feldera-enterprise")]
     {
-        let pipeline_name = parse_string_param(&request, "pipeline_name")?;
+        let pipeline_name = parse_url_parameter(&request, "pipeline_name")?;
         state
             .runner
             .forward_http_request_to_pipeline_by_name(
@@ -790,7 +820,7 @@ pub(crate) async fn get_pipeline_heap_profile(
     tenant_id: ReqData<TenantId>,
     request: HttpRequest,
 ) -> Result<HttpResponse, ManagerError> {
-    let pipeline_name = parse_string_param(&request, "pipeline_name")?;
+    let pipeline_name = parse_url_parameter(&request, "pipeline_name")?;
     state
         .runner
         .forward_http_request_to_pipeline_by_name(
@@ -841,7 +871,7 @@ pub(crate) async fn pipeline_adhoc_sql(
     request: HttpRequest,
     body: web::Payload,
 ) -> Result<HttpResponse, ManagerError> {
-    let pipeline_name = parse_string_param(&request, "pipeline_name")?;
+    let pipeline_name = parse_url_parameter(&request, "pipeline_name")?;
     state
         .runner
         .forward_streaming_http_request_to_pipeline_by_name(

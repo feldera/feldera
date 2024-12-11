@@ -915,15 +915,11 @@ async fn output_endpoint(
 }
 
 #[get("/input_endpoints/{endpoint_name}/pause")]
-async fn pause_input_endpoint(state: WebData<ServerState>, req: HttpRequest) -> impl Responder {
-    let endpoint_name = match req.match_info().get("endpoint_name") {
-        None => {
-            return Err(PipelineError::MissingUrlEncodedParam {
-                param: "endpoint_name",
-            });
-        }
-        Some(table_name) => table_name.to_string(),
-    };
+async fn pause_input_endpoint(
+    state: WebData<ServerState>,
+    path: web::Path<String>,
+) -> impl Responder {
+    let endpoint_name = path.into_inner();
 
     match &*state.controller.lock().unwrap() {
         Some(controller) => controller.pause_input_endpoint(&endpoint_name)?,
@@ -936,15 +932,11 @@ async fn pause_input_endpoint(state: WebData<ServerState>, req: HttpRequest) -> 
 }
 
 #[get("/input_endpoints/{endpoint_name}/start")]
-async fn start_input_endpoint(state: WebData<ServerState>, req: HttpRequest) -> impl Responder {
-    let endpoint_name = match req.match_info().get("endpoint_name") {
-        None => {
-            return Err(PipelineError::MissingUrlEncodedParam {
-                param: "endpoint_name",
-            });
-        }
-        Some(table_name) => table_name.to_string(),
-    };
+async fn start_input_endpoint(
+    state: WebData<ServerState>,
+    path: web::Path<String>,
+) -> impl Responder {
+    let endpoint_name = path.into_inner();
 
     match &*state.controller.lock().unwrap() {
         Some(controller) => controller.start_input_endpoint(&endpoint_name)?,

@@ -901,11 +901,21 @@ async fn pipeline(action: PipelineAction, client: Client) {
             );
         }
         PipelineAction::Program { action } => program(action, client).await,
-        PipelineAction::Endpoint {
+        PipelineAction::TableConnector {
             name,
-            endpoint_name,
+            table_name,
+            connector_name,
             action,
-        } => endpoint(name, endpoint_name.as_str(), action, client).await,
+        } => {
+            table_connector(
+                name,
+                table_name.as_str(),
+                connector_name.as_str(),
+                action,
+                client,
+            )
+            .await
+        }
         PipelineAction::HeapProfile {
             name,
             pprof,
@@ -1033,44 +1043,47 @@ async fn pipeline(action: PipelineAction, client: Client) {
     }
 }
 
-async fn endpoint(
+async fn table_connector(
     pipeline_name: String,
-    endpoint_name: &str,
-    action: EndpointAction,
+    table_name: &str,
+    connector_name: &str,
+    action: ConnectorAction,
     client: Client,
 ) {
     match action {
-        EndpointAction::Start => {
+        ConnectorAction::Start => {
             client
-                .input_endpoint_action()
+                .post_pipeline_input_connector_action()
                 .pipeline_name(pipeline_name)
-                .endpoint_name(endpoint_name)
+                .table_name(table_name)
+                .connector_name(connector_name)
                 .action("start")
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
                     client.baseurl,
-                    "Failed to start endpoint",
+                    "Failed to start table connector",
                     1,
                 ))
                 .unwrap();
-            println!("Endpoint {} started successfully.", endpoint_name);
+            println!("Table {table_name} connector {connector_name} started successfully.");
         }
-        EndpointAction::Pause => {
+        ConnectorAction::Pause => {
             client
-                .input_endpoint_action()
+                .post_pipeline_input_connector_action()
                 .pipeline_name(pipeline_name)
-                .endpoint_name(endpoint_name)
+                .table_name(table_name)
+                .connector_name(connector_name)
                 .action("pause")
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
                     client.baseurl,
-                    "Failed to pause endpoint",
+                    "Failed to pause table connector",
                     1,
                 ))
                 .unwrap();
-            println!("Endpoint {} paused successfully.", endpoint_name);
+            println!("Table {table_name} connector {connector_name} paused successfully.");
         }
     };
 }

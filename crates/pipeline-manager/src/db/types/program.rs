@@ -388,7 +388,7 @@ fn convert_connectors_with_unique_names(
     let mut unique_names = vec![];
     for (stream, connector_name, _, origin_value) in &connectors {
         if let Some(name) = connector_name {
-            let unique_name = format!("{stream}.{name}");
+            let unique_name = format!("{}.{name}", SqlIdentifier::from(&stream).name());
             if unique_names.contains(&Some(unique_name.clone())) {
                 return Err(ConnectorGenerationError::RelationConnectorNameCollision {
                     position: origin_value.value_position,
@@ -410,7 +410,11 @@ fn convert_connectors_with_unique_names(
             // Try several times to generate a unique name which is not extremely long
             let mut found = None;
             for _retry in 0..20 {
-                let unique_name = format!("{}.{}", &stream, generate_random_name());
+                let unique_name = format!(
+                    "{}.{}",
+                    SqlIdentifier::from(&stream).name(),
+                    generate_random_name()
+                );
                 if !unique_names.contains(&Some(unique_name.clone())) {
                     found = Some(unique_name);
                     break;
