@@ -1,6 +1,7 @@
 package org.dbsp.sqlCompiler.compiler.sql.mysql;
 
 import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
+import org.junit.Ignore;
 import org.junit.Test;
 
 public class TimestampdiffTests extends SqlIoTest {
@@ -11,6 +12,13 @@ public class TimestampdiffTests extends SqlIoTest {
                 CREATE MATERIALIZED VIEW v AS SELECT
                 c1 - INTERVAL '10' MINUTE AS f_c1
                 FROM time_tbl;""");
+    }
+
+    @Test
+    public void testIllegal() {
+        this.statementsFailingInCompilation(
+                "CREATE VIEW V AS SELECT (DATE '2020-01-01' - DATE '2019-01-01') DAY",
+                "subtraction not supported; consider using 'DATETIMEDIFF'");
     }
 
     // Test data obtained from
@@ -400,7 +408,7 @@ public class TimestampdiffTests extends SqlIoTest {
                 );
     }
 
-    @Test
+    @Test @Ignore("Disabled date subtraction")
     public void diffTests() {
         this.qs("""
                 select (DATE '2024-01-01' - DATE '2023-12-31') DAYS;
@@ -409,7 +417,7 @@ public class TimestampdiffTests extends SqlIoTest {
                  1 day
                 (1 row)
                 
-                 select (TIME '12:00:00' - TIME '10:00:00') MINUTES;
+                 select (TIME '12:00:00' - TIME '10:00:00') MINUTES TO SECONDS;
                  minutes
                 ---------
                  2 hours
@@ -419,6 +427,29 @@ public class TimestampdiffTests extends SqlIoTest {
                  minutes
                 ---------
                  1 day 2 hours
+                (1 row)""");
+    }
+
+    @Test
+    public void diffTests2() {
+        this.qs("""
+                select TIMESTAMPDIFF(DAY, DATE '2024-01-01', DATE '2023-12-31');
+                 days
+                ------
+                 -1
+                (1 row)
+                
+                select TIMESTAMPDIFF(MINUTE, TIME '12:00:00', TIME '10:00:00');
+                 minutes
+                ---------
+                 -120
+                (1 row)
+                
+                -- 24 * 60 + 120 = 1560
+                select TIMESTAMPDIFF(MINUTE, TIMESTAMP '2024-01-01 12:00:00', TIMESTAMP '2023-12-31 10:00:00');
+                 minutes
+                ---------
+                 -1560
                 (1 row)""");
     }
 }

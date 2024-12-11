@@ -1,6 +1,7 @@
 package org.dbsp.sqlCompiler.compiler.sql.simple;
 
 import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
+import org.junit.Ignore;
 import org.junit.Test;
 
 public class DateArithmeticTests extends SqlIoTest {
@@ -356,7 +357,7 @@ public class DateArithmeticTests extends SqlIoTest {
                 (1 row)""");
     }
 
-    @Test
+    @Test @Ignore("Disabled date subtraction")
     public void testDateSub() {
         this.qs("""
                 SELECT (date '2023-12-01' - date '2022-12-01') days;
@@ -375,6 +376,12 @@ public class DateArithmeticTests extends SqlIoTest {
                  diff
                 ------
                  1 year ago
+                (1 row)
+                
+                SELECT (date '2023-12-01' - date '2023-01-01') year;
+                 diff
+                ------
+                 11 months
                 (1 row)
 
                 SELECT (date '2023-12-01' - date '2023-01-01') month;

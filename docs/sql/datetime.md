@@ -90,6 +90,10 @@ For dates it always returns 0, since dates have no time component.
 Values of type `DATE` can be compared using `=`, `<>`, `!=`, `<`, `>`,
 `<=`, `>=`, `<=>`, `BETWEEN`; the result is a Boolean.
 
+`TIMESTAMPDIFF(<unit>, left, right)` computes the difference between
+two dates values and expresses the result in the specified time units.
+The result is a 32-bit integer.
+
 ## Times
 
 A time represents the time of day, a value between 0 and 24 hours
@@ -137,6 +141,10 @@ time)`.
 
 Values of type `TIME` can be compared using `=`, `<>`, `!=`, `<`, `>`,
 `<=`, `>=`, `<=>`, `BETWEEN`; the result is a Boolean.
+
+`TIMESTAMPDIFF(<unit>, left, right)` computes the difference between
+two time values and expresses the result in the specified time units.
+The result is a 32-bit integer.
 
 ## Timestamps
 
@@ -289,14 +297,11 @@ The following arithmetic operations are supported:
 | `TIME` `+` `INTERVAL`         | `TIME`             | Add an interval to a time. Performs wrapping addition.           |
 | `-` `INTERVAL`                | `INTERVAL`         | Negate an interval                                               |
 | `DATE` `-` `INTERVAL`         | `DATE`             | Subtract an interval from a date                                 |
-| (`TIME` `-` `TIME`) TIMEUNIT  | `INTERVAL` (short) | Compute the difference between two times                         |
 | `TIME` `-` `INTERVAL`         | `TIME`             | Subtract an interval from a time. Performs wrapping subtraction. |
 | `TIMESTAMP` `-` `INTERVAL`    | `TIMESTAMP`        | Subtract an interval from a timestamp                            |
 | `INTERVAL` `-` `INTERVAL`     | `INTERVAL`         | Subtract two intervals                                           |
 | `INTERVAL` `*` `DOUBLE`       | `INTERVAL`         | Multiply an interval by a scalar                                 |
 | `INTERVAL` `/` `DOUBLE`       | `INTERVAL`         | Divide an interval by a scalar                                   |
-| (`DATE` `-` `DATE`) `TIMEUNIT`| `INTERVAL`         | Subtract two dates, generate an interval with the specified time units |
-| (`TIMESTAMP` `-` `TIMESTAMP`) `TIMEUNIT` | `INTERVAL` | Subtract two timestamps, generate an interval with the specified time units |
 
 Arithmetic involving a `TIME` value always produces a (positive)
 `TIME` value, between `00:00:00` (inclusive) and `24:00:00`
@@ -307,12 +312,9 @@ interval from a `TIME` value is supported, but always leaves the
 `TIME` value unchanged (since long intervals always consist of a whole
 number of days).
 
-Arithmetic between a DATE and an INTERVAL first converts the interval
-to a whole number days (rounding down) and then performs the
+Arithmetic between a `DATE` and an `INTERVAL` first converts the
+interval to a whole number days (rounding down) and then performs the
 computation on whole days.
-
-Subtraction between two dates, timestamps, or times must be followed
-by a TIMEUNIT qualifier: e.g., `(DATE '2024-01-01' - DATE '2023-12-31') DAYS`.
 
 `DATE_SUB` is a synonim for `DATE` - `INTERVAL`.  `DATE_ADD` is a
 synonim for `DATE` + `INTERVAL`.
