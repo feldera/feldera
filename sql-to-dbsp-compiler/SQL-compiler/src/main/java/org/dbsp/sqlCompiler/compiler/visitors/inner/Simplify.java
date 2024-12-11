@@ -126,7 +126,7 @@ public class Simplify extends InnerRewriteVisitor {
         this.push(expression);
         DBSPExpression source = this.transform(expression.expression);
         this.pop(expression);
-        DBSPExpression result = source.applyClone();
+        DBSPExpression result = source.applyCloneIfNeeded();
         if (source.is(DBSPCloneExpression.class)) {
             result = source;
         }

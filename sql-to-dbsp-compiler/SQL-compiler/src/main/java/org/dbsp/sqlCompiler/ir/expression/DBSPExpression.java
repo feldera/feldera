@@ -192,6 +192,9 @@ public abstract class DBSPExpression
     public DBSPExpression applyCloneIfNeeded() {
         if (this.getType().hasCopy())
             return this;
+        if (this.is(DBSPBaseTupleExpression.class))
+            // No need to clone a Tuple constructor
+            return this;
         return this.applyClone();
     }
 

@@ -96,7 +96,6 @@ public class ExpandCasts extends InnerRewriteVisitor {
     }
 
     DBSPExpression convertToStruct(DBSPExpression source, DBSPTypeTuple type) {
-        // Convert a tuple to a VARIANT MAP indexed by the field names
         List<DBSPExpression> fields = new ArrayList<>();
         assert type.originalStruct != null;
         DBSPType sourceType = source.getType();

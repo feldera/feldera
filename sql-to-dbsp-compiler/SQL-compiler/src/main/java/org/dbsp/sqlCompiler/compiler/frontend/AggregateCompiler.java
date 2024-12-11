@@ -63,6 +63,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVecLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.IsNumericType;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBaseType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBinary;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDouble;
@@ -385,9 +386,21 @@ public class AggregateCompiler implements ICompilerComponent {
     public DBSPExpression aggregateOperation(
             CalciteObject node, DBSPOpcode op,
             DBSPType type, DBSPExpression left, DBSPExpression right, @Nullable DBSPExpression filter) {
+        assert op.isAggregate;
         DBSPType leftType = left.getType();
         DBSPType rightType = right.getType();
         DBSPType resultType = type.withMayBeNull(leftType.mayBeNull || rightType.mayBeNull);
+        assert type.sameType(leftType);
+        // For all types the nullability of leftType and rightType may differ.
+        // For recursive types the element types of leftType and rightType may be wrong from Calcite,
+        // because Calcite sometimes assumes (but not always!) that field types are always nullable.
+        if (!leftType.withMayBeNull(rightType.mayBeNull).sameType(rightType)) {
+            if (!rightType.is(DBSPTypeBaseType.class)) {
+                // These can also be different DECIMAL types
+                right = right.cast(leftType.withMayBeNull(rightType.mayBeNull));
+            }
+        }
+
         DBSPExpression binOp = new DBSPConditionalAggregateExpression(
                 node, op, resultType, left.applyCloneIfNeeded(), right.applyCloneIfNeeded(), filter);
         return binOp.cast(type);
