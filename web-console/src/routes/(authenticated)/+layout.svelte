@@ -11,12 +11,13 @@
   import { useDrawer } from '$lib/compositions/layout/useDrawer.svelte'
   import ModalDrawer from '$lib/components/layout/ModalDrawer.svelte'
   import Drawer from '$lib/components/layout/Drawer.svelte'
-  import AppHeader from '$lib/components/layout/AppHeader.svelte'
   import NavigationExtras from '$lib/components/layout/NavigationExtras.svelte'
   import CreatePipelineButton from '$lib/components/pipelines/CreatePipelineButton.svelte'
   import PipelineList from '$lib/components/pipelines/List.svelte'
   import { useLocalStorage } from '$lib/compositions/localStore.svelte'
   import { useIsTablet } from '$lib/compositions/layout/useIsMobile.svelte'
+  import BookADemo from '$lib/components/other/BookADemo.svelte'
+  import { page } from '$app/stores'
 
   const dialog = useGlobalDialog()
 
@@ -81,6 +82,9 @@
         }}
       ></CreatePipelineButton>
     </div>
+    {#if ['/', '/demos/'].includes($page.url.pathname)}
+      <BookADemo class="self-center" />
+    {/if}
     <NavigationExtras inline></NavigationExtras>
   </ModalDrawer>
 </div>

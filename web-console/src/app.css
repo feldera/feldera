@@ -35,6 +35,10 @@
 
 /* Skeleton UI overrides */
 
+.btn {
+  gap: calc(0.5rem * var(--space-scale-factor));
+}
+
 .checkbox,
 .radio {
   @apply bg-white-black border-none;

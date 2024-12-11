@@ -5,6 +5,10 @@
   import { Segment } from '@skeletonlabs/skeleton-svelte'
   import type { PageData } from './$types'
   import AppHeader from '$lib/components/layout/AppHeader.svelte'
+  import BookADemo from '$lib/components/other/BookADemo.svelte'
+  import { useDrawer } from '$lib/compositions/layout/useDrawer.svelte'
+  import NavigationExtras from '$lib/components/layout/NavigationExtras.svelte'
+  import CreatePipelineButton from '$lib/components/pipelines/CreatePipelineButton.svelte'
 
   let { data }: { data: PageData } = $props()
   const breadcrumbs = [
@@ -25,11 +29,29 @@
     Examples: 'Example'
   } as const
   let demosType = $state<(typeof typeLabels)[number]>('All')
+  const drawer = useDrawer('right')
 </script>
 
 <AppHeader>
   {#snippet afterStart()}
     <PipelineBreadcrumbs {breadcrumbs}></PipelineBreadcrumbs>
+  {/snippet}
+  {#snippet beforeEnd()}
+    {#if drawer.isMobileDrawer}
+      <button
+        onclick={() => (drawer.value = !drawer.value)}
+        class="fd fd-book-marked btn-icon flex text-[20px] preset-tonal-surface"
+        aria-label="Open extras drawer"
+      >
+      </button>
+    {:else}
+      <NavigationExtras></NavigationExtras>
+      <div class="relative">
+        <CreatePipelineButton class="max-w-64" btnClass="preset-filled-surface-50-950"
+        ></CreatePipelineButton>
+      </div>
+      <BookADemo />
+    {/if}
   {/snippet}
 </AppHeader>
 <div class="px-2 pb-5 md:px-8">

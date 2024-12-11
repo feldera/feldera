@@ -21,6 +21,7 @@
   import AppHeader from '$lib/components/layout/AppHeader.svelte'
   import NavigationExtras from '$lib/components/layout/NavigationExtras.svelte'
   import { useDrawer } from '$lib/compositions/layout/useDrawer.svelte'
+  import BookADemo from '$lib/components/other/BookADemo.svelte'
 
   preloadCode(`${base}/pipelines/*`).then(() => preloadCode(`${base}/demos/`))
 
@@ -71,6 +72,7 @@
         <CreatePipelineButton class="max-w-64" btnClass="preset-filled-surface-50-950"
         ></CreatePipelineButton>
       </div>
+      <BookADemo />
     {/if}
   {/snippet}
 </AppHeader>

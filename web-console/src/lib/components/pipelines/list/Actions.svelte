@@ -139,11 +139,19 @@
 </div>
 
 {#snippet _delete()}
-  <button
-    class="{buttonClass} {shortClass} {shortColor} fd fd-trash-2 preset-tonal-surface {iconClass}"
-    onclick={() => (globalDialog.dialog = deleteDialog)}
-  >
-  </button>
+  <div>
+    <button
+      class="{buttonClass} {shortClass} {shortColor} fd fd-trash-2 preset-tonal-surface {iconClass}"
+      class:disabled={pipelineBusy}
+      onclick={() => (globalDialog.dialog = deleteDialog)}
+    >
+    </button>
+  </div>
+  {#if pipelineBusy}
+    <Tooltip class="bg-white-black z-20 text-surface-950-50" placement="top">
+      Shutdown the pipeline to delete it
+    </Tooltip>
+  {/if}
 {/snippet}
 {#snippet start(
   text: string,
@@ -174,7 +182,7 @@
 {#snippet _start()}
   {@render start('Resume', () => 'start', 'Resuming')}
   {#if unsavedChanges}
-    <Tooltip class="z-20 bg-white text-surface-950-50 dark:bg-black" placement="top">
+    <Tooltip class="bg-white-black z-20 text-surface-950-50" placement="top">
       Save the pipeline before running
     </Tooltip>
   {/if}
@@ -182,7 +190,7 @@
 {#snippet _start_paused()}
   {@render start('Start', (alt) => (alt ? 'start_paused' : 'start_paused_start'), 'Starting up')}
   {#if unsavedChanges}
-    <Tooltip class="z-20 bg-white text-surface-950-50 dark:bg-black" placement="top">
+    <Tooltip class="bg-white-black z-20 text-surface-950-50" placement="top">
       Save the pipeline before running
     </Tooltip>
   {/if}
