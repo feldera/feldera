@@ -23,6 +23,9 @@ RUN apt update --fix-missing && apt install \
   ca-certificates gnupg \
   # Required by the `metrics-exporter-tcp` crate
   protobuf-compiler
+  # TODO: decide on below
+  # # Required to retrieve the git commit hash
+  # git
 
 # Set UTF-8 locale. Needed for the Rust compiler to handle Unicode column names.
 RUN sed -i -e 's/# en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen && \
@@ -87,6 +90,9 @@ COPY sql-to-dbsp-compiler/lib sql-to-dbsp-compiler/lib
 COPY --from=web-ui-builder /web-console/build web-console-build
 ENV WEBUI_BUILD_DIR=/app/web-console-out
 ENV WEBCONSOLE_BUILD_DIR=/app/web-console-build
+# TODO: decide on below
+# # Used to extract the git commit hash which will be included in the platform version
+# COPY .git .git
 RUN /root/.cargo/bin/cargo build --release --bin=pipeline-manager --features=pg-embed
 
 # Java build can be performed in parallel
