@@ -109,8 +109,8 @@ RUN mkdir -p lib/sql-to-dbsp-compiler/SQL-compiler/target
 COPY --from=javabuild /sql/sql-to-dbsp-compiler/SQL-compiler/target/sql2dbsp-jar-with-dependencies.jar lib/sql-to-dbsp-compiler/SQL-compiler/target/sql2dbsp-jar-with-dependencies.jar
 
 # Reuse `Cargo.lock` to ensure consistent crate versions.
-RUN mkdir -p .feldera/cargo_workspace
-COPY --chown=feldera Cargo.lock .feldera/cargo_workspace/Cargo.lock
+RUN mkdir -p .feldera/compiler/rust-compilation
+COPY --chown=feldera Cargo.lock .feldera/compiler/rust-compilation/Cargo.lock
 
 # Copy over demos
 RUN mkdir -p demos
