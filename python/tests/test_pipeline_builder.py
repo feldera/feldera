@@ -1008,7 +1008,7 @@ Code snippet:
         pipeline.delete()
 
         got_err: str = err.exception.args[0].strip()
-        assert "error: cannot START failed pipeline" in got_err
+        assert "Unable to START the pipeline" in got_err
 
 
 if __name__ == "__main__":

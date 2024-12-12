@@ -27,7 +27,7 @@ class FelderaClient:
         self,
         url: str,
         api_key: Optional[str] = None,
-        timeout: Optional[int] = None,
+        timeout: Optional[float] = None,
     ) -> None:
         """
         :param url: The url to Feldera API (ex: https://try.feldera.com)
@@ -36,7 +36,7 @@ class FelderaClient:
             out.
         """
 
-        self.config = Config(url, api_key, timeout)
+        self.config = Config(url, api_key, timeout=timeout)
         self.http = HttpRequests(self.config)
 
         try:
@@ -188,18 +188,28 @@ class FelderaClient:
 
         return resp
 
-    def start_pipeline(self, pipeline_name: str):
+    def start_pipeline(self, pipeline_name: str, timeout_s: Optional[float] = None):
         """
         Start a pipeline
 
         :param pipeline_name: The name of the pipeline to start
+        :param timeout_s: The amount of time in seconds to wait for the pipeline to start
         """
 
         self.http.post(
             path=f"/pipelines/{pipeline_name}/start",
         )
 
+        start_time = time.time()
+
         while True:
+            if timeout_s is not None:
+                elapsed = time.time() - start_time
+                if elapsed > timeout_s:
+                    raise TimeoutError(
+                        f"Timed out waiting for pipeline {pipeline_name} to start"
+                    )
+
             resp = self.get_pipeline(pipeline_name)
             status = resp.deployment_status
 
@@ -217,12 +227,18 @@ Reason: The pipeline is in a FAILED state due to the following error:
             )
             time.sleep(0.1)
 
-    def pause_pipeline(self, pipeline_name: str, error_message: str = None):
+    def pause_pipeline(
+        self,
+        pipeline_name: str,
+        error_message: str = None,
+        timeout_s: Optional[float] = None,
+    ):
         """
         Stop a pipeline
 
         :param pipeline_name: The name of the pipeline to stop
         :param error_message: The error message to show if the pipeline is in FAILED state
+        :param timeout_s: The amount of time in seconds to wait for the pipeline to pause
         """
         self.http.post(
             path=f"/pipelines/{pipeline_name}/pause",
@@ -231,7 +247,16 @@ Reason: The pipeline is in a FAILED state due to the following error:
         if error_message is None:
             error_message = "Unable to PAUSE the pipeline.\n"
 
+        start_time = time.time()
+
         while True:
+            if timeout_s is not None:
+                elapsed = time.time() - start_time
+                if elapsed > timeout_s:
+                    raise TimeoutError(
+                        f"Timed out waiting for pipeline {pipeline_name} to pause"
+                    )
+
             resp = self.get_pipeline(pipeline_name)
             status = resp.deployment_status
 
@@ -249,21 +274,24 @@ Reason: The pipeline is in a FAILED state due to the following error:
             )
             time.sleep(0.1)
 
-    def shutdown_pipeline(self, pipeline_name: str):
+    def shutdown_pipeline(self, pipeline_name: str, timeout_s: Optional[float] = 15):
         """
         Shutdown a pipeline
 
         :param pipeline_name: The name of the pipeline to shut down
+        :param timeout_s: The amount of time in seconds to wait for the pipeline to shut down. Default is 15 seconds
         """
+
+        if timeout_s is None:
+            timeout_s = 15
 
         self.http.post(
             path=f"/pipelines/{pipeline_name}/shutdown",
         )
 
         start = time.time()
-        timeout = 15
 
-        while time.time() - start < timeout:
+        while time.time() - start < timeout_s:
             status = self.get_pipeline(pipeline_name).deployment_status
 
             if status == "Shutdown":
@@ -277,16 +305,16 @@ Reason: The pipeline is in a FAILED state due to the following error:
 
         # retry sending shutdown request as the pipline hasn't shutdown yet
         logging.debug(
-            "pipeline %s hasn't shutdown after %s s, retrying", pipeline_name, timeout
+            "pipeline %s hasn't shutdown after %s s, retrying", pipeline_name, timeout_s
         )
         self.http.post(
             path=f"/pipelines/{pipeline_name}/shutdown",
         )
 
         start = time.time()
-        timeout = 5
+        timeout_s = 5
 
-        while time.time() - start < timeout:
+        while time.time() - start < timeout_s:
             status = self.get_pipeline(pipeline_name).deployment_status
 
             if status == "Shutdown":

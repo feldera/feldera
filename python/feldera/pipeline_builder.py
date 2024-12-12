@@ -66,7 +66,7 @@ class PipelineBuilder:
         )
 
         inner = self.client.create_pipeline(inner)
-        pipeline = Pipeline(inner.name, self.client)
+        pipeline = Pipeline(self.client)
         pipeline._inner = inner
 
         return pipeline
@@ -103,7 +103,7 @@ class PipelineBuilder:
         )
 
         inner = self.client.create_or_update_pipeline(inner)
-        pipeline = Pipeline(inner.name, self.client)
+        pipeline = Pipeline(self.client)
         pipeline._inner = inner
 
         return pipeline

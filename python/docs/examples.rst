@@ -33,6 +33,15 @@ Connecting to Feldera on localhost
 
     pipeline = PipelineBuilder(client, name, sql).create()
 
+Setting HTTP Connection Timeouts
+================================
+
+.. code-block:: python
+
+    from feldera import FelderaClient, PipelineBuilder
+
+    client = FelderaClient("http://localhost:8080", api_key=api_key, timeout=10)
+
 Creating a Pipeline (OVERWRITING existing pipelines)
 ====================================================
 
