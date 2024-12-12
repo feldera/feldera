@@ -4,7 +4,9 @@
 
 <a
   class="btn preset-tonal-surface {_class}"
-  href="https://calendly.com/d/cn7m-grv-mzm/feldera-demo"
+  href="https://calendly.com/d/cqnj-p63-mbq/feldera-demo"
+  target="_blank"
+  rel="noreferrer"
 >
   <span class="fd fd-message-circle-question text-[20px]"></span>
   Book a demo
