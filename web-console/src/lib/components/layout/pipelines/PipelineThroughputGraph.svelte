@@ -28,6 +28,7 @@
   let pipelineName = $derived(pipeline.current.name)
   const throughput = $derived(calcPipelineThroughput(metrics))
 
+  let primaryColor = getComputedStyle(document.body).getPropertyValue('--color-primary-500').trim()
   const options = $derived({
     animationDuration: 0,
     animationDurationUpdate: refetchMs * 1.5,
@@ -78,7 +79,8 @@
         type: 'line' as const,
         // symbol: 'none',
         itemStyle: {
-          opacity: 0
+          opacity: 0,
+          color: `rgb(${primaryColor})`
         },
         data: throughput.series
       }

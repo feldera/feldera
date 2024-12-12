@@ -4,9 +4,7 @@
   import Popup from '$lib/components/common/Popup.svelte'
   import AuthPopupMenu from './AuthPopupMenu.svelte'
   import type { AuthDetails } from '$lib/types/auth'
-  import { useDarkMode } from '$lib/compositions/useDarkMode.svelte'
   import DarkModeSwitch from '$lib/components/layout/userPopup/DarkModeSwitch.svelte'
-  let darkMode = useDarkMode()
 
   const { compactBreakpoint = '' }: { compactBreakpoint?: string } = $props()
   const auth = $page.data.auth as AuthDetails | undefined
@@ -57,6 +55,7 @@
         <div class="px-3 text-surface-700-300">Authentication is disabled</div>
         <div class="hr"></div>
         <DarkModeSwitch></DarkModeSwitch>
+        <div class="hr pt-4 text-surface-500">Feldera version {$page.data.felderaVersion}</div>
       </div>
     {/snippet}
   </Popup>

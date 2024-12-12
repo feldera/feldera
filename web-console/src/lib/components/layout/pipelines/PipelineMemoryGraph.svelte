@@ -46,6 +46,7 @@
   const yMin = 0
   const maxMemoryMb = $derived(pipeline.current.runtimeConfig.resources?.memory_mb_max ?? undefined)
 
+  let primaryColor = getComputedStyle(document.body).getPropertyValue('--color-primary-500').trim()
   let options = $derived({
     animationDuration: 0,
     animationDurationUpdate: refetchMs * 1.5,
@@ -95,7 +96,8 @@
         type: 'line' as const,
         // symbol: 'none',
         itemStyle: {
-          opacity: 0
+          opacity: 0,
+          color: `rgb(${primaryColor})`
         },
         data: metrics.global.map((m) => ({
           name: m.timeMs.toString(),
