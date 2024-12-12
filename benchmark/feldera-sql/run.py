@@ -424,6 +424,9 @@ def main():
         start = time.time()
         full_name = get_full_name(folder, pipeline_name)
 
+        os.system("> benchmarks/tpc-h/s100/lineitem.csv")
+        os.system("> benchmarks/tpc-h/s100/orders.csv")
+
         # Start pipeline
         elapsed = start_pipeline(full_name, True)
         print(f"Started pipeline {full_name} in {elapsed:.1f} s")
@@ -433,6 +436,18 @@ def main():
         last_processed = 0
         peak_memory = 0
         error = False
+        s10_sizes = [11600030, 7501215, 7496781, 7498613, 7499995,
+                     7503191, 7500353, 7495159, 7493700, 7497601, 7499444]
+        s100_sizes = [116000030, 74986052, 75008556, 75003764, 75013918,
+                      74993521, 75005783, 75005844, 75007691, 75005303,
+                      75007470]
+        sizes = s100_sizes
+        thresholds = []
+        sum = 0
+        for size in sizes:
+            sum += size
+            thresholds += [sum]
+        shard = 0
         while True:
             req = requests.get(
                 f"{api_url}/v0/pipelines/{full_name}/stats", headers=headers
@@ -494,6 +509,14 @@ def main():
                         print("restarting...")
                         start_pipeline(full_name, True)
                 last_processed = processed
+                if processed >= thresholds[shard]:
+                    shard += 1
+                    print()
+                    if shard >= len(thresholds):
+                        break
+                    os.system(f"cd benchmarks/tpc-h/s100/ && cat lineitem-{shard}.csv >> lineitem.csv")
+                    os.system(f"cd benchmarks/tpc-h/s100/ && cat orders-{shard}.csv >> orders.csv")
+                    start = time.time()
                 if stats["global_metrics"]["pipeline_complete"]:
                     break
             time.sleep(metricsinterval)

@@ -20,7 +20,7 @@ CREATE TABLE LINEITEM (
 ) WITH ('connectors' = '[{{
     "transport": {{
         "name": "file_input",
-        "config": {{ "path": "{folder}/data-large/lineitem.csv" }}
+        "config": {{ "path": "{folder}/s100/lineitem.csv", "follow": true }}
     }},
     "format": {{
         "name": "csv",
@@ -41,7 +41,7 @@ CREATE TABLE ORDERS  (
 ) WITH ('connectors' = '[{{
     "transport": {{
         "name": "file_input",
-        "config": {{ "path": "{folder}/data-large/orders.csv" }}
+        "config": {{ "path": "{folder}/s100/orders.csv", "follow": true }}
     }},
     "format": {{
         "name": "csv",
@@ -62,7 +62,7 @@ CREATE TABLE PART (
 ) WITH ('connectors' = '[{{
     "transport": {{
         "name": "file_input",
-        "config": {{ "path": "{folder}/data-large/part.csv" }}
+        "config": {{ "path": "{folder}/s100/part.csv" }}
     }},
     "format": {{
         "name": "csv",
@@ -82,7 +82,7 @@ CREATE TABLE CUSTOMER (
 ) WITH ('connectors' = '[{{
     "transport": {{
         "name": "file_input",
-        "config": {{ "path": "{folder}/data-large/customer.csv" }}
+        "config": {{ "path": "{folder}/s100/customer.csv" }}
     }},
     "format": {{
         "name": "csv",
@@ -101,7 +101,7 @@ CREATE TABLE SUPPLIER (
 ) WITH ('connectors' = '[{{
     "transport": {{
         "name": "file_input",
-        "config": {{ "path": "{folder}/data-large/supplier.csv" }}
+        "config": {{ "path": "{folder}/s100/supplier.csv" }}
     }},
     "format": {{
         "name": "csv",
@@ -118,7 +118,7 @@ CREATE TABLE PARTSUPP (
 ) WITH ('connectors' = '[{{
     "transport": {{
         "name": "file_input",
-        "config": {{ "path": "{folder}/data-large/partsupp.csv" }}
+        "config": {{ "path": "{folder}/s100/partsupp.csv" }}
     }},
     "format": {{
         "name": "csv",
@@ -134,7 +134,7 @@ CREATE TABLE NATION  (
 ) WITH ('connectors' = '[{{
     "transport": {{
         "name": "file_input",
-        "config": {{ "path": "{folder}/data-large/nation.csv" }}
+        "config": {{ "path": "{folder}/s100/nation.csv" }}
     }},
     "format": {{
         "name": "csv",
@@ -149,7 +149,7 @@ CREATE TABLE REGION  (
 ) WITH ('connectors' = '[{{
     "transport": {{
         "name": "file_input",
-        "config": {{ "path": "{folder}/data-large/region.csv" }}
+        "config": {{ "path": "{folder}/s100/region.csv" }}
     }},
     "format": {{
         "name": "csv",
