@@ -123,7 +123,7 @@
   bind:value={currentTab.value}
   listMargin=""
   contentClasses="h-full"
-  classes="flex flex-col flex-1 !space-y-0 bg-surface-50-950 rounded-container p-4 pt-2"
+  classes="flex flex-col flex-1 !space-y-0 bg-surface-50-950 rounded-container p-4 pt-3"
 >
   {#snippet list()}
     <div class=" w-full">
