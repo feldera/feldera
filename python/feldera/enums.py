@@ -1,4 +1,5 @@
 from enum import Enum
+from typing import Optional
 
 
 class CompilationProfile(Enum):
@@ -190,3 +191,44 @@ class PipelineStatus(Enum):
 
     def __eq__(self, other):
         return self.value == other.value
+
+
+class ProgramStatus(Enum):
+    Pending = 1
+    CompilingSql = 2
+    SqlCompiled = 3
+    CompilingRust = 4
+    Success = 5
+    SqlError = 6
+    RustError = 7
+    SystemError = 8
+
+    def __init__(self, value):
+        self.error: Optional[dict] = None
+        self._value_ = value
+
+    @staticmethod
+    def from_value(value):
+        error = None
+        if isinstance(value, dict):
+            error = value
+            value = list(value.keys())[0]
+
+        for member in ProgramStatus:
+            if member.name.lower() == value.lower():
+                member.error = error
+                return member
+        raise ValueError(f"Unknown value '{value}' for enum {ProgramStatus.__name__}")
+
+    def __eq__(self, other):
+        return self.value == other.value
+
+    def __str__(self):
+        return self.name + (f": ({self.error})" if self.error else "")
+
+    def get_error(self) -> Optional[dict]:
+        """
+        Returns the compilation error, if any.
+        """
+
+        return self.error

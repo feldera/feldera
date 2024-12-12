@@ -1,3 +1,4 @@
+import logging
 import time
 import pandas
 
@@ -6,7 +7,7 @@ from collections import deque
 from queue import Queue
 
 from feldera.rest.errors import FelderaAPIError
-from feldera.enums import PipelineStatus
+from feldera.enums import PipelineStatus, ProgramStatus
 from feldera.rest.pipeline import Pipeline as InnerPipeline
 from feldera.rest.feldera_client import FelderaClient
 from feldera._callback_runner import _CallbackRunnerInstruction, CallbackRunner
@@ -15,11 +16,16 @@ from feldera._helpers import ensure_dataframe_has_columns, chunk_dataframe
 
 
 class Pipeline:
-    def __init__(self, name: str, client: FelderaClient):
-        self.name = name
+    def __init__(self, client: FelderaClient):
         self.client: FelderaClient = client
         self._inner: InnerPipeline | None = None
         self.views_tx: List[Dict[str, Queue]] = []
+
+    @staticmethod
+    def _from_inner(inner: InnerPipeline, client: FelderaClient):
+        pipeline = Pipeline(client)
+        pipeline._inner = inner
+        return pipeline
 
     def __setup_output_listeners(self):
         """
@@ -35,15 +41,21 @@ class Pipeline:
                 # block until the callback runner is ready
                 queue.join()
 
+    def refresh(self):
+        """
+        Calls the backend to get the updated, latest version of the pipeline.
+        """
+
+        self._inner = self.client.get_pipeline(self.name)
+
     def status(self) -> PipelineStatus:
         """
         Return the current status of the pipeline.
         """
 
         try:
-            inner = self.client.get_pipeline(self.name)
-            self._inner = inner
-            return PipelineStatus.from_str(inner.deployment_status)
+            self.refresh()
+            return PipelineStatus.from_str(self._inner.deployment_status)
 
         except FelderaAPIError as err:
             if err.status_code == 404:
@@ -54,6 +66,11 @@ class Pipeline:
     def input_pandas(self, table_name: str, df: pandas.DataFrame, force: bool = False):
         """
         Push all rows in a pandas DataFrame to the pipeline.
+
+        The pipeline must either be in RUNNING or PAUSED states to push data.
+        An error will be raised if the pipeline is in any other state.
+
+        The dataframe must have the same columns as the table in the pipeline.
 
         :param table_name: The name of the table to insert data into.
         :param df: The pandas DataFrame to be pushed to the pipeline.
@@ -104,6 +121,9 @@ class Pipeline:
         """
         Push this JSON data to the specified table of the pipeline.
 
+        The pipeline must either be in RUNNING or PAUSED states to push data.
+        An error will be raised if the pipeline is in any other state.
+
         :param table_name: The name of the table to push data into.
         :param data: The JSON encoded data to be pushed to the pipeline. The data should be in the form:
             `{'col1': 'val1', 'col2': 'val2'}` or `[{'col1': 'val1', 'col2': 'val2'}, {'col1': 'val1', 'col2': 'val2'}]`
@@ -131,6 +151,9 @@ class Pipeline:
         Listen to the output of the provided view so that it is available in the notebook / python code.
         When the pipeline is shutdown, these listeners are dropped.
 
+        You must call this method before starting the pipeline to get the entire output of the view.
+        If this method is called once the pipeline has started, you will only get the output from that point onwards.
+
         :param view_name: The name of the view to listen to.
         """
 
@@ -150,6 +173,9 @@ class Pipeline:
     ):
         """
         Run the given callback on each chunk of the output of the specified view.
+
+        You must call this method before starting the pipeline to operate on the entire output.
+        You can call this method after the pipeline has started, but you will only get the output from that point onwards.
 
         :param view_name: The name of the view.
         :param callback: The callback to run on each chunk. The callback should take two arguments:
@@ -176,7 +202,9 @@ class Pipeline:
         handler = CallbackRunner(self.client, self.name, view_name, callback, queue)
         handler.start()
 
-    def wait_for_completion(self, shutdown: bool = False):
+    def wait_for_completion(
+        self, shutdown: bool = False, timeout_s: Optional[float] = None
+    ):
         """
         Block until the pipeline has completed processing all input records.
 
@@ -191,6 +219,8 @@ class Pipeline:
         Kafka, that does not issue the end-of-input notification.
 
         :param shutdown: If True, the pipeline will be shutdown after completion. False by default.
+        :param timeout_s: Optional. The maximum time (in seconds) to wait for the pipeline to complete.
+            The default is None, which means wait indefinitely.
 
         :raises RuntimeError: If the pipeline returns unknown metrics.
         """
@@ -202,7 +232,19 @@ class Pipeline:
         ]:
             raise RuntimeError("Pipeline must be running to wait for completion")
 
+        start_time = time.time()
+
         while True:
+            if timeout_s is not None:
+                elapsed = time.time() - start_time
+                if elapsed > timeout_s:
+                    raise TimeoutError(
+                        f"timeout ({timeout_s}s) reached while waiting for pipeline {self.name} to complete"
+                    )
+                logging.debug(
+                    f"waiting for pipeline {self.name} to complete: elapsed time {elapsed}s, timeout: {timeout_s}s"
+                )
+
             metrics: dict = self.client.get_pipeline_stats(self.name).get(
                 "global_metrics"
             )
@@ -221,11 +263,18 @@ class Pipeline:
         if shutdown:
             self.shutdown()
 
-    def start(self):
+    def start(self, timeout_s: Optional[float] = None):
         """
         .. _start:
 
         Starts this pipeline.
+
+        The pipeline must be in SHUTDOWN state to start.
+        If the pipeline is in any other state, an error will be raised.
+        If the pipeline is in PAUSED state, use `.meth:resume` instead.
+        If the pipeline is in FAILED state, it must be shutdown before starting it again.
+
+        :param timeout_s: The maximum time (in seconds) to wait for the pipeline to start.
 
         :raises RuntimeError: If the pipeline returns unknown metrics.
         """
@@ -239,17 +288,23 @@ class Pipeline:
                 )
             )
 
-        self.client.pause_pipeline(self.name, "Unable to START the pipeline.")
+        self.client.pause_pipeline(
+            self.name, "Unable to START the pipeline.", timeout_s
+        )
         self.__setup_output_listeners()
-        self.resume()
+        self.resume(timeout_s)
 
-    def restart(self):
+    def restart(self, timeout_s: Optional[float] = None):
         """
         Restarts the pipeline.
+
+        This method **SHUTS DOWN** the pipeline regardless of its current state and then starts it again.
+
+        :param timeout_s: The maximum time (in seconds) to wait for the pipeline to restart.
         """
 
-        self.shutdown()
-        self.start()
+        self.shutdown(timeout_s)
+        self.start(timeout_s)
 
     def wait_for_idle(
         self,
@@ -328,16 +383,25 @@ class Pipeline:
                 raise RuntimeError(f"waiting for idle reached timeout ({timeout_s}s)")
             time.sleep(poll_interval_s)
 
-    def pause(self):
+    def pause(self, timeout_s: Optional[float] = None):
         """
         Pause the pipeline.
+
+        The pipeline can only transition to the PAUSED state from the RUNNING state.
+        If the pipeline is already paused, it will remain in the PAUSED state.
+
+        :param timeout_s: The maximum time (in seconds) to wait for the pipeline to pause.
         """
 
-        self.client.pause_pipeline(self.name)
+        self.client.pause_pipeline(self.name, timeout_s=timeout_s)
 
-    def shutdown(self):
+    def shutdown(self, timeout_s: Optional[float] = None):
         """
         Shut down the pipeline.
+
+        Shuts down the pipeline regardless of its current state.
+
+        :param timeout_s: The maximum time (in seconds) to wait for the pipeline to shut down.
         """
 
         if len(self.views_tx) > 0:
@@ -347,18 +411,22 @@ class Pipeline:
                 # block until the callback runner has been stopped
                 queue.join()
 
-        self.client.shutdown_pipeline(self.name)
+        self.client.shutdown_pipeline(self.name, timeout_s=timeout_s)
 
-    def resume(self):
+    def resume(self, timeout_s: Optional[float] = None):
         """
-        Resumes the pipeline.
+        Resumes the pipeline from the PAUSED state.
+
+        :param timeout_s: The maximum time (in seconds) to wait for the pipeline to shut down.
         """
 
-        self.client.start_pipeline(self.name)
+        self.client.start_pipeline(self.name, timeout_s=timeout_s)
 
     def delete(self):
         """
         Deletes the pipeline.
+
+        The pipeline must be shutdown before it can be deleted.
         """
 
         self.client.delete_pipeline(self.name)
@@ -374,8 +442,8 @@ class Pipeline:
 
         try:
             inner = client.get_pipeline(name)
-            pipeline = Pipeline(inner.name, client)
-            pipeline.__inner = inner
+            pipeline = Pipeline(client)
+            pipeline._inner = inner
             return pipeline
         except FelderaAPIError as err:
             if err.status_code == 404:
@@ -385,6 +453,9 @@ class Pipeline:
         """
         Executes an ad-hoc SQL query on this pipeline and returns the result in the specified format.
         For ``INSERT`` and ``DELETE`` queries, consider using :meth:`.execute` instead.
+
+        Note:
+            You can only ``SELECT`` from ``MATERIALIZED`` tables and views.
 
         Important:
             This method is lazy. It returns a generator and is not evaluated until you consume the result.
@@ -400,6 +471,9 @@ class Pipeline:
         Executes an ad-hoc SQL query on this pipeline and saves the result to the specified path as a parquet file.
         If the extension isn't `parquet`, it will be automatically appended to `path`.
 
+        Note:
+            You can only ``SELECT`` from ``MATERIALIZED`` tables and views.
+
         :param query: The SQL query to be executed.
         :param path: The path of the parquet file.
         """
@@ -409,6 +483,9 @@ class Pipeline:
     def query_tabular(self, query: str) -> Generator[str, None, None]:
         """
         Executes a SQL query on this pipeline and returns the result as a formatted string.
+
+        Note:
+            You can only ``SELECT`` from ``MATERIALIZED`` tables and views.
 
         Important:
             This method is lazy. It returns a generator and is not evaluated until you consume the result.
@@ -429,8 +506,197 @@ class Pipeline:
         confirmation of successful query execution, but does not require the query result.
         If the query fails, an exception will be raised.
 
+        Important:
+            If you try to ``INSERT`` or ``DELETE`` data from a table while the pipeline is paused,
+            it will block until the pipeline is resumed.
+
         :param query: The SQL query to be executed.
         """
 
         gen = self.query_tabular(query)
         deque(gen, maxlen=0)
+
+    @property
+    def name(self):
+        """
+        Return the name of the pipeline.
+        """
+
+        return self._inner.name
+
+    def program_code(self):
+        """
+        Return the program code of the pipeline.
+        """
+
+        self.refresh()
+        return self._inner.program_code
+
+    def program_status(self):
+        """
+        Return the program status of the pipeline.
+
+        Program status is the status of compilation of this SQL program.
+        We first compile the SQL program to Rust code, and then compile the Rust code to a binary.
+        """
+
+        self.refresh()
+        return ProgramStatus.from_value(self._inner.program_status)
+
+    def program_status_since(self):
+        """
+        Return the timestamp since the program status of the pipeline.
+        """
+
+        self.refresh()
+        return self._inner.program_status_since
+
+    def udf_rust(self):
+        """
+        Return the Rust code for UDFs.
+        """
+
+        self.refresh()
+        return self._inner.udf_rust
+
+    def udf_toml(self):
+        """
+        Return the Rust dependencies required by UDFs (in the TOML format).
+        """
+
+        self.refresh()
+        return self._inner.udf_toml
+
+    def program_config(self):
+        """
+        Return the program config of the pipeline.
+        """
+
+        self.refresh()
+        return self._inner.program_config
+
+    def runtime_config(self):
+        """
+        Return the runtime config of the pipeline.
+        """
+
+        self.refresh()
+        return self._inner.runtime_config
+
+    def id(self):
+        """
+        Return the ID of the pipeline.
+        """
+
+        self.refresh()
+        return self._inner.id
+
+    def description(self):
+        """
+        Return the description of the pipeline.
+        """
+
+        self.refresh()
+        return self._inner.description
+
+    def tables(self):
+        """
+        Return the tables of the pipeline.
+        """
+
+        self.refresh()
+        return self._inner.tables
+
+    def views(self):
+        """
+        Return the views of the pipeline.
+        """
+
+        self.refresh()
+        return self._inner.views
+
+    def created_at(self):
+        """
+        Return the creation time of the pipeline.
+        """
+
+        self.refresh()
+        return self._inner.created_at
+
+    def version(self):
+        """
+        Return the version of the pipeline.
+        """
+
+        self.refresh()
+        return self._inner.version
+
+    def program_version(self):
+        """
+        Return the program version of the pipeline.
+        """
+
+        self.refresh()
+        return self._inner.program_version
+
+    def deployment_status_since(self):
+        """
+        Return the timestamp since the which this deployment status of the pipeline was set.
+        """
+
+        self.refresh()
+        return self._inner.deployment_status_since
+
+    def deployment_config(self):
+        """
+        Return the deployment config of the pipeline.
+        """
+
+        self.refresh()
+        return self._inner.deployment_config
+
+    def deployment_desired_status(self):
+        """
+        Return the desired deployment status of the pipeline.
+        This is the next state that the pipeline should transition to.
+        """
+
+        self.refresh()
+        return self._inner.deployment_desired_status
+
+    def deployment_error(self):
+        """
+        Return the deployment error of the pipeline.
+        Returns an empty string if there is no error.
+        """
+
+        self.refresh()
+        return self._inner.deployment_error
+
+    def deployment_location(self):
+        """
+        Return the deployment location of the pipeline.
+        Deployment location is the location where the pipeline can be reached at runtime (a TCP port number or a URI).
+        """
+
+        self.refresh()
+        return self._inner.deployment_location
+
+    def program_binary_url(self):
+        """
+        Return the program binary URL of the pipeline.
+        This is the URL where the compiled program binary can be downloaded from.
+        """
+
+        self.refresh()
+        return self._inner.program_binary_url
+
+    def program_info(self):
+        """
+        Return the program info of the pipeline.
+        This is the output returned by the SQL compiler and contains things like, input connectors, output connectors, the Rust code,
+        the program schema and so on.
+        """
+
+        self.refresh()
+        return self._inner.program_info

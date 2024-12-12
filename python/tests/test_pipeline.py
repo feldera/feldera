@@ -161,15 +161,23 @@ class TestPipeline(unittest.TestCase):
 
         TEST_CLIENT.push_to_pipeline(name, "tbl", "csv", data)
         resp = TEST_CLIENT.query_as_text(pipeline.name, "SELECT * FROM tbl")
-        expected = """+----+
+        expected = [
+            """+----+
+| id |
++----+
+| 1  |
+| 2  |
++----+""",
+            """+----+
 | id |
 +----+
 | 2  |
 | 1  |
-+----+"""
++----+""",
+        ]
 
         got = "\n".join(resp)
-        assert got == expected
+        assert got in expected
 
         TEST_CLIENT.shutdown_pipeline(name)
         TEST_CLIENT.delete_pipeline(name)
@@ -217,7 +225,7 @@ class TestPipeline(unittest.TestCase):
         expected = [{"id": 2}, {"id": 1}]
         got = list(resp)
 
-        assert got == expected
+        self.assertCountEqual(got, expected)
 
         TEST_CLIENT.shutdown_pipeline(name)
         TEST_CLIENT.delete_pipeline(name)
