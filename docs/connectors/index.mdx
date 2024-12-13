@@ -87,6 +87,16 @@ of tables and views.
 
 The following attributes are common to all connectors:
 
+* `name` - The name that is given to the connector, which must be
+  unique among the connectors of the table or view. This is particularly
+  useful to define when wanting to refer to it, for example to
+  [start or pause it at runtime](#input-connector-orchestration).
+  By default, this is randomly generated.
+
+* `paused` - If set to to true the connector will not fetch or push data to the pipeline when started
+   unless [explicitly enabled through the API](/api/start-resume-or-pause-the-input-connector).
+   By default this is set to false.
+
 * `max_queued_records` - The approximate maximum number of records to
   keep in memory.  For an input connector, this is the maximum number
   that the endpoint will read into memory, before the endpoint pauses
@@ -99,10 +109,6 @@ The following attributes are common to all connectors:
 * `max_batch_size` - For an input connector, the approximate maximum
   number of records that the pipeline will process in a single
   pipeline step.  By default, this is 10,000.
-
-* `paused` - If set to to true the connector will not fetch or push data to the pipeline when started
-   unless [explicitly enabled through the API](/api/change-the-desired-state-of-an-input-endpoint).
-   By default this is set to false.
 
 ### Configuring the output buffer
 
@@ -160,6 +166,88 @@ specified.
 
 See [Delta Lake output connector documentation](/connectors/sinks/delta)
 for an example of configuring the output buffer.
+
+## Input connector orchestration
+
+Connector Orchestration enables users to activate or deactivate input connectors
+on demand, giving them control over the timing and order of data ingestion from
+multiple sources. It can, for example, be used to backfill a pipeline with
+historical data from a database or data lake before switching over to real-time
+ingestion from a streaming source like Kafka.
+
+Input connectors can be in either the `Running` or `Paused` state. By default,
+connectors are initialized in the `Running` state when a pipeline is deployed.
+In this state, the connector actively fetches data from its configured data
+source and forwards it to the pipeline. If needed, a connector can be created
+in the `Paused` state by setting its
+[`paused`](/connectors/#generic-attributes) property
+to `true`.
+The current connector state can be retrieved via the
+[pipeline statistics endpoint](/api/retrieve-pipeline-statistics-e-g-metrics-performance-counters).
+
+When paused, the connector remains idle until it is reactivated.
+Conversely, a connector in the `Running` state can be paused at any time.
+This can be done by calling its
+[start/pause endpoint](/api/start-resume-or-pause-the-input-connector),
+in which to specify table and connector name.
+
+Note that only if both the pipeline *and* the connector state is `Running`,
+is the input connector active. The following table illustrates this:
+```text
+Pipeline state    Connector state    Connector is active?
+--------------    ---------------    --------------------
+Paused            Paused             No
+Paused            Running            No
+Running           Paused             No
+Running           Running            Yes
+```
+
+### Orchestration example
+
+1. Create and start a pipeline named `example` with the following SQL:
+   ```sql
+   CREATE TABLE numbers (
+     num INT
+   ) WITH (
+       'connectors' = '[
+           {
+               "name": "c1",
+               "paused": true,
+               "transport": {
+                   "name": "datagen",
+                   "config": {"plan": [{ "rate": 1, "fields": { "num": { "range": [0, 10], "strategy": "uniform" } } }]}
+               }
+           },
+           {
+               "name": "c2",
+               "paused": false,
+               "transport": {
+                   "name": "datagen",
+                   "config": {"plan": [{ "rate": 1, "fields": { "num": { "range": [10, 20], "strategy": "uniform" } } }]}
+               }
+           }
+       ]'
+   );
+   ```
+
+   Note that the `numbers` table has two input connectors, one of which has `paused` property set to `true`.
+   This connector will be created in the `Paused` state.
+
+2. Check the `numbers` table checkbox in the Change Stream tab. Observe that although the pipeline is `Running`,
+   the change stream only shows input records from connector `c2` (i.e., `[10, 20)`) but not of connector
+   `c1` (i.e., `[0, 10)`).
+
+3. Start connector `c1`:
+   ```
+   fda table-connector example numbers c1 start
+   ```
+   Now the Changes Stream tab will show new input records from both connectors.
+
+4. Pause connector `c2`:
+   ```
+   fda table-connector example numbers c2 pause
+   ```
+   Now the Changes Stream tab no longer will show new input records from connector `c2`.
 
 ## Additional resources
 
