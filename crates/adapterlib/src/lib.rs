@@ -5,6 +5,7 @@ pub mod catalog;
 pub mod errors;
 pub mod format;
 pub mod transport;
+pub mod utils;
 
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, FromPrimitive, Serialize, NoUninit)]
 #[repr(u8)]

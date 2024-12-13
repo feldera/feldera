@@ -4544,6 +4544,7 @@ dependencies = [
  "apache-avro",
  "arrow",
  "bytemuck",
+ "datafusion",
  "dbsp",
  "dyn-clone",
  "erased-serde",
