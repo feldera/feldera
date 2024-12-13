@@ -212,7 +212,7 @@ public class CalciteOptimizer implements IWritesLogs {
                 CoreRules.AGGREGATE_EXPAND_DISTINCT_AGGREGATES_TO_JOIN,
                 // Rule is unsound https://issues.apache.org/jira/browse/CALCITE-6403
                 CoreRules.AGGREGATE_EXPAND_DISTINCT_AGGREGATES));
-        this.addStep(new BaseOptimizerStep("Join order", level) {
+        this.addStep(new BaseOptimizerStep("Join order", 2) {
             @Override
             HepProgram getProgram(RelNode node, int level) {
                 this.addRules(level,
@@ -225,7 +225,6 @@ public class CalciteOptimizer implements IWritesLogs {
                         // https://github.com/feldera/feldera/issues/1702
                         CoreRules.FILTER_INTO_JOIN
                 );
-
                 OuterJoinFinder finder = new OuterJoinFinder();
                 finder.run(node);
                 // Bushy join optimization fails when the query contains outer joins.

@@ -84,6 +84,8 @@ public class DBSPTypeUser extends DBSPType {
         return result;
     }
 
+    // Do not forget to override this function in subclasses, even
+    // if the implementation is identical.
     @Override
     public void accept(InnerVisitor visitor) {
         VisitDecision decision = visitor.preorder(this);

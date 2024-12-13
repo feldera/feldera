@@ -52,5 +52,10 @@ public final class DBSPJoinIndexOperator extends DBSPJoinBaseOperator {
         visitor.pop(this);
     }
 
+    @Override
+    public DBSPJoinBaseOperator withFunctionAndInputs(DBSPExpression function, OutputPort left, OutputPort right) {
+        return new DBSPJoinIndexOperator(this.getNode(), this.getOutputIndexedZSetType(), function, this.isMultiset, left, right);
+    }
+
     // equivalent inherited from base class
 }

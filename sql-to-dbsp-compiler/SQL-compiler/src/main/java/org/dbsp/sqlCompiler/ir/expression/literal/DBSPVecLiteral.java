@@ -60,14 +60,16 @@ public final class DBSPVecLiteral extends DBSPLiteral implements IDBSPContainer 
     public DBSPVecLiteral(CalciteObject node, DBSPType type, @Nullable List<DBSPExpression> data) {
         super(node, type, data == null);
         this.vecType = this.getType().to(DBSPTypeVec.class);
-        this.data = new ArrayList<>();
         if (data != null) {
+            this.data = new ArrayList<>();
             for (DBSPExpression e : data) {
                 if (!e.getType().sameType(data.get(0).getType()))
                     throw new InternalCompilerError("Not all values of vector have the same type:" +
                             e.getType() + " vs " + data.get(0).getType(), this);
                 this.add(e);
             }
+        } else {
+            this.data = null;
         }
     }
 

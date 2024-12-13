@@ -4,6 +4,7 @@ import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
+import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
@@ -12,7 +13,7 @@ import javax.annotation.Nullable;
 import java.util.List;
 import java.util.Objects;
 
-/** Currently there is no corespondent operator in DBSP, so an attept to generate
+/** Currently there is no corespondent operator in DBSP, so an attempt to generate
  * Rust for this operator will fail.   See {@link DBSPJoinIndexOperator} for
  * the function signature. */
 public final class DBSPStreamJoinIndexOperator extends DBSPJoinBaseOperator {
@@ -49,6 +50,12 @@ public final class DBSPStreamJoinIndexOperator extends DBSPJoinBaseOperator {
         if (!decision.stop())
             visitor.postorder(this);
         visitor.pop(this);
+    }
+
+    @Override
+    public DBSPJoinBaseOperator withFunctionAndInputs(DBSPExpression function, OutputPort left, OutputPort right) {
+        return new DBSPStreamJoinIndexOperator(
+                this.getNode(), this.getOutputIndexedZSetType(), function, this.isMultiset, left, right);
     }
 
     // equivalent inherited from base class

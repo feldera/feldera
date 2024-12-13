@@ -150,12 +150,11 @@ public class ToRustVisitor extends CircuitVisitor {
      * }
      */
 
-    public ToRustVisitor(DBSPCompiler compiler, IndentStream builder,
-                         CompilerOptions options, ProgramMetadata metadata) {
+    public ToRustVisitor(DBSPCompiler compiler, IndentStream builder, ProgramMetadata metadata) {
         super(compiler);
-        this.options = options;
+        this.options = compiler.options;
         this.builder = builder;
-        this.useHandles = this.options.ioOptions.emitHandles;
+        this.useHandles = compiler.options.ioOptions.emitHandles;
         StringBuilder streams = new StringBuilder();
         this.streams = new IndentStream(streams);
         this.metadata = metadata;
@@ -164,7 +163,7 @@ public class ToRustVisitor extends CircuitVisitor {
     }
 
     ToRustInnerVisitor createInnerVisitor(IndentStream builder) {
-        return new ToRustInnerVisitor(this.compiler(), builder, options, false);
+        return new ToRustInnerVisitor(this.compiler(), builder, false);
     }
 
     void generateInto(DBSPType type) {
@@ -1532,10 +1531,10 @@ public class ToRustVisitor extends CircuitVisitor {
         return this.constantLike(operator);
     }
 
-    public static String toRustString(DBSPCompiler compiler, DBSPCircuit node, CompilerOptions options) {
+    public static String toRustString(DBSPCompiler compiler, DBSPCircuit node) {
         StringBuilder builder = new StringBuilder();
         IndentStream stream = new IndentStream(builder);
-        ToRustVisitor visitor = new ToRustVisitor(compiler, stream, options, node.getMetadata());
+        ToRustVisitor visitor = new ToRustVisitor(compiler, stream, node.getMetadata());
         visitor.apply(node);
         return builder.toString();
     }

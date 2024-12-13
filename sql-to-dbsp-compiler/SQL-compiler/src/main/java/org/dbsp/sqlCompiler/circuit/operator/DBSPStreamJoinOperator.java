@@ -72,5 +72,10 @@ public final class DBSPStreamJoinOperator extends DBSPJoinBaseOperator {
         return this;
     }
 
+    @Override
+    public DBSPJoinBaseOperator withFunctionAndInputs(DBSPExpression function, OutputPort left, OutputPort right) {
+        return new DBSPStreamJoinOperator(this.getNode(), this.getOutputZSetType(), function, this.isMultiset, left, right);
+    }
+
     // equivalent inherited from base class
 }

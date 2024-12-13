@@ -137,7 +137,7 @@ public class ImplementNow extends Passes {
         ReferenceMap refMap;
 
         public RewriteNowClosure(DBSPCompiler compiler) {
-            super(compiler);
+            super(compiler, false);
             this.nowReplacement = null;
             this.parameterReplacement = null;
             this.refMap = null;
@@ -194,7 +194,7 @@ public class ImplementNow extends Passes {
         final DBSPExpression replacement;
 
         public RewriteNowExpression(DBSPCompiler compiler, DBSPExpression replacement) {
-            super(compiler);
+            super(compiler, false);
             this.replacement = replacement;
         }
 
@@ -770,6 +770,7 @@ public class ImplementNow extends Passes {
             Simplify simplify = new Simplify(this.compiler());
             DBSPClosureExpression closure = function.to(DBSPClosureExpression.class);
             closure = simplify.apply(closure).to(DBSPClosureExpression.class);
+            closure = closure.ensureTree(compiler).to(DBSPClosureExpression.class);
             List<BooleanExpression> filters = this.findTemporalFilters(operator, closure);
             filters = combineExpressions(filters);
             assert !filters.isEmpty();

@@ -21,6 +21,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPFlatmap;
 import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeFunction;
+import org.dbsp.util.Maybe;
 
 /** Optimizes patterns containing projections.
  * - constant followed by projection
@@ -116,7 +117,7 @@ public class OptimizeProjectionVisitor extends CircuitCloneWithGraphsVisitor {
         DBSPClosureExpression joinFunction = source.getClosureFunction();
         DBSPExpression function = operator.getFunction();
         DBSPExpression newFunction = function.to(DBSPClosureExpression.class)
-                .applyAfter(reporter, joinFunction, true);
+                .applyAfter(reporter, joinFunction, Maybe.YES);
         return source.withFunction(newFunction, operator.outputType).to(DBSPJoinBaseOperator.class);
     }
 
@@ -148,7 +149,7 @@ public class OptimizeProjectionVisitor extends CircuitCloneWithGraphsVisitor {
         DBSPExpression function = operator.getFunction();
         DBSPClosureExpression joinFunction = source.getClosureFunction();
         DBSPExpression newFunction = function.to(DBSPClosureExpression.class)
-                .applyAfter(reporter, joinFunction, true);
+                .applyAfter(reporter, joinFunction, Maybe.YES);
         if (source.is(DBSPJoinOperator.class)) {
             return new DBSPJoinIndexOperator(source.getNode(), operator.getOutputIndexedZSetType(),
                     newFunction, operator.isMultiset, source.left(), source.right());

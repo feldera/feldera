@@ -1398,7 +1398,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
                 fields.add(field);
                 DBSPType type = field.getType();
                 field = ExpressionCompiler.makeBinaryExpression(operator.getNode(), field.getType(),
-                        DBSPOpcode.SUB, field.deepCopy(), watermark);
+                        DBSPOpcode.SUB, field, watermark);
                 timestamps.add(field);
                 DBSPExpression min = type.to(IsBoundedType.class).getMinValue();
                 minimums.add(min);

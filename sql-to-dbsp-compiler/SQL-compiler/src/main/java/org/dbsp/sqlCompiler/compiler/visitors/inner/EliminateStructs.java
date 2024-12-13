@@ -12,7 +12,7 @@ import java.util.List;
 /** Convert every occurrence of a TypeStruct to a TypeTuple */
 public class EliminateStructs extends InnerRewriteVisitor {
     public EliminateStructs(DBSPCompiler compiler) {
-        super(compiler);
+        super(compiler, false);
     }
 
     @Override

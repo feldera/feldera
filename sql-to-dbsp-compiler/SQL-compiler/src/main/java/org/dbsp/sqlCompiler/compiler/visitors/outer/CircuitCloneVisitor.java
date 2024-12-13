@@ -45,7 +45,6 @@ import java.util.*;
  * Each operator is replaced in one of two cases:
  * - any of its inputs has changed
  * - the 'force' flag is 'true'.
- * We expect that this is a base class for all visitors which modify a circuit.
  * This visitor is a base class for all visitors that modify circuits. */
 public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs, ICompilerComponent {
     /** For each {@link OutputPort} in the original circuit an {@link OutputPort} in the
@@ -345,6 +344,16 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs, 
 
     @Override
     public void postorder(DBSPStreamJoinOperator operator) {
+        this.replace(operator);
+    }
+
+    @Override
+    public void postorder(DBSPStreamAntiJoinOperator operator) {
+        this.replace(operator);
+    }
+
+    @Override
+    public void postorder(DBSPAntiJoinOperator operator) {
         this.replace(operator);
     }
 

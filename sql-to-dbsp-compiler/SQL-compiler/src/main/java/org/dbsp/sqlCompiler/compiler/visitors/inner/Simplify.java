@@ -85,10 +85,8 @@ import java.util.Objects;
 
 /** Visitor which does some Rust-level expression simplifications. */
 public class Simplify extends InnerRewriteVisitor {
-    // You would think that Calcite has done these optimizations, but apparently not.
-
     public Simplify(DBSPCompiler compiler) {
-        super(compiler);
+        super(compiler, false);
     }
 
     @Override

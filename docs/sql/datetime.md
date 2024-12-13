@@ -283,7 +283,7 @@ an increased precision for the corresponding type, e.g.:
 
 `EXTRACT(unit FROM interval)` extracts the specified value from an `INTERVAL`.
 Short intervals support EXTRACT of values between DAYS and MILLISECONDS.
-Long intervals support EXTRACT of values MILLENIUM and MONTHS.
+Long intervals support EXTRACT of values between MILLENIUM and MONTHS.
 
 ## Other date/time/timestamp/time interval operations
 

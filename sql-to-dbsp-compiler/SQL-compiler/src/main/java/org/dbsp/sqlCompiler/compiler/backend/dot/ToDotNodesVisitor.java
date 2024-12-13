@@ -4,15 +4,14 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperatorBase;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinFilterMapOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperatorWithError;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateWithWaterlineOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceBaseOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWaterlineOperator;
-import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.rust.ToRustInnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -89,8 +88,7 @@ public class ToDotNodesVisitor extends CircuitVisitor {
     }
 
     String convertFunction(DBSPExpression expression) {
-        String result = ToRustInnerVisitor.toRustString(
-                this.compiler(), expression, CompilerOptions.getDefault(), true);
+        String result = ToRustInnerVisitor.toRustString(this.compiler(), expression, true);
         result = result.replace("\n", "\\l");
         return Utilities.escapeDoubleQuotes(result);
     }
@@ -194,6 +192,13 @@ public class ToDotNodesVisitor extends CircuitVisitor {
         this.stream.decrease().append("}").newline();
     }
 
+    String quoteSymbols(String str) {
+        return str.replace("<", "\\<")
+                .replace(">", "\\>")
+                .replace("{", "\\{")
+                .replace("}", "\\}");
+    }
+
     @Override
     public VisitDecision preorder(DBSPOperatorWithError node) {
         this.stream.append(node.getNodeName())
@@ -205,9 +210,10 @@ public class ToDotNodesVisitor extends CircuitVisitor {
         if (this.details > 3) {
             this.stream
                     .append("(")
-                    .append(this.convertFunction(node.function))
+                    // additional quoting needed in operators with ports
+                    .append(quoteSymbols(this.convertFunction(node.function)))
                     .append(", ")
-                    .append(this.convertFunction(node.error))
+                    .append(quoteSymbols(this.convertFunction(node.error)))
                     .append(")\\l");
         }
         this.stream.append("\" ]")

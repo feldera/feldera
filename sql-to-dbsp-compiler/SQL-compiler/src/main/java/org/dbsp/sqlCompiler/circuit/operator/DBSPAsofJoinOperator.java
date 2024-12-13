@@ -120,6 +120,12 @@ public final class DBSPAsofJoinOperator extends DBSPJoinBaseOperator {
     }
 
     @Override
+    public DBSPJoinBaseOperator withFunctionAndInputs(DBSPExpression function, OutputPort left, OutputPort right) {
+        return new DBSPAsofJoinOperator(this.getNode(), this.getOutputZSetType(), function,
+                this.leftTimestamp, this.rightTimestamp, this.comparator, this.isMultiset, this.isLeft, left, right);
+    }
+
+    @Override
     public boolean equivalent(DBSPOperator other) {
         if (!super.equivalent(other))
             return false;

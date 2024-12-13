@@ -622,7 +622,7 @@ public class AggregateCompiler implements ICompilerComponent {
 
             if (aggregatedValueType.mayBeNull)
                 plusOne = ExpressionCompiler.makeIndicator(
-                        node, intermediateResultTypeNonNull, aggregatedValue.deepCopy());
+                        node, intermediateResultTypeNonNull, aggregatedValue);
             DBSPExpression weightedCount = new DBSPBinaryExpression(
                     node, intermediateResultType.withMayBeNull(plusOne.getType().mayBeNull),
                     DBSPOpcode.MUL_WEIGHT, plusOne,
@@ -682,7 +682,7 @@ public class AggregateCompiler implements ICompilerComponent {
         DBSPExpression plusOne = intermediateResultTypeNonNull.to(IsNumericType.class).getOne();
 
         if (aggregatedValueType.mayBeNull)
-            plusOne = ExpressionCompiler.makeIndicator(node, intermediateResultTypeNonNull, aggregatedValue.deepCopy());
+            plusOne = ExpressionCompiler.makeIndicator(node, intermediateResultTypeNonNull, aggregatedValue);
         DBSPExpression weightedCount = new DBSPBinaryExpression(
                 node, intermediateResultType.withMayBeNull(plusOne.getType().mayBeNull),
                 DBSPOpcode.MUL_WEIGHT, plusOne,

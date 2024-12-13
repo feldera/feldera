@@ -35,7 +35,7 @@ import java.util.Objects;
  */
 public class ExpandWriteLog extends InnerRewriteVisitor {
     public ExpandWriteLog(DBSPCompiler compiler) {
-        super(compiler);
+        super(compiler, false);
     }
 
     @Override
@@ -72,7 +72,7 @@ public class ExpandWriteLog extends InnerRewriteVisitor {
                         } else {
                             String printFunction = type.mayBeNull ? "print_opt" : "print";
                             DBSPExpression print = new DBSPApplyExpression(
-                                    expression.getNode(), printFunction, new DBSPTypeVoid(), castToStr.deepCopy().applyCloneIfNeeded());
+                                    expression.getNode(), printFunction, new DBSPTypeVoid(), castToStr.applyCloneIfNeeded());
                             statements.add(print.toStatement());
                         }
                         if (!part.isEmpty()) {
@@ -81,7 +81,7 @@ public class ExpandWriteLog extends InnerRewriteVisitor {
                             statements.add(print.toStatement());
                         }
                     }
-                    result = new DBSPBlockExpression(statements, arguments[1].deepCopy().applyCloneIfNeeded());
+                    result = new DBSPBlockExpression(statements, arguments[1].applyCloneIfNeeded());
                 }
             }
         }

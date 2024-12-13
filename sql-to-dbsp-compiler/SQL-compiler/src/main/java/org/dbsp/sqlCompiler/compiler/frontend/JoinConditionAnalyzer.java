@@ -187,8 +187,7 @@ public class JoinConditionAnalyzer implements IWritesLogs {
     /**
      * Returns 'true' if this expression is referencing a column in the left table.
      * @param node  A row expression.
-     * @return null if this does not refer to a table column.
-     */
+     * @return null if this does not refer to a table column. */
     @Nullable
     public Boolean isLeftTableColumnReference(RexNode node) {
         RexInputRef ref = asInputRef(node);

@@ -44,7 +44,7 @@ public class BetaReduction extends InnerRewriteVisitor {
     final ResolveReferences resolver;
 
     public BetaReduction(DBSPCompiler compiler) {
-        super(compiler);
+        super(compiler, false);
         this.variableValue = new DeclarationValue<>();
         this.resolver = new ResolveReferences(compiler, true);
     }

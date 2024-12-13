@@ -7,13 +7,16 @@ import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.dot.ToDotEdgesVisitor;
 import org.dbsp.sqlCompiler.compiler.backend.dot.ToDot;
 import org.dbsp.sqlCompiler.compiler.backend.dot.ToDotNodesVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.IRTransform;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.MonotoneExpression;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.AppendOnly;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitGraph;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitRewriter;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitTransform;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.Graph;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.OptimizeWithGraph;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.ExpandOperators;
+import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.util.IWritesLogs;
 import org.dbsp.util.IndentStream;
 import org.dbsp.util.graph.Port;
@@ -86,6 +89,14 @@ public class MonotoneAnalyzer implements CircuitTransform, IWritesLogs {
     public DBSPCircuit apply(DBSPCircuit circuit) {
         final boolean debug = this.getDebugLevel() >= 1;
         final int details = this.getDebugLevel();
+
+        IRTransform transform = e -> {
+            if (e.is(DBSPExpression.class))
+                return e.to(DBSPExpression.class).ensureTree(compiler);
+            return e;
+        };
+        CircuitRewriter toTree = new CircuitRewriter(this.compiler, transform, false);
+        circuit = toTree.apply(circuit);
 
         // Insert noops between consecutive integrators
         Graph graph = new Graph(this.compiler);

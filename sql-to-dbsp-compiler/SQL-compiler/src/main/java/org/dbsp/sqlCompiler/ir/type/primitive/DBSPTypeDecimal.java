@@ -113,7 +113,7 @@ public class DBSPTypeDecimal extends DBSPTypeBaseType
 
     @Override
     public boolean hasCopy() {
-        return false;
+        return true;
     }
 
     @Override

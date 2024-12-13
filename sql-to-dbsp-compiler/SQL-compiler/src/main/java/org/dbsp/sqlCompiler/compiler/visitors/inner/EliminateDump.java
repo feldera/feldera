@@ -20,7 +20,7 @@ import java.util.function.Function;
 /* Implement the dump() function. */
 public class EliminateDump extends InnerRewriteVisitor {
     public EliminateDump(DBSPCompiler compiler) {
-        super(compiler);
+        super(compiler, false);
     }
 
     @Override
@@ -50,7 +50,7 @@ public class EliminateDump extends InnerRewriteVisitor {
                 block.add(makePrint.apply(new DBSPStringLiteral(": (")));
                 DBSPTypeTuple tuple = arguments[1].getType().to(DBSPTypeTuple.class);
                 for (int i = 0; i < tuple.size(); i++) {
-                    DBSPExpression fieldI = arguments[1].deepCopy().field(i);
+                    DBSPExpression fieldI = arguments[1].field(i);
                     DBSPExpression format = new DBSPStringLiteral("%%,");
                     DBSPExpression writeLog = new DBSPApplyExpression(
                             expression.getNode(), "writelog", fieldI.type, format, fieldI);

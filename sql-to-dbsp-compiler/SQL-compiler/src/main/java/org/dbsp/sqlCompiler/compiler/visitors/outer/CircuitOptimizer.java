@@ -24,6 +24,7 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
+import org.dbsp.sqlCompiler.circuit.annotation.Waterline;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.ICompilerComponent;
@@ -34,7 +35,6 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.ExpandCasts;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.ExpandWriteLog;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Simplify;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.SimplifyWaterline;
-import org.dbsp.sqlCompiler.circuit.annotation.Waterline;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity.MonotoneAnalyzer;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 
@@ -65,17 +65,19 @@ public record CircuitOptimizer(DBSPCompiler compiler) implements ICompilerCompon
         // passes.add(ToDot.dumper(compiler, "x.png", 4));
         // First part of optimizations may still synthesize some circuit components
         passes.add(new ImplementNow(compiler));
-        passes.add(new DeterministicInitializers(compiler));
+        passes.add(new DeterministicDefault(compiler));
         passes.add(new StopOnError(compiler));
         passes.add(new RecursiveComponents(compiler));
+        passes.add(new DeadCode(compiler, options.languageOptions.generateInputForEveryTable, true));
         if (options.languageOptions.outputsAreSets)
             passes.add(new EnsureDistinctOutputs(compiler));
+        passes.add(new UnusedFields(compiler));
         passes.add(new MinMaxOptimize(compiler, compiler.weightVar));
         passes.add(new ExpandAggregateZero(compiler));
         passes.add(new MergeSums(compiler));
         passes.add(new OptimizeWithGraph(compiler, g -> new RemoveNoops(compiler, g)));
         passes.add(new PropagateEmptySources(compiler));
-        passes.add(new DeadCode(compiler, options.languageOptions.generateInputForEveryTable, true));
+        passes.add(new DeadCode(compiler, true, false));
         passes.add(new OptimizeDistinctVisitor(compiler));
         // This is useful even without incrementalization if we have recursion
         passes.add(new OptimizeIncrementalVisitor(compiler));
@@ -94,7 +96,6 @@ public record CircuitOptimizer(DBSPCompiler compiler) implements ICompilerCompon
         passes.add(new RemoveTable(compiler, DBSPCompiler.ERROR_TABLE_NAME));
 
         // The circuit is complete here, start optimizing for real.
-        passes.add(new NarrowJoins(compiler));
         // Doing this after the monotone analysis only
         if (!options.ioOptions.emitHandles)
             passes.add(new IndexedInputs(compiler));
