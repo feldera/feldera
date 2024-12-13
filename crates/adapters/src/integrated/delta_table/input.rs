@@ -33,6 +33,10 @@ use deltalake::table::builder::ensure_table_uri;
 use deltalake::table::PeekCommit;
 use deltalake::{datafusion, DeltaTable, DeltaTableBuilder, Path};
 use feldera_adapterlib::format::ParseError;
+use feldera_adapterlib::utils::datafusion::{
+    execute_query_collect, execute_singleton_query, timestamp_to_sql_expression,
+    validate_sql_expression, validate_timestamp_column,
+};
 use feldera_types::config::InputEndpointConfig;
 use feldera_types::format::json::JsonFlavor;
 use feldera_types::program_schema::{ColumnType, Field, Relation, SqlType};
@@ -204,7 +208,7 @@ impl DeltaTableInputEndpointInner {
     ) {
         let mut receiver_clone = receiver.clone();
         select! {
-            _ = Self::worker_task_inner(self.clone(), input_stream,schema, receiver, init_status_sender) => {
+            _ = Self::worker_task_inner(self.clone(), input_stream, schema, receiver, init_status_sender) => {
                 debug!("delta_table {}: worker task terminated",
                     &self.endpoint_name,
                 );
@@ -279,7 +283,7 @@ impl DeltaTableInputEndpointInner {
                 String::new()
             });
 
-        let bounds = self.execute_query_collect(&bounds_query).await?;
+        let bounds = execute_query_collect(&self.datafusion, &bounds_query).await?;
 
         info!(
             "delta_table {}: querying the table for min and max timestamp values",
@@ -321,18 +325,20 @@ impl DeltaTableInputEndpointInner {
             &self.endpoint_name,
         );
 
-        let min = Self::timestamp_to_sql_expression(&timestamp_field.columntype, &min);
-        let max = Self::timestamp_to_sql_expression(&timestamp_field.columntype, &max);
+        let min = timestamp_to_sql_expression(&timestamp_field.columntype, &min);
+        let max = timestamp_to_sql_expression(&timestamp_field.columntype, &max);
 
         let mut start = min.clone();
         let mut done = "false".to_string();
 
         while &done != "true" {
             // Evaluate SQL expression for the new end of the interval.
-            let end = self
-                .execute_singleton_query(&format!("select cast(({start} + {lateness}) as string)"))
-                .await?;
-            let end = Self::timestamp_to_sql_expression(&timestamp_field.columntype, &end);
+            let end = execute_singleton_query(
+                &self.datafusion,
+                &format!("select cast(({start} + {lateness}) as string)"),
+            )
+            .await?;
+            let end = timestamp_to_sql_expression(&timestamp_field.columntype, &end);
 
             // Query the table for the range.
             let mut range_query =
@@ -346,56 +352,14 @@ impl DeltaTableInputEndpointInner {
 
             start = end.clone();
 
-            done = self
-                .execute_singleton_query(&format!("select cast({start} > {max} as string)"))
-                .await?;
+            done = execute_singleton_query(
+                &self.datafusion,
+                &format!("select cast({start} > {max} as string)"),
+            )
+            .await?;
         }
 
         Ok(())
-    }
-
-    /// Execute a SQL query and collect all results in a vector of `RecordBatch`'s.
-    async fn execute_query_collect(&self, query: &str) -> Result<Vec<RecordBatch>, AnyError> {
-        let options = SQLOptions::new()
-            .with_allow_ddl(false)
-            .with_allow_dml(false);
-
-        let df = self
-            .datafusion
-            .sql_with_options(query, options)
-            .await
-            .map_err(|e| anyhow!("error compiling query '{query}': {e}"))?;
-
-        df.collect()
-            .await
-            .map_err(|e| anyhow!("error executing query '{query}': e"))
-    }
-
-    /// Execute a SQL query that returns a reault with exactly one row and column of type `string`.
-    async fn execute_singleton_query(&self, query: &str) -> Result<String, AnyError> {
-        let result = self.execute_query_collect(query).await?;
-        if result.len() != 1 {
-            return Err(anyhow!(
-                "internal error: query '{query}' returned {} batches; expected: 1",
-                result.len()
-            ));
-        }
-
-        if result[0].num_rows() != 1 {
-            return Err(anyhow!(
-                "internal error: query '{query}' returned {} rows; expected: 1",
-                result[0].num_rows()
-            ));
-        }
-
-        if result[0].num_columns() != 1 {
-            return Err(anyhow!(
-                "internal error: query '{query}' returned {} columns; expected: 1",
-                result[0].num_columns()
-            ));
-        }
-
-        Ok(result[0].column(0).as_string::<i32>().value(0).to_string())
     }
 
     async fn worker_task_inner(
@@ -578,49 +542,10 @@ impl DeltaTableInputEndpointInner {
         Ok(())
     }
 
-    /// Parse expression only to validate it.
-    fn validate_sql_expression(expr: &str) -> Result<(), ParserError> {
-        let mut parser = Parser::new(&GenericDialect).try_with_sql(expr)?;
-        parser.parse_expr()?;
-
-        Ok(())
-    }
-
-    /// Convert a value of the timestamp column returned by a SQL query into a valid
-    /// SQL expression.
-    fn timestamp_to_sql_expression(column_type: &ColumnType, expr: &str) -> String {
-        match column_type.typ {
-            SqlType::Timestamp => format!("timestamp '{expr}'"),
-            SqlType::Date => format!("date '{expr}'"),
-            _ => expr.to_string(),
-        }
-    }
-
-    /// Check that the `timestamp` field has one of supported types.
-    fn validate_timestamp_type(&self, timestamp: &Field) -> Result<(), ControllerError> {
-        if !timestamp.columntype.is_integral_type()
-            && !matches!(
-                &timestamp.columntype.typ,
-                SqlType::Date | SqlType::Timestamp
-            )
-        {
-            return Err(ControllerError::invalid_transport_configuration(
-                &self.endpoint_name,
-                &format!(
-                    "timestamp column '{}' has unsupported type {}; supported types for 'timestamp_column' are integer types, DATE, and TIMESTAMP; see DeltaLake connector documentation: https://docs.feldera.com/connectors/sources/delta",
-                    timestamp.name,
-                    serde_json::to_string(&timestamp.columntype).unwrap()
-                ),
-            ));
-        }
-
-        Ok(())
-    }
-
     /// Validate the filter expression specified in the 'snapshot_filter' parameter.
     fn validate_snapshot_filter(&self) -> Result<(), ControllerError> {
         if let Some(filter) = &self.config.snapshot_filter {
-            Self::validate_sql_expression(filter).map_err(|e| {
+            validate_sql_expression(filter).map_err(|e| {
                 ControllerError::invalid_transport_configuration(
                     &self.endpoint_name,
                     &format!("error parsing 'snapshot_filter' expression '{filter}': {e}"),
@@ -631,76 +556,10 @@ impl DeltaTableInputEndpointInner {
         Ok(())
     }
 
-    /// Validate 'timestamp_column' if specified.
-    async fn validate_timestamp_column(&self, schema: &Relation) -> Result<(), ControllerError> {
-        let Some(timestamp_column) = &self.config.timestamp_column else {
-            return Ok(());
-        };
-
-        // Lookup column in the schema.
-        let Some(field) = schema.field(timestamp_column) else {
-            return Err(ControllerError::invalid_transport_configuration(
-                &self.endpoint_name,
-                &format!("timestamp column '{timestamp_column}' not found in table schema"),
-            ));
-        };
-
-        // Field must have a supported type.
-        self.validate_timestamp_type(field)?;
-
-        // Column must have lateness.
-        let Some(lateness) = &field.lateness else {
-            return Err(ControllerError::invalid_transport_configuration(
-                &self.endpoint_name,
-                &format!(
-                    "timestamp column '{timestamp_column}' does not have a LATENESS attribute; see DeltaLake connector documentation: https://docs.feldera.com/connectors/sources/delta"
-                ),
-            ));
-        };
-
-        // Validate lateness expression.
-        Self::validate_sql_expression(lateness).map_err(|e|
-            ControllerError::invalid_transport_configuration(
-                &self.endpoint_name,
-                &format!("error parsing LATENESS attribute '{lateness}' of the timestamp column '{timestamp_column}': {e}; see DeltaLake connector documentation for more details: https://docs.feldera.com/connectors/sources/delta"),
-            ),
-        )?;
-
-        // Lateness has to be >0. Zero would mean that we need to ingest data strictly in order. If we need to support this case in the future,
-        // we could revert to our old (and very costly) strategy of issuing a single `select *` query with the 'ORDER BY timestamp_column' clause,
-        // which requires storing and sorting the entire collection locally.
-        let is_zero = self
-            .execute_singleton_query(&format!(
-                "select cast(({lateness} + {lateness}) = {lateness} as string)"
-            ))
-            .map_err(|e| {
-                ControllerError::invalid_transport_configuration(
-                    &self.endpoint_name,
-                    &e.to_string(),
-                )
-            })
-            .await?;
-
-        if &is_zero == "true" {
-            return Err(ControllerError::invalid_transport_configuration(&self.endpoint_name, &format!("invalid LATENESS attribute '{lateness}' of the timestamp column '{timestamp_column}': LATENESS must be greater than zero; see DeltaLake connector documentation for more details: https://docs.feldera.com/connectors/sources/delta")));
-        }
-
-        Ok(())
-    }
-
     /// Prepare to read initial snapshot, if required by endpoint configuration.
     ///
-    /// This function runs as part of endpoint initialization.  The query will be actually
-    /// executed after initialization. The goal is to catch as many configuration errors as
-    /// possible during initialization.
-    ///
-    // FIXME: we rely on `order by` to order the snapshot by timestamp if requested by
-    // the configuration.  Datafusion implments this by downloading the entire dataset,
-    // storing and sorting it locally.  This is expensive and unnecessary.  A better approach
-    // is to instead read the input table in a series of queries, each returning a time range
-    // equal to the lateness of the timestamp column.  This is how the
-    // [`withEventTimeOrder`](https://docs.databricks.com/en/structured-streaming/delta-lake.html#process-initial-snapshot-without-data-being-dropped)
-    // feature works in Databricks.
+    /// * register snapshot as a datafusion table
+    /// * validate snapshot config: filter condition and timestamp column
     async fn prepare_snapshot_query(
         &self,
         table: &Arc<DeltaTable>,
@@ -712,7 +571,17 @@ impl DeltaTableInputEndpointInner {
 
         self.register_snapshot_table(table).await?;
         self.validate_snapshot_filter()?;
-        self.validate_timestamp_column(schema).await?;
+
+        if let Some(timestamp_column) = &self.config.timestamp_column {
+            validate_timestamp_column(
+                &self.endpoint_name,
+                &timestamp_column,
+                &self.datafusion,
+                schema,
+                "see DeltaLake connector documentation for more details: https://docs.feldera.com/connectors/sources/delta"
+            )
+            .await?;
+        };
 
         Ok(())
     }
