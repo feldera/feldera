@@ -74,5 +74,10 @@ public final class DBSPJoinOperator extends DBSPJoinBaseOperator {
         visitor.pop(this);
     }
 
+    @Override
+    public DBSPJoinBaseOperator withFunctionAndInputs(DBSPExpression function, OutputPort left, OutputPort right) {
+        return new DBSPJoinOperator(this.getNode(), this.getOutputZSetType(), function, this.isMultiset, left, right);
+    }
+
     // equivalent inherited from base class
 }

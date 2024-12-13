@@ -51,6 +51,11 @@ public class TranslateVisitor<T> extends InnerVisitor {
             }
             return stream.decrease().append("]").toString();
         }
+
+        public void clear() {
+            this.translation.clear();
+            this.node.clear();
+        }
     }
 
     final TranslationMap<T> translationMap;
@@ -87,5 +92,11 @@ public class TranslateVisitor<T> extends InnerVisitor {
     public T applyAnalysis(IDBSPInnerNode node) {
         this.apply(node);
         return this.maybeGet(node);
+    }
+
+    @Override
+    public void startVisit(IDBSPInnerNode node) {
+        super.startVisit(node);
+        this.translationMap.clear();
     }
 }

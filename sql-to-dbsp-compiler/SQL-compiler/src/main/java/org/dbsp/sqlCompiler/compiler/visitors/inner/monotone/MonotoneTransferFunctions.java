@@ -258,7 +258,7 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
         this.push(expression);
         // Check that the expression is a pure tree; this is required by the dataflow analysis,
         // which represents monotonicity information as a key-value map indexed by expressions.
-        new RepeatedExpressions(this.compiler, true).apply(expression.body);
+        new RepeatedExpressions(this.compiler, true, true).apply(expression.body);
         expression.body.accept(this);
         this.pop(expression);
         MonotoneExpression bodyValue = this.get(expression.body);

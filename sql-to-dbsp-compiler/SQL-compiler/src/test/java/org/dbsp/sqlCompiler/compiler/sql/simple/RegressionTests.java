@@ -374,6 +374,27 @@ public class RegressionTests extends SqlIoTest {
         this.compileRustTestCase(sql);
     }
 
+    @Test @Ignore("https://github.com/feldera/feldera/issues/3154")
+    public void testOuterDuplicate() {
+        // Validated on Postgres
+        String sql = """
+                CREATE TABLE t1(x int, y int);
+                CREATE TABLE t2(z int, w int);
+                CREATE VIEW W AS SELECT * FROM t1 LEFT JOIN t2 on x = z;""";
+        var ccs = this.getCCS(sql);
+        this.addRustTestCase(ccs);
+        ccs.step("""
+                INSERT INTO t1 VALUES(1, 0), (1, 0), (2, 0), (3, 0);
+                INSERT INTO t2 VALUES(1, 1), (2, 2);
+                """,
+                """
+                  x | y | z | w | weight
+                --------------------------
+                  1 | 0 | 1 | 1 | 2
+                  2 | 0 | 2 | 2 | 1
+                  3 | 0 |   |   | 1""");
+    }
+
     @Test
     public void issue2641() {
         String sql = """
@@ -473,7 +494,7 @@ public class RegressionTests extends SqlIoTest {
         // This is not executed, since the udfs have no definitions
         var ccs = this.getCCS(sql);
         // Test that code generation does not crash
-        ToRustVisitor.toRustString(ccs.compiler, ccs.circuit, ccs.compiler.options);
+        ToRustVisitor.toRustString(ccs.compiler, ccs.circuit);
     }
 
     @Test

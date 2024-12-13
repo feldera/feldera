@@ -34,8 +34,8 @@ public class ToDot {
             stream.append("digraph ")
                     .append(circuit.id)
                     .append(" {")
-                    .append("ordering=\"in\"").newline()
-                    .increase();
+                    .increase()
+                    .append("ordering=\"in\"").newline();
             CircuitVisitor nVisitor = nodesVisitor.create(stream);
             CircuitVisitor eVisitor = edgesVisitor.create(stream);
             nVisitor.apply(circuit);

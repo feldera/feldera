@@ -17,7 +17,7 @@ import java.util.Set;
 
 /** Check that default values for all column initializers are constant expressions.
  * This requires building a call graph. */
-public class DeterministicInitializers extends CircuitVisitor {
+public class DeterministicDefault extends CircuitVisitor {
     final Set<String> nonDeterministic;
 
     static class HasNondeterminism extends InnerVisitor {
@@ -59,7 +59,7 @@ public class DeterministicInitializers extends CircuitVisitor {
 
     final HasNondeterminism hn;
 
-    public DeterministicInitializers(DBSPCompiler compiler) {
+    public DeterministicDefault(DBSPCompiler compiler) {
         super(compiler);
         this.nonDeterministic = new HashSet<>();
         this.markNondeterministic("now");

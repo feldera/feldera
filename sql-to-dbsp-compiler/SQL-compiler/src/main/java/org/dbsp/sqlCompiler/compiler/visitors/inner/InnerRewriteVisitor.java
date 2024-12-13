@@ -128,8 +128,11 @@ import java.util.function.Predicate;
 public abstract class InnerRewriteVisitor
         extends InnerVisitor
         implements IWritesLogs {
-    protected InnerRewriteVisitor(DBSPCompiler compiler) {
+    protected final boolean force;
+
+    protected InnerRewriteVisitor(DBSPCompiler compiler, boolean force) {
         super(compiler);
+        this.force = force;
     }
 
     /** Result produced by the last preorder invocation. */
@@ -152,7 +155,7 @@ public abstract class InnerRewriteVisitor
      * Replace the 'old' IR node with the 'newOp' IR node if
      * any of its fields differs. */
     protected void map(IDBSPInnerNode old, IDBSPInnerNode newOp) {
-        if (old == newOp || old.sameFields(newOp)) {
+        if ((old == newOp) || (!this.force && old.sameFields(newOp))) {
             // Ignore new op.
             this.lastResult = old;
             return;
@@ -1255,7 +1258,10 @@ public abstract class InnerRewriteVisitor
         DBSPType returnType = this.transform(function.returnType);
         DBSPExpression body = this.transformN(function.body);
         List<DBSPParameter> parameters =
-                Linq.map(function.parameters, p -> this.apply(p).to(DBSPParameter.class));
+                Linq.map(function.parameters, p -> {
+                    p.accept(this);
+                    return Objects.requireNonNull(this.lastResult).to(DBSPParameter.class);
+                });
         this.pop(function);
         DBSPFunction result = new DBSPFunction(
                 function.name, parameters, returnType, body, function.annotations);
@@ -1306,9 +1312,9 @@ public abstract class InnerRewriteVisitor
         DBSPExpression rowVar = this.transform(aggregate.rowVar);
         List<AggregateBase> implementations =
                 Linq.map(aggregate.aggregates, c -> {
-                            IDBSPInnerNode result = this.apply(c);
-                            return result.to(AggregateBase.class);
-                        });
+                    IDBSPInnerNode result = this.transform(c);
+                    return result.to(AggregateBase.class);
+                });
         this.pop(aggregate);
         DBSPAggregate result = new DBSPAggregate(
                 aggregate.getNode(), rowVar.to(DBSPVariablePath.class), implementations);

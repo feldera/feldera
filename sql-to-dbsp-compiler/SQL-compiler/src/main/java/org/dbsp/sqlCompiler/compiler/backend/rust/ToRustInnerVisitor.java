@@ -151,12 +151,11 @@ public class ToRustInnerVisitor extends InnerVisitor {
     protected final boolean compact;
     protected final CompilerOptions options;
 
-    public ToRustInnerVisitor(DBSPCompiler compiler, IndentStream builder,
-                              CompilerOptions options, boolean compact) {
+    public ToRustInnerVisitor(DBSPCompiler compiler, IndentStream builder, boolean compact) {
         super(compiler);
         this.builder = builder;
         this.compact = compact;
-        this.options = options;
+        this.options = compiler.options;
     }
 
     @SuppressWarnings("SameReturnValue")
@@ -981,9 +980,8 @@ public class ToRustInnerVisitor extends InnerVisitor {
 
     @Override
     public VisitDecision preorder(DBSPLetExpression expression) {
-        this.builder.increase()
-                .append("{")
-                .newline()
+        this.builder.append("{")
+                .increase()
                 .append("let ")
                 .append(expression.variable.variable)
                 .append(" = ");
@@ -1678,11 +1676,10 @@ public class ToRustInnerVisitor extends InnerVisitor {
         throw new InternalCompilerError("Should have been eliminated", implementation.getNode());
     }
 
-    public static String toRustString(DBSPCompiler compiler, IDBSPInnerNode node,
-                                      CompilerOptions options, boolean compact) {
+    public static String toRustString(DBSPCompiler compiler, IDBSPInnerNode node, boolean compact) {
         StringBuilder builder = new StringBuilder();
         IndentStream stream = new IndentStream(builder);
-        ToRustInnerVisitor visitor = new ToRustInnerVisitor(compiler, stream, options, compact);
+        ToRustInnerVisitor visitor = new ToRustInnerVisitor(compiler, stream, compact);
         node.accept(visitor);
         return builder.toString();
     }

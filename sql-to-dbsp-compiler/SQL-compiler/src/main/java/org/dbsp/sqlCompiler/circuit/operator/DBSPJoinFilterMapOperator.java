@@ -78,4 +78,10 @@ public final class DBSPJoinFilterMapOperator extends DBSPJoinBaseOperator {
             visitor.postorder(this);
         visitor.pop(this);
     }
+
+    @Override
+    public DBSPJoinBaseOperator withFunctionAndInputs(DBSPExpression function, OutputPort left, OutputPort right) {
+        return new DBSPJoinFilterMapOperator(this.getNode(), this.getOutputZSetType(), function,
+                this.filter, this.map, this.isMultiset, left, right);
+    }
 }

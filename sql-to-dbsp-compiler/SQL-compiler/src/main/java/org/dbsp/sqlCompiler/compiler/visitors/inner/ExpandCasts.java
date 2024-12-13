@@ -36,7 +36,7 @@ public class ExpandCasts extends InnerRewriteVisitor {
     // This pass may be iterated many times, depending on the complexity of the expressions involved.
     // Expanding some casts generates other casts.
     public ExpandCasts(DBSPCompiler compiler) {
-        super(compiler);
+        super(compiler, false);
     }
 
     void unsupported(DBSPExpression source, DBSPType type) {

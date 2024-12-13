@@ -27,6 +27,7 @@ import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.BetaReduction;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.RepeatedExpressions;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Simplify;
 import org.dbsp.sqlCompiler.ir.DBSPNode;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
@@ -247,5 +248,14 @@ public abstract class DBSPExpression
     public DBSPExpression not() {
         assert this.getType().is(DBSPTypeBool.class);
         return new DBSPUnaryExpression(this.getNode(), this.getType(), DBSPOpcode.NOT, this);
+    }
+
+    /** If this expression is a DAG, it converts it to a tree, otherwise it leaves it unchanged */
+    public DBSPExpression ensureTree(DBSPCompiler compiler) {
+        RepeatedExpressions repeated = new RepeatedExpressions(compiler, true, false);
+        repeated.apply(this);
+        if (repeated.hasDuplicate())
+            return this.deepCopy();
+        return this;
     }
 }

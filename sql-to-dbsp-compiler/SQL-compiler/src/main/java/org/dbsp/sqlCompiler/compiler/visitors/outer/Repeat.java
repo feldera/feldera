@@ -11,10 +11,12 @@ import org.dbsp.util.Logger;
 public class Repeat implements IWritesLogs, CircuitTransform, ICompilerComponent {
     final DBSPCompiler compiler;
     public final CircuitTransform transform;
+    public final long id;
 
     public Repeat(DBSPCompiler compiler, CircuitTransform visitor) {
         this.compiler = compiler;
         this.transform = visitor;
+        this.id = CircuitVisitor.crtId++;
     }
 
     @Override
@@ -31,6 +33,10 @@ public class Repeat implements IWritesLogs, CircuitTransform, ICompilerComponent
         int maxRepeats = Math.max(circuit.size(), 10);
         int repeats = 0;
         while (true) {
+            Logger.INSTANCE.belowLevel(this, 1)
+                    .append("Iteration ")
+                    .append(repeats)
+                    .newline();
             DBSPCircuit result = this.transform.apply(circuit);
             Logger.INSTANCE.belowLevel(this, 4)
                     .append("After ")
@@ -54,7 +60,7 @@ public class Repeat implements IWritesLogs, CircuitTransform, ICompilerComponent
 
     @Override
     public String toString() {
-        return "Repeat " + this.transform;
+        return this.id + " Repeat " + this.transform;
     }
 
     @Override

@@ -84,7 +84,7 @@ public class EquivalenceTests {
         DBSPLetStatement stat1 = new DBSPLetStatement("w", plus1);
         DBSPBlockExpression block1 = new DBSPBlockExpression(Linq.list(stat1), stat1.getVarReference());
         DBSPExpression blockLambda0 = block0.closure(
-                x.deepCopy().to(DBSPVariablePath.class),
+                x.to(DBSPVariablePath.class),
                 y.deepCopy().to(DBSPVariablePath.class));
         DBSPExpression blockLambda1 = block1.closure(
                 y.deepCopy().to(DBSPVariablePath.class),

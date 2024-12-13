@@ -253,7 +253,7 @@ use crate::*;
 
                 for (DBSPFunction function : extern) {
                     function = this.generateStubBody(function);
-                    String str = ToRustInnerVisitor.toRustString(compiler, function, compiler.options, false);
+                    String str = ToRustInnerVisitor.toRustString(compiler, function, false);
                     protosStream.println(str);
                 }
                 protosStream.close();

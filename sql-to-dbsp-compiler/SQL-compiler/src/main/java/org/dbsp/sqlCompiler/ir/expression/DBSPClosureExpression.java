@@ -28,6 +28,7 @@ import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.Expensive;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
@@ -36,6 +37,9 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeFunction;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
+import org.dbsp.util.Maybe;
+
+import static org.dbsp.util.Maybe.*;
 
 /** An expression of the form |param0, param1, ...| body. */
 public final class DBSPClosureExpression extends DBSPExpression {
@@ -142,12 +146,24 @@ public final class DBSPClosureExpression extends DBSPExpression {
      * closure expression.  This closure must have exactly 1
      * parameter, while the before one can have multiple ones.
      * @param before Closure to compose.
-     * @param inline If true, inline the call, otherwise use a temporary variable. */
+     * @param maybe If {@link Maybe#YES}, inline the call,
+     *              If {@link Maybe#NO},  use a temporary variable,
+     *              If {@link Maybe#MAYBE} use a heuristic. */
     public DBSPClosureExpression applyAfter(
-            DBSPCompiler compiler, DBSPClosureExpression before, boolean inline) {
+            DBSPCompiler compiler, DBSPClosureExpression before, Maybe maybe) {
         if (this.parameters.length != 1)
             throw new InternalCompilerError("Expected closure with 1 parameter", this);
-        if (inline) {
+
+        if (maybe == MAYBE) {
+            Expensive expensive = new Expensive(compiler);
+            expensive.apply(before);
+            if (expensive.isExpensive())
+                maybe = NO;
+            else
+                maybe = YES;
+        }
+
+        if (maybe == YES) {
             DBSPExpression apply = this.call(before.body.borrow());
             return apply.closure(before.parameters).reduce(compiler).to(DBSPClosureExpression.class);
         } else {

@@ -186,7 +186,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
         DBSPTypeTuple type = this.inputRow.getType().deref().to(DBSPTypeTuple.class);
         int index = inputRef.getIndex();
         if (index < type.size()) {
-            DBSPExpression field = this.inputRow.deepCopy().deref().field(index);
+            DBSPExpression field = this.inputRow.deref().field(index);
             return field.applyCloneIfNeeded();
         }
         if (index - type.size() < this.constants.size())
@@ -199,7 +199,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
         CalciteObject node = CalciteObject.create(this.context, correlVariable);
         if (this.inputRow == null)
             throw new InternalCompilerError("Correlation variable referenced without a row context", node);
-        return this.inputRow.deref().deepCopy();
+        return this.inputRow.deref();
     }
 
     @Override
@@ -757,24 +757,16 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
         return new DBSPVecLiteral(node, type, args);
     }
 
-    /** Ensures that all the elements of this array are of the expectedType
-     *  Casts to the expected type if necessary
-     * @param arg the Array of elements
-     * @param expectedType the expected type of the elements
-     */
-    DBSPExpression ensureArrayElementsOfType(DBSPExpression arg, DBSPType expectedType) {
-        DBSPTypeVec argType = arg.getType().to(DBSPTypeVec.class);
+    /** Ensures that all the elements of array 'vec' are of the expectedType
+     * @param vec the Array of elements
+     * @param expectedType the expected type of the elements */
+    DBSPExpression ensureArrayElementsOfType(DBSPExpression vec, DBSPType expectedType) {
+        DBSPTypeVec argType = vec.getType().to(DBSPTypeVec.class);
         DBSPType argElemType = argType.getElementType();
-        DBSPType expectedVecType = new DBSPTypeVec(expectedType, arg.type.mayBeNull);
-
-        if (!argElemType.sameType(expectedType)) {
-            // Apply a cast to every element of the vector
-            DBSPVariablePath var = argElemType.ref().var();
-            DBSPExpression cast = var.deref().cast(expectedType).closure(var);
-            arg = new DBSPApplyExpression("map", expectedVecType, arg.borrow(), cast);
-        }
-
-        return arg;
+        DBSPType expectedVecType = new DBSPTypeVec(expectedType, vec.type.mayBeNull);
+        if (!argElemType.sameType(expectedType))
+            vec = vec.cast(expectedVecType);
+        return vec;
     }
 
     @Override

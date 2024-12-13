@@ -27,7 +27,6 @@ import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.ICompilerComponent;
 import org.dbsp.sqlCompiler.compiler.backend.dot.ToDot;
-import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerRewriteVisitor;
 import org.dbsp.util.IWritesLogs;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Logger;
@@ -69,12 +68,17 @@ public class Passes implements IWritesLogs, CircuitTransform, ICompilerComponent
             String name = String.format("%02d-", dumped++) + "before.png";
             ToDot.dump(this.compiler, name, details, "png", circuit);
         }
+        long start = System.currentTimeMillis();
         for (CircuitTransform pass: this.passes) {
-            Logger.INSTANCE.belowLevel("Passes", 1)
-                    .append("Executing ")
-                    .append(pass.toString())
-                    .newline();
             circuit = pass.apply(circuit);
+            long end = System.currentTimeMillis();
+            Logger.INSTANCE.belowLevel("Passes", 1)
+                    .append(pass.toString())
+                    .append(" took ")
+                    .append(end - start)
+                    .append("ms")
+                    .newline();
+            start = end;
             if (this.getDebugLevel() >= 3) {
                 String name = String.format("%02d-", dumped++) + pass.toString().replace(" ", "_") + ".png";
                 ToDot.dump(this.compiler, name, details, "png", circuit);

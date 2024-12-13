@@ -24,16 +24,22 @@ public class RepeatedExpressions extends InnerVisitor {
     @Nullable
     private IDBSPInnerNode duplicate;
     private final List<IDBSPInnerNode> duplicateContext = new ArrayList<>();
+    private final boolean reportError;
 
-    public RepeatedExpressions(DBSPCompiler compiler, boolean expressions) {
+    public RepeatedExpressions(DBSPCompiler compiler, boolean expressions, boolean reportError) {
         super(compiler);
         this.onlyExpressions = expressions;
         this.visited = new HashSet<>();
         this.duplicate = null;
+        this.reportError = reportError;
     }
 
     void printContext() {
         System.out.println(Linq.map(this.context, IHasId::getId));
+    }
+
+    public boolean hasDuplicate() {
+        return this.duplicate != null;
     }
 
     @Override
@@ -57,13 +63,16 @@ public class RepeatedExpressions extends InnerVisitor {
     @Override
     public void startVisit(IDBSPInnerNode node) {
         this.root = node;
+        this.visited.clear();
+        this.duplicate = null;
+        this.duplicateContext.clear();
         super.startVisit(node);
     }
 
     @Override
     public void endVisit() {
         Objects.requireNonNull(this.root);
-        if (this.duplicate != null) {
+        if (this.duplicate != null && this.reportError) {
             StringBuilder builder = new StringBuilder();
             builder.append("Expression ")
                     .append(this.root)
