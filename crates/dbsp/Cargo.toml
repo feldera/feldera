@@ -94,7 +94,7 @@ csv = "1.2.2"
 tar = "0.4.38"
 zstd = "0.12.0"
 criterion = "0.5.1"
-pprof = { version = "0.13.0", features = ["flamegraph", "criterion"] }
+pprof = { version = "0.14.0", features = ["flamegraph", "criterion"] }
 rand_xoshiro = "0.6.0"
 indicatif = "0.17.0-rc.11"
 #clap = { version = "3.2.8", features = ["derive", "env"] }
