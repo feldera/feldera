@@ -493,27 +493,6 @@ impl ControllerStatus {
         }
     }
 
-    /// True if the number of records buffered by the endpoint exceeds
-    /// its `max_queued_records` config parameter.
-    pub fn input_endpoint_full(&self, endpoint_id: &EndpointId) -> bool {
-        let buffered_records = self.num_input_endpoint_buffered_records(endpoint_id);
-
-        let max_queued_records = match self.inputs.read().unwrap().get(endpoint_id) {
-            None => return false,
-            Some(endpoint) => endpoint.config.connector_config.max_queued_records,
-        };
-
-        buffered_records >= max_queued_records
-    }
-
-    /// True if the endpoint's `paused_by_user` flag is set to `true`.
-    pub fn input_endpoint_paused_by_user(&self, endpoint_id: &EndpointId) -> bool {
-        match self.inputs.read().unwrap().get(endpoint_id) {
-            None => false,
-            Some(endpoint) => endpoint.paused,
-        }
-    }
-
     /// Update the global counters after receiving a new input batch.
     ///
     /// This method is used for inserts that don't belong to an endpoint, e.g.,
@@ -885,6 +864,19 @@ impl InputEndpointStatus {
                 *fatal_error = Some(error.to_string());
             }
         }
+    }
+
+    /// True if the endpoint's `paused_by_user` flag is set to `true`.
+    pub fn is_paused_by_user(&self) -> bool {
+        self.paused
+    }
+
+    /// True if the number of records buffered by the endpoint exceeds
+    /// its `max_queued_records` config parameter.
+    pub fn is_full(&self) -> bool {
+        let buffered_records = self.metrics.buffered_records.load(Ordering::Acquire);
+        let max_queued_records = self.config.connector_config.max_queued_records;
+        buffered_records >= max_queued_records
     }
 
     fn completed(&self, num_records: u64, hash: u64, metadata: Option<RmpValue>) {

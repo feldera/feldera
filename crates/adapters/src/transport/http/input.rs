@@ -21,6 +21,7 @@ use std::{
     sync::{atomic::Ordering, Arc, Mutex},
     time::Duration,
 };
+use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 use tokio::{
     sync::watch,
     time::{sleep, timeout},
@@ -76,9 +77,9 @@ struct HttpInputEndpointInner {
 }
 
 impl HttpInputEndpointInner {
-    fn new(config: HttpInputConfig) -> Self {
+    fn new(config: HttpInputConfig, receiver: UnboundedReceiver<InputReaderCommand>) -> Arc<Self> {
         let force = config.force;
-        Self {
+        let inner = Arc::new(Self {
             name: config.name,
             state: Atomic::new(if force {
                 PipelineState::Running
@@ -88,7 +89,67 @@ impl HttpInputEndpointInner {
             status_notifier: watch::channel(()).0,
             details: Mutex::new(None),
             force,
+        });
+        tokio::spawn(HttpInputEndpointInner::background_task(
+            inner.clone(),
+            receiver,
+        ));
+        inner
+    }
+
+    async fn background_task(self: Arc<Self>, mut receiver: UnboundedReceiver<InputReaderCommand>) {
+        while let Some(message) = receiver.recv().await {
+            let _guard = info_span!("http_input").entered();
+            match message {
+                InputReaderCommand::Seek(_) => (),
+                InputReaderCommand::Replay(metadata) => {
+                    let Metadata { chunks } = rmpv::ext::from_value(metadata).unwrap();
+                    let mut guard = self.details.lock().unwrap();
+                    let details = guard.as_mut().unwrap();
+                    let mut num_records = 0;
+                    let mut hasher = Xxh3Default::new();
+                    for chunk in chunks {
+                        let (mut buffer, errors) = details.parser.parse(&chunk);
+                        details.consumer.buffered(buffer.len(), chunk.len());
+                        details.consumer.parse_errors(errors);
+                        num_records += buffer.len();
+                        buffer.hash(&mut hasher);
+                        buffer.flush();
+                    }
+                    details.consumer.replayed(num_records, hasher.finish());
+                }
+                InputReaderCommand::Extend => self.set_state(PipelineState::Running),
+                InputReaderCommand::Pause => {
+                    if !self.force {
+                        self.set_state(PipelineState::Paused)
+                    }
+                }
+                InputReaderCommand::Queue => {
+                    let mut guard = self.details.lock().unwrap();
+                    let details = guard.as_mut().unwrap();
+                    let (num_records, hash, chunks) = details.queue.flush_with_aux();
+                    let metadata = if details.consumer.is_pipeline_fault_tolerant() {
+                        rmpv::ext::to_value(Metadata {
+                            chunks: chunks.into_iter().map(ByteBuf::from).collect(),
+                        })
+                        .unwrap()
+                    } else {
+                        RmpValue::Nil
+                    };
+                    details.consumer.extended(num_records, hash, metadata);
+                }
+                InputReaderCommand::Disconnect => self.set_state(PipelineState::Terminated),
+            }
         }
+    }
+
+    fn notify(&self) {
+        self.status_notifier.send_replace(());
+    }
+
+    fn set_state(&self, state: PipelineState) {
+        self.state.store(state, Ordering::Release);
+        self.notify();
     }
 }
 
@@ -96,12 +157,15 @@ impl HttpInputEndpointInner {
 #[derive(Clone)]
 pub(crate) struct HttpInputEndpoint {
     inner: Arc<HttpInputEndpointInner>,
+    sender: UnboundedSender<InputReaderCommand>,
 }
 
 impl HttpInputEndpoint {
     pub(crate) fn new(config: HttpInputConfig) -> Self {
+        let (sender, receiver) = unbounded_channel();
         Self {
-            inner: Arc::new(HttpInputEndpointInner::new(config)),
+            inner: HttpInputEndpointInner::new(config, receiver),
+            sender,
         }
     }
 
@@ -111,10 +175,6 @@ impl HttpInputEndpoint {
 
     fn name(&self) -> &str {
         &self.inner.name
-    }
-
-    fn notify(&self) {
-        self.inner.status_notifier.send_replace(());
     }
 
     fn push(&self, bytes: Option<&[u8]>, errors: &mut CircularQueue<ParseError>) -> usize {
@@ -218,7 +278,7 @@ impl HttpInputEndpoint {
         // queue would get destroyed when the caller drops us, which could lead
         // to some of our records never getting processed.
         while self.queue_len() > 0 {
-            sleep(Duration::from_millis(100)).await;
+            sleep(Duration::from_micros(50)).await;
         }
 
         debug!(
@@ -230,11 +290,6 @@ impl HttpInputEndpoint {
         } else {
             Err(PipelineError::parse_errors(num_errors, errors.asc_iter()))
         }
-    }
-
-    fn set_state(&self, state: PipelineState) {
-        self.inner.state.store(state, Ordering::Release);
-        self.notify();
     }
 }
 
@@ -265,47 +320,7 @@ impl TransportInputEndpoint for HttpInputEndpoint {
 
 impl InputReader for HttpInputEndpoint {
     fn request(&self, command: InputReaderCommand) {
-        let _guard = info_span!("http_input").entered();
-        match command {
-            InputReaderCommand::Seek(_) => (),
-            InputReaderCommand::Replay(metadata) => {
-                let Metadata { chunks } = rmpv::ext::from_value(metadata).unwrap();
-                let mut guard = self.inner.details.lock().unwrap();
-                let details = guard.as_mut().unwrap();
-                let mut num_records = 0;
-                let mut hasher = Xxh3Default::new();
-                for chunk in chunks {
-                    let (mut buffer, errors) = details.parser.parse(&chunk);
-                    details.consumer.buffered(buffer.len(), chunk.len());
-                    details.consumer.parse_errors(errors);
-                    num_records += buffer.len();
-                    buffer.hash(&mut hasher);
-                    buffer.flush();
-                }
-                details.consumer.replayed(num_records, hasher.finish());
-            }
-            InputReaderCommand::Extend => self.set_state(PipelineState::Running),
-            InputReaderCommand::Pause => {
-                if !self.inner.force {
-                    self.set_state(PipelineState::Paused)
-                }
-            }
-            InputReaderCommand::Queue => {
-                let mut guard = self.inner.details.lock().unwrap();
-                let details = guard.as_mut().unwrap();
-                let (num_records, hash, chunks) = details.queue.flush_with_aux();
-                let metadata = if details.consumer.is_pipeline_fault_tolerant() {
-                    rmpv::ext::to_value(Metadata {
-                        chunks: chunks.into_iter().map(ByteBuf::from).collect(),
-                    })
-                    .unwrap()
-                } else {
-                    RmpValue::Nil
-                };
-                details.consumer.extended(num_records, hash, metadata);
-            }
-            InputReaderCommand::Disconnect => self.set_state(PipelineState::Terminated),
-        }
+        let _ = self.sender.send(command);
     }
 
     fn is_closed(&self) -> bool {

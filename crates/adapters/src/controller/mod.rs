@@ -1457,9 +1457,7 @@ impl BackpressureThread {
             };
 
             for (epid, ep) in controller.status.input_status().iter() {
-                let should_run = globally_running
-                    && !controller.status.input_endpoint_paused_by_user(epid)
-                    && !controller.status.input_endpoint_full(epid);
+                let should_run = globally_running && !ep.is_paused_by_user() && !ep.is_full();
                 match should_run {
                     true => {
                         if running_endpoints.insert(*epid) {
