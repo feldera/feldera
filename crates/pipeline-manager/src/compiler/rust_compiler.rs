@@ -636,9 +636,11 @@ async fn prepare_workspace(
         opt-level = 0
         lto = \"off\"
         codegen-units = 256
+        debug = true
 
         [profile.optimized]
         inherits = \"release\"
+        debug = true
     "};
     let cargo_toml_file_path = config
         .working_dir()
