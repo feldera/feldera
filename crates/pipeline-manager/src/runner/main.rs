@@ -14,7 +14,7 @@ use actix_web::HttpResponse;
 use actix_web::Responder;
 use actix_web::{get, web, HttpRequest, HttpServer};
 use async_stream::try_stream;
-use log::{debug, error, info, trace};
+use log::{debug, error, trace};
 use std::collections::BTreeMap;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -207,7 +207,7 @@ pub async fn runner_main<E: PipelineExecutor + 'static>(
     if !wait_for_http_server_ready(main_http_server_port).await {
         panic!("Unable to reach runner main HTTP server on port {main_http_server_port}");
     }
-    info!(
+    debug!(
         "Runner main HTTP server ready on port {}",
         main_http_server_port
     );
@@ -227,7 +227,7 @@ async fn reconcile<E: PipelineExecutor + 'static>(
 ) -> Result<(), ManagerError> {
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
     spawn(crate::db_notifier::listen(db.clone(), tx));
-    info!("Runner has started");
+    debug!("Runner has started");
     loop {
         trace!("Waiting for pipeline operation notification from database...");
         if let Some(DbNotification::Pipeline(op, tenant_id, pipeline_id)) = rx.recv().await {
