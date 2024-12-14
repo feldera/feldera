@@ -49,8 +49,9 @@ use actix_web_static_files::ResourceFiles;
 use anyhow::{Error as AnyError, Result as AnyResult};
 use futures_util::FutureExt;
 use log::{error, log, trace, Level};
+use std::io::Write;
 use std::time::Duration;
-use std::{env, net::TcpListener, sync::Arc};
+use std::{env, io, net::TcpListener, sync::Arc};
 use termbg::{theme, Theme};
 use tokio::sync::Mutex;
 use utoipa::openapi::security::{HttpAuthScheme, HttpBuilder, SecurityScheme};
@@ -458,8 +459,13 @@ pub async fn run(
     let addr = env::var("BANNER_ADDR").unwrap_or(bind_address);
     let url = format!("http://{}:{}", addr, port);
 
-    println!(
-        r"
+    // Lock both out streams so that the banner is printed in one go
+    // and not interrupted by log messages from other threads.
+    let err_lock = io::stderr().lock();
+    let mut out_lock = io::stdout().lock();
+    let _ = out_lock.write_all(
+        format!(
+            r"
 
 {banner}
 
@@ -468,10 +474,15 @@ API server URL: {}
 Documentation: https://docs.feldera.com/
 Version: {}
         ",
-        url,
-        url,
-        env!("CARGO_PKG_VERSION")
+            url,
+            url,
+            env!("CARGO_PKG_VERSION")
+        )
+        .as_bytes(),
     );
+    drop(out_lock);
+    drop(err_lock);
+
     server.await?;
     Ok(())
 }
