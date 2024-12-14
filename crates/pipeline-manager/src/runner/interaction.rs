@@ -7,6 +7,7 @@ use crate::error::ManagerError;
 use crate::runner::error::RunnerError;
 use actix_web::{http::Method, web::Payload, HttpRequest, HttpResponse, HttpResponseBuilder};
 use reqwest::StatusCode;
+use std::sync::LazyLock;
 use std::{sync::Arc, time::Duration};
 use tokio::sync::Mutex;
 
@@ -87,9 +88,9 @@ impl RunnerInteraction {
         query_string: &str,
         timeout: Option<Duration>, // If timeout is not specified, a default timeout is used
     ) -> Result<(String, reqwest::Response), ManagerError> {
-        let client = reqwest::Client::new();
+        static CLIENT: LazyLock<reqwest::Client> = LazyLock::new(reqwest::Client::new);
         let url = RunnerInteraction::format_pipeline_url(location, endpoint, query_string);
-        let response = client
+        let response = CLIENT
             .request(method, &url)
             .timeout(timeout.unwrap_or(Self::PIPELINE_HTTP_REQUEST_TIMEOUT))
             .send()

@@ -90,6 +90,7 @@ impl HttpInputEndpointInner {
             details: Mutex::new(None),
             force,
         });
+
         tokio::spawn(HttpInputEndpointInner::background_task(
             inner.clone(),
             receiver,
@@ -98,9 +99,9 @@ impl HttpInputEndpointInner {
     }
 
     async fn background_task(self: Arc<Self>, mut receiver: UnboundedReceiver<InputReaderCommand>) {
+        let input_span = info_span!("http_input");
         while let Some(message) = receiver.recv().await {
-            let _guard = info_span!("http_input").entered();
-            match message {
+            input_span.in_scope(|| match message {
                 InputReaderCommand::Seek(_) => (),
                 InputReaderCommand::Replay(metadata) => {
                     let Metadata { chunks } = rmpv::ext::from_value(metadata).unwrap();
@@ -139,7 +140,7 @@ impl HttpInputEndpointInner {
                     details.consumer.extended(num_records, hash, metadata);
                 }
                 InputReaderCommand::Disconnect => self.set_state(PipelineState::Terminated),
-            }
+            });
         }
     }
 
