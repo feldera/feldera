@@ -26,6 +26,7 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAsofJoinOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPChainAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
 import org.dbsp.sqlCompiler.circuit.DBSPDeclaration;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPControlledKeyFilterOperator;
@@ -239,6 +240,24 @@ public class CircuitRewriter extends CircuitCloneVisitor {
             result = new DBSPStreamAggregateOperator(operator.getNode(),
                     outputType.to(DBSPTypeIndexedZSet.class),
                     function, aggregate, input)
+                    .copyAnnotations(operator);
+        }
+        this.map(operator, result);
+    }
+
+    @Override
+    public void postorder(DBSPChainAggregateOperator operator) {
+        DBSPType outputType = this.transform(operator.outputType);
+        DBSPExpression function = this.transform(operator.getFunction());
+        DBSPExpression init = this.transform(operator.init);
+        OutputPort input = this.mapped(operator.input());
+        DBSPSimpleOperator result = operator;
+        if (!outputType.sameType(operator.outputType)
+                || !DBSPExpression.same(function, operator.function)
+                || !DBSPExpression.same(init, operator.init)
+                || !input.equals(operator.input())) {
+            result = new DBSPChainAggregateOperator(operator.getNode(), init.to(DBSPClosureExpression.class),
+                    function.to(DBSPClosureExpression.class), outputType, input)
                     .copyAnnotations(operator);
         }
         this.map(operator, result);

@@ -52,7 +52,11 @@ public class IncrementalRegressionTests extends SqlIoTest {
     @Test
     public void issue3145() {
         this.compileRustTestCase("""
-                CREATE TABLE array_tbl(c1 INT ARRAY NOT NULL);
+                CREATE TABLE array_tbl(
+                id INT,
+                c1 INT ARRAY NOT NULL,
+                c2 INT ARRAY,
+                c3 MAP<VARCHAR, INT> ARRAY);
                 CREATE MATERIALIZED VIEW max_emp AS SELECT
                 MAX(c1) AS max FROM array_tbl WHERE FALSE;""");
     }
