@@ -19,7 +19,7 @@
   >
     <Segment.Item
       value="light"
-      base="btn cursor-pointer z-[1] px-4 sm:px-12 h-auto"
+      base="btn cursor-pointer z-[1] px-10 sm:px-12 h-auto"
       labelClasses="flex items-center flex-nowrap gap-3 transition-none"
     >
       <span class="fd fd-sun text-[20px]"></span>
@@ -27,7 +27,7 @@
     </Segment.Item>
     <Segment.Item
       value="dark"
-      base="btn cursor-pointer z-[1] px-4 sm:px-12 h-auto"
+      base="btn cursor-pointer z-[1] px-10 sm:px-12 h-auto"
       labelClasses="flex items-center flex-nowrap gap-3 transition-none"
     >
       <span class="fd fd-moon text-[20px]"></span>

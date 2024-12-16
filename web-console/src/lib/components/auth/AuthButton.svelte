@@ -50,7 +50,7 @@
     {#snippet content(close)}
       <div
         transition:fade={{ duration: 100 }}
-        class="bg-white-dark absolute right-0 z-30 flex max-h-[400px] w-[calc(100vw-100px)] max-w-[260px] flex-col justify-end gap-4 overflow-y-auto rounded-container p-4 shadow-md scrollbar"
+        class="bg-white-dark absolute right-0 z-30 flex max-h-[400px] w-[calc(100vw-16px)] max-w-[360px] flex-col justify-end gap-4 overflow-y-auto rounded-container p-4 shadow-md scrollbar sm:max-w-[400px]"
       >
         <div class="px-3 text-surface-700-300">Authentication is disabled</div>
         <div class="hr"></div>

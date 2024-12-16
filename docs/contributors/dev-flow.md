@@ -20,10 +20,10 @@ cd ./sql-to-dbsp-compiler && ./build.sh && cd ..
 Build and start the Pipeline Manager (that also serves the Feldera Web Console):
 
 ```bash
-RUST_LOG=info RUST_BACKTRACE=1 cargo run --bin pipeline-manager --features pg-embed -- --api-server-working-directory ~/.feldera -d postgres-embed --dev-mode --bind-address 0.0.0.0 --sql-compiler-home ./sql-to-dbsp-compiler --dbsp-override-path .  --compiler-working-directory ~/.feldera --runner-working-directory ~/.feldera
+RUST_LOG=info RUST_BACKTRACE=1 cargo run --bin pipeline-manager --features pg-embed -- --pg-embed-working-directory ~/.feldera/data --db-connection-string postgres-embed --dev-mode --bind-address 0.0.0.0 --sql-compiler-home ./sql-to-dbsp-compiler --dbsp-override-path .  --compiler-working-directory ~/.feldera --runner-working-directory ~/.feldera
 ```
 
-> Here, `~/.feldera` is the directory that will host compilation artifacts of SQL Compiler that Pipeline Manager will then use. It will be created if it doesn't exist, and you can use another name for it - just replace corresponding arguments in the above command.
+> Here, `~/.feldera` is the directory that will host compilation artifacts of SQL Compiler and other state of the Pipeline Manager and the pipelines. It will be created if it doesn't exist, and you can use a different directory.
 
 > `--dbsp-override-path .` should be the path of the Feldera repository root - so update the argument if you are running from a different directory.
 
