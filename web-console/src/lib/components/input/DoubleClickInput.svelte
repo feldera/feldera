@@ -6,12 +6,14 @@
     value = $bindable(),
     children,
     onvalue,
-    class: _class = ''
+    class: _class = '',
+    disabled
   }: {
     value: string
     children?: Snippet
     onvalue?: (value: string) => void
     class?: string
+    disabled?: boolean
   } = $props()
   let showInput = $state(false)
 
@@ -50,11 +52,26 @@
     class={_class}
   />
 {:else}
-  <span class="group" role="button" tabindex={0} ondblclick={() => (showInput = true)}>
+  <span
+    class="group {disabled ? 'cursor-default' : ''}"
+    role="button"
+    tabindex={0}
+    ondblclick={() => {
+      if (disabled) {
+        return
+      }
+      showInput = true
+    }}
+  >
     {@render children?.()}
     <button
-      onclick={() => (showInput = true)}
-      class="fd fd-pencil-line text-[20px] text-surface-400-600 group-hover:text-surface-950-50"
+      {disabled}
+      onclick={() => {
+        showInput = true
+      }}
+      class="fd fd-pencil-line text-[20px] text-surface-400-600 {disabled
+        ? ''
+        : 'group-hover:text-surface-950-50'}"
       aria-label="Edit pipeline name"
     >
     </button>

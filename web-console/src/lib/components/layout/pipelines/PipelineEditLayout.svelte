@@ -261,6 +261,7 @@ example = "1.0"`
                   goto(newUrl, { replaceState: true })
                 })
               }}
+              disabled={editDisabled}
               class="input -mb-1 -ml-2 mr-2 inline w-64 max-w-full py-0 pl-2 text-base sm:text-lg"
             >
               <span class="text-base sm:text-lg">
