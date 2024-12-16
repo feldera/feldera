@@ -139,4 +139,4 @@ ENV RUSTFLAGS="-C link-arg=-fuse-ld=mold"
 # Run the precompile phase to speed up Rust compilations during deployment
 RUN ./pipeline-manager --bind-address=0.0.0.0 --sql-compiler-home=/home/feldera/lib/sql-to-dbsp-compiler --dbsp-override-path=/home/feldera/lib --precompile
 ENV BANNER_ADDR=localhost
-ENTRYPOINT ["./pipeline-manager", "--bind-address=0.0.0.0", "--sql-compiler-home=/home/feldera/lib/sql-to-dbsp-compiler", "--dbsp-override-path=/home/feldera/lib", "--allowed-origins", "https://www.feldera.com", "--allowed-origins", "http://localhost:8080", "--demos-dir", "/home/feldera/demos"]
+ENTRYPOINT ["./pipeline-manager", "--bind-address=0.0.0.0", "--sql-compiler-home=/home/feldera/lib/sql-to-dbsp-compiler", "--dbsp-override-path=/home/feldera/lib", "--demos-dir", "/home/feldera/demos"]
