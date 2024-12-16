@@ -432,7 +432,7 @@ Code snippet:
             ]'
         );
 
-        CREATE VIEW s AS SELECT * FROM items;
+        CREATE MATERIALIZED VIEW s AS SELECT * FROM items;
         """
 
         pipeline = PipelineBuilder(
@@ -960,8 +960,11 @@ Code snippet:
         pipeline = PipelineBuilder(
             TEST_CLIENT, name="test_issue2971", sql=sql
         ).create_or_replace()
-        pipeline.start()
+        pipeline.restart()
         pipeline.input_json("t0", {"c0": 10})
+
+        while pipeline.status() != PipelineStatus.FAILED:
+            time.sleep(0.1)
 
         with self.assertRaises(RuntimeError) as err:
             pipeline.pause()

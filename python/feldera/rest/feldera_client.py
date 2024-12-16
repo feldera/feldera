@@ -7,6 +7,7 @@ from decimal import Decimal
 from typing import Generator
 
 from feldera.rest.config import Config
+from feldera.rest.errors import FelderaTimeoutError
 from feldera.rest.pipeline import Pipeline
 from feldera.rest._httprequests import HttpRequests
 
@@ -44,6 +45,14 @@ class FelderaClient:
         except Exception as e:
             logging.error(f"Failed to connect to Feldera API: {e}")
             raise e
+
+    @staticmethod
+    def localhost(port: int = 8080) -> "FelderaClient":
+        """
+        Create a FelderaClient that connects to the local Feldera instance
+        """
+
+        return FelderaClient(f"http://localhost:{port}")
 
     def get_pipeline(self, pipeline_name) -> Pipeline:
         """
@@ -188,23 +197,25 @@ class FelderaClient:
 
         return resp
 
-    def start_pipeline(self, pipeline_name: str, timeout_s: Optional[float] = None):
+    def start_pipeline(self, pipeline_name: str, timeout_s: Optional[float] = 300):
         """
-        Start a pipeline
 
         :param pipeline_name: The name of the pipeline to start
-        :param timeout_s: The amount of time in seconds to wait for the pipeline to start
+        :param timeout_s: The amount of time in seconds to wait for the pipeline to start. 300 seconds by default.
         """
+
+        if timeout_s is None:
+            timeout_s = 300
 
         self.http.post(
             path=f"/pipelines/{pipeline_name}/start",
         )
 
-        start_time = time.time()
+        start_time = time.monotonic()
 
         while True:
             if timeout_s is not None:
-                elapsed = time.time() - start_time
+                elapsed = time.monotonic() - start_time
                 if elapsed > timeout_s:
                     raise TimeoutError(
                         f"Timed out waiting for pipeline {pipeline_name} to start"
@@ -231,15 +242,19 @@ Reason: The pipeline is in a FAILED state due to the following error:
         self,
         pipeline_name: str,
         error_message: str = None,
-        timeout_s: Optional[float] = None,
+        timeout_s: Optional[float] = 300,
     ):
         """
         Stop a pipeline
 
         :param pipeline_name: The name of the pipeline to stop
         :param error_message: The error message to show if the pipeline is in FAILED state
-        :param timeout_s: The amount of time in seconds to wait for the pipeline to pause
+        :param timeout_s: The amount of time in seconds to wait for the pipeline to pause. 300 seconds by default.
         """
+
+        if timeout_s is None:
+            timeout_s = 300
+
         self.http.post(
             path=f"/pipelines/{pipeline_name}/pause",
         )
@@ -247,11 +262,11 @@ Reason: The pipeline is in a FAILED state due to the following error:
         if error_message is None:
             error_message = "Unable to PAUSE the pipeline.\n"
 
-        start_time = time.time()
+        start_time = time.monotonic()
 
         while True:
             if timeout_s is not None:
-                elapsed = time.time() - start_time
+                elapsed = time.monotonic() - start_time
                 if elapsed > timeout_s:
                     raise TimeoutError(
                         f"Timed out waiting for pipeline {pipeline_name} to pause"
@@ -274,24 +289,24 @@ Reason: The pipeline is in a FAILED state due to the following error:
             )
             time.sleep(0.1)
 
-    def shutdown_pipeline(self, pipeline_name: str, timeout_s: Optional[float] = 15):
+    def shutdown_pipeline(self, pipeline_name: str, timeout_s: Optional[float] = 300):
         """
         Shutdown a pipeline
 
         :param pipeline_name: The name of the pipeline to shut down
-        :param timeout_s: The amount of time in seconds to wait for the pipeline to shut down. Default is 15 seconds
+        :param timeout_s: The amount of time in seconds to wait for the pipeline to shut down. Default is 15 seconds.
         """
 
         if timeout_s is None:
-            timeout_s = 15
+            timeout_s = 300
 
         self.http.post(
             path=f"/pipelines/{pipeline_name}/shutdown",
         )
 
-        start = time.time()
+        start = time.monotonic()
 
-        while time.time() - start < timeout_s:
+        while time.monotonic() - start < timeout_s:
             status = self.get_pipeline(pipeline_name).deployment_status
 
             if status == "Shutdown":
@@ -303,30 +318,9 @@ Reason: The pipeline is in a FAILED state due to the following error:
             )
             time.sleep(0.1)
 
-        # retry sending shutdown request as the pipline hasn't shutdown yet
-        logging.debug(
-            "pipeline %s hasn't shutdown after %s s, retrying", pipeline_name, timeout_s
+        raise FelderaTimeoutError(
+            f"timeout error: pipeline '{pipeline_name}' did not shutdown in {timeout_s} seconds"
         )
-        self.http.post(
-            path=f"/pipelines/{pipeline_name}/shutdown",
-        )
-
-        start = time.time()
-        timeout_s = 5
-
-        while time.time() - start < timeout_s:
-            status = self.get_pipeline(pipeline_name).deployment_status
-
-            if status == "Shutdown":
-                return
-
-            logging.debug(
-                "still shutting down %s, waiting for 100 more milliseconds",
-                pipeline_name,
-            )
-            time.sleep(0.1)
-
-        raise RuntimeError(f"Failed to shutdown pipeline {pipeline_name}")
 
     def checkpoint_pipeline(self, pipeline_name: str):
         """
@@ -463,12 +457,12 @@ Reason: The pipeline is in a FAILED state due to the following error:
             stream=True,
         )
 
-        end = time.time() + timeout if timeout else None
+        end = time.monotonic() + timeout if timeout else None
 
         # Using the default chunk size below makes `iter_lines` extremely
         # inefficient when dealing with long lines.
         for chunk in resp.iter_lines(chunk_size=50000000):
-            if end and time.time() > end:
+            if end and time.monotonic() > end:
                 break
             if chunk:
                 yield json.loads(chunk, parse_float=Decimal)
