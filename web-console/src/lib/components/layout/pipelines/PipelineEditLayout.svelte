@@ -41,6 +41,7 @@
   import NavigationExtrasPopup from '$lib/components/layout/NavigationExtrasPopup.svelte'
   import DoubleClickInput from '$lib/components/input/DoubleClickInput.svelte'
   import { goto } from '$app/navigation'
+  import NavigationExtras from '$lib/components/layout/NavigationExtras.svelte'
 
   let {
     preloaded,
@@ -271,21 +272,19 @@ example = "1.0"`
       </div>
     {/snippet}
     {#snippet beforeEnd()}
-      <!-- {@render pipelineActions({ class: 'hidden lg:flex' })} -->
-      {#if !isTablet.current}
-        <div class="relative">
-          <CreatePipelineButton btnClass="preset-filled-surface-50-950"></CreatePipelineButton>
-        </div>
-      {/if}
       {#if drawer.isMobileDrawer}
         <button
           onclick={() => (drawer.value = !drawer.value)}
-          class="fd fd-menu btn-icon flex text-[20px] preset-tonal-surface"
+          class="fd fd-book-marked btn-icon flex text-[20px] preset-tonal-surface"
           aria-label="Open extras drawer"
         >
         </button>
       {:else}
-        <NavigationExtrasPopup></NavigationExtrasPopup>
+        <NavigationExtras></NavigationExtras>
+        <div class="relative">
+          <CreatePipelineButton class="max-w-64" btnClass="preset-filled-surface-50-950"
+          ></CreatePipelineButton>
+        </div>
       {/if}
     {/snippet}
   </AppHeader>

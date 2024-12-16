@@ -38,13 +38,8 @@
       .with('Resuming', () => ['shutdown', 'delete'])
       .with('ShuttingDown', () => ['shutdown'])
       .with('Unavailable', () => ['delete'])
-      .with(
-        { SqlError: P.any },
-        { RustError: P.any },
-        { SystemError: P.any },
-        { PipelineError: P.any },
-        () => ['delete']
-      )
+      .with({ SqlError: P.any }, { RustError: P.any }, { SystemError: P.any }, () => ['delete'])
+      .with({ PipelineError: P.any }, () => ['shutdown'])
       .exhaustive()
   let selected = $derived(
     join(

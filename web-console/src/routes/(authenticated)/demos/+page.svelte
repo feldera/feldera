@@ -11,16 +11,22 @@
   import CreatePipelineButton from '$lib/components/pipelines/CreatePipelineButton.svelte'
 
   let { data }: { data: PageData } = $props()
-  const breadcrumbs = [
-    {
-      text: 'Home',
-      href: `${base}/`
-    },
+  let demosType = $state<(typeof typeLabels)[number]>('All')
+  const drawer = useDrawer('right')
+  const breadcrumbs = $derived([
+    ...(drawer.isMobileDrawer
+      ? []
+      : [
+          {
+            text: 'Home',
+            href: `${base}/`
+          }
+        ]),
     {
       text: 'Use cases and tutorials',
       href: `${base}/demos/`
     }
-  ]
+  ])
   const typeLabels = ['All', 'Use Cases', 'Tutorials', 'Examples'] as const
   const types = {
     All: undefined,
@@ -28,8 +34,6 @@
     Tutorials: 'Tutorial',
     Examples: 'Example'
   } as const
-  let demosType = $state<(typeof typeLabels)[number]>('All')
-  const drawer = useDrawer('right')
 </script>
 
 <AppHeader>
@@ -65,7 +69,7 @@
     gap="sm:gap-2"
   >
     {#each typeLabels as type}
-      <Segment.Item value={type} base="btn cursor-pointer z-[1] sm:px-8 h-6 text-sm">
+      <Segment.Item value={type} base="btn cursor-pointer z-[1] px-5 sm:px-8 h-6 text-sm">
         {type}
       </Segment.Item>
     {/each}
