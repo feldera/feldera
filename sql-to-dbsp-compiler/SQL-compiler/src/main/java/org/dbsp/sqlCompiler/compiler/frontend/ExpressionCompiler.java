@@ -945,6 +945,8 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 return result;
             }
             case CHAR_LENGTH: {
+                validateArgCount(node, operationName, ops.size(), 1);
+                this.ensureString(ops, 0);
                 return compileFunction(call, node, type, ops, 1);
             }
             case ST_POINT: {
@@ -1017,8 +1019,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                                 ops, 2);
                     }
                     case "log10":
-                    case "ln":
-                    {
+                    case "ln": {
                         // Cast to Double
                         this.ensureDouble(ops, 0);
                         // See: https://github.com/feldera/feldera/issues/1363
@@ -1027,27 +1028,25 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                         }
                         return compilePolymorphicFunction(call, node, type, ops, 1);
                     }
-                    case "log":
-                    {
+                    case "log": {
                         // Turn the arguments into Double
-                        for (int i = 0; i < ops.size(); i++) {
+                        for (int i = 0; i < ops.size(); i++)
                             this.ensureDouble(ops, i);
-                        }
                         return compilePolymorphicFunction(call, node, type, ops, 1, 2);
                     }
                     case "power": {
-                        // power(a, .5) -> sqrt(a).  This is more precise.
-                        // Calcite does the opposite conversion.
-                        assert ops.size() == 2: "Expected two arguments for power function";
-
+                        validateArgCount(node, operationName, ops.size(), 2);
                         // convert integer to double
                         DBSPExpression firstArg = ops.get(0);
-                        if (firstArg.type.is(DBSPTypeInteger.class)) {
+                        if (firstArg.type.is(DBSPTypeInteger.class))
                             this.ensureDouble(ops, 0);
-                        }
+                        if (ops.get(1).type.is(DBSPTypeInteger.class))
+                            this.ensureInteger(ops, 1, 32);
 
                         DBSPExpression argument = ops.get(1);
                         if (argument.is(DBSPDecimalLiteral.class)) {
+                            // power(a, .5) -> sqrt(a).  This is more precise.
+                            // Calcite does the opposite conversion.
                             DBSPDecimalLiteral dec = argument.to(DBSPDecimalLiteral.class);
                             BigDecimal pointFive = new BigDecimal(5).movePointLeft(1);
                             if (!dec.isNull() && Objects.requireNonNull(dec.value).equals(pointFive)) {
@@ -1067,8 +1066,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                             }
                         }
 
-                        return compilePolymorphicFunction(call, node, type,
-                                ops, 2);
+                        return compilePolymorphicFunction(call, node, type, ops, 2);
                     }
                     case "pi": {
                         return compileFunction(call, node, type, ops, 0);
@@ -1135,13 +1133,21 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                             this.ensureInteger(ops, 3, 32);
                         return compileFunction(module_prefix + getCallName(call), node, type, ops, 3, 4);
                     }
-                    case "chr":
+                    case "chr": {
+                        validateArgCount(node, opName, ops.size(), 1);
+                        this.ensureInteger(ops, 0, 32);
+                        return compileFunction(call, node, type, ops, 1);
+                    }
                     case "ascii":
                     case "lower":
                     case "upper":
+                    case "initcap":
+                        validateArgCount(node, opName, ops.size(), 1);
+                        this.ensureString(ops, 0);
+                        // fall through
                     case "to_hex":
                     case "octet_length":
-                    case "initcap": {
+                    {
                         return compileFunction(call, node, type, ops, 1);
                     }
                     case "cardinality": {
@@ -1172,6 +1178,9 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                     case "format_date":
                         return compileFunction(call, node, type, ops, 2);
                     case "replace":
+                        validateArgCount(node, opName, ops.size(), 3);
+                        for (int i = 0; i < ops.size(); i++)
+                            this.ensureString(ops, i);
                         return compileFunction(call, node, type, ops, 3);
                     case "division":
                         return makeBinaryExpression(node, type, DBSPOpcode.DIV, ops);
@@ -1192,6 +1201,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                         if (ops.get(0).type.is(DBSPTypeBinary.class)) {
                             module_prefix = "binary::";
                         } else {
+                            this.ensureString(ops, 0);
                             module_prefix = "string::";
                         }
                         return compileFunction(module_prefix + opName, node, type, ops, 2, 3);
@@ -1201,13 +1211,16 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                     case "concat":
                         return makeBinaryExpressions(node, type, DBSPOpcode.CONCAT, ops);
                     case "concat_ws": {
+                        this.ensureString(ops, 0);
                         DBSPExpression sep = ops.get(0);
                         if (ops.size() == 1)
                             return sep.cast(type);
                         DBSPExpression accumulator = DBSPStringLiteral.none(type.withMayBeNull(true));
-                        for (int i = 1; i < ops.size(); i++)
+                        for (int i = 1; i < ops.size(); i++) {
+                            this.ensureString(ops, i);
                             accumulator = compileFunction(
                                     call, node, type, Linq.list(sep, accumulator, ops.get(i)), 3);
+                        }
                         return accumulator.cast(type);
                     }
                     case "now":
@@ -1330,16 +1343,17 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 }
             }
             case POSITION: {
+                validateArgCount(node, operationName, ops.size(), 2);
                 String module_prefix;
                 if (ops.get(0).type.is(DBSPTypeBinary.class)) {
                     module_prefix = "binary::";
                 } else {
+                    this.ensureString(ops, 0);
                     module_prefix = "string::";
                 }
                 return compileFunction(module_prefix + getCallName(call), node, type, ops, 2);
             }
             case ARRAY_TO_STRING: {
-                // Calcite does not enforce the type of the arguments, why?
                 this.ensureString(ops, 1);
                 if (ops.size() > 2)
                     this.ensureString(ops, 2);
@@ -1348,6 +1362,10 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
             case LIKE:
             // ILIKE will also match LIKE in Calcite, it's just a special case for case-insensitive matching
             case SIMILAR: {
+                validateArgCount(node, operationName, ops.size(), 2, 3);
+                for (int i = 0; i < ops.size(); i++)
+                    // Calcite does not enforce the type of the arguments, why?
+                    this.ensureString(ops, i);
                 return compileFunction(call, node, type, ops, 2, 3);
             }
             case FLOOR:
@@ -1395,10 +1413,13 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 }
                 return new DBSPBinaryExpression(node, type, opcode, op0, index);
             }
+            case TRIM:
+                validateArgCount(node, operationName, ops.size(), 3);
+                this.ensureString(ops, 1);
+                this.ensureString(ops, 2);
+                // fall through
             case TIMESTAMP_DIFF:
-            case TRIM: {
                 return compileKeywordFunction(call, node, null, type, ops, 0, 3);
-            }
             case TUMBLE: {
                 if (ops.size() >= 2) {
                     DBSPExpression op = ops.get(1);
@@ -1552,10 +1573,8 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
             case ARRAY_DISTINCT: {
                 DBSPExpression arg0 = ops.get(0);
                 String method = getCallName(call);
-
                 if (arg0.type.mayBeNull)
                     method += "N";
-
                 return new DBSPApplyExpression(node, method, type, arg0);
             }
             case ARRAY_REVERSE: {
@@ -1685,3 +1704,4 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
         return this.compiler;
     }
 }
+
