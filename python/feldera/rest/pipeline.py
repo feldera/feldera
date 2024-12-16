@@ -37,7 +37,7 @@ class Pipeline:
         self.description: Optional[str] = description
         self.program_config: Mapping[str, Any] = program_config
         self.runtime_config: Mapping[str, Any] = runtime_config
-        self.id: Optional[str] = id
+        self.id: Optional[str] = None
         self.tables: list[SQLTable] = []
         self.views: list[SQLView] = []
         self.deployment_status: Optional[str] = None

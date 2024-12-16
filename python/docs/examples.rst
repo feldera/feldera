@@ -36,11 +36,21 @@ Connecting to Feldera on localhost
 Setting HTTP Connection Timeouts
 ================================
 
+To set a timeout for the HTTP connection, pass the timeout parameter to the `.class:FelderaClient` constructor.
+If the Feldera backend server takes longer than the specified timeout to respond, a
+`.class:FelderaTimeoutError` exception will be raised.
+This example sets the timeout for each HTTP request to 10 seconds.
+
 .. code-block:: python
 
     from feldera import FelderaClient, PipelineBuilder
 
     client = FelderaClient("http://localhost:8080", api_key=api_key, timeout=10)
+
+.. note::
+    This is for an individual HTTP request, and does not affect things like waiting for a pipeline to start,
+    pause, resume and shutdown.
+    To set a timeout for these state transitions, set the parameter `timeout_s` in respective functions.
 
 Creating a Pipeline (OVERWRITING existing pipelines)
 ====================================================
