@@ -16,7 +16,7 @@ class aggtst_row_max_gby(TstView):
         self.data = [
             {
                 "id": 0,
-                "c1": {"expr$0": 4, "expr$1": "hello", "expr$2": "adios"},
+                "c1": {"expr$0": 4, "expr$1": None, "expr$2": "adios"},
                 "c2": {"expr$0": "ola", "expr$1": 3, "expr$2": "ciao"},
             },
             {
@@ -46,7 +46,7 @@ class aggtst_row_max_distinct_gby(TstView):
     def __init__(self):
         # checked manually
         self.data = [
-            {"id": 0, "c1": {"expr$0": 4, "expr$1": "hello", "expr$2": "adios"}},
+            {"id": 0, "c1": {"expr$0": 4, "expr$1": None, "expr$2": "adios"}},
             {"id": 1, "c1": {"expr$0": 7, "expr$1": "hi", "expr$2": "hiya"}},
         ]
         self.sql = """CREATE MATERIALIZED VIEW row_max_distinct_gby AS SELECT
