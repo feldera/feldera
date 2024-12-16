@@ -44,6 +44,21 @@ public class RegressionTests extends SqlIoTest {
     }
 
     @Test
+    public void issue3159() {
+        this.compileRustTestCase("""
+                CREATE TABLE t2(c0 TINYINT);
+                CREATE VIEW v2_optimized AS (SELECT POWER(5, t2.c0) FROM t2);
+                """);
+    }
+
+    @Test
+    public void issue3158() {
+        this.compileRustTestCase("""
+                CREATE TABLE t3(c0 SMALLINT);
+                CREATE VIEW v0 AS (SELECT CHR(t3.c0) FROM t3);""");
+    }
+
+    @Test
     public void issue3109() {
         var ccs = this.getCCS("""
                 CREATE TYPE other_type AS (s string);
