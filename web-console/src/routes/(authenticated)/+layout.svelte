@@ -55,7 +55,7 @@
       width="w-72"
       bind:open={leftDrawer.value}
       side="left"
-      class="bg-white-dark flex flex-col gap-2 p-4"
+      class="bg-white-dark flex flex-col gap-2 pl-4 pr-1 pt-8"
     >
       <PipelineList
         pipelines={pipelineList.pipelines}

@@ -7,7 +7,6 @@
   import { base } from '$app/paths'
   import { type PipelineThumb } from '$lib/services/pipelineManager'
   import { page } from '$app/stores'
-  import { useDrawer } from '$lib/compositions/layout/useDrawer.svelte'
 
   let {
     pipelines = $bindable(),
@@ -28,15 +27,19 @@
   }
 </script>
 
-<div class="flex justify-between p-4 pr-0">
-  <span class="h6">Pipelines</span>
-  <button
-    onclick={onclose}
-    class="fd fd-x btn btn-icon btn-icon-lg"
-    aria-label="Close pipelines list"
-  ></button>
-</div>
-<div class="relative flex flex-col gap-2 overflow-y-auto scrollbar" use:bindScrollY={{ scrollY }}>
+<div
+  class="relative flex flex-col gap-2 pb-4 pr-4 scrollbar"
+  style="overflow-y: overlay;"
+  use:bindScrollY={{ scrollY }}
+>
+  <div class="bg-white-dark sticky top-0 flex justify-between pb-2 pl-4">
+    <span class="h6">Pipelines</span>
+    <button
+      onclick={onclose}
+      class="fd fd-x btn btn-icon btn-icon-lg"
+      aria-label="Close pipelines list"
+    ></button>
+  </div>
   {#each pipelines as pipeline}
     <a
       class="flex flex-nowrap items-center justify-between gap-2 rounded py-2 pl-4 {$page.params
