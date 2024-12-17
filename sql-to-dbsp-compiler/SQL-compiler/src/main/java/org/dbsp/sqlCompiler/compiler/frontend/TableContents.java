@@ -32,7 +32,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateTableStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.DropTableStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.RelStatement;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
+import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
@@ -51,7 +51,7 @@ public class TableContents implements ICompilerComponent {
     final Map<ProgramIdentifier, CreateTableStatement> tableCreation = new HashMap<>();
     /** Keep track of the contents of each table. */
     @Nullable
-    final Map<ProgramIdentifier, DBSPZSetLiteral> tableContents;
+    final Map<ProgramIdentifier, DBSPZSetExpression> tableContents;
     final DBSPCompiler compiler;
 
     public TableContents(DBSPCompiler compiler, boolean trackTableContents) {
@@ -62,7 +62,7 @@ public class TableContents implements ICompilerComponent {
             this.tableContents = null;
     }
 
-    public DBSPZSetLiteral getTableContents(ProgramIdentifier tableName) {
+    public DBSPZSetExpression getTableContents(ProgramIdentifier tableName) {
         if (this.tableContents == null)
             throw new UnsupportedException("Not keeping track of table contents", CalciteObject.EMPTY);
         return Utilities.getExists(this.tableContents, tableName);
@@ -77,7 +77,7 @@ public class TableContents implements ICompilerComponent {
             this.tablesCreated.add(create.relationName);
             if (this.tableContents != null)
                 Utilities.putNew(this.tableContents, create.relationName,
-                        DBSPZSetLiteral.emptyWithElementType(
+                        DBSPZSetExpression.emptyWithElementType(
                                 create.getRowTypeAsTuple(this.compiler.getTypeCompiler())));
         } else if (statement.is(DropTableStatement.class)) {
             DropTableStatement drop = statement.to(DropTableStatement.class);
@@ -93,10 +93,10 @@ public class TableContents implements ICompilerComponent {
         return Utilities.getExists(this.tableCreation, tableName);
     }
 
-    public void addToTable(ProgramIdentifier tableName, DBSPZSetLiteral value) {
+    public void addToTable(ProgramIdentifier tableName, DBSPZSetExpression value) {
         if (this.tableContents == null)
             throw new UnsupportedException("Not keeping track of table contents", CalciteObject.EMPTY);
-        DBSPZSetLiteral table = this.tableContents.get(tableName);
+        DBSPZSetExpression table = this.tableContents.get(tableName);
         table.addUsingCast(value);
     }
 
@@ -120,8 +120,8 @@ public class TableContents implements ICompilerComponent {
     public void clear() {
         if (this.tableContents == null)
             return;
-        for (Map.Entry<ProgramIdentifier, DBSPZSetLiteral> entry: this.tableContents.entrySet()) {
-            entry.setValue(DBSPZSetLiteral.emptyWithElementType(entry.getValue().getElementType()));
+        for (Map.Entry<ProgramIdentifier, DBSPZSetExpression> entry: this.tableContents.entrySet()) {
+            entry.setValue(DBSPZSetExpression.emptyWithElementType(entry.getValue().getElementType()));
         }
     }
 

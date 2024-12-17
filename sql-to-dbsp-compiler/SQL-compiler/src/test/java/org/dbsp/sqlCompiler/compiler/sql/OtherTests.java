@@ -55,7 +55,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStrLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
+import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStatement;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
@@ -204,7 +204,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
     @Test
     public void toCsvTest() {
         DBSPCompiler compiler = testCompiler();
-        DBSPZSetLiteral s = new DBSPZSetLiteral(EndToEndTests.E0, EndToEndTests.E1);
+        DBSPZSetExpression s = new DBSPZSetExpression(EndToEndTests.E0, EndToEndTests.E1);
         StringBuilder builder = new StringBuilder();
         ToCsvVisitor visitor = new ToCsvVisitor(compiler, builder, () -> "");
         visitor.apply(s);
@@ -219,7 +219,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
     @Test
     public void rustCsvTest() throws IOException, InterruptedException {
         DBSPCompiler compiler = testCompiler();
-        DBSPZSetLiteral data = new DBSPZSetLiteral(EndToEndTests.E0, EndToEndTests.E1);
+        DBSPZSetExpression data = new DBSPZSetExpression(EndToEndTests.E0, EndToEndTests.E1);
         File file = File.createTempFile("test", ".csv", new File(BaseSQLTests.rustDirectory));
         file.deleteOnExit();
         ToCsvVisitor.toCsv(compiler, file, data);
@@ -244,7 +244,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
     @Test
     public void rustCsvTest2() throws IOException, InterruptedException {
         DBSPCompiler compiler = this.testCompiler();
-        DBSPZSetLiteral data = new DBSPZSetLiteral(
+        DBSPZSetExpression data = new DBSPZSetExpression(
                 new DBSPTupleExpression(new DBSPI32Literal(1, true)),
                 new DBSPTupleExpression(new DBSPI32Literal(2, true)),
                 new DBSPTupleExpression(DBSPI32Literal.none(
@@ -604,7 +604,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
                 INSERT INTO T VALUES(1, 'x');
                 REMOVE FROM T VALUES(2, 'Y');
                 REMOVE FROM T VALUES(3, 'Z');""").simplify(compiler);
-        DBSPZSetLiteral expected = DBSPZSetLiteral.emptyWithElementType(
+        DBSPZSetExpression expected = DBSPZSetExpression.emptyWithElementType(
                 new DBSPTypeTuple(
                         new DBSPTypeInteger(CalciteObject.EMPTY, 32, true, true),
                         DBSPTypeString.varchar(true)));

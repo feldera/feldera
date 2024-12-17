@@ -20,14 +20,14 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI8Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntervalMillisLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntervalMonthsLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPMapLiteral;
+import org.dbsp.sqlCompiler.ir.expression.DBSPMapExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimeLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimestampLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVariantLiteral;
+import org.dbsp.sqlCompiler.ir.expression.DBSPVariantExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVariantNullLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVecLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
+import org.dbsp.sqlCompiler.ir.expression.DBSPVecExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
@@ -70,7 +70,7 @@ public class VariantTests extends BaseSQLTests {
         // T contains a date with timestamp '100'.
         query = "CREATE VIEW V AS " + query;
         CompilerCircuitStream ccs = this.getCCS(query);
-        DBSPZSetLiteral expectedOutput = new DBSPZSetLiteral(new DBSPTupleExpression(fields));
+        DBSPZSetExpression expectedOutput = new DBSPZSetExpression(new DBSPTupleExpression(fields));
         InputOutputChange change = new InputOutputChange(new Change(), new Change(expectedOutput));
         ccs.addChange(change);
         this.addRustTestCase(ccs);
@@ -80,12 +80,12 @@ public class VariantTests extends BaseSQLTests {
     public void testVariant() {
         // adapted from Calcite variant.iq
         this.testQuery("SELECT CAST(1 AS VARIANT)",
-                new DBSPVariantLiteral(new DBSPI32Literal(1)));
+                new DBSPVariantExpression(new DBSPI32Literal(1)));
         this.testQuery("SELECT TYPEOF(CAST(1 AS VARIANT))",
                 new DBSPStringLiteral("INTEGER"));
         // The runtime knows that this is a TINYINT
         this.testQuery("SELECT CAST(CAST(1 AS TINYINT) AS VARIANT)",
-                new DBSPVariantLiteral(new DBSPI8Literal((byte) 1)));
+                new DBSPVariantExpression(new DBSPI8Literal((byte) 1)));
         // Converting something to VARIANT and back works
         this.testQuery("SELECT CAST(CAST(1 AS VARIANT) AS INT)",
                 new DBSPI32Literal(1, true));
@@ -94,7 +94,7 @@ public class VariantTests extends BaseSQLTests {
                 new DBSPI8Literal((byte) 1, true));
         // Some VARIANT objects when output receive double quotes
         this.testQuery("select CAST('string' as VARIANT)",
-                new DBSPVariantLiteral(new DBSPStringLiteral("string")));
+                new DBSPVariantExpression(new DBSPStringLiteral("string")));
         // CHAR(3) values are represented as VARCHAR in variants
         this.testQuery("SELECT CAST(CAST('abc' AS VARIANT) AS VARCHAR)",
                 new DBSPStringLiteral("abc", true));
@@ -120,12 +120,12 @@ public class VariantTests extends BaseSQLTests {
                 new DBSPBoolLiteral(false));
         // An array of variant values can have values with any underlying type
         this.testQuery("SELECT ARRAY[CAST(1 AS VARIANT), CAST('abc' AS VARIANT)]",
-                new DBSPVecLiteral(
-                        new DBSPVariantLiteral(new DBSPI32Literal(1)),
-                        new DBSPVariantLiteral(new DBSPStringLiteral("abc"))));
+                new DBSPVecExpression(
+                        new DBSPVariantExpression(new DBSPI32Literal(1)),
+                        new DBSPVariantExpression(new DBSPStringLiteral("abc"))));
         // A map with VARCHAR keys and VARIANT values
         this.testQuery("SELECT MAP['a', CAST(1 AS VARIANT), 'b', CAST('abc' AS VARIANT), 'c', CAST(ARRAY[1,2,3] AS VARIANT)]",
-                new DBSPMapLiteral(
+                new DBSPMapExpression(
                         new DBSPTypeMap(
                                 DBSPTypeString.varchar(false),
                                 new DBSPTypeVariant(CalciteObject.EMPTY,
@@ -134,45 +134,45 @@ public class VariantTests extends BaseSQLTests {
                         Linq.list(new DBSPStringLiteral("a"),
                                 new DBSPStringLiteral("b"),
                                 new DBSPStringLiteral("c")),
-                        Linq.list(new DBSPVariantLiteral(new DBSPI32Literal(1)),
-                                new DBSPVariantLiteral(new DBSPStringLiteral("abc")),
-                                new DBSPVariantLiteral(new DBSPVecLiteral(
+                        Linq.list(new DBSPVariantExpression(new DBSPI32Literal(1)),
+                                new DBSPVariantExpression(new DBSPStringLiteral("abc")),
+                                new DBSPVariantExpression(new DBSPVecExpression(
                                         new DBSPI32Literal(1),
                                         new DBSPI32Literal(2),
                                         new DBSPI32Literal(3)
                                 )))));
         // Variant values allow access by index, but return null if they are not arrays
         this.testQuery("SELECT (CAST(1 AS VARIANT))[1]",
-                DBSPZSetLiteral.none(new DBSPTypeVariant(true)));
+                new DBSPTypeVariant(true).none());
         this.testQuery("SELECT CAST(ARRAY[1,2,3] AS VARIANT)[1]",
-                new DBSPVariantLiteral(new DBSPI32Literal(1), true));
+                new DBSPVariantExpression(new DBSPI32Literal(1), true));
         // Acessing items in a VARIANT array returns VARIANT values,
         // even if the array itself does not contain VARIANT values
         // (Otherwise TYPEOF would not compile)
         this.testQuery("SELECT TYPEOF(CAST(ARRAY[1,2,3] AS VARIANT)[1])",
                 new DBSPStringLiteral("INTEGER"));
         this.testQuery("SELECT CAST(DATE '2020-01-01' AS VARIANT)",
-                new DBSPVariantLiteral(new DBSPDateLiteral("2020-01-01")));
+                new DBSPVariantExpression(new DBSPDateLiteral("2020-01-01")));
         this.testQuery("SELECT CAST(TIMESTAMP '2020-01-01 10:00:00' AS VARIANT)",
-                new DBSPVariantLiteral(new DBSPTimestampLiteral(
+                new DBSPVariantExpression(new DBSPTimestampLiteral(
                         CalciteObject.EMPTY,
                         new DBSPTypeTimestamp(CalciteObject.EMPTY, false),
                         new TimestampString("2020-01-01 10:00:00"))));
         this.testQuery("SELECT CAST(TIME '10:01:01' AS VARIANT)",
-                new DBSPVariantLiteral(new DBSPTimeLiteral(
+                new DBSPVariantExpression(new DBSPTimeLiteral(
                         CalciteObject.EMPTY,
                         new DBSPTypeTime(CalciteObject.EMPTY, false),
                         new TimeString("10:01:01"))));
         this.testQuery("SELECT CAST(INTERVAL '4-1' YEARS TO MONTHS AS VARIANT)",
-                new DBSPVariantLiteral(new DBSPIntervalMonthsLiteral(DBSPTypeMonthsInterval.Units.YEARS_TO_MONTHS, 49)));
+                new DBSPVariantExpression(new DBSPIntervalMonthsLiteral(DBSPTypeMonthsInterval.Units.YEARS_TO_MONTHS, 49)));
         this.testQuery("SELECT CAST(INTERVAL '4 10:01' DAYS TO MINUTES AS VARIANT)",
-                new DBSPVariantLiteral(new DBSPIntervalMillisLiteral(1000L * (4 * 86400 + 10 * 3600 + 60), false)));
+                new DBSPVariantExpression(new DBSPIntervalMillisLiteral(1000L * (4 * 86400 + 10 * 3600 + 60), false)));
         this.testQuery("SELECT CAST(CAST(1 AS VARIANT) AS VARIANT)",
-                new DBSPVariantLiteral(new DBSPI32Literal(1)));
+                new DBSPVariantExpression(new DBSPI32Literal(1)));
         this.testQuery("SELECT CAST(x'0102' AS VARIANT)",
-                new DBSPVariantLiteral(new DBSPBinaryLiteral(new byte[] { 1, 2 })));
+                new DBSPVariantExpression(new DBSPBinaryLiteral(new byte[] { 1, 2 })));
         this.testQuery("SELECT CAST(CAST(x'0102' AS VARBINARY) AS VARIANT)",
-                new DBSPVariantLiteral(new DBSPBinaryLiteral(new byte[] { 1, 2 })));
+                new DBSPVariantExpression(new DBSPBinaryLiteral(new byte[] { 1, 2 })));
     }
 
     @Test
@@ -187,18 +187,18 @@ public class VariantTests extends BaseSQLTests {
                 DBSPLiteral.none(new DBSPTypeVariant(true)));
         // One can access fields by index in a VARIANT
         this.testQuery("SELECT CAST(Map[1,'a',2,'b',3,'c'] AS VARIANT)[1]",
-                new DBSPVariantLiteral(new DBSPStringLiteral("a"), true));
+                new DBSPVariantExpression(new DBSPStringLiteral("a"), true));
         this.testQuery("SELECT TYPEOF(CAST(Map[1,'a',2,'b',3,'c'] AS VARIANT)[1])",
                 new DBSPStringLiteral("VARCHAR"));
         // Note that field name is quoted to match the case of the key
         this.testQuery("SELECT CAST(Map['a',1,'b',2,'c',3] AS VARIANT).\"a\"",
-                new DBSPVariantLiteral(new DBSPI32Literal(1), true));
+                new DBSPVariantExpression(new DBSPI32Literal(1), true));
         // Unquoted field may not match, depending on the 'unquotedCasing' compiler flag
         this.testQuery("SELECT CAST(Map['A',1,'b',2,'c',3] AS VARIANT).A",
                 DBSPLiteral.none(new DBSPTypeVariant(true)));
         // The safest way is to index with a string
         this.testQuery("SELECT CAST(Map['a',1,'b',2,'c',3] AS VARIANT)['a']",
-                new DBSPVariantLiteral(new DBSPI32Literal(1), true));
+                new DBSPVariantExpression(new DBSPI32Literal(1), true));
         // Maps can have variant keys too
         // (but you have to index with a variant).
         this.testQuery("SELECT (Map[CAST('a' AS VARIANT), 1, CAST(1 AS VARIANT), 2])[CAST(1 AS VARIANT)]",
@@ -213,42 +213,42 @@ public class VariantTests extends BaseSQLTests {
     @Test
     public void parseJsonTests() {
         this.testQuery("SELECT PARSE_JSON(1)",
-                new DBSPVariantLiteral(
+                new DBSPVariantExpression(
                         new DBSPDecimalLiteral(1)));
         this.testQuery("SELECT PARSE_JSON('1')",
-                new DBSPVariantLiteral(
+                new DBSPVariantExpression(
                         new DBSPDecimalLiteral(1)));
         this.testQuery("SELECT TYPEOF(PARSE_JSON('1'))",
                 new DBSPStringLiteral("DECIMAL"));
         this.testQuery("SELECT PARSE_JSON('\"a\"')",
-                new DBSPVariantLiteral(
+                new DBSPVariantExpression(
                         new DBSPStringLiteral("a")));
         this.testQuery("SELECT PARSE_JSON('false')",
-                new DBSPVariantLiteral(
+                new DBSPVariantExpression(
                         new DBSPBoolLiteral(false)));
         this.testQuery("SELECT PARSE_JSON('null')",
                 DBSPVariantNullLiteral.variantNull());
         this.testQuery("SELECT TYPEOF(PARSE_JSON('null'))",
                 new DBSPStringLiteral("VARIANT"));
         this.testQuery("SELECT PARSE_JSON(null)",
-                DBSPVariantLiteral.none(new DBSPTypeVariant(CalciteObject.EMPTY, true)));
+                new DBSPVariantExpression(null, new DBSPTypeVariant(CalciteObject.EMPTY, true)));
         this.testQuery("SELECT PARSE_JSON('[1,2,3]')",
-                new DBSPVariantLiteral(
-                        new DBSPVecLiteral(
-                                new DBSPVariantLiteral(new DBSPDecimalLiteral(1)),
-                                new DBSPVariantLiteral(new DBSPDecimalLiteral(2)),
-                                new DBSPVariantLiteral(new DBSPDecimalLiteral(3)))));
+                new DBSPVariantExpression(
+                        new DBSPVecExpression(
+                                new DBSPVariantExpression(new DBSPDecimalLiteral(1)),
+                                new DBSPVariantExpression(new DBSPDecimalLiteral(2)),
+                                new DBSPVariantExpression(new DBSPDecimalLiteral(3)))));
         this.testQuery("SELECT PARSE_JSON('{\"a\": 1, \"b\": 2}')",
-                new DBSPVariantLiteral(
-                        new DBSPMapLiteral(
+                new DBSPVariantExpression(
+                        new DBSPMapExpression(
                                 new DBSPTypeMap(
                                         new DBSPTypeVariant(false),
                                         new DBSPTypeVariant(false), false),
                                 Linq.list(
-                                        new DBSPVariantLiteral(new DBSPStringLiteral("a")),
-                                        new DBSPVariantLiteral(new DBSPDecimalLiteral(1)),
-                                        new DBSPVariantLiteral(new DBSPStringLiteral("b")),
-                                        new DBSPVariantLiteral(new DBSPDecimalLiteral(2))))));
+                                        new DBSPVariantExpression(new DBSPStringLiteral("a")),
+                                        new DBSPVariantExpression(new DBSPDecimalLiteral(1)),
+                                        new DBSPVariantExpression(new DBSPStringLiteral("b")),
+                                        new DBSPVariantExpression(new DBSPDecimalLiteral(2))))));
         this.testQuery("""
                 SELECT PARSE_JSON('{"a": 1, "b": [2, 3.3, null]}') = CAST(
                    MAP[
@@ -267,26 +267,26 @@ public class VariantTests extends BaseSQLTests {
         // This is a bug in Calcite, the array should be nullable, and the elements should be nullable too
         this.testQuery("""
                 SELECT CAST(ARRAY[NULL, 1] AS INT ARRAY)""",
-                new DBSPVecLiteral(false,
+                new DBSPVecExpression(false,
                         new DBSPTypeInteger(CalciteObject.EMPTY, 32, true, true).none(),
                         new DBSPI32Literal(1, true)));
         // result is null, since 1 cannot be converted to a string
         this.testQuery("""
                 SELECT CAST(PARSE_JSON('["a", 1]') AS STRING ARRAY)""",
-                new DBSPVecLiteral(
+                new DBSPVecExpression(
                         new DBSPTypeVec(DBSPTypeString.varchar(false), true),
                         true));
         this.testQuery("""
                 SELECT CAST(PARSE_JSON('["a", 1]') AS VARIANT ARRAY)""",
-                new DBSPVecLiteral(true,
-                        new DBSPVariantLiteral(new DBSPStringLiteral("a", true)),
-                        new DBSPVariantLiteral(new DBSPDecimalLiteral(CalciteObject.EMPTY,
+                new DBSPVecExpression(true,
+                        new DBSPVariantExpression(new DBSPStringLiteral("a", true)),
+                        new DBSPVariantExpression(new DBSPDecimalLiteral(CalciteObject.EMPTY,
                                 DBSPTypeDecimal.getDefault(), new BigDecimal(1)))));
 
         this.testQuery("""
                 SELECT CAST(ARRAY[NULL, 1] AS VARIANT)""",
-                new DBSPVariantLiteral(
-                        new DBSPVecLiteral(false,
+                new DBSPVariantExpression(
+                        new DBSPVecExpression(false,
                                 new DBSPTypeInteger(CalciteObject.EMPTY, 32, true, true).none(),
                                 new DBSPI32Literal(1, true))));
     }
@@ -295,28 +295,28 @@ public class VariantTests extends BaseSQLTests {
     public void testCastMap() {
         this.testQuery("""
                 SELECT CAST(PARSE_JSON('{"a": 1}') AS MAP<VARIANT, VARIANT>)""",
-                new DBSPMapLiteral(
+                new DBSPMapExpression(
                         new DBSPTypeMap(
                                 new DBSPTypeVariant(false),
                                 new DBSPTypeVariant(false),
                                 true),
                                 Linq.list(
-                                        new DBSPVariantLiteral(new DBSPStringLiteral("a")),
-                                        new DBSPVariantLiteral(new DBSPDecimalLiteral(1)))));
+                                        new DBSPVariantExpression(new DBSPStringLiteral("a")),
+                                        new DBSPVariantExpression(new DBSPDecimalLiteral(1)))));
         this.testQuery("""
                 SELECT CAST(PARSE_JSON('{"a": 1}') AS MAP<STRING, VARIANT>)""",
-                new DBSPMapLiteral(
+                new DBSPMapExpression(
                         new DBSPTypeMap(
                                 DBSPTypeString.varchar(false),
                                 new DBSPTypeVariant(false),
                                 true),
                         Linq.list(
                                 new DBSPStringLiteral("a"),
-                                new DBSPVariantLiteral(new DBSPDecimalLiteral(1))
+                                new DBSPVariantExpression(new DBSPDecimalLiteral(1))
                         )));
         this.testQuery("""
                 SELECT CAST(PARSE_JSON('{"a": 1}') AS MAP<STRING, INT>)""",
-                new DBSPMapLiteral(
+                new DBSPMapExpression(
                         new DBSPTypeMap(
                                 DBSPTypeString.varchar(false),
                                 new DBSPTypeInteger(CalciteObject.EMPTY, 32, true, false),
@@ -328,7 +328,7 @@ public class VariantTests extends BaseSQLTests {
         // Wrong type, result is NULL
         this.testQuery("""
                 SELECT CAST(PARSE_JSON('{"a": 1}') AS MAP<STRING, TIMESTAMP>)""",
-                new DBSPMapLiteral(
+                new DBSPMapExpression(
                         new DBSPTypeMap(
                                 DBSPTypeString.varchar(false),
                                 new DBSPTypeTimestamp(CalciteObject.EMPTY, false),
@@ -336,7 +336,7 @@ public class VariantTests extends BaseSQLTests {
 
         this.testQuery("""
                 SELECT CAST(MAP['a', 1, 'b', 2] AS VARIANT)""",
-                new DBSPVariantLiteral(new DBSPMapLiteral(
+                new DBSPVariantExpression(new DBSPMapExpression(
                         new DBSPTypeMap(
                                 DBSPTypeString.varchar(false),
                                 new DBSPTypeInteger(CalciteObject.EMPTY, 32, true, false),
@@ -366,7 +366,7 @@ public class VariantTests extends BaseSQLTests {
         this.testQuery("SELECT TO_JSON(PARSE_JSON('null'))",
                 new DBSPStringLiteral("null", true));
         this.testQuery("SELECT TO_JSON(PARSE_JSON(null))",
-                DBSPVariantLiteral.none(DBSPTypeString.varchar(true)));
+                DBSPTypeString.varchar(true).none());
         this.testQuery("SELECT TO_JSON(PARSE_JSON('[1,2,3]'))",
                 new DBSPStringLiteral("[1,2,3]", true));
         this.testQuery("SELECT TO_JSON(PARSE_JSON('{\"a\":1,\"b\":2}'))",
@@ -386,8 +386,8 @@ public class VariantTests extends BaseSQLTests {
     @Test
     public void structTests() {
         this.testQuery("SELECT CAST(s(2, 'a', ARRAY[1, 2, 3]) AS VARIANT)",
-                new DBSPVariantLiteral(
-                        new DBSPMapLiteral(
+                new DBSPVariantExpression(
+                        new DBSPMapExpression(
                                 new DBSPTypeMap(DBSPTypeString.varchar(false),
                                         new DBSPTypeVariant(false), false),
                                 Linq.list(
@@ -396,9 +396,9 @@ public class VariantTests extends BaseSQLTests {
                                         new DBSPStringLiteral("a")
                                 ),
                                 Linq.list(
-                                        new DBSPVariantLiteral(new DBSPI32Literal(2)),
-                                        new DBSPVariantLiteral(new DBSPStringLiteral("a")),
-                                        new DBSPVariantLiteral(new DBSPVecLiteral(
+                                        new DBSPVariantExpression(new DBSPI32Literal(2)),
+                                        new DBSPVariantExpression(new DBSPStringLiteral("a")),
+                                        new DBSPVariantExpression(new DBSPVecExpression(
                                                 new DBSPI32Literal(1),
                                                 new DBSPI32Literal(2),
                                                 new DBSPI32Literal(3)))))));
@@ -408,7 +408,7 @@ public class VariantTests extends BaseSQLTests {
                 new DBSPTupleExpression(true,
                         new DBSPI32Literal(2, true),
                         new DBSPStringLiteral("a", true),
-                        new DBSPVecLiteral(true,
+                        new DBSPVecExpression(true,
                                 new DBSPI32Literal(1, true),
                                 new DBSPI32Literal(2, true),
                                 new DBSPI32Literal(3, true))));
@@ -416,11 +416,11 @@ public class VariantTests extends BaseSQLTests {
                 new DBSPStringLiteral("{\"sa\":[{\"a\":[1,null,3],\"i\":2,\"s\":\"a\"},{\"a\":[],\"i\":3,\"s\":\"b\"}]}", true));
         this.testQuery("SELECT CAST(PARSE_JSON('{\"sa\": [{\"i\": 2, \"s\": \"a\", \"a\": [1, 2, 3]}]}') AS T)",
                 new DBSPTupleExpression(true,
-                        new DBSPVecLiteral(true,
+                        new DBSPVecExpression(true,
                                 new DBSPTupleExpression(true,
                                         new DBSPI32Literal(2, true),
                                         new DBSPStringLiteral("a", true),
-                                        new DBSPVecLiteral(true,
+                                        new DBSPVecExpression(true,
                                                 new DBSPI32Literal(1, true),
                                                 new DBSPI32Literal(2, true),
                                                 new DBSPI32Literal(3, true))))));

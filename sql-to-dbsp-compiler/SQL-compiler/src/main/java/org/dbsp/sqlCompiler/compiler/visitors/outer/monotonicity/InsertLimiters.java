@@ -83,7 +83,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
+import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
@@ -1619,7 +1619,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
             OutputPort collected;
             if (this.errorStreams.isEmpty()) {
                 DBSPSimpleOperator c = new DBSPConstantOperator(operator.getNode(),
-                        DBSPZSetLiteral.emptyWithElementType(operator.getOutputZSetElementType()), false, false);
+                        DBSPZSetExpression.emptyWithElementType(operator.getOutputZSetElementType()), false, false);
                 this.addOperator(c);
                 collected = c.outputPort();
             } else if (this.errorStreams.size() > 1) {

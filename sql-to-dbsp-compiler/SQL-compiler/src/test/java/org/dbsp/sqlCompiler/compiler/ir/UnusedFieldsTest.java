@@ -14,7 +14,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
+import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
@@ -32,7 +32,7 @@ public class UnusedFieldsTest {
         DBSPCompiler compiler = new DBSPCompiler(new CompilerOptions());
         Assert.assertEquals("None::<Vec<String>>",
                 ToRustInnerVisitor.toRustString(compiler, none, false));
-        DBSPZSetLiteral zset = new DBSPZSetLiteral(none);
+        DBSPZSetExpression zset = new DBSPZSetExpression(none);
         Assert.assertEquals("zset!((Vec<s>?)null => 1,)", zset.toString());
         Assert.assertEquals("zset!(None::<Vec<String>> => 1)",
                 ToRustInnerVisitor.toRustString(compiler, zset, false));
@@ -40,7 +40,7 @@ public class UnusedFieldsTest {
         Assert.assertEquals("Tup1::new((Vec<s>?)null, )", tup.toString());
         Assert.assertEquals("Tup1::new(None::<Vec<String>>)",
                 ToRustInnerVisitor.toRustString(compiler, tup, false));
-        DBSPZSetLiteral zset1 = new DBSPZSetLiteral(tup);
+        DBSPZSetExpression zset1 = new DBSPZSetExpression(tup);
         Assert.assertEquals("zset!(Tup1::new((Vec<s>?)null, ) => 1,)", zset1.toString());
         Assert.assertEquals("zset!(Tup1::new(None::<Vec<String>>) => 1)",
                 ToRustInnerVisitor.toRustString(compiler, zset1, false));

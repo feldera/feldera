@@ -67,7 +67,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPISizeLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntervalMillisLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntervalMonthsLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPKeywordLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPMapLiteral;
+import org.dbsp.sqlCompiler.ir.expression.DBSPMapExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPNullLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPRealLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStrLiteral;
@@ -79,10 +79,10 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU16Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU64Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPUSizeLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVariantLiteral;
+import org.dbsp.sqlCompiler.ir.expression.DBSPVariantExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVariantNullLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVecLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
+import org.dbsp.sqlCompiler.ir.expression.DBSPVecExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.statement.DBSPComment;
 import org.dbsp.sqlCompiler.ir.statement.DBSPConstItem;
 import org.dbsp.sqlCompiler.ir.statement.DBSPExpressionStatement;
@@ -431,15 +431,15 @@ public abstract class InnerRewriteVisitor
     }
 
     @Override
-    public VisitDecision preorder(DBSPVariantLiteral expression) {
+    public VisitDecision preorder(DBSPVariantExpression expression) {
         this.push(expression);
         DBSPExpression value = this.transformN(expression.value);
         this.pop(expression);
         DBSPExpression result;
         if (expression.isSqlNull) {
-            result = DBSPVariantLiteral.sqlNull(expression.mayBeNull());
+            result = DBSPVariantExpression.sqlNull(expression.getType().mayBeNull);
         } else {
-            result = new DBSPVariantLiteral(value, expression.type.mayBeNull);
+            result = new DBSPVariantExpression(value, expression.type.mayBeNull);
         }
         this.map(expression, result);
         return VisitDecision.STOP;
@@ -653,20 +653,20 @@ public abstract class InnerRewriteVisitor
     }
 
     @Override
-    public VisitDecision preorder(DBSPVecLiteral expression) {
+    public VisitDecision preorder(DBSPVecExpression expression) {
         this.push(expression);
         DBSPType type = this.transform(expression.getType());
         List<DBSPExpression> data = null;
         if (expression.data != null)
             data = Linq.map(expression.data, this::transform);
         this.pop(expression);
-        DBSPExpression result = new DBSPVecLiteral(expression.getNode(), type, data);
+        DBSPExpression result = new DBSPVecExpression(expression.getNode(), type, data);
         this.map(expression, result);
         return VisitDecision.STOP;
     }
 
     @Override
-    public VisitDecision preorder(DBSPMapLiteral expression) {
+    public VisitDecision preorder(DBSPMapExpression expression) {
         this.push(expression);
         DBSPType type = this.transform(expression.getType());
         List<DBSPExpression> keys = null;
@@ -677,18 +677,18 @@ public abstract class InnerRewriteVisitor
             values = Linq.map(expression.values, this::transform);
         }
         this.pop(expression);
-        DBSPExpression result = new DBSPMapLiteral(type.to(DBSPTypeMap.class), keys, values);
+        DBSPExpression result = new DBSPMapExpression(type.to(DBSPTypeMap.class), keys, values);
         this.map(expression, result);
         return VisitDecision.STOP;
     }
 
     @Override
-    public VisitDecision preorder(DBSPZSetLiteral expression) {
+    public VisitDecision preorder(DBSPZSetExpression expression) {
         this.push(expression);
         DBSPType type = this.transform(expression.getType());
         DBSPTypeZSet zType = type.to(DBSPTypeZSet.class);
-        DBSPZSetLiteral result =
-                DBSPZSetLiteral.emptyWithElementType(zType.getElementType());
+        DBSPZSetExpression result =
+                DBSPZSetExpression.emptyWithElementType(zType.getElementType());
         for (Map.Entry<DBSPExpression, Long> entry: expression.data.entrySet()) {
             DBSPExpression row = this.transform(entry.getKey());
             result.add(row, entry.getValue());

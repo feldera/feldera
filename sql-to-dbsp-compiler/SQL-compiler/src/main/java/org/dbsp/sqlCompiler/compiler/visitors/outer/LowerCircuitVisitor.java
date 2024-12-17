@@ -28,7 +28,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStrLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPUSizeLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVecLiteral;
+import org.dbsp.sqlCompiler.ir.expression.DBSPVecExpression;
 import org.dbsp.sqlCompiler.ir.statement.DBSPExpressionStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStatement;
@@ -157,7 +157,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
         DBSPExpression arrayExpression;
         if (arrayType.mayBeNull) {
             DBSPExpression condition = statement.getVarReference().deref().is_null();
-            DBSPExpression empty = new DBSPVecLiteral(flatmap.getNode(), arrayType.withMayBeNull(false), Linq.list());
+            DBSPExpression empty = new DBSPVecExpression(flatmap.getNode(), arrayType.withMayBeNull(false), Linq.list());
             DBSPExpression contents = statement.getVarReference().deref().applyClone().unwrap();
             arrayExpression = new DBSPIfExpression(flatmap.getNode(), condition, empty, contents);
         } else {

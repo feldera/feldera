@@ -7,7 +7,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
+import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
 
@@ -18,7 +18,7 @@ import java.util.List;
 public final class DBSPNowOperator extends DBSPSimpleOperator {
     // zset!(Tup1::new(now()))
     static DBSPExpression createFunction(CalciteObject node) {
-        return new DBSPZSetLiteral(
+        return new DBSPZSetExpression(
                 new DBSPTupleExpression(new DBSPApplyExpression(
                         "now", new DBSPTypeTimestamp(node, false))));
     }

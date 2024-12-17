@@ -12,7 +12,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStrLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
+import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDate;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
@@ -27,9 +27,9 @@ import java.util.Set;
 /** Represents the contents of a table as produced by INSERT and REMOVE statements */
 public class TableValue {
     public final ProgramIdentifier tableName;
-    public final DBSPZSetLiteral contents;
+    public final DBSPZSetExpression contents;
 
-    public TableValue(ProgramIdentifier tableName, DBSPZSetLiteral contents) {
+    public TableValue(ProgramIdentifier tableName, DBSPZSetExpression contents) {
         this.tableName = tableName;
         this.contents = contents;
     }

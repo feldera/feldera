@@ -89,11 +89,11 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI64Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI8Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPISizeLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIndexedZSetLiteral;
+import org.dbsp.sqlCompiler.ir.expression.DBSPIndexedZSetExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntervalMillisLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntervalMonthsLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPMapLiteral;
+import org.dbsp.sqlCompiler.ir.expression.DBSPMapExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPNullLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPRealLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStrLiteral;
@@ -105,10 +105,10 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU16Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU64Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPUSizeLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVariantLiteral;
+import org.dbsp.sqlCompiler.ir.expression.DBSPVariantExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVariantNullLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVecLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
+import org.dbsp.sqlCompiler.ir.expression.DBSPVecExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.path.DBSPPath;
 import org.dbsp.sqlCompiler.ir.path.DBSPPathSegment;
 import org.dbsp.sqlCompiler.ir.path.DBSPSimplePathSegment;
@@ -405,45 +405,44 @@ public class ToRustInnerVisitor extends InnerVisitor {
     }
 
     @Override
-    public VisitDecision preorder(DBSPVecLiteral literal) {
-        if (literal.isNull())
-            return this.doNull(literal);
-        assert literal.data != null;
-        if (literal.mayBeNull())
+    public VisitDecision preorder(DBSPVecExpression expression) {
+        if (expression.data == null)
+            return this.doNullExpression(expression);
+        if (expression.getType().mayBeNull)
             this.builder.append("Some(");
         this.builder.append("vec!(");
-        if (literal.data.size() > 1)
+        if (expression.data.size() > 1)
             this.builder.increase();
-        for (DBSPExpression exp: literal.data) {
+        for (DBSPExpression exp: expression.data) {
             exp.accept(this);
             this.builder.append(", ");
         }
-        if (literal.data.size() > 1)
+        if (expression.data.size() > 1)
             this.builder.decrease();
         this.builder.append(")");
-        if (literal.mayBeNull())
+        if (expression.getType().mayBeNull)
             this.builder.append(")");
         return VisitDecision.STOP;
     }
 
     @Override
-    public VisitDecision preorder(DBSPMapLiteral literal) {
-        if (literal.isNull())
-            return this.doNull(literal);
-        if (literal.mayBeNull())
+    public VisitDecision preorder(DBSPMapExpression expression) {
+        if (expression.isNull())
+            return this.doNullExpression(expression);
+        if (expression.getType().mayBeNull)
             this.builder.append("Some(");
         this.builder.append("BTreeMap::from([")
                 .increase();
-        assert literal.values != null;
-        for (int i = 0; i < Objects.requireNonNull(literal.keys).size(); i++) {
+        assert expression.values != null;
+        for (int i = 0; i < Objects.requireNonNull(expression.keys).size(); i++) {
             this.builder.append("(");
-            literal.keys.get(i).accept(this);
+            expression.keys.get(i).accept(this);
             this.builder.append(", ");
-            literal.values.get(i).accept(this);
+            expression.values.get(i).accept(this);
             this.builder.append("), ");
         }
         this.builder.decrease().append("])");
-        if (literal.mayBeNull())
+        if (expression.getType().mayBeNull)
             this.builder.append(")");
         return VisitDecision.STOP;
     }
@@ -467,12 +466,12 @@ public class ToRustInnerVisitor extends InnerVisitor {
     }
 
     @Override
-    public VisitDecision preorder(DBSPZSetLiteral literal) {
+    public VisitDecision preorder(DBSPZSetExpression expression) {
         this.builder.append("zset!(");
-        boolean large = literal.data.entrySet().size() > 1;
+        boolean large = expression.data.entrySet().size() > 1;
         if (large)
             this.builder.increase();
-        for (Map.Entry<DBSPExpression, Long> e: literal.data.entrySet()) {
+        for (Map.Entry<DBSPExpression, Long> e: expression.data.entrySet()) {
             e.getKey().accept(this);
             this.builder.append(" => ")
                     .append(e.getValue());
@@ -486,7 +485,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
     }
 
     @Override
-    public VisitDecision preorder(DBSPIndexedZSetLiteral literal) {
+    public VisitDecision preorder(DBSPIndexedZSetExpression expression) {
         this.builder.append("indexed_zset!(")
                 .append(")");
         return VisitDecision.STOP;
@@ -566,20 +565,19 @@ public class ToRustInnerVisitor extends InnerVisitor {
     }
 
     @Override
-    public VisitDecision preorder(DBSPVariantLiteral literal) {
-        if (literal.isNull())
-            return this.doNull(literal);
-        if (literal.mayBeNull())
+    public VisitDecision preorder(DBSPVariantExpression expression) {
+        if (expression.value == null)
+            return this.doNullExpression(expression);
+        if (expression.getType().mayBeNull)
             this.builder.append("Some(");
-        if (literal.isSqlNull) {
+        if (expression.isSqlNull) {
             this.builder.append("Variant::SqlNull");
         } else {
             this.builder.append("Variant::from(");
-            assert literal.value != null;
-            literal.value.accept(this);
+            expression.value.accept(this);
             this.builder.append(")");
         }
-        if (literal.mayBeNull())
+        if (expression.getType().mayBeNull)
             this.builder.append(")");
         return VisitDecision.STOP;
     }

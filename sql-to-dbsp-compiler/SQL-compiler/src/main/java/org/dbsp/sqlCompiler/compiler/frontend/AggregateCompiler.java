@@ -59,7 +59,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI64Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVecLiteral;
+import org.dbsp.sqlCompiler.ir.expression.DBSPVecExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.IsNumericType;
@@ -296,7 +296,7 @@ public class AggregateCompiler implements ICompilerComponent {
         boolean ignoreNulls = this.call.ignoreNulls();
         boolean distinct = this.call.isDistinct();
         DBSPType elementType = this.resultType.to(DBSPTypeVec.class).getElementType();
-        DBSPExpression zero = DBSPVecLiteral.emptyWithElementType(elementType, this.resultType.mayBeNull);
+        DBSPExpression zero = DBSPVecExpression.emptyWithElementType(elementType, this.resultType.mayBeNull);
         DBSPExpression aggregatedValue = this.getAggregatedValue();
         DBSPVariablePath accumulator = this.resultType.var();
         String functionName;

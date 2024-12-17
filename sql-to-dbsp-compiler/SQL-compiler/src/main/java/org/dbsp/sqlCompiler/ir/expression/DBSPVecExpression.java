@@ -21,16 +21,17 @@
  * SOFTWARE.
  */
 
-package org.dbsp.sqlCompiler.ir.expression.literal;
+package org.dbsp.sqlCompiler.ir.expression;
 
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.ISameValue;
-import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
-import org.dbsp.sqlCompiler.ir.expression.IDBSPContainer;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPNullLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeVec;
 import org.dbsp.util.IIndentStream;
@@ -42,23 +43,23 @@ import java.util.List;
 import java.util.Objects;
 
 /** Represents a vector described by its elements. */
-public final class DBSPVecLiteral extends DBSPLiteral implements IDBSPContainer {
+public final class DBSPVecExpression extends DBSPExpression implements IDBSPContainer, ISameValue {
     @Nullable
     public final List<DBSPExpression> data;
     public final DBSPTypeVec vecType;
 
-    public static DBSPVecLiteral emptyWithElementType(DBSPType elementType, boolean mayBeNull) {
-        return new DBSPVecLiteral(CalciteObject.EMPTY, new DBSPTypeVec(elementType, mayBeNull), Linq.list());
+    public static DBSPVecExpression emptyWithElementType(DBSPType elementType, boolean mayBeNull) {
+        return new DBSPVecExpression(CalciteObject.EMPTY, new DBSPTypeVec(elementType, mayBeNull), Linq.list());
     }
 
-    public DBSPVecLiteral(DBSPType vectorType, boolean isNull) {
-        super(CalciteObject.EMPTY, vectorType, isNull);
+    public DBSPVecExpression(DBSPType vectorType, boolean isNull) {
+        super(CalciteObject.EMPTY, vectorType);
         this.data = isNull ? null : new ArrayList<>();
         this.vecType = this.getType().to(DBSPTypeVec.class);
     }
 
-    public DBSPVecLiteral(CalciteObject node, DBSPType type, @Nullable List<DBSPExpression> data) {
-        super(node, type, data == null);
+    public DBSPVecExpression(CalciteObject node, DBSPType type, @Nullable List<DBSPExpression> data) {
+        super(node, type);
         this.vecType = this.getType().to(DBSPTypeVec.class);
         if (data != null) {
             this.data = new ArrayList<>();
@@ -73,8 +74,8 @@ public final class DBSPVecLiteral extends DBSPLiteral implements IDBSPContainer 
         }
     }
 
-    public DBSPVecLiteral(boolean mayBeNull, DBSPExpression... data) {
-        super(CalciteObject.EMPTY, new DBSPTypeVec(data[0].getType(), mayBeNull), false);
+    public DBSPVecExpression(boolean mayBeNull, DBSPExpression... data) {
+        super(CalciteObject.EMPTY, new DBSPTypeVec(data[0].getType(), mayBeNull));
         this.vecType = this.getType().to(DBSPTypeVec.class);
         this.data = new ArrayList<>();
         for (DBSPExpression e: data) {
@@ -85,7 +86,7 @@ public final class DBSPVecLiteral extends DBSPLiteral implements IDBSPContainer 
         }
     }
 
-    public DBSPVecLiteral(DBSPExpression... data) {
+    public DBSPVecExpression(DBSPExpression... data) {
        this(false, data);
     }
 
@@ -102,7 +103,7 @@ public final class DBSPVecLiteral extends DBSPLiteral implements IDBSPContainer 
         return this;
     }
 
-    public void add(DBSPVecLiteral other) {
+    public void add(DBSPVecExpression other) {
         if (!this.getType().sameType(other.getType()))
             throw new InternalCompilerError("Added vectors do not have the same type " +
                     this.getElementType() + " vs " + other.getElementType(), this);
@@ -127,15 +128,27 @@ public final class DBSPVecLiteral extends DBSPLiteral implements IDBSPContainer 
     }
 
     @Override
-    public DBSPLiteral getWithNullable(boolean mayBeNull) {
-        return new DBSPVecLiteral(this.getNode(), this.type.withMayBeNull(mayBeNull), this.data);
+    public boolean sameFields(IDBSPNode other) {
+        DBSPVecExpression otherVec = other.as(DBSPVecExpression.class);
+        if (otherVec == null)
+            return false;
+        if (this.data == null)
+            return otherVec.data == null;
+        if (otherVec.data == null)
+            return false;
+        if (this.data.size() != otherVec.data.size())
+            return false;
+        for (int i = 0; i < this.size(); i++)
+            if (this.data.get(i) != otherVec.data.get(i))
+                return false;
+        return true;
     }
 
     @Override
     public boolean sameValue(@Nullable ISameValue o) {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
-        DBSPVecLiteral that = (DBSPVecLiteral) o;
+        DBSPVecExpression that = (DBSPVecExpression) o;
         if (!Objects.equals(data, that.data)) return false;
         return vecType.equals(that.vecType);
     }
@@ -160,24 +173,22 @@ public final class DBSPVecLiteral extends DBSPLiteral implements IDBSPContainer 
 
     @Override
     public DBSPExpression deepCopy() {
-        return new DBSPVecLiteral(this.getNode(), this.getType(),
+        return new DBSPVecExpression(this.getNode(), this.getType(),
                 this.data != null ? Linq.map(this.data, DBSPExpression::deepCopy) : null);
     }
 
-    @Override
     public boolean isConstant() {
-        return this.isNull || this.data == null || Linq.all(this.data, DBSPExpression::isConstantLiteral);
+        return this.data == null || Linq.all(this.data, DBSPExpression::isConstantLiteral);
     }
 
     @Override
     public boolean equivalent(EquivalenceContext context, DBSPExpression other) {
-        DBSPVecLiteral otherExpression = other.as(DBSPVecLiteral.class);
+        DBSPVecExpression otherExpression = other.as(DBSPVecExpression.class);
         if (otherExpression == null)
             return false;
         return context.equivalent(this.data, otherExpression.data);
     }
 
-    @Override
     public String toSqlString() {
         if (this.data == null)
             return DBSPNullLiteral.NULL;

@@ -32,7 +32,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDoubleLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
+import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.junit.Test;
 
 /**
@@ -55,10 +55,10 @@ public class MultiViewTests extends BaseSQLTests {
         CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
         Change inputChange = EndToEndTests.createInput();
         Change outputChange = new Change(
-                new DBSPZSetLiteral(
+                new DBSPZSetExpression(
                         new DBSPTupleExpression(new DBSPBoolLiteral(true)),
                         new DBSPTupleExpression(new DBSPBoolLiteral(false))),
-                new DBSPZSetLiteral(
+                new DBSPZSetExpression(
                         new DBSPTupleExpression(new DBSPDoubleLiteral(12.0)),
                         new DBSPTupleExpression(new DBSPDoubleLiteral(1.0))));
         ccs.addPair(inputChange, outputChange);
@@ -81,10 +81,10 @@ public class MultiViewTests extends BaseSQLTests {
 
         InputOutputChange change = new InputOutputChange(
                 EndToEndTests.createInput(),
-                new Change(new DBSPZSetLiteral(
+                new Change(new DBSPZSetExpression(
                         new DBSPTupleExpression(new DBSPBoolLiteral(true)),
                         new DBSPTupleExpression(new DBSPBoolLiteral(false))),
-                        new DBSPZSetLiteral(
+                        new DBSPZSetExpression(
                                 new DBSPTupleExpression(new DBSPBoolLiteral(true)),
                                 new DBSPTupleExpression(new DBSPBoolLiteral(false))))
         );
@@ -108,10 +108,10 @@ public class MultiViewTests extends BaseSQLTests {
         CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
         InputOutputChange change = new InputOutputChange(
                 EndToEndTests.createInput(),
-                new Change(new DBSPZSetLiteral(
+                new Change(new DBSPZSetExpression(
                         new DBSPTupleExpression(new DBSPBoolLiteral(true)),
                         new DBSPTupleExpression(new DBSPBoolLiteral(false))),
-                        new DBSPZSetLiteral(
+                        new DBSPZSetExpression(
                                 new DBSPTupleExpression(new DBSPI32Literal(10))))
         );
         ccs.addChange(change);

@@ -1,12 +1,13 @@
-package org.dbsp.sqlCompiler.ir.expression.literal;
+package org.dbsp.sqlCompiler.ir.expression;
 
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.ISameValue;
-import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPNullLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeMap;
 import org.dbsp.util.IIndentStream;
@@ -17,9 +18,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
-/** Represents a map constructor.
- * TODO: this should not extend DBSPLiteral, since it's not always a constant. */
-public final class DBSPMapLiteral extends DBSPLiteral {
+/** Represents a map constructor. */
+public final class DBSPMapExpression extends DBSPExpression implements ISameValue {
     // Both lists must have the same length
     @Nullable
     public final List<DBSPExpression> keys;
@@ -34,6 +34,10 @@ public final class DBSPMapLiteral extends DBSPLiteral {
         return result;
     }
 
+    public boolean isNull() {
+        return this.keys == null;
+    }
+
     public boolean isConstant() {
         return (this.keys == null || Linq.all(this.keys, DBSPExpression::isConstantLiteral)) &&
                 (this.values == null || Linq.all(this.values, DBSPExpression::isConstantLiteral));
@@ -46,12 +50,12 @@ public final class DBSPMapLiteral extends DBSPLiteral {
         return result;
     }
 
-    public DBSPMapLiteral(DBSPTypeMap mapType, List<DBSPExpression> data) {
+    public DBSPMapExpression(DBSPTypeMap mapType, List<DBSPExpression> data) {
         this(mapType, getKeys(data), getValues(data));
     }
 
-    public DBSPMapLiteral(DBSPTypeMap mapType, @Nullable List<DBSPExpression> keys, @Nullable List<DBSPExpression> values) {
-        super(CalciteObject.EMPTY, mapType, keys == null || values == null);
+    public DBSPMapExpression(DBSPTypeMap mapType, @Nullable List<DBSPExpression> keys, @Nullable List<DBSPExpression> values) {
+        super(CalciteObject.EMPTY, mapType);
         this.mapType = this.getType().to(DBSPTypeMap.class);
         if (keys == null) {
             this.keys = null;
@@ -110,12 +114,25 @@ public final class DBSPMapLiteral extends DBSPLiteral {
     }
 
     @Override
-    public DBSPLiteral getWithNullable(boolean mayBeNull) {
-        return new DBSPMapLiteral(this.getType().withMayBeNull(mayBeNull).to(DBSPTypeMap.class),
-                this.keys, this.values);
+    public boolean sameFields(IDBSPNode other) {
+        DBSPMapExpression otherMap = other.as(DBSPMapExpression.class);
+        if (otherMap == null)
+            return false;
+        if (this.keys == null)
+            return otherMap.keys == null;
+        if (otherMap.keys == null)
+            return false;
+        assert this.values != null;
+        assert otherMap.values != null;
+        for (int i = 0; i < this.size(); i++) {
+            if (this.keys.get(i) != otherMap.keys.get(i))
+                return false;
+            if (this.values.get(i) != otherMap.values.get(i))
+                return false;
+        }
+        return true;
     }
 
-    @Override
     public String toSqlString() {
         if (this.keys == null)
             return DBSPNullLiteral.NULL;
@@ -139,7 +156,7 @@ public final class DBSPMapLiteral extends DBSPLiteral {
     public boolean sameValue(@Nullable ISameValue o) {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
-        DBSPMapLiteral that = (DBSPMapLiteral) o;
+        DBSPMapExpression that = (DBSPMapExpression) o;
         if (!Objects.equals(this.keys, that.keys)) return false;
         if (!Objects.equals(this.values, that.values)) return false;
         return mapType.equals(that.mapType);
@@ -168,14 +185,14 @@ public final class DBSPMapLiteral extends DBSPLiteral {
 
     @Override
     public DBSPExpression deepCopy() {
-        return new DBSPMapLiteral(this.mapType,
+        return new DBSPMapExpression(this.mapType,
                 this.keys != null ? Linq.map(this.keys, DBSPExpression::deepCopy) : null,
                 this.values != null ? Linq.map(this.values, DBSPExpression::deepCopy) : null);
     }
 
     @Override
     public boolean equivalent(EquivalenceContext context, DBSPExpression other) {
-        DBSPMapLiteral otherExpression = other.as(DBSPMapLiteral.class);
+        DBSPMapExpression otherExpression = other.as(DBSPMapExpression.class);
         if (otherExpression == null)
             return false;
         return context.equivalent(this.keys, otherExpression.keys) &&

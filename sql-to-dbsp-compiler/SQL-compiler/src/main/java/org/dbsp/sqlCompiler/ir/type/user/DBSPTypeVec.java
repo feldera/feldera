@@ -26,7 +26,7 @@ package org.dbsp.sqlCompiler.ir.type.user;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVecLiteral;
+import org.dbsp.sqlCompiler.ir.expression.DBSPVecExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.ICollectionType;
 
@@ -46,7 +46,7 @@ public class DBSPTypeVec extends DBSPTypeUser implements ICollectionType {
     public DBSPExpression defaultValue() {
         if (this.mayBeNull)
             return this.none();
-        return new DBSPVecLiteral(this, false);
+        return new DBSPVecExpression(this, false);
     }
 
     @Override

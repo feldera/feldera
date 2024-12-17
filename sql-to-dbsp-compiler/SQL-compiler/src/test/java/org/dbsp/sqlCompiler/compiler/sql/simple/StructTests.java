@@ -11,8 +11,8 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVecLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
+import org.dbsp.sqlCompiler.ir.expression.DBSPVecExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
@@ -80,8 +80,8 @@ public class StructTests extends SqlIoTest {
                 address0
         );
         DBSPExpression pair = new DBSPTupleExpression(person0, person0);
-        DBSPZSetLiteral input = new DBSPZSetLiteral(pair);
-        DBSPZSetLiteral output = new DBSPZSetLiteral(new DBSPTupleExpression(address0));
+        DBSPZSetExpression input = new DBSPZSetExpression(pair);
+        DBSPZSetExpression output = new DBSPZSetExpression(new DBSPTupleExpression(address0));
         ccs.addPair(new Change(input), new Change(output));
         this.addRustTestCase(ccs);
     }
@@ -115,8 +115,8 @@ public class StructTests extends SqlIoTest {
                 address0
         );
         DBSPExpression pair = new DBSPTupleExpression(person0, person0);
-        DBSPZSetLiteral input = new DBSPZSetLiteral(pair);
-        DBSPZSetLiteral output = new DBSPZSetLiteral(new DBSPTupleExpression(
+        DBSPZSetExpression input = new DBSPZSetExpression(pair);
+        DBSPZSetExpression output = new DBSPZSetExpression(new DBSPTupleExpression(
                 new DBSPTupleExpression(
                         new DBSPStringLiteral("Broadway", true),
                         new DBSPStringLiteral("New York", true),
@@ -138,12 +138,12 @@ public class StructTests extends SqlIoTest {
         compiler.compileStatements(ddl);
         CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
         DBSPExpression pers = new DBSPTupleExpression(true,
-                new DBSPVecLiteral(true,
+                new DBSPVecExpression(true,
                     new DBSPStringLiteral("Broadway", true),
                     new DBSPStringLiteral("5th Avenue", true),
                     new DBSPStringLiteral("1st Street", true)));
-        DBSPZSetLiteral input = new DBSPZSetLiteral(new DBSPTupleExpression(pers));
-        DBSPZSetLiteral output = new DBSPZSetLiteral(new DBSPTupleExpression(
+        DBSPZSetExpression input = new DBSPZSetExpression(new DBSPTupleExpression(pers));
+        DBSPZSetExpression output = new DBSPZSetExpression(new DBSPTupleExpression(
                         new DBSPStringLiteral("Broadway", true)));
         ccs.addPair(new Change(input), new Change(output));
         this.addRustTestCase(ccs);
@@ -158,12 +158,12 @@ public class StructTests extends SqlIoTest {
             CREATE VIEW V AS SELECT st FROM PERS, UNNEST(PERS.p0.street) AS st;""";
         CompilerCircuitStream ccs = this.getCCS(ddl);
         DBSPExpression pers = new DBSPTupleExpression(true,
-                new DBSPVecLiteral(true,
+                new DBSPVecExpression(true,
                         new DBSPStringLiteral("Broadway", true),
                         new DBSPStringLiteral("5th Avenue", true),
                         new DBSPStringLiteral("1st Street", true)));
-        DBSPZSetLiteral input = new DBSPZSetLiteral(new DBSPTupleExpression(pers));
-        DBSPZSetLiteral output = new DBSPZSetLiteral(
+        DBSPZSetExpression input = new DBSPZSetExpression(new DBSPTupleExpression(pers));
+        DBSPZSetExpression output = new DBSPZSetExpression(
                 new DBSPTupleExpression(
                         new DBSPStringLiteral("Broadway", true)),
                 new DBSPTupleExpression(
@@ -184,7 +184,7 @@ public class StructTests extends SqlIoTest {
         CompilerCircuitStream ccs = this.getCCS(ddl);
         DBSPBoolLiteral t = new DBSPBoolLiteral(true, true);
         DBSPExpression t0 = new DBSPTupleExpression(true,
-                new DBSPVecLiteral(true,
+                new DBSPVecExpression(true,
                         new DBSPTupleExpression(
                                 true, new DBSPI32Literal(0, true), t),
                         new DBSPTupleExpression(
@@ -192,17 +192,17 @@ public class StructTests extends SqlIoTest {
                         new DBSPTupleExpression(
                                 true, new DBSPI32Literal(2, true), t)));
         DBSPExpression t1 = new DBSPTupleExpression(true,
-                new DBSPVecLiteral(true,
+                new DBSPVecExpression(true,
                         new DBSPTupleExpression(
                                 true, new DBSPI32Literal(3, true), t),
                         new DBSPTupleExpression(
                                 true, new DBSPI32Literal(4, true), t),
                         new DBSPTupleExpression(
                                 true, new DBSPI32Literal(5, true), t)));
-        DBSPZSetLiteral input = new DBSPZSetLiteral(
+        DBSPZSetExpression input = new DBSPZSetExpression(
                 new DBSPTupleExpression(t0),
                 new DBSPTupleExpression(t1));
-        DBSPZSetLiteral output = new DBSPZSetLiteral(
+        DBSPZSetExpression output = new DBSPZSetExpression(
                 new DBSPTupleExpression(new DBSPI32Literal(0, true), t),
                 new DBSPTupleExpression(new DBSPI32Literal(1, true), t),
                 new DBSPTupleExpression(new DBSPI32Literal(2, true), t),
@@ -225,19 +225,19 @@ public class StructTests extends SqlIoTest {
         CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
         DBSPBoolLiteral t = new DBSPBoolLiteral(true, true);
         DBSPExpression t0 = new DBSPTupleExpression(true,
-                new DBSPVecLiteral(true,
+                new DBSPVecExpression(true,
                         new DBSPTupleExpression(Linq.list(new DBSPI32Literal(0, true), t), true),
                         new DBSPTupleExpression(Linq.list(new DBSPI32Literal(1, true), t), true),
                         new DBSPTupleExpression(Linq.list(new DBSPI32Literal(2, true), t), true)));
         DBSPExpression t1 = new DBSPTupleExpression(true,
-                new DBSPVecLiteral(true,
+                new DBSPVecExpression(true,
                         new DBSPTupleExpression(Linq.list(new DBSPI32Literal(3, true), t), true),
                         new DBSPTupleExpression(Linq.list(new DBSPI32Literal(4, true), t), true),
                         new DBSPTupleExpression(Linq.list(new DBSPI32Literal(5, true), t), true)));
-        DBSPZSetLiteral input = new DBSPZSetLiteral(
+        DBSPZSetExpression input = new DBSPZSetExpression(
                 new DBSPTupleExpression(t0),
                 new DBSPTupleExpression(t1));
-        DBSPZSetLiteral output = new DBSPZSetLiteral(
+        DBSPZSetExpression output = new DBSPZSetExpression(
                 new DBSPTupleExpression(new DBSPI32Literal(1, true)),
                 new DBSPTupleExpression(new DBSPI32Literal(2, true)),
                 new DBSPTupleExpression(new DBSPI32Literal(3, true)),
@@ -260,19 +260,19 @@ public class StructTests extends SqlIoTest {
         CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
         DBSPBoolLiteral t = new DBSPBoolLiteral(true, true);
         DBSPExpression t0 = new DBSPTupleExpression(true,
-                new DBSPVecLiteral(true,
+                new DBSPVecExpression(true,
                         new DBSPTupleExpression(Linq.list(new DBSPI32Literal(0, true), t), true),
                         new DBSPTupleExpression(Linq.list(new DBSPI32Literal(1, true), t), true),
                         new DBSPTupleExpression(Linq.list(new DBSPI32Literal(2, true), t), true)));
         DBSPExpression t1 = new DBSPTupleExpression(true,
-                new DBSPVecLiteral(true,
+                new DBSPVecExpression(true,
                         new DBSPTupleExpression(Linq.list(new DBSPI32Literal(3, true), t), true),
                         new DBSPTupleExpression(Linq.list(new DBSPI32Literal(4, true), t), true),
                         new DBSPTupleExpression(Linq.list(new DBSPI32Literal(5, true), t), true)));
-        DBSPZSetLiteral input = new DBSPZSetLiteral(
+        DBSPZSetExpression input = new DBSPZSetExpression(
                 new DBSPTupleExpression(t0),
                 new DBSPTupleExpression(t1));
-        DBSPZSetLiteral output = new DBSPZSetLiteral(
+        DBSPZSetExpression output = new DBSPZSetExpression(
                 new DBSPTupleExpression(new DBSPI32Literal(1, true)),
                 new DBSPTupleExpression(new DBSPI32Literal(2, true)),
                 new DBSPTupleExpression(new DBSPI32Literal(3, true)),
@@ -310,11 +310,11 @@ public class StructTests extends SqlIoTest {
         DBSPExpression person0 = new DBSPTupleExpression(true,
                 new DBSPStringLiteral("Mike", true),
                 new DBSPStringLiteral("John", true),
-                new DBSPVecLiteral(true, address0, address0)
+                new DBSPVecExpression(true, address0, address0)
         );
         DBSPExpression data = new DBSPTupleExpression(person0);
-        DBSPZSetLiteral input = new DBSPZSetLiteral(data);
-        DBSPZSetLiteral output = new DBSPZSetLiteral(new DBSPTupleExpression(address0));
+        DBSPZSetExpression input = new DBSPZSetExpression(data);
+        DBSPZSetExpression output = new DBSPZSetExpression(new DBSPTupleExpression(address0));
         ccs.addPair(new Change(input), new Change(output));
         this.addRustTestCase(ccs);
     }
@@ -336,7 +336,7 @@ public class StructTests extends SqlIoTest {
                 DBSPTypeString.varchar(true)
         ).withMayBeNull(true);
         DBSPExpression address0 = tuple.none();
-        DBSPZSetLiteral input = new DBSPZSetLiteral(new DBSPTupleExpression(address0));
+        DBSPZSetExpression input = new DBSPZSetExpression(new DBSPTupleExpression(address0));
         ccs.addPair(new Change(input), new Change());
         this.addRustTestCase(ccs);
     }

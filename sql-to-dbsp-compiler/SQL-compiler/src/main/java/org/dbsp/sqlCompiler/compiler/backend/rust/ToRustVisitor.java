@@ -95,9 +95,9 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.DBSPWindowBoundExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPISizeLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIndexedZSetLiteral;
+import org.dbsp.sqlCompiler.ir.expression.DBSPIndexedZSetExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStrLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
+import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.statement.DBSPFunctionItem;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStructItem;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStructWithHelperItem;
@@ -1509,11 +1509,11 @@ public class ToRustVisitor extends CircuitVisitor {
         operator.function.accept(this.innerVisitor);
         this.builder.append("} else {");
         if (operator.outputType.is(DBSPTypeZSet.class)) {
-            DBSPZSetLiteral empty = DBSPZSetLiteral.emptyWithElementType(
+            DBSPZSetExpression empty = DBSPZSetExpression.emptyWithElementType(
                     operator.getOutputZSetElementType());
             empty.accept(this.innerVisitor);
         } else {
-            assert operator.function.to(DBSPIndexedZSetLiteral.class).isEmpty();
+            assert operator.function.to(DBSPIndexedZSetExpression.class).isEmpty();
             operator.function.accept(this.innerVisitor);
         }
         this.builder.append("}));");

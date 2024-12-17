@@ -20,7 +20,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPUnwrapCustomOrdExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnwrapExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
+import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
@@ -313,7 +313,7 @@ public class Projection extends InnerVisitor {
     /** Compose this projection with a constant expression.
      * @param before Constant expression.
      * @return A new constant expression. */
-    public DBSPExpression applyAfter(DBSPZSetLiteral before) {
+    public DBSPExpression applyAfter(DBSPZSetExpression before) {
         Objects.requireNonNull(this.expression);
 
         Map<DBSPExpression, Long> result = new HashMap<>();
@@ -331,7 +331,7 @@ public class Projection extends InnerVisitor {
                 elementType = simplified.getType();
             result.put(simplified, entry.getValue());
         }
-        return new DBSPZSetLiteral(result, Objects.requireNonNull(elementType));
+        return new DBSPZSetExpression(result, Objects.requireNonNull(elementType));
     }
 
     @Override

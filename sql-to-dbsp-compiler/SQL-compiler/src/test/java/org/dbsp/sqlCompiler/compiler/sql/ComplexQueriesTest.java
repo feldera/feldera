@@ -18,7 +18,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI64Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimestampLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
+import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDouble;
 import org.junit.Assert;
@@ -378,8 +378,8 @@ public class ComplexQueriesTest extends BaseSQLTests {
                     ON t1.cc_num = t2.cc_num);""";
         DBSPCompiler compiler = testCompiler();
         compiler.compileStatements(script);
-        DBSPZSetLiteral[] inputs = new DBSPZSetLiteral[] {
-                new DBSPZSetLiteral(new DBSPTupleExpression(
+        DBSPZSetExpression[] inputs = new DBSPZSetExpression[] {
+                new DBSPZSetExpression(new DBSPTupleExpression(
                         new DBSPDoubleLiteral(0.0),
                         new DBSPStringLiteral("First", true),
                         new DBSPStringLiteral("Male", true),
@@ -394,7 +394,7 @@ public class ComplexQueriesTest extends BaseSQLTests {
                         new DBSPStringLiteral("Job", true),
                         new DBSPStringLiteral("2020-02-20", true)
                         )),
-                new DBSPZSetLiteral(new DBSPTupleExpression(
+                new DBSPZSetExpression(new DBSPTupleExpression(
                         new DBSPTimestampLiteral("2020-02-20 10:00:00", false),
                         new DBSPDoubleLiteral(0.0, false),
                         new DBSPStringLiteral("Merchant", true),
@@ -438,8 +438,8 @@ public class ComplexQueriesTest extends BaseSQLTests {
                 FROM transactions AS t1;""";
         DBSPCompiler compiler = testCompiler();
         compiler.compileStatements(script);
-        DBSPZSetLiteral[] inputs = new DBSPZSetLiteral[] {
-                new DBSPZSetLiteral(new DBSPTupleExpression(
+        DBSPZSetExpression[] inputs = new DBSPZSetExpression[] {
+                new DBSPZSetExpression(new DBSPTupleExpression(
                         new DBSPI64Literal(0, false),
                         new DBSPDoubleLiteral(10.0, true),
                         new DBSPI32Literal(1000)

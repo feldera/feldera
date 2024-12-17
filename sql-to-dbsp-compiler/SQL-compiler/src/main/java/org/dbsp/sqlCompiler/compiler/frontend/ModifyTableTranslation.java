@@ -34,7 +34,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateTableStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.TableModifyStatement;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
+import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
@@ -49,7 +49,7 @@ import java.util.Objects;
 class ModifyTableTranslation implements ICompilerComponent {
     /** Result of the VALUES expression. */
     @Nullable
-    private DBSPZSetLiteral valuesTranslation;
+    private DBSPZSetExpression valuesTranslation;
     /**
      * Maps each column index to the actual destination column index.
      * This handles SQL statements such as
@@ -96,7 +96,7 @@ class ModifyTableTranslation implements ICompilerComponent {
         }
     }
 
-    public DBSPZSetLiteral getTranslation() {
+    public DBSPZSetExpression getTranslation() {
         return Objects.requireNonNull(this.valuesTranslation);
     }
 
@@ -114,11 +114,11 @@ class ModifyTableTranslation implements ICompilerComponent {
         return new DBSPTupleExpression(columns);
     }
 
-    DBSPZSetLiteral permuteColumns(DBSPZSetLiteral source) {
+    DBSPZSetExpression permuteColumns(DBSPZSetExpression source) {
         assert this.resultType != null;
         if (this.columnPermutation == null)
             return source;
-        DBSPZSetLiteral result = DBSPZSetLiteral.emptyWithElementType(this.resultType);
+        DBSPZSetExpression result = DBSPZSetExpression.emptyWithElementType(this.resultType);
         for (Map.Entry<DBSPExpression, Long> e : source.data.entrySet()) {
             DBSPExpression perm = this.permuteColumns(e.getKey());
             result.add(perm, e.getValue());
@@ -126,7 +126,7 @@ class ModifyTableTranslation implements ICompilerComponent {
         return result;
     }
 
-    public void setResult(DBSPZSetLiteral literal) {
+    public void setResult(DBSPZSetExpression literal) {
         if (this.valuesTranslation != null)
             throw new InternalCompilerError("Overwriting logical value translation", CalciteObject.EMPTY);
         this.valuesTranslation = this.permuteColumns(literal);

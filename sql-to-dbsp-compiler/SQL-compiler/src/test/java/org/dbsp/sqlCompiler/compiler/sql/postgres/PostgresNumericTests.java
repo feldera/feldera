@@ -29,7 +29,7 @@ import org.dbsp.sqlCompiler.compiler.sql.tools.CompilerCircuitStream;
 import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
 import org.dbsp.sqlCompiler.compiler.sql.tools.Change;
 import org.dbsp.sqlCompiler.compiler.sql.tools.InputOutputChange;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
+import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
@@ -519,7 +519,7 @@ public class PostgresNumericTests extends SqlIoTest {
         InputOutputChange change = new InputOutputChange(
                 this.getPreparedInputs(compiler),
                 new Change(
-                        DBSPZSetLiteral.emptyWithElementType(new DBSPTypeTuple(
+                        DBSPZSetExpression.emptyWithElementType(new DBSPTypeTuple(
                                 new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,false),
                                 new DBSPTypeInteger(CalciteObject.EMPTY, 64, true,false),
                                 new DBSPTypeDecimal(CalciteObject.EMPTY, WIDTH, 10, false),

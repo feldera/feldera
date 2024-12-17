@@ -58,8 +58,8 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPRealLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPUSizeLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVecLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
+import org.dbsp.sqlCompiler.ir.expression.DBSPVecExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStatement;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -215,19 +215,19 @@ public class DBSPExecutor extends SqlSltTestExecutor {
     }
 
     /** Convert a description of the data in the SLT format to a ZSet. */
-    public static DBSPZSetLiteral convert(@Nullable List<String> data, DBSPTypeZSet outputType) {
+    public static DBSPZSetExpression convert(@Nullable List<String> data, DBSPTypeZSet outputType) {
         if (data == null)
             data = Linq.list();
-        DBSPZSetLiteral result;
+        DBSPZSetExpression result;
         IDBSPContainer container;
         DBSPType elementType = outputType.elementType;
         if (elementType.is(DBSPTypeVec.class)) {
             elementType = elementType.to(DBSPTypeVec.class).getElementType();
-            DBSPVecLiteral vec = DBSPVecLiteral.emptyWithElementType(elementType, false);
+            DBSPVecExpression vec = DBSPVecExpression.emptyWithElementType(elementType, false);
             container = vec;
-            result = new DBSPZSetLiteral(vec);
+            result = new DBSPZSetExpression(vec);
         } else {
-            result = DBSPZSetLiteral.emptyWithElementType(outputType.getElementType());
+            result = DBSPZSetExpression.emptyWithElementType(outputType.getElementType());
             container = result;
         }
         DBSPTypeTuple outputElementType = elementType.to(DBSPTypeTuple.class);
@@ -304,7 +304,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
         }
         assert sink != null;
         DBSPTypeZSet outputType = sink.outputType.to(DBSPTypeZSet.class);
-        DBSPZSetLiteral expectedOutput = null;
+        DBSPZSetExpression expectedOutput = null;
         if (testQuery.outputDescription.hash == null) {
             expectedOutput = DBSPExecutor.convert(testQuery.outputDescription.getQueryResults(), outputType);
         }
@@ -429,7 +429,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
             int outputNumber,
             DBSPFunction inputGeneratingFunction,
             TableContents contents,
-            @Nullable DBSPZSetLiteral output,
+            @Nullable DBSPZSetExpression output,
             SqlTestQueryOutputDescription description) {
         List<DBSPStatement> list = new ArrayList<>();
         DBSPExpression arg = new DBSPApplyExpression(

@@ -11,9 +11,9 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPMapLiteral;
+import org.dbsp.sqlCompiler.ir.expression.DBSPMapExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVecLiteral;
+import org.dbsp.sqlCompiler.ir.expression.DBSPVecExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.IsDateType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
@@ -74,7 +74,7 @@ public class ExpandCasts extends InnerRewriteVisitor {
                 DBSPExpression rec = field.cast(new DBSPTypeVariant(false));
                 values.add(rec);
             }
-            expression = new DBSPMapLiteral(type, keys, values);
+            expression = new DBSPMapExpression(type, keys, values);
         } else if (source.type.is(DBSPTypeVec.class)) {
             // Convert a vector by converting all elements to Variant
             DBSPTypeVec vecType = source.type.to(DBSPTypeVec.class);
@@ -150,7 +150,7 @@ public class ExpandCasts extends InnerRewriteVisitor {
             if (!type.getElementType().equals(sourceVecType.getElementType())) {
                 if (sourceVecType.getElementType().is(DBSPTypeAny.class)) {
                     // This can only happen if the source is an empty vector
-                    return new DBSPVecLiteral(type, false);
+                    return new DBSPVecExpression(type, false);
                 }
                 DBSPVariablePath var = sourceVecType.getElementType().ref().var();
                 DBSPExpression convert = var.deref();
@@ -165,7 +165,7 @@ public class ExpandCasts extends InnerRewriteVisitor {
             }
             return source.cast(type);
         } else if (sourceType.is(DBSPTypeNull.class)) {
-            return DBSPVecLiteral.none(type);
+            return new DBSPVecExpression(type, true);
         } else {
             this.unsupported(source, type);
             // unreachable
