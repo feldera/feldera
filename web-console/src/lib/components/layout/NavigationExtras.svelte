@@ -1,10 +1,7 @@
 <script lang="ts">
   import { useRefreshPipelineList } from '$lib/compositions/pipelines/usePipelineList.svelte'
-  import { base } from '$app/paths'
   import Popup from '$lib/components/common/Popup.svelte'
   import { fade } from 'svelte/transition'
-  import { page } from '$app/stores'
-  import { fromStore } from 'svelte/store'
   import IconDiscord from '$assets/icons/vendors/discord-logomark-color.svg?component'
   import IconSlack from '$assets/icons/vendors/slack-logomark-color.svg?component'
 
@@ -47,8 +44,6 @@
       href: 'https://docs.feldera.com/tutorials/basics/part1'
     }
   ]
-
-  const _page = fromStore(page)
 </script>
 
 {#snippet header(full: string, short: string, isOpen?: boolean)}

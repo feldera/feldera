@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { page } from '$app/stores'
+  import { page } from '$app/state'
   import PipelineEditLayout from '$lib/components/layout/pipelines/PipelineEditLayout.svelte'
   import {
     writablePipeline,
@@ -11,9 +11,9 @@
 
   let { data } = $props()
 
-  let pipelineName = $state(decodeURIComponent($page.params.pipelineName))
+  let pipelineName = $state(decodeURIComponent(page.params.pipelineName))
   $effect(() => {
-    pipelineName = decodeURIComponent($page.params.pipelineName)
+    pipelineName = decodeURIComponent(page.params.pipelineName)
   })
 
   let pipelineCache = $state({ current: data.preloadedPipeline })
