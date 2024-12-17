@@ -4,7 +4,7 @@
   import { useIsMobile, useIsTablet } from '$lib/compositions/layout/useIsMobile.svelte'
   import FelderaLogomarkLight from '$assets/images/feldera-modern/Feldera Logomark Color Dark.svg?component'
   import FelderaLogomarkDark from '$assets/images/feldera-modern/Feldera Logomark Color Light.svg?component'
-  import IconBook from '$assets/icons/feldera-material-icons/book-marked.svg?component'
+  import IconBookOpen from '$assets/icons/feldera-material-icons/book-open.svg?component'
   import IconDiscord from '$assets/icons/vendors/discord-logomark-color.svg?component'
   import ImageBox from '$assets/images/generic/package.svg?component'
   import IconSlack from '$assets/icons/vendors/slack-logomark-color.svg?component'
@@ -33,7 +33,7 @@
     {
       title: 'Documentation',
       href: 'https://docs.feldera.com',
-      icon: IconBook
+      icon: IconBookOpen
     },
     {
       title: 'Join the Conversation',
@@ -106,7 +106,7 @@
           <div class="flex flex-col gap-x-8 gap-y-4 lg:flex-row">
             {#each featured as link}
               <a class="bg-white-dark btn !p-6" href={link.href} target="_blank" rel="noreferrer"
-                ><link.icon class="h-6 w-6"></link.icon>{link.title}</a
+                ><link.icon class="h-6 w-6 fill-surface-950-50"></link.icon>{link.title}</a
               >
             {/each}
           </div>
