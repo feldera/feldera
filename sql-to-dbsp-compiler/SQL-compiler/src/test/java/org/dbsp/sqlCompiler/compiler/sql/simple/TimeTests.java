@@ -38,6 +38,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntervalMonthsLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimestampLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMonthsInterval;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
 import org.junit.Test;
 
@@ -93,11 +94,11 @@ public class TimeTests extends BaseSQLTests {
     @Test
     public void testInterval() {
         this.testQuery("SELECT INTERVAL '20' YEAR",
-                new DBSPIntervalMonthsLiteral(240));
+                new DBSPIntervalMonthsLiteral(DBSPTypeMonthsInterval.Units.YEARS, 240));
         this.testQuery("SELECT INTERVAL '20-7' YEAR TO MONTH",
-                new DBSPIntervalMonthsLiteral(247));
+                new DBSPIntervalMonthsLiteral(DBSPTypeMonthsInterval.Units.YEARS_TO_MONTHS, 247));
         this.testQuery("SELECT INTERVAL '10' MONTH",
-                new DBSPIntervalMonthsLiteral(10));
+                new DBSPIntervalMonthsLiteral(DBSPTypeMonthsInterval.Units.MONTHS, 10));
         this.testQuery("SELECT INTERVAL '10' DAY",
                 new DBSPIntervalMillisLiteral(10L * 86400 * 1000, false));
         this.testQuery("SELECT INTERVAL '10 10' DAY TO HOUR",

@@ -7,8 +7,10 @@ use std::cmp::Ordering;
 use crate::{binary::ByteArray, geopoint::*, interval::*, timestamp::*, variant::*, Weight};
 use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 use dbsp::algebra::{HasOne, HasZero, F32, F64};
+use lazy_static::lazy_static;
 use num::{FromPrimitive, One, ToPrimitive, Zero};
 use num_traits::cast::NumCast;
+use regex::Regex;
 use rust_decimal::{Decimal, RoundingStrategy};
 use std::collections::BTreeMap;
 use std::error::Error;
@@ -1103,8 +1105,61 @@ pub fn cast_to_s_u(value: usize, size: i32, fixed: bool) -> String {
     limit_or_size_string(result, size, fixed)
 }
 
+#[doc(hidden)]
+#[inline]
 pub fn cast_to_s_V(value: Variant, size: i32, fixed: bool) -> String {
     let result: String = value.try_into().unwrap();
+    limit_or_size_string(result, size, fixed)
+}
+
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_s_LongInterval_YEARS(interval: LongInterval, size: i32, fixed: bool) -> String {
+    let years = interval.years();
+    let result = "+".to_string() + &years.to_string();
+    limit_or_size_string(result, size, fixed)
+}
+
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_s_LongInterval_MONTHS(interval: LongInterval, size: i32, fixed: bool) -> String {
+    let months = interval.months();
+    let (months, negate) = if months < 0 {
+        (-months, true)
+    } else {
+        (months, false)
+    };
+    let result: String = (if negate { "-" } else { "+" }).to_string() + &months.to_string();
+    limit_or_size_string(result, size, fixed)
+}
+
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_s_LongInterval_YEARS_TO_MONTHS(
+    interval: LongInterval,
+    size: i32,
+    fixed: bool,
+) -> String {
+    let months = interval.months();
+    let (months, negate) = if months < 0 {
+        (-months, true)
+    } else {
+        (months, false)
+    };
+    let years = months / 12;
+    let months = months % 12;
+    let result: String = (if negate { "-" } else { "+" }).to_string()
+        + &years.to_string()
+        + "-"
+        + &months.to_string();
+    limit_or_size_string(result, size, fixed)
+}
+
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_s_ShortInterval(interval: ShortInterval, size: i32, fixed: bool) -> String {
+    // TODO: this is not right
+    let result: String = interval.milliseconds().to_string();
     limit_or_size_string(result, size, fixed)
 }
 
@@ -1123,6 +1178,10 @@ cast_to_string!(Timestamp, Timestamp);
 cast_to_string!(Time, Time);
 cast_to_string!(Date, Date);
 cast_to_string!(V, Variant);
+cast_to_string!(LongInterval_MONTHS, LongInterval);
+cast_to_string!(LongInterval_YEARS, LongInterval);
+cast_to_string!(LongInterval_YEARS_TO_MONTHS, LongInterval);
+cast_to_string!(ShortInterval, ShortInterval);
 
 #[doc(hidden)]
 #[inline]
@@ -1388,29 +1447,47 @@ pub fn cast_to_i64_Weight(w: Weight) -> i64 {
 
 #[doc(hidden)]
 #[inline]
+pub fn cast_to_i8_ShortInterval(value: ShortInterval) -> i8 {
+    cast_to_i8_i64(cast_to_i64_ShortInterval(value))
+}
+
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_i16_ShortInterval(value: ShortInterval) -> i16 {
+    cast_to_i16_i64(cast_to_i64_ShortInterval(value))
+}
+
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_i32_ShortInterval(value: ShortInterval) -> i32 {
+    cast_to_i32_i64(cast_to_i64_ShortInterval(value))
+}
+
+#[doc(hidden)]
+#[inline]
 pub fn cast_to_i64_ShortInterval(value: ShortInterval) -> i64 {
     value.milliseconds()
 }
 
-#[doc(hidden)]
-#[inline]
-pub fn cast_to_i64N_ShortIntervalN(value: Option<ShortInterval>) -> Option<i64> {
-    let value = value?;
-    Some(cast_to_i64_ShortInterval(value))
-}
+cast_function!(i8, i8, ShortInterval, ShortInterval);
+cast_function!(i16, i16, ShortInterval, ShortInterval);
+cast_function!(i32, i32, ShortInterval, ShortInterval);
+cast_function!(i64, i64, ShortInterval, ShortInterval);
 
 #[doc(hidden)]
 #[inline]
-pub fn cast_to_i64_LongInterval(value: LongInterval) -> i64 {
+pub fn cast_to_i64_LongInterval_YEARS(value: LongInterval) -> i64 {
     value.months() as i64
 }
 
 #[doc(hidden)]
 #[inline]
-pub fn cast_to_i64N_LongIntervalN(value: Option<LongInterval>) -> Option<i64> {
-    let value = value?;
-    Some(cast_to_i64_LongInterval(value))
+pub fn cast_to_i64_LongInterval_MONTHS(value: LongInterval) -> i64 {
+    value.months() as i64
 }
+
+cast_function!(i64, i64, LongInterval_MONTHS, LongInterval);
+cast_function!(i64, i64, LongInterval_YEARS, LongInterval);
 
 //////// casts to Short interval
 
@@ -1438,6 +1515,18 @@ pub fn cast_to_ShortInterval_i64(value: i64) -> ShortInterval {
     ShortInterval::from(value)
 }
 
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_ShortInterval_s(_value: String) -> ShortInterval {
+    panic!("Not yet implemented")
+}
+
+cast_function!(ShortInterval, ShortInterval, i8, i8);
+cast_function!(ShortInterval, ShortInterval, i16, i16);
+cast_function!(ShortInterval, ShortInterval, i32, i32);
+cast_function!(ShortInterval, ShortInterval, i64, i64);
+cast_function!(ShortInterval, ShortInterval, s, String);
+
 //////// casts to ShortIntervalN
 
 #[doc(hidden)]
@@ -1445,6 +1534,122 @@ pub fn cast_to_ShortInterval_i64(value: i64) -> ShortInterval {
 pub fn cast_to_ShortIntervalN_nullN(_value: Option<()>) -> Option<ShortInterval> {
     None
 }
+
+//////// casts to LongInterval
+
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_LongInterval_YEARS_i8(value: i8) -> LongInterval {
+    cast_to_LongInterval_YEARS_i32(value as i32)
+}
+
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_LongInterval_YEARS_i16(value: i16) -> LongInterval {
+    cast_to_LongInterval_YEARS_i32(value as i32)
+}
+
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_LongInterval_YEARS_i32(value: i32) -> LongInterval {
+    LongInterval::from(value * 12)
+}
+
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_LongInterval_YEARS_i64(value: i64) -> LongInterval {
+    cast_to_LongInterval_YEARS_i32(value as i32)
+}
+
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_LongInterval_MONTHS_i8(value: i8) -> LongInterval {
+    cast_to_LongInterval_MONTHS_i32(value as i32)
+}
+
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_LongInterval_MONTHS_i16(value: i16) -> LongInterval {
+    cast_to_LongInterval_MONTHS_i32(value as i32)
+}
+
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_LongInterval_MONTHS_i32(value: i32) -> LongInterval {
+    LongInterval::from(value)
+}
+
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_LongInterval_MONTHS_i64(value: i64) -> LongInterval {
+    cast_to_LongInterval_MONTHS_i32(value as i32)
+}
+
+cast_function!(LongInterval_YEARS, LongInterval, i8, i8);
+cast_function!(LongInterval_YEARS, LongInterval, i16, i16);
+cast_function!(LongInterval_YEARS, LongInterval, i32, i32);
+cast_function!(LongInterval_YEARS, LongInterval, i64, i64);
+cast_function!(LongInterval_MONTHS, LongInterval, i8, i8);
+cast_function!(LongInterval_MONTHS, LongInterval, i16, i16);
+cast_function!(LongInterval_MONTHS, LongInterval, i32, i32);
+cast_function!(LongInterval_MONTHS, LongInterval, i64, i64);
+
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_LongInterval_YEARS_s(value: String) -> LongInterval {
+    let years: i32 = value.parse().unwrap();
+    cast_to_LongInterval_YEARS_i32(years)
+}
+
+lazy_static! {
+    static ref YEARS_TO_MONTHS: Regex = Regex::new(r"^(-?\d+)-(\d+)$").unwrap();
+}
+
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_LongInterval_YEARS_TO_MONTHS_s(value: String) -> LongInterval {
+    if let Some(captures) = YEARS_TO_MONTHS.captures(&value) {
+        let years: i32 = captures
+            .get(1)
+            .unwrap()
+            .as_str()
+            .parse()
+            .expect("YEARS IS not a number.");
+        let months: i32 = captures
+            .get(2)
+            .unwrap()
+            .as_str()
+            .parse()
+            .expect("MONTHS is not a number.");
+        let months = if years < 0 {
+            years - months
+        } else {
+            years + months
+        };
+        LongInterval::new(months)
+    } else {
+        panic!("Interval does not have format 'years-months'");
+    }
+}
+
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_LongInterval_MONTHS_s(value: String) -> LongInterval {
+    let months: i32 = value.parse().unwrap();
+    cast_to_LongInterval_MONTHS_i32(months)
+}
+
+cast_function!(LongInterval_YEARS, LongInterval, s, String);
+cast_function!(LongInterval_YEARS_TO_MONTHS, LongInterval, s, String);
+cast_function!(LongInterval_MONTHS, LongInterval, s, String);
+
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_LongInterval_LongInterval(value: LongInterval) -> LongInterval {
+    value
+}
+
+cast_function!(LongInterval, LongInterval, LongInterval, LongInterval);
 
 //////// casts to Timestamp
 
@@ -1486,6 +1691,18 @@ cast_function!(Timestamp, Timestamp, Date, Date);
 
 #[doc(hidden)]
 #[inline]
+pub fn cast_to_Timestamp_Time(value: Time) -> Timestamp {
+    let dt = NaiveDateTime::new(
+        NaiveDate::from_ymd_opt(1970, 1, 1).unwrap(),
+        value.to_time(),
+    );
+    Timestamp::from_naiveDateTime(dt)
+}
+
+cast_function!(Timestamp, Timestamp, Time, Time);
+
+#[doc(hidden)]
+#[inline]
 pub fn cast_to_TimestampN_nullN(_value: Option<()>) -> Option<Timestamp> {
     None
 }
@@ -1513,6 +1730,36 @@ pub fn cast_to_i64_Timestamp(value: Timestamp) -> i64 {
 }
 
 cast_function!(i64, i64, Timestamp, Timestamp);
+
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_decimal_Timestamp(value: Timestamp, precision: u32, scale: u32) -> Decimal {
+    cast_to_decimal_decimalN(Decimal::from_i64(value.milliseconds()), precision, scale)
+}
+
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_decimalN_Timestamp(value: Timestamp, precision: u32, scale: u32) -> Option<Decimal> {
+    Some(cast_to_decimal_Timestamp(value, precision, scale))
+}
+
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_decimal_TimestampN(value: Option<Timestamp>, precision: u32, scale: u32) -> Decimal {
+    let value = value.unwrap();
+    cast_to_decimal_Timestamp(value, precision, scale)
+}
+
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_decimalN_TimestampN(
+    value: Option<Timestamp>,
+    precision: u32,
+    scale: u32,
+) -> Option<Decimal> {
+    let value = value?;
+    cast_to_decimalN_Timestamp(value, precision, scale)
+}
 
 macro_rules! cast_ts {
     ($type_name: ident, $arg_type: ty) => {
@@ -1729,7 +1976,9 @@ cast_variant!(Time, Time, Time);
 cast_variant!(bytes, ByteArray, Binary);
 cast_variant!(Timestamp, Timestamp, Timestamp);
 cast_variant!(ShortInterval, ShortInterval, ShortInterval);
-cast_variant!(LongInterval, LongInterval, LongInterval);
+cast_variant!(LongInterval_YEARS_TO_MONTHS, LongInterval, LongInterval);
+cast_variant!(LongInterval_MONTHS, LongInterval, LongInterval);
+cast_variant!(LongInterval_YEARS, LongInterval, LongInterval);
 cast_variant!(GeoPoint, GeoPoint, Geometry);
 
 #[doc(hidden)]

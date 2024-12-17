@@ -172,7 +172,8 @@ public class RustSqlRuntimeLibrary {
             if (opcode == DBSPOpcode.TS_SUB || opcode == DBSPOpcode.TS_ADD) {
                 if (ltype.is(IsTimeRelatedType.class)) {
                     assert rtype != null;
-                    suffixReturn = "_" + expectedReturnType.baseTypeWithSuffix();
+                    suffixReturn = "_" + expectedReturnType.to(DBSPTypeBaseType.class).shortName()
+                            + expectedReturnType.nullableSuffix();
                     if (rtype.is(IsNumericType.class))
                         throw new CompilationError("Cannot apply operation " + Utilities.singleQuote(opcode.toString()) +
                                 " to arguments of type " + ltype.asSqlString() + " and " + rtype.asSqlString(), node);

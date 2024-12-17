@@ -15,10 +15,12 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPMapLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVecLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.IsDateType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBaseType;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBinary;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeNull;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
@@ -206,6 +208,9 @@ public class ExpandCasts extends InnerRewriteVisitor {
             result = this.convertToStruct(source, type.to(DBSPTypeTuple.class));
         } else if (type.is(DBSPTypeMap.class)) {
             result = this.convertToMap(source, type.to(DBSPTypeMap.class));
+        } else if (type.is(IsDateType.class) && source.getType().is(DBSPTypeBinary.class)) {
+            throw new UnsupportedException(
+                    "Conversion of BINARY object to " + type.asSqlString() + " not supported", expression.getNode());
         }
         if (result == null)
             // Default implementation

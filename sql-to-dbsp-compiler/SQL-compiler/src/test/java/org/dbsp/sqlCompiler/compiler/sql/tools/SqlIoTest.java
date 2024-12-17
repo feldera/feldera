@@ -41,6 +41,7 @@ public abstract class SqlIoTest extends BaseSQLTests {
         options.languageOptions.generateInputForEveryTable = true;
         options.languageOptions.incrementalize = false;
         options.languageOptions.unrestrictedIOTypes = true;
+        options.ioOptions.verbosity = 1;
         return options;
     }
 

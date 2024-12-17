@@ -245,9 +245,11 @@ public class TypeCompiler implements ICompilerComponent {
                     throw new UnimplementedException("Support for SQL type " + Utilities.singleQuote(tn.getName())
                             + " not yet implemented", node);
                 case INTERVAL_YEAR:
+                    return new DBSPTypeMonthsInterval(node, DBSPTypeMonthsInterval.Units.YEARS, nullable);
                 case INTERVAL_YEAR_MONTH:
+                    return new DBSPTypeMonthsInterval(node, DBSPTypeMonthsInterval.Units.YEARS_TO_MONTHS, nullable);
                 case INTERVAL_MONTH:
-                    return new DBSPTypeMonthsInterval(node, nullable);
+                    return new DBSPTypeMonthsInterval(node, DBSPTypeMonthsInterval.Units.MONTHS, nullable);
                 case INTERVAL_DAY:
                 case INTERVAL_DAY_HOUR:
                 case INTERVAL_DAY_MINUTE:

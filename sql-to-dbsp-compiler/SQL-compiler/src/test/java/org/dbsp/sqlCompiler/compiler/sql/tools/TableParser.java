@@ -273,7 +273,7 @@ public class TableParser {
             result = new DBSPIntervalMillisLiteral(value, fieldType.mayBeNull);
         } else if (fieldType.is(DBSPTypeMonthsInterval.class)) {
             int months = longIntervalToMonths(trimmed);
-            result = new DBSPIntervalMonthsLiteral(months);
+            result = new DBSPIntervalMonthsLiteral(fieldType.to(DBSPTypeMonthsInterval.class).units, months);
         } else if (fieldType.is(DBSPTypeString.class)) {
             // If there is no space in front of the string, we expect a NULL.
             // This is how we distinguish empty strings from nulls.
