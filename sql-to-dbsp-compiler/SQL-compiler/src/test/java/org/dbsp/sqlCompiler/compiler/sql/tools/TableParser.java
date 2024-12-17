@@ -22,8 +22,8 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPRealLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimeLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimestampLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVecLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
+import org.dbsp.sqlCompiler.ir.expression.DBSPVecExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
@@ -302,7 +302,7 @@ public class TableParser {
             DBSPTypeVec vec = fieldType.to(DBSPTypeVec.class);
             // TODO: this does not handle nested arrays
             if (trimmed.equals("NULL")) {
-                result = new DBSPVecLiteral(fieldType, true);
+                result = new DBSPVecExpression(fieldType, true);
             } else {
                 if (!trimmed.startsWith("{") || !trimmed.endsWith("}"))
                     throw new UnimplementedException("Expected array constant to be bracketed: " + trimmed);
@@ -313,10 +313,10 @@ public class TableParser {
                     DBSPExpression[] fields;
                     fields = Linq.map(
                             parts, p -> parseValue(vec.getElementType(), p), DBSPExpression.class);
-                    result = new DBSPVecLiteral(fieldType.mayBeNull, fields);
+                    result = new DBSPVecExpression(fieldType.mayBeNull, fields);
                 } else {
                     // empty vector
-                    result = new DBSPVecLiteral(vec, false);
+                    result = new DBSPVecExpression(vec, false);
                 }
             }
         } else if (fieldType.is(DBSPTypeBinary.class)) {
@@ -387,13 +387,13 @@ public class TableParser {
         extraFields.add(new DBSPTypeInteger(CalciteObject.EMPTY, 64, true, false));
         DBSPType extraOutputType = new DBSPTypeTuple(extraFields);
         Change change = parseTable(table, new DBSPTypeZSet(extraOutputType), -1);
-        DBSPZSetLiteral[] extracted = Linq.map(change.sets, SqlIoTest::extractWeight, DBSPZSetLiteral.class);
+        DBSPZSetExpression[] extracted = Linq.map(change.sets, SqlIoTest::extractWeight, DBSPZSetExpression.class);
         return new Change(extracted);
     }
 
     public static Change parseTable(String table, DBSPType outputType, int rowCount) {
         DBSPTypeZSet zset = outputType.to(DBSPTypeZSet.class);
-        DBSPZSetLiteral result = DBSPZSetLiteral.emptyWithElementType(zset.elementType);
+        DBSPZSetExpression result = DBSPZSetExpression.emptyWithElementType(zset.elementType);
         DBSPTypeTuple tuple = zset.elementType.to(DBSPTypeTuple.class);
 
         // We parse tables in three formats:

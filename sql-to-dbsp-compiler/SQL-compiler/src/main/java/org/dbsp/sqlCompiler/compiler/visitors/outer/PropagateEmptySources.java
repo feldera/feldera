@@ -24,9 +24,8 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateOper
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIndexedZSetLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
+import org.dbsp.sqlCompiler.ir.expression.DBSPIndexedZSetExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 
@@ -45,20 +44,20 @@ public class PropagateEmptySources extends CircuitCloneVisitor {
     @Override
     public void postorder(DBSPConstantOperator operator) {
         DBSPExpression expression = operator.getFunction();
-        if (expression.is(DBSPZSetLiteral.class)) {
-            DBSPZSetLiteral lit = expression.to(DBSPZSetLiteral.class);
+        if (expression.is(DBSPZSetExpression.class)) {
+            DBSPZSetExpression lit = expression.to(DBSPZSetExpression.class);
             if (lit.isEmpty())
                 this.emptySources.add(operator);
         }
         super.postorder(operator);
     }
 
-    DBSPLiteral emptyLiteral(DBSPType type) {
+    DBSPExpression emptySet(DBSPType type) {
         if (type.is(DBSPTypeZSet.class)) {
             DBSPTypeZSet z = type.to(DBSPTypeZSet.class);
-            return DBSPZSetLiteral.emptyWithElementType(z.elementType);
+            return DBSPZSetExpression.emptyWithElementType(z.elementType);
         } else {
-            return new DBSPIndexedZSetLiteral(type.getNode(), type);
+            return new DBSPIndexedZSetExpression(type.getNode(), type);
         }
     }
 
@@ -66,7 +65,7 @@ public class PropagateEmptySources extends CircuitCloneVisitor {
         OutputPort source = this.mapped(operator.input());
         if (this.emptySources.contains(source.node())) {
             DBSPType outputType = operator.getType();
-            DBSPLiteral value = this.emptyLiteral(outputType);
+            DBSPExpression value = this.emptySet(outputType);
             DBSPConstantOperator result = new DBSPConstantOperator(
                     operator.getNode(), value, false, operator.isMultiset);
             this.emptySources.add(result);
@@ -170,7 +169,7 @@ public class PropagateEmptySources extends CircuitCloneVisitor {
             newSources.add(source);
         }
         if (newSources.isEmpty()) {
-            DBSPLiteral value = this.emptyLiteral(operator.getType());
+            DBSPExpression value = this.emptySet(operator.getType());
             DBSPConstantOperator result = new DBSPConstantOperator(
                     operator.getNode(), value, false, operator.isMultiset);
             this.emptySources.add(result);
@@ -189,7 +188,7 @@ public class PropagateEmptySources extends CircuitCloneVisitor {
         OutputPort right = this.mapped(operator.inputs.get(1));
         if (this.emptySources.contains(right.node())) {
             if (this.emptySources.contains(left.node())) {
-                DBSPLiteral value = this.emptyLiteral(operator.getType());
+                DBSPExpression value = this.emptySet(operator.getType());
                 DBSPConstantOperator result = new DBSPConstantOperator(
                         operator.getNode(), value, false, operator.isMultiset);
                 this.emptySources.add(result);
@@ -207,7 +206,7 @@ public class PropagateEmptySources extends CircuitCloneVisitor {
         for (OutputPort prev: operator.inputs) {
             OutputPort source = this.mapped(prev);
             if (this.emptySources.contains(source.node())) {
-                DBSPLiteral value = this.emptyLiteral(operator.getType());
+                DBSPExpression value = this.emptySet(operator.getType());
                 DBSPConstantOperator result = new DBSPConstantOperator(
                         operator.getNode(), value, false, operator.isMultiset);
                 this.emptySources.add(result);
@@ -223,7 +222,7 @@ public class PropagateEmptySources extends CircuitCloneVisitor {
         for (OutputPort prev: operator.inputs) {
             OutputPort source = this.mapped(prev);
             if (this.emptySources.contains(source.node())) {
-                DBSPLiteral value = this.emptyLiteral(operator.getType());
+                DBSPExpression value = this.emptySet(operator.getType());
                 DBSPConstantOperator result = new DBSPConstantOperator(
                         operator.getNode(), value, false, operator.isMultiset);
                 this.emptySources.add(result);

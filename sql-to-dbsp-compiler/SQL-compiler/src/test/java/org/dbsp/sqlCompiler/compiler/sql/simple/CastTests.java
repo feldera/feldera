@@ -36,7 +36,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI64Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
+import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
 import org.junit.Test;
 
@@ -60,7 +60,7 @@ public class CastTests extends SqlIoTest {
     }
 
     public Change createInput() {
-        return new Change(new DBSPZSetLiteral(new DBSPTupleExpression(
+        return new Change(new DBSPZSetExpression(new DBSPTupleExpression(
                 new DBSPI32Literal(10),
                 new DBSPDoubleLiteral(12.0),
                 new DBSPStringLiteral("100100"),
@@ -68,7 +68,7 @@ public class CastTests extends SqlIoTest {
                 new DBSPDecimalLiteral(tenFour, new BigDecimal(100103)))));
     }
 
-    public void testQuery(String query, DBSPZSetLiteral expectedOutput) {
+    public void testQuery(String query, DBSPZSetExpression expectedOutput) {
         query = "CREATE VIEW V AS " + query + ";";
         CompilerCircuitStream ccs = this.getCCS(query);
         InputOutputChange change = new InputOutputChange(this.createInput(), new Change(expectedOutput));
@@ -91,27 +91,27 @@ public class CastTests extends SqlIoTest {
     @Test
     public void intAndString() {
         String query = "SELECT '1' + 2";
-        this.testQuery(query, new DBSPZSetLiteral(
+        this.testQuery(query, new DBSPZSetExpression(
                 new DBSPTupleExpression(new DBSPI32Literal(3))));
     }
 
     @Test
     public void intAndStringTable() {
         String query = "SELECT T.COL1 + T.COL3 FROM T";
-        this.testQuery(query, new DBSPZSetLiteral(
+        this.testQuery(query, new DBSPZSetExpression(
                 new DBSPTupleExpression(new DBSPI32Literal(100110))));
     }
 
     @Test
     public void castNull() {
         String query = "SELECT CAST(NULL AS INTEGER)";
-        this.testQuery(query, new DBSPZSetLiteral(new DBSPTupleExpression(new DBSPI32Literal())));
+        this.testQuery(query, new DBSPZSetExpression(new DBSPTupleExpression(new DBSPI32Literal())));
     }
 
     @Test
     public void castFromFPTest() {
         String query = "SELECT T.COL1 + T.COL2 + T.COL3 + T.COL5 FROM T";
-        this.testQuery(query, new DBSPZSetLiteral(new DBSPTupleExpression(new DBSPDoubleLiteral(200225.0))));
+        this.testQuery(query, new DBSPZSetExpression(new DBSPTupleExpression(new DBSPDoubleLiteral(200225.0))));
     }
 
     @Test
@@ -123,7 +123,7 @@ public class CastTests extends SqlIoTest {
 
     @Test
     public void testFpCasts() {
-        this.testQuery("SELECT CAST(T.COL2 AS BIGINT) FROM T", new DBSPZSetLiteral(new DBSPTupleExpression(new DBSPI64Literal(12))));
+        this.testQuery("SELECT CAST(T.COL2 AS BIGINT) FROM T", new DBSPZSetExpression(new DBSPTupleExpression(new DBSPI64Literal(12))));
     }
 
     @Test

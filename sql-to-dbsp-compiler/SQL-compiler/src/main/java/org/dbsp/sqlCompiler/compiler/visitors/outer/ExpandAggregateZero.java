@@ -12,7 +12,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.TypeCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
+import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.util.Linq;
 
 /** Replaces the {@link DBSPAggregateZeroOperator} with a graph;
@@ -35,7 +35,7 @@ public class ExpandAggregateZero extends CircuitCloneVisitor {
         DBSPSimpleOperator neg = new DBSPNegateOperator(node, map1.outputPort());
         this.addOperator(neg);
         DBSPSimpleOperator constant = new DBSPConstantOperator(
-                node, new DBSPZSetLiteral(emptySetResult), false, false);
+                node, new DBSPZSetExpression(emptySetResult), false, false);
         this.addOperator(constant);
         DBSPSimpleOperator sum = new DBSPSumOperator(node, Linq.list(constant.outputPort(), neg.outputPort(), input));
         this.map(operator, sum);

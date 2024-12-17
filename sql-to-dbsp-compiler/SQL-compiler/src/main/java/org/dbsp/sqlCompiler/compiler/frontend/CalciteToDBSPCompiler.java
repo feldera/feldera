@@ -172,9 +172,9 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntervalMillisLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPMapLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVecLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
+import org.dbsp.sqlCompiler.ir.expression.DBSPMapExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPVecExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.path.DBSPPath;
 import org.dbsp.sqlCompiler.ir.path.DBSPSimplePathSegment;
 import org.dbsp.sqlCompiler.ir.statement.DBSPFunctionItem;
@@ -1570,7 +1570,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 assert elementType.sameType(flatten ? inputRowType.getFieldType(0) : inputRowType);
 
                 row = inputRowType.ref().var();
-                DBSPExpression zero = DBSPVecLiteral.emptyWithElementType(elementType, type.mayBeNull);
+                DBSPExpression zero = DBSPVecExpression.emptyWithElementType(elementType, type.mayBeNull);
                 DBSPVariablePath accumulator = vecType.var();
                 String functionName;
                 DBSPExpression[] arguments;
@@ -1598,7 +1598,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 assert valueType.sameType(inputRowType.getFieldType(1));
 
                 row = inputRowType.ref().var();
-                DBSPExpression zero = new DBSPMapLiteral(mapType, Linq.list());
+                DBSPExpression zero = new DBSPMapExpression(mapType, Linq.list());
                 DBSPVariablePath accumulator = mapType.var();
                 String functionName;
                 DBSPExpression[] arguments;
@@ -1648,7 +1648,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             resultType = sourceType;
         }
 
-        DBSPZSetLiteral result = DBSPZSetLiteral.emptyWithElementType(resultType);
+        DBSPZSetExpression result = DBSPZSetExpression.emptyWithElementType(resultType);
         for (List<RexLiteral> t : values.getTuples()) {
             List<DBSPExpression> expressions = new ArrayList<>();
             if (t.size() != sourceType.size())
@@ -2860,7 +2860,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         CreateTableStatement def = this.tableContents.getTableDefinition(modify.tableName);
         this.modifyTableTranslation = new ModifyTableTranslation(
                 modify, def, targetColumnList, this.compiler);
-        DBSPZSetLiteral result;
+        DBSPZSetExpression result;
         if (modify.rel instanceof LogicalTableScan scan) {
             // Support for INSERT INTO table (SELECT * FROM otherTable)
             ProgramIdentifier sourceTable = Utilities.toIdentifier(scan.getTable().getQualifiedName());
@@ -3025,7 +3025,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         throw new UnsupportedException(statement.getCalciteObject());
     }
 
-    private DBSPZSetLiteral compileConstantProject(LogicalProject project) {
+    private DBSPZSetExpression compileConstantProject(LogicalProject project) {
         // Specialization of the visitor's visit method for LogicalProject
         // Does not produce a DBSPOperator, but only a literal.
         CalciteObject node = CalciteObject.create(project);
@@ -3034,7 +3034,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPType inputType = this.convertType(project.getInput().getRowType(), false);
         DBSPVariablePath row = inputType.ref().var();  // should not be used
         ExpressionCompiler expressionCompiler = new ExpressionCompiler(project, row, this.compiler);
-        DBSPZSetLiteral result = DBSPZSetLiteral.emptyWithElementType(outputElementType);
+        DBSPZSetExpression result = DBSPZSetExpression.emptyWithElementType(outputElementType);
 
         List<DBSPExpression> resultColumns = new ArrayList<>();
         int index = 0;

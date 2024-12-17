@@ -8,7 +8,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
+import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.junit.Test;
 
 public class SerdeTest extends SqlIoTest {
@@ -48,8 +48,8 @@ public class SerdeTest extends SqlIoTest {
         DBSPExpression person0 = new DBSPTupleExpression(
                 new DBSPI32Literal(2, true)
         );
-        DBSPZSetLiteral input = new DBSPZSetLiteral(address0, address1, invalid, invalidJson);
-        DBSPZSetLiteral output = new DBSPZSetLiteral(person0, person0);
+        DBSPZSetExpression input = new DBSPZSetExpression(address0, address1, invalid, invalidJson);
+        DBSPZSetExpression output = new DBSPZSetExpression(person0, person0);
         ccs.addPair(new Change(input), new Change(output));
         this.addRustTestCase(ccs);
     }

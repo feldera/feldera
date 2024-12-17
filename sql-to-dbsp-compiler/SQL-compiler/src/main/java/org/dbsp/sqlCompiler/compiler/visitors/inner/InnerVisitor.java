@@ -92,13 +92,13 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI64Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI8Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPISizeLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIndexedZSetLiteral;
+import org.dbsp.sqlCompiler.ir.expression.DBSPIndexedZSetExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntervalMillisLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntervalMonthsLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPKeywordLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPMapLiteral;
+import org.dbsp.sqlCompiler.ir.expression.DBSPMapExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPNullLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPRealLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStrLiteral;
@@ -110,10 +110,10 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU16Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU64Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPUSizeLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVariantLiteral;
+import org.dbsp.sqlCompiler.ir.expression.DBSPVariantExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVariantNullLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVecLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
+import org.dbsp.sqlCompiler.ir.expression.DBSPVecExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.path.DBSPPath;
 import org.dbsp.sqlCompiler.ir.path.DBSPPathSegment;
 import org.dbsp.sqlCompiler.ir.path.DBSPSimplePathSegment;
@@ -677,20 +677,20 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
         return this.preorder(node.to(DBSPLiteral.class));
     }
 
-    public VisitDecision preorder(DBSPVariantLiteral node) {
-        return this.preorder(node.to(DBSPLiteral.class));
+    public VisitDecision preorder(DBSPVariantExpression node) {
+        return this.preorder(node.to(DBSPExpression.class));
     }
 
     public VisitDecision preorder(DBSPVariantNullLiteral node) {
         return this.preorder(node.to(DBSPLiteral.class));
     }
 
-    public VisitDecision preorder(DBSPVecLiteral node) {
-        return this.preorder(node.to(DBSPLiteral.class));
+    public VisitDecision preorder(DBSPVecExpression node) {
+        return this.preorder(node.to(DBSPExpression.class));
     }
 
-    public VisitDecision preorder(DBSPMapLiteral node) {
-        return this.preorder(node.to(DBSPLiteral.class));
+    public VisitDecision preorder(DBSPMapExpression node) {
+        return this.preorder(node.to(DBSPExpression.class));
     }
 
     public VisitDecision preorder(DBSPTimestampLiteral node) {
@@ -725,12 +725,12 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
         return this.preorder(node.to(DBSPLiteral.class));
     }
 
-    public VisitDecision preorder(DBSPZSetLiteral node) {
-        return this.preorder(node.to(DBSPLiteral.class));
+    public VisitDecision preorder(DBSPZSetExpression node) {
+        return this.preorder(node.to(DBSPExpression.class));
     }
 
-    public VisitDecision preorder(DBSPIndexedZSetLiteral node) {
-        return this.preorder(node.to(DBSPLiteral.class));
+    public VisitDecision preorder(DBSPIndexedZSetExpression node) {
+        return this.preorder(node.to(DBSPExpression.class));
     }
 
     public VisitDecision preorder(DBSPStrLiteral node) {
@@ -1261,20 +1261,20 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
         this.postorder(node.to(DBSPLiteral.class));
     }
 
-    public void postorder(DBSPVariantLiteral node) {
-        this.postorder(node.to(DBSPLiteral.class));
+    public void postorder(DBSPVariantExpression node) {
+        this.postorder(node.to(DBSPExpression.class));
     }
 
     public void postorder(DBSPVariantNullLiteral node) {
         this.postorder(node.to(DBSPLiteral.class));
     }
 
-    public void postorder(DBSPVecLiteral node) {
-        this.postorder(node.to(DBSPLiteral.class));
+    public void postorder(DBSPVecExpression node) {
+        this.postorder(node.to(DBSPExpression.class));
     }
 
-    public void postorder(DBSPMapLiteral node) {
-        this.postorder(node.to(DBSPLiteral.class));
+    public void postorder(DBSPMapExpression node) {
+        this.postorder(node.to(DBSPExpression.class));
     }
 
     public void postorder(DBSPFPLiteral node) {
@@ -1289,12 +1289,12 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
         this.postorder(node.to(DBSPLiteral.class));
     }
 
-    public void postorder(DBSPIndexedZSetLiteral node) {
-        this.postorder(node.to(DBSPLiteral.class));
+    public void postorder(DBSPIndexedZSetExpression node) {
+        this.postorder(node.to(DBSPExpression.class));
     }
 
-    public void postorder(DBSPZSetLiteral node) {
-        this.postorder(node.to(DBSPLiteral.class));
+    public void postorder(DBSPZSetExpression node) {
+        this.postorder(node.to(DBSPExpression.class));
     }
 
     public void postorder(DBSPStrLiteral node) {

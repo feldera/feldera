@@ -34,6 +34,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.*;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
@@ -79,11 +80,11 @@ public class DbspJdbcExecutor extends DBSPExecutor {
         return this.statementExecutor.getConnection();
     }
 
-    public DBSPZSetLiteral getTableContents(ProgramIdentifier table) throws SQLException {
+    public DBSPZSetExpression getTableContents(ProgramIdentifier table) throws SQLException {
         return getTableContents(this.getStatementExecutorConnection(), table);
     }
 
-    public static DBSPZSetLiteral getTableContents(Connection connection, ProgramIdentifier table) throws SQLException {
+    public static DBSPZSetExpression getTableContents(Connection connection, ProgramIdentifier table) throws SQLException {
         List<DBSPExpression> rows = new ArrayList<>();
         try (Statement stmt1 = connection.createStatement()) {
             ResultSet rs = stmt1.executeQuery("SELECT * FROM " + table);
@@ -149,8 +150,8 @@ public class DbspJdbcExecutor extends DBSPExecutor {
             }
             rs.close();
             if (rows.isEmpty())
-                return DBSPZSetLiteral.emptyWithElementType(new DBSPTypeTuple(colTypes));
-            return new DBSPZSetLiteral(rows.toArray(new DBSPExpression[0]));
+                return DBSPZSetExpression.emptyWithElementType(new DBSPTypeTuple(colTypes));
+            return new DBSPZSetExpression(rows.toArray(new DBSPExpression[0]));
         }
     }
 
@@ -159,7 +160,7 @@ public class DbspJdbcExecutor extends DBSPExecutor {
         TableValue[] result = new TableValue[this.tablesCreated.size()];
         int i = 0;
         for (ProgramIdentifier table: this.tablesCreated) {
-            DBSPZSetLiteral lit = this.getTableContents(table);
+            DBSPZSetExpression lit = this.getTableContents(table);
             result[i++] = new TableValue(table, lit);
         }
         return result;

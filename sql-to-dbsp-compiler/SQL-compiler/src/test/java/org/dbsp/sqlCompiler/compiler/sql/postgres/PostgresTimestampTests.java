@@ -34,7 +34,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
+import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.util.Linq;
 import org.junit.Test;
@@ -142,7 +142,7 @@ public class PostgresTimestampTests extends SqlIoTest {
         query = "CREATE VIEW V AS " + query;
         DBSPCompiler compiler = this.compileQuery(query, true);
         CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
-        DBSPZSetLiteral input = compiler.getTableContents().getTableContents(
+        DBSPZSetExpression input = compiler.getTableContents().getTableContents(
                 compiler.canonicalName("TIMESTAMP_TBL", false));
         InputOutputChange change = new InputOutputChange(new Change(input), expectedOutput);
         ccs.addChange(change);
@@ -559,7 +559,7 @@ public class PostgresTimestampTests extends SqlIoTest {
                         new DBSPI32Literal(-(int)(TableParser.shortIntervalToMilliseconds(d) / 60000), true)), DBSPExpression.class);
         String query = "SELECT TIMESTAMPDIFF(MINUTE, d1, timestamp '1997-01-02') AS diff\n" +
                 "   FROM TIMESTAMP_TBL WHERE d1 BETWEEN '1902-01-01' AND '2038-01-01'";
-        this.testQuery(query, new Change(new DBSPZSetLiteral(results)));
+        this.testQuery(query, new Change(new DBSPZSetExpression(results)));
     }
 
     @Test
@@ -662,7 +662,7 @@ public class PostgresTimestampTests extends SqlIoTest {
         DBSPExpression[] results = Linq.map(data, d ->
                 new DBSPTupleExpression(d == null ? DBSPLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,true)) :
                         new DBSPI32Literal(-(int)(TableParser.shortIntervalToMilliseconds(d)/1000), true)), DBSPExpression.class);
-        this.testQuery(query, new Change(new DBSPZSetLiteral(results)));
+        this.testQuery(query, new Change(new DBSPZSetExpression(results)));
     }
 
     @Test

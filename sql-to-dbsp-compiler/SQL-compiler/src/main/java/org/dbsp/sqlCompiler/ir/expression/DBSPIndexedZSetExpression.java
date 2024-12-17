@@ -1,39 +1,42 @@
-package org.dbsp.sqlCompiler.ir.expression.literal;
+package org.dbsp.sqlCompiler.ir.expression;
 
-import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.ISameValue;
-import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
-import org.dbsp.sqlCompiler.ir.expression.IDBSPContainer;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.util.IIndentStream;
 
 import javax.annotation.Nullable;
 
-/** Represents a (constant) IndexedZSet described by its elements.
+/** Represents an IndexedZSet described by its elements.
  * An IndexedZSet is a map from keys to tuples to integer weights.
  * Currently, we only support empty indexed zsets since we found no
  * need for other constants yet. */
-public final class DBSPIndexedZSetLiteral extends DBSPLiteral implements IDBSPContainer {
+public final class DBSPIndexedZSetExpression extends DBSPExpression implements IDBSPContainer, ISameValue {
     public final DBSPTypeIndexedZSet indexedZSetType;
 
-    public DBSPIndexedZSetLiteral(CalciteObject node, DBSPType type) {
-        super(node, type, false);
+    public DBSPIndexedZSetExpression(CalciteObject node, DBSPType type) {
+        super(node, type);
         this.indexedZSetType = this.getType().to(DBSPTypeIndexedZSet.class);
     }
 
-    @Override
     public boolean isConstant() {
         return true;
     }
 
     @Override
     public DBSPExpression deepCopy() {
-        return new DBSPIndexedZSetLiteral(this.getNode(), this.type);
+        return new DBSPIndexedZSetExpression(this.getNode(), this.type);
+    }
+
+    @Override
+    public boolean equivalent(EquivalenceContext context, DBSPExpression other) {
+        throw new UnimplementedException();
     }
 
     @Override
@@ -46,10 +49,8 @@ public final class DBSPIndexedZSetLiteral extends DBSPLiteral implements IDBSPCo
     }
 
     @Override
-    public DBSPLiteral getWithNullable(boolean mayBeNull) {
-        if (mayBeNull)
-            throw new InternalCompilerError("Null indexed zset");
-        return this;
+    public boolean sameFields(IDBSPNode other) {
+        return other.is(DBSPIndexedZSetExpression.class);
     }
 
     public boolean isEmpty() {
@@ -69,18 +70,13 @@ public final class DBSPIndexedZSetLiteral extends DBSPLiteral implements IDBSPCo
     public boolean sameValue(@Nullable ISameValue o) {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
-        DBSPIndexedZSetLiteral that = (DBSPIndexedZSetLiteral) o;
+        DBSPIndexedZSetExpression that = (DBSPIndexedZSetExpression) o;
         return this.indexedZSetType.sameType(that.indexedZSetType);
     }
 
     @Override
     public IDBSPContainer add(DBSPExpression expression) {
         throw new UnimplementedException("Not yet implemented: IndexedZSet literals", expression);
-    }
-
-    @Override
-    public String toSqlString() {
-        throw new InternalCompilerError("Unreachable");
     }
 
     @Override

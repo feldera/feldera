@@ -8,7 +8,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI64Literal;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
+import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
@@ -91,11 +91,11 @@ public abstract class SqlIoTest extends BaseSQLTests {
      * (a, b) -> 4
      * (c, d) -> -1
      */
-    static DBSPZSetLiteral extractWeight(DBSPZSetLiteral data) {
+    static DBSPZSetExpression extractWeight(DBSPZSetExpression data) {
         DBSPTypeTuple rowType = data.getElementType().to(DBSPTypeTuple.class);
         int rowSize = rowType.size();
         DBSPType resultType = rowType.slice(0, rowSize - 1);
-        DBSPZSetLiteral result = DBSPZSetLiteral.emptyWithElementType(resultType);
+        DBSPZSetExpression result = DBSPZSetExpression.emptyWithElementType(resultType);
 
         for (Map.Entry<DBSPExpression, Long> entry: data.data.entrySet()) {
             Long weight = entry.getValue();
@@ -113,17 +113,17 @@ public abstract class SqlIoTest extends BaseSQLTests {
     }
 
     public Change getPreparedInputs(DBSPCompiler compiler) {
-        DBSPZSetLiteral[] inputs = new DBSPZSetLiteral[
+        DBSPZSetExpression[] inputs = new DBSPZSetExpression[
                 compiler.getTableContents().tablesCreated.size()];
         int index = 0;
         for (ProgramIdentifier table: compiler.getTableContents().tablesCreated) {
-            DBSPZSetLiteral data = compiler.getTableContents().getTableContents(table);
+            DBSPZSetExpression data = compiler.getTableContents().getTableContents(table);
             inputs[index++] = data;
         }
         return new Change(inputs);
     }
 
-    public void compare(String query, DBSPZSetLiteral expected, boolean optimize, int rowCount) {
+    public void compare(String query, DBSPZSetExpression expected, boolean optimize, int rowCount) {
         DBSPCompiler compiler = this.testCompiler(optimize);
         this.prepareInputs(compiler);
         compiler.compileStatement("CREATE VIEW VV AS " + query);
@@ -282,7 +282,7 @@ public abstract class SqlIoTest extends BaseSQLTests {
         DBSPCircuit circuit = ccs.circuit;
         DBSPType outputType = circuit.getSingleOutputType();
         Change result = new Change(
-                DBSPZSetLiteral.emptyWithElementType(outputType.to(DBSPTypeZSet.class).getElementType()));
+                DBSPZSetExpression.emptyWithElementType(outputType.to(DBSPTypeZSet.class).getElementType()));
         InputOutputChange ioChange = new InputOutputChange(
                 this.getPreparedInputs(compiler),
                 result

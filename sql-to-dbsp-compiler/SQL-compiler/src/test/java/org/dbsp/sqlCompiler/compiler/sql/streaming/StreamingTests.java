@@ -21,11 +21,11 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDateLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDoubleLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPMapLiteral;
+import org.dbsp.sqlCompiler.ir.expression.DBSPMapExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimestampLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVariantLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
+import org.dbsp.sqlCompiler.ir.expression.DBSPVariantExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDate;
@@ -1794,111 +1794,111 @@ public class StreamingTests extends StreamingTestBase {
         CompilerCircuitStream ccs = this.getCCS(sql);
         ccs.addChange(new InputOutputChange(
                 new Change(
-                        new DBSPZSetLiteral(
+                        new DBSPZSetExpression(
                                 new DBSPTupleExpression(
                                         new DBSPDoubleLiteral(10.0, true),
                                         new DBSPTimestampLiteral("2023-12-30 10:00:00", false)))),
                 new Change(
-                        new DBSPZSetLiteral(
+                        new DBSPZSetExpression(
                                 new DBSPTupleExpression(
                                         new DBSPDoubleLiteral(10.0, true),
                                         new DBSPDateLiteral("2023-12-30", false))),
-                        DBSPZSetLiteral.emptyWithElementType(error))));
+                        DBSPZSetExpression.emptyWithElementType(error))));
         // Insert tuple before waterline, should be dropped
         ccs.addChange(new InputOutputChange(
                 new Change(
-                        new DBSPZSetLiteral(
+                        new DBSPZSetExpression(
                                 new DBSPTupleExpression(
                                         new DBSPDoubleLiteral(10.0, true),
                                         new DBSPTimestampLiteral("2023-12-29 10:00:00", false)))),
                 new Change(
-                        DBSPZSetLiteral.emptyWithElementType(out),
-                        new DBSPZSetLiteral(
+                        DBSPZSetExpression.emptyWithElementType(out),
+                        new DBSPZSetExpression(
                                 new DBSPTupleExpression(
                                         new DBSPStringLiteral("series"),
                                         new DBSPStringLiteral("Late value"),
-                                        new DBSPVariantLiteral(
-                                                new DBSPMapLiteral(map,
+                                        new DBSPVariantExpression(
+                                                new DBSPMapExpression(map,
                                                         Linq.list(
-                                                                new DBSPVariantLiteral(
+                                                                new DBSPVariantExpression(
                                                                         new DBSPStringLiteral("distance")
                                                                 ),
-                                                                new DBSPVariantLiteral(
+                                                                new DBSPVariantExpression(
                                                                         new DBSPDoubleLiteral(10.0)
                                                                 ),
-                                                                new DBSPVariantLiteral(
+                                                                new DBSPVariantExpression(
                                                                         new DBSPStringLiteral("pickup")
                                                                 ),
-                                                                new DBSPVariantLiteral(
+                                                                new DBSPVariantExpression(
                                                                         new DBSPTimestampLiteral("2023-12-29 10:00:00", false)
                                                                 )))))))));
         // Insert tuple after waterline, should change average.
         // Waterline is advanced
         ccs.addChange(new InputOutputChange(
                 new Change(
-                        new DBSPZSetLiteral(
+                        new DBSPZSetExpression(
                                 new DBSPTupleExpression(
                                         new DBSPDoubleLiteral(20.0, true),
                                         new DBSPTimestampLiteral("2023-12-30 10:10:00", false)))),
                 new Change(
-                        new DBSPZSetLiteral(
+                        new DBSPZSetExpression(
                                 new DBSPTupleExpression(
                                         new DBSPDoubleLiteral(15.0, true),
                                         new DBSPDateLiteral("2023-12-30", false)))
                                 .add(
-                                        new DBSPZSetLiteral(
+                                        new DBSPZSetExpression(
                                                 new DBSPTupleExpression(
                                                         new DBSPDoubleLiteral(10.0, true),
                                                         new DBSPDateLiteral("2023-12-30", false))).negate()
                                 ),
-                        DBSPZSetLiteral.emptyWithElementType(error))));
+                        DBSPZSetExpression.emptyWithElementType(error))));
         // Insert tuple before last waterline, should be dropped
         ccs.addChange(new InputOutputChange(
                 new Change(
-                        new DBSPZSetLiteral(
+                        new DBSPZSetExpression(
                                 new DBSPTupleExpression(
                                         new DBSPDoubleLiteral(10.0, true),
                                         new DBSPTimestampLiteral("2023-12-29 09:10:00", false)))),
                 new Change(
-                        DBSPZSetLiteral.emptyWithElementType(out),
-                        new DBSPZSetLiteral(
+                        DBSPZSetExpression.emptyWithElementType(out),
+                        new DBSPZSetExpression(
                                 new DBSPTupleExpression(
                                         new DBSPStringLiteral("series"),
                                         new DBSPStringLiteral("Late value"),
-                                        new DBSPVariantLiteral(
-                                                new DBSPMapLiteral(map,
+                                        new DBSPVariantExpression(
+                                                new DBSPMapExpression(map,
                                                         Linq.list(
-                                                                new DBSPVariantLiteral(
+                                                                new DBSPVariantExpression(
                                                                         new DBSPStringLiteral("distance")
                                                                 ),
-                                                                new DBSPVariantLiteral(
+                                                                new DBSPVariantExpression(
                                                                         new DBSPDoubleLiteral(10.0)
                                                                 ),
-                                                                new DBSPVariantLiteral(
+                                                                new DBSPVariantExpression(
                                                                         new DBSPStringLiteral("pickup")
                                                                 ),
-                                                                new DBSPVariantLiteral(
+                                                                new DBSPVariantExpression(
                                                                         new DBSPTimestampLiteral("2023-12-29 09:10:00", false)
                                                                 )))))))));
         // Insert tuple in the past, but before the last waterline
         ccs.addChange(new InputOutputChange(
                 new Change(
-                        new DBSPZSetLiteral(
+                        new DBSPZSetExpression(
                                 new DBSPTupleExpression(
                                         new DBSPDoubleLiteral(10.0, true),
                                         new DBSPTimestampLiteral("2023-12-30 10:00:00", false)))),
                 new Change(
-                        new DBSPZSetLiteral(
+                        new DBSPZSetExpression(
                                 new DBSPTupleExpression(
                                         new DBSPDoubleLiteral(13.333333333333334, true),
                                         new DBSPDateLiteral("2023-12-30", false)))
                                 .add(
-                                        new DBSPZSetLiteral(
+                                        new DBSPZSetExpression(
                                                 new DBSPTupleExpression(
                                                         new DBSPDoubleLiteral(15.0, true),
                                                         new DBSPDateLiteral("2023-12-30", false))).negate()
                                 ),
-                        DBSPZSetLiteral.emptyWithElementType(error))));
+                        DBSPZSetExpression.emptyWithElementType(error))));
         this.addRustTestCase(ccs);
     }
 
@@ -1926,92 +1926,92 @@ public class StreamingTests extends StreamingTestBase {
         CompilerCircuitStream ccs = this.getCCS(sql, Linq.list("series"), Linq.list("e", "error_view"));
         ccs.addChange(new InputOutputChange(
                 new Change(
-                        new DBSPZSetLiteral(
+                        new DBSPZSetExpression(
                                 new DBSPTupleExpression(
                                         new DBSPDoubleLiteral(10.0, true),
                                         new DBSPTimestampLiteral("2023-12-30 10:00:00", false)))),
                 new Change(
-                        DBSPZSetLiteral.emptyWithElementType(e),
-                        DBSPZSetLiteral.emptyWithElementType(error))));
+                        DBSPZSetExpression.emptyWithElementType(e),
+                        DBSPZSetExpression.emptyWithElementType(error))));
         // Insert tuple before waterline, should be dropped
         ccs.addChange(new InputOutputChange(
                 new Change(
-                        new DBSPZSetLiteral(
+                        new DBSPZSetExpression(
                                 new DBSPTupleExpression(
                                         new DBSPDoubleLiteral(10.0, true),
                                         new DBSPTimestampLiteral("2023-12-29 10:00:00", false)))),
                 new Change(
-                        new DBSPZSetLiteral(
+                        new DBSPZSetExpression(
                                 new DBSPTupleExpression(new DBSPStringLiteral("Late value"))),
-                        new DBSPZSetLiteral(
+                        new DBSPZSetExpression(
                                 new DBSPTupleExpression(
                                         new DBSPStringLiteral("series"),
                                         new DBSPStringLiteral("Late value"),
-                                        new DBSPVariantLiteral(
-                                                new DBSPMapLiteral(map,
+                                        new DBSPVariantExpression(
+                                                new DBSPMapExpression(map,
                                                         Linq.list(
-                                                                new DBSPVariantLiteral(
+                                                                new DBSPVariantExpression(
                                                                         new DBSPStringLiteral("distance")
                                                                 ),
-                                                                new DBSPVariantLiteral(
+                                                                new DBSPVariantExpression(
                                                                         new DBSPDoubleLiteral(10.0)
                                                                 ),
-                                                                new DBSPVariantLiteral(
+                                                                new DBSPVariantExpression(
                                                                         new DBSPStringLiteral("pickup")
                                                                 ),
-                                                                new DBSPVariantLiteral(
+                                                                new DBSPVariantExpression(
                                                                         new DBSPTimestampLiteral("2023-12-29 10:00:00", false)
                                                                 )))))))));
         // Insert tuple after waterline, should change average.
         // Waterline is advanced
         ccs.addChange(new InputOutputChange(
                 new Change(
-                        new DBSPZSetLiteral(
+                        new DBSPZSetExpression(
                                 new DBSPTupleExpression(
                                         new DBSPDoubleLiteral(20.0, true),
                                         new DBSPTimestampLiteral("2023-12-30 10:10:00", false)))),
                 new Change(
-                        DBSPZSetLiteral.emptyWithElementType(e),
-                        DBSPZSetLiteral.emptyWithElementType(error))));
+                        DBSPZSetExpression.emptyWithElementType(e),
+                        DBSPZSetExpression.emptyWithElementType(error))));
         // Insert tuple before last waterline, should be dropped
         ccs.addChange(new InputOutputChange(
                 new Change(
-                        new DBSPZSetLiteral(
+                        new DBSPZSetExpression(
                                 new DBSPTupleExpression(
                                         new DBSPDoubleLiteral(10.0, true),
                                         new DBSPTimestampLiteral("2023-12-29 09:10:00", false)))),
                 new Change(
-                        new DBSPZSetLiteral(
+                        new DBSPZSetExpression(
                                 new DBSPTupleExpression(new DBSPStringLiteral("Late value"))),
-                        new DBSPZSetLiteral(
+                        new DBSPZSetExpression(
                                 new DBSPTupleExpression(
                                         new DBSPStringLiteral("series"),
                                         new DBSPStringLiteral("Late value"),
-                                        new DBSPVariantLiteral(
-                                                new DBSPMapLiteral(map,
+                                        new DBSPVariantExpression(
+                                                new DBSPMapExpression(map,
                                                         Linq.list(
-                                                                new DBSPVariantLiteral(
+                                                                new DBSPVariantExpression(
                                                                         new DBSPStringLiteral("distance")
                                                                 ),
-                                                                new DBSPVariantLiteral(
+                                                                new DBSPVariantExpression(
                                                                         new DBSPDoubleLiteral(10.0)
                                                                 ),
-                                                                new DBSPVariantLiteral(
+                                                                new DBSPVariantExpression(
                                                                         new DBSPStringLiteral("pickup")
                                                                 ),
-                                                                new DBSPVariantLiteral(
+                                                                new DBSPVariantExpression(
                                                                         new DBSPTimestampLiteral("2023-12-29 09:10:00", false)
                                                                 )))))))));
         // Insert tuple in the past, but before the last waterline
         ccs.addChange(new InputOutputChange(
                 new Change(
-                        new DBSPZSetLiteral(
+                        new DBSPZSetExpression(
                                 new DBSPTupleExpression(
                                         new DBSPDoubleLiteral(10.0, true),
                                         new DBSPTimestampLiteral("2023-12-30 10:00:00", false)))),
                 new Change(
-                        DBSPZSetLiteral.emptyWithElementType(e),
-                        DBSPZSetLiteral.emptyWithElementType(error))));
+                        DBSPZSetExpression.emptyWithElementType(e),
+                        DBSPZSetExpression.emptyWithElementType(error))));
         this.addRustTestCase(ccs);
     }
 

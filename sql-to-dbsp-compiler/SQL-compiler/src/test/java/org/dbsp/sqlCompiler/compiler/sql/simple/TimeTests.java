@@ -37,7 +37,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntervalMillisLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntervalMonthsLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimestampLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
+import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMonthsInterval;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
 import org.junit.Test;
@@ -58,14 +58,14 @@ public class TimeTests extends BaseSQLTests {
         query = "CREATE VIEW V AS " + query;
         DBSPCompiler compiler = this.compileQuery(query);
         CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
-        DBSPZSetLiteral expectedOutput = new DBSPZSetLiteral(new DBSPTupleExpression(fields));
+        DBSPZSetExpression expectedOutput = new DBSPZSetExpression(new DBSPTupleExpression(fields));
         InputOutputChange change = new InputOutputChange(this.createInput(), new Change(expectedOutput));
         ccs.addChange(change);
         this.addRustTestCase(ccs);
     }
 
     public Change createInput() {
-        return new Change(new DBSPZSetLiteral(new DBSPTupleExpression(new DBSPTimestampLiteral(100))));
+        return new Change(new DBSPZSetExpression(new DBSPTupleExpression(new DBSPTimestampLiteral(100))));
     }
 
     @Test

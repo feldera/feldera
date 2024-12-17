@@ -1,12 +1,13 @@
-package org.dbsp.sqlCompiler.ir.expression.literal;
+package org.dbsp.sqlCompiler.ir.expression;
 
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
+import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.ISameValue;
-import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
-import org.dbsp.sqlCompiler.ir.expression.IDBSPContainer;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBaseType;
@@ -20,10 +21,11 @@ import javax.annotation.Nullable;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.function.Function;
 
-public final class DBSPZSetLiteral extends DBSPLiteral
-        implements IDBSPContainer, ToIndentableString {
+public final class DBSPZSetExpression extends DBSPExpression
+        implements IDBSPContainer, ToIndentableString, ISameValue {
     public final Map<DBSPExpression, Long> data;
     public final DBSPType elementType;
 
@@ -34,7 +36,6 @@ public final class DBSPZSetLiteral extends DBSPLiteral
         return data[0].getType();
     }
 
-    @Override
     public boolean isConstant() {
         return Linq.all(this.data.keySet(), DBSPExpression::isConstantLiteral);
     }
@@ -47,8 +48,8 @@ public final class DBSPZSetLiteral extends DBSPLiteral
      *             To create empty zsets use the constructor
      *             with just a type argument.
      */
-    public DBSPZSetLiteral(DBSPExpression... data) {
-        super(CalciteObject.EMPTY, new DBSPTypeZSet(getType(data)), false);
+    public DBSPZSetExpression(DBSPExpression... data) {
+        super(CalciteObject.EMPTY, new DBSPTypeZSet(getType(data)));
         this.elementType = data[0].getType();
         this.data = new HashMap<>();
         for (DBSPExpression e : data) {
@@ -60,15 +61,15 @@ public final class DBSPZSetLiteral extends DBSPLiteral
         }
     }
 
-    public DBSPZSetLiteral(Map<DBSPExpression, Long> data, DBSPType elementType) {
-        super(CalciteObject.EMPTY, new DBSPTypeZSet(elementType), false);
+    public DBSPZSetExpression(Map<DBSPExpression, Long> data, DBSPType elementType) {
+        super(CalciteObject.EMPTY, new DBSPTypeZSet(elementType));
         this.data = data;
         this.elementType = elementType;
     }
 
     /** Creates an empty zset with the specified element type. */
-    public DBSPZSetLiteral(DBSPType elementType) {
-        super(CalciteObject.EMPTY, new DBSPTypeZSet(elementType), false);
+    public DBSPZSetExpression(DBSPType elementType) {
+        super(CalciteObject.EMPTY, new DBSPTypeZSet(elementType));
         this.elementType = elementType;
         this.data = new HashMap<>();
     }
@@ -76,25 +77,25 @@ public final class DBSPZSetLiteral extends DBSPLiteral
     /**
      * Creates an empty zset with the specified type.
      */
-    public static DBSPZSetLiteral emptyWithElementType(DBSPType elementType) {
-        return new DBSPZSetLiteral(elementType);
+    public static DBSPZSetExpression emptyWithElementType(DBSPType elementType) {
+        return new DBSPZSetExpression(elementType);
     }
 
     @SuppressWarnings("MethodDoesntCallSuperMethod")
-    public DBSPZSetLiteral clone() {
-        return new DBSPZSetLiteral(new HashMap<>(this.data), this.elementType);
+    public DBSPZSetExpression clone() {
+        return new DBSPZSetExpression(new HashMap<>(this.data), this.elementType);
     }
 
     public DBSPType getElementType() {
         return this.elementType;
     }
 
-    public DBSPZSetLiteral add(DBSPExpression expression) {
+    public DBSPZSetExpression add(DBSPExpression expression) {
         return this.add(expression, 1);
     }
 
-    public DBSPZSetLiteral map(Function<DBSPExpression, DBSPExpression> map, DBSPType elementType) {
-        DBSPZSetLiteral result = DBSPZSetLiteral.emptyWithElementType(elementType);
+    public DBSPZSetExpression map(Function<DBSPExpression, DBSPExpression> map, DBSPType elementType) {
+        DBSPZSetExpression result = DBSPZSetExpression.emptyWithElementType(elementType);
         for (Map.Entry<DBSPExpression, Long> entry : this.data.entrySet()) {
             DBSPExpression converted = map.apply(entry.getKey());
             result.add(converted, entry.getValue());
@@ -102,7 +103,7 @@ public final class DBSPZSetLiteral extends DBSPLiteral
         return result;
     }
 
-    public DBSPZSetLiteral add(DBSPExpression expression, long weight) {
+    public DBSPZSetExpression add(DBSPExpression expression, long weight) {
         // We expect the expression to be a constant value (a literal)
         if (expression.getType().code != this.getElementType().code)
             throw new InternalCompilerError("Added element type " +
@@ -120,7 +121,7 @@ public final class DBSPZSetLiteral extends DBSPLiteral
         return this;
     }
 
-    public DBSPZSetLiteral add(DBSPZSetLiteral other) {
+    public DBSPZSetExpression add(DBSPZSetExpression other) {
         if (!this.elementType.sameType(other.elementType))
             throw new InternalCompilerError("Added zsets do not have the same type " +
                     this.getElementType() + " vs " + other.getElementType(), this.elementType);
@@ -128,7 +129,7 @@ public final class DBSPZSetLiteral extends DBSPLiteral
         return this;
     }
 
-    public DBSPZSetLiteral addUsingCast(DBSPZSetLiteral other) {
+    public DBSPZSetExpression addUsingCast(DBSPZSetExpression other) {
         other.data.forEach(this::addUsingCast);
         return this;
     }
@@ -138,12 +139,12 @@ public final class DBSPZSetLiteral extends DBSPLiteral
             return expression.cast(type);
         } else if (type.is(DBSPTypeVec.class)) {
             DBSPTypeVec vec = type.to(DBSPTypeVec.class);
-            DBSPVecLiteral vecLit = expression.to(DBSPVecLiteral.class);
+            DBSPVecExpression vecLit = expression.to(DBSPVecExpression.class);
             if (vecLit.data == null) {
-                return new DBSPVecLiteral(type, type.mayBeNull);
+                return new DBSPVecExpression(type, type.mayBeNull);
             }
             List<DBSPExpression> fields = Linq.map(vecLit.data, e -> castRecursive(e, vec.getElementType()));
-            return new DBSPVecLiteral(expression.getNode(), type, fields);
+            return new DBSPVecExpression(expression.getNode(), type, fields);
         } else if (type.is(DBSPTypeTupleBase.class)) {
             DBSPTypeTupleBase tuple = this.elementType.to(DBSPTypeTupleBase.class);
             DBSPExpression[] fields = new DBSPExpression[tuple.size()];
@@ -161,8 +162,8 @@ public final class DBSPZSetLiteral extends DBSPLiteral
         this.add(toAdd, weight);
     }
 
-    public DBSPZSetLiteral negate() {
-        DBSPZSetLiteral result = DBSPZSetLiteral.emptyWithElementType(this.elementType);
+    public DBSPZSetExpression negate() {
+        DBSPZSetExpression result = DBSPZSetExpression.emptyWithElementType(this.elementType);
         for (Map.Entry<DBSPExpression, Long> entry : data.entrySet()) {
             result.add(entry.getKey(), -entry.getValue());
         }
@@ -173,8 +174,8 @@ public final class DBSPZSetLiteral extends DBSPLiteral
         return this.data.size();
     }
 
-    public DBSPZSetLiteral minus(DBSPZSetLiteral sub) {
-        DBSPZSetLiteral result = this.clone();
+    public DBSPZSetExpression minus(DBSPZSetExpression sub) {
+        DBSPZSetExpression result = this.clone();
         result.add(sub.negate());
         return result;
     }
@@ -191,6 +192,23 @@ public final class DBSPZSetLiteral extends DBSPLiteral
     }
 
     @Override
+    public boolean sameFields(IDBSPNode other) {
+        DBSPZSetExpression otherZset = other.as(DBSPZSetExpression.class);
+        if (otherZset == null)
+            return false;
+        if (this.size() != otherZset.size())
+            return false;
+        for (var entry: this.data.entrySet()) {
+            DBSPExpression expr = entry.getKey();
+            if (!otherZset.data.containsKey(expr))
+                return false;
+            if (!Objects.equals(entry.getValue(), otherZset.data.get(expr)))
+                return false;
+        }
+        return true;
+    }
+
+    @Override
     public int hashCode() {
         return this.data.hashCode();
     }
@@ -199,19 +217,24 @@ public final class DBSPZSetLiteral extends DBSPLiteral
         return this.data.isEmpty();
     }
 
-    public DBSPZSetLiteral deepCopy() {
+    public DBSPZSetExpression deepCopy() {
         Map<DBSPExpression, Long> newData = new HashMap<>();
         for (Map.Entry<DBSPExpression, Long> d : this.data.entrySet()) {
             newData.put(d.getKey().deepCopy(), d.getValue());
         }
-        return new DBSPZSetLiteral(newData, this.elementType);
+        return new DBSPZSetExpression(newData, this.elementType);
+    }
+
+    @Override
+    public boolean equivalent(EquivalenceContext context, DBSPExpression other) {
+        throw new UnimplementedException();
     }
 
     @Override
     public boolean sameValue(@Nullable ISameValue o) {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
-        DBSPZSetLiteral that = (DBSPZSetLiteral) o;
+        DBSPZSetExpression that = (DBSPZSetExpression) o;
         if (!this.type.sameType(that.type)) return false;
         return this.minus(that).size() == 0;
     }
@@ -230,17 +253,5 @@ public final class DBSPZSetLiteral extends DBSPLiteral
                     .append(",");
         }
         return builder.append(")");
-    }
-
-    @Override
-    public DBSPLiteral getWithNullable(boolean mayBeNull) {
-        if (mayBeNull)
-            throw new InternalCompilerError("Nullable zset");
-        return this;
-    }
-
-    @Override
-    public String toSqlString() {
-        throw new InternalCompilerError("unreachable");
     }
 }

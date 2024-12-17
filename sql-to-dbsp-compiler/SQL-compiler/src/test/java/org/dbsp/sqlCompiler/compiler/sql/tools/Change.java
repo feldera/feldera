@@ -4,7 +4,7 @@ import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.TableContents;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Simplify;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
+import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Shuffle;
@@ -14,17 +14,17 @@ import java.util.List;
 /** A Change is a collection of Z-sets literals.
  * It represents an atomic change that is applied to a set of tables or views. */
 public class Change {
-    public final DBSPZSetLiteral[] sets;
+    public final DBSPZSetExpression[] sets;
 
-    public Change(DBSPZSetLiteral... sets) {
+    public Change(DBSPZSetExpression... sets) {
         this.sets = sets;
     }
 
     public Change(TableContents contents) {
-        this.sets = new DBSPZSetLiteral[contents.getTableCount()];
+        this.sets = new DBSPZSetExpression[contents.getTableCount()];
         int index = 0;
         for (ProgramIdentifier table: contents.tablesCreated) {
-            DBSPZSetLiteral data = contents.getTableContents(table);
+            DBSPZSetExpression data = contents.getTableContents(table);
             this.sets[index] = data;
             index++;
         }
@@ -32,23 +32,23 @@ public class Change {
 
     /** Return a change that has the sets in this one shuffled */
     public Change shuffle(Shuffle shuffle) {
-        List<DBSPZSetLiteral> data = Linq.list(this.sets);
+        List<DBSPZSetExpression> data = Linq.list(this.sets);
         data = shuffle.shuffle(data);
-        DBSPZSetLiteral[] shuffled = data.toArray(new DBSPZSetLiteral[0]);
+        DBSPZSetExpression[] shuffled = data.toArray(new DBSPZSetExpression[0]);
         return new Change(shuffled);
     }
 
     public Change simplify(DBSPCompiler compiler) {
         Simplify simplify = new Simplify(compiler);
-        DBSPZSetLiteral[] simplified = Linq.map(this.sets,
-                t -> simplify.apply(t).to(DBSPZSetLiteral.class), DBSPZSetLiteral.class);
+        DBSPZSetExpression[] simplified = Linq.map(this.sets,
+                t -> simplify.apply(t).to(DBSPZSetExpression.class), DBSPZSetExpression.class);
         return new Change(simplified);
     }
 
     /** Create a Change for a single ZSet, representing an empty ZSet
      * with the specified element type. */
     public static Change singleEmptyWithElementType(DBSPType elementType) {
-        return new Change(DBSPZSetLiteral.emptyWithElementType(elementType));
+        return new Change(DBSPZSetExpression.emptyWithElementType(elementType));
     }
 
     /** Number of Z-sets in this change */
@@ -56,14 +56,14 @@ public class Change {
         return this.sets.length;
     }
 
-    public DBSPZSetLiteral getSet(int index) {
+    public DBSPZSetExpression getSet(int index) {
         return this.sets[index];
     }
 
     @Override
     public String toString() {
         StringBuilder builder = new StringBuilder();
-        for (DBSPZSetLiteral zset: this.sets) {
+        for (DBSPZSetExpression zset: this.sets) {
             builder.append(zset);
             builder.append(System.lineSeparator());
         }

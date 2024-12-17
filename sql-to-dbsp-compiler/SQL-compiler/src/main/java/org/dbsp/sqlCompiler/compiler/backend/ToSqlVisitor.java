@@ -14,7 +14,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPNullLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPRealLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimestampLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
+import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.util.Utilities;
 
 import java.util.Map;
@@ -103,13 +103,13 @@ public class ToSqlVisitor extends InnerVisitor {
     }
 
     @Override
-    public VisitDecision preorder(DBSPZSetLiteral literal) {
-        for (Map.Entry<DBSPExpression, Long> entry: literal.data.entrySet()) {
+    public VisitDecision preorder(DBSPZSetExpression expression) {
+        for (Map.Entry<DBSPExpression, Long> entry: expression.data.entrySet()) {
             DBSPExpression key = entry.getKey();
             long value = entry.getValue();
             if (value < 0)
                 throw new UnsupportedException("ZSet with negative weights is not representable as SQL",
-                        literal.getNode());
+                        expression.getNode());
             for (; value != 0; value--) {
                 key.accept(this);
                 this.appendable.append("\n");

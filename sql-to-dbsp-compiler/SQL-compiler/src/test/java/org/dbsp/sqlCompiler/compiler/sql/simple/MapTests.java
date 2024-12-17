@@ -9,9 +9,9 @@ import org.dbsp.sqlCompiler.compiler.sql.tools.InputOutputChange;
 import org.dbsp.sqlCompiler.compiler.sql.tools.InputOutputChangeStream;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPMapLiteral;
+import org.dbsp.sqlCompiler.ir.expression.DBSPMapExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
+import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
@@ -37,7 +37,7 @@ public class MapTests extends BaseSQLTests {
         this.addRustTestCase(ccs);
     }
 
-    private void testQuery(String query, DBSPZSetLiteral literal) {
+    private void testQuery(String query, DBSPZSetExpression literal) {
         this.testQuery("", query,
                 new InputOutputChangeStream().addChange(
                         new InputOutputChange(new Change(), new Change(literal))));
@@ -47,8 +47,8 @@ public class MapTests extends BaseSQLTests {
     public void mapLiteralTest() {
         String query = "SELECT MAP['hi',2]";
         DBSPType str = DBSPTypeString.varchar(false);
-        this.testQuery(query, new DBSPZSetLiteral(
-                new DBSPTupleExpression(new DBSPMapLiteral(
+        this.testQuery(query, new DBSPZSetExpression(
+                new DBSPTupleExpression(new DBSPMapExpression(
                         new DBSPTypeMap(
                                 str,
                                 new DBSPTypeInteger(CalciteObject.EMPTY, 32, true, false),
@@ -60,7 +60,7 @@ public class MapTests extends BaseSQLTests {
     @Test
     public void mapIndexTest() {
         String query = "SELECT MAP['hi',2]['hi'], MAP['hi',2]['x']";
-        this.testQuery(query, new DBSPZSetLiteral(
+        this.testQuery(query, new DBSPZSetExpression(
                 new DBSPTupleExpression(
                         new DBSPI32Literal(2, true),
                         new DBSPI32Literal())));
@@ -70,8 +70,8 @@ public class MapTests extends BaseSQLTests {
     public void mapBlackboxTest() {
         String query = "SELECT blackbox(MAP['hi',2])";
         DBSPType str = DBSPTypeString.varchar(false);
-        this.testQuery(query, new DBSPZSetLiteral(
-                new DBSPTupleExpression(new DBSPMapLiteral(
+        this.testQuery(query, new DBSPZSetExpression(
+                new DBSPTupleExpression(new DBSPMapExpression(
                         new DBSPTypeMap(
                                 str,
                                 new DBSPTypeInteger(CalciteObject.EMPTY, 32, true, false),
@@ -83,7 +83,7 @@ public class MapTests extends BaseSQLTests {
     @Test
     public void mapCardinalityTest() {
         String query = "SELECT CARDINALITY(MAP['hi',2])";
-        this.testQuery(query, new DBSPZSetLiteral(
+        this.testQuery(query, new DBSPZSetExpression(
                 new DBSPTupleExpression(
                         new DBSPI32Literal(1))));
     }
@@ -92,7 +92,7 @@ public class MapTests extends BaseSQLTests {
     public void testMapSubquery() {
         String ddl = "CREATE TABLE T(v varchar, x int)";
         String query = "SELECT MAP(SELECT * FROM T)";
-        DBSPZSetLiteral input = new DBSPZSetLiteral(
+        DBSPZSetExpression input = new DBSPZSetExpression(
                 new DBSPTupleExpression(
                         new DBSPStringLiteral("hello", true),
                         new DBSPI32Literal(10, true)),
@@ -102,9 +102,9 @@ public class MapTests extends BaseSQLTests {
         DBSPTypeMap mapType = new DBSPTypeMap(
                 DBSPTypeString.varchar(true),
                 new DBSPTypeInteger(CalciteObject.EMPTY, 32, true ,true), false);
-        DBSPZSetLiteral result = new DBSPZSetLiteral(
+        DBSPZSetExpression result = new DBSPZSetExpression(
                 new DBSPTupleExpression(
-                        new DBSPMapLiteral(
+                        new DBSPMapExpression(
                                 mapType,
                                 Linq.list(
                                         new DBSPStringLiteral("there", true),

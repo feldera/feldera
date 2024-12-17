@@ -27,6 +27,13 @@ public class IncrementalRegressionTests extends SqlIoTest {
     }
 
     @Test
+    public void issue3164() {
+        this.getCCS("""
+             CREATE TABLE T(x INTEGER LATENESS 10);
+             CREATE VIEW V AS SELECT MAP['x', x] FROM T;""");
+    }
+
+    @Test
     public void issue3126() {
         this.getCCS("CREATE VIEW e AS SELECT * FROM error_view;");
     }

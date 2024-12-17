@@ -29,6 +29,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.*;
 import org.dbsp.util.Utilities;
 
@@ -173,13 +174,13 @@ public class ToCsvVisitor extends InnerVisitor {
     }
 
     @Override
-    public VisitDecision preorder(DBSPZSetLiteral literal) {
-        for (Map.Entry<DBSPExpression, Long> entry: literal.data.entrySet()) {
+    public VisitDecision preorder(DBSPZSetExpression expression) {
+        for (Map.Entry<DBSPExpression, Long> entry: expression.data.entrySet()) {
             DBSPExpression key = entry.getKey();
             long value = entry.getValue();
             if (value < 0)
                 throw new UnsupportedException("ZSet with negative weights is not representable as CSV",
-                        literal.getNode());
+                        expression.getNode());
             for (; value != 0; value--) {
                 key.accept(this);
                 this.appendable.append("\n");
@@ -191,12 +192,12 @@ public class ToCsvVisitor extends InnerVisitor {
     /**
      * Write a literal to a file as a csv format.
      * @param file        File to write to.
-     * @param literal     Literal to write.
+     * @param expression     Literal to write.
      */
-    public static File toCsv(DBSPCompiler compiler, File file, DBSPZSetLiteral literal) throws IOException {
+    public static File toCsv(DBSPCompiler compiler, File file, DBSPZSetExpression expression) throws IOException {
         StringBuilder builder = new StringBuilder();
         ToCsvVisitor visitor = new ToCsvVisitor(compiler, builder, () -> "");
-        visitor.apply(literal);
+        visitor.apply(expression);
         FileWriter writer = new FileWriter(file);
         writer.write(builder.toString());
         writer.close();

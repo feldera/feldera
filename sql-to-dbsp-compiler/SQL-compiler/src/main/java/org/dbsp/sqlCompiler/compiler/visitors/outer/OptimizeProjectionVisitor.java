@@ -19,7 +19,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFlatmap;
 import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
+import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeFunction;
 import org.dbsp.util.Maybe;
 
@@ -47,7 +47,7 @@ public class OptimizeProjectionVisitor extends CircuitCloneWithGraphsVisitor {
         if (projection.isProjection) {
             if (source.node().is(DBSPConstantOperator.class)) {
                 DBSPExpression newConstant = projection.applyAfter(
-                        source.node().to(DBSPConstantOperator.class).getFunction().to(DBSPZSetLiteral.class));
+                        source.node().to(DBSPConstantOperator.class).getFunction().to(DBSPZSetExpression.class));
                 DBSPSimpleOperator result = source.simpleNode().withFunction(newConstant, operator.outputType);
                 this.map(operator, result);
                 return;

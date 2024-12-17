@@ -27,7 +27,7 @@ import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.sql.tools.Change;
 import org.dbsp.sqlCompiler.compiler.sql.tools.InputOutputChangeStream;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
+import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.junit.Ignore;
 import org.junit.Test;
 
@@ -41,7 +41,7 @@ public class NaiveIncrementalTests extends EndToEndTests {
     }
 
     @Override
-    public void testQuery(String query, DBSPZSetLiteral firstOutput) {
+    public void testQuery(String query, DBSPZSetExpression firstOutput) {
         Change input = createInput();
         Change secondOutput = Change.singleEmptyWithElementType(firstOutput.getElementType());
         Change thirdOutput = new Change(secondOutput.getSet(0).minus(firstOutput));
@@ -54,7 +54,7 @@ public class NaiveIncrementalTests extends EndToEndTests {
     }
 
     @Override
-    void testConstantOutput(String query, DBSPZSetLiteral output) {
+    void testConstantOutput(String query, DBSPZSetExpression output) {
         Change input = createInput();
         Change e = Change.singleEmptyWithElementType(output.getElementType());
         this.invokeTestQueryBase(query,
@@ -66,8 +66,8 @@ public class NaiveIncrementalTests extends EndToEndTests {
 
     @Override
     void testAggregate(String query,
-                       DBSPZSetLiteral firstOutput,
-                       DBSPZSetLiteral outputForEmptyInput) {
+                       DBSPZSetExpression firstOutput,
+                       DBSPZSetExpression outputForEmptyInput) {
         Change input = createInput();
         Change secondOutput = Change.singleEmptyWithElementType(firstOutput.getElementType());
         Change thirdOutput = new Change(outputForEmptyInput.minus(firstOutput));

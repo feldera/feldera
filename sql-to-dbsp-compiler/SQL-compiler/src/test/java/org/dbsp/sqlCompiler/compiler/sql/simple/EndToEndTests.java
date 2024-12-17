@@ -44,8 +44,8 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI64Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPNullLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVecLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
+import org.dbsp.sqlCompiler.ir.expression.DBSPVecExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
@@ -90,14 +90,14 @@ public class EndToEndTests extends BaseSQLTests {
     }
 
     /** Use this function to test queries whose result does not change when table T is modified. */
-    void testConstantOutput(String query, DBSPZSetLiteral output) {
+    void testConstantOutput(String query, DBSPZSetExpression output) {
         this.testQueryBase(query, new InputOutputChange(createInput(), new Change(output)).toStream());
     }
 
     /** Use this function to test queries that compute aggregates */
     void testAggregate(String query,
-                       DBSPZSetLiteral firstOutput,
-                       DBSPZSetLiteral outputForEmptyInput) {
+                       DBSPZSetExpression firstOutput,
+                       DBSPZSetExpression outputForEmptyInput) {
         this.testQueryBase(query, new InputOutputChange(createInput(), new Change(firstOutput)).toStream());
     }
 
@@ -111,7 +111,7 @@ public class EndToEndTests extends BaseSQLTests {
      INSERT INTO T VALUES (10, 1e0, false, 'Hi', 1, 0e0);
      */
     static Change createInput() {
-        return new Change(new DBSPZSetLiteral(E0, E1));
+        return new Change(new DBSPZSetExpression(E0, E1));
     }
 
     public static final DBSPTypeDecimal D62 = new DBSPTypeDecimal(CalciteObject.EMPTY, 6, 2, true);
@@ -132,11 +132,11 @@ public class EndToEndTests extends BaseSQLTests {
             new DBSPDecimalLiteral(D62, BigDecimal.ZERO)
     );
 
-    static final DBSPZSetLiteral z0 = new DBSPZSetLiteral(E0);
-    static final DBSPZSetLiteral z1 = new DBSPZSetLiteral(E1);
-    static final DBSPZSetLiteral empty = DBSPZSetLiteral.emptyWithElementType(z0.getElementType());
+    static final DBSPZSetExpression z0 = new DBSPZSetExpression(E0);
+    static final DBSPZSetExpression z1 = new DBSPZSetExpression(E1);
+    static final DBSPZSetExpression empty = DBSPZSetExpression.emptyWithElementType(z0.getElementType());
 
-    public void testQuery(String query, DBSPZSetLiteral expectedOutput) {
+    public void testQuery(String query, DBSPZSetExpression expectedOutput) {
         this.testQuery(query, new Change(expectedOutput));
     }
 
@@ -148,7 +148,7 @@ public class EndToEndTests extends BaseSQLTests {
     @Test
     public void testNullableCompare() {
         String query = "SELECT T.COL5 > T.COL1 FROM T";
-        this.testQuery(query, new DBSPZSetLiteral(
+        this.testQuery(query, new DBSPZSetExpression(
                 new DBSPTupleExpression(new DBSPBoolLiteral()),
                 new DBSPTupleExpression(new DBSPBoolLiteral(false, true))));
     }
@@ -158,7 +158,7 @@ public class EndToEndTests extends BaseSQLTests {
         String query = "SELECT ABS(T.COL2) FROM T";
         assert E0.fields != null;
         assert E1.fields != null;
-        this.testQuery(query, new DBSPZSetLiteral(
+        this.testQuery(query, new DBSPZSetExpression(
                 new DBSPTupleExpression(E0.fields[1]),
                 new DBSPTupleExpression(E1.fields[1])));
     }
@@ -166,7 +166,7 @@ public class EndToEndTests extends BaseSQLTests {
     @Test
     public void testNullableCastCompare() {
         String query = "SELECT T.COL5 > T.COL2 FROM T";
-        this.testQuery(query, new DBSPZSetLiteral(
+        this.testQuery(query, new DBSPZSetExpression(
                 new DBSPTupleExpression(new DBSPBoolLiteral()),
                 new DBSPTupleExpression(new DBSPBoolLiteral(false, true))));
     }
@@ -174,7 +174,7 @@ public class EndToEndTests extends BaseSQLTests {
     @Test
     public void testNullableCastCompare2() {
         String query = "SELECT T.COL5 > T.COL6 FROM T";
-        this.testQuery(query, new DBSPZSetLiteral(
+        this.testQuery(query, new DBSPZSetExpression(
                 new DBSPTupleExpression(new DBSPBoolLiteral()),
                 new DBSPTupleExpression(new DBSPBoolLiteral(true, true))));
     }
@@ -182,7 +182,7 @@ public class EndToEndTests extends BaseSQLTests {
     @Test
     public void testNullableCompare2() {
         String query = "SELECT T.COL5 > 10 FROM T";
-        this.testQuery(query, new DBSPZSetLiteral(
+        this.testQuery(query, new DBSPZSetExpression(
                 new DBSPTupleExpression(new DBSPBoolLiteral()),
                 new DBSPTupleExpression(new DBSPBoolLiteral(false, true))));
     }
@@ -190,7 +190,7 @@ public class EndToEndTests extends BaseSQLTests {
     @Test
     public void testBoolean() {
         String query = "SELECT T.COL3 OR T.COL1 > 10 FROM T";
-        this.testQuery(query, new DBSPZSetLiteral(
+        this.testQuery(query, new DBSPZSetExpression(
                 new DBSPTupleExpression(new DBSPBoolLiteral(true)),
                 new DBSPTupleExpression(new DBSPBoolLiteral(false))));
     }
@@ -198,7 +198,7 @@ public class EndToEndTests extends BaseSQLTests {
     @Test
     public void testNullableBoolean2() {
         String query = "SELECT T.COL5 > 10 AND T.COL3 FROM T";
-        this.testQuery(query, new DBSPZSetLiteral(
+        this.testQuery(query, new DBSPZSetExpression(
                 new DBSPTupleExpression(new DBSPBoolLiteral()),
                 new DBSPTupleExpression(new DBSPBoolLiteral(false, true))));
     }
@@ -206,7 +206,7 @@ public class EndToEndTests extends BaseSQLTests {
     @Test
     public void testNullableBoolean3() {
         String query = "SELECT T.COL3 AND T.COL5 > 10 FROM T";
-        this.testQuery(query, new DBSPZSetLiteral(
+        this.testQuery(query, new DBSPZSetExpression(
                 new DBSPTupleExpression(new DBSPBoolLiteral()),
                 new DBSPTupleExpression(new DBSPBoolLiteral(false, true))));
     }
@@ -214,7 +214,7 @@ public class EndToEndTests extends BaseSQLTests {
     @Test
     public void overDecimalTest() {
         String query = "SELECT T.COL1, COUNT(*) OVER (ORDER BY T.COL6 RANGE UNBOUNDED PRECEDING) FROM T";
-        this.testQuery(query, new DBSPZSetLiteral(
+        this.testQuery(query, new DBSPZSetExpression(
                 new DBSPTupleExpression(new DBSPI32Literal(10), new DBSPI64Literal(1)),
                 new DBSPTupleExpression(new DBSPI32Literal(10), new DBSPI64Literal(2))));
     }
@@ -223,20 +223,20 @@ public class EndToEndTests extends BaseSQLTests {
     public void overTest() {
         String query = "SELECT T.COL1, COUNT(*) OVER (ORDER BY T.COL1 RANGE UNBOUNDED PRECEDING) FROM T";
         DBSPExpression t = new DBSPTupleExpression(new DBSPI32Literal(10), new DBSPI64Literal(2));
-        this.testQuery(query, new DBSPZSetLiteral(t, t));
+        this.testQuery(query, new DBSPZSetExpression(t, t));
     }
 
     @Test
     public void overSumTest() {
         String query = "SELECT T.COL1, SUM(T.COL2) OVER (ORDER BY T.COL1 RANGE UNBOUNDED PRECEDING) FROM T";
         DBSPExpression t = new DBSPTupleExpression(new DBSPI32Literal(10), new DBSPDoubleLiteral(13.0));
-        this.testQuery(query, new DBSPZSetLiteral(t, t));
+        this.testQuery(query, new DBSPZSetExpression(t, t));
     }
 
     @Test
     public void lagTest() {
         String query = "SELECT T.COL1, LAG(T.COL1) OVER (ORDER BY T.COL1) FROM T";
-        this.testQuery(query, new DBSPZSetLiteral(
+        this.testQuery(query, new DBSPZSetExpression(
                 new DBSPTupleExpression(
                         new DBSPI32Literal(10),
                         DBSPLiteral.none(new DBSPTypeInteger(
@@ -250,41 +250,41 @@ public class EndToEndTests extends BaseSQLTests {
     public void testConcat() {
         String query = "SELECT T.COL4 || ' ' || T.COL4 FROM T";
         DBSPExpression lit = new DBSPTupleExpression(new DBSPStringLiteral("Hi Hi"));
-        this.testQuery(query, new DBSPZSetLiteral(lit, lit));
+        this.testQuery(query, new DBSPZSetExpression(lit, lit));
     }
 
     @Test
     public void testCast() {
         String query = "SELECT CAST(T.COL1 AS VARCHAR) FROM T";
         DBSPExpression lit = new DBSPTupleExpression(new DBSPStringLiteral("10"));
-        this.testQuery(query, new DBSPZSetLiteral(lit, lit));
+        this.testQuery(query, new DBSPZSetExpression(lit, lit));
     }
 
     @Test
     public void testArray() {
         String query = "SELECT ELEMENT(ARRAY [2])";
-        DBSPZSetLiteral result = new DBSPZSetLiteral(new DBSPTupleExpression(new DBSPI32Literal(2, true)));
+        DBSPZSetExpression result = new DBSPZSetExpression(new DBSPTupleExpression(new DBSPI32Literal(2, true)));
         this.testConstantOutput(query, result);
     }
 
     @Test
     public void testNull() {
         String query = "SELECT NULL";
-        DBSPZSetLiteral result = new DBSPZSetLiteral(new DBSPTupleExpression(new DBSPNullLiteral()));
+        DBSPZSetExpression result = new DBSPZSetExpression(new DBSPTupleExpression(new DBSPNullLiteral()));
         this.testConstantOutput(query, result);
     }
 
     @Test
     public void testArrayIndex() {
         String query = "SELECT (ARRAY [2])[1]";
-        DBSPZSetLiteral result = new DBSPZSetLiteral(new DBSPTupleExpression(new DBSPI32Literal(2, true)));
+        DBSPZSetExpression result = new DBSPZSetExpression(new DBSPTupleExpression(new DBSPI32Literal(2, true)));
         this.testConstantOutput(query, result);
     }
 
     @Test
     public void testArrayIndexOutOfBounds() {
         String query = "SELECT (ARRAY [2])[3]";
-        DBSPZSetLiteral result = new DBSPZSetLiteral(new DBSPTupleExpression(DBSPLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,true))));
+        DBSPZSetExpression result = new DBSPZSetExpression(new DBSPTupleExpression(DBSPLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,true))));
         this.testConstantOutput(query, result);
     }
 
@@ -293,7 +293,7 @@ public class EndToEndTests extends BaseSQLTests {
         String query = "SELECT T.COL4 || NULL FROM T";
         DBSPExpression lit = new DBSPTupleExpression(DBSPLiteral.none(
                 new DBSPTypeString(CalciteObject.EMPTY, DBSPTypeString.UNLIMITED_PRECISION, false, true)));
-        this.testQuery(query, new DBSPZSetLiteral(lit, lit));
+        this.testQuery(query, new DBSPZSetExpression(lit, lit));
     }
 
     @Test
@@ -301,7 +301,7 @@ public class EndToEndTests extends BaseSQLTests {
         String query = "SELECT CONCAT(T.COL4, NULL) FROM T";
         DBSPExpression lit = new DBSPTupleExpression(DBSPLiteral.none(
                 new DBSPTypeString(CalciteObject.EMPTY, DBSPTypeString.UNLIMITED_PRECISION, false, true)));
-        this.testQuery(query, new DBSPZSetLiteral(lit, lit));
+        this.testQuery(query, new DBSPZSetExpression(lit, lit));
     }
 
     @Test
@@ -314,7 +314,7 @@ public class EndToEndTests extends BaseSQLTests {
                 SELECT T.COL1,
                 SUM(T.COL2) OVER (ORDER BY T.COL1 RANGE UNBOUNDED PRECEDING),
                 COUNT(*) OVER (ORDER BY T.COL1 RANGE UNBOUNDED PRECEDING) FROM T""";
-        this.testQuery(query, new DBSPZSetLiteral(t, t));
+        this.testQuery(query, new DBSPZSetExpression(t, t));
     }
 
     @Test
@@ -324,7 +324,7 @@ public class EndToEndTests extends BaseSQLTests {
                 new DBSPI64Literal(0));
         String query = "SELECT T.COL1, " +
                 "COUNT(*) OVER (ORDER BY T.COL1 RANGE BETWEEN 2 PRECEDING AND 1 PRECEDING) FROM T";
-        this.testQuery(query, new DBSPZSetLiteral(t, t));
+        this.testQuery(query, new DBSPZSetExpression(t, t));
     }
 
     @Test
@@ -337,7 +337,7 @@ public class EndToEndTests extends BaseSQLTests {
                 SELECT T.COL1,
                 SUM(T.COL2) OVER (ORDER BY T.COL1 RANGE UNBOUNDED PRECEDING),
                 COUNT(*) OVER (ORDER BY T.COL1 RANGE BETWEEN 2 PRECEDING AND 1 PRECEDING) FROM T""";
-        this.testQuery(query, new DBSPZSetLiteral(t, t));
+        this.testQuery(query, new DBSPZSetExpression(t, t));
     }
 
     @Test
@@ -348,10 +348,10 @@ public class EndToEndTests extends BaseSQLTests {
                 0.5 * (SELECT Sum(r1.COL5) FROM T r1) =
                 (SELECT Sum(r2.COL5) FROM T r2 WHERE r2.COL1 = r.COL1)""";
         this.testAggregate(query,
-                new DBSPZSetLiteral(
+                new DBSPZSetExpression(
                         new DBSPTupleExpression(DBSPLiteral.none(
                                 new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,true)))),
-                new DBSPZSetLiteral(
+                new DBSPZSetExpression(
                         new DBSPTupleExpression(DBSPLiteral.none(
                                 new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,true)))));
 
@@ -368,9 +368,9 @@ public class EndToEndTests extends BaseSQLTests {
     public void someTest() {
         String query = "SELECT SOME(T.COL3) FROM T";
         this.testAggregate(query,
-                new DBSPZSetLiteral(
+                new DBSPZSetExpression(
                         new DBSPTupleExpression(new DBSPBoolLiteral(true, true))),
-                new DBSPZSetLiteral(
+                new DBSPZSetExpression(
                         new DBSPTupleExpression(new DBSPBoolLiteral())));
     }
 
@@ -378,9 +378,9 @@ public class EndToEndTests extends BaseSQLTests {
     public void orTest() {
         String query = "SELECT LOGICAL_OR(T.COL3) FROM T";
         this.testAggregate(query,
-                new DBSPZSetLiteral(
+                new DBSPZSetExpression(
                         new DBSPTupleExpression(new DBSPBoolLiteral(true, true))),
-                new DBSPZSetLiteral(
+                new DBSPZSetExpression(
                         new DBSPTupleExpression(new DBSPBoolLiteral())));
     }
 
@@ -388,9 +388,9 @@ public class EndToEndTests extends BaseSQLTests {
     public void everyTest() {
         String query = "SELECT EVERY(T.COL3) FROM T";
         this.testAggregate(query,
-                new DBSPZSetLiteral(
+                new DBSPZSetExpression(
                         new DBSPTupleExpression(new DBSPBoolLiteral(false, true))),
-                new DBSPZSetLiteral(
+                new DBSPZSetExpression(
                         new DBSPTupleExpression(new DBSPBoolLiteral())));
     }
 
@@ -398,7 +398,7 @@ public class EndToEndTests extends BaseSQLTests {
     public void projectTest() {
         String query = "SELECT T.COL3 FROM T";
         this.testQuery(query,
-                new DBSPZSetLiteral(
+                new DBSPZSetExpression(
                         new DBSPTupleExpression(new DBSPBoolLiteral(true)),
                         new DBSPTupleExpression(new DBSPBoolLiteral(false))));
     }
@@ -407,7 +407,7 @@ public class EndToEndTests extends BaseSQLTests {
     public void withTest() {
         String query = "WITH v AS (SELECT COL3 FROM T)\n" +
                 "SELECT * FROM v";
-        this.testQuery(query, new DBSPZSetLiteral(
+        this.testQuery(query, new DBSPZSetExpression(
                 new DBSPTupleExpression(new DBSPBoolLiteral(true)),
                 new DBSPTupleExpression(new DBSPBoolLiteral(false))));
     }
@@ -417,7 +417,7 @@ public class EndToEndTests extends BaseSQLTests {
         String query = "SELECT T.COL3, " +
                 "SUM(T.COL1) FILTER (WHERE T.COL1 > 20)\n" +
                 "FROM T GROUP BY T.COL3";
-        this.testQuery(query, new DBSPZSetLiteral(
+        this.testQuery(query, new DBSPZSetExpression(
                 new DBSPTupleExpression(
                         new DBSPBoolLiteral(true),
                         DBSPLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,true))
@@ -432,7 +432,7 @@ public class EndToEndTests extends BaseSQLTests {
         String query = "SELECT T.COL3, " +
                 "COUNT(*) FILTER (WHERE T.COL1 > 20)\n" +
                 "FROM T GROUP BY T.COL3";
-        this.testQuery(query, new DBSPZSetLiteral(
+        this.testQuery(query, new DBSPZSetExpression(
                 new DBSPTupleExpression(
                         new DBSPBoolLiteral(true),
                         new DBSPI64Literal(0, false)
@@ -448,7 +448,7 @@ public class EndToEndTests extends BaseSQLTests {
                 SELECT T.COL3, COUNT(*) FILTER (WHERE T.COL1 > 20),
                 SUM(T.COL1) FILTER (WHERE T.COL1 > 20)
                 FROM T GROUP BY T.COL3""";
-        this.testQuery(query, new DBSPZSetLiteral(
+        this.testQuery(query, new DBSPZSetExpression(
                 new DBSPTupleExpression(
                         new DBSPBoolLiteral(true),
                         new DBSPI64Literal(0, false),
@@ -470,7 +470,7 @@ public class EndToEndTests extends BaseSQLTests {
     public void plusNullTest() {
         String query = "SELECT T.COL1 + T.COL5 FROM T";
         this.testQuery(query,
-                new DBSPZSetLiteral(
+                new DBSPZSetExpression(
                         new DBSPTupleExpression(new DBSPI32Literal(11, true)),
                         new DBSPTupleExpression(DBSPLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,true)))));
     }
@@ -479,7 +479,7 @@ public class EndToEndTests extends BaseSQLTests {
     public void negateNullTest() {
         String query = "SELECT -T.COL5 FROM T";
         this.testQuery(query,
-                new DBSPZSetLiteral(
+                new DBSPZSetExpression(
                         new DBSPTupleExpression(new DBSPI32Literal(-1, true)),
                         new DBSPTupleExpression(DBSPLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,true)))));
     }
@@ -489,7 +489,7 @@ public class EndToEndTests extends BaseSQLTests {
         String query = "SELECT CAST(CAST(T.COL5 as VARIANT) AS INTEGER) FROM T";
         DBSPI32Literal one = new DBSPI32Literal(1, true);
         this.testQuery(query,
-                new DBSPZSetLiteral(
+                new DBSPZSetExpression(
                         new DBSPTupleExpression(one),
                         new DBSPTupleExpression(DBSPLiteral.none(one.getType()))));
     }
@@ -499,7 +499,7 @@ public class EndToEndTests extends BaseSQLTests {
         String query = "SELECT T.COL5 FROM T";
         DBSPI32Literal one = new DBSPI32Literal(1, true);
         this.testQuery(query,
-                new DBSPZSetLiteral(
+                new DBSPZSetExpression(
                         new DBSPTupleExpression(one),
                         new DBSPTupleExpression(DBSPLiteral.none(one.getType()))));
     }
@@ -527,7 +527,7 @@ public class EndToEndTests extends BaseSQLTests {
     @Test
     public void joinTest() {
         String query = "SELECT T1.COL3, T2.COL3 AS C3 FROM T AS T1 JOIN T AS T2 ON T1.COL1 = T2.COL1";
-        this.testQuery(query, new DBSPZSetLiteral(
+        this.testQuery(query, new DBSPZSetExpression(
                 new DBSPTupleExpression(new DBSPBoolLiteral(false), new DBSPBoolLiteral(false)),
                 new DBSPTupleExpression(new DBSPBoolLiteral(false), new DBSPBoolLiteral(true)),
                 new DBSPTupleExpression(new DBSPBoolLiteral(true), new DBSPBoolLiteral(false)),
@@ -537,28 +537,28 @@ public class EndToEndTests extends BaseSQLTests {
     @Test
     public void joinFPTest() {
         String query = "SELECT T1.COL3, T2.COL3 AS C3 FROM T AS T1 JOIN T AS T2 ON T1.COL2 = T2.COL6";
-        this.testQuery(query, DBSPZSetLiteral.emptyWithElementType(
+        this.testQuery(query, DBSPZSetExpression.emptyWithElementType(
                 new DBSPTypeTuple(DBSPTypeBool.create(false), DBSPTypeBool.create(false))));
     }
 
     @Test
     public void joinNullableTest() {
         String query = "SELECT T1.COL3, T2.COL3 AS C3 FROM T AS T1 JOIN T AS T2 ON T1.COL1 = T2.COL5";
-        this.testQuery(query, DBSPZSetLiteral.emptyWithElementType(
+        this.testQuery(query, DBSPZSetExpression.emptyWithElementType(
                 new DBSPTypeTuple(DBSPTypeBool.create(false), DBSPTypeBool.create(false))));
     }
 
     @Test
     public void zero() {
         String query = "SELECT 0";
-        this.testConstantOutput(query, new DBSPZSetLiteral(
+        this.testConstantOutput(query, new DBSPZSetExpression(
                 new DBSPTupleExpression(new DBSPI32Literal(0))));
     }
 
     @Test
     public void geoPointTest() {
         String query = "SELECT ST_POINT(0, 0)";
-        this.testConstantOutput(query, new DBSPZSetLiteral(
+        this.testConstantOutput(query, new DBSPZSetExpression(
                 new DBSPTupleExpression(
                         new DBSPGeoPointLiteral(CalciteObject.EMPTY,
                                 new DBSPDoubleLiteral(0),
@@ -568,14 +568,14 @@ public class EndToEndTests extends BaseSQLTests {
     @Test
     public void geoDistanceTest() {
         String query = "SELECT ST_DISTANCE(ST_POINT(0, 0), ST_POINT(0,1))";
-        this.testConstantOutput(query, new DBSPZSetLiteral(
+        this.testConstantOutput(query, new DBSPZSetExpression(
                 new DBSPTupleExpression(new DBSPDoubleLiteral(1.0, true))));
     }
 
     @Test
     public void leftOuterJoinTest() {
         String query = "SELECT T1.COL3, T2.COL3 AS C3 FROM T AS T1 LEFT JOIN T AS T2 ON T1.COL1 = T2.COL5";
-        this.testQuery(query, new DBSPZSetLiteral(
+        this.testQuery(query, new DBSPZSetExpression(
                 new DBSPTupleExpression(new DBSPBoolLiteral(false), new DBSPBoolLiteral()),
                 new DBSPTupleExpression(new DBSPBoolLiteral(true), new DBSPBoolLiteral())
         ));
@@ -584,7 +584,7 @@ public class EndToEndTests extends BaseSQLTests {
     @Test
     public void rightOuterJoinTest() {
         String query = "SELECT T1.COL3, T2.COL3 AS C3 FROM T AS T1 RIGHT JOIN T AS T2 ON T1.COL1 = T2.COL5";
-        this.testQuery(query, new DBSPZSetLiteral(
+        this.testQuery(query, new DBSPZSetExpression(
                 new DBSPTupleExpression(new DBSPBoolLiteral(), new DBSPBoolLiteral(false)),
                 new DBSPTupleExpression(new DBSPBoolLiteral(), new DBSPBoolLiteral(true))
         ));
@@ -593,7 +593,7 @@ public class EndToEndTests extends BaseSQLTests {
     @Test
     public void fullOuterJoinTest() {
         String query = "SELECT T1.COL3, T2.COL3 AS C3 FROM T AS T1 FULL OUTER JOIN T AS T2 ON T1.COL1 = T2.COL5";
-        this.testQuery(query, new DBSPZSetLiteral(
+        this.testQuery(query, new DBSPZSetExpression(
                 new DBSPTupleExpression(new DBSPBoolLiteral(false, true), new DBSPBoolLiteral()),
                 new DBSPTupleExpression(new DBSPBoolLiteral(true, true), new DBSPBoolLiteral()),
                 new DBSPTupleExpression(new DBSPBoolLiteral(), new DBSPBoolLiteral(false, true)),
@@ -646,7 +646,7 @@ public class EndToEndTests extends BaseSQLTests {
     @Test
     public void whereExpressionTest() {
         String query = "SELECT * FROM T WHERE COL2 < 0";
-        this.testQuery(query, DBSPZSetLiteral.emptyWithElementType(z0.getElementType()));
+        this.testQuery(query, DBSPZSetExpression.emptyWithElementType(z0.getElementType()));
     }
 
     @Test
@@ -658,13 +658,13 @@ public class EndToEndTests extends BaseSQLTests {
     @Test
     public void constantFoldTest() {
         String query = "SELECT 1 + 2";
-        this.testConstantOutput(query, new DBSPZSetLiteral(new DBSPTupleExpression(new DBSPI32Literal(3))));
+        this.testConstantOutput(query, new DBSPZSetExpression(new DBSPTupleExpression(new DBSPI32Literal(3))));
     }
 
     @Test
     public void groupByTest() {
         String query = "SELECT COL1 FROM T GROUP BY COL1";
-        this.testQuery(query, new DBSPZSetLiteral(
+        this.testQuery(query, new DBSPZSetExpression(
                 new DBSPTupleExpression(new DBSPI32Literal(10))));
     }
 
@@ -672,13 +672,13 @@ public class EndToEndTests extends BaseSQLTests {
     public void groupByCountTest() {
         String query = "SELECT COL1, COUNT(col2) FROM T GROUP BY COL1, COL3";
         DBSPExpression row =  new DBSPTupleExpression(new DBSPI32Literal(10), new DBSPI64Literal(1));
-        this.testQuery(query, new DBSPZSetLiteral( row, row));
+        this.testQuery(query, new DBSPZSetExpression( row, row));
     }
 
     @Test
     public void groupBySumTest() {
         String query = "SELECT COL1, SUM(col2) FROM T GROUP BY COL1, COL3";
-        this.testQuery(query, new DBSPZSetLiteral(
+        this.testQuery(query, new DBSPZSetExpression(
                 new DBSPTupleExpression(new DBSPI32Literal(10), new DBSPDoubleLiteral(1)),
                 new DBSPTupleExpression(new DBSPI32Literal(10), new DBSPDoubleLiteral(12))));
     }
@@ -686,7 +686,7 @@ public class EndToEndTests extends BaseSQLTests {
     @Test
     public void divTest() {
         String query = "SELECT T.COL1 / T.COL5 FROM T";
-        this.testQuery(query, new DBSPZSetLiteral(
+        this.testQuery(query, new DBSPZSetExpression(
                 new DBSPTupleExpression(DBSPLiteral.none(
                         new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,true))),
                 new DBSPTupleExpression(new DBSPI32Literal(10, true))));
@@ -702,7 +702,7 @@ public class EndToEndTests extends BaseSQLTests {
     public void decimalParse() {
         // This is the same as DECIMAL(N, 0), so the result is rounded down
         String query = "SELECT CAST('0.5' AS DECIMAL)";
-        this.testConstantOutput(query, new DBSPZSetLiteral(
+        this.testConstantOutput(query, new DBSPZSetExpression(
                 new DBSPTupleExpression(
                         new DBSPDecimalLiteral(new DBSPTypeDecimal(CalciteObject.EMPTY, DBSPTypeDecimal.MAX_PRECISION, 0, false), new BigDecimal("0")))));
     }
@@ -710,7 +710,7 @@ public class EndToEndTests extends BaseSQLTests {
     @Test
     public void decimalParseWithPrecisionScale() {
         String query = "SELECT CAST('0.5' AS DECIMAL(2, 1))";
-        this.testConstantOutput(query, new DBSPZSetLiteral(
+        this.testConstantOutput(query, new DBSPZSetExpression(
                 new DBSPTupleExpression(
                         new DBSPDecimalLiteral(new DBSPTypeDecimal(CalciteObject.EMPTY, 2, 1, false), new BigDecimal("0.5"))
                 )
@@ -720,7 +720,7 @@ public class EndToEndTests extends BaseSQLTests {
     @Test
     public void divIntTest() {
         String query = "SELECT T.COL5 / T.COL5 FROM T";
-        this.testQuery(query, new DBSPZSetLiteral(
+        this.testQuery(query, new DBSPZSetExpression(
                 new DBSPTupleExpression(DBSPLiteral.none(
                         new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,true))),
                 new DBSPTupleExpression(new DBSPI32Literal(1, true))));
@@ -729,7 +729,7 @@ public class EndToEndTests extends BaseSQLTests {
     @Test
     public void divTest2() {
         String query = "SELECT 5 / COUNT(*) - COUNT(*) FROM T";
-        this.testQuery(query, new DBSPZSetLiteral(
+        this.testQuery(query, new DBSPZSetExpression(
                 new DBSPTupleExpression(new DBSPI64Literal(0))));
     }
 
@@ -754,14 +754,14 @@ public class EndToEndTests extends BaseSQLTests {
     @Test
     public void testByteArray() {
         String query = "SELECT x'012345ab'";
-        this.testConstantOutput(query, new DBSPZSetLiteral(
+        this.testConstantOutput(query, new DBSPZSetExpression(
                 new DBSPTupleExpression(new DBSPBinaryLiteral(new byte[]{ 0x01, 0x23, 0x45, (byte)0xAB }))));
     }
 
     @Test
     public void floatDivTest() {
         String query = "SELECT CAST(T.COL6 AS DOUBLE) / T.COL6 FROM T";
-        this.testQuery(query, new DBSPZSetLiteral(
+        this.testQuery(query, new DBSPZSetExpression(
                 new DBSPTupleExpression(DBSPLiteral.none(
                         new DBSPTypeDouble(CalciteObject.EMPTY,true))),
                 new DBSPTupleExpression(new DBSPDoubleLiteral(Double.NaN, true))));
@@ -771,16 +771,16 @@ public class EndToEndTests extends BaseSQLTests {
     public void countDistinctTest() {
         String query = "SELECT 100 + COUNT(DISTINCT - T.COL5) FROM T";
         this.testAggregate(query,
-                new DBSPZSetLiteral(
+                new DBSPZSetExpression(
                         new DBSPTupleExpression(
                                 new DBSPI64Literal(101))),
-                new DBSPZSetLiteral(new DBSPTupleExpression(new DBSPI64Literal(100))));
+                new DBSPZSetExpression(new DBSPTupleExpression(new DBSPI64Literal(100))));
     }
 
     @Test
     public void writeLogTest() {
         String query = "SELECT WRITELOG('Hello %% message\n', COL1) FROM (SELECT DISTINCT T.COL1 FROM T)";
-        this.testQuery(query, new DBSPZSetLiteral(
+        this.testQuery(query, new DBSPZSetExpression(
                 new DBSPTupleExpression(
                         new DBSPI32Literal(10))));
     }
@@ -788,7 +788,7 @@ public class EndToEndTests extends BaseSQLTests {
     @Test
     public void distinctTest() {
         String query = "SELECT DISTINCT T.COL1 FROM T";
-        this.testQuery(query, new DBSPZSetLiteral(
+        this.testQuery(query, new DBSPZSetExpression(
                 new DBSPTupleExpression(
                         new DBSPI32Literal(10))));
     }
@@ -797,7 +797,7 @@ public class EndToEndTests extends BaseSQLTests {
     public void nullDistinctTest() {
         String query = "SELECT DISTINCT 0 + NULL, T.COL1 FROM T";
         DBSPI32Literal ten = new DBSPI32Literal(10);
-        this.testQuery(query, new DBSPZSetLiteral(
+        this.testQuery(query, new DBSPZSetExpression(
                 new DBSPTupleExpression(DBSPLiteral.none(ten.getType().withMayBeNull(true)),
                         ten)));
     }
@@ -806,11 +806,11 @@ public class EndToEndTests extends BaseSQLTests {
     public void aggregateDistinctTest() {
         String query = "SELECT SUM(DISTINCT T.COL1), SUM(T.COL2) FROM T";
         this.testAggregate(query,
-                new DBSPZSetLiteral(
+                new DBSPZSetExpression(
                         new DBSPTupleExpression(
                                 new DBSPI32Literal(10, true),
                                 new DBSPDoubleLiteral(13.0, true))),
-                new DBSPZSetLiteral(
+                new DBSPZSetExpression(
                         new DBSPTupleExpression(
                                 DBSPLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,true)),
                                 DBSPLiteral.none(new DBSPTypeDouble(CalciteObject.EMPTY,true)))));
@@ -820,9 +820,9 @@ public class EndToEndTests extends BaseSQLTests {
     public void aggregateTest() {
         String query = "SELECT SUM(T.COL1) FROM T";
         this.testAggregate(query,
-                new DBSPZSetLiteral(
+                new DBSPZSetExpression(
                         new DBSPTupleExpression(new DBSPI32Literal(20, true))),
-                new DBSPZSetLiteral(
+                new DBSPZSetExpression(
                         new DBSPTupleExpression(DBSPLiteral.none(
                                 new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,true)))));
     }
@@ -830,10 +830,10 @@ public class EndToEndTests extends BaseSQLTests {
     @Test
     public void aggregateTwiceTest() {
         String query = "SELECT COUNT(T.COL1), SUM(T.COL1) FROM T";
-        this.testAggregate(query, new DBSPZSetLiteral(
+        this.testAggregate(query, new DBSPZSetExpression(
                         new DBSPTupleExpression(
                                 new DBSPI64Literal(2), new DBSPI32Literal(20, true))),
-                new DBSPZSetLiteral(
+                new DBSPZSetExpression(
                         new DBSPTupleExpression(new DBSPI64Literal(0),
                                 DBSPLiteral.none(
                                         new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,true)))));
@@ -843,12 +843,12 @@ public class EndToEndTests extends BaseSQLTests {
     public void linearNonLinearTest() {
         String query = "SELECT MAX(T.COL1), SUM(T.COL1) FROM T";
         this.testAggregate(query,
-                new DBSPZSetLiteral(
+                new DBSPZSetExpression(
                         new DBSPTupleExpression(
                                 new DBSPI32Literal(10, true),
                                 new DBSPI32Literal(20, true)
                         )),
-                new DBSPZSetLiteral(
+                new DBSPZSetExpression(
                         new DBSPTupleExpression(
                                 new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,true).none(),
                                 new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,true).none())
@@ -859,9 +859,9 @@ public class EndToEndTests extends BaseSQLTests {
     public void maxTest() {
         String query = "SELECT MAX(T.COL1) FROM T";
         this.testAggregate(query,
-                new DBSPZSetLiteral(
+                new DBSPZSetExpression(
                         new DBSPTupleExpression(new DBSPI32Literal(10, true))),
-                new DBSPZSetLiteral(
+                new DBSPZSetExpression(
                         new DBSPTupleExpression(DBSPLiteral.none(
                                 new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,true)))));
     }
@@ -870,9 +870,9 @@ public class EndToEndTests extends BaseSQLTests {
     public void maxConst() {
         String query = "SELECT MAX(6) FROM T";
         this.testAggregate(query,
-                new DBSPZSetLiteral(
+                new DBSPZSetExpression(
                         new DBSPTupleExpression(new DBSPI32Literal(6, true))),
-                new DBSPZSetLiteral(
+                new DBSPZSetExpression(
                         new DBSPTupleExpression(DBSPLiteral.none(
                                 new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,true)))));
     }
@@ -880,7 +880,7 @@ public class EndToEndTests extends BaseSQLTests {
     @Test
     public void emptyAggregate() {
         String query = "SELECT COUNT(*), COUNT(DISTINCT COL1) FROM T WHERE COL1 > 10000";
-        this.testConstantOutput(query, new DBSPZSetLiteral(
+        this.testConstantOutput(query, new DBSPZSetExpression(
                 new DBSPTupleExpression(
                         new DBSPI64Literal(0), new DBSPI64Literal(0))));
     }
@@ -888,7 +888,7 @@ public class EndToEndTests extends BaseSQLTests {
     @Test
     public void constAggregateExpression() {
         String query = "SELECT 34 / SUM (1) FROM T GROUP BY COL1";
-        this.testQuery(query, new DBSPZSetLiteral(
+        this.testQuery(query, new DBSPZSetExpression(
                  new DBSPTupleExpression(
                         new DBSPI32Literal(17))));
     }
@@ -897,9 +897,9 @@ public class EndToEndTests extends BaseSQLTests {
     public void inTest() {
         String query = "SELECT 3 in (SELECT COL5 FROM T)";
         this.testAggregate(query,
-                new DBSPZSetLiteral(new DBSPTupleExpression(
+                new DBSPZSetExpression(new DBSPTupleExpression(
                         DBSPLiteral.none(new DBSPTypeBool(CalciteObject.EMPTY, true)))),
-                new DBSPZSetLiteral(new DBSPTupleExpression(
+                new DBSPZSetExpression(new DBSPTupleExpression(
                         new DBSPBoolLiteral(false, true)))
         );
     }
@@ -907,7 +907,7 @@ public class EndToEndTests extends BaseSQLTests {
     @Test
     public void constAggregateExpression2() {
         String query = "SELECT 34 / AVG (1) FROM T GROUP BY COL1";
-        this.testQuery(query, new DBSPZSetLiteral(
+        this.testQuery(query, new DBSPZSetExpression(
                  new DBSPTupleExpression(
                         new DBSPI32Literal(34))));
     }
@@ -915,7 +915,7 @@ public class EndToEndTests extends BaseSQLTests {
     @Test
     public void constAggregateDoubleExpression() {
         String query = "SELECT 34 / SUM (1), 20 / SUM(2) FROM T GROUP BY COL1";
-        this.testQuery(query, new DBSPZSetLiteral(
+        this.testQuery(query, new DBSPZSetExpression(
                  new DBSPTupleExpression(
                         new DBSPI32Literal(17), new DBSPI32Literal(5))));
     }
@@ -924,9 +924,9 @@ public class EndToEndTests extends BaseSQLTests {
     public void aggregateFloatTest() {
         String query = "SELECT SUM(T.COL2) FROM T";
         this.testAggregate(query,
-                new DBSPZSetLiteral(
+                new DBSPZSetExpression(
                         new DBSPTupleExpression(new DBSPDoubleLiteral(13.0, true))),
-                new DBSPZSetLiteral(
+                new DBSPZSetExpression(
                         new DBSPTupleExpression(DBSPLiteral.none(new DBSPTypeDouble(CalciteObject.EMPTY,true)))));
     }
 
@@ -934,9 +934,9 @@ public class EndToEndTests extends BaseSQLTests {
     public void optionAggregateTest() {
         String query = "SELECT SUM(T.COL5) FROM T";
         this.testAggregate(query,
-                new DBSPZSetLiteral(
+                new DBSPZSetExpression(
                         new DBSPTupleExpression(new DBSPI32Literal(1, true))),
-                new DBSPZSetLiteral(
+                new DBSPZSetExpression(
                         new DBSPTupleExpression(DBSPLiteral.none(
                                 new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,true)))));
     }
@@ -944,7 +944,7 @@ public class EndToEndTests extends BaseSQLTests {
     @Test
     public void aggregateFalseTest() {
         String query = "SELECT SUM(T.COL1) FROM T WHERE FALSE";
-        this.testConstantOutput(query, new DBSPZSetLiteral(
+        this.testConstantOutput(query, new DBSPZSetExpression(
                  new DBSPTupleExpression(
                         DBSPLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,true)))));
     }
@@ -952,10 +952,10 @@ public class EndToEndTests extends BaseSQLTests {
     @Test
     public void averageTest() {
         String query = "SELECT AVG(T.COL1) FROM T";
-        DBSPZSetLiteral output = new DBSPZSetLiteral(
+        DBSPZSetExpression output = new DBSPZSetExpression(
                 new DBSPTupleExpression(
                         new DBSPI32Literal(10, true)));
-        this.testAggregate(query, output, new DBSPZSetLiteral(
+        this.testAggregate(query, output, new DBSPZSetExpression(
                 new DBSPTupleExpression(DBSPLiteral.none(
                         new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,true)))));
     }
@@ -963,10 +963,10 @@ public class EndToEndTests extends BaseSQLTests {
     @Test
     public void averageFpTest() {
         String query = "SELECT AVG(T.COL2) FROM T";
-        DBSPZSetLiteral output = new DBSPZSetLiteral(
+        DBSPZSetExpression output = new DBSPZSetExpression(
                 new DBSPTupleExpression(
                         new DBSPDoubleLiteral(6.5, true)));
-        this.testAggregate(query, output, new DBSPZSetLiteral(
+        this.testAggregate(query, output, new DBSPZSetExpression(
                 new DBSPTupleExpression(DBSPLiteral.none(
                         new DBSPTypeDouble(CalciteObject.EMPTY, true)))));
     }
@@ -974,10 +974,10 @@ public class EndToEndTests extends BaseSQLTests {
     @Test
     public void averageNullableTest() {
         String query = "SELECT AVG(T.COL6) FROM T";
-        DBSPZSetLiteral output = new DBSPZSetLiteral(
+        DBSPZSetExpression output = new DBSPZSetExpression(
                 new DBSPTupleExpression(
                         new DBSPDecimalLiteral(D62, new BigDecimal(0))));
-        this.testAggregate(query, output, new DBSPZSetLiteral(
+        this.testAggregate(query, output, new DBSPZSetExpression(
                 new DBSPTupleExpression(DBSPLiteral.none(D62))));
     }
 
@@ -985,7 +985,7 @@ public class EndToEndTests extends BaseSQLTests {
     public void cartesianTest() {
         String query = "SELECT * FROM T, T AS X";
         DBSPExpression inResult = DBSPTupleExpression.flatten(E0, E0);
-        DBSPZSetLiteral result = new DBSPZSetLiteral( inResult);
+        DBSPZSetExpression result = new DBSPZSetExpression( inResult);
         result.add(DBSPTupleExpression.flatten(E0, E1));
         result.add(DBSPTupleExpression.flatten(E1, E0));
         result.add(DBSPTupleExpression.flatten(E1, E1));
@@ -995,7 +995,7 @@ public class EndToEndTests extends BaseSQLTests {
     @Test
     public void foldTest() {
         String query = "SELECT + 91 + NULLIF ( + 93, + 38 )";
-        this.testConstantOutput(query, new DBSPZSetLiteral(
+        this.testConstantOutput(query, new DBSPZSetExpression(
                  new DBSPTupleExpression(
                 new DBSPI32Literal(184, true))));
     }
@@ -1003,16 +1003,16 @@ public class EndToEndTests extends BaseSQLTests {
     @Test
     public void orderbyTest() {
         String query = "SELECT * FROM T ORDER BY T.COL2";
-        this.testQuery(query, new DBSPZSetLiteral(
-                new DBSPVecLiteral(E1, E0)
+        this.testQuery(query, new DBSPZSetExpression(
+                new DBSPVecExpression(E1, E0)
         ));
     }
 
     @Test
     public void limitTest() {
         String query = "SELECT * FROM T ORDER BY T.COL2 LIMIT 1";
-        this.testQuery(query, new DBSPZSetLiteral(
-                new DBSPVecLiteral(E1)
+        this.testQuery(query, new DBSPZSetExpression(
+                new DBSPVecExpression(E1)
         ));
     }
 
@@ -1021,7 +1021,7 @@ public class EndToEndTests extends BaseSQLTests {
         // If the optimizer doesn't remove the inner ORDER BY this test
         // fails because the types don't match in Rust.
         String query = "SELECT COL1 FROM (SELECT * FROM T ORDER BY T.COL2)";
-        this.testQuery(query, new DBSPZSetLiteral(
+        this.testQuery(query, new DBSPZSetExpression(
                 new DBSPTupleExpression(new DBSPI32Literal(10)),
                 new DBSPTupleExpression(new DBSPI32Literal(10))));
     }
@@ -1029,16 +1029,16 @@ public class EndToEndTests extends BaseSQLTests {
     @Test
     public void orderbyDescendingTest() {
         String query = "SELECT * FROM T ORDER BY T.COL2 DESC";
-        this.testQuery(query, new DBSPZSetLiteral(
-                new DBSPVecLiteral(E0, E1)
+        this.testQuery(query, new DBSPZSetExpression(
+                new DBSPVecExpression(E0, E1)
         ));
     }
 
     @Test
     public void orderby2Test() {
         String query = "SELECT * FROM T ORDER BY T.COL2, T.COL1";
-        this.testQuery(query, new DBSPZSetLiteral(
-                new DBSPVecLiteral(E1, E0)
+        this.testQuery(query, new DBSPZSetExpression(
+                new DBSPVecExpression(E1, E0)
         ));
     }
 }

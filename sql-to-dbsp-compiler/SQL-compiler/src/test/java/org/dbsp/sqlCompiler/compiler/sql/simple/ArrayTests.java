@@ -36,8 +36,8 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPNullLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVecLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
+import org.dbsp.sqlCompiler.ir.expression.DBSPVecExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeVec;
@@ -83,8 +83,8 @@ public class ArrayTests extends BaseSQLTests {
                         Linq.list(new DBSPTypeInteger(CalciteObject.EMPTY, 64, true, false))
                 ), true);
         // null vector
-        Change input = new Change(new DBSPZSetLiteral(new DBSPTupleExpression(
-                Linq.list(new DBSPVecLiteral(vecType, true)), false)));
+        Change input = new Change(new DBSPZSetExpression(new DBSPTupleExpression(
+                Linq.list(new DBSPVecExpression(vecType, true)), false)));
         Change output = new Change();
         InputOutputChangeStream stream = new InputOutputChangeStream().addPair(input, output);
         this.testQuery(statements, query, stream);
@@ -104,11 +104,11 @@ public class ArrayTests extends BaseSQLTests {
     @Test
     public void testUnnest() {
         String query = "SELECT i*2 FROM UNNEST(ARRAY [1, 2, 3, 4, 5]) AS T(i)";
-        DBSPZSetLiteral result = null;
+        DBSPZSetExpression result = null;
         for (int i = 1; i < 6; i++) {
             DBSPTupleExpression tuple = new DBSPTupleExpression(new DBSPI32Literal(i * 2));
             if (i == 1)
-                result = new DBSPZSetLiteral(tuple);
+                result = new DBSPZSetExpression(tuple);
             else
                 Objects.requireNonNull(result).add(tuple);
         }
@@ -120,11 +120,11 @@ public class ArrayTests extends BaseSQLTests {
     @Test
     public void testUnnestDuplicate() {
         String query = "SELECT * FROM UNNEST(ARRAY [1, 1, 1])";
-        DBSPZSetLiteral result = null;
+        DBSPZSetExpression result = null;
         for (int i = 1; i < 4; i++) {
             DBSPTupleExpression tuple = new DBSPTupleExpression(new DBSPI32Literal(1));
             if (i == 1)
-                result = new DBSPZSetLiteral(tuple);
+                result = new DBSPZSetExpression(tuple);
             else
                 Objects.requireNonNull(result).add(tuple);
         }
@@ -136,11 +136,11 @@ public class ArrayTests extends BaseSQLTests {
     @Test
     public void testUnnestNull() {
         String query = "SELECT * FROM UNNEST(ARRAY [1, 2, 3, 4, NULL])";
-        DBSPZSetLiteral result = null;
+        DBSPZSetExpression result = null;
         for (int i = 1; i < 5; i++) {
             DBSPTupleExpression tuple = new DBSPTupleExpression(new DBSPI32Literal(i, true));
             if (i == 1)
-                result = new DBSPZSetLiteral(tuple);
+                result = new DBSPZSetExpression(tuple);
             else
                 Objects.requireNonNull(result).add(tuple);
         }
@@ -153,13 +153,13 @@ public class ArrayTests extends BaseSQLTests {
     @Test
     public void testUnnestOrdinality() {
         String query = "SELECT * FROM UNNEST(ARRAY [1, 2, 3, 4, 5]) WITH ORDINALITY";
-        DBSPZSetLiteral result = null;
+        DBSPZSetExpression result = null;
         for (int i = 1; i < 6; i++) {
             DBSPTupleExpression tuple = new DBSPTupleExpression(
                     new DBSPI32Literal(i),
                     new DBSPI32Literal(i));
             if (i == 1)
-                result = new DBSPZSetLiteral(tuple);
+                result = new DBSPZSetExpression(tuple);
             else
                 Objects.requireNonNull(result).add(tuple);
         }
@@ -170,13 +170,13 @@ public class ArrayTests extends BaseSQLTests {
     @Test
     public void testUnnestOrdinalityNull() {
         String query = "SELECT * FROM UNNEST(ARRAY [1, 2, 3, 4, 5, NULL]) WITH ORDINALITY";
-        DBSPZSetLiteral result = null;
+        DBSPZSetExpression result = null;
         for (int i = 1; i < 6; i++) {
             DBSPTupleExpression tuple = new DBSPTupleExpression(
                     new DBSPI32Literal(i, true),
                     new DBSPI32Literal(i));
             if (i == 1)
-                result = new DBSPZSetLiteral(tuple);
+                result = new DBSPZSetExpression(tuple);
             else
                 Objects.requireNonNull(result).add(tuple);
         }
@@ -191,14 +191,14 @@ public class ArrayTests extends BaseSQLTests {
     @Test @Ignore("UNNEST with 2 arguments not yet implemented")
     public void testUnnest2() {
         String query = "SELECT * FROM UNNEST(ARRAY [1, 2, 3, 4, 5], ARRAY[3, 2, 1])";
-        DBSPZSetLiteral result = null;
+        DBSPZSetExpression result = null;
         for (int i = 1; i < 6; i++) {
             DBSPTupleExpression tuple = new DBSPTupleExpression(
                     new DBSPI32Literal(i),
                     i < 4 ? new DBSPI32Literal(4 - 1, true) :
                             DBSPLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,true)));
             if (i == 1)
-                result = new DBSPZSetLiteral(tuple);
+                result = new DBSPZSetExpression(tuple);
             else
                 Objects.requireNonNull(result).add(tuple);
         }
@@ -214,21 +214,21 @@ public class ArrayTests extends BaseSQLTests {
                 + "ID INTEGER NOT NULL)";
         String query = "SELECT VAL * 2, ID FROM " +
                 "ARR_TABLE, UNNEST(VALS) AS VAL";
-        DBSPZSetLiteral input = new DBSPZSetLiteral(
+        DBSPZSetExpression input = new DBSPZSetExpression(
                 new DBSPTupleExpression(
-                        new DBSPVecLiteral(
+                        new DBSPVecExpression(
                                 new DBSPI32Literal(1, true),
                                 new DBSPI32Literal(2, true),
                                 new DBSPI32Literal(3, true)),
                         new DBSPI32Literal(6)),
                 new DBSPTupleExpression(
-                        new DBSPVecLiteral(
+                        new DBSPVecExpression(
                                 new DBSPI32Literal(1, true),
                                 new DBSPI32Literal(2, true),
                                 new DBSPI32Literal(3, true)),
                         new DBSPI32Literal(7))
                 );
-        DBSPZSetLiteral result = new DBSPZSetLiteral(
+        DBSPZSetExpression result = new DBSPZSetExpression(
                 new DBSPTupleExpression(new DBSPI32Literal(2, true), new DBSPI32Literal(6)),
                 new DBSPTupleExpression(new DBSPI32Literal(4, true), new DBSPI32Literal(6)),
                 new DBSPTupleExpression(new DBSPI32Literal(6, true), new DBSPI32Literal(6)),
@@ -248,29 +248,29 @@ public class ArrayTests extends BaseSQLTests {
                 + "ID INTEGER NOT NULL)";
         String query = "SELECT VAL0, VAL1, ID FROM " +
                 "ARR_TABLE, UNNEST(VALS0) AS VAL0, UNNEST(VALS1) AS VAL1";
-        DBSPZSetLiteral input = new DBSPZSetLiteral(
+        DBSPZSetExpression input = new DBSPZSetExpression(
                 new DBSPTupleExpression(
-                        new DBSPVecLiteral(
+                        new DBSPVecExpression(
                                 new DBSPI32Literal(1, true),
                                 new DBSPI32Literal(2, true),
                                 new DBSPI32Literal(3, true)),
-                        new DBSPVecLiteral(
+                        new DBSPVecExpression(
                                 new DBSPI32Literal(4, true),
                                 new DBSPI32Literal(5, true),
                                 new DBSPI32Literal(6, true)),
                         new DBSPI32Literal(7)),
                 new DBSPTupleExpression(
-                        new DBSPVecLiteral(
+                        new DBSPVecExpression(
                                 new DBSPI32Literal(8, true),
                                 new DBSPI32Literal(9, true),
                                 new DBSPI32Literal(10, true)),
-                        new DBSPVecLiteral(
+                        new DBSPVecExpression(
                                 new DBSPI32Literal(11, true),
                                 new DBSPI32Literal(12, true),
                                 new DBSPI32Literal(13, true)),
                         new DBSPI32Literal(14))
         );
-        DBSPZSetLiteral result = DBSPZSetLiteral.emptyWithElementType(
+        DBSPZSetExpression result = DBSPZSetExpression.emptyWithElementType(
             new DBSPTypeTuple(
                     new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,true),
                     new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,true),
@@ -315,7 +315,7 @@ public class ArrayTests extends BaseSQLTests {
     public void testConstants() {
         String query = "SELECT ARRAY[2,3][2], CARDINALITY(ARRAY[2,3]), ELEMENT(ARRAY[2])";
         this.testQuery("", query, new InputOutputChange(new Change(),
-                new Change(new DBSPZSetLiteral(
+                new Change(new DBSPZSetExpression(
                         new DBSPTupleExpression(
                                 new DBSPI32Literal(3, true),
                                 new DBSPI32Literal(2),
@@ -326,7 +326,7 @@ public class ArrayTests extends BaseSQLTests {
     @Test
     public void testElementNull() {
         this.testQuery("", "SELECT ELEMENT(NULL)", new InputOutputChange(new Change(),
-                new Change(new DBSPZSetLiteral(
+                new Change(new DBSPZSetExpression(
                         new DBSPTupleExpression(new DBSPNullLiteral())))).toStream());
     }
 
@@ -339,30 +339,30 @@ public class ArrayTests extends BaseSQLTests {
     public void testArrayAppend() {
         String ddl = "CREATE TABLE ARR_TBL(val INTEGER ARRAY NOT NULL)";
 
-        DBSPZSetLiteral input = new DBSPZSetLiteral(
+        DBSPZSetExpression input = new DBSPZSetExpression(
                 new DBSPTupleExpression(
-                        new DBSPVecLiteral(
+                        new DBSPVecExpression(
                                 new DBSPI32Literal(1, true),
                                 new DBSPI32Literal(2, true),
                                 new DBSPI32Literal(3, true))
                 ),
                 new DBSPTupleExpression(
-                        new DBSPVecLiteral(
+                        new DBSPVecExpression(
                                 new DBSPI32Literal(5, true),
                                 new DBSPI32Literal(6, true),
                                 new DBSPI32Literal(7, true))
                 )
         );
-        DBSPZSetLiteral result = new DBSPZSetLiteral(
+        DBSPZSetExpression result = new DBSPZSetExpression(
                 new DBSPTupleExpression(
-                        new DBSPVecLiteral(
+                        new DBSPVecExpression(
                                 new DBSPI32Literal(1, true),
                                 new DBSPI32Literal(2, true),
                                 new DBSPI32Literal(3, true),
                                 new DBSPI32Literal(4, true))
                 ),
                 new DBSPTupleExpression(
-                        new DBSPVecLiteral(
+                        new DBSPVecExpression(
                                 new DBSPI32Literal(5, true),
                                 new DBSPI32Literal(6, true),
                                 new DBSPI32Literal(7, true),
@@ -377,30 +377,30 @@ public class ArrayTests extends BaseSQLTests {
     @Test
     public void testArrayAppendNullable() {
         String ddl = "CREATE TABLE ARR_TBL(val INTEGER ARRAY)";
-        DBSPZSetLiteral input = new DBSPZSetLiteral(
+        DBSPZSetExpression input = new DBSPZSetExpression(
                 new DBSPTupleExpression(
-                        new DBSPVecLiteral(true,
+                        new DBSPVecExpression(true,
                                 new DBSPI32Literal(1, true),
                                 new DBSPI32Literal(2, true),
                                 new DBSPI32Literal(3, true))
                 ),
                 new DBSPTupleExpression(
-                        new DBSPVecLiteral(true,
+                        new DBSPVecExpression(true,
                                 new DBSPI32Literal(5, true),
                                 new DBSPI32Literal(6, true),
                                 new DBSPI32Literal(7, true))
                 )
         );
-        DBSPZSetLiteral result = new DBSPZSetLiteral(
+        DBSPZSetExpression result = new DBSPZSetExpression(
                 new DBSPTupleExpression(
-                        new DBSPVecLiteral(true,
+                        new DBSPVecExpression(true,
                                 new DBSPI32Literal(1, true),
                                 new DBSPI32Literal(2, true),
                                 new DBSPI32Literal(3, true),
                                 new DBSPI32Literal(4, true))
                 ),
                 new DBSPTupleExpression(
-                        new DBSPVecLiteral(true,
+                        new DBSPVecExpression(true,
                                 new DBSPI32Literal(5, true),
                                 new DBSPI32Literal(6, true),
                                 new DBSPI32Literal(7, true),
@@ -415,25 +415,25 @@ public class ArrayTests extends BaseSQLTests {
     @Test
     public void testArrayAppendInnerNullable() {
         String ddl = "CREATE TABLE ARR_TBL(val INTEGER ARRAY NULL)";
-        DBSPZSetLiteral input = new DBSPZSetLiteral(
+        DBSPZSetExpression input = new DBSPZSetExpression(
                 new DBSPTupleExpression(
-                        new DBSPVecLiteral(true,
+                        new DBSPVecExpression(true,
                                 DBSPLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,true)),
                                 new DBSPI32Literal(1, true),
                                 new DBSPI32Literal(2, true),
                                 new DBSPI32Literal(3, true))
                 ),
                 new DBSPTupleExpression(
-                        new DBSPVecLiteral(true,
+                        new DBSPVecExpression(true,
                                 DBSPLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,true)),
                                 new DBSPI32Literal(5, true),
                                 new DBSPI32Literal(6, true),
                                 new DBSPI32Literal(7, true))
                 )
         );
-        DBSPZSetLiteral result = new DBSPZSetLiteral(
+        DBSPZSetExpression result = new DBSPZSetExpression(
                 new DBSPTupleExpression(
-                        new DBSPVecLiteral(true,
+                        new DBSPVecExpression(true,
                                 DBSPLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,true)),
                                 new DBSPI32Literal(1, true),
                                 new DBSPI32Literal(2, true),
@@ -441,7 +441,7 @@ public class ArrayTests extends BaseSQLTests {
                                 new DBSPI32Literal(4, true))
                 ),
                 new DBSPTupleExpression(
-                        new DBSPVecLiteral(true,
+                        new DBSPVecExpression(true,
                                 DBSPLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,true)),
                                 new DBSPI32Literal(5, true),
                                 new DBSPI32Literal(6, true),
@@ -457,21 +457,21 @@ public class ArrayTests extends BaseSQLTests {
     @Test
     public void testArrayMaxNullable() {
         String ddl = "CREATE TABLE ARR_TBL(val INTEGER ARRAY)";
-        DBSPZSetLiteral input = new DBSPZSetLiteral(
+        DBSPZSetExpression input = new DBSPZSetExpression(
                 new DBSPTupleExpression(
-                        new DBSPVecLiteral(true,
+                        new DBSPVecExpression(true,
                                 new DBSPI32Literal(1, true),
                                 new DBSPI32Literal(2, true),
                                 new DBSPI32Literal(3, true))
                 ),
                 new DBSPTupleExpression(
-                        new DBSPVecLiteral(true,
+                        new DBSPVecExpression(true,
                                 new DBSPI32Literal(5, true),
                                 new DBSPI32Literal(6, true),
                                 new DBSPI32Literal(7, true))
                 )
         );
-        DBSPZSetLiteral result = new DBSPZSetLiteral(
+        DBSPZSetExpression result = new DBSPZSetExpression(
                 new DBSPTupleExpression(
                         new DBSPI32Literal(3, true)
                 ),
@@ -487,14 +487,14 @@ public class ArrayTests extends BaseSQLTests {
     @Test
     public void testArraySubquery() {
         String ddl = "CREATE TABLE PAIRS(x INT NOT NULL, s VARCHAR NOT NULL);";
-        DBSPZSetLiteral input = new DBSPZSetLiteral(
+        DBSPZSetExpression input = new DBSPZSetExpression(
                 new DBSPTupleExpression(
                         new DBSPI32Literal(10), new DBSPStringLiteral("hello")),
                 new DBSPTupleExpression(
                         new DBSPI32Literal(5), new DBSPStringLiteral("there")));
-        DBSPZSetLiteral result = new DBSPZSetLiteral(
+        DBSPZSetExpression result = new DBSPZSetExpression(
                 new DBSPTupleExpression(
-                    new DBSPVecLiteral(
+                    new DBSPVecExpression(
                         new DBSPTupleExpression(
                             new DBSPI32Literal(5), new DBSPStringLiteral("there")),
                         new DBSPTupleExpression(
@@ -508,22 +508,22 @@ public class ArrayTests extends BaseSQLTests {
     public void testArrayMaxInnerNullable() {
         String ddl = "CREATE TABLE ARR_TBL(val INTEGER ARRAY)";
 
-        DBSPZSetLiteral input = new DBSPZSetLiteral(
+        DBSPZSetExpression input = new DBSPZSetExpression(
                 new DBSPTupleExpression(
-                        new DBSPVecLiteral(true,
+                        new DBSPVecExpression(true,
                                 new DBSPI32Literal(1, true),
                                 new DBSPI32Literal(2, true),
                                 DBSPNullLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, 32, true, true)),
                                 new DBSPI32Literal(3, true))
                 ),
                 new DBSPTupleExpression(
-                        new DBSPVecLiteral(true,
+                        new DBSPVecExpression(true,
                                 new DBSPI32Literal(5, true),
                                 new DBSPI32Literal(6, true),
                                 new DBSPI32Literal(7, true))
                 )
         );
-        DBSPZSetLiteral result = new DBSPZSetLiteral(
+        DBSPZSetExpression result = new DBSPZSetExpression(
                 new DBSPTupleExpression(
                         new DBSPI32Literal(3, true)
                 ),
@@ -540,21 +540,21 @@ public class ArrayTests extends BaseSQLTests {
     public void testArrayMinNullable() {
         String ddl = "CREATE TABLE ARR_TBL(val INTEGER ARRAY)";
 
-        DBSPZSetLiteral input = new DBSPZSetLiteral(
+        DBSPZSetExpression input = new DBSPZSetExpression(
                 new DBSPTupleExpression(
-                        new DBSPVecLiteral(true,
+                        new DBSPVecExpression(true,
                                 new DBSPI32Literal(1, true),
                                 new DBSPI32Literal(2, true),
                                 new DBSPI32Literal(3, true))
                 ),
                 new DBSPTupleExpression(
-                        new DBSPVecLiteral(true,
+                        new DBSPVecExpression(true,
                                 new DBSPI32Literal(5, true),
                                 new DBSPI32Literal(6, true),
                                 new DBSPI32Literal(7, true))
                 )
         );
-        DBSPZSetLiteral result = new DBSPZSetLiteral(
+        DBSPZSetExpression result = new DBSPZSetExpression(
                 new DBSPTupleExpression(
                         new DBSPI32Literal(1, true)
                 ),
@@ -571,22 +571,22 @@ public class ArrayTests extends BaseSQLTests {
     public void testArrayMinInnerNullable() {
         String ddl = "CREATE TABLE ARR_TBL(val INTEGER ARRAY)";
 
-        DBSPZSetLiteral input = new DBSPZSetLiteral(
+        DBSPZSetExpression input = new DBSPZSetExpression(
                 new DBSPTupleExpression(
-                        new DBSPVecLiteral(true,
+                        new DBSPVecExpression(true,
                                 new DBSPI32Literal(1, true),
                                 new DBSPI32Literal(2, true),
                                 DBSPNullLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, 32, true, true)),
                                 new DBSPI32Literal(3, true))
                 ),
                 new DBSPTupleExpression(
-                        new DBSPVecLiteral(true,
+                        new DBSPVecExpression(true,
                                 new DBSPI32Literal(5, true),
                                 new DBSPI32Literal(6, true),
                                 new DBSPI32Literal(7, true))
                 )
         );
-        DBSPZSetLiteral result = new DBSPZSetLiteral(
+        DBSPZSetExpression result = new DBSPZSetExpression(
                 new DBSPTupleExpression(
                         new DBSPI32Literal(1, true)
                 ),
@@ -606,7 +606,7 @@ public class ArrayTests extends BaseSQLTests {
                 (SELECT ARRAY[1, 2] a)""";
         this.testQuery("", sql,
                 new InputOutputChangeStream().addPair(new Change(),
-                        new Change(new DBSPZSetLiteral(
+                        new Change(new DBSPZSetExpression(
                                 new DBSPTupleExpression(
                                         new DBSPI32Literal(2, true),
                                         new DBSPI32Literal())))));

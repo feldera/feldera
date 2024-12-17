@@ -76,14 +76,14 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntervalMillisLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntervalMonthsLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPKeywordLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPMapLiteral;
+import org.dbsp.sqlCompiler.ir.expression.DBSPMapExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPNullLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPRealLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimeLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimestampLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU32Literal;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVecLiteral;
+import org.dbsp.sqlCompiler.ir.expression.DBSPVecExpression;
 import org.dbsp.sqlCompiler.ir.path.DBSPPath;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.IsIntervalType;
@@ -751,11 +751,11 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
         return s;
     }
 
-    DBSPVecLiteral arrayConstructor(CalciteObject node, DBSPType type, List<DBSPExpression> ops) {
+    DBSPVecExpression arrayConstructor(CalciteObject node, DBSPType type, List<DBSPExpression> ops) {
         DBSPTypeVec vec = type.to(DBSPTypeVec.class);
         DBSPType elemType = vec.getElementType();
         List<DBSPExpression> args = Linq.map(ops, o -> o.cast(elemType));
-        return new DBSPVecLiteral(node, type, args);
+        return new DBSPVecExpression(node, type, args);
     }
 
     /** Ensures that all the elements of array 'vec' are of the expectedType
@@ -1413,11 +1413,11 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 return this.arrayConstructor(node, type, ops);
             case MAP_VALUE_CONSTRUCTOR: {
                 DBSPTypeMap map = type.to(DBSPTypeMap.class);
-                List<DBSPExpression> keys = DBSPMapLiteral.getKeys(ops);
+                List<DBSPExpression> keys = DBSPMapExpression.getKeys(ops);
                 keys = Linq.map(keys, o -> o.cast(map.getKeyType()));
-                List<DBSPExpression> values = DBSPMapLiteral.getValues(ops);
+                List<DBSPExpression> values = DBSPMapExpression.getValues(ops);
                 values = Linq.map(values, o -> o.cast(map.getValueType()));
-                return new DBSPMapLiteral(map, keys, values);
+                return new DBSPMapExpression(map, keys, values);
             }
             case ITEM: {
                 if (call.operands.size() != 2)
@@ -1628,7 +1628,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                     String warningMessage =
                             node + ": all elements are null; result is always an empty array";
                     this.compiler.reportWarning(node.getPositionRange(), "unnecessary function call", warningMessage);
-                    return new DBSPVecLiteral(arg0.getNode(), arg0.getType(), Linq.list());
+                    return new DBSPVecExpression(arg0.getNode(), arg0.getType(), Linq.list());
                 }
 
                 String method = getArrayOrMapCallName(call, arg0);
