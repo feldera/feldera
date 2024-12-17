@@ -131,6 +131,8 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBaseType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeISize;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMillisInterval;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMonthsInterval;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVariant;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVoid;
@@ -813,9 +815,15 @@ public class ToRustInnerVisitor extends InnerVisitor {
             expression.source.accept(this);
             return VisitDecision.STOP;
         }
-
         functionName = "cast_to_" + destType.baseTypeWithSuffix() +
                 "_" + sourceType.baseTypeWithSuffix();
+
+        if ((sourceType.is(DBSPTypeMonthsInterval.class) && destType.is(DBSPTypeMonthsInterval.class)) ||
+            (sourceType.is(DBSPTypeMillisInterval.class) && destType.is(DBSPTypeMillisInterval.class))) {
+            DBSPTypeBaseType t = destType.to(DBSPTypeBaseType.class);
+            functionName = "cast_to_" + t.shortName() + destType.nullableSuffix() +
+                    "_" + t.shortName() + sourceType.nullableSuffix();
+        }
         this.builder.append(functionName).append("(");
         expression.source.accept(this);
         DBSPTypeDecimal dec = destType.as(DBSPTypeDecimal.class);

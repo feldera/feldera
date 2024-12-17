@@ -62,6 +62,20 @@ public class IncrementalRegressionTests extends SqlIoTest {
     }
 
     @Test
+    public void issue3153() {
+        this.compileRustTestCase("""
+                CREATE TABLE timestamp_tbl(
+                c1 TIMESTAMP NOT NULL,
+                c2 TIMESTAMP);
+                CREATE LOCAL VIEW atbl_long_interval AS SELECT
+                (c1 - c2)MONTH AS months
+                FROM timestamp_tbl;
+                CREATE MATERIALIZED VIEW v AS SELECT
+                CAST(months AS VARCHAR) AS res
+                FROM atbl_long_interval;""");
+    }
+
+    @Test
     public void issue3119() {
         this.compileRustTestCase("""
                 CREATE TABLE row_tbl(id INT, c1 INT NOT NULL, c2 VARCHAR, c3 VARCHAR);

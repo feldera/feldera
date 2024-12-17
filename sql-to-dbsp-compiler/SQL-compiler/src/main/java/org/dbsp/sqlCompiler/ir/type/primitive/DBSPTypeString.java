@@ -41,10 +41,8 @@ public class DBSPTypeString extends DBSPTypeBaseType {
     /** If true the width is fixed, i.e., this is a CHAR type.
      * Otherwise, this is a VARCHAR. */
     public final boolean fixed;
-    /**
-     * Number of characters.  If UNLIMITED_PRECISION it means "unlimited".
-     * This is the size specified by CHAR or VARCHAR.
-     */
+    /** Number of characters.  If UNLIMITED_PRECISION it means "unlimited".
+     * This is the size specified by CHAR or VARCHAR. */
     public final int precision;
 
     public DBSPTypeString(CalciteObject node, int precision, boolean fixed, boolean mayBeNull) {

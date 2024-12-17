@@ -179,7 +179,7 @@ public class Simplify extends InnerRewriteVisitor {
                     try {
                         TimeString ts = new TimeString(str.value);
                         result = new DBSPTimeLiteral(lit.getNode(), type, ts);
-                    } catch (DateTimeParseException ex) {
+                    } catch (DateTimeParseException | IllegalArgumentException ex) {
                         this.compiler.reportWarning(expression.getSourcePosition(), "Not a number",
                                 " String " + Utilities.singleQuote(str.value) +
                                         " cannot be interpreted as a time");

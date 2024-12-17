@@ -189,5 +189,124 @@ public class CastTests extends SqlIoTest {
                 "Cast function cannot convert value of type INTEGER to type DATE");
         this.statementsFailingInCompilation("CREATE VIEW V AS SELECT CAST(DATE '2024-01-01' AS INTEGER)",
                 "Cast function cannot convert value of type DATE to type INTEGER");
+
+        this.statementsFailingInCompilation("CREATE VIEW V AS SELECT CAST(X'01' AS TIME)",
+                "Conversion of BINARY object to ");
+    }
+
+    @Test
+    public void testAllCasts() {
+        String[] types = new String[] {
+                "BOOLEAN",
+                "TINYINT",
+                "SMALLINT",
+                "INTEGER",
+                "BIGINT",
+                "DECIMAL(10, 2)",
+                "REAL",
+                "DOUBLE",
+                "CHAR(6)",
+                "VARCHAR",
+                "BINARY",
+                "VARBINARY",
+                // "NULL",
+                "INTERVAL YEARS TO MONTHS",
+                "INTERVAL YEARS",
+                "INTERVAL MONTHS",
+                // TODO more short intervals
+                "INTERVAL SECONDS",
+                "TIME",
+                "TIMESTAMP",
+                "DATE",
+                // "GEOMETRY",
+                "ROW(lf INTEGER, rf VARCHAR)",
+                "INT ARRAY",
+                "MAP<INT, VARCHAR>"
+        };
+        String[] values = new String[] {
+                "'true'", // boolean
+                "1",    // tinyint
+                "1",    // smallint
+                "1",    // integer
+                "1",    // bigint
+                "1.1",  // decimal
+                "1.1e0", // real
+                "1.1e0", // double
+                "'chars'", // char(6)
+                "'string'", // varchar
+                "x'0123'", // BINARY
+                "x'3456'", // VARBINARY
+                // "NULL", // NULL
+                "'1-2'",   // INTERVAL YEARS TO MONTHS
+                "'1'",     // INTERVAL YEARS
+                "'2'",     // INTERVAL MONTHS
+                "10",      // INTERVAL SECONDS
+                "'10:00:00'",  // TIME
+                "'2000-01-01 10:00:00'", // TIMESTAMP
+                "'2000-01-01'", // DATE
+                "ROW(1, 'string')", // ROW
+                "ARRAY[1, 2, 3]",   // ARRAY
+                "MAP[1, 'a', 2, 'b']" // MAP
+        };
+
+        final boolean T = true;
+        final boolean F = false;
+        final boolean[][] legal = {
+                // To:   B, I8, I16, I32, I64, Dec, r, d, c, v, b, vb, ym, y, m, s, t, ts, dt, row, a, m
+                /* B */{ T, F,  F,   F,   F,   F,   F, F, T, T, F, F,  F,  F, F, F, F, F,  F,  F,   F, F },
+                /* I8*/{ T, T,  T,   T,   T,   T,   T, T, T, T, F, F,  F,  T, T, T, F, F,  F,  F,   F, F },
+                /*I16*/{ T, T,  T,   T,   T,   T,   T, T, T, T, F, F,  F,  T, T, T, F, F,  F,  F,   F, F },
+                /*I32*/{ T, T,  T,   T,   T,   T,   T, T, T, T, F, F,  F,  T, T, T, F, F,  F,  F,   F, F },
+                /*I64*/{ T, T,  T,   T,   T,   T,   T, T, T, T, F, F,  F,  T, T, T, F, F,  F,  F,   F, F },
+                /*Dec*/{ T, T,  T,   T,   T,   T,   T, T, T, T, F, F,  F,  T, T, T, F, F,  F,  F,   F, F },
+                /* r */{ T, T,  T,   T,   T,   T,   T, T, T, T, F, F,  F,  F, F, F, F, F,  F,  F,   F, F },
+                /* d */{ T, T,  T,   T,   T,   T,   T, T, T, T, F, F,  F,  F, F, F, F, F,  F,  F,   F, F },
+                /*chr*/{ T, T,  T,   T,   T,   T,   T, T, T, T, T, T,  T,  T, T, T, T, T,  T,  F,   F, F },
+                /* v */{ T, T,  T,   T,   T,   T,   T, T, T, T, T, T,  T,  T, T, T, T, T,  T,  F,   F, F },
+                /* b */{ F, F,  F,   F,   F,   F,   F, F, T, T, T, T,  F,  F, F, F, F, F,  F,  F,   F, F },
+                /*vb */{ F, F,  F,   F,   F,   F,   F, F, T, T, T, T,  F,  F, F, F, F, F,  F,  F,   F, F },
+                /*ym */{ F, F,  F,   F,   F,   F,   F, F, T, T, F, F,  T,  T, T, F, F, F,  F,  F,   F, F },
+                /* y */{ F, T,  T,   T,   T,   F,   F, F, T, T, F, F,  T,  T, T, F, F, F,  F,  F,   F, F },
+                /* m */{ F, T,  T,   T,   T,   F,   F, F, T, T, F, F,  T,  T, T, F, F, F,  F,  F,   F, F },
+                /* s */{ F, T,  T,   T,   T,   T,   F, F, T, T, F, F,  F,  F, F, T, F, F,  F,  F,   F, F },
+                /* t */{ F, F,  F,   F,   F,   F,   F, F, T, T, F, F,  F,  F, F, F, T, T,  F,  F,   F, F },
+                /* ts*/{ F, T,  T,   T,   T,   T,   T, T, T, T, F, F,  F,  F, F, F, T, T,  T,  F,   F, F },
+                /* dt*/{ F, F,  F,   F,   F,   F,   F, F, T, T, F, F,  F,  F, F, F, F, T,  T,  F,   F, F },
+                /*row*/{ F, F,  F,   F,   F,   F,   F, F, F, F, F, F,  F,  F, F, F, F, F,  F,  T,   F, F },
+                /* a */{ F, F,  F,   F,   F,   F,   F, F, F, F, F, F,  F,  F, F, F, F, F,  F,  F,   T, F },
+                /* m */{ F, F,  F,   F,   F,   F,   F, F, F, F, F, F,  F,  F, F, F, F, F,  F,  F,   F, T },
+        };
+
+        StringBuilder program = new StringBuilder();
+        program.append("CREATE VIEW V AS SELECT ");
+        for (int i = 0; i < types.length; i++) {
+            String type = types[i];
+            String value = values[i];
+            if (i > 0)
+                program.append(", ");
+            program.append("CAST(").append(value).append(" AS ").append(type).append(")\n");
+        }
+        program.append(";\n");
+
+        for (int i = 0; i < types.length; i++) {
+            program.append("CREATE VIEW V").append(i).append(" AS SELECT ");
+            boolean first = true;
+            String value = values[i];
+            String type = types[i];
+            for (int j = 0; j < types.length; j++) {
+                String fin = types[j];
+                boolean ok = legal[i][j];
+                if (!ok) continue;
+                if (!first)
+                    program.append(", ");
+                first = false;
+                program.append("CAST(");
+                program.append("CAST(").append(value).append(" AS ").append(type).append(")");
+                program.append(" AS ").append(fin).append(")");
+                program.append("\n");
+            }
+            program.append(";\n");
+        }
+        this.compileRustTestCase(program.toString());
     }
 }

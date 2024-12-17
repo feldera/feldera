@@ -89,6 +89,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.IsIntervalType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRef;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBaseType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVariant;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeMap;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeResult;
@@ -671,7 +672,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
             RexCall call, CalciteObject node, @Nullable String functionName,
             DBSPType resultType, List<DBSPExpression> ops,
             int keywordIndex, Integer... expectedArgCount) {
-       DBSPKeywordLiteral keyword = ops.get(keywordIndex).to(DBSPKeywordLiteral.class);
+        DBSPKeywordLiteral keyword = ops.get(keywordIndex).to(DBSPKeywordLiteral.class);
         StringBuilder name = new StringBuilder();
         String baseName = functionName != null ? functionName : getCallName(call);
         validateArgCount(node, baseName, ops.size(), expectedArgCount);
@@ -1308,7 +1309,30 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
             }
             case EXTRACT: {
                 // This is also hit for "date_part", which is an alias for "extract".
-                return compileKeywordFunction(call, node, "extract", type, ops, 0, 2);
+                String baseName = "extract";
+                validateArgCount(node, baseName, ops.size(), 2);
+                DBSPKeywordLiteral keyword = ops.get(0).to(DBSPKeywordLiteral.class);
+                StringBuilder name = new StringBuilder();
+                name.append(baseName)
+                        .append("_")
+                        .append(keyword);
+                DBSPExpression[] operands = new DBSPExpression[ops.size() - 1];
+                int index = 0;
+                for (int i = 0; i < ops.size(); i++) {
+                    DBSPExpression op = ops.get(i);
+                    if (i == 0)
+                        continue;
+                    operands[index] = op;
+                    index++;
+                    name.append("_");
+                    DBSPType operandType = op.getType();
+                    if (operandType.is(IsIntervalType.class))
+                        name.append(operandType.to(DBSPTypeBaseType.class).shortName())
+                                .append(operandType.nullableSuffix());
+                    else
+                        name.append(op.getType().baseTypeWithSuffix());
+                }
+                return new DBSPApplyExpression(node, name.toString(), type, operands);
             }
             case DATE_TRUNC: {
                 return compileKeywordFunction(call, node, "date_trunc", type, ops, 1, 2);

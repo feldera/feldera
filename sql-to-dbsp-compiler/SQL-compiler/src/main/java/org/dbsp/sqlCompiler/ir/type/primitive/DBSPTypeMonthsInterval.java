@@ -42,8 +42,17 @@ import java.util.Objects;
 public class DBSPTypeMonthsInterval
         extends DBSPTypeBaseType
         implements IsTimeRelatedType, IHasZero, IsIntervalType {
-    public DBSPTypeMonthsInterval(CalciteObject node, boolean mayBeNull) {
+    public enum Units {
+        MONTHS,
+        YEARS,
+        YEARS_TO_MONTHS
+    };
+
+    public final Units units;
+
+    public DBSPTypeMonthsInterval(CalciteObject node, Units units, boolean mayBeNull) {
         super(node, DBSPTypeCode.INTERVAL_LONG, mayBeNull);
+        this.units = units;
     }
 
     @Override
@@ -57,19 +66,19 @@ public class DBSPTypeMonthsInterval
 
     @Override
     public DBSPExpression getMinValue() {
-        return new DBSPIntervalMonthsLiteral(Integer.MIN_VALUE, this.mayBeNull);
+        return new DBSPIntervalMonthsLiteral(this.units, Integer.MIN_VALUE, this.mayBeNull);
     }
 
     @Override
     public DBSPExpression getMaxValue() {
-        return new DBSPIntervalMonthsLiteral(Integer.MAX_VALUE, this.mayBeNull);
+        return new DBSPIntervalMonthsLiteral(this.units, Integer.MAX_VALUE, this.mayBeNull);
     }
 
     @Override
     public DBSPType withMayBeNull(boolean mayBeNull) {
         if (this.mayBeNull == mayBeNull)
             return this;
-        return new DBSPTypeMonthsInterval(this.getNode(), mayBeNull);
+        return new DBSPTypeMonthsInterval(this.getNode(), this.units, mayBeNull);
     }
 
     @Override
@@ -81,18 +90,26 @@ public class DBSPTypeMonthsInterval
     public DBSPExpression defaultValue() {
         if (this.mayBeNull)
             return this.none();
-        return new DBSPIntervalMonthsLiteral(0, this.mayBeNull);
+        return new DBSPIntervalMonthsLiteral(this.units, 0, this.mayBeNull);
     }
 
     @Override
     public DBSPLiteral getZero() {
-        return new DBSPIntervalMonthsLiteral(0, this.mayBeNull);
+        return new DBSPIntervalMonthsLiteral(this.units, 0, this.mayBeNull);
     }
 
     @Override
     public boolean sameType(DBSPType other) {
         if (!super.sameNullability(other))
             return false;
-        return other.is(DBSPTypeMonthsInterval.class);
+        DBSPTypeMonthsInterval otherType = other.as(DBSPTypeMonthsInterval.class);
+        if (otherType == null)
+            return false;
+        return this.units == otherType.units;
+    }
+
+    @Override
+    public String baseTypeWithSuffix() {
+        return this.shortName() + "_" + this.units.name() + this.nullableSuffix();
     }
 }

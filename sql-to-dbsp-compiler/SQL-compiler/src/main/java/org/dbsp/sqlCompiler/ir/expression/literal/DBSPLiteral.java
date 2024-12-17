@@ -96,7 +96,7 @@ public abstract class DBSPLiteral extends DBSPExpression implements ISameValue {
         } else if (type.is(DBSPTypeMillisInterval.class)) {
             return new DBSPIntervalMillisLiteral();
         } else if (type.is(DBSPTypeMonthsInterval.class)) {
-            return new DBSPIntervalMonthsLiteral();
+            return new DBSPIntervalMonthsLiteral(DBSPTypeMonthsInterval.Units.MONTHS);
         } else if (type.is(DBSPTypeString.class)) {
             return new DBSPStringLiteral(CalciteObject.EMPTY, type, null, StandardCharsets.UTF_8);
         } else if (type.is(DBSPTypeTime.class)) {

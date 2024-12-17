@@ -46,19 +46,20 @@ public final class DBSPIntervalMonthsLiteral
 
     public DBSPIntervalMonthsLiteral(CalciteObject node, DBSPType type, @Nullable Integer value) {
         super(node, type, value == null);
+        assert type.is(DBSPTypeMonthsInterval.class);
         this.value = value;
     }
 
-    public DBSPIntervalMonthsLiteral(int value) {
-        this(CalciteObject.EMPTY, new DBSPTypeMonthsInterval(CalciteObject.EMPTY, false), value);
+    public DBSPIntervalMonthsLiteral(DBSPTypeMonthsInterval.Units units, int value) {
+        this(CalciteObject.EMPTY, new DBSPTypeMonthsInterval(CalciteObject.EMPTY, units,false), value);
     }
 
-    public DBSPIntervalMonthsLiteral(int value, boolean mayBeNull) {
-        this(CalciteObject.EMPTY, new DBSPTypeMonthsInterval(CalciteObject.EMPTY, mayBeNull), value);
+    public DBSPIntervalMonthsLiteral(DBSPTypeMonthsInterval.Units units, int value, boolean mayBeNull) {
+        this(CalciteObject.EMPTY, new DBSPTypeMonthsInterval(CalciteObject.EMPTY, units, mayBeNull), value);
     }
 
-    public DBSPIntervalMonthsLiteral() {
-        this(CalciteObject.EMPTY, new DBSPTypeMonthsInterval(CalciteObject.EMPTY, true), null);
+    public DBSPIntervalMonthsLiteral(DBSPTypeMonthsInterval.Units units) {
+        this(CalciteObject.EMPTY, new DBSPTypeMonthsInterval(CalciteObject.EMPTY, units,true), null);
     }
 
     @Override
@@ -129,7 +130,7 @@ public final class DBSPIntervalMonthsLiteral
         if (value == null)
             return new DBSPIntervalMonthsLiteral(this.getNode(), this.type, null);
         BigInteger result = value.multiply(BigInteger.valueOf(this.value));
-        return new DBSPIntervalMonthsLiteral(result.intValueExact());
+        return new DBSPIntervalMonthsLiteral(this.getNode(), this.type, result.intValueExact());
     }
 
     @Override

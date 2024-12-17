@@ -423,6 +423,16 @@ impl LongInterval {
     pub fn months(&self) -> i32 {
         self.months
     }
+
+    /// Retrieve the number of years in the long interval.
+    pub fn years(&self) -> i32 {
+        let (mul, months) = if self.months() < 0 {
+            (-1, -self.months())
+        } else {
+            (1, self.months())
+        };
+        (months / 12) * mul
+    }
 }
 
 /// Multiply a `LongInterval` by an integer producing a `LongInterval`
