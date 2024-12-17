@@ -6,7 +6,7 @@
   import PipelineStatus from '$lib/components/pipelines/list/PipelineStatusDot.svelte'
   import { base } from '$app/paths'
   import { type PipelineThumb } from '$lib/services/pipelineManager'
-  import { page } from '$app/stores'
+  import { page } from '$app/state'
 
   let {
     pipelines = $bindable(),
@@ -42,7 +42,7 @@
   </div>
   {#each pipelines as pipeline}
     <a
-      class="flex flex-nowrap items-center justify-between gap-2 rounded py-2 pl-4 {$page.params
+      class="flex flex-nowrap items-center justify-between gap-2 rounded py-2 pl-4 {page.params
         .pipelineName === pipeline.name
         ? 'bg-surface-50-950'
         : 'hover:bg-surface-50-950'}"

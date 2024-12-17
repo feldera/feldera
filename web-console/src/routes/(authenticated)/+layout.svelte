@@ -17,7 +17,7 @@
   import { useLocalStorage } from '$lib/compositions/localStore.svelte'
   import { useIsTablet } from '$lib/compositions/layout/useIsMobile.svelte'
   import BookADemo from '$lib/components/other/BookADemo.svelte'
-  import { page } from '$app/stores'
+  import { page } from '$app/state'
 
   const dialog = useGlobalDialog()
 
@@ -82,7 +82,7 @@
         }}
       ></CreatePipelineButton>
     </div>
-    {#if ['/', '/demos/'].includes($page.url.pathname)}
+    {#if ['/', '/demos/'].includes(page.url.pathname)}
       <BookADemo class="self-center" />
     {/if}
     <NavigationExtras inline></NavigationExtras>
