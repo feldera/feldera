@@ -10,10 +10,13 @@ use std::{
     path::{Path, PathBuf},
 };
 
-/// The default `platform_version`, which is retrieved from the
-/// environment variable `CARGO_PKG_VERSION` set by Cargo.
+/// The default `platform_version` is formed using two compilation environment variables:
+/// - `CARGO_PKG_VERSION` set by Cargo
+/// - `FELDERA_BUILD_GIT_COMMIT_HASH` set by the custom `build.rs` script
 fn default_platform_version() -> String {
-    env!("CARGO_PKG_VERSION").to_string()
+    let package_version = env!("CARGO_PKG_VERSION").to_string();
+    let git_commit_hash = env!("FELDERA_BUILD_GIT_COMMIT_HASH").to_string();
+    format!("{package_version}+{git_commit_hash}")
 }
 
 /// Default working directory: ~/.feldera
