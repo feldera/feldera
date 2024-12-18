@@ -22,10 +22,7 @@ use std::{
     time::Duration,
 };
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
-use tokio::{
-    sync::watch,
-    time::{sleep, timeout},
-};
+use tokio::{sync::watch, time::timeout};
 use tracing::{debug, info_span};
 use xxhash_rust::xxh3::Xxh3Default;
 
@@ -72,23 +69,15 @@ struct HttpInputEndpointInner {
     state: Atomic<PipelineState>,
     status_notifier: watch::Sender<()>,
     details: Mutex<Option<HttpInputEndpointDetails>>,
-    /// Ingest data even if the pipeline is paused.
-    force: bool,
 }
 
 impl HttpInputEndpointInner {
     fn new(config: HttpInputConfig, receiver: UnboundedReceiver<InputReaderCommand>) -> Arc<Self> {
-        let force = config.force;
         let inner = Arc::new(Self {
             name: config.name,
-            state: Atomic::new(if force {
-                PipelineState::Running
-            } else {
-                PipelineState::Paused
-            }),
+            state: Atomic::new(PipelineState::Paused),
             status_notifier: watch::channel(()).0,
             details: Mutex::new(None),
-            force,
         });
 
         tokio::spawn(HttpInputEndpointInner::background_task(
@@ -120,11 +109,7 @@ impl HttpInputEndpointInner {
                     details.consumer.replayed(num_records, hasher.finish());
                 }
                 InputReaderCommand::Extend => self.set_state(PipelineState::Running),
-                InputReaderCommand::Pause => {
-                    if !self.force {
-                        self.set_state(PipelineState::Paused)
-                    }
-                }
+                InputReaderCommand::Pause => self.set_state(PipelineState::Paused),
                 InputReaderCommand::Queue => {
                     let mut guard = self.details.lock().unwrap();
                     let details = guard.as_mut().unwrap();
@@ -216,7 +201,7 @@ impl HttpInputEndpoint {
             .error(fatal, error);
     }
 
-    fn queue_len(&self) -> usize {
+    fn _queue_len(&self) -> usize {
         self.inner
             .details
             .lock()
@@ -234,6 +219,7 @@ impl HttpInputEndpoint {
     pub(crate) async fn complete_request(
         &self,
         mut payload: Payload,
+        force: bool,
     ) -> Result<HttpResponse, PipelineError> {
         debug!("HTTP input endpoint '{}': start of request", self.name());
 
@@ -243,7 +229,15 @@ impl HttpInputEndpoint {
         let mut status_watch = self.inner.status_notifier.subscribe();
 
         loop {
-            match self.state() {
+            let pipeline_state = self.state();
+
+            let forced_state = if force && pipeline_state == PipelineState::Paused {
+                PipelineState::Running
+            } else {
+                pipeline_state
+            };
+
+            match forced_state {
                 PipelineState::Paused => {
                     let _ = status_watch.changed().await;
                 }
@@ -273,13 +267,6 @@ impl HttpInputEndpoint {
                     }
                 }
             }
-        }
-
-        // Wait for the controller to process all of our records. Otherwise, the
-        // queue would get destroyed when the caller drops us, which could lead
-        // to some of our records never getting processed.
-        while self.queue_len() > 0 {
-            sleep(Duration::from_micros(50)).await;
         }
 
         debug!(
