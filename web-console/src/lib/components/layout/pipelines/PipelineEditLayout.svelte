@@ -38,7 +38,6 @@
   import PipelineList from '$lib/components/pipelines/List.svelte'
   import { usePipelineList } from '$lib/compositions/pipelines/usePipelineList.svelte'
   import { useDrawer } from '$lib/compositions/layout/useDrawer.svelte'
-  import NavigationExtrasPopup from '$lib/components/layout/NavigationExtrasPopup.svelte'
   import DoubleClickInput from '$lib/components/input/DoubleClickInput.svelte'
   import { goto } from '$app/navigation'
   import NavigationExtras from '$lib/components/layout/NavigationExtras.svelte'
@@ -230,10 +229,8 @@ example = "1.0"`
 <div class="flex h-full w-full flex-col">
   <AppHeader>
     {#snippet afterStart()}
-      <div
-        class="flex min-w-0 flex-1 flex-col gap-x-4 gap-y-1 2xl:flex-row-reverse 2xl:justify-end"
-      >
-        <PipelineStatus class="mt-0 h-6 lg:-mt-4 2xl:mt-2" status={pipeline.current.status}
+      <div class="flex min-w-0 flex-1 flex-col gap-x-4 gap-y-1 sm:flex-row-reverse sm:justify-end">
+        <PipelineStatus class="mt-0 h-6 sm:mt-1.5" status={pipeline.current.status}
         ></PipelineStatus>
         <PipelineBreadcrumbs
           class="-ml-3 py-1 pl-3"
@@ -262,7 +259,8 @@ example = "1.0"`
                 })
               }}
               disabled={editDisabled}
-              class="input -mb-1 -ml-2 mr-2 inline w-64 max-w-full py-0 pl-2 text-base sm:text-lg"
+              class="inline overflow-hidden overflow-ellipsis"
+              inputClass="input flex -ml-2 mr-2 py-0 pl-2 text-base sm:text-lg"
             >
               <span class="text-base sm:text-lg">
                 {pipeline.current.name}

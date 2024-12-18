@@ -46,27 +46,25 @@
   ]
 </script>
 
-{#snippet header(full: string, short: string, isOpen?: boolean)}
-  {#if inline}
-    {full}
-  {:else}
-    <span class="hidden sm:inline">{full}</span>
-    <span class="inline sm:hidden">{short}</span>
-    <span class="fd fd-chevron-down text-[20px] transition-transform" class:rotate-180={isOpen}
-    ></span>
-  {/if}
+{#snippet dropdownHeader(full: string, short: string, toggle?: () => void, isOpen?: boolean)}
+  <button onclick={toggle} class="btn px-1 {toggle ? '' : 'cursor-default'} ">
+    {#if inline}
+      {full}
+    {:else}
+      <span class="hidden sm:inline">{full}</span>
+      <span class="inline sm:hidden">{short}</span>
+      <span class="fd fd-chevron-down text-[20px] transition-transform" class:rotate-180={isOpen}
+      ></span>
+    {/if}
+  </button>
 {/snippet}
 
 {#snippet docsButton(toggle?: () => void, isOpen?: boolean)}
-  <button onclick={toggle} class="btn {toggle ? '' : 'cursor-default'} ">
-    {@render header('Documentation', 'Docs', isOpen)}
-  </button>
+  {@render dropdownHeader('Documentation', 'Docs', toggle, isOpen)}
 {/snippet}
 
 {#snippet communityButton(toggle?: () => void, isOpen?: boolean)}
-  <button onclick={toggle} class="btn {toggle ? '' : 'cursor-default'}">
-    {@render header('Community Resources', 'Community', isOpen)}
-  </button>
+  {@render dropdownHeader('Community Resources', 'Community', toggle, isOpen)}
 {/snippet}
 
 {#snippet docsItems()}
@@ -101,7 +99,6 @@
     {@render docsButton()}
   </span>
   {@render docsItems()}
-  <!-- <div></div> -->
   <span class="flex flex-col text-surface-500">
     {@render communityButton()}
   </span>
