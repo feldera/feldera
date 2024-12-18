@@ -495,21 +495,35 @@ snapshot.  The condition must be a valid SQL Boolean expression that can be used
 the \`where\` clause of the \`select * from snapshot where ...\` query.
 
 This option can be used to specify the range of event times to include in the snapshot,
-e.g.: \`ts BETWEEN '2005-01-01 00:00:00' AND '2010-12-31 23:59:59'\`.`,
+e.g.: \`ts BETWEEN TIMESTAMP '2005-01-01 00:00:00' AND TIMESTAMP '2010-12-31 23:59:59'\`.`,
       nullable: true
     },
     timestamp_column: {
       type: 'string',
       description: `Table column that serves as an event timestamp.
 
-
 When this option is specified, and \`mode\` is one of \`snapshot\` or \`snapshot_and_follow\`,
-the snapshot of the table is ingested in the timestamp order.  This setting is required
-for tables declared with the
-[\`LATENESS\`](https://docs.feldera.com/sql/streaming#lateness-expressions) attribute
-in Feldera SQL. It impacts the performance of the connector, since data must be sorted
-before pushing it to the pipeline; therefore it is not recommended to use this
-settings for tables without \`LATENESS\`.`,
+table rows are ingested in the timestamp order, respecting the
+[\`LATENESS\`](https://docs.feldera.com/sql/streaming#lateness-expressions)
+property of the column: each ingested row has a timestamp no more than \`LATENESS\`
+time units earlier than the most recent timestamp of any previously ingested row.
+The ingestion is performed by partitioning the table into timestamp ranges of width
+\`LATENESS\`. Each range is processed sequentially, in increasing timestamp order.
+
+# Example
+
+Consider a table with timestamp column of type \`TIMESTAMP\` and lateness attribute
+\`INTERVAL 1 DAY\`. Assuming that the oldest timestamp in the table is
+\`2024-01-01T00:00:00\`\`, the connector will fetch all records with timestamps
+from \`2024-01-01\`, then all records for \`2024-01-02\`, \`2024-01-03\`, etc., until all records
+in the table have been ingested.
+
+# Requirements
+
+* The timestamp column must be of a supported type: integer, \`DATE\`, or \`TIMESTAMP\`.
+* The timestamp column must be declared with non-zero \`LATENESS\`.
+* For efficient ingest, the table must be optimized for timestamp-based
+queries using partitioning, Z-ordering, or liquid clustering.`,
       nullable: true
     },
     uri: {
@@ -631,263 +645,6 @@ The contents of this field is determined by \`error_code\`.`
   }
 } as const
 
-export const $ExtendedPipelineDescr = {
-  type: 'object',
-  description: `Pipeline descriptor which besides the basic fields in direct regular control of the user
-also has all additional fields generated and maintained by the back-end.`,
-  required: [
-    'id',
-    'name',
-    'description',
-    'created_at',
-    'version',
-    'platform_version',
-    'runtime_config',
-    'program_code',
-    'udf_rust',
-    'udf_toml',
-    'program_config',
-    'program_version',
-    'program_status',
-    'program_status_since',
-    'deployment_status',
-    'deployment_status_since',
-    'deployment_desired_status'
-  ],
-  properties: {
-    created_at: {
-      type: 'string',
-      format: 'date-time',
-      description: 'Timestamp when the pipeline was originally created.'
-    },
-    deployment_config: {
-      allOf: [
-        {
-          $ref: '#/components/schemas/PipelineConfig'
-        }
-      ],
-      nullable: true
-    },
-    deployment_desired_status: {
-      $ref: '#/components/schemas/PipelineDesiredStatus'
-    },
-    deployment_error: {
-      allOf: [
-        {
-          $ref: '#/components/schemas/ErrorResponse'
-        }
-      ],
-      nullable: true
-    },
-    deployment_location: {
-      type: 'string',
-      description: `Location where the pipeline can be reached at runtime
-(e.g., a TCP port number or a URI).`,
-      nullable: true
-    },
-    deployment_status: {
-      $ref: '#/components/schemas/PipelineStatus'
-    },
-    deployment_status_since: {
-      type: 'string',
-      format: 'date-time',
-      description: `Time when the pipeline was assigned its current status
-of the pipeline.`
-    },
-    description: {
-      type: 'string',
-      description: 'Pipeline description.'
-    },
-    id: {
-      $ref: '#/components/schemas/PipelineId'
-    },
-    name: {
-      type: 'string',
-      description: 'Pipeline name.'
-    },
-    platform_version: {
-      type: 'string',
-      description: 'Pipeline platform version.'
-    },
-    program_binary_integrity_checksum: {
-      type: 'string',
-      description: 'Checksum of the binary file itself.',
-      nullable: true
-    },
-    program_binary_source_checksum: {
-      type: 'string',
-      description:
-        'Combined checksum of all the inputs that influenced Rust compilation to a binary.',
-      nullable: true
-    },
-    program_binary_url: {
-      type: 'string',
-      description: 'URL where to download the program binary from.',
-      nullable: true
-    },
-    program_code: {
-      type: 'string',
-      description: 'Program SQL code.'
-    },
-    program_config: {
-      $ref: '#/components/schemas/ProgramConfig'
-    },
-    program_info: {
-      allOf: [
-        {
-          $ref: '#/components/schemas/ProgramInfo'
-        }
-      ],
-      nullable: true
-    },
-    program_status: {
-      $ref: '#/components/schemas/ProgramStatus'
-    },
-    program_status_since: {
-      type: 'string',
-      format: 'date-time',
-      description: 'Timestamp when the current program status was set.'
-    },
-    program_version: {
-      $ref: '#/components/schemas/Version'
-    },
-    runtime_config: {
-      $ref: '#/components/schemas/RuntimeConfig'
-    },
-    udf_rust: {
-      type: 'string',
-      description: 'Rust code for UDFs.'
-    },
-    udf_toml: {
-      type: 'string',
-      description: 'Rust dependencies in the TOML format.'
-    },
-    version: {
-      $ref: '#/components/schemas/Version'
-    }
-  }
-} as const
-
-export const $ExtendedPipelineDescrOptionalCode = {
-  type: 'object',
-  description: 'Extended pipeline descriptor with code being optionally included.',
-  required: [
-    'id',
-    'name',
-    'description',
-    'created_at',
-    'version',
-    'platform_version',
-    'runtime_config',
-    'program_config',
-    'program_version',
-    'program_status',
-    'program_status_since',
-    'deployment_status',
-    'deployment_status_since',
-    'deployment_desired_status'
-  ],
-  properties: {
-    created_at: {
-      type: 'string',
-      format: 'date-time'
-    },
-    deployment_config: {
-      allOf: [
-        {
-          $ref: '#/components/schemas/PipelineConfig'
-        }
-      ],
-      nullable: true
-    },
-    deployment_desired_status: {
-      $ref: '#/components/schemas/PipelineDesiredStatus'
-    },
-    deployment_error: {
-      allOf: [
-        {
-          $ref: '#/components/schemas/ErrorResponse'
-        }
-      ],
-      nullable: true
-    },
-    deployment_location: {
-      type: 'string',
-      nullable: true
-    },
-    deployment_status: {
-      $ref: '#/components/schemas/PipelineStatus'
-    },
-    deployment_status_since: {
-      type: 'string',
-      format: 'date-time'
-    },
-    description: {
-      type: 'string'
-    },
-    id: {
-      $ref: '#/components/schemas/PipelineId'
-    },
-    name: {
-      type: 'string'
-    },
-    platform_version: {
-      type: 'string'
-    },
-    program_binary_integrity_checksum: {
-      type: 'string',
-      nullable: true
-    },
-    program_binary_source_checksum: {
-      type: 'string',
-      nullable: true
-    },
-    program_binary_url: {
-      type: 'string',
-      nullable: true
-    },
-    program_code: {
-      type: 'string',
-      nullable: true
-    },
-    program_config: {
-      $ref: '#/components/schemas/ProgramConfig'
-    },
-    program_info: {
-      allOf: [
-        {
-          $ref: '#/components/schemas/ProgramInfo'
-        }
-      ],
-      nullable: true
-    },
-    program_status: {
-      $ref: '#/components/schemas/ProgramStatus'
-    },
-    program_status_since: {
-      type: 'string',
-      format: 'date-time'
-    },
-    program_version: {
-      $ref: '#/components/schemas/Version'
-    },
-    runtime_config: {
-      $ref: '#/components/schemas/RuntimeConfig'
-    },
-    udf_rust: {
-      type: 'string',
-      nullable: true
-    },
-    udf_toml: {
-      type: 'string',
-      nullable: true
-    },
-    version: {
-      $ref: '#/components/schemas/Version'
-    }
-  }
-} as const
-
 export const $Field = {
   allOf: [
     {
@@ -899,6 +656,18 @@ export const $Field = {
       properties: {
         columntype: {
           $ref: '#/components/schemas/ColumnType'
+        },
+        default: {
+          type: 'string',
+          nullable: true
+        },
+        lateness: {
+          type: 'string',
+          nullable: true
+        },
+        watermark: {
+          type: 'string',
+          nullable: true
         }
       }
     }
@@ -1043,6 +812,16 @@ will pick up the last chunk of records (100..125) to generate.`,
     }
   },
   additionalProperties: false
+} as const
+
+export const $GetPipelineParameters = {
+  type: 'object',
+  description: 'Query parameters to GET a pipeline or a list of pipelines.',
+  properties: {
+    selector: {
+      $ref: '#/components/schemas/PipelineFieldSelector'
+    }
+  }
 } as const
 
 export const $HttpInputConfig = {
@@ -1304,19 +1083,6 @@ These options override \`kafka_options\` for producers, and may be empty.`,
   }
 } as const
 
-export const $ListPipelinesQueryParameters = {
-  type: 'object',
-  description: 'Query parameters for GET the list of pipelines.',
-  properties: {
-    code: {
-      type: 'boolean',
-      description: `Whether to include program code in the response (default: \`true\`).
-Passing \`false\` reduces the response size, which is particularly handy
-when frequently monitoring the endpoint over low bandwidth connections.`
-    }
-  }
-} as const
-
 export const $NewApiKeyRequest = {
   type: 'object',
   description: 'Request to create a new API key.',
@@ -1512,7 +1278,7 @@ connected to.`
 
 export const $PatchPipeline = {
   type: 'object',
-  description: `Patch (partially) update the pipeline.
+  description: `Partially update the pipeline (PATCH).
 
 Note that the patching only applies to the main fields, not subfields.
 For instance, it is not possible to update only the number of workers;
@@ -1724,49 +1490,221 @@ of the compiled program (e.g., connectors). Storage configuration,
 if applicable, is set by the runner.`
 } as const
 
-export const $PipelineDescr = {
-  type: 'object',
-  description: 'Pipeline descriptor.',
-  required: ['name', 'description', 'runtime_config', 'program_code', 'program_config'],
-  properties: {
-    description: {
-      type: 'string',
-      description: 'Pipeline description.'
-    },
-    name: {
-      type: 'string',
-      description: 'Pipeline name.'
-    },
-    program_code: {
-      type: 'string',
-      description: 'Program SQL code.'
-    },
-    program_config: {
-      $ref: '#/components/schemas/ProgramConfig'
-    },
-    runtime_config: {
-      $ref: '#/components/schemas/RuntimeConfig'
-    },
-    udf_rust: {
-      type: 'string',
-      description: 'Rust code for UDFs.'
-    },
-    udf_toml: {
-      type: 'string',
-      description: 'Rust dependencies in the TOML format.'
-    }
-  }
-} as const
-
 export const $PipelineDesiredStatus = {
   type: 'string',
   enum: ['Shutdown', 'Paused', 'Running']
+} as const
+
+export const $PipelineFieldSelector = {
+  type: 'string',
+  enum: ['all', 'status']
 } as const
 
 export const $PipelineId = {
   type: 'string',
   format: 'uuid',
   description: 'Pipeline identifier.'
+} as const
+
+export const $PipelineInfo = {
+  type: 'object',
+  description: 'Pipeline information.',
+  required: [
+    'id',
+    'name',
+    'description',
+    'created_at',
+    'version',
+    'platform_version',
+    'runtime_config',
+    'program_code',
+    'udf_rust',
+    'udf_toml',
+    'program_config',
+    'program_version',
+    'program_status',
+    'program_status_since',
+    'deployment_status',
+    'deployment_status_since',
+    'deployment_desired_status'
+  ],
+  properties: {
+    created_at: {
+      type: 'string',
+      format: 'date-time'
+    },
+    deployment_desired_status: {
+      $ref: '#/components/schemas/PipelineDesiredStatus'
+    },
+    deployment_error: {
+      allOf: [
+        {
+          $ref: '#/components/schemas/ErrorResponse'
+        }
+      ],
+      nullable: true
+    },
+    deployment_status: {
+      $ref: '#/components/schemas/PipelineStatus'
+    },
+    deployment_status_since: {
+      type: 'string',
+      format: 'date-time'
+    },
+    description: {
+      type: 'string'
+    },
+    id: {
+      $ref: '#/components/schemas/PipelineId'
+    },
+    name: {
+      type: 'string'
+    },
+    platform_version: {
+      type: 'string'
+    },
+    program_code: {
+      type: 'string'
+    },
+    program_config: {
+      $ref: '#/components/schemas/ProgramConfig'
+    },
+    program_info: {
+      allOf: [
+        {
+          $ref: '#/components/schemas/ProgramInfo'
+        }
+      ],
+      nullable: true
+    },
+    program_status: {
+      $ref: '#/components/schemas/ProgramStatus'
+    },
+    program_status_since: {
+      type: 'string',
+      format: 'date-time'
+    },
+    program_version: {
+      $ref: '#/components/schemas/Version'
+    },
+    runtime_config: {
+      $ref: '#/components/schemas/RuntimeConfig'
+    },
+    udf_rust: {
+      type: 'string'
+    },
+    udf_toml: {
+      type: 'string'
+    },
+    version: {
+      $ref: '#/components/schemas/Version'
+    }
+  }
+} as const
+
+export const $PipelineSelectedInfo = {
+  type: 'object',
+  description: `Pipeline information which has a selected subset of optional fields.
+If an optional field is not selected (i.e., is \`None\`), it will not be serialized.`,
+  required: [
+    'id',
+    'name',
+    'description',
+    'created_at',
+    'version',
+    'platform_version',
+    'program_version',
+    'program_status',
+    'program_status_since',
+    'deployment_status',
+    'deployment_status_since',
+    'deployment_desired_status'
+  ],
+  properties: {
+    created_at: {
+      type: 'string',
+      format: 'date-time'
+    },
+    deployment_desired_status: {
+      $ref: '#/components/schemas/PipelineDesiredStatus'
+    },
+    deployment_error: {
+      allOf: [
+        {
+          $ref: '#/components/schemas/ErrorResponse'
+        }
+      ],
+      nullable: true
+    },
+    deployment_status: {
+      $ref: '#/components/schemas/PipelineStatus'
+    },
+    deployment_status_since: {
+      type: 'string',
+      format: 'date-time'
+    },
+    description: {
+      type: 'string'
+    },
+    id: {
+      $ref: '#/components/schemas/PipelineId'
+    },
+    name: {
+      type: 'string'
+    },
+    platform_version: {
+      type: 'string'
+    },
+    program_code: {
+      type: 'string',
+      nullable: true
+    },
+    program_config: {
+      allOf: [
+        {
+          $ref: '#/components/schemas/ProgramConfig'
+        }
+      ],
+      nullable: true
+    },
+    program_info: {
+      allOf: [
+        {
+          $ref: '#/components/schemas/ProgramInfo'
+        }
+      ],
+      nullable: true
+    },
+    program_status: {
+      $ref: '#/components/schemas/ProgramStatus'
+    },
+    program_status_since: {
+      type: 'string',
+      format: 'date-time'
+    },
+    program_version: {
+      $ref: '#/components/schemas/Version'
+    },
+    runtime_config: {
+      allOf: [
+        {
+          $ref: '#/components/schemas/RuntimeConfig'
+        }
+      ],
+      nullable: true
+    },
+    udf_rust: {
+      type: 'string',
+      nullable: true
+    },
+    udf_toml: {
+      type: 'string',
+      nullable: true
+    },
+    version: {
+      $ref: '#/components/schemas/Version'
+    }
+  }
 } as const
 
 export const $PipelineStatus = {
@@ -1828,13 +1766,13 @@ These statuses are selected by invoking REST endpoints shown
 in the diagram.
 
 The user can monitor the current state of the pipeline via the
-\`GET /v0/pipelines/{name}\` endpoint, which returns an object of type
-\`ExtendedPipelineDescr\`. In a typical scenario, the user first sets
-the desired state, e.g., by invoking the \`/start\` endpoint, and
-then polls the \`GET /v0/pipelines/{name}\` endpoint to monitor the
-actual status of the pipeline until its \`deployment_status\` attribute
-changes to "running" indicating that the pipeline has been successfully
-initialized and is processing data, or "failed", indicating an error.`,
+\`GET /v0/pipelines/{name}\` endpoint. In a typical scenario,
+the user first sets the desired state, e.g., by invoking the
+\`/start\` endpoint, and then polls the \`GET /v0/pipelines/{name}\`
+endpoint to monitor the actual status of the pipeline until its
+\`deployment_status\` attribute changes to \`Running\` indicating
+that the pipeline has been successfully initialized and is
+processing data, or \`Failed\`, indicating an error.`,
   enum: [
     'Shutdown',
     'Provisioning',
@@ -1845,6 +1783,49 @@ initialized and is processing data, or "failed", indicating an error.`,
     'Failed',
     'ShuttingDown'
   ]
+} as const
+
+export const $PostPutPipeline = {
+  type: 'object',
+  description: `Create a new pipeline (POST), or fully update an existing pipeline (PUT).
+Left-out fields will be set to their default value.`,
+  required: ['name', 'program_code'],
+  properties: {
+    description: {
+      type: 'string',
+      nullable: true
+    },
+    name: {
+      type: 'string'
+    },
+    program_code: {
+      type: 'string'
+    },
+    program_config: {
+      allOf: [
+        {
+          $ref: '#/components/schemas/ProgramConfig'
+        }
+      ],
+      nullable: true
+    },
+    runtime_config: {
+      allOf: [
+        {
+          $ref: '#/components/schemas/RuntimeConfig'
+        }
+      ],
+      nullable: true
+    },
+    udf_rust: {
+      type: 'string',
+      nullable: true
+    },
+    udf_toml: {
+      type: 'string',
+      nullable: true
+    }
+  }
 } as const
 
 export const $ProgramConfig = {

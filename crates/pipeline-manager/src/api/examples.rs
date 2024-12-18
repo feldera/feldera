@@ -1,10 +1,12 @@
 // Example errors for use in OpenAPI docs.
 use crate::api::error::ApiError;
-use crate::api::pipeline::{ExtendedPipelineDescrOptionalCode, PatchPipeline};
+use crate::api::pipeline::{
+    PatchPipeline, PipelineFieldSelector, PipelineInfo, PipelineSelectedInfo, PostPutPipeline,
+};
 use crate::db::error::DBError;
 use crate::db::types::common::Version;
 use crate::db::types::pipeline::{
-    ExtendedPipelineDescr, PipelineDescr, PipelineDesiredStatus, PipelineId, PipelineStatus,
+    ExtendedPipelineDescr, PipelineDesiredStatus, PipelineId, PipelineStatus,
 };
 use crate::db::types::program::{CompilationProfile, ProgramConfig, ProgramStatus};
 use crate::error::ManagerError;
@@ -46,26 +48,26 @@ pub(crate) fn error_stream_terminated() -> ErrorResponse {
     })
 }
 
-pub(crate) fn pipeline_1() -> PipelineDescr {
-    PipelineDescr {
+pub(crate) fn pipeline_post_put() -> PostPutPipeline {
+    PostPutPipeline {
         name: "example1".to_string(),
-        description: "Description of the pipeline example1".to_string(),
-        runtime_config: RuntimeConfig {
+        description: Some("Description of the pipeline example1".to_string()),
+        runtime_config: Some(RuntimeConfig {
             workers: 16,
             tracing_endpoint_jaeger: "".to_string(),
             ..RuntimeConfig::default()
-        },
+        }),
         program_code: "CREATE TABLE table1 ( col1 INT );".to_string(),
-        udf_rust: "".to_string(),
-        udf_toml: "".to_string(),
-        program_config: ProgramConfig {
+        udf_rust: None,
+        udf_toml: None,
+        program_config: Some(ProgramConfig {
             profile: Some(CompilationProfile::Optimized),
             cache: true,
-        },
+        }),
     }
 }
 
-pub(crate) fn extended_pipeline_1() -> ExtendedPipelineDescr {
+fn extended_pipeline_1() -> ExtendedPipelineDescr {
     ExtendedPipelineDescr {
         id: PipelineId(uuid!("67e55044-10b1-426f-9247-bb680e5fe0c8")),
         name: "example1".to_string(),
@@ -101,7 +103,7 @@ pub(crate) fn extended_pipeline_1() -> ExtendedPipelineDescr {
     }
 }
 
-pub(crate) fn extended_pipeline_2() -> ExtendedPipelineDescr {
+fn extended_pipeline_2() -> ExtendedPipelineDescr {
     ExtendedPipelineDescr {
         id: PipelineId(uuid!("67e55044-10b1-426f-9247-bb680e5fe0c9")),
         name: "example2".to_string(),
@@ -152,11 +154,20 @@ pub(crate) fn extended_pipeline_2() -> ExtendedPipelineDescr {
     }
 }
 
-pub(crate) fn list_extended_pipeline_optional_code() -> Vec<ExtendedPipelineDescrOptionalCode> {
-    vec![
-        ExtendedPipelineDescrOptionalCode::new(extended_pipeline_1(), false),
-        ExtendedPipelineDescrOptionalCode::new(extended_pipeline_2(), false),
-    ]
+pub(crate) fn pipeline_1_info() -> PipelineInfo {
+    PipelineInfo::new(&extended_pipeline_1())
+}
+
+pub(crate) fn pipeline_1_selected_info() -> PipelineSelectedInfo {
+    PipelineSelectedInfo::new(&extended_pipeline_1(), &PipelineFieldSelector::All)
+}
+
+pub(crate) fn pipeline_2_selected_info() -> PipelineSelectedInfo {
+    PipelineSelectedInfo::new(&extended_pipeline_2(), &PipelineFieldSelector::All)
+}
+
+pub(crate) fn list_pipeline_selected_info() -> Vec<PipelineSelectedInfo> {
+    vec![pipeline_1_selected_info(), pipeline_2_selected_info()]
 }
 
 pub(crate) fn patch_pipeline() -> PatchPipeline {

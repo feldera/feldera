@@ -361,20 +361,34 @@ export type DeltaTableReaderConfig = {
    * the `where` clause of the `select * from snapshot where ...` query.
    *
    * This option can be used to specify the range of event times to include in the snapshot,
-   * e.g.: `ts BETWEEN '2005-01-01 00:00:00' AND '2010-12-31 23:59:59'`.
+   * e.g.: `ts BETWEEN TIMESTAMP '2005-01-01 00:00:00' AND TIMESTAMP '2010-12-31 23:59:59'`.
    */
   snapshot_filter?: string | null
   /**
    * Table column that serves as an event timestamp.
    *
-   *
    * When this option is specified, and `mode` is one of `snapshot` or `snapshot_and_follow`,
-   * the snapshot of the table is ingested in the timestamp order.  This setting is required
-   * for tables declared with the
-   * [`LATENESS`](https://docs.feldera.com/sql/streaming#lateness-expressions) attribute
-   * in Feldera SQL. It impacts the performance of the connector, since data must be sorted
-   * before pushing it to the pipeline; therefore it is not recommended to use this
-   * settings for tables without `LATENESS`.
+   * table rows are ingested in the timestamp order, respecting the
+   * [`LATENESS`](https://docs.feldera.com/sql/streaming#lateness-expressions)
+   * property of the column: each ingested row has a timestamp no more than `LATENESS`
+   * time units earlier than the most recent timestamp of any previously ingested row.
+   * The ingestion is performed by partitioning the table into timestamp ranges of width
+   * `LATENESS`. Each range is processed sequentially, in increasing timestamp order.
+   *
+   * # Example
+   *
+   * Consider a table with timestamp column of type `TIMESTAMP` and lateness attribute
+   * `INTERVAL 1 DAY`. Assuming that the oldest timestamp in the table is
+   * `2024-01-01T00:00:00``, the connector will fetch all records with timestamps
+   * from `2024-01-01`, then all records for `2024-01-02`, `2024-01-03`, etc., until all records
+   * in the table have been ingested.
+   *
+   * # Requirements
+   *
+   * * The timestamp column must be of a supported type: integer, `DATE`, or `TIMESTAMP`.
+   * * The timestamp column must be declared with non-zero `LATENESS`.
+   * * For efficient ingest, the table must be optimized for timestamp-based
+   * queries using partitioning, Z-ordering, or liquid clustering.
    */
   timestamp_column?: string | null
   /**
@@ -483,114 +497,15 @@ export type ErrorResponse = {
 }
 
 /**
- * Pipeline descriptor which besides the basic fields in direct regular control of the user
- * also has all additional fields generated and maintained by the back-end.
- */
-export type ExtendedPipelineDescr = {
-  /**
-   * Timestamp when the pipeline was originally created.
-   */
-  created_at: string
-  deployment_config?: PipelineConfig | null
-  deployment_desired_status: PipelineDesiredStatus
-  deployment_error?: ErrorResponse | null
-  /**
-   * Location where the pipeline can be reached at runtime
-   * (e.g., a TCP port number or a URI).
-   */
-  deployment_location?: string | null
-  deployment_status: PipelineStatus
-  /**
-   * Time when the pipeline was assigned its current status
-   * of the pipeline.
-   */
-  deployment_status_since: string
-  /**
-   * Pipeline description.
-   */
-  description: string
-  id: PipelineId
-  /**
-   * Pipeline name.
-   */
-  name: string
-  /**
-   * Pipeline platform version.
-   */
-  platform_version: string
-  /**
-   * Checksum of the binary file itself.
-   */
-  program_binary_integrity_checksum?: string | null
-  /**
-   * Combined checksum of all the inputs that influenced Rust compilation to a binary.
-   */
-  program_binary_source_checksum?: string | null
-  /**
-   * URL where to download the program binary from.
-   */
-  program_binary_url?: string | null
-  /**
-   * Program SQL code.
-   */
-  program_code: string
-  program_config: ProgramConfig
-  program_info?: ProgramInfo | null
-  program_status: ProgramStatus
-  /**
-   * Timestamp when the current program status was set.
-   */
-  program_status_since: string
-  program_version: Version
-  runtime_config: RuntimeConfig
-  /**
-   * Rust code for UDFs.
-   */
-  udf_rust: string
-  /**
-   * Rust dependencies in the TOML format.
-   */
-  udf_toml: string
-  version: Version
-}
-
-/**
- * Extended pipeline descriptor with code being optionally included.
- */
-export type ExtendedPipelineDescrOptionalCode = {
-  created_at: string
-  deployment_config?: PipelineConfig | null
-  deployment_desired_status: PipelineDesiredStatus
-  deployment_error?: ErrorResponse | null
-  deployment_location?: string | null
-  deployment_status: PipelineStatus
-  deployment_status_since: string
-  description: string
-  id: PipelineId
-  name: string
-  platform_version: string
-  program_binary_integrity_checksum?: string | null
-  program_binary_source_checksum?: string | null
-  program_binary_url?: string | null
-  program_code?: string | null
-  program_config: ProgramConfig
-  program_info?: ProgramInfo | null
-  program_status: ProgramStatus
-  program_status_since: string
-  program_version: Version
-  runtime_config: RuntimeConfig
-  udf_rust?: string | null
-  udf_toml?: string | null
-  version: Version
-}
-
-/**
  * A SQL field.
  *
  * Matches the SQL compiler JSON format.
  */
 export type Field = SqlIdentifier & {
   columntype: ColumnType
+  default?: string | null
+  lateness?: string | null
+  watermark?: string | null
 }
 
 /**
@@ -703,6 +618,13 @@ export type GenerationPlan = {
    * will pick up the last chunk of records (100..125) to generate.
    */
   worker_chunk_size?: number | null
+}
+
+/**
+ * Query parameters to GET a pipeline or a list of pipelines.
+ */
+export type GetPipelineParameters = {
+  selector?: PipelineFieldSelector
 }
 
 /**
@@ -900,18 +822,6 @@ export type KafkaOutputFtConfig = {
 }
 
 /**
- * Query parameters for GET the list of pipelines.
- */
-export type ListPipelinesQueryParameters = {
-  /**
-   * Whether to include program code in the response (default: `true`).
-   * Passing `false` reduces the response size, which is particularly handy
-   * when frequently monitoring the endpoint over low bandwidth connections.
-   */
-  code?: boolean
-}
-
-/**
  * Request to create a new API key.
  */
 export type NewApiKeyRequest = {
@@ -1054,7 +964,7 @@ export type OutputEndpointConfig = ConnectorConfig & {
 }
 
 /**
- * Patch (partially) update the pipeline.
+ * Partially update the pipeline (PATCH).
  *
  * Note that the patching only applies to the main fields, not subfields.
  * For instance, it is not possible to update only the number of workers;
@@ -1173,40 +1083,65 @@ export type PipelineConfig = {
   storage_config?: StorageConfig | null
 }
 
-/**
- * Pipeline descriptor.
- */
-export type PipelineDescr = {
-  /**
-   * Pipeline description.
-   */
-  description: string
-  /**
-   * Pipeline name.
-   */
-  name: string
-  /**
-   * Program SQL code.
-   */
-  program_code: string
-  program_config: ProgramConfig
-  runtime_config: RuntimeConfig
-  /**
-   * Rust code for UDFs.
-   */
-  udf_rust?: string
-  /**
-   * Rust dependencies in the TOML format.
-   */
-  udf_toml?: string
-}
-
 export type PipelineDesiredStatus = 'Shutdown' | 'Paused' | 'Running'
+
+export type PipelineFieldSelector = 'all' | 'status'
 
 /**
  * Pipeline identifier.
  */
 export type PipelineId = string
+
+/**
+ * Pipeline information.
+ */
+export type PipelineInfo = {
+  created_at: string
+  deployment_desired_status: PipelineDesiredStatus
+  deployment_error?: ErrorResponse | null
+  deployment_status: PipelineStatus
+  deployment_status_since: string
+  description: string
+  id: PipelineId
+  name: string
+  platform_version: string
+  program_code: string
+  program_config: ProgramConfig
+  program_info?: ProgramInfo | null
+  program_status: ProgramStatus
+  program_status_since: string
+  program_version: Version
+  runtime_config: RuntimeConfig
+  udf_rust: string
+  udf_toml: string
+  version: Version
+}
+
+/**
+ * Pipeline information which has a selected subset of optional fields.
+ * If an optional field is not selected (i.e., is `None`), it will not be serialized.
+ */
+export type PipelineSelectedInfo = {
+  created_at: string
+  deployment_desired_status: PipelineDesiredStatus
+  deployment_error?: ErrorResponse | null
+  deployment_status: PipelineStatus
+  deployment_status_since: string
+  description: string
+  id: PipelineId
+  name: string
+  platform_version: string
+  program_code?: string | null
+  program_config?: ProgramConfig | null
+  program_info?: ProgramInfo | null
+  program_status: ProgramStatus
+  program_status_since: string
+  program_version: Version
+  runtime_config?: RuntimeConfig | null
+  udf_rust?: string | null
+  udf_toml?: string | null
+  version: Version
+}
 
 /**
  * Pipeline status.
@@ -1266,13 +1201,13 @@ export type PipelineId = string
  * in the diagram.
  *
  * The user can monitor the current state of the pipeline via the
- * `GET /v0/pipelines/{name}` endpoint, which returns an object of type
- * `ExtendedPipelineDescr`. In a typical scenario, the user first sets
- * the desired state, e.g., by invoking the `/start` endpoint, and
- * then polls the `GET /v0/pipelines/{name}` endpoint to monitor the
- * actual status of the pipeline until its `deployment_status` attribute
- * changes to "running" indicating that the pipeline has been successfully
- * initialized and is processing data, or "failed", indicating an error.
+ * `GET /v0/pipelines/{name}` endpoint. In a typical scenario,
+ * the user first sets the desired state, e.g., by invoking the
+ * `/start` endpoint, and then polls the `GET /v0/pipelines/{name}`
+ * endpoint to monitor the actual status of the pipeline until its
+ * `deployment_status` attribute changes to `Running` indicating
+ * that the pipeline has been successfully initialized and is
+ * processing data, or `Failed`, indicating an error.
  */
 export type PipelineStatus =
   | 'Shutdown'
@@ -1283,6 +1218,20 @@ export type PipelineStatus =
   | 'Unavailable'
   | 'Failed'
   | 'ShuttingDown'
+
+/**
+ * Create a new pipeline (POST), or fully update an existing pipeline (PUT).
+ * Left-out fields will be set to their default value.
+ */
+export type PostPutPipeline = {
+  description?: string | null
+  name: string
+  program_code: string
+  program_config?: ProgramConfig | null
+  runtime_config?: RuntimeConfig | null
+  udf_rust?: string | null
+  udf_toml?: string | null
+}
 
 /**
  * Program configuration.
@@ -1948,23 +1897,24 @@ export type GetMetricsError = unknown
 export type ListPipelinesData = {
   query?: {
     /**
-     * Whether to include program code in the response (default: `true`).
-     * Passing `false` reduces the response size, which is particularly handy
-     * when frequently monitoring the endpoint over low bandwidth connections.
+     * The `selector` parameter limits which fields are returned for a pipeline.
+     * Limiting which fields is particularly handy for instance when frequently
+     * monitoring over low bandwidth connections while being only interested
+     * in pipeline status.
      */
-    code?: boolean
+    selector?: PipelineFieldSelector
   }
 }
 
-export type ListPipelinesResponse = Array<ExtendedPipelineDescrOptionalCode>
+export type ListPipelinesResponse = Array<PipelineSelectedInfo>
 
 export type ListPipelinesError = ErrorResponse
 
 export type PostPipelineData = {
-  body: PipelineDescr
+  body: PostPutPipeline
 }
 
-export type PostPipelineResponse = ExtendedPipelineDescr
+export type PostPipelineResponse = PipelineInfo
 
 export type PostPipelineError = ErrorResponse
 
@@ -1975,14 +1925,23 @@ export type GetPipelineData = {
      */
     pipeline_name: string
   }
+  query?: {
+    /**
+     * The `selector` parameter limits which fields are returned for a pipeline.
+     * Limiting which fields is particularly handy for instance when frequently
+     * monitoring over low bandwidth connections while being only interested
+     * in pipeline status.
+     */
+    selector?: PipelineFieldSelector
+  }
 }
 
-export type GetPipelineResponse = ExtendedPipelineDescr
+export type GetPipelineResponse = PipelineSelectedInfo
 
 export type GetPipelineError = ErrorResponse
 
 export type PutPipelineData = {
-  body: PipelineDescr
+  body: PostPutPipeline
   path: {
     /**
      * Unique pipeline name
@@ -1991,7 +1950,7 @@ export type PutPipelineData = {
   }
 }
 
-export type PutPipelineResponse = ExtendedPipelineDescr
+export type PutPipelineResponse = PipelineInfo
 
 export type PutPipelineError = ErrorResponse
 
@@ -2018,7 +1977,7 @@ export type PatchPipelineData = {
   }
 }
 
-export type PatchPipelineResponse = ExtendedPipelineDescr
+export type PatchPipelineResponse = PipelineInfo
 
 export type PatchPipelineError = ErrorResponse
 
@@ -2135,27 +2094,6 @@ export type HttpInputResponse = unknown
 
 export type HttpInputError = ErrorResponse
 
-export type InputEndpointActionData = {
-  path: {
-    /**
-     * Endpoint action [start, pause]
-     */
-    action: string
-    /**
-     * Input endpoint name
-     */
-    endpoint_name: string
-    /**
-     * Unique pipeline name
-     */
-    pipeline_name: string
-  }
-}
-
-export type InputEndpointActionResponse = unknown
-
-export type InputEndpointActionError = ErrorResponse
-
 export type GetPipelineLogsData = {
   path: {
     /**
@@ -2206,6 +2144,31 @@ export type GetPipelineStatsResponse = {
 }
 
 export type GetPipelineStatsError = ErrorResponse
+
+export type PostPipelineInputConnectorActionData = {
+  path: {
+    /**
+     * Input connector action (one of: start, pause)
+     */
+    action: string
+    /**
+     * Unique input connector name
+     */
+    connector_name: string
+    /**
+     * Unique pipeline name
+     */
+    pipeline_name: string
+    /**
+     * Unique table name
+     */
+    table_name: string
+  }
+}
+
+export type PostPipelineInputConnectorActionResponse = unknown
+
+export type PostPipelineInputConnectorActionError = ErrorResponse
 
 export type PostPipelineActionData = {
   path: {
@@ -2336,7 +2299,7 @@ export type $OpenApiTs = {
         /**
          * List of pipelines retrieved successfully
          */
-        '200': Array<ExtendedPipelineDescrOptionalCode>
+        '200': Array<PipelineSelectedInfo>
         '500': ErrorResponse
       }
     }
@@ -2346,7 +2309,11 @@ export type $OpenApiTs = {
         /**
          * Pipeline successfully created
          */
-        '201': ExtendedPipelineDescr
+        '201': PipelineInfo
+        /**
+         * Invalid name specified
+         */
+        '400': ErrorResponse
         /**
          * Cannot create pipeline as the name already exists
          */
@@ -2361,7 +2328,7 @@ export type $OpenApiTs = {
         /**
          * Pipeline retrieved successfully
          */
-        '200': ExtendedPipelineDescr
+        '200': PipelineSelectedInfo
         /**
          * Pipeline with that name does not exist
          */
@@ -2374,7 +2341,7 @@ export type $OpenApiTs = {
         /**
          * Pipeline successfully updated
          */
-        '200': ExtendedPipelineDescr
+        '200': PipelineInfo
         /**
          * Pipeline needs to be shutdown to be modified
          */
@@ -2408,7 +2375,7 @@ export type $OpenApiTs = {
         /**
          * Pipeline successfully updated
          */
-        '200': ExtendedPipelineDescr
+        '200': PipelineInfo
         /**
          * Pipeline needs to be shutdown to be modified
          */
@@ -2533,21 +2500,6 @@ export type $OpenApiTs = {
       }
     }
   }
-  '/v0/pipelines/{pipeline_name}/input_endpoints/{endpoint_name}/{action}': {
-    post: {
-      req: InputEndpointActionData
-      res: {
-        /**
-         * Request accepted.
-         */
-        '202': unknown
-        /**
-         * Specified endpoint does not exist.
-         */
-        '404': ErrorResponse
-      }
-    }
-  }
   '/v0/pipelines/{pipeline_name}/logs': {
     get: {
       req: GetPipelineLogsData
@@ -2602,6 +2554,21 @@ export type $OpenApiTs = {
         '400': ErrorResponse
         /**
          * Pipeline with that name does not exist
+         */
+        '404': ErrorResponse
+      }
+    }
+  }
+  '/v0/pipelines/{pipeline_name}/tables/{table_name}/connectors/{connector_name}/{action}': {
+    post: {
+      req: PostPipelineInputConnectorActionData
+      res: {
+        /**
+         * Action has been processed
+         */
+        '200': unknown
+        /**
+         * Input connector with that name does not exist
          */
         '404': ErrorResponse
       }

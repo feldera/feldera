@@ -179,7 +179,7 @@ export const patchPipeline = async (pipeline_name: string, pipeline: Partial<Pip
 }
 
 export const getPipelines = async (): Promise<PipelineThumb[]> => {
-  const pipelines = await handled(listPipelines)({ query: { code: false } })
+  const pipelines = await handled(listPipelines)({ query: { selector: 'status' } })
   return pipelines.map(toPipelineThumb)
 }
 

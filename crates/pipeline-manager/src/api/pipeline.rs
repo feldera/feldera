@@ -1,7 +1,6 @@
 use super::ManagerError;
 use crate::api::error::ApiError;
 use crate::api::examples;
-use crate::api::util::parse_url_parameter;
 use crate::api::ServerState;
 #[cfg(not(feature = "feldera-enterprise"))]
 use crate::common_error::CommonError;
@@ -23,7 +22,7 @@ use actix_web::{
     HttpRequest, HttpResponse,
 };
 use chrono::{DateTime, Utc};
-use feldera_types::config::{PipelineConfig, RuntimeConfig};
+use feldera_types::config::RuntimeConfig;
 use feldera_types::error::ErrorResponse;
 use feldera_types::program_schema::SqlIdentifier;
 use log::info;
@@ -32,9 +31,9 @@ use std::time::Duration;
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
-/// Extended pipeline descriptor with code being optionally included.
-#[derive(Deserialize, Serialize, ToSchema, Eq, PartialEq, Debug, Clone)]
-pub struct ExtendedPipelineDescrOptionalCode {
+/// Pipeline information.
+#[derive(Serialize, ToSchema, Eq, PartialEq, Debug, Clone)]
+pub struct PipelineInfo {
     pub id: PipelineId,
     pub name: String,
     pub description: String,
@@ -42,88 +41,260 @@ pub struct ExtendedPipelineDescrOptionalCode {
     pub version: Version,
     pub platform_version: String,
     pub runtime_config: RuntimeConfig,
-    pub program_code: Option<String>,
-    pub udf_rust: Option<String>,
-    pub udf_toml: Option<String>,
+    pub program_code: String,
+    pub udf_rust: String,
+    pub udf_toml: String,
     pub program_config: ProgramConfig,
     pub program_version: Version,
     pub program_status: ProgramStatus,
     pub program_status_since: DateTime<Utc>,
-    pub program_info: Option<Option<ProgramInfo>>,
-    pub program_binary_source_checksum: Option<String>,
-    pub program_binary_integrity_checksum: Option<String>,
-    pub program_binary_url: Option<String>,
+    pub program_info: Option<ProgramInfo>,
     pub deployment_status: PipelineStatus,
     pub deployment_status_since: DateTime<Utc>,
     pub deployment_desired_status: PipelineDesiredStatus,
     pub deployment_error: Option<ErrorResponse>,
-    pub deployment_config: Option<PipelineConfig>,
-    pub deployment_location: Option<String>,
 }
 
-impl ExtendedPipelineDescrOptionalCode {
-    pub(crate) fn new(extended_pipeline: ExtendedPipelineDescr, include_code: bool) -> Self {
-        ExtendedPipelineDescrOptionalCode {
+impl PipelineInfo {
+    pub(crate) fn new(extended_pipeline: &ExtendedPipelineDescr) -> Self {
+        PipelineInfo {
             id: extended_pipeline.id,
-            name: extended_pipeline.name,
-            description: extended_pipeline.description,
+            name: extended_pipeline.name.clone(),
+            description: extended_pipeline.description.clone(),
             created_at: extended_pipeline.created_at,
             version: extended_pipeline.version,
-            platform_version: extended_pipeline.platform_version,
-            runtime_config: extended_pipeline.runtime_config,
-            program_code: if include_code {
-                Some(extended_pipeline.program_code)
-            } else {
-                None
-            },
-            udf_rust: if include_code {
-                Some(extended_pipeline.udf_rust)
-            } else {
-                None
-            },
-            udf_toml: if include_code {
-                Some(extended_pipeline.udf_toml)
-            } else {
-                None
-            },
-            program_config: extended_pipeline.program_config,
+            platform_version: extended_pipeline.platform_version.clone(),
+            runtime_config: extended_pipeline.runtime_config.clone(),
+            program_code: extended_pipeline.program_code.clone(),
+            udf_rust: extended_pipeline.udf_rust.clone(),
+            udf_toml: extended_pipeline.udf_toml.clone(),
+            program_config: extended_pipeline.program_config.clone(),
             program_version: extended_pipeline.program_version,
-            program_status: extended_pipeline.program_status,
+            program_status: extended_pipeline.program_status.clone(),
             program_status_since: extended_pipeline.program_status_since,
-            program_info: if include_code {
-                Some(extended_pipeline.program_info)
-            } else {
-                None
-            },
-            program_binary_source_checksum: extended_pipeline.program_binary_source_checksum,
-            program_binary_integrity_checksum: extended_pipeline.program_binary_integrity_checksum,
-            program_binary_url: extended_pipeline.program_binary_url,
+            program_info: extended_pipeline.program_info.clone(),
             deployment_status: extended_pipeline.deployment_status,
             deployment_status_since: extended_pipeline.deployment_status_since,
             deployment_desired_status: extended_pipeline.deployment_desired_status,
-            deployment_error: extended_pipeline.deployment_error,
-            deployment_config: extended_pipeline.deployment_config,
-            deployment_location: extended_pipeline.deployment_location,
+            deployment_error: extended_pipeline.deployment_error.clone(),
         }
     }
 }
 
-/// Default for the `code` query parameter when GET the list of pipelines.
-fn default_list_pipelines_query_parameter_code() -> bool {
-    true
+/// Pipeline information which has a selected subset of optional fields.
+/// If an optional field is not selected (i.e., is `None`), it will not be serialized.
+#[derive(Serialize, ToSchema, Eq, PartialEq, Debug, Clone)]
+pub struct PipelineSelectedInfo {
+    pub id: PipelineId,
+    pub name: String,
+    pub description: String,
+    pub created_at: DateTime<Utc>,
+    pub version: Version,
+    pub platform_version: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub runtime_config: Option<RuntimeConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub program_code: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub udf_rust: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub udf_toml: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub program_config: Option<ProgramConfig>,
+    pub program_version: Version,
+    pub program_status: ProgramStatus,
+    pub program_status_since: DateTime<Utc>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub program_info: Option<Option<ProgramInfo>>,
+    pub deployment_status: PipelineStatus,
+    pub deployment_status_since: DateTime<Utc>,
+    pub deployment_desired_status: PipelineDesiredStatus,
+    pub deployment_error: Option<ErrorResponse>,
 }
 
-/// Query parameters for GET the list of pipelines.
+impl PipelineSelectedInfo {
+    pub(crate) fn new(
+        extended_pipeline: &ExtendedPipelineDescr,
+        selector: &PipelineFieldSelector,
+    ) -> Self {
+        PipelineSelectedInfo {
+            id: extended_pipeline.id,
+            name: extended_pipeline.name.clone(),
+            description: extended_pipeline.description.clone(),
+            created_at: extended_pipeline.created_at,
+            version: extended_pipeline.version,
+            platform_version: extended_pipeline.platform_version.clone(),
+            runtime_config: selector
+                .some_if_included("runtime_config", extended_pipeline.runtime_config.clone()),
+            program_code: selector
+                .some_if_included("program_code", extended_pipeline.program_code.clone()),
+            udf_rust: selector.some_if_included("udf_rust", extended_pipeline.udf_rust.clone()),
+            udf_toml: selector.some_if_included("udf_toml", extended_pipeline.udf_toml.clone()),
+            program_config: selector
+                .some_if_included("program_config", extended_pipeline.program_config.clone()),
+            program_version: extended_pipeline.program_version,
+            program_status: extended_pipeline.program_status.clone(),
+            program_status_since: extended_pipeline.program_status_since,
+            program_info: selector
+                .some_if_included("program_info", extended_pipeline.program_info.clone()),
+            deployment_status: extended_pipeline.deployment_status,
+            deployment_status_since: extended_pipeline.deployment_status_since,
+            deployment_desired_status: extended_pipeline.deployment_desired_status,
+            deployment_error: extended_pipeline.deployment_error.clone(),
+        }
+    }
+}
+
+/// Fields included in the `all` selector.
+const PIPELINE_FIELD_SELECTOR_ALL_FIELDS: [&str; 19] = [
+    "id",
+    "name",
+    "description",
+    "created_at",
+    "version",
+    "platform_version",
+    "runtime_config",
+    "program_code",
+    "udf_rust",
+    "udf_toml",
+    "program_config",
+    "program_version",
+    "program_status",
+    "program_status_since",
+    "program_info",
+    "deployment_status",
+    "deployment_status_since",
+    "deployment_desired_status",
+    "deployment_error",
+];
+
+/// Fields included in the `status` selector.
+const PIPELINE_FIELD_SELECTOR_STATUS_FIELDS: [&str; 13] = [
+    "id",
+    "name",
+    "description",
+    "created_at",
+    "version",
+    "platform_version",
+    "program_version",
+    "program_status",
+    "program_status_since",
+    "deployment_status",
+    "deployment_status_since",
+    "deployment_desired_status",
+    "deployment_error",
+];
+
+#[derive(Deserialize, Serialize, ToSchema, Eq, PartialEq, Debug, Clone)]
+#[serde(rename_all = "snake_case")]
+pub enum PipelineFieldSelector {
+    /// Select all fields of a pipeline.
+    ///
+    /// The selection includes the following fields:
+    /// - `id`
+    /// - `name`
+    /// - `description`
+    /// - `created_at`
+    /// - `version`
+    /// - `platform_version`
+    /// - `runtime_config`
+    /// - `program_code`
+    /// - `udf_rust`
+    /// - `udf_toml`
+    /// - `program_config`
+    /// - `program_version`
+    /// - `program_status`
+    /// - `program_status_since`
+    /// - `program_info`
+    /// - `deployment_status`
+    /// - `deployment_status_since`
+    /// - `deployment_desired_status`
+    /// - `deployment_error`
+    All,
+    /// Select only the fields required to know the status of a pipeline.
+    ///
+    /// The selection includes the following fields:
+    /// - `id`
+    /// - `name`
+    /// - `description`
+    /// - `created_at`
+    /// - `version`
+    /// - `platform_version`
+    /// - `program_version`
+    /// - `program_status`
+    /// - `program_status_since`
+    /// - `deployment_status`
+    /// - `deployment_status_since`
+    /// - `deployment_desired_status`
+    /// - `deployment_error`
+    Status,
+}
+
+impl PipelineFieldSelector {
+    /// List of all included fields.
+    pub(crate) fn included_fields(&self) -> Vec<&str> {
+        match self {
+            PipelineFieldSelector::All => PIPELINE_FIELD_SELECTOR_ALL_FIELDS.to_vec(),
+            PipelineFieldSelector::Status => PIPELINE_FIELD_SELECTOR_STATUS_FIELDS.to_vec(),
+        }
+    }
+
+    /// Returns `Some(value)` if the field is included, else `None`.
+    fn some_if_included<T>(&self, field: &str, value: T) -> Option<T> {
+        if self.included_fields().contains(&field) {
+            Some(value)
+        } else {
+            None
+        }
+    }
+}
+
+/// Default for the `selector` query parameter when GET a pipeline or a list of pipelines.
+fn default_pipeline_field_selector() -> PipelineFieldSelector {
+    PipelineFieldSelector::All
+}
+
+/// Query parameters to GET a pipeline or a list of pipelines.
 #[derive(Debug, Deserialize, IntoParams, ToSchema)]
-pub struct ListPipelinesQueryParameters {
-    /// Whether to include program code in the response (default: `true`).
-    /// Passing `false` reduces the response size, which is particularly handy
-    /// when frequently monitoring the endpoint over low bandwidth connections.
-    #[serde(default = "default_list_pipelines_query_parameter_code")]
-    code: bool,
+pub struct GetPipelineParameters {
+    /// The `selector` parameter limits which fields are returned for a pipeline.
+    /// Limiting which fields is particularly handy for instance when frequently
+    /// monitoring over low bandwidth connections while being only interested
+    /// in pipeline status.
+    #[serde(default = "default_pipeline_field_selector")]
+    selector: PipelineFieldSelector,
 }
 
-/// Patch (partially) update the pipeline.
+/// Create a new pipeline (POST), or fully update an existing pipeline (PUT).
+/// Left-out fields will be set to their default value.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct PostPutPipeline {
+    pub name: String,
+    pub description: Option<String>,
+    pub runtime_config: Option<RuntimeConfig>,
+    pub program_code: String,
+    pub udf_rust: Option<String>,
+    pub udf_toml: Option<String>,
+    pub program_config: Option<ProgramConfig>,
+}
+
+impl PostPutPipeline {
+    /// Converts the optional fields with the default value
+    /// as alternative (e.g., a string will be empty).
+    fn to_descr(&self) -> PipelineDescr {
+        PipelineDescr {
+            name: self.name.clone(),
+            description: self.description.clone().unwrap_or_default(),
+            runtime_config: self.runtime_config.clone().unwrap_or_default(),
+            program_code: self.program_code.clone(),
+            udf_rust: self.udf_rust.clone().unwrap_or_default(),
+            udf_toml: self.udf_toml.clone().unwrap_or_default(),
+            program_config: self.program_config.clone().unwrap_or_default(),
+        }
+    }
+}
+
+/// Partially update the pipeline (PATCH).
 ///
 /// Note that the patching only applies to the main fields, not subfields.
 /// For instance, it is not possible to update only the number of workers;
@@ -141,16 +312,16 @@ pub struct PatchPipeline {
 }
 
 /// Retrieve the list of pipelines.
-/// Inclusion of program code is configured with by the `code` boolean query parameter.
+/// Configure which fields are included using the `selector` query parameter.
 #[utoipa::path(
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
-    params(ListPipelinesQueryParameters),
+    params(GetPipelineParameters),
     responses(
         (status = OK
             , description = "List of pipelines retrieved successfully"
-            , body = [ExtendedPipelineDescrOptionalCode]
-            , example = json!(examples::list_extended_pipeline_optional_code())),
+            , body = [PipelineSelectedInfo]
+            , example = json!(examples::list_pipeline_selected_info())),
         (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
     ),
     tag = "Pipelines"
@@ -159,30 +330,32 @@ pub struct PatchPipeline {
 pub(crate) async fn list_pipelines(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
-    query: web::Query<ListPipelinesQueryParameters>,
+    query: web::Query<GetPipelineParameters>,
 ) -> Result<HttpResponse, DBError> {
     let pipelines = state.db.lock().await.list_pipelines(*tenant_id).await?;
-    let pipelines: Vec<ExtendedPipelineDescrOptionalCode> = pipelines
+    let returned_pipelines: Vec<PipelineSelectedInfo> = pipelines
         .iter()
-        .map(|v| ExtendedPipelineDescrOptionalCode::new(v.clone(), query.code))
+        .map(|v| PipelineSelectedInfo::new(v, &query.selector))
         .collect();
     Ok(HttpResponse::Ok()
         .insert_header(CacheControl(vec![CacheDirective::NoCache]))
-        .json(pipelines))
+        .json(returned_pipelines))
 }
 
 /// Retrieve a pipeline.
+/// Configure which fields are included using the `selector` query parameter.
 #[utoipa::path(
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
     params(
         ("pipeline_name" = String, Path, description = "Unique pipeline name"),
+        GetPipelineParameters,
     ),
     responses(
         (status = OK
             , description = "Pipeline retrieved successfully"
-            , body = ExtendedPipelineDescr
-            , example = json!(examples::extended_pipeline_1())),
+            , body = PipelineSelectedInfo
+            , example = json!(examples::pipeline_1_selected_info())),
         (status = NOT_FOUND
             , description = "Pipeline with that name does not exist"
             , body = ErrorResponse
@@ -194,18 +367,20 @@ pub(crate) async fn list_pipelines(
 pub(crate) async fn get_pipeline(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
-    req: HttpRequest,
+    path: web::Path<String>,
+    query: web::Query<GetPipelineParameters>,
 ) -> Result<HttpResponse, ManagerError> {
-    let pipeline_name = parse_url_parameter(&req, "pipeline_name")?;
+    let pipeline_name = path.into_inner();
     let pipeline = state
         .db
         .lock()
         .await
         .get_pipeline(*tenant_id, &pipeline_name)
         .await?;
+    let returned_pipeline = PipelineSelectedInfo::new(&pipeline, &query.selector);
     Ok(HttpResponse::Ok()
         .insert_header(CacheControl(vec![CacheDirective::NoCache]))
-        .json(&pipeline))
+        .json(&returned_pipeline))
 }
 
 /// Create a new pipeline.
@@ -213,13 +388,13 @@ pub(crate) async fn get_pipeline(
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
     request_body(
-        content = PipelineDescr, example = json!(examples::pipeline_1())
+        content = PostPutPipeline, example = json!(examples::pipeline_post_put())
     ),
     responses(
         (status = CREATED
             , description = "Pipeline successfully created"
-            , body = ExtendedPipelineDescr
-            , example = json!(examples::extended_pipeline_1())),
+            , body = PipelineInfo
+            , example = json!(examples::pipeline_1_info())),
         (status = CONFLICT
             , description = "Cannot create pipeline as the name already exists"
             , body = ErrorResponse
@@ -235,8 +410,10 @@ pub(crate) async fn get_pipeline(
 pub(crate) async fn post_pipeline(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
-    body: web::Json<PipelineDescr>,
+    body: web::Json<PostPutPipeline>,
 ) -> Result<HttpResponse, ManagerError> {
+    let pipeline_descr = body.into_inner().to_descr();
+    check_runtime_config(&pipeline_descr.runtime_config)?;
     let pipeline = state
         .db
         .lock()
@@ -245,14 +422,15 @@ pub(crate) async fn post_pipeline(
             *tenant_id,
             Uuid::now_v7(),
             &state.common_config.platform_version,
-            body.into_inner(),
+            pipeline_descr,
         )
         .await?;
+    let returned_pipeline = PipelineInfo::new(&pipeline);
 
     info!("Created pipeline {} (tenant: {})", pipeline.id, *tenant_id);
     Ok(HttpResponse::Created()
         .insert_header(CacheControl(vec![CacheDirective::NoCache]))
-        .json(pipeline))
+        .json(returned_pipeline))
 }
 
 /// Fully update a pipeline if it already exists, otherwise create a new pipeline.
@@ -263,17 +441,17 @@ pub(crate) async fn post_pipeline(
         ("pipeline_name" = String, Path, description = "Unique pipeline name"),
     ),
     request_body(
-        content = PipelineDescr, example = json!(examples::pipeline_1())
+        content = PostPutPipeline, example = json!(examples::pipeline_post_put())
     ),
     responses(
         (status = CREATED
             , description = "Pipeline successfully created"
-            , body = ExtendedPipelineDescr
-            , example = json!(examples::extended_pipeline_1())),
+            , body = PipelineInfo
+            , example = json!(examples::pipeline_1_info())),
         (status = OK
             , description = "Pipeline successfully updated"
-            , body = ExtendedPipelineDescr
-            , example = json!(examples::extended_pipeline_1())),
+            , body = PipelineInfo
+            , example = json!(examples::pipeline_1_info())),
         (status = CONFLICT
             , description = "Cannot rename pipeline as the name already exists"
             , body = ErrorResponse
@@ -289,11 +467,12 @@ pub(crate) async fn post_pipeline(
 async fn put_pipeline(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
-    request: HttpRequest,
-    body: web::Json<PipelineDescr>,
+    path: web::Path<String>,
+    body: web::Json<PostPutPipeline>,
 ) -> Result<HttpResponse, ManagerError> {
-    let pipeline_name = parse_url_parameter(&request, "pipeline_name")?;
-    check_runtime_config(&body.runtime_config)?;
+    let pipeline_name = path.into_inner();
+    let pipeline_descr = body.into_inner().to_descr();
+    check_runtime_config(&pipeline_descr.runtime_config)?;
     let (is_new, pipeline) = state
         .db
         .lock()
@@ -303,22 +482,24 @@ async fn put_pipeline(
             Uuid::now_v7(),
             &pipeline_name,
             &state.common_config.platform_version,
-            body.into_inner(),
+            pipeline_descr,
         )
         .await?;
+    let returned_pipeline = PipelineInfo::new(&pipeline);
+
     if is_new {
         info!("Created pipeline {} (tenant: {})", pipeline.id, *tenant_id);
         Ok(HttpResponse::Created()
             .insert_header(CacheControl(vec![CacheDirective::NoCache]))
-            .json(pipeline))
+            .json(returned_pipeline))
     } else {
         info!(
-            "Updated pipeline {} to version {} (tenant: {})",
+            "Fully updated pipeline {} to version {} (tenant: {})",
             pipeline.id, pipeline.version, *tenant_id
         );
         Ok(HttpResponse::Ok()
             .insert_header(CacheControl(vec![CacheDirective::NoCache]))
-            .json(pipeline))
+            .json(returned_pipeline))
     }
 }
 
@@ -335,8 +516,8 @@ async fn put_pipeline(
     responses(
         (status = OK
             , description = "Pipeline successfully updated"
-            , body = ExtendedPipelineDescr
-            , example = json!(examples::extended_pipeline_1())),
+            , body = PipelineInfo
+            , example = json!(examples::pipeline_1_info())),
         (status = NOT_FOUND
             , description = "Pipeline with that name does not exist"
             , body = ErrorResponse
@@ -356,10 +537,10 @@ async fn put_pipeline(
 pub(crate) async fn patch_pipeline(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
-    request: HttpRequest,
+    path: web::Path<String>,
     body: web::Json<PatchPipeline>,
 ) -> Result<HttpResponse, ManagerError> {
-    let pipeline_name = parse_url_parameter(&request, "pipeline_name")?;
+    let pipeline_name = path.into_inner();
     if let Some(config) = &body.runtime_config {
         check_runtime_config(config)?;
     }
@@ -380,14 +561,15 @@ pub(crate) async fn patch_pipeline(
             &body.program_config,
         )
         .await?;
+    let returned_pipeline = PipelineInfo::new(&pipeline);
 
     info!(
-        "Updated pipeline {} to version {} (tenant: {})",
+        "Partially updated pipeline {} to version {} (tenant: {})",
         pipeline.id, pipeline.version, *tenant_id
     );
     Ok(HttpResponse::Ok()
         .insert_header(CacheControl(vec![CacheDirective::NoCache]))
-        .json(pipeline))
+        .json(returned_pipeline))
 }
 
 /// Delete a pipeline.
@@ -415,9 +597,9 @@ pub(crate) async fn patch_pipeline(
 pub(crate) async fn delete_pipeline(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
-    request: HttpRequest,
+    path: web::Path<String>,
 ) -> Result<HttpResponse, ManagerError> {
-    let pipeline_name = parse_url_parameter(&request, "pipeline_name")?;
+    let pipeline_name = path.into_inner();
     let pipeline_id = state
         .db
         .lock()
@@ -473,18 +655,18 @@ pub(crate) async fn delete_pipeline(
 pub(crate) async fn post_pipeline_action(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
-    request: HttpRequest,
+    path: web::Path<(String, String)>,
 ) -> Result<HttpResponse, ManagerError> {
-    let pipeline_name = parse_url_parameter(&request, "pipeline_name")?;
-    let action = parse_url_parameter(&request, "action")?;
-    match action.as_str() {
+    let (pipeline_name, action) = path.into_inner();
+    let verb = match action.as_str() {
         "start" => {
             state
                 .db
                 .lock()
                 .await
                 .set_deployment_desired_status_running(*tenant_id, &pipeline_name)
-                .await?
+                .await?;
+            "starting"
         }
         "pause" => {
             state
@@ -492,7 +674,8 @@ pub(crate) async fn post_pipeline_action(
                 .lock()
                 .await
                 .set_deployment_desired_status_paused(*tenant_id, &pipeline_name)
-                .await?
+                .await?;
+            "pausing"
         }
         "shutdown" => {
             state
@@ -500,15 +683,16 @@ pub(crate) async fn post_pipeline_action(
                 .lock()
                 .await
                 .set_deployment_desired_status_shutdown(*tenant_id, &pipeline_name)
-                .await?
+                .await?;
+            "shutting down"
         }
         _ => Err(ManagerError::from(ApiError::InvalidPipelineAction {
             action: action.to_string(),
         }))?,
-    }
+    };
 
     info!(
-        "Accepted {action} action for pipeline {pipeline_name} (tenant: {})",
+        "Accepted action: {verb} pipeline '{pipeline_name}' (tenant: {})",
         *tenant_id
     );
     Ok(HttpResponse::Accepted().finish())
@@ -576,9 +760,13 @@ pub(crate) async fn post_pipeline_input_connector_action(
     let (pipeline_name, table_name, connector_name, action) = path.into_inner();
 
     // Validate action
-    if action != "start" && action != "pause" {
-        return Err(ApiError::InvalidConnectorAction { action }.into());
-    }
+    let verb = match action.as_str() {
+        "start" => "starting",
+        "pause" => "pausing",
+        _ => {
+            return Err(ApiError::InvalidConnectorAction { action }.into());
+        }
+    };
 
     // The table name provided by the user is interpreted as
     // a SQL identifier to account for case (in-)sensitivity
@@ -604,7 +792,7 @@ pub(crate) async fn post_pipeline_input_connector_action(
     // Log only if the response indicates success
     if response.status() == StatusCode::OK {
         info!(
-            "Connector action: {action}: pipeline '{pipeline_name}' on table '{table_name}' on connector '{connector_name}' (tenant: {})",
+            "Connector action: {verb} pipeline '{pipeline_name}' on table '{table_name}' on connector '{connector_name}' (tenant: {})",
             *tenant_id
         );
     }
@@ -645,9 +833,9 @@ pub(crate) async fn get_pipeline_logs(
     client: WebData<awc::Client>,
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
-    request: HttpRequest,
+    path: web::Path<String>,
 ) -> Result<HttpResponse, ManagerError> {
-    let pipeline_name = parse_url_parameter(&request, "pipeline_name")?;
+    let pipeline_name = path.into_inner();
     state
         .runner
         .http_streaming_logs_from_pipeline_by_name(&client, *tenant_id, &pipeline_name)
@@ -682,9 +870,10 @@ pub(crate) async fn get_pipeline_logs(
 pub(crate) async fn get_pipeline_stats(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
+    path: web::Path<String>,
     request: HttpRequest,
 ) -> Result<HttpResponse, ManagerError> {
-    let pipeline_name = parse_url_parameter(&request, "pipeline_name")?;
+    let pipeline_name = path.into_inner();
     state
         .runner
         .forward_http_request_to_pipeline_by_name(
@@ -725,9 +914,10 @@ pub(crate) async fn get_pipeline_stats(
 pub(crate) async fn get_pipeline_circuit_profile(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
+    path: web::Path<String>,
     request: HttpRequest,
 ) -> Result<HttpResponse, ManagerError> {
-    let pipeline_name = parse_url_parameter(&request, "pipeline_name")?;
+    let pipeline_name = path.into_inner();
     state
         .runner
         .forward_http_request_to_pipeline_by_name(
@@ -766,17 +956,18 @@ pub(crate) async fn get_pipeline_circuit_profile(
 pub(crate) async fn checkpoint_pipeline(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
+    path: web::Path<String>,
     request: HttpRequest,
 ) -> Result<HttpResponse, ManagerError> {
     #[cfg(not(feature = "feldera-enterprise"))]
     {
-        let _ = (state, tenant_id, request);
+        let _ = (state, tenant_id, path.into_inner(), request);
         Err(CommonError::EnterpriseFeature("checkpoint").into())
     }
 
     #[cfg(feature = "feldera-enterprise")]
     {
-        let pipeline_name = parse_url_parameter(&request, "pipeline_name")?;
+        let pipeline_name = path.into_inner();
         state
             .runner
             .forward_http_request_to_pipeline_by_name(
@@ -818,9 +1009,10 @@ pub(crate) async fn checkpoint_pipeline(
 pub(crate) async fn get_pipeline_heap_profile(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
+    path: web::Path<String>,
     request: HttpRequest,
 ) -> Result<HttpResponse, ManagerError> {
-    let pipeline_name = parse_url_parameter(&request, "pipeline_name")?;
+    let pipeline_name = path.into_inner();
     state
         .runner
         .forward_http_request_to_pipeline_by_name(
@@ -868,10 +1060,11 @@ pub(crate) async fn pipeline_adhoc_sql(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
     client: WebData<awc::Client>,
+    path: web::Path<String>,
     request: HttpRequest,
     body: web::Payload,
 ) -> Result<HttpResponse, ManagerError> {
-    let pipeline_name = parse_url_parameter(&request, "pipeline_name")?;
+    let pipeline_name = path.into_inner();
     state
         .runner
         .forward_streaming_http_request_to_pipeline_by_name(
