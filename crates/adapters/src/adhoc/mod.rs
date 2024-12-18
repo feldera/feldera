@@ -82,6 +82,7 @@ pub async fn stream_adhoc_result(
     match args.format {
         AdHocResultFormat::Text => {
             Ok(HttpResponse::Ok()
+                .insert_header(header::CacheControl(vec![header::CacheDirective::NoStore]))
                 .content_type(mime::TEXT_PLAIN)
                 .streaming::<_, Infallible>(try_stream! {
                     let stream_exec = match execute_stream(df).await {
@@ -159,6 +160,7 @@ pub async fn stream_adhoc_result(
                 }))
         }
         AdHocResultFormat::Json => Ok(HttpResponse::Ok()
+            .insert_header(header::CacheControl(vec![header::CacheDirective::NoStore]))
             .content_type(mime::APPLICATION_JSON)
             .streaming::<_, Infallible>(try_stream! {
                 let stream_exec = match execute_stream(df).await {
@@ -228,6 +230,7 @@ pub async fn stream_adhoc_result(
             }.fuse());
 
             Ok(HttpResponse::Ok()
+                .insert_header(header::CacheControl(vec![header::CacheDirective::NoStore]))
                 .insert_header(header::ContentDisposition::attachment(file_name))
                 .content_type(mime::APPLICATION_OCTET_STREAM)
                 .streaming(stream! {

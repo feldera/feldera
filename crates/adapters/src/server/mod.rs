@@ -524,7 +524,9 @@ async fn start(state: WebData<ServerState>) -> impl Responder {
     match &*state.controller.lock().unwrap() {
         Some(controller) => {
             controller.start();
-            Ok(HttpResponse::Ok().json("The pipeline is running"))
+            Ok(HttpResponse::Ok()
+                .insert_header(header::CacheControl(vec![header::CacheDirective::NoStore]))
+                .json("The pipeline is running"))
         }
         None => Err(missing_controller_error(&state)),
     }
@@ -535,7 +537,9 @@ async fn pause(state: WebData<ServerState>) -> impl Responder {
     match &*state.controller.lock().unwrap() {
         Some(controller) => {
             controller.pause();
-            Ok(HttpResponse::Ok().json("Pipeline paused"))
+            Ok(HttpResponse::Ok()
+                .insert_header(header::CacheControl(vec![header::CacheDirective::NoStore]))
+                .json("Pipeline paused"))
         }
         None => Err(missing_controller_error(&state)),
     }
@@ -560,6 +564,7 @@ async fn stats(state: WebData<ServerState>) -> impl Responder {
         Some(controller) => {
             let json_string = serde_json::to_string(controller.status()).unwrap();
             Ok(HttpResponse::Ok()
+                .insert_header(header::CacheControl(vec![header::CacheDirective::NoStore]))
                 .content_type(mime::APPLICATION_JSON)
                 .body(json_string))
         }
@@ -580,6 +585,7 @@ async fn metrics(state: WebData<ServerState>) -> impl Responder {
             .metrics(controller)
         {
             Ok(metrics) => Ok(HttpResponse::Ok()
+                .insert_header(header::CacheControl(vec![header::CacheDirective::NoStore]))
                 .content_type(mime::TEXT_PLAIN)
                 .body(metrics)),
             Err(e) => Err(PipelineError::PrometheusError {
@@ -593,6 +599,7 @@ async fn metrics(state: WebData<ServerState>) -> impl Responder {
 #[get("/metadata")]
 async fn metadata(state: WebData<ServerState>) -> impl Responder {
     HttpResponse::Ok()
+        .insert_header(header::CacheControl(vec![header::CacheDirective::NoStore]))
         .content_type(mime::APPLICATION_JSON)
         .body(state.metadata.read().unwrap().clone())
 }
@@ -609,6 +616,7 @@ async fn heap_profile() -> impl Responder {
         }
         match prof_ctl.dump_pprof() {
             Ok(profile) => Ok(HttpResponse::Ok()
+                .insert_header(header::CacheControl(vec![header::CacheDirective::NoStore]))
                 .content_type("application/protobuf")
                 .body(profile)),
             Err(e) => Err(PipelineError::HeapProfilerError {
@@ -640,6 +648,7 @@ async fn dump_profile(state: WebData<ServerState>) -> impl Responder {
     let profile = receiver.await.unwrap()?;
 
     Ok(HttpResponse::Ok()
+        .insert_header(header::CacheControl(vec![header::CacheDirective::NoStore]))
         .insert_header(header::ContentType("application/zip".parse().unwrap()))
         .insert_header(header::ContentDisposition::attachment("profile.zip"))
         .body(profile.as_zip()))
@@ -683,7 +692,9 @@ async fn shutdown(state: WebData<ServerState>) -> impl Responder {
                 if let Err(e) = tokio::fs::remove_file(SERVER_PORT_FILE).await {
                     warn!("Failed to remove server port file: {e}");
                 }
-                Ok(HttpResponse::Ok().json("Pipeline terminated"))
+                Ok(HttpResponse::Ok()
+                    .insert_header(header::CacheControl(vec![header::CacheDirective::NoStore]))
+                    .json("Pipeline terminated"))
             }
             Err(e) => Err(e),
         }
@@ -960,7 +971,9 @@ async fn pause_input_endpoint(
         }
     };
 
-    Ok(HttpResponse::Ok())
+    Ok(HttpResponse::Ok()
+        .insert_header(header::CacheControl(vec![header::CacheDirective::NoStore]))
+        .finish())
 }
 
 #[get("/input_endpoints/{endpoint_name}/start")]
@@ -977,7 +990,9 @@ async fn start_input_endpoint(
         }
     };
 
-    Ok(HttpResponse::Ok())
+    Ok(HttpResponse::Ok()
+        .insert_header(header::CacheControl(vec![header::CacheDirective::NoStore]))
+        .finish())
 }
 
 #[cfg(test)]
