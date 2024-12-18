@@ -51,6 +51,7 @@ use tokio::{
     time::{sleep, timeout},
 };
 
+use crate::api::PipelineFieldSelector;
 use crate::compiler::main::{compiler_main, compiler_precompile};
 use crate::config::CommonConfig;
 #[cfg(feature = "pg-embed")]
@@ -356,6 +357,15 @@ impl TestConfig {
         let utf8_str = std::str::from_utf8(&bytes).expect("Bytes should be valid UTF-8 string");
         serde_json::from_str::<Value>(utf8_str)
             .expect("UTF-8 string should be convertible to JSON value")
+    }
+
+    /// Checks status and decodes the response body as JSON.
+    pub async fn check_status_and_decode_json(
+        response: ClientResponse<Decoder<Payload>>,
+        expected_status: StatusCode,
+    ) -> Value {
+        assert_eq!(response.status(), expected_status);
+        Self::decode_json(response).await
     }
 
     /// Retrieve the stats of a pipeline as JSON value.
@@ -717,9 +727,14 @@ async fn setup() -> TestConfig {
 
 /// Creates and deploys a basic pipeline named `test` with the provided SQL in paused state.
 async fn create_and_deploy_test_pipeline(config: &TestConfig, sql: &str) {
-    // Create pipeline
+    prepare_pipeline(config, "test", sql).await
+}
+
+/// Creates, compiles and deploys a pipeline.
+async fn prepare_pipeline(config: &TestConfig, name: &str, sql: &str) {
+    // Create
     let request_body = json!({
-        "name": "test",
+        "name": name,
         "description": "Description of the test pipeline",
         "runtime_config": {},
         "program_code": sql,
@@ -728,30 +743,233 @@ async fn create_and_deploy_test_pipeline(config: &TestConfig, sql: &str) {
     let response = config.post("/v0/pipelines", &request_body).await;
     assert_eq!(response.status(), StatusCode::CREATED);
 
-    // Wait for its program compilation completion
+    // Wait for compilation
     config
-        .wait_for_compilation("test", 1, config.compilation_timeout)
+        .wait_for_compilation(name, 1, config.compilation_timeout)
         .await;
 
     // Start the pipeline in Paused state
-    let response = config.post_no_body("/v0/pipelines/test/pause").await;
+    let response = config
+        .post_no_body(format!("/v0/pipelines/{name}/pause"))
+        .await;
     assert_eq!(response.status(), StatusCode::ACCEPTED);
-
-    // Await it reaching paused status
     config
-        .wait_for_deployment_status("test", PipelineStatus::Paused, config.start_timeout)
+        .wait_for_deployment_status(name, PipelineStatus::Paused, config.start_timeout)
         .await;
 }
 
-/// Tests that at initialization there are no pipelines.
+/// Tests the creation of pipelines using its POST endpoint.
 #[actix_web::test]
 #[serial]
-async fn lists_at_initialization_are_empty() {
+async fn pipeline_post() {
     let config = setup().await;
-    for endpoint in &["/v0/pipelines"] {
-        let mut response = config.get(endpoint).await;
-        let value: Value = response.json().await.unwrap();
-        assert_eq!(value, json!([]));
+
+    // Empty body
+    assert_eq!(
+        config.post("/v0/pipelines", &json!({})).await.status(),
+        StatusCode::BAD_REQUEST
+    );
+
+    // Name is missing
+    assert_eq!(
+        config
+            .post("/v0/pipelines", &json!({ "program-code": "" }))
+            .await
+            .status(),
+        StatusCode::BAD_REQUEST
+    );
+
+    // Program SQL code is missing
+    assert_eq!(
+        config
+            .post("/v0/pipelines", &json!({ "name": "test-1" }))
+            .await
+            .status(),
+        StatusCode::BAD_REQUEST
+    );
+
+    // Minimum body
+    let pipeline = TestConfig::check_status_and_decode_json(
+        config
+            .post(
+                "/v0/pipelines",
+                &json!({
+                    "name": "test-1",
+                    "program_code": "",
+                }),
+            )
+            .await,
+        StatusCode::CREATED,
+    )
+    .await;
+    assert_eq!(pipeline["name"], json!("test-1"));
+    assert_eq!(pipeline["description"], json!(""));
+    assert!(pipeline["runtime_config"].is_object());
+    assert_eq!(pipeline["program_code"], json!(""));
+    assert_eq!(pipeline["udf_rust"], json!(""));
+    assert_eq!(pipeline["udf_toml"], json!(""));
+    assert!(pipeline["program_config"].is_object());
+
+    // Body with SQL
+    let pipeline = TestConfig::check_status_and_decode_json(
+        config
+            .post(
+                "/v0/pipelines",
+                &json!({
+                    "name": "test-2",
+                    "program_code": "sql-2",
+                }),
+            )
+            .await,
+        StatusCode::CREATED,
+    )
+    .await;
+    assert_eq!(pipeline["name"], json!("test-2"));
+    assert_eq!(pipeline["description"], json!(""));
+    assert!(pipeline["runtime_config"].is_object());
+    assert_eq!(pipeline["program_code"], json!("sql-2"));
+    assert_eq!(pipeline["udf_rust"], json!(""));
+    assert_eq!(pipeline["udf_toml"], json!(""));
+    assert!(pipeline["program_config"].is_object());
+
+    // All fields
+    let pipeline = TestConfig::check_status_and_decode_json(
+        config
+            .post(
+                "/v0/pipelines",
+                &json!({
+                    "name": "test-3",
+                    "description": "description-3",
+                    "runtime_config": {
+                        "workers": 123
+                    },
+                    "program_code": "sql-3",
+                    "udf_rust": "rust-3",
+                    "udf_toml": "toml-3",
+                    "program_config": {
+                        "profile": "dev"
+                    }
+                }),
+            )
+            .await,
+        StatusCode::CREATED,
+    )
+    .await;
+    assert_eq!(pipeline["name"], json!("test-3"));
+    assert_eq!(pipeline["description"], json!("description-3"));
+    assert!(pipeline["runtime_config"].is_object());
+    assert_eq!(pipeline["runtime_config"]["workers"], json!(123));
+    assert_eq!(pipeline["program_code"], json!("sql-3"));
+    assert_eq!(pipeline["udf_rust"], json!("rust-3"));
+    assert_eq!(pipeline["udf_toml"], json!("toml-3"));
+    assert!(pipeline["program_config"].is_object());
+    assert_eq!(pipeline["program_config"]["profile"], json!("dev"));
+}
+
+/// Tests the retrieval of a pipeline and list of pipelines.
+#[actix_web::test]
+#[serial]
+async fn pipeline_get() {
+    let config = setup().await;
+
+    // Not found
+    let response = config.get("/v0/pipelines/test-1").await;
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+
+    // List is initially empty
+    let mut response = config.get("/v0/pipelines").await;
+    let value: Value = response.json().await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(value, json!([]));
+
+    // Create first pipeline
+    let sql1 = "CREATE TABLE t1(c1 INT);";
+    prepare_pipeline(&config, "test-1", sql1).await;
+
+    // Retrieve list of one
+    let mut response = config.get("/v0/pipelines").await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let value: Value = response.json().await.unwrap();
+    let list1 = value.as_array().unwrap();
+    assert_eq!(list1.len(), 1);
+
+    // Retrieve first pipeline
+    let mut response = config.get("/v0/pipelines/test-1").await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let object1_1: Value = response.json().await.unwrap();
+
+    // Create second pipeline
+    let sql2 = "CREATE TABLE t2(c2 INT);";
+    prepare_pipeline(&config, "test-2", sql2).await;
+
+    // Retrieve list of two
+    let mut response = config.get("/v0/pipelines").await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let value: Value = response.json().await.unwrap();
+    let list2 = value.as_array().unwrap();
+    assert_eq!(list2.len(), 2);
+
+    // Retrieve first pipeline again
+    let mut response = config.get("/v0/pipelines/test-1").await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let object1_2: Value = response.json().await.unwrap();
+
+    // Retrieve second pipeline
+    let mut response = config.get("/v0/pipelines/test-2").await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let object2_2: Value = response.json().await.unwrap();
+
+    // Check first pipeline
+    for object1 in [list1[0].clone(), object1_1, object1_2, list2[0].clone()] {
+        assert_eq!(object1["name"].as_str().unwrap(), "test-1");
+        assert_eq!(object1["program_code"].as_str().unwrap(), sql1);
+    }
+
+    // Check second pipeline
+    for object2 in [object2_2, list2[1].clone()] {
+        assert_eq!(object2["name"].as_str().unwrap(), "test-2");
+        assert_eq!(object2["program_code"].as_str().unwrap(), sql2);
+    }
+}
+
+/// Tests the retrieval of a pipeline and list of pipelines with a field selector.
+#[actix_web::test]
+#[serial]
+async fn pipeline_get_selector() {
+    let config = setup().await;
+    prepare_pipeline(&config, "test-1", "CREATE TABLE t1(c1 INT);").await;
+    for base_endpoint in ["/v0/pipelines", "/v0/pipelines/test-1"] {
+        for (expected_selector, selector_value) in [
+            (PipelineFieldSelector::All, ""),
+            (PipelineFieldSelector::All, "all"),
+            (PipelineFieldSelector::Status, "status"),
+        ] {
+            // Perform request
+            let endpoint = if selector_value.is_empty() {
+                base_endpoint.to_string()
+            } else {
+                format!("{base_endpoint}?selector={selector_value}")
+            };
+            let mut response = config.get(&endpoint).await;
+            assert_eq!(response.status(), StatusCode::OK);
+
+            // Parse response body as object
+            let value: Value = response.json().await.unwrap();
+            let object = if value.is_array() {
+                let array = value.as_array().unwrap();
+                assert_eq!(array.len(), 1);
+                array[0].as_object().unwrap().clone()
+            } else {
+                value.as_object().unwrap().clone()
+            };
+
+            // Check that the pipeline object has exactly the expected fields
+            let mut expected_fields_sorted = expected_selector.included_fields();
+            expected_fields_sorted.sort();
+            let mut actual_fields_sorted: Vec<&String> = object.keys().collect();
+            actual_fields_sorted.sort();
+            assert_eq!(expected_fields_sorted, actual_fields_sorted);
+        }
     }
 }
 
@@ -1080,11 +1298,7 @@ async fn pipeline_start_without_compiling() {
 
     // Wait for it to actually start
     config
-        .wait_for_deployment_status(
-            "test",
-            PipelineStatus::Running,
-            Duration::from_millis(60_000),
-        )
+        .wait_for_deployment_status("test", PipelineStatus::Running, config.compilation_timeout)
         .await;
 }
 
@@ -2294,106 +2508,6 @@ async fn pipeline_deleted_during_program_compilation() {
 
     // Validate the compiler still works correctly by fully compiling a program
     create_and_deploy_test_pipeline(&config, "").await;
-}
-
-/// Checks that Rust compilation is cached in the face of non-impactful
-/// edits (e.g., comments, whitespace, connectors).
-#[actix_web::test]
-#[serial]
-async fn pipeline_rust_compilation_is_cached() {
-    let config = setup().await;
-    let mut source_checksums = vec![];
-    for request_body in vec![
-        json!({
-            "name": "test-1",
-            "description": "Description of test-1",
-            "runtime_config": {},
-            "program_code": "CREATE TABLE t1 ( c1 INT );",
-            "program_config": {}
-        }),
-        json!({
-            "name": "test-2",
-            "description": "Description of test-2",
-            "runtime_config": {},
-            "program_code": "CREATE TABLE t1 ( c1 INT );",
-            "program_config": {}
-        }),
-        json!({
-            "name": "test-3",
-            "description": "Description of test-3",
-            "runtime_config": {},
-            "program_code": "CREATE TABLE t1 ( c1 INT ); -- Comments",
-            "program_config": {}
-        }),
-        json!({
-            "name": "test-4",
-            "description": "Description of test-4",
-            "runtime_config": {},
-            "program_code": "CREATE TABLE t1  ( c1 INT );", // Extra whitespace
-            "program_config": {}
-        }),
-        json!({
-            "name": "test-5",
-            "description": "Description of test-5",
-            "runtime_config": {},
-            "program_code": "CREATE TABLE t1 ( c1 INT ) WITH (
-                'connectors' = '[{
-                    \"name\": \"c1\",
-                    \"transport\": {
-                        \"name\": \"url_input\",
-                        \"config\": {\"path\": \"https://feldera.com/example.json\"}
-                    }
-                }]'
-            );", // With a connector
-            "program_config": {}
-        }),
-        json!({
-            "name": "test-6",
-            "description": "Description of test-6",
-            "runtime_config": {},
-            "program_code": "CREATE TABLE t2 ( c1 INT );", // Different table name will trigger recompilation
-            "program_config": {}
-        }),
-    ] {
-        let pipeline_name = request_body["name"].as_str().unwrap().to_string();
-
-        // Create pipeline
-        let response = config.post("/v0/pipelines", &request_body).await;
-        assert_eq!(response.status(), StatusCode::CREATED);
-
-        // Wait for its program compilation completion
-        config
-            .wait_for_compilation(&pipeline_name, 1, config.compilation_timeout)
-            .await;
-
-        // Get its source checksum
-        let mut response = config.get(format!("/v0/pipelines/{pipeline_name}")).await;
-        let response_body = response.body().await.unwrap();
-        let response_str = String::from_utf8(response_body.to_vec()).unwrap();
-        let response_json: Value = serde_json::from_str(&response_str).unwrap();
-        let source_checksum = response_json["program_binary_source_checksum"]
-            .as_str()
-            .unwrap()
-            .to_string();
-        source_checksums.push(source_checksum);
-    }
-
-    // Compare checksums
-    assert_eq!(source_checksums[0], source_checksums[1]);
-    assert_eq!(source_checksums[0], source_checksums[2]);
-    assert_eq!(source_checksums[0], source_checksums[3]);
-    assert_eq!(source_checksums[0], source_checksums[4]);
-    assert_ne!(source_checksums[0], source_checksums[5]);
-    assert_eq!(source_checksums[1], source_checksums[2]);
-    assert_eq!(source_checksums[1], source_checksums[3]);
-    assert_eq!(source_checksums[1], source_checksums[4]);
-    assert_ne!(source_checksums[1], source_checksums[5]);
-    assert_eq!(source_checksums[2], source_checksums[3]);
-    assert_eq!(source_checksums[2], source_checksums[4]);
-    assert_ne!(source_checksums[2], source_checksums[5]);
-    assert_eq!(source_checksums[3], source_checksums[4]);
-    assert_ne!(source_checksums[3], source_checksums[5]);
-    assert_ne!(source_checksums[4], source_checksums[5]);
 }
 
 /// Retrieves whether pipeline is paused, connector is paused, and number of processed

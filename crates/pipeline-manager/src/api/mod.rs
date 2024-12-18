@@ -49,6 +49,7 @@ use actix_web_static_files::ResourceFiles;
 use anyhow::{Error as AnyError, Result as AnyResult};
 use futures_util::FutureExt;
 use log::{error, log, trace, Level};
+pub use pipeline::PipelineFieldSelector;
 use std::io::Write;
 use std::time::Duration;
 use std::{env, io, net::TcpListener, sync::Arc};
@@ -141,13 +142,14 @@ The program version is used internally by the compiler to know when to recompile
 
         // Pipeline
         crate::db::types::pipeline::PipelineId,
-        crate::db::types::pipeline::PipelineDescr,
-        crate::db::types::pipeline::ExtendedPipelineDescr,
         crate::db::types::pipeline::PipelineStatus,
         crate::db::types::pipeline::PipelineDesiredStatus,
-        crate::api::pipeline::ListPipelinesQueryParameters,
+        crate::api::pipeline::PipelineInfo,
+        crate::api::pipeline::PipelineSelectedInfo,
+        crate::api::pipeline::PipelineFieldSelector,
+        crate::api::pipeline::GetPipelineParameters,
+        crate::api::pipeline::PostPutPipeline,
         crate::api::pipeline::PatchPipeline,
-        crate::api::pipeline::ExtendedPipelineDescrOptionalCode,
 
         // Demo
         crate::demo::Demo,

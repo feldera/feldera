@@ -485,14 +485,14 @@ async fn pipeline(action: PipelineAction, client: Client) {
             ) {
                 let response = client
                     .post_pipeline()
-                    .body(PipelineDescr {
-                        description: "".to_string(),
+                    .body(PostPutPipeline {
+                        description: None,
                         name: name.to_string(),
                         program_code: program_code.unwrap_or_default(),
                         udf_rust,
                         udf_toml,
-                        program_config: profile.into(),
-                        runtime_config: RuntimeConfig::default(),
+                        program_config: Some(profile.into()),
+                        runtime_config: None,
                     })
                     .send()
                     .await
@@ -532,13 +532,18 @@ async fn pipeline(action: PipelineAction, client: Client) {
                 let cd = TemporaryCacheDisable::new(
                     name.clone(),
                     client.clone(),
-                    pc.program_config.clone(),
+                    pc.program_config.clone().unwrap(),
                 )
                 .await;
-                let new_program = if pc.program_code.ends_with(|c: char| c.is_whitespace()) {
-                    pc.program_code.trim().to_string()
+                let new_program = if pc
+                    .program_code
+                    .as_ref()
+                    .unwrap()
+                    .ends_with(|c: char| c.is_whitespace())
+                {
+                    pc.program_code.as_ref().unwrap().trim().to_string()
                 } else {
-                    pc.program_code.clone() + " "
+                    pc.program_code.clone().unwrap() + " "
                 };
 
                 client
@@ -863,6 +868,7 @@ async fn pipeline(action: PipelineAction, client: Client) {
                     1,
                 ))
                 .map(|response| response.runtime_config.clone())
+                .unwrap()
                 .unwrap();
 
             if patch_runtime_config(&mut rc, key, value.as_str()).is_err() {
@@ -1107,13 +1113,13 @@ async fn program(action: ProgramAction, client: Client) {
                 ))
                 .unwrap();
             if !udf_rs && !udf_toml {
-                println!("{}", response.program_code);
+                println!("{}", response.program_code.clone().unwrap());
             }
             if udf_rs {
-                println!("{}", response.udf_rust);
+                println!("{}", response.udf_rust.clone().unwrap());
             }
             if udf_toml {
-                println!("{}", response.udf_toml);
+                println!("{}", response.udf_toml.clone().unwrap());
             }
         }
         ProgramAction::Config { name } => {

@@ -22,6 +22,9 @@ pub async fn create_new_file_with_content(
     file.write_all(content.as_bytes())
         .await
         .map_err(|e| CommonError::io_error(format!("writing file '{}'", file_path.display()), e))?;
+    file.flush().await.map_err(|e| {
+        CommonError::io_error(format!("flushing file '{}'", file_path.display()), e)
+    })?;
     Ok(())
 }
 
@@ -41,6 +44,9 @@ pub async fn recreate_file_with_content(
     file.write_all(content.as_bytes())
         .await
         .map_err(|e| CommonError::io_error(format!("writing file '{}'", file_path.display()), e))?;
+    file.flush().await.map_err(|e| {
+        CommonError::io_error(format!("flushing file '{}'", file_path.display()), e)
+    })?;
     Ok(())
 }
 

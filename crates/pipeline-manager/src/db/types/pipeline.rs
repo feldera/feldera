@@ -82,13 +82,13 @@ impl Display for PipelineId {
 /// in the diagram.
 ///
 /// The user can monitor the current state of the pipeline via the
-/// `GET /v0/pipelines/{name}` endpoint, which returns an object of type
-/// `ExtendedPipelineDescr`. In a typical scenario, the user first sets
-/// the desired state, e.g., by invoking the `/start` endpoint, and
-/// then polls the `GET /v0/pipelines/{name}` endpoint to monitor the
-/// actual status of the pipeline until its `deployment_status` attribute
-/// changes to "running" indicating that the pipeline has been successfully
-/// initialized and is processing data, or "failed", indicating an error.
+/// `GET /v0/pipelines/{name}` endpoint. In a typical scenario,
+/// the user first sets the desired state, e.g., by invoking the
+/// `/start` endpoint, and then polls the `GET /v0/pipelines/{name}`
+/// endpoint to monitor the actual status of the pipeline until its
+/// `deployment_status` attribute changes to `Running` indicating
+/// that the pipeline has been successfully initialized and is
+/// processing data, or `Failed`, indicating an error.
 #[derive(Deserialize, Serialize, ToSchema, Eq, PartialEq, Debug, Clone, Copy)]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub enum PipelineStatus {
@@ -364,7 +364,7 @@ pub fn validate_deployment_desired_status_transition(
 }
 
 /// Pipeline descriptor.
-#[derive(Deserialize, Serialize, ToSchema, Eq, PartialEq, Debug, Clone)]
+#[derive(Eq, PartialEq, Debug, Clone)]
 pub struct PipelineDescr {
     /// Pipeline name.
     pub name: String,
@@ -379,11 +379,9 @@ pub struct PipelineDescr {
     pub program_code: String,
 
     /// Rust code for UDFs.
-    #[serde(default)]
     pub udf_rust: String,
 
     /// Rust dependencies in the TOML format.
-    #[serde(default)]
     pub udf_toml: String,
 
     /// Program compilation configuration.
@@ -392,7 +390,7 @@ pub struct PipelineDescr {
 
 /// Pipeline descriptor which besides the basic fields in direct regular control of the user
 /// also has all additional fields generated and maintained by the back-end.
-#[derive(Deserialize, Serialize, ToSchema, Eq, PartialEq, Debug, Clone)]
+#[derive(Eq, PartialEq, Debug, Clone)]
 pub struct ExtendedPipelineDescr {
     /// Assigned globally unique pipeline identifier.
     pub id: PipelineId,

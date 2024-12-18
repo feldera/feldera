@@ -54,9 +54,6 @@ import type {
   HttpInputData,
   HttpInputError,
   HttpInputResponse,
-  InputEndpointActionData,
-  InputEndpointActionError,
-  InputEndpointActionResponse,
   GetPipelineLogsData,
   GetPipelineLogsError,
   GetPipelineLogsResponse,
@@ -66,6 +63,9 @@ import type {
   GetPipelineStatsData,
   GetPipelineStatsError,
   GetPipelineStatsResponse,
+  PostPipelineInputConnectorActionData,
+  PostPipelineInputConnectorActionError,
+  PostPipelineInputConnectorActionResponse,
   PostPipelineActionData,
   PostPipelineActionError,
   PostPipelineActionResponse
@@ -159,7 +159,7 @@ export const getMetrics = (options?: Options) => {
 
 /**
  * Retrieve the list of pipelines.
- * Inclusion of program code is configured with by the `code` boolean query parameter.
+ * Configure which fields are included using the `selector` query parameter.
  */
 export const listPipelines = (options?: Options<ListPipelinesData>) => {
   return (options?.client ?? client).get<ListPipelinesResponse, ListPipelinesError>({
@@ -180,6 +180,7 @@ export const postPipeline = (options: Options<PostPipelineData>) => {
 
 /**
  * Retrieve a pipeline.
+ * Configure which fields are included using the `selector` query parameter.
  */
 export const getPipeline = (options: Options<GetPipelineData>) => {
   return (options?.client ?? client).get<GetPipelineResponse, GetPipelineError>({
@@ -288,20 +289,6 @@ export const httpInput = (options: Options<HttpInputData>) => {
 }
 
 /**
- * Change the desired state of an input endpoint.
- * The following values of the `action` argument are accepted by this endpoint:
- *
- * - 'start': Start processing data.
- * - 'pause': Pause the pipeline.
- */
-export const inputEndpointAction = (options: Options<InputEndpointActionData>) => {
-  return (options?.client ?? client).post<InputEndpointActionResponse, InputEndpointActionError>({
-    ...options,
-    url: '/v0/pipelines/{pipeline_name}/input_endpoints/{endpoint_name}/{action}'
-  })
-}
-
-/**
  * Retrieve pipeline logs as a stream.
  * The logs stream catches up to the extent of the internally configured per-pipeline
  * circular logs buffer (limited to a certain byte size and number of lines, whichever
@@ -337,6 +324,46 @@ export const getPipelineStats = (options: Options<GetPipelineStatsData>) => {
   return (options?.client ?? client).get<GetPipelineStatsResponse, GetPipelineStatsError>({
     ...options,
     url: '/v0/pipelines/{pipeline_name}/stats'
+  })
+}
+
+/**
+ * Start (resume) or pause the input connector.
+ * The following values of the `action` argument are accepted: `start` and `pause`.
+ *
+ * Input connectors can be in either the `Running` or `Paused` state. By default,
+ * connectors are initialized in the `Running` state when a pipeline is deployed.
+ * In this state, the connector actively fetches data from its configured data
+ * source and forwards it to the pipeline. If needed, a connector can be created
+ * in the `Paused` state by setting its
+ * [`paused`](https://docs.feldera.com/connectors/#generic-attributes) property
+ * to `true`. When paused, the connector remains idle until reactivated using the
+ * `start` command. Conversely, a connector in the `Running` state can be paused
+ * at any time by issuing the `pause` command.
+ *
+ * The current connector state can be retrieved via the
+ * `GET /v0/pipelines/{pipeline_name}/stats` endpoint.
+ *
+ * Note that only if both the pipeline *and* the connector state is `Running`,
+ * is the input connector active.
+ * ```text
+ * Pipeline state    Connector state    Connector is active?
+ * --------------    ---------------    --------------------
+ * Paused            Paused             No
+ * Paused            Running            No
+ * Running           Paused             No
+ * Running           Running            Yes
+ * ```
+ */
+export const postPipelineInputConnectorAction = (
+  options: Options<PostPipelineInputConnectorActionData>
+) => {
+  return (options?.client ?? client).post<
+    PostPipelineInputConnectorActionResponse,
+    PostPipelineInputConnectorActionError
+  >({
+    ...options,
+    url: '/v0/pipelines/{pipeline_name}/tables/{table_name}/connectors/{connector_name}/{action}'
   })
 }
 
