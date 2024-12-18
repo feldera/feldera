@@ -531,7 +531,7 @@ impl TransportConfig {
 
 /// Data format specification used to parse raw data received from the
 /// endpoint or to encode data sent to the endpoint.
-#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash, Serialize, Deserialize, ToSchema)]
 pub struct FormatConfig {
     /// Format name, e.g., "csv", "json", "bincode", etc.
     pub name: Cow<'static, str>,
