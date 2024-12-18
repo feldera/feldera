@@ -19,7 +19,7 @@ from pyiceberg.types import (
     DoubleType,
     DecimalType,
     BinaryType,
-    FixedType
+    FixedType,
 )
 from pyiceberg.partitioning import PartitionSpec, PartitionField
 from pyiceberg.transforms import DayTransform
@@ -178,25 +178,45 @@ if args.json_file:
     pandas_df["tm"] = pd.to_datetime(pandas_df["tm"]).dt.time
     pandas_df["ts"] = pd.to_datetime(pandas_df["ts"])
     pandas_df["dt"] = pd.to_datetime(pandas_df["dt"]).dt.date
-    pandas_df['dec'] = pandas_df["dec"].apply(lambda x: Decimal(f"{x:.3f}"))
+    pandas_df["dec"] = pandas_df["dec"].apply(lambda x: Decimal(f"{x:.3f}"))
     # pandas_df['uuid'] = pandas_df['uuid'].apply(lambda x: bytes(x))
-    pandas_df['fixed'] = pandas_df['fixed'].apply(lambda x: bytes(x))
-    pandas_df['varbin'] = pandas_df['varbin'].apply(lambda x: bytes(x))
+    pandas_df["fixed"] = pandas_df["fixed"].apply(lambda x: bytes(x))
+    pandas_df["varbin"] = pandas_df["varbin"].apply(lambda x: bytes(x))
 
 else:
     # Generate a range of dates between 2024-01-01 and 2024-12-31
-    date_range = pd.date_range(start='2024-01-01', end='2024-12-31')
+    date_range = pd.date_range(start="2024-01-01", end="2024-12-31")
 
     data = {
         "b": np.random.choice([True, False], size=num_records),  # Boolean
         "i": np.arange(1, num_records + 1, dtype=np.int32),
-        "l": np.random.randint(np.iinfo(np.int64).min, np.iinfo(np.int64).max, size=num_records, dtype=np.int64),  # int64
-        "r": np.random.uniform(-1e6, 1e6, size=num_records).astype(np.float32),  # float32
-        "d": np.random.uniform(-1e12, 1e12, size=num_records).astype(np.float64),  # float64
-        "dec": [Decimal(random.uniform(-1e5, 1e5)).quantize(Decimal("0.001")) for _ in range(num_records)],
-        #"dt": pd.date_range(start="2000-01-01", periods=num_records, freq="D").date,  # date32
+        "l": np.random.randint(
+            np.iinfo(np.int64).min,
+            np.iinfo(np.int64).max,
+            size=num_records,
+            dtype=np.int64,
+        ),  # int64
+        "r": np.random.uniform(-1e6, 1e6, size=num_records).astype(
+            np.float32
+        ),  # float32
+        "d": np.random.uniform(-1e12, 1e12, size=num_records).astype(
+            np.float64
+        ),  # float64
+        "dec": [
+            Decimal(random.uniform(-1e5, 1e5)).quantize(Decimal("0.001"))
+            for _ in range(num_records)
+        ],
+        # "dt": pd.date_range(start="2000-01-01", periods=num_records, freq="D").date,  # date32
         "dt": [date_range[i % len(date_range)] for i in range(num_records)],
-        "tm": [time(random.randint(0, 23), random.randint(0, 59), random.randint(0, 59), random.randint(0, 999999)) for _ in range(num_records)],
+        "tm": [
+            time(
+                random.randint(0, 23),
+                random.randint(0, 59),
+                random.randint(0, 59),
+                random.randint(0, 999999),
+            )
+            for _ in range(num_records)
+        ],
         "ts": [
             datetime.datetime(2023, 1, 1) + datetime.timedelta(seconds=i)
             for i in range(num_records)
@@ -204,13 +224,15 @@ else:
         "s": [f"string_{i}" for i in range(num_records)],  # string
         # "uuid": [uuid.uuid4().bytes for _ in range(num_records)],  # binary(16) - UUID
         "fixed": [np.random.bytes(5) for _ in range(num_records)],  # fixed binary(5)
-        "varbin": [np.random.bytes(np.random.randint(1, 20)) for _ in range(num_records)]  # variable-length binary
+        "varbin": [
+            np.random.bytes(np.random.randint(1, 20)) for _ in range(num_records)
+        ],  # variable-length binary
     }
 
     # Create the DataFrame
     pandas_df = pd.DataFrame(data)
 
-    #print(pandas_df.head())
+    # print(pandas_df.head())
 
 print("Generating Pandas dataframe")
 
