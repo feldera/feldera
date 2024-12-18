@@ -19,6 +19,21 @@ import org.junit.Test;
 
 public class RegressionTests extends SqlIoTest {
     @Test
+    public void issue3183() {
+        var ccs = this.getCCS("""
+                CREATE TABLE row_tbl(id INT, c1 INT, c2 VARCHAR, c3 VARCHAR);
+                CREATE MATERIALIZED VIEW row_count_col_where AS SELECT
+                COUNT(ROW(c1, c2, c3)) FILTER(WHERE c1 < c2) AS c1
+                FROM row_tbl;""");
+        ccs.step("INSERT INTO row_tbl VALUES(0, 4, NULL, 'adios')",
+                """
+                  c | weight
+                 ------------
+                  0 | 1""");
+        this.addRustTestCase(ccs);
+    }
+
+    @Test
     public void issue3114() {
         this.compileRustTestCase("""
                 CREATE TABLE T(x integer);

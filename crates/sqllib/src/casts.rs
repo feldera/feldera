@@ -1414,7 +1414,8 @@ macro_rules! cast_to_i {
             #[doc(hidden)]
             #[inline]
             pub fn [<cast_to_ $result_type N_sN >](value: Option<String>) -> Option<$result_type> {
-                value.unwrap().trim().parse().ok()
+                let value = value?;
+                value.trim().parse().ok()
             }
 
             // From other integers
