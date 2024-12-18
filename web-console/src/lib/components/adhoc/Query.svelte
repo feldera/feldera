@@ -24,12 +24,13 @@
       // Enter to submit, Shift + Enter to enter newline
       if (e.key === 'Enter') {
         if (e.shiftKey || e.altKey || e.ctrlKey) {
-          if (!disabled) {
-            onSubmitQuery((e as any).currentTarget.value)
-          }
-          e.preventDefault()
           return
         }
+        if (!disabled) {
+          onSubmitQuery((e as any).currentTarget.value)
+        }
+        e.preventDefault()
+        return
       }
     }
 </script>
