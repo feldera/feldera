@@ -7,7 +7,7 @@ use crate::error::ManagerError;
 use crate::runner::error::RunnerError;
 use actix_web::{http::Method, web::Payload, HttpRequest, HttpResponse, HttpResponseBuilder};
 use reqwest::StatusCode;
-use std::{sync::Arc, time::Duration};
+use std::{collections::HashMap, sync::Arc, sync::LazyLock, time::Duration};
 use tokio::sync::Mutex;
 
 /// Interface to interact through HTTP with the runner itself or the pipelines that it spawns.

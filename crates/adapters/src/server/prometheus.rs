@@ -72,11 +72,11 @@ impl PrometheusMetrics {
         let status = controller.status();
 
         for (endpoint_id, endpoint_status) in status.input_status().iter() {
-            result.add_input_endpoint(*endpoint_id, endpoint_status)?;
+            result.add_input_endpoint(*endpoint_id, &endpoint_status.endpoint_name)?;
         }
 
         for (endpoint_id, endpoint_status) in status.output_status().iter() {
-            result.add_output_endpoint(*endpoint_id, endpoint_status)?;
+            result.add_output_endpoint(*endpoint_id, &endpoint_status.endpoint_name)?;
         }
 
         Ok(result)
@@ -85,29 +85,29 @@ impl PrometheusMetrics {
     pub(crate) fn add_input_endpoint(
         &mut self,
         endpoint_id: EndpointId,
-        status: &InputEndpointStatus,
+        endpoint_name: &str,
     ) -> AnyResult<()> {
         let total_bytes = GaugeBuilder::new("input_total_bytes", self.pipeline_name.clone())
             .with_unit(metrics::Unit::Bytes)
-            .with_endpoint(status.endpoint_name.clone())
+            .with_endpoint(String::from(endpoint_name))
             .build();
         let total_records = GaugeBuilder::new("input_total_records", self.pipeline_name.clone())
-            .with_endpoint(status.endpoint_name.clone())
+            .with_endpoint(String::from(endpoint_name))
             .with_unit(metrics::Unit::Count)
             .build();
         let buffered_records =
             GaugeBuilder::new("input_buffered_records", self.pipeline_name.clone())
-                .with_endpoint(status.endpoint_name.clone())
+                .with_endpoint(String::from(endpoint_name))
                 .with_unit(metrics::Unit::Count)
                 .build();
         let num_transport_errors =
             GaugeBuilder::new("input_num_transport_errors", self.pipeline_name.clone())
-                .with_endpoint(status.endpoint_name.clone())
+                .with_endpoint(String::from(endpoint_name))
                 .with_unit(metrics::Unit::Count)
                 .build();
         let num_parse_errors =
             GaugeBuilder::new("input_num_parse_errors", self.pipeline_name.clone())
-                .with_endpoint(status.endpoint_name.clone())
+                .with_endpoint(String::from(endpoint_name))
                 .with_unit(metrics::Unit::Count)
                 .build();
 
@@ -154,36 +154,36 @@ impl PrometheusMetrics {
     pub(crate) fn add_output_endpoint(
         &mut self,
         endpoint_id: EndpointId,
-        status: &OutputEndpointStatus,
+        endpoint_name: &str,
     ) -> AnyResult<()> {
         let transmitted_bytes =
             GaugeBuilder::new("output_transmitted_bytes", self.pipeline_name.clone())
-                .with_endpoint(status.endpoint_name.clone())
+                .with_endpoint(String::from(endpoint_name))
                 .with_unit(metrics::Unit::Bytes)
                 .build();
         let transmitted_records =
             GaugeBuilder::new("output_transmitted_records", self.pipeline_name.clone())
-                .with_endpoint(status.endpoint_name.clone())
+                .with_endpoint(String::from(endpoint_name))
                 .with_unit(metrics::Unit::Count)
                 .build();
         let buffered_records =
             GaugeBuilder::new("output_buffered_records", self.pipeline_name.clone())
-                .with_endpoint(status.endpoint_name.clone())
+                .with_endpoint(String::from(endpoint_name))
                 .with_unit(metrics::Unit::Count)
                 .build();
         let buffered_batches =
             GaugeBuilder::new("output_buffered_batches", self.pipeline_name.clone())
-                .with_endpoint(status.endpoint_name.clone())
+                .with_endpoint(String::from(endpoint_name))
                 .with_unit(metrics::Unit::Count)
                 .build();
         let num_transport_errors =
             GaugeBuilder::new("output_num_transport_errors", self.pipeline_name.clone())
-                .with_endpoint(status.endpoint_name.clone())
+                .with_endpoint(String::from(endpoint_name))
                 .with_unit(metrics::Unit::Count)
                 .build();
         let num_encode_errors =
             GaugeBuilder::new("output_num_encode_errors", self.pipeline_name.clone())
-                .with_endpoint(status.endpoint_name.clone())
+                .with_endpoint(String::from(endpoint_name))
                 .with_unit(metrics::Unit::Count)
                 .build();
 
