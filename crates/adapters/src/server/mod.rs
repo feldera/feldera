@@ -31,7 +31,9 @@ use feldera_types::{query::AdhocQueryArgs, transport::http::SERVER_PORT_FILE};
 use futures_util::FutureExt;
 use minitrace::collector::Config;
 use serde::Deserialize;
+use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::LazyLock;
 use std::{
     borrow::Cow,
     net::TcpListener,
@@ -702,34 +704,19 @@ struct IngressArgs {
     force: bool,
 }
 
-#[post("/ingress/{table_name}")]
-async fn input_endpoint(
-    state: WebData<ServerState>,
-    req: HttpRequest,
-    args: Query<IngressArgs>,
-    payload: Payload,
-) -> impl Responder {
-    debug!("{req:?}");
-    let table_name = match req.match_info().get("table_name") {
-        None => {
-            return Err(PipelineError::MissingUrlEncodedParam {
-                param: "table_name",
-            });
-        }
-        Some(table_name) => table_name.to_string(),
-    };
-    // debug!("Table name {table_name:?}");
-
-    // Generate endpoint name.
-    let endpoint_name = format!("api-ingress-{table_name}-{}", Uuid::new_v4());
-
-    // Create HTTP endpoint.
+/// Create a new HTTP input endpoint.
+async fn create_http_input_endpoint(
+    state: &WebData<ServerState>,
+    req: &HttpRequest,
+    table_name: String,
+    endpoint_name: String,
+    args: &Query<IngressArgs>,
+) -> Result<HttpInputEndpoint, PipelineError> {
     let config = HttpInputConfig {
         name: endpoint_name.clone(),
-        force: args.force,
     };
-    let endpoint = HttpInputEndpoint::new(config.clone());
 
+    let endpoint = HttpInputEndpoint::new(config.clone());
     // Create endpoint config.
     let config = InputEndpointConfig {
         stream: Cow::from(table_name),
@@ -738,7 +725,7 @@ async fn input_endpoint(
             format: Some(parser_config_from_http_request(
                 &endpoint_name,
                 &args.format,
-                &req,
+                req,
             )?),
             output_buffer_config: Default::default(),
             max_batch_size: default_max_batch_size(),
@@ -748,7 +735,7 @@ async fn input_endpoint(
     };
 
     // Connect endpoint.
-    let endpoint_id = match &*state.controller.lock().unwrap() {
+    let _endpoint_id = match &*state.controller.lock().unwrap() {
         Some(controller) => {
             if controller.register_api_connection().is_err() {
                 return Err(PipelineError::ApiConnectionLimit);
@@ -772,20 +759,51 @@ async fn input_endpoint(
         }
     };
 
+    Ok(endpoint)
+}
+
+#[post("/ingress/{table_name}")]
+async fn input_endpoint(
+    state: WebData<ServerState>,
+    req: HttpRequest,
+    args: Query<IngressArgs>,
+    payload: Payload,
+) -> impl Responder {
+    static TABLE_ENDPOINTS: LazyLock<RwLock<HashMap<String, HttpInputEndpoint>>> =
+        LazyLock::new(|| RwLock::new(HashMap::new()));
+    debug!("{req:?}");
+
+    let table_name = match req.match_info().get("table_name") {
+        None => {
+            return Err(PipelineError::MissingUrlEncodedParam {
+                param: "table_name",
+            });
+        }
+        Some(table_name) => table_name.to_string(),
+    };
+
+    // Generate endpoint name.
+    let endpoint_name = format!("api-ingress-{table_name}-{}", Uuid::new_v4());
+    let cached_endpoint = TABLE_ENDPOINTS.read().unwrap().get(&table_name).cloned();
+    let endpoint = match cached_endpoint {
+        Some(endpoint) => endpoint,
+        None => {
+            let endpoint =
+                create_http_input_endpoint(&state, &req, table_name.clone(), endpoint_name, &args)
+                    .await?;
+            TABLE_ENDPOINTS
+                .write()
+                .unwrap()
+                .insert(table_name, endpoint.clone());
+            endpoint
+        }
+    };
+
     // Call endpoint to complete request.
-    let response = endpoint
-        .complete_request(payload)
+    endpoint
+        .complete_request(payload, args.force)
         .instrument(info_span!("http_input"))
-        .await;
-    drop(endpoint);
-
-    // Delete endpoint on completion/error.
-    if let Some(controller) = state.controller.lock().unwrap().as_ref() {
-        controller.disconnect_input(&endpoint_id);
-        controller.unregister_api_connection();
-    }
-
-    response
+        .await
 }
 
 /// Create an instance of `FormatConfig` from format name and
