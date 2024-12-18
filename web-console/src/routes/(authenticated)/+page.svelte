@@ -62,7 +62,7 @@
     {#if drawer.isMobileDrawer}
       <button
         onclick={() => (drawer.value = !drawer.value)}
-        class="fd fd-book-marked btn-icon flex text-[20px] preset-tonal-surface"
+        class="fd fd-book-open btn-icon flex text-[20px] preset-tonal-surface"
         aria-label="Open extras drawer"
       >
       </button>
@@ -182,7 +182,7 @@
           <div class="relative flex gap-5">
             <CreatePipelineButton btnClass="preset-filled-surface-50-950"></CreatePipelineButton>
             <a class="btn text-sm preset-tonal-surface" href="https://docs.feldera.com">
-              <span class="fd fd-book-marked text-2xl"></span>
+              <span class="fd fd-book-open text-2xl"></span>
               Documentation
             </a>
           </div>

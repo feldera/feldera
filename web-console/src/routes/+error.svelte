@@ -3,7 +3,7 @@
   import AppHeader from '$lib/components/layout/AppHeader.svelte'
 </script>
 
-<div class="flex h-full w-full max-w-[3200px] flex-col place-self-center">
+<div class="flex h-full w-full flex-col">
   <AppHeader></AppHeader>
 
   <div class="pt:16 p-8 text-center sm:pt-32">

@@ -274,7 +274,7 @@ example = "1.0"`
       {#if drawer.isMobileDrawer}
         <button
           onclick={() => (drawer.value = !drawer.value)}
-          class="fd fd-book-marked btn-icon flex text-[20px] preset-tonal-surface"
+          class="fd fd-book-open btn-icon flex text-[20px] preset-tonal-surface"
           aria-label="Open extras drawer"
         >
         </button>
