@@ -14,7 +14,7 @@
   } = $props()
 </script>
 
-<div class="overflow-hidden overflow-ellipsis whitespace-nowrap {_class}">
+<div class="flex flex-nowrap overflow-hidden overflow-ellipsis whitespace-nowrap {_class}">
   {#each breadcrumbs as breadcrumb}
     <a
       class="inline cursor-pointer self-center {textClass} [&:not(:nth-last-child(2))]:text-surface-500"
