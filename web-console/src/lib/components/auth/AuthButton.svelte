@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { page } from '$app/stores'
+  import { page } from '$app/state'
   import { fade } from 'svelte/transition'
   import Popup from '$lib/components/common/Popup.svelte'
   import AuthPopupMenu from './AuthPopupMenu.svelte'
@@ -7,7 +7,7 @@
   import DarkModeSwitch from '$lib/components/layout/userPopup/DarkModeSwitch.svelte'
 
   const { compactBreakpoint = '' }: { compactBreakpoint?: string } = $props()
-  const auth = $page.data.auth as AuthDetails | undefined
+  const auth = page.data.auth as AuthDetails | undefined
 </script>
 
 {#if typeof auth === 'object' && 'logout' in auth}
@@ -55,7 +55,7 @@
         <div class="px-3 text-surface-700-300">Authentication is disabled</div>
         <div class="hr"></div>
         <DarkModeSwitch></DarkModeSwitch>
-        <div class="hr pt-4 text-surface-500">Feldera version {$page.data.felderaVersion}</div>
+        <div class="hr pt-4 text-surface-500">Feldera version {page.data.felderaVersion}</div>
       </div>
     {/snippet}
   </Popup>

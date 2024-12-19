@@ -83,7 +83,7 @@
   import { editor, KeyCode, KeyMod } from 'monaco-editor/esm/vs/editor/editor.api'
   import type { EditorLanguage } from 'monaco-editor/esm/metadata'
   import PipelineEditorStatusBar from '$lib/components/layout/pipelines/PipelineEditorStatusBar.svelte'
-  import { page } from '$app/stores'
+  import { page } from '$app/state'
   import { useSkeletonTheme } from '$lib/compositions/useSkeletonTheme.svelte'
   import { pipelineFileNameRegex } from '$lib/compositions/health/systemErrors'
   import { effectMonacoContentPlaceholder } from '$lib/components/monacoEditor/effectMonacoContentPlaceholder.svelte'
@@ -241,7 +241,7 @@
       return
     }
     const [, fileName, line, , column] =
-      $page.url.hash.match(new RegExp(`#(${pipelineFileNameRegex}):(\\d+)(:(\\d+))?`)) ?? []
+      page.url.hash.match(new RegExp(`#(${pipelineFileNameRegex}):(\\d+)(:(\\d+))?`)) ?? []
     if (!line) {
       return
     }

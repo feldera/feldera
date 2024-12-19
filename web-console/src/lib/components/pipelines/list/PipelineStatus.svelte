@@ -1,13 +1,12 @@
 <script lang="ts">
   import { getPipelineStatusLabel } from '$lib/functions/pipelines/status'
   import { type PipelineStatus } from '$lib/services/pipelineManager'
-  import { Tooltip } from '$lib/components/common/Tooltip.svelte'
   import { match, P } from 'ts-pattern'
 
   const { status, class: _class = '' }: { status: PipelineStatus; class?: string } = $props()
   const chipClass = $derived(
     match(status)
-      .with('Shutdown', () => 'preset-filled-surface-50-950')
+      .with('Shutdown', () => 'bg-surface-100-900')
       .with('Starting up', () => 'preset-filled-tertiary-200-800')
       .with('Initializing', () => 'preset-filled-tertiary-200-800')
       .with('Paused', () => 'preset-filled-warning-200-800')

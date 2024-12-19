@@ -26,7 +26,7 @@
     value = json
   })
   const apply = (value: string) => onApply(value).then(onClose)
-  const { editorFontSize } = useCodeEditorSettings()
+  const { editorFontSize, showMinimap, showStickyScroll } = useCodeEditorSettings()
 </script>
 
 <div class="flex flex-col gap-4 p-4">
@@ -58,9 +58,14 @@
         overviewRulerLanes: 0,
         hideCursorInOverviewRuler: true,
         overviewRulerBorder: false,
-        minimap: { enabled: false },
         scrollbar: {
           vertical: 'visible'
+        },
+        minimap: {
+          enabled: showMinimap.value
+        },
+        stickyScroll: {
+          enabled: showStickyScroll.value
         },
         language: 'json',
         ...isMonacoEditorDisabled(disabled)

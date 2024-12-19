@@ -34,11 +34,11 @@
     }}
     metadata={{
       runtimeConfig: {
-        title: `Runtime resources`,
+        title: `Runtime configuration`,
         editorClass: 'h-96'
       },
       programConfig: {
-        title: `Compilation profile`,
+        title: `Compilation configuration`,
         editorClass: 'h-24'
       }
     }}

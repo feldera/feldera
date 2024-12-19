@@ -95,7 +95,7 @@
   const shortClass = 'w-9'
   const longClass = 'w-28 sm:w-32 justify-between pl-2 gap-2 text-sm sm:text-base'
   const shortColor = 'preset-tonal-surface'
-  const basicBtnColor = 'preset-filled-surface-100-900 !bg-opacity-50'
+  const basicBtnColor = 'preset-filled-surface-100-900'
   const importantBtnColor = 'preset-filled-primary-500'
 </script>
 

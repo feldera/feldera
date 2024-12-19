@@ -7,7 +7,7 @@
   export type Row = { cells: SQLValueJS[] } | { error: string } | { warning: string }
 
   export type QueryResult = {
-    rows: Row[]
+    rows: () => Row[]
     columns: Field[]
     totalSkippedBytes: number
     endResultStream: () => void
@@ -24,12 +24,13 @@
       // Enter to submit, Shift + Enter to enter newline
       if (e.key === 'Enter') {
         if (e.shiftKey || e.altKey || e.ctrlKey) {
-          if (!disabled) {
-            onSubmitQuery((e as any).currentTarget.value)
-          }
-          e.preventDefault()
           return
         }
+        if (!disabled) {
+          onSubmitQuery((e as any).currentTarget.value)
+        }
+        e.preventDefault()
+        return
       }
     }
 </script>
@@ -75,6 +76,10 @@
       }
     }
   }
+  let rows = $state<Row[]>([])
+  $effect(() => {
+    rows = result?.rows() ?? []
+  })
 </script>
 
 <div
@@ -135,11 +140,8 @@
           </div>
           <div class="flex h-6 w-full flex-nowrap items-center gap-4 whitespace-nowrap">
             {#if result}
-              {result.rows.length > 1
-                ? `${result.rows.length} rows`
-                : result.rows.length === 0
-                  ? 'No rows returned'
-                  : ''}
+              {@const len = rows.length}
+              {len > 1 ? `${len} rows` : len === 0 ? 'No rows returned' : ''}
             {/if}
             {#if progress}
               <Progress value={null} meterBg="bg-primary-500" base="h-1 max-w-[1000px]"></Progress>
@@ -155,7 +157,7 @@
           <div class="relative h-full w-fit max-w-full">
             <ReverseScrollFixedList
               itemSize={28}
-              items={result.rows}
+              items={rows}
               class=""
               stickyIndices={[]}
               marginTop={28}
@@ -179,10 +181,11 @@
                 >
                   <table style:height class="w-fit" use:keepMaxWidth>
                     {#if result.columns.length}
-                      <thead class="bg-white-dark sticky top-0 z-10 !mb-0 h-7">
+                      <thead>
                         <tr>
                           {#each result.columns as column}
-                            <SqlColumnHeader {column}></SqlColumnHeader>
+                            <SqlColumnHeader {column} class="bg-white-dark sticky top-0 z-10 h-7"
+                            ></SqlColumnHeader>
                           {/each}
                         </tr>
                       </thead>
@@ -195,7 +198,7 @@
               {/snippet}
               {#snippet item(row, style, padding, isSticky)}
                 {#if 'cells' in row}
-                  <tr {style} class="h-7 whitespace-nowrap even:bg-white dark:even:bg-black">
+                  <tr {style} class="h-7 whitespace-nowrap odd:bg-white odd:even:bg-black">
                     {#each row.cells as value}
                       <SQLValue
                         {value}

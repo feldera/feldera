@@ -10,14 +10,13 @@
   import { SvelteKitTopLoader } from 'sveltekit-top-loader'
   import { useDrawer } from '$lib/compositions/layout/useDrawer.svelte'
   import ModalDrawer from '$lib/components/layout/ModalDrawer.svelte'
-  import Drawer from '$lib/components/layout/Drawer.svelte'
   import NavigationExtras from '$lib/components/layout/NavigationExtras.svelte'
   import CreatePipelineButton from '$lib/components/pipelines/CreatePipelineButton.svelte'
   import PipelineList from '$lib/components/pipelines/List.svelte'
   import { useLocalStorage } from '$lib/compositions/localStore.svelte'
   import { useIsTablet } from '$lib/compositions/layout/useIsMobile.svelte'
   import BookADemo from '$lib/components/other/BookADemo.svelte'
-  import { page } from '$app/stores'
+  import { page } from '$app/state'
 
   const dialog = useGlobalDialog()
 
@@ -25,14 +24,14 @@
 
   useRefreshPipelineList()
   const rightDrawer = useDrawer('right')
-  const leftDrawer = useLocalStorage('layout/pipelines/pipelinesPanel/show', false) // useDrawer('left')
-  const pipelineList = usePipelineList(data.preloaded)
   const isTablet = useIsTablet()
+  const leftDrawer = useLocalStorage('layout/pipelines/pipelinesPanel/show', !isTablet.current) // Make pipeline drawer open by default on larger screens
+  const pipelineList = usePipelineList(data.preloaded)
 </script>
 
 <SvelteKitTopLoader height={2} color={'rgb(var(--color-primary-500))'} showSpinner={false}
 ></SvelteKitTopLoader>
-<div class="h-full w-full">
+<div class="flex h-full w-full justify-center">
   <!-- <Drawer width="w-[22rem]" bind:open={showDrawer.value} side="left">
     <div class="flex h-full w-full flex-col gap-1">
       <span class="mx-5 my-4 flex items-end justify-center">
@@ -47,7 +46,7 @@
       <PipelinesList bind:pipelines={pipelines.pipelines}></PipelinesList>
     </div>
   </Drawer> -->
-  <div class="flex h-full w-full max-w-[3200px] flex-col place-self-center">
+  <div class="flex h-full w-full flex-col">
     {@render children()}
   </div>
   {#if isTablet.current}
@@ -55,7 +54,7 @@
       width="w-72"
       bind:open={leftDrawer.value}
       side="left"
-      class="bg-white-dark flex flex-col gap-2 p-4"
+      class="bg-white-dark flex flex-col gap-2 pl-4 pr-1 pt-8"
     >
       <PipelineList
         pipelines={pipelineList.pipelines}
@@ -82,7 +81,7 @@
         }}
       ></CreatePipelineButton>
     </div>
-    {#if ['/', '/demos/'].includes($page.url.pathname)}
+    {#if ['/', '/demos/'].includes(page.url.pathname)}
       <BookADemo class="self-center" />
     {/if}
     <NavigationExtras inline></NavigationExtras>

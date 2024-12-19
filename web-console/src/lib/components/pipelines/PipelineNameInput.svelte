@@ -2,7 +2,6 @@
   import { useUpdatePipelineList } from '$lib/compositions/pipelines/usePipelineList.svelte'
   import { goto } from '$app/navigation'
   import { postPipeline } from '$lib/services/pipelineManager'
-  import { page } from '$app/stores'
   import { base } from '$app/paths'
   import type { Snippet } from 'svelte'
 

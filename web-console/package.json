@@ -41,7 +41,7 @@
     "@svelte-bin/clipboard": "^0.1.4",
     "@sveltejs/adapter-auto": "^3.3.1",
     "@sveltejs/adapter-static": "^3.0.6",
-    "@sveltejs/kit": "^2.8.1",
+    "@sveltejs/kit": "^2.12.1",
     "@sveltejs/vite-plugin-svelte": "^4.0.0",
     "@tailwindcss/forms": "^0.5.9",
     "@tailwindcss/typography": "^0.5.15",

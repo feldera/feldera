@@ -1,13 +1,8 @@
 <script lang="ts">
   import { deletePipeline as _deletePipeline } from '$lib/services/pipelineManager'
-  import { useGlobalDialog } from '$lib/compositions/useGlobalDialog.svelte'
   import Popup from '$lib/components/common/Popup.svelte'
   import { fade } from 'svelte/transition'
   import { Switch } from '@skeletonlabs/skeleton-svelte'
-  import DeleteDialog, { deleteDialogProps } from '$lib/components/dialogs/DeleteDialog.svelte'
-  import JSONDialog from '$lib/components/dialogs/JSONDialog.svelte'
-  import JSONbig from 'true-json-bigint'
-  import { Tooltip } from '$lib/components/common/Tooltip.svelte'
   import { NumberInput } from 'flowbite-svelte'
   import { useCodeEditorSettings } from '$lib/compositions/pipelines/useCodeEditorSettings.svelte'
 

@@ -7,12 +7,14 @@
     children,
     onvalue,
     class: _class = '',
+    inputClass,
     disabled
   }: {
     value: string
     children?: Snippet
     onvalue?: (value: string) => void
     class?: string
+    inputClass?: string
     disabled?: boolean
   } = $props()
   let showInput = $state(false)
@@ -49,11 +51,11 @@
       }
     }}
     enterkeyhint="done"
-    class={_class}
+    class={inputClass}
   />
 {:else}
   <span
-    class="group {disabled ? 'cursor-default' : ''}"
+    class="group {_class} {disabled ? 'cursor-default' : ''}"
     role="button"
     tabindex={0}
     ondblclick={() => {

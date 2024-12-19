@@ -25,7 +25,7 @@
   const darkMode = useDarkMode()
   let value = $state(values)
   const apply = (value: Record<string, string>) => onApply(value).then(onClose)
-  const { editorFontSize } = useCodeEditorSettings()
+  const { editorFontSize, showMinimap, showStickyScroll } = useCodeEditorSettings()
   let keys = $derived(Object.keys(value))
 </script>
 
@@ -60,9 +60,14 @@
           overviewRulerLanes: 0,
           hideCursorInOverviewRuler: true,
           overviewRulerBorder: false,
-          minimap: { enabled: false },
           scrollbar: {
             vertical: 'visible'
+          },
+          minimap: {
+            enabled: showMinimap.value
+          },
+          stickyScroll: {
+            enabled: showStickyScroll.value
           },
           language: 'json',
           ...isMonacoEditorDisabled(disabled)
