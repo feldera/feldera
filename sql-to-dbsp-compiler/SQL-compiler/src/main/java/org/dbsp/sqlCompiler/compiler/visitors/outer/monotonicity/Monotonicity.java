@@ -2,6 +2,7 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPAntiJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAsofJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPChainAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDeindexOperator;
@@ -25,6 +26,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPPrimitiveAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAntiJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSubtractOperator;
@@ -438,6 +440,26 @@ public class Monotonicity extends CircuitVisitor {
     @Override
     public void postorder(DBSPStreamJoinIndexOperator node) {
         this.processJoinBase(node);
+    }
+
+    @Override
+    public void postorder(DBSPAntiJoinOperator node) {
+        // Preserve monotonicity of left input
+        MonotoneExpression input = this.getMonotoneExpression(node.left());
+        if (input == null)
+            return;
+        MonotoneExpression output = this.identity(node, getBodyType(input), true);
+        this.set(node, output);
+    }
+
+    @Override
+    public void postorder(DBSPStreamAntiJoinOperator node) {
+        // Preserve monotonicity of left input
+        MonotoneExpression input = this.getMonotoneExpression(node.left());
+        if (input == null)
+            return;
+        MonotoneExpression output = this.identity(node, getBodyType(input), true);
+        this.set(node, output);
     }
 
     @Override

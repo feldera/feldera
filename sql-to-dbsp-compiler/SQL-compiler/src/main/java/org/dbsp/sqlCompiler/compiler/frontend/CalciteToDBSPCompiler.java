@@ -97,7 +97,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPSubtractOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAntiJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewDeclarationOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamDistinctOperator;
@@ -1061,7 +1061,6 @@ public class CalciteToDBSPCompiler extends RelVisitor
     }
 
     private void visitJoin(LogicalJoin join) {
-        // TODO: This is wrong for outer joins: https://github.com/feldera/feldera/issues/3154
         CalciteObject node = CalciteObject.create(join);
         JoinRelType joinType = join.getJoinType();
         if (joinType == JoinRelType.ANTI || joinType == JoinRelType.SEMI)
@@ -1235,83 +1234,81 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPVariablePath joinVar = lrType.ref().var();
         if (joinType == JoinRelType.LEFT || joinType == JoinRelType.FULL) {
             this.addOperator(result);
-            // project the join on the left columns
+            DBSPTypeIndexedZSet indexType = new DBSPTypeIndexedZSet(node, leftResultType, new DBSPTypeTuple());
+
+            // Project the join on the left columns and index with the entire tuple
             DBSPClosureExpression toLeftColumns =
-                    DBSPTupleExpression.flatten(joinVar.deref())
-                            .slice(0, leftColumns)
-                            .pointwiseCast(leftResultType).closure(joinVar);
-            DBSPSimpleOperator joinLeftColumns = new DBSPMapOperator(
-                    node, toLeftColumns, this.makeZSet(leftResultType), inner.outputPort());
+                    new DBSPRawTupleExpression(
+                            DBSPTupleExpression.flatten(
+                                    joinVar.deref()).slice(0, leftColumns)
+                                    .pointwiseCast(leftResultType),
+                            new DBSPTupleExpression()).closure(joinVar);
+            DBSPSimpleOperator joinLeftColumns = new DBSPMapIndexOperator(
+                    node, toLeftColumns, indexType, inner.outputPort());
             this.addOperator(joinLeftColumns);
-            DBSPSimpleOperator distJoin = new DBSPStreamDistinctOperator(node, joinLeftColumns.outputPort());
-            this.addOperator(distJoin);
 
-            // subtract from left relation
-            DBSPSimpleOperator leftCast = left;
+            // Index the left collection in the same way
             DBSPVariablePath l1 = leftElementType.ref().var();
-            if (!leftResultType.sameType(leftElementType)) {
-                DBSPClosureExpression castLeft =
-                    DBSPTupleExpression.flatten(l1.deref())
-                            .pointwiseCast(leftResultType).closure(l1);
-                leftCast = new DBSPMapOperator(node, castLeft, this.makeZSet(leftResultType), left.outputPort());
-                this.addOperator(leftCast);
-            }
-            DBSPSimpleOperator sub = new DBSPSubtractOperator(node, leftCast.outputPort(), distJoin.outputPort());
-            this.addOperator(sub);
-            DBSPStreamDistinctOperator dist = new DBSPStreamDistinctOperator(node, sub.outputPort());
-            this.addOperator(dist);
+            DBSPClosureExpression castLeft = new DBSPRawTupleExpression(
+                    DBSPTupleExpression.flatten(l1.deref()).pointwiseCast(leftResultType),
+                    new DBSPTupleExpression()).closure(l1);
+            DBSPSimpleOperator fullLeftIndex = new DBSPMapIndexOperator(node, castLeft, indexType, left.outputPort());
+            this.addOperator(fullLeftIndex);
 
-            // fill nulls in the right relation fields
+            // subtract join from left relation
+            DBSPSimpleOperator sub = new DBSPStreamAntiJoinOperator(
+                    node, fullLeftIndex.outputPort(), joinLeftColumns.outputPort());
+            this.addOperator(sub);
+
+            // fill nulls in the right relation fields and drop index
+            DBSPVariablePath var = indexType.getKVRefType().var();
             DBSPTupleExpression rEmpty = new DBSPTupleExpression(
                     Linq.map(rightElementType.tupFields,
                              et -> DBSPLiteral.none(et.withMayBeNull(true)), DBSPExpression.class));
-            DBSPVariablePath lCasted = leftResultType.ref().var();
-            DBSPClosureExpression leftRow = DBSPTupleExpression.flatten(lCasted.deref(), rEmpty).closure(
-                    lCasted.asParameter());
-            DBSPSimpleOperator expand = new DBSPMapOperator(node, leftRow, this.makeZSet(resultType), dist.outputPort());
+            DBSPClosureExpression leftRow =
+                    DBSPTupleExpression.flatten(var.field(0).deref(), rEmpty).closure(var);
+            DBSPSimpleOperator expand = new DBSPMapOperator(
+                    node, leftRow, this.makeZSet(resultType), sub.outputPort());
             this.addOperator(expand);
             result = new DBSPSumOperator(node, result.outputPort(), expand.outputPort());
         }
         if (joinType == JoinRelType.RIGHT || joinType == JoinRelType.FULL) {
             this.addOperator(result);
+            DBSPTypeIndexedZSet indexType = new DBSPTypeIndexedZSet(node, rightResultType, new DBSPTypeTuple());
 
             // project the join on the right columns
             DBSPClosureExpression toRightColumns =
-                    DBSPTupleExpression.flatten(joinVar.deref())
-                            .slice(leftColumns, totalColumns)
-                            .pointwiseCast(rightResultType).closure(
-                    joinVar);
-            DBSPSimpleOperator joinRightColumns = new DBSPMapOperator(
-                    node, toRightColumns, this.makeZSet(rightResultType), inner.outputPort());
+                    new DBSPRawTupleExpression(
+                            DBSPTupleExpression.flatten(
+                                    joinVar.deref()).slice(leftColumns, totalColumns)
+                                    .pointwiseCast(rightResultType),
+                            new DBSPTupleExpression()).closure(joinVar);
+            DBSPSimpleOperator joinRightColumns = new DBSPMapIndexOperator(
+                    node, toRightColumns, indexType, inner.outputPort());
             this.addOperator(joinRightColumns);
-            DBSPSimpleOperator distJoin = new DBSPStreamDistinctOperator(node, joinRightColumns.outputPort());
-            this.addOperator(distJoin);
 
-            // subtract from right relation
-            DBSPSimpleOperator rightCast = right;
+            // Index the right collection in the same way
             DBSPVariablePath r1 = rightElementType.ref().var();
-            if (!rightResultType.sameType(rightElementType)) {
-                DBSPClosureExpression castRight =
-                        DBSPTupleExpression.flatten(r1.deref())
-                                .pointwiseCast(rightResultType).closure(
-                        r1);
-                rightCast = new DBSPMapOperator(node, castRight, this.makeZSet(rightResultType), right.outputPort());
-                this.addOperator(rightCast);
-            }
-            DBSPSimpleOperator sub = new DBSPSubtractOperator(node, rightCast.outputPort(), distJoin.outputPort());
-            this.addOperator(sub);
-            DBSPStreamDistinctOperator dist = new DBSPStreamDistinctOperator(node, sub.outputPort());
-            this.addOperator(dist);
+            DBSPClosureExpression castRight = new DBSPRawTupleExpression(
+                    DBSPTupleExpression.flatten(r1.deref()).pointwiseCast(rightResultType),
+                    new DBSPTupleExpression()).closure(r1);
+            DBSPSimpleOperator fullRightIndex = new DBSPMapIndexOperator(node, castRight, indexType, right.outputPort());
+            this.addOperator(fullRightIndex);
 
-            // fill nulls in the left relation fields
+            // subtract join from left relation
+            DBSPSimpleOperator sub = new DBSPStreamAntiJoinOperator(
+                    node, fullRightIndex.outputPort(), joinRightColumns.outputPort());
+            this.addOperator(sub);
+
+            // fill nulls in the right relation fields and drop index
+            DBSPVariablePath var = indexType.getKVRefType().var();
             DBSPTupleExpression lEmpty = new DBSPTupleExpression(
                     Linq.map(leftElementType.tupFields,
                             et -> DBSPLiteral.none(et.withMayBeNull(true)), DBSPExpression.class));
-            DBSPVariablePath rCasted = rightResultType.ref().var();
             DBSPClosureExpression rightRow =
-                    DBSPTupleExpression.flatten(lEmpty, rCasted.deref()).closure(rCasted);
-            DBSPSimpleOperator expand = new DBSPMapOperator(node,
-                    rightRow, this.makeZSet(resultType), dist.outputPort());
+                    DBSPTupleExpression.flatten(lEmpty, var.field(0).deref()).closure(var);
+            DBSPSimpleOperator expand = new DBSPMapOperator(
+                    node, rightRow, this.makeZSet(resultType), sub.outputPort());
             this.addOperator(expand);
             result = new DBSPSumOperator(node, result.outputPort(), expand.outputPort());
         }

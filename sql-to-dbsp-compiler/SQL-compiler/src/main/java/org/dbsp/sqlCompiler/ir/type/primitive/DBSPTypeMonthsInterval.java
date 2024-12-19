@@ -112,4 +112,22 @@ public class DBSPTypeMonthsInterval
     public String baseTypeWithSuffix() {
         return this.shortName() + "_" + this.units.name() + this.nullableSuffix();
     }
+
+    @Override
+    public String toString() {
+        StringBuilder builder = new StringBuilder();
+        builder.append("LongInterval(");
+        builder.append(switch (this.units) {
+            case YEARS_TO_MONTHS -> "Y";
+            case YEARS -> "Y";
+            default -> "";
+        });
+        builder.append(switch (this.units) {
+            case YEARS_TO_MONTHS -> "M";
+            case MONTHS -> "Y";
+            default -> "";
+        });
+        builder.append(")");
+        return builder.toString();
+    }
 }

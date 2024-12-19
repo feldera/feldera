@@ -743,7 +743,7 @@ public class SqlToRelCompiler implements IWritesLogs {
                     columnName +
                     " - " + value +
                     " FROM TMP;\n";
-            Logger.INSTANCE.belowLevel(this, 2)
+            Logger.INSTANCE.belowLevel(this, 4)
                     .newline()
                     .append(sql)
                     .newline();
@@ -799,7 +799,7 @@ public class SqlToRelCompiler implements IWritesLogs {
               CREATE VIEW V AS SELECT expression;
               and validate it. */
             String sql = "CREATE VIEW V AS SELECT " + value.toSqlString(OracleSqlDialect.DEFAULT) + ";";
-            Logger.INSTANCE.belowLevel(this, 2)
+            Logger.INSTANCE.belowLevel(this, 4)
                     .newline()
                     .append(sql)
                     .newline();
@@ -1168,7 +1168,7 @@ public class SqlToRelCompiler implements IWritesLogs {
             builder.append("\nFROM TMP;");
 
             String sql = builder.toString();
-            Logger.INSTANCE.belowLevel(this, 2)
+            Logger.INSTANCE.belowLevel(this, 4)
                     .newline()
                     .append(sql)
                     .newline();
