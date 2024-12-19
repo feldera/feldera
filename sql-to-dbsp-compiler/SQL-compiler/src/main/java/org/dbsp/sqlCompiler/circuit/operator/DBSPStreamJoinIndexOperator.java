@@ -13,9 +13,8 @@ import javax.annotation.Nullable;
 import java.util.List;
 import java.util.Objects;
 
-/** Currently there is no corespondent operator in DBSP, so an attempt to generate
- * Rust for this operator will fail.   See {@link DBSPJoinIndexOperator} for
- * the function signature. */
+/** Currently there is no corespondent operator in DBSP.
+ * See {@link DBSPJoinIndexOperator} for the function signature. */
 public final class DBSPStreamJoinIndexOperator extends DBSPJoinBaseOperator {
     public DBSPStreamJoinIndexOperator(
             CalciteObject node, DBSPTypeIndexedZSet outputType,

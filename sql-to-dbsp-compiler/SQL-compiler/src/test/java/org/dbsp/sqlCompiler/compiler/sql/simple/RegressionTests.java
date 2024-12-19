@@ -389,7 +389,7 @@ public class RegressionTests extends SqlIoTest {
         this.compileRustTestCase(sql);
     }
 
-    @Test @Ignore("https://github.com/feldera/feldera/issues/3154")
+    @Test
     public void testOuterDuplicate() {
         // Validated on Postgres
         String sql = """

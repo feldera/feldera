@@ -95,6 +95,8 @@ import org.dbsp.sqlCompiler.ir.statement.DBSPStructWithHelperItem;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeFunction;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMillisInterval;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMonthsInterval;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVariant;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
@@ -295,6 +297,24 @@ public abstract class InnerRewriteVisitor
         DBSPType[] args = this.transform(type.typeArgs);
         this.pop(type);
         DBSPType result = new DBSPTypeUser(type.getNode(), type.code, type.name, type.mayBeNull, args);
+        this.map(type, result);
+        return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPTypeMonthsInterval type) {
+        this.push(type);
+        this.pop(type);
+        DBSPType result = new DBSPTypeMonthsInterval(type.getNode(), type.units, type.mayBeNull);
+        this.map(type, result);
+        return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPTypeMillisInterval type) {
+        this.push(type);
+        this.pop(type);
+        DBSPType result = new DBSPTypeMillisInterval(type.getNode(), type.mayBeNull);
         this.map(type, result);
         return VisitDecision.STOP;
     }
