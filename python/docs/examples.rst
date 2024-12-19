@@ -111,6 +111,32 @@ Using Pandas DataFrames
     # delete the pipeline
     pipeline.delete()
 
+Executing ad-hoc SQL Queries
+============================
+
+Ad-hoc SQL queries can be executed on running or paused pipelines.
+Ad-hoc queries provide a way to query the state of **materialized** views or tables.
+
+For more information, refer to the docs at: https://docs.feldera.com/sql/ad-hoc
+
+We provide the following methods to execute ad-hoc queries:
+
+#. :meth:`.Pipeline.execute` - Execute an ad-hoc query and discard the result. Useful for ``INSERT`` queries.
+
+#. :meth:`.Pipeline.query` **(Lazy)** - Executes an ad-hoc query and returns a generator to iterate over the result.
+
+#. :meth:`.Pipeline.query_tabular` **(Lazy)** - Executes an ad-hoc query and returns a generator that yields a string representing the query result in human-readable tabular format.
+
+#. :meth:`.Pipeline.query_parquet` - Executes an ad-hoc query and saves the result to the specified path as a parquet file.
+
+.. code-block:: python
+
+    # execute an `INSERT` ad-hoc SQL query
+    pipeline.execute("INSERT into students VALUES ('John', 1)")
+
+    # executing a `SELECT` ad-hoc SQL query
+    students = list(pipeline.query("SELECT * FROM students"))
+
 Iterating over Output Chunks
 ============================
 
