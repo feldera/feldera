@@ -18,3 +18,7 @@ export const useIsScreenMd = () => {
 export const useIsScreenLg = () => {
   return new Store(listen('not (min-width: 1024px)'))
 }
+
+export const useIsScreenXl = () => {
+  return new Store(listen('not (min-width: 1280px)'))
+}

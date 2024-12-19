@@ -173,6 +173,11 @@ example = "1.0"`
     currentPipelineFile[pipelineName] ??= 'program.sql'
   })
 
+  const isTablet = useIsTablet()
+  const isScreenLg = useIsScreenLg()
+  const drawer = useDrawer('right')
+  const pipelineList = usePipelineList(preloaded)
+
   let showPipelinesPanel = useLocalStorage('layout/pipelines/pipelinesPanel/show', false)
   let showMonitoringPanel = useLocalStorage('layout/pipelines/monitoringPanel', true)
   let separateAdHocTab = useLocalStorage('layout/pipelines/separateAdHoc', false)
@@ -180,11 +185,6 @@ example = "1.0"`
   let isDraggingPipelineListResizer = $state(false)
   let saveFile = $state(() => {})
 
-  const isTablet = useIsTablet()
-  const isScreenLg = useIsScreenLg()
-  const drawer = useDrawer('right')
-
-  const pipelineList = usePipelineList(preloaded)
   let pipelineListPane = $state<PaneAPI>()
   $effect(() => {
     if (!pipelineListPane) {
