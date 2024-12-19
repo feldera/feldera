@@ -466,6 +466,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
             } catch (Throwable e) {
                 this.messages.reportError(e);
                 this.printMessages(SqlParserPos.ZERO);
+                parsed.clear();
             }
         }
         this.toCompile.clear();

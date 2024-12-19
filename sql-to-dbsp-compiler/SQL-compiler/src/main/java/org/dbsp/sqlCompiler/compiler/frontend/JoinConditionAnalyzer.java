@@ -95,6 +95,10 @@ public class JoinConditionAnalyzer implements IWritesLogs {
             this.comparisons.add(new EqualityTest(l, r, commonType, nonNull));
         }
 
+        public boolean isCrossJoin() {
+            return this.comparisons.isEmpty() && this.leftOver == null;
+        }
+
         void validate() {
             if (this.leftOver == null && this.comparisons.isEmpty())
                 throw new InternalCompilerError("Unexpected empty join condition", this.object);
