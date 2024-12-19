@@ -567,7 +567,9 @@ async fn stats(state: WebData<ServerState>) -> impl Responder {
     }
 }
 
-/// This endpoint is invoked by the Prometheus server.
+/// Outputs controller metrics in the format expected by Prometheus, as
+/// documented at
+/// <https://github.com/prometheus/docs/blob/main/content/docs/instrumenting/exposition_formats.md>.
 #[get("/metrics")]
 async fn metrics(state: WebData<ServerState>) -> impl Responder {
     match &*state.controller.lock().unwrap() {
@@ -590,6 +592,9 @@ async fn metrics(state: WebData<ServerState>) -> impl Responder {
     }
 }
 
+/// Returns static metadata associated with the circuit.  Can contain any
+/// string, but the intention is to store information about the circuit (e.g.,
+/// SQL code) in JSON format.
 #[get("/metadata")]
 async fn metadata(state: WebData<ServerState>) -> impl Responder {
     HttpResponse::Ok()
