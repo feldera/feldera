@@ -1316,4 +1316,36 @@ public class RegressionTests extends SqlIoTest {
                 CREATE TABLE t1(c0 REAL, c1 VARCHAR, c2 CHAR);
                 CREATE VIEW v2_optimized AS SELECT MIN(t1.c1) FROM t1 WHERE (1 IS NOT DISTINCT FROM 2);""");
     }
+
+    @Test
+    public void issue2736() {
+        var ccs = this.getCCS("""
+                create table latest_cells(
+                  id integer,
+                  mentioned_cell_ids integer array
+                );
+                
+                create local view l as
+                select
+                    s.id,
+                    m.mentioned_id
+                from
+                    latest_cells s
+                left join unnest(s.mentioned_cell_ids) as m(mentioned_id) on true;
+                
+                create local view l1 as
+                select
+                    s.id,
+                    m.mentioned_id
+                from
+                    latest_cells s
+                join unnest(s.mentioned_cell_ids) as m(mentioned_id) on true;
+                
+                create view e as (SELECT * FROM l) EXCEPT (SELECT * FROM l1);""");
+        ccs.step("INSERT INTO latest_cells VALUES(1, ARRAY[1,2,3]), (2, ARRAY[2,3,4]);",
+                """
+                  id | mentioned_id
+                 -------------------""");
+        this.addRustTestCase(ccs);
+    }
 }
