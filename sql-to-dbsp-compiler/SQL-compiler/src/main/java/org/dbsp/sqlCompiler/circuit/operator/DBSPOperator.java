@@ -95,7 +95,7 @@ public abstract class DBSPOperator extends DBSPNode implements IDBSPOuterNode {
                 throw new InternalCompilerError("Comparing operator with " + this.inputs.size() +
                         " inputs with a list of " + newInputs.size() + " inputs", this);
             else
-                return false;
+                return true;
         }
         for (boolean b: Linq.zip(this.inputs, newInputs, (l, r) -> !l.equals(r))) {
             if (b)

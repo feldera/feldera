@@ -3,6 +3,7 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPAntiJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPApply2Operator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPApplyOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAsofJoinOperator;
@@ -34,6 +35,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateOper
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateWithWaterlineOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAntiJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSubtractOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSumOperator;
@@ -308,6 +310,19 @@ public class InsertLimiters extends CircuitCloneVisitor {
             this.nonMonotone(represented);
         else
             this.addBounds(represented, expanded.replacement, 0);
+    }
+
+
+    @Override
+    public void postorder(DBSPStreamAntiJoinOperator operator) {
+        this.addBoundsForNonExpandedOperator(operator);
+        super.postorder(operator);
+    }
+
+    @Override
+    public void postorder(DBSPAntiJoinOperator operator) {
+        this.addBoundsForNonExpandedOperator(operator);
+        super.postorder(operator);
     }
 
     @Override
