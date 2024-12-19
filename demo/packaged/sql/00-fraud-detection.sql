@@ -1,6 +1,6 @@
--- Use Case: Feature Engineering for Real-Time Fraud Detection (fraud-detection)
+-- Use Case: Real-Time Fraud Detection (fraud-detection)
 --
--- Build real-time feature pipelines in SQL.
+-- Tackle fraud-detection using a real-time feature engineering pipeline in SQL.
 --
 -- ## How to run
 --
