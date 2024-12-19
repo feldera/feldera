@@ -72,6 +72,7 @@ public record CircuitOptimizer(DBSPCompiler compiler) implements ICompilerCompon
         if (options.languageOptions.outputsAreSets)
             passes.add(new EnsureDistinctOutputs(compiler));
         passes.add(new UnusedFields(compiler));
+        passes.add(new CSE(compiler));
         passes.add(new MinMaxOptimize(compiler, compiler.weightVar));
         passes.add(new ExpandAggregateZero(compiler));
         passes.add(new MergeSums(compiler));
@@ -127,6 +128,8 @@ public record CircuitOptimizer(DBSPCompiler compiler) implements ICompilerCompon
         passes.add(new Repeat(compiler, new ExpandCasts(compiler).circuitRewriter(true)));
         // Beta reduction after implementing aggregates.
         passes.add(new BetaReduction(compiler).getCircuitVisitor(false));
+        passes.add(new ExpandJoins(compiler));
+        passes.add(new CSE(compiler));
         passes.add(new RemoveViewOperators(compiler, true));
         passes.add(new CompactNames(compiler));
         return new Passes("optimize", compiler, passes);

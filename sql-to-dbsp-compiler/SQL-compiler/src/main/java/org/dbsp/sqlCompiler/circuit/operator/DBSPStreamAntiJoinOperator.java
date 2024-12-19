@@ -11,8 +11,7 @@ import javax.annotation.Nullable;
 import java.util.List;
 import java.util.Objects;
 
-/** Currently there is no corespondent operator in DBSP, so an attempt to generate
- * Rust for this operator will fail. */
+/** Currently there is no corespondent operator in DBSP. */
 public final class DBSPStreamAntiJoinOperator extends DBSPBinaryOperator {
     public DBSPStreamAntiJoinOperator(CalciteObject node, OutputPort left, OutputPort right) {
         super(node, "stream_antijoin", null, left.outputType(), left.isMultiset(), left, right);

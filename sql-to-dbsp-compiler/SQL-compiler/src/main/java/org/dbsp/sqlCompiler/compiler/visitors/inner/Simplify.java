@@ -136,9 +136,9 @@ public class Simplify extends InnerRewriteVisitor {
     public VisitDecision preorder(DBSPCastExpression expression) {
         this.push(expression);
         DBSPExpression source = this.transform(expression.source);
-        DBSPType type = this.transform(expression.getType());
-        DBSPExpression result = source.cast(type);
         this.pop(expression);
+        DBSPType type = expression.getType();
+        DBSPExpression result = source.cast(type);
         DBSPLiteral lit = source.as(DBSPLiteral.class);
         if (lit != null) {
             DBSPType litType = lit.getType();
@@ -332,9 +332,7 @@ public class Simplify extends InnerRewriteVisitor {
                 }
             }
         }
-        assert expression.getType().mayBeNull == result.getType().mayBeNull :
-                "Nullability of " + expression + " has changed " +
-                " from " + expression.getType() + " to " + result.getType();
+        assert expression.getType().sameType(result.getType());
         this.map(expression, result);
         return VisitDecision.STOP;
     }

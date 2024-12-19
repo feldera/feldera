@@ -37,6 +37,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariantExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVecExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.primitive.*;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeMap;
@@ -99,7 +100,7 @@ public abstract class DBSPLiteral extends DBSPExpression implements ISameValue {
         } else if (type.is(DBSPTypeMillisInterval.class)) {
             return new DBSPIntervalMillisLiteral();
         } else if (type.is(DBSPTypeMonthsInterval.class)) {
-            return new DBSPIntervalMonthsLiteral(DBSPTypeMonthsInterval.Units.MONTHS);
+            return new DBSPIntervalMonthsLiteral(type.getNode(), type, null);
         } else if (type.is(DBSPTypeString.class)) {
             return new DBSPStringLiteral(CalciteObject.EMPTY, type, null, StandardCharsets.UTF_8);
         } else if (type.is(DBSPTypeTime.class)) {
@@ -118,6 +119,8 @@ public abstract class DBSPLiteral extends DBSPExpression implements ISameValue {
             return new DBSPBinaryLiteral(type.getNode(), type, null);
         } else if (type.is(DBSPTypeVariant.class)) {
             return new DBSPVariantExpression(null, type);
+        } else if (type.is(DBSPTypeStruct.class)) {
+            return type.to(DBSPTypeStruct.class).toTuple().none();
         }
         throw new InternalCompilerError("Unexpected type for NULL literal " + type, type);
     }

@@ -38,6 +38,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
+import org.dbsp.util.Linq;
 import org.junit.Test;
 
 import java.math.BigDecimal;
@@ -194,9 +195,11 @@ public class CastTests extends SqlIoTest {
                 "Conversion of BINARY object to ");
     }
 
+    @SuppressWarnings("ConstantValue")
     @Test
     public void testAllCasts() {
         String[] types = new String[] {
+                "NULL",
                 "BOOLEAN",
                 "TINYINT",
                 "SMALLINT",
@@ -224,6 +227,7 @@ public class CastTests extends SqlIoTest {
                 "MAP<INT, VARCHAR>"
         };
         String[] values = new String[] {
+                "NULL",   // NULL
                 "'true'", // boolean
                 "1",    // tinyint
                 "1",    // smallint
@@ -236,7 +240,6 @@ public class CastTests extends SqlIoTest {
                 "'string'", // varchar
                 "x'0123'", // BINARY
                 "x'3456'", // VARBINARY
-                // "NULL", // NULL
                 "'1-2'",   // INTERVAL YEARS TO MONTHS
                 "'1'",     // INTERVAL YEARS
                 "'2'",     // INTERVAL MONTHS
@@ -251,58 +254,73 @@ public class CastTests extends SqlIoTest {
 
         final boolean T = true;
         final boolean F = false;
-        final boolean[][] legal = {
-                // To:   B, I8, I16, I32, I64, Dec, r, d, c, v, b, vb, ym, y, m, s, t, ts, dt, row, a, m
-                /* B */{ T, F,  F,   F,   F,   F,   F, F, T, T, F, F,  F,  F, F, F, F, F,  F,  F,   F, F },
-                /* I8*/{ T, T,  T,   T,   T,   T,   T, T, T, T, F, F,  F,  T, T, T, F, F,  F,  F,   F, F },
-                /*I16*/{ T, T,  T,   T,   T,   T,   T, T, T, T, F, F,  F,  T, T, T, F, F,  F,  F,   F, F },
-                /*I32*/{ T, T,  T,   T,   T,   T,   T, T, T, T, F, F,  F,  T, T, T, F, F,  F,  F,   F, F },
-                /*I64*/{ T, T,  T,   T,   T,   T,   T, T, T, T, F, F,  F,  T, T, T, F, F,  F,  F,   F, F },
-                /*Dec*/{ T, T,  T,   T,   T,   T,   T, T, T, T, F, F,  F,  T, T, T, F, F,  F,  F,   F, F },
-                /* r */{ T, T,  T,   T,   T,   T,   T, T, T, T, F, F,  F,  F, F, F, F, F,  F,  F,   F, F },
-                /* d */{ T, T,  T,   T,   T,   T,   T, T, T, T, F, F,  F,  F, F, F, F, F,  F,  F,   F, F },
-                /*chr*/{ T, T,  T,   T,   T,   T,   T, T, T, T, T, T,  T,  T, T, T, T, T,  T,  F,   F, F },
-                /* v */{ T, T,  T,   T,   T,   T,   T, T, T, T, T, T,  T,  T, T, T, T, T,  T,  F,   F, F },
-                /* b */{ F, F,  F,   F,   F,   F,   F, F, T, T, T, T,  F,  F, F, F, F, F,  F,  F,   F, F },
-                /*vb */{ F, F,  F,   F,   F,   F,   F, F, T, T, T, T,  F,  F, F, F, F, F,  F,  F,   F, F },
-                /*ym */{ F, F,  F,   F,   F,   F,   F, F, T, T, F, F,  T,  T, T, F, F, F,  F,  F,   F, F },
-                /* y */{ F, T,  T,   T,   T,   F,   F, F, T, T, F, F,  T,  T, T, F, F, F,  F,  F,   F, F },
-                /* m */{ F, T,  T,   T,   T,   F,   F, F, T, T, F, F,  T,  T, T, F, F, F,  F,  F,   F, F },
-                /* s */{ F, T,  T,   T,   T,   T,   F, F, T, T, F, F,  F,  F, F, T, F, F,  F,  F,   F, F },
-                /* t */{ F, F,  F,   F,   F,   F,   F, F, T, T, F, F,  F,  F, F, F, T, T,  F,  F,   F, F },
-                /* ts*/{ F, T,  T,   T,   T,   T,   T, T, T, T, F, F,  F,  F, F, F, T, T,  T,  F,   F, F },
-                /* dt*/{ F, F,  F,   F,   F,   F,   F, F, T, T, F, F,  F,  F, F, F, F, T,  T,  F,   F, F },
-                /*row*/{ F, F,  F,   F,   F,   F,   F, F, F, F, F, F,  F,  F, F, F, F, F,  F,  T,   F, F },
-                /* a */{ F, F,  F,   F,   F,   F,   F, F, F, F, F, F,  F,  F, F, F, F, F,  F,  F,   T, F },
-                /* m */{ F, F,  F,   F,   F,   F,   F, F, F, F, F, F,  F,  F, F, F, F, F,  F,  F,   F, T },
+        // Rows and columns match the array of types above.
+        final Boolean[][] legal = {
+          // To: N, B, I8,16,32,64,De,r, d, c, v, b, vb,ym,y, m, s, t, ts,dt,ro,a, m
+        /*From*/
+        /* N */{ F, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T },
+        /* B */{ F, T, F, F, F, F, F, F, F, T, T, F, F, F, F, F, F, F, F, F, F, F, F },
+        /* I8*/{ F, T, T, T, T, T, T, T, T, T, T, F, F, F, T, T, T, F, F, F, F, F, F },
+        /*I16*/{ F, T, T, T, T, T, T, T, T, T, T, F, F, F, T, T, T, F, F, F, F, F, F },
+        /*I32*/{ F, T, T, T, T, T, T, T, T, T, T, F, F, F, T, T, T, F, F, F, F, F, F },
+        /*I64*/{ F, T, T, T, T, T, T, T, T, T, T, F, F, F, T, T, T, F, F, F, F, F, F },
+        /*Dec*/{ F, T, T, T, T, T, T, T, T, T, T, F, F, F, T, T, T, F, F, F, F, F, F },
+        /* r */{ F, T, T, T, T, T, T, T, T, T, T, F, F, F, F, F, F, F, F, F, F, F, F },
+        /* d */{ F, T, T, T, T, T, T, T, T, T, T, F, F, F, F, F, F, F, F, F, F, F, F },
+        /*chr*/{ F, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, F, F, F },
+        /* v */{ F, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, F, F, F },
+        /* b */{ F, F, F, F, F, F, F, F, F, T, T, T, T, F, F, F, F, F, F, F, F, F, F },
+        /*vb */{ F, F, F, F, F, F, F, F, F, T, T, T, T, F, F, F, F, F, F, F, F, F, F },
+        /*ym */{ F, F, F, F, F, F, F, F, F, T, T, F, F, T, T, T, F, F, F, F, F, F, F },
+        /* y */{ F, F, T, T, T, T, F, F, F, T, T, F, F, T, T, T, F, F, F, F, F, F, F },
+        /* m */{ F, F, T, T, T, T, F, F, F, T, T, F, F, T, T, T, F, F, F, F, F, F, F },
+        /* s */{ F, F, T, T, T, T, T, F, F, T, T, F, F, F, F, F, T, F, F, F, F, F, F },
+        /* t */{ F, F, F, F, F, F, F, F, F, T, T, F, F, F, F, F, F, T, T, F, F, F, F },
+        /* ts*/{ F, F, T, T, T, T, T, T, T, T, T, F, F, F, F, F, F, T, T, T, F, F, F },
+        /* dt*/{ F, F, F, F, F, F, F, F, F, T, T, F, F, F, F, F, F, F, T, T, F, F, F },
+        /*row*/{ F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, T, F, F },
+        /* a */{ F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, T, F },
+        /* m */{ F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, T },
         };
 
+        assert types.length == legal.length;
+        assert types.length == legal[0].length;
         StringBuilder program = new StringBuilder();
         program.append("CREATE VIEW V AS SELECT ");
+        boolean first = true;
         for (int i = 0; i < types.length; i++) {
             String type = types[i];
             String value = values[i];
-            if (i > 0)
+            if (!legal[i][i])
+                continue;
+            if (!first)
                 program.append(", ");
+            first = false;
             program.append("CAST(").append(value).append(" AS ").append(type).append(")\n");
         }
         program.append(";\n");
 
         for (int i = 0; i < types.length; i++) {
-            program.append("CREATE VIEW V").append(i).append(" AS SELECT ");
-            boolean first = true;
             String value = values[i];
-            String type = types[i];
+            String from = types[i];
+            if (!Linq.any(legal[i], p -> p)) continue;
+            program.append("CREATE VIEW V").append(i).append(" AS SELECT ");
+
+            first = true;
             for (int j = 0; j < types.length; j++) {
-                String fin = types[j];
+                String to = types[j];
                 boolean ok = legal[i][j];
                 if (!ok) continue;
                 if (!first)
                     program.append(", ");
                 first = false;
                 program.append("CAST(");
-                program.append("CAST(").append(value).append(" AS ").append(type).append(")");
-                program.append(" AS ").append(fin).append(")");
+                if (value.equals("NULL"))
+                    // Special case
+                    program.append(value);
+                else
+                    program.append("CAST(").append(value).append(" AS ").append(from).append(")");
+                program.append(" AS ").append(to).append(")");
                 program.append("\n");
             }
             program.append(";\n");
