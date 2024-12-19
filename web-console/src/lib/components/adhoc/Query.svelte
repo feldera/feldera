@@ -180,10 +180,11 @@
                 >
                   <table style:height class="w-fit" use:keepMaxWidth>
                     {#if result.columns.length}
-                      <thead class="bg-white-dark sticky top-0 z-10 !mb-0 h-7">
+                      <thead>
                         <tr>
                           {#each result.columns as column}
-                            <SqlColumnHeader {column}></SqlColumnHeader>
+                            <SqlColumnHeader {column} class="bg-white-dark sticky top-0 z-10 h-7"
+                            ></SqlColumnHeader>
                           {/each}
                         </tr>
                       </thead>
@@ -196,7 +197,7 @@
               {/snippet}
               {#snippet item(row, style, padding, isSticky)}
                 {#if 'cells' in row}
-                  <tr {style} class="h-7 whitespace-nowrap even:bg-white dark:even:bg-black">
+                  <tr {style} class="h-7 whitespace-nowrap odd:bg-white odd:even:bg-black">
                     {#each row.cells as value}
                       <SQLValue
                         {value}
