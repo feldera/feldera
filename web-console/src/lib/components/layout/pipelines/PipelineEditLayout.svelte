@@ -229,9 +229,7 @@ example = "1.0"`
 <div class="flex h-full w-full flex-col">
   <AppHeader>
     {#snippet afterStart()}
-      <div class="flex min-w-0 flex-1 flex-col gap-x-4 gap-y-1 sm:flex-row-reverse sm:justify-end">
-        <PipelineStatus class="mt-0 h-6 sm:mt-1.5" status={pipeline.current.status}
-        ></PipelineStatus>
+      <div class="flex min-w-0 flex-1 flex-col gap-x-4 gap-y-1 sm:flex-row">
         <PipelineBreadcrumbs
           class="-ml-3 py-1 pl-3"
           textClass="text-base sm:text-lg"
@@ -268,6 +266,8 @@ example = "1.0"`
             </DoubleClickInput>
           {/snippet}
         </PipelineBreadcrumbs>
+        <PipelineStatus class="mt-0 h-6 sm:mt-1.5" status={pipeline.current.status}
+        ></PipelineStatus>
       </div>
     {/snippet}
     {#snippet beforeEnd()}
