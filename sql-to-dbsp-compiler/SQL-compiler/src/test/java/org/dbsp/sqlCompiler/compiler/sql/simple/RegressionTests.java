@@ -1303,6 +1303,15 @@ public class RegressionTests extends SqlIoTest {
     }
 
     @Test
+    public void testPanic() {
+        this.q("""
+            SELECT CAST(CAST(array[1] AS VARIANT) AS VARCHAR);
+             r
+            ---
+            NULL""");
+    }
+
+    @Test
     public void issue3093() {
         this.compileRustTestCase("""
                 CREATE TABLE t1(c0 REAL);

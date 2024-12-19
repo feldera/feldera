@@ -1114,6 +1114,26 @@ pub fn cast_to_s_V(value: Variant, size: i32, fixed: bool) -> String {
 
 #[doc(hidden)]
 #[inline]
+pub fn cast_to_s_VN(value: Option<Variant>, size: i32, fixed: bool) -> Option<String> {
+    Some(cast_to_s_V(value.unwrap(), size, fixed))
+}
+
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_sN_V(value: Variant, size: i32, fixed: bool) -> Option<String> {
+    let result: String = value.try_into().ok()?;
+    Some(limit_or_size_string(result, size, fixed))
+}
+
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_sN_VN(value: Option<Variant>, size: i32, fixed: bool) -> Option<String> {
+    let value = value?;
+    cast_to_sN_V(value, size, fixed)
+}
+
+#[doc(hidden)]
+#[inline]
 pub fn cast_to_s_LongInterval_YEARS(interval: LongInterval, size: i32, fixed: bool) -> String {
     let years = interval.years();
     let result = "+".to_string() + &years.to_string();
@@ -1177,7 +1197,6 @@ cast_to_string!(i64, i64);
 cast_to_string!(Timestamp, Timestamp);
 cast_to_string!(Time, Time);
 cast_to_string!(Date, Date);
-cast_to_string!(V, Variant);
 cast_to_string!(LongInterval_MONTHS, LongInterval);
 cast_to_string!(LongInterval_YEARS, LongInterval);
 cast_to_string!(LongInterval_YEARS_TO_MONTHS, LongInterval);
