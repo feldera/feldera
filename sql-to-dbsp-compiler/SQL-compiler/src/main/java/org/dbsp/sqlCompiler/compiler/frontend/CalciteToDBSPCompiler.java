@@ -401,8 +401,12 @@ public class CalciteToDBSPCompiler extends RelVisitor
         //  });
         CalciteObject node = CalciteObject.create(correlate);
         DBSPTypeTuple type = this.convertType(correlate.getRowType(), false).to(DBSPTypeTuple.class);
+        /*
+        The join type does not influence the results of the decorrelate!
+        A Decorrelate is a cross join, and an outer cross join is equivalent to an inner cross join.
         if (correlate.getJoinType().isOuterJoin())
             throw this.decorrelateError(node);
+         */
 
         this.visit(correlate.getLeft(), 0, correlate);
         DBSPSimpleOperator left = this.getInputAs(correlate.getLeft(), true);
@@ -1077,6 +1081,10 @@ public class CalciteToDBSPCompiler extends RelVisitor
         JoinConditionAnalyzer analyzer = new JoinConditionAnalyzer(
                 leftElementType.to(DBSPTypeTuple.class).size(), this.compiler.getTypeCompiler());
         JoinConditionAnalyzer.ConditionDecomposition decomposition = analyzer.analyze(join, join.getCondition());
+        if (decomposition.isCrossJoin())
+            // An outer cross-join is always equivalent with an inner cross join
+            joinType = JoinRelType.INNER;
+
         // If any key field that is compared with = is nullable we need to filter the inputs;
         // this will make some key columns non-nullable
         DBSPSimpleOperator filteredLeft = this.filterNonNullFields(join,
@@ -2872,8 +2880,19 @@ public class CalciteToDBSPCompiler extends RelVisitor
             // are left as projections in the code.  We only handle
             // the case where all project expressions are "constants".
             result = this.compileConstantProject((LogicalProject) modify.rel);
+        } else if (modify.rel instanceof LogicalUnion union) {
+            result = null;
+            for (RelNode node: union.getInputs()) {
+                if (node instanceof LogicalProject project) {
+                    DBSPZSetExpression lit = this.compileConstantProject(project);
+                    if (result == null)
+                        result = lit;
+                    else
+                        result.add(lit);
+                }
+            }
         } else {
-            throw new UnimplementedException("CREATE TABLE statement of this form not supported",
+            throw new UnimplementedException("statement of this form not supported",
                     modify.getCalciteObject());
         }
         if (!isInsert)
