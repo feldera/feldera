@@ -4,9 +4,7 @@
     {
       queries: (QueryData | undefined)[]
     }
-  > = {}
-
-  let getAdhocQueries = $state(() => adhocQueries)
+  > = $state({})
 </script>
 
 <script lang="ts">
@@ -21,6 +19,7 @@
   } from '$lib/functions/pipelines/changeStream'
   import invariant from 'tiny-invariant'
   import WarningBanner from '$lib/components/pipelines/editor/WarningBanner.svelte'
+  import { enclosure, reclosureKey } from '$lib/functions/common/function'
 
   let { pipeline }: { pipeline: { current: ExtendedPipeline } } = $props()
   let pipelineName = $derived(pipeline.current.name)
@@ -35,13 +34,12 @@
   const onSubmitQuery = (pipelineName: string, i: number) => (query: string) => {
     const promise = adHocQuery(pipelineName, query)
     adhocQueries[pipelineName].queries[i]!.progress = true
-    getAdhocQueries = () => adhocQueries
     promise.then((stream) => {
       if (!adhocQueries[pipelineName].queries[i]) {
         return
       }
       adhocQueries[pipelineName].queries[i].result = {
-        rows: [],
+        rows: enclosure([]),
         columns: [],
         totalSkippedBytes: 0,
         endResultStream: () => {}
@@ -67,23 +65,26 @@
         }
         {
           // Limit result size behavior - ignore all but first bufferSize rows
-          const previousLength = adhocQueries[pipelineName].queries[i].result.rows.length
-          adhocQueries[pipelineName].queries[i].result.rows.push(
-            ...input
-              .slice(0, bufferSize - previousLength)
-              .map((v) => (isDataRow(v) ? { cells: Object.values(v) } : v) as Row)
-          )
-          getAdhocQueries = () => adhocQueries
-
+          const previousLength = adhocQueries[pipelineName].queries[i].result.rows().length
+          adhocQueries[pipelineName].queries[i].result
+            .rows()
+            .push(
+              ...input
+                .slice(0, bufferSize - previousLength)
+                .map((v) => (isDataRow(v) ? { cells: Object.values(v) } : v) as Row)
+            )
+          reclosureKey(adhocQueries[pipelineName].queries[i].result, 'rows')
           if (input.length > bufferSize - previousLength) {
             queueMicrotask(() => {
               if (!adhocQueries[pipelineName].queries[i]) {
                 return
               }
-              adhocQueries[pipelineName].queries[i].result?.rows.push({
-                warning: `The result contains more rows, but only the first ${bufferSize} are shown`
-              })
-              getAdhocQueries = () => adhocQueries
+              if (adhocQueries[pipelineName].queries[i].result?.rows) {
+                adhocQueries[pipelineName].queries[i].result.rows().push({
+                  warning: `The result contains more rows, but only the first ${bufferSize} are shown`
+                })
+                reclosureKey(adhocQueries[pipelineName].queries[i].result, 'rows')
+              }
               adhocQueries[pipelineName].queries[i].result?.endResultStream()
             })
           }
@@ -107,13 +108,12 @@
             if (
               adhocQueries[pipelineName].queries.length === i + 1 &&
               ((row) => !row || isDataRow(row))(
-                adhocQueries[pipelineName].queries[i].result?.rows.at(0)
+                adhocQueries[pipelineName].queries[i].result?.rows().at(0)
               )
             ) {
               adhocQueries[pipelineName].queries.push({ query: '' })
             }
             adhocQueries[pipelineName].queries[i].progress = false
-            getAdhocQueries = () => adhocQueries
           },
           onNetworkError(e, injectValue) {
             injectValue({ error: e.message })
@@ -138,13 +138,13 @@
       Start the pipeline to be able to run queries
     </WarningBanner>
   {/if}
-  {#each getAdhocQueries()[pipelineName].queries as x, i}
+  {#each adhocQueries[pipelineName].queries as x, i}
     {#if x}
       {invariant(adhocQueries[pipelineName].queries[i])}
       <Query
         bind:query={adhocQueries[pipelineName].queries[i].query}
-        progress={getAdhocQueries()[pipelineName].queries[i]!.progress}
-        result={getAdhocQueries()[pipelineName].queries[i]!.result}
+        progress={adhocQueries[pipelineName].queries[i]!.progress}
+        result={adhocQueries[pipelineName].queries[i]!.result}
         onSubmitQuery={onSubmitQuery(pipelineName, i)}
         onDeleteQuery={() => {
           if (!adhocQueries[pipelineName].queries[i]) {
@@ -152,13 +152,12 @@
           }
           adhocQueries[pipelineName].queries[i].result?.endResultStream()
           delete adhocQueries[pipelineName].queries[i] // Delete instead of splice to preserve indices of other elements
-          getAdhocQueries = () => adhocQueries
         }}
-        onCancelQuery={getAdhocQueries()[pipelineName].queries[i]!.progress
+        onCancelQuery={adhocQueries[pipelineName].queries[i]!.progress
           ? adhocQueries[pipelineName].queries[i].result?.endResultStream
           : undefined}
         disabled={isIdle}
-        isLastQuery={getAdhocQueries()[pipelineName].queries.length === i + 1}
+        isLastQuery={adhocQueries[pipelineName].queries.length === i + 1}
       ></Query>
     {/if}
   {/each}
