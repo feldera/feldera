@@ -534,3 +534,49 @@ Reason: The pipeline is in a FAILED state due to the following error:
         for chunk in resp.iter_lines(chunk_size=50000000):
             if chunk:
                 yield json.loads(chunk, parse_float=Decimal)
+
+    def pause_connector(self, pipeline_name, table_name, connector_name):
+        """
+        Pause the specified input connector.
+
+        Connectors allow feldera to fetch data from a source or write data to a sink.
+        This method allows users to **PAUSE** a specific **INPUT** connector.
+        All connectors are RUNNING by default.
+
+        Refer to the connector documentation for more information:
+        <https://docs.feldera.com/connectors/#input-connector-orchestration>
+
+        :param pipeline_name: The name of the pipeline.
+        :param table_name: The name of the table associated with this connector.
+        :param connector_name: The name of the connector.
+
+        :raises FelderaAPIError: If the connector cannot be found, or if the pipeline is not running.
+        """
+
+        self.http.post(
+            path=f"/pipelines/{pipeline_name}/tables/{table_name}/connectors/{connector_name}/pause",
+        )
+
+    def resume_connector(
+        self, pipeline_name: str, table_name: str, connector_name: str
+    ):
+        """
+        Resume the specified connector.
+
+        Connectors allow feldera to fetch data from a source or write data to a sink.
+        This method allows users to **RESUME / START** a specific **INPUT** connector.
+        All connectors are RUNNING by default.
+
+        Refer to the connector documentation for more information:
+        <https://docs.feldera.com/connectors/#input-connector-orchestration>
+
+        :param pipeline_name: The name of the pipeline.
+        :param table_name: The name of the table associated with this connector.
+        :param connector_name: The name of the connector.
+
+        :raises FelderaAPIError: If the connector cannot be found, or if the pipeline is not running.
+        """
+
+        self.http.post(
+            path=f"/pipelines/{pipeline_name}/tables/{table_name}/connectors/{connector_name}/start",
+        )
