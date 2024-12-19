@@ -755,7 +755,7 @@ async fn create_http_input_endpoint(
             }
         }
         None => {
-            return Err(missing_controller_error(&state));
+            return Err(missing_controller_error(state));
         }
     };
 
