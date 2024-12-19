@@ -24,9 +24,9 @@
 
   useRefreshPipelineList()
   const rightDrawer = useDrawer('right')
-  const leftDrawer = useLocalStorage('layout/pipelines/pipelinesPanel/show', false) // useDrawer('left')
-  const pipelineList = usePipelineList(data.preloaded)
   const isTablet = useIsTablet()
+  const leftDrawer = useLocalStorage('layout/pipelines/pipelinesPanel/show', !isTablet.current) // Make pipeline drawer open by default on larger screens
+  const pipelineList = usePipelineList(data.preloaded)
 </script>
 
 <SvelteKitTopLoader height={2} color={'rgb(var(--color-primary-500))'} showSpinner={false}
