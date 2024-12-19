@@ -151,7 +151,7 @@
             return
           }
           adhocQueries[pipelineName].queries[i].result?.endResultStream()
-          delete adhocQueries[pipelineName].queries[i] // Delete instead of splice to preserve indices of other elements
+          adhocQueries[pipelineName].queries[i] = undefined // Overwrite with undefined instead of splice to preserve indices of other elements
         }}
         onCancelQuery={adhocQueries[pipelineName].queries[i]!.progress
           ? adhocQueries[pipelineName].queries[i].result?.endResultStream

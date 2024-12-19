@@ -52,7 +52,6 @@
   <NewApiKeyForm
     onSuccess={() => {
       apiKeys.reload?.()
-      console.log('zzzz')
     }}
   ></NewApiKeyForm>
   <!-- <button
