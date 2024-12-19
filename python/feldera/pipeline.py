@@ -164,6 +164,44 @@ class Pipeline:
             force=force,
         )
 
+    def pause_connector(self, table_name: str, connector_name: str):
+        """
+        Pause the specified input connector.
+
+        Connectors allow feldera to fetch data from a source or write data to a sink.
+        This method allows users to **PAUSE** a specific **INPUT** connector.
+        All connectors are RUNNING by default.
+
+        Refer to the connector documentation for more information:
+        <https://docs.feldera.com/connectors/#input-connector-orchestration>
+
+        :param table_name: The name of the table that the connector is attached to.
+        :param connector_name: The name of the connector to pause.
+
+        :raises FelderaAPIError: If the connector is not found, or if the pipeline is not running.
+        """
+
+        self.client.pause_connector(self.name, table_name, connector_name)
+
+    def resume_connector(self, table_name: str, connector_name: str):
+        """
+        Resume the specified connector.
+
+        Connectors allow feldera to fetch data from a source or write data to a sink.
+        This method allows users to **RESUME / START** a specific **INPUT** connector.
+        All connectors are RUNNING by default.
+
+        Refer to the connector documentation for more information:
+        <https://docs.feldera.com/connectors/#input-connector-orchestration>
+
+        :param table_name: The name of the table that the connector is attached to.
+        :param connector_name: The name of the connector to resume.
+
+        :raises FelderaAPIError: If the connector is not found, or if the pipeline is not running.
+        """
+
+        self.client.resume_connector(self.name, table_name, connector_name)
+
     def listen(self, view_name: str) -> OutputHandler:
         """
         Follow the change stream (i.e., the output) of the provided view.
@@ -493,9 +531,18 @@ resume a paused pipeline."""
             if err.status_code == 404:
                 raise RuntimeError(f"Pipeline with name {name} not found")
 
+    def checkpoint(self):
+        """
+        Checkpoints this pipeline, if fault-tolerance is enabled.
+
+        :raises FelderaAPIError: If checkpointing is not enabled.
+        """
+
+        self.client.checkpoint_pipeline(self.name)
+
     def query(self, query: str) -> Generator[Mapping[str, Any], None, None]:
         """
-        Executes an ad-hoc SQL query on this pipeline and returns the result in the specified format.
+        Executes an ad-hoc SQL query on this pipeline and returns a generator that yields the rows of the result as Python dictionaries.
         For ``INSERT`` and ``DELETE`` queries, consider using :meth:`.execute` instead.
 
         Note:
