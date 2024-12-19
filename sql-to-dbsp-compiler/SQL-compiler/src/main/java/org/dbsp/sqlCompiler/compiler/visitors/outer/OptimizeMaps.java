@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
+import org.dbsp.sqlCompiler.circuit.operator.DBSPAntiJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPApplyOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAsofJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDeindexOperator;
@@ -14,6 +15,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNegateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNoopOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAntiJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
@@ -56,7 +58,18 @@ public class OptimizeMaps extends CircuitCloneWithGraphsVisitor {
             super.postorder(operator);
             return;
         }
-        if (source.node().is(DBSPMapOperator.class)) {
+        if (source.node().is(DBSPAntiJoinOperator.class) || source.node().is(DBSPStreamAntiJoinOperator.class)) {
+            // Swap
+            List<OutputPort> newSources = new ArrayList<>();
+            for (OutputPort sourceSource: source.node().inputs) {
+                DBSPSimpleOperator newProjection = operator.withInputs(Linq.list(sourceSource), true);
+                newSources.add(newProjection.outputPort());
+                this.addOperator(newProjection);
+            }
+            DBSPSimpleOperator result = source.simpleNode().withInputs(newSources, true);
+            this.map(operator, result);
+            return;
+        } else if (source.node().is(DBSPMapOperator.class)) {
             // mapindex(map) = mapindex
             DBSPClosureExpression expression = source.simpleNode().getClosureFunction();
             DBSPClosureExpression newFunction = operator.getClosureFunction()
