@@ -3,7 +3,7 @@
 </script>
 
 <a
-  class="btn preset-tonal-surface {_class}"
+  class="btn preset-filled-primary-500 {_class}"
   href="https://calendly.com/d/cqnj-p63-mbq/feldera-demo"
   target="_blank"
   rel="noreferrer"
