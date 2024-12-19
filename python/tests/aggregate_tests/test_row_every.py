@@ -4,7 +4,7 @@ from .aggtst_base import TstView
 class aggtst_row_every(TstView):
     def __init__(self):
         # Validated on Postgres
-        self.data = [{'c1': True}]
+        self.data = [{"c1": True}]
         self.sql = """CREATE MATERIALIZED VIEW row_every AS SELECT
                       EVERY(ROW(c3, c2) !=  ROW(c2, c3)) AS c1
                       FROM row_tbl"""

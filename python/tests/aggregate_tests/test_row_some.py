@@ -4,7 +4,7 @@ from .aggtst_base import TstView
 class aggtst_row_some(TstView):
     def __init__(self):
         # Validated on Postgres
-        self.data = [{'c1': True}]
+        self.data = [{"c1": True}]
         self.sql = """CREATE MATERIALIZED VIEW row_some AS SELECT
                       SOME(ROW(c3, c2) !=  ROW(c2, c3)) AS c1
                       FROM row_tbl"""
