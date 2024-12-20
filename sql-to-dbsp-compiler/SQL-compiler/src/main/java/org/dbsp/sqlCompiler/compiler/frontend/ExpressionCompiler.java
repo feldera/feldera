@@ -274,11 +274,14 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
     /**
      * Given operands for an operation that requires identical types on left and right,
      * compute the type that both operands must be cast to.
+     * @param node       Compilation context.
      * @param left       Left operand type.
      * @param right      Right operand type.
+     * @param error      Extra message to show in case of error.
      * @return           Common type operands must be cast to.
      */
-    public static DBSPType reduceType(DBSPType left, DBSPType right) {
+    public static DBSPType reduceType(CalciteObject node, DBSPType left, DBSPType right,
+                                      String error) {
         if (left.is(DBSPTypeNull.class))
             return right.withMayBeNull(true);
         if (right.is(DBSPTypeNull.class))
@@ -287,14 +290,19 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
         if (left.sameTypeIgnoringNullability(right))
             return left.withMayBeNull(anyNull);
 
+        IsNumericType ln = left.as(IsNumericType.class);
+        IsNumericType rn = right.as(IsNumericType.class);
+
         DBSPTypeInteger li = left.as(DBSPTypeInteger.class);
         DBSPTypeInteger ri = right.as(DBSPTypeInteger.class);
         DBSPTypeDecimal ld = left.as(DBSPTypeDecimal.class);
         DBSPTypeDecimal rd = right.as(DBSPTypeDecimal.class);
-        IsNumericType ln = left.to(IsNumericType.class);
-        IsNumericType rn = right.to(IsNumericType.class);
         DBSPTypeFP lf = left.as(DBSPTypeFP.class);
         DBSPTypeFP rf = right.as(DBSPTypeFP.class);
+        if (ln == null || rn == null) {
+            throw new CompilationError(error + "Implicit conversion between " +
+                    left.asSqlString() + " and " + right.asSqlString() + " not supported", node);
+        }
         if (li != null) {
             if (ri != null) {
                 // INT op INT, choose the wider int type
@@ -379,15 +387,17 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
         return makeBinaryExpression(node, type, opcode, left, right);
     }
 
-    /** Creates a call to the INDICATOR function,
-     * which returns 0 for None and 1 for Some.
-     * For tuples it returns the multiplication of the indicator for all fields */
+    /** Creates a call to the INDICATOR function, which returns 0 for None and 1 for Some.
+     * For tuples it returns the multiplication of the indicator for all fields.
+     * This is used in the implementation of COUNT(a, b). */
     public static DBSPExpression makeIndicator(
             CalciteObject node, DBSPType resultType, DBSPExpression argument) {
         assert !resultType.mayBeNull;
         assert resultType.is(IsNumericType.class);
         DBSPType argType = argument.getType();
-        if (argType.is(DBSPTypeTuple.class)) {
+        if (argType.is(DBSPTypeTuple.class) &&
+                argType.to(DBSPTypeTuple.class).originalStruct == null) {
+            // This means this is a composite count: COUNT(a, b, c)
             DBSPTypeTupleBase tuple = argument.getType().to(DBSPTypeTuple.class);
             DBSPExpression result = resultType.to(IsNumericType.class).getOne();
             for (int i = 0; i < tuple.size(); i++) {
@@ -431,7 +441,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
         DBSPType expressionResultType;
         if (needCommonType(opcode, type, leftType, rightType)) {
             // Need to cast both operands to a common type.  Find out what it is.
-            DBSPType commonBase = reduceType(leftType, rightType);
+            DBSPType commonBase = reduceType(node, leftType, rightType, "");
             expressionResultType = commonBase.withMayBeNull(anyNull);
             if (commonBase.is(DBSPTypeDecimal.class))
                 expressionResultType = DBSPTypeDecimal.getDefault().withMayBeNull(anyNull);  // no limits
@@ -1652,6 +1662,17 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 throw new UnimplementedException("Please use the TABLE function HOP", node);
             case ROW:
                 return new DBSPTupleExpression(node, ops);
+            case COALESCE:
+                if (ops.isEmpty()) {
+                    throw new CompilationError(
+                            "Function " + Utilities.singleQuote(operationName) +
+                                    " with 0 arguments is unknown", node);
+                }
+                DBSPExpression first = ops.get(0).cast(type);
+                for (int i = 1; i < ops.size(); i++) {
+                    first = new DBSPIfExpression(node, first.is_null(), ops.get(i).cast(type), first);
+                }
+                return first;
             case DOT:
             default:
                 throw new UnimplementedException("Function " + Utilities.singleQuote(operationName)
