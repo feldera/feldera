@@ -384,7 +384,7 @@ impl ResponseError for RunnerError {
             Self::PipelineShutdownTimeout { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::PortFileParseError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::BinaryFetchError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
-            Self::PipelineUnreachable { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::PipelineUnreachable { .. } => StatusCode::SERVICE_UNAVAILABLE,
         }
     }
 
