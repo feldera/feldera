@@ -977,7 +977,7 @@ public class ArrayFunctionsTests extends SqlIoTest {
                 (1 row)""");
     }
     
-    @Test @Ignore("https://issues.apache.org/jira/browse/CALCITE-6723")
+    @Test
     public void testArrayInsert() {
         this.qs("""
                 select array_insert(cast(null as integer array), 3, 4);

@@ -592,6 +592,21 @@ public class RegressionTests extends SqlIoTest {
     }
 
     @Test
+    public void issue3165() {
+        this.q("""
+             SELECT ASCII('8') >= ABS(1.1806236821);
+              r
+             ---
+              true""");
+    }
+
+    @Test @Ignore("https://issues.apache.org/jira/browse/CALCITE-6742")
+    public void issue3180() {
+        this.showPlan();
+        this.getCCS("CREATE VIEW V AS SELECT ROW(1, 'x') = ROW('x', 1);");
+    }
+
+    @Test
     public void issue2316() {
         String sql = """
                 CREATE TABLE sum(c1 TINYINT);
