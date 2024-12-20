@@ -6,9 +6,54 @@ use crate::db::types::tenant::TenantId;
 use crate::error::ManagerError;
 use crate::runner::error::RunnerError;
 use actix_web::{http::Method, web::Payload, HttpRequest, HttpResponse, HttpResponseBuilder};
+use crossbeam::sync::ShardedLock;
 use reqwest::StatusCode;
 use std::{collections::HashMap, sync::Arc, sync::LazyLock, time::Duration};
 use tokio::sync::Mutex;
+use tokio::time::Instant;
+
+pub(crate) static ENDPOINT_LOCATION_CACHE: LazyLock<
+    ShardedLock<HashMap<(TenantId, String), CachedPipelineDescr>>,
+> = LazyLock::new(|| ShardedLock::new(HashMap::new()));
+
+pub(crate) struct CachedPipelineDescr {
+    pipeline: ExtendedPipelineDescr,
+    instantiated: Instant,
+}
+
+impl CachedPipelineDescr {
+    const CACHE_TTL: Duration = Duration::from_secs(10);
+
+    fn deployment_status(&self) -> Result<(ExtendedPipelineDescr, String), ManagerError> {
+        match self.pipeline.deployment_status {
+            PipelineStatus::Running | PipelineStatus::Paused => {}
+            _ => Err(RunnerError::PipelineNotRunningOrPaused {
+                pipeline_id: self.pipeline.id,
+                pipeline_name: self.pipeline.name.clone(),
+            })?,
+        };
+
+        Ok((
+            self.pipeline.clone(),
+            match &self.pipeline.deployment_location {
+                None => Err(RunnerError::PipelineMissingDeploymentLocation {
+                    pipeline_id: self.pipeline.id,
+                    pipeline_name: self.pipeline.name.clone(),
+                })?,
+                Some(location) => location.clone(),
+            },
+        ))
+    }
+}
+
+impl From<ExtendedPipelineDescr> for CachedPipelineDescr {
+    fn from(pipeline: ExtendedPipelineDescr) -> Self {
+        Self {
+            pipeline,
+            instantiated: Instant::now(),
+        }
+    }
+}
 
 /// Interface to interact through HTTP with the runner itself or the pipelines that it spawns.
 pub struct RunnerInteraction {
@@ -38,31 +83,27 @@ impl RunnerInteraction {
         tenant_id: TenantId,
         pipeline_name: &str,
     ) -> Result<(ExtendedPipelineDescr, String), ManagerError> {
-        let pipeline = self
-            .db
-            .lock()
-            .await
-            .get_pipeline(tenant_id, pipeline_name)
-            .await?;
-
-        match pipeline.deployment_status {
-            PipelineStatus::Running | PipelineStatus::Paused => {}
-            _ => Err(RunnerError::PipelineNotRunningOrPaused {
-                pipeline_id: pipeline.id,
-                pipeline_name: pipeline.name.clone(),
-            })?,
-        };
-
-        Ok((
-            pipeline.clone(),
-            match pipeline.deployment_location {
-                None => Err(RunnerError::PipelineMissingDeploymentLocation {
-                    pipeline_id: pipeline.id,
-                    pipeline_name: pipeline.name.clone(),
-                })?,
-                Some(location) => location,
-            },
-        ))
+        let cache = ENDPOINT_LOCATION_CACHE.read().unwrap();
+        let entry = cache
+            .get(&(tenant_id, pipeline_name.to_string()))
+            .filter(|entry| entry.instantiated.elapsed() <= CachedPipelineDescr::CACHE_TTL);
+        match entry {
+            Some(entry) => entry.deployment_status(),
+            None => {
+                drop(cache);
+                let pipeline = self
+                    .db
+                    .lock()
+                    .await
+                    .get_pipeline(tenant_id, pipeline_name)
+                    .await?;
+                let cached_descriptor: CachedPipelineDescr = pipeline.into();
+                let deployment_status = cached_descriptor.deployment_status();
+                let mut cache = ENDPOINT_LOCATION_CACHE.write().unwrap();
+                cache.insert((tenant_id, pipeline_name.to_string()), cached_descriptor);
+                deployment_status
+            }
+        }
     }
 
     /// Formats the URL to reach the pipeline.
