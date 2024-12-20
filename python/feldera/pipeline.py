@@ -422,6 +422,7 @@ class Pipeline:
     def checkpoint(self):
         """
         Checkpoints this pipeline, if fault-tolerance is enabled.
+        Fault Tolerance in Feldera: <https://docs.feldera.com/fault-tolerance/>
 
         :raises FelderaAPIError: If checkpointing is not enabled.
         """
