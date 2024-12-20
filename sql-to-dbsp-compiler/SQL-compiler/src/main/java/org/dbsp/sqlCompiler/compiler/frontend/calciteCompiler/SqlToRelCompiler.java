@@ -362,8 +362,7 @@ public class SqlToRelCompiler implements IWritesLogs {
             this.errorReporter = errorReporter;
         }
 
-        /** Calcite can build calls that have null operands, e.g.,
-         * <a href="https://issues.apache.org/jira/browse/CALCITE-6707">[CALCITE-6707]</a>.
+        /** Calcite can build calls that have null operands.
          * Find such cases and reject them. */
         @Override
         public Void visit(SqlCall call) {
