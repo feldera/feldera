@@ -48,6 +48,17 @@ public class RegressionTests extends SqlIoTest {
     }
 
     @Test
+    public void issue3164() {
+        this.compileRustTestCase("""
+                CREATE TABLE T(x integer LATENESS 1);
+                CREATE VIEW V
+                    AS SELECT
+                        x,
+                        CAST(x as VARCHAR)
+                    FROM T;""");
+    }
+
+    @Test
     public void latenessType() {
         this.statementsFailingInCompilation("""
                 CREATE TABLE T(x integer);

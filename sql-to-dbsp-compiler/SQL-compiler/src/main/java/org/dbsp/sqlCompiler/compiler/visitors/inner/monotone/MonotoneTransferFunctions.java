@@ -42,6 +42,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStatement;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.IsTimeRelatedType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeFunction;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
@@ -630,19 +631,28 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
 
     @Override
     public void postorder(DBSPCastExpression expression) {
-        // Casts always preserve monotonicity in SQL
         MonotoneExpression source = this.get(expression.source);
         DBSPExpression reduced = null;
-        if (source.mayBeMonotone()) {
+
+        // Casts always preserve monotonicity in SQL, but only if the
+        // result type can represent monotone values.
+        boolean outputTypeMayBeMonotone =
+                (expression.getType().is(IsNumericType.class) ||
+                        expression.getType().is(IsTimeRelatedType.class));
+        boolean isMonotone = source.mayBeMonotone() && outputTypeMayBeMonotone;
+        IMaybeMonotoneType resultType;
+        if (isMonotone) {
             reduced = expression.replaceSource(source.getReducedExpression());
+            resultType = source.copyMonotonicity(expression.getType());
+        } else {
+            resultType = new NonMonotoneType(expression.type);
         }
         if (this.positiveExpressions.contains(expression.source) &&
                 expression.type.is(IsNumericType.class))
             this.positiveExpressions.add(expression);
         if (this.constantExpressions.contains(expression.source))
             this.constantExpressions.add(expression);
-        MonotoneExpression result = new MonotoneExpression(
-                expression, source.copyMonotonicity(expression.getType()), reduced);
+        MonotoneExpression result = new MonotoneExpression(expression, resultType, reduced);
         this.set(expression, result);
     }
 
