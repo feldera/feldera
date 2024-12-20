@@ -46,8 +46,7 @@ public class JoinConditionAnalyzer implements IWritesLogs {
         this.typeCompiler = typeCompiler;
     }
 
-    /** Represents an equality test in a join
-     * between two columns in the two tables.
+    /** Represents an equality test in a join between two columns in the two tables.
      * @param leftColumn  Column from the left relation that is compared for equality
      * @param rightColumn Column from the right relation that is compared for equality
      * @param commonType  Type that columns have to be cast to
@@ -72,13 +71,13 @@ public class JoinConditionAnalyzer implements IWritesLogs {
      * A join condition is decomposed into a list of equality comparisons
      * and another general-purpose boolean expression. */
     class ConditionDecomposition {
-        final CalciteObject object;
+        final RelNode join;
         public final List<EqualityTest> comparisons;
         @Nullable
         RexNode            leftOver;
 
-        ConditionDecomposition(CalciteObject object) {
-            this.object = object;
+        ConditionDecomposition(RelNode join) {
+            this.join = join;
             this.comparisons = new ArrayList<>();
             this.leftOver = null;
         }
@@ -101,7 +100,8 @@ public class JoinConditionAnalyzer implements IWritesLogs {
 
         void validate() {
             if (this.leftOver == null && this.comparisons.isEmpty())
-                throw new InternalCompilerError("Unexpected empty join condition", this.object);
+                throw new InternalCompilerError("Unexpected empty join condition",
+                        CalciteObject.create(this.join));
         }
 
         /** Part of the join condition that is not an equality test.
@@ -171,7 +171,10 @@ public class JoinConditionAnalyzer implements IWritesLogs {
                     mayBeNull = true;
                 }
             }
-            DBSPType commonType = ExpressionCompiler.reduceType(leftType, rightType).withMayBeNull(mayBeNull);
+            DBSPType commonType = ExpressionCompiler.reduceType(
+                    CalciteObject.create(this.join, call),
+                    leftType, rightType, "Consider using an INNER JOIN with an explicit ON condition.\n" +
+                            "In NATURAL or USING JOIN: ").withMayBeNull(mayBeNull);
             if (leftIsLeft) {
                 this.addEquality(left, right, commonType, !mayBeNull);
             } else {
@@ -205,7 +208,7 @@ public class JoinConditionAnalyzer implements IWritesLogs {
                 .append("Analyzing ")
                 .append(expression.toString())
                 .newline();
-        final ConditionDecomposition result = new ConditionDecomposition(CalciteObject.create(context, expression));
+        final ConditionDecomposition result = new ConditionDecomposition(context);
         if (! (expression instanceof RexCall call)) {
             result.setLeftOver(expression);
             return result;

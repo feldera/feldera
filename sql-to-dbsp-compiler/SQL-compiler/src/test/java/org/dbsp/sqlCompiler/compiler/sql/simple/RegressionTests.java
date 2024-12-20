@@ -1305,10 +1305,59 @@ public class RegressionTests extends SqlIoTest {
     @Test
     public void testPanic() {
         this.q("""
-            SELECT CAST(CAST(array[1] AS VARIANT) AS VARCHAR);
-             r
-            ---
-            NULL""");
+                SELECT CAST(CAST(array[1] AS VARIANT) AS VARCHAR);
+                 r
+                ---
+                NULL""");
+    }
+
+    @Test
+    public void issue3196() {
+        var ccs = this.getCCS("""
+                CREATE TABLE row_tbl(
+                id INT,
+                c1 INT NOT NULL,
+                c2 VARCHAR,
+                c3 VARCHAR);
+                
+                CREATE MATERIALIZED VIEW row_count_col_gby AS SELECT
+                id, COUNT(DISTINCT ROW(c1, c2, c3)) AS c1
+                FROM row_tbl
+                GROUP BY id;""");
+        ccs.step("""
+                INSERT INTO row_tbl VALUES
+                (0, 4, NULL, 'adios'),
+                (0, 3, 'ola', 'ciao'),
+                (1, 7, 'hi', 'hiya'),
+                (1, 2, 'elo', 'ciao'),
+                (1, 2, 'elo', 'ciao');""", """
+                 id | count | weight
+                ---------------------
+                 0  |     2 | 1
+                 1  |     2 | 1""");
+        this.addRustTestCase(ccs);
+    }
+
+    @Test @Ignore("https://github.com/feldera/feldera/issues/3204")
+    public void testSlt() {
+        this.q("""
+                SELECT CASE WHEN 1 NOT IN ( NULL, COUNT(*) ) THEN 1 END;
+                 r
+                ---
+                NULL""");
+    }
+
+    @Test
+    public void issue3199() {
+        this.statementsFailingInCompilation("""
+                CREATE TABLE t1(c0 VARCHAR);
+                CREATE TABLE t2(c0 DECIMAL(19, 9));
+                CREATE VIEW V AS (SELECT * FROM t1 NATURAL JOIN t2);""",
+                "Implicit conversion between VARCHAR and DECIMAL not supported");
+        this.getCCS("""
+                CREATE TABLE t1(c0 INTEGER);
+                CREATE TABLE t2(c0 DECIMAL(19, 9));
+                CREATE VIEW V AS (SELECT * FROM t1 NATURAL JOIN t2);""");
     }
 
     @Test

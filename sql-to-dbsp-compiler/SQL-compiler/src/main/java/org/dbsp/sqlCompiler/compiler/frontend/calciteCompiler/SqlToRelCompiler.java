@@ -271,7 +271,8 @@ public class SqlToRelCompiler implements IWritesLogs {
                 // Calcite recommends not using withExpand, but there are no
                 // rules to decorrelate some queries that withExpand will produce,
                 // e.g., AggScottTests.testAggregates4
-                .withExpand(true);
+                .withExpand(true)
+                .withTrimUnusedFields(true);
         this.validator = null;
         this.converter = null;
         this.usedViewDeclarations = new HashSet<>();
