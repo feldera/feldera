@@ -121,6 +121,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         DBSPCompiler compiler = this.compileDef();
         compiler.compileStatement(query);
         DBSPCircuit circuit = compiler.getFinalCircuit(false);
+        Assert.assertNotNull(circuit);
         String str = circuit.toString();
         String expected = """
                 Circuit circuit {
@@ -397,6 +398,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         compiler.compileStatement(ddl);
         compiler.compileStatements(query);
         DBSPCircuit circuit = compiler.getFinalCircuit(false);
+        Assert.assertNotNull(circuit);
         DBSPTypeZSet outputType = circuit.getSingleOutputType().to(DBSPTypeZSet.class);
         DBSPSimpleOperator source = circuit.getInput(compiler.canonicalName("T", false));
         Assert.assertNotNull(source);
@@ -416,6 +418,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         compiler.compileStatement(ddl);
         compiler.compileStatements(query);
         DBSPCircuit circuit = compiler.getFinalCircuit(false);
+        Assert.assertNotNull(circuit);
         DBSPSinkOperator sink = circuit.getSink(compiler.canonicalName("V", false));
         Assert.assertNotNull(sink);
         OutputPort op = sink.input();
