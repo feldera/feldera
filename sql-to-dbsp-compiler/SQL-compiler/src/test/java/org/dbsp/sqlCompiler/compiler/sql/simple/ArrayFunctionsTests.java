@@ -977,7 +977,7 @@ public class ArrayFunctionsTests extends SqlIoTest {
                 (1 row)""");
     }
     
-    @Test @Ignore("https://issues.apache.org/jira/browse/CALCITE-6723")
+    @Test
     public void testArrayInsert() {
         this.qs("""
                 select array_insert(cast(null as integer array), 3, 4);
@@ -1034,16 +1034,10 @@ public class ArrayFunctionsTests extends SqlIoTest {
                 {1, 2, 4, 3}
                 (1 row)
                 
-                select array_insert(array(1, 2, 3), 3, cast(4 as double));
+                select array_insert(array(1, 2, 3), 3, 4.0e0);
                  r
                 ---
-                {1.0, 2.0, 4.0, 3.0}
-                (1 row)
-                
-                select array_insert(array(1, 2, 3), 3, cast(4 as real));
-                 r
-                ---
-                {1.0, 2.0, 4.0, 3.0}
+                {1, 2, 4, 3}
                 (1 row)
                 
                 select array_insert(array(1, 2, 3), 3, cast(4 as bigint));
@@ -1061,7 +1055,7 @@ public class ArrayFunctionsTests extends SqlIoTest {
                 select array_insert(array(1, 2, 3), 3, cast(null as real));
                  r
                 ---
-                {1.0, 2.0, null, 3.0}
+                {1, 2, null, 3}
                 (1 row)
                 
                 select array_insert(array(1, 2, 3), 3, cast(null as tinyint));

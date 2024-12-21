@@ -104,6 +104,7 @@ import org.apache.calcite.sql.util.SqlShuttle;
 import org.apache.calcite.sql.validate.SqlConformanceEnum;
 import org.apache.calcite.sql.validate.SqlValidator;
 import org.apache.calcite.sql.validate.SqlValidatorUtil;
+import org.apache.calcite.sql2rel.ConvertToChecked;
 import org.apache.calcite.sql2rel.SqlToRelConverter;
 import org.apache.calcite.sql2rel.StandardConvertletTable;
 import org.apache.calcite.tools.RelBuilder;
@@ -361,8 +362,7 @@ public class SqlToRelCompiler implements IWritesLogs {
             this.errorReporter = errorReporter;
         }
 
-        /** Calcite can build calls that have null operands, e.g.,
-         * <a href="https://issues.apache.org/jira/browse/CALCITE-6707">[CALCITE-6707]</a>.
+        /** Calcite can build calls that have null operands.
          * Find such cases and reject them. */
         @Override
         public Void visit(SqlCall call) {
@@ -759,7 +759,7 @@ public class SqlToRelCompiler implements IWritesLogs {
             CreateViewStatement cv = (CreateViewStatement) lastStatement;
             RelNode node = cv.getRelNode();
             if (node instanceof LogicalTableScan) {
-                // This means that a subtraction with 0 was reduced to nothing
+                // This means that a subtraction with 0 was reduced to a simple value
                 assert this.converter != null;
                 return this.converter.convertExpression(value);
             }
@@ -768,7 +768,7 @@ public class SqlToRelCompiler implements IWritesLogs {
                 if (projects.size() == 1) {
                     RexNode subtract = projects.get(0);
                     if (subtract instanceof RexCall call) {
-                        if (call.getKind() == SqlKind.MINUS) {
+                        if (call.getKind() == SqlKind.MINUS || call.getKind() == SqlKind.CHECKED_MINUS) {
                             RexNode left = call.getOperands().get(0);
                             if (left instanceof RexInputRef) {
                                 // This may include some casts
@@ -1268,7 +1268,6 @@ public class SqlToRelCompiler implements IWritesLogs {
                     this.usedViews.add(simple);
                     id = id.setName(0, this.getInputName.apply(simple).name());
                 }
-                return id;
             } else {
                 SqlIdentifier component = id.getComponent(0);
                 ProgramIdentifier simple = Utilities.toIdentifier(component);
@@ -1276,8 +1275,8 @@ public class SqlToRelCompiler implements IWritesLogs {
                     this.usedViews.add(simple);
                     id = id.setName(0, this.getInputName.apply(simple).name());
                 }
-                return id;
             }
+            return id;
         }
     }
 
@@ -1436,6 +1435,12 @@ public class SqlToRelCompiler implements IWritesLogs {
                                 "please use 'CREATE MATERIALIZED VIEW' instead");
             }
         }
+
+        // Convert plan to use checked arithmetic
+        // Must be done before optimizations.
+        ConvertToChecked checkedConverter = new ConvertToChecked(this.getRexBuilder());
+        RelNode checked = checkedConverter.visit(relRoot.rel);
+        relRoot = relRoot.withRel(checked);
 
         RelNode optimized = this.optimize(relRoot.rel);
         relRoot = relRoot.withRel(optimized);
