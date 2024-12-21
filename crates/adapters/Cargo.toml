@@ -120,7 +120,7 @@ tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 jemalloc_pprof = "0.1.0"
 
 [target.'cfg(any(target_os = "macos", target_os = "linux"))'.dependencies]
-psutil = "3.2.2"
+psutil = { git = "https://github.com/ryzhyk/rust-psutil.git", rev = "5a5e3f8" }
 
 [dev-dependencies]
 actix-test = "0.1.1"
