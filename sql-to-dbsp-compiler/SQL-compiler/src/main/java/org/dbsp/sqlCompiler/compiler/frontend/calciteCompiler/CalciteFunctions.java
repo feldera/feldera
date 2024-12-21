@@ -264,7 +264,6 @@ public class CalciteFunctions implements FunctionDocumentation.FunctionRegistry 
             new Func(SqlLibraryOperators.ARRAY_CONCAT, "ARRAY_CONCAT", SqlLibrary.SPARK, "array", false),
             new Func(SqlLibraryOperators.ARRAY_CONTAINS, "ARRAY_CONTAINS", SqlLibrary.SPARK, "array", false),
             new Func(SqlLibraryOperators.ARRAY_DISTINCT, "ARRAY_DISTINCT", SqlLibrary.SPARK, "array", false),
-            new Func(SqlLibraryOperators.ARRAY_INSERT, "ARRAY_INSERT", SqlLibrary.SPARK, "array", false),
             new Func(SqlLibraryOperators.ARRAY_JOIN, "ARRAY_JOIN", SqlLibrary.SPARK, "array", false),
             new Func(SqlLibraryOperators.ARRAY_LENGTH, "ARRAY_LENGTH", SqlLibrary.SPARK, "array", false),
             new Func(SqlLibraryOperators.ARRAY_MAX, "ARRAY_MAX", SqlLibrary.SPARK, "array", false),

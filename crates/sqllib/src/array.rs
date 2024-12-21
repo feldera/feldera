@@ -2,6 +2,7 @@
 
 use crate::{some_function2, some_generic_function2, Variant, Weight};
 use std::collections::HashSet;
+use std::fmt::Debug;
 use std::hash::Hash;
 use std::ops::Index;
 
@@ -799,21 +800,45 @@ where
     Some(array_intersect__(left, right))
 }
 
+// There are only 8 variants of array_insert, since the
+// compiler enforces the element type is always nullable.
+// The standard macros we have don't work for this function.
+
 // The result type must always be Vec<Option<T>>
-// The result type must always be Vec<Option<T>>
+// The suffix has 4 symbols
+// N_N_
+// ^array
+//  ^pos
+//   ^value
+//    ^array element type
+
 #[doc(hidden)]
-pub fn array_insert____<T>(array: Vec<T>, pos: i32, value: T) -> Vec<Option<T>>
+pub fn array_insert__N_<T>(array: Vec<T>, pos: i32, value: Option<T>) -> Vec<Option<T>>
 where
-    T: Clone,
+    T: Clone + Debug,
 {
-    array_insert___N(array, pos, Some(value))
+    let array: Vec<Option<T>> = array.into_iter().map(|x| Some(x)).collect();
+    array_insert__NN(array, pos, value)
+}
+
+#[doc(hidden)]
+pub fn array_insert_NN_<T>(
+    array: Vec<T>,
+    pos: Option<i32>,
+    value: Option<T>,
+) -> Option<Vec<Option<T>>>
+where
+    T: Clone + Debug,
+{
+    let pos = pos?;
+    Some(array_insert__N_(array, pos, value))
 }
 
 #[doc(hidden)]
 #[allow(clippy::needless_range_loop)]
-pub fn array_insert___N<T>(array: Vec<T>, pos: i32, value: Option<T>) -> Vec<Option<T>>
+pub fn array_insert__NN<T>(array: Vec<Option<T>>, pos: i32, value: Option<T>) -> Vec<Option<T>>
 where
-    T: Clone,
+    T: Clone + Debug,
 {
     const MAX_ARRAY_LENGTH: usize = (i32::MAX) as usize - 15;
     let mut abs = num::abs(pos) as usize;
@@ -827,93 +852,100 @@ where
 
     let len = array.len();
     if pos <= 0 {
-        if abs < len {
+        if abs <= len {
             // Insert inside array
-            abs = len - abs;
+            abs = len - abs + 2;
         } else {
             // extend array and insert at the beginning
             let mut result: Vec<Option<T>> = Vec::with_capacity(abs + 1);
-            result[0] = value;
-            for index in 1..(abs + 1 - len) {
-                result[index] = None;
+            result.push(value);
+            for _index in 0..(abs - len - 1) {
+                result.push(None);
             }
-            let mut index = abs + 1 - len;
-            for element in array.iter() {
-                result[index] = Some(element.clone());
-                index += 1;
-            }
+            result.extend(array.iter().cloned());
             return result;
         }
     } else if abs > len {
         // extend the array and insert at end
-        let mut result = Vec::<Option<T>>::with_capacity(abs);
-        for (index, element) in array.iter().enumerate() {
-            result[index] = Some(element.clone());
+        let mut result = Vec::<Option<T>>::with_capacity(abs + 1);
+        result.extend(array.iter().cloned());
+        for _index in len..(abs - 1) {
+            result.push(None);
         }
-        for index in len..(abs - 1) {
-            result[index] = None;
-        }
-        result[abs] = value;
+        result.push(value);
         return result;
     }
 
-    let mut result = Vec::with_capacity(len + 1);
-    for index in 0..(abs - 1) {
-        result[index] = Some(array[index].clone());
-    }
-    result[abs] = value;
-    for index in abs..len {
-        result[index] = Some(array[index - 1].clone())
-    }
+    let mut result = Vec::<Option<T>>::with_capacity(len + 1);
+    result.extend_from_slice(&array[..(abs - 1)]);
+    result.push(value);
+    result.extend_from_slice(&array[(abs - 1)..len]);
     result
 }
 
 #[doc(hidden)]
-pub fn array_insertN___<T>(array: Option<Vec<T>>, pos: i32, value: T) -> Option<Vec<Option<T>>>
+pub fn array_insert_NNN<T>(
+    array: Vec<Option<T>>,
+    pos: Option<i32>,
+    value: Option<T>,
+) -> Option<Vec<Option<T>>>
 where
-    T: Clone,
+    T: Clone + Debug,
 {
-    let array = array?;
-    Some(array_insert___N(array, pos, Some(value)))
+    let pos = pos?;
+    Some(array_insert__NN(array, pos, value))
 }
 
 #[doc(hidden)]
 pub fn array_insertN_N_<T>(
     array: Option<Vec<T>>,
-    pos: Option<i32>,
-    value: T,
-) -> Option<Vec<Option<T>>>
-where
-    T: Clone,
-{
-    let array = array?;
-    let pos = pos?;
-    Some(array_insert____(array, pos, value))
-}
-
-#[doc(hidden)]
-pub fn array_insertN__N<T>(
-    array: Option<Vec<T>>,
     pos: i32,
     value: Option<T>,
 ) -> Option<Vec<Option<T>>>
 where
-    T: Clone,
+    T: Clone + Debug,
 {
     let array = array?;
-    Some(array_insert___N(array, pos, value))
+    Some(array_insert__N_(array, pos, value))
 }
 
 #[doc(hidden)]
-pub fn array_insertN_NN<T>(
+pub fn array_insertNNN_<T>(
     array: Option<Vec<T>>,
     pos: Option<i32>,
     value: Option<T>,
 ) -> Option<Vec<Option<T>>>
 where
-    T: Clone,
+    T: Clone + Debug,
 {
     let array = array?;
     let pos = pos?;
-    Some(array_insert___N(array, pos, value))
+    Some(array_insert__N_(array, pos, value))
+}
+
+#[doc(hidden)]
+pub fn array_insertN_NN<T>(
+    array: Option<Vec<Option<T>>>,
+    pos: i32,
+    value: Option<T>,
+) -> Option<Vec<Option<T>>>
+where
+    T: Clone + Debug,
+{
+    let array = array?;
+    Some(array_insert__NN(array, pos, value))
+}
+
+#[doc(hidden)]
+pub fn array_insertNNNN<T>(
+    array: Option<Vec<Option<T>>>,
+    pos: Option<i32>,
+    value: Option<T>,
+) -> Option<Vec<Option<T>>>
+where
+    T: Clone + Debug,
+{
+    let array = array?;
+    let pos = pos?;
+    Some(array_insert__NN(array, pos, value))
 }
