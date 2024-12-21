@@ -36,7 +36,6 @@ public abstract class SqlIoTest extends BaseSQLTests {
         CompilerOptions options = new CompilerOptions();
         options.ioOptions.quiet = true;
         options.ioOptions.emitHandles = true;
-        options.ioOptions.verbosity = 1;
         options.languageOptions.throwOnError = true;
         options.languageOptions.optimizationLevel = optimize ? 2 : 0;
         options.languageOptions.generateInputForEveryTable = true;

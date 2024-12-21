@@ -754,7 +754,6 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
      */
     String getArrayCallNameWithElemNullability(RexCall call, DBSPExpression... ops) {
         String s = getArrayOrMapCallName(call, ops);
-
         DBSPTypeVec vec = ops[0].type.to(DBSPTypeVec.class);
         DBSPType elemType = vec.getElementType();
         s = s + elemType.nullableUnderlineSuffix();
@@ -1284,6 +1283,17 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                     case "time_trunc":
                         // Like DATE_TRUNC
                         return compileKeywordFunction(call, node, null, type, ops, 1, 2);
+                    case "array_insert": {
+                        validateArgCount(node, operationName, ops.size(), 3);
+                        assert type.is(DBSPTypeVec.class);
+                        // Element type must be always nullable in result
+                        assert type.to(DBSPTypeVec.class).getElementType().mayBeNull;
+                        this.ensureInteger(ops, 1, 32);
+                        DBSPExpression inserted = ops.get(2);
+                        inserted = inserted.cast(type.to(DBSPTypeVec.class).getElementType());
+                        String method = getArrayCallNameWithElemNullability(call, ops.get(0), ops.get(1), inserted);
+                        return new DBSPApplyExpression(node, method, type, ops.get(0), ops.get(1), inserted).cast(type);
+                    }
                 }
                 return this.compileUdfOrConstructor(node, call, type, ops);
             }
@@ -1648,13 +1658,6 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
 
                 String method = getArrayOrMapCallName(call, arg0);
                 return new DBSPApplyExpression(node, method, type, arg0);
-            }
-            case ARRAY_INSERT: {
-                validateArgCount(node, operationName, ops.size(), 3);
-                DBSPExpression op1 = ops.get(1)
-                        .cast(new DBSPTypeInteger(node, 32, true, ops.get(1).getType().mayBeNull));
-                String method = getArrayCallNameWithElemNullability(call, ops.get(0), op1, ops.get(2));
-                return new DBSPApplyExpression(node, method, type, ops.get(0), op1, ops.get(2)).cast(type);
             }
             case ARRAY_REPEAT: {
                 validateArgCount(node, operationName, ops.size(), 2);
