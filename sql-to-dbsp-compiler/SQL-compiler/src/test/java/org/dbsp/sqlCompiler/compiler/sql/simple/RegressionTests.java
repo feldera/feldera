@@ -600,9 +600,8 @@ public class RegressionTests extends SqlIoTest {
               true""");
     }
 
-    @Test @Ignore("https://issues.apache.org/jira/browse/CALCITE-6742")
+    @Test
     public void issue3180() {
-        this.showPlan();
         this.getCCS("CREATE VIEW V AS SELECT ROW(1, 'x') = ROW('x', 1);");
     }
 
@@ -1440,7 +1439,7 @@ public class RegressionTests extends SqlIoTest {
         this.addRustTestCase(ccs);
     }
 
-    @Test @Ignore("https://github.com/feldera/feldera/issues/3204")
+    @Test
     public void testSlt() {
         this.q("""
                 SELECT CASE WHEN 1 NOT IN ( NULL, COUNT(*) ) THEN 1 END;
