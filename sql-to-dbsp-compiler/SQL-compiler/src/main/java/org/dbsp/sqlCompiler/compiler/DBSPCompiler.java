@@ -356,7 +356,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
                 }
                 InputColumnMetadata otherMeta = otherTable.metadata.getColumnMetadata(otherColumnName);
                 if (otherMeta == null) {
-                    this.reportError(selfColumn.getSourcePosition(),
+                    this.reportError(otherColumn.getSourcePosition(),
                             "Column not found",
                             "Table " + otherTableName.singleQuote() +
                                     " does not have a column named " + otherColumnName.singleQuote());
@@ -417,6 +417,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
                 Utilities.singleQuote(key.getString()), node);
     }
 
+    @SuppressWarnings("unused")
     void validateConnectorsProperty(CalciteObject node, SqlFragment key, SqlFragment value) {
         // Nothing right now.
         // This is validated by the pipeline_manager, and it's relatively fast.
