@@ -359,7 +359,7 @@ export const pipelineLogsStream = async (pipelineName: string) => {
 export const adHocQuery = async (pipelineName: string, query: string) => {
   const fetch = getAuthenticatedFetch()
   const result = await fetch(
-    `${felderaEndpoint}/v0/pipelines/${pipelineName}/query?sql=${query}&format=json`
+    `${felderaEndpoint}/v0/pipelines/${pipelineName}/query?sql=${encodeURIComponent(query)}&format=json`
   )
   if (result.status !== 200) {
     const json = await result.json()
