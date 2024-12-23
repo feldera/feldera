@@ -10,6 +10,7 @@ use actix_web::{web::Payload, HttpResponse};
 use anyhow::{anyhow, Error as AnyError, Result as AnyResult};
 use atomic::Atomic;
 use circular_queue::CircularQueue;
+use dbsp::circuit::tokio::TOKIO;
 use feldera_types::program_schema::Relation;
 use feldera_types::transport::http::HttpInputConfig;
 use futures_util::StreamExt;
@@ -91,10 +92,11 @@ impl HttpInputEndpointInner {
             force,
         });
 
-        tokio::spawn(HttpInputEndpointInner::background_task(
+        TOKIO.spawn(HttpInputEndpointInner::background_task(
             inner.clone(),
             receiver,
         ));
+
         inner
     }
 
