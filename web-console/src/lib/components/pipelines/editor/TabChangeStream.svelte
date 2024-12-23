@@ -5,6 +5,7 @@
     relationName: string
   }
   type ExtraType = {
+    fields: Record<string, Field>
     selected: boolean
     cancelStream?: () => void
   }
@@ -72,11 +73,11 @@
                         relationName,
                         columns: Object.keys(
                           ((row) => ('insert' in row ? row.insert : row.delete))(rows[0])
-                        ).map((name) => ({
-                          name,
-                          case_sensitive: false,
-                          columntype: { nullable: true }
-                        }))
+                        ).map((name) => {
+                          return pipelinesRelations[pipelineName][relationName].fields[
+                            normalizeCaseIndependentName({ name })
+                          ]
+                        })
                       }
                     ] as Row[])
                   : [])
@@ -158,7 +159,10 @@
 <script lang="ts">
   import { usePipelineActionCallbacks } from '$lib/compositions/pipelines/usePipelineActionCallbacks.svelte'
 
-  import { getCaseIndependentName } from '$lib/functions/felderaRelation'
+  import {
+    getCaseIndependentName,
+    normalizeCaseIndependentName
+  } from '$lib/functions/felderaRelation'
   import {
     relationEgressStream,
     relationIngress,
@@ -168,7 +172,7 @@
   import type { XgressRecord } from '$lib/types/pipelineManager'
   import ChangeStream from './ChangeStream.svelte'
   import { Pane, PaneGroup, PaneResizer } from 'paneforge'
-  import type { Relation } from '$lib/services/manager'
+  import type { ColumnType, Field, Relation } from '$lib/services/manager'
   import {
     CustomJSONParserTransformStream,
     parseCancellable,
@@ -177,6 +181,7 @@
   import JSONbig from 'true-json-bigint'
   import { groupBy } from '$lib/functions/common/array'
   import { untrack } from 'svelte'
+  import { tuple } from '$lib/functions/common/tuple'
 
   let { pipeline }: { pipeline: { current: ExtendedPipeline } } = $props()
 
@@ -196,7 +201,10 @@
         const oldRelation = oldSchema[newRelationName]?.type === type && oldSchema[newRelationName]
         pipelinesRelations[pipelineName][newRelationName] = oldRelation || {
           type,
-          selected: false
+          selected: false,
+          fields: Object.fromEntries(
+            newRelation.fields.map((f) => tuple(getCaseIndependentName(f), f))
+          )
         }
       }
     }

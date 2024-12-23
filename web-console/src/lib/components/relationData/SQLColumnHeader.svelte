@@ -1,5 +1,6 @@
 <script lang="ts">
   import { getCaseIndependentName } from '$lib/functions/felderaRelation'
+  import { displaySQLColumnType } from '$lib/functions/sql'
   import type { Field } from '$lib/services/manager'
 
   let {
@@ -23,6 +24,7 @@
   style:left={typeof style === 'string' ? undefined : style?.left}
   style:z-index={typeof style === 'string' ? undefined : style?.['z-index']}
   >{getCaseIndependentName(column)}</th> -->
-<th class="{isSticky ? 'sticky top-0 z-10' : ''} px-3 font-normal {_class}" {style}
-  >{getCaseIndependentName(column)}</th
->
+<th class="{isSticky ? 'sticky top-0 z-10' : ''} px-3 font-normal {_class}" {style}>
+  {getCaseIndependentName(column)}
+  <span class="text-sm text-surface-600-400">{displaySQLColumnType(column)}</span>
+</th>
