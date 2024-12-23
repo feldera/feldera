@@ -66,7 +66,7 @@
   const keepMaxWidth = (element: HTMLElement) => {
     const observer = new ResizeObserver(([entry]) => {
       maxW = Math.max(maxW, entry.borderBoxSize[0].inlineSize)
-      element.style.width = `${maxW}px`
+      element.style.minWidth = `${maxW}px`
     })
     observer.observe(element)
     let maxW = $state(0)
