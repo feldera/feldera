@@ -34,8 +34,9 @@
 
   let stickToBottom = $state(true)
 
+  let len = $derived(items.length)
   $effect(() => {
-    items.length
+    len
     untrack(() => {
       if (stickToBottom) {
         scrollToBottom()
