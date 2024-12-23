@@ -182,6 +182,8 @@
   import { groupBy } from '$lib/functions/common/array'
   import { untrack } from 'svelte'
   import { tuple } from '$lib/functions/common/tuple'
+  import { useIsMobile } from '$lib/compositions/layout/useIsMobile.svelte'
+  import { Segment } from '@skeletonlabs/skeleton-svelte'
 
   let { pipeline }: { pipeline: { current: ExtendedPipeline } } = $props()
 
@@ -272,89 +274,128 @@
       }))
     )
   }
+
+  const isMobile = useIsMobile()
+  const mobileDisplayModes = ['Tables and Views', 'Data stream'] as const
+  let mobileDisplayMode = $state<(typeof mobileDisplayModes)[number]>('Tables and Views')
 </script>
 
-<div class="flex h-full flex-row">
-  <PaneGroup direction="horizontal" onpaste={ingestPasted}>
-    <Pane defaultSize={20} minSize={5} class="flex h-full">
-      <div
-        class="bg-white-dark mr-2 mt-4 flex w-full flex-col gap-1 overflow-y-auto text-nowrap rounded p-4 scrollbar"
-      >
-        {#snippet relationItem(relation: RelationInfo & ExtraType)}
-          <label class="flex-none cursor-pointer overflow-hidden overflow-ellipsis">
-            <input
-              type="checkbox"
-              class="bg-white-dark checkbox m-1"
-              checked={relation.selected}
-              onchange={(e) => {
-                const follow = e.currentTarget.checked
-                pipelinesRelations[pipelineName][relation.relationName].selected = follow
-                if (follow) {
-                  // If stream is stopped - the action will silently fail
-                  pipelinesRelations[pipelineName][relation.relationName].cancelStream =
-                    startReadingStream(pipelineName, relation.relationName)
-                } else {
-                  pipelinesRelations[pipelineName][relation.relationName].cancelStream?.()
-                  pipelinesRelations[pipelineName][relation.relationName].cancelStream = undefined
-                  if (
-                    !Object.values(pipelinesRelations[pipelineName]).some(
-                      ({ selected }) => selected
-                    )
-                  ) {
-                    changeStream[pipelineName].rows = []
-                    changeStream[pipelineName].headers = []
-                    getChangeStream = () => changeStream
-                    return
-                  }
-                  ;({
-                    rows: changeStream[pipelineName].rows,
-                    headers: changeStream[pipelineName].headers
-                  } = filterOutRows(
-                    changeStream[pipelineName].rows,
-                    changeStream[pipelineName].headers,
-                    relation.relationName
-                  ))
-                  getChangeStream = () => changeStream
-                }
-              }}
-              value={relation}
-            />
-            {relation.relationName}
-          </label>
-        {/snippet}
-        {#if inputs.length}
-          <div class="text-surface-600-400">Tables:</div>
-        {/if}
-        {#each inputs as relation}
-          {@render relationItem({ ...relation, pipelineName })}
-        {/each}
-        {#if outputs.length}
-          <div class="text-surface-600-400">Views:</div>
-        {/if}
-        {#each outputs as relation}
-          {@render relationItem({ ...relation, pipelineName })}
-        {/each}
-        {#if inputs.length + outputs.length === 0}
-          <div class="text-surface-600-400">No relations</div>
-        {/if}
-      </div>
-    </Pane>
-    <PaneResizer class="pane-divider-vertical"></PaneResizer>
+{#snippet relationView()}
+  {#snippet relationItem(relation: RelationInfo & ExtraType)}
+    <label class="flex-none cursor-pointer overflow-hidden overflow-ellipsis">
+      <input
+        type="checkbox"
+        class="bg-white-dark checkbox m-1"
+        checked={relation.selected}
+        onchange={(e) => {
+          const follow = e.currentTarget.checked
+          pipelinesRelations[pipelineName][relation.relationName].selected = follow
+          if (follow) {
+            // If stream is stopped - the action will silently fail
+            pipelinesRelations[pipelineName][relation.relationName].cancelStream =
+              startReadingStream(pipelineName, relation.relationName)
+          } else {
+            pipelinesRelations[pipelineName][relation.relationName].cancelStream?.()
+            pipelinesRelations[pipelineName][relation.relationName].cancelStream = undefined
+            if (!Object.values(pipelinesRelations[pipelineName]).some(({ selected }) => selected)) {
+              changeStream[pipelineName].rows = []
+              changeStream[pipelineName].headers = []
+              getChangeStream = () => changeStream
+              return
+            }
+            ;({
+              rows: changeStream[pipelineName].rows,
+              headers: changeStream[pipelineName].headers
+            } = filterOutRows(
+              changeStream[pipelineName].rows,
+              changeStream[pipelineName].headers,
+              relation.relationName
+            ))
+            getChangeStream = () => changeStream
+          }
+        }}
+        value={relation}
+      />
+      {relation.relationName}
+    </label>
+  {/snippet}
+  {#if inputs.length}
+    <div class="text-surface-600-400">Tables:</div>
+  {/if}
+  {#each inputs as relation}
+    {@render relationItem({ ...relation, pipelineName })}
+  {/each}
+  {#if outputs.length}
+    <div class="text-surface-600-400">Views:</div>
+  {/if}
+  {#each outputs as relation}
+    {@render relationItem({ ...relation, pipelineName })}
+  {/each}
+  {#if inputs.length + outputs.length === 0}
+    <div class="text-surface-600-400">No relations</div>
+  {/if}
+{/snippet}
 
-    <Pane minSize={70} class="flex h-full pl-2 pt-4">
-      {#if getChangeStream()[pipelineName]?.rows?.length}
-        {#key pipelineName}
-          <ChangeStream changeStream={getChangeStream()[pipelineName]}></ChangeStream>
-        {/key}
+{#snippet dataView()}
+  {#if getChangeStream()[pipelineName]?.rows?.length}
+    {#key pipelineName}
+      <ChangeStream changeStream={getChangeStream()[pipelineName]}></ChangeStream>
+    {/key}
+  {:else}
+    <span class="p-2 text-surface-600-400">
+      {#if Object.values(pipelinesRelations[pipelineName] ?? {}).some((r) => r.selected)}
+        The selected tables and views have not emitted any new changes
       {:else}
-        <span class="p-2 text-surface-600-400">
-          {#if Object.values(pipelinesRelations[pipelineName] ?? {}).some((r) => r.selected)}
-            The selected tables and views have not emitted any new changes
-          {:else}
-            Select tables and views to see the record updates as they are emitted
-          {/if}
-        </span>
+        Select tables and views to see the record updates as they are emitted
       {/if}
-    </Pane>
-  </PaneGroup>
+    </span>
+  {/if}
+{/snippet}
+
+<div class="flex h-full flex-row sm:pt-4">
+  {#if isMobile.current}
+    <div
+      class="bg-white-dark flex flex-1 flex-col gap-1 overflow-y-auto rounded pl-2 pt-2 scrollbar sm:gap-2 sm:p-2"
+    >
+      <Segment
+        bind:value={mobileDisplayMode}
+        background="preset-filled-surface-50-950 w-fit flex-none"
+        indicatorBg="bg-white-dark shadow"
+        indicatorText=""
+        border="p-1"
+        rounded="rounded"
+      >
+        {#each mobileDisplayModes as mode}
+          <Segment.Item value={mode} base="btn cursor-pointer z-[1] px-5 h-6 text-sm">
+            {mode}
+          </Segment.Item>
+        {/each}
+      </Segment>
+      {#if mobileDisplayMode === mobileDisplayModes[0]}
+        {@render relationView()}
+      {:else}
+        <div class="flex h-full overflow-y-auto scrollbar">
+          {@render dataView()}
+        </div>
+      {/if}
+    </div>
+  {:else}
+    <PaneGroup direction={isMobile.current ? 'vertical' : 'horizontal'} onpaste={ingestPasted}>
+      <Pane defaultSize={20} minSize={10} class="flex h-full">
+        <div
+          class="bg-white-dark flex w-full flex-col gap-1 overflow-y-auto text-nowrap rounded p-4 scrollbar"
+        >
+          {@render relationView()}
+        </div>
+      </Pane>
+      <PaneResizer
+        class="my-2 sm:mx-2 sm:my-0 {isMobile.current
+          ? 'pane-divider-horizontal'
+          : 'pane-divider-vertical'}"
+      ></PaneResizer>
+      <Pane minSize={60} class="flex h-full">
+        {@render dataView()}
+      </Pane>
+    </PaneGroup>
+  {/if}
 </div>

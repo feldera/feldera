@@ -13,7 +13,7 @@
     background="preset-filled-surface-50-950 h-12 w-fit"
     indicatorBg="bg-white-dark shadow "
     indicatorText=""
-    border="px-3 py-1"
+    border="p-1"
     rounded="rounded"
     gap="gap-2"
   >
