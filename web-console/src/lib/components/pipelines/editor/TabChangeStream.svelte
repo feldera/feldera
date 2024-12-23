@@ -296,6 +296,16 @@
                 } else {
                   pipelinesRelations[pipelineName][relation.relationName].cancelStream?.()
                   pipelinesRelations[pipelineName][relation.relationName].cancelStream = undefined
+                  if (
+                    !Object.values(pipelinesRelations[pipelineName]).some(
+                      ({ selected }) => selected
+                    )
+                  ) {
+                    changeStream[pipelineName].rows = []
+                    changeStream[pipelineName].headers = []
+                    getChangeStream = () => changeStream
+                    return
+                  }
                   ;({
                     rows: changeStream[pipelineName].rows,
                     headers: changeStream[pipelineName].headers
