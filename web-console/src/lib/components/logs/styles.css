@@ -1,0 +1,168 @@
+/* base colors */
+
+black {
+  @apply text-white dark:text-dark;
+}
+
+backgroundBlack {
+  @apply bg-white dark:bg-dark;
+}
+
+red {
+  @apply !text-[#c75d58] !text-opacity-[inherit] dark:!text-[#EFA6A2] dark:!text-opacity-[inherit];
+}
+
+backgroundRed {
+  @apply bg-[#c75d58] dark:bg-[#EFA6A2];
+}
+
+green {
+  @apply !text-[#36633f] !text-opacity-[inherit] dark:!text-[#80C990] dark:!text-opacity-[inherit];
+}
+
+backgroundGreen {
+  @apply bg-[#36633f] dark:bg-[#80C990];
+}
+
+yellow {
+  @apply !text-[#c2c255] !text-opacity-[inherit] dark:!text-[#C8C874] dark:!text-opacity-[inherit];
+}
+
+backgroundYellow {
+  @apply bg-[#c2c255] dark:bg-[#C8C874];
+}
+
+blue {
+  @apply !text-[#39559e] !text-opacity-[inherit] dark:!text-[#a3b8ef] dark:!text-opacity-[inherit];
+}
+
+backgroundBlue {
+  @apply bg-[#39559e] dark:bg-[#a3b8ef];
+}
+
+magenta {
+  @apply !text-[#a15295] !text-opacity-[inherit] dark:!text-[#E6A3DC] dark:!text-opacity-[inherit];
+}
+
+backgroundMagenta {
+  @apply bg-[#a15295] dark:bg-[#E6A3DC];
+}
+
+cyan {
+  @apply !text-[#1da0a3] !text-opacity-[inherit] dark:!text-[#50CACD] dark:!text-opacity-[inherit];
+}
+
+backgroundCyan {
+  @apply bg-[#1da0a3] dark:bg-[#50CACD];
+}
+
+white {
+  @apply !text-[#424242] !text-opacity-[inherit] dark:!text-[#dbdbdb] dark:!text-opacity-[inherit];
+}
+
+backgroundWhite {
+  @apply bg-[#424242] dark:bg-[#dbdbdb];
+}
+
+/* bright colors */
+gray {
+  @apply !text-[#bababa] !text-opacity-[inherit] dark:!text-[#454545] dark:!text-opacity-[inherit];
+}
+
+backgroundGray {
+  @apply bg-[#bababa] dark:bg-[#454545];
+}
+
+brightRed {
+  @apply !text-[#cc3333] !text-opacity-[inherit] dark:!text-[#ff5959] dark:!text-opacity-[inherit];
+}
+
+backgroundBrightRed {
+  @apply bg-[#cc3333] dark:bg-[#ff5959];
+}
+
+brightGreen {
+  @apply !text-[#15b328] !text-opacity-[inherit] dark:!text-[#33de47] dark:!text-opacity-[inherit];
+}
+
+backgroundBrightGreen {
+  @apply bg-[#15b328] dark:bg-[#33de47];
+}
+
+brightYellow {
+  @apply !text-[#d4de12] !text-opacity-[inherit] dark:!text-[#f4ff26] dark:!text-opacity-[inherit];
+}
+
+backgroundBrightYellow {
+  @apply bg-[#d4de12] dark:bg-[#f4ff26];
+}
+
+brightBlue {
+  @apply !text-[#1192cf] !text-opacity-[inherit] dark:!text-[#34b3ed] dark:!text-opacity-[inherit];
+}
+
+backgroundBrightBlue {
+  @apply bg-[#1192cf] dark:bg-[#34b3ed];
+}
+
+brightMagenta {
+  @apply !text-[#bf0ba4] !text-opacity-[inherit] dark:!text-[#eb36d0] dark:!text-opacity-[inherit];
+}
+
+backgroundBrightMagenta {
+  @apply bg-[#bf0ba4] dark:bg-[#eb36d0];
+}
+
+brightCyan {
+  @apply !text-[#06c7cc] !text-opacity-[inherit] dark:!text-[#1fe8ed] dark:!text-opacity-[inherit];
+}
+
+backgroundBrightCyan {
+  @apply bg-[#06c7cc] dark:bg-[#1fe8ed];
+}
+
+brightWhite {
+  @apply text-dark !text-opacity-[inherit] dark:text-white dark:!text-opacity-[inherit];
+}
+
+backgroundBrightWhite {
+  @apply text-dark dark:text-white;
+}
+
+/* modifiers */
+
+bold {
+  @apply font-semibold;
+}
+
+dim {
+  @apply text-dark !text-opacity-80 dark:text-white dark:!text-opacity-75;
+}
+
+dim * {
+  @apply text-inherit;
+}
+
+italic {
+  @apply italic;
+}
+
+underline {
+  @apply underline;
+}
+
+inverse {
+  @apply text-white mix-blend-difference;
+}
+
+hidden {
+  @apply opacity-30;
+}
+
+strikethrough {
+  @apply line-through;
+}
+
+overline {
+  @apply overline;
+}

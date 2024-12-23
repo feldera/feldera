@@ -3,6 +3,8 @@
   import { useSkeletonTheme } from '$lib/compositions/useSkeletonTheme.svelte'
   import { humanSize } from '$lib/functions/common/string'
   import WarningBanner from '$lib/components/pipelines/editor/WarningBanner.svelte'
+  import ANSIDecoratedText from '$lib/components/logs/ANSIDecoratedText.svelte'
+
   const theme = useSkeletonTheme()
 
   let { logs }: { logs: { rows: string[]; totalSkippedBytes: number } } = $props()
@@ -17,11 +19,11 @@
     </WarningBanner>
   {/if}
   <ReverseScrollList items={logs.rows} class="bg-white-dark pl-2 scrollbar">
-    {#snippet item(item)}
+    {#snippet item(value)}
       <div class="whitespace-pre-wrap" style="font-family: {theme.config.monospaceFontFamily};">
         <!-- TODO: Re-enable line numbers when they get reported by backend -->
         <!-- <span class="select-none font-bold">{(i + 1).toFixed().padStart(5, ' ')}&nbsp;&nbsp;</span> -->
-        {item}
+        <ANSIDecoratedText {value} />
       </div>
     {/snippet}
   </ReverseScrollList>
