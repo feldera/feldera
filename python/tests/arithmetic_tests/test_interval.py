@@ -19,9 +19,9 @@ class arithtst_atbl_long_interval_res(TstView):
     def __init__(self):
         # Validated on MySQL
         self.data = [
-            {'id': 0, 'months_res': 60},
-            {'id': 1, 'months_res': -32},
-            {'id': 2, 'months_res': 126}
+            {"id": 0, "months_res": 60},
+            {"id": 1, "months_res": -32},
+            {"id": 2, "months_res": 126},
         ]
         self.sql = """CREATE MATERIALIZED VIEW atbl_long_interval_res AS SELECT
                       id,
@@ -53,9 +53,9 @@ class arithtst_atbl_short_interval_res(TstView):
     def __init__(self):
         # Validated on MySQL
         self.data = [
-            {'id': 0, 'seconds_res': 160342920},
-            {'id': 1, 'seconds_res': -84686400},
-            {'id': 2, 'seconds_res': 332907420}
+            {"id": 0, "seconds_res": 160342920},
+            {"id": 1, "seconds_res": -84686400},
+            {"id": 2, "seconds_res": 332907420},
         ]
         self.sql = """CREATE MATERIALIZED VIEW atbl_short_interval_res AS SELECT
                       id,
@@ -84,9 +84,9 @@ class arithtst_linterval_minus_linterval_res(TstView):
     def __init__(self):
         # checked manually
         self.data = [
-            {'id': 0, 'f_c1_res': 50},
-            {'id': 1, 'f_c1_res': -42},
-            {'id': 2, 'f_c1_res': 116}
+            {"id": 0, "f_c1_res": 50},
+            {"id": 1, "f_c1_res": -42},
+            {"id": 2, "f_c1_res": 116},
         ]
         self.sql = """CREATE MATERIALIZED VIEW linterval_minus_linterval_res AS SELECT
                       id,
@@ -108,14 +108,15 @@ class arithtst_sinterval_minus_sinterval_res(TstView):
     def __init__(self):
         # Validated on Postgres
         self.data = [
-            {'id': 0, 'f_c1_res': 158775030},
-            {'id': 1, 'f_c1_res': -86254290},
-            {'id': 2, 'f_c1_res': 331339530}
+            {"id": 0, "f_c1_res": 158775030},
+            {"id": 1, "f_c1_res": -86254290},
+            {"id": 2, "f_c1_res": 331339530},
         ]
         self.sql = """CREATE MATERIALIZED VIEW sinterval_minus_sinterval_res AS SELECT
                       id,
                       CAST((f_c1) AS BIGINT) AS f_c1_res
                       FROM sinterval_minus_sinterval"""
+
 
 # Equivalent Postgres SQL
 # CREATE TABLE atbl_interval AS SELECT
@@ -143,9 +144,9 @@ class arithtst_linterval_plus_linterval_res(TstView):
     def __init__(self):
         # checked manually
         self.data = [
-            {'id': 0, 'f_c1_res': 70},
-            {'id': 1, 'f_c1_res': -22},
-            {'id': 2, 'f_c1_res': 136}
+            {"id": 0, "f_c1_res": 70},
+            {"id": 1, "f_c1_res": -22},
+            {"id": 2, "f_c1_res": 136},
         ]
         self.sql = """CREATE MATERIALIZED VIEW linterval_plus_linterval_res AS SELECT
                       id,
@@ -167,9 +168,9 @@ class arithtst_sinterval_plus_sinterval_res(TstView):
     def __init__(self):
         # Validated on Postgres
         self.data = [
-            {'id': 0, 'f_c1_res': 161910810},
-            {'id': 1, 'f_c1_res': -83118510},
-            {'id': 2, 'f_c1_res': 334475310}
+            {"id": 0, "f_c1_res": 161910810},
+            {"id": 1, "f_c1_res": -83118510},
+            {"id": 2, "f_c1_res": 334475310},
         ]
         self.sql = """CREATE MATERIALIZED VIEW sinterval_plus_sinterval_res AS SELECT
                       id,
@@ -193,9 +194,9 @@ class arithtst_linterval_negation(TstView):
     def __init__(self):
         # Validated on Postgres
         self.data = [
-            {'id': 0, 'f_c1': '2019-12-05', 'f_c2': '2014-12-05T08:27:00'},
-            {'id': 1, 'f_c1': '2027-08-05', 'f_c2': '2022-08-05T08:27:00'},
-            {'id': 2, 'f_c1': '2014-06-05', 'f_c2': '2009-06-05T08:27:00'}
+            {"id": 0, "f_c1": "2019-12-05", "f_c2": "2014-12-05T08:27:00"},
+            {"id": 1, "f_c1": "2027-08-05", "f_c2": "2022-08-05T08:27:00"},
+            {"id": 2, "f_c1": "2014-06-05", "f_c2": "2009-06-05T08:27:00"},
         ]
         self.sql = """CREATE MATERIALIZED VIEW linterval_negation AS SELECT
                       id,
@@ -208,9 +209,9 @@ class arithtst_sinterval_negation(TstView):
     def __init__(self):
         # Validated on Postgres
         self.data = [
-            {'id': 0, 'f_c1': '22:48:00', 'f_c2': '2014-11-05T12:45:00'},
-            {'id': 1, 'f_c1': '22:30:00', 'f_c2': '2022-08-11T12:27:00'},
-            {'id': 2, 'f_c1': '16:13:00', 'f_c2': '2009-05-18T06:10:00'}
+            {"id": 0, "f_c1": "22:48:00", "f_c2": "2014-11-05T12:45:00"},
+            {"id": 1, "f_c1": "22:30:00", "f_c2": "2022-08-11T12:27:00"},
+            {"id": 2, "f_c1": "16:13:00", "f_c2": "2009-05-18T06:10:00"},
         ]
         self.sql = """CREATE MATERIALIZED VIEW sinterval_negation AS SELECT
                        id,
@@ -228,8 +229,7 @@ class arithtst_sinterval_negation(TstView):
 class arithtst_neg(TstView):
     def __init__(self):
         # Result validation is not required for local views
-        self.data = [
-        ]
+        self.data = []
         self.sql = """CREATE LOCAL VIEW neg AS SELECT
                       v1.id,
                       (-v1.months) AS months_neg,
@@ -242,9 +242,9 @@ class arithtst_neg_res(TstView):
     def __init__(self):
         # checked manually
         self.data = [
-            {'id': 0, 'f_c1': -60, 'f_c2': -160342920},
-            {'id': 1, 'f_c1': 32, 'f_c2': 84686400},
-            {'id': 2, 'f_c1': -126, 'f_c2': -332907420}
+            {"id": 0, "f_c1": -60, "f_c2": -160342920},
+            {"id": 1, "f_c1": 32, "f_c2": 84686400},
+            {"id": 2, "f_c1": -126, "f_c2": -332907420},
         ]
         self.sql = """CREATE MATERIALIZED VIEW neg_res AS SELECT
                       id,
@@ -267,9 +267,9 @@ class arithtst_linterval_mul_double_res(TstView):
     def __init__(self):
         # checked manually
         self.data = [
-            {'id': 0, 'f_c1': '+154'},
-            {'id': 1, 'f_c1': '-82'},
-            {'id': 2, 'f_c1': '+325'}
+            {"id": 0, "f_c1": "+154"},
+            {"id": 1, "f_c1": "-82"},
+            {"id": 2, "f_c1": "+325"},
         ]
         self.sql = """CREATE MATERIALIZED VIEW linterval_mul_double_res AS SELECT
                       id,
@@ -291,9 +291,9 @@ class arithtst_linterval_div_double_res(TstView):
     def __init__(self):
         # checked manually
         self.data = [
-            {'id': 0, 'f_c1': '+23'},
-            {'id': 1, 'f_c1': '-12'},
-            {'id': 2, 'f_c1': '+48'}
+            {"id": 0, "f_c1": "+23"},
+            {"id": 1, "f_c1": "-12"},
+            {"id": 2, "f_c1": "+48"},
         ]
         self.sql = """CREATE MATERIALIZED VIEW linterval_div_double_res AS SELECT
                       id,
