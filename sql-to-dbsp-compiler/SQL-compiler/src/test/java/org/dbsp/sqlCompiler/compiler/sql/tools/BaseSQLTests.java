@@ -135,8 +135,8 @@ public class BaseSQLTests {
         this.shouldMatch(message, regex, isRegex);
     }
 
-    public void statementsFailingInCompilation(String statements, String regex) {
-        this.statementsFailingInCompilation(statements, regex, false);
+    public void statementsFailingInCompilation(String statements, String substring) {
+        this.statementsFailingInCompilation(statements, substring, false);
     }
 
     /** Compile a set of statements that are expected to give a warning at compile time.

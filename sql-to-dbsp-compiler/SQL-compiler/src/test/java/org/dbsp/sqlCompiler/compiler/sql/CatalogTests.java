@@ -25,6 +25,21 @@ public class CatalogTests extends BaseSQLTests {
     }
 
     @Test
+    public void issue3219() {
+        this.statementsFailingInCompilation("""
+                CREATE TABLE CUSTOMER (
+                    "cc_NUM" BIGINT NOT NULL PRIMARY KEY
+                );
+                CREATE TABLE TRANSACTION (
+                    "cc_NUM" BIGINT NOT NULL,
+                    FOREIGN KEY ("cc_NUM") REFERENCES CUSTOMER(cc_NUM)
+                )""", """
+                    6|    FOREIGN KEY ("cc_NUM") REFERENCES CUSTOMER(cc_NUM)
+                                                                     ^^^^^^
+                """);
+    }
+
+    @Test
     public void issue3056() {
         this.statementsFailingInCompilation("""
                 CREATE FUNCTION ZERO() RETURNS INT AS 0;
