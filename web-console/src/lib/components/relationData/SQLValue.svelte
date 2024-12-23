@@ -34,7 +34,7 @@
 
 <td
   {...props?.(displayValue)}
-  class:italic={thumb === null}
+  class:italic={value === null}
   class="px-3 {typeof value === 'number' || BigNumber.isBigNumber(value)
     ? 'text-right'
     : ''} {_class}"
