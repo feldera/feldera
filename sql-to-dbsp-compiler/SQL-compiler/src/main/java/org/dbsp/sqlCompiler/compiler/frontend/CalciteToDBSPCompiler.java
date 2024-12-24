@@ -2827,7 +2827,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         ViewMetadata meta = new ViewMetadata(view.relationName,
                 columnMetadata, view.getViewKind(), emitFinalIndex,
                 // The view is a system view if it's not visible
-                declare != null, !currentView.isVisible());
+                declare != null, !currentView.isVisible(), view.getProperties());
         if (view.getViewKind() != SqlCreateView.ViewKind.LOCAL) {
             this.metadata.addView(view);
             // Create two operators chained, a ViewOperator and a SinkOperator.
