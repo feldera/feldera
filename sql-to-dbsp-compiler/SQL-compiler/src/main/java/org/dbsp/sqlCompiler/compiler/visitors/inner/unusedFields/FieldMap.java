@@ -9,11 +9,8 @@ import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
 
-import java.util.BitSet;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 
 /** Maps each tuple field index to a new tuple field index.  */
 public class FieldMap {
@@ -36,7 +33,7 @@ public class FieldMap {
         return this.fieldMap.isEmpty();
     }
 
-    public FieldMap(DBSPType parameterType, BitSet bits) {
+    public FieldMap(DBSPType parameterType, FindUnusedFields.SizedBitSet bits) {
         this.parameterType = parameterType;
         this.fieldMap = new LinkedHashMap<>();
         assert this.parameterType.is(DBSPTypeRef.class);
@@ -44,7 +41,7 @@ public class FieldMap {
         this.size = this.parameterType.deref().to(DBSPTypeTupleBase.class).size();
 
         int compressed = 0;
-        for (int i = 0; i < bits.length(); i++) {
+        for (int i = 0; i < bits.size(); i++) {
             if (bits.get(i)) {
                 Utilities.putNew(this.fieldMap, i, compressed);
                 compressed++;
@@ -54,7 +51,7 @@ public class FieldMap {
 
     static FieldMap identity(DBSPType parameterType) {
         DBSPTypeTupleBase type = parameterType.deref().to(DBSPTypeTupleBase.class);
-        BitSet all = new BitSet();
+        FindUnusedFields.SizedBitSet all = new FindUnusedFields.SizedBitSet(type.size());
         all.set(0, type.size());
         return new FieldMap(parameterType, all);
     }

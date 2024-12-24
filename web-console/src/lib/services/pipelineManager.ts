@@ -7,14 +7,14 @@ import {
   patchPipeline as _patchPipeline,
   deletePipeline as _deletePipeline,
   type PipelineStatus as _PipelineStatus,
-  type ProgramStatus,
+  type ProgramStatus as _ProgramStatus,
   postPipelineAction as _postPipelineAction,
   type ErrorResponse,
   postPipeline as _postPipeline,
-  type PipelineDescr,
+  type PipelineInfo,
   type PatchPipeline,
   getConfigAuthentication,
-  type ExtendedPipelineDescr,
+  type PipelineSelectedInfo,
   listApiKeys,
   postApiKey as _postApiKey,
   deleteApiKey as _deleteApiKey,
@@ -22,7 +22,9 @@ import {
   getConfig as _getConfig,
   getConfigDemos,
   httpInput,
-  type Field
+  type Field,
+  type SqlCompilerMessage,
+  type PostPutPipeline
 } from '$lib/services/manager'
 export type {
   // PipelineDescr,
@@ -34,7 +36,8 @@ export type {
 } from '$lib/services/manager'
 import { P, match } from 'ts-pattern'
 import type { ControllerStatus, XgressRecord } from '$lib/types/pipelineManager'
-export type { ProgramSchema, ProgramStatus } from '$lib/services/manager'
+export type { ProgramSchema } from '$lib/services/manager'
+export type ProgramStatus = _ProgramStatus | { SqlWarning: SqlCompilerMessage[] }
 
 import * as AxaOidc from '@axa-fr/oidc-client'
 const { OidcClient } = AxaOidc
@@ -51,6 +54,10 @@ const unauthenticatedClient = createClient({
   responseTransformer: JSONbig.parse as any,
   baseUrl: felderaEndpoint
 })
+
+type PipelineDescr = PostPutPipeline
+
+type ExtendedPipelineDescr = PipelineSelectedInfo
 
 export type ExtendedPipelineDescrNoCode = Omit<ExtendedPipelineDescr, 'program_code'>
 
@@ -70,14 +77,18 @@ const toPipelineThumb = (
   programStatus: pipeline.program_status
 })
 
-const toPipeline = <P extends PipelineDescr>(pipeline: P) => ({
+const toPipeline = <
+  P extends Omit<PipelineDescr, 'program_code'> & { program_code?: string | null | undefined }
+>(
+  pipeline: P
+) => ({
   name: pipeline.name,
   description: pipeline.description,
   runtimeConfig: pipeline.runtime_config,
   programConfig: pipeline.program_config,
-  programCode: pipeline.program_code,
-  programUdfRs: pipeline.udf_rust,
-  programUdfToml: pipeline.udf_toml
+  programCode: pipeline.program_code ?? '',
+  programUdfRs: pipeline.udf_rust ?? '',
+  programUdfToml: pipeline.udf_toml ?? ''
 })
 
 const toExtendedPipeline = ({
@@ -88,19 +99,16 @@ const toExtendedPipeline = ({
   ...pipeline
 }: ExtendedPipelineDescr) => ({
   createdAt: pipeline.created_at,
-  deploymentConfig: pipeline.deployment_config,
   deploymentDesiredStatus: deployment_desired_status,
   deploymentError: deployment_error,
-  deploymentLocation: pipeline.deployment_location,
   deploymentStatus: deployment_status,
   deploymentStatusSince: pipeline.deployment_status_since,
   description: pipeline.description,
   id: pipeline.id,
   name: pipeline.name,
-  programBinaryUrl: pipeline.program_binary_url,
-  programCode: pipeline.program_code,
-  programUdfRs: pipeline.udf_rust,
-  programUdfToml: pipeline.udf_toml,
+  programCode: pipeline.program_code ?? '',
+  programUdfRs: pipeline.udf_rust ?? '',
+  programUdfToml: pipeline.udf_toml ?? '',
   programConfig: pipeline.program_config,
   programInfo: pipeline.program_info,
   programStatus: program_status,
@@ -226,7 +234,7 @@ export const getPipelineStats = async (pipeline_name: string) => {
 }
 
 const consolidatePipelineStatus = (
-  programStatus: ProgramStatus,
+  programStatus: _ProgramStatus,
   pipelineStatus: _PipelineStatus,
   desiredStatus: _PipelineStatus,
   pipelineError: ErrorResponse | null | undefined
@@ -236,7 +244,11 @@ const consolidatePipelineStatus = (
     .with(['Shutdown', P.any, P.nullish, 'SqlCompiled'], () => 'SQL compiled' as const)
     .with(['Shutdown', P.any, P.nullish, 'Pending'], () => 'Queued' as const)
     .with(['Shutdown', P.any, P.nullish, 'CompilingRust'], () => 'Compiling binary' as const)
-    .with(['Shutdown', P.any, P.nullish, { SqlError: P.select() }], (SqlError) => ({ SqlError }))
+    .with(
+      ['Shutdown', P.any, P.nullish, { SqlError: P.select() }],
+      (SqlError): { SqlError: SqlCompilerMessage[] } | { SqlWarning: SqlCompilerMessage[] } =>
+        SqlError.every(({ warning }) => warning) ? { SqlWarning: SqlError } : { SqlError }
+    )
     .with(['Shutdown', P.any, P.nullish, { RustError: P.select() }], (RustError) => ({ RustError }))
     .with(['Shutdown', P.any, P.nullish, { SystemError: P.select() }], (SystemError) => ({
       SystemError

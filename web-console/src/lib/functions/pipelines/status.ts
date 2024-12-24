@@ -3,7 +3,7 @@ import { P, match } from 'ts-pattern'
 
 export const getPipelineStatusLabel = (status: PipelineStatus) => {
   return match(status)
-    .with('Shutdown', () => 'Ready To Start')
+    .with('Shutdown', { SqlWarning: P.any }, () => 'Ready To Start')
     .with('Starting up', () => 'Starting up')
     .with('Initializing', () => 'Initializing')
     .with('Paused', () => 'Paused')
@@ -25,7 +25,7 @@ export const getPipelineStatusLabel = (status: PipelineStatus) => {
 
 export const getDeploymentStatusLabel = (status: PipelineStatus) => {
   return match(status)
-    .with('Shutdown', () => '')
+    .with('Shutdown', { SqlWarning: P.any }, () => '')
     .with('Starting up', () => 'Starting up')
     .with('Initializing', () => 'Initializing')
     .with('Paused', () => 'Paused')
@@ -47,7 +47,7 @@ export const getDeploymentStatusLabel = (status: PipelineStatus) => {
 
 export const isPipelineIdle = (status: PipelineStatus) => {
   return match(status)
-    .with('Shutdown', () => true)
+    .with('Shutdown', { SqlWarning: P.any }, () => true)
     .with('Starting up', () => false)
     .with('Initializing', () => false)
     .with('Paused', () => false)
@@ -69,7 +69,7 @@ export const isPipelineIdle = (status: PipelineStatus) => {
 
 export const isMetricsAvailable = (status: PipelineStatus) => {
   return match(status)
-    .with('Shutdown', () => 'no' as const)
+    .with('Shutdown', { SqlWarning: P.any }, () => 'no' as const)
     .with('Starting up', () => 'no' as const)
     .with('Initializing', () => 'no' as const)
     .with('Paused', () => 'yes' as const)

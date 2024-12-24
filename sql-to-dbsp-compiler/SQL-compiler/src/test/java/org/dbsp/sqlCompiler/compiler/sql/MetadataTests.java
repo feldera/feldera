@@ -278,6 +278,42 @@ public class MetadataTests extends BaseSQLTests {
     }
 
     @Test
+    public void unusedInputColumns() {
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.options.languageOptions.throwOnError = false;
+        compiler.options.ioOptions.quiet = false;
+        compiler.compileStatements("""
+                CREATE TABLE T(used INTEGER, unused INTEGER);
+                CREATE TABLE T1(used INTEGER, unused INTEGER) with ('materialized' = 'true');
+                CREATE VIEW V AS SELECT used FROM ((SELECT * FROM T) UNION ALL (SELECT * FROM T1));""");
+        TestUtil.assertMessagesContain(compiler, "Unused column: Column 'unused' of table 't' is unused");
+    }
+
+    @Test
+    public void trimUnusedInputColumns() {
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.options.languageOptions.throwOnError = false;
+        compiler.options.ioOptions.trimInputs = true;
+        compiler.compileStatements("""
+                CREATE TABLE T(used INTEGER, unused INTEGER);
+                CREATE TABLE T1(used INTEGER, unused INTEGER) with ('materialized' = 'true');
+                CREATE VIEW V AS SELECT used FROM ((SELECT * FROM T) UNION ALL (SELECT * FROM T1));""");
+        DBSPCircuit circuit = compiler.getFinalCircuit(false);
+        Assert.assertNotNull(circuit);
+        DBSPSourceTableOperator input = circuit.getInput(new ProgramIdentifier("t", false));
+        Assert.assertNotNull(input);
+        DBSPTypeTuple tuple = input.getOutputZSetElementType().to(DBSPTypeTuple.class);
+        // Field 'unused' has been dropped
+        Assert.assertEquals(1, tuple.size());
+
+        input = circuit.getInput(new ProgramIdentifier("t1", false));
+        Assert.assertNotNull(input);
+        tuple = input.getOutputZSetElementType().to(DBSPTypeTuple.class);
+        // Field 'unused' is not dropped from materialized tables
+        Assert.assertEquals(2, tuple.size());
+    }
+
+    @Test
     public void nullKey() {
         String ddl = """
                CREATE TABLE T (
@@ -465,7 +501,7 @@ public class MetadataTests extends BaseSQLTests {
                 CREATE TABLE T (COL1 INT NOT NULL DEFAULT 0, COL2 DOUBLE DEFAULT 0.0, COL3 VARCHAR DEFAULT NULL);
                 CREATE VIEW V AS SELECT COL1 FROM T;""";
         File file = createInputScript(sql);
-        CompilerMessages messages = CompilerMain.execute("-o", BaseSQLTests.testFilePath, file.getPath());
+        CompilerMessages messages = CompilerMain.execute("-q", "-o", BaseSQLTests.testFilePath, file.getPath());
         messages.print();
         Assert.assertEquals(0, messages.errorCount());
         Utilities.compileAndTestRust(BaseSQLTests.rustDirectory, false);
@@ -516,6 +552,9 @@ public class MetadataTests extends BaseSQLTests {
                       Default: false
                     --streaming
                       Compiling a streaming program, where only inserts are allowed
+                      Default: false
+                    --trimInputs
+                      Do not ingest unused fields of input tables
                       Default: false
                     --unquotedCasing
                       How unquoted identifiers are treated.  Choices are: 'upper', 'lower',\s

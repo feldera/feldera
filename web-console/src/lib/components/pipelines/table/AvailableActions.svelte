@@ -29,7 +29,7 @@
       .with('Queued', 'Compiling SQL', () => ['delete'])
       .with('SQL compiled', () => ['delete'])
       .with('Compiling binary', () => ['delete'])
-      .with('Shutdown', () => ['start', 'delete'])
+      .with('Shutdown', { SqlWarning: P.any }, () => ['start', 'delete'])
       .with('Initializing', () => ['shutdown', 'delete'])
       .with('Starting up', () => ['shutdown', 'delete'])
       .with('Running', () => ['shutdown', 'pause'])
