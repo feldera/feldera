@@ -78,7 +78,9 @@ public enum DBSPOpcode {
     // Otherwise, this returns left >= right.
     CONTROLLED_FILTER_GTE("cf_compare_gte", true),
     // Higher order operation: apply a function to every element of an array
-    ARRAY_CONVERT("array_map", false)
+    ARRAY_CONVERT("array_map", false),
+    // Apply a function to every key-value element of a map
+    MAP_CONVERT("map_map", false),
     ;
 
     private final String text;

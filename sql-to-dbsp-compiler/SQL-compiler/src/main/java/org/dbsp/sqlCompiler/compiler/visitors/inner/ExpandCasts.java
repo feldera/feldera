@@ -155,7 +155,7 @@ public class ExpandCasts extends InnerRewriteVisitor {
                 DBSPVariablePath var = sourceVecType.getElementType().ref().var();
                 DBSPExpression convert = var.deref();
                 if (convert.getType().is(DBSPTypeBaseType.class))
-                    convert = convert.applyClone().applyCloneIfNeeded();
+                    convert = convert.applyCloneIfNeeded();
                 convert = convert.cast(type.getElementType()).closure(var);
                 source = new DBSPBinaryExpression(source.getNode(),
                         new DBSPTypeVec(type.getElementType(), sourceType.mayBeNull),
@@ -174,7 +174,23 @@ public class ExpandCasts extends InnerRewriteVisitor {
     }
 
     @Nullable DBSPExpression convertToMap(DBSPExpression source, DBSPTypeMap type) {
-        // I think that all the supported casts work with the default implementation
+        DBSPType sourceType = source.getType();
+        if (sourceType.is(DBSPTypeMap.class)) {
+            DBSPTypeMap sourceMap = sourceType.to(DBSPTypeMap.class);
+            if (!type.getKeyType().sameType(sourceMap.getKeyType())) {
+                this.unsupported(source, type);
+            }
+
+            DBSPVariablePath var = sourceMap.getValueType().ref().var();
+            DBSPExpression convert = var.deref();
+            if (convert.getType().is(DBSPTypeBaseType.class))
+                convert = convert.applyCloneIfNeeded();
+            convert = convert.cast(type.getValueType()).closure(var);
+            source = new DBSPBinaryExpression(source.getNode(),
+                    type, DBSPOpcode.MAP_CONVERT, source.borrow(), convert);
+            return source.cast(type);
+        }
+        // Everything else use the default conversion
         return null;
     }
 
@@ -210,7 +226,7 @@ public class ExpandCasts extends InnerRewriteVisitor {
             result = this.convertToMap(source, type.to(DBSPTypeMap.class));
         } else if (type.is(IsDateType.class) && source.getType().is(DBSPTypeBinary.class)) {
             throw new UnsupportedException(
-                    "Conversion of BINARY object to " + type.asSqlString() + " not supported", expression.getNode());
+                    "Cast function cannot convert BINARY value to " + type.asSqlString(), expression.getNode());
         }
         if (result == null)
             // Default implementation

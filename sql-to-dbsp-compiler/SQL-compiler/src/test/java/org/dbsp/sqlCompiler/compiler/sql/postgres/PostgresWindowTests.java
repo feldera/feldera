@@ -1,7 +1,9 @@
 package org.dbsp.sqlCompiler.compiler.sql.postgres;
 
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteOptimizer;
 import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
+import org.dbsp.util.Logger;
 import org.junit.Ignore;
 import org.junit.Test;
 
@@ -199,30 +201,7 @@ public class PostgresWindowTests extends SqlIoTest {
                    -1 |   0 |    2
                     6 |   1 |    3
                    -1 |   3 |    3
-                (10 rows)""", false);
-    }
-
-    @Test
-    public void testFails() {
-        this.qs("""
-                SELECT lead(ten * 2, 1, -1.4) OVER (PARTITION BY four ORDER BY ten), ten, four
-                FROM tenk1_2_small
-                WHERE unique2 < 10
-                -- ORDER BY four, ten
-                ;
-                 lead | ten | four
-                ------+-----+------
-                    0 |   0 |    0
-                    8 |   0 |    0
-                 -1.4 |   4 |    0
-                    2 |   1 |    1
-                   14 |   1 |    1
-                   18 |   7 |    1
-                 -1.4 |   9 |    1
-                 -1.4 |   0 |    2
-                    6 |   1 |    3
-                 -1.4 |   3 |    3
-                (10 rows)""", false);
+                (10 rows)""");
     }
 
     @Test
@@ -261,7 +240,7 @@ public class PostgresWindowTests extends SqlIoTest {
                   10 |       3 |    3
                   10 |       7 |    3
                 (10 rows)
-                """, false);
+                """);
     }
 
     @Test
@@ -282,7 +261,7 @@ public class PostgresWindowTests extends SqlIoTest {
                   23 |       0 |    0
                   23 |       8 |    0
                   23 |       4 |    0
-                (10 rows)""", false);
+                (10 rows)""");
     }
 
     @Test
@@ -353,7 +332,7 @@ public class PostgresWindowTests extends SqlIoTest {
                 ----+-----
                   1 |
                   2 |
-                (2 rows)""", false);
+                (2 rows)""");
     }
 
     @Test
@@ -476,7 +455,7 @@ public class PostgresWindowTests extends SqlIoTest {
                      4 | sales|        4800 | 3
                      3 | sales|        4800 | 3
                 (8 rows)
-                """, false);
+                """);
     }
 
     @Test @Ignore("Lead with variable amounts not supported")
@@ -547,6 +526,6 @@ public class PostgresWindowTests extends SqlIoTest {
                  0.7 |   0 |    2
                  0.7 |   1 |    3
                  0.7 |   3 |    3
-                (10 rows)""", false);
+                (10 rows)""");
     }
 }

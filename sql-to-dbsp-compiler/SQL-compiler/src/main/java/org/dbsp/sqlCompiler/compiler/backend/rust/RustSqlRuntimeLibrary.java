@@ -35,6 +35,7 @@ import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.*;
+import java.util.function.Function;
 
 /** This class encodes (part of) the interface to the SQL
  * runtime library: support functions that implement the SQL semantics. */
@@ -137,9 +138,16 @@ public class RustSqlRuntimeLibrary {
                     Intervals such as 'INTERVAL 1 MONTH' or 'INTERVAL 1 YEAR' are not constant.
                     Can you rephrase the query using an interval such as 'INTERVAL 30 DAYS' instead?""", node);
         }
+
+        Function<DBSPType, String> boundFunction;
+        if (boundType.is(IsIntervalType.class))
+            boundFunction = t -> t.withMayBeNull(false).to(DBSPTypeBaseType.class).shortName();
+        else
+            boundFunction = t -> t.withMayBeNull(false).baseTypeWithSuffix();
+
         return new FunctionDescription("to_bound_" +
-                boundType.withMayBeNull(false).baseTypeWithSuffix() + "_" +
-                sortType.withMayBeNull(false).baseTypeWithSuffix() + "_" +
+                boundFunction.apply(boundType) + "_" +
+                boundFunction.apply(sortType) + "_" +
                 unsignedType.baseTypeWithSuffix(), unsignedType);
     }
 

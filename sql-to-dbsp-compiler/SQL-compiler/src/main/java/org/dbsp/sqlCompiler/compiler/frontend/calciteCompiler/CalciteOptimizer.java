@@ -95,7 +95,7 @@ public class CalciteOptimizer implements IWritesLogs {
         this.builder = builder;
         this.steps = new ArrayList<>();
         this.level = level;
-        this.createOptimizer(level);
+        this.createOptimizer();
     }
 
     RelNode apply(RelNode rel) {
@@ -152,7 +152,7 @@ public class CalciteOptimizer implements IWritesLogs {
         }
     }
 
-    void createOptimizer(int level) {
+    void createOptimizer() {
         this.addStep(new SimpleOptimizerStep("Constant fold", 2,
                 CoreRules.COERCE_INPUTS,
                 CoreRules.FILTER_REDUCE_EXPRESSIONS,
@@ -258,6 +258,8 @@ public class CalciteOptimizer implements IWritesLogs {
         this.addStep(new SimpleOptimizerStep("Move projections", 0,
                 // Rule is unsound: https://issues.apache.org/jira/browse/CALCITE-6681
                 // CoreRules.PROJECT_CORRELATE_TRANSPOSE,
+                // Rule is unsound; test PostgresWindowTests.dateWindow fails with this.
+                // https://issues.apache.org/jira/browse/CALCITE-6746
                 CoreRules.PROJECT_WINDOW_TRANSPOSE,
                 CoreRules.PROJECT_SET_OP_TRANSPOSE,
                 CoreRules.FILTER_PROJECT_TRANSPOSE

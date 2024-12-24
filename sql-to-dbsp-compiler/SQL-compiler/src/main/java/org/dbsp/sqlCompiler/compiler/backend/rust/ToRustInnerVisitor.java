@@ -780,6 +780,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
                 this.builder.decrease().append(")");
                 return VisitDecision.STOP;
             }
+            this.unimplementedCast(expression);
         }
         if (sourceMap != null) {
             if (destType.is(DBSPTypeVariant.class)) {
@@ -789,6 +790,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
                 this.builder.decrease().append(")");
                 return VisitDecision.STOP;
             }
+            this.unimplementedCast(expression);
         }
 
         if (sourceType.is(DBSPTypeTuple.class)) {
@@ -926,8 +928,9 @@ public class ToRustInnerVisitor extends InnerVisitor {
                 this.builder.append(")");
                 break;
             }
-            case ARRAY_CONVERT: {
-                // Pass array by reference
+            case ARRAY_CONVERT:
+            case MAP_CONVERT: {
+                // Pass first argument by reference
                 this.builder.append(expression.opcode.toString())
                         .append(expression.left.getType().deref().nullableUnderlineSuffix())
                         .append(expression.right.getType().nullableUnderlineSuffix())

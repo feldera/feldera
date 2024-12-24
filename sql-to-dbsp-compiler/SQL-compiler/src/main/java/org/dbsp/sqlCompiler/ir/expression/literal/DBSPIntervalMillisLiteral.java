@@ -32,6 +32,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.IsIntervalLiteral;
 import org.dbsp.sqlCompiler.ir.IsNumericLiteral;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMillisInterval;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMonthsInterval;
 import org.dbsp.util.IIndentStream;
 
 import javax.annotation.Nullable;
@@ -41,10 +42,11 @@ import java.util.Objects;
 public final class DBSPIntervalMillisLiteral
         extends DBSPLiteral
         implements IsNumericLiteral, IsIntervalLiteral {
+
     @Nullable public final Long value;
 
-    public DBSPIntervalMillisLiteral() {
-        this(CalciteObject.EMPTY, new DBSPTypeMillisInterval(CalciteObject.EMPTY, true), null);
+    public DBSPIntervalMillisLiteral(DBSPTypeMillisInterval.Units units) {
+        this(CalciteObject.EMPTY, new DBSPTypeMillisInterval(CalciteObject.EMPTY, units, true), null);
     }
 
     @Override
@@ -57,8 +59,8 @@ public final class DBSPIntervalMillisLiteral
         this.value = value;
     }
 
-    public DBSPIntervalMillisLiteral(long value, boolean mayBeNull) {
-        this(CalciteObject.EMPTY, new DBSPTypeMillisInterval(CalciteObject.EMPTY, mayBeNull), value);
+    public DBSPIntervalMillisLiteral(DBSPTypeMillisInterval.Units units, long value, boolean mayBeNull) {
+        this(CalciteObject.EMPTY, new DBSPTypeMillisInterval(CalciteObject.EMPTY, units, mayBeNull), value);
     }
 
     @Override
@@ -114,7 +116,8 @@ public final class DBSPIntervalMillisLiteral
         if (value == null)
             return new DBSPIntervalMillisLiteral(this.getNode(), this.type, null);
         BigInteger result = value.multiply(BigInteger.valueOf(this.value));
-        return new DBSPIntervalMillisLiteral(result.longValueExact(), this.isNull);
+        return new DBSPIntervalMillisLiteral(
+                this.type.to(DBSPTypeMillisInterval.class).units, result.longValueExact(), this.isNull);
     }
 
     @Override

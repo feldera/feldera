@@ -192,6 +192,7 @@ import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.type.IHasZero;
 import org.dbsp.sqlCompiler.ir.IsNumericLiteral;
 import org.dbsp.sqlCompiler.ir.type.IsNumericType;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBaseType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDate;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
@@ -524,14 +525,18 @@ public class CalciteToDBSPCompiler extends RelVisitor
         }
         int nextIndex = inputRowType.size();
 
-        List<DBSPExpression> tumbleArguments = new ArrayList<>();
-        tumbleArguments.add(row.deref().field(timestampIndex).unwrapIfNullable());
-        tumbleArguments.add(interval);
+        DBSPExpression[] args = new DBSPExpression[2 + ((start != null) ? 1 : 0)];
+        args[0] = row.deref().field(timestampIndex).unwrapIfNullable();
+        args[1] = interval;
         if (start != null)
-            tumbleArguments.add(start);
+            args[2] = start;
         DBSPType tumbleType = type.tupFields[nextIndex];
-        results[nextIndex] = ExpressionCompiler.compilePolymorphicFunction(
-                "tumble", node, tumbleType, tumbleArguments, 2, 3);
+        String typeName = "_" + interval.getType().to(DBSPTypeBaseType.class).shortName();
+        String functionName = "tumble_" + args[0].getType().baseTypeWithSuffix() + typeName;
+        if (start != null)
+            functionName += "_" + start.getType().to(DBSPTypeBaseType.class).shortName();
+
+        results[nextIndex] = new DBSPApplyExpression(node, functionName, tumbleType, args);
         results[nextIndex + 1] = ExpressionCompiler.makeBinaryExpression(node,
                 tumbleType, DBSPOpcode.ADD, results[nextIndex], interval);
 
@@ -567,7 +572,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         if (call.operandCount() == 4)
             start = expressionCompiler.compile(operands.get(3));
         else
-            start = new DBSPIntervalMillisLiteral(0, false);
+            start = new DBSPIntervalMillisLiteral(DBSPTypeMillisInterval.Units.SECONDS, 0, false);
 
         DBSPHopOperator hop = new DBSPHopOperator(
                 node, timestampIndex, interval, start, size, makeZSet(type), opInput.outputPort());

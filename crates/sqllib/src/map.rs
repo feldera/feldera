@@ -5,6 +5,28 @@ use dbsp::utils::Tup2;
 use std::collections::BTreeMap;
 
 #[doc(hidden)]
+pub fn map_map__<K, V0, V1, F>(map: &BTreeMap<K, V0>, f: F) -> BTreeMap<K, V1>
+where
+    K: Ord + Clone,
+    F: Fn(&V0) -> V1,
+{
+    let result: BTreeMap<K, V1> = map
+        .iter()
+        .map(move |(key, value)| (key.clone(), f(value)))
+        .collect();
+    result
+}
+
+#[doc(hidden)]
+pub fn map_mapN_<K, V0, V1, F>(map: &Option<BTreeMap<K, V0>>, f: F) -> Option<BTreeMap<K, V1>>
+where
+    K: Ord + Clone,
+    F: Fn(&V0) -> V1,
+{
+    map.as_ref().map(|map| map_map__(map, f))
+}
+
+#[doc(hidden)]
 pub fn map_agg<K, V>(
     accumulator: &mut BTreeMap<K, V>,
     value: Tup2<K, V>,
