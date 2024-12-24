@@ -1136,8 +1136,14 @@ pub fn cast_to_sN_VN(value: Option<Variant>, size: i32, fixed: bool) -> Option<S
 #[inline]
 pub fn cast_to_s_LongInterval_YEARS(interval: LongInterval, size: i32, fixed: bool) -> String {
     let years = interval.years();
-    let result = "+".to_string() + &years.to_string();
+    let negative = years < 0;
+    let result = sign(negative) + &num::abs(years).to_string();
     limit_or_size_string(result, size, fixed)
+}
+
+#[doc(hidden)]
+pub fn sign(negative: bool) -> String {
+    (if negative { "-" } else { "+" }).to_string()
 }
 
 #[doc(hidden)]
@@ -1149,7 +1155,7 @@ pub fn cast_to_s_LongInterval_MONTHS(interval: LongInterval, size: i32, fixed: b
     } else {
         (months, false)
     };
-    let result: String = (if negate { "-" } else { "+" }).to_string() + &months.to_string();
+    let result: String = sign(negate) + &months.to_string();
     limit_or_size_string(result, size, fixed)
 }
 
@@ -1168,18 +1174,217 @@ pub fn cast_to_s_LongInterval_YEARS_TO_MONTHS(
     };
     let years = months / 12;
     let months = months % 12;
-    let result: String = (if negate { "-" } else { "+" }).to_string()
-        + &years.to_string()
-        + "-"
-        + &months.to_string();
+    let result: String = sign(negate) + &years.to_string() + "-" + &months.to_string();
     limit_or_size_string(result, size, fixed)
 }
 
 #[doc(hidden)]
 #[inline]
-pub fn cast_to_s_ShortInterval(interval: ShortInterval, size: i32, fixed: bool) -> String {
-    // TODO: this is not right
-    let result: String = interval.milliseconds().to_string();
+pub fn cast_to_s_ShortInterval_DAYS(interval: ShortInterval, size: i32, fixed: bool) -> String {
+    let negative = interval.milliseconds() < 0;
+    let interval = if negative {
+        ShortInterval::new(-interval.milliseconds())
+    } else {
+        interval
+    };
+    let days = extract_day_ShortInterval(interval);
+    let result = format!("{}{}", sign(negative), days);
+    limit_or_size_string(result, size, fixed)
+}
+
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_s_ShortInterval_HOURS(interval: ShortInterval, size: i32, fixed: bool) -> String {
+    let negative = interval.milliseconds() < 0;
+    let interval = if negative {
+        ShortInterval::new(-interval.milliseconds())
+    } else {
+        interval
+    };
+    let days = extract_day_ShortInterval(interval);
+    let hours = extract_hour_ShortInterval(interval);
+    let result = format!("{}{}", sign(negative), 24 * days + hours);
+    limit_or_size_string(result, size, fixed)
+}
+
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_s_ShortInterval_DAYS_TO_HOURS(
+    interval: ShortInterval,
+    size: i32,
+    fixed: bool,
+) -> String {
+    let negative = interval.milliseconds() < 0;
+    let interval = if negative {
+        ShortInterval::new(-interval.milliseconds())
+    } else {
+        interval
+    };
+    let days = extract_day_ShortInterval(interval);
+    let hours = extract_hour_ShortInterval(interval);
+    let result = format!("{}{} {:02}", sign(negative), days, hours);
+    limit_or_size_string(result, size, fixed)
+}
+
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_s_ShortInterval_MINUTES(interval: ShortInterval, size: i32, fixed: bool) -> String {
+    let negative = interval.milliseconds() < 0;
+    let interval = if negative {
+        ShortInterval::new(-interval.milliseconds())
+    } else {
+        interval
+    };
+    let days = extract_day_ShortInterval(interval);
+    let hours = extract_hour_ShortInterval(interval);
+    let minutes = extract_minute_ShortInterval(interval);
+    let result = format!("{}{}", sign(negative), (days * 24 + hours) * 60 + minutes);
+    limit_or_size_string(result, size, fixed)
+}
+
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_s_ShortInterval_DAYS_TO_MINUTES(
+    interval: ShortInterval,
+    size: i32,
+    fixed: bool,
+) -> String {
+    let negative = interval.milliseconds() < 0;
+    let interval = if negative {
+        ShortInterval::new(-interval.milliseconds())
+    } else {
+        interval
+    };
+    let days = extract_day_ShortInterval(interval);
+    let hours = extract_hour_ShortInterval(interval);
+    let minutes = extract_minute_ShortInterval(interval);
+    let result = format!("{}{} {:02}:{:02}", sign(negative), days, hours, minutes);
+    limit_or_size_string(result, size, fixed)
+}
+
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_s_ShortInterval_HOURS_TO_MINUTES(
+    interval: ShortInterval,
+    size: i32,
+    fixed: bool,
+) -> String {
+    let negative = interval.milliseconds() < 0;
+    let interval = if negative {
+        ShortInterval::new(-interval.milliseconds())
+    } else {
+        interval
+    };
+    let days = extract_day_ShortInterval(interval);
+    let hours = extract_hour_ShortInterval(interval);
+    let minutes = extract_minute_ShortInterval(interval);
+    let result = format!("{}{}:{:02}", sign(negative), days * 24 + hours, minutes);
+    limit_or_size_string(result, size, fixed)
+}
+
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_s_ShortInterval_SECONDS(interval: ShortInterval, size: i32, fixed: bool) -> String {
+    let negative = interval.milliseconds() < 0;
+    let interval = if negative {
+        ShortInterval::new(-interval.milliseconds())
+    } else {
+        interval
+    };
+    let days = extract_day_ShortInterval(interval);
+    let hours = extract_hour_ShortInterval(interval);
+    let minutes = extract_minute_ShortInterval(interval);
+    let seconds = extract_second_ShortInterval(interval);
+    let result = format!(
+        "{}{}.{:06}",
+        sign(negative),
+        ((days * 24 + hours) * 60 + minutes) * 60 + seconds,
+        0
+    );
+    limit_or_size_string(result, size, fixed)
+}
+
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_s_ShortInterval_DAYS_TO_SECONDS(
+    interval: ShortInterval,
+    size: i32,
+    fixed: bool,
+) -> String {
+    let negative = interval.milliseconds() < 0;
+    let interval = if negative {
+        ShortInterval::new(-interval.milliseconds())
+    } else {
+        interval
+    };
+    let days = extract_day_ShortInterval(interval);
+    let hours = extract_hour_ShortInterval(interval);
+    let minutes = extract_minute_ShortInterval(interval);
+    let seconds = extract_second_ShortInterval(interval);
+    let result = format!(
+        "{}{} {:02}:{:02}:{:02}.{:06}",
+        sign(negative),
+        days,
+        hours,
+        minutes,
+        seconds,
+        0
+    );
+    limit_or_size_string(result, size, fixed)
+}
+
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_s_ShortInterval_HOURS_TO_SECONDS(
+    interval: ShortInterval,
+    size: i32,
+    fixed: bool,
+) -> String {
+    let negative = interval.milliseconds() < 0;
+    let interval = if negative {
+        ShortInterval::new(-interval.milliseconds())
+    } else {
+        interval
+    };
+    let days = extract_day_ShortInterval(interval);
+    let hours = extract_hour_ShortInterval(interval);
+    let minutes = extract_minute_ShortInterval(interval);
+    let seconds = extract_second_ShortInterval(interval);
+    let result = format!(
+        "{}{}:{:02}:{:02}.{:06}",
+        sign(negative),
+        days * 24 + hours,
+        minutes,
+        seconds,
+        0
+    );
+    limit_or_size_string(result, size, fixed)
+}
+
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_s_ShortInterval_MINUTES_TO_SECONDS(
+    interval: ShortInterval,
+    size: i32,
+    fixed: bool,
+) -> String {
+    let negative = interval.milliseconds() < 0;
+    let interval = if negative {
+        ShortInterval::new(-interval.milliseconds())
+    } else {
+        interval
+    };
+    let days = extract_day_ShortInterval(interval);
+    let hours = extract_hour_ShortInterval(interval);
+    let minutes = extract_minute_ShortInterval(interval);
+    let seconds = extract_second_ShortInterval(interval);
+    let result = format!(
+        "{}{:02}:{:02}.{:06}",
+        sign(negative),
+        (days * 24 + hours) * 60 + minutes,
+        seconds,
+        0
+    );
     limit_or_size_string(result, size, fixed)
 }
 
@@ -1200,7 +1405,16 @@ cast_to_string!(Date, Date);
 cast_to_string!(LongInterval_MONTHS, LongInterval);
 cast_to_string!(LongInterval_YEARS, LongInterval);
 cast_to_string!(LongInterval_YEARS_TO_MONTHS, LongInterval);
-cast_to_string!(ShortInterval, ShortInterval);
+cast_to_string!(ShortInterval_DAYS, ShortInterval);
+cast_to_string!(ShortInterval_HOURS, ShortInterval);
+cast_to_string!(ShortInterval_DAYS_TO_HOURS, ShortInterval);
+cast_to_string!(ShortInterval_MINUTES, ShortInterval);
+cast_to_string!(ShortInterval_DAYS_TO_MINUTES, ShortInterval);
+cast_to_string!(ShortInterval_HOURS_TO_MINUTES, ShortInterval);
+cast_to_string!(ShortInterval_SECONDS, ShortInterval);
+cast_to_string!(ShortInterval_DAYS_TO_SECONDS, ShortInterval);
+cast_to_string!(ShortInterval_HOURS_TO_SECONDS, ShortInterval);
+cast_to_string!(ShortInterval_MINUTES_TO_SECONDS, ShortInterval);
 
 #[doc(hidden)]
 #[inline]
@@ -1467,32 +1681,116 @@ pub fn cast_to_i64_Weight(w: Weight) -> i64 {
 
 #[doc(hidden)]
 #[inline]
-pub fn cast_to_i8_ShortInterval(value: ShortInterval) -> i8 {
-    cast_to_i8_i64(cast_to_i64_ShortInterval(value))
+pub fn cast_to_i8_ShortInterval_DAYS(value: ShortInterval) -> i8 {
+    cast_to_i8_i64(cast_to_i64_ShortInterval_DAYS(value))
 }
 
 #[doc(hidden)]
 #[inline]
-pub fn cast_to_i16_ShortInterval(value: ShortInterval) -> i16 {
-    cast_to_i16_i64(cast_to_i64_ShortInterval(value))
+pub fn cast_to_i16_ShortInterval_DAYS(value: ShortInterval) -> i16 {
+    cast_to_i16_i64(cast_to_i64_ShortInterval_DAYS(value))
 }
 
 #[doc(hidden)]
 #[inline]
-pub fn cast_to_i32_ShortInterval(value: ShortInterval) -> i32 {
-    cast_to_i32_i64(cast_to_i64_ShortInterval(value))
+pub fn cast_to_i32_ShortInterval_DAYS(value: ShortInterval) -> i32 {
+    cast_to_i32_i64(cast_to_i64_ShortInterval_DAYS(value))
 }
 
 #[doc(hidden)]
 #[inline]
-pub fn cast_to_i64_ShortInterval(value: ShortInterval) -> i64 {
+pub fn cast_to_i64_ShortInterval_DAYS(value: ShortInterval) -> i64 {
     value.milliseconds()
 }
 
-cast_function!(i8, i8, ShortInterval, ShortInterval);
-cast_function!(i16, i16, ShortInterval, ShortInterval);
-cast_function!(i32, i32, ShortInterval, ShortInterval);
-cast_function!(i64, i64, ShortInterval, ShortInterval);
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_i8_ShortInterval_HOURS(value: ShortInterval) -> i8 {
+    cast_to_i8_i64(cast_to_i64_ShortInterval_HOURS(value))
+}
+
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_i16_ShortInterval_HOURS(value: ShortInterval) -> i16 {
+    cast_to_i16_i64(cast_to_i64_ShortInterval_HOURS(value))
+}
+
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_i32_ShortInterval_HOURS(value: ShortInterval) -> i32 {
+    cast_to_i32_i64(cast_to_i64_ShortInterval_HOURS(value))
+}
+
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_i64_ShortInterval_HOURS(value: ShortInterval) -> i64 {
+    value.milliseconds()
+}
+
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_i8_ShortInterval_MINUTES(value: ShortInterval) -> i8 {
+    cast_to_i8_i64(cast_to_i64_ShortInterval_MINUTES(value))
+}
+
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_i16_ShortInterval_MINUTES(value: ShortInterval) -> i16 {
+    cast_to_i16_i64(cast_to_i64_ShortInterval_MINUTES(value))
+}
+
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_i32_ShortInterval_MINUTES(value: ShortInterval) -> i32 {
+    cast_to_i32_i64(cast_to_i64_ShortInterval_MINUTES(value))
+}
+
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_i64_ShortInterval_MINUTES(value: ShortInterval) -> i64 {
+    value.milliseconds()
+}
+
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_i8_ShortInterval_SECONDS(value: ShortInterval) -> i8 {
+    cast_to_i8_i64(cast_to_i64_ShortInterval_SECONDS(value))
+}
+
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_i16_ShortInterval_SECONDS(value: ShortInterval) -> i16 {
+    cast_to_i16_i64(cast_to_i64_ShortInterval_SECONDS(value))
+}
+
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_i32_ShortInterval_SECONDS(value: ShortInterval) -> i32 {
+    cast_to_i32_i64(cast_to_i64_ShortInterval_SECONDS(value))
+}
+
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_i64_ShortInterval_SECONDS(value: ShortInterval) -> i64 {
+    value.milliseconds()
+}
+
+cast_function!(i8, i8, ShortInterval_DAYS, ShortInterval);
+cast_function!(i16, i16, ShortInterval_DAYS, ShortInterval);
+cast_function!(i32, i32, ShortInterval_DAYS, ShortInterval);
+cast_function!(i64, i64, ShortInterval_DAYS, ShortInterval);
+cast_function!(i8, i8, ShortInterval_HOURS, ShortInterval);
+cast_function!(i16, i16, ShortInterval_HOURS, ShortInterval);
+cast_function!(i32, i32, ShortInterval_HOURS, ShortInterval);
+cast_function!(i64, i64, ShortInterval_HOURS, ShortInterval);
+cast_function!(i8, i8, ShortInterval_MINUTES, ShortInterval);
+cast_function!(i16, i16, ShortInterval_MINUTES, ShortInterval);
+cast_function!(i32, i32, ShortInterval_MINUTES, ShortInterval);
+cast_function!(i64, i64, ShortInterval_MINUTES, ShortInterval);
+cast_function!(i8, i8, ShortInterval_SECONDS, ShortInterval);
+cast_function!(i16, i16, ShortInterval_SECONDS, ShortInterval);
+cast_function!(i32, i32, ShortInterval_SECONDS, ShortInterval);
+cast_function!(i64, i64, ShortInterval_SECONDS, ShortInterval);
 
 #[doc(hidden)]
 #[inline]
@@ -1513,27 +1811,116 @@ cast_function!(i64, i64, LongInterval_YEARS, LongInterval);
 
 #[doc(hidden)]
 #[inline]
-pub fn cast_to_ShortInterval_i8(value: i8) -> ShortInterval {
-    ShortInterval::from(value as i64)
+pub fn cast_to_ShortInterval_DAYS_i8(value: i8) -> ShortInterval {
+    cast_to_ShortInterval_DAYS_i64(value as i64)
 }
 
 #[doc(hidden)]
 #[inline]
-pub fn cast_to_ShortInterval_i16(value: i16) -> ShortInterval {
-    ShortInterval::from(value as i64)
+pub fn cast_to_ShortInterval_DAYS_i16(value: i16) -> ShortInterval {
+    cast_to_ShortInterval_DAYS_i64(value as i64)
 }
 
 #[doc(hidden)]
 #[inline]
-pub fn cast_to_ShortInterval_i32(value: i32) -> ShortInterval {
-    ShortInterval::from(value as i64)
+pub fn cast_to_ShortInterval_DAYS_i32(value: i32) -> ShortInterval {
+    cast_to_ShortInterval_DAYS_i64(value as i64)
 }
 
 #[doc(hidden)]
 #[inline]
-pub fn cast_to_ShortInterval_i64(value: i64) -> ShortInterval {
-    ShortInterval::from(value)
+pub fn cast_to_ShortInterval_DAYS_i64(value: i64) -> ShortInterval {
+    ShortInterval::new(value * 86400 * 1000)
 }
+
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_ShortInterval_HOURS_i8(value: i8) -> ShortInterval {
+    cast_to_ShortInterval_HOURS_i64(value as i64)
+}
+
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_ShortInterval_HOURS_i16(value: i16) -> ShortInterval {
+    cast_to_ShortInterval_HOURS_i64(value as i64)
+}
+
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_ShortInterval_HOURS_i32(value: i32) -> ShortInterval {
+    cast_to_ShortInterval_HOURS_i64(value as i64)
+}
+
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_ShortInterval_HOURS_i64(value: i64) -> ShortInterval {
+    ShortInterval::new(value * 3600 * 1000)
+}
+
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_ShortInterval_MINUTES_i8(value: i8) -> ShortInterval {
+    cast_to_ShortInterval_MINUTES_i64(value as i64)
+}
+
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_ShortInterval_MINUTES_i16(value: i16) -> ShortInterval {
+    cast_to_ShortInterval_MINUTES_i64(value as i64)
+}
+
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_ShortInterval_MINUTES_i32(value: i32) -> ShortInterval {
+    cast_to_ShortInterval_MINUTES_i64(value as i64)
+}
+
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_ShortInterval_MINUTES_i64(value: i64) -> ShortInterval {
+    ShortInterval::new(value * 60 * 1000)
+}
+
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_ShortInterval_SECONDS_i8(value: i8) -> ShortInterval {
+    cast_to_ShortInterval_SECONDS_i64(value as i64)
+}
+
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_ShortInterval_SECONDS_i16(value: i16) -> ShortInterval {
+    cast_to_ShortInterval_SECONDS_i64(value as i64)
+}
+
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_ShortInterval_SECONDS_i32(value: i32) -> ShortInterval {
+    cast_to_ShortInterval_SECONDS_i64(value as i64)
+}
+
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_ShortInterval_SECONDS_i64(value: i64) -> ShortInterval {
+    ShortInterval::new(value * 60 * 1000)
+}
+
+cast_function!(ShortInterval_DAYS, ShortInterval, i8, i8);
+cast_function!(ShortInterval_DAYS, ShortInterval, i16, i16);
+cast_function!(ShortInterval_DAYS, ShortInterval, i32, i32);
+cast_function!(ShortInterval_DAYS, ShortInterval, i64, i64);
+cast_function!(ShortInterval_HOURS, ShortInterval, i8, i8);
+cast_function!(ShortInterval_HOURS, ShortInterval, i16, i16);
+cast_function!(ShortInterval_HOURS, ShortInterval, i32, i32);
+cast_function!(ShortInterval_HOURS, ShortInterval, i64, i64);
+cast_function!(ShortInterval_MINUTES, ShortInterval, i8, i8);
+cast_function!(ShortInterval_MINUTES, ShortInterval, i16, i16);
+cast_function!(ShortInterval_MINUTES, ShortInterval, i32, i32);
+cast_function!(ShortInterval_MINUTES, ShortInterval, i64, i64);
+cast_function!(ShortInterval_SECONDS, ShortInterval, i8, i8);
+cast_function!(ShortInterval_SECONDS, ShortInterval, i16, i16);
+cast_function!(ShortInterval_SECONDS, ShortInterval, i32, i32);
+cast_function!(ShortInterval_SECONDS, ShortInterval, i64, i64);
 
 #[doc(hidden)]
 #[inline]
@@ -1541,10 +1928,6 @@ pub fn cast_to_ShortInterval_s(_value: String) -> ShortInterval {
     panic!("Not yet implemented")
 }
 
-cast_function!(ShortInterval, ShortInterval, i8, i8);
-cast_function!(ShortInterval, ShortInterval, i16, i16);
-cast_function!(ShortInterval, ShortInterval, i32, i32);
-cast_function!(ShortInterval, ShortInterval, i64, i64);
 cast_function!(ShortInterval, ShortInterval, s, String);
 
 //////// casts to ShortIntervalN
@@ -1669,7 +2052,85 @@ pub fn cast_to_LongInterval_LongInterval(value: LongInterval) -> LongInterval {
     value
 }
 
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_ShortInterval_ShortInterval(value: ShortInterval) -> ShortInterval {
+    value
+}
+
 cast_function!(LongInterval, LongInterval, LongInterval, LongInterval);
+cast_function!(ShortInterval, ShortInterval, ShortInterval, ShortInterval);
+
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_ShortInterval_DAYS_s(_values: String) -> ShortInterval {
+    unimplemented!();
+}
+
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_ShortInterval_HOURS_s(_values: String) -> ShortInterval {
+    unimplemented!();
+}
+
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_ShortInterval_DAYS_TO_HOURS_s(_values: String) -> ShortInterval {
+    unimplemented!();
+}
+
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_ShortInterval_MINUTES_s(_values: String) -> ShortInterval {
+    unimplemented!();
+}
+
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_ShortInterval_DAYS_TO_MINUTES_s(_values: String) -> ShortInterval {
+    unimplemented!();
+}
+
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_ShortInterval_HOURS_TO_MINUTES_s(_values: String) -> ShortInterval {
+    unimplemented!();
+}
+
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_ShortInterval_SECONDS_s(_values: String) -> ShortInterval {
+    unimplemented!();
+}
+
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_ShortInterval_DAYS_TO_SECONDS_s(_values: String) -> ShortInterval {
+    unimplemented!();
+}
+
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_ShortInterval_HOURS_TO_SECONDS_s(_values: String) -> ShortInterval {
+    unimplemented!();
+}
+
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_ShortInterval_MINUTES_TO_SECONDS_s(_values: String) -> ShortInterval {
+    unimplemented!();
+}
+
+cast_function!(ShortInterval_DAYS, ShortInterval, s, String);
+cast_function!(ShortInterval_HOURS, ShortInterval, s, String);
+cast_function!(ShortInterval_DAYS_TO_HOURS, ShortInterval, s, String);
+cast_function!(ShortInterval_MINUTES, ShortInterval, s, String);
+cast_function!(ShortInterval_DAYS_TO_MINUTES, ShortInterval, s, String);
+cast_function!(ShortInterval_HOURS_TO_MINUTES, ShortInterval, s, String);
+cast_function!(ShortInterval_SECONDS, ShortInterval, s, String);
+cast_function!(ShortInterval_DAYS_TO_SECONDS, ShortInterval, s, String);
+cast_function!(ShortInterval_HOURS_TO_SECONDS, ShortInterval, s, String);
+cast_function!(ShortInterval_MINUTES_TO_SECONDS, ShortInterval, s, String);
 
 //////// casts to Timestamp
 
@@ -1995,7 +2456,20 @@ cast_variant!(Date, Date, Date);
 cast_variant!(Time, Time, Time);
 cast_variant!(bytes, ByteArray, Binary);
 cast_variant!(Timestamp, Timestamp, Timestamp);
-cast_variant!(ShortInterval, ShortInterval, ShortInterval);
+cast_variant!(ShortInterval_DAYS, ShortInterval, ShortInterval);
+cast_variant!(ShortInterval_HOURS, ShortInterval, ShortInterval);
+cast_variant!(ShortInterval_DAYS_TO_HOURS, ShortInterval, ShortInterval);
+cast_variant!(ShortInterval_MINUTES, ShortInterval, ShortInterval);
+cast_variant!(ShortInterval_DAYS_TO_MINUTES, ShortInterval, ShortInterval);
+cast_variant!(ShortInterval_HOURS_TO_MINUTES, ShortInterval, ShortInterval);
+cast_variant!(ShortInterval_SECONDS, ShortInterval, ShortInterval);
+cast_variant!(ShortInterval_DAYS_TO_SECONDS, ShortInterval, ShortInterval);
+cast_variant!(ShortInterval_HOURS_TO_SECONDS, ShortInterval, ShortInterval);
+cast_variant!(
+    ShortInterval_MINUTES_TO_SECONDS,
+    ShortInterval,
+    ShortInterval
+);
 cast_variant!(LongInterval_YEARS_TO_MONTHS, LongInterval, LongInterval);
 cast_variant!(LongInterval_MONTHS, LongInterval, LongInterval);
 cast_variant!(LongInterval_YEARS, LongInterval, LongInterval);

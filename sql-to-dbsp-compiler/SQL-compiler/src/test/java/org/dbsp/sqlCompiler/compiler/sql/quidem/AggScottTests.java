@@ -862,7 +862,7 @@ public class AggScottTests extends ScottBaseTests {
                 |  1 | 6 |
                 |  3 | 3 |
                 +----+---+
-                (4 rows)""", false);
+                (4 rows)""");
     }
 
     @Test
@@ -911,7 +911,7 @@ public class AggScottTests extends ScottBaseTests {
                 +----+----+---+----------+
                 |  5 | 14 | 6 | 29025.00 |
                 +----+----+---+----------+
-                (1 row)""", false);
+                (1 row)""");
     }
 
     @Test

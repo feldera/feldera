@@ -130,7 +130,7 @@ public class BaseSQLTests {
         this.prepareInputs(compiler);
         compiler.compileStatements(statements);
         getCircuit(compiler);
-        assert compiler.messages.exitCode != 0 : "Program was expected to fail";
+        assert compiler.messages.exitCode != 0 : "Program was expected to fail: " + statements;
         String message = compiler.messages.toString();
         this.shouldMatch(message, regex, isRegex);
     }
@@ -222,7 +222,7 @@ public class BaseSQLTests {
             pt = new ProgramAndTester(test.ccs.circuit, test.createTesterCode(testNumber, rustDirectory));
             BaseSQLTests.testsExecuted++;
             // Filter here tests
-            // if (pt.program() != null && !pt.program().toString().contains(".flatmap")) continue;
+            // if (pt.program() != null && !pt.program().toString().contains("hop")) continue;
             writer.add(pt);
             testNumber++;
         }

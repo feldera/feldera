@@ -43,8 +43,24 @@ import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.INTERVAL_SHORT;
 public class DBSPTypeMillisInterval
         extends DBSPTypeBaseType
         implements IsTimeRelatedType, IHasZero, IsIntervalType {
-    public DBSPTypeMillisInterval(CalciteObject node, boolean mayBeNull) {
+    public enum Units {
+        DAYS,
+        HOURS,
+        DAYS_TO_HOURS,
+        MINUTES,
+        HOURS_TO_MINUTES,
+        DAYS_TO_MINUTES,
+        SECONDS,
+        DAYS_TO_SECONDS,
+        HOURS_TO_SECONDS,
+        MINUTES_TO_SECONDS,
+    };
+
+    public final Units units;
+
+    public DBSPTypeMillisInterval(CalciteObject node, Units units, boolean mayBeNull) {
         super(node, INTERVAL_SHORT, mayBeNull);
+        this.units = units;
     }
 
     @Override
@@ -58,42 +74,50 @@ public class DBSPTypeMillisInterval
 
     @Override
     public DBSPExpression getMinValue() {
-        return new DBSPIntervalMillisLiteral(Long.MIN_VALUE, this.mayBeNull);
+        return new DBSPIntervalMillisLiteral(this.units, Long.MIN_VALUE, this.mayBeNull);
     }
 
     @Override
     public DBSPExpression getMaxValue() {
-        return new DBSPIntervalMillisLiteral(Long.MAX_VALUE, this.mayBeNull);
+        return new DBSPIntervalMillisLiteral(this.units, Long.MAX_VALUE, this.mayBeNull);
     }
 
     @Override
     public DBSPType withMayBeNull(boolean mayBeNull) {
         if (this.mayBeNull == mayBeNull)
             return this;
-        return new DBSPTypeMillisInterval(this.getNode(), mayBeNull);
+        return new DBSPTypeMillisInterval(this.getNode(), this.units, mayBeNull);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(this.mayBeNull, 8);
+        return Objects.hash(this.mayBeNull, this.units, 8);
     }
 
     @Override
     public DBSPExpression defaultValue() {
         if (this.mayBeNull)
             return this.none();
-        return new DBSPIntervalMillisLiteral(0, this.mayBeNull);
+        return new DBSPIntervalMillisLiteral(this.units, 0, this.mayBeNull);
     }
 
     @Override
     public DBSPLiteral getZero() {
-        return new DBSPIntervalMillisLiteral(0, this.mayBeNull);
+        return new DBSPIntervalMillisLiteral(this.units, 0, this.mayBeNull);
     }
 
     @Override
     public boolean sameType(DBSPType other) {
         if (!super.sameNullability(other))
             return false;
-        return other.is(DBSPTypeMillisInterval.class);
+        DBSPTypeMillisInterval otherType = other.as(DBSPTypeMillisInterval.class);
+        if (otherType == null)
+            return false;
+        return this.units == otherType.units;
+    }
+
+    @Override
+    public String baseTypeWithSuffix() {
+        return this.shortName() + "_" + this.units.name() + this.nullableSuffix();
     }
 }

@@ -98,7 +98,7 @@ public abstract class DBSPLiteral extends DBSPExpression implements ISameValue {
         } else if (type.is(DBSPTypeGeoPoint.class)) {
             return new DBSPGeoPointLiteral();
         } else if (type.is(DBSPTypeMillisInterval.class)) {
-            return new DBSPIntervalMillisLiteral();
+            return new DBSPIntervalMillisLiteral(type.getNode(), type, null);
         } else if (type.is(DBSPTypeMonthsInterval.class)) {
             return new DBSPIntervalMonthsLiteral(type.getNode(), type, null);
         } else if (type.is(DBSPTypeString.class)) {

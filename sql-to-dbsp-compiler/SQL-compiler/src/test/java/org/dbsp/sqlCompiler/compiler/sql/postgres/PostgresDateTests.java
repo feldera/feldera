@@ -29,6 +29,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntervalMillisLiteral;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMillisInterval;
 import org.dbsp.util.Linq;
 import org.junit.Test;
 
@@ -931,7 +932,7 @@ public class PostgresDateTests extends SqlIoTest {
         // TODO: why is the output an integer instead of an interval in Postgres?
         DBSPZSetExpression result =
                 new DBSPZSetExpression(Linq.map(results,
-                        l -> new DBSPTupleExpression(new DBSPIntervalMillisLiteral(
+                        l -> new DBSPTupleExpression(new DBSPIntervalMillisLiteral(DBSPTypeMillisInterval.Units.SECONDS,
                                 l * 86400 * 1000, true)), DBSPExpression.class));
         this.compare(query, result, true, results.length);
     }

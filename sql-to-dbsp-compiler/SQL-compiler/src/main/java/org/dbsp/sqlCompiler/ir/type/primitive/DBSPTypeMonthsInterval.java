@@ -83,7 +83,7 @@ public class DBSPTypeMonthsInterval
 
     @Override
     public int hashCode() {
-        return Objects.hash(this.mayBeNull, 9);
+        return Objects.hash(this.mayBeNull, this.units, 9);
     }
 
     @Override
