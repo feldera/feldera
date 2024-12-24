@@ -592,6 +592,20 @@ public class RegressionTests extends SqlIoTest {
     }
 
     @Test
+    public void issue3165() {
+        this.q("""
+             SELECT ASCII('8') >= ABS(1.1806236821);
+              r
+             ---
+              true""");
+    }
+
+    @Test
+    public void issue3180() {
+        this.getCCS("CREATE VIEW V AS SELECT ROW(1, 'x') = ROW('x', 1);");
+    }
+
+    @Test
     public void issue2316() {
         String sql = """
                 CREATE TABLE sum(c1 TINYINT);
@@ -1349,7 +1363,7 @@ public class RegressionTests extends SqlIoTest {
         this.addRustTestCase(ccs);
     }
 
-    @Test @Ignore("https://github.com/feldera/feldera/issues/3204")
+    @Test
     public void testSlt() {
         this.q("""
                 SELECT CASE WHEN 1 NOT IN ( NULL, COUNT(*) ) THEN 1 END;

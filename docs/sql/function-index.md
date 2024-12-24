@@ -28,6 +28,7 @@
 * `ARRAY_CONTAINS`: [array](array.md)
 * `ARRAY_DISTINCT`: [array](array.md)
 * `ARRAY_EXCEPT`: [array](array.md)
+* `ARRAY_INSERT`: [array](array.md)
 * `ARRAY_INTERSECT`: [array](array.md)
 * `ARRAY_JOIN`: [array](array.md)
 * `ARRAY_LENGTH`: [array](array.md)

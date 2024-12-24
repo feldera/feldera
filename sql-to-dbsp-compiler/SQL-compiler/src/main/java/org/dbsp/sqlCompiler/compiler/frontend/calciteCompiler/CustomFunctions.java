@@ -7,6 +7,7 @@ import org.apache.calcite.sql.SqlFunction;
 import org.apache.calcite.sql.SqlFunctionCategory;
 import org.apache.calcite.sql.SqlIdentifier;
 import org.apache.calcite.sql.SqlKind;
+import org.apache.calcite.sql.SqlOperatorBinding;
 import org.apache.calcite.sql.fun.SqlLibraryOperators;
 import org.apache.calcite.sql.type.OperandTypes;
 import org.apache.calcite.sql.type.ReturnTypes;
@@ -14,6 +15,7 @@ import org.apache.calcite.sql.type.SqlOperandTypeChecker;
 import org.apache.calcite.sql.type.SqlReturnTypeInference;
 import org.apache.calcite.sql.type.SqlTypeFamily;
 import org.apache.calcite.sql.type.SqlTypeTransforms;
+import org.apache.calcite.sql.type.SqlTypeUtil;
 import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.util.Utilities;
@@ -46,6 +48,7 @@ public class CustomFunctions {
         add(ArrayExcept.INSTANCE);
         add(ArrayUnion.INSTANCE);
         add(ArrayIntersect.INSTANCE);
+        add(ArrayInsertFunction.INSTANCE);
     }};
 
     private final List<NonOptimizedFunction> functions;
@@ -142,6 +145,32 @@ public class CustomFunctions {
         }
 
         public static final ParseJsonFunction INSTANCE = new ParseJsonFunction();
+    }
+
+    static class ArrayInsertFunction extends NonOptimizedFunction {
+        // Due to https://issues.apache.org/jira/browse/CALCITE-6743 we cannot use
+        // the Calcite ARRAY_INSERT function
+        private ArrayInsertFunction() {
+            super("ARRAY_INSERT",
+                    ArrayInsertFunction::arrayInsertReturnType,
+                    OperandTypes.ARRAY_INSERT,
+                    SqlFunctionCategory.USER_DEFINED_FUNCTION,
+                    "array");
+        }
+
+        private static RelDataType arrayInsertReturnType(SqlOperatorBinding opBinding) {
+            List<RelDataType> operandTypes = opBinding.collectOperandTypes();
+            assert operandTypes.size() == 3;
+            final RelDataType arrayType = operandTypes.get(0);
+            RelDataType elementType = arrayType.getComponentType();
+            assert elementType != null;
+            // Result element type always nullable
+            elementType = opBinding.getTypeFactory().createTypeWithNullability(elementType, true);
+            return SqlTypeUtil.createArrayType(opBinding.getTypeFactory(), elementType,
+                    arrayType.isNullable() || operandTypes.get(1).isNullable());
+        }
+
+        public static final ArrayInsertFunction INSTANCE = new ArrayInsertFunction();
     }
 
     static class ToJsonFunction extends NonOptimizedFunction {
