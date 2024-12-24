@@ -8,6 +8,7 @@
     items,
     itemSize,
     item: renderItem,
+    emptyItem,
     listContainer,
     stickyIndices,
     class: _class = '',
@@ -17,6 +18,7 @@
   }: {
     items: Row[]
     item: Snippet<[item: Row, style?: string, padding?: string, isSticky?: boolean]>
+    emptyItem: Snippet
     listContainer?: Snippet<[Snippet, ListContainer, Snippet | undefined]>
     header?: Snippet
     footer?: Snippet
@@ -60,6 +62,7 @@
   {itemSize}
   {stickyIndices}
   {marginTop}
+  {emptyItem}
 >
   {#snippet item({ index, style, padding, isSticky })}
     {#if items[index]}

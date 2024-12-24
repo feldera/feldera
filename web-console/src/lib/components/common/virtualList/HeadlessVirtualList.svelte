@@ -20,6 +20,7 @@
   import { binarySearchMax } from '$lib/functions/common/array'
   let {
     item,
+    emptyItem,
     itemCount,
     itemSize,
     listContainer = defaultListContainer,
@@ -47,6 +48,10 @@
     onscroll?: OnScroll
     header?: Snippet
     item: Snippet<[Item]>
+    /**
+     * An empty item is rendered to preserve even-odd coloring of list items
+     */
+    emptyItem: Snippet
     listContainer?: Snippet<[Snippet, ListContainer, Snippet | undefined]>
     placeholder?: Snippet<[Item]>
     footer?: Snippet
@@ -110,7 +115,7 @@
   {@render header?.()}
   {#if indexOffset % 2 == 0}
     <!-- Preserve even-odd coloring of elements -->
-    <div></div>
+    {@render emptyItem()}
   {/if}
   {#if stickyRow !== undefined}
     {@render item({
