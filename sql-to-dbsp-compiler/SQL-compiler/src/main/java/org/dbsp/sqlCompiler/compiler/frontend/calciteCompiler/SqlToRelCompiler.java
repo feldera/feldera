@@ -1288,26 +1288,109 @@ public class SqlToRelCompiler implements IWritesLogs {
         return builder.toString();
     }
 
-    public static String getSqlString(RelDataType type) {
-        //SqlTypeUtil does not support all existing types...
+    static void appendPrecision(RelDataType type, StringBuilder builder) {
+        if (type.getPrecision() != RelDataType.PRECISION_NOT_SPECIFIED)
+            builder.append("(")
+                    .append(type.getPrecision())
+                    .append(")");
+    }
+
+    public void toSql(RelDataType type, StringBuilder builder, boolean topLevel) {
         switch (type.getSqlTypeName()) {
-            case INTERVAL_YEAR: return "YEAR";
-            case INTERVAL_YEAR_MONTH: return "YEAR TO MONTH";
-            case INTERVAL_MONTH: return "MONTH";
-            case INTERVAL_DAY: return "DAY";
-            case INTERVAL_DAY_HOUR: return "DAY TO HOUR";
-            case INTERVAL_DAY_MINUTE: return "DAY TO MINUTE";
-            case INTERVAL_DAY_SECOND: return "DAY TO SECOND";
-            case INTERVAL_HOUR: return "HOUR";
-            case INTERVAL_HOUR_MINUTE: return "HOUR TO MINUTE";
-            case INTERVAL_HOUR_SECOND: return "HOUR TO SECOND";
-            case INTERVAL_MINUTE: return "MINUTE";
-            case INTERVAL_MINUTE_SECOND: return "MINUTE TO SECOND";
-            case INTERVAL_SECOND: return "SECOND";
-            default: break;
+            case BOOLEAN: builder.append("BOOLEAN"); break;
+            case TINYINT: builder.append("TINYINT"); break;
+            case SMALLINT: builder.append("SMALLINT"); break;
+            case INTEGER: builder.append("INTEGER"); break;
+            case BIGINT: builder.append("BIGINT"); break;
+            case DECIMAL:
+                builder.append("DECIMAL(")
+                        .append(type.getPrecision())
+                        .append(", ")
+                        .append(type.getScale());
+                break;
+            case REAL: builder.append("REAL"); break;
+            case DOUBLE: builder.append("DOUBLE"); break;
+            case DATE: builder.append("DATE"); break;
+            case TIME:
+                builder.append("TIME");
+                appendPrecision(type, builder);
+                break;
+            case TIMESTAMP:
+                builder.append("TIMESTAMP");
+                appendPrecision(type, builder);
+                break;
+            case INTERVAL_YEAR: builder.append("INTERVAL YEAR"); break;
+            case INTERVAL_YEAR_MONTH: builder.append("INTERVAL YEAR TO MONTH"); break;
+            case INTERVAL_MONTH: builder.append("INTERVAL MONTH"); break;
+            case INTERVAL_DAY: builder.append("INTERVAL DAY"); break;
+            case INTERVAL_DAY_HOUR: builder.append("INTERVAL DAY TO HOUR"); break;
+            case INTERVAL_DAY_MINUTE: builder.append("INTERVAL DAY TO MINUTE"); break;
+            case INTERVAL_DAY_SECOND: builder.append("INTERVAL DAY TO SECOND"); break;
+            case INTERVAL_HOUR: builder.append("INTERVAL HOUR"); break;
+            case INTERVAL_HOUR_MINUTE: builder.append("INTERVAL HOUR TO MINUTE"); break;
+            case INTERVAL_HOUR_SECOND: builder.append("INTERVAL HOUR TO SECOND"); break;
+            case INTERVAL_MINUTE: builder.append("INTERVAL MINUTE"); break;
+            case INTERVAL_MINUTE_SECOND: builder.append("INTERVAL MINUTE TO SECOND"); break;
+            case INTERVAL_SECOND: builder.append("INTERVAL SECOND"); break;
+            case CHAR:
+                builder.append("CHAR(")
+                        .append(type.getPrecision())
+                        .append(")");
+                break;
+            case VARCHAR:
+            case BINARY:
+            case VARBINARY:
+                builder.append("VARCHAR");
+                appendPrecision(type, builder);
+                break;
+            case NULL:
+                builder.append("NULL");
+            case ARRAY:
+                toSql(Objects.requireNonNull(type.getComponentType()), builder, false);
+                builder.append("ARRAY");
+                break;
+            case MAP:
+                builder.append("MAP<");
+                toSql(Objects.requireNonNull(type.getKeyType()), builder, false);
+                builder.append(", ");
+                toSql(Objects.requireNonNull(type.getValueType()), builder, false);
+                builder.append(">");
+                break;
+            case ROW:
+                boolean first = true;
+                if (topLevel) {
+                    for (var field: type.getFieldList()) {
+                        if (!first)
+                            builder.append(", ");
+                        first = false;
+                        builder.append(field.getName());
+                        builder.append(" ");
+                        toSql(field.getType(), builder, false);
+                        if (!field.getType().isNullable())
+                            builder.append(" NOT NULL");
+                    }
+                } else {
+                    builder.append("ROW(");
+                    for (var field : type.getFieldList()) {
+                        if (!first)
+                            builder.append(", ");
+                        first = false;
+                        builder.append(field.getName());
+                        builder.append(" ");
+                        toSql(field.getType(), builder, false);
+                    }
+                    builder.append(")");
+                }
+                break;
+            case GEOMETRY:
+                builder.append("GEOMETRY");
+                break;
+            case VARIANT:
+                builder.append("VARIANT");
+                break;
+            default:
+                throw new UnimplementedException(type.getFullTypeString(), CalciteObject.create(type));
         }
-        SqlDataTypeSpec spec = SqlTypeUtil.convertTypeToSpec(type);
-        return getSqlString(spec);
     }
 
     /** Replace references to recursive views that are not defined yet with
@@ -1454,15 +1537,24 @@ public class SqlToRelCompiler implements IWritesLogs {
             if (!viewType.equals(declaredType)) {
                this.errorReporter.reportError(view.getPosition(), "Type mismatch",
                         "Type inferred for view " + view.relationName.singleQuote() +
-                        " is " + viewType.getFullTypeString());
+                        " is " + this.typeToColumns(view.relationName, viewType));
                 this.errorReporter.reportError(dv.getPosition(), "Type mismatch",
-                        "does not match the declared type " + declaredType.getFullTypeString() + ":",
+                        "does not match the declared type " +
+                                this.typeToColumns(view.relationName, declaredType) + ":",
                         true);
             }
         }
 
         this.definedViews.add(view.relationName);
         return view;
+    }
+
+    String typeToColumns(ProgramIdentifier view, RelDataType type) {
+        StringBuilder builder = new StringBuilder();
+        builder.append(view).append("(");
+        toSql(type, builder, true);
+        builder.append(")");
+        return builder.toString();
     }
 
     /** Compile a SQL statement.
