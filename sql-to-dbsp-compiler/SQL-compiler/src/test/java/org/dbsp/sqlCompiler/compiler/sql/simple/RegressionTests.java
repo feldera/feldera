@@ -605,6 +605,82 @@ public class RegressionTests extends SqlIoTest {
     }
 
     @Test
+    public void issue3235() {
+        this.getCCS("""
+                create table users (
+                    id bigint not null primary key,
+                    is_banned bool,
+                    country string,
+                    name string
+                );
+                
+                create table groups (
+                    id bigint not null primary key,
+                    name string
+                );
+                
+                create table members (
+                    user_id  bigint not null,
+                    group_id bigint not null
+                );
+                
+                create table files (
+                    id bigint not null primary key,
+                    name string,
+                    parent_id bigint,
+                    is_public bool,
+                    folder bool
+                );
+                
+                create table group_file_owner (
+                    group_id bigint not null,
+                    file_id bigint not null
+                );
+                
+                create table group_file_viewer (
+                    group_id bigint not null,
+                    file_id bigint not null
+                );
+                
+                declare recursive view group_can_read (
+                    group_id bigint not null,
+                    file_id bigint not null
+                );
+                
+                declare recursive view group_can_write (
+                    group_id bigint not null,
+                    file_id bigint not null
+                );
+                
+                create materialized view group_can_write as
+                select group_id, file_id from group_file_owner
+                UNION ALL
+                select
+                    group_can_write.group_id,
+                    files.id as file_id
+                from
+                    group_can_write join files on group_can_write.file_id = files.parent_id;
+                
+                create materialized view group_can_read as
+                select group_id, file_id from group_file_viewer
+                UNION ALL
+                select group_id, file_id from group_can_write
+                UNION ALL
+                select
+                    group_can_read.group_id,
+                    files.id as file_id
+                from
+                    group_can_read join files on group_can_read.file_id = files.parent_id;
+                
+                create view user_can_write as
+                select
+                    members.user_id,
+                    group_can_write.file_id
+                from
+                    members join group_can_write on members.group_id = group_can_write.group_id;""");
+    }
+
+    @Test
     public void testVariantCast() {
         String sql = """
                 CREATE TABLE variant_table(val VARIANT);
