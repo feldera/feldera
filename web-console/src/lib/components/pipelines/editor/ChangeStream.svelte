@@ -129,6 +129,9 @@
         </tr>
       {/if}
     {/snippet}
+    {#snippet emptyItem()}
+      <tr class="h-0"></tr>
+    {/snippet}
     {#snippet footer()}
       <tr style="height: auto; ">
         <td></td>
