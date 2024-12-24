@@ -68,7 +68,7 @@
   const active = $derived(
     match(pipeline.current.status)
       .returnType<(keyof typeof actions)[]>()
-      .with('Shutdown', () => ['_spacer_long', '_start_paused'])
+      .with('Shutdown', { SqlWarning: P.any }, () => ['_spacer_long', '_start_paused'])
       .with('Queued', () => ['_spacer_long', '_start_pending'])
       .with('Starting up', () => ['_shutdown', '_status_spinner'])
       .with('Initializing', () => ['_shutdown', '_status_spinner'])

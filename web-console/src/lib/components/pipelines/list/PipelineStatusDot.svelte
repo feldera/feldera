@@ -7,7 +7,7 @@
   const { status, class: _class = '' }: { status: PipelineStatus; class?: string } = $props()
   const chipClass = $derived(
     match(status)
-      .with('Shutdown', () => 'preset-filled-surface-400-600')
+      .with('Shutdown', { SqlWarning: P.any }, () => 'preset-filled-surface-400-600')
       .with('Starting up', () => 'preset-filled-tertiary-200-800')
       .with('Initializing', () => 'preset-filled-tertiary-200-800')
       .with('Paused', () => 'preset-filled-warning-400-600')
