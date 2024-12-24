@@ -7,7 +7,7 @@
 
   const chipClass = $derived(
     match(status)
-      .with('Shutdown', () => '')
+      .with('Shutdown', { SqlWarning: P.any }, () => '')
       .with('Starting up', () => 'preset-filled-tertiary-200-800')
       .with('Initializing', () => 'preset-filled-tertiary-200-800')
       .with('Paused', () => 'preset-tonal-warning')

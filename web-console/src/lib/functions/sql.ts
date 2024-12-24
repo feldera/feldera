@@ -1,5 +1,5 @@
 import { nonNull } from '$lib/functions/common/function'
-import { ColumnType } from '$lib/services/manager'
+import type { ColumnType } from '$lib/services/manager'
 
 const displaySQLType = (columntype: ColumnType): string =>
   (columntype.component ? displaySQLType(columntype.component) + ' ' : '') +
