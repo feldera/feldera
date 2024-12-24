@@ -19,6 +19,7 @@
         { RustError: P.any },
         () => 'fd fd-circle-check-big text-[24px] text-success-500'
       )
+      .with({ SqlWarning: P.any }, () => 'fd fd-circle-alert text-[24px] text-warning-500')
       .with('Pending', 'CompilingSql', undefined, () => 'spinner')
       .with(P.shape({}), () => 'fd fd-circle-x inline-block text-[20px] text-error-500')
       .exhaustive()
@@ -39,12 +40,7 @@
   SQL
 </div>
 
-<div
-  class="{match(programStatus)
-    .with('SqlCompiled', 'CompilingRust', { RustError: P.any }, () => 'flex')
-    .with('Success', 'Pending', 'CompilingSql', P.shape({}), undefined, () => 'hidden')
-    .exhaustive()} flex-nowrap gap-2 self-center whitespace-nowrap"
->
+<div class="{rustClass === '' ? 'hidden' : 'flex'} flex-nowrap gap-2 self-center whitespace-nowrap">
   <span class={rustClass}>
     <IconLoader class={rustClass === 'spinner' ? spinnerClass : 'hidden'}></IconLoader>
   </span>
