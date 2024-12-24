@@ -113,6 +113,8 @@ public class DBSPNestedOperator extends DBSPOperator implements ICircuit {
         if (this == other)
             return true;
         if (other instanceof DBSPNestedOperator sub) {
+            if (this.allOperators.size() != sub.allOperators.size())
+                return false;
             return Linq.all(Linq.zipSameLength(this.allOperators, sub.allOperators, DBSPOperator::equivalent));
         }
         return false;
