@@ -33,8 +33,38 @@ import java.util.Map;
 
 /** Analyze a closure and find unused fields in its parameters. */
 public class FindUnusedFields extends SymbolicInterpreter<FindUnusedFields.SymbolicValue> {
+    public record SizedBitSet(int size, BitSet bits) {
+        public SizedBitSet(int size) {
+            this(size, new BitSet());
+        }
+
+        public boolean hasUnusedBits() {
+            return this.size > this.bits.cardinality();
+        }
+
+        public int cardinality() {
+            return this.bits.cardinality();
+        }
+
+        public void set(int fieldNo) {
+            this.bits.set(fieldNo);
+        }
+
+        public void set(int start, int end, boolean b) {
+            this.bits.set(start, end, b);
+        }
+
+        public boolean get(int i) {
+            return this.bits.get(i);
+        }
+
+        public void set(int start, int end) {
+            this.bits.set(start, end);
+        }
+    }
+
     /** Result is deposited here */
-    public final Map<DBSPParameter, BitSet> usedFields;
+    public final Map<DBSPParameter, SizedBitSet> usedFields;
     final ResolveReferences resolver;
 
     interface SymbolicValue extends ICastable {}
@@ -64,7 +94,7 @@ public class FindUnusedFields extends SymbolicInterpreter<FindUnusedFields.Symbo
         Substitution<DBSPParameter, DBSPParameter> newParam = new Substitution<>();
 
         for (DBSPParameter param: this.usedFields.keySet()) {
-            BitSet bits = this.usedFields.get(param);
+            SizedBitSet bits = this.usedFields.get(param);
             FieldMap fm = new FieldMap(param.getType(), bits);
             remap.setMap(param, fm);
             DBSPType newType = fm.compressedType().ref();
@@ -79,9 +109,9 @@ public class FindUnusedFields extends SymbolicInterpreter<FindUnusedFields.Symbo
     public boolean foundUnusedFields() {
         for (var e: this.usedFields.entrySet()) {
             DBSPTypeTupleBase type = e.getKey().getType().deref().to(DBSPTypeTupleBase.class);
-            BitSet bitset = e.getValue();
+            SizedBitSet bitset = e.getValue();
             assert type.size() >= bitset.cardinality();
-            if (type.size() > bitset.cardinality())
+            if (bitset.hasUnusedBits())
                 return true;
         }
         return false;
@@ -99,7 +129,8 @@ public class FindUnusedFields extends SymbolicInterpreter<FindUnusedFields.Symbo
 
     @Override
     public void postorder(DBSPParameter param) {
-        Utilities.putNew(this.usedFields, param, new BitSet());
+        Utilities.putNew(this.usedFields, param,
+                new SizedBitSet(param.getType().deref().to(DBSPTypeTupleBase.class).size()));
         SymbolicValue val = new ValueIsParameter(param);
         this.set(param, val);
         this.setCurrentValue(param, val);
@@ -197,7 +228,7 @@ public class FindUnusedFields extends SymbolicInterpreter<FindUnusedFields.Symbo
     }
 
     void markAllFieldsUsed(DBSPParameter param) {
-        BitSet set = Utilities.getExists(this.usedFields, param);
+        SizedBitSet set = Utilities.getExists(this.usedFields, param);
         int fields = param.getType().deref().to(DBSPTypeTupleBase.class).size();
         // all fields are used
         set.set(0, fields, true);

@@ -446,7 +446,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
                 CREATE TABLE T (COL1 INT NOT NULL, COL2 DOUBLE NOT NULL);
                 CREATE VIEW V AS SELECT COL1 FROM T;""";
         File file = createInputScript(sql);
-        CompilerMessages messages = CompilerMain.execute("-o", BaseSQLTests.testFilePath, file.getPath());
+        CompilerMessages messages = CompilerMain.execute("-q", "-o", BaseSQLTests.testFilePath, file.getPath());
         messages.print();
         Assert.assertEquals(0, messages.exitCode);
         Utilities.compileAndTestRust(BaseSQLTests.rustDirectory, false);

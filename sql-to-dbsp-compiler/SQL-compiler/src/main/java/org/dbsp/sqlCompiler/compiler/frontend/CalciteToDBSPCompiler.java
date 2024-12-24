@@ -238,7 +238,7 @@ import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.USER;
 public class CalciteToDBSPCompiler extends RelVisitor
         implements IWritesLogs, ICompilerComponent {
     // Result is deposited here
-    private DBSPCircuit circuit;
+    private final DBSPCircuit circuit;
     // Map each compiled RelNode operator to its DBSP implementation.
     final Map<RelNode, DBSPSimpleOperator> nodeOperator;
     final TableContents tableContents;
@@ -293,9 +293,10 @@ public class CalciteToDBSPCompiler extends RelVisitor
 
     /** Gets the circuit produced so far and starts a new one. */
     public DBSPCircuit getFinalCircuit() {
-        DBSPCircuit result = this.circuit;
-        this.circuit = new DBSPCircuit(this.compiler.metadata);
-        return result;
+        if (this.compiler.hasErrors()) {
+            throw new CompilationError("Stopping compilation due to errors");
+        }
+        return this.circuit;
     }
 
     /** This retrieves the operator that is an input.  If the operator may
@@ -2891,6 +2892,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                         result.add(lit);
                 }
             }
+            assert result != null;
         } else {
             throw new UnimplementedException("statement of this form not supported",
                     modify.getCalciteObject());
