@@ -527,6 +527,200 @@ public class PostgresIntervalTests extends SqlIoTest {
                  x
                 ---
                  +1-10
+                (1 row)
+                
+                SELECT CAST(INTERVAL -22 MONTHS AS VARCHAR);
+                 x
+                ---
+                 -22
+                (1 row)
+                
+                SELECT CAST(INTERVAL -1 YEARS AS VARCHAR);
+                 x
+                ---
+                 -1
+                (1 row)
+                
+                SELECT CAST(INTERVAL '-1-10' YEARS TO MONTHS AS VARCHAR);
+                 x
+                ---
+                 -1-10
+                (1 row)""");
+    }
+
+    @Test
+    public void doubleCastTest() {
+        this.qs("""
+                SELECT CAST(CAST(INTERVAL '1 02:03:04.5' DAYS TO SECONDS AS INTERVAL DAYS) AS VARCHAR);
+                 x
+                ---
+                 +1
+                (1 row)
+                
+                SELECT CAST(CAST(INTERVAL '1 02:03:04.5' DAYS TO SECONDS AS INTERVAL DAYS TO HOURS) AS VARCHAR);
+                 x
+                ---
+                 +1 02
+                (1 row)
+                
+                SELECT CAST(CAST(INTERVAL '1 02:03:04.5' DAYS TO SECONDS AS INTERVAL DAYS TO MINUTES) AS VARCHAR);
+                 x
+                ---
+                 +1 02:03
+                (1 row)
+                
+                SELECT CAST(CAST(INTERVAL '1 02:03:04.5' DAYS TO SECONDS AS INTERVAL DAYS TO SECONDS) AS VARCHAR);
+                 x
+                ---
+                 +1 02:03:04.000000
+                (1 row)
+
+                SELECT CAST(CAST(INTERVAL '1 02:03:04.5' DAYS TO SECONDS AS INTERVAL HOURS) AS VARCHAR);
+                 x
+                ---
+                 +26
+                (1 row)
+                
+                SELECT CAST(CAST(INTERVAL '1 02:03:04.5' DAYS TO SECONDS AS INTERVAL HOURS TO MINUTES) AS VARCHAR);
+                 x
+                ---
+                 +26:03
+                (1 row)
+                
+                SELECT CAST(CAST(INTERVAL '1 02:03:04.5' DAYS TO SECONDS AS INTERVAL HOURS TO SECONDS) AS VARCHAR);
+                 x
+                ---
+                 +26:03:04.000000
+                (1 row)
+                
+                SELECT CAST(CAST(INTERVAL '1 02:03:04.5' DAYS TO SECONDS AS INTERVAL MINUTES) AS VARCHAR);
+                 x
+                ---
+                 +1563
+                (1 row)
+                
+                SELECT CAST(CAST(INTERVAL '1 02:03:04.5' DAYS TO SECONDS AS INTERVAL MINUTES TO SECONDS) AS VARCHAR);
+                 x
+                ---
+                 +1563:04.000000
+                (1 row)
+                
+                SELECT CAST(CAST(INTERVAL '1 02:03:04.5' DAYS TO SECONDS AS INTERVAL SECONDS) AS VARCHAR);
+                 x
+                ---
+                 +93784.000000
+                (1 row)""");
+    }
+
+    @Test
+    public void testCastShortIntervalToString() {
+        this.qs("""                
+                SELECT CAST(INTERVAL '1 02:03:04.5' DAYS TO SECONDS AS VARCHAR);
+                 x
+                ---
+                 +1 02:03:04.000000
+                (1 row)
+                
+                SELECT CAST(INTERVAL '1' DAYS AS VARCHAR);
+                 x
+                ---
+                 +1
+                (1 row)
+                
+                SELECT CAST(INTERVAL '1 02' DAYS TO HOURS AS VARCHAR);
+                 x
+                ---
+                 +1 02
+                (1 row)
+                
+                SELECT CAST(INTERVAL '1 02:03' DAYS TO MINUTES AS VARCHAR);
+                 x
+                ---
+                 +1 02:03
+                (1 row)
+                
+                SELECT CAST(INTERVAL '02:03:04.5' HOURS TO SECONDS AS VARCHAR);
+                 x
+                ---
+                 +2:03:04.000000
+                (1 row)
+                
+                SELECT CAST(INTERVAL '02:03' HOURS TO MINUTES AS VARCHAR);
+                 x
+                ---
+                 +2:03
+                (1 row)
+
+                SELECT CAST(INTERVAL '2' HOURS AS VARCHAR);
+                 x
+                ---
+                 +2
+                (1 row)
+                
+                SELECT CAST(INTERVAL '3' MINUTES AS VARCHAR);
+                 x
+                ---
+                 +3
+                (1 row)
+                
+                SELECT CAST(INTERVAL '4.000' SECONDS AS VARCHAR);
+                 x
+                ---
+                 +4.000000
+                (1 row)
+
+                SELECT CAST(INTERVAL '-1 02:03:04.5' DAYS TO SECONDS AS VARCHAR);
+                 x
+                ---
+                 -1 02:03:04.000000
+                (1 row)
+                
+                SELECT CAST(INTERVAL '-1' DAYS AS VARCHAR);
+                 x
+                ---
+                 -1
+                (1 row)
+                
+                SELECT CAST(INTERVAL '-1 02' DAYS TO HOURS AS VARCHAR);
+                 x
+                ---
+                 -1 02
+                (1 row)
+                
+                SELECT CAST(INTERVAL '-1 02:03' DAYS TO MINUTES AS VARCHAR);
+                 x
+                ---
+                 -1 02:03
+                (1 row)
+                
+                SELECT CAST(INTERVAL '-2:03' HOURS TO MINUTES AS VARCHAR);
+                 x
+                ---
+                 -2:03
+                (1 row)
+                
+                SELECT CAST(INTERVAL '-2' HOURS AS VARCHAR);
+                 x
+                ---
+                 -2
+                (1 row)
+                
+                SELECT CAST(INTERVAL '-3' MINUTES AS VARCHAR);
+                 x
+                ---
+                 -3
+                (1 row)
+                
+                SELECT CAST(INTERVAL '-02:03:04.5' HOURS TO SECONDS AS VARCHAR);
+                 x
+                ---
+                 -2:03:04.000000
+                (1 row)
+                
+                SELECT CAST(INTERVAL '-4.000' SECONDS AS VARCHAR);
+                 x
+                ---
+                 -4.000000
                 (1 row)""");
     }
 

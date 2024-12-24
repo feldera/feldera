@@ -1467,16 +1467,23 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
             case TIMESTAMP_DIFF:
                 return compileKeywordFunction(call, node, null, type, ops, 0, 3);
             case TUMBLE: {
-                if (ops.size() >= 2) {
-                    DBSPExpression op = ops.get(1);
-                    if (op.getType().is(DBSPTypeMonthsInterval.class)) {
-                        throw new UnsupportedException(
-                                "Tumbling window intervals must be 'short' SQL intervals (days and lower)",
-                                op.getNode());
-                    }
+                validateArgCount(node, operationName, ops.size(), 2, 3);
+                DBSPExpression op = ops.get(1);
+                if (op.getType().is(DBSPTypeMonthsInterval.class)) {
+                    throw new UnsupportedException(
+                            "Tumbling window intervals must be 'short' SQL intervals (days and lower)",
+                            op.getNode());
                 }
-                return compilePolymorphicFunction(
-                        "tumble", node, type, ops, 2, 3);
+                DBSPExpression[] args = new DBSPExpression[ops.size()];
+                args[0] = ops.get(0);
+                args[1] = ops.get(1);
+                String typeName = "_" + args[1].getType().to(DBSPTypeBaseType.class).shortName();
+                String functionName = "tumble_" + args[0].getType().baseTypeWithSuffix() + typeName;
+                if (ops.size() == 3) {
+                    args[2] = ops.get(2);
+                    functionName += "_" + args[2].getType().to(DBSPTypeBaseType.class).shortName();
+                }
+                return new DBSPApplyExpression(node, functionName, type, args);
             }
             case ARRAY_LENGTH:
             case ARRAY_SIZE: {

@@ -289,24 +289,24 @@ Long intervals support EXTRACT of values between MILLENIUM and MONTHS.
 
 The following arithmetic operations are supported:
 
-| Operation                     | Result Type        | Explanation                                                      |
-|-------------------------------|--------------------|------------------------------------------------------------------|
-| `DATE` `+` `INTERVAL`         | `DATE`             | Add an interval to a date                                        |
-| (`DATE` `-` `DATE`) DAYS      | `INTERVAL`         | Compute the difference between two dates as a short interval     |
-| (`DATE` `-` `DATE`) MONTHS    | `INTERVAL`         | Compute the difference between two dates as a long interval      |
-| (`TIME` `-` `TIME`) SECONDS   | `INTERVAL`         | Compute the difference between two times as a short interval     |
-| `INTERVAL` `+` `INTERVAL`     | `INTERVAL`         | Add two intervals; both must have the same type                  |
-| `TIMESTAMP` `+` `INTERVAL`    | `TIMESTAMP`        | Add an interval to a timestamp                                   |
-| `TIME` `+` `INTERVAL`         | `TIME`             | Add an interval to a time. Performs wrapping addition.           |
-| `-` `INTERVAL`                | `INTERVAL`         | Negate an interval                                               |
-| `DATE` `-` `INTERVAL`         | `DATE`             | Subtract an interval from a date                                 |
-| `TIME` `-` `INTERVAL`         | `TIME`             | Subtract an interval from a time. Performs wrapping subtraction. |
-| `TIMESTAMP` `-` `INTERVAL`    | `TIMESTAMP`        | Subtract an interval from a timestamp                            |
-| (`TIMESTAMP` `-` `TIMESTAMP`) SECONDS | `INTERVAL` | Compute the difference between two timestamps as a short interval|
-| (`TIMESTAMP` `-` `TIMESTAMP`) MONTHS  | `INTERVAL` | Compute the difference between two timestamps as a long interval |
-| `INTERVAL` `-` `INTERVAL`     | `INTERVAL`         | Subtract two intervals                                           |
-| `INTERVAL` `*` `DOUBLE`       | `INTERVAL`         | Multiply an interval by a scalar                                 |
-| `INTERVAL` `/` `DOUBLE`       | `INTERVAL`         | Divide an interval by a scalar                                   |
+| Operation                         | Result Type        | Explanation                                                      |
+|-----------------------------------|--------------------|------------------------------------------------------------------|
+| _date_ `+` _interval_             | `DATE`             | Add an interval to a date                                        |
+| (_date_ `-` _date_) shortInterval | `INTERVAL`         | Compute the difference between two dates as a short interval     |
+| (_date_ `-` _date_) longInterval  | `INTERVAL`         | Compute the difference between two dates as a long interval      |
+| (_time_ `-` _time_) shortInterval | `INTERVAL`         | Compute the difference between two times as a short interval     |
+| _interval_ `+` _interval_         | `INTERVAL`         | Add two intervals; both must have the same type                  |
+| _timestamp_ `+` _interval_        | `TIMESTAMP`        | Add an interval to a timestamp                                   |
+| _time_ `+` _interval_             | `TIME`             | Add an interval to a time. Performs wrapping addition.           |
+| `-` _interval_                    | `INTERVAL`         | Negate an interval                                               |
+| _date_ `-` _interval_             | `DATE`             | Subtract an interval from a date                                 |
+| _time_ `-` _interval_             | `TIME`             | Subtract an interval from a time. Performs wrapping subtraction. |
+| _timestamp_ `-` _interval_        | `TIMESTAMP`        | Subtract an interval from a timestamp                            |
+| (_timestamp_ `-` _timestamp_) shortInterval | `INTERVAL` | Compute the difference between two timestamps as a short interval|
+| (`TIMESTAMP` `-` `TIMESTAMP`) longInterval  | `INTERVAL` | Compute the difference between two timestamps as a long interval |
+| _interval_ `-` _interval_         | `INTERVAL`         | Subtract two intervals                                           |
+| _interval_ `*` _double_           | `INTERVAL`         | Multiply an interval by a scalar                                 |
+| _interval_ `/` _double_           | `INTERVAL`         | Divide an interval by a scalar                                   |
 
 Arithmetic involving a `TIME` value always produces a (positive)
 `TIME` value, between `00:00:00` (inclusive) and `24:00:00`

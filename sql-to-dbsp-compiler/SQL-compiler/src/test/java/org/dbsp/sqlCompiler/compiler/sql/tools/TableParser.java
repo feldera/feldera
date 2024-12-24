@@ -270,10 +270,12 @@ public class TableParser {
             };
         } else if (fieldType.is(DBSPTypeMillisInterval.class)) {
             long value = shortIntervalToMilliseconds(trimmed);
-            result = new DBSPIntervalMillisLiteral(value, fieldType.mayBeNull);
+            result = new DBSPIntervalMillisLiteral(
+                    fieldType.to(DBSPTypeMillisInterval.class).units, value, fieldType.mayBeNull);
         } else if (fieldType.is(DBSPTypeMonthsInterval.class)) {
             int months = longIntervalToMonths(trimmed);
-            result = new DBSPIntervalMonthsLiteral(fieldType.to(DBSPTypeMonthsInterval.class).units, months);
+            result = new DBSPIntervalMonthsLiteral(
+                    fieldType.to(DBSPTypeMonthsInterval.class).units, months, fieldType.mayBeNull);
         } else if (fieldType.is(DBSPTypeString.class)) {
             // If there is no space in front of the string, we expect a NULL.
             // This is how we distinguish empty strings from nulls.

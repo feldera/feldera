@@ -251,16 +251,25 @@ public class TypeCompiler implements ICompilerComponent {
                 case INTERVAL_MONTH:
                     return new DBSPTypeMonthsInterval(node, DBSPTypeMonthsInterval.Units.MONTHS, nullable);
                 case INTERVAL_DAY:
+                    return new DBSPTypeMillisInterval(node, DBSPTypeMillisInterval.Units.DAYS, nullable);
                 case INTERVAL_DAY_HOUR:
+                    return new DBSPTypeMillisInterval(node, DBSPTypeMillisInterval.Units.DAYS_TO_HOURS, nullable);
                 case INTERVAL_DAY_MINUTE:
+                    return new DBSPTypeMillisInterval(node, DBSPTypeMillisInterval.Units.DAYS_TO_MINUTES, nullable);
                 case INTERVAL_DAY_SECOND:
+                    return new DBSPTypeMillisInterval(node, DBSPTypeMillisInterval.Units.DAYS_TO_SECONDS, nullable);
                 case INTERVAL_HOUR:
+                    return new DBSPTypeMillisInterval(node, DBSPTypeMillisInterval.Units.HOURS, nullable);
                 case INTERVAL_HOUR_MINUTE:
+                    return new DBSPTypeMillisInterval(node, DBSPTypeMillisInterval.Units.HOURS_TO_MINUTES, nullable);
                 case INTERVAL_HOUR_SECOND:
+                    return new DBSPTypeMillisInterval(node, DBSPTypeMillisInterval.Units.HOURS_TO_SECONDS, nullable);
                 case INTERVAL_MINUTE:
+                    return new DBSPTypeMillisInterval(node, DBSPTypeMillisInterval.Units.MINUTES, nullable);
                 case INTERVAL_MINUTE_SECOND:
+                    return new DBSPTypeMillisInterval(node, DBSPTypeMillisInterval.Units.MINUTES_TO_SECONDS, nullable);
                 case INTERVAL_SECOND:
-                    return new DBSPTypeMillisInterval(node, nullable);
+                    return new DBSPTypeMillisInterval(node, DBSPTypeMillisInterval.Units.SECONDS, nullable);
                 case GEOMETRY:
                     return new DBSPTypeGeoPoint(node, nullable);
                 case TIMESTAMP:

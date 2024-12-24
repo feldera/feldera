@@ -13,13 +13,6 @@ public class TimestampdiffTests extends SqlIoTest {
                 FROM time_tbl;""");
     }
 
-    @Test
-    public void issue3132() {
-        this.statementsFailingInCompilation(
-                "CREATE VIEW V AS SELECT (DATE '2020-01-01' - DATE '2019-01-01') YEAR",
-                "Unsupported interval: Interval type 'YEAR' not supported for difference operator");
-    }
-
     // Test data obtained from
     // https://github.com/mysql/mysql-server/blob/mysql-test/r/func_time.result#L715
     @Test

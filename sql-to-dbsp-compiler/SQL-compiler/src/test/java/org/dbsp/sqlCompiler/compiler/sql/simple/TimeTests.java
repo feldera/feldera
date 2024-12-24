@@ -38,6 +38,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntervalMonthsLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimestampLiteral;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMillisInterval;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMonthsInterval;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
 import org.junit.Test;
@@ -100,30 +101,38 @@ public class TimeTests extends BaseSQLTests {
         this.testQuery("SELECT INTERVAL '10' MONTH",
                 new DBSPIntervalMonthsLiteral(DBSPTypeMonthsInterval.Units.MONTHS, 10));
         this.testQuery("SELECT INTERVAL '10' DAY",
-                new DBSPIntervalMillisLiteral(10L * 86400 * 1000, false));
+                new DBSPIntervalMillisLiteral(DBSPTypeMillisInterval.Units.DAYS, 10L * 86400 * 1000, false));
         this.testQuery("SELECT INTERVAL '10 10' DAY TO HOUR",
-                new DBSPIntervalMillisLiteral(10L * 86400 * 1000 + 10 * 3600 * 1000, false));
+                new DBSPIntervalMillisLiteral(DBSPTypeMillisInterval.Units.DAYS_TO_HOURS, 10L * 86400 * 1000 + 10 * 3600 * 1000, false));
         this.testQuery("SELECT INTERVAL '10 10:30' DAY TO MINUTE",
-                new DBSPIntervalMillisLiteral(10L * 86400 * 1000 + 10 * 3600 * 1000 + 30 * 60 * 1000, false));
+                new DBSPIntervalMillisLiteral(DBSPTypeMillisInterval.Units.DAYS_TO_MINUTES, 10L * 86400 * 1000 + 10 * 3600 * 1000 + 30 * 60 * 1000, false));
         this.testQuery("SELECT INTERVAL '10 10:30:40.999' DAY TO SECOND",
-                new DBSPIntervalMillisLiteral(
+                new DBSPIntervalMillisLiteral(DBSPTypeMillisInterval.Units.DAYS_TO_SECONDS,
                         10L * 86400 * 1000 + 10 * 3600 * 1000 + 30 * 60 * 1000 + 40999, false));
         this.testQuery("SELECT INTERVAL '12' HOUR",
-                new DBSPIntervalMillisLiteral(12L * 3600 * 1000, false));
+                new DBSPIntervalMillisLiteral(DBSPTypeMillisInterval.Units.HOURS,
+                        12L * 3600 * 1000, false));
         this.testQuery("SELECT INTERVAL '12:10' HOUR TO MINUTE",
-                new DBSPIntervalMillisLiteral(12L * 3600 * 1000 + 10 * 60 * 1000, false));
+                new DBSPIntervalMillisLiteral(DBSPTypeMillisInterval.Units.HOURS_TO_MINUTES,
+                        12L * 3600 * 1000 + 10 * 60 * 1000, false));
         this.testQuery("SELECT INTERVAL '12:10:59' HOUR TO SECOND",
-                new DBSPIntervalMillisLiteral(12L * 3600 * 1000 + 10 * 60 * 1000 + 59000, false));
+                new DBSPIntervalMillisLiteral(DBSPTypeMillisInterval.Units.HOURS_TO_SECONDS,
+                        12L * 3600 * 1000 + 10 * 60 * 1000 + 59000, false));
         this.testQuery("SELECT INTERVAL '10' MINUTE",
-                new DBSPIntervalMillisLiteral(10L * 60 * 1000, false));
+                new DBSPIntervalMillisLiteral(
+                        DBSPTypeMillisInterval.Units.MINUTES, 10L * 60 * 1000, false));
         this.testQuery("SELECT INTERVAL '80:01.001' MINUTE TO SECOND",
-                new DBSPIntervalMillisLiteral(80L * 60 * 1000 + 1001, false));
+                new DBSPIntervalMillisLiteral(
+                        DBSPTypeMillisInterval.Units.MINUTES_TO_SECONDS, 80L * 60 * 1000 + 1001, false));
         this.testQuery("SELECT INTERVAL '80.001' SECOND",
-                new DBSPIntervalMillisLiteral(80001, false));
+                new DBSPIntervalMillisLiteral(
+                        DBSPTypeMillisInterval.Units.SECONDS, 80001, false));
         this.testQuery("SELECT INTERVAL '100' HOUR(3)",
-                new DBSPIntervalMillisLiteral(100L * 3600 * 1000, false));
+                new DBSPIntervalMillisLiteral(
+                        DBSPTypeMillisInterval.Units.HOURS, 100L * 3600 * 1000, false));
         this.testQuery("SELECT INTERVAL '-1 2:03:04' DAYS TO SECONDS",
-                new DBSPIntervalMillisLiteral(-(86400L * 1000 + 2 * 3600 * 1000 + 3 * 60 * 1000 + 4000), false));
+                new DBSPIntervalMillisLiteral(
+                        DBSPTypeMillisInterval.Units.DAYS_TO_SECONDS, -(86400L * 1000 + 2 * 3600 * 1000 + 3 * 60 * 1000 + 4000), false));
     }
 
     @Test
