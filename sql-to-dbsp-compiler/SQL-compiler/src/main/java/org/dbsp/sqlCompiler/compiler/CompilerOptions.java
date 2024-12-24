@@ -29,7 +29,6 @@ import com.beust.jcommander.ParametersDelegate;
 import org.apache.calcite.avatica.util.Casing;
 import org.apache.calcite.config.Lex;
 import org.apache.calcite.sql.parser.SqlParserUtil;
-import org.apache.calcite.tools.Program;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.util.IDiff;
 import org.dbsp.util.SqlLexicalRulesConverter;
@@ -39,7 +38,7 @@ import javax.annotation.Nullable;
 import java.util.HashMap;
 import java.util.Map;
 
-/** Packages options for a compiler from SQL to Rust. */
+/** Command-line options for the SQL compiler */
 @SuppressWarnings("CanBeFinal")
 // These fields cannot be final, since JCommander writes them through reflection.
 public class CompilerOptions implements IDiff<CompilerOptions> {
@@ -197,10 +196,13 @@ public class CompilerOptions implements IDiff<CompilerOptions> {
         @Parameter(names = "--sqlnames", hidden = true,
                 description = "Use the table names as identifiers in the generated code")
         public boolean sqlNames = false;
+        @Parameter(names = "--trimInputs", description = "Do not ingest unused fields of input tables")
+        public boolean trimInputs = false;
 
         /** Only compare fields that matter. */
         public boolean same(IO other) {
-            return this.emitHandles == other.emitHandles;
+            return this.emitHandles == other.emitHandles &&
+                    this.trimInputs == other.trimInputs;
         }
 
         @Override
@@ -215,6 +217,7 @@ public class CompilerOptions implements IDiff<CompilerOptions> {
                     ", emitJsonErrors=" + this.emitJsonErrors +
                     ", emitJsonSchema=" + Utilities.singleQuote(this.emitJsonSchema) +
                     ", inputFile=" + Utilities.singleQuote(this.inputFile) +
+                    ", trimInputs=" + this.trimInputs +
                     ", verbosity=" + this.verbosity +
                     '}';
         }
@@ -225,7 +228,9 @@ public class CompilerOptions implements IDiff<CompilerOptions> {
                 return "";
             return "IO{" +
                     (this.emitHandles != other.emitHandles ? ".emitHandles=" +
-                            this.emitHandles + "!=" + other.emitHandles: "") +
+                            this.emitHandles + "!=" + other.emitHandles: "")
+                    + (this.trimInputs != other.trimInputs ? ".trimInputs=" +
+                            this.trimInputs + "!=" + other.trimInputs: "") +
                     "}";
         }
     }

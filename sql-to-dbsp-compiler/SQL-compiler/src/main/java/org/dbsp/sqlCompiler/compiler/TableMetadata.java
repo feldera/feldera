@@ -6,14 +6,16 @@ import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 
 /** Metadata describing an input table. */
 public class TableMetadata {
-    final ProgramIdentifier tableName;
+    public final ProgramIdentifier tableName;
     final LinkedHashMap<ProgramIdentifier, InputColumnMetadata> columnMetadata;
+    final List<ProgramIdentifier> columnNames;
     final List<ForeignKey> foreignKeys;
     public final boolean materialized;
     final TableChanges changes;
@@ -34,9 +36,15 @@ public class TableMetadata {
         this.materialized = materialized;
         this.foreignKeys = foreignKeys;
         this.changes = streaming ? TableChanges.AppendOnly : TableChanges.Unrestricted;
+        this.columnNames = new ArrayList<>();
         for (InputColumnMetadata meta: columns) {
             Utilities.putNew(this.columnMetadata, meta.name, meta);
+            this.columnNames.add(meta.name);
         }
+    }
+
+    public boolean isStreaming() {
+        return this.changes == TableChanges.AppendOnly;
     }
 
     public List<ForeignKey> getForeignKeys() {
@@ -61,6 +69,11 @@ public class TableMetadata {
     @Nullable
     public InputColumnMetadata getColumnMetadata(ProgramIdentifier column) {
         return this.columnMetadata.get(column);
+    }
+
+    public InputColumnMetadata getColumnMetadata(int index) {
+        ProgramIdentifier id = this.columnNames.get(index);
+        return this.columnMetadata.get(id);
     }
 
     public int getColumnCount() { return this.columnMetadata.size(); }
