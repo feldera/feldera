@@ -17,9 +17,9 @@ class arithtst_date_minus_date_res(TstView):
     def __init__(self):
         # Validated on MySQL
         self.data = [
-            {'id': 0, 'seconds_res': 318211200, 'days': 3683, 'months': 121},
-            {'id': 1, 'seconds_res': -84672000, 'days': -980, 'months': -32},
-            {'id': 2, 'seconds_res': 648518400, 'days': 7506, 'months': 246}
+            {"id": 0, "seconds_res": 318211200, "days": 3683, "months": 121},
+            {"id": 1, "seconds_res": -84672000, "days": -980, "months": -32},
+            {"id": 2, "seconds_res": 648518400, "days": 7506, "months": 246},
         ]
         self.sql = """CREATE MATERIALIZED VIEW date_minus_date_res AS SELECT
                       id,
@@ -42,10 +42,24 @@ class arithtst_date_minus_interval(TstView):
     def __init__(self):
         # Validated on MySQL
         self.data = [
-            {'id': 0, 'seconds_c1': '2014-11-05', 'days_c1': '2014-11-05', 'months_c1': '2014-11-05'},
-            {'id': 1, 'seconds_c1': '2023-02-26', 'days_c1': '2023-02-26', 'months_c1': '2023-02-21'},
-            {'id': 2, 'seconds_c1': '1948-12-02', 'days_c1': '1948-12-02', 'months_c1': '1948-12-21'}
-
+            {
+                "id": 0,
+                "seconds_c1": "2014-11-05",
+                "days_c1": "2014-11-05",
+                "months_c1": "2014-11-05",
+            },
+            {
+                "id": 1,
+                "seconds_c1": "2023-02-26",
+                "days_c1": "2023-02-26",
+                "months_c1": "2023-02-21",
+            },
+            {
+                "id": 2,
+                "seconds_c1": "1948-12-02",
+                "days_c1": "1948-12-02",
+                "months_c1": "1948-12-21",
+            },
         ]
         self.sql = """CREATE MATERIALIZED VIEW date_minus_interval AS SELECT
                       v1.id,
@@ -60,9 +74,24 @@ class arithtst_date_plus_interval(TstView):
     def __init__(self):
         # Validated on MySQL
         self.data = [
-            {'id': 0, 'seconds_c1': '2024-12-05', 'days_c1': '2024-12-05', 'months_c2': '2024-12-05'},
-            {'id': 1, 'seconds_c1': '2020-06-21', 'days_c1': '2020-06-21', 'months_c2': '2020-06-26'},
-            {'id': 2, 'seconds_c1': '1969-06-21', 'days_c1': '1969-06-21', 'months_c2': '1969-06-02'}
+            {
+                "id": 0,
+                "seconds_c1": "2024-12-05",
+                "days_c1": "2024-12-05",
+                "months_c2": "2024-12-05",
+            },
+            {
+                "id": 1,
+                "seconds_c1": "2020-06-21",
+                "days_c1": "2020-06-21",
+                "months_c2": "2020-06-26",
+            },
+            {
+                "id": 2,
+                "seconds_c1": "1969-06-21",
+                "days_c1": "1969-06-21",
+                "months_c2": "1969-06-02",
+            },
         ]
         self.sql = """CREATE MATERIALIZED VIEW date_plus_interval AS SELECT
                       v1.id,
@@ -81,8 +110,7 @@ class arithtst_date_plus_interval(TstView):
 class arithtst_neg_date(TstView):
     def __init__(self):
         # Result validation is not required for local views
-        self.data = [
-        ]
+        self.data = []
         self.sql = """CREATE LOCAL VIEW neg_date AS SELECT
                       id,
                       (-seconds) AS seconds_neg,
@@ -95,9 +123,9 @@ class arithtst_neg_date_res(TstView):
     def __init__(self):
         # checked manually
         self.data = [
-            {'id': 0, 'f_c1': -318211200, 'f_c2': -3683, 'f_c3': -121},
-            {'id': 1, 'f_c1': 84672000, 'f_c2': 980, 'f_c3': 32},
-            {'id': 2, 'f_c1': -648518400, 'f_c2': -7506, 'f_c3': -246}
+            {"id": 0, "f_c1": -318211200, "f_c2": -3683, "f_c3": -121},
+            {"id": 1, "f_c1": 84672000, "f_c2": 980, "f_c3": 32},
+            {"id": 2, "f_c1": -648518400, "f_c2": -7506, "f_c3": -246},
         ]
         self.sql = """CREATE MATERIALIZED VIEW neg_date_res AS SELECT
                       id,

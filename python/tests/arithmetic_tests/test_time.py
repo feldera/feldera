@@ -34,8 +34,8 @@ class arithtst_time_minus_interval(TstView):
     def __init__(self):
         # Validated on Postgres
         self.data = [
-            {'id': 0, 'min': '18:20:00', 'hour': '08:45:00', 'sec': '12:45:00'},
-            {'id': 1, 'min': '07:50:00', 'hour': '10:00:00', 'sec': '14:00:00'}
+            {"id": 0, "min": "18:20:00", "hour": "08:45:00", "sec": "12:45:00"},
+            {"id": 1, "min": "07:50:00", "hour": "10:00:00", "sec": "14:00:00"},
         ]
         self.sql = """CREATE MATERIALIZED VIEW time_minus_interval AS SELECT
                       v2.id,
@@ -50,8 +50,8 @@ class arithtst_time_plus_interval(TstView):
     def __init__(self):
         # Validated on Postgres
         self.data = [
-            {'id': 0, 'min': '18:40:00', 'hour': '16:45:00', 'sec': '00:15:00'},
-            {'id': 1, 'min': '08:10:00', 'hour': '18:00:00', 'sec': '02:00:00'}
+            {"id": 0, "min": "18:40:00", "hour": "16:45:00", "sec": "00:15:00"},
+            {"id": 1, "min": "08:10:00", "hour": "18:00:00", "sec": "02:00:00"},
         ]
         self.sql = """CREATE MATERIALIZED VIEW time_plus_interval AS SELECT
                       v2.id,
