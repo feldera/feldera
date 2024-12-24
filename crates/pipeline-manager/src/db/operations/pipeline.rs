@@ -11,6 +11,7 @@ use crate::db::types::program::{
     validate_program_status_transition, ProgramConfig, ProgramInfo, ProgramStatus,
 };
 use crate::db::types::tenant::TenantId;
+use crate::runner::interaction::ENDPOINT_LOCATION_CACHE;
 use deadpool_postgres::Transaction;
 use feldera_types::config::{PipelineConfig, RuntimeConfig};
 use feldera_types::error::ErrorResponse;
@@ -528,6 +529,10 @@ pub(crate) async fn set_deployment_status(
     new_deployment_config: Option<PipelineConfig>,
     new_deployment_location: Option<String>,
 ) -> Result<(), DBError> {
+    // Clear the entire cache, this is too coarse grained, but we don't have the pipeline_name
+    // here, and it is not that critical to have a more fine-grained cache invalidation.
+    ENDPOINT_LOCATION_CACHE.write().unwrap().clear();
+
     let current = get_pipeline_by_id(txn, tenant_id, pipeline_id).await?;
 
     // Due to early start, the following do not require a successfully compiled program:
