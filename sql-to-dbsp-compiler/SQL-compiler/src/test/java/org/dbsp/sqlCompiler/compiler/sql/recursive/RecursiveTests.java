@@ -11,6 +11,17 @@ import org.junit.Test;
 /** Tests with recursive queries */
 public class RecursiveTests extends BaseSQLTests {
     @Test
+    public void issue2977() {
+        this.statementsFailingInCompilation("""
+            DECLARE RECURSIVE VIEW V(x integer, y VARCHAR);
+            CREATE VIEW V AS SELECT y, x FROM V;""", """
+                does not match the declared type v(x INTEGER, y VARCHAR):
+                    1|DECLARE RECURSIVE VIEW V(x integer, y VARCHAR);
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                    2|CREATE VIEW V AS SELECT y, x FROM V;""");
+    }
+
+    @Test
     public void issue2979() {
         String sql = """
                 -- Given a cell value as a formula (e.g., =A0+B0), and a context with cell values
