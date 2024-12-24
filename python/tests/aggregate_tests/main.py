@@ -140,11 +140,13 @@ from tests.aggregate_tests.test_map_every import *  # noqa: F403
 from tests.aggregate_tests.test_row_arg_max import *  # noqa: F403
 from tests.aggregate_tests.test_row_arg_min import *  # noqa: F403
 from tests.aggregate_tests.test_row_arr_agg import *  # noqa: F403
+from tests.aggregate_tests.test_row_count_col import *  # noqa: F403
 from tests.aggregate_tests.test_row_max import *  # noqa: F403
 from tests.aggregate_tests.test_row_min import *  # noqa: F403
 from tests.aggregate_tests.test_row_some import *  # noqa: F403
 from tests.aggregate_tests.test_row_every import *  # noqa: F403
 from tests.aggregate_tests.test_row_tbl import *  # noqa: F403
+from tests.aggregate_tests.test_empty_set import *  # noqa: F403
 
 
 def register_tests_in_module(module, ta: TstAccumulator):
