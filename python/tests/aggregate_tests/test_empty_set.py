@@ -80,7 +80,7 @@ class aggtst_arr_agg_emp_test(TstView):
 
 class aggtst_avg_emp_test(TstView):
     def __init__(self):
-        self.data = [{'c1_avg': None, 'c2_avg': None}]
+        self.data = [{"c1_avg": None, "c2_avg": None}]
         self.sql = """CREATE MATERIALIZED VIEW avg_emp AS SELECT
                       AVG(c1) FILTER(WHERE c1 < 1) AS c1_avg,
                       AVG(c2) FILTER(WHERE c2 < 2) AS c2_avg
@@ -89,7 +89,7 @@ class aggtst_avg_emp_test(TstView):
 
 class aggtst_sum_emp_test(TstView):
     def __init__(self):
-        self.data = [{'sum': None}]
+        self.data = [{"sum": None}]
         self.sql = """CREATE MATERIALIZED VIEW sum_emp AS SELECT
                       SUM(c1) FILTER(WHERE c1 < 1) AS sum
                       FROM int_tbl"""
@@ -97,7 +97,7 @@ class aggtst_sum_emp_test(TstView):
 
 class aggtst_stdev_samp_emp_test(TstView):
     def __init__(self):
-        self.data = [{'stdev_samp': None}]
+        self.data = [{"stdev_samp": None}]
         self.sql = """CREATE MATERIALIZED VIEW stdev_samp_emp AS SELECT
                       STDDEV_SAMP(c1) FILTER(WHERE c1 < 1) AS stdev_samp
                       FROM int_tbl"""
@@ -105,7 +105,7 @@ class aggtst_stdev_samp_emp_test(TstView):
 
 class aggtst_stdev_pop_emp_test(TstView):
     def __init__(self):
-        self.data = [{'stdev_pop': None}]
+        self.data = [{"stdev_pop": None}]
         self.sql = """CREATE MATERIALIZED VIEW stdev_pop_emp AS SELECT
                       STDDEV_POP(c1) AS stdev_pop
                       FROM int_tbl
