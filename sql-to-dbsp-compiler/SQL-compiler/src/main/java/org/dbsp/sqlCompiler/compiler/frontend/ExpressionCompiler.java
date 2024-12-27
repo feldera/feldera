@@ -238,13 +238,25 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                         node, type, Objects.requireNonNull(literal.getValueAs(BigDecimal.class)));
             else if (type.is(DBSPTypeKeyword.class))
                 return new DBSPKeywordLiteral(node, Objects.requireNonNull(literal.getValue()).toString());
-            else if (type.is(DBSPTypeMillisInterval.class))
-                return new DBSPIntervalMillisLiteral(node, type, Objects.requireNonNull(
-                        literal.getValueAs(BigDecimal.class)).longValue());
-            else if (type.is(DBSPTypeMonthsInterval.class))
-                return new DBSPIntervalMonthsLiteral(node, type, Objects.requireNonNull(
-                        literal.getValueAs(Integer.class)));
-            else if (type.is(DBSPTypeTimestamp.class)) {
+            else if (type.is(DBSPTypeMillisInterval.class)) {
+                long value = Objects.requireNonNull(literal.getValueAs(BigDecimal.class)).longValue();
+                value = switch (type.to(DBSPTypeMillisInterval.class).units) {
+                    case DAYS -> value * 86400 * 1000;
+                    case DAYS_TO_HOURS, HOURS -> value * 3600 * 1000;
+                    case DAYS_TO_MINUTES, HOURS_TO_MINUTES, MINUTES -> value * 60 * 1000;
+                    case DAYS_TO_SECONDS, HOURS_TO_SECONDS, MINUTES_TO_SECONDS, SECONDS -> value * 1000;
+                };
+                return new DBSPIntervalMillisLiteral(node, type, value);
+            }
+            else if (type.is(DBSPTypeMonthsInterval.class)) {
+                int value = Objects.requireNonNull(literal.getValueAs(Integer.class));
+                value = switch (type.to(DBSPTypeMonthsInterval.class).units) {
+                    case MONTHS -> value;
+                    case YEARS -> 12 * value;
+                    default -> value; // Unclear why this is so.
+                };
+                return new DBSPIntervalMonthsLiteral(node, type, value);
+            } else if (type.is(DBSPTypeTimestamp.class)) {
                 return new DBSPTimestampLiteral(node, type,
                         Objects.requireNonNull(literal.getValueAs(TimestampString.class)));
             } else if (type.is(DBSPTypeDate.class)) {

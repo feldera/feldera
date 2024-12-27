@@ -10,7 +10,7 @@ use dbsp::algebra::{HasOne, HasZero, F32, F64};
 use lazy_static::lazy_static;
 use num::{FromPrimitive, One, ToPrimitive, Zero};
 use num_traits::cast::NumCast;
-use regex::Regex;
+use regex::{Captures, Regex};
 use rust_decimal::{Decimal, RoundingStrategy};
 use std::collections::BTreeMap;
 use std::error::Error;
@@ -1902,7 +1902,7 @@ pub fn cast_to_ShortInterval_SECONDS_i32(value: i32) -> ShortInterval {
 #[doc(hidden)]
 #[inline]
 pub fn cast_to_ShortInterval_SECONDS_i64(value: i64) -> ShortInterval {
-    ShortInterval::new(value * 60 * 1000)
+    ShortInterval::new(value * 1000)
 }
 
 cast_function!(ShortInterval_DAYS, ShortInterval, i8, i8);
@@ -1921,14 +1921,6 @@ cast_function!(ShortInterval_SECONDS, ShortInterval, i8, i8);
 cast_function!(ShortInterval_SECONDS, ShortInterval, i16, i16);
 cast_function!(ShortInterval_SECONDS, ShortInterval, i32, i32);
 cast_function!(ShortInterval_SECONDS, ShortInterval, i64, i64);
-
-#[doc(hidden)]
-#[inline]
-pub fn cast_to_ShortInterval_s(_value: String) -> ShortInterval {
-    panic!("Not yet implemented")
-}
-
-cast_function!(ShortInterval, ShortInterval, s, String);
 
 //////// casts to ShortIntervalN
 
@@ -2005,33 +1997,38 @@ pub fn cast_to_LongInterval_YEARS_s(value: String) -> LongInterval {
 }
 
 lazy_static! {
-    static ref YEARS_TO_MONTHS: Regex = Regex::new(r"^(-?\d+)-(\d+)$").unwrap();
+    static ref YEARS_TO_MONTHS: Regex = Regex::new(r"^(-?\d+)(-(\d+))?$").unwrap();
 }
 
 #[doc(hidden)]
 #[inline]
 pub fn cast_to_LongInterval_YEARS_TO_MONTHS_s(value: String) -> LongInterval {
     if let Some(captures) = YEARS_TO_MONTHS.captures(&value) {
-        let years: i32 = captures
-            .get(1)
-            .unwrap()
-            .as_str()
+        let yearcap = captures.get(1).unwrap().as_str();
+        let mut years: i32 = yearcap
             .parse()
-            .expect("YEARS IS not a number.");
-        let months: i32 = captures
-            .get(2)
-            .unwrap()
-            .as_str()
-            .parse()
-            .expect("MONTHS is not a number.");
+            .unwrap_or_else(|_| panic!("YEARS IS not a number: {yearcap}."));
+        let months: i32;
+        match captures.get(2) {
+            None => {
+                months = years;
+                years = 0;
+            }
+            _ => {
+                let monthcap = captures.get(3).unwrap().as_str();
+                months = monthcap
+                    .parse()
+                    .expect("MONTHS is not a number: {monthcap}.");
+            }
+        }
         let months = if years < 0 {
-            years - months
+            12 * years - months
         } else {
-            years + months
+            12 * years + months
         };
         LongInterval::new(months)
     } else {
-        panic!("Interval does not have format 'years-months'");
+        panic!("Interval '{value}' does not have format 'years-months'");
     }
 }
 
@@ -2061,64 +2058,175 @@ pub fn cast_to_ShortInterval_ShortInterval(value: ShortInterval) -> ShortInterva
 cast_function!(LongInterval, LongInterval, LongInterval, LongInterval);
 cast_function!(ShortInterval, ShortInterval, ShortInterval, ShortInterval);
 
+lazy_static! {
+    static ref DAYS_TO_SECONDS: Regex =
+        Regex::new(r"^(-)?(\d+)( \d{1,2})(:(\d{1,2})(:(\d{1,2})([.](\d{1,6}))?)?)?$").unwrap();
+    static ref DAYS_TO_MINUTES: Regex = Regex::new(r"^(-)?(\d+)( \d{1,2})(:(\d{1,2}))?$").unwrap();
+    static ref DAYS_TO_HOURS: Regex = Regex::new(r"^(-)?(\d+)( \d{1,2})?$").unwrap();
+    static ref HOURS_TO_SECONDS: Regex =
+        Regex::new(r"^(-)?(\d{1,2})(:(\d{1,2})(:(\d{1,2})([.](\d{1,6}))?)?)?$").unwrap();
+    static ref HOURS_TO_MINUTES: Regex = Regex::new(r"^(-)?(\d{1,2})(:(\d{1,2}))?$").unwrap();
+    static ref MINUTES_TO_SECONDS: Regex =
+        Regex::new(r"^(-)?(\d{1,2})(:(\d{1,2})([.](\d{1,6}))?)?$").unwrap();
+}
+
 #[doc(hidden)]
 #[inline]
-pub fn cast_to_ShortInterval_DAYS_s(_values: String) -> ShortInterval {
+pub fn cast_to_ShortInterval_DAYS_s(value: String) -> ShortInterval {
+    let value: i64 = value.parse().unwrap();
+    cast_to_ShortInterval_DAYS_i64(value)
+}
+
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_ShortInterval_HOURS_s(value: String) -> ShortInterval {
+    let value: i64 = value.parse().unwrap();
+    cast_to_ShortInterval_HOURS_i64(value)
+}
+
+#[doc(hidden)]
+pub fn negative(captures: &Captures) -> bool {
+    captures.get(1).is_some()
+}
+
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_ShortInterval_DAYS_TO_HOURS_s(value: String) -> ShortInterval {
+    if let Some(captures) = DAYS_TO_HOURS.captures(&value) {
+        let negative = negative(&captures);
+        let daycap = captures.get(2).unwrap().as_str();
+        let mut days: i64 = daycap
+            .parse()
+            .unwrap_or_else(|_| panic!("DAYS is not a number: {}", daycap));
+        let hours: i64;
+        match captures.get(3) {
+            None => {
+                hours = days;
+                days = 0;
+            }
+            Some(_) => {
+                let hourcap = captures.get(3).unwrap().as_str().trim();
+                hours = hourcap
+                    .parse()
+                    .unwrap_or_else(|_| panic!("HOURS is not a number: {}", hourcap));
+            }
+        };
+        let hours = if negative {
+            -days * 24 - hours
+        } else {
+            days * 24 + hours
+        };
+        ShortInterval::new(hours * 3600 * 1000)
+    } else {
+        panic!("Interval '{value}' does not have format 'days hours'");
+    }
+}
+
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_ShortInterval_MINUTES_s(value: String) -> ShortInterval {
+    let value: i64 = value.parse().unwrap();
+    cast_to_ShortInterval_MINUTES_i64(value)
+}
+
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_ShortInterval_DAYS_TO_MINUTES_s(_value: String) -> ShortInterval {
     unimplemented!();
 }
 
 #[doc(hidden)]
 #[inline]
-pub fn cast_to_ShortInterval_HOURS_s(_values: String) -> ShortInterval {
+pub fn cast_to_ShortInterval_HOURS_TO_MINUTES_s(value: String) -> ShortInterval {
+    if let Some(captures) = HOURS_TO_MINUTES.captures(&value) {
+        let negative = negative(&captures);
+        let hcap = captures.get(2).unwrap().as_str();
+        let mut hours: i64 = hcap
+            .parse()
+            .unwrap_or_else(|_| panic!("HOURS is not a number: {}", hcap));
+        let minutes: i64;
+        match captures.get(4) {
+            None => {
+                minutes = hours;
+                hours = 0;
+            }
+            Some(_) => {
+                let mincap = captures.get(4).unwrap().as_str().trim();
+                minutes = mincap
+                    .parse()
+                    .unwrap_or_else(|_| panic!("MINUTES is not a number: {}", mincap));
+            }
+        };
+        let minutes = if negative {
+            -hours * 60 - minutes
+        } else {
+            hours * 60 + minutes
+        };
+        ShortInterval::new(minutes * 60 * 1000)
+    } else {
+        panic!("Interval '{value}' does not have format 'hours:minutes'");
+    }
+}
+
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_ShortInterval_SECONDS_s(value: String) -> ShortInterval {
+    let value: i64 = value.parse().unwrap();
+    cast_to_ShortInterval_SECONDS_i64(value)
+}
+
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_ShortInterval_DAYS_TO_SECONDS_s(_value: String) -> ShortInterval {
     unimplemented!();
 }
 
 #[doc(hidden)]
 #[inline]
-pub fn cast_to_ShortInterval_DAYS_TO_HOURS_s(_values: String) -> ShortInterval {
+pub fn cast_to_ShortInterval_HOURS_TO_SECONDS_s(_value: String) -> ShortInterval {
     unimplemented!();
 }
 
 #[doc(hidden)]
 #[inline]
-pub fn cast_to_ShortInterval_MINUTES_s(_values: String) -> ShortInterval {
-    unimplemented!();
-}
-
-#[doc(hidden)]
-#[inline]
-pub fn cast_to_ShortInterval_DAYS_TO_MINUTES_s(_values: String) -> ShortInterval {
-    unimplemented!();
-}
-
-#[doc(hidden)]
-#[inline]
-pub fn cast_to_ShortInterval_HOURS_TO_MINUTES_s(_values: String) -> ShortInterval {
-    unimplemented!();
-}
-
-#[doc(hidden)]
-#[inline]
-pub fn cast_to_ShortInterval_SECONDS_s(_values: String) -> ShortInterval {
-    unimplemented!();
-}
-
-#[doc(hidden)]
-#[inline]
-pub fn cast_to_ShortInterval_DAYS_TO_SECONDS_s(_values: String) -> ShortInterval {
-    unimplemented!();
-}
-
-#[doc(hidden)]
-#[inline]
-pub fn cast_to_ShortInterval_HOURS_TO_SECONDS_s(_values: String) -> ShortInterval {
-    unimplemented!();
-}
-
-#[doc(hidden)]
-#[inline]
-pub fn cast_to_ShortInterval_MINUTES_TO_SECONDS_s(_values: String) -> ShortInterval {
-    unimplemented!();
+pub fn cast_to_ShortInterval_MINUTES_TO_SECONDS_s(value: String) -> ShortInterval {
+    if let Some(captures) = MINUTES_TO_SECONDS.captures(&value) {
+        let negative = negative(&captures);
+        let mincap = captures.get(2).unwrap().as_str();
+        let mut minutes: i64 = mincap
+            .parse()
+            .unwrap_or_else(|_| panic!("MINUTES is not a number: {}", mincap));
+        let seconds: i64;
+        match captures.get(4) {
+            None => {
+                seconds = minutes;
+                minutes = 0;
+            }
+            Some(_) => {
+                let seccap = captures.get(4).unwrap().as_str().trim();
+                seconds = seccap
+                    .parse()
+                    .unwrap_or_else(|_| panic!("SECONDS is not a number: {}", seccap));
+            }
+        };
+        let ms: i64 = match captures.get(6) {
+            None => 0,
+            Some(_) => {
+                let mscap = captures.get(6).unwrap().as_str();
+                (mscap.to_owned() + "000000")[..3]
+                    .parse()
+                    .unwrap_or_else(|_| panic!("MILLISECONDS is not a number: {}", mscap))
+            }
+        };
+        let ms = if negative {
+            -minutes * 60000 - seconds * 1000 - ms
+        } else {
+            minutes * 60000 + seconds * 1000 + ms
+        };
+        ShortInterval::new(ms)
+    } else {
+        panic!("Interval '{value}' does not have format 'minutes:seconds.fractions'");
+    }
 }
 
 cast_function!(ShortInterval_DAYS, ShortInterval, s, String);
@@ -2330,6 +2438,13 @@ pub fn cast_to_bytesN_bytes(value: ByteArray) -> Option<ByteArray> {
     Some(value)
 }
 
+#[doc(hidden)]
+pub fn cast_to_bytes_s(_value: String) -> ByteArray {
+    unimplemented!();
+}
+
+cast_function!(bytes, ByteArray, s, String);
+
 ///////////////////// Cast to Variant
 
 // Synthesizes 6 functions for the argument type, e.g.:
@@ -2517,7 +2632,7 @@ where
 {
     value
         .try_into()
-        .unwrap_or_else(|_| panic!("Cannot convert to vector"))
+        .unwrap_or_else(|_| panic!("Cannot convert VARIANT to vector"))
 }
 
 #[doc(hidden)]
@@ -2587,7 +2702,7 @@ where
 {
     value
         .try_into()
-        .unwrap_or_else(|_| panic!("Cannot convert to map"))
+        .unwrap_or_else(|_| panic!("Cannot convert VARIANT to map"))
 }
 
 #[doc(hidden)]
