@@ -43,6 +43,7 @@ public final class DBSPIntervalMillisLiteral
         extends DBSPLiteral
         implements IsNumericLiteral, IsIntervalLiteral {
 
+    /** Canonical value, represented in milliseconds */
     @Nullable public final Long value;
 
     public DBSPIntervalMillisLiteral(DBSPTypeMillisInterval.Units units) {
