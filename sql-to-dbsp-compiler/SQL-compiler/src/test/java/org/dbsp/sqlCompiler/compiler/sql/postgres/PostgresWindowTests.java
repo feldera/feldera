@@ -1,9 +1,7 @@
 package org.dbsp.sqlCompiler.compiler.sql.postgres;
 
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteOptimizer;
 import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
-import org.dbsp.util.Logger;
 import org.junit.Ignore;
 import org.junit.Test;
 

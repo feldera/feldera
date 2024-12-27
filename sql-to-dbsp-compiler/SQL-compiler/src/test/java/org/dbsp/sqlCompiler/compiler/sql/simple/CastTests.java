@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.compiler.sql.simple;
 
+import org.checkerframework.checker.units.qual.min;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.sql.tools.Change;
@@ -176,6 +177,214 @@ public class CastTests extends SqlIoTest {
                  i
                 ---
                  1
+                (1 row)""");
+    }
+
+    @Test
+    public void testCastStringToComplexLongInterval() {
+        this.qs("""
+                SELECT CAST('1-1' AS INTERVAL YEAR TO MONTH);
+                 i
+                ---
+                 13 months
+                (1 row)
+                
+                SELECT CAST('1' AS INTERVAL YEAR TO MONTH);
+                 i
+                ---
+                 1 months
+                (1 row)
+                
+                SELECT CAST('-1' AS INTERVAL YEAR TO MONTH);
+                 i
+                ---
+                 1 months ago
+                (1 row)
+                
+                SELECT CAST('-1-1' AS INTERVAL YEAR TO MONTH);
+                 i
+                ---
+                 13 months ago
+                (1 row)""");
+    }
+
+    @Test
+    public void testCastStringToComplexShortInterval() {
+        this.qs("""
+                SELECT CAST('1 1' AS INTERVAL DAY TO HOUR);
+                 i
+                ---
+                 25 hours
+                (1 row)
+                
+                SELECT CAST('1' AS INTERVAL DAY TO HOUR);
+                 i
+                ---
+                 1 hours
+                (1 row)
+                
+                SELECT CAST('-1 1' AS INTERVAL DAY TO HOUR);
+                 i
+                ---
+                 25 hours ago
+                (1 row)
+                
+                SELECT CAST('-1' AS INTERVAL DAY TO HOUR);
+                 i
+                ---
+                 1 hours ago
+                (1 row)
+                
+                SELECT CAST('1:1' AS INTERVAL HOURS TO MINUTES);
+                 i
+                ---
+                 61 min
+                (1 row)
+                
+                SELECT CAST('1' AS INTERVAL HOURS TO MINUTES);
+                 i
+                ---
+                 1 min
+                (1 row)
+                
+                SELECT CAST('-1:1' AS INTERVAL HOURS TO MINUTES);
+                 i
+                ---
+                 61 mins ago
+                (1 row)
+                
+                SELECT CAST('-1' AS INTERVAL HOURS TO MINUTES);
+                 i
+                ---
+                 1 min ago
+                (1 row)""");
+    }
+
+    @Test
+    public void testCastStringToComplexShortInterval1() {
+        this.qs("""
+                SELECT CAST('1:1' AS INTERVAL MINUTES TO SECONDS);
+                 i
+                ---
+                 61 secs
+                (1 row)
+                
+                SELECT CAST('1' AS INTERVAL MINUTES TO SECONDS);
+                 i
+                ---
+                 1 sec
+                (1 row)
+                
+                SELECT CAST('-1:1' AS INTERVAL MINUTES TO SECONDS);
+                 i
+                ---
+                 61 secs ago
+                (1 row)
+                
+                SELECT CAST('-1' AS INTERVAL MINUTES TO SECONDS);
+                 i
+                ---
+                 1 sec ago
+                (1 row)
+                
+                SELECT CAST('1:1.1' AS INTERVAL MINUTES TO SECONDS);
+                 i
+                ---
+                 61.1 secs
+                (1 row)
+                
+                SELECT CAST('-1:1.1' AS INTERVAL MINUTES TO SECONDS);
+                 i
+                ---
+                 61.1 secs ago
+                (1 row)
+                
+                SELECT CAST('1:1.111111' AS INTERVAL MINUTES TO SECONDS);
+                 i
+                ---
+                 61.111 secs
+                (1 row)
+                
+                SELECT CAST('-1:1.111111' AS INTERVAL MINUTES TO SECONDS);
+                 i
+                ---
+                 61.111 secs ago
+                (1 row)""");
+    }
+
+    @Test
+    public void testCastStringToSimpleInterval() {
+        this.qs("""
+                SELECT CAST('1' AS INTERVAL YEAR);
+                 i
+                ---
+                 1 year
+                (1 row)
+                
+                SELECT CAST('1' AS INTERVAL MONTH);
+                 i
+                ---
+                 1 month
+                (1 row)
+                
+                SELECT CAST('-1' AS INTERVAL YEAR);
+                 i
+                ---
+                 1 year ago
+                (1 row)
+                
+                SELECT CAST('-1' AS INTERVAL MONTH);
+                 i
+                ---
+                 1 month ago
+                (1 row)
+                
+                SELECT CAST('1' AS INTERVAL DAYS);
+                 i
+                ---
+                 24 hours
+                (1 row)
+                
+                SELECT CAST('1' AS INTERVAL HOURS);
+                 i
+                ---
+                 1 hour
+                (1 row)
+                
+                SELECT CAST('1' AS INTERVAL MINUTES);
+                 i
+                ---
+                 1 min
+                (1 row)
+                
+                SELECT CAST('1' AS INTERVAL SECONDS);
+                 i
+                ---
+                 1 sec
+                (1 row)
+                
+                SELECT CAST('-1' AS INTERVAL DAYS);
+                 i
+                ---
+                 24 hours ago
+                (1 row)
+                
+                SELECT CAST('-1' AS INTERVAL HOURS);
+                 i
+                ---
+                 1 hour ago
+                (1 row)
+                
+                SELECT CAST('-1' AS INTERVAL MINUTES);
+                 i
+                ---
+                 1 min ago
+                (1 row)
+                
+                SELECT CAST('-1' AS INTERVAL SECONDS);
+                 i
+                ---
+                 1 sec ago
                 (1 row)""");
     }
 
