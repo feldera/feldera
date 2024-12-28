@@ -188,6 +188,13 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
 
     // Steps executed before the actual compilation.
     void start() {
+        // Compute the names based on the compiler flags.
+        NOW_TABLE_NAME = this.canonicalName("now", false);
+        ERROR_TABLE_NAME = this.canonicalName("ERROR_TABLE", false);
+        ERROR_VIEW_NAME = this.canonicalName("ERROR_VIEW", false);
+        if (this.options.ioOptions.raw)
+            return;
+
         // Declare the system tables
         this.compileInternal(
                 """
@@ -196,10 +203,6 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
                 CREATE VIEW ERROR_VIEW AS SELECT * FROM ERROR_TABLE;
                 """,
                 true, false);
-        // Compute the names based on the compiler flags.
-        NOW_TABLE_NAME = this.canonicalName("now", false);
-        ERROR_TABLE_NAME = this.canonicalName("ERROR_TABLE", false);
-        ERROR_VIEW_NAME = this.canonicalName("ERROR_VIEW", false);
     }
 
     public boolean hasWarnings() {

@@ -23,7 +23,6 @@
 
 package org.dbsp.sqlCompiler.compiler.sql.simple;
 
-import org.checkerframework.checker.units.qual.min;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.sql.tools.Change;
@@ -40,6 +39,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
 import org.dbsp.util.Linq;
+import org.junit.Ignore;
 import org.junit.Test;
 
 import java.math.BigDecimal;
@@ -180,7 +180,7 @@ public class CastTests extends SqlIoTest {
                 (1 row)""");
     }
 
-    @Test
+    @Test @Ignore("https://issues.apache.org/jira/browse/CALCITE-6751")
     public void testCastStringToComplexLongInterval() {
         this.qs("""
                 SELECT CAST('1-1' AS INTERVAL YEAR TO MONTH);
@@ -208,7 +208,7 @@ public class CastTests extends SqlIoTest {
                 (1 row)""");
     }
 
-    @Test
+    @Test @Ignore("https://issues.apache.org/jira/browse/CALCITE-6751")
     public void testCastStringToComplexShortInterval() {
         this.qs("""
                 SELECT CAST('1 1' AS INTERVAL DAY TO HOUR);
@@ -260,7 +260,7 @@ public class CastTests extends SqlIoTest {
                 (1 row)""");
     }
 
-    @Test
+    @Test @Ignore("https://issues.apache.org/jira/browse/CALCITE-6751")
     public void testCastStringToComplexShortInterval1() {
         this.qs("""
                 SELECT CAST('1:1' AS INTERVAL MINUTES TO SECONDS);
@@ -312,7 +312,7 @@ public class CastTests extends SqlIoTest {
                 (1 row)""");
     }
 
-    @Test
+    @Test @Ignore("https://issues.apache.org/jira/browse/CALCITE-6751")
     public void testCastStringToSimpleInterval() {
         this.qs("""
                 SELECT CAST('1' AS INTERVAL YEAR);

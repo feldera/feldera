@@ -2416,34 +2416,52 @@ pub fn cast_to_i_i64(value: i64) -> isize {
 
 cast_function!(i, isize, i64, i64);
 
-pub fn cast_to_bytesN_nullN(_value: Option<()>) -> Option<ByteArray> {
+pub fn cast_to_bytesN_nullN(_value: Option<()>, _precision: i32) -> Option<ByteArray> {
     None
 }
 
 #[doc(hidden)]
-#[inline]
-pub fn cast_to_bytes_bytes(value: ByteArray) -> ByteArray {
-    value
+pub fn cast_to_bytes_s(value: String, precision: i32) -> ByteArray {
+    let array = value.as_bytes();
+    ByteArray::with_size(array, precision)
 }
 
 #[doc(hidden)]
-#[inline]
-pub fn cast_to_bytes_bytesN(value: Option<ByteArray>) -> ByteArray {
-    value.unwrap()
+pub fn cast_to_bytesN_s(value: String, precision: i32) -> Option<ByteArray> {
+    Some(cast_to_bytes_s(value, precision))
 }
 
 #[doc(hidden)]
-#[inline]
-pub fn cast_to_bytesN_bytes(value: ByteArray) -> Option<ByteArray> {
-    Some(value)
+pub fn cast_to_bytes_sN(value: Option<String>, precision: i32) -> ByteArray {
+    cast_to_bytes_s(value.unwrap(), precision)
 }
 
 #[doc(hidden)]
-pub fn cast_to_bytes_s(_value: String) -> ByteArray {
-    unimplemented!();
+pub fn cast_to_bytesN_sN(value: Option<String>, precision: i32) -> Option<ByteArray> {
+    let value = value?;
+    cast_to_bytesN_s(value, precision)
 }
 
-cast_function!(bytes, ByteArray, s, String);
+#[doc(hidden)]
+pub fn cast_to_bytes_bytes(value: ByteArray, precision: i32) -> ByteArray {
+    ByteArray::with_size(value.as_slice(), precision)
+}
+
+#[doc(hidden)]
+pub fn cast_to_bytes_bytesN(value: Option<ByteArray>, precision: i32) -> ByteArray {
+    ByteArray::with_size(value.unwrap().as_slice(), precision)
+}
+
+#[doc(hidden)]
+pub fn cast_to_bytesN_bytesN(value: Option<ByteArray>, precision: i32) -> Option<ByteArray> {
+    let value = value?;
+    Some(ByteArray::with_size(value.as_slice(), precision))
+}
+
+#[doc(hidden)]
+pub fn cast_to_bytesN_bytes(value: ByteArray, precision: i32) -> Option<ByteArray> {
+    Some(ByteArray::with_size(value.as_slice(), precision))
+}
 
 ///////////////////// Cast to Variant
 

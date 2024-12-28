@@ -198,6 +198,9 @@ public class CompilerOptions implements IDiff<CompilerOptions> {
         public boolean sqlNames = false;
         @Parameter(names = "--trimInputs", description = "Do not ingest unused fields of input tables")
         public boolean trimInputs = false;
+        @Parameter(names = "--raw", hidden = true,
+                description = "Do not generate any internal tables (ERROR, NOW, etc).")
+        public boolean raw = false;
 
         /** Only compare fields that matter. */
         public boolean same(IO other) {

@@ -35,9 +35,7 @@ import java.nio.charset.StandardCharsets;
 
 import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.STRING;
 
-public class DBSPTypeString extends DBSPTypeBaseType {
-    public static final int UNLIMITED_PRECISION = -1;
-
+public class DBSPTypeString extends DBSPTypeBaseType implements IHasPrecision {
     /** If true the width is fixed, i.e., this is a CHAR type.
      * Otherwise, this is a VARCHAR. */
     public final boolean fixed;
@@ -112,5 +110,10 @@ public class DBSPTypeString extends DBSPTypeBaseType {
                 .append(Boolean.toString(this.fixed))
                 .append(")")
                 .append(this.mayBeNull ? "?" : "");
+    }
+
+    @Override
+    public int getPrecision() {
+        return this.precision;
     }
 }

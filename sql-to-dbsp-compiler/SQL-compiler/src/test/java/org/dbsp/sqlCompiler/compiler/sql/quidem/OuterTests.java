@@ -268,6 +268,6 @@ public class OuterTests extends PostBaseTests {
                 |   | 30 |    |     |
                 |   |    |    | 200 |
                 +---+----+----+-----+
-                (4 rows)""", false);
+                (4 rows)""");
     }
 }

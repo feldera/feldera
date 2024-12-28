@@ -11,9 +11,7 @@ import org.dbsp.util.IIndentStream;
 import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.BYTES;
 
 /** Represents a byte array. */
-public class DBSPTypeBinary extends DBSPTypeBaseType {
-    public static final int UNLIMITED_PRECISION = -1;
-
+public class DBSPTypeBinary extends DBSPTypeBaseType implements IHasPrecision {
     public final int precision;
 
     public DBSPTypeBinary(CalciteObject node, int precision, boolean mayBeNull) {
@@ -73,5 +71,10 @@ public class DBSPTypeBinary extends DBSPTypeBaseType {
                 .append(this.precision)
                 .append(")")
                 .append(this.mayBeNull ? "?" : "");
+    }
+
+    @Override
+    public int getPrecision() {
+        return this.precision;
     }
 }

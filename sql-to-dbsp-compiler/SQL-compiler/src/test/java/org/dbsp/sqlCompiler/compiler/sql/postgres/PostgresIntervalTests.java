@@ -511,16 +511,16 @@ public class PostgresIntervalTests extends SqlIoTest {
     public void testCastString() {
         // These are not from postgres
         this.qs("""
-                SELECT CAST(INTERVAL 22 MONTHS AS VARCHAR);
-                 x
-                ---
-                 +22
-                (1 row)
-                
                 SELECT CAST(INTERVAL 1 YEARS AS VARCHAR);
                  x
                 ---
                  +1
+                (1 row)
+                
+                SELECT CAST(INTERVAL 22 MONTHS AS VARCHAR);
+                 x
+                ---
+                 +22
                 (1 row)
                 
                 SELECT CAST(INTERVAL '1-10' YEARS TO MONTHS AS VARCHAR);

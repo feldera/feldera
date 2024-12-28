@@ -81,7 +81,7 @@ public class TopKTests extends SqlIoTest {
         for (String function : new String[]{"RANK", "DENSE_RANK", "ROW_NUMBER"}) {
             String q = paramQuery.replace("?", function);
             // Same result for all 3 functions
-            this.qs(q, false);
+            this.qs(q);
         }
     }
 
@@ -238,6 +238,6 @@ public class TopKTests extends SqlIoTest {
                  1          | S1| 2011-09-02       | 1
                  2          | S3| 2011-08-01       | 2
                  3          | S1| 2011-08-02       | 3
-                (3 rows)""", false);
+                (3 rows)""");
     }
 }
