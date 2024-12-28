@@ -5,6 +5,8 @@ import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
 import org.junit.Ignore;
 import org.junit.Test;
 
+import static org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest.TestOptimizations.Optimized;
+
 // postgres/src/test/regress/expected/window.out
 public class PostgresWindowTests extends SqlIoTest {
     @Override
@@ -299,7 +301,9 @@ public class PostgresWindowTests extends SqlIoTest {
                      |   3900 | 12-23-2006
                      |   5000 | 10-01-2006
                      |   6000 | 10-01-2006
-                (10 rows)""", false);
+                (10 rows)""", Optimized);
+        // This doesn't work unoptimized, because the constant window bound
+        // is pulled out of the window operator.
     }
 
     @Test

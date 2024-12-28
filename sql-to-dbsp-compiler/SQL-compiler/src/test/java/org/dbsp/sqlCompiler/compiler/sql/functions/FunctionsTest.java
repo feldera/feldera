@@ -357,16 +357,18 @@ public class FunctionsTest extends SqlIoTest {
 
     @Test
     public void testConcat() {
-        this.q("""
+        this.qs("""
                 SELECT CONCAT('string', 1);
                 result
                 ---------
-                 string1""");
-        this.q("""
+                 string1
+                (1 row)
+
                 SELECT CONCAT('string', 1, true);
                 result
                 ---------
-                 string1TRUE""");
+                 string1TRUE
+                (1 row)""");
     }
 
     @Test

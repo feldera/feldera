@@ -197,16 +197,21 @@ public class BaseSQLTests {
         return createInputFile(result, contents);
     }
 
+    public static void createEmptyStubs() {
+        try {
+            PrintStream outputStream = new PrintStream(Files.newOutputStream(Paths.get(rustDirectory, DBSPCompiler.STUBS_FILE_NAME)));
+            outputStream.println();
+            outputStream.close();
+        } catch (IOException ignored) {}
+    }
+
     /** Runs all the tests from the testsToRun list. */
     @AfterClass
     public static void runAllTests() throws IOException, InterruptedException {
         if (testsToRun.isEmpty())
             return;
-        // Create empty stubs.rs file
-        PrintStream outputStream = new PrintStream(Files.newOutputStream(Paths.get(rustDirectory, DBSPCompiler.STUBS_FILE_NAME)));
-        outputStream.println();
-        outputStream.close();
-        outputStream = new PrintStream(Files.newOutputStream(Paths.get(testFilePath)));
+        createEmptyStubs();
+        PrintStream outputStream = new PrintStream(Files.newOutputStream(Paths.get(testFilePath)));
         // Use the compiler from the first test case.
         DBSPCompiler firstCompiler = testsToRun.get(0).ccs.compiler;
         RustFileWriter writer = new RustFileWriter(outputStream);

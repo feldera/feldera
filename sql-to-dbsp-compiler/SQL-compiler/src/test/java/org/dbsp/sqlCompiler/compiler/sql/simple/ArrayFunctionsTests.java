@@ -683,8 +683,7 @@ public class ArrayFunctionsTests extends SqlIoTest {
                 ---------------
                  {}
                 (1 row)
-                """, false
-        );
+                """);
     }
 
     @Test
@@ -989,7 +988,7 @@ public class ArrayFunctionsTests extends SqlIoTest {
                 | 2  | {-2, -2, 1, 1, 2, 2}    |
                 | 3  | {-2, -2, 1, 1, 2, 2, 3} |
                 +----+-------------------------+
-                (7 rows)""", false);
+                (7 rows)""");
     }
     
     @Test
