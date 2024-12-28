@@ -347,9 +347,10 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
                 "-i", "--alltables", "--ignoreOrder", "-o", BaseSQLTests.testFilePath, file);
         messages.print();
         Assert.assertEquals(0, messages.errorCount());
-        if (run) {
+        if (run)
             Utilities.compileAndTestRust(BaseSQLTests.rustDirectory, false);
-        }
+        // cleanup after ourselves
+        createEmptyStubs();
     }
 
     @Test

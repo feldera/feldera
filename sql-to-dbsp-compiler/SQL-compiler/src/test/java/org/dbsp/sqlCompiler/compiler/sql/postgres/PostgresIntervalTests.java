@@ -368,27 +368,26 @@ public class PostgresIntervalTests extends SqlIoTest {
                 """);
         // Following ones are legal in Postgres but not in Calcite
         String ill = "Illegal interval literal";
-        this.statementsFailingInCompilation("CREATE VIEW V AS SELECT interval '1' year to month", ill);
-        this.statementsFailingInCompilation("CREATE VIEW V AS SELECT interval '1 2:03' day to hour", ill);
-        this.statementsFailingInCompilation("CREATE VIEW V AS SELECT interval '1 2:03:04' day to hour", ill);
-        this.statementsFailingInCompilation("CREATE VIEW V AS SELECT interval '1 2:03:04' day to minute", ill);
-        this.statementsFailingInCompilation("CREATE VIEW V AS SELECT interval '1 2:03' day to second", ill);
-        this.statementsFailingInCompilation("CREATE VIEW V AS SELECT interval '1 2:03:04' hour to minute", ill);
-        this.statementsFailingInCompilation("CREATE VIEW V AS SELECT interval '1 2:03' hour to second", ill);
-        this.statementsFailingInCompilation("CREATE VIEW V AS SELECT interval '1 2:03:04' hour to second", ill);
-        this.statementsFailingInCompilation("CREATE VIEW V AS SELECT interval '1 2:03' minute to second", ill);
-        this.statementsFailingInCompilation("CREATE VIEW V AS SELECT interval '1 2:03:04' minute to second", ill);
-        this.statementsFailingInCompilation("CREATE VIEW V AS SELECT interval '1 2:03' hour to minute", ill);
-        this.statementsFailingInCompilation("CREATE VIEW V AS SELECT interval '1 +2:03' minute to second", ill);
-        this.statementsFailingInCompilation("CREATE VIEW V AS SELECT interval '1 +2:03:04' minute to second", ill);
-        this.statementsFailingInCompilation("CREATE VIEW V AS SELECT interval '1 -2:03' minute to second", ill);
-        this.statementsFailingInCompilation("CREATE VIEW V AS SELECT interval '1 -2:03:04' minute to second", ill);
-        // Illegal in Postgres tooCREATE VIEW V AS
-        this.statementsFailingInCompilation("CREATE VIEW V AS SELECT interval '1 2' hour to second", ill);
-        this.statementsFailingInCompilation("CREATE VIEW V AS SELECT interval '1 2' minute to second", ill);
-        this.statementsFailingInCompilation("CREATE VIEW V AS SELECT interval '1 2' day to second", ill);
-        this.statementsFailingInCompilation("CREATE VIEW V AS SELECT interval '1 2' day to minute", ill);
-        this.statementsFailingInCompilation("CREATE VIEW V AS SELECT interval '1 2' hour to minute", ill);
+        this.queryFailingInCompilation("SELECT interval '1' year to month", ill);
+        this.queryFailingInCompilation("SELECT interval '1 2:03' day to hour", ill);
+        this.queryFailingInCompilation("SELECT interval '1 2:03:04' day to hour", ill);
+        this.queryFailingInCompilation("SELECT interval '1 2:03:04' day to minute", ill);
+        this.queryFailingInCompilation("SELECT interval '1 2:03' day to second", ill);
+        this.queryFailingInCompilation("SELECT interval '1 2:03:04' hour to minute", ill);
+        this.queryFailingInCompilation("SELECT interval '1 2:03' hour to second", ill);
+        this.queryFailingInCompilation("SELECT interval '1 2:03:04' hour to second", ill);
+        this.queryFailingInCompilation("SELECT interval '1 2:03' minute to second", ill);
+        this.queryFailingInCompilation("SELECT interval '1 2:03:04' minute to second", ill);
+        this.queryFailingInCompilation("SELECT interval '1 2:03' hour to minute", ill);
+        this.queryFailingInCompilation("SELECT interval '1 +2:03' minute to second", ill);
+        this.queryFailingInCompilation("SELECT interval '1 +2:03:04' minute to second", ill);
+        this.queryFailingInCompilation("SELECT interval '1 -2:03' minute to second", ill);
+        this.queryFailingInCompilation("SELECT interval '1 -2:03:04' minute to second", ill);
+        this.queryFailingInCompilation("SELECT interval '1 2' hour to second", ill);
+        this.queryFailingInCompilation("SELECT interval '1 2' minute to second", ill);
+        this.queryFailingInCompilation("SELECT interval '1 2' day to second", ill);
+        this.queryFailingInCompilation("SELECT interval '1 2' day to minute", ill);
+        this.queryFailingInCompilation("SELECT interval '1 2' hour to minute", ill);
     }
 
     // skipped tests that require precision in intervals
@@ -511,16 +510,16 @@ public class PostgresIntervalTests extends SqlIoTest {
     public void testCastString() {
         // These are not from postgres
         this.qs("""
-                SELECT CAST(INTERVAL 22 MONTHS AS VARCHAR);
-                 x
-                ---
-                 +22
-                (1 row)
-                
                 SELECT CAST(INTERVAL 1 YEARS AS VARCHAR);
                  x
                 ---
                  +1
+                (1 row)
+                
+                SELECT CAST(INTERVAL 22 MONTHS AS VARCHAR);
+                 x
+                ---
+                 +22
                 (1 row)
                 
                 SELECT CAST(INTERVAL '1-10' YEARS TO MONTHS AS VARCHAR);

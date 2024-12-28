@@ -29,7 +29,7 @@ public class RedshiftTests extends ScottBaseTests {
                 7844 | 1250.00
                 7900 | 2850.00
                 (6 rows)
-                """, false);
+                """);
     }
 
     @Test

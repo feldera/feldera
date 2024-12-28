@@ -32,6 +32,12 @@ import java.util.regex.Pattern;
  * one or multiple queries.
  */
 public abstract class SqlIoTest extends BaseSQLTests {
+    public enum TestOptimizations {
+        Optimized,
+        Unoptimized,
+        Both
+    };
+
     public CompilerOptions getOptions(boolean optimize) {
         CompilerOptions options = new CompilerOptions();
         options.ioOptions.quiet = true;
@@ -189,24 +195,23 @@ public abstract class SqlIoTest extends BaseSQLTests {
      * Test a query followed by the expected output.
      * The query ends at the semicolon.
      *
-     * @param twoWays if true, runs two test cases, one with optimizations and one without.
-     *                Otherwise, it runs only with optimizations.
      * @param rowCount Expected row count.  -1 if unknown.
      */
-    public void q(String queryAndOutput, boolean twoWays, int rowCount) {
+    public void q(String queryAndOutput, TestOptimizations to, int rowCount) {
         queryAndOutput = this.removeComments(queryAndOutput);
         int semicolon = queryAndOutput.indexOf(';');
         if (semicolon < 0)
             throw new RuntimeException("Could not parse query and output");
         String query = queryAndOutput.substring(0, semicolon);
         String expected = queryAndOutput.substring(semicolon + 1);
+        if (to == TestOptimizations.Both || to == TestOptimizations.Optimized)
         this.compare(query, expected, true, rowCount);
-        if (twoWays)
+        if (to == TestOptimizations.Both || to == TestOptimizations.Unoptimized)
             this.compare(query, expected, false, rowCount);
     }
 
     public void q(String queryAndOutput) {
-        this.q(queryAndOutput, true, -1);
+        this.q(queryAndOutput, TestOptimizations.Both, -1);
     }
 
     /**
@@ -227,7 +232,7 @@ public abstract class SqlIoTest extends BaseSQLTests {
      *  1.2345679e-20
      * (3 rows)
      */
-    public void qs(String queriesWithOutputs, boolean twoWays) {
+    protected void qs(String queriesWithOutputs, TestOptimizations to) {
         String[] parts = queriesWithOutputs.split("\n\n");
         // From each part drop the last line (N rows) *and* its last newline.
         Pattern regex = Pattern.compile("^(.*)\\n\\((\\d+) rows?\\)$", Pattern.DOTALL);
@@ -238,7 +243,7 @@ public abstract class SqlIoTest extends BaseSQLTests {
                 String result = regexMatcher.group(1);
                 String rows = regexMatcher.group(2);
                 int rowCount = Integer.parseInt(rows);
-                this.q(result, twoWays, rowCount);
+                this.q(result, to, rowCount);
             } else {
                 throw new RuntimeException("Could not understand test #" + index + ": " + part);
             }
@@ -247,7 +252,7 @@ public abstract class SqlIoTest extends BaseSQLTests {
     }
 
     public void qs(String queriesWithOutputs) {
-        this.qs(queriesWithOutputs, true);
+        this.qs(queriesWithOutputs, TestOptimizations.Both);
     }
 
     /**

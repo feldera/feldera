@@ -40,6 +40,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
 import org.dbsp.util.Linq;
+import org.junit.Ignore;
 import org.junit.Test;
 
 import java.math.BigDecimal;
@@ -189,18 +190,6 @@ public class CastTests extends SqlIoTest {
                  13 months
                 (1 row)
                 
-                SELECT CAST('1' AS INTERVAL YEAR TO MONTH);
-                 i
-                ---
-                 1 months
-                (1 row)
-                
-                SELECT CAST('-1' AS INTERVAL YEAR TO MONTH);
-                 i
-                ---
-                 1 months ago
-                (1 row)
-                
                 SELECT CAST('-1-1' AS INTERVAL YEAR TO MONTH);
                  i
                 ---
@@ -211,80 +200,84 @@ public class CastTests extends SqlIoTest {
     @Test
     public void testCastStringToComplexShortInterval() {
         this.qs("""
-                SELECT CAST('1 1' AS INTERVAL DAY TO HOUR);
+                SELECT CAST('100 1' AS INTERVAL DAY TO HOUR);
                  i
                 ---
-                 25 hours
+                 100 days 1 hours
                 (1 row)
                 
-                SELECT CAST('1' AS INTERVAL DAY TO HOUR);
+                SELECT CAST('-100 1' AS INTERVAL DAY TO HOUR);
                  i
                 ---
-                 1 hours
+                 100 days 1 hours ago
                 (1 row)
                 
-                SELECT CAST('-1 1' AS INTERVAL DAY TO HOUR);
+                SELECT CAST('100:1' AS INTERVAL HOURS TO MINUTES);
                  i
                 ---
-                 25 hours ago
+                 100 hours 1 min
                 (1 row)
                 
-                SELECT CAST('-1' AS INTERVAL DAY TO HOUR);
+                SELECT CAST('-100:1' AS INTERVAL HOURS TO MINUTES);
                  i
                 ---
-                 1 hours ago
+                 100 hours 1 mins ago
+                (1 row)""");
+    }
+
+    @Test
+    public void testCastStringToComplexShortInterval2() {
+        this.qs("""
+                SELECT CAST('10 10:1' AS INTERVAL DAYS TO MINUTES);
+                 i
+                ---
+                 10 days 10 hours 1 mins
+                (1 row)
+
+                SELECT CAST('-10 10:1' AS INTERVAL DAYS TO MINUTES);
+                 i
+                ---
+                 10 days 10 hours 1 mins ago
+                (1 row)
+
+                SELECT CAST('100:1:1' AS INTERVAL HOUR TO SECOND);
+                 i
+                ---
+                 100 hours 61 secs
                 (1 row)
                 
-                SELECT CAST('1:1' AS INTERVAL HOURS TO MINUTES);
+                SELECT CAST('-100:1:1' AS INTERVAL HOUR TO SECOND);
                  i
                 ---
-                 61 min
+                 100 hours 61 secs ago
                 (1 row)
                 
-                SELECT CAST('1' AS INTERVAL HOURS TO MINUTES);
+                SELECT CAST('-100 10:1:1' AS INTERVAL DAYS TO SECOND);
                  i
                 ---
-                 1 min
+                 100 days 10 hours 61 secs ago
                 (1 row)
                 
-                SELECT CAST('-1:1' AS INTERVAL HOURS TO MINUTES);
+                SELECT CAST('100 10:1:1' AS INTERVAL DAYS TO SECOND);
                  i
                 ---
-                 61 mins ago
-                (1 row)
-                
-                SELECT CAST('-1' AS INTERVAL HOURS TO MINUTES);
-                 i
-                ---
-                 1 min ago
+                 100 days 10 hours 61 secs
                 (1 row)""");
     }
 
     @Test
     public void testCastStringToComplexShortInterval1() {
         this.qs("""
-                SELECT CAST('1:1' AS INTERVAL MINUTES TO SECONDS);
+                SELECT CAST('100:1' AS INTERVAL MINUTES TO SECONDS);
                  i
                 ---
-                 61 secs
+                 100 mins 1 secs
                 (1 row)
                 
-                SELECT CAST('1' AS INTERVAL MINUTES TO SECONDS);
+                SELECT CAST('-100:1' AS INTERVAL MINUTES TO SECONDS);
                  i
                 ---
-                 1 sec
-                (1 row)
-                
-                SELECT CAST('-1:1' AS INTERVAL MINUTES TO SECONDS);
-                 i
-                ---
-                 61 secs ago
-                (1 row)
-                
-                SELECT CAST('-1' AS INTERVAL MINUTES TO SECONDS);
-                 i
-                ---
-                 1 sec ago
+                 100 mins 1 secs ago
                 (1 row)
                 
                 SELECT CAST('1:1.1' AS INTERVAL MINUTES TO SECONDS);
@@ -385,6 +378,18 @@ public class CastTests extends SqlIoTest {
                  i
                 ---
                  1 sec ago
+                (1 row)
+                
+                SELECT CAST('-1000' AS INTERVAL SECONDS);
+                 i
+                ---
+                 1000 sec ago
+                (1 row)
+                
+                SELECT CAST('1000.23' AS INTERVAL SECONDS);
+                 i
+                ---
+                 1000.23 secs
                 (1 row)""");
     }
 

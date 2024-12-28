@@ -169,48 +169,67 @@ public class VarbinaryTests extends SqlIoTest {
         );
     }
 
+    @Test
+    public void testCast() {
+        this.qs("""
+                SELECT CAST('abcd1234' AS VARBINARY);
+                 r
+                ---
+                 6162636431323334
+                (1 row)
+
+                SELECT CAST(x'abcd1234' AS BINARY(2));
+                 r
+                ---
+                 abcd
+                (1 row)
+                
+                SELECT CAST(x'abcd' AS BINARY(4));
+                 r
+                ---
+                 abcd0000
+                (1 row)""");
+    }
+
     // Tested on Postgres
     @Test
     public void testSubstring() {
-        this.qs(
-                """
-                        SELECT substring(x'123456', 0);
-                         substring
-                        -----------
-                         123456
-                        (1 row)
+        this.qs("""
+                SELECT substring(x'123456', 0);
+                 substring
+                -----------
+                 123456
+                (1 row)
 
-                        SELECT substring(x'123456', 1);
-                         substring
-                        -----------
-                         123456
-                        (1 row)
+                SELECT substring(x'123456', 1);
+                 substring
+                -----------
+                 123456
+                (1 row)
 
-                        SELECT substring(x'123456', 3);
-                         substring
-                        -----------
-                         56
-                        (1 row)
+                SELECT substring(x'123456', 3);
+                 substring
+                -----------
+                 56
+                (1 row)
 
-                        SELECT substring(x'123456', -1);
-                         substring
-                        -----------
-                         123456
-                        (1 row)
+                SELECT substring(x'123456', -1);
+                 substring
+                -----------
+                 123456
+                (1 row)
 
-                        SELECT substring(x'1234567890', 3, 2);
-                         substring
-                        -----------
-                         5678
-                        (1 row)
+                SELECT substring(x'1234567890', 3, 2);
+                 substring
+                -----------
+                 5678
+                (1 row)
 
-                        SELECT substring(x'123456'::bytea from -2 for 6);
-                         substring
-                        -----------
-                         123456
-                        (1 row)
-                        """
-        );
+                SELECT substring(x'123456'::bytea from -2 for 6);
+                 substring
+                -----------
+                 123456
+                (1 row)""");
     }
 
     @Test

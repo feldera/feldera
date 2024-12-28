@@ -83,7 +83,4 @@ public class NaiveIncrementalTests extends EndToEndTests {
         // Do not run this test in incremental mode, since it produces
         // a division by 0 on an empty input.
     }
-
-    @Override @Ignore("Temporarily disabled until we get a stream_join_index operator")
-    public void linearNonLinearTest() {}
 }
