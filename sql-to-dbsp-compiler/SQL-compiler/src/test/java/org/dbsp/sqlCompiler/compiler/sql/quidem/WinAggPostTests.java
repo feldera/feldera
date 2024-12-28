@@ -154,7 +154,7 @@ public class WinAggPostTests extends PostBaseTests {
                 | F      |      5 |
                 | F      |      6 |
                 +--------+--------+
-                (6 rows)""", false);
+                (6 rows)""");
     }
 
     @Test
@@ -494,7 +494,7 @@ public class WinAggPostTests extends PostBaseTests {
                 |     60 | F |
                 |        | F |
                 +--------+---+
-                (9 rows)""", false);
+                (9 rows)""");
     }
 
     @Test
@@ -512,7 +512,7 @@ public class WinAggPostTests extends PostBaseTests {
                  Eve   |     50 | F| 7
                  Grace |     60 | F| 8
                  Wilma |        | F| 9
-                (9 rows)""", false);
+                (9 rows)""");
     }
 
     @Test @Ignore("RANK not supported")
@@ -594,7 +594,7 @@ public class WinAggPostTests extends PostBaseTests {
                 |     60 | Grace | 1 |
                 |        | Wilma | 1 |
                 +--------+-------+---+
-                (6 rows)""", false);
+                (6 rows)""");
     }
 
     @Test @Ignore("MAP not yet supported")

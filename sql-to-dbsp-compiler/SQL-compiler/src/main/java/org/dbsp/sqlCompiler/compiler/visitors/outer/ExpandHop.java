@@ -9,6 +9,7 @@ import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.ExpressionCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.TypeCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyMethodExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
@@ -19,8 +20,10 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStatement;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.IsIntervalType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBaseType;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeVec;
 
 import javax.annotation.Nullable;
@@ -59,8 +62,19 @@ public class ExpandHop extends CircuitCloneVisitor {
         hopArguments.add(size);
         hopArguments.add(start);
         DBSPType hopType = type.tupFields[nextIndex];
-        results[nextIndex] = ExpressionCompiler.compilePolymorphicFunction(
-                "hop", node, new DBSPTypeVec(hopType, false), hopArguments, 4);
+        DBSPType resultType = new DBSPTypeVec(hopType, false);
+        StringBuilder functionName = new StringBuilder("hop");
+        DBSPExpression[] operands = hopArguments.toArray(new DBSPExpression[0]);
+        for (DBSPExpression op: hopArguments) {
+            DBSPType t = op.getType();
+            String argType;
+            if (t.is(IsIntervalType.class))
+                argType = t.to(DBSPTypeBaseType.class).shortName();
+            else
+                argType = t.baseTypeWithSuffix();
+            functionName.append("_").append(argType);
+        }
+        results[nextIndex] = new DBSPApplyExpression(node, functionName.toString(), resultType, operands);
         DBSPTupleExpression mapBody = new DBSPTupleExpression(results);
         DBSPClosureExpression func = mapBody.closure(row);
         DBSPMapOperator map = new DBSPMapOperator(node, func, TypeCompiler.makeZSet(mapBody.getType()), source);

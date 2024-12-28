@@ -23,6 +23,9 @@ a literal must have an even number of characters, and all characters
 must be legal hexadecimal digits.  A multi-part literal can be
 specified as the concatenation of multiple literals, e.g.: `x'AB' 'CD'`.
 
+Converting a string to a binary value produces a binary value
+containing the bytes of the encoding of the characters of the string.
+
 ## Binary value operations
 
 Binary values support bitwise operations, although there is no syntax

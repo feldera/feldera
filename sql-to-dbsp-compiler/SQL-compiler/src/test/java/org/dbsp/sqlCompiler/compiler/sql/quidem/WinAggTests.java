@@ -32,7 +32,7 @@ public class WinAggTests extends ScottBaseTests {
                 |  7844 |     30 | 14 | 14 | 14 | 14 |
                 |  7876 |     20 |  8 |  8 |  8 | 14 |
                 +-------+--------+----+----+----+----+
-                (14 rows)""", false);
+                (14 rows)""");
     }
 
     @Test @Ignore("ROWS not yet implemented in WINDOW https://github.com/feldera/feldera/issues/457")
@@ -123,6 +123,6 @@ public class WinAggTests extends ScottBaseTests {
                 |  7844 | 989.94     | 989.94        |
                 |  7900 |            |               |
                 +-------+------------+---------------+
-                (6 rows)""", false);
+                (6 rows)""");
     }
 }

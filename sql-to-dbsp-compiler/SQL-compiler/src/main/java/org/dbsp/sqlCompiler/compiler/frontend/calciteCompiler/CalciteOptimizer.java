@@ -8,7 +8,6 @@ import org.apache.calcite.plan.hep.HepProgramBuilder;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.RelVisitor;
 import org.apache.calcite.rel.core.Join;
-import org.apache.calcite.rel.logical.LogicalCorrelate;
 import org.apache.calcite.rel.rules.CoreRules;
 import org.apache.calcite.rel.rules.PruneEmptyRules;
 import org.apache.calcite.sql2rel.RelDecorrelator;
@@ -95,7 +94,7 @@ public class CalciteOptimizer implements IWritesLogs {
         this.builder = builder;
         this.steps = new ArrayList<>();
         this.level = level;
-        this.createOptimizer(level);
+        this.createOptimizer();
     }
 
     RelNode apply(RelNode rel) {
@@ -135,24 +134,7 @@ public class CalciteOptimizer implements IWritesLogs {
         }
     }
 
-    /** Helper class to discover whether a query contains correlates */
-    static class CorrelateFinder extends RelVisitor {
-        public boolean found = false;
-        @Override public void visit(
-                RelNode node, int ordinal,
-                @org.checkerframework.checker.nullness.qual.Nullable RelNode parent) {
-            if (node instanceof LogicalCorrelate) {
-                this.found = true;
-            }
-            super.visit(node, ordinal, parent);
-        }
-
-        void run(RelNode node) {
-            this.go(node);
-        }
-    }
-
-    void createOptimizer(int level) {
+    void createOptimizer() {
         this.addStep(new SimpleOptimizerStep("Constant fold", 2,
                 CoreRules.COERCE_INPUTS,
                 CoreRules.FILTER_REDUCE_EXPRESSIONS,

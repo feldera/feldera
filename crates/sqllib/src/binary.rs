@@ -7,7 +7,11 @@ use flate2::read::GzDecoder;
 use hex::ToHex;
 use serde::{Deserialize, Serialize};
 use size_of::SizeOf;
-use std::{cmp::min, fmt::Debug, io::Read};
+use std::{
+    cmp::{min, Ordering},
+    fmt::Debug,
+    io::Read,
+};
 
 /// A ByteArray object, representing a SQL value with type
 /// `BINARY` or `VARBINARY`.
@@ -58,6 +62,23 @@ impl ByteArray {
     /// Create a ByteArray from a slice of bytes
     pub fn new(d: &[u8]) -> Self {
         Self { data: d.to_vec() }
+    }
+
+    pub fn with_size(d: &[u8], size: i32) -> Self {
+        if size < 0 {
+            ByteArray::new(d)
+        } else {
+            let size = size as usize;
+            match d.len().cmp(&size) {
+                Ordering::Equal => ByteArray::new(d),
+                Ordering::Greater => ByteArray::new(&d[..size]),
+                Ordering::Less => {
+                    let mut data: Vec<u8> = vec![0; size];
+                    data[..d.len()].copy_from_slice(d);
+                    ByteArray::new(&data)
+                }
+            }
+        }
     }
 
     pub fn zero(size: usize) -> Self {

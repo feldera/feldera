@@ -129,6 +129,7 @@ import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBaseType;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBinary;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeISize;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMillisInterval;
@@ -780,6 +781,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
                 this.builder.decrease().append(")");
                 return VisitDecision.STOP;
             }
+            this.unimplementedCast(expression);
         }
         if (sourceMap != null) {
             if (destType.is(DBSPTypeVariant.class)) {
@@ -789,6 +791,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
                 this.builder.decrease().append(")");
                 return VisitDecision.STOP;
             }
+            this.unimplementedCast(expression);
         }
 
         if (sourceType.is(DBSPTypeTuple.class)) {
@@ -834,12 +837,19 @@ public class ToRustInnerVisitor extends InnerVisitor {
         }
         DBSPTypeString str = destType.as(DBSPTypeString.class);
         if (str != null) {
-            // pass precision and scale as arguments to cast method too
+            // pass precision and fixedness as arguments to cast method too
             this.builder.append(",")
                     .append(str.precision)
                     .append(", ")
                     .append(Boolean.toString(str.fixed));
         }
+        DBSPTypeBinary binary = destType.as(DBSPTypeBinary.class);
+        if (binary != null) {
+            // pass precision as argument to cast method too
+            this.builder.append(",")
+                    .append(binary.precision);
+        }
+
         this.builder.append(")");
         return VisitDecision.STOP;
     }
@@ -926,8 +936,9 @@ public class ToRustInnerVisitor extends InnerVisitor {
                 this.builder.append(")");
                 break;
             }
-            case ARRAY_CONVERT: {
-                // Pass array by reference
+            case ARRAY_CONVERT:
+            case MAP_CONVERT: {
+                // Pass first argument by reference
                 this.builder.append(expression.opcode.toString())
                         .append(expression.left.getType().deref().nullableUnderlineSuffix())
                         .append(expression.right.getType().nullableUnderlineSuffix())

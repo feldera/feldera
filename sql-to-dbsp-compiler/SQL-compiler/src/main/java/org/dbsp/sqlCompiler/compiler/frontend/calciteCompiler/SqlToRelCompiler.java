@@ -273,7 +273,9 @@ public class SqlToRelCompiler implements IWritesLogs {
                 // rules to decorrelate some queries that withExpand will produce,
                 // e.g., AggScottTests.testAggregates4
                 .withExpand(true)
-                .withTrimUnusedFields(true);
+                .withTrimUnusedFields(true)
+                .withRelBuilderConfigTransform(t -> t.withSimplify(false))
+                ;
         this.validator = null;
         this.converter = null;
         this.usedViewDeclarations = new HashSet<>();
@@ -382,17 +384,6 @@ public class SqlToRelCompiler implements IWritesLogs {
                 assert interval instanceof SqlIntervalQualifier;
                 SqlIntervalQualifier qual = (SqlIntervalQualifier) interval;
                 switch (qual.timeUnitRange) {
-                    case YEAR:
-                    case YEAR_TO_MONTH:
-                    case DAY_TO_HOUR:
-                    case DAY_TO_MINUTE:
-                    case DAY_TO_SECOND:
-                    case HOUR:
-                    case HOUR_TO_MINUTE:
-                    case HOUR_TO_SECOND:
-                    case MINUTE:
-                    case MINUTE_TO_SECOND:
-                    case ISOYEAR:
                     case QUARTER:
                     case WEEK:
                     case MILLISECOND:
@@ -407,13 +398,22 @@ public class SqlToRelCompiler implements IWritesLogs {
                     case MILLENNIUM:
                         this.errorReporter.reportError(position, "Unsupported interval",
                                 "Interval type " + Utilities.singleQuote(qual.timeUnitRange.toString()) +
-                                        " not supported for difference operator; only 'MONTH' and 'SECOND' are supported;\n" +
-                                        "'DAY' is supported for 'DATE' values");
+                                        " not supported for difference operator");
                         break;
+                    case YEAR:
+                    case YEAR_TO_MONTH:
+                    case DAY_TO_HOUR:
+                    case DAY_TO_MINUTE:
+                    case DAY_TO_SECOND:
+                    case HOUR:
+                    case HOUR_TO_MINUTE:
+                    case HOUR_TO_SECOND:
+                    case MINUTE:
+                    case MINUTE_TO_SECOND:
+                    case ISOYEAR:
                     case MONTH:
                     case DAY:
                     case SECOND:
-                        // DAY is OK only for dates
                         break;
                 }
             }
@@ -780,7 +780,6 @@ public class SqlToRelCompiler implements IWritesLogs {
             }
         } catch (CalciteContextException e) {
             SqlParserPos pos = value.getParserPosition();
-            @SuppressWarnings("DataFlowIssue")
             CalciteContextException ex = new CalciteContextException(e.getMessage(), e.getCause());
             ex.setPosition(pos.getLineNum(), pos.getColumnNum(), pos.getEndLineNum(), pos.getEndColumnNum());
             throw ex;
@@ -826,7 +825,6 @@ public class SqlToRelCompiler implements IWritesLogs {
             }
         } catch (CalciteContextException e) {
             SqlParserPos pos = value.getParserPosition();
-            @SuppressWarnings("DataFlowIssue")
             CalciteContextException ex = new CalciteContextException(e.getMessage(), e.getCause());
             ex.setPosition(pos.getLineNum(), pos.getColumnNum(), pos.getEndLineNum(), pos.getEndColumnNum());
             throw ex;

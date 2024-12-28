@@ -130,7 +130,7 @@ public class BaseSQLTests {
         this.prepareInputs(compiler);
         compiler.compileStatements(statements);
         getCircuit(compiler);
-        assert compiler.messages.exitCode != 0 : "Program was expected to fail";
+        assert compiler.messages.exitCode != 0 : "Program was expected to fail: " + statements;
         String message = compiler.messages.toString();
         this.shouldMatch(message, regex, isRegex);
     }

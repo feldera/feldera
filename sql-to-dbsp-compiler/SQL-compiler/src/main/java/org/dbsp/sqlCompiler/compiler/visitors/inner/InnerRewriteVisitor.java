@@ -314,7 +314,7 @@ public abstract class InnerRewriteVisitor
     public VisitDecision preorder(DBSPTypeMillisInterval type) {
         this.push(type);
         this.pop(type);
-        DBSPType result = new DBSPTypeMillisInterval(type.getNode(), type.mayBeNull);
+        DBSPType result = new DBSPTypeMillisInterval(type.getNode(), type.units, type.mayBeNull);
         this.map(type, result);
         return VisitDecision.STOP;
     }
