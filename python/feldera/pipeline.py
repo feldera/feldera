@@ -545,6 +545,7 @@ resume a paused pipeline."""
         """
         Executes an ad-hoc SQL query on this pipeline and returns a generator that yields the rows of the result as Python dictionaries.
         For ``INSERT`` and ``DELETE`` queries, consider using :meth:`.execute` instead.
+        All floating-point numbers are deserialized as Decimal objects to avoid precision loss.
 
         Note:
             You can only ``SELECT`` from materialized tables and views.
