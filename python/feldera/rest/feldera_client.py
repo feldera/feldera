@@ -536,6 +536,7 @@ Reason: The pipeline is in a FAILED state due to the following error:
         """
         Executes an ad-hoc query on the specified pipeline and returns the result as a generator that yields
         rows of the query as Python dictionaries.
+        All floating-point numbers are deserialized as Decimal objects to avoid precision loss.
 
         :param pipeline_name: The name of the pipeline to query.
         :param query: The SQL query to be executed.
