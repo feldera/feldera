@@ -504,15 +504,39 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         pipeline: &ExtendedPipelineDescr,
     ) -> Result<State, DBError> {
         // If the pipeline program errored during compilation, immediately transition to `Failed`
-        if matches!(
-            pipeline.program_status,
-            ProgramStatus::SqlError(_)
-                | ProgramStatus::RustError(_)
-                | ProgramStatus::SystemError(_)
-        ) {
-            return Ok(State::TransitionToFailed {
-                error: ErrorResponse::from_error_nolog(&DBError::StartFailedDueToFailedCompilation),
-            });
+        match &pipeline.program_status {
+            ProgramStatus::SqlError(e) => {
+                return Ok(State::TransitionToFailed {
+                    error: ErrorResponse::from_error_nolog(
+                        &DBError::StartFailedDueToFailedCompilation {
+                            compiler_error: e
+                                .iter()
+                                .map(|s| s.to_string())
+                                .collect::<Vec<String>>()
+                                .join("\n"),
+                        },
+                    ),
+                });
+            }
+            ProgramStatus::RustError(e) => {
+                return Ok(State::TransitionToFailed {
+                    error: ErrorResponse::from_error_nolog(
+                        &DBError::StartFailedDueToFailedCompilation {
+                            compiler_error: e.to_string(),
+                        },
+                    ),
+                });
+            }
+            ProgramStatus::SystemError(e) => {
+                return Ok(State::TransitionToFailed {
+                    error: ErrorResponse::from_error_nolog(
+                        &DBError::StartFailedDueToFailedCompilation {
+                            compiler_error: e.to_string(),
+                        },
+                    ),
+                });
+            }
+            _ => {}
         }
 
         // The runner is unable to run a pipeline program compiled under an outdated platform.

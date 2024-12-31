@@ -458,7 +458,22 @@ async fn wait_for_status(
 
         if wait_for != PipelineStatus::Shutdown && pc.deployment_status == PipelineStatus::Failed {
             if let Some(deployment_error) = &pc.deployment_error {
-                eprintln!("{}", deployment_error.message);
+                if deployment_error.error_code == "StartFailedDueToFailedCompilation" {
+                    eprintln!("Pipeline failed to start due to the following compilation error:");
+                    eprintln!();
+                    eprintln!(
+                        "{}",
+                        deployment_error
+                            .details
+                            .as_object()
+                            .unwrap_or(&serde_json::Map::new())
+                            .get("compiler_error")
+                            .and_then(|e| e.as_str())
+                            .unwrap_or_default()
+                    );
+                } else {
+                    eprintln!("{}", deployment_error.message);
+                }
             } else {
                 eprintln!("Pipeline failed to reach status {:?}", wait_for);
             }

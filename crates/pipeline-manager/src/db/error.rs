@@ -15,6 +15,7 @@ use tokio_postgres::error::Error as PgError;
 
 #[derive(Debug, Serialize)]
 #[serde(untagged)]
+#[non_exhaustive]
 pub enum DBError {
     #[serde(serialize_with = "serialize_pg_error")]
     PostgresError {
@@ -105,7 +106,9 @@ pub enum DBError {
     InvalidConnectorTransport {
         reason: String,
     },
-    StartFailedDueToFailedCompilation,
+    StartFailedDueToFailedCompilation {
+        compiler_error: String,
+    },
     TransitionRequiresCompiledProgram {
         current: PipelineStatus,
         transition_to: PipelineStatus,
@@ -415,7 +418,7 @@ impl Display for DBError {
             DBError::InvalidConnectorTransport { reason } => {
                 write!(f, "Invalid connector transport: '{reason}'")
             }
-            DBError::StartFailedDueToFailedCompilation => {
+            DBError::StartFailedDueToFailedCompilation { .. } => {
                 write!(
                     f,
                     "Not possible to start the pipeline because the program failed to compile"
@@ -550,7 +553,7 @@ impl ResponseError for DBError {
             Self::CannotRenameNonExistingPipeline { .. } => StatusCode::BAD_REQUEST,
             Self::OutdatedProgramVersion { .. } => StatusCode::CONFLICT,
             Self::InvalidConnectorTransport { .. } => StatusCode::BAD_REQUEST,
-            Self::StartFailedDueToFailedCompilation => StatusCode::BAD_REQUEST,
+            Self::StartFailedDueToFailedCompilation { .. } => StatusCode::BAD_REQUEST,
             Self::TransitionRequiresCompiledProgram { .. } => StatusCode::INTERNAL_SERVER_ERROR, // Runner error
             Self::InvalidProgramStatusTransition { .. } => StatusCode::INTERNAL_SERVER_ERROR, // Compiler error
             Self::InvalidDeploymentStatusTransition { .. } => StatusCode::INTERNAL_SERVER_ERROR, // Runner error
