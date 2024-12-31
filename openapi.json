@@ -1956,7 +1956,9 @@
                   "Program failed compilation": {
                     "description": "Program failed compilation",
                     "value": {
-                      "details": null,
+                      "details": {
+                        "compiler_error": "error: failed to compile: error: linking with `cc` failed: exit code: 1"
+                      },
                       "error_code": "StartFailedDueToFailedCompilation",
                       "message": "Not possible to start the pipeline because the program failed to compile"
                     }

@@ -204,7 +204,10 @@ pub(crate) fn error_pipeline_not_running_or_paused() -> ErrorResponse {
 }
 
 pub(crate) fn error_program_failed_compilation() -> ErrorResponse {
-    ErrorResponse::from_error_nolog(&DBError::StartFailedDueToFailedCompilation)
+    ErrorResponse::from_error_nolog(&DBError::StartFailedDueToFailedCompilation {
+        compiler_error: "error: failed to compile: error: linking with `cc` failed: exit code: 1"
+            .to_string(),
+    })
 }
 
 pub(crate) fn error_invalid_pipeline_action() -> ErrorResponse {

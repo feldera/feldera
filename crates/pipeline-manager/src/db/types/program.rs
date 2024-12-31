@@ -13,7 +13,7 @@ use rand::{thread_rng, Rng};
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::collections::BTreeMap;
-use std::fmt::Display;
+use std::fmt::{Display, Formatter};
 use std::str::FromStr;
 use std::string::ParseError;
 use thiserror::Error as ThisError;
@@ -99,6 +99,19 @@ pub struct SqlCompilerMessage {
     pub(crate) error_type: String,
     message: String,
     snippet: Option<String>,
+}
+
+impl Display for SqlCompilerMessage {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{error_type}: {message} (line {start_line_number}, column {start_column})",
+            error_type = self.error_type,
+            message = self.message,
+            start_line_number = self.start_line_number,
+            start_column = self.start_column
+        )
+    }
 }
 
 impl SqlCompilerMessage {
