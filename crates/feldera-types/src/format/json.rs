@@ -122,8 +122,7 @@ pub enum JsonLines {
 ///
 /// ### `Debezium`
 ///
-/// We support a simplified version of the Debezium CDC format.  All fields
-/// except `payload` are ignored.
+/// Debezium CDC format.  Refer to [Debezium input connector documentation](https://docs.feldera.com/connectors/sources/debezium) for details.
 ///
 /// ```json
 /// {"payload": {"op": "u", "before": {"b": true, "i": 123}, "after": {"b": true, "i": 0}}}
