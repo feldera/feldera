@@ -1939,15 +1939,19 @@ impl ModelHelpers for Mutex<DbModel> {
             validate_name(name)?;
         }
         if let Some(runtime_config) = runtime_config {
-            validate_runtime_config(runtime_config).map_err(|e| DBError::InvalidRuntimeConfig {
-                value: runtime_config.clone(),
-                error: e,
+            validate_runtime_config(runtime_config, false).map_err(|e| {
+                DBError::InvalidRuntimeConfig {
+                    value: runtime_config.clone(),
+                    error: e,
+                }
             })?;
         }
         if let Some(program_config) = program_config {
-            validate_program_config(program_config).map_err(|e| DBError::InvalidProgramConfig {
-                value: program_config.clone(),
-                error: e,
+            validate_program_config(program_config, false).map_err(|e| {
+                DBError::InvalidProgramConfig {
+                    value: program_config.clone(),
+                    error: e,
+                }
             })?;
         }
 
@@ -2293,13 +2297,13 @@ impl Storage for Mutex<DbModel> {
         let mut state = self.lock().await;
 
         validate_name(&pipeline.name)?;
-        validate_runtime_config(&pipeline.runtime_config).map_err(|e| {
+        validate_runtime_config(&pipeline.runtime_config, false).map_err(|e| {
             DBError::InvalidRuntimeConfig {
                 value: pipeline.runtime_config.clone(),
                 error: e,
             }
         })?;
-        validate_program_config(&pipeline.program_config).map_err(|e| {
+        validate_program_config(&pipeline.program_config, false).map_err(|e| {
             DBError::InvalidProgramConfig {
                 value: pipeline.program_config.clone(),
                 error: e,

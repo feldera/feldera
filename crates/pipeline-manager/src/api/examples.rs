@@ -156,12 +156,12 @@ fn pipeline_info_internal_to_external(pipeline: PipelineInfoInternal) -> Pipelin
         created_at: pipeline.created_at,
         version: pipeline.version,
         platform_version: pipeline.platform_version,
-        runtime_config: validate_runtime_config(&pipeline.runtime_config)
+        runtime_config: validate_runtime_config(&pipeline.runtime_config, true)
             .expect("example must have a valid runtime_config"),
         program_code: pipeline.program_code,
         udf_rust: pipeline.udf_rust,
         udf_toml: pipeline.udf_toml,
-        program_config: validate_program_config(&pipeline.program_config)
+        program_config: validate_program_config(&pipeline.program_config, true)
             .expect("example must have a valid program_config"),
         program_version: pipeline.program_version,
         program_status: pipeline.program_status,
@@ -194,13 +194,13 @@ fn pipeline_selected_info_internal_to_external(
         version: pipeline.version,
         platform_version: pipeline.platform_version,
         runtime_config: pipeline.runtime_config.map(|v| {
-            validate_runtime_config(&v).expect("example must have a valid runtime_config")
+            validate_runtime_config(&v, true).expect("example must have a valid runtime_config")
         }),
         program_code: pipeline.program_code,
         udf_rust: pipeline.udf_rust,
         udf_toml: pipeline.udf_toml,
         program_config: pipeline.program_config.map(|v| {
-            validate_program_config(&v).expect("example must have a valid program_config")
+            validate_program_config(&v, true).expect("example must have a valid program_config")
         }),
         program_version: pipeline.program_version,
         program_status: pipeline.program_status,

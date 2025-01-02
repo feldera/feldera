@@ -378,7 +378,7 @@ pub async fn perform_rust_compilation(
     }
 
     // Program configuration
-    let program_config = validate_program_config(program_config).map_err(|error| {
+    let program_config = validate_program_config(program_config, true).map_err(|error| {
         RustCompilationError::SystemError(formatdoc! {"
                 The program configuration:
                 {program_config:#}

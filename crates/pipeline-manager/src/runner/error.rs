@@ -200,7 +200,7 @@ impl Display for RunnerError {
                 write!(
                     f,
                     "The runtime configuration:\n{value:#}\n\n... is not valid due to: {error}.\n\n\
-                    This indicates a backward-incompatible platform upgrade occurred.\
+                    This indicates a backward-incompatible platform upgrade occurred. \
                     Shut down and update the 'runtime_config' field of the pipeline to resolve this."
                 )
             }
@@ -211,7 +211,7 @@ impl Display for RunnerError {
                 write!(
                     f,
                     "The program information:\n{value:#}\n\n... is not valid due to: {error}.\n\n\
-                    This indicates a backward-incompatible platform upgrade occurred.\
+                    This indicates a backward-incompatible platform upgrade occurred. \
                     Shut down and recompile the pipeline to resolve this."
                 )
             }
@@ -222,7 +222,7 @@ impl Display for RunnerError {
                 write!(
                     f,
                     "The deployment configuration:\n{value:#}\n\n... is not valid due to: {error}.\n\n\
-                    This indicates a backward-incompatible platform upgrade occurred.\
+                    This indicates a backward-incompatible platform upgrade occurred. \
                     Shut down and restart the pipeline to resolve this."
                 )
             }

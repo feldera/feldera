@@ -10,8 +10,10 @@ use crate::db::storage_postgres::StoragePostgres;
 use crate::db::types::pipeline::PipelineId;
 use crate::db::types::program::{generate_program_info, SqlCompilerMessage};
 use crate::db::types::tenant::TenantId;
+use crate::db::types::utils::validate_program_config;
 use crate::db::types::version::Version;
 use feldera_types::program_schema::ProgramSchema;
+use indoc::formatdoc;
 use log::{debug, error, info, trace};
 use std::path::Path;
 use std::time::Instant;
@@ -286,7 +288,7 @@ pub(crate) async fn perform_sql_compilation(
     pipeline_id: PipelineId,
     platform_version: &str,
     program_version: Version,
-    _program_config: &serde_json::Value, // Might be used in the future to pass SQL compiler flags
+    program_config: &serde_json::Value,
     program_code: &str,
 ) -> Result<(serde_json::Value, Duration), SqlCompilationError> {
     let start = Instant::now();
@@ -299,6 +301,20 @@ pub(crate) async fn perform_sql_compilation(
             common_config.platform_version
         )));
     }
+
+    // Program configuration
+    // Might be used in the future to pass SQL compiler flags
+    let _program_config = validate_program_config(program_config, true).map_err(|error| {
+        SqlCompilationError::SystemError(formatdoc! {"
+                The program configuration:
+                {program_config:#}
+
+                ... is not valid due to: {error}.
+
+                This indicates a backward-incompatible platform upgrade occurred.
+                Update the 'program_config' field of the pipeline to resolve this.
+            "})
+    })?;
 
     // Recreate working directory for the input/output of the SQL compiler
     let working_dir = config

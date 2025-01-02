@@ -1,6 +1,7 @@
 use crate::db::error::DBError;
 use crate::db::types::program::{ProgramConfig, ProgramInfo};
 use feldera_types::config::{PipelineConfig, RuntimeConfig};
+use log::error;
 use regex::Regex;
 use serde::Serialize;
 use thiserror::Error as ThisError;
@@ -52,42 +53,72 @@ pub enum ValidationError {
 }
 
 /// Deserializes generic JSON value into [`RuntimeConfig`] and performs any additional validation.
+/// It should log an error if it was not used to validate initial user input.
 pub(crate) fn validate_runtime_config(
     value: &serde_json::Value,
+    log_if_invalid: bool,
 ) -> Result<RuntimeConfig, ValidationError> {
-    let runtime_config: RuntimeConfig = serde_json::from_value(value.clone())
-        .map_err(|e| ValidationError::DeserializationFailed(e.to_string()))?;
-    #[cfg(not(feature = "feldera-enterprise"))]
-    if runtime_config.fault_tolerance.is_some() {
-        return Err(ValidationError::EnterpriseFeature(
-            "fault tolerance".to_string(),
-        ));
+    let deserialize_result = serde_json::from_value::<RuntimeConfig>(value.clone())
+        .map_err(|e| ValidationError::DeserializationFailed(e.to_string()));
+    match deserialize_result {
+        Ok(runtime_config) => {
+            #[cfg(not(feature = "feldera-enterprise"))]
+            if runtime_config.fault_tolerance.is_some() {
+                let e = ValidationError::EnterpriseFeature("fault tolerance".to_string());
+                if log_if_invalid {
+                    error!("Backward incompatibility detected: the following JSON:\n{value:#}\n\n... is no longer a valid runtime configuration due to: {e}");
+                }
+                return Err(e);
+            }
+            Ok(runtime_config)
+        }
+        Err(e) => {
+            if log_if_invalid {
+                error!("Backward incompatibility detected: the following JSON:\n{value:#}\n\n... is no longer a valid runtime configuration due to: {e}");
+            }
+            Err(e)
+        }
     }
-    Ok(runtime_config)
 }
 
 /// Deserializes generic JSON value into [`ProgramConfig`] and performs any additional validation.
+/// It should log an error if it was not used to validate initial user input.
 pub(crate) fn validate_program_config(
     value: &serde_json::Value,
+    log_if_invalid: bool,
 ) -> Result<ProgramConfig, ValidationError> {
-    serde_json::from_value(value.clone())
-        .map_err(|e| ValidationError::DeserializationFailed(e.to_string()))
+    let deserialize_result = serde_json::from_value(value.clone())
+        .map_err(|e| ValidationError::DeserializationFailed(e.to_string()));
+    if let Err(e) = &deserialize_result {
+        if log_if_invalid {
+            error!("Backward incompatibility detected: the following JSON:\n{value:#}\n\n... is no longer a valid program configuration due to: {e}");
+        }
+    }
+    deserialize_result
 }
 
 /// Deserializes the generic JSON value into [`ProgramInfo`] and performs any additional validation.
 pub(crate) fn validate_program_info(
     value: &serde_json::Value,
 ) -> Result<ProgramInfo, ValidationError> {
-    serde_json::from_value(value.clone())
-        .map_err(|e| ValidationError::DeserializationFailed(e.to_string()))
+    let deserialize_result = serde_json::from_value(value.clone())
+        .map_err(|e| ValidationError::DeserializationFailed(e.to_string()));
+    if let Err(e) = &deserialize_result {
+        error!("Backward incompatibility detected: the following JSON:\n{value:#}\n\n... is no longer a valid program information due to: {e}");
+    }
+    deserialize_result
 }
 
 /// Deserializes the generic JSON value into [`PipelineConfig`] and performs any additional validation.
 pub(crate) fn validate_deployment_config(
     value: &serde_json::Value,
 ) -> Result<PipelineConfig, ValidationError> {
-    serde_json::from_value(value.clone())
-        .map_err(|e| ValidationError::DeserializationFailed(e.to_string()))
+    let deserialize_result = serde_json::from_value(value.clone())
+        .map_err(|e| ValidationError::DeserializationFailed(e.to_string()));
+    if let Err(e) = &deserialize_result {
+        error!("Backward incompatibility detected: the following JSON:\n{value:#}\n\n... is no longer a valid deployment configuration due to: {e}");
+    }
+    deserialize_result
 }
 
 #[cfg(test)]
@@ -149,23 +180,28 @@ mod tests {
         // RuntimeConfig -> JSON -> RuntimeConfig is the same as original
         let runtime_config = RuntimeConfig::default();
         let value = serde_json::to_value(runtime_config.clone()).unwrap();
-        assert_eq!(runtime_config, validate_runtime_config(&value).unwrap());
+        assert_eq!(
+            runtime_config,
+            validate_runtime_config(&value, true).unwrap()
+        );
 
         // Invalid JSON for RuntimeConfig
         assert!(matches!(
-            validate_runtime_config(&json!({ "workers": "not-a-number" })),
+            validate_runtime_config(&json!({ "workers": "not-a-number" }), true),
             Err(ValidationError::DeserializationFailed(_))
         ));
 
         #[cfg(feature = "feldera-enterprise")]
-        assert!(validate_runtime_config(&json!({ "fault_tolerance": {} }))
-            .unwrap()
-            .fault_tolerance
-            .is_some());
+        assert!(
+            validate_runtime_config(&json!({ "fault_tolerance": {} }), true)
+                .unwrap()
+                .fault_tolerance
+                .is_some()
+        );
 
         #[cfg(not(feature = "feldera-enterprise"))]
         assert!(matches!(
-            validate_runtime_config(&json!({ "fault_tolerance": {} })),
+            validate_runtime_config(&json!({ "fault_tolerance": {} }), true),
             Err(ValidationError::EnterpriseFeature(s)) if s == "fault tolerance"
         ));
     }
@@ -178,11 +214,14 @@ mod tests {
             cache: false,
         };
         let value = serde_json::to_value(program_config.clone()).unwrap();
-        assert_eq!(program_config, validate_program_config(&value).unwrap());
+        assert_eq!(
+            program_config,
+            validate_program_config(&value, true).unwrap()
+        );
 
         // Invalid JSON for ProgramConfig
         assert!(matches!(
-            validate_program_config(&json!({ "profile": "non-existent-profile" })),
+            validate_program_config(&json!({ "profile": "non-existent-profile" }), true),
             Err(ValidationError::DeserializationFailed(_))
         ));
     }

@@ -203,13 +203,13 @@ pub(crate) async fn new_pipeline(
     pipeline: PipelineDescr,
 ) -> Result<(PipelineId, Version), DBError> {
     validate_name(&pipeline.name)?;
-    let _ = validate_runtime_config(&pipeline.runtime_config).map_err(|error| {
+    let _ = validate_runtime_config(&pipeline.runtime_config, false).map_err(|error| {
         DBError::InvalidRuntimeConfig {
             value: pipeline.runtime_config.clone(),
             error,
         }
     })?;
-    let _ = validate_program_config(&pipeline.program_config).map_err(|error| {
+    let _ = validate_program_config(&pipeline.program_config, false).map_err(|error| {
         DBError::InvalidProgramConfig {
             value: pipeline.program_config.clone(),
             error,
@@ -277,7 +277,7 @@ pub(crate) async fn update_pipeline(
         validate_name(name)?;
     }
     if let Some(runtime_config) = runtime_config {
-        let _ = validate_runtime_config(runtime_config).map_err(|error| {
+        let _ = validate_runtime_config(runtime_config, false).map_err(|error| {
             DBError::InvalidRuntimeConfig {
                 value: runtime_config.clone(),
                 error,
@@ -285,7 +285,7 @@ pub(crate) async fn update_pipeline(
         })?;
     }
     if let Some(program_config) = program_config {
-        let _ = validate_program_config(program_config).map_err(|error| {
+        let _ = validate_program_config(program_config, false).map_err(|error| {
             DBError::InvalidProgramConfig {
                 value: program_config.clone(),
                 error,

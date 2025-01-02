@@ -584,7 +584,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         assert_eq!(self.platform_version, pipeline.platform_version);
 
         // Required runtime_config
-        let runtime_config = match validate_runtime_config(&pipeline.runtime_config) {
+        let runtime_config = match validate_runtime_config(&pipeline.runtime_config, true) {
             Ok(runtime_config) => runtime_config,
             Err(e) => {
                 return Ok(State::TransitionToFailed {
