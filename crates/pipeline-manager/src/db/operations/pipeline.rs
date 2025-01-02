@@ -26,13 +26,15 @@ use uuid::Uuid;
 ///
 /// TODO: when a breaking migration can happen, get rid of the YAML backup attempt
 fn deserialize_json_value(s: &str) -> Result<serde_json::Value, DBError> {
-    let json_result = serde_json::from_str(s);
+    let json_result = serde_json::from_str::<serde_json::Value>(s);
     match json_result {
         Ok(json_value) => Ok(json_value),
         Err(json_error) => {
-            let yaml_result: serde_yaml::Result<serde_yaml::Value> = serde_yaml::from_str(s);
+            let yaml_result = serde_yaml::from_str::<serde_yaml::Value>(s);
             match yaml_result {
                 Ok(yaml_value) => {
+                    // Note that this conversion is not lossless: for example if the YAML contains a mapping
+                    // with two keys, 1: 2 and "1": 3, then the resulting JSON object will be {"1": 3}
                     let converted_value = serde_json::to_value(yaml_value).map_err(|e| {
                         DBError::InvalidJsonData {
                             data: s.to_string(),
