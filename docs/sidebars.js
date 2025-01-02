@@ -96,6 +96,18 @@ const sidebars = {
                     ]
                 },
                 'tutorials/time-series',
+                {
+                    type: 'category',
+                    label: 'Fine-Grained Authorization',
+                    link: {
+                        type: 'doc',
+                        id: 'use_cases/fine_grained_authorization/intro'
+                    },
+                    items: [
+                        'use_cases/fine_grained_authorization/static',
+                        'use_cases/fine_grained_authorization/dynamic'
+                    ]
+                },
                 'tutorials/rest_api/index',
                 'tutorials/monitoring/index'
             ]
