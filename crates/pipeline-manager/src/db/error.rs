@@ -380,29 +380,29 @@ impl Display for DBError {
             DBError::InvalidRuntimeConfig { value, error } => {
                 write!(
                     f,
-                    "JSON for 'runtime_config' field:\n{value}\n\n... is not valid due to: {error}"
+                    "JSON for 'runtime_config' field:\n{value:#}\n\n... is not valid due to: {error}"
                 )
             }
             DBError::InvalidProgramConfig { value, error } => {
                 write!(
                     f,
-                    "JSON for 'program_config' field:\n{value}\n\n... is not valid due to: {error}"
+                    "JSON for 'program_config' field:\n{value:#}\n\n... is not valid due to: {error}"
                 )
             }
             DBError::InvalidProgramInfo { value, error } => {
                 write!(
                     f,
-                    "JSON for 'program_info' field:\n{value}\n\n... is not valid due to: {error}"
+                    "JSON for 'program_info' field:\n{value:#}\n\n... is not valid due to: {error}"
                 )
             }
             DBError::InvalidDeploymentConfig { value, error } => {
                 write!(
                     f,
-                    "JSON for 'deployment_config' field:\n{value}\n\n... is not valid due to: {error}"
+                    "JSON for 'deployment_config' field:\n{value:#}\n\n... is not valid due to: {error}"
                 )
             }
             DBError::InvalidErrorResponse { value, error } => {
-                write!(f, "JSON for 'deployment_error' field:\n{value}\n\n... is not valid due to: {error}")
+                write!(f, "JSON for 'deployment_error' field:\n{value:#}\n\n... is not valid due to: {error}")
             }
             DBError::FailedToSerializeErrorResponse { error } => {
                 write!(f, "Unable to serialize error response for 'deployment_error' field as JSON due to: {error}")

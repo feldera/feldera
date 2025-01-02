@@ -381,7 +381,7 @@ pub async fn perform_rust_compilation(
     let program_config = validate_program_config(program_config).map_err(|error| {
         RustCompilationError::SystemError(formatdoc! {"
                 The program configuration:
-                {program_config}
+                {program_config:#}
 
                 ... is not valid due to: {error}.
 
@@ -402,7 +402,7 @@ pub async fn perform_rust_compilation(
     let program_info = validate_program_info(&program_info).map_err(|error| {
         RustCompilationError::SystemError(formatdoc! {"
                 The program information:
-                {program_info}
+                {program_info:#}
 
                 ... is not valid due to: {error}.
 
