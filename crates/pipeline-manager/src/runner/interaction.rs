@@ -56,10 +56,7 @@ impl RunnerInteraction {
         Ok((
             pipeline.clone(),
             match pipeline.deployment_location {
-                None => Err(RunnerError::PipelineMissingDeploymentLocation {
-                    pipeline_id: pipeline.id,
-                    pipeline_name: pipeline.name.clone(),
-                })?,
+                None => Err(RunnerError::PipelineMissingDeploymentLocation)?,
                 Some(location) => location,
             },
         ))

@@ -2,8 +2,8 @@
 //!
 //! This module defines the controller configuration structure.  The leaves of
 //! this structure are individual transport-specific and data-format-specific
-//! endpoint configs.  We represent these configs as opaque yaml values, so
-//! that the entire configuration tree can be deserialized from a yaml file.
+//! endpoint configs.  We represent these configs as opaque JSON values, so
+//! that the entire configuration tree can be deserialized from a JSON file.
 
 use crate::transport::adhoc::AdHocInputConfig;
 use crate::transport::datagen::DatagenInputConfig;
@@ -66,16 +66,6 @@ pub struct PipelineConfig {
     /// Output endpoint configuration.
     #[serde(default)]
     pub outputs: BTreeMap<Cow<'static, str>, OutputEndpointConfig>,
-}
-
-impl PipelineConfig {
-    pub fn from_yaml(s: &str) -> Self {
-        serde_yaml::from_str(s).unwrap()
-    }
-
-    pub fn to_yaml(&self) -> String {
-        serde_yaml::to_string(self).unwrap()
-    }
 }
 
 /// Configuration for persistent storage in a [`PipelineConfig`].
@@ -285,16 +275,6 @@ impl Default for RuntimeConfig {
                 Some(100_000)
             },
         }
-    }
-}
-
-impl RuntimeConfig {
-    pub fn from_yaml(s: &str) -> Self {
-        serde_yaml::from_str(s).unwrap()
-    }
-
-    pub fn to_yaml(&self) -> String {
-        serde_yaml::to_string(self).unwrap()
     }
 }
 
