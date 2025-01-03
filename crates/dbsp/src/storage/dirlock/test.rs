@@ -3,10 +3,11 @@ use crate::storage::backend::StorageError::{self};
 use std::{fs, path::Path, process};
 
 fn cant_relock(path: &Path) {
-    assert_eq!(
-        LockedDirectory::new(path).unwrap_err(),
-        StorageError::StorageLocked(process::id(), path.to_path_buf(),)
-    );
+    let StorageError::StorageLocked(pid, dir) = LockedDirectory::new(path).unwrap_err() else {
+        unreachable!();
+    };
+    assert_eq!(process::id(), pid);
+    assert_eq!(dir, path.to_path_buf());
 }
 
 #[test]
