@@ -184,6 +184,7 @@ mod tests {
         storage::backend::{posixio_impl::PosixBackend, StoragePath},
     };
 
+    use feldera_types::config::FileBackendConfig;
     use tempfile::TempDir;
 
     use crate::{controller::journal::Journal, test::init_test_logger};
@@ -196,7 +197,11 @@ mod tests {
         init_test_logger();
 
         let tempdir = TempDir::new().unwrap();
-        let backend = Arc::new(PosixBackend::new(tempdir, StorageCacheConfig::default()));
+        let backend = Arc::new(PosixBackend::new(
+            tempdir,
+            StorageCacheConfig::default(),
+            &FileBackendConfig::default(),
+        ));
         let path = StoragePath::from("journal");
 
         let records = (0..10)

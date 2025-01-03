@@ -57,6 +57,13 @@ pub enum StorageError {
     #[error("The requested storage backend ({0:?}) is not available in the open-source version of feldera"
     )]
     BackendNotSupported(Box<StorageBackendConfig>),
+
+    /// The requested storage backend ({backend}) cannot be configured with {}.
+    #[error("The requested storage backend ({backend}) cannot be configured with {config:?}.")]
+    InvalidBackendConfig {
+        backend: String,
+        config: StorageBackendConfig,
+    },
 }
 
 impl From<std::io::Error> for StorageError {
@@ -128,6 +135,7 @@ impl StorageError {
             StorageError::InvalidURL(_) => ErrorKind::Other,
             StorageError::ObjectStore { kind, .. } => *kind,
             StorageError::BackendNotSupported(_) => ErrorKind::Other,
+            StorageError::InvalidBackendConfig { .. } => ErrorKind::Other,
         }
     }
 
