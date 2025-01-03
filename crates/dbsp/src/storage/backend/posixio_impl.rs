@@ -1,13 +1,12 @@
 //! [StorageBackend] implementation using POSIX I/O.
 
-use feldera_types::config::StorageCacheConfig;
+use feldera_types::config::{FileBackendConfig, StorageCacheConfig};
 use metrics::{counter, histogram};
 use std::{
     fs::{self, remove_file, File, OpenOptions},
     io::Error as IoError,
     os::unix::fs::MetadataExt,
     path::{Path, PathBuf},
-    rc::Rc,
     sync::{
         atomic::{AtomicBool, AtomicI64, Ordering},
         Arc,
@@ -17,15 +16,16 @@ use std::{
 use tracing::warn;
 
 use super::{
-    append_to_path, tempdir_for_thread, BlockLocation, FileId, FileReader, FileWriter, HasFileId,
+    append_to_path, default_read_async, BlockLocation, FileId, FileReader, FileWriter, HasFileId,
     StorageBackend, StorageCacheFlags, StorageError, IOV_MAX, MUTABLE_EXTENSION,
 };
-use crate::circuit::metrics::{
-    FILES_CREATED, FILES_DELETED, TOTAL_BYTES_WRITTEN, WRITES_SUCCESS, WRITE_LATENCY,
+use crate::circuit::{
+    metrics::{FILES_CREATED, FILES_DELETED, TOTAL_BYTES_WRITTEN, WRITES_SUCCESS, WRITE_LATENCY},
+    tokio::TOKIO,
 };
 use crate::storage::{buffer_cache::FBuf, init};
 
-pub(super) struct PosixReader {
+struct PosixReader {
     file: Arc<File>,
     file_id: FileId,
     drop: DeleteOnDrop,
@@ -33,20 +33,30 @@ pub(super) struct PosixReader {
     ///
     /// -1 if the file size is unknown.
     size: AtomicI64,
+    /// Whether to use background threads for file I/O.
+    async_threads: bool,
 }
 
 impl PosixReader {
-    pub(super) fn new(file: Arc<File>, file_id: FileId, path: PathBuf, keep: bool) -> Self {
+    fn new(
+        file: Arc<File>,
+        file_id: FileId,
+        path: PathBuf,
+        keep: bool,
+        async_threads: bool,
+    ) -> Self {
         Self {
             file,
             file_id,
             drop: DeleteOnDrop::new(path, keep),
             size: AtomicI64::new(-1),
+            async_threads,
         }
     }
-    pub(super) fn open(
+    fn open(
         path: PathBuf,
         cache: StorageCacheConfig,
+        async_threads: bool,
     ) -> Result<Arc<dyn FileReader>, StorageError> {
         let file = OpenOptions::new()
             .read(true)
@@ -58,6 +68,7 @@ impl PosixReader {
             FileId::new(),
             path,
             true,
+            async_threads,
         )))
     }
 }
@@ -82,6 +93,32 @@ impl FileReader for PosixReader {
         }
     }
 
+    fn read_async(
+        &self,
+        blocks: Vec<BlockLocation>,
+        callback: Box<dyn FnOnce(Vec<Result<Arc<FBuf>, StorageError>>) + Send>,
+    ) {
+        if self.async_threads {
+            let file = self.file.clone();
+            TOKIO.spawn_blocking(move || {
+                callback(
+                    blocks
+                        .into_iter()
+                        .map(|location| {
+                            let mut buffer = FBuf::with_capacity(location.size);
+                            match buffer.read_exact_at(&file, location.offset, location.size) {
+                                Ok(()) => Ok(Arc::new(buffer)),
+                                Err(e) => Err(e.into()),
+                            }
+                        })
+                        .collect(),
+                );
+            });
+        } else {
+            default_read_async(self, blocks, callback);
+        }
+    }
+
     fn get_size(&self) -> Result<u64, StorageError> {
         let sz = self.size.load(Ordering::Relaxed);
         if sz >= 0 {
@@ -94,7 +131,8 @@ impl FileReader for PosixReader {
     }
 }
 
-struct DeleteOnDrop {
+/// Deletes a file when dropped (unless [Self::keep] is called first).
+pub struct DeleteOnDrop {
     path: PathBuf,
     keep: AtomicBool,
 }
@@ -112,13 +150,17 @@ impl Drop for DeleteOnDrop {
 }
 
 impl DeleteOnDrop {
-    fn new(path: PathBuf, keep: bool) -> Self {
+    /// Returns an object that will delete `path` when dropped (unless `keep` is
+    /// true or [Self::keep] is called before this dropping).
+    pub fn new(path: PathBuf, keep: bool) -> Self {
         Self {
             path,
             keep: AtomicBool::new(keep),
         }
     }
-    fn keep(&self) {
+
+    /// Disables deleting the file when dropped.
+    pub fn keep(&self) {
         self.keep.store(true, Ordering::Relaxed);
     }
 }
@@ -132,6 +174,8 @@ struct PosixWriter {
     buffers: Vec<Arc<FBuf>>,
     offset: u64,
     len: u64,
+
+    async_threads: bool,
 }
 
 impl HasFileId for PosixWriter {
@@ -170,6 +214,7 @@ impl FileWriter for PosixWriter {
                 self.file_id,
                 finalized_path.clone(),
                 false,
+                self.async_threads,
             )),
             finalized_path,
         ))
@@ -177,7 +222,7 @@ impl FileWriter for PosixWriter {
 }
 
 impl PosixWriter {
-    fn new(file: File, path: PathBuf) -> Self {
+    fn new(file: File, path: PathBuf, async_threads: bool) -> Self {
         Self {
             file_id: FileId::new(),
             file,
@@ -185,6 +230,7 @@ impl PosixWriter {
             buffers: Vec::new(),
             offset: 0,
             len: 0,
+            async_threads,
         }
     }
 
@@ -245,6 +291,9 @@ pub struct PosixBackend {
 
     /// Cache configuration.
     cache: StorageCacheConfig,
+
+    /// Whether to use background threads for file I/O.
+    async_threads: bool,
 }
 
 impl PosixBackend {
@@ -253,32 +302,22 @@ impl PosixBackend {
     /// ## Parameters
     /// - `base`: Directory in which we keep the files.
     ///   shared among all instances of the backend.
-    pub fn new<P: AsRef<Path>>(base: P, cache: StorageCacheConfig) -> Self {
+    pub fn new<P: AsRef<Path>>(
+        base: P,
+        cache: StorageCacheConfig,
+        options: &FileBackendConfig,
+    ) -> Self {
         init();
         Self {
             base: base.as_ref().to_path_buf(),
             cache,
+            async_threads: options.async_threads.unwrap_or(false),
         }
     }
 
     /// Returns the directory in which the backend creates files.
     pub fn path(&self) -> &Path {
         self.base.as_path()
-    }
-
-    fn new_default() -> Rc<Self> {
-        Rc::new(PosixBackend::new(
-            tempdir_for_thread(),
-            StorageCacheConfig::default(),
-        ))
-    }
-
-    /// Returns a thread-local default backend.
-    pub fn default_for_thread() -> Rc<Self> {
-        thread_local! {
-            pub static DEFAULT_BACKEND: Rc<PosixBackend> = PosixBackend::new_default();
-        }
-        DEFAULT_BACKEND.with(|rc| rc.clone())
     }
 }
 
@@ -292,11 +331,11 @@ impl StorageBackend for PosixBackend {
             .cache_flags(&self.cache)
             .open(&path)?;
         counter!(FILES_CREATED).increment(1);
-        Ok(Box::new(PosixWriter::new(file, path)))
+        Ok(Box::new(PosixWriter::new(file, path, self.async_threads)))
     }
 
     fn open(&self, name: &Path) -> Result<Arc<dyn FileReader>, StorageError> {
-        PosixReader::open(self.base.join(name), self.cache)
+        PosixReader::open(self.base.join(name), self.cache, self.async_threads)
     }
 }
 
@@ -304,7 +343,7 @@ impl StorageBackend for PosixBackend {
 mod tests {
     use std::{path::Path, rc::Rc};
 
-    use feldera_types::config::StorageCacheConfig;
+    use feldera_types::config::{FileBackendConfig, StorageCacheConfig};
 
     use crate::storage::backend::{
         tests::{random_sizes, test_backend},
@@ -314,7 +353,11 @@ mod tests {
     use super::PosixBackend;
 
     fn create_posix_backend(path: &Path) -> Rc<dyn StorageBackend> {
-        Rc::new(PosixBackend::new(path, StorageCacheConfig::default()))
+        Rc::new(PosixBackend::new(
+            path,
+            StorageCacheConfig::default(),
+            &FileBackendConfig::default(),
+        ))
     }
 
     /// Write 10 MiB total in 1 KiB chunks.  `VectoredWrite` flushes its buffer when it

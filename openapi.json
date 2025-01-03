@@ -2694,6 +2694,18 @@
         ],
         "description": "A SQL field.\n\nMatches the SQL compiler JSON format."
       },
+      "FileBackendConfig": {
+        "type": "object",
+        "description": "Configuration for local file system access.",
+        "properties": {
+          "async_threads": {
+            "type": "boolean",
+            "description": "Whether to use background threads for file I/O.\n\nBackground threads should improve performance, but they can reduce\nperformance if too few cores are available. This is provided for\ndebugging and fine-tuning and should ordinarily be left unset.",
+            "default": null,
+            "nullable": true
+          }
+        }
+      },
       "FileInputConfig": {
         "type": "object",
         "description": "Configuration for reading data from a file with `FileInputTransport`",
@@ -4672,20 +4684,13 @@
           {
             "type": "object",
             "required": [
-              "name",
-              "config"
+              "name"
             ],
             "properties": {
-              "config": {
-                "type": "string",
-                "enum": [
-                  "default"
-                ]
-              },
               "name": {
                 "type": "string",
                 "enum": [
-                  "config"
+                  "default"
                 ]
               }
             }
@@ -4698,21 +4703,35 @@
             ],
             "properties": {
               "config": {
-                "type": "string",
-                "enum": [
-                  "io_uring"
-                ]
+                "$ref": "#/components/schemas/FileBackendConfig"
               },
               "name": {
                 "type": "string",
                 "enum": [
-                  "config"
+                  "file"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "enum": [
+                  "io_uring"
                 ]
               }
             }
           }
         ],
-        "description": "Backend storage configuration."
+        "description": "Backend storage configuration.",
+        "discriminator": {
+          "propertyName": "name"
+        }
       },
       "StorageCacheConfig": {
         "type": "string",

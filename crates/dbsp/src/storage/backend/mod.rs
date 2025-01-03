@@ -11,7 +11,7 @@
 
 use crate::storage::buffer_cache::FBuf;
 use feldera_types::config::{
-    StorageBackendConfig, StorageCacheConfig, StorageConfig, StorageOptions,
+    FileBackendConfig, StorageBackendConfig, StorageCacheConfig, StorageConfig, StorageOptions,
 };
 use serde::{ser::SerializeStruct, Serialize, Serializer};
 use std::{
@@ -160,8 +160,38 @@ pub trait FileReader: Send + Sync + HasFileId {
     /// as an error.
     fn read_block(&self, location: BlockLocation) -> Result<Arc<FBuf>, StorageError>;
 
+    /// Initiates an asynchronous read.  When the read completes, `callback`
+    /// will be called.
+    ///
+    /// The default implementation is not actually asynchronous.
+    fn read_async(
+        &self,
+        blocks: Vec<BlockLocation>,
+        callback: Box<dyn FnOnce(Vec<Result<Arc<FBuf>, StorageError>>) + Send>,
+    ) {
+        default_read_async(self, blocks, callback);
+    }
+
     /// Returns the file's size in bytes.
     fn get_size(&self) -> Result<u64, StorageError>;
+}
+
+/// Default implementation for [FileReader::read_async].
+///
+/// This implementation is not actually asynchronous.
+pub fn default_read_async<R>(
+    reader: &R,
+    blocks: Vec<BlockLocation>,
+    callback: Box<dyn FnOnce(Vec<Result<Arc<FBuf>, StorageError>>) + Send>,
+) where
+    R: FileReader + ?Sized,
+{
+    callback(
+        blocks
+            .into_iter()
+            .map(|location| reader.read_block(location))
+            .collect(),
+    )
 }
 
 /// A storage backend.
@@ -205,6 +235,7 @@ impl dyn StorageBackend {
 
         match &options.backend {
             StorageBackendConfig::Default => Ok(Self::new_default(config)),
+            StorageBackendConfig::File(options) => Ok(Self::new_file(config, options)),
             StorageBackendConfig::IoUring => Ok(Self::new_iouring(config)),
         }
     }
@@ -229,8 +260,16 @@ impl dyn StorageBackend {
         }
     }
 
+    fn new_file(config: &StorageConfig, options: &FileBackendConfig) -> Rc<Self> {
+        Rc::new(posixio_impl::PosixBackend::new(
+            config.path(),
+            config.cache,
+            options,
+        ))
+    }
+
     fn new_default(config: &StorageConfig) -> Rc<Self> {
-        Rc::new(posixio_impl::PosixBackend::new(config.path(), config.cache))
+        Self::new_file(config, &FileBackendConfig::default())
     }
 
     fn new_iouring(config: &StorageConfig) -> Rc<Self> {
@@ -300,7 +339,7 @@ pub struct InvalidBlockLocation {
 }
 
 /// A block that can be read or written in a [FileReader] or [FileWriter].
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct BlockLocation {
     /// Byte offset, a multiple of 512.
     pub offset: u64,

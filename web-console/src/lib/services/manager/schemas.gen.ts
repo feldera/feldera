@@ -737,6 +737,23 @@ export const $Field = {
 Matches the SQL compiler JSON format.`
 } as const
 
+export const $FileBackendConfig = {
+  type: 'object',
+  description: 'Configuration for local file system access.',
+  properties: {
+    async_threads: {
+      type: 'boolean',
+      description: `Whether to use background threads for file I/O.
+
+Background threads should improve performance, but they can reduce
+performance if too few cores are available. This is provided for
+debugging and fine-tuning and should ordinarily be left unset.`,
+      default: null,
+      nullable: true
+    }
+  }
+} as const
+
 export const $FileInputConfig = {
   type: 'object',
   description: 'Configuration for reading data from a file with `FileInputTransport`',
@@ -3117,15 +3134,11 @@ export const $StorageBackendConfig = {
   oneOf: [
     {
       type: 'object',
-      required: ['name', 'config'],
+      required: ['name'],
       properties: {
-        config: {
-          type: 'string',
-          enum: ['default']
-        },
         name: {
           type: 'string',
-          enum: ['config']
+          enum: ['default']
         }
       }
     },
@@ -3134,17 +3147,29 @@ export const $StorageBackendConfig = {
       required: ['name', 'config'],
       properties: {
         config: {
-          type: 'string',
-          enum: ['io_uring']
+          $ref: '#/components/schemas/FileBackendConfig'
         },
         name: {
           type: 'string',
-          enum: ['config']
+          enum: ['file']
+        }
+      }
+    },
+    {
+      type: 'object',
+      required: ['name'],
+      properties: {
+        name: {
+          type: 'string',
+          enum: ['io_uring']
         }
       }
     }
   ],
-  description: 'Backend storage configuration.'
+  description: 'Backend storage configuration.',
+  discriminator: {
+    propertyName: 'name'
+  }
 } as const
 
 export const $StorageCacheConfig = {
