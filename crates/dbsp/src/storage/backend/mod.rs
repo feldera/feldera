@@ -235,12 +235,6 @@ pub trait Storage {
 
     /// Returns the root of the storage backend.
     fn base(&self) -> PathBuf;
-
-    /// Allocates a buffer suitable for writing to a file using Direct I/O over
-    /// `io_uring`.
-    fn allocate_buffer(&self, sz: usize) -> FBuf {
-        FBuf::with_capacity(sz)
-    }
 }
 
 impl<S> Storage for Box<S>
