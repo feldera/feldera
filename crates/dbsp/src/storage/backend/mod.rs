@@ -14,6 +14,7 @@ use serde::{ser::SerializeStruct, Serialize, Serializer};
 use std::{
     fs::OpenOptions,
     io::ErrorKind,
+    ops::Range,
     path::{Path, PathBuf},
     rc::Rc,
     sync::{
@@ -153,6 +154,25 @@ pub trait FileReader: Send + Sync + HasFileId {
     /// If successful, the result will be exactly `size` bytes long; that is,
     /// this API treats read past EOF as an error.
     fn read_block(&self, offset: u64, size: usize) -> Result<Arc<FBuf>, StorageError>;
+
+    /// Initiates an asynchronous read.  When the read completes, `callback`
+    /// will be called.
+    ///
+    /// The default implementation is not actually asynchronous.
+    fn read_async(
+        &self,
+        blocks: Vec<Range<u64>>,
+        callback: Box<dyn FnOnce(Vec<Result<Arc<FBuf>, StorageError>>) + Send>,
+    ) {
+        callback(
+            blocks
+                .into_iter()
+                .map(|range| {
+                    self.read_block(range.start, (range.end - range.start).try_into().unwrap())
+                })
+                .collect(),
+        )
+    }
 
     /// Returns the file's size in bytes.
     fn get_size(&self) -> Result<u64, StorageError>;
