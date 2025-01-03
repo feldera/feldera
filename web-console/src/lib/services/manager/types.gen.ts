@@ -509,6 +509,20 @@ export type Field = SqlIdentifier & {
 }
 
 /**
+ * Configuration for local file system access.
+ */
+export type FileBackendConfig = {
+  /**
+   * Whether to use background threads for file I/O.
+   *
+   * Background threads should improve performance, but they can reduce
+   * performance if too few cores are available. This is provided for
+   * debugging and fine-tuning and should ordinarily be left unset.
+   */
+  async_threads?: boolean | null
+}
+
+/**
  * Configuration for reading data from a file with `FileInputTransport`
  */
 export type FileInputConfig = {
@@ -1943,17 +1957,17 @@ export type SqlType =
  */
 export type StorageBackendConfig =
   | {
-      config: 'default'
-      name: 'config'
+      name: 'default'
     }
   | {
-      config: 'io_uring'
-      name: 'config'
+      config: FileBackendConfig
+      name: 'file'
+    }
+  | {
+      name: 'io_uring'
     }
 
-export type config = 'default'
-
-export type name = 'config'
+export type name = 'default'
 
 /**
  * How to cache access to storage within a Feldera pipeline.

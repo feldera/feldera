@@ -165,11 +165,15 @@ pub enum StorageBackendConfig {
     #[default]
     Default,
 
+    /// Use the local file system.
+    ///
+    /// This uses ordinary system file operations.
+    File(FileBackendConfig),
+
     /// Use `io_uring` to access the local file system.
     ///
-    /// This falls back to ordinary access to the local file system if
-    /// `io_uring` is unavailable, as is often the case with cloud container
-    /// systems.
+    /// This falls back to [StorageBackendConfig::File] if `io_uring` is
+    /// unavailable, as is often the case with cloud container systems.
     IoUring,
 }
 
@@ -189,6 +193,18 @@ pub enum StorageCompression {
 
     /// Use [Snappy](https://en.wikipedia.org/wiki/Snappy_(compression)) compression.
     Snappy,
+}
+
+/// Configuration for local file system access.
+#[derive(Debug, Clone, Default, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
+#[serde(default)]
+pub struct FileBackendConfig {
+    /// Whether to use background threads for file I/O.
+    ///
+    /// Background threads should improve performance, but they can reduce
+    /// performance if too few cores are available. This is provided for
+    /// debugging and fine-tuning and should ordinarily be left unset.
+    pub async_threads: Option<bool>,
 }
 
 /// Global pipeline configuration settings. This is the publicly
