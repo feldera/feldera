@@ -67,7 +67,8 @@
 //! permitted to provide a way to summarize data for comparisons.  The need for
 //! this improvement is not yet clear, so it is not yet implemented.
 
-#![warn(missing_docs)]
+// Warn about missing docs, but not for item declared with `#[cfg(test)]`.
+#![cfg_attr(not(test), warn(missing_docs))]
 
 #[cfg(doc)]
 use crc32c::crc32c;
