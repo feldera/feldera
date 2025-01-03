@@ -5,6 +5,7 @@ use metrics::{counter, histogram};
 use std::{
     fs::{self, remove_file, File, OpenOptions},
     io::Error as IoError,
+    ops::Range,
     os::unix::fs::MetadataExt,
     path::{Path, PathBuf},
     rc::Rc,
@@ -20,8 +21,9 @@ use super::{
     append_to_path, tempdir_for_thread, FileId, FileReader, FileWriter, HasFileId, StorageBackend,
     StorageCacheFlags, StorageError, MUTABLE_EXTENSION,
 };
-use crate::circuit::metrics::{
-    FILES_CREATED, FILES_DELETED, TOTAL_BYTES_WRITTEN, WRITES_SUCCESS, WRITE_LATENCY,
+use crate::circuit::{
+    metrics::{FILES_CREATED, FILES_DELETED, TOTAL_BYTES_WRITTEN, WRITES_SUCCESS, WRITE_LATENCY},
+    tokio::TOKIO,
 };
 use crate::storage::{buffer_cache::FBuf, init};
 
@@ -82,6 +84,29 @@ impl FileReader for PosixReader {
         }
     }
 
+    fn read_async(
+        &self,
+        blocks: Vec<std::ops::Range<u64>>,
+        callback: Box<dyn FnOnce(Vec<Result<Arc<FBuf>, StorageError>>) + Send>,
+    ) {
+        let file = self.file.clone();
+        TOKIO.spawn_blocking(move || {
+            callback(
+                blocks
+                    .into_iter()
+                    .map(|Range { start, end }| {
+                        let length = (end - start) as usize;
+                        let mut buffer = FBuf::with_capacity(length);
+                        match buffer.read_exact_at(&file, start, length) {
+                            Ok(()) => Ok(Arc::new(buffer)),
+                            Err(e) => Err(e.into()),
+                        }
+                    })
+                    .collect(),
+            );
+        });
+    }
+
     fn get_size(&self) -> Result<u64, StorageError> {
         let sz = self.size.load(Ordering::Relaxed);
         if sz >= 0 {
@@ -94,7 +119,8 @@ impl FileReader for PosixReader {
     }
 }
 
-struct DeleteOnDrop {
+/// Deletes a file when dropped (unless [Self::keep] is called first).
+pub struct DeleteOnDrop {
     path: PathBuf,
     keep: AtomicBool,
 }
@@ -112,13 +138,17 @@ impl Drop for DeleteOnDrop {
 }
 
 impl DeleteOnDrop {
-    fn new(path: PathBuf, keep: bool) -> Self {
+    /// Returns an object that will delete `path` when dropped (unless `keep` is
+    /// true or [Self::keep] is called before this dropping).
+    pub fn new(path: PathBuf, keep: bool) -> Self {
         Self {
             path,
             keep: AtomicBool::new(keep),
         }
     }
-    fn keep(&self) {
+
+    /// Disables deleting the file when dropped.
+    pub fn keep(&self) {
         self.keep.store(true, Ordering::Relaxed);
     }
 }
