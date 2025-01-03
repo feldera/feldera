@@ -5,8 +5,8 @@ use crate::db::operations::utils::{
 use crate::db::types::api_key::{
     ApiKeyDescr, ApiKeyId, ApiPermission, API_PERMISSION_READ, API_PERMISSION_WRITE,
 };
-use crate::db::types::common::validate_name;
 use crate::db::types::tenant::TenantId;
+use crate::db::types::utils::validate_name;
 use deadpool_postgres::Transaction;
 use openssl::sha;
 use std::str::FromStr;

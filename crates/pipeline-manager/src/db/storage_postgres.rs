@@ -6,16 +6,15 @@ use crate::db::operations;
 use crate::db::pg_setup;
 use crate::db::storage::Storage;
 use crate::db::types::api_key::{ApiKeyDescr, ApiPermission};
-use crate::db::types::common::Version;
 use crate::db::types::pipeline::{
     ExtendedPipelineDescr, PipelineDescr, PipelineDesiredStatus, PipelineId, PipelineStatus,
 };
-use crate::db::types::program::{ProgramConfig, ProgramInfo, ProgramStatus, SqlCompilerMessage};
+use crate::db::types::program::{ProgramStatus, SqlCompilerMessage};
 use crate::db::types::tenant::TenantId;
+use crate::db::types::version::Version;
 use crate::{auth::TenantRecord, config::DatabaseConfig};
 use async_trait::async_trait;
 use deadpool_postgres::{Manager, Pool, RecyclingMethod};
-use feldera_types::config::{PipelineConfig, RuntimeConfig};
 use feldera_types::error::ErrorResponse;
 use log::{debug, info, log, Level};
 use tokio_postgres::NoTls;
@@ -250,11 +249,11 @@ impl Storage for StoragePostgres {
         name: &Option<String>,
         description: &Option<String>,
         platform_version: &str,
-        runtime_config: &Option<RuntimeConfig>,
+        runtime_config: &Option<serde_json::Value>,
         program_code: &Option<String>,
         udf_rust: &Option<String>,
         udf_toml: &Option<String>,
-        program_config: &Option<ProgramConfig>,
+        program_config: &Option<serde_json::Value>,
     ) -> Result<ExtendedPipelineDescr, DBError> {
         let mut client = self.pool.get().await?;
         let txn = client.transaction().await?;
@@ -351,7 +350,7 @@ impl Storage for StoragePostgres {
         tenant_id: TenantId,
         pipeline_id: PipelineId,
         program_version_guard: Version,
-        program_info: &ProgramInfo,
+        program_info: &serde_json::Value,
     ) -> Result<(), DBError> {
         let mut client = self.pool.get().await?;
         let txn = client.transaction().await?;
@@ -555,7 +554,7 @@ impl Storage for StoragePostgres {
         &self,
         tenant_id: TenantId,
         pipeline_id: PipelineId,
-        deployment_config: PipelineConfig,
+        deployment_config: serde_json::Value,
     ) -> Result<(), DBError> {
         let mut client = self.pool.get().await?;
         let txn = client.transaction().await?;
