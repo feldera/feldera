@@ -1720,6 +1720,11 @@ where
     /// This function does not move the cursor if `compare` returns [`Equal`] or
     /// [`Greater`] for the current row or a previous row.
     ///
+    /// # Error handling
+    ///
+    /// If this returns an error, then the cursor's position might be lost. If
+    /// so, then its position is advanced past the end of the row group.
+    ///
     /// # Safety
     ///
     /// Unsafe because `rkyv` deserialization is unsafe.
@@ -1974,6 +1979,27 @@ where
         }
     }
 
+    /// This implements an equivalent of the following snippet, but it performs
+    /// much better because it searches from the current path, reusing the data
+    /// block and index blocks already in the path, instead of starting from the
+    /// root node.
+    ///
+    /// ````text
+    /// match Self::best_match(row_group, compare, Less)? {
+    ///     Some(path) => {
+    ///         *self = path;
+    ///         return Ok(true);
+    ///     }
+    ///     None => return Ok(false),
+    /// }
+    /// ```
+    ///
+    /// If this returns an `Error`, then the resulting `Path` can violate the
+    /// invariant that `self.data` is not a direct child of the last element in
+    /// `self.indexes`. The caller should not use this `Path` again.
+    ///
+    /// The same optimization would apply to backward seeks, but they haven't
+    /// been important in practice yet.
     unsafe fn advance_to_first_ge<N, T, C>(
         &mut self,
         row_group: &RowGroup<'_, K, A, N, T>,
@@ -1983,30 +2009,6 @@ where
         T: ColumnSpec,
         C: Fn(&K) -> Ordering,
     {
-        // This implementation is equivalent to:
-        //
-        // ````
-        // match Self::best_match(row_group, compare, Less)? {
-        //     Some(path) => {
-        //         *self = path;
-        //         return Ok(true);
-        //     }
-        //     None => return Ok(false),
-        // }
-        // ```
-        //
-        // but it performs much better because it searches from the current
-        // path, reusing the data block and index blocks already in the path,
-        // instead of starting from the root node.
-        //
-        // XXX This operation can yield an inconsistent path (where `self.data`
-        // is not a direct child of the last element in `self.indexes`) if an
-        // I/O error occurs in the middle. Our current upper layers don't try to
-        // tolerate I/O errors though.
-        //
-        // XXX The same optimization would apply to backward seeks, but they
-        // haven't been important in practice yet.
-
         let rows = self.row..row_group.rows.end;
 
         // Check the current position first. We might already be done.
@@ -2289,6 +2291,8 @@ where
         }
     }
 
+    /// If this returns an I/O error, then the position might be lost (and set
+    /// to `Position::After`).
     unsafe fn advance_to_first_ge<N, T, C>(
         &mut self,
         row_group: &RowGroup<'_, K, A, N, T>,
@@ -2304,8 +2308,16 @@ where
             }
             Position::After => (),
             Position::Row(path) => {
-                if !path.advance_to_first_ge(row_group, compare)? {
-                    *self = Position::After
+                match path.advance_to_first_ge(row_group, compare) {
+                    Ok(false) => {
+                        *self = Position::After;
+                    }
+                    Ok(true) => (),
+                    Err(error) => {
+                        // Discard `path`, which might now be invalid.
+                        *self = Position::After;
+                        return Err(error);
+                    }
                 }
             }
         }
