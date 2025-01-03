@@ -58,18 +58,6 @@ pub enum StorageError {
     #[error("{0}")]
     StdIo(#[from] std::io::Error),
 
-    /// Range to be written overlaps with previous write.
-    #[error("The range to be written overlaps with a previous write")]
-    OverlappingWrites,
-
-    /// Read ended before the full request length.
-    #[error("The read would have returned less data than requested.")]
-    ShortRead,
-
-    /// Storage location not found.
-    #[error("The requested (base) directory for storage ({0:?}) does not exist.")]
-    StorageLocationNotFound(PathBuf),
-
     /// A process already locked the provided storage directory.
     ///
     /// If this is not expected, please remove the lock file manually, after verifying
@@ -77,27 +65,9 @@ pub enum StorageError {
     #[error("A process with PID {0} is already using the storage directory {1:?}.")]
     StorageLocked(u32, PathBuf),
 
-    /// Unable to lock the PID file for the storage directory.
-    ///
-    /// This means another pipeline started and tried to lock it at the same time.
-    #[error("Unable to lock the PID file ({1:?}) for the storage directory.")]
-    UnableToLockPidFile(i32, PathBuf),
-
     /// Unknown checkpoint specified in configuration.
     #[error("Couldn't find the specified checkpoint ({0:?}).")]
     CheckpointNotFound(Uuid),
-
-    /// Unable to receive a message from the thread that does storage compaction.
-    #[error("Unable to receive a message from the merge-thread.")]
-    TryRx(#[from] std::sync::mpsc::TryRecvError),
-
-    /// Error when sending a message to the thread that merges batches.
-    #[error("Unable to receive a message from the compactor-thread.")]
-    Rx(#[from] std::sync::mpsc::RecvError),
-
-    /// The thread that merges batches exited unexpectedly.
-    #[error("Compactor Thread exited unexpectedly.")]
-    MergerThreadExited,
 }
 
 impl Serialize for StorageError {
@@ -116,35 +86,6 @@ impl Serialize for StorageError {
         }
     }
 }
-
-/// Implementation of PartialEq for StorageError.
-///
-/// This is for testing only and therefore intentionally not a complete
-/// implementation.
-#[cfg(test)]
-impl PartialEq for StorageError {
-    fn eq(&self, other: &Self) -> bool {
-        fn is_unexpected_eof(error: &StorageError) -> bool {
-            use std::io::ErrorKind;
-            matches!(error, StorageError::StdIo(error) if error.kind() == ErrorKind::UnexpectedEof)
-        }
-        #[allow(clippy::match_like_matches_macro)]
-        match (self, other) {
-            (Self::OverlappingWrites, Self::OverlappingWrites) => true,
-            (Self::ShortRead, Self::ShortRead) => true,
-            (Self::StorageLocationNotFound(path), Self::StorageLocationNotFound(other_path)) => {
-                path == other_path
-            }
-            (Self::StorageLocked(pid, path), Self::StorageLocked(other_pid, other_path)) => {
-                pid == other_pid && path == other_path
-            }
-            _ => is_unexpected_eof(self) && is_unexpected_eof(other),
-        }
-    }
-}
-
-#[cfg(test)]
-impl Eq for StorageError {}
 
 /// A unique identifier for a [FileReader] or [FileWriter].
 ///
