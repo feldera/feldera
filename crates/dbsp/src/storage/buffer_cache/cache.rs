@@ -8,8 +8,6 @@ use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use std::{collections::BTreeMap, ops::Range};
 
-use crc32c::crc32c;
-
 use crate::storage::backend::{Backend, FileId, FileReader, FileWriter, Storage};
 use crate::storage::file::reader::{CorruptionError, Error};
 use crate::{storage::backend::StorageError, storage::buffer_cache::FBuf, Runtime};
@@ -265,11 +263,8 @@ where
         &self,
         file: &mut dyn FileWriter,
         offset: u64,
-        mut data: FBuf,
+        data: FBuf,
     ) -> Result<(), StorageError> {
-        let checksum = crc32c(&data[4..]).to_le_bytes();
-        data[..4].copy_from_slice(checksum.as_slice());
-
         let data = file.write_block(offset, data)?;
         let size = data.len();
         let aux = E::from_write(data, offset, size).unwrap();
