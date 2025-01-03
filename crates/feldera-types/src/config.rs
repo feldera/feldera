@@ -220,6 +220,11 @@ pub enum StorageBackendConfig {
     #[default]
     Default,
 
+    /// Use the local file system.
+    ///
+    /// This uses ordinary system file operations.
+    File(FileBackendConfig),
+
     /// Object storage.
     Object(ObjectStorageConfig),
 }
@@ -228,6 +233,7 @@ impl Display for StorageBackendConfig {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             StorageBackendConfig::Default => write!(f, "default"),
+            StorageBackendConfig::File(_) => write!(f, "file"),
             StorageBackendConfig::Object(_) => write!(f, "object"),
         }
     }
@@ -317,6 +323,18 @@ pub struct ObjectStorageConfig {
     /// options.
     #[serde(flatten)]
     pub other_options: BTreeMap<String, String>,
+}
+
+/// Configuration for local file system access.
+#[derive(Debug, Clone, Default, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
+#[serde(default)]
+pub struct FileBackendConfig {
+    /// Whether to use background threads for file I/O.
+    ///
+    /// Background threads should improve performance, but they can reduce
+    /// performance if too few cores are available. This is provided for
+    /// debugging and fine-tuning and should ordinarily be left unset.
+    pub async_threads: Option<bool>,
 }
 
 /// Global pipeline configuration settings. This is the publicly
