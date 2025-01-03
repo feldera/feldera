@@ -150,11 +150,7 @@ pub trait IndexedZSet:
         self.distinct()
     }
 
-    // /// Returns an iterator over updates in the indexed Z-set.
-    // fn iter(&self) -> IndexedZSetIterator<Self> {
-    //     IndexedZSetIterator::new(self.cursor())
-    // }
-
+    /// Returns an iterator over updates in the indexed Z-set.
     fn iter(&self) -> IndexedZSetIterator<Self> {
         IndexedZSetIterator::new(self.cursor())
     }
