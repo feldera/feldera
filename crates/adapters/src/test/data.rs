@@ -4,7 +4,7 @@ use arrow::array::{
 };
 use arrow::datatypes::{DataType, Schema, TimeUnit};
 use dbsp::utils::Tup2;
-use feldera_sqllib::{ByteArray, Date, Time, Timestamp, F32, F64};
+use feldera_sqllib::{ByteArray, Date, Time, Timestamp, Variant, F32, F64};
 use feldera_types::program_schema::{ColumnType, Field, Relation, SqlIdentifier};
 use feldera_types::{
     deserialize_table_record, deserialize_without_context, serialize_struct, serialize_table_record,
@@ -50,6 +50,16 @@ impl TestStruct {
             ..Default::default()
         }
     }
+
+    pub fn arrow_schema() -> Arc<Schema> {
+        Arc::new(Schema::new(vec![
+            arrow::datatypes::Field::new("id", DataType::Int64, false),
+            arrow::datatypes::Field::new("b", DataType::Boolean, false),
+            arrow::datatypes::Field::new("i", DataType::Int64, true),
+            arrow::datatypes::Field::new("s", DataType::Utf8, false),
+        ]))
+    }
+
     pub fn schema() -> Vec<Field> {
         vec![
             Field::new("id".into(), ColumnType::bigint(false)),
@@ -759,4 +769,336 @@ deserialize_table_record!(IcebergTestStruct["IcebergTestStruct", 13] {
     // (uuid, "uuid", false, ByteArray, None),
     (fixed, "fixed", false, ByteArray, None),
     (varbin, "varbin", false, ByteArray, None)
+});
+
+/// Struct will all types supported by the DeltaLake connector.
+#[derive(
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Clone,
+    Hash,
+    SizeOf,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
+#[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
+pub struct DeltaTestStruct {
+    pub bigint: i64,
+    pub binary: ByteArray,
+    pub boolean: bool,
+    pub date: Date,
+    pub decimal_10_3: Decimal,
+    pub double: F64,
+    pub float: F32,
+    pub int: i32,
+    pub smallint: i16,
+    pub string: String,
+    pub timestamp_ntz: Timestamp,
+    pub tinyint: i8,
+    pub string_array: Vec<String>,
+    pub struct1: TestStruct,
+    pub struct_array: Vec<TestStruct>,
+    pub string_string_map: BTreeMap<String, String>,
+    pub string_struct_map: BTreeMap<String, TestStruct>,
+    pub variant: Variant,
+}
+
+// TODO: INTERVAL, VOID, TIMESTAMP (with tz), Object, map with non-string keys
+
+impl Arbitrary for DeltaTestStruct {
+    type Parameters = ();
+
+    type Strategy = BoxedStrategy<DeltaTestStruct>;
+
+    fn arbitrary_with(_params: Self::Parameters) -> Self::Strategy {
+        (
+            (
+                i64::arbitrary(),
+                collection::vec(u8::arbitrary(), 0..=10),
+                bool::arbitrary(),
+                0i32..100_000,    // Date
+                0..1_000_000i128, // Decimal digits
+                -1_000_000f64..1_000_000f64,
+                -1_000_000f32..1_000_000f32,
+                i32::arbitrary(),
+                i16::arbitrary(),
+            ),
+            (
+                0i32..1000,                // string
+                1704070800i64..1735693200, // Generate timestamps within a 1-year range
+                i8::arbitrary(),
+                collection::vec(i32::arbitrary().prop_map(|x| x.to_string()), 0..=2), // string array
+                TestStruct::arbitrary(),
+                collection::vec(TestStruct::arbitrary(), 0..=2),
+                BTreeMap::<String, String>::arbitrary_with((
+                    SizeRange::from(0..2),
+                    Default::default(),
+                    Default::default(),
+                )),
+                BTreeMap::<String, TestStruct>::arbitrary_with((
+                    SizeRange::from(0..2),
+                    Default::default(),
+                    Default::default(),
+                )),
+                (0i32..1000),
+            ),
+        )
+            .prop_map(
+                |(
+                    (bigint, binary, boolean, date, decimal_digits, double, float, int, smallint),
+                    (
+                        string,
+                        timestamp_ntz,
+                        tinyint,
+                        string_array,
+                        struct1,
+                        struct_array,
+                        string_string_map,
+                        string_struct_map,
+                        variant,
+                    ),
+                )| {
+                    DeltaTestStruct {
+                        bigint,
+                        binary: ByteArray::from_vec(binary),
+                        boolean,
+                        date: Date::new(date),
+                        decimal_10_3: Decimal::from_i128_with_scale(decimal_digits, 3),
+                        double: F64::new(double.trunc()), // truncate to avoid rounding errors when serializing floats to/from JSON
+                        float: F32::new(float.trunc()),
+                        int,
+                        smallint,
+                        string: string.to_string(),
+                        timestamp_ntz: Timestamp::new(timestamp_ntz * 1000),
+                        tinyint,
+                        string_array,
+                        struct1,
+                        struct_array,
+                        string_string_map,
+                        string_struct_map,
+                        variant: Variant::Map(
+                            std::iter::once((
+                                (Variant::String("foo".to_string())),
+                                Variant::String(variant.to_string()),
+                            ))
+                            .collect(),
+                        ),
+                    }
+                },
+            )
+            .boxed()
+    }
+}
+
+impl DeltaTestStruct {
+    pub fn arrow_schema() -> Arc<Schema> {
+        Arc::new(Schema::new(vec![
+            arrow::datatypes::Field::new("bigint", DataType::Int64, false),
+            arrow::datatypes::Field::new("binary", DataType::Binary, false),
+            arrow::datatypes::Field::new("boolean", DataType::Boolean, false),
+            arrow::datatypes::Field::new("date", DataType::Date32, false),
+            arrow::datatypes::Field::new("decimal_10_3", DataType::Decimal128(10, 3), false),
+            arrow::datatypes::Field::new("double", DataType::Float64, false),
+            arrow::datatypes::Field::new("float", DataType::Float32, false),
+            arrow::datatypes::Field::new("int", DataType::Int32, false),
+            arrow::datatypes::Field::new("smallint", DataType::Int16, false),
+            arrow::datatypes::Field::new("string", DataType::Utf8, false),
+            arrow::datatypes::Field::new(
+                "timestamp_ntz",
+                DataType::Timestamp(TimeUnit::Microsecond, None),
+                false,
+            ),
+            arrow::datatypes::Field::new("tinyint", DataType::Int8, false),
+            arrow::datatypes::Field::new(
+                "string_array",
+                DataType::new_list(DataType::Utf8, false),
+                false,
+            ),
+            arrow::datatypes::Field::new(
+                "struct1",
+                DataType::Struct(TestStruct::arrow_schema().fields.clone()),
+                false,
+            ),
+            arrow::datatypes::Field::new(
+                "struct_array",
+                DataType::new_list(
+                    DataType::Struct(TestStruct::arrow_schema().fields.clone()),
+                    false,
+                ),
+                false,
+            ),
+            arrow::datatypes::Field::new_map(
+                "string_string_map",
+                "entries",
+                arrow::datatypes::Field::new("key", DataType::Utf8, false),
+                arrow::datatypes::Field::new("value", DataType::Utf8, false),
+                false,
+                false,
+            ),
+            arrow::datatypes::Field::new_map(
+                "string_struct_map",
+                "entries",
+                arrow::datatypes::Field::new("key", DataType::Utf8, false),
+                arrow::datatypes::Field::new(
+                    "value",
+                    DataType::Struct(TestStruct::arrow_schema().fields.clone()),
+                    false,
+                ),
+                false,
+                false,
+            ),
+            arrow::datatypes::Field::new("variant", DataType::Utf8, false),
+        ]))
+    }
+
+    pub fn schema() -> Vec<Field> {
+        vec![
+            Field::new("bigint".into(), ColumnType::bigint(false)),
+            Field::new("binary".into(), ColumnType::varbinary(false)),
+            Field::new("boolean".into(), ColumnType::boolean(false)),
+            Field::new("date".into(), ColumnType::date(false)),
+            Field::new("decimal_10_3".into(), ColumnType::decimal(10, 3, false)),
+            Field::new("double".into(), ColumnType::double(false)),
+            Field::new("float".into(), ColumnType::real(false)),
+            Field::new("int".into(), ColumnType::int(false)),
+            Field::new("smallint".into(), ColumnType::smallint(false)),
+            Field::new("string".into(), ColumnType::varchar(false)),
+            Field::new("timestamp_ntz".into(), ColumnType::timestamp(false)),
+            Field::new("tinyint".into(), ColumnType::tinyint(false)),
+            Field::new(
+                "string_array".into(),
+                ColumnType::array(false, ColumnType::varchar(false)),
+            ),
+            Field::new(
+                "struct1".into(),
+                ColumnType::structure(false, &TestStruct::schema()),
+            ),
+            Field::new(
+                "struct_array".into(),
+                ColumnType::array(false, ColumnType::structure(false, &TestStruct::schema())),
+            ),
+            Field::new(
+                "string_string_map".into(),
+                ColumnType::map(
+                    false,
+                    ColumnType::varchar(false),
+                    ColumnType::varchar(false),
+                ),
+            ),
+            Field::new(
+                "string_struct_map".into(),
+                ColumnType::map(
+                    false,
+                    ColumnType::varchar(false),
+                    ColumnType::structure(false, &TestStruct::schema()),
+                ),
+            ),
+            Field::new("variant".into(), ColumnType::variant(false)),
+        ]
+    }
+
+    pub fn schema_with_lateness() -> Vec<Field> {
+        let fields = vec![
+            Field::new("bigint".into(), ColumnType::bigint(false)).with_lateness("1000"),
+            Field::new("binary".into(), ColumnType::varbinary(false)),
+            Field::new("boolean".into(), ColumnType::boolean(false)),
+            Field::new("date".into(), ColumnType::date(false)),
+            Field::new("decimal_10_3".into(), ColumnType::decimal(10, 3, false)),
+            Field::new("double".into(), ColumnType::double(false)),
+            Field::new("float".into(), ColumnType::real(false)),
+            Field::new("int".into(), ColumnType::int(false)),
+            Field::new("smallint".into(), ColumnType::smallint(false)),
+            Field::new("string".into(), ColumnType::varchar(false)),
+            Field::new("timestamp_ntz".into(), ColumnType::timestamp(false))
+                .with_lateness("interval '10 days'"),
+            Field::new("tinyint".into(), ColumnType::tinyint(false)),
+            Field::new(
+                "string_array".into(),
+                ColumnType::array(false, ColumnType::varchar(false)),
+            ),
+            Field::new(
+                "struct1".into(),
+                ColumnType::structure(false, &TestStruct::schema()),
+            ),
+            Field::new(
+                "struct_array".into(),
+                ColumnType::array(false, ColumnType::structure(false, &TestStruct::schema())),
+            ),
+            Field::new(
+                "string_string_map".into(),
+                ColumnType::map(
+                    false,
+                    ColumnType::varchar(false),
+                    ColumnType::varchar(false),
+                ),
+            ),
+            Field::new(
+                "string_struct_map".into(),
+                ColumnType::map(
+                    false,
+                    ColumnType::varchar(false),
+                    ColumnType::structure(false, &TestStruct::schema()),
+                ),
+            ),
+            Field::new("variant".into(), ColumnType::variant(false)),
+        ];
+
+        fields
+    }
+
+    pub fn relation_schema() -> Relation {
+        Relation {
+            name: SqlIdentifier::new("DeltaTestStruct", false),
+            fields: Self::schema(),
+            materialized: false,
+            properties: BTreeMap::new(),
+        }
+    }
+}
+
+serialize_table_record!(DeltaTestStruct[18]{
+    bigint["bigint"]: i64,
+    binary["binary"]: ByteArray,
+    boolean["boolean"]: bool,
+    date["date"]: Date,
+    decimal_10_3["decimal_10_3"]: Decimal,
+    double["double"]: F64,
+    float["float"]: F32,
+    int["int"]: i32,
+    smallint["smallint"]: i16,
+    string["string"]: String,
+    timestamp_ntz["timestamp_ntz"]: Timestamp,
+    tinyint["tinyint"]: i8,
+    string_array["string_array"]: Vec<String>,
+    struct1["struct1"]: TestStruct,
+    struct_array["struct_array"]: Vec<TestStruct>,
+    string_string_map["string_string_map"]: BTreeMap<String, String>,
+    string_struct_map["string_struct_map"]: BTreeMap<String, TestStruct>,
+    variant["variant"]: Variant
+});
+
+deserialize_table_record!(DeltaTestStruct["DeltaTestStruct", 18] {
+    (bigint, "bigint", false, i64, None),
+    (binary, "binary", false, ByteArray, None),
+    (boolean, "boolean", false, bool, None),
+    (date, "date", false, Date, None),
+    (decimal_10_3, "decimal_10_3", false, Decimal, None),
+    (double, "double", false, F64, None),
+    (float, "float", false, F32, None),
+    (int, "int", false, i32, None),
+    (smallint, "smallint", false, i16, None),
+    (string, "string", false, String, None),
+    (timestamp_ntz, "timestamp_ntz", false, Timestamp, None),
+    (tinyint, "tinyint", false, i8, None),
+    (string_array, "string_array", false, Vec<String>, None),
+    (struct1, "struct1", false, TestStruct, None),
+    (struct_array, "struct_array", false, Vec<TestStruct>, None),
+    (string_string_map, "string_string_map", false, BTreeMap<String, String>, None),
+    (string_struct_map, "string_struct_map", false, BTreeMap<String, TestStruct>, None),
+    (variant, "variant", false, Variant, None)
 });

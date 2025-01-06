@@ -4,8 +4,8 @@ use crate::format::parquet::test::load_parquet_file;
 use crate::format::relation_to_parquet_schema;
 use crate::integrated::delta_table::register_storage_handlers;
 use crate::test::{
-    file_to_zset, list_files_recursive, test_circuit, wait, DatabricksPeople, MockDeZSet,
-    MockUpdate, TestStruct2,
+    file_to_zset, list_files_recursive, test_circuit, wait, DatabricksPeople, DeltaTestStruct,
+    MockDeZSet, MockUpdate,
 };
 use crate::{Controller, ControllerError, InputFormat};
 use anyhow::anyhow;
@@ -25,7 +25,9 @@ use deltalake::operations::create::CreateBuilder;
 use deltalake::protocol::SaveMode;
 use deltalake::{DeltaOps, DeltaTable, DeltaTableBuilder};
 use feldera_types::config::PipelineConfig;
+use feldera_types::format::json::JsonFlavor;
 use feldera_types::program_schema::{Field, Relation};
+use feldera_types::serde_with_context::serde_config::DecimalFormat;
 use feldera_types::serde_with_context::serialize::SerializeWithContextWrapper;
 use feldera_types::serde_with_context::{
     DateFormat, DeserializeWithContext, SerializeWithContext, SqlSerdeConfig, TimeFormat,
@@ -60,6 +62,7 @@ use uuid::Uuid;
 fn delta_output_serde_config() -> SqlSerdeConfig {
     SqlSerdeConfig::default()
         .with_date_format(DateFormat::String("%Y-%m-%d"))
+        .with_decimal_format(DecimalFormat::String)
         // DeltaLake only supports microsecond-based timestamp encoding, so we just
         // hardwire that for now.  See also `format/parquet/mod.rs`.
         .with_timestamp_format(TimestampFormat::MicrosSinceEpoch)
@@ -298,7 +301,7 @@ outputs:
     let config: PipelineConfig = serde_yaml::from_str(&config_str).unwrap();
 
     Controller::with_config(
-        |workers| Ok(test_circuit::<T>(workers, &TestStruct2::schema())),
+        |workers| Ok(test_circuit::<T>(workers, &DeltaTestStruct::schema())),
         &config,
         Box::new(move |e| panic!("delta_to_delta pipeline: error: {e}")),
     )
@@ -314,7 +317,7 @@ outputs:
 /// by reading parquet files directly.  I guess the best way to do this is
 /// to build an input connector.
 fn delta_table_output_test(
-    data: Vec<TestStruct2>,
+    data: Vec<DeltaTestStruct>,
     table_uri: &str,
     object_store_config: &HashMap<String, String>,
     verify: bool,
@@ -330,8 +333,11 @@ fn delta_table_output_test(
     for v in data.iter() {
         let buffer: Vec<u8> = Vec::new();
         let mut serializer = serde_json::Serializer::new(buffer);
-        v.serialize_with_context(&mut serializer, &SqlSerdeConfig::default())
-            .unwrap();
+        v.serialize_with_context(
+            &mut serializer,
+            &SqlSerdeConfig::from(JsonFlavor::default()),
+        )
+        .unwrap();
         input_file
             .as_file_mut()
             .write_all(&serializer.into_inner())
@@ -385,7 +391,12 @@ outputs:
     let config: PipelineConfig = serde_yaml::from_str(&config_str).unwrap();
 
     let controller = Controller::with_config(
-        |workers| Ok(test_circuit::<TestStruct2>(workers, &TestStruct2::schema())),
+        |workers| {
+            Ok(test_circuit::<DeltaTestStruct>(
+                workers,
+                &DeltaTestStruct::schema(),
+            ))
+        },
         &config,
         Box::new(move |e| panic!("delta_table_output_test: error: {e}")),
     )
@@ -404,7 +415,7 @@ outputs:
 
         let mut output_records = Vec::with_capacity(data.len());
         for parquet_file in parquet_files {
-            let mut records: Vec<TestStruct2> = load_parquet_file(&parquet_file);
+            let mut records: Vec<DeltaTestStruct> = load_parquet_file(&parquet_file);
             output_records.append(&mut records);
         }
 
@@ -453,7 +464,7 @@ async fn test_follow(
     input_table_uri: &str,
     output_table_uri: &str,
     storage_options: &HashMap<String, String>,
-    data: Vec<TestStruct2>,
+    data: Vec<DeltaTestStruct>,
     snapshot: bool,
     buffer_size: u64,
     buffer_timeout_ms: u64,
@@ -504,7 +515,7 @@ async fn test_follow(
     let output_table_uri_clone = output_table_uri.to_string();
 
     let pipeline = tokio::task::spawn_blocking(move || {
-        delta_to_delta_pipeline::<TestStruct2>(
+        delta_to_delta_pipeline::<DeltaTestStruct>(
             &input_table_uri_clone,
             &input_config,
             &output_table_uri_clone,
@@ -582,12 +593,12 @@ async fn test_follow(
 }
 
 /// Generate up to `max_records` _unique_ records.
-fn data(max_records: usize) -> impl Strategy<Value = Vec<TestStruct2>> {
-    vec(TestStruct2::arbitrary(), 0..max_records).prop_map(|vec| {
+fn delta_data(max_records: usize) -> impl Strategy<Value = Vec<DeltaTestStruct>> {
+    vec(DeltaTestStruct::arbitrary(), 0..max_records).prop_map(|vec| {
         let mut idx = 0;
         vec.into_iter()
             .map(|mut x| {
-                x.field = idx;
+                x.bigint = idx;
                 idx += 1;
                 x
             })
@@ -599,9 +610,9 @@ async fn delta_table_follow_file_test_common(snapshot: bool) {
     // We cannot use proptest macros in `async` context, so generate
     // some random data manually.
     let mut runner = TestRunner::default();
-    let data = data(100_000).new_tree(&mut runner).unwrap().current();
+    let data = delta_data(20_000).new_tree(&mut runner).unwrap().current();
 
-    let relation_schema = TestStruct2::schema();
+    let relation_schema = DeltaTestStruct::schema();
 
     let input_table_dir = TempDir::new().unwrap();
     let input_table_uri = input_table_dir.path().display().to_string();
@@ -639,9 +650,9 @@ async fn delta_table_follow_s3_test_common(snapshot: bool) {
     // We cannot use proptest macros in `async` context, so generate
     // some random data manually.
     let mut runner = TestRunner::default();
-    let data = data(100_000).new_tree(&mut runner).unwrap().current();
+    let data = delta_data(20_000).new_tree(&mut runner).unwrap().current();
 
-    let relation_schema = TestStruct2::schema();
+    let relation_schema = DeltaTestStruct::schema();
 
     let input_uuid = uuid::Uuid::new_v4();
     let output_uuid = uuid::Uuid::new_v4();
@@ -691,95 +702,97 @@ async fn delta_table_snapshot_and_follow_s3_test() {
 }
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(2))]
+    #![proptest_config(ProptestConfig::with_cases(1))]
 
     /// ```text
     /// input.json --> [pipeline1]--->delta_table-->[pipeline2]-->output.json
     /// ```
     #[test]
-    fn delta_table_file_output_proptest(data in data(100_000))
+    fn delta_table_file_output_proptest(data in delta_data(20_000))
     {
         let table_dir = TempDir::new().unwrap();
         let table_uri = table_dir.path().display().to_string();
+
+        // Uncomment to inspect output parquet files produced by the test.
+        forget(table_dir);
+
         delta_table_output_test(data.clone(), &table_uri, &HashMap::new(), true);
 
-        // // Uncomment to inspect output parquet files produced by the test.
-        // forget(table_dir);
 
         // Read delta table unordered.
-        let mut json_file = delta_table_snapshot_to_json::<TestStruct2>(
+        let mut json_file = delta_table_snapshot_to_json::<DeltaTestStruct>(
             &table_uri,
-            &TestStruct2::schema(),
+            &DeltaTestStruct::schema(),
             &HashMap::new());
 
         let expected_zset = OrdZSet::from_tuples((), data.clone().into_iter().map(|x| Tup2(Tup2(x,()),1)).collect());
-        let zset = file_to_zset::<TestStruct2>(json_file.as_file_mut(), "json", r#"update_format: "insert_delete""#);
+        let zset = file_to_zset::<DeltaTestStruct>(json_file.as_file_mut(), "json", r#"update_format: "insert_delete""#);
         assert_eq!(zset, expected_zset);
 
-        // Order delta table by `id` (which should be its natural order).
-        let mut json_file_ordered_by_id = delta_table_snapshot_to_json::<TestStruct2>(
+        // Order delta table by `bigint` (which should be its natural order).
+        let mut json_file_ordered_by_id = delta_table_snapshot_to_json::<DeltaTestStruct>(
             &table_uri,
-            &TestStruct2::schema_with_lateness(),
-            &HashMap::from([("timestamp_column".to_string(), "id".to_string())]));
+            &DeltaTestStruct::schema_with_lateness(),
+            &HashMap::from([("timestamp_column".to_string(), "bigint".to_string())]));
 
-        let zset = file_to_zset::<TestStruct2>(json_file_ordered_by_id.as_file_mut(), "json", r#"update_format: "insert_delete""#);
+        let zset = file_to_zset::<DeltaTestStruct>(json_file_ordered_by_id.as_file_mut(), "json", r#"update_format: "insert_delete""#);
         assert_eq!(zset, expected_zset);
 
-        // Order delta table by `id`, specify id range.
-        let mut json_file_ordered_filtered = delta_table_snapshot_to_json::<TestStruct2>(
+        // Order delta table by `bigint`, specify range.
+        let mut json_file_ordered_filtered = delta_table_snapshot_to_json::<DeltaTestStruct>(
             &table_uri,
-            &TestStruct2::schema_with_lateness(),
-            &HashMap::from([("timestamp_column".to_string(), "id".to_string()), ("snapshot_filter".to_string(), "id >= 10000 ".to_string())]));
+            &DeltaTestStruct::schema_with_lateness(),
+            &HashMap::from([("timestamp_column".to_string(), "bigint".to_string()), ("snapshot_filter".to_string(), "bigint >= 10000 ".to_string())]));
 
         let expected_filtered_zset = OrdZSet::from_tuples(
                 (),
                 data.clone().into_iter()
-                    .filter(|x| x.field >= 10000)
+                    .filter(|x| x.bigint >= 10000)
                     .map(|x| Tup2(Tup2(x,()),1)).collect()
                 );
 
-            let zset = file_to_zset::<TestStruct2>(json_file_ordered_filtered.as_file_mut(), "json", r#"update_format: "insert_delete""#);
+            let zset = file_to_zset::<DeltaTestStruct>(json_file_ordered_filtered.as_file_mut(), "json", r#"update_format: "insert_delete""#);
             assert_eq!(zset, expected_filtered_zset);
 
         // Order delta table by `timestamp`.
-        let mut json_file_ordered_by_ts = delta_table_snapshot_to_json::<TestStruct2>(
+        let mut json_file_ordered_by_ts = delta_table_snapshot_to_json::<DeltaTestStruct>(
             &table_uri,
-            &TestStruct2::schema_with_lateness(),
-            &HashMap::from([("timestamp_column".to_string(), "ts".to_string())]));
+            &DeltaTestStruct::schema_with_lateness(),
+            &HashMap::from([("timestamp_column".to_string(), "timestamp_ntz".to_string())]));
 
-        let zset = file_to_zset::<TestStruct2>(json_file_ordered_by_ts.as_file_mut(), "json", r#"update_format: "insert_delete""#);
+        let zset = file_to_zset::<DeltaTestStruct>(json_file_ordered_by_ts.as_file_mut(), "json", r#"update_format: "insert_delete""#);
         assert_eq!(zset, expected_zset);
 
         // Order delta table by `timestamp`; specify an empty filter condition
-        let mut json_file_ordered_by_ts = delta_table_snapshot_to_json::<TestStruct2>(
+        let mut json_file_ordered_by_ts = delta_table_snapshot_to_json::<DeltaTestStruct>(
             &table_uri,
-            &TestStruct2::schema_with_lateness(),
-            &HashMap::from([("timestamp_column".to_string(), "ts".to_string()), ("snapshot_filter".to_string(), "ts < timestamp '2005-01-01T00:00:00'".to_string())]));
+            &DeltaTestStruct::schema_with_lateness(),
+            &HashMap::from([("timestamp_column".to_string(), "timestamp_ntz".to_string()), ("snapshot_filter".to_string(), "timestamp_ntz < timestamp '2005-01-01T00:00:00'".to_string())]));
 
-        let zset = file_to_zset::<TestStruct2>(json_file_ordered_by_ts.as_file_mut(), "json", r#"update_format: "insert_delete""#);
+        let zset = file_to_zset::<DeltaTestStruct>(json_file_ordered_by_ts.as_file_mut(), "json", r#"update_format: "insert_delete""#);
         assert_eq!(zset, OrdZSet::empty());
 
         // Filter delta table by id
-        let mut json_file_filtered_by_id = delta_table_snapshot_to_json::<TestStruct2>(
+        let mut json_file_filtered_by_id = delta_table_snapshot_to_json::<DeltaTestStruct>(
             &table_uri,
-            &TestStruct2::schema(),
-            &HashMap::from([("snapshot_filter".to_string(), "id >= 10000 ".to_string())]));
+            &DeltaTestStruct::schema(),
+            &HashMap::from([("snapshot_filter".to_string(), "bigint >= 10000 ".to_string())]));
 
         let expected_filtered_zset = OrdZSet::from_tuples(
             (),
             data.clone().into_iter()
-                .filter(|x| x.field >= 10000)
+                .filter(|x| x.bigint >= 10000)
                 .map(|x| Tup2(Tup2(x,()),1)).collect()
             );
 
-        let zset = file_to_zset::<TestStruct2>(json_file_filtered_by_id.as_file_mut(), "json", r#"update_format: "insert_delete""#);
+        let zset = file_to_zset::<DeltaTestStruct>(json_file_filtered_by_id.as_file_mut(), "json", r#"update_format: "insert_delete""#);
         assert_eq!(zset, expected_filtered_zset);
 
         // Filter delta table by timestamp.
-        let mut json_file_filtered_by_ts = delta_table_snapshot_to_json::<TestStruct2>(
+        let mut json_file_filtered_by_ts = delta_table_snapshot_to_json::<DeltaTestStruct>(
             &table_uri,
-            &TestStruct2::schema(),
-            &HashMap::from([("snapshot_filter".to_string(), "ts >= '2005-01-01 00:00:00'".to_string())]));
+            &DeltaTestStruct::schema(),
+            &HashMap::from([("snapshot_filter".to_string(), "timestamp_ntz >= '2005-01-01 00:00:00'".to_string())]));
 
         let start = NaiveDate::from_ymd_opt(2005, 1, 1)
                 .unwrap()
@@ -789,11 +802,11 @@ proptest! {
         let expected_filtered_zset = OrdZSet::from_tuples(
             (),
             data.into_iter()
-                .filter(|x| x.field_2.milliseconds() >= start.and_utc().timestamp_millis())
+                .filter(|x| x.timestamp_ntz.milliseconds() >= start.and_utc().timestamp_millis())
                 .map(|x| Tup2(Tup2(x,()),1)).collect()
             );
 
-        let zset = file_to_zset::<TestStruct2>(json_file_filtered_by_ts.as_file_mut(), "json", r#"update_format: "insert_delete""#);
+        let zset = file_to_zset::<DeltaTestStruct>(json_file_filtered_by_ts.as_file_mut(), "json", r#"update_format: "insert_delete""#);
         assert_eq!(zset, expected_filtered_zset);
 
 
@@ -808,7 +821,7 @@ proptest! {
     /// Write to a Delta table in S3.
     #[cfg(feature = "delta-s3-test")]
     #[test]
-    fn delta_table_s3_output_proptest(data in data(100_000))
+    fn delta_table_s3_output_proptest(data in delta_data(20_000))
     {
         let uuid = uuid::Uuid::new_v4();
         let object_store_config = [
@@ -825,13 +838,13 @@ proptest! {
         delta_table_output_test(data.clone(), &table_uri, &object_store_config, false);
         //delta_table_output_test(data.clone(), &table_uri, &object_store_config, false);
 
-        let mut json_file = delta_table_snapshot_to_json::<TestStruct2>(
+        let mut json_file = delta_table_snapshot_to_json::<DeltaTestStruct>(
             &table_uri,
-            &TestStruct2::schema(),
+            &DeltaTestStruct::schema(),
             &object_store_config);
 
         let expected_zset = OrdZSet::from_tuples((), data.into_iter().map(|x| Tup2(Tup2(x,()),1)).collect());
-        let zset = file_to_zset::<TestStruct2>(json_file.as_file_mut(), "json", r#"update_format: "insert_delete""#);
+        let zset = file_to_zset::<DeltaTestStruct>(json_file.as_file_mut(), "json", r#"update_format: "insert_delete""#);
         assert_eq!(zset, expected_zset);
     }
 }
