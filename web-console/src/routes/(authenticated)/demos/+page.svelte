@@ -9,6 +9,7 @@
   import { useDrawer } from '$lib/compositions/layout/useDrawer.svelte'
   import NavigationExtras from '$lib/components/layout/NavigationExtras.svelte'
   import CreatePipelineButton from '$lib/components/pipelines/CreatePipelineButton.svelte'
+  import Footer from '$lib/components/layout/Footer.svelte'
 
   let { data }: { data: PageData } = $props()
   let demosType = $state<(typeof typeLabels)[number]>('All')
@@ -75,8 +76,10 @@
     {/each}
   </Segment>
 </div>
-<div class="flex flex-col overflow-y-auto px-2 pb-4 scrollbar md:px-8">
-  <div class="grid grid-cols-1 gap-x-6 gap-y-5 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5">
+<div class="flex h-full flex-col justify-between overflow-y-auto scrollbar">
+  <div
+    class="grid grid-cols-1 gap-x-6 gap-y-5 px-2 sm:grid-cols-2 md:px-8 lg:grid-cols-3 2xl:grid-cols-5"
+  >
     {#each data.demos.filter((demo) => {
       const target = types[demosType]
       return !target || demo.type === target
@@ -84,4 +87,5 @@
       <DemoTile {demo}></DemoTile>
     {/each}
   </div>
+  <Footer></Footer>
 </div>

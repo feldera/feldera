@@ -30,5 +30,6 @@
     "python.analysis.extraPaths": [
         "./python"
     ],
-    "prettier.configPath": "web-console/.prettierrc"
+    "prettier.configPath": "web-console/.prettierrc",
+    "svg.preview.background": "transparent"
 }
