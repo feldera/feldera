@@ -39,8 +39,9 @@ pub fn load_parquet_file<T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
         .unwrap_or_else(|_| panic!("error opening parquet file {path:?}"))
         .into_iter()
         .map(|row| {
-            let row = row.unwrap().to_json_value();
-            //println!("row: {}", &row);
+            let row = row.unwrap();
+
+            let row = row.to_json_value();
 
             T::deserialize_with_context(row, &SqlSerdeConfig::from(JsonFlavor::ParquetConverter))
                 .unwrap()

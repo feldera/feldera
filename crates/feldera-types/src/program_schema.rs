@@ -792,6 +792,32 @@ impl ColumnType {
         }
     }
 
+    pub fn variant(nullable: bool) -> Self {
+        ColumnType {
+            typ: SqlType::Variant,
+            nullable,
+            precision: None,
+            scale: None,
+            component: None,
+            fields: None,
+            key: None,
+            value: None,
+        }
+    }
+
+    pub fn array(nullable: bool, element: ColumnType) -> Self {
+        ColumnType {
+            typ: SqlType::Array,
+            nullable,
+            precision: None,
+            scale: None,
+            component: Some(Box::new(element)),
+            fields: None,
+            key: None,
+            value: None,
+        }
+    }
+
     pub fn structure(nullable: bool, fields: &[Field]) -> Self {
         ColumnType {
             typ: SqlType::Struct,
