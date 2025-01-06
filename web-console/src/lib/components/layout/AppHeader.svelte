@@ -6,13 +6,10 @@
   import { useDarkMode } from '$lib/compositions/useDarkMode.svelte'
   import type { Snippet } from 'svelte'
   import AuthButton from '$lib/components/auth/AuthButton.svelte'
-  import { useRefreshPipelineList } from '$lib/compositions/pipelines/usePipelineList.svelte'
   import { base } from '$app/paths'
 
   let { afterStart, beforeEnd }: { afterStart?: Snippet; beforeEnd?: Snippet } = $props()
   let darkMode = useDarkMode()
-
-  useRefreshPipelineList()
 </script>
 
 <div class="flex w-full flex-row items-center justify-between gap-4 px-2 py-2 md:px-8">
