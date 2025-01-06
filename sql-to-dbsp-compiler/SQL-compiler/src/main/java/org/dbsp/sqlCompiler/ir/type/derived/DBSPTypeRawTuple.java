@@ -58,7 +58,7 @@ public class DBSPTypeRawTuple extends DBSPTypeTupleBase {
 
     @Override
     public DBSPExpression makeTuple(DBSPExpression... expressions) {
-        return new DBSPRawTupleExpression(expressions);
+        return new DBSPRawTupleExpression(this.getNode(), this, expressions);
     }
 
     @Override

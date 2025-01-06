@@ -210,7 +210,7 @@ public class ExpandCasts extends InnerRewriteVisitor {
                     result = expression.source;
             } else if (type.mayBeNull) {
                 // Cast from T to Option<T>
-                result = expression.source.applyCloneIfNeeded().some();
+                result = expression.source.applyCloneIfNeeded().someIfNeeded();
             } else if (sourceType.mayBeNull && !type.is(DBSPTypeVariant.class)) {
                 // Cast from Option<T> to T
                 // Only VARIANT has a different implementation

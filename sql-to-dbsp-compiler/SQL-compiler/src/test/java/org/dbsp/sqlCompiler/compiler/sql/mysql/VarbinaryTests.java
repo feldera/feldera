@@ -127,45 +127,42 @@ public class VarbinaryTests extends SqlIoTest {
     // While Postgres doesn't allow negative "overlay from" value, we treat it as 0
     @Test
     public void testOverlay() {
-        this.qs(
-                """
-                        SELECT overlay(x'1234567890'::bytea placing x'0203' from 2 for 3);
-                         overlay
-                        ---------
-                         12020390
-                        (1 row)
+        this.qs("""
+                SELECT overlay(x'1234567890'::bytea placing x'0203' from 2 for 3);
+                 overlay
+                ---------
+                 12020390
+                (1 row)
 
-                        SELECT overlay(x'123456'::bytea placing x'1010' from 1 for 0);
-                         overlay
-                        ---------
-                         1010123456
-                        (1 row)
+                SELECT overlay(x'123456'::bytea placing x'1010' from 1 for 0);
+                 overlay
+                ---------
+                 1010123456
+                (1 row)
 
-                        SELECT overlay(x'123456'::bytea placing x'1010' from 1 for 1);
-                         overlay
-                        ---------
-                         10103456
-                        (1 row)
+                SELECT overlay(x'123456'::bytea placing x'1010' from 1 for 1);
+                 overlay
+                ---------
+                 10103456
+                (1 row)
 
-                        SELECT overlay(x'123456'::bytea placing x'1010' from 1 for -1);
-                         overlay
-                        ---------
-                         1010123456
-                        (1 row)
+                SELECT overlay(x'123456'::bytea placing x'1010' from 1 for -1);
+                 overlay
+                ---------
+                 1010123456
+                (1 row)
 
-                        SELECT overlay(x'123456'::bytea placing x'1010' from -1);
-                         overlay
-                        ---------
-                         123456
-                        (1 row)
+                SELECT overlay(x'123456'::bytea placing x'1010' from -1);
+                 overlay
+                ---------
+                 123456
+                (1 row)
 
-                        SELECT overlay(x'123456'::bytea placing x'7890' from 7);
-                         overlay
-                        ---------
-                         1234567890
-                        (1 row)
-
-                        """
+                SELECT overlay(x'123456'::bytea placing x'7890' from 7);
+                 overlay
+                ---------
+                 1234567890
+                (1 row)"""
         );
     }
 
@@ -269,20 +266,18 @@ public class VarbinaryTests extends SqlIoTest {
 
     @Test
     public void testPosition() {
-        this.qs(
-                """
-                        SELECT position(x'20' IN x'102023'::bytea);
-                         position
-                        ----------
-                         2
-                        (1 row)
-
-                        SELECT position(x'24' IN x'102023'::bytea);
-                         position
-                        ----------
-                         0
-                        (1 row)
-                        """
+        this.qs("""
+                SELECT position(x'20' IN x'102023'::bytea);
+                 position
+                ----------
+                 2
+                (1 row)
+                
+                SELECT position(x'24' IN x'102023'::bytea);
+                 position
+                ----------
+                 0
+                (1 row)"""
         );
     }
 }

@@ -27,6 +27,20 @@ public class StructTests extends SqlIoTest {
     }
 
     @Test
+    public void issue3262() {
+        // Duplicates a test from CatalogTests, since programs with handles cannot be used to generate Rust tests.
+        var ccs = this.getCCS(
+                "CREATE TABLE fails (named_pairs MAP<VARCHAR, ROW(k VARCHAR, v VARCHAR)>);" +
+                        "CREATE VIEW V AS SELECT named_pairs['a'].k FROM fails;");
+        ccs.step("INSERT INTO fails VALUES(MAP['a', ROW('2', '3'), 'b', NULL])",
+                """
+                         result | weight
+                        -----------------
+                         2| 1""");
+        this.addRustTestCase(ccs);
+    }
+
+    @Test
     public void rowTest() {
         String sql = """
                 CREATE TABLE t(

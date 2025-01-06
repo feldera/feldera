@@ -65,6 +65,7 @@ import org.apache.calcite.sql.SqlBasicCall;
 import org.apache.calcite.sql.SqlBasicTypeNameSpec;
 import org.apache.calcite.sql.SqlCall;
 import org.apache.calcite.sql.SqlCharStringLiteral;
+import org.apache.calcite.sql.SqlCollectionTypeNameSpec;
 import org.apache.calcite.sql.SqlDataTypeSpec;
 import org.apache.calcite.sql.SqlExplainFormat;
 import org.apache.calcite.sql.SqlExplainLevel;
@@ -73,10 +74,12 @@ import org.apache.calcite.sql.SqlIdentifier;
 import org.apache.calcite.sql.SqlInsert;
 import org.apache.calcite.sql.SqlIntervalQualifier;
 import org.apache.calcite.sql.SqlKind;
+import org.apache.calcite.sql.SqlMapTypeNameSpec;
 import org.apache.calcite.sql.SqlNode;
 import org.apache.calcite.sql.SqlNodeList;
 import org.apache.calcite.sql.SqlOperator;
 import org.apache.calcite.sql.SqlOperatorTable;
+import org.apache.calcite.sql.SqlRowTypeNameSpec;
 import org.apache.calcite.sql.SqlSelect;
 import org.apache.calcite.sql.SqlTypeNameSpec;
 import org.apache.calcite.sql.SqlUserDefinedTypeNameSpec;
@@ -92,8 +95,6 @@ import org.apache.calcite.sql.parser.SqlParseException;
 import org.apache.calcite.sql.parser.SqlParser;
 import org.apache.calcite.sql.parser.SqlParserPos;
 import org.apache.calcite.sql.pretty.SqlPrettyWriter;
-import org.apache.calcite.sql.type.ArraySqlType;
-import org.apache.calcite.sql.type.MapSqlType;
 import org.apache.calcite.sql.type.SqlTypeFactoryImpl;
 import org.apache.calcite.sql.type.SqlTypeFamily;
 import org.apache.calcite.sql.type.SqlTypeName;
@@ -157,6 +158,7 @@ import java.util.Objects;
 import java.util.Properties;
 import java.util.Set;
 import java.util.function.Consumer;
+import java.util.stream.Collectors;
 
 /**
  * The SqlToRel compiler compiles SQL into Calcite RelNode representations.
@@ -606,7 +608,7 @@ public class SqlToRelCompiler implements IWritesLogs {
         return rel;
     }
 
-    RelDataType createNullableType(RelDataType type) {
+    private RelDataType createNullableType(RelDataType type) {
         if (type instanceof RelRecordType) {
             // This function seems to be buggy in Calcite:
             // there is sets the nullability of all record fields.
@@ -615,52 +617,100 @@ public class SqlToRelCompiler implements IWritesLogs {
         return this.typeFactory.createTypeWithNullability(type, true);
     }
 
-    RelDataType nullableElements(RelDataType dataType) {
-        if (dataType instanceof ArraySqlType array) {
-            RelDataType elementType = array.getComponentType();
-            elementType = this.nullableElements(elementType);
+    private RelDataType deriveType(SqlDataTypeSpec typeSpec) {
+        // The implementation of SqlDataTypeSpec.deriveType does not correctly handle
+        // nullability of collection elements.
+        SqlTypeNameSpec typeName = typeSpec.getTypeNameSpec();
+        if (typeName instanceof SqlUserDefinedTypeNameSpec udtObject) {
+            SqlIdentifier identifier = udtObject.getTypeName();
+            ProgramIdentifier name = Utilities.toIdentifier(identifier);
+            if (this.udt.containsKey(name)) {
+                RelDataType result = Utilities.getExists(this.udt, name);
+                Boolean nullable = typeSpec.getNullable();
+                if (nullable != null && nullable)
+                    result = this.createNullableType(result);
+                return result;
+            }
+
+            RelDataType result =  typeName.deriveType(this.getValidator());
+            if (typeSpec.getNullable() != null && typeSpec.getNullable())
+                result = this.createNullableType(result);
+            return result;
+        }
+
+        if (typeName instanceof SqlBasicTypeNameSpec) {
+            RelDataType result = typeSpec.deriveType(this.getValidator());
+            if (typeSpec.getNullable() != null && typeSpec.getNullable())
+                result = this.createNullableType(result);
+            return result;
+        } else if (typeName instanceof SqlCollectionTypeNameSpec collection) {
+            SqlTypeNameSpec elementTypeName = collection.getElementTypeName();
+            SqlDataTypeSpec newSpec = new SqlDataTypeSpec(elementTypeName, null, true, SqlParserPos.ZERO);
+            RelDataType elementType = this.specToRel(newSpec, false);
             elementType = this.createNullableType(elementType);
-            return new ArraySqlType(elementType, dataType.isNullable());
-        } else if (dataType instanceof MapSqlType map) {
-            RelDataType valueType = map.getValueType();
-            valueType = this.nullableElements(valueType);
+            // Don't need 'collectionType', but there is no other way to check whether the typeName is for an ARRAY
+            RelDataType collectionType = collection.deriveType(this.getValidator());
+            if (collectionType.getSqlTypeName() == SqlTypeName.ARRAY) {
+                RelDataType result = this.typeFactory.createArrayType(elementType, -1);
+                if (typeSpec.getNullable() != null && typeSpec.getNullable())
+                    result = this.createNullableType(result);
+                return result;
+            } else {
+                throw new UnimplementedException("Unsupported type", CalciteObject.create(collectionType));
+            }
+        } else if (typeName instanceof SqlRowTypeNameSpec row) {
+            List<SqlIdentifier> fieldNames = row.getFieldNames();
+            List<SqlDataTypeSpec> fieldTypes = row.getFieldTypes();
+            List<RelDataType> fields = new ArrayList<>(fieldTypes.size());
+            for (int i = 0; i < row.getArity(); i++) {
+                SqlDataTypeSpec field = fieldTypes.get(i);
+                RelDataType elementType = this.specToRel(field, false);
+                // Nullability *can* be specified for ROW fields!
+                fields.add(elementType);
+            }
+            RelDataType result = this.typeFactory.createStructType(
+                    fields,
+                    fieldNames.stream()
+                            .map(SqlIdentifier::toString)
+                            .collect(Collectors.toList()));
+            if (typeSpec.getNullable() != null && typeSpec.getNullable())
+                result = this.createNullableType(result);
+            return result;
+        } else if (typeName instanceof SqlMapTypeNameSpec map) {
+            SqlDataTypeSpec key = map.getKeyType();
+            SqlDataTypeSpec value = map.getValType();
+            RelDataType keyType = this.specToRel(key, false);
+            RelDataType valueType = this.specToRel(value, false);
+            // keyType = this.createNullableType(keyType);
             valueType = this.createNullableType(valueType);
-            return new MapSqlType(map.getKeyType(), valueType, map.isNullable());
+            RelDataType result = this.typeFactory.createMapType(keyType, valueType);
+            if (typeSpec.getNullable() != null && typeSpec.getNullable())
+                result = this.createNullableType(result);
+            return result;
         } else {
-            return dataType;
+            throw new UnimplementedException("Unsupported type: " + getSqlString(typeSpec),
+                    CalciteObject.create(typeSpec.getTypeNameSpec().getParserPos()));
         }
     }
 
-    /** Convert a type from Sql to Rel.
+    /** Convert a type from Sql to Rel.  Insert user-defined types in the {@link SqlToRelCompiler#udt} map.
      * @param spec            Type specification in Sql representation.
-     * @param ignoreNullable  If true never return a nullable type. */
-    public RelDataType specToRel(SqlDataTypeSpec spec, boolean ignoreNullable) {
-        SqlTypeNameSpec typeName = spec.getTypeNameSpec();
+     * @param neverNullable   If true never return a nullable type.  Used for primary keys. */
+    public RelDataType specToRel(SqlDataTypeSpec spec, boolean neverNullable) {
+        SqlTypeNameSpec typeSpec = spec.getTypeNameSpec();
         ProgramIdentifier name = new ProgramIdentifier("", false);
         RelDataType result;
-        if (typeName instanceof SqlUserDefinedTypeNameSpec udtObject) {
-            SqlIdentifier identifier = udtObject.getTypeName();
-            name = Utilities.toIdentifier(identifier);
-            if (this.udt.containsKey(name)) {
-                result = Utilities.getExists(this.udt, name);
-                Boolean nullable = spec.getNullable();
-                if (nullable != null && nullable && !ignoreNullable) {
-                    result = this.createNullableType(result);
-                }
-                return result;
-            }
-        }
-        result = typeName.deriveType(this.getValidator());
-        result = this.nullableElements(result);
 
-        Boolean nullable = spec.getNullable();
-        if (nullable != null && nullable && !ignoreNullable) {
-            result = this.createNullableType(result);
+        result = this.deriveType(spec);
+        if (neverNullable) {
+            result = this.typeFactory.createTypeWithNullability(result, false);
         }
-        if (typeName instanceof SqlUserDefinedTypeNameSpec udtObject) {
+        if (typeSpec instanceof SqlUserDefinedTypeNameSpec udtObject) {
             if (result.isStruct()) {
                 RelStruct retval = new RelStruct(udtObject.getTypeName(), result.getFieldList(), result.isNullable());
-                Utilities.putNew(this.udt, name, retval);
+                if (!this.udt.containsKey(name)) {
+                    Utilities.putNew(this.udt, name, retval);
+                }
                 return retval;
             }
         }
@@ -1676,7 +1726,6 @@ public class SqlToRelCompiler implements IWritesLogs {
                 return retval;
             }
         };
-
         ProgramIdentifier typeName = Utilities.toIdentifier(ct.name);
         this.rootSchema.add(typeName.name(), proto);
         RelDataType relDataType = proto.apply(this.typeFactory);

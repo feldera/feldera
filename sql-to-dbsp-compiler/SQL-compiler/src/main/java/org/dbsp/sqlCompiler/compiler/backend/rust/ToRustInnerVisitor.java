@@ -953,7 +953,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
                 DBSPType collectionType = expression.left.getType().deref();
                 DBSPTypeMap map = collectionType.to(DBSPTypeMap.class);
                 this.builder.append("map_index")
-                        .append(expression.left.getType().nullableUnderlineSuffix())
+                        .append(collectionType.nullableUnderlineSuffix())
                         .append(map.getValueType().nullableUnderlineSuffix())
                         .append(expression.right.getType().nullableUnderlineSuffix())
                         .append("(");

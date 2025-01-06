@@ -2870,7 +2870,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         }
         CreateTableStatement def = this.tableContents.getTableDefinition(modify.tableName);
         this.modifyTableTranslation = new ModifyTableTranslation(
-                modify, def, targetColumnList, this.compiler);
+                modify, def, targetColumnList, this.compiler.getTypeCompiler());
         DBSPZSetExpression result;
         if (modify.rel instanceof LogicalTableScan scan) {
             // Support for INSERT INTO table (SELECT * FROM otherTable)
@@ -2905,8 +2905,32 @@ public class CalciteToDBSPCompiler extends RelVisitor
         if (!isInsert)
             result = result.negate();
         this.modifyTableTranslation = null;
-        this.tableContents.addToTable(modify.tableName, result);
+        this.tableContents.addToTable(modify.tableName, result, this.compiler);
         return result;
+    }
+
+    private DBSPTypeStruct.Field makeField(List<RelDataTypeField> relFields,
+                                           CalciteObject object, SqlIdentifier name,
+                                           int index, SqlDataTypeSpec typeSpec) {
+        DBSPType fieldType = null;
+        if (typeSpec.getTypeNameSpec() instanceof SqlUserDefinedTypeNameSpec) {
+            // Assume it is a reference to another struct
+            SqlIdentifier identifier = typeSpec.getTypeNameSpec().getTypeName();
+            ProgramIdentifier referred = Utilities.toIdentifier(identifier);
+            fieldType = this.compiler.getStructByName(referred);
+            if (typeSpec.getNullable() != null && typeSpec.getNullable() && fieldType != null)
+                fieldType = fieldType.withMayBeNull(true);
+        }
+        if (fieldType == null) {
+            // Not a user-defined type
+            RelDataTypeField ft = relFields.get(index);
+            fieldType = this.convertType(ft.getType(), true);
+        }
+        return new DBSPTypeStruct.Field(
+                object,
+                Utilities.toIdentifier(name),
+                index,
+                fieldType);
     }
 
     @Nullable
@@ -2919,32 +2943,38 @@ public class CalciteToDBSPCompiler extends RelVisitor
         }
         List<RelDataTypeField> relFields = stat.relDataType.getFieldList();
         List<DBSPTypeStruct.Field> fields = new ArrayList<>();
-        for (SqlNode def : Objects.requireNonNull(ct.attributeDefs)) {
-            // the relFields implementation has already flattened structs,
-            // so for structs we look them up again using the Sql representation
-            DBSPType fieldType = null;
-            final SqlAttributeDefinition attributeDef =
-                    (SqlAttributeDefinition) def;
-            final SqlDataTypeSpec typeSpec = attributeDef.dataType;
-            if (typeSpec.getTypeNameSpec() instanceof SqlUserDefinedTypeNameSpec) {
-                // Assume it is a reference to another struct
-                SqlIdentifier identifier = typeSpec.getTypeNameSpec().getTypeName();
-                ProgramIdentifier referred = Utilities.toIdentifier(identifier);
-                fieldType = this.compiler.getStructByName(referred);
-                if (typeSpec.getNullable() != null && typeSpec.getNullable() && fieldType != null)
-                    fieldType = fieldType.withMayBeNull(true);
+        if (ct.attributeDefs != null) {
+            for (SqlNode def : ct.attributeDefs) {
+                // the relFields implementation has already flattened structs,
+                // so for structs we look them up again using the Sql representation
+                final SqlAttributeDefinition attributeDef =
+                        (SqlAttributeDefinition) def;
+                final SqlDataTypeSpec typeSpec = attributeDef.dataType;
+                DBSPTypeStruct.Field field = this.makeField(relFields, object, attributeDef.name, index, typeSpec);
+                index++;
+                fields.add(field);
             }
-            if (fieldType == null) {
-                // Not a user-defined type
-                RelDataTypeField ft = relFields.get(index);
-                fieldType = this.convertType(ft.getType(), true);
+        } else {
+            throw new UnsupportedException("User-defined types cannot be defined to be ROW types; consider" +
+                    " eliminating 'ROW' from this definition",
+                    CalciteObject.create(ct.name));
+            /*
+            This doesn't quite work, and it's probably not necessary.
+
+            assert ct.dataType != null;
+            var spec = ct.dataType.getTypeNameSpec();
+            if (spec instanceof SqlRowTypeNameSpec row) {
+                List<SqlIdentifier> fieldNames = row.getFieldNames();
+                var types = row.getFieldTypes();
+                for (int i = 0; i < row.getArity(); i++) {
+                    SqlIdentifier name = fieldNames.get(i);
+                    SqlDataTypeSpec typeSpec = types.get(i);
+                    DBSPTypeStruct.Field field = this.makeField(relFields, object, name, index, typeSpec);
+                    index++;
+                    fields.add(field);
+                }
             }
-            DBSPTypeStruct.Field field = new DBSPTypeStruct.Field(
-                    object,
-                    Utilities.toIdentifier(attributeDef.name),
-                    index++,
-                    fieldType);
-            fields.add(field);
+            */
         }
 
         String saneName = this.compiler.getSaneStructName(stat.typeName);

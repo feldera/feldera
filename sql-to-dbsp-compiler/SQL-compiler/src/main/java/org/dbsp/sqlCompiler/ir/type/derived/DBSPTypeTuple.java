@@ -152,7 +152,7 @@ public class DBSPTypeTuple extends DBSPTypeTupleBase {
 
     @Override
     public DBSPExpression makeTuple(DBSPExpression... expressions) {
-        return new DBSPTupleExpression(expressions);
+        return new DBSPTupleExpression(this.getNode(), this, expressions);
     }
 
     @Override

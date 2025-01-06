@@ -1,11 +1,10 @@
 # Operations on arrays
 
-An array type can be created by applying the `ARRAY` suffix to
-another type.  For example `INT ARRAY` is an array of integers.
-Array indexes start from 1.  Array sizes are limited to 2^31 elements.
-Array elements may be nullable types, e.g., `INT ARRAY NULL`.
-Multidimensional arrays are possible, e.g. `VARCHAR ARRAY ARRAY`
-is a two-dimensional array.
+An array type can be created by applying the `ARRAY` suffix to another
+type.  For example `INT ARRAY` is an array of integers.  Array indexes
+start from 1.  Array sizes are limited to 2^31 elements.  Array values
+be nullable types, e.g., `INT ARRAY NULL`.  Multidimensional arrays
+are possible, e.g. `VARCHAR ARRAY ARRAY` is a two-dimensional array.
 
 In `CREATE TABLE` and `CREATE TYPE` declarations there is no way to
 specify the nullability of the elements of an `ARRAY`.  The compiler

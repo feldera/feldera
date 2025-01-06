@@ -130,6 +130,13 @@ public abstract class DBSPExpression
         return new DBSPSomeExpression(this.getNode(), this);
     }
 
+    /** Apply some only if the expression is not nullable */
+    public DBSPExpression someIfNeeded() {
+        if (this.getType().mayBeNull)
+            return this;
+        return this.some();
+    }
+
     public DBSPClosureExpression closure() {
         return new DBSPClosureExpression(this);
     }

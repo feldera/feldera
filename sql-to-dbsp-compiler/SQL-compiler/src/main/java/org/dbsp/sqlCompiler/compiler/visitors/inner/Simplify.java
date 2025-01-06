@@ -44,6 +44,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPFieldExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPIfExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPIsNullExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
+import org.dbsp.sqlCompiler.ir.expression.DBSPSomeExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDateLiteral;
@@ -597,6 +598,20 @@ public class Simplify extends InnerRewriteVisitor {
             // ignore, defer to runtime
         }
         this.map(expression, result.cast(expression.getType()));
+        return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPSomeExpression expression) {
+        this.push(expression);
+        DBSPExpression source = this.transform(expression.expression);
+        this.pop(expression);
+        if (source.is(DBSPLiteral.class)) {
+            DBSPExpression result = source.to(DBSPLiteral.class).getWithNullable(true);
+            this.map(expression, result);
+        } else {
+            this.map(expression, source.some());
+        }
         return VisitDecision.STOP;
     }
 }

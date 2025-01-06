@@ -107,6 +107,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeNull;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeMap;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeOption;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeStream;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
@@ -183,6 +184,13 @@ public class ToRustVisitor extends CircuitVisitor {
             this.builder.append(".into_iter().map(|y| y");
             this.generateInto(vec.getElementType());
             this.builder.append(").collect()");
+        } else if (type.is(DBSPTypeMap.class)) {
+            DBSPTypeMap map = type.to(DBSPTypeMap.class);
+            this.builder.append(".into_iter().map(|(k,v)| (k");
+            this.generateInto(map.getKeyType());
+            this.builder.append(", v");
+            this.generateInto(map.getValueType());
+            this.builder.append(")).collect()");
         } else {
             this.builder.append(".into()");
         }
@@ -570,22 +578,26 @@ public class ToRustVisitor extends CircuitVisitor {
         return VisitDecision.STOP;
     }
 
-    void findNestedStructs(DBSPTypeStruct struct, List<DBSPTypeStruct> result) {
-        for (DBSPTypeStruct str: result)
-            if (str.name.equals(struct.name))
-                return;
-        for (DBSPTypeStruct.Field field: struct.fields.values()) {
-            DBSPTypeStruct ft = field.type.as(DBSPTypeStruct.class);
-            if (ft != null)
-                findNestedStructs(ft, result);
-            DBSPTypeVec vec = field.type.as(DBSPTypeVec.class);
-            if (vec != null) {
-                DBSPTypeStruct elem = vec.getElementType().as(DBSPTypeStruct.class);
-                if (elem != null)
-                    findNestedStructs(elem, result);
-            }
+    static class FindNestedStructs extends InnerVisitor {
+        final List<DBSPTypeStruct> structs;
+
+        public FindNestedStructs(DBSPCompiler compiler, List<DBSPTypeStruct> result) {
+            super(compiler);
+            this.structs = result;
         }
-        result.add(struct);
+
+        @Override
+        public void postorder(DBSPTypeStruct struct) {
+            for (DBSPTypeStruct str: this.structs)
+                if (str.name.equals(struct.name))
+                    return;
+            this.structs.add(struct);
+        }
+    }
+
+    void findNestedStructs(DBSPTypeStruct struct, List<DBSPTypeStruct> result) {
+        FindNestedStructs fn = new FindNestedStructs(this.compiler, result);
+        fn.apply(struct);
     }
 
     void generateStructDeclarations(DBSPTypeStruct struct) {

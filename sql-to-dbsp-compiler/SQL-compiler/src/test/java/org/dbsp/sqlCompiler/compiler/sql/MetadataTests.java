@@ -290,6 +290,56 @@ public class MetadataTests extends BaseSQLTests {
     }
 
     @Test
+    public void testNestedMap() {
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.compileStatements("""
+                CREATE TABLE fails (
+                        j ROW(
+                            s MAP<VARCHAR, ROW(
+                                t VARCHAR
+                            )>
+                        )
+                    );""");
+        compiler.getFinalCircuit(false);
+        ObjectNode node = compiler.getIOMetadataAsJson();
+        String json = node.toPrettyString();
+        Assert.assertTrue(json.contains("""
+                {
+                  "inputs" : [ {
+                    "name" : "fails",
+                    "case_sensitive" : false,
+                    "fields" : [ {
+                      "name" : "j",
+                      "case_sensitive" : false,
+                      "columntype" : {
+                        "fields" : [ {
+                          "key" : {
+                            "nullable" : false,
+                            "precision" : -1,
+                            "type" : "VARCHAR"
+                          },
+                          "name" : "s",
+                          "nullable" : false,
+                          "type" : "MAP",
+                          "value" : {
+                            "fields" : [ {
+                              "name" : "t",
+                              "nullable" : false,
+                              "precision" : -1,
+                              "type" : "VARCHAR"
+                            } ],
+                            "nullable" : true
+                          }
+                        } ],
+                        "nullable" : true
+                      }
+                    } ],
+                    "materialized" : false,
+                    "foreign_keys" : [ ]
+                  } ]"""));
+    }
+
+    @Test
     public void trimUnusedInputColumns() {
         DBSPCompiler compiler = this.testCompiler();
         compiler.options.languageOptions.throwOnError = false;

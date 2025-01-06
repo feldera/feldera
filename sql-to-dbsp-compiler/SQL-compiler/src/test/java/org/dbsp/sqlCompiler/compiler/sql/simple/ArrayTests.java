@@ -272,9 +272,9 @@ public class ArrayTests extends BaseSQLTests {
         );
         DBSPZSetExpression result = DBSPZSetExpression.emptyWithElementType(
             new DBSPTypeTuple(
-                    new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,true),
-                    new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,true),
-                    new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,true))
+                    new DBSPTypeInteger(CalciteObject.EMPTY, 32, true, true),
+                    new DBSPTypeInteger(CalciteObject.EMPTY, 32, true, true),
+                    new DBSPTypeInteger(CalciteObject.EMPTY, 32, true, false))
         );
         for (int i = 1; i < 4; i++)
             for (int j = 4; j < 7; j++) {

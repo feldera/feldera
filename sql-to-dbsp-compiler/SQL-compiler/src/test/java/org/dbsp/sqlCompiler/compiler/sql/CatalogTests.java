@@ -12,6 +12,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeVec;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 import org.junit.Assert;
+import org.junit.Ignore;
 import org.junit.Test;
 
 /** Tests that emit Rust code using the catalog. */
@@ -23,6 +24,57 @@ public class CatalogTests extends BaseSQLTests {
         result.ioOptions.emitHandles = false;
         result.languageOptions.unrestrictedIOTypes = false;
         return result;
+    }
+
+    @Test
+    public void issue3262() {
+        var ccs = this.getCCS("""
+                  CREATE TABLE T(p MAP<VARCHAR, ROW(k VARCHAR, v VARCHAR)>);
+                  CREATE VIEW V AS SELECT p['a'].k FROM T;""");
+        this.addRustTestCase(ccs);
+    }
+
+    @Test 
+    public void nullableRow() {
+        var ccs = this.getCCS("""
+                  CREATE TABLE T(p ROW(k VARCHAR, v VARCHAR));
+                  CREATE VIEW V AS SELECT t.p.k FROM T;""");
+        this.addRustTestCase(ccs);
+    }
+
+    @Test
+    public void issue3263() {
+        this.statementsFailingInCompilation(
+                "CREATE TYPE BOXED_VALUE AS ROW(Value VARCHAR);",
+                "User-defined types cannot be defined to be ROW types");
+    }
+
+    @Test
+    public void issue3262a() {
+        this.compileRustTestCase("""
+                CREATE TABLE T (
+                        h VARCHAR,
+                        i MAP<VARCHAR, VARCHAR>,
+                        j ROW(
+                            k ROW(
+                                l VARCHAR
+                            ),
+                            m ROW(
+                                n ROW(
+                                    o ROW(
+                                        p VARCHAR,
+                                        q VARCHAR
+                                    ),
+                                    r VARCHAR
+                                ) NULL
+                            ),
+                            s MAP<VARCHAR, ROW(
+                                t VARCHAR
+                            )>
+                        ),
+                        x BIGINT
+                    );
+                CREATE VIEW V AS SELECT h, t.i['a'], t.j.k.l, t.j.m, t.j.m.n FROM T;""");
     }
 
     @Test
@@ -138,7 +190,8 @@ public class CatalogTests extends BaseSQLTests {
                    f s,
                    g n,
                    h s NOT NULL,
-                   i n NOT NULL
+                   i n NOT NULL,
+                   r ROW(le s, ri INT)
                 );
 
                 CREATE VIEW V AS SELECT * FROM T;
@@ -146,10 +199,12 @@ public class CatalogTests extends BaseSQLTests {
         DBSPCompiler compiler = this.testCompiler();
         compiler.compileStatements(sql);
         DBSPCircuit circuit = getCircuit(compiler);
+        compiler.showErrors(System.err);
+        Assert.assertNotNull(circuit);
         DBSPType type = circuit.getSingleOutputType().to(DBSPTypeZSet.class).elementType;
         Assert.assertTrue(type.is(DBSPTypeTuple.class));
         DBSPTypeTuple t = type.to(DBSPTypeTuple.class);
-        Assert.assertEquals(4, t.size());
+        Assert.assertEquals(5, t.size());
         DBSPType t0 = t.getFieldType(0);
         Assert.assertTrue(t0.is(DBSPTypeTuple.class));
 
@@ -178,6 +233,9 @@ public class CatalogTests extends BaseSQLTests {
 
         DBSPType t3 = t.getFieldType(3);
         Assert.assertTrue(t3.sameType(nN.withMayBeNull(false)));
+
+        DBSPType t4 = t.getFieldType(4);
+        Assert.assertTrue(t4.is(DBSPTypeTuple.class));
     }
 
     @Test

@@ -861,7 +861,7 @@ public class Monotonicity extends CircuitVisitor {
                         makeNoExpression(ix.keyType),
                         new DBSPTupleExpression(
                                 lowerBound,
-                                makeNoExpression(outputValueType.tupFields[1]).some()));
+                                makeNoExpression(outputValueType.tupFields[1]).someIfNeeded()));
         DBSPClosureExpression closure = body.closure(var);
         MonotoneTransferFunctions analyzer = new MonotoneTransferFunctions(
                 this.compiler(), node, MonotoneTransferFunctions.ArgumentKind.IndexedZSet, inputProjection);

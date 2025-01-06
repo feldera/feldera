@@ -71,11 +71,9 @@ public class TableValue {
      * @param name    Name for the created function.
      * @param tables  Values that produce the input
      * @param directory  Directory where temporary files can be written
-     * @param connectionString  Connection string that specified whether a database should be used for the data.
-     *                          If the value is 'csv' temporary files may be used.
      */
     public static DBSPFunction createInputFunction(DBSPCompiler compiler, String name,
-            TableValue[] tables, String directory, String connectionString) throws IOException {
+            TableValue[] tables, String directory) throws IOException {
         DBSPExpression[] fields = new DBSPExpression[tables.length];
         Set<ProgramIdentifier> seen = new HashSet<>();
         for (int i = 0; i < tables.length; i++) {
