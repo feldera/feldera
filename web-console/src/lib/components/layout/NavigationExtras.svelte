@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { useRefreshPipelineList } from '$lib/compositions/pipelines/usePipelineList.svelte'
   import Popup from '$lib/components/common/Popup.svelte'
   import { fade } from 'svelte/transition'
   import IconDiscord from '$assets/icons/vendors/discord-logomark-color.svg?component'
@@ -7,7 +6,6 @@
 
   let { inline }: { inline?: boolean } = $props()
 
-  useRefreshPipelineList()
   const communityResources = [
     {
       title: 'Discord',

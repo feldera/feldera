@@ -63,7 +63,7 @@ export const useRefreshPipeline = (
   })
 
   const restartReload = () => {
-    const interval = setInterval(reload, 1000)
+    const interval = setInterval(reload, 2000)
     return () => {
       clearInterval(interval)
     }
