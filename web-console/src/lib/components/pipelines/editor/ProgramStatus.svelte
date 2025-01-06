@@ -9,7 +9,7 @@
     programStatus: ProgramStatus | undefined
   } = $props()
 
-  const spinnerClass = 'animate-spin text-[24px] fill-surface-950-50'
+  const spinnerClass = 'animate-spin text-[20px] fill-surface-950-50'
   let sqlClass = $derived(
     match(programStatus)
       .with(
@@ -17,9 +17,9 @@
         'SqlCompiled',
         'CompilingRust',
         { RustError: P.any },
-        () => 'fd fd-circle-check-big text-[24px] text-success-500'
+        () => 'fd fd-circle-check-big text-[20px] text-success-500'
       )
-      .with({ SqlWarning: P.any }, () => 'fd fd-circle-alert text-[24px] text-warning-500')
+      .with({ SqlWarning: P.any }, () => 'fd fd-circle-alert text-[20px] text-warning-500')
       .with('Pending', 'CompilingSql', undefined, () => 'spinner')
       .with(P.shape({}), () => 'fd fd-circle-x inline-block text-[20px] text-error-500')
       .exhaustive()
