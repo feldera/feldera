@@ -289,7 +289,7 @@ impl PipelineExecutor for LocalRunner {
     type Config = LocalRunnerConfig;
 
     // Provisioning is over once the pipeline port file has been detected.
-    const PROVISIONING_TIMEOUT: Duration = Duration::from_millis(10_000);
+    const PROVISIONING_TIMEOUT: Duration = Duration::from_millis(20_000);
     const PROVISIONING_POLL_PERIOD: Duration = Duration::from_millis(250);
 
     // Shutdown is over once the process has exited.
