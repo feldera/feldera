@@ -13,9 +13,10 @@
   import { CanvasRenderer } from 'echarts/renderers'
   import { tuple } from '$lib/functions/common/tuple'
   import { humanSize } from '$lib/functions/common/string'
-  import type { EChartsInitOpts } from 'echarts/core'
   import type { Pipeline } from '$lib/services/pipelineManager'
   import type { ECMouseEvent } from 'svelte-echarts'
+  import type { EChartsOption } from 'echarts'
+  import { rgbToHex } from '$lib/functions/common/color'
 
   let {
     pipeline,
@@ -44,10 +45,14 @@
   const yMaxStep = $derived(Math.pow(2, Math.ceil(Math.log2(valueMax * 1.25))))
   const yMax = $derived(valueMax !== 0 ? yMaxStep : 1024 * 2048)
   const yMin = 0
-  const maxMemoryMb = $derived(pipeline.current.runtimeConfig.resources?.memory_mb_max ?? undefined)
+  const maxMemoryMb = $derived(
+    pipeline.current.runtimeConfig?.resources?.memory_mb_max ?? undefined
+  )
 
-  let primaryColor = getComputedStyle(document.body).getPropertyValue('--color-primary-500').trim()
-  let options = $derived({
+  let primaryColor = rgbToHex(
+    getComputedStyle(document.body).getPropertyValue('--color-primary-500').trim()
+  )
+  let options: EChartsOption = $derived({
     animationDuration: 0,
     animationDurationUpdate: refetchMs * 1.5,
     animationEasingUpdate: 'linear' as const,
@@ -91,13 +96,13 @@
         return humanSize(x.value[1])
       }
     },
+    color: primaryColor,
     series: [
       {
         type: 'line' as const,
         // symbol: 'none',
         itemStyle: {
-          opacity: 0,
-          color: `rgb(${primaryColor})`
+          opacity: 0
         },
         data: metrics.global.map((m) => ({
           name: m.timeMs.toString(),
@@ -123,7 +128,7 @@
         triggerLineEvent: true
       }
     ]
-  } satisfies EChartsInitOpts)
+  })
 
   const handleSeriesHover = <T,>(setValue: (value: T | null) => void) => ({
     mouseover: (e: CustomEvent<ECMouseEvent>) => {

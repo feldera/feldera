@@ -8,11 +8,6 @@
     }
   > = {}
 
-  const rgbToHex = (rgb: string) => {
-    const [r, g, b] = Array.from(rgb.match(/\d+/g) ?? []).map((v) => parseInt(v))
-    return '#' + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)
-  }
-
   MonacoImports.editor.defineTheme('feldera-light', {
     base: 'vs',
     inherit: true,
@@ -90,6 +85,7 @@
   import { GenericOverlayWidget } from '$lib/components/monacoEditor/GenericOverlayWidget'
   import { usePipelineActionCallbacks } from '$lib/compositions/pipelines/usePipelineActionCallbacks.svelte'
   import { useCodeEditorSettings } from '$lib/compositions/pipelines/useCodeEditorSettings.svelte'
+  import { rgbToHex } from '$lib/functions/common/color'
 
   void MonacoImports // Explicitly import all monaco-editor esm modules
 
