@@ -232,7 +232,7 @@ example = "1.0"`
       <div class="flex min-w-0 flex-1 flex-col gap-x-4 gap-y-1 sm:flex-row">
         <PipelineBreadcrumbs
           class="-ml-3 py-1 pl-3"
-          textClass="text-base sm:text-lg"
+          textClass="text-base"
           breadcrumbs={[
             ...(isTablet.current
               ? []
@@ -258,9 +258,9 @@ example = "1.0"`
               }}
               disabled={editDisabled}
               class="inline overflow-hidden overflow-ellipsis"
-              inputClass="input flex -ml-2 mr-2 py-0 pl-2 text-base sm:text-lg"
+              inputClass="input flex -ml-2 mr-2 py-0 pl-2 text-base"
             >
-              <span class="text-base sm:text-lg">
+              <span class="text-base">
                 {pipeline.current.name}
               </span>
             </DoubleClickInput>
@@ -407,13 +407,17 @@ example = "1.0"`
           {/snippet}
           {#snippet fileTab(text, onClick, isCurrent, isSaved)}
             <button
-              class="flex flex-nowrap py-2 pl-2 pr-4 sm:pl-3 {isCurrent
+              class=" flex flex-nowrap py-2 pl-2 pr-5 sm:pl-3 {isCurrent
                 ? 'inset-y-2 border-b-2 pb-1.5 border-surface-950-50'
                 : ' rounded hover:!bg-opacity-50 hover:bg-surface-100-900'}"
               onclick={onClick}
             >
               {text}
-              <div class="-ml-3 -mt-3 h-0 w-4 text-5xl {isSaved ? '' : 'fd fd-dot'}"></div>
+              <div
+                class="h-0 w-0 -translate-x-2 -translate-y-1.5 text-4xl {isSaved
+                  ? ''
+                  : 'fd fd-dot'}"
+              ></div>
             </button>
           {/snippet}
         </CodeEditor>

@@ -39,7 +39,7 @@
     ></button>
   </div>
   {#each keys as key}
-    <span class="h6 font-normal">{metadata?.[key].title ?? ''}</span>
+    <span class="font-normal">{metadata?.[key].title ?? ''}</span>
     <div class={metadata?.[key].editorClass}>
       <MonacoEditor
         bind:value={value[key]}

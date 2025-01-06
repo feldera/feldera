@@ -279,10 +279,7 @@
     <div></div>
     Cancel start
   </button>
-  <Tooltip
-    class="bg-white-dark z-20 whitespace-nowrap rounded text-surface-950-50"
-    placement="top"
-  >
+  <Tooltip class="bg-white-dark z-20 whitespace-nowrap rounded text-surface-950-50" placement="top">
     The pipeline is scheduled to start automatically after compilation
   </Tooltip>
 {/snippet}
