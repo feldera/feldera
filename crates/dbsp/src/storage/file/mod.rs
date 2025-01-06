@@ -473,6 +473,13 @@ mod test {
             unsafe { cursor.item((tmp_key, tmp_aux)) },
             Some((key.erase_mut(), aux.erase_mut()))
         );
+
+        let mut cursor = row_group.before();
+        assert!(unsafe { cursor.seek_exact(&key) }.unwrap());
+        assert_eq!(
+            unsafe { cursor.item((tmp_key, tmp_aux)) },
+            Some((key.erase_mut(), aux.erase_mut()))
+        );
     }
 
     fn test_out_of_range<K, A, N, T>(
@@ -484,26 +491,38 @@ mod test {
         A: DBData,
         T: ColumnSpec,
     {
-        let mut tmp_key = K::default();
-        let mut tmp_aux = A::default();
-        let (tmp_key, tmp_aux): (&mut DynData, &mut DynData) =
-            (tmp_key.erase_mut(), tmp_aux.erase_mut());
+        let mut key1 = K::default();
+        let mut aux1 = A::default();
+        let (key1, aux1): (&mut DynData, &mut DynData) = (key1.erase_mut(), aux1.erase_mut());
+
+        let mut key2 = K::default();
+        let mut aux2 = A::default();
+        let (key2, aux2): (&mut DynData, &mut DynData) = (key2.erase_mut(), aux2.erase_mut());
 
         let mut cursor = row_group.first().unwrap();
         unsafe { cursor.advance_to_value_or_larger(after.erase()) }.unwrap();
-        assert_eq!(unsafe { cursor.item((tmp_key, tmp_aux)) }, None);
+        assert_eq!(unsafe { cursor.item((key1, aux1)) }, None);
 
         cursor.move_first().unwrap();
         unsafe { cursor.seek_forward_until(|k| k >= after.erase()) }.unwrap();
-        assert_eq!(unsafe { cursor.item((tmp_key, tmp_aux)) }, None);
+        assert_eq!(unsafe { cursor.item((key1, aux1)) }, None);
 
         let mut cursor = row_group.last().unwrap();
         unsafe { cursor.rewind_to_value_or_smaller(before.erase()) }.unwrap();
-        assert_eq!(unsafe { cursor.item((tmp_key, tmp_aux)) }, None);
+        assert_eq!(unsafe { cursor.item((key1, aux1)) }, None);
 
         cursor.move_last().unwrap();
         unsafe { cursor.seek_backward_until(|k| k <= before.erase()) }.unwrap();
-        assert_eq!(unsafe { cursor.item((tmp_key, tmp_aux)) }, None);
+        assert_eq!(unsafe { cursor.item((key1, aux1)) }, None);
+
+        cursor.move_first().unwrap();
+        let first1 = unsafe { cursor.item((key1, aux1)) };
+        assert!(!unsafe { cursor.seek_exact(after) }.unwrap());
+        let first2 = unsafe { cursor.item((key2, aux2)) };
+        assert_eq!(first1, first2);
+        assert!(!unsafe { cursor.seek_exact(before) }.unwrap());
+        let first2 = unsafe { cursor.item((key2, aux2)) };
+        assert_eq!(first1, first2);
     }
 
     #[allow(clippy::len_zero)]

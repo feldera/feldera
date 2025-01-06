@@ -617,6 +617,13 @@ where
         best
     }
 
+    unsafe fn find_exact<C>(&self, target_rows: &Range<u64>, compare: &C) -> Option<usize>
+    where
+        C: Fn(&K) -> Ordering,
+    {
+        self.find_best_match(target_rows, compare, Equal)
+    }
+
     /// Returns the comparison of the key in `row` using `compare`.
     unsafe fn compare_row<C>(&self, factories: &Factories<K, A>, row: u64, compare: &C) -> Ordering
     where
@@ -893,6 +900,130 @@ where
     unsafe fn get_bound(&self, index: usize, bound: &mut K) {
         let offset = self.bounds.get(&self.raw, index) as usize;
         bound.deserialize_from_bytes(&self.raw, offset)
+    }
+
+    fn get_row_range(&self, child_idx: usize) -> Range<u64> {
+        let start = if child_idx > 0 {
+            self.inner.row_totals.get(&self.inner.raw, child_idx - 1)
+        } else {
+            0
+        } + self.first_row;
+        let end = self.inner.row_totals.get(&self.inner.raw, child_idx) + self.first_row;
+        start..end
+    }
+
+    unsafe fn find_exact<C>(&self, target_rows: &Range<u64>, compare: &C) -> Option<usize>
+    where
+        C: Fn(&K) -> Ordering,
+    {
+        let mut result = None;
+        self.key_factory.with(&mut |bound| {
+            let mut start = 0;
+            let mut end = self.n_children();
+            result = loop {
+                if start >= end {
+                    break None;
+                }
+                let mid = (start + end) / 2;
+                let rows = self.get_row_range(mid);
+
+                /// Compares `a` to `b` and reports their relationship.
+                fn compare_ranges(a: &Range<u64>, b: &Range<u64>) -> Case {
+                    if a.end <= b.start {
+                        Case::Before
+                    } else if b.end <= a.start {
+                        Case::After
+                    } else if b.end <= a.end {
+                        if a.start <= b.start {
+                            Case::Contains
+                        } else {
+                            Case::OverlapEnd
+                        }
+                    } else if b.start <= a.start {
+                        Case::Inside
+                    } else {
+                        Case::OverlapStart
+                    }
+                }
+
+                /// The relationship between two ranges `a` and `b`.
+                ///
+                /// A visual representation of the possibilities:
+                ///
+                /// ```text
+                ///                    [-------b-------]
+                ///   [--before--]        [--inside--]      [--after--]
+                ///              [---------contains---------]
+                ///              [overlap-start]
+                ///                           [-overlap-end-]
+                /// ```
+                enum Case {
+                    /// `a` is before `b`, with no overlap.
+                    Before,
+
+                    /// `a` is after `b`, with no overlap.
+                    After,
+
+                    /// `a` contains all of `b` (and might stick out on either
+                    /// side).  This includes the case where `a` and `b` are
+                    /// equal.
+                    Contains,
+
+                    /// `a` is inside `b`.  (If `a` and `b` are equal, that is
+                    /// [Self::Contains] instead.)
+                    Inside,
+
+                    /// `a` starts before `b` and overlaps its beginning (but
+                    /// not all of it: that would be [Self::Contains]).
+                    OverlapStart,
+
+                    /// `a` starts within `b` and overlaps its end (but doesn't
+                    /// contain all of `b`: that would be [Self::Contains]).
+                    OverlapEnd,
+                }
+
+                let cmp = match compare_ranges(target_rows, &rows) {
+                    Case::Before => Less,
+                    Case::After => Greater,
+                    Case::Inside => Equal,
+                    Case::Contains => {
+                        self.get_bound(mid * 2, bound);
+                        match compare(bound) {
+                            Greater => {
+                                self.get_bound(mid * 2 + 1, bound);
+                                match compare(bound) {
+                                    Less => Equal,
+                                    other => other,
+                                }
+                            }
+                            other => other,
+                        }
+                    }
+                    Case::OverlapStart => {
+                        self.get_bound(mid * 2, bound);
+                        match compare(bound) {
+                            Greater => Equal,
+                            other => other,
+                        }
+                    }
+                    Case::OverlapEnd => {
+                        self.get_bound(mid * 2 + 1, bound);
+                        match compare(bound) {
+                            Less => Equal,
+                            other => other,
+                        }
+                    }
+                };
+
+                match cmp {
+                    Less => end = mid,
+                    Greater => start = mid + 1,
+                    Equal => break Some(mid),
+                }
+            };
+        });
+
+        result
     }
 
     unsafe fn find_best_match<C>(
@@ -1692,6 +1823,16 @@ where
             .move_to_row(&self.row_group, self.row_group.rows.start)
     }
 
+    /// Moves just before the row group.
+    pub fn move_before(&mut self) {
+        self.position = Position::Before;
+    }
+
+    /// Moves just after the row group.
+    pub fn move_after(&mut self) {
+        self.position = Position::After;
+    }
+
     /// Moves to the last row in the row group.  If the row group is empty,
     /// this has no effect.
     pub fn move_last(&mut self) -> Result<(), Error> {
@@ -1818,6 +1959,22 @@ where
     /// Unsafe because `rkyv` deserialization is unsafe.
     pub unsafe fn advance_to_value_or_larger(&mut self, target: &K) -> Result<(), Error> {
         self.advance_to_first_ge(&|key| target.cmp(key))
+    }
+
+    /// Moves the cursor to the row whose key is exactly `target`.  This
+    /// function does not move the cursor if no key is exactly `target`.
+    ///
+    /// # Safety
+    ///
+    /// Unsafe because `rkyv` deserialization is unsafe.
+    pub unsafe fn seek_exact(&mut self, target: &K) -> Result<bool, Error> {
+        match Position::find_exact::<N, T, _>(&self.row_group, &|key| target.cmp(key))? {
+            Some(position) => {
+                self.position = position;
+                Ok(true)
+            }
+            None => Ok(false),
+        }
     }
 
     /// Moves the cursor forward past rows for which `compare` returns [`Less`],
@@ -2118,6 +2275,42 @@ where
                             row: data_block.first_row + child_idx as u64,
                             indexes,
                             data: data_block,
+                        }));
+                }
+            }
+        }
+    }
+
+    unsafe fn find_exact<N, T, C>(
+        row_group: &RowGroup<'_, K, A, N, T>,
+        compare: &C,
+    ) -> Result<Option<Self>, Error>
+    where
+        T: ColumnSpec,
+        C: Fn(&K) -> Ordering,
+    {
+        let mut indexes = Vec::new();
+        let Some(mut node) = row_group.reader.columns[row_group.column].root.clone() else {
+            return Ok(None);
+        };
+        loop {
+            match node.read(&row_group.reader.file)? {
+                TreeBlock::Index(index_block) => {
+                    let Some(child_idx) = index_block.find_exact(&row_group.rows, compare) else {
+                        return Ok(None);
+                    };
+                    node = index_block.get_child(child_idx)?;
+                    indexes.push(index_block);
+                }
+                TreeBlock::Data(data_block) => {
+                    let factories = data_block.factories.clone();
+                    return Ok(data_block
+                        .find_exact(&row_group.rows, compare)
+                        .map(|child_idx| Self {
+                            row: data_block.first_row + child_idx as u64,
+                            indexes,
+                            data: data_block,
+                            factories,
                         }));
                 }
             }
@@ -2486,6 +2679,16 @@ where
                 Position::Before
             }),
         }
+    }
+    unsafe fn find_exact<N, T, C>(
+        row_group: &RowGroup<'_, K, A, N, T>,
+        compare: &C,
+    ) -> Result<Option<Self>, Error>
+    where
+        T: ColumnSpec,
+        C: Fn(&K) -> Ordering,
+    {
+        Ok(Path::find_exact(row_group, compare)?.map(|path| Position::Row(path)))
     }
     fn absolute_position<N, T>(&self, row_group: &RowGroup<K, A, N, T>) -> u64
     where
