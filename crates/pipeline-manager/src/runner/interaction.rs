@@ -1,7 +1,7 @@
 use crate::config::ApiServerConfig;
 use crate::db::storage::Storage;
 use crate::db::storage_postgres::StoragePostgres;
-use crate::db::types::pipeline::{ExtendedPipelineDescr, PipelineId, PipelineStatus};
+use crate::db::types::pipeline::{ExtendedPipelineDescrMonitoring, PipelineId, PipelineStatus};
 use crate::db::types::tenant::TenantId;
 use crate::error::ManagerError;
 use crate::runner::error::RunnerError;
@@ -37,12 +37,12 @@ impl RunnerInteraction {
         &self,
         tenant_id: TenantId,
         pipeline_name: &str,
-    ) -> Result<(ExtendedPipelineDescr, String), ManagerError> {
+    ) -> Result<(ExtendedPipelineDescrMonitoring, String), ManagerError> {
         let pipeline = self
             .db
             .lock()
             .await
-            .get_pipeline(tenant_id, pipeline_name)
+            .get_pipeline_for_monitoring(tenant_id, pipeline_name)
             .await?;
 
         match pipeline.deployment_status {
@@ -294,7 +294,7 @@ impl RunnerInteraction {
             .db
             .lock()
             .await
-            .get_pipeline(tenant_id, pipeline_name)
+            .get_pipeline_for_monitoring(tenant_id, pipeline_name)
             .await?;
 
         // Build request to the runner

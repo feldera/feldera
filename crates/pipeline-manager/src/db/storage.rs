@@ -1,13 +1,47 @@
 use crate::db::error::DBError;
 use crate::db::types::api_key::{ApiKeyDescr, ApiPermission};
 use crate::db::types::common::Version;
-use crate::db::types::pipeline::{ExtendedPipelineDescr, PipelineDescr, PipelineId};
+use crate::db::types::pipeline::{
+    ExtendedPipelineDescr, ExtendedPipelineDescrMonitoring, PipelineDescr, PipelineId,
+};
 use crate::db::types::program::{ProgramConfig, ProgramInfo, SqlCompilerMessage};
 use crate::db::types::tenant::TenantId;
 use async_trait::async_trait;
 use feldera_types::config::{PipelineConfig, RuntimeConfig};
 use feldera_types::error::ErrorResponse;
 use uuid::Uuid;
+
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum ExtendedPipelineDescrRunner {
+    Monitoring(ExtendedPipelineDescrMonitoring),
+    Complete(ExtendedPipelineDescr),
+}
+
+impl ExtendedPipelineDescrRunner {
+    /// The complete descriptor can be directly limited to become
+    /// the descriptor with only fields relevant to monitoring.
+    pub fn only_monitoring(&self) -> ExtendedPipelineDescrMonitoring {
+        match self {
+            ExtendedPipelineDescrRunner::Monitoring(pipeline) => pipeline.clone(),
+            ExtendedPipelineDescrRunner::Complete(pipeline) => ExtendedPipelineDescrMonitoring {
+                id: pipeline.id,
+                name: pipeline.name.clone(),
+                description: pipeline.description.clone(),
+                created_at: pipeline.created_at,
+                version: pipeline.version,
+                platform_version: pipeline.platform_version.clone(),
+                program_version: pipeline.program_version,
+                program_status: pipeline.program_status.clone(),
+                program_status_since: pipeline.program_status_since,
+                deployment_status: pipeline.deployment_status,
+                deployment_status_since: pipeline.deployment_status_since,
+                deployment_desired_status: pipeline.deployment_desired_status,
+                deployment_error: pipeline.deployment_error.clone(),
+                deployment_location: pipeline.deployment_location.clone(),
+            },
+        }
+    }
+}
 
 /// The [`Storage`] trait has all methods the API uses to interact with storage.
 /// The implementation of these methods varies depending on the backing storage.
@@ -56,6 +90,12 @@ pub(crate) trait Storage {
         tenant_id: TenantId,
     ) -> Result<Vec<ExtendedPipelineDescr>, DBError>;
 
+    /// Retrieves a list of pipelines as extended descriptors with only fields relevant to monitoring.
+    async fn list_pipelines_for_monitoring(
+        &self,
+        tenant_id: TenantId,
+    ) -> Result<Vec<ExtendedPipelineDescrMonitoring>, DBError>;
+
     /// Retrieves a pipeline as extended descriptor.
     async fn get_pipeline(
         &self,
@@ -63,12 +103,39 @@ pub(crate) trait Storage {
         name: &str,
     ) -> Result<ExtendedPipelineDescr, DBError>;
 
-    /// Retrieves a pipeline as extended descriptor using its identifier.
+    /// Retrieves a pipeline as extended descriptor with only fields relevant to monitoring.
+    async fn get_pipeline_for_monitoring(
+        &self,
+        tenant_id: TenantId,
+        name: &str,
+    ) -> Result<ExtendedPipelineDescrMonitoring, DBError>;
+
+    /// Retrieves using its identifier a pipeline as extended descriptor.
+    #[allow(dead_code)] // It is used by various tests
     async fn get_pipeline_by_id(
         &self,
         tenant_id: TenantId,
         pipeline_id: PipelineId,
     ) -> Result<ExtendedPipelineDescr, DBError>;
+
+    /// Retrieves using its identifier a pipeline as extended descriptor with only fields relevant to monitoring.
+    async fn get_pipeline_by_id_for_monitoring(
+        &self,
+        tenant_id: TenantId,
+        pipeline_id: PipelineId,
+    ) -> Result<ExtendedPipelineDescrMonitoring, DBError>;
+
+    /// Retrieves a pipeline as extended descriptor using its identifier.
+    /// Depending on the deployment status, program status, platform version,
+    /// and whether provisioning was called, the result is either the complete
+    /// descriptor, or the smaller descriptor with only fields relevant to monitoring.
+    async fn get_pipeline_by_id_for_runner(
+        &self,
+        tenant_id: TenantId,
+        pipeline_id: PipelineId,
+        platform_version: &str,
+        provision_called: bool,
+    ) -> Result<ExtendedPipelineDescrRunner, DBError>;
 
     /// Creates a new pipeline.
     async fn new_pipeline(
@@ -270,10 +337,11 @@ pub(crate) trait Storage {
         &self,
     ) -> Result<Vec<(TenantId, PipelineId)>, DBError>;
 
-    /// Retrieves a list of all pipeline ids across all tenants.
-    async fn list_pipelines_across_all_tenants(
+    /// Retrieves a list of all pipelines across all tenants.
+    /// The descriptors only have the fields relevant to monitoring.
+    async fn list_pipelines_across_all_tenants_for_monitoring(
         &self,
-    ) -> Result<Vec<(TenantId, ExtendedPipelineDescr)>, DBError>;
+    ) -> Result<Vec<(TenantId, ExtendedPipelineDescrMonitoring)>, DBError>;
 
     /// Determines what to do with pipelines that are `Pending` and `CompilingSql`.
     ///

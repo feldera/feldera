@@ -1,12 +1,13 @@
 use crate::auth::{generate_api_key, TenantRecord};
 use crate::db::error::DBError;
-use crate::db::storage::Storage;
+use crate::db::storage::{ExtendedPipelineDescrRunner, Storage};
 use crate::db::storage_postgres::StoragePostgres;
 use crate::db::types::api_key::{ApiKeyDescr, ApiKeyId, ApiPermission};
 use crate::db::types::common::{validate_name, Version};
 use crate::db::types::pipeline::{
     validate_deployment_desired_status_transition, validate_deployment_status_transition,
-    ExtendedPipelineDescr, PipelineDescr, PipelineDesiredStatus, PipelineId, PipelineStatus,
+    ExtendedPipelineDescr, ExtendedPipelineDescrMonitoring, PipelineDescr, PipelineDesiredStatus,
+    PipelineId, PipelineStatus,
 };
 use crate::db::types::program::{
     generate_pipeline_config, validate_program_status_transition, CompilationProfile,
@@ -1226,8 +1227,17 @@ enum StorageAction {
     ValidateApiKey(TenantId, String),
     // Pipelines
     ListPipelines(TenantId),
+    ListPipelinesForMonitoring(TenantId),
     GetPipeline(TenantId, String),
+    GetPipelineForMonitoring(TenantId, String),
     GetPipelineById(TenantId, PipelineId),
+    GetPipelineByIdForMonitoring(TenantId, PipelineId),
+    GetPipelineByIdForRunner(
+        TenantId,
+        PipelineId,
+        #[proptest(strategy = "limited_platform_version()")] String,
+        bool,
+    ),
     NewPipeline(
         TenantId,
         #[proptest(strategy = "limited_uuid()")] Uuid,
@@ -1306,7 +1316,7 @@ enum StorageAction {
         #[proptest(strategy = "limited_error_response()")] ErrorResponse,
     ),
     ListPipelineIdsAcrossAllTenants,
-    ListPipelinesAcrossAllTenants,
+    ListPipelinesAcrossAllTenantsForMonitoring,
     ClearOngoingSqlCompilation(#[proptest(strategy = "limited_platform_version()")] String),
     GetNextSqlCompilation(#[proptest(strategy = "limited_platform_version()")] String),
     ClearOngoingRustCompilation(#[proptest(strategy = "limited_platform_version()")] String),
@@ -1328,6 +1338,35 @@ fn convert_pipeline_with_constant_timestamps(
     pipeline.program_status_since = timestamp;
     pipeline.deployment_status_since = timestamp;
     pipeline
+}
+
+/// Convert pipeline monitoring descriptor for test comparison.
+/// See for explanation: [`convert_pipeline_with_constant_timestamps`].
+fn convert_pipeline_for_monitoring_with_constant_timestamps(
+    mut pipeline: ExtendedPipelineDescrMonitoring,
+) -> ExtendedPipelineDescrMonitoring {
+    let timestamp = Utc.timestamp_nanos(0);
+    pipeline.created_at = timestamp;
+    pipeline.program_status_since = timestamp;
+    pipeline.deployment_status_since = timestamp;
+    pipeline
+}
+
+/// Convert pipeline runner descriptor for test comparison.
+/// See for explanation: [`convert_pipeline_with_constant_timestamps`].
+fn convert_pipeline_for_runner_with_constant_timestamps(
+    pipeline: ExtendedPipelineDescrRunner,
+) -> ExtendedPipelineDescrRunner {
+    match pipeline {
+        ExtendedPipelineDescrRunner::Monitoring(pipeline) => {
+            ExtendedPipelineDescrRunner::Monitoring(
+                convert_pipeline_for_monitoring_with_constant_timestamps(pipeline),
+            )
+        }
+        ExtendedPipelineDescrRunner::Complete(pipeline) => ExtendedPipelineDescrRunner::Complete(
+            convert_pipeline_with_constant_timestamps(pipeline),
+        ),
+    }
 }
 
 /// Check database responses by direct comparison.
@@ -1357,7 +1396,8 @@ fn check_responses<T: Debug + PartialEq>(
     }
 }
 
-/// Ignores timestamps.
+/// Compares model response to that of the database implementation
+/// when the type is `ExtendedPipelineDescr`.
 fn check_response_pipeline(
     step: usize,
     mut result_model: DBResult<ExtendedPipelineDescr>,
@@ -1368,7 +1408,32 @@ fn check_response_pipeline(
     check_responses(step, result_model, result_impl);
 }
 
-/// Ignores timestamps.
+/// Compares model response to that of the database implementation
+/// when the type is `ExtendedPipelineDescrMonitoring`.
+fn check_response_pipeline_for_monitoring(
+    step: usize,
+    mut result_model: DBResult<ExtendedPipelineDescrMonitoring>,
+    mut result_impl: DBResult<ExtendedPipelineDescrMonitoring>,
+) {
+    result_model = result_model.map(convert_pipeline_for_monitoring_with_constant_timestamps);
+    result_impl = result_impl.map(convert_pipeline_for_monitoring_with_constant_timestamps);
+    check_responses(step, result_model, result_impl);
+}
+
+/// Compares model response to that of the database implementation
+/// when the type is `ExtendedPipelineDescrRunner`.
+fn check_response_pipeline_for_runner(
+    step: usize,
+    mut result_model: DBResult<ExtendedPipelineDescrRunner>,
+    mut result_impl: DBResult<ExtendedPipelineDescrRunner>,
+) {
+    result_model = result_model.map(convert_pipeline_for_runner_with_constant_timestamps);
+    result_impl = result_impl.map(convert_pipeline_for_runner_with_constant_timestamps);
+    check_responses(step, result_model, result_impl);
+}
+
+/// Compares model response to that of the database implementation
+/// when the type is (created, `ExtendedPipelineDescrRunner`).
 fn check_response_pipeline_with_created(
     step: usize,
     mut result_model: DBResult<(bool, ExtendedPipelineDescr)>,
@@ -1381,7 +1446,8 @@ fn check_response_pipeline_with_created(
     check_responses(step, result_model, result_impl);
 }
 
-/// Ignores timestamps.
+/// Compares model response to that of the database implementation
+/// when the type is `Option<(TenantId, ExtendedPipelineDescr)>`.
 fn check_response_optional_pipeline_with_tenant_id(
     step: usize,
     mut result_model: DBResult<Option<(TenantId, ExtendedPipelineDescr)>>,
@@ -1406,7 +1472,8 @@ fn check_response_optional_pipeline_with_tenant_id(
     check_responses(step, result_model, result_impl);
 }
 
-/// Ignores timestamps.
+/// Compares model response to that of the database implementation
+/// when the type is `Vec<ExtendedPipelineDescr>` (ignores order).
 fn check_response_pipelines(
     step: usize,
     mut result_model: DBResult<Vec<ExtendedPipelineDescr>>,
@@ -1427,11 +1494,34 @@ fn check_response_pipelines(
     check_responses(step, result_model, result_impl);
 }
 
-/// Ignores timestamps and ordering.
-fn check_response_pipelines_with_tenant_id(
+/// Compares model response to that of the database implementation
+/// when the type is `Vec<ExtendedPipelineDescrMonitoring>` (ignores order).
+fn check_response_pipelines_for_monitoring(
     step: usize,
-    mut result_model: DBResult<Vec<(TenantId, ExtendedPipelineDescr)>>,
-    mut result_impl: DBResult<Vec<(TenantId, ExtendedPipelineDescr)>>,
+    mut result_model: DBResult<Vec<ExtendedPipelineDescrMonitoring>>,
+    mut result_impl: DBResult<Vec<ExtendedPipelineDescrMonitoring>>,
+) {
+    result_model = result_model.map(|mut v| {
+        v.sort_by(|p1, p2| p1.id.cmp(&p2.id));
+        v.into_iter()
+            .map(convert_pipeline_for_monitoring_with_constant_timestamps)
+            .collect()
+    });
+    result_impl = result_impl.map(|mut v| {
+        v.sort_by(|p1, p2| p1.id.cmp(&p2.id));
+        v.into_iter()
+            .map(convert_pipeline_for_monitoring_with_constant_timestamps)
+            .collect()
+    });
+    check_responses(step, result_model, result_impl);
+}
+
+/// Compares model response to that of the database implementation
+/// when the type is `Vec<(TenantId, ExtendedPipelineDescrMonitoring)>` (ignores order).
+fn check_response_pipelines_for_monitoring_with_tenant_id(
+    step: usize,
+    mut result_model: DBResult<Vec<(TenantId, ExtendedPipelineDescrMonitoring)>>,
+    mut result_impl: DBResult<Vec<(TenantId, ExtendedPipelineDescrMonitoring)>>,
 ) {
     result_model = result_model.map(|mut v| {
         v.sort_by(|(t1, p1), (t2, p2)| (t1, p1.id).cmp(&(t2, p2.id)));
@@ -1439,7 +1529,7 @@ fn check_response_pipelines_with_tenant_id(
             .map(|(tenant_id, pipeline)| {
                 (
                     tenant_id,
-                    convert_pipeline_with_constant_timestamps(pipeline),
+                    convert_pipeline_for_monitoring_with_constant_timestamps(pipeline),
                 )
             })
             .collect()
@@ -1450,7 +1540,7 @@ fn check_response_pipelines_with_tenant_id(
             .map(|(tenant_id, pipeline)| {
                 (
                     tenant_id,
-                    convert_pipeline_with_constant_timestamps(pipeline),
+                    convert_pipeline_for_monitoring_with_constant_timestamps(pipeline),
                 )
             })
             .collect()
@@ -1458,7 +1548,8 @@ fn check_response_pipelines_with_tenant_id(
     check_responses(step, result_model, result_impl);
 }
 
-/// Ignores ordering.
+/// Compares model response to that of the database implementation
+/// when the type is `Vec<(TenantId, PipelineId)>` (ignores order).
 fn check_response_pipeline_ids_with_tenant_id(
     step: usize,
     mut result_model: DBResult<Vec<(TenantId, PipelineId)>>,
@@ -1584,17 +1675,41 @@ fn db_impl_behaves_like_model() {
                                 let impl_response = handle.db.list_pipelines(tenant_id).await;
                                 check_response_pipelines(i, model_response, impl_response);
                             }
+                            StorageAction::ListPipelinesForMonitoring(tenant_id) => {
+                                create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
+                                let model_response = model.list_pipelines_for_monitoring(tenant_id).await;
+                                let impl_response = handle.db.list_pipelines_for_monitoring(tenant_id).await;
+                                check_response_pipelines_for_monitoring(i, model_response, impl_response);
+                            }
                             StorageAction::GetPipeline(tenant_id, pipeline_name) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
                                 let model_response = model.get_pipeline(tenant_id, &pipeline_name).await;
                                 let impl_response = handle.db.get_pipeline(tenant_id, &pipeline_name).await;
                                 check_response_pipeline(i, model_response, impl_response);
                             }
+                            StorageAction::GetPipelineForMonitoring(tenant_id, pipeline_name) => {
+                                create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
+                                let model_response = model.get_pipeline_for_monitoring(tenant_id, &pipeline_name).await;
+                                let impl_response = handle.db.get_pipeline_for_monitoring(tenant_id, &pipeline_name).await;
+                                check_response_pipeline_for_monitoring(i, model_response, impl_response);
+                            }
                             StorageAction::GetPipelineById(tenant_id, pipeline_id) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
                                 let model_response = model.get_pipeline_by_id(tenant_id, pipeline_id).await;
                                 let impl_response = handle.db.get_pipeline_by_id(tenant_id, pipeline_id).await;
                                 check_response_pipeline(i, model_response, impl_response);
+                            }
+                            StorageAction::GetPipelineByIdForMonitoring(tenant_id, pipeline_id) => {
+                                create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
+                                let model_response = model.get_pipeline_by_id_for_monitoring(tenant_id, pipeline_id).await;
+                                let impl_response = handle.db.get_pipeline_by_id_for_monitoring(tenant_id, pipeline_id).await;
+                                check_response_pipeline_for_monitoring(i, model_response, impl_response);
+                            }
+                            StorageAction::GetPipelineByIdForRunner(tenant_id, pipeline_id, platform_version, provision_called) => {
+                                create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
+                                let model_response = model.get_pipeline_by_id_for_runner(tenant_id, pipeline_id, &platform_version, provision_called).await;
+                                let impl_response = handle.db.get_pipeline_by_id_for_runner(tenant_id, pipeline_id, &platform_version, provision_called).await;
+                                check_response_pipeline_for_runner(i, model_response, impl_response);
                             }
                             StorageAction::NewPipeline(tenant_id, new_id, platform_version, pipeline_descr) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
@@ -1739,10 +1854,10 @@ fn db_impl_behaves_like_model() {
                                 let impl_response = handle.db.list_pipeline_ids_across_all_tenants().await;
                                 check_response_pipeline_ids_with_tenant_id(i, model_response, impl_response);
                             }
-                            StorageAction::ListPipelinesAcrossAllTenants => {
-                                let model_response = model.list_pipelines_across_all_tenants().await;
-                                let impl_response = handle.db.list_pipelines_across_all_tenants().await;
-                                check_response_pipelines_with_tenant_id(i, model_response, impl_response);
+                            StorageAction::ListPipelinesAcrossAllTenantsForMonitoring => {
+                                let model_response = model.list_pipelines_across_all_tenants_for_monitoring().await;
+                                let impl_response = handle.db.list_pipelines_across_all_tenants_for_monitoring().await;
+                                check_response_pipelines_for_monitoring_with_tenant_id(i, model_response, impl_response);
                             }
                             StorageAction::ClearOngoingSqlCompilation(platform_version) => {
                                 let model_response = model.clear_ongoing_sql_compilation(&platform_version).await;
@@ -2042,6 +2157,28 @@ impl ModelHelpers for Mutex<DbModel> {
     }
 }
 
+/// Converts the complete extended descriptor to one with only fields relevant to monitoring.
+fn convert_descriptor_to_monitoring(
+    pipeline: ExtendedPipelineDescr,
+) -> ExtendedPipelineDescrMonitoring {
+    ExtendedPipelineDescrMonitoring {
+        id: pipeline.id,
+        name: pipeline.name.clone(),
+        description: pipeline.description.clone(),
+        created_at: pipeline.created_at,
+        version: pipeline.version,
+        platform_version: pipeline.platform_version.clone(),
+        program_version: pipeline.program_version,
+        program_status: pipeline.program_status.clone(),
+        program_status_since: pipeline.program_status_since,
+        deployment_status: pipeline.deployment_status,
+        deployment_status_since: pipeline.program_status_since,
+        deployment_desired_status: pipeline.deployment_desired_status,
+        deployment_error: pipeline.deployment_error.clone(),
+        deployment_location: pipeline.deployment_location.clone(),
+    }
+}
+
 #[async_trait]
 impl Storage for Mutex<DbModel> {
     async fn check_connection(&self) -> Result<(), DBError> {
@@ -2158,6 +2295,18 @@ impl Storage for Mutex<DbModel> {
             .collect())
     }
 
+    async fn list_pipelines_for_monitoring(
+        &self,
+        tenant_id: TenantId,
+    ) -> Result<Vec<ExtendedPipelineDescrMonitoring>, DBError> {
+        self.list_pipelines(tenant_id).await.map(|pipelines| {
+            pipelines
+                .iter()
+                .map(|v| convert_descriptor_to_monitoring(v.clone()))
+                .collect()
+        })
+    }
+
     async fn get_pipeline(
         &self,
         tenant_id: TenantId,
@@ -2175,6 +2324,16 @@ impl Storage for Mutex<DbModel> {
             })
     }
 
+    async fn get_pipeline_for_monitoring(
+        &self,
+        tenant_id: TenantId,
+        name: &str,
+    ) -> Result<ExtendedPipelineDescrMonitoring, DBError> {
+        self.get_pipeline(tenant_id, name)
+            .await
+            .map(convert_descriptor_to_monitoring)
+    }
+
     async fn get_pipeline_by_id(
         &self,
         tenant_id: TenantId,
@@ -2186,6 +2345,53 @@ impl Storage for Mutex<DbModel> {
             .get(&(tenant_id, pipeline_id))
             .cloned()
             .ok_or(DBError::UnknownPipeline { pipeline_id })
+    }
+
+    async fn get_pipeline_by_id_for_monitoring(
+        &self,
+        tenant_id: TenantId,
+        pipeline_id: PipelineId,
+    ) -> Result<ExtendedPipelineDescrMonitoring, DBError> {
+        self.get_pipeline_by_id(tenant_id, pipeline_id)
+            .await
+            .map(convert_descriptor_to_monitoring)
+    }
+
+    async fn get_pipeline_by_id_for_runner(
+        &self,
+        tenant_id: TenantId,
+        pipeline_id: PipelineId,
+        platform_version: &str,
+        provision_called: bool,
+    ) -> Result<ExtendedPipelineDescrRunner, DBError> {
+        let pipeline = self.get_pipeline_by_id(tenant_id, pipeline_id).await?;
+        let is_ready_compiled = pipeline.program_status == ProgramStatus::Success
+            && pipeline.platform_version == platform_version;
+        if matches!(
+            (
+                pipeline.deployment_status,
+                pipeline.deployment_desired_status,
+                is_ready_compiled,
+                provision_called
+            ),
+            (
+                PipelineStatus::Shutdown,
+                PipelineDesiredStatus::Paused | PipelineDesiredStatus::Running,
+                true,
+                _,
+            ) | (
+                PipelineStatus::Provisioning,
+                PipelineDesiredStatus::Paused | PipelineDesiredStatus::Running,
+                _,
+                false,
+            ),
+        ) {
+            Ok(ExtendedPipelineDescrRunner::Complete(pipeline))
+        } else {
+            Ok(ExtendedPipelineDescrRunner::Monitoring(
+                convert_descriptor_to_monitoring(pipeline),
+            ))
+        }
     }
 
     async fn new_pipeline(
@@ -2731,22 +2937,24 @@ impl Storage for Mutex<DbModel> {
         Ok(result)
     }
 
-    async fn list_pipelines_across_all_tenants(
+    async fn list_pipelines_across_all_tenants_for_monitoring(
         &self,
-    ) -> Result<Vec<(TenantId, ExtendedPipelineDescr)>, DBError> {
-        let mut result: Vec<(TenantId, ExtendedPipelineDescr)> = self
+    ) -> Result<Vec<(TenantId, ExtendedPipelineDescrMonitoring)>, DBError> {
+        let mut result: Vec<(TenantId, ExtendedPipelineDescrMonitoring)> = self
             .lock()
             .await
             .pipelines
             .iter()
-            .map(|((tid, _), pipeline)| (*tid, pipeline.clone()))
+            .map(|((tid, _), pipeline)| (*tid, convert_descriptor_to_monitoring(pipeline.clone())))
             .collect();
         result.sort_by(|(_, p1), (_, p2)| p1.id.cmp(&p2.id));
         Ok(result)
     }
 
     async fn clear_ongoing_sql_compilation(&self, platform_version: &str) -> Result<(), DBError> {
-        let pipelines = self.list_pipelines_across_all_tenants().await?;
+        let pipelines = self
+            .list_pipelines_across_all_tenants_for_monitoring()
+            .await?;
         for (tid, pipeline) in pipelines {
             if pipeline.deployment_status == PipelineStatus::Shutdown {
                 if pipeline.platform_version == platform_version {
@@ -2808,16 +3016,19 @@ impl Storage for Mutex<DbModel> {
     }
 
     async fn clear_ongoing_rust_compilation(&self, platform_version: &str) -> Result<(), DBError> {
-        let pipelines = self.list_pipelines_across_all_tenants().await?;
+        let pipelines = self
+            .list_pipelines_across_all_tenants_for_monitoring()
+            .await?;
         for (tid, pipeline) in pipelines {
             if pipeline.deployment_status == PipelineStatus::Shutdown {
                 if pipeline.platform_version == platform_version {
                     if pipeline.program_status == ProgramStatus::CompilingRust {
+                        let pipeline_complete = self.get_pipeline_by_id(tid, pipeline.id).await?;
                         self.transit_program_status_to_sql_compiled(
                             tid,
                             pipeline.id,
                             pipeline.program_version,
-                            &pipeline.program_info.unwrap(),
+                            &pipeline_complete.program_info.unwrap(),
                         )
                         .await?;
                     }

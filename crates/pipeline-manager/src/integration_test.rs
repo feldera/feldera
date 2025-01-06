@@ -51,7 +51,6 @@ use tokio::{
     time::{sleep, timeout},
 };
 
-use crate::api::PipelineFieldSelector;
 use crate::compiler::main::{compiler_main, compiler_precompile};
 use crate::config::CommonConfig;
 #[cfg(feature = "pg-embed")]
@@ -932,6 +931,46 @@ async fn pipeline_get() {
     }
 }
 
+/// Fields included in the `all` selector.
+const PIPELINE_FIELD_SELECTOR_ALL_FIELDS: [&str; 19] = [
+    "id",
+    "name",
+    "description",
+    "created_at",
+    "version",
+    "platform_version",
+    "runtime_config",
+    "program_code",
+    "udf_rust",
+    "udf_toml",
+    "program_config",
+    "program_version",
+    "program_status",
+    "program_status_since",
+    "program_info",
+    "deployment_status",
+    "deployment_status_since",
+    "deployment_desired_status",
+    "deployment_error",
+];
+
+/// Fields included in the `status` selector.
+const PIPELINE_FIELD_SELECTOR_STATUS_FIELDS: [&str; 13] = [
+    "id",
+    "name",
+    "description",
+    "created_at",
+    "version",
+    "platform_version",
+    "program_version",
+    "program_status",
+    "program_status_since",
+    "deployment_status",
+    "deployment_status_since",
+    "deployment_desired_status",
+    "deployment_error",
+];
+
 /// Tests the retrieval of a pipeline and list of pipelines with a field selector.
 #[actix_web::test]
 #[serial]
@@ -939,10 +978,10 @@ async fn pipeline_get_selector() {
     let config = setup().await;
     prepare_pipeline(&config, "test-1", "CREATE TABLE t1(c1 INT);").await;
     for base_endpoint in ["/v0/pipelines", "/v0/pipelines/test-1"] {
-        for (expected_selector, selector_value) in [
-            (PipelineFieldSelector::All, ""),
-            (PipelineFieldSelector::All, "all"),
-            (PipelineFieldSelector::Status, "status"),
+        for (selector_value, expected_fields) in [
+            ("", PIPELINE_FIELD_SELECTOR_ALL_FIELDS.to_vec()),
+            ("all", PIPELINE_FIELD_SELECTOR_ALL_FIELDS.to_vec()),
+            ("status", PIPELINE_FIELD_SELECTOR_STATUS_FIELDS.to_vec()),
         ] {
             // Perform request
             let endpoint = if selector_value.is_empty() {
@@ -964,7 +1003,7 @@ async fn pipeline_get_selector() {
             };
 
             // Check that the pipeline object has exactly the expected fields
-            let mut expected_fields_sorted = expected_selector.included_fields();
+            let mut expected_fields_sorted = expected_fields;
             expected_fields_sorted.sort();
             let mut actual_fields_sorted: Vec<&String> = object.keys().collect();
             actual_fields_sorted.sort();

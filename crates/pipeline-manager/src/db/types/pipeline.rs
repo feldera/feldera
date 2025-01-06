@@ -438,7 +438,7 @@ pub struct ExtendedPipelineDescr {
 
     /// Program information which includes schema, input connectors and output connectors.
     /// It is set once SQL compilation has been successfully completed
-    /// (i.e., the `program_status` field reaches >= `ProgramStatus::CompilingRust`).
+    /// (i.e., the `program_status` field reaches >= `ProgramStatus::SqlCompiled`).
     pub program_info: Option<ProgramInfo>,
 
     /// Combined checksum of all the inputs that influenced Rust compilation to a binary.
@@ -473,5 +473,29 @@ pub struct ExtendedPipelineDescr {
 
     /// Location where the pipeline can be reached at runtime
     /// (e.g., a TCP port number or a URI).
+    pub deployment_location: Option<String>,
+}
+
+/// Pipeline descriptor which includes the fields relevant to system monitoring.
+/// The advantage of this descriptor over the [`ExtendedPipelineDescr`] is that it
+/// excludes fields which can be quite large (e.g., the generated Rust code stored
+/// in `program_info` can become several MiB in size). This is particularly relevant
+/// for monitoring in which the pipeline tuple is retrieved very frequently, which would
+/// result in high CPU usage to retrieve large fields that are not of interest.
+#[derive(Eq, PartialEq, Debug, Clone)]
+pub struct ExtendedPipelineDescrMonitoring {
+    pub id: PipelineId,
+    pub name: String,
+    pub description: String,
+    pub created_at: DateTime<Utc>,
+    pub version: Version,
+    pub platform_version: String,
+    pub program_version: Version,
+    pub program_status: ProgramStatus,
+    pub program_status_since: DateTime<Utc>,
+    pub deployment_status: PipelineStatus,
+    pub deployment_status_since: DateTime<Utc>,
+    pub deployment_desired_status: PipelineDesiredStatus,
+    pub deployment_error: Option<ErrorResponse>,
     pub deployment_location: Option<String>,
 }
