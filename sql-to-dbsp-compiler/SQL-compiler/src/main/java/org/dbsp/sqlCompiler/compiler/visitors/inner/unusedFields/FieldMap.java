@@ -2,6 +2,8 @@ package org.dbsp.sqlCompiler.compiler.visitors.inner.unusedFields;
 
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRef;
@@ -84,7 +86,12 @@ public class FieldMap {
                 fields[target] = var.deref().field(i).applyCloneIfNeeded();
             }
         }
-        return tuple.makeTuple(fields).closure(var.asParameter());
+        DBSPExpression tup;
+        if (tuple.isRaw())
+            tup = new DBSPRawTupleExpression(fields);
+        else
+            tup = new DBSPTupleExpression(tuple.mayBeNull, fields);
+        return tup.closure(var.asParameter());
     }
 
     @Override

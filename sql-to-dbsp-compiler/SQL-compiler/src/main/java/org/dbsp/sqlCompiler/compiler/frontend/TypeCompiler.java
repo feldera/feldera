@@ -147,7 +147,7 @@ public class TypeCompiler implements ICompilerComponent {
                 struct = new DBSPTypeStruct(node, new ProgramIdentifier(saneName, false), saneName, fields, nullable);
             }
             if (asStruct) {
-                return struct;
+                return struct.withMayBeNull(dt.isNullable());
             } else {
                 DBSPType[] fieldTypes = new DBSPType[dt.getFieldCount()];
                 int i = 0;

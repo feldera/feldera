@@ -95,7 +95,9 @@ public class TestCase {
         }
 
         for (InputOutputChange changes : this.ccs.stream.changes) {
-            Change inputs = changes.getInputs().shuffle(inputShuffle).simplify(this.ccs.compiler);
+            Change inputs = changes.getInputs();
+            inputs = inputs.shuffle(inputShuffle);
+            inputs = inputs.simplify(this.ccs.compiler);
             Change outputs = changes.getOutputs().shuffle(outputShuffle).simplify(this.ccs.compiler);
 
             TableValue[] tableValues = new TableValue[inputs.getSetCount()];
@@ -103,8 +105,8 @@ public class TestCase {
                 tableValues[i] = new TableValue(
                         this.ccs.compiler.canonicalName("t" + i, false), inputs.getSet(i));
             String functionName = "input" + pair;
-            DBSPFunction inputFunction = TableValue.createInputFunction(this.ccs.compiler,
-                    functionName, tableValues, codeDirectory, "csv");
+            DBSPFunction inputFunction = TableValue.createInputFunction(
+                    this.ccs.compiler, functionName, tableValues, codeDirectory);
             list.add(new DBSPFunctionItem(inputFunction));
             DBSPLetStatement in = new DBSPLetStatement(functionName, inputFunction.call());
             list.add(in);

@@ -11,6 +11,7 @@ import org.dbsp.sqlCompiler.ir.ISameValue;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBaseType;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeMap;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeVec;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 import org.dbsp.util.IIndentStream;
@@ -105,7 +106,7 @@ public final class DBSPZSetExpression extends DBSPExpression
 
     public DBSPZSetExpression add(DBSPExpression expression, long weight) {
         // We expect the expression to be a constant value (a literal)
-        if (expression.getType().code != this.getElementType().code)
+        if (!expression.getType().sameType(this.getElementType()))
             throw new InternalCompilerError("Added element type " +
                     expression.getType() + " does not match zset type " + this.getElementType(), expression);
         if (this.data.containsKey(expression)) {
@@ -146,12 +147,30 @@ public final class DBSPZSetExpression extends DBSPExpression
             List<DBSPExpression> fields = Linq.map(vecLit.data, e -> castRecursive(e, vec.getElementType()));
             return new DBSPVecExpression(expression.getNode(), type, fields);
         } else if (type.is(DBSPTypeTupleBase.class)) {
-            DBSPTypeTupleBase tuple = this.elementType.to(DBSPTypeTupleBase.class);
+            DBSPTypeTupleBase tuple = type.to(DBSPTypeTupleBase.class);
             DBSPExpression[] fields = new DBSPExpression[tuple.size()];
+            if (expression.is(DBSPBaseTupleExpression.class)) {
+                DBSPBaseTupleExpression te = expression.to(DBSPBaseTupleExpression.class);
+                if (te.fields == null) {
+                    return tuple.none();
+                }
+            }
             for (int i = 0; i < tuple.size(); i++) {
-                fields[i] = this.castRecursive(expression.field(i).simplify(), tuple.tupFields[i]);
+                DBSPFieldExpression expr = expression.field(i);
+                DBSPExpression simple = expr.simplify();
+                fields[i] = this.castRecursive(simple, tuple.tupFields[i]);
             }
             return tuple.makeTuple(fields);
+        } else if (type.is(DBSPTypeMap.class)) {
+            DBSPTypeMap map = type.to(DBSPTypeMap.class);
+            DBSPMapExpression mapLit = expression.to(DBSPMapExpression.class);
+            if (mapLit.values == null) {
+                return new DBSPMapExpression(map, null, null);
+            }
+            assert mapLit.keys != null;
+            List<DBSPExpression> keys = Linq.map(mapLit.keys, e -> this.castRecursive(e, map.getKeyType()));
+            List<DBSPExpression> values = Linq.map(mapLit.values, e -> this.castRecursive(e, map.getValueType()));
+            return new DBSPMapExpression(map, keys, values);
         } else {
             throw new InternalCompilerError("Casting expressions of type " + type);
         }

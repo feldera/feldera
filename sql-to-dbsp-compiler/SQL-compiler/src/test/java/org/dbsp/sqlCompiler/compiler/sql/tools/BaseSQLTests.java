@@ -129,7 +129,7 @@ public class BaseSQLTests {
         compiler.options.languageOptions.throwOnError = false;
         this.prepareInputs(compiler);
         compiler.compileStatements(statements);
-        getCircuit(compiler);
+        compiler.getFinalCircuit(true);
         if (compiler.messages.exitCode == 0) {
             throw new RuntimeException("Program was expected to fail: " + statements);
         } else {
@@ -289,7 +289,9 @@ public class BaseSQLTests {
     }
 
     public static DBSPCircuit getCircuit(DBSPCompiler compiler) {
-        return compiler.getFinalCircuit(false);
+        DBSPCircuit circuit = compiler.getFinalCircuit(false);
+        assert circuit != null;
+        return circuit;
     }
 
     protected InputOutputChangeStream streamWithEmptyChanges() {

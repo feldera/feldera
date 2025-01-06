@@ -129,7 +129,7 @@ public abstract class SqlIoTest extends BaseSQLTests {
         return new Change(inputs);
     }
 
-    public void compare(String query, DBSPZSetExpression expected, boolean optimize, int rowCount) {
+    public void compare(String query, DBSPZSetExpression expected, boolean optimize) {
         DBSPCompiler compiler = this.testCompiler(optimize);
         this.prepareInputs(compiler);
         compiler.compileStatement("CREATE VIEW VV AS " + query);
@@ -205,7 +205,7 @@ public abstract class SqlIoTest extends BaseSQLTests {
         String query = queryAndOutput.substring(0, semicolon);
         String expected = queryAndOutput.substring(semicolon + 1);
         if (to == TestOptimizations.Both || to == TestOptimizations.Optimized)
-        this.compare(query, expected, true, rowCount);
+            this.compare(query, expected, true, rowCount);
         if (to == TestOptimizations.Both || to == TestOptimizations.Unoptimized)
             this.compare(query, expected, false, rowCount);
     }

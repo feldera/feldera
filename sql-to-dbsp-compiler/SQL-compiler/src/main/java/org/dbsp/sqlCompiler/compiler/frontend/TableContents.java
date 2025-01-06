@@ -32,6 +32,8 @@ import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateTableStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.DropTableStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.RelStatement;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.ExpandCasts;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.Simplify;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.util.Utilities;
 
@@ -93,11 +95,15 @@ public class TableContents implements ICompilerComponent {
         return Utilities.getExists(this.tableCreation, tableName);
     }
 
-    public void addToTable(ProgramIdentifier tableName, DBSPZSetExpression value) {
+    public void addToTable(ProgramIdentifier tableName, DBSPZSetExpression value, DBSPCompiler compiler) {
         if (this.tableContents == null)
             throw new UnsupportedException("Not keeping track of table contents", CalciteObject.EMPTY);
         DBSPZSetExpression table = this.tableContents.get(tableName);
-        table.addUsingCast(value);
+        Simplify simplify = new Simplify(compiler);
+        ExpandCasts expand = new ExpandCasts(compiler);
+        var expanded = expand.apply(value);
+        var simplified = simplify.apply(expanded);
+        table.addUsingCast(simplified.to(DBSPZSetExpression.class));
     }
 
     public int getTableIndex(ProgramIdentifier tableName) {

@@ -46,7 +46,7 @@ import java.util.Map;
 import java.util.Objects;
 
 /** Information used to translate INSERT or DELETE SQL statements */
-class ModifyTableTranslation implements ICompilerComponent {
+class ModifyTableTranslation {
     /** Result of the VALUES expression. */
     @Nullable
     private DBSPZSetExpression valuesTranslation;
@@ -59,16 +59,14 @@ class ModifyTableTranslation implements ICompilerComponent {
     private HashMap<Integer, Integer> columnPermutation;
     @Nullable
     DBSPTypeTuple resultType;
-    final DBSPCompiler compiler;
 
     public ModifyTableTranslation(TableModifyStatement statement,
                                   CreateTableStatement tableDefinition,
                                   @Nullable SqlNodeList columnList,
-                                  DBSPCompiler compiler) {
+                                  TypeCompiler compiler) {
         this.valuesTranslation = null;
-        this.compiler = compiler;
         this.columnPermutation = null;
-        DBSPTypeTuple sourceType = tableDefinition.getRowTypeAsTuple(this.compiler.getTypeCompiler());
+        DBSPTypeTuple sourceType = tableDefinition.getRowTypeAsTuple(compiler);
         if (columnList != null) {
             // The column list specifies an order for the columns that are assigned,
             // which may not be the order of the columns in the table.  We need to
@@ -130,10 +128,5 @@ class ModifyTableTranslation implements ICompilerComponent {
         if (this.valuesTranslation != null)
             throw new InternalCompilerError("Overwriting logical value translation", CalciteObject.EMPTY);
         this.valuesTranslation = this.permuteColumns(literal);
-    }
-
-    @Override
-    public DBSPCompiler compiler() {
-        return this.compiler;
     }
 }

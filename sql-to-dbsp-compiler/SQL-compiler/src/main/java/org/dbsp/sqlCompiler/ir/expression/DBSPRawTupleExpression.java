@@ -38,8 +38,12 @@ import java.util.List;
 
 /** A Raw tuple expression generates a raw Rust tuple, e.g., (1, 's', a+b). */
 public final class DBSPRawTupleExpression extends DBSPBaseTupleExpression {
+    public DBSPRawTupleExpression(CalciteObject node, DBSPTypeRawTuple type, DBSPExpression... expressions) {
+        super(node, type, expressions);
+    }
+
     public DBSPRawTupleExpression(CalciteObject node, DBSPExpression... expressions) {
-        super(node,
+        this(node,
                 new DBSPTypeRawTuple(Linq.map(expressions, DBSPExpression::getType, DBSPType.class)), expressions);
     }
 

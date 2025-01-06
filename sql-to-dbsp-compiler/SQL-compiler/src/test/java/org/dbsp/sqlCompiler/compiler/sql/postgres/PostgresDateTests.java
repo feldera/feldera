@@ -934,7 +934,7 @@ public class PostgresDateTests extends SqlIoTest {
                 new DBSPZSetExpression(Linq.map(results,
                         l -> new DBSPTupleExpression(new DBSPIntervalMillisLiteral(DBSPTypeMillisInterval.Units.SECONDS,
                                 l * 86400 * 1000, true)), DBSPExpression.class));
-        this.compare(query, result, true, results.length);
+        this.compare(query, result, true);
     }
 
     // There is no 'epoch' date in Calcite
