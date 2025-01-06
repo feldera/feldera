@@ -22,6 +22,7 @@
   import NavigationExtras from '$lib/components/layout/NavigationExtras.svelte'
   import { useDrawer } from '$lib/compositions/layout/useDrawer.svelte'
   import BookADemo from '$lib/components/other/BookADemo.svelte'
+  import Footer from '$lib/components/layout/Footer.svelte'
 
   preloadCode(`${base}/pipelines/*`).then(() => preloadCode(`${base}/demos/`))
 
@@ -76,7 +77,7 @@
     {/if}
   {/snippet}
 </AppHeader>
-<div class="h-full overflow-y-auto scrollbar">
+<div class="flex h-full flex-col justify-between overflow-y-auto scrollbar">
   <div class="flex flex-col gap-8 p-2 pt-0 md:p-8 md:pt-0">
     {#if !welcomed.value}
       <div class="relative flex min-h-40 w-full gap-4 p-6 sm:gap-12">
@@ -93,7 +94,7 @@
         {:else}
           <FelderaLogomarkLight class="hidden h-full max-h-28 sm:inline"></FelderaLogomarkLight>
         {/if}
-        <div class="flex w-full flex-col justify-between gap-y-2">
+        <div class="flex w-full flex-col justify-between gap-y-4">
           <div class="flex flex-nowrap justify-between">
             <div class="text-2xl font-semibold">Explore our communities and documentation</div>
             <button
@@ -113,7 +114,36 @@
         </div>
       </div>
     {/if}
-
+    <div class="">
+      <div class="flex flex-nowrap items-center gap-4 text-xl font-semibold">
+        <span class="fd fd-network text-surface-500"></span><span>Your pipelines</span>
+      </div>
+      {#if pipelines.pipelines.length}
+        <PipelineTable pipelines={pipelines.pipelines} bind:selectedPipelines>
+          {#snippet preHeaderEnd()}
+            {#if selectedPipelines.length}
+              <AvailableActions pipelines={pipelines.pipelines} bind:selectedPipelines
+              ></AvailableActions>
+            {:else}
+              <CreatePipelineButton class="max-w-64" btnClass="preset-filled-surface-50-950"
+              ></CreatePipelineButton>
+            {/if}
+          {/snippet}
+        </PipelineTable>
+      {:else}
+        <div class="flex w-full flex-col items-center gap-4 pt-8 sm:pt-16">
+          <ImageBox class="h-9 fill-surface-200-800"></ImageBox>
+          <div class="">Your pipelines will appear here</div>
+          <div class="relative flex gap-5">
+            <CreatePipelineButton btnClass="preset-filled-surface-50-950"></CreatePipelineButton>
+            <a class="btn text-sm preset-tonal-surface" href="https://docs.feldera.com">
+              <span class="fd fd-book-open text-2xl"></span>
+              Documentation
+            </a>
+          </div>
+        </div>
+      {/if}
+    </div>
     {#if data.demos.length}
       <div>
         <InlineDropdown bind:open={showSuggestedDemos.value}>
@@ -159,35 +189,6 @@
         </InlineDropdown>
       </div>
     {/if}
-    <div class="min-h-96">
-      <div class="flex flex-nowrap items-center gap-4 text-xl font-semibold">
-        <span class="fd fd-network text-surface-500"></span><span>Your pipelines</span>
-      </div>
-      {#if pipelines.pipelines.length}
-        <PipelineTable pipelines={pipelines.pipelines} bind:selectedPipelines>
-          {#snippet preHeaderEnd()}
-            {#if selectedPipelines.length}
-              <AvailableActions pipelines={pipelines.pipelines} bind:selectedPipelines
-              ></AvailableActions>
-            {:else}
-              <CreatePipelineButton class="max-w-64" btnClass="preset-filled-surface-50-950"
-              ></CreatePipelineButton>
-            {/if}
-          {/snippet}
-        </PipelineTable>
-      {:else}
-        <div class="flex w-full flex-col items-center gap-4 pt-8 sm:pt-16">
-          <ImageBox class="h-9 fill-surface-200-800"></ImageBox>
-          <div class="">Your pipelines will appear here</div>
-          <div class="relative flex gap-5">
-            <CreatePipelineButton btnClass="preset-filled-surface-50-950"></CreatePipelineButton>
-            <a class="btn text-sm preset-tonal-surface" href="https://docs.feldera.com">
-              <span class="fd fd-book-open text-2xl"></span>
-              Documentation
-            </a>
-          </div>
-        </div>
-      {/if}
-    </div>
   </div>
+  <Footer></Footer>
 </div>

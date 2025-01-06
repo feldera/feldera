@@ -13,12 +13,12 @@
 </script>
 
 <div class="flex w-full flex-row items-center justify-between gap-4 px-2 py-2 md:px-8">
-  <a class="py-1 md:pt-0 lg:pb-6 lg:pr-6" href="{base}/">
+  <a class="py-3 lg:pb-4 lg:pr-6 lg:pt-2" href="{base}/">
     <span class="hidden lg:block">
       {#if darkMode.current === 'dark'}
-        <FelderaModernLogoColorLight class="h-12"></FelderaModernLogoColorLight>
+        <FelderaModernLogoColorLight class="h-8"></FelderaModernLogoColorLight>
       {:else}
-        <FelderaModernLogoColorDark class="h-12"></FelderaModernLogoColorDark>
+        <FelderaModernLogoColorDark class="h-8"></FelderaModernLogoColorDark>
       {/if}
     </span>
     <span class="inline lg:hidden">
