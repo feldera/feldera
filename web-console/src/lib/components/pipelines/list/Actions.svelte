@@ -62,33 +62,36 @@
     _configurations,
     _configureProgram,
     _configureResources,
-    _saveFile
+    _saveFile,
+    _unschedule
   }
 
-  const active = $derived(
-    match(pipeline.current.status)
+  const active = $derived.by(() => {
+    const unscheduleButton =
+      pipeline.current.deploymentDesiredStatus === 'Shutdown'
+        ? ('_spacer_long' as const)
+        : ('_unschedule' as const)
+    return match(pipeline.current.status)
       .returnType<(keyof typeof actions)[]>()
       .with('Shutdown', { SqlWarning: P.any }, () => ['_spacer_long', '_start_paused'])
-      .with('Queued', () => ['_spacer_long', '_start_pending'])
-      .with('Starting up', () => ['_shutdown', '_status_spinner'])
-      .with('Initializing', () => ['_shutdown', '_status_spinner'])
+      .with('Starting up', 'Initializing', 'Pausing', 'Resuming', 'Unavailable', () => [
+        '_shutdown',
+        '_status_spinner'
+      ])
       .with('Running', () => ['_shutdown', '_pause'])
-      .with('Pausing', () => ['_shutdown', '_status_spinner'])
-      .with('Resuming', () => ['_shutdown', '_status_spinner'])
       .with('Paused', () => ['_shutdown', '_start'])
       .with('ShuttingDown', () => ['_spacer_long', '_status_spinner'])
       .with({ PipelineError: P.any }, () => ['_shutdown', '_spacer_long'])
-      .with('Compiling SQL', 'SQL compiled', 'Compiling binary', () => [
-        '_spacer_long',
+      .with('Queued', 'Compiling SQL', 'SQL compiled', 'Compiling binary', () => [
+        unscheduleButton,
         '_start_pending'
       ])
-      .with('Unavailable', () => ['_shutdown', '_status_spinner'])
       .with({ SqlError: P.any }, { RustError: P.any }, { SystemError: P.any }, () => [
         '_spacer_long',
         '_start_error'
       ])
       .exhaustive()
-  )
+  })
 
   const buttonClass = 'btn gap-0'
   const iconClass = 'text-[20px]'
@@ -264,6 +267,23 @@
     {:else}
       File saved
     {/if}
+  </Tooltip>
+{/snippet}
+{#snippet _unschedule()}
+  <button
+    class="{buttonClass} {longClass} {basicBtnColor}"
+    onclick={() => {
+      globalDialog.dialog = shutdownDialog
+    }}
+  >
+    <div></div>
+    Cancel start
+  </button>
+  <Tooltip
+    class="bg-white-dark z-20 whitespace-nowrap rounded text-surface-950-50"
+    placement="top"
+  >
+    The pipeline is scheduled to start automatically after compilation
   </Tooltip>
 {/snippet}
 
