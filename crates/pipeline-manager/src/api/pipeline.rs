@@ -8,7 +8,8 @@ use crate::db::error::DBError;
 use crate::db::storage::Storage;
 use crate::db::types::common::Version;
 use crate::db::types::pipeline::{
-    ExtendedPipelineDescr, PipelineDescr, PipelineDesiredStatus, PipelineId, PipelineStatus,
+    ExtendedPipelineDescr, ExtendedPipelineDescrMonitoring, PipelineDescr, PipelineDesiredStatus,
+    PipelineId, PipelineStatus,
 };
 use crate::db::types::program::{ProgramConfig, ProgramInfo, ProgramStatus};
 use crate::db::types::tenant::TenantId;
@@ -113,10 +114,7 @@ pub struct PipelineSelectedInfo {
 }
 
 impl PipelineSelectedInfo {
-    pub(crate) fn new(
-        extended_pipeline: &ExtendedPipelineDescr,
-        selector: &PipelineFieldSelector,
-    ) -> Self {
+    pub(crate) fn new_all(extended_pipeline: &ExtendedPipelineDescr) -> Self {
         PipelineSelectedInfo {
             id: extended_pipeline.id,
             name: extended_pipeline.name.clone(),
@@ -124,19 +122,39 @@ impl PipelineSelectedInfo {
             created_at: extended_pipeline.created_at,
             version: extended_pipeline.version,
             platform_version: extended_pipeline.platform_version.clone(),
-            runtime_config: selector
-                .some_if_included("runtime_config", extended_pipeline.runtime_config.clone()),
-            program_code: selector
-                .some_if_included("program_code", extended_pipeline.program_code.clone()),
-            udf_rust: selector.some_if_included("udf_rust", extended_pipeline.udf_rust.clone()),
-            udf_toml: selector.some_if_included("udf_toml", extended_pipeline.udf_toml.clone()),
-            program_config: selector
-                .some_if_included("program_config", extended_pipeline.program_config.clone()),
+            runtime_config: Some(extended_pipeline.runtime_config.clone()),
+            program_code: Some(extended_pipeline.program_code.clone()),
+            udf_rust: Some(extended_pipeline.udf_rust.clone()),
+            udf_toml: Some(extended_pipeline.udf_toml.clone()),
+            program_config: Some(extended_pipeline.program_config.clone()),
             program_version: extended_pipeline.program_version,
             program_status: extended_pipeline.program_status.clone(),
             program_status_since: extended_pipeline.program_status_since,
-            program_info: selector
-                .some_if_included("program_info", extended_pipeline.program_info.clone()),
+            program_info: Some(extended_pipeline.program_info.clone()),
+            deployment_status: extended_pipeline.deployment_status,
+            deployment_status_since: extended_pipeline.deployment_status_since,
+            deployment_desired_status: extended_pipeline.deployment_desired_status,
+            deployment_error: extended_pipeline.deployment_error.clone(),
+        }
+    }
+
+    pub(crate) fn new_status(extended_pipeline: &ExtendedPipelineDescrMonitoring) -> Self {
+        PipelineSelectedInfo {
+            id: extended_pipeline.id,
+            name: extended_pipeline.name.clone(),
+            description: extended_pipeline.description.clone(),
+            created_at: extended_pipeline.created_at,
+            version: extended_pipeline.version,
+            platform_version: extended_pipeline.platform_version.clone(),
+            runtime_config: None,
+            program_code: None,
+            udf_rust: None,
+            udf_toml: None,
+            program_config: None,
+            program_version: extended_pipeline.program_version,
+            program_status: extended_pipeline.program_status.clone(),
+            program_status_since: extended_pipeline.program_status_since,
+            program_info: None,
             deployment_status: extended_pipeline.deployment_status,
             deployment_status_since: extended_pipeline.deployment_status_since,
             deployment_desired_status: extended_pipeline.deployment_desired_status,
@@ -144,46 +162,6 @@ impl PipelineSelectedInfo {
         }
     }
 }
-
-/// Fields included in the `all` selector.
-const PIPELINE_FIELD_SELECTOR_ALL_FIELDS: [&str; 19] = [
-    "id",
-    "name",
-    "description",
-    "created_at",
-    "version",
-    "platform_version",
-    "runtime_config",
-    "program_code",
-    "udf_rust",
-    "udf_toml",
-    "program_config",
-    "program_version",
-    "program_status",
-    "program_status_since",
-    "program_info",
-    "deployment_status",
-    "deployment_status_since",
-    "deployment_desired_status",
-    "deployment_error",
-];
-
-/// Fields included in the `status` selector.
-const PIPELINE_FIELD_SELECTOR_STATUS_FIELDS: [&str; 13] = [
-    "id",
-    "name",
-    "description",
-    "created_at",
-    "version",
-    "platform_version",
-    "program_version",
-    "program_status",
-    "program_status_since",
-    "deployment_status",
-    "deployment_status_since",
-    "deployment_desired_status",
-    "deployment_error",
-];
 
 #[derive(Deserialize, Serialize, ToSchema, Eq, PartialEq, Debug, Clone)]
 #[serde(rename_all = "snake_case")]
@@ -228,25 +206,6 @@ pub enum PipelineFieldSelector {
     /// - `deployment_desired_status`
     /// - `deployment_error`
     Status,
-}
-
-impl PipelineFieldSelector {
-    /// List of all included fields.
-    pub(crate) fn included_fields(&self) -> Vec<&str> {
-        match self {
-            PipelineFieldSelector::All => PIPELINE_FIELD_SELECTOR_ALL_FIELDS.to_vec(),
-            PipelineFieldSelector::Status => PIPELINE_FIELD_SELECTOR_STATUS_FIELDS.to_vec(),
-        }
-    }
-
-    /// Returns `Some(value)` if the field is included, else `None`.
-    fn some_if_included<T>(&self, field: &str, value: T) -> Option<T> {
-        if self.included_fields().contains(&field) {
-            Some(value)
-        } else {
-            None
-        }
-    }
 }
 
 /// Default for the `selector` query parameter when GET a pipeline or a list of pipelines.
@@ -332,11 +291,28 @@ pub(crate) async fn list_pipelines(
     tenant_id: ReqData<TenantId>,
     query: web::Query<GetPipelineParameters>,
 ) -> Result<HttpResponse, DBError> {
-    let pipelines = state.db.lock().await.list_pipelines(*tenant_id).await?;
-    let returned_pipelines: Vec<PipelineSelectedInfo> = pipelines
-        .iter()
-        .map(|v| PipelineSelectedInfo::new(v, &query.selector))
-        .collect();
+    let returned_pipelines: Vec<PipelineSelectedInfo> = match &query.selector {
+        PipelineFieldSelector::All => {
+            let pipelines = state.db.lock().await.list_pipelines(*tenant_id).await?;
+            pipelines
+                .iter()
+                .map(PipelineSelectedInfo::new_all)
+                .collect()
+        }
+        PipelineFieldSelector::Status => {
+            let pipelines = state
+                .db
+                .lock()
+                .await
+                .list_pipelines_for_monitoring(*tenant_id)
+                .await?;
+            pipelines
+                .iter()
+                .map(PipelineSelectedInfo::new_status)
+                .collect()
+        }
+    };
+
     Ok(HttpResponse::Ok()
         .insert_header(CacheControl(vec![CacheDirective::NoCache]))
         .json(returned_pipelines))
@@ -371,13 +347,27 @@ pub(crate) async fn get_pipeline(
     query: web::Query<GetPipelineParameters>,
 ) -> Result<HttpResponse, ManagerError> {
     let pipeline_name = path.into_inner();
-    let pipeline = state
-        .db
-        .lock()
-        .await
-        .get_pipeline(*tenant_id, &pipeline_name)
-        .await?;
-    let returned_pipeline = PipelineSelectedInfo::new(&pipeline, &query.selector);
+    let returned_pipeline = match &query.selector {
+        PipelineFieldSelector::All => {
+            let pipeline = state
+                .db
+                .lock()
+                .await
+                .get_pipeline(*tenant_id, &pipeline_name)
+                .await?;
+            PipelineSelectedInfo::new_all(&pipeline)
+        }
+        PipelineFieldSelector::Status => {
+            let pipeline = state
+                .db
+                .lock()
+                .await
+                .get_pipeline_for_monitoring(*tenant_id, &pipeline_name)
+                .await?;
+            PipelineSelectedInfo::new_status(&pipeline)
+        }
+    };
+
     Ok(HttpResponse::Ok()
         .insert_header(CacheControl(vec![CacheDirective::NoCache]))
         .json(&returned_pipeline))

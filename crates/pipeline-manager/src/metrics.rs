@@ -71,7 +71,9 @@ async fn metrics(
 ) -> Result<impl Responder, ManagerError> {
     let mut buffer = String::new();
     let db = db.lock().await;
-    let pipelines = db.list_pipelines_across_all_tenants().await?;
+    let pipelines = db
+        .list_pipelines_across_all_tenants_for_monitoring()
+        .await?;
     for (_tenant_id, pipeline) in pipelines {
         // Get the metrics for all running pipelines,
         // don't write anything if the request fails.

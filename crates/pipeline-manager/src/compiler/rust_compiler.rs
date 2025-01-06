@@ -215,6 +215,12 @@ async fn attempt_end_to_end_rust_compilation(
                 .await?;
         }
         Err(e) => match e {
+            RustCompilationError::NoLongerExists => {
+                info!(
+                    "Rust compilation canceled: pipeline {} no longer exists",
+                    pipeline.id,
+                );
+            }
             RustCompilationError::Outdated => {
                 info!(
                     "Rust compilation canceled: pipeline {} (program version: {}) is outdated",
@@ -317,6 +323,9 @@ fn calculate_source_checksum(
 /// Rust compilation possible error outcomes.
 #[derive(Debug)]
 pub enum RustCompilationError {
+    /// In the meanwhile the pipeline was deleted, as such the Rust
+    /// compilation is no longer useful.
+    NoLongerExists,
     /// In the meanwhile the pipeline was already updated, as such the
     /// Rust compilation is outdated and no longer useful.
     Outdated,
@@ -723,7 +732,7 @@ async fn call_compiler(
                         match db
                             .lock()
                             .await
-                            .get_pipeline_by_id(tenant_id, pipeline_id)
+                            .get_pipeline_by_id_for_monitoring(tenant_id, pipeline_id)
                             .await
                         {
                             Ok(pipeline) => {
@@ -732,7 +741,7 @@ async fn call_compiler(
                                 }
                             }
                             Err(DBError::UnknownPipeline { .. }) => {
-                                return Err(RustCompilationError::Outdated);
+                                return Err(RustCompilationError::NoLongerExists);
                             }
                             Err(e) => {
                                 error!("Rust compilation outdated check failed due to database error: {e}")

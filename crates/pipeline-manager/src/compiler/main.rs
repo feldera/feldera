@@ -150,6 +150,9 @@ pub async fn compiler_precompile(
     )
     .await
     .map_err(|e| match e {
+        SqlCompilationError::NoLongerExists => CompilerError::PrecompilationError {
+            error: "SQL compilation no longer relevant as pipeline no longer exists".to_string(),
+        },
         SqlCompilationError::Outdated => CompilerError::PrecompilationError {
             error: "Outdated SQL compilation".to_string(),
         },
@@ -179,6 +182,9 @@ pub async fn compiler_precompile(
     )
     .await
     .map_err(|e| match e {
+        RustCompilationError::NoLongerExists => CompilerError::PrecompilationError {
+            error: "Rust compilation no longer relevant as pipeline no longer exists".to_string(),
+        },
         RustCompilationError::Outdated => CompilerError::PrecompilationError {
             error: "Outdated Rust compilation".to_string(),
         },

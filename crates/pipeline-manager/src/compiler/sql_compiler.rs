@@ -205,6 +205,12 @@ pub(crate) async fn attempt_end_to_end_sql_compilation(
                 .await?;
         }
         Err(e) => match e {
+            SqlCompilationError::NoLongerExists => {
+                debug!(
+                    "SQL compilation canceled: pipeline {} no longer exists",
+                    pipeline.id,
+                );
+            }
             SqlCompilationError::Outdated => {
                 debug!(
                     "SQL compilation canceled: pipeline {} (program version: {}) is outdated",
@@ -252,6 +258,9 @@ pub(crate) async fn attempt_end_to_end_sql_compilation(
 /// SQL compilation possible error outcomes.
 #[derive(Debug)]
 pub enum SqlCompilationError {
+    /// In the meanwhile the pipeline was deleted, as such the SQL
+    /// compilation is no longer useful.
+    NoLongerExists,
     /// In the meanwhile the pipeline was already updated, as such the
     /// SQL compilation is outdated and no longer useful.
     Outdated,
@@ -378,7 +387,7 @@ pub(crate) async fn perform_sql_compilation(
                         match db
                             .lock()
                             .await
-                            .get_pipeline_by_id(tenant_id, pipeline_id)
+                            .get_pipeline_by_id_for_monitoring(tenant_id, pipeline_id)
                             .await
                         {
                             Ok(pipeline) => {
@@ -387,7 +396,7 @@ pub(crate) async fn perform_sql_compilation(
                                 }
                             }
                             Err(DBError::UnknownPipeline { .. }) => {
-                                return Err(SqlCompilationError::Outdated);
+                                return Err(SqlCompilationError::NoLongerExists);
                             }
                             Err(e) => {
                                 error!("SQL compilation outdated check failed due to database error: {e}")

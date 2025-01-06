@@ -5,7 +5,8 @@ use crate::db::operations::utils::{
 use crate::db::types::common::{validate_name, Version};
 use crate::db::types::pipeline::{
     validate_deployment_desired_status_transition, validate_deployment_status_transition,
-    ExtendedPipelineDescr, PipelineDescr, PipelineDesiredStatus, PipelineId, PipelineStatus,
+    ExtendedPipelineDescr, ExtendedPipelineDescrMonitoring, PipelineDescr, PipelineDesiredStatus,
+    PipelineId, PipelineStatus,
 };
 use crate::db::types::program::{
     validate_program_status_transition, ProgramConfig, ProgramInfo, ProgramStatus,
@@ -17,7 +18,7 @@ use feldera_types::error::ErrorResponse;
 use tokio_postgres::Row;
 use uuid::Uuid;
 
-/// All columns needed to usually retrieve the pipeline.
+/// All pipeline columns.
 const RETRIEVE_PIPELINE_COLUMNS: &str =
     "p.id, p.tenant_id, p.name, p.description, p.created_at, p.version, p.platform_version, p.runtime_config,
      p.program_code, p.udf_rust, p.udf_toml, p.program_config, p.program_version, p.program_status,
@@ -26,7 +27,7 @@ const RETRIEVE_PIPELINE_COLUMNS: &str =
      p.deployment_status, p.deployment_status_since, p.deployment_desired_status,
      p.deployment_error, p.deployment_config, p.deployment_location";
 
-/// Converts a pipeline table row to its extended descriptor.
+/// Converts a pipeline table row to its extended descriptor with all fields.
 fn row_to_extended_pipeline_descriptor(row: &Row) -> Result<ExtendedPipelineDescr, DBError> {
     assert_eq!(row.len(), 26);
     let program_info_str = row.get::<_, Option<String>>(16);
@@ -61,6 +62,38 @@ fn row_to_extended_pipeline_descriptor(row: &Row) -> Result<ExtendedPipelineDesc
     })
 }
 
+/// Pipeline columns relevant to monitoring.
+const RETRIEVE_PIPELINE_MONITORING_COLUMNS: &str =
+    "p.id, p.tenant_id, p.name, p.description, p.created_at, p.version, p.platform_version,
+     p.program_version, p.program_status, p.program_status_since, p.program_error,
+     p.deployment_status, p.deployment_status_since, p.deployment_desired_status,
+     p.deployment_error, p.deployment_location";
+
+/// Converts a pipeline table row to its extended descriptor with only fields relevant to monitoring.
+fn row_to_extended_pipeline_descriptor_monitoring(
+    row: &Row,
+) -> Result<ExtendedPipelineDescrMonitoring, DBError> {
+    assert_eq!(row.len(), 16);
+    let deployment_error_str = row.get::<_, Option<String>>(14);
+    Ok(ExtendedPipelineDescrMonitoring {
+        id: PipelineId(row.get(0)),
+        // tenant_id is not used
+        name: row.get(2),
+        description: row.get(3),
+        created_at: row.get(4),
+        version: Version(row.get(5)),
+        platform_version: row.get(6),
+        program_version: Version(row.get(7)),
+        program_status: ProgramStatus::from_columns(row.get(8), row.get(10))?,
+        program_status_since: row.get(9),
+        deployment_status: row.get::<_, String>(11).try_into()?,
+        deployment_status_since: row.get(12),
+        deployment_desired_status: row.get::<_, String>(13).try_into()?,
+        deployment_error: deployment_error_str.map(|s| ErrorResponse::from_yaml(&s)),
+        deployment_location: row.get(15),
+    })
+}
+
 pub(crate) async fn list_pipelines(
     txn: &Transaction<'_>,
     tenant_id: TenantId,
@@ -77,6 +110,26 @@ pub(crate) async fn list_pipelines(
     let mut result = Vec::with_capacity(rows.len());
     for row in rows {
         result.push(row_to_extended_pipeline_descriptor(&row)?);
+    }
+    Ok(result)
+}
+
+pub(crate) async fn list_pipelines_for_monitoring(
+    txn: &Transaction<'_>,
+    tenant_id: TenantId,
+) -> Result<Vec<ExtendedPipelineDescrMonitoring>, DBError> {
+    let stmt = txn
+        .prepare_cached(&format!(
+            "SELECT {RETRIEVE_PIPELINE_MONITORING_COLUMNS}
+             FROM pipeline AS p
+             WHERE p.tenant_id = $1
+             ORDER BY p.id ASC"
+        ))
+        .await?;
+    let rows: Vec<Row> = txn.query(&stmt, &[&tenant_id.0]).await?;
+    let mut result = Vec::with_capacity(rows.len());
+    for row in rows {
+        result.push(row_to_extended_pipeline_descriptor_monitoring(&row)?);
     }
     Ok(result)
 }
@@ -102,6 +155,27 @@ pub(crate) async fn get_pipeline(
     row_to_extended_pipeline_descriptor(&row)
 }
 
+pub(crate) async fn get_pipeline_for_monitoring(
+    txn: &Transaction<'_>,
+    tenant_id: TenantId,
+    name: &str,
+) -> Result<ExtendedPipelineDescrMonitoring, DBError> {
+    let stmt = txn
+        .prepare_cached(&format!(
+            "SELECT {RETRIEVE_PIPELINE_MONITORING_COLUMNS}
+             FROM pipeline AS p
+             WHERE p.tenant_id = $1 AND p.name = $2
+            "
+        ))
+        .await?;
+    let row = txn.query_opt(&stmt, &[&tenant_id.0, &name]).await?.ok_or(
+        DBError::UnknownPipelineName {
+            pipeline_name: name.to_string(),
+        },
+    )?;
+    row_to_extended_pipeline_descriptor_monitoring(&row)
+}
+
 pub async fn get_pipeline_by_id(
     txn: &Transaction<'_>,
     tenant_id: TenantId,
@@ -120,6 +194,26 @@ pub async fn get_pipeline_by_id(
         .await?
         .ok_or(DBError::UnknownPipeline { pipeline_id })?;
     row_to_extended_pipeline_descriptor(&row)
+}
+
+pub async fn get_pipeline_by_id_for_monitoring(
+    txn: &Transaction<'_>,
+    tenant_id: TenantId,
+    pipeline_id: PipelineId,
+) -> Result<ExtendedPipelineDescrMonitoring, DBError> {
+    let stmt = txn
+        .prepare_cached(&format!(
+            "SELECT {RETRIEVE_PIPELINE_MONITORING_COLUMNS}
+             FROM pipeline AS p
+             WHERE p.tenant_id = $1 AND p.id = $2
+            "
+        ))
+        .await?;
+    let row = txn
+        .query_opt(&stmt, &[&tenant_id.0, &pipeline_id.0])
+        .await?
+        .ok_or(DBError::UnknownPipeline { pipeline_id })?;
+    row_to_extended_pipeline_descriptor_monitoring(&row)
 }
 
 pub(crate) async fn new_pipeline(
@@ -654,13 +748,14 @@ pub(crate) async fn list_pipeline_ids_across_all_tenants(
     Ok(pipelines)
 }
 
-/// Lists pipelines across all tenants.
-pub(crate) async fn list_pipelines_across_all_tenants(
+/// Retrieves a list of all pipelines across all tenants.
+/// The descriptors only have the fields relevant to monitoring.
+pub(crate) async fn list_pipelines_across_all_tenants_for_monitoring(
     txn: &Transaction<'_>,
-) -> Result<Vec<(TenantId, ExtendedPipelineDescr)>, DBError> {
+) -> Result<Vec<(TenantId, ExtendedPipelineDescrMonitoring)>, DBError> {
     let stmt = txn
         .prepare_cached(&format!(
-            "SELECT {RETRIEVE_PIPELINE_COLUMNS}
+            "SELECT {RETRIEVE_PIPELINE_MONITORING_COLUMNS}
              FROM pipeline AS p
              ORDER BY p.id ASC
             "
@@ -671,7 +766,7 @@ pub(crate) async fn list_pipelines_across_all_tenants(
     for row in rows {
         result.push((
             TenantId(row.get(1)),
-            row_to_extended_pipeline_descriptor(&row)?,
+            row_to_extended_pipeline_descriptor_monitoring(&row)?,
         ));
     }
     Ok(result)

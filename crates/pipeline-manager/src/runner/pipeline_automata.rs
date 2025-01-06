@@ -1,8 +1,9 @@
 use crate::db::error::DBError;
-use crate::db::storage::Storage;
+use crate::db::storage::{ExtendedPipelineDescrRunner, Storage};
 use crate::db::storage_postgres::StoragePostgres;
 use crate::db::types::pipeline::{
-    ExtendedPipelineDescr, PipelineDesiredStatus, PipelineId, PipelineStatus,
+    ExtendedPipelineDescr, ExtendedPipelineDescrMonitoring, PipelineDesiredStatus, PipelineId,
+    PipelineStatus,
 };
 use crate::db::types::program::{generate_pipeline_config, ProgramStatus};
 use crate::db::types::tenant::TenantId;
@@ -181,13 +182,30 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
 
     /// Executes one run cycle.
     async fn do_run(&mut self) -> Result<Duration, DBError> {
-        // Retrieve the current pipeline including its statuses
-        let pipeline = &self
+        // Depending on the upcoming transition, it either retrieves the smaller monitoring descriptor,
+        // or the larger complete descriptor. It should only get the complete descriptor if:
+        // - current=`Shutdown`
+        //   AND desired=`Running`/`Paused`
+        //   AND program_status=`Success`
+        //   AND platform_version=self.platform_version
+        // - current=`Provisioning`
+        //   AND desired=`Running`/`Paused`
+        //   AND `provision()` is not yet called
+        //
+        // The complete descriptor can be converted into the monitoring one, which is done to avoid
+        // checking which one was returned in the general flow.
+        let pipeline_monitoring_or_complete = &self
             .db
             .lock()
             .await
-            .get_pipeline_by_id(self.tenant_id, self.pipeline_id)
+            .get_pipeline_by_id_for_runner(
+                self.tenant_id,
+                self.pipeline_id,
+                &self.platform_version,
+                self.provision_called,
+            )
             .await?;
+        let pipeline = &pipeline_monitoring_or_complete.only_monitoring();
 
         // Runner initialization is called on the first run cycle
         if self.first_run_cycle {
@@ -210,7 +228,27 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             (
                 PipelineStatus::Shutdown,
                 PipelineDesiredStatus::Paused | PipelineDesiredStatus::Running,
-            ) => self.transit_shutdown_to_paused_or_running(pipeline).await?,
+            ) => {
+                if pipeline.program_status == ProgramStatus::Success
+                    && pipeline.platform_version == self.platform_version
+                {
+                    if let ExtendedPipelineDescrRunner::Complete(pipeline) =
+                        pipeline_monitoring_or_complete
+                    {
+                        self.transit_shutdown_to_paused_or_running_phase_ready(pipeline)
+                            .await?
+                    } else {
+                        panic!(
+                            "For the transit of Shutdown towards Running/Paused \
+                            (program successfully compiled at current platform version), \
+                            the complete pipeline descriptor should have been retrieved"
+                        );
+                    }
+                } else {
+                    self.transit_shutdown_to_paused_or_running_phase_early_start(pipeline)
+                        .await?
+                }
+            }
 
             // Provisioning
             (PipelineStatus::Provisioning, PipelineDesiredStatus::Shutdown) => {
@@ -220,8 +258,24 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                 PipelineStatus::Provisioning,
                 PipelineDesiredStatus::Paused | PipelineDesiredStatus::Running,
             ) => {
-                self.transit_provisioning_to_paused_or_running(pipeline)
-                    .await
+                if !self.provision_called {
+                    if let ExtendedPipelineDescrRunner::Complete(pipeline) =
+                        pipeline_monitoring_or_complete
+                    {
+                        self.transit_provisioning_to_paused_or_running_phase_call_provision(
+                            pipeline,
+                        )
+                        .await
+                    } else {
+                        panic!(
+                            "For the transit of Provisioning towards Paused/Running (provision not yet called), \
+                            the complete pipeline descriptor should have been retrieved"
+                        );
+                    }
+                } else {
+                    self.transit_provisioning_to_paused_or_running_phase_awaiting(pipeline)
+                        .await
+                }
             }
 
             // Initializing
@@ -413,7 +467,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
     /// The location is expected to be there.
     /// Returns an error if the location is missing.
     fn get_required_deployment_location(
-        pipeline: &ExtendedPipelineDescr,
+        pipeline: &ExtendedPipelineDescrMonitoring,
     ) -> Result<String, RunnerError> {
         match pipeline.deployment_location.clone() {
             None => Err(RunnerError::PipelineMissingDeploymentLocation {
@@ -498,11 +552,22 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         }
     }
 
-    /// Transition from shutdown to paused or running state.
-    async fn transit_shutdown_to_paused_or_running(
+    /// Transits from `Shutdown` to `Paused` or `Running` state when the program is either
+    /// not yet successfully compiled or compiled at a different platform version.
+    async fn transit_shutdown_to_paused_or_running_phase_early_start(
         &mut self,
-        pipeline: &ExtendedPipelineDescr,
+        pipeline: &ExtendedPipelineDescrMonitoring,
     ) -> Result<State, DBError> {
+        assert!(
+            pipeline.program_status != ProgramStatus::Success
+                || self.platform_version != pipeline.platform_version,
+            "Expected to be true: {:?} != {:?} || {} != {}",
+            pipeline.program_status,
+            ProgramStatus::Success,
+            self.platform_version,
+            pipeline.platform_version
+        );
+
         // If the pipeline program errored during compilation, immediately transition to `Failed`
         match &pipeline.program_status {
             ProgramStatus::SqlError(e) => {
@@ -557,23 +622,17 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                     pipeline.program_version,
                 )
                 .await?;
-            return Ok(State::Unchanged);
         }
 
-        // Early start: await ongoing compilation
-        if pipeline.program_status == ProgramStatus::Pending
-            || pipeline.program_status == ProgramStatus::CompilingSql
-            || pipeline.program_status == ProgramStatus::SqlCompiled
-            || pipeline.program_status == ProgramStatus::CompilingRust
-        {
-            return Ok(State::Unchanged);
-        }
+        Ok(State::Unchanged)
+    }
 
-        // All other program statuses (errors and ongoing) have already been checked for,
-        // as such it must be successfully compiled at this point, and as well for the
-        // current platform. The program status will not change anymore till the pipeline
-        // is shutdown, because the runner will not do so and is the only one who can initiate
-        // recompilation if the pipeline is not fully shutdown and the program status is success.
+    /// Transits from `Shutdown` to `Paused` or `Running` state when the program is
+    /// successfully compiled at the current platform version.
+    async fn transit_shutdown_to_paused_or_running_phase_ready(
+        &mut self,
+        pipeline: &ExtendedPipelineDescr,
+    ) -> Result<State, DBError> {
         assert_eq!(pipeline.program_status, ProgramStatus::Success);
         assert_eq!(self.platform_version, pipeline.platform_version);
 
@@ -607,11 +666,17 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         Ok(State::TransitionToProvisioning { deployment_config })
     }
 
-    /// Start and await the pipeline provisioning.
-    async fn transit_provisioning_to_paused_or_running(
+    /// Starts the pipeline provisioning by calling `provision()`
+    /// and setting the `provision_called` boolean state variable
+    /// to initiate the next phase of awaiting its finish.
+    /// The call is idempotent, as such it can be called again if the
+    /// runner unexpectedly restarts and the boolean is reset.
+    async fn transit_provisioning_to_paused_or_running_phase_call_provision(
         &mut self,
         pipeline: &ExtendedPipelineDescr,
     ) -> State {
+        assert!(!self.provision_called);
+
         // Deployment configuration and program binary URL are expected to be set
         let deployment_config = match pipeline.deployment_config.clone() {
             None => {
@@ -640,69 +705,71 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             Some(program_binary_url) => program_binary_url,
         };
 
-        // Call `provision()` once and wait for provisioning to finish.
-        // The call is idempotent, as such it can be called again if the
-        // runner unexpectedly restarts and the `provision_called` boolean
-        // is reset.
-        if !self.provision_called {
-            match self
-                .pipeline_handle
-                .provision(
-                    &deployment_config,
-                    &program_binary_url,
-                    pipeline.program_version,
-                )
-                .await
-            {
-                Ok(()) => {
-                    self.provision_called = true;
-                    info!(
-                        "Provisioning pipeline {} (tenant: {})",
-                        self.pipeline_id, self.tenant_id
-                    );
-                    State::Unchanged
-                }
-                Err(e) => State::TransitionToFailed {
-                    error: ErrorResponse::from_error_nolog(&e),
-                },
+        match self
+            .pipeline_handle
+            .provision(
+                &deployment_config,
+                &program_binary_url,
+                pipeline.program_version,
+            )
+            .await
+        {
+            Ok(()) => {
+                self.provision_called = true;
+                info!(
+                    "Provisioning pipeline {} (tenant: {})",
+                    self.pipeline_id, self.tenant_id
+                );
+                State::Unchanged
             }
-        } else {
-            match self.pipeline_handle.is_provisioned().await {
-                Ok(Some(location)) => State::TransitionToInitializing {
-                    deployment_location: location,
-                },
-                Ok(None) => {
-                    debug!(
-                        "Pipeline provisioning: pipeline {} is not yet provisioned",
-                        pipeline.id
-                    );
-                    if Self::has_timeout_expired(
-                        pipeline.deployment_status_since,
-                        self.provisioning_timeout,
-                    ) {
-                        error!(
-                            "Pipeline provisioning: timed out for pipeline {}",
-                            pipeline.id
-                        );
-                        State::TransitionToFailed {
-                            error: RunnerError::PipelineProvisioningTimeout {
-                                pipeline_id: self.pipeline_id,
-                                timeout: self.provisioning_timeout,
-                            }
-                            .into(),
-                        }
-                    } else {
-                        State::Unchanged
-                    }
-                }
-                Err(e) => {
+            Err(e) => State::TransitionToFailed {
+                error: ErrorResponse::from_error_nolog(&e),
+            },
+        }
+    }
+
+    /// Awaits the pipeline provisioning by calling `is_provisioned()`.
+    /// If the provisioning duration exceeds the timeout, the deployment fails.
+    async fn transit_provisioning_to_paused_or_running_phase_awaiting(
+        &mut self,
+        pipeline: &ExtendedPipelineDescrMonitoring,
+    ) -> State {
+        assert!(self.provision_called);
+        match self.pipeline_handle.is_provisioned().await {
+            Ok(Some(location)) => State::TransitionToInitializing {
+                deployment_location: location,
+            },
+            Ok(None) => {
+                debug!(
+                    "Pipeline provisioning: pipeline {} is not yet provisioned",
+                    pipeline.id
+                );
+                if Self::has_timeout_expired(
+                    pipeline.deployment_status_since,
+                    self.provisioning_timeout,
+                ) {
                     error!(
-                        "Pipeline provisioning: error occurred for pipeline {}: {e}",
+                        "Pipeline provisioning: timed out for pipeline {}",
                         pipeline.id
                     );
                     State::TransitionToFailed {
-                        error: ErrorResponse::from_error_nolog(&e),
+                        error: RunnerError::PipelineProvisioningTimeout {
+                            pipeline_id: self.pipeline_id,
+                            timeout: self.provisioning_timeout,
+                        }
+                        .into(),
                     }
+                } else {
+                    State::Unchanged
+                }
+            }
+            Err(e) => {
+                error!(
+                    "Pipeline provisioning: error occurred for pipeline {}: {e}",
+                    pipeline.id
+                );
+                State::TransitionToFailed {
+                    error: ErrorResponse::from_error_nolog(&e),
                 }
             }
         }
@@ -713,7 +780,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
     /// The pipeline transitions to failure upon timeout or error.
     async fn transit_initializing_to_paused_or_running(
         &mut self,
-        pipeline: &ExtendedPipelineDescr,
+        pipeline: &ExtendedPipelineDescrMonitoring,
     ) -> State {
         // Check deployment when initialized
         if let Err(e) = self.pipeline_handle.check().await {
@@ -775,7 +842,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
     /// The action request result determines which state transition needs to occur.
     async fn perform_action_initialized_pipeline(
         &mut self,
-        pipeline: &ExtendedPipelineDescr,
+        pipeline: &ExtendedPipelineDescrMonitoring,
         is_start: bool,
     ) -> State {
         let deployment_location = match Self::get_required_deployment_location(pipeline) {
@@ -834,7 +901,10 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
     /// Probes a pipeline which is past the Initializing status, hence is
     /// either Paused, Running or Unavailable. The probe result determines
     /// whether and, if so, which state transition needs to occur.
-    async fn probe_initialized_pipeline(&mut self, pipeline: &ExtendedPipelineDescr) -> State {
+    async fn probe_initialized_pipeline(
+        &mut self,
+        pipeline: &ExtendedPipelineDescrMonitoring,
+    ) -> State {
         // Check deployment when initialized
         if let Err(e) = self.pipeline_handle.check().await {
             return State::TransitionToFailed {
@@ -890,7 +960,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
     /// pipeline or its underlying runtime resources are in.
     async fn transit_shutting_down_to_shutdown(
         &mut self,
-        pipeline: &ExtendedPipelineDescr,
+        pipeline: &ExtendedPipelineDescrMonitoring,
     ) -> State {
         if let Err(e) = self.pipeline_handle.shutdown().await {
             error!("Pipeline {} could not be shutdown: {e}", pipeline.id);

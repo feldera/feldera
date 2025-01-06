@@ -1,8 +1,6 @@
 // Example errors for use in OpenAPI docs.
 use crate::api::error::ApiError;
-use crate::api::pipeline::{
-    PatchPipeline, PipelineFieldSelector, PipelineInfo, PipelineSelectedInfo, PostPutPipeline,
-};
+use crate::api::pipeline::{PatchPipeline, PipelineInfo, PipelineSelectedInfo, PostPutPipeline};
 use crate::db::error::DBError;
 use crate::db::types::common::Version;
 use crate::db::types::pipeline::{
@@ -159,11 +157,11 @@ pub(crate) fn pipeline_1_info() -> PipelineInfo {
 }
 
 pub(crate) fn pipeline_1_selected_info() -> PipelineSelectedInfo {
-    PipelineSelectedInfo::new(&extended_pipeline_1(), &PipelineFieldSelector::All)
+    PipelineSelectedInfo::new_all(&extended_pipeline_1())
 }
 
 pub(crate) fn pipeline_2_selected_info() -> PipelineSelectedInfo {
-    PipelineSelectedInfo::new(&extended_pipeline_2(), &PipelineFieldSelector::All)
+    PipelineSelectedInfo::new_all(&extended_pipeline_2())
 }
 
 pub(crate) fn list_pipeline_selected_info() -> Vec<PipelineSelectedInfo> {

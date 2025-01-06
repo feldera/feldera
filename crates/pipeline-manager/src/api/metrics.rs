@@ -36,7 +36,12 @@ pub(crate) async fn get_metrics(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
 ) -> Result<HttpResponse, ManagerError> {
-    let pipelines = state.db.lock().await.list_pipelines(*tenant_id).await?;
+    let pipelines = state
+        .db
+        .lock()
+        .await
+        .list_pipelines_for_monitoring(*tenant_id)
+        .await?;
 
     const NEWLINE: u8 = b'\n';
     let mut result = Vec::new();
