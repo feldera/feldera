@@ -82,19 +82,22 @@ const sidebars = {
                     ]
                 },
                 {
+                    type: 'doc',
+                    id: 'use_cases/fraud_detection/fraud_detection',
+                    label: 'Real-time Fraud Detection',
+                },
+                {
                     type: 'category',
-                    label: 'Use Cases',
+                    label: 'Real-time Web Applications',
                     items: [
-                        {
-                            type: 'doc',
-                            id: 'use_cases/fraud_detection/fraud_detection',
-                            label: 'Real-time Fraud Detection',
-                        },
+                        'use_cases/real_time_apps/part1',
+                        'use_cases/real_time_apps/part2',
+                        'use_cases/real_time_apps/part3',
                     ]
                 },
                 'tutorials/time-series',
                 'tutorials/rest_api/index',
-                'tutorials/monitoring/index',
+                'tutorials/monitoring/index'
             ]
         },
         {
