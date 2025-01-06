@@ -95,7 +95,7 @@
         {/if}
         <div class="flex w-full flex-col justify-between gap-y-2">
           <div class="flex flex-nowrap justify-between">
-            <div class="h5">Explore our communities and documentation</div>
+            <div class="text-2xl font-semibold">Explore our communities and documentation</div>
             <button
               class="fd fd-x btn-icon-lg"
               aria-label="Close"
@@ -129,7 +129,7 @@
               ></div>
 
               <div class="flex flex-nowrap items-center gap-4">
-                <div class="h5">Explore use cases and tutorials</div>
+                <div class="text-xl font-semibold">Explore use cases and tutorials</div>
                 <a
                   class="whitespace-nowrap text-primary-500"
                   href="{base}/demos/"
@@ -149,7 +149,7 @@
                 <div class="card flex flex-col p-4">
                   <div class="text-sm text-surface-500">&nbsp;</div>
                   <a class="text-left text-primary-500" href="{base}/demos/">
-                    <span class="py-2 text-lg">Discover More Examples and Tutorials</span>
+                    <span class="py-2">Discover More Examples and Tutorials</span>
                     <!-- <span class="fd fd-arrow-right inline-block w-2 text-[20px]"></span> -->
                   </a>
                 </div>
@@ -160,7 +160,7 @@
       </div>
     {/if}
     <div class="min-h-96">
-      <div class="h5 flex flex-nowrap items-center gap-4">
+      <div class="flex flex-nowrap items-center gap-4 text-xl font-semibold">
         <span class="fd fd-network text-surface-500"></span><span>Your pipelines</span>
       </div>
       {#if pipelines.pipelines.length}
@@ -178,7 +178,7 @@
       {:else}
         <div class="flex w-full flex-col items-center gap-4 pt-8 sm:pt-16">
           <ImageBox class="h-9 fill-surface-200-800"></ImageBox>
-          <div class="text-lg">Your pipelines will appear here</div>
+          <div class="">Your pipelines will appear here</div>
           <div class="relative flex gap-5">
             <CreatePipelineButton btnClass="preset-filled-surface-50-950"></CreatePipelineButton>
             <a class="btn text-sm preset-tonal-surface" href="https://docs.feldera.com">

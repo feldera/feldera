@@ -60,4 +60,20 @@
   padding: 0px !important;
 }
 
+.h3 {
+  line-height: 28px;
+}
+
+.h4 {
+  line-height: 28px;
+}
+
+.h5 {
+  line-height: 20px;
+}
+
 /* The end of Skeleton UI overrides */
+
+html {
+  font-size: 87.5% /* rem = 14px */;
+}

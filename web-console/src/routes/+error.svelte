@@ -12,7 +12,7 @@
     >
       {page.status}
     </div>
-    <div class="h3">
+    <div class="text-2xl font-semibold">
       {page.error?.message === 'Not Found'
         ? 'This page is not a part of your Feldera instance'
         : page.error?.message}

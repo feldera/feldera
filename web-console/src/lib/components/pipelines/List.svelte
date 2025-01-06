@@ -33,7 +33,7 @@
   use:bindScrollY={{ scrollY }}
 >
   <div class="bg-white-dark sticky top-0 flex justify-between pb-2 pl-4">
-    <span class="h6">Pipelines</span>
+    <span class="font-semibold">Pipelines</span>
     <button
       onclick={onclose}
       class="fd fd-x btn btn-icon btn-icon-lg"
