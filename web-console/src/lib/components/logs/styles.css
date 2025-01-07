@@ -1,3 +1,6 @@
+/* @import '../../../theme.css' theme(reference);
+@import 'tailwindcss'; */
+
 /* base colors */
 
 black {
@@ -9,7 +12,8 @@ backgroundBlack {
 }
 
 red {
-  @apply !text-[#c75d58] !text-opacity-[inherit] dark:!text-[#EFA6A2] dark:!text-opacity-[inherit];
+  --tw-text-opacity: inherit !important;
+  @apply !text-[#c75d58] dark:!text-[#EFA6A2];
 }
 
 backgroundRed {
@@ -17,7 +21,8 @@ backgroundRed {
 }
 
 green {
-  @apply !text-[#36633f] !text-opacity-[inherit] dark:!text-[#80C990] dark:!text-opacity-[inherit];
+  --tw-text-opacity: inherit !important;
+  @apply !text-[#36633f] dark:!text-[#80C990];
 }
 
 backgroundGreen {
@@ -25,7 +30,8 @@ backgroundGreen {
 }
 
 yellow {
-  @apply !text-[#c2c255] !text-opacity-[inherit] dark:!text-[#C8C874] dark:!text-opacity-[inherit];
+  --tw-text-opacity: inherit !important;
+  @apply !text-[#c2c255] dark:!text-[#C8C874];
 }
 
 backgroundYellow {
@@ -33,7 +39,8 @@ backgroundYellow {
 }
 
 blue {
-  @apply !text-[#39559e] !text-opacity-[inherit] dark:!text-[#a3b8ef] dark:!text-opacity-[inherit];
+  --tw-text-opacity: inherit !important;
+  @apply !text-[#39559e] dark:!text-[#a3b8ef];
 }
 
 backgroundBlue {
@@ -41,7 +48,8 @@ backgroundBlue {
 }
 
 magenta {
-  @apply !text-[#a15295] !text-opacity-[inherit] dark:!text-[#E6A3DC] dark:!text-opacity-[inherit];
+  --tw-text-opacity: inherit !important;
+  @apply !text-[#a15295] dark:!text-[#E6A3DC];
 }
 
 backgroundMagenta {
@@ -49,7 +57,8 @@ backgroundMagenta {
 }
 
 cyan {
-  @apply !text-[#1da0a3] !text-opacity-[inherit] dark:!text-[#50CACD] dark:!text-opacity-[inherit];
+  --tw-text-opacity: inherit !important;
+  @apply !text-[#1da0a3] dark:!text-[#50CACD];
 }
 
 backgroundCyan {
@@ -57,7 +66,8 @@ backgroundCyan {
 }
 
 white {
-  @apply !text-[#424242] !text-opacity-[inherit] dark:!text-[#dbdbdb] dark:!text-opacity-[inherit];
+  --tw-text-opacity: inherit !important;
+  @apply !text-[#424242] dark:!text-[#dbdbdb];
 }
 
 backgroundWhite {
@@ -66,7 +76,8 @@ backgroundWhite {
 
 /* bright colors */
 gray {
-  @apply !text-[#bababa] !text-opacity-[inherit] dark:!text-[#454545] dark:!text-opacity-[inherit];
+  --tw-text-opacity: inherit !important;
+  @apply !text-[#bababa] dark:!text-[#454545];
 }
 
 backgroundGray {
@@ -74,7 +85,8 @@ backgroundGray {
 }
 
 brightRed {
-  @apply !text-[#cc3333] !text-opacity-[inherit] dark:!text-[#ff5959] dark:!text-opacity-[inherit];
+  --tw-text-opacity: inherit !important;
+  @apply !text-[#cc3333] dark:!text-[#ff5959];
 }
 
 backgroundBrightRed {
@@ -82,7 +94,8 @@ backgroundBrightRed {
 }
 
 brightGreen {
-  @apply !text-[#15b328] !text-opacity-[inherit] dark:!text-[#33de47] dark:!text-opacity-[inherit];
+  --tw-text-opacity: inherit !important;
+  @apply !text-[#15b328] dark:!text-[#33de47];
 }
 
 backgroundBrightGreen {
@@ -90,7 +103,8 @@ backgroundBrightGreen {
 }
 
 brightYellow {
-  @apply !text-[#d4de12] !text-opacity-[inherit] dark:!text-[#f4ff26] dark:!text-opacity-[inherit];
+  --tw-text-opacity: inherit !important;
+  @apply !text-[#d4de12] dark:!text-[#f4ff26];
 }
 
 backgroundBrightYellow {
@@ -98,7 +112,8 @@ backgroundBrightYellow {
 }
 
 brightBlue {
-  @apply !text-[#1192cf] !text-opacity-[inherit] dark:!text-[#34b3ed] dark:!text-opacity-[inherit];
+  --tw-text-opacity: inherit !important;
+  @apply!text- [#1192cf] dark:!text-[#34b3ed];
 }
 
 backgroundBrightBlue {
@@ -106,7 +121,8 @@ backgroundBrightBlue {
 }
 
 brightMagenta {
-  @apply !text-[#bf0ba4] !text-opacity-[inherit] dark:!text-[#eb36d0] dark:!text-opacity-[inherit];
+  --tw-text-opacity: inherit !important;
+  @apply !text-[#bf0ba4] dark:!text-[#eb36d0];
 }
 
 backgroundBrightMagenta {
@@ -114,7 +130,8 @@ backgroundBrightMagenta {
 }
 
 brightCyan {
-  @apply !text-[#06c7cc] !text-opacity-[inherit] dark:!text-[#1fe8ed] dark:!text-opacity-[inherit];
+  --tw-text-opacity: inherit !important;
+  @apply !text-[#06c7cc] dark:!text-[#1fe8ed];
 }
 
 backgroundBrightCyan {
@@ -122,7 +139,8 @@ backgroundBrightCyan {
 }
 
 brightWhite {
-  @apply text-dark !text-opacity-[inherit] dark:text-white dark:!text-opacity-[inherit];
+  --tw-text-opacity: inherit !important;
+  @apply text-dark dark:text-white;
 }
 
 backgroundBrightWhite {
@@ -136,7 +154,7 @@ bold {
 }
 
 dim {
-  @apply text-dark !text-opacity-80 dark:text-white dark:!text-opacity-75;
+  @apply text-dark/80 dark:text-white/75;
 }
 
 dim * {
