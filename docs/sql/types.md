@@ -1,4 +1,4 @@
-# Built-in Data Types
+# Data Types
 
 The compiler supports the following SQL data types:
 

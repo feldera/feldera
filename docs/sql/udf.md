@@ -1,4 +1,4 @@
-# User-defined functions
+# User-Defined Functions
 
 The SQL statement `CREATE FUNCTION` can be used to declare new
 functions.  Functions can be implemented either in SQL or in Rust.

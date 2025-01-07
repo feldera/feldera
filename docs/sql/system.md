@@ -1,4 +1,4 @@
-# System views
+# System Views
 
 The Feldera runtime comes with some built-in views.  These views are
 built-in.  Their contents is pre-populated by the runtime.

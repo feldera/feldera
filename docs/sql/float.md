@@ -1,4 +1,4 @@
-# Floating point types
+# Floating Point Operations
 
 We support standard IEEE 754 floating point types.
 

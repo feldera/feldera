@@ -1,4 +1,4 @@
-# Aggregate operations
+# Aggregate Operations
 
 ## Standard aggregate operations
 

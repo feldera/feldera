@@ -1,4 +1,4 @@
-# String operations
+# String Operations
 
 SQL defines two primary character types: `character varying(n)` and
 `character(n)`, where n is a positive integer.  Both of these types

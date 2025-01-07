@@ -1,4 +1,4 @@
-# Table functions
+# Table Functions
 
 A table function is a function that returns data of a table type.  The
 table-valued function can be used wherever a relation can be used.

@@ -135,17 +135,20 @@ const sidebars = {
                 {
                     type: 'category',
                     label: 'Feldera SQL',
+                    link: {
+                        type: 'doc',
+                        id: 'sql/index'
+                    },
                     items: [
                         'sql/grammar',
                         'sql/identifiers',
+                        'sql/types',
+                        'sql/casts',
                         'sql/operators',
                         'sql/aggregates',
-                        'sql/casts',
-                        'sql/types',
                         'sql/boolean',
                         'sql/comparisons',
                         'sql/integer',
-                        'sql/json',
                         'sql/float',
                         'sql/decimal',
                         'sql/string',
@@ -153,6 +156,7 @@ const sidebars = {
                         'sql/array',
                         'sql/map',
                         'sql/datetime',
+                        'sql/json',
                         'sql/materialized',
                         'sql/recursion',
                         'sql/ad-hoc',

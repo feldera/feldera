@@ -1,4 +1,4 @@
-# Ad-hoc SQL queries
+# Ad-hoc SQL Queries
 
 You can run ad-hoc SQL queries on a running or paused pipeline. Unlike Feldera SQL programs that define pipelines and
 are evaluated incrementally, ad-hoc queries are evaluated in batch mode,
