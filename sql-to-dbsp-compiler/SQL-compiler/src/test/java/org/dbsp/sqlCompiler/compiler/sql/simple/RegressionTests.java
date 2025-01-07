@@ -40,6 +40,46 @@ public class RegressionTests extends SqlIoTest {
     }
 
     @Test
+    public void issue3256() {
+        this.compileRustTestCase("""
+                CREATE TABLE t0(c0 int);
+                CREATE VIEW v6 AS (
+                    SELECT 1 FROM t0 WHERE
+                    FALSE
+                    NOT BETWEEN
+                    (
+                        (
+                            '7983-8-6 4:8:10'::TIMESTAMP IS DISTINCT FROM '6895-2-30 16:1:47'::TIMESTAMP
+                        ) NOT BETWEEN (
+                            ARRAY_CONTAINS(array[1.531442425, 1.542531961E9, 5.09355347E8], 1.0164673495)
+                        ) AND true
+                    ) AND true
+                );""");
+        this.compileRustTestCase("""
+                CREATE TABLE t0(c0 BOOLEAN);
+                CREATE VIEW v5 AS
+                (SELECT 1 FROM t0 WHERE (ARRAYS_OVERLAP(array[1, 1, 3], array[1]))
+                BETWEEN (ARRAY_CONTAINS(array[1.7727161785], 1.0)) AND ((CAST('5280-11-23 14:7:53' AS TIMESTAMP))
+                BETWEEN (CAST('7227-11-13 15:49:21' AS TIMESTAMP)) AND (CAST('8869-5-1 10:45:55' AS TIMESTAMP))));""");
+    }
+
+    @Test
+    public void issue3257() {
+        this.compileRustTestCase(
+                "CREATE VIEW v7 AS " +
+                        "(SELECT ARRAY_TO_STRING(array[CAST('1:17:23' AS TIME), CAST('3:9:29' AS TIME)], ''));");
+    }
+
+    @Test
+    public void issue3258() {
+        this.compileRustTestCase("""
+                CREATE TABLE t0(c0 int);
+                CREATE VIEW v6 AS (SELECT COUNT(1) FROM t0 WHERE
+                ARRAYS_OVERLAP(array[array[CAST('1173-8-15 5:11:20' AS TIMESTAMP)]],
+                array[array[CAST('5973-8-27 8:0:9' AS TIMESTAMP)]]));""");
+    }
+
+    @Test
     public void issue3114() {
         this.compileRustTestCase("""
                 CREATE TABLE T(x integer);

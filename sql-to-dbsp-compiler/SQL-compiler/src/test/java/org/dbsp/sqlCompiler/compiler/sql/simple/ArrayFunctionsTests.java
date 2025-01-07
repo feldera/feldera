@@ -1,7 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.sql.simple;
 
 import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
-import org.junit.Ignore;
 import org.junit.Test;
 
 public class ArrayFunctionsTests extends SqlIoTest {
@@ -292,23 +291,68 @@ public class ArrayFunctionsTests extends SqlIoTest {
 
     @Test
     public void testArrayPositionDiffTypes() {
-        this.queryFailingInCompilation("SELECT array_position(ARRAY [1, 2, 3, 4], 1e0)", "different types", false);
-        this.queryFailingInCompilation("SELECT array_position(ARRAY [1.0, 2.0, 3.0, 4.0], 1e0)", "different types", false);
-        this.queryFailingInCompilation("SELECT array_position(ARRAY [1.0, 2.0, 3.0, 4.0], 0e0)", "different types", false);
+        this.qs("""
+                SELECT array_position(ARRAY [1, 2, 3, 4], 1e0);
+                 result
+                --------
+                 1
+                (1 row)
+                
+                SELECT array_position(ARRAY [1.0, 2.0, 3.0, 4.0], 1e0);
+                 result
+                --------
+                 1
+                (1 row)
+                
+                SELECT array_position(ARRAY [1.0, 2.0, 3.0, 4.0], 0e0);
+                 result
+                --------
+                 0
+                (1 row)""");
     }
 
     @Test
     public void testArrayContainsDiffTypes() {
-        this.queryFailingInCompilation("SELECT array_contains(ARRAY [1, 2, 3, 4], 1e0)", "different types", false);
-        this.queryFailingInCompilation("SELECT array_contains(ARRAY [1.0, 2.0, 3.0, 4.0], 1e0)", "different types", false);
-        this.queryFailingInCompilation("SELECT array_contains(ARRAY [1.0, 2.0, 3.0, 4.0], 0e0)", "different types", false);
+        this.qs("""
+                SELECT array_contains(ARRAY [1, 2, 3, 4], 1e0);
+                 result
+                --------
+                 true
+                (1 row)
+                
+                SELECT array_contains(ARRAY [1.0, 2.0, 3.0, 4.0], 1e0);
+                 result
+                --------
+                 true
+                (1 row)
+                
+                SELECT array_contains(ARRAY [1.0, 2.0, 3.0, 4.0], 0e0);
+                 result
+                --------
+                 false
+                (1 row)""");
     }
 
     @Test
     public void testArrayRemoveDiffTypes() {
-        this.queryFailingInCompilation("SELECT array_remove(ARRAY [1, 2, 3, 4], 1e0)", "different types", false);
-        this.queryFailingInCompilation("SELECT array_remove(ARRAY [1.0, 2.0, 3.0, 4.0], 1e0)", "different types", false);
-        this.queryFailingInCompilation("SELECT array_remove(ARRAY [1.0, 2.0, 3.0, 4.0], 0e0)", "different types", false);
+        this.qs("""
+                SELECT array_remove(ARRAY [1, 2, 3, 4], 1e0);
+                 result
+                --------
+                 {2,3,4}
+                (1 row)
+                
+                SELECT array_remove(ARRAY [1.0, 2.0, 3.0, 4.0], 1e0);
+                 result
+                --------
+                 {2,3,4}
+                (1 row)
+                
+                SELECT array_remove(ARRAY [1.0, 2.0, 3.0, 4.0], 0e0);
+                 result
+                --------
+                 {1,2,3,4}
+                (1 row)""");
     }
 
     @Test
@@ -772,6 +816,12 @@ public class ArrayFunctionsTests extends SqlIoTest {
     @Test
     public void testArraysOverlap() {
         this.qs("""
+                SELECT ARRAYS_OVERLAP(null, null);
+                 arrays_overlap
+                ----------------
+                 null
+                (1 row)
+                
                 SELECT ARRAYS_OVERLAP(ARRAY [1, 2, 3], ARRAY [2, 4]);
                  arrays_overlap
                 ----------------
@@ -823,7 +873,7 @@ public class ArrayFunctionsTests extends SqlIoTest {
                 SELECT ARRAYS_OVERLAP(ARRAY [null, 1], ARRAY [2, 3, null]);
                  arrays_overlap
                 ----------------
-                 NULL
+                 true
                 (1 row)
 
                 SELECT ARRAYS_OVERLAP(cast(null as integer array), cast(null as integer array));
@@ -847,7 +897,7 @@ public class ArrayFunctionsTests extends SqlIoTest {
                 SELECT ARRAYS_OVERLAP(array [3], array [1, null]);
                  arrays_overlap
                 ----------------
-                 NULL
+                 false
                 (1 row)
                 """
         );
@@ -856,14 +906,10 @@ public class ArrayFunctionsTests extends SqlIoTest {
     @Test
     public void testArraysOverlapDiffTypes() {
         // fails for the Calcite optimized version as Calcite returns false
-        this.queryFailingInCompilation("SELECT ARRAYS_OVERLAP(ARRAY [1, 2, 3], ARRAY [2e0, 4e0])", "different types", false);
-        this.queryFailingInCompilation("SELECT ARRAYS_OVERLAP(ARRAY [1, 2, 3], ARRAY [2.0, 4.0])", "different types", false);
-    }
-
-    @Test
-    public void testArraysOverlapNull() {
-        this.queryFailingInCompilation("SELECT ARRAYS_OVERLAP(null, null)",
-                 "Cannot apply 'ARRAYS_OVERLAP' to arguments of type 'ARRAYS_OVERLAP(<NULL>, <NULL>)'");
+        this.queryFailingInCompilation("SELECT ARRAYS_OVERLAP(ARRAY [1, 2, 3], ARRAY [2e0, 4e0])",
+                "Cannot apply 'ARRAYS_OVERLAP' to arguments of type");
+        this.queryFailingInCompilation("SELECT ARRAYS_OVERLAP(ARRAY [1, 2, 3], ARRAY [2.0, 4.0])",
+                "Cannot apply 'ARRAYS_OVERLAP' to arguments of type");
     }
 
     @Test

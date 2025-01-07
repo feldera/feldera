@@ -622,7 +622,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
         String result = "";
         if (vec != null)
             // This is the reverse of what you may expect
-            result = typeString(vec.getElementType()) + "vec";
+            result = vec.getElementType().nullableUnderlineSuffix() + "vec";
         result += type.nullableUnderlineSuffix();
         return result;
     }
@@ -631,8 +631,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
      * Compile a function call into a Rust function.
      *
      * @param baseName         Base name of the called function in Rust.
-     *                         To this name we append information about argument
-     *                         nullabilty.
+     *                         To this name we append information about argument nullabilty.
      * @param node             CalciteObject holding the call.
      * @param resultType       Type of result produced by call.
      * @param ops              Translated operands for the call.
@@ -769,12 +768,12 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
 
     /** Ensures that all the elements of array 'vec' are of the expectedType
      * @param vec the Array of elements
-     * @param expectedType the expected type of the elements */
-    DBSPExpression ensureArrayElementsOfType(DBSPExpression vec, DBSPType expectedType) {
+     * @param expectedElementType the expected type of the elements */
+    DBSPExpression ensureArrayElementsOfType(DBSPExpression vec, DBSPType expectedElementType) {
         DBSPTypeVec argType = vec.getType().to(DBSPTypeVec.class);
         DBSPType argElemType = argType.getElementType();
-        DBSPType expectedVecType = new DBSPTypeVec(expectedType, vec.type.mayBeNull);
-        if (!argElemType.sameType(expectedType))
+        DBSPType expectedVecType = new DBSPTypeVec(expectedElementType, vec.type.mayBeNull);
+        if (!argElemType.sameType(expectedElementType))
             vec = vec.cast(expectedVecType);
         return vec;
     }
@@ -1107,8 +1106,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                     case "sech":
                     case "csc":
                     case "csch":
-                    case "exp":
-                    {
+                    case "exp": {
                         this.ensureDouble(ops, 0);
                         return compilePolymorphicFunction(call, node, type, ops, 1);
                     }
@@ -1161,8 +1159,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                         this.ensureString(ops, 0);
                         // fall through
                     case "to_hex":
-                    case "octet_length":
-                    {
+                    case "octet_length": {
                         return compileFunction(call, node, type, ops, 1);
                     }
                     case "cardinality": {
@@ -1256,7 +1253,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                             this.ensureInteger(ops, i, 32);
                         return compileFunction(call, node, type, ops, 2);
                     case "blackbox":
-                        assert ops.size() == 1: "expected one argument for blackbox function";
+                        assert ops.size() == 1 : "expected one argument for blackbox function";
                         return new DBSPApplyExpression(node, "blackbox", ops.get(0).type, ops.toArray(new DBSPExpression[0]));
                     case "regexp_replace": {
                         validateArgCount(node, operationName, ops.size(), 2, 3);
@@ -1294,47 +1291,36 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                         String method = getArrayCallNameWithElemNullability(call, ops.get(0), ops.get(1), inserted);
                         return new DBSPApplyExpression(node, method, type, ops.get(0), ops.get(1), inserted).cast(type);
                     }
-                }
-                return this.compileUdfOrConstructor(node, call, type, ops);
-            }
-            case ARRAYS_OVERLAP: {
-                if (ops.size() != 2)
-                    throw operandCountError(node, operationName, call.operandCount());
-                DBSPExpression arg0 = ops.get(0);
-                DBSPTypeVec arg0Vec = arg0.getType().to(DBSPTypeVec.class);
-                DBSPType arg0ElemType = arg0Vec.getElementType();
+                    case "arrays_overlap": {
+                        if (ops.size() != 2)
+                            throw operandCountError(node, operationName, call.operandCount());
+                        DBSPExpression arg0 = ops.get(0);
+                        DBSPExpression arg1 = ops.get(1);
+                        if (arg0.getType().is(DBSPTypeNull.class) || arg1.getType().is(DBSPTypeNull.class))
+                            return type.none();
 
-                DBSPExpression arg1 = ops.get(1);
-                DBSPTypeVec arg1Vec = arg1.getType().to(DBSPTypeVec.class);
-                DBSPType arg1ElemType = arg1Vec.getElementType();
+                        DBSPTypeVec arg0Vec = arg0.getType().to(DBSPTypeVec.class);
+                        DBSPType arg0ElemType = arg0Vec.getElementType();
 
-                // if the two arrays are of different types of elements
-                if (!arg0ElemType.sameType(arg1ElemType)) {
-                    // check if the nullability of arg0 needs to change to match arg1
-                    if (arg1ElemType.mayBeNull && !arg0ElemType.mayBeNull) {
-                        if (arg0Vec.mayBeNull && arg0.equals(arg0Vec.nullValue())) {
-                            arg0 = new DBSPTypeVec(arg1ElemType, true).nullValue();
+                        DBSPTypeVec arg1Vec = arg1.getType().to(DBSPTypeVec.class);
+                        DBSPType arg1ElemType = arg1Vec.getElementType();
+
+                        // if the two arrays are of different types of elements
+                        if (!arg0ElemType.sameType(arg1ElemType)) {
+                            // they can only differ in nullability; make them both nullable
+                            arg0 = this.ensureArrayElementsOfType(arg0, arg0ElemType.withMayBeNull(true));
+                            arg1 = this.ensureArrayElementsOfType(arg1, arg0ElemType.withMayBeNull(true));
                             ops.set(0, arg0);
-                        } else {
-                            arg0 = this.ensureArrayElementsOfType(arg0, arg1ElemType);
-                            ops.set(0, arg0);
-                        }
-                    } else if (arg0ElemType.mayBeNull && !arg1ElemType.mayBeNull) {
-                        if (arg1Vec.mayBeNull && arg1.equals(arg1Vec.nullValue())) {
-                            arg1 = new DBSPTypeVec(arg0ElemType, true).nullValue();
                             ops.set(1, arg1);
                         }
-                        arg1 = this.ensureArrayElementsOfType(arg1, arg0ElemType);
-                        ops.set(1, arg1);
-                    }
-                    // if the nullability is not the problem, return an unimplemented error as types are different
-                    else {
-                        this.compiler.reportError(node.getPositionRange(), "Array elements are of different types",
-                                "Fist array is of type: " + arg0ElemType + " and second array is of type: " + arg1ElemType);
+
+                        String method = "arrays_overlap" +
+                                ops.get(0).getType().nullableUnderlineSuffix() +
+                                ops.get(1).getType().nullableUnderlineSuffix();
+                        return new DBSPApplyExpression(node, method, type, ops.get(0), ops.get(1));
                     }
                 }
-
-                return compileFunction(call, node, type, ops, 2);
+                return this.compileUdfOrConstructor(node, call, type, ops);
             }
             case OTHER: {
                 String opName = call.op.getName().toLowerCase();
@@ -1403,6 +1389,17 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 return compileFunction(module_prefix + getCallName(call), node, type, ops, 2);
             }
             case ARRAY_TO_STRING: {
+                validateArgCount(node, operationName, ops.size(), 2, 3);
+                DBSPExpression op0 = ops.get(0);
+                DBSPType arg0Type = op0.getType();
+                if (!arg0Type.is(DBSPTypeVec.class))
+                    throw new UnsupportedException("First argument must be an array" +
+                            Utilities.singleQuote(operationName), node);
+                DBSPTypeVec vecType = arg0Type.to(DBSPTypeVec.class);
+                if (!vecType.getElementType().is(DBSPTypeString.class)) {
+                    op0 = this.ensureArrayElementsOfType(op0, DBSPTypeString.varchar(vecType.getElementType().mayBeNull));
+                    ops.set(0, op0);
+                }
                 this.ensureString(ops, 1);
                 if (ops.size() > 2)
                     this.ensureString(ops, 2);
@@ -1581,14 +1578,9 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                     // edge case for elements of type null (like ARRAY [null])
                     if (elemType.is(DBSPTypeNull.class)) {
                         // cast to type of arg1
-                        arg0 = ensureArrayElementsOfType(arg0, arg1.type.withMayBeNull(true));
-                    }
-                    // if apart from the null case, the types are different
-                    else if (!elemType.sameType(arg1.type.withMayBeNull(elemType.mayBeNull))) {
-                        this.compiler.reportError(node.getPositionRange(), "array elements and argument of different types",
-                                "Fist argument is an array of type: " + elemType +
-                                        " and second argument is of type: " + arg1.type
-                        );
+                        arg0 = this.ensureArrayElementsOfType(arg0, arg1.type.withMayBeNull(true));
+                    } else if (!elemType.sameType(arg1.type.withMayBeNull(elemType.mayBeNull))) {
+                        arg1 = arg1.cast(elemType);
                     }
                 }
 

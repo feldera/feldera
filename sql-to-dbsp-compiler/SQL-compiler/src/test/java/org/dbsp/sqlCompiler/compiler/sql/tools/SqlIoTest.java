@@ -209,22 +209,6 @@ public abstract class SqlIoTest extends BaseSQLTests {
         this.q(queryAndOutput, true, -1);
     }
 
-    /** Run a query that is expected to fail in compilation.
-     * @param query             Query to run.
-     * @param messageFragment   This fragment should appear in the error message.
-     * @param optimize          Boolean that indicates if the query should be compiled with optimizations. */
-    public void queryFailingInCompilation(String query, String messageFragment, boolean optimize) {
-        DBSPCompiler compiler = this.testCompiler(optimize);
-        compiler.options.languageOptions.throwOnError = false;
-        compiler.options.languageOptions.optimizationLevel = optimize ? 2 : 0;
-        this.prepareInputs(compiler);
-        compiler.compileStatement("CREATE VIEW VV AS " + query);
-        getCircuit(compiler);
-        Assert.assertTrue(compiler.messages.exitCode != 0);
-        String message = compiler.messages.toString();
-        Assert.assertTrue(message.contains(messageFragment));
-    }
-
     /**
      * Test a sequence of queries, each followed by its expected output.
      * Two queries are separated by a whitespace line.

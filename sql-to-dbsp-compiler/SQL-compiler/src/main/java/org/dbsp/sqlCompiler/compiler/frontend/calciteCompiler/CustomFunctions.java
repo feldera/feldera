@@ -3,59 +3,70 @@ package org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rel.type.RelDataTypeField;
 import org.apache.calcite.rex.RexNode;
+import org.apache.calcite.sql.SqlCallBinding;
 import org.apache.calcite.sql.SqlFunction;
 import org.apache.calcite.sql.SqlFunctionCategory;
 import org.apache.calcite.sql.SqlIdentifier;
 import org.apache.calcite.sql.SqlKind;
+import org.apache.calcite.sql.SqlNode;
+import org.apache.calcite.sql.SqlOperandCountRange;
+import org.apache.calcite.sql.SqlOperator;
 import org.apache.calcite.sql.SqlOperatorBinding;
 import org.apache.calcite.sql.fun.SqlLibraryOperators;
 import org.apache.calcite.sql.type.OperandTypes;
 import org.apache.calcite.sql.type.ReturnTypes;
+import org.apache.calcite.sql.type.SqlOperandCountRanges;
 import org.apache.calcite.sql.type.SqlOperandTypeChecker;
 import org.apache.calcite.sql.type.SqlReturnTypeInference;
+import org.apache.calcite.sql.type.SqlSingleOperandTypeChecker;
 import org.apache.calcite.sql.type.SqlTypeFamily;
 import org.apache.calcite.sql.type.SqlTypeTransforms;
 import org.apache.calcite.sql.type.SqlTypeUtil;
+import org.apache.calcite.util.Util;
 import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 
+import static java.util.Objects.requireNonNull;
 import static org.apache.calcite.sql.type.OperandTypes.family;
 import static org.apache.calcite.sql.type.ReturnTypes.ARG1;
+import static org.apache.calcite.util.Static.RESOURCE;
 
 /** Several functions that we define and add to the existing ones. */
 public class CustomFunctions {
-    private static final List<NonOptimizedFunction> initial = new ArrayList<>() {{
-        add(RlikeFunction.INSTANCE);
-        add(GunzipFunction.INSTANCE);
-        add(WriteLogFunction.INSTANCE);
-        add(SequenceFunction.INSTANCE);
-        add(ToIntFunction.INSTANCE);
-        add(NowFunction.INSTANCE);
-        add(ParseJsonFunction.INSTANCE);
-        add(ToJsonFunction.INSTANCE);
-        add(BlackboxFunction.INSTANCE);
-        add(ParseTimeFunction.INSTANCE);
-        add(ParseDateFunction.INSTANCE);
-        add(ParseTimestampFunction.INSTANCE);
-        add(FormatDateFunction.INSTANCE);
-        add(ArrayExcept.INSTANCE);
-        add(ArrayUnion.INSTANCE);
-        add(ArrayIntersect.INSTANCE);
-        add(ArrayInsertFunction.INSTANCE);
-    }};
-
     private final List<NonOptimizedFunction> functions;
     private final HashMap<ProgramIdentifier, ExternalFunction> udf;
 
     public CustomFunctions() {
-        this.functions = initial;
+        this.functions = new ArrayList<>();
+        this.functions.add(new RlikeFunction());
+        this.functions.add(new GunzipFunction());
+        this.functions.add(new WriteLogFunction());
+        this.functions.add(new SequenceFunction());
+        this.functions.add(new ToIntFunction());
+        this.functions.add(new NowFunction());
+        this.functions.add(new ParseJsonFunction());
+        this.functions.add(new ToJsonFunction());
+        this.functions.add(new BlackboxFunction());
+        this.functions.add(new ParseTimeFunction());
+        this.functions.add(new ParseDateFunction());
+        this.functions.add(new ParseTimestampFunction());
+        this.functions.add(new FormatDateFunction());
+        this.functions.add(new ArrayExcept());
+        this.functions.add(new ArrayUnion());
+        this.functions.add(new ArrayIntersect());
+        this.functions.add(new ArrayInsertFunction());
+        this.functions.add(new ArraysOverlapFunction());
+        this.functions.add(new ArrayRemoveFunction());
+        this.functions.add(new ArrayContainsFunction());
+        this.functions.add(new ArrayPositionFunction());
         this.udf = new HashMap<>();
     }
 
@@ -65,8 +76,8 @@ public class CustomFunctions {
         this.udf = new HashMap<>(other.udf);
     }
 
-    public static List<? extends FunctionDocumentation.FunctionDescription> getInitialDescriptions() {
-        return CustomFunctions.initial;
+    public Collection<? extends FunctionDocumentation.FunctionDescription> getDescriptions() {
+        return this.functions;
     }
 
     /** Function that has no implementation for the optimizer */
@@ -132,8 +143,18 @@ public class CustomFunctions {
         private FormatDateFunction() {
             super(SqlLibraryOperators.FORMAT_DATE, "datetime");
         }
+    }
 
-        public static final FormatDateFunction INSTANCE = new FormatDateFunction();
+    static class ArrayContainsFunction extends CalciteFunctionClone {
+        private ArrayContainsFunction() { super(SqlLibraryOperators.ARRAY_CONTAINS, "array"); }
+    }
+
+    static class ArrayRemoveFunction extends CalciteFunctionClone {
+        private ArrayRemoveFunction() { super(SqlLibraryOperators.ARRAY_REMOVE, "array"); }
+    }
+
+    static class ArrayPositionFunction extends CalciteFunctionClone {
+        private ArrayPositionFunction() { super(SqlLibraryOperators.ARRAY_POSITION, "array"); }
     }
 
     static class ParseJsonFunction extends NonOptimizedFunction {
@@ -143,8 +164,6 @@ public class CustomFunctions {
                     OperandTypes.STRING,
                     SqlFunctionCategory.STRING, "json");
         }
-
-        public static final ParseJsonFunction INSTANCE = new ParseJsonFunction();
     }
 
     static class ArrayInsertFunction extends NonOptimizedFunction {
@@ -169,8 +188,61 @@ public class CustomFunctions {
             return SqlTypeUtil.createArrayType(opBinding.getTypeFactory(), elementType,
                     arrayType.isNullable() || operandTypes.get(1).isNullable());
         }
+    }
 
-        public static final ArrayInsertFunction INSTANCE = new ArrayInsertFunction();
+    /** Checks that two operands have the exact same type */
+    public static class OperandsHaveSameType implements SqlSingleOperandTypeChecker {
+        @Override
+        public boolean checkSingleOperandType(
+                SqlCallBinding callBinding, SqlNode operand,
+                int iFormalOperand, boolean throwOnFailure) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public SqlOperandCountRange getOperandCountRange() {
+            return SqlOperandCountRanges.of(2);
+        }
+
+        @Override
+        public boolean checkOperandTypes(SqlCallBinding callBinding, boolean throwOnFailure) {
+            int operands = callBinding.getOperandCount();
+            final List<Integer> operandList = Util.range(operands);
+            RelDataType firstType = null;
+            for (int i : operandList) {
+                RelDataType type = callBinding.getOperandType(i);
+                if (firstType != null) {
+                    if (!SqlTypeUtil.sameNamedType(firstType, type)) {
+                        if (!throwOnFailure) {
+                            return false;
+                        }
+                        throw requireNonNull(callBinding, "callBinding").newValidationError(
+                                RESOURCE.needSameTypeParameter());
+                    }
+                } else {
+                    firstType = type;
+                }
+            }
+            return true;
+        }
+
+        @Override
+        public String getAllowedSignatures(SqlOperator op, String opName) {
+            return "<T>, <T>";
+        }
+    }
+
+    public static final SqlSingleOperandTypeChecker SAME_TYPE = new OperandsHaveSameType();
+
+    private static class ArraysOverlapFunction extends NonOptimizedFunction {
+        ArraysOverlapFunction() {
+            super("ARRAYS_OVERLAP",
+                    ReturnTypes.BOOLEAN_NULLABLE,
+                    SAME_TYPE.and(OperandTypes.family(SqlTypeFamily.ARRAY, SqlTypeFamily.ARRAY)),
+                            // .and(new NotNullOperandTypeChecker(2, true)),
+                    SqlFunctionCategory.USER_DEFINED_FUNCTION,
+                    "array");
+        }
     }
 
     static class ToJsonFunction extends NonOptimizedFunction {
@@ -180,8 +252,6 @@ public class CustomFunctions {
                     OperandTypes.VARIANT,
                     SqlFunctionCategory.STRING, "json");
         }
-
-        public static final ToJsonFunction INSTANCE = new ToJsonFunction();
     }
 
     /** Similar to PARSE_TIME in Calcite, but always nullable */
@@ -190,8 +260,6 @@ public class CustomFunctions {
             super("PARSE_TIME", ReturnTypes.TIME.andThen(SqlTypeTransforms.FORCE_NULLABLE),
                     OperandTypes.STRING_STRING, SqlFunctionCategory.TIMEDATE, "datetime");
         }
-
-        public static final ParseTimeFunction INSTANCE = new ParseTimeFunction();
     }
 
     /** Similar to PARSE_DATE in Calcite, but always nullable */
@@ -200,8 +268,6 @@ public class CustomFunctions {
             super("PARSE_DATE", ReturnTypes.DATE.andThen(SqlTypeTransforms.FORCE_NULLABLE),
                     OperandTypes.STRING_STRING, SqlFunctionCategory.TIMEDATE, "datetime");
         }
-
-        public static final ParseDateFunction INSTANCE = new ParseDateFunction();
     }
 
     /* Similar to PARSE_TIMESTAMP in Calcite, but always nullable */
@@ -210,8 +276,6 @@ public class CustomFunctions {
             super("PARSE_TIMESTAMP", ReturnTypes.TIMESTAMP.andThen(SqlTypeTransforms.FORCE_NULLABLE),
                     OperandTypes.STRING_STRING, SqlFunctionCategory.TIMEDATE, "datetime");
         }
-
-        public static final ParseTimestampFunction INSTANCE = new ParseTimestampFunction();
     }
 
     /** RLIKE used as a function.  RLIKE in SQL uses infix notation */
@@ -223,8 +287,6 @@ public class CustomFunctions {
                     OperandTypes.STRING_STRING,
                     SqlFunctionCategory.STRING, "string");
         }
-
-        public static final RlikeFunction INSTANCE = new RlikeFunction();
     }
 
     static class NowFunction extends NonOptimizedFunction {
@@ -234,8 +296,6 @@ public class CustomFunctions {
                     OperandTypes.NILADIC,
                     SqlFunctionCategory.TIMEDATE, "datetime");
         }
-
-        public static final NowFunction INSTANCE = new NowFunction();
     }
 
     /** GUNZIP(binary) returns the string that results from decompressing the
@@ -249,8 +309,6 @@ public class CustomFunctions {
                     OperandTypes.BINARY,
                     SqlFunctionCategory.STRING, "binary");
         }
-
-        public static final GunzipFunction INSTANCE = new GunzipFunction();
     }
 
     /** WRITELOG(format, arg) returns its argument 'arg' unchanged but also logs
@@ -263,8 +321,6 @@ public class CustomFunctions {
                     family(SqlTypeFamily.CHARACTER, SqlTypeFamily.ANY),
                     SqlFunctionCategory.USER_DEFINED_FUNCTION, "");
         }
-
-        public static final WriteLogFunction INSTANCE = new WriteLogFunction();
     }
 
     /** SEQUENCE(start, end) returns an array of integers from start to end (inclusive).
@@ -278,8 +334,6 @@ public class CustomFunctions {
                     family(SqlTypeFamily.INTEGER, SqlTypeFamily.INTEGER),
                     SqlFunctionCategory.USER_DEFINED_FUNCTION, "integer");
         }
-
-        public static final SequenceFunction INSTANCE = new SequenceFunction();
     }
 
     /** TO_INT(BINARY) returns an integers from a BINARY object which has less than 4 bytes.
@@ -292,8 +346,6 @@ public class CustomFunctions {
                     OperandTypes.BINARY,
                     SqlFunctionCategory.NUMERIC, "binary");
         }
-
-        public static final ToIntFunction INSTANCE = new ToIntFunction();
     }
 
     static class BlackboxFunction extends NonOptimizedFunction {
@@ -303,8 +355,6 @@ public class CustomFunctions {
                     OperandTypes.ANY,
                     SqlFunctionCategory.USER_DEFINED_FUNCTION, "");
         }
-
-        public static final BlackboxFunction INSTANCE = new BlackboxFunction();
     }
 
     // This function is non-deterministic in Calcite, since it does not
@@ -313,7 +363,6 @@ public class CustomFunctions {
         private ArrayExcept() {
             super(SqlLibraryOperators.ARRAY_EXCEPT, "array");
         }
-        public static final ArrayExcept INSTANCE = new ArrayExcept();
     }
 
     // This function is non-deterministic in Calcite, since it does not
@@ -322,7 +371,6 @@ public class CustomFunctions {
         private ArrayUnion() {
             super(SqlLibraryOperators.ARRAY_UNION, "array");
         }
-        public static final ArrayUnion INSTANCE = new ArrayUnion();
     }
 
     // This function is non-deterministic in Calcite, since it does not
@@ -331,7 +379,6 @@ public class CustomFunctions {
         private ArrayIntersect() {
             super(SqlLibraryOperators.ARRAY_INTERSECT, "array");
         }
-        public static final ArrayIntersect INSTANCE = new ArrayIntersect();
     }
 
     /**
