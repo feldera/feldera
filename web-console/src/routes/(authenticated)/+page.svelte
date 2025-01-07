@@ -1,7 +1,7 @@
 <script lang="ts">
   import { preloadCode } from '$app/navigation'
   import { base } from '$app/paths'
-  import { useIsMobile, useIsTablet } from '$lib/compositions/layout/useIsMobile.svelte'
+  import { useIsTablet } from '$lib/compositions/layout/useIsMobile.svelte'
   import FelderaLogomarkLight from '$assets/images/feldera-modern/Feldera Logomark Color Dark.svg?component'
   import FelderaLogomarkDark from '$assets/images/feldera-modern/Feldera Logomark Color Light.svg?component'
   import IconBookOpen from '$assets/icons/feldera-material-icons/book-open.svg?component'
@@ -27,7 +27,6 @@
   preloadCode(`${base}/pipelines/*`).then(() => preloadCode(`${base}/demos/`))
 
   let { data }: { data: PageData } = $props()
-  const isMobile = useIsMobile()
   const isTablet = useIsTablet()
 
   const featured = [
@@ -48,7 +47,7 @@
     }
   ]
 
-  const maxShownDemos = $derived(isMobile.current ? 3 : isTablet.current ? 5 : 9)
+  const maxShownDemos = $derived(isTablet.current ? 5 : 9)
 
   const pipelines = usePipelineList(data.preloaded)
   let welcomed = useLocalStorage('home/welcomed', false)
