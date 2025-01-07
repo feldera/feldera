@@ -35,6 +35,11 @@ backend-specific documentation for details:
 * [Azure Blob Storage options](https://docs.rs/object_store/latest/object_store/azure/enum.AzureConfigKey.html)
 * [Google Cloud Storage options](https://docs.rs/object_store/latest/object_store/gcp/enum.GoogleConfigKey.html)
 
+## Data type mapping
+
+See [source connector documentation](/connectors/sources/delta/#data-type-mapping) for DeltaLake to Feldera SQL
+type mapping.
+
 ## The small file problem and output buffer configuration
 
 By default a Feldera pipeline sends a batch of changes to the output transport

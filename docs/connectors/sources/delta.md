@@ -41,6 +41,28 @@ specific storage backends.  Refer to backend-specific documentation for details:
 * [Azure Blob Storage options](https://docs.rs/object_store/latest/object_store/azure/enum.AzureConfigKey.html)
 * [Google Cloud Storage options](https://docs.rs/object_store/latest/object_store/gcp/enum.GoogleConfigKey.html)
 
+## Data type mapping
+
+The following table lists supported Delta Lake data types and corresponding Feldera types.
+
+| Delta Lake type             | Feldera SQL type | Comment       |
+|-----------------------------|------------------|---------------|
+| `BIGINT`                    | `BIGINT`         |               |
+| `BINARY`                    | `VARBINARY`      |               |
+| `BOOLEAN`                   | `BOOLEAN`        |               |
+| `DATE`                      | `DATE`           |               |
+| `DOUBLE`                    | `DOUBLE`         |               |
+| `FLOAT`                     | `REAL`           |               |
+| `INT`                       | `INT`            |               |
+| `SMALLINT`                  | `SMALLINT`       |               |
+| `STRING`                    | `STRING`         |               |
+| `DECIMAL(P,S)`              | `DECIMAL(P,S)`   | The largest supported precision `P` is 28.|
+| `TIMESTAMP`, `TIMESTAMP_NTZ`| `TIMESTAMP`      | Timestamp values are rounded to the nearest millisecond.  Feldera currently does not support timestamps with time zones.  When using the `TIMESTAMP` DeltaLake type, time zone information gets discarded. |
+| `TINYINT`                   | `TINYINT`        |               |
+| `MAP<K,V>`                  | `MAP<K,V>`       |               |
+| `ARRAY<T>`                  | `T ARRAY`        |               |
+| `STRUCT`                    | `ROW` or [user-defined type](/sql/types#user-defined-types)| structs can be encoded as either anonymous `ROW` types or as named user-defined structs |
+| `VARIANT`                   | `VARIANT`        |               |
 
 ## Ingesting time series data from a Delta Lake
 
