@@ -1,4 +1,4 @@
-# Index of functions and SQL constructs supported in Feldera SQL
+# Index of Functions and SQL Constructs Supported in Feldera SQL
 
 * `%`: [operators](operators.md)
 * `*`: [operators](operators.md)

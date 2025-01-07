@@ -1,4 +1,4 @@
-# Binary (byte array) operations
+# Binary (Byte Array) Operations
 
 The `BINARY` and `VARBINARY` data types allows storage of binary strings.
 

@@ -1,4 +1,4 @@
-# Dynamically-typed values and JSON support
+# Dynamically-Typed Values and JSON Support
 
 ## The `VARIANT` type
 

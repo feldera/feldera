@@ -1,4 +1,4 @@
-# Decimal data type
+# Operations on Decimals
 
 A synonym for the ``decimal`` type is ``numeric``.
 

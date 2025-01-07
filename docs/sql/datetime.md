@@ -1,4 +1,4 @@
-# Date- and time-related operations
+# Date- and Time-Related Operations
 
 ## Time units
 
