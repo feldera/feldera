@@ -4,7 +4,9 @@ use std::fmt::Display;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize, ToSchema)]
+#[derive(
+    Clone, Copy, Debug, Eq, Ord, Hash, PartialEq, PartialOrd, Serialize, Deserialize, ToSchema,
+)]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct TenantId(
     #[cfg_attr(test, proptest(strategy = "crate::db::test::limited_uuid()"))] pub Uuid,

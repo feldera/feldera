@@ -3,17 +3,60 @@ use crate::db::storage::Storage;
 use crate::db::storage_postgres::StoragePostgres;
 use crate::db::types::pipeline::{ExtendedPipelineDescrMonitoring, PipelineId, PipelineStatus};
 use crate::db::types::tenant::TenantId;
+use crate::db_notifier::DbNotification;
 use crate::error::ManagerError;
 use crate::runner::error::RunnerError;
 use actix_web::{http::Method, web::Payload, HttpRequest, HttpResponse, HttpResponseBuilder};
+use crossbeam::sync::ShardedLock;
 use reqwest::StatusCode;
-use std::{collections::HashMap, sync::Arc, sync::LazyLock, time::Duration};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 use tokio::sync::Mutex;
+use tokio::time::Instant;
+
+pub(crate) struct CachedPipelineDescr {
+    pipeline: ExtendedPipelineDescrMonitoring,
+    instantiated: Instant,
+}
+
+impl CachedPipelineDescr {
+    const CACHE_TTL: Duration = Duration::from_secs(5);
+
+    fn deployment_status(&self) -> Result<(ExtendedPipelineDescrMonitoring, String), ManagerError> {
+        match self.pipeline.deployment_status {
+            PipelineStatus::Running | PipelineStatus::Paused => {}
+            _ => Err(RunnerError::PipelineNotRunningOrPaused {
+                pipeline_id: self.pipeline.id,
+                pipeline_name: self.pipeline.name.clone(),
+            })?,
+        };
+
+        Ok((
+            self.pipeline.clone(),
+            match &self.pipeline.deployment_location {
+                None => Err(RunnerError::PipelineMissingDeploymentLocation {
+                    pipeline_id: self.pipeline.id,
+                    pipeline_name: self.pipeline.name.clone(),
+                })?,
+                Some(location) => location.clone(),
+            },
+        ))
+    }
+}
+
+impl From<ExtendedPipelineDescrMonitoring> for CachedPipelineDescr {
+    fn from(pipeline: ExtendedPipelineDescrMonitoring) -> Self {
+        Self {
+            pipeline,
+            instantiated: Instant::now(),
+        }
+    }
+}
 
 /// Interface to interact through HTTP with the runner itself or the pipelines that it spawns.
 pub struct RunnerInteraction {
     config: ApiServerConfig,
     db: Arc<Mutex<StoragePostgres>>,
+    endpoint_cache: Arc<ShardedLock<HashMap<(TenantId, String), CachedPipelineDescr>>>,
 }
 
 impl RunnerInteraction {
@@ -28,7 +71,26 @@ impl RunnerInteraction {
     /// Creates the interaction interface.
     /// The database is used to retrieve pipelines.
     pub fn new(config: ApiServerConfig, db: Arc<Mutex<StoragePostgres>>) -> Self {
-        Self { config, db }
+        let endpoint_cache = Arc::new(ShardedLock::new(HashMap::new()));
+        {
+            let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+            tokio::spawn(crate::db_notifier::listen(db.clone(), tx));
+            let endpoint_cache = endpoint_cache.clone();
+            tokio::spawn(async move {
+                while let Some(DbNotification::Pipeline(_op, _tenant, _pipeline_id)) =
+                    rx.recv().await
+                {
+                    let mut cache = endpoint_cache.write().unwrap();
+                    cache.clear();
+                }
+            });
+        }
+
+        Self {
+            config,
+            db,
+            endpoint_cache,
+        }
     }
 
     /// Checks that the pipeline (1) exists and retrieves it, (2) is either running or paused,
@@ -37,32 +99,32 @@ impl RunnerInteraction {
         &self,
         tenant_id: TenantId,
         pipeline_name: &str,
-    ) -> Result<(ExtendedPipelineDescrMonitoring, String), ManagerError> {
-        let pipeline = self
-            .db
-            .lock()
-            .await
-            .get_pipeline_for_monitoring(tenant_id, pipeline_name)
-            .await?;
-
-        match pipeline.deployment_status {
-            PipelineStatus::Running | PipelineStatus::Paused => {}
-            _ => Err(RunnerError::PipelineNotRunningOrPaused {
-                pipeline_id: pipeline.id,
-                pipeline_name: pipeline.name.clone(),
-            })?,
-        };
-
-        Ok((
-            pipeline.clone(),
-            match pipeline.deployment_location {
-                None => Err(RunnerError::PipelineMissingDeploymentLocation {
-                    pipeline_id: pipeline.id,
-                    pipeline_name: pipeline.name.clone(),
-                })?,
-                Some(location) => location,
-            },
-        ))
+    ) -> Result<(ExtendedPipelineDescrMonitoring, String, bool), ManagerError> {
+        let cache = self.endpoint_cache.read().unwrap();
+        let entry = cache
+            .get(&(tenant_id, pipeline_name.to_string()))
+            .filter(|entry| entry.instantiated.elapsed() <= CachedPipelineDescr::CACHE_TTL);
+        match entry {
+            Some(entry) => {
+                let (desc, location) = entry.deployment_status()?;
+                Ok((desc, location, true))
+            }
+            None => {
+                drop(cache);
+                let pipeline = self
+                    .db
+                    .lock()
+                    .await
+                    .get_pipeline_for_monitoring(tenant_id, pipeline_name)
+                    .await?;
+                let cached_descriptor: CachedPipelineDescr = pipeline.into();
+                let deployment_status = cached_descriptor.deployment_status();
+                let mut cache = self.endpoint_cache.write().unwrap();
+                cache.insert((tenant_id, pipeline_name.to_string()), cached_descriptor);
+                let (desc, location) = deployment_status?;
+                Ok((desc, location, false))
+            }
+        }
     }
 
     /// Formats the URL to reach the pipeline.
@@ -212,23 +274,48 @@ impl RunnerInteraction {
         query_string: &str,
         timeout: Option<Duration>, // If no timeout is specified, a default timeout is used
     ) -> Result<HttpResponse, ManagerError> {
-        let (pipeline, location) = self.check_pipeline(tenant_id, pipeline_name).await?;
-        RunnerInteraction::forward_http_request_to_pipeline(
+        let (pipeline, location, cache_hit) = self.check_pipeline(tenant_id, pipeline_name).await?;
+        let r = RunnerInteraction::forward_http_request_to_pipeline(
             pipeline.id,
             Some(pipeline_name.to_string()),
             &location,
-            method,
+            method.clone(),
             endpoint,
             query_string,
             timeout,
         )
         .await
-        .map(|(_url, response)| response)
-        .map_err(|e| {
-            ManagerError::from(RunnerError::PipelineUnreachable {
-                original_error: e.to_string(),
-            })
-        })
+        .map(|(_url, response)| response);
+
+        match r {
+            Ok(response) => Ok(response),
+            Err(e) => {
+                if !cache_hit {
+                    Err(ManagerError::from(RunnerError::PipelineUnreachable {
+                        original_error: e.to_string(),
+                    }))
+                } else {
+                    // In case of a cache hit&error, we remove the cache entry and retry the request
+                    // as the cache entry might be outdated. The only time this solves a problem is
+                    // when a pipeline transitions to a different state (e.g. from running
+                    // to paused to running) and we have not yet processed the notification from the
+                    // database that evicts the cache (this scenario is highly unlikely not just because
+                    // we've probably processed the notification, but also because we have to do 3 pipeline
+                    // transitions within the cache ttl of 5 secs).
+                    let mut cache = self.endpoint_cache.write().unwrap();
+                    cache.remove(&(tenant_id, pipeline_name.to_string()));
+                    Box::pin(self.forward_http_request_to_pipeline_by_name(
+                        tenant_id,
+                        pipeline_name,
+                        method,
+                        endpoint,
+                        query_string,
+                        timeout,
+                    ))
+                    .await
+                }
+            }
+        }
     }
 
     /// Forwards HTTP request to the pipeline, with both the request
@@ -246,7 +333,8 @@ impl RunnerInteraction {
         client: &awc::Client,
         timeout: Option<Duration>, // If no timeout is specified, a default timeout is used
     ) -> Result<HttpResponse, ManagerError> {
-        let (pipeline, location) = self.check_pipeline(tenant_id, pipeline_name).await?;
+        let (pipeline, location, _cache_hit) =
+            self.check_pipeline(tenant_id, pipeline_name).await?;
 
         // Build new request to pipeline
         let url =
