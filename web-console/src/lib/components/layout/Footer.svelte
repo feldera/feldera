@@ -4,6 +4,7 @@
 
   import FelderaLogoBlackDetail from '$assets/images/feldera-modern/Feldera Logo Black Detail.svg?component'
   import FelderaLogoWhiteDetail from '$assets/images/feldera-modern/Feldera Logo White Detail.svg?component'
+  import BookADemo from '../other/BookADemo.svelte'
 
   const darkMode = useDarkMode()
 </script>
@@ -15,12 +16,11 @@
     <FelderaLogoBlackDetail class="h-8 pl-4 opacity-40"></FelderaLogoBlackDetail>
   {/if}
   <div class="flex flex-col gap-1 md:flex-row">
-    <a
-      href="https://calendly.com/d/cqnj-p63-mbq/feldera-demo"
-      target="_blank"
-      rel="noreferrer"
-      class="btn justify-start px-4 hover:bg-surface-50-950">Book a demo</a
-    >
+    <BookADemo class="justify-start px-4 hover:bg-surface-50-950">
+      <!-- svelte-ignore block_empty -->
+      {#snippet icon()}{/snippet}
+      Book a demo
+    </BookADemo>
     <a
       target="_blank"
       rel="noreferrer"

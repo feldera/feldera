@@ -41,6 +41,8 @@
   import DoubleClickInput from '$lib/components/input/DoubleClickInput.svelte'
   import { goto } from '$app/navigation'
   import NavigationExtras from '$lib/components/layout/NavigationExtras.svelte'
+  import BookADemo from '$lib/components/other/BookADemo.svelte'
+  import Tooltip from '$lib/components/common/Tooltip.svelte'
 
   let {
     preloaded,
@@ -284,12 +286,11 @@ example = "1.0"`
           <CreatePipelineButton class="max-w-64" btnClass="preset-filled-surface-50-950"
           ></CreatePipelineButton>
         </div>
+        <BookADemo class="btn-icon preset-filled-surface-50-950"></BookADemo>
+        <Tooltip class="bg-white-dark rounded text-surface-950-50">Book a demo</Tooltip>
       {/if}
     {/snippet}
   </AppHeader>
-  <!-- <div class="flex w-full justify-end gap-4 px-2 pb-4 md:px-8 lg:hidden">
-    {@render pipelineActions()}
-  </div> -->
   <PaneGroup direction="horizontal" class="!overflow-visible px-2 pb-4 md:pl-8 md:pr-8 xl:pl-4">
     <Pane
       defaultSize={15}
