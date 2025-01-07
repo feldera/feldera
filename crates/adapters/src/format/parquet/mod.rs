@@ -11,7 +11,7 @@ use arrow::datatypes::{
 use bytes::Bytes;
 use erased_serde::Serialize as ErasedSerialize;
 use feldera_types::config::ConnectorConfig;
-use feldera_types::serde_with_context::serde_config::{DecimalFormat, VariantFormat};
+use feldera_types::serde_with_context::serde_config::{BinaryFormat, DecimalFormat, VariantFormat};
 use feldera_types::serde_with_context::{DateFormat, SqlSerdeConfig, TimeFormat, TimestampFormat};
 use parquet::arrow::ArrowWriter;
 use parquet::file::properties::WriterProperties;
@@ -45,6 +45,7 @@ pub const fn arrow_serde_config() -> &'static SqlSerdeConfig {
         date_format: DateFormat::String("%Y-%m-%d"),
         decimal_format: DecimalFormat::String,
         variant_format: VariantFormat::JsonString,
+        binary_format: BinaryFormat::Array,
     }
 }
 

@@ -4730,6 +4730,7 @@ dependencies = [
 name = "feldera-sqllib"
 version = "0.33.0"
 dependencies = [
+ "base64 0.22.1",
  "chrono",
  "dbsp",
  "feldera-size-of",

@@ -579,7 +579,6 @@ deserialize_table_record!(DatabricksPeople["DatabricksPeople", 8] {
     PartialOrd,
     Ord,
     serde::Serialize,
-    serde::Deserialize,
     Clone,
     Hash,
     SizeOf,

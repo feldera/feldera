@@ -13,7 +13,7 @@ use feldera_types::{
     format::avro::{AvroParserConfig, AvroUpdateFormat},
     program_schema::Relation,
     serde_with_context::{
-        serde_config::{DecimalFormat, VariantFormat},
+        serde_config::{BinaryFormat, DecimalFormat, VariantFormat},
         DateFormat, SqlSerdeConfig, TimeFormat, TimestampFormat,
     },
 };
@@ -44,6 +44,7 @@ pub const fn avro_de_config() -> &'static SqlSerdeConfig {
         date_format: DateFormat::DaysSinceEpoch,
         decimal_format: DecimalFormat::String,
         variant_format: VariantFormat::JsonString,
+        binary_format: BinaryFormat::Array,
     }
 }
 
