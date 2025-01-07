@@ -1,13 +1,16 @@
 //! byte arrays (binary objects in SQL)
 
 use crate::{some_function1, some_function2, some_function3, some_function4};
+use base64::prelude::*;
 use dbsp::NumEntries;
-use feldera_types::{deserialize_without_context, serialize_without_context};
+use feldera_types::serde_with_context::{
+    serde_config::BinaryFormat, DeserializeWithContext, SerializeWithContext, SqlSerdeConfig,
+};
 use flate2::read::GzDecoder;
 use hex::ToHex;
-use serde::{Deserialize, Serialize};
+use serde::{de::Error as _, Deserialize, Deserializer, Serialize, Serializer};
 use size_of::SizeOf;
-use std::{cmp::min, fmt::Debug, io::Read};
+use std::{borrow::Cow, cmp::min, fmt::Debug, io::Read};
 
 /// A ByteArray object, representing a SQL value with type
 /// `BINARY` or `VARBINARY`.
@@ -21,7 +24,6 @@ use std::{cmp::min, fmt::Debug, io::Read};
     Ord,
     Hash,
     Serialize,
-    Deserialize,
     SizeOf,
     rkyv::Archive,
     rkyv::Serialize,
@@ -34,8 +36,45 @@ pub struct ByteArray {
     data: Vec<u8>,
 }
 
-serialize_without_context!(ByteArray);
-deserialize_without_context!(ByteArray);
+impl SerializeWithContext<SqlSerdeConfig> for ByteArray {
+    fn serialize_with_context<S>(
+        &self,
+        serializer: S,
+        context: &SqlSerdeConfig,
+    ) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match context.binary_format {
+            BinaryFormat::Array => self.data.serialize(serializer),
+            BinaryFormat::Base64 => serializer.serialize_str(&BASE64_STANDARD.encode(&self.data)),
+        }
+    }
+}
+
+impl<'de> DeserializeWithContext<'de, SqlSerdeConfig> for ByteArray {
+    fn deserialize_with_context<D>(
+        deserializer: D,
+        config: &'de SqlSerdeConfig,
+    ) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        match config.binary_format {
+            BinaryFormat::Array => {
+                let data = Vec::<u8>::deserialize(deserializer)?;
+                Ok(Self { data })
+            }
+            BinaryFormat::Base64 => {
+                let str: Cow<'de, str> = Deserialize::deserialize(deserializer)?;
+                let data = BASE64_STANDARD
+                    .decode(&*str)
+                    .map_err(|e| D::Error::custom(format!("invalid base64 string: {e}")))?;
+                Ok(Self { data })
+            }
+        }
+    }
+}
 
 #[doc(hidden)]
 impl NumEntries for &ByteArray {

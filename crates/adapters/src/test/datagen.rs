@@ -24,7 +24,6 @@ use std::{env, thread};
     PartialOrd,
     Ord,
     serde::Serialize,
-    serde::Deserialize,
     Clone,
     Hash,
     SizeOf,

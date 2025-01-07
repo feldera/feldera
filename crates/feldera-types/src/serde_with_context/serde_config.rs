@@ -101,6 +101,21 @@ impl Default for VariantFormat {
     }
 }
 
+/// Representation of the SQL `BINARY` and `VARBINARY` types.
+#[derive(Clone, Debug)]
+pub enum BinaryFormat {
+    /// Serialize as array of bytes.
+    Array,
+    /// Serialize as base64-encoded string.
+    Base64,
+}
+
+impl Default for BinaryFormat {
+    fn default() -> Self {
+        Self::Array
+    }
+}
+
 /// Deserializer configuration for parsing SQL records.
 #[derive(Clone, Default, Debug)]
 pub struct SqlSerdeConfig {
@@ -114,6 +129,9 @@ pub struct SqlSerdeConfig {
     pub decimal_format: DecimalFormat,
     /// `VARIANT` format
     pub variant_format: VariantFormat,
+    /// 'VARBINARY', 'BINARY' format.
+    // TODO: do we want separate settings for binary and varbinary.
+    pub binary_format: BinaryFormat,
 }
 
 impl SqlSerdeConfig {
@@ -143,6 +161,11 @@ impl SqlSerdeConfig {
         self.variant_format = variant_format;
         self
     }
+
+    pub fn with_binary_format(mut self, binary_format: BinaryFormat) -> Self {
+        self.binary_format = binary_format;
+        self
+    }
 }
 
 impl From<JsonFlavor> for SqlSerdeConfig {
@@ -160,6 +183,7 @@ impl From<JsonFlavor> for SqlSerdeConfig {
                 timestamp_format: TimestampFormat::MillisSinceEpoch,
                 decimal_format: DecimalFormat::String,
                 variant_format: VariantFormat::JsonString,
+                binary_format: BinaryFormat::Array,
             },
             JsonFlavor::DebeziumMySql => Self {
                 time_format: TimeFormat::Micros,
@@ -167,6 +191,7 @@ impl From<JsonFlavor> for SqlSerdeConfig {
                 timestamp_format: TimestampFormat::String("%Y-%m-%dT%H:%M:%S%Z"),
                 decimal_format: DecimalFormat::String,
                 variant_format: VariantFormat::JsonString,
+                binary_format: BinaryFormat::Array,
             },
             JsonFlavor::DebeziumPostgres => Self {
                 time_format: TimeFormat::Micros,
@@ -174,6 +199,7 @@ impl From<JsonFlavor> for SqlSerdeConfig {
                 timestamp_format: TimestampFormat::MillisSinceEpoch,
                 decimal_format: DecimalFormat::String,
                 variant_format: VariantFormat::JsonString,
+                binary_format: BinaryFormat::Array,
             },
             JsonFlavor::Snowflake => Self {
                 time_format: TimeFormat::String("%H:%M:%S%.f"),
@@ -181,6 +207,7 @@ impl From<JsonFlavor> for SqlSerdeConfig {
                 timestamp_format: TimestampFormat::String("%Y-%m-%dT%H:%M:%S%.f%:z"),
                 decimal_format: DecimalFormat::String,
                 variant_format: VariantFormat::JsonString,
+                binary_format: BinaryFormat::Array,
             },
             JsonFlavor::Pandas => Self {
                 time_format: TimeFormat::String("%H:%M:%S%.f"),
@@ -188,6 +215,7 @@ impl From<JsonFlavor> for SqlSerdeConfig {
                 timestamp_format: TimestampFormat::MillisSinceEpoch,
                 decimal_format: DecimalFormat::String,
                 variant_format: VariantFormat::JsonString,
+                binary_format: BinaryFormat::Array,
             },
             JsonFlavor::ParquetConverter => Self {
                 time_format: TimeFormat::Nanos,
@@ -200,6 +228,7 @@ impl From<JsonFlavor> for SqlSerdeConfig {
                 timestamp_format: TimestampFormat::String("%Y-%m-%d %H:%M:%S %:z"), // 2023-11-04 15:33:47 +00:00
                 decimal_format: DecimalFormat::String,
                 variant_format: VariantFormat::JsonString,
+                binary_format: BinaryFormat::Base64,
             },
         }
     }
