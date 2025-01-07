@@ -34,6 +34,12 @@ public class RegressionTests extends SqlIoTest {
     }
 
     @Test
+    public void issue3259() {
+        this.statementsFailingInCompilation("create table t0(c0 decimal(0, 0));",
+                "DECIMAL precision 0 must be between 1 and 28");
+    }
+
+    @Test
     public void issue3114() {
         this.compileRustTestCase("""
                 CREATE TABLE T(x integer);

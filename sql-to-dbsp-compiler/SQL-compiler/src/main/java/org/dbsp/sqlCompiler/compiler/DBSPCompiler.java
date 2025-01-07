@@ -383,7 +383,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
 
     void printMessages(@Nullable SqlParserPos pos) {
         System.err.println(this.messages);
-        if (pos != null) {
+        if (pos != null && pos != SqlParserPos.ZERO) {
             System.err.println("While compiling");
             System.err.println(this.sources.getFragment(new SourcePositionRange(pos), true));
         }
@@ -460,6 +460,8 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
                 } else {
                     this.messages.reportError(e);
                 }
+            } catch (CalciteException e) {
+                this.messages.reportError(e);
             } catch (Throwable e) {
                 this.messages.reportError(e);
                 this.printMessages(SqlParserPos.ZERO);
