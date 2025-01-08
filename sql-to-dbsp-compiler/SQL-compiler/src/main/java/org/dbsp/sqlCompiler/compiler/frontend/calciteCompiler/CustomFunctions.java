@@ -20,6 +20,7 @@ import org.apache.calcite.sql.type.SqlOperandTypeChecker;
 import org.apache.calcite.sql.type.SqlReturnTypeInference;
 import org.apache.calcite.sql.type.SqlSingleOperandTypeChecker;
 import org.apache.calcite.sql.type.SqlTypeFamily;
+import org.apache.calcite.sql.type.SqlTypeName;
 import org.apache.calcite.sql.type.SqlTypeTransforms;
 import org.apache.calcite.sql.type.SqlTypeUtil;
 import org.apache.calcite.util.Util;
@@ -33,9 +34,11 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
 
 import static java.util.Objects.requireNonNull;
 import static org.apache.calcite.sql.type.OperandTypes.family;
+import static org.apache.calcite.sql.type.OperandTypes.sequence;
 import static org.apache.calcite.sql.type.ReturnTypes.ARG1;
 import static org.apache.calcite.util.Static.RESOURCE;
 
@@ -190,7 +193,8 @@ public class CustomFunctions {
         }
     }
 
-    /** Checks that two operands have the exact same type */
+    /** Checks that two operands have the "same" type.
+     * Two string types are considered "same". */
     public static class OperandsHaveSameType implements SqlSingleOperandTypeChecker {
         @Override
         public boolean checkSingleOperandType(
@@ -204,6 +208,48 @@ public class CustomFunctions {
             return SqlOperandCountRanges.of(2);
         }
 
+        boolean sameType(RelDataType first, RelDataType second) {
+            SqlTypeName firstName = first.getSqlTypeName();
+            SqlTypeName secondName = second.getSqlTypeName();
+            if (SqlTypeName.CHAR_TYPES.contains(firstName)) {
+                return SqlTypeName.CHAR_TYPES.contains(secondName);
+            } else if (firstName == SqlTypeName.ARRAY) {
+                if (secondName != SqlTypeName.ARRAY)
+                    return false;
+                return this.sameType(
+                        Objects.requireNonNull(first.getComponentType()),
+                        Objects.requireNonNull(second.getComponentType()));
+            } else if (firstName == SqlTypeName.MAP) {
+                if (secondName != SqlTypeName.MAP)
+                    return false;
+                return this.sameType(
+                        Objects.requireNonNull(first.getKeyType()),
+                        Objects.requireNonNull(second.getKeyType())) &&
+                    this.sameType(
+                            Objects.requireNonNull(first.getValueType()),
+                            Objects.requireNonNull(second.getValueType()));
+            } else if (first.isStruct()) {
+                if (!second.isStruct()) {
+                    return false;
+                }
+                if (first.getFieldCount() != second.getFieldCount()) {
+                    return false;
+                }
+                List<RelDataTypeField> fields1 = first.getFieldList();
+                List<RelDataTypeField> fields2 = second.getFieldList();
+                for (int i = 0; i < fields1.size(); ++i) {
+                    if (!this.sameType(
+                            fields1.get(i).getType(),
+                            fields2.get(i).getType())) {
+                        return false;
+                    }
+                }
+                return true;
+            } else {
+                return SqlTypeUtil.sameNamedType(first, second);
+            }
+        }
+
         @Override
         public boolean checkOperandTypes(SqlCallBinding callBinding, boolean throwOnFailure) {
             int operands = callBinding.getOperandCount();
@@ -212,7 +258,8 @@ public class CustomFunctions {
             for (int i : operandList) {
                 RelDataType type = callBinding.getOperandType(i);
                 if (firstType != null) {
-                    if (!SqlTypeUtil.sameNamedType(firstType, type)) {
+                    boolean same = this.sameType(firstType, type);
+                    if (!same) {
                         if (!throwOnFailure) {
                             return false;
                         }
@@ -239,7 +286,6 @@ public class CustomFunctions {
             super("ARRAYS_OVERLAP",
                     ReturnTypes.BOOLEAN_NULLABLE,
                     SAME_TYPE.and(OperandTypes.family(SqlTypeFamily.ARRAY, SqlTypeFamily.ARRAY)),
-                            // .and(new NotNullOperandTypeChecker(2, true)),
                     SqlFunctionCategory.USER_DEFINED_FUNCTION,
                     "array");
         }
