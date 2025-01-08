@@ -40,6 +40,27 @@ public class RegressionTests extends SqlIoTest {
     }
 
     @Test
+    public void issue3247() {
+        this.getCCS("""
+                CREATE TABLE t3(c0 CHAR(21));
+                CREATE TABLE t9(c0 VARCHAR);
+                CREATE VIEW v6 AS (SELECT * FROM t3 NATURAL JOIN t9);""");
+    }
+
+    @Test
+    public void recursionTest() {
+        this.getCCS("""
+                CREATE TABLE B(id VARCHAR);
+                CREATE VIEW V1 AS SELECT id, 'x' as y FROM B;
+                CREATE VIEW V2 AS SELECT id, 'xx' as y FROM B;
+                CREATE VIEW U AS SELECT * FROM V1 UNION ALL SELECT * FROM V2;
+                
+                DECLARE RECURSIVE VIEW e(id TEXT, y VARCHAR(2) NOT NULL);
+                CREATE VIEW e AS
+                SELECT * FROM U;""");
+    }
+
+    @Test
     public void issue3256() {
         this.compileRustTestCase("""
                 CREATE TABLE t0(c0 int);
@@ -1497,10 +1518,10 @@ public class RegressionTests extends SqlIoTest {
     @Test
     public void issue3199() {
         this.statementsFailingInCompilation("""
-                CREATE TABLE t1(c0 VARCHAR);
+                CREATE TABLE t1(c0 VARBINARY);
                 CREATE TABLE t2(c0 DECIMAL(19, 9));
                 CREATE VIEW V AS (SELECT * FROM t1 NATURAL JOIN t2);""",
-                "Implicit conversion between VARCHAR and DECIMAL not supported");
+                "Column 'c0' matched using NATURAL keyword or USING clause has incompatible types");
         this.getCCS("""
                 CREATE TABLE t1(c0 INTEGER);
                 CREATE TABLE t2(c0 DECIMAL(19, 9));

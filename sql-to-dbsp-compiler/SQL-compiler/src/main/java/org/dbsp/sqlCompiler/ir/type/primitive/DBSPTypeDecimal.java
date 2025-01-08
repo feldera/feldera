@@ -34,6 +34,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.IsNumericType;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 
+import javax.annotation.Nullable;
 import java.math.BigDecimal;
 import java.util.Objects;
 
@@ -136,6 +137,12 @@ public class DBSPTypeDecimal extends DBSPTypeBaseType
             return false;
         DBSPTypeDecimal other = type.to(DBSPTypeDecimal.class);
         return this.scale == other.scale && this.precision == other.precision;
+    }
+
+    @Nullable
+    @Override
+    public String asSqlString() {
+        return "DECIMAL(" + this.precision + ", " + this.scale + ")";
     }
 
     @Override

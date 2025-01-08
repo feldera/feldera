@@ -31,6 +31,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.IIndentStream;
 
+import javax.annotation.Nullable;
 import java.nio.charset.StandardCharsets;
 
 import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.STRING;
@@ -115,5 +116,18 @@ public class DBSPTypeString extends DBSPTypeBaseType implements IHasPrecision {
     @Override
     public int getPrecision() {
         return this.precision;
+    }
+
+    @Nullable
+    @Override
+    public String asSqlString() {
+        String result;
+        if (this.fixed)
+            result = "CHAR";
+        else
+            result = "VARCHAR";
+        if (this.precision != UNLIMITED_PRECISION)
+            result += "(" + this.precision + ")";
+        return result;
     }
 }
