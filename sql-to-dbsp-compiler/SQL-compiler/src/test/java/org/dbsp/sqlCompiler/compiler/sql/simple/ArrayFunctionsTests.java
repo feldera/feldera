@@ -814,6 +814,15 @@ public class ArrayFunctionsTests extends SqlIoTest {
     }
 
     @Test
+    public void issue3272() {
+        this.q("""
+                SELECT ARRAYS_OVERLAP(array['UC', 'uc', 'f'], array['f']);
+                 result
+                --------
+                 true""");
+    }
+
+    @Test
     public void testArraysOverlap() {
         this.qs("""
                 SELECT ARRAYS_OVERLAP(null, null);
