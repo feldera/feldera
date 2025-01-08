@@ -13,7 +13,7 @@ if true; then
     # This is the standard behavior
     CALCITE_REPO="https://github.com/apache/calcite.git"
     CALCITE_BRANCH="main"
-    CALCITE_NEXT_COMMIT="129e5cc89cafa0d55e3d4c1925ca7cafee888bdd"
+    CALCITE_NEXT_COMMIT="c1b9bdcd8283f3698b757d9a91412324b194123c"
 else
     # Switch to this script when testing a branch in mihaibudiu's fork that
     # hasn't been merged yet
