@@ -84,12 +84,14 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimeLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimestampLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU32Literal;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVecExpression;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPUuidLiteral;
 import org.dbsp.sqlCompiler.ir.path.DBSPPath;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.IsIntervalType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRef;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBaseType;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeUuid;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVariant;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeMap;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeResult;
@@ -128,6 +130,7 @@ import java.math.BigDecimal;
 import java.nio.charset.Charset;
 import java.util.List;
 import java.util.Objects;
+import java.util.UUID;
 
 import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.NULL;
 import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.USER;
@@ -262,6 +265,8 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                         literal.getValueAs(TimeString.class)));
             } else if (type.is(DBSPTypeBinary.class)) {
                 return new DBSPBinaryLiteral(node, type, literal.getValueAs(byte[].class));
+            } else if (type.is(DBSPTypeUuid.class)) {
+                return new DBSPUuidLiteral(node, type, literal.getValueAs(UUID.class));
             }
         } catch (BaseCompilerException ex) {
             throw ex;

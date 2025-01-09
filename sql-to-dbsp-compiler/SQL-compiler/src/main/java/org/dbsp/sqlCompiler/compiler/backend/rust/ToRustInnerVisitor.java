@@ -106,6 +106,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU64Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPUSizeLiteral;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariantExpression;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPUuidLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVariantNullLiteral;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVecExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
@@ -311,6 +312,32 @@ public class ToRustInnerVisitor extends InnerVisitor {
                 .append(Long.toString(Objects.requireNonNull(literal.value)))
                 .append("/*")
                 .append(Objects.requireNonNull(literal.getTimestampString()).toString())
+                .append("*/")
+                .append(")");
+        if (literal.mayBeNull())
+            this.builder.append(")");
+        return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPUuidLiteral literal) {
+        if (literal.isNull())
+            return this.doNull(literal);
+        if (literal.mayBeNull())
+            this.builder.append("Some(");
+        this.builder.append("Uuid::from_bytes([");
+        byte[] data = literal.getByteArray();
+        assert data != null;
+        assert literal.value != null;
+        boolean first = true;
+        for (byte b: data) {
+            if (!first)
+                this.builder.append(",");
+            first = false;
+            this.builder.append(Byte.toUnsignedInt(b));
+        }
+        this.builder.append("]/*")
+                .append(Objects.requireNonNull(literal.value.toString()))
                 .append("*/")
                 .append(")");
         if (literal.mayBeNull())

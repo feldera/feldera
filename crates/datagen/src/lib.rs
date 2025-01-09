@@ -799,6 +799,7 @@ impl<'a> RecordGenerator<'a> {
     fn typ_to_default(typ: SqlType) -> Value {
         match typ {
             SqlType::Boolean => Value::Bool(false),
+            SqlType::Uuid => Value::String("00000000-0000-0000-0000-000000000000".to_string()),
             SqlType::TinyInt
             | SqlType::SmallInt
             | SqlType::Int
@@ -863,6 +864,7 @@ impl<'a> RecordGenerator<'a> {
     ) -> AnyResult<()> {
         match field.columntype.typ {
             SqlType::Boolean => self.generate_boolean(field, settings, incr, rng, obj),
+            SqlType::Uuid => self.generate_uuid(field, settings, incr, rng, obj),
             SqlType::TinyInt => self.generate_integer::<i8>(field, settings, incr, rng, obj),
             SqlType::SmallInt => self.generate_integer::<i16>(field, settings, incr, rng, obj),
             SqlType::Int => self.generate_integer::<i32>(field, settings, incr, rng, obj),
@@ -1785,6 +1787,52 @@ impl<'a> RecordGenerator<'a> {
                 let zipf = Zipf::new(2, settings.e as f64).unwrap();
                 let x = rng.sample(zipf) as usize;
                 Value::Bool(x == 1)
+            }
+            (DatagenStrategy::Zipf, Some(values)) => {
+                let zipf = Zipf::new(values.len() as u64, settings.e as f64).unwrap();
+                let idx = rng.sample(zipf) as usize - 1;
+                values[idx].clone()
+            }
+            (m, _) => {
+                return Err(anyhow!(
+                    "Invalid strategy `{m:?}` for field: `{:?}` with type {:?}",
+                    field.name,
+                    field.columntype.typ
+                ));
+            }
+        };
+
+        Ok(())
+    }
+
+    fn generate_uuid(
+        &self,
+        field: &Field,
+        settings: &RngFieldSettings,
+        _incr: usize,
+        rng: &mut SmallRng,
+        obj: &mut Value,
+    ) -> AnyResult<()> {
+        if let Some(nl) = Self::maybe_null(field, settings, rng) {
+            *obj = nl;
+            return Ok(());
+        }
+
+        *obj = match (&settings.strategy, &settings.values) {
+            (DatagenStrategy::Increment, None) => {
+                unimplemented!()
+            }
+            (DatagenStrategy::Increment, Some(_values)) => {
+                unimplemented!()
+            }
+            (DatagenStrategy::Uniform, None) => {
+                unimplemented!()
+            }
+            (DatagenStrategy::Uniform, Some(values)) => {
+                values[rand::random::<usize>() % values.len()].clone()
+            }
+            (DatagenStrategy::Zipf, None) => {
+                unimplemented!()
             }
             (DatagenStrategy::Zipf, Some(values)) => {
                 let zipf = Zipf::new(values.len() as u64, settings.e as f64).unwrap();

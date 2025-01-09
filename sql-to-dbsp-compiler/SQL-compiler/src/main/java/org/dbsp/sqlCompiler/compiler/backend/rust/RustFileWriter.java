@@ -151,6 +151,7 @@ public class RustFileWriter {
                     string::*,
                     operators::*,
                     aggregates::*,
+                    uuid::*,
                     variant::*,
                 };
 

@@ -37,6 +37,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeUuid;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVariant;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
@@ -278,6 +279,8 @@ public class TypeCompiler implements ICompilerComponent {
                     return new DBSPTypeDate(node, nullable);
                 case TIME:
                     return new DBSPTypeTime(node, nullable);
+                case UUID:
+                    return new DBSPTypeUuid(node, nullable);
                 case VARIANT:
                     return new DBSPTypeVariant(node, nullable);
                 default:

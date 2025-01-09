@@ -248,6 +248,12 @@ curl -i -X PUT http://localhost:8080/v0/pipelines/udf_api_test \
 
 ### SQL type representation in Rust
 
+:::caution Experimental feature
+
+The type representing SQL data structures may change in the future.
+
+:::
+
 The following table shows the Rust representation of standard SQL data
 types.  A nullable SQL type is represented by the corresponding rust
 `Option<>` type.  Notice that some of these types are not standard
@@ -275,6 +281,7 @@ crate, which is part of the Feldera SQL runtime.
 | `DATE`                   | `feldera_sqllib::Date`                  |
 | `T ARRAY`                | `Vec<T>`                                |
 | `MAP<K, V>`              | `BTreeMap<K, V>`                        |
+| `UUID`                   | `feldera_sqllib::Uuid`                  |
 | `VARIANT`                | `feldera_sqllib::Variant`               |
 
 Multiple SQL types may be represented by the same Rust type.  For

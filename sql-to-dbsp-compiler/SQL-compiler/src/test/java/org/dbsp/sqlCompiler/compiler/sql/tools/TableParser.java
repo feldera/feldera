@@ -24,20 +24,16 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimeLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimestampLiteral;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVecExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPUuidLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeVec;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBinary;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDate;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDouble;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMillisInterval;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMonthsInterval;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeReal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTime;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
@@ -52,6 +48,7 @@ import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
+import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -242,120 +239,132 @@ public class TableParser {
             if (!fieldType.mayBeNull)
                 throw new RuntimeException("Null value in non-nullable column " + fieldType);
             result = fieldType.nullValue();
-        } else if (fieldType.is(DBSPTypeDouble.class)) {
-            double value = Double.parseDouble(trimmed);
-            result = new DBSPDoubleLiteral(value, fieldType.mayBeNull);
-        } else if (fieldType.is(DBSPTypeReal.class)) {
-            float value = Float.parseFloat(trimmed);
-            result = new DBSPRealLiteral(value, fieldType.mayBeNull);
-        } else if (fieldType.is(DBSPTypeDecimal.class)) {
-            BigDecimal value = new BigDecimal(trimmed);
-            result = new DBSPDecimalLiteral(fieldType, value);
-        } else if (fieldType.is(DBSPTypeTimestamp.class)) {
-            result = convertTimestamp(trimmed, fieldType.mayBeNull);
-        } else if (fieldType.is(DBSPTypeDate.class)) {
-            result = parseDate(trimmed, fieldType.mayBeNull);
-        } else if (fieldType.is(DBSPTypeTime.class)) {
-            result = parseTime(trimmed, fieldType.mayBeNull);
-        } else if (fieldType.is(DBSPTypeInteger.class)) {
-            DBSPTypeInteger intType = fieldType.to(DBSPTypeInteger.class);
-            result = switch (intType.getWidth()) {
-                case 8 -> new DBSPI8Literal(Byte.parseByte(trimmed), fieldType.mayBeNull);
-                case 16 -> new DBSPI16Literal(Short.parseShort(trimmed), fieldType.mayBeNull);
-                case 32 -> new DBSPI32Literal(Integer.parseInt(trimmed), fieldType.mayBeNull);
-                case 64 -> new DBSPI64Literal(Long.parseLong(trimmed), fieldType.mayBeNull);
-                default -> throw new UnimplementedException(
-                        "Support for SQL integer type of size " + intType.getWidth() +
-                        " not yet implemented", intType);
-            };
-        } else if (fieldType.is(DBSPTypeMillisInterval.class)) {
-            long value = shortIntervalToMilliseconds(trimmed);
-            result = new DBSPIntervalMillisLiteral(
-                    fieldType.to(DBSPTypeMillisInterval.class).units, value, fieldType.mayBeNull);
-        } else if (fieldType.is(DBSPTypeMonthsInterval.class)) {
-            int months = longIntervalToMonths(trimmed);
-            result = new DBSPIntervalMonthsLiteral(
-                    fieldType.to(DBSPTypeMonthsInterval.class).units, months, fieldType.mayBeNull);
-        } else if (fieldType.is(DBSPTypeString.class)) {
-            // If there is no space in front of the string, we expect a NULL.
-            // This is how we distinguish empty strings from nulls.
-            if (!data.startsWith(" ")) {
-                if (data.startsWith("NULL"))
-                    result = DBSPLiteral.none(fieldType);
-                else
-                    throw new RuntimeException("Expected NULL or a space: " +
-                            Utilities.singleQuote(data));
-            } else {
-                // replace \\n with \n, otherwise we can't represent it
-                data = data.substring(1);
-                data = data.replace("\\n", "\n");
-                DBSPTypeString type = fieldType.to(DBSPTypeString.class);
-                if (!type.fixed)
-                    data = Utilities.trimRight(data);
-                result = new DBSPStringLiteral(CalciteObject.EMPTY, fieldType, data, StandardCharsets.UTF_8);
-            }
-        } else if (fieldType.is(DBSPTypeBool.class)) {
-            boolean isTrue = trimmed.equalsIgnoreCase("t") || trimmed.equalsIgnoreCase("true");
-            boolean isFalse = trimmed.equalsIgnoreCase("f") || trimmed.equalsIgnoreCase("false");
-            if (!isTrue && !isFalse)
-                throw new RuntimeException("Cannot parse boolean value " + Utilities.singleQuote(trimmed));
-            result = new DBSPBoolLiteral(CalciteObject.EMPTY, fieldType, isTrue);
-        } else if (fieldType.is(DBSPTypeVec.class)) {
-            DBSPTypeVec vec = fieldType.to(DBSPTypeVec.class);
-            // TODO: this does not handle nested arrays
-            if (trimmed.equals("NULL")) {
-                result = new DBSPVecExpression(fieldType, true);
-            } else {
-                if (!trimmed.startsWith("{") || !trimmed.endsWith("}"))
-                    throw new UnimplementedException("Expected array constant to be bracketed: " + trimmed);
-                trimmed = trimmed.substring(1, trimmed.length() - 1);
-                if (!trimmed.isEmpty()) {
-                    // an empty string split still returns an empty string
-                    String[] parts = trimmed.split(",");
-                    DBSPExpression[] fields;
-                    fields = Linq.map(
-                            parts, p -> parseValue(vec.getElementType(), p), DBSPExpression.class);
-                    result = new DBSPVecExpression(fieldType.mayBeNull, fields);
-                } else {
-                    // empty vector
-                    result = new DBSPVecExpression(vec, false);
-                }
-            }
-        } else if (fieldType.is(DBSPTypeBinary.class)) {
-            if (!data.startsWith(" ")) {
-                if (data.equals("NULL"))
-                    result = DBSPLiteral.none(fieldType);
-                else
-                    throw new RuntimeException("Expected NULL or a space: " +
-                            Utilities.singleQuote(data));
-            } else {
-                data = data.trim();
-                byte[] bytes = ConversionUtil.toByteArrayFromString(data, 16);
-                result = new DBSPBinaryLiteral(CalciteObject.EMPTY, fieldType, bytes);
-            }
-        } else if (fieldType.is(DBSPTypeTuple.class)) {
-            // TODO: this does not handle nested tuples, or tuples with arrays
-            DBSPTypeTuple tuple = fieldType.to(DBSPTypeTuple.class);
-            if (trimmed.equals("NULL")) {
-                result = tuple.none();
-            } else {
-                if (!trimmed.startsWith("{") || !trimmed.endsWith("}"))
-                    throw new UnimplementedException("Expected tuple constant to be bracketed: " + trimmed);
-                trimmed = trimmed.substring(1, trimmed.length() - 1);
-                assert !trimmed.isEmpty();
-
-                String[] parts = trimmed.split(",");
-                assert parts.length == tuple.size() :
-                        "Expected " + tuple.size() + " fields for tuple, got " + parts.length;
-                List<DBSPExpression> fields = new ArrayList<>(tuple.size());
-                int index = 0;
-                for (DBSPType ft: tuple.tupFields)
-                    fields.add(parseValue(ft, parts[index++]));
-                result = new DBSPTupleExpression(CalciteObject.EMPTY, tuple, fields);
-            }
         } else {
-            throw new UnimplementedException("Support for parsing fields of type " + fieldType + " not yet implemented",
-                    fieldType);
+            result = switch (fieldType.code) {
+                case DOUBLE -> {
+                    double value = Double.parseDouble(trimmed);
+                    yield new DBSPDoubleLiteral(value, fieldType.mayBeNull);
+                }
+                case REAL -> {
+                    float value = Float.parseFloat(trimmed);
+                    yield new DBSPRealLiteral(value, fieldType.mayBeNull);
+                }
+                case DECIMAL -> {
+                    BigDecimal value = new BigDecimal(trimmed);
+                    yield new DBSPDecimalLiteral(fieldType, value);
+                }
+                case TIMESTAMP -> convertTimestamp(trimmed, fieldType.mayBeNull);
+                case DATE -> parseDate(trimmed, fieldType.mayBeNull);
+                case TIME -> parseTime(trimmed, fieldType.mayBeNull);
+                case INT8 -> new DBSPI8Literal(Byte.parseByte(trimmed), fieldType.mayBeNull);
+                case INT16 -> new DBSPI16Literal(Short.parseShort(trimmed), fieldType.mayBeNull);
+                case INT32 -> new DBSPI32Literal(Integer.parseInt(trimmed), fieldType.mayBeNull);
+                case INT64 -> new DBSPI64Literal(Long.parseLong(trimmed), fieldType.mayBeNull);
+                case INTERVAL_SHORT -> {
+                    long value = shortIntervalToMilliseconds(trimmed);
+                    yield new DBSPIntervalMillisLiteral(fieldType.to(DBSPTypeMillisInterval.class).units, value, fieldType.mayBeNull);
+                }
+                case INTERVAL_LONG -> {
+                    int months = longIntervalToMonths(trimmed);
+                    yield new DBSPIntervalMonthsLiteral(fieldType.to(DBSPTypeMonthsInterval.class).units, months);
+                }
+                case STRING -> {
+                    // If there is no space in front of the string, we expect a NULL.
+                    // This is how we distinguish empty strings from nulls.
+                    if (!data.startsWith(" ")) {
+                        if (data.startsWith("NULL"))
+                            yield DBSPLiteral.none(fieldType);
+                        else
+                            throw new RuntimeException("Expected NULL or a space: " +
+                                    Utilities.singleQuote(data));
+                    } else {
+                        // replace \\n with \n, otherwise we can't represent it
+                        data = data.substring(1);
+                        data = data.replace("\\n", "\n");
+                        DBSPTypeString type = fieldType.to(DBSPTypeString.class);
+                        if (!type.fixed)
+                            data = Utilities.trimRight(data);
+                        yield new DBSPStringLiteral(CalciteObject.EMPTY, fieldType, data, StandardCharsets.UTF_8);
+                    }
+                }
+                case BOOL -> {
+                    boolean isTrue = trimmed.equalsIgnoreCase("t") || trimmed.equalsIgnoreCase("true");
+                    boolean isFalse = trimmed.equalsIgnoreCase("f") || trimmed.equalsIgnoreCase("false");
+                    if (!isTrue && !isFalse)
+                        throw new RuntimeException("Cannot parse boolean value " + Utilities.singleQuote(trimmed));
+                    yield new DBSPBoolLiteral(CalciteObject.EMPTY, fieldType, isTrue);
+                }
+                case VEC -> {
+                    DBSPTypeVec vec = fieldType.to(DBSPTypeVec.class);
+                    // TODO: this does not handle nested arrays
+                    if (trimmed.equals("NULL")) {
+                        yield new DBSPVecExpression(fieldType, true);
+                    } else {
+                        if (!trimmed.startsWith("{") || !trimmed.endsWith("}"))
+                            throw new UnimplementedException("Expected array constant to be bracketed: " + trimmed);
+                        trimmed = trimmed.substring(1, trimmed.length() - 1);
+                        if (!trimmed.isEmpty()) {
+                            // an empty string split still returns an empty string
+                            String[] parts = trimmed.split(",");
+                            DBSPExpression[] fields;
+                            fields = Linq.map(
+                                    parts, p -> parseValue(vec.getElementType(), p), DBSPExpression.class);
+                            yield new DBSPVecExpression(fieldType.mayBeNull, fields);
+                        } else {
+                            // empty vector
+                            yield new DBSPVecExpression(vec, false);
+                        }
+                    }
+                }
+                case BYTES -> {
+                    if (!data.startsWith(" ")) {
+                        if (data.equals("NULL"))
+                            yield DBSPLiteral.none(fieldType);
+                        else
+                            throw new RuntimeException("Expected NULL or a space: " +
+                                    Utilities.singleQuote(data));
+                    } else {
+                        data = data.trim();
+                        byte[] bytes = ConversionUtil.toByteArrayFromString(data, 16);
+                        yield new DBSPBinaryLiteral(CalciteObject.EMPTY, fieldType, bytes);
+                    }
+                }
+                case UUID -> {
+                    if (!data.startsWith(" ")) {
+                        if (data.equals("NULL"))
+                            yield DBSPLiteral.none(fieldType);
+                        else
+                            throw new RuntimeException("Expected NULL or a space: " +
+                                    Utilities.singleQuote(data));
+                    } else {
+                        UUID uuid = UUID.fromString(trimmed);
+                        yield new DBSPUuidLiteral(CalciteObject.EMPTY, fieldType, uuid);
+                    }
+                }
+                case TUPLE -> {
+                    // TODO: this does not handle nested tuples, or tuples with arrays
+                    DBSPTypeTuple tuple = fieldType.to(DBSPTypeTuple.class);
+                    if (trimmed.equals("NULL")) {
+                        yield tuple.none();
+                    } else {
+                        if (!trimmed.startsWith("{") || !trimmed.endsWith("}"))
+                            throw new UnimplementedException("Expected tuple constant to be bracketed: " + trimmed);
+                        trimmed = trimmed.substring(1, trimmed.length() - 1);
+                        assert !trimmed.isEmpty();
+
+                        String[] parts = trimmed.split(",");
+                        assert parts.length == tuple.size() :
+                                "Expected " + tuple.size() + " fields for tuple, got " + parts.length;
+                        List<DBSPExpression> fields = new ArrayList<>(tuple.size());
+                        int index = 0;
+                        for (DBSPType ft : tuple.tupFields)
+                            fields.add(parseValue(ft, parts[index++]));
+                        yield new DBSPTupleExpression(CalciteObject.EMPTY, tuple, fields);
+                    }
+                }
+                default -> throw new UnimplementedException(
+                        "Support for parsing fields of type " + fieldType + " not yet implemented", fieldType);
+            };
         }
         return result;
     }

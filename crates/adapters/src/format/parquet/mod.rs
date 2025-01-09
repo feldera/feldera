@@ -262,6 +262,7 @@ pub fn relation_to_arrow_fields(fields: &[Field], delta_lake: bool) -> Vec<Arrow
             ),
             SqlType::Date => DataType::Date32,
             SqlType::Null => DataType::Null,
+            SqlType::Uuid => DataType::LargeBinary,
             SqlType::Binary => DataType::LargeBinary,
             SqlType::Varbinary => DataType::LargeBinary,
             SqlType::Interval(

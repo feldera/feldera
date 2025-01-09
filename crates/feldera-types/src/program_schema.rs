@@ -429,6 +429,8 @@ pub enum SqlType {
     Map,
     /// SQL `NULL` type.
     Null,
+    /// SQL `UUID` type.
+    Uuid,
     /// SQL `VARIANT` type.
     Variant,
 }
@@ -479,6 +481,7 @@ impl<'de> Deserialize<'de> for SqlType {
             "struct" => Ok(SqlType::Struct),
             "map" => Ok(SqlType::Map),
             "null" => Ok(SqlType::Null),
+            "uuid" => Ok(SqlType::Uuid),
             _ => Err(serde::de::Error::custom(format!(
                 "Unknown SQL type: {}",
                 value
@@ -525,6 +528,7 @@ impl Serialize for SqlType {
             },
             SqlType::Array => "ARRAY",
             SqlType::Struct => "STRUCT",
+            SqlType::Uuid => "UUID",
             SqlType::Map => "MAP",
             SqlType::Null => "NULL",
             SqlType::Variant => "VARIANT",
@@ -615,6 +619,19 @@ impl ColumnType {
     pub fn boolean(nullable: bool) -> Self {
         ColumnType {
             typ: SqlType::Boolean,
+            nullable,
+            precision: None,
+            scale: None,
+            component: None,
+            fields: None,
+            key: None,
+            value: None,
+        }
+    }
+
+    pub fn uuid(nullable: bool) -> Self {
+        ColumnType {
+            typ: SqlType::Uuid,
             nullable,
             precision: None,
             scale: None,
@@ -875,6 +892,7 @@ mod tests {
     fn serde_sql_type() {
         for (sql_str_base, expected_value) in [
             ("Boolean", SqlType::Boolean),
+            ("Uuid", SqlType::Uuid),
             ("TinyInt", SqlType::TinyInt),
             ("SmallInt", SqlType::SmallInt),
             ("Integer", SqlType::Int),

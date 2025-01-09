@@ -32,7 +32,7 @@ tikv-jemallocator = { version = "0.5.4", features = ["profiling", "unprefixed_ma
 
 hashing = { path = "../lib/hashing" }
 readers = { path = "../lib/readers" }
-uuid = { version = "1.6.1" }
+uuid = { version = "1.11.0" }
 # Used only in some unit tests
 metrics = { version = "0.23.0" }
 metrics-util = { version = "0.17.0" }
