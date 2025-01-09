@@ -1529,6 +1529,25 @@ public class RegressionTests extends SqlIoTest {
     }
 
     @Test
+    public void issue3294() {
+        this.compileRustTestCase("""
+                CREATE TABLE not_materialized(id bigint not null);
+                CREATE TABLE "TaBle1"(id bigint not null) with ('materialized' = 'true');
+                
+                CREATE TABLE t1 (
+                    id INT NOT NULL,
+                    dt DATE NOT NULL,
+                    uid UUID NOT NULL
+                );
+                CREATE TABLE t2 (
+                    id INT NOT NULL,
+                    st VARCHAR NOT NULL
+                );
+                CREATE VIEW joined AS ( SELECT t1.dt AS c1, t2.st AS c2, t1.uid as c3 FROM t1, t2 WHERE t1.id = t2.id );
+                CREATE VIEW view_of_not_materialized AS ( SELECT * FROM not_materialized );""");
+    }
+
+    @Test
     public void issue2391() {
         var ccs = this.getCCS("""
                 CREATE TABLE double_tbl(c1 DOUBLE, c2 DOUBLE NOT NULL);

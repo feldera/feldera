@@ -241,6 +241,7 @@ pub fn validate_field_schema(
             return validate_map_schema(avro_schema, value_type);
         }
         SqlType::Null => AvroSchema::Null,
+        SqlType::Uuid => AvroSchema::String,
     };
 
     if avro_schema != &expected {
@@ -475,6 +476,7 @@ impl AvroSchemaBuilder {
                     attributes: BTreeMap::new(),
                 })
             }
+            SqlType::Uuid => AvroSchema::String,
             SqlType::Null => AvroSchema::Null,
         })
     }

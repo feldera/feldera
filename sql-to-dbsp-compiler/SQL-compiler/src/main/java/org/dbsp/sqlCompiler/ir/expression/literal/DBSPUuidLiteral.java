@@ -1,26 +1,3 @@
-/*
- * Copyright 2022 VMware, Inc.
- * SPDX-License-Identifier: MIT
- *
- * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and associated documentation files (the "Software"), to deal
- * in the Software without restriction, including without limitation the rights
- * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- * copies of the Software, and to permit persons to whom the Software is
- * furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included in all
- * copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
- * SOFTWARE.
- */
-
 package org.dbsp.sqlCompiler.ir.expression.literal;
 
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
@@ -30,33 +7,45 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.ISameValue;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeUuid;
 import org.dbsp.util.IIndentStream;
 
 import javax.annotation.Nullable;
+import java.nio.ByteBuffer;
 import java.util.Objects;
+import java.util.UUID;
 
-public final class DBSPBoolLiteral extends DBSPLiteral {
+public final class DBSPUuidLiteral extends DBSPLiteral {
     @Nullable
-    public final Boolean value;
+    public final UUID value;
 
-    public DBSPBoolLiteral(CalciteObject node, DBSPType type, @Nullable Boolean value) {
+    public DBSPUuidLiteral(CalciteObject node, DBSPType type, @Nullable UUID value) {
         super(node, type, value == null);
-        assert type.is(DBSPTypeBool.class);
+        assert type.is(DBSPTypeUuid.class);
         this.value = value;
     }
 
-    public DBSPBoolLiteral() {
+    @Nullable
+    public byte[] getByteArray() {
+        if (this.value == null)
+            return null;
+        ByteBuffer byteBuffer = ByteBuffer.wrap(new byte[16]);
+        byteBuffer.putLong(this.value.getMostSignificantBits());
+        byteBuffer.putLong(this.value.getLeastSignificantBits());
+        return byteBuffer.array();
+    }
+
+    public DBSPUuidLiteral() {
         this(null, true);
     }
 
-    public DBSPBoolLiteral(boolean value) {
+    public DBSPUuidLiteral(UUID value) {
         this(value, false);
     }
 
-    public DBSPBoolLiteral(@Nullable Boolean b, boolean nullable) {
-        this(CalciteObject.EMPTY, new DBSPTypeBool(CalciteObject.EMPTY, nullable), b);
-        if (b == null && !nullable)
+    public DBSPUuidLiteral(@Nullable UUID u, boolean nullable) {
+        this(CalciteObject.EMPTY, new DBSPTypeUuid(CalciteObject.EMPTY, nullable), u);
+        if (u == null && !nullable)
             throw new InternalCompilerError("Null value with non-nullable type", this);
     }
 
@@ -67,7 +56,7 @@ public final class DBSPBoolLiteral extends DBSPLiteral {
 
     @Override
     public DBSPExpression deepCopy() {
-        return new DBSPBoolLiteral(this.getNode(), this.type, this.value);
+        return new DBSPUuidLiteral(this.getNode(), this.type, this.value);
     }
 
     @Override
@@ -81,7 +70,7 @@ public final class DBSPBoolLiteral extends DBSPLiteral {
 
     @Override
     public DBSPLiteral getWithNullable(boolean mayBeNull) {
-        return new DBSPBoolLiteral(this.checkIfNull(this.value, mayBeNull), mayBeNull);
+        return new DBSPUuidLiteral(this.checkIfNull(this.value, mayBeNull), mayBeNull);
     }
 
     @Override
@@ -95,7 +84,7 @@ public final class DBSPBoolLiteral extends DBSPLiteral {
     public boolean sameValue(@Nullable ISameValue o) {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
-        DBSPBoolLiteral that = (DBSPBoolLiteral) o;
+        DBSPUuidLiteral that = (DBSPUuidLiteral) o;
         return Objects.equals(this.value, that.value);
     }
 

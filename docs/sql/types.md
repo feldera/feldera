@@ -26,7 +26,8 @@ The compiler supports the following SQL data types:
 | `ROW`                       | A tuple (anonymous struct with named fields) with 1 or more elements.  Example `ROW(left int null, right varchar)`                                                 |                            |
 | `ARRAY`                     | An array with element of the specified type. Used as a suffix for another type (e.g., `INT ARRAY`)                                                                 |                            |
 | `MAP`                       | A map with keys and values of specified types. The syntax is `MAP<KEYTYPE, VALUETYPE>`                                                                             |                            |
-| `VARIANT`                   | A dynamically-typed value that can wrap any other SQL type  |                            |
+| `UUID`                      | An 128 bit unique identifier                                                                                                                                       |                            |
+| `VARIANT`                   | A dynamically-typed value that can wrap any other SQL type                                                                                                         |                            |
 
 - For `DECIMAL` types: 23.456 has a precision of 5 and a scale of 3.
   If scale is missing it is assumed to be 0.

@@ -41,7 +41,6 @@ import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.primitive.*;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeMap;
-import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeVec;
 
 import javax.annotation.Nullable;
 import java.nio.charset.StandardCharsets;
@@ -69,60 +68,33 @@ public abstract class DBSPLiteral extends DBSPExpression implements ISameValue {
     public static DBSPExpression none(DBSPType type) {
         if (!type.mayBeNull)
             throw new RuntimeException(type + " cannot represent NULL");
-        if (type.is(DBSPTypeInteger.class)) {
-            DBSPTypeInteger it = type.to(DBSPTypeInteger.class);
-            if (!it.signed)
-                throw new InternalCompilerError("Null of unsigned type ", type);
-            switch (it.getWidth()) {
-                case 8:
-                    return new DBSPI8Literal();
-                case 16:
-                    return new DBSPI16Literal();
-                case 32:
-                    return new DBSPI32Literal();
-                case 64:
-                    return new DBSPI64Literal();
-                case 128:
-                    return new DBSPI128Literal();
-            }
-        } else if (type.is(DBSPTypeBool.class)) {
-            return new DBSPBoolLiteral();
-        } else if (type.is(DBSPTypeDate.class)) {
-            return new DBSPDateLiteral();
-        } else if (type.is(DBSPTypeDecimal.class)) {
-            return new DBSPDecimalLiteral(type.getNode(), type, null);
-        } else if (type.is(DBSPTypeDouble.class)) {
-            return new DBSPDoubleLiteral();
-        } else if (type.is(DBSPTypeReal.class)) {
-            return new DBSPRealLiteral();
-        } else if (type.is(DBSPTypeGeoPoint.class)) {
-            return new DBSPGeoPointLiteral();
-        } else if (type.is(DBSPTypeMillisInterval.class)) {
-            return new DBSPIntervalMillisLiteral(type.getNode(), type, null);
-        } else if (type.is(DBSPTypeMonthsInterval.class)) {
-            return new DBSPIntervalMonthsLiteral(type.getNode(), type, null);
-        } else if (type.is(DBSPTypeString.class)) {
-            return new DBSPStringLiteral(CalciteObject.EMPTY, type, null, StandardCharsets.UTF_8);
-        } else if (type.is(DBSPTypeTime.class)) {
-            return new DBSPTimeLiteral();
-        } else if (type.is(DBSPTypeVec.class)) {
-            return new DBSPVecExpression(type, true);
-        } else if (type.is(DBSPTypeMap.class)) {
-            return new DBSPMapExpression(type.to(DBSPTypeMap.class), null, null);
-        } else if (type.is(DBSPTypeTuple.class)) {
-            return DBSPTupleExpression.none(type.to(DBSPTypeTuple.class));
-        } else if (type.is(DBSPTypeNull.class)) {
-            return new DBSPNullLiteral();
-        } else if (type.is(DBSPTypeTimestamp.class)) {
-            return new DBSPTimestampLiteral();
-        } else if (type.is(DBSPTypeBinary.class)) {
-            return new DBSPBinaryLiteral(type.getNode(), type, null);
-        } else if (type.is(DBSPTypeVariant.class)) {
-            return new DBSPVariantExpression(null, type);
-        } else if (type.is(DBSPTypeStruct.class)) {
-            return type.to(DBSPTypeStruct.class).toTuple().none();
-        }
-        throw new InternalCompilerError("Unexpected type for NULL literal " + type, type);
+        return switch (type.code) {
+            case INT8 -> new DBSPI8Literal();
+            case INT16 -> new DBSPI16Literal();
+            case INT32 -> new DBSPI32Literal();
+            case INT64 -> new DBSPI64Literal();
+            case INT128 -> new DBSPI128Literal();
+            case BOOL -> new DBSPBoolLiteral();
+            case DATE -> new DBSPDateLiteral();
+            case DECIMAL -> new DBSPDecimalLiteral(type.getNode(), type, null);
+            case DOUBLE -> new DBSPDoubleLiteral();
+            case REAL -> new DBSPRealLiteral();
+            case GEOPOINT -> new DBSPGeoPointLiteral();
+            case INTERVAL_SHORT -> new DBSPIntervalMillisLiteral(type.getNode(), type, null);
+            case INTERVAL_LONG -> new DBSPIntervalMonthsLiteral(type.getNode(), type, null);
+            case STRING -> new DBSPStringLiteral(CalciteObject.EMPTY, type, null, StandardCharsets.UTF_8);
+            case TIME -> new DBSPTimeLiteral();
+            case VEC -> new DBSPVecExpression(type, true);
+            case MAP -> new DBSPMapExpression(type.to(DBSPTypeMap.class), null, null);
+            case TUPLE -> DBSPTupleExpression.none(type.to(DBSPTypeTuple.class));
+            case NULL -> new DBSPNullLiteral();
+            case TIMESTAMP -> new DBSPTimestampLiteral();
+            case BYTES -> new DBSPBinaryLiteral(type.getNode(), type, null);
+            case VARIANT -> new DBSPVariantExpression(null, type);
+            case STRUCT -> type.to(DBSPTypeStruct.class).toTuple().none();
+            case UUID -> new DBSPUuidLiteral();
+            default -> throw new InternalCompilerError("Unexpected type for NULL literal " + type, type);
+        };
     }
 
     public String wrapSome(String value) {

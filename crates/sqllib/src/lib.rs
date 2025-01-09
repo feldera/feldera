@@ -21,6 +21,8 @@ pub mod source;
 #[doc(hidden)]
 pub mod string;
 pub mod timestamp;
+#[doc(hidden)]
+pub mod uuid;
 pub mod variant;
 
 pub use binary::ByteArray;
@@ -33,6 +35,7 @@ pub use regex::Regex;
 #[doc(hidden)]
 pub use source::{SourcePosition, SourcePositionRange};
 pub use timestamp::{Date, Time, Timestamp};
+pub use uuid::Uuid;
 pub use variant::Variant;
 
 use std::collections::BTreeMap;

@@ -68,7 +68,7 @@ tokio = { version = "1.25.0", features = ["sync", "macros", "fs", "rt"] }
 utoipa = "4.1"
 chrono = { version = "0.4.38", features = ["rkyv-64", "serde"] }
 colored = "2.0.0"
-uuid = { version = "1.3.3", features = ["v4", "std"] }
+uuid = { version = "1.11.0", features = ["v4", "std"] }
 # Make sure this is the same rustls version used by the `tonic` crate.
 # See the `ensure_default_crypto_provider` function at the root of this crate.
 rustls = "0.23.12"
