@@ -180,6 +180,7 @@ const sidebars = {
                         'sql/system',
                         'sql/table',
                         'sql/udf',
+                        'sql/uuid',
                         'sql/function-index'
                     ]
                 },
@@ -297,7 +298,7 @@ const sidebars = {
                         'formats/csv',
                     ],
                 },
-		"fault-tolerance"
+                "fault-tolerance"
             ]
         }
         ,

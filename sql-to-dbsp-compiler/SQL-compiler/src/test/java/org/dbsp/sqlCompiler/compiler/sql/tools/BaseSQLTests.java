@@ -130,9 +130,12 @@ public class BaseSQLTests {
         this.prepareInputs(compiler);
         compiler.compileStatements(statements);
         getCircuit(compiler);
-        assert compiler.messages.exitCode != 0 : "Program was expected to fail: " + statements;
-        String message = compiler.messages.toString();
-        this.shouldMatch(message, regex, isRegex);
+        if (compiler.messages.exitCode == 0) {
+            throw new RuntimeException("Program was expected to fail: " + statements);
+        } else {
+            String message = compiler.messages.toString();
+            this.shouldMatch(message, regex, isRegex);
+        }
     }
 
     public void statementsFailingInCompilation(String statements, String substring) {

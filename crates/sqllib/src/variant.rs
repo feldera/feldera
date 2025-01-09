@@ -2,7 +2,7 @@
 //! the values in a SQL program.
 
 use crate::{
-    binary::ByteArray, casts::*, Date, GeoPoint, LongInterval, ShortInterval, Time, Timestamp,
+    binary::ByteArray, casts::*, Date, GeoPoint, LongInterval, ShortInterval, Time, Timestamp, Uuid,
 };
 use dbsp::algebra::{F32, F64};
 use feldera_types::serde_with_context::serde_config::VariantFormat;
@@ -63,6 +63,7 @@ pub enum Variant {
     LongInterval(LongInterval),
     Binary(ByteArray),
     Geometry(GeoPoint),
+    Uuid(Uuid),
     #[size_of(skip, skip_bounds)]
     Array(#[omit_bounds] Vec<Variant>),
     #[size_of(skip, skip_bounds)]
@@ -341,6 +342,7 @@ impl SerializeWithContext<SqlSerdeConfig> for Variant {
                 Variant::Array(a) => a.serialize_with_context(serializer, context),
                 Variant::Binary(a) => a.serialize_with_context(serializer, context),
                 Variant::Map(m) => m.serialize_with_context(serializer, context),
+                Variant::Uuid(u) => u.serialize_with_context(serializer, context),
             },
         }
     }
@@ -370,6 +372,7 @@ impl Variant {
             Variant::Binary(_) => "BINARY",
             Variant::Array(_) => "ARRAY",
             Variant::Map(_) => "MAP",
+            Variant::Uuid(_) => "UUID",
         }
     }
 
@@ -453,6 +456,7 @@ from!(ShortInterval, ShortInterval);
 from!(LongInterval, LongInterval);
 from!(Geometry, GeoPoint);
 from!(Binary, ByteArray);
+from!(Uuid, Uuid);
 
 impl<T> From<Vec<T>> for Variant
 where
@@ -576,6 +580,7 @@ into!(ShortInterval, ShortInterval);
 into!(LongInterval, LongInterval);
 into!(Geometry, GeoPoint);
 into!(Binary, ByteArray);
+into!(Uuid, Uuid);
 
 macro_rules! into_numeric {
     ($type:ty, $type_name: ident) => {

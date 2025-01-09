@@ -268,6 +268,7 @@ mod kafka_connect_json_converter {
             SqlType::Interval(_) => RepresentationType::String,
             SqlType::Variant => RepresentationType::String,
             SqlType::Null => RepresentationType::String,
+            SqlType::Uuid => RepresentationType::String,
         }
     }
 
