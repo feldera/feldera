@@ -1,8 +1,11 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
+import org.dbsp.sqlCompiler.circuit.ICircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPDeltaOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperatorWithError;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
@@ -57,7 +60,7 @@ public class CSE extends Repeat {
         public void postorder(DBSPConstantOperator operator) {
             for (DBSPConstantOperator op: this.constants) {
                 if (op.equivalent(operator)) {
-                    this.canonical.put(operator, op);
+                    this.setCanonical(operator, op);
                 } else {
                     this.constants.add(op);
                 }
@@ -72,6 +75,31 @@ public class CSE extends Repeat {
                     return succ.port() == 0;
             }
             return false;
+        }
+
+        @Override
+        public void postorder(DBSPDeltaOperator operator) {
+            // Compare with all other deltas in the same circuit
+            ICircuit parent = this.getParent();
+            DBSPNestedOperator nested = parent.to(DBSPNestedOperator.class);
+            for (var delta: nested.deltaInputs) {
+                if (operator == delta)
+                    // Compare only with the previous ones
+                    break;
+                if (operator.input().equals(delta.input())) {
+                    this.setCanonical(operator, delta);
+                }
+            }
+        }
+
+        void setCanonical(DBSPOperator operator, DBSPOperator canonical) {
+            Logger.INSTANCE.belowLevel(this, 1)
+                    .append("CSE ")
+                    .append(operator.toString())
+                    .append(" -> ")
+                    .append(canonical.toString())
+                    .newline();
+            this.canonical.put(operator, canonical);
         }
 
         @Override
@@ -94,13 +122,7 @@ public class CSE extends Repeat {
                         continue;
                     // Do not CSE something which is followed by a GC operator
                     if (base.equivalent(compare)) {
-                        Logger.INSTANCE.belowLevel(this, 1)
-                                .append("CSE ")
-                                .append(compare.toString())
-                                .append(" -> ")
-                                .append(base.toString())
-                                .newline();
-                        this.canonical.put(compare, base);
+                        this.setCanonical(compare, base);
                     }
                 }
             }

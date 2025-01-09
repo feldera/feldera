@@ -520,7 +520,7 @@ public class RecursiveTests extends BaseSQLTests {
     }
 
     @Test
-    public void typeMismatchTest() {
+    public void errorTests() {
         // Declared type does not match
         String sql = """
                 DECLARE RECURSIVE VIEW V(v INT);
@@ -534,8 +534,7 @@ public class RecursiveTests extends BaseSQLTests {
         this.statementsFailingInCompilation(sql, "does not match the declared type");
 
         // Declared recursive view not used anywhere
-        sql = """
-                DECLARE RECURSIVE VIEW V(v INT);""";
+        sql = "DECLARE RECURSIVE VIEW V(v INT);";
         this.shouldWarn(sql, "Unused view declaration");
 
         // Recursive view is not recursive

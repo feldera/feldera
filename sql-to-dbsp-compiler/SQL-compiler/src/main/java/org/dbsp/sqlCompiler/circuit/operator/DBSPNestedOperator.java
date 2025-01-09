@@ -28,7 +28,7 @@ public class DBSPNestedOperator extends DBSPOperator implements ICircuit {
     final Map<ProgramIdentifier, DBSPViewOperator> viewByName;
     /** Indexed by original view name */
     public final Map<ProgramIdentifier, DBSPViewDeclarationOperator> declarationByName;
-    final List<DBSPDeltaOperator> deltaInputs;
+    public final List<DBSPDeltaOperator> deltaInputs;
     /** For each output port of this, the actual port of an operator inside,
      * which produces the result. */
     public final List<OutputPort> internalOutputs;
