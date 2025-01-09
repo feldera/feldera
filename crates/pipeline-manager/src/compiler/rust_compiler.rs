@@ -645,11 +645,9 @@ async fn prepare_workspace(
         opt-level = 0
         lto = \"off\"
         codegen-units = 256
-        debug = \"line-tables-only\"
 
         [profile.optimized]
         inherits = \"release\"
-        debug = \"line-tables-only\"
     "};
     let cargo_toml_file_path = config
         .working_dir()
