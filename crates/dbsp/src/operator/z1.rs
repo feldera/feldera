@@ -331,11 +331,11 @@ impl<T> UnaryOperator<T, T> for Z1<T>
 where
     T: Checkpoint + Eq + SizeOf + NumEntries + Clone + 'static,
 {
-    fn eval(&mut self, i: &T) -> T {
+    async fn eval(&mut self, i: &T) -> T {
         replace(&mut self.values, i.clone())
     }
 
-    fn eval_owned(&mut self, i: T) -> T {
+    async fn eval_owned(&mut self, i: T) -> T {
         replace(&mut self.values, i)
     }
 
@@ -362,11 +362,11 @@ impl<T> StrictUnaryOperator<T, T> for Z1<T>
 where
     T: Checkpoint + Eq + SizeOf + NumEntries + Clone + 'static,
 {
-    fn eval_strict(&mut self, i: &T) {
+    async fn eval_strict(&mut self, i: &T) {
         self.values = i.clone();
     }
 
-    fn eval_strict_owned(&mut self, i: T) {
+    async fn eval_strict_owned(&mut self, i: T) {
         self.values = i;
     }
 
@@ -525,7 +525,7 @@ impl<T> UnaryOperator<T, T> for Z1Nested<T>
 where
     T: Eq + SizeOf + NumEntries + Clone + 'static,
 {
-    fn eval(&mut self, i: &T) -> T {
+    async fn eval(&mut self, i: &T) -> T {
         debug_assert!(self.timestamp <= self.values.len());
 
         if self.timestamp == self.values.len() {
@@ -540,7 +540,7 @@ where
         result
     }
 
-    fn eval_owned(&mut self, i: T) -> T {
+    async fn eval_owned(&mut self, i: T) -> T {
         debug_assert!(self.timestamp <= self.values.len());
 
         if self.timestamp == self.values.len() {
@@ -588,14 +588,14 @@ impl<T> StrictUnaryOperator<T, T> for Z1Nested<T>
 where
     T: Eq + SizeOf + NumEntries + Clone + 'static,
 {
-    fn eval_strict(&mut self, i: &T) {
+    async fn eval_strict(&mut self, i: &T) {
         debug_assert!(self.timestamp < self.values.len());
 
         self.values[self.timestamp] = i.clone();
         self.timestamp += 1;
     }
 
-    fn eval_strict_owned(&mut self, i: T) {
+    async fn eval_strict_owned(&mut self, i: T) {
         debug_assert!(self.timestamp < self.values.len());
 
         self.values[self.timestamp] = i;
@@ -614,8 +614,8 @@ mod test {
         operator::{Z1Nested, Z1},
     };
 
-    #[test]
-    fn z1_test() {
+    #[tokio::test]
+    async fn z1_test() {
         let mut z1 = Z1::new(0);
 
         let expected_result = vec![0, 1, 2, 0, 4, 5];
@@ -623,15 +623,15 @@ mod test {
         // Test `UnaryOperator` API.
         let mut res = Vec::new();
         z1.clock_start(0);
-        res.push(z1.eval(&1));
-        res.push(z1.eval(&2));
-        res.push(z1.eval(&3));
+        res.push(z1.eval(&1).await);
+        res.push(z1.eval(&2).await);
+        res.push(z1.eval(&3).await);
         z1.clock_end(0);
 
         z1.clock_start(0);
-        res.push(z1.eval_owned(4));
-        res.push(z1.eval_owned(5));
-        res.push(z1.eval_owned(6));
+        res.push(z1.eval_owned(4).await);
+        res.push(z1.eval_owned(5).await);
+        res.push(z1.eval_owned(6).await);
         z1.clock_end(0);
 
         assert_eq!(res, expected_result);
@@ -640,27 +640,27 @@ mod test {
         let mut res = Vec::new();
         z1.clock_start(0);
         res.push(z1.get_output());
-        z1.eval_strict(&1);
+        z1.eval_strict(&1).await;
         res.push(z1.get_output());
-        z1.eval_strict(&2);
+        z1.eval_strict(&2).await;
         res.push(z1.get_output());
-        z1.eval_strict(&3);
+        z1.eval_strict(&3).await;
         z1.clock_end(0);
 
         z1.clock_start(0);
         res.push(z1.get_output());
-        z1.eval_strict_owned(4);
+        z1.eval_strict_owned(4).await;
         res.push(z1.get_output());
-        z1.eval_strict_owned(5);
+        z1.eval_strict_owned(5).await;
         res.push(z1.get_output());
-        z1.eval_strict_owned(6);
+        z1.eval_strict_owned(6).await;
         z1.clock_end(0);
 
         assert_eq!(res, expected_result);
     }
 
-    #[test]
-    fn z1_nested_test() {
+    #[tokio::test]
+    async fn z1_nested_test() {
         let mut z1 = Z1Nested::new(0);
 
         // Test `UnaryOperator` API.
@@ -669,25 +669,25 @@ mod test {
 
         let mut res = Vec::new();
         z1.clock_start(0);
-        res.push(z1.eval_owned(1));
-        res.push(z1.eval(&2));
-        res.push(z1.eval(&3));
+        res.push(z1.eval_owned(1).await);
+        res.push(z1.eval(&2).await);
+        res.push(z1.eval(&3).await);
         z1.clock_end(0);
         assert_eq!(res.as_slice(), &[0, 0, 0]);
 
         let mut res = Vec::new();
         z1.clock_start(0);
-        res.push(z1.eval_owned(4));
-        res.push(z1.eval_owned(5));
+        res.push(z1.eval_owned(4).await);
+        res.push(z1.eval_owned(5).await);
         z1.clock_end(0);
         assert_eq!(res.as_slice(), &[1, 2]);
 
         let mut res = Vec::new();
         z1.clock_start(0);
-        res.push(z1.eval_owned(6));
-        res.push(z1.eval_owned(7));
-        res.push(z1.eval(&8));
-        res.push(z1.eval(&9));
+        res.push(z1.eval_owned(6).await);
+        res.push(z1.eval_owned(7).await);
+        res.push(z1.eval(&8).await);
+        res.push(z1.eval(&9).await);
         z1.clock_end(0);
         assert_eq!(res.as_slice(), &[4, 5, 5, 5]);
 
@@ -699,11 +699,11 @@ mod test {
         let mut res = Vec::new();
         z1.clock_start(0);
         res.push(z1.get_output());
-        z1.eval_strict(&1);
+        z1.eval_strict(&1).await;
         res.push(z1.get_output());
-        z1.eval_strict(&2);
+        z1.eval_strict(&2).await;
         res.push(z1.get_output());
-        z1.eval_strict(&3);
+        z1.eval_strict(&3).await;
         z1.clock_end(0);
         assert_eq!(res.as_slice(), &[0, 0, 0]);
 
@@ -711,9 +711,9 @@ mod test {
 
         z1.clock_start(0);
         res.push(z1.get_output());
-        z1.eval_strict_owned(4);
+        z1.eval_strict_owned(4).await;
         res.push(z1.get_output());
-        z1.eval_strict_owned(5);
+        z1.eval_strict_owned(5).await;
         z1.clock_end(0);
 
         assert_eq!(res.as_slice(), &[1, 2]);
@@ -722,13 +722,13 @@ mod test {
 
         z1.clock_start(0);
         res.push(z1.get_output());
-        z1.eval_strict_owned(6);
+        z1.eval_strict_owned(6).await;
         res.push(z1.get_output());
-        z1.eval_strict_owned(7);
+        z1.eval_strict_owned(7).await;
         res.push(z1.get_output());
-        z1.eval_strict_owned(8);
+        z1.eval_strict_owned(8).await;
         res.push(z1.get_output());
-        z1.eval_strict_owned(9);
+        z1.eval_strict_owned(9).await;
         z1.clock_end(0);
 
         assert_eq!(res.as_slice(), &[4, 5, 5, 5]);

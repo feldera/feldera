@@ -760,12 +760,12 @@ where
     O: IndexedZSet<Key = B::Key, Val = DynPair<DynDataTyped<TS>, DynOpt<Out>>>,
 {
     #[trace]
-    fn eval<'a>(
+    async fn eval(
         &mut self,
-        input_delta: Cow<'a, B>,
-        input_trace: Cow<'a, T>,
-        radix_tree: Cow<'a, RT>,
-        output_trace: Cow<'a, OT>,
+        input_delta: Cow<'_, B>,
+        input_trace: Cow<'_, T>,
+        radix_tree: Cow<'_, RT>,
+        output_trace: Cow<'_, OT>,
     ) -> O {
         let mut delta_cursor = input_delta.cursor();
         let mut output_trace_cursor = output_trace.cursor();

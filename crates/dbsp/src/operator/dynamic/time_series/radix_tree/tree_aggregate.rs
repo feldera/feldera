@@ -244,11 +244,11 @@ where
     OT: RadixTreeReader<TS, Acc> + Clone,
 {
     #[trace]
-    fn eval<'a>(
+    async fn eval(
         &mut self,
-        delta: Cow<'a, Z>,
-        input_trace: Cow<'a, IT>,
-        output_trace: Cow<'a, OT>,
+        delta: Cow<'_, Z>,
+        input_trace: Cow<'_, IT>,
+        output_trace: Cow<'_, OT>,
     ) -> O {
         let mut updates = self.radix_tree_factories.node_updates_factory.default_box();
         updates.reserve(delta.key_count());

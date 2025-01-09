@@ -580,7 +580,7 @@ where
     Acc: DataTrait + ?Sized,
 {
     #[trace]
-    fn eval(&mut self, i: &Z) -> O {
+    async fn eval(&mut self, i: &Z) -> O {
         let mut builder = O::Builder::with_capacity(&self.factories, (), i.len());
         let mut agg = self.option_output_factory.default_box();
         let mut key = self.factories.key_factory().default_box();
@@ -846,7 +846,7 @@ where
     Out: DataTrait + ?Sized,
 {
     #[trace]
-    fn eval(&mut self, delta: &Z, input_trace: &IT) -> Box<DynPairs<Z::Key, DynOpt<Out>>> {
+    async fn eval(&mut self, delta: &Z, input_trace: &IT) -> Box<DynPairs<Z::Key, DynOpt<Out>>> {
         // println!(
         //     "{}: AggregateIncremental::eval @{:?}\ndelta:{delta}",
         //     Runtime::worker_index(),

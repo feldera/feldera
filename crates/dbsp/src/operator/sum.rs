@@ -79,7 +79,7 @@ impl<D> NaryOperator<D, D> for Sum<D>
 where
     D: AddByRef + AddAssignByRef + Clone + NumEntries + 'static,
 {
-    fn eval<'a, Iter>(&mut self, inputs: Iter) -> D
+    async fn eval<'a, Iter>(&'a mut self, inputs: Iter) -> D
     where
         Iter: Iterator<Item = Cow<'a, D>>,
     {

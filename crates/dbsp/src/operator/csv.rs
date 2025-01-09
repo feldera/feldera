@@ -70,7 +70,7 @@ where
     T: DBData + for<'de> Deserialize<'de> + 'static,
     R: Read + 'static,
 {
-    fn eval(&mut self) -> OrdZSet<T> {
+    async fn eval(&mut self) -> OrdZSet<T> {
         let source = if self.time == 0 && Runtime::worker_index() == 0 {
             let mut data = Vec::<Tup2<Tup2<T, ()>, ZWeight>>::new();
 

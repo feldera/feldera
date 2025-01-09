@@ -107,7 +107,7 @@ where
     OZ: IndexedZSet<Key = Z::Key>,
 {
     #[trace]
-    fn eval<'a>(&mut self, delta: &Z, output_trace: &Spine<OZ>) -> OZ {
+    async fn eval(&mut self, delta: &Z, output_trace: &Spine<OZ>) -> OZ {
         let mut delta_cursor = delta.cursor();
         let mut output_trace_cursor = output_trace.cursor();
 

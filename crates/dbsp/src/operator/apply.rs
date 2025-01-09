@@ -215,7 +215,7 @@ impl<T1, T2, F, const FP: bool> UnaryOperator<T1, T2> for Apply<F, FP>
 where
     F: FnMut(&T1) -> T2 + 'static,
 {
-    fn eval(&mut self, i1: &T1) -> T2 {
+    async fn eval(&mut self, i1: &T1) -> T2 {
         (self.func)(i1)
     }
 }
@@ -262,12 +262,12 @@ impl<T1, T2, F, const FP: bool> UnaryOperator<T1, T2> for ApplyOwned<F, FP>
 where
     F: FnMut(T1) -> T2 + 'static,
 {
-    fn eval(&mut self, _input: &T1) -> T2 {
+    async fn eval(&mut self, _input: &T1) -> T2 {
         unreachable!("cannot use ApplyOwned with reference inputs")
     }
 
     #[inline]
-    fn eval_owned(&mut self, input: T1) -> T2 {
+    async fn eval_owned(&mut self, input: T1) -> T2 {
         (self.apply)(input)
     }
 
@@ -328,12 +328,12 @@ where
     B: FnMut(&T1) -> T2 + 'static,
     F: Fn(Scope) -> bool + 'static,
 {
-    fn eval(&mut self, input: &T1) -> T2 {
+    async fn eval(&mut self, input: &T1) -> T2 {
         (self.borrowed)(input)
     }
 
     #[inline]
-    fn eval_owned(&mut self, input: T1) -> T2 {
+    async fn eval_owned(&mut self, input: T1) -> T2 {
         (self.owned)(input)
     }
 

@@ -242,7 +242,7 @@ where
     // regions in order + extra care to iterate over `batch` and `trace` jointly
     // in region3.
     #[trace]
-    fn eval(
+    async fn eval(
         &mut self,
         trace: Cow<'_, T>,
         batch: Cow<'_, B>,

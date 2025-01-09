@@ -560,12 +560,12 @@ where
     T2: ZBatchReader<Key = I2::Key, Val = I2::Val, Time = ()> + Clone,
     Z: IndexedZSet,
 {
-    fn eval<'a>(
+    async fn eval(
         &mut self,
-        delta1: Cow<'a, I1>,
-        delayed_trace1: Cow<'a, T1>,
-        delta2: Cow<'a, I2>,
-        delayed_trace2: Cow<'a, T2>,
+        delta1: Cow<'_, I1>,
+        delayed_trace1: Cow<'_, T1>,
+        delta2: Cow<'_, I2>,
+        delayed_trace2: Cow<'_, T2>,
     ) -> Z {
         let mut delta1_cursor = delta1.cursor();
         let mut delta2_cursor = delta2.cursor();

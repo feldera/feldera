@@ -333,7 +333,11 @@ where
     B: IndexedZSet<Key = T::Key, Val = T::Val>,
 {
     #[trace]
-    fn eval(&mut self, trace: &T, updates: &Box<DynPairs<T::Key, DynUpdate<T::Val, U>>>) -> B {
+    async fn eval(
+        &mut self,
+        trace: &T,
+        updates: &Box<DynPairs<T::Key, DynUpdate<T::Val, U>>>,
+    ) -> B {
         // Inputs must be sorted by key
         debug_assert!(updates.is_sorted_by(&|u1, u2| u1.fst().cmp(u2.fst())));
 

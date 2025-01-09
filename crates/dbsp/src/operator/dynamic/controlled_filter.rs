@@ -158,7 +158,7 @@ where
     T: DataTrait + ?Sized,
     E: DataTrait + ?Sized,
 {
-    fn eval(&mut self, data: &Z, threshold: &Box<T>) -> Z {
+    async fn eval(&mut self, data: &Z, threshold: &Box<T>) -> Z {
         let mut builder = Z::Builder::new_builder(&self.factories.batch_factories, ());
 
         let mut cursor = data.cursor();
@@ -187,7 +187,7 @@ where
             cursor.step_key();
         }
 
-        unsafe { self.error_stream_val.put(errors.done()) };
+        self.error_stream_val.put(errors.done());
         builder.done()
     }
 }
@@ -245,7 +245,7 @@ where
     T: DataTrait + ?Sized,
     E: DataTrait + ?Sized,
 {
-    fn eval(&mut self, data: &Z, threshold: &Box<T>) -> Z {
+    async fn eval(&mut self, data: &Z, threshold: &Box<T>) -> Z {
         let mut builder = Z::Builder::new_builder(&self.factories.batch_factories, ());
 
         let mut cursor = data.cursor();
@@ -271,7 +271,7 @@ where
             cursor.step_key();
         }
 
-        unsafe { self.error_stream_val.put(errors.done()) };
+        self.error_stream_val.put(errors.done());
         builder.done()
     }
 }

@@ -752,7 +752,7 @@ where
     OT: 'static,
     F: Fn(IT) -> OT + 'static,
 {
-    fn eval(&mut self) -> OT {
+    async fn eval(&mut self) -> OT {
         let v = self.mailbox.take();
         (self.input_func)(v)
     }

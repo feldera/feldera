@@ -66,7 +66,7 @@ where
     T2: 'static,
     F: FnMut(&dyn Iterator<Item = Cow<T>>) -> T2 + 'static,
 {
-    fn eval<'a, Iter>(&'a mut self, inputs: Iter) -> T2
+    async fn eval<'a, Iter>(&'a mut self, inputs: Iter) -> T2
     where
         Iter: Iterator<Item = Cow<'a, T>>,
     {

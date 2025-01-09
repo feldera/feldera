@@ -262,13 +262,13 @@ where
     T: Clone + Send + 'static,
 {
     #[trace]
-    fn eval(&mut self, input: &T) {
+    async fn eval(&mut self, input: &T) {
         // Safety: `worker` is guaranteed to be a valid & unique worker index
         unsafe { self.gather.push(self.worker, input.clone()) }
     }
 
     #[trace]
-    fn eval_owned(&mut self, input: T) {
+    async fn eval_owned(&mut self, input: T) {
         // Safety: `worker` is guaranteed to be a valid & unique worker index
         unsafe { self.gather.push(self.worker, input) }
     }
@@ -327,7 +327,7 @@ where
     T: Batch<Time = ()> + 'static,
 {
     #[trace]
-    fn eval(&mut self) -> T {
+    async fn eval(&mut self) -> T {
         // Safety: This is the gather thread
         debug_assert!(unsafe { self.gather.all_channels_ready() });
 
@@ -376,7 +376,7 @@ where
     T: Batch<Time = ()> + 'static,
 {
     #[trace]
-    fn eval(&mut self) -> T {
+    async fn eval(&mut self) -> T {
         T::dyn_empty(&self.factories)
     }
 }

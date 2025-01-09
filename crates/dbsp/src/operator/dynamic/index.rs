@@ -136,7 +136,7 @@ where
     CI: BatchReader<Key = DynPair<CO::Key, CO::Val>, Val = DynUnit, Time = (), R = CO::R>,
 {
     #[trace]
-    fn eval(&mut self, input: &CI) -> CO {
+    async fn eval(&mut self, input: &CI) -> CO {
         let mut builder = <CO as Batch>::Builder::with_capacity(&self.factories, (), input.len());
 
         let mut cursor = input.cursor();
@@ -228,7 +228,7 @@ where
     F: Fn(&CI::Key, &mut DynPair<CO::Key, CO::Val>) + 'static,
 {
     #[trace]
-    fn eval(&mut self, i: &CI) -> CO {
+    async fn eval(&mut self, i: &CI) -> CO {
         let mut tuples = self.factories.weighted_items_factory().default_box();
         tuples.reserve(i.len());
 
@@ -246,9 +246,9 @@ where
         CO::dyn_from_tuples(&self.factories, (), &mut tuples)
     }
 
-    fn eval_owned(&mut self, i: CI) -> CO {
+    async fn eval_owned(&mut self, i: CI) -> CO {
         // TODO: owned implementation.
-        self.eval(&i)
+        self.eval(&i).await
     }
 }
 

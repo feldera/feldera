@@ -8,7 +8,7 @@ use crate::circuit::{
     OwnershipPreference, Scope,
 };
 use crate::Error;
-use std::borrow::Cow;
+use std::{borrow::Cow, future::Future};
 use uuid::Uuid;
 
 use super::GlobalNodeId;
@@ -225,7 +225,7 @@ pub trait Operator: 'static {
 /// a single output stream.
 pub trait SourceOperator<O>: Operator {
     /// Yield the next value.
-    fn eval(&mut self) -> O;
+    fn eval(&mut self) -> impl Future<Output = O>;
 }
 
 /// A sink operator consumes an input stream, but does not produce an output
@@ -233,11 +233,11 @@ pub trait SourceOperator<O>: Operator {
 /// performed by the circuit to the outside world.
 pub trait SinkOperator<I>: Operator {
     /// Consume input by reference.
-    fn eval(&mut self, input: &I);
+    fn eval(&mut self, input: &I) -> impl Future<Output = ()>;
 
     /// Consume input by value.
-    fn eval_owned(&mut self, input: I) {
-        self.eval(&input);
+    fn eval_owned(&mut self, input: I) -> impl Future<Output = ()> {
+        async move { self.eval(&input).await }
     }
 
     /// Ownership preference on the operator's input stream
@@ -259,7 +259,7 @@ where
     ///
     /// The operator must be prepated to handle any combination of
     /// owned and borrowed inputs.
-    fn eval<'a>(&mut self, lhs: Cow<'a, I1>, rhs: Cow<'a, I2>);
+    fn eval<'a>(&mut self, lhs: Cow<'a, I1>, rhs: Cow<'a, I2>) -> impl Future<Output = ()>;
 
     /// Ownership preference on the operator's input streams
     /// (see [`OwnershipPreference`]).
@@ -275,11 +275,11 @@ where
 /// and produces a stream of outputs of type `O`.
 pub trait UnaryOperator<I, O>: Operator {
     /// Consume input by reference.
-    fn eval(&mut self, input: &I) -> O;
+    fn eval(&mut self, input: &I) -> impl Future<Output = O>;
 
     /// Consume input by value.
-    fn eval_owned(&mut self, input: I) -> O {
-        self.eval(&input)
+    fn eval_owned(&mut self, input: I) -> impl Future<Output = O> {
+        async move { self.eval(&input).await }
     }
 
     /// Ownership preference on the operator's input stream
@@ -293,21 +293,21 @@ pub trait UnaryOperator<I, O>: Operator {
 /// of types `I1` and `I2` and produces a stream of outputs of type `O`.
 pub trait BinaryOperator<I1, I2, O>: Operator {
     /// Consume input by reference.
-    fn eval(&mut self, lhs: &I1, rhs: &I2) -> O;
+    fn eval(&mut self, lhs: &I1, rhs: &I2) -> impl Future<Output = O>;
 
     /// Consume input by value.
-    fn eval_owned(&mut self, lhs: I1, rhs: I2) -> O {
-        self.eval(&lhs, &rhs)
+    fn eval_owned(&mut self, lhs: I1, rhs: I2) -> impl Future<Output = O> {
+        async move { self.eval(&lhs, &rhs).await }
     }
 
     /// Consume the first input by value and the second by reference.
-    fn eval_owned_and_ref(&mut self, lhs: I1, rhs: &I2) -> O {
-        self.eval(&lhs, rhs)
+    fn eval_owned_and_ref(&mut self, lhs: I1, rhs: &I2) -> impl Future<Output = O> {
+        async move { self.eval(&lhs, rhs).await }
     }
 
     /// Consume the first input by reference and the second by value.
-    fn eval_ref_and_owned(&mut self, lhs: &I1, rhs: I2) -> O {
-        self.eval(lhs, &rhs)
+    fn eval_ref_and_owned(&mut self, lhs: &I1, rhs: I2) -> impl Future<Output = O> {
+        async move { self.eval(lhs, &rhs).await }
     }
 
     /// Ownership preference on the operator's input streams
@@ -332,7 +332,12 @@ where
     ///
     /// The operator must be prepated to handle any combination of
     /// owned and borrowed inputs.
-    fn eval<'a>(&mut self, i1: Cow<'a, I1>, i2: Cow<'a, I2>, i3: Cow<'a, I3>) -> O;
+    fn eval(
+        &mut self,
+        i1: Cow<'_, I1>,
+        i2: Cow<'_, I2>,
+        i3: Cow<'_, I3>,
+    ) -> impl Future<Output = O>;
 
     fn input_preference(
         &self,
@@ -363,8 +368,13 @@ where
     ///
     /// The operator must be prepated to handle any combination of
     /// owned and borrowed inputs.
-    fn eval<'a>(&mut self, i1: Cow<'a, I1>, i2: Cow<'a, I2>, i3: Cow<'a, I3>, i4: Cow<'a, I4>)
-        -> O;
+    fn eval(
+        &mut self,
+        i1: Cow<'_, I1>,
+        i2: Cow<'_, I2>,
+        i3: Cow<'_, I3>,
+        i4: Cow<'_, I4>,
+    ) -> impl Future<Output = O>;
 
     fn input_preference(
         &self,
@@ -393,7 +403,7 @@ where
     ///
     /// The operator must be prepated to handle any combination of
     /// owned and borrowed inputs.
-    fn eval<'a, Iter>(&'a mut self, inputs: Iter) -> O
+    fn eval<'a, Iter>(&'a mut self, inputs: Iter) -> impl Future<Output = O>
     where
         Iter: Iterator<Item = Cow<'a, I>>;
 
@@ -435,14 +445,14 @@ pub trait StrictUnaryOperator<I, O>: StrictOperator<O> {
     /// output will be consumed via
     /// [`get_output`](`StrictOperator::get_output`) during the
     /// next timestamp.
-    fn eval_strict(&mut self, input: &I);
+    fn eval_strict(&mut self, input: &I) -> impl Future<Output = ()>;
 
     /// Feed input for the current timestamp to the operator by value.  The
     /// output will be consumed via
     /// [`get_output`](`StrictOperator::get_output`) during the
     /// next timestamp.
-    fn eval_strict_owned(&mut self, input: I) {
-        self.eval_strict(&input);
+    fn eval_strict_owned(&mut self, input: I) -> impl Future<Output = ()> {
+        async move { self.eval_strict(&input).await }
     }
 
     /// Ownership preference on the operator's input stream
@@ -475,7 +485,7 @@ pub trait ImportOperator<I, O>: Operator {
 
     /// Invoked once per nested clock cycle to write a value to
     /// the output stream.
-    fn eval(&mut self) -> O;
+    fn eval(&mut self) -> impl Future<Output = O>;
 
     /// Ownership preference on the operator's input stream
     /// (see [`OwnershipPreference`]).

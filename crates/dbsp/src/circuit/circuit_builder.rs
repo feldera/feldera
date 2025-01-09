@@ -29,7 +29,6 @@ use crate::{
     trace::Batch,
     InputHandle, OutputHandle,
 };
-
 use crate::{
     circuit::{
         cache::{CircuitCache, CircuitStoreMarker},
@@ -56,16 +55,20 @@ use serde::Serialize;
 use std::{
     any::type_name_of_val,
     borrow::Cow,
-    cell::{Ref, RefCell, RefMut, UnsafeCell},
+    cell::{Ref, RefCell, RefMut},
     collections::HashMap,
     fmt::{self, Debug, Display, Write},
+    future::Future,
     iter::repeat,
     marker::PhantomData,
+    ops::Deref,
     panic::Location,
+    pin::Pin,
     rc::Rc,
     thread::panicking,
     time::{Duration, Instant},
 };
+use tokio::{runtime::Runtime as TokioRuntime, task::LocalSet};
 use tracing::info;
 use typedmap::{TypedMap, TypedMapKey};
 use uuid::Uuid;
@@ -96,7 +99,12 @@ impl<D> StreamValue<D> {
         }
     }
 
-    unsafe fn put(&mut self, val: D) {
+    fn put(&mut self, val: D) {
+        // Check that stream contents was consumed at the last clock cycle.
+        // This isn't strictly necessary for correctness, but can indicate a
+        // scheduling or token counting error.
+        debug_assert!(self.val.is_none());
+
         // If the stream is not connected to any consumers, drop the output
         // on the floor.
         if self.consumers > 0 {
@@ -104,10 +112,49 @@ impl<D> StreamValue<D> {
             self.val = Some(val);
         }
     }
+
+    /// Returns a reference to the value.
+    fn peek<R>(this: &R) -> &D
+    where
+        R: Deref<Target = Self>,
+    {
+        debug_assert_ne!(this.tokens, 0);
+
+        this.val.as_ref().unwrap()
+    }
+
+    /// Returns the owned value, leaving `this` empty iff the number of remaining
+    /// tokens is 1; returns None otherwise.
+    fn take(this: &RefCell<Self>) -> Option<D>
+    where
+        D: Clone,
+    {
+        let tokens = this.borrow().tokens;
+        debug_assert_ne!(tokens, 0);
+
+        if tokens == 1 {
+            Some(this.borrow_mut().val.take().unwrap())
+        } else {
+            None
+        }
+    }
+
+    /// Must be called exactly once by each consumer of the stream at each clock cycle,
+    /// when the consumer has finished processing the contents of the stream. The consumer
+    /// is not allowed to access the value after calling this function. This guarantees that,
+    /// once the number of tokens drops to 1, only one active consumer remains and that
+    /// consumer can retrieve the value using `Self::take`.
+    fn consume_token(&mut self) {
+        debug_assert_ne!(self.tokens, 0);
+        self.tokens -= 1;
+        if self.tokens == 0 {
+            self.val.take();
+        }
+    }
 }
 
 #[repr(transparent)]
-pub struct RefStreamValue<D>(Rc<UnsafeCell<StreamValue<D>>>);
+pub struct RefStreamValue<D>(Rc<RefCell<StreamValue<D>>>);
 
 impl<D> Clone for RefStreamValue<D> {
     fn clone(&self) -> Self {
@@ -117,28 +164,31 @@ impl<D> Clone for RefStreamValue<D> {
 
 impl<D> RefStreamValue<D> {
     pub fn empty() -> Self {
-        Self(Rc::new(UnsafeCell::new(StreamValue::empty())))
+        Self(Rc::new(RefCell::new(StreamValue::empty())))
     }
 
-    fn get(&self) -> *mut StreamValue<D> {
-        self.0.get()
+    fn get_mut(&self) -> RefMut<StreamValue<D>> {
+        self.0.borrow_mut()
+    }
+
+    fn get(&self) -> Ref<StreamValue<D>> {
+        self.0.borrow()
     }
 
     /// Put a new value in the stream.
     ///
-    /// # Safety
+    /// # Panics
     ///
-    /// Noone should be holding a reference to the stream value, e.g., the stream cannot
-    /// simultaneously be an input and an output of the same operator.
-    pub unsafe fn put(&self, d: D) {
-        let val = &mut *self.0.get();
+    /// Panics if someone is holding a reference to the stream value.
+    pub fn put(&self, d: D) {
+        let mut val = self.get_mut();
         val.put(d);
     }
 
     unsafe fn transmute<D2>(&self) -> RefStreamValue<D2> {
         RefStreamValue(std::mem::transmute::<
-            Rc<UnsafeCell<StreamValue<D>>>,
-            Rc<UnsafeCell<StreamValue<D2>>>,
+            Rc<RefCell<StreamValue<D>>>,
+            Rc<RefCell<StreamValue<D2>>>,
         >(self.0.clone()))
     }
 }
@@ -745,41 +795,25 @@ impl<C, D> Stream<C, D>
 where
     D: Clone,
 {
-    /// Consume a value from the stream.
-    ///
-    /// This function is invoked exactly once per clock cycle by each
-    /// consumer connected to the stream.  The last consumer receives
-    /// an owned value (`Cow::Owned`).
-    ///
-    /// # Safety
-    ///
-    /// The caller must have exclusive access to the current stream.
-    pub(crate) unsafe fn take(&'_ self) -> Cow<'_, D> {
-        let val = &mut *self.val.get();
-        debug_assert_ne!(val.tokens, 0);
-        val.tokens -= 1;
-        if val.tokens == 0 {
-            Cow::Owned(val.val.take().unwrap())
-        } else {
-            Cow::Borrowed(val.val.as_ref().unwrap())
-        }
+    fn get(&self) -> Ref<StreamValue<D>> {
+        self.val.get()
     }
 
-    /// Get a reference to the content of the stream without
-    /// decrementing the refcount.
-    pub(crate) unsafe fn peek(&self) -> &D {
-        let val = &*self.val.get();
-        debug_assert_ne!(val.tokens, 0);
+    fn get_mut(&self) -> RefMut<StreamValue<D>> {
+        self.val.get_mut()
+    }
 
-        val.val.as_ref().unwrap()
+    fn val(&self) -> &RefCell<StreamValue<D>> {
+        &self.val.0
     }
 
     /// Puts a value in the stream, overwriting the previous value if any.
     ///
-    /// #Safety
+    /// # Panics
     ///
-    /// The caller must have exclusive access to the current stream.
-    unsafe fn put(&self, d: D) {
+    /// The caller must have exclusive access to the current stream;
+    /// otherwise the method will panic.
+    fn put(&self, d: D) {
         self.val.put(d);
     }
 }
@@ -836,12 +870,7 @@ pub trait Node {
     /// Evaluate the operator.  Reads one value from each input stream
     /// and pushes a new value to the output stream (except for sink
     /// operators, which don't have an output stream).
-    ///
-    /// # Safety
-    ///
-    /// Only one node may be scheduled at any given time (a node cannot invoke
-    /// another node).
-    unsafe fn eval(&mut self) -> Result<(), SchedulerError>;
+    fn eval<'a>(&'a mut self) -> Pin<Box<dyn Future<Output = Result<(), SchedulerError>> + 'a>>;
 
     /// Notify the node about start of a clock epoch.
     ///
@@ -861,12 +890,7 @@ pub trait Node {
     /// # Arguments
     ///
     /// * `scope` - the scope whose clock is ending.
-    ///
-    /// # Safety
-    ///
-    /// Only one node may be scheduled at any given time (a node cannot invoke
-    /// another node).
-    unsafe fn clock_end(&mut self, scope: Scope);
+    fn clock_end(&mut self, scope: Scope);
 
     fn init(&mut self, _gid: &GlobalNodeId) {}
 
@@ -1258,7 +1282,7 @@ pub trait Circuit: WithClock + Clone + 'static {
     /// Global id of the circuit node.
     ///
     /// Returns [`GlobalNodeId::root()`] for the root circuit.
-    fn global_id(&self) -> Ref<'_, GlobalNodeId>;
+    fn global_id(&self) -> &GlobalNodeId;
 
     /// Number of nodes in the circuit.
     fn num_nodes(&self) -> usize;
@@ -1355,7 +1379,7 @@ pub trait Circuit: WithClock + Clone + 'static {
     /// Evaluate operator with the given id.
     ///
     /// This method should only be used by schedulers.
-    fn eval_node(&self, id: NodeId) -> Result<(), SchedulerError>;
+    fn eval_node(&self, id: NodeId) -> impl Future<Output = Result<(), SchedulerError>>;
 
     /// Evaluate closure `f` inside a new circuit region.
     ///
@@ -1699,7 +1723,7 @@ pub trait Circuit: WithClock + Clone + 'static {
     fn connect_feedback_with_preference<I, O, Op>(
         &self,
         output_node_id: NodeId,
-        operator: Rc<UnsafeCell<Op>>,
+        operator: Rc<RefCell<Op>>,
         input_stream: &Stream<Self, I>,
         input_preference: OwnershipPreference,
     ) where
@@ -1891,11 +1915,11 @@ where
     // Circuit's node id within the parent circuit.
     node_id: NodeId,
     global_node_id: GlobalNodeId,
-    nodes: Vec<Box<dyn Node>>,
-    edges: Vec<Edge>,
+    nodes: RefCell<Vec<RefCell<Box<dyn Node>>>>,
+    edges: RefCell<Vec<Edge>>,
     circuit_event_handlers: CircuitEventHandlers,
     scheduler_event_handlers: SchedulerEventHandlers,
-    store: CircuitCache,
+    store: RefCell<CircuitCache>,
     last_stream_id: RefCell<StreamId>,
 }
 
@@ -1917,34 +1941,36 @@ where
             root_scope,
             node_id,
             global_node_id,
-            nodes: Vec::new(),
-            edges: Vec::new(),
+            nodes: RefCell::new(Vec::new()),
+            edges: RefCell::new(Vec::new()),
             circuit_event_handlers,
             scheduler_event_handlers,
-            store: TypedMap::new(),
+            store: RefCell::new(TypedMap::new()),
             last_stream_id,
         }
     }
 
-    fn add_edge(&mut self, edge: Edge) {
-        self.edges.push(edge);
+    fn add_edge(&self, edge: Edge) {
+        self.edges.borrow_mut().push(edge);
     }
 
-    fn add_node<N>(&mut self, mut node: N)
+    fn add_node<N>(&self, mut node: N)
     where
         N: Node + 'static,
     {
         node.init(&self.global_node_id);
-        self.nodes.push(Box::new(node) as Box<dyn Node>);
+        self.nodes
+            .borrow_mut()
+            .push(RefCell::new(Box::new(node) as Box<dyn Node>));
     }
 
-    fn clear(&mut self) {
-        self.nodes.clear();
-        self.edges.clear();
-        self.store.clear();
+    fn clear(&self) {
+        self.nodes.borrow_mut().clear();
+        self.edges.borrow_mut().clear();
+        self.store.borrow_mut().clear();
     }
 
-    fn register_circuit_event_handler<F>(&mut self, name: &str, handler: F)
+    fn register_circuit_event_handler<F>(&self, name: &str, handler: F)
     where
         F: Fn(&CircuitEvent) + 'static,
     {
@@ -1954,14 +1980,14 @@ where
         );
     }
 
-    fn unregister_circuit_event_handler(&mut self, name: &str) -> bool {
+    fn unregister_circuit_event_handler(&self, name: &str) -> bool {
         self.circuit_event_handlers
             .borrow_mut()
             .remove(name)
             .is_some()
     }
 
-    fn register_scheduler_event_handler<F>(&mut self, name: &str, handler: F)
+    fn register_scheduler_event_handler<F>(&self, name: &str, handler: F)
     where
         F: FnMut(&SchedulerEvent<'_>) + 'static,
     {
@@ -1971,7 +1997,7 @@ where
         );
     }
 
-    fn unregister_scheduler_event_handler(&mut self, name: &str) -> bool {
+    fn unregister_scheduler_event_handler(&self, name: &str) -> bool {
         self.scheduler_event_handlers
             .borrow_mut()
             .remove(name)
@@ -1991,8 +2017,8 @@ where
     }
 
     fn fixedpoint(&self, scope: Scope) -> bool {
-        self.nodes.iter().all(|node| {
-            node.fixedpoint(scope)
+        self.nodes.borrow().iter().all(|node| {
+            node.borrow().fixedpoint(scope)
             /*if !res {
                 eprintln!("node {} ({})", node.global_id(), node.name());
             }*/
@@ -2009,7 +2035,7 @@ pub struct ChildCircuit<P>
 where
     P: WithClock,
 {
-    inner: Rc<RefCell<CircuitInner<P>>>,
+    inner: Rc<CircuitInner<P>>,
     time: Rc<RefCell<<P::Time as Timestamp>::Nested>>,
 }
 
@@ -2045,14 +2071,9 @@ impl<P> ChildCircuit<P>
 where
     P: WithClock,
 {
-    /// Mutably borrow the inner circuit.
-    fn inner_mut(&self) -> RefMut<'_, CircuitInner<P>> {
-        self.inner.borrow_mut()
-    }
-
     /// Immutably borrow the inner circuit.
-    fn inner(&self) -> Ref<'_, CircuitInner<P>> {
-        self.inner.borrow()
+    fn inner(&self) -> &CircuitInner<P> {
+        &self.inner
     }
 }
 
@@ -2117,6 +2138,17 @@ impl RootCircuit {
         F: FnOnce(&mut RootCircuit) -> Result<T, AnyError>,
         S: Scheduler + 'static,
     {
+        // TODO: user LocalRuntime instead of Runtime + LocalSet when
+        // tokio::LocalRuntime is stable.
+        // Local tokio runtime that schedules operators on the current worker thread.
+        let tokio_runtime = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .map_err(|e| {
+                DbspError::Scheduler(SchedulerError::TokioError {
+                    error: e.to_string(),
+                })
+            })?;
+
         let mut circuit = RootCircuit::new();
         let res = constructor(&mut circuit).map_err(DbspError::Constructor)?;
         let executor =
@@ -2128,7 +2160,14 @@ impl RootCircuit {
         // scratch.
         circuit.log_scheduler_event(&SchedulerEvent::clock_start());
         circuit.clock_start(0);
-        Ok((CircuitHandle { circuit, executor }, res))
+        Ok((
+            CircuitHandle {
+                circuit,
+                executor,
+                tokio_runtime,
+            },
+            res,
+        ))
     }
 }
 
@@ -2137,7 +2176,7 @@ impl RootCircuit {
     // [`RootCircuit::build`] API.
     fn new() -> Self {
         Self {
-            inner: Rc::new(RefCell::new(CircuitInner::new(
+            inner: Rc::new(CircuitInner::new(
                 (),
                 0,
                 NodeId::root(),
@@ -2145,7 +2184,7 @@ impl RootCircuit {
                 Rc::new(RefCell::new(HashMap::new())),
                 Rc::new(RefCell::new(HashMap::new())),
                 RefCell::new(StreamId::new(0)),
-            ))),
+            )),
             time: Rc::new(RefCell::new(())),
         }
     }
@@ -2175,14 +2214,13 @@ impl RootCircuit {
     where
         F: Fn(&CircuitEvent) + 'static,
     {
-        self.inner_mut()
-            .register_circuit_event_handler(name, handler);
+        self.inner().register_circuit_event_handler(name, handler);
     }
 
     /// Remove a circuit event handler.  Returns `true` if a handler with the
     /// specified name had previously been registered and `false` otherwise.
     pub fn unregister_circuit_event_handler(&self, name: &str) -> bool {
-        self.inner_mut().unregister_circuit_event_handler(name)
+        self.inner().unregister_circuit_event_handler(name)
     }
 
     /// Attach a scheduler event handler to the top-level circuit (see
@@ -2203,14 +2241,13 @@ impl RootCircuit {
     where
         F: FnMut(&SchedulerEvent<'_>) + 'static,
     {
-        self.inner_mut()
-            .register_scheduler_event_handler(name, handler);
+        self.inner().register_scheduler_event_handler(name, handler);
     }
 
     /// Remove a scheduler event handler.  Returns `true` if a handler with the
     /// specified name had previously been registered and `false` otherwise.
     pub fn unregister_scheduler_event_handler(&self, name: &str) -> bool {
-        self.inner_mut().unregister_scheduler_event_handler(name)
+        self.inner().unregister_scheduler_event_handler(name)
     }
 }
 
@@ -2227,7 +2264,7 @@ where
         let last_stream_id = parent.last_stream_id();
 
         ChildCircuit {
-            inner: Rc::new(RefCell::new(CircuitInner::new(
+            inner: Rc::new(CircuitInner::new(
                 parent,
                 root_scope,
                 id,
@@ -2235,7 +2272,7 @@ where
                 circuit_handlers,
                 sched_handlers,
                 last_stream_id,
-            ))),
+            )),
             time: Rc::new(RefCell::new(Timestamp::clock_start())),
         }
     }
@@ -2268,7 +2305,7 @@ where
         ));
 
         let origin = self.global_node_id().child(from);
-        self.inner_mut().add_edge(Edge {
+        self.inner().add_edge(Edge {
             from,
             to,
             origin,
@@ -2286,12 +2323,12 @@ where
         F: FnOnce(NodeId) -> (N, T),
         N: Node + 'static,
     {
-        let id = self.inner().nodes.len();
+        let id = self.inner().nodes.borrow().len();
 
         // We don't hold a reference to `self.inner()` while calling `f`, so it can
         // safely modify the circuit, e.g., add edges.
         let (node, res) = f(NodeId(id));
-        self.inner_mut().add_node(node);
+        self.inner().add_node(node);
         res
     }
 
@@ -2301,33 +2338,33 @@ where
         F: FnOnce(NodeId) -> Result<(N, T), E>,
         N: Node + 'static,
     {
-        let id = self.inner().nodes.len();
+        let id = self.inner().nodes.borrow().len();
 
         // We don't hold a reference to `self.inner()` while calling `f`, so it can
         // safely modify the circuit, e.g., add edges.
         let (node, res) = f(NodeId(id))?;
-        self.inner_mut().add_node(node);
+        self.inner().add_node(node);
         Ok(res)
     }
 
     /// Recursively apply `f` to all nodes in `self` and its children.
     pub(crate) fn map_nodes_recursive(&self, f: &mut dyn FnMut(&dyn Node)) {
-        for node in self.inner().nodes.iter() {
-            f(node.as_ref());
-            node.map_nodes_recursive(f);
+        for node in self.inner().nodes.borrow().iter() {
+            f(node.borrow().as_ref());
+            node.borrow().map_nodes_recursive(f);
         }
     }
 
     /// Recursively apply `f` to all nodes in `self` and its children mutably.
     pub(crate) fn map_nodes_recursive_mut(&mut self, f: &mut dyn FnMut(&mut dyn Node)) {
-        for node in self.inner_mut().nodes.iter_mut() {
-            f(node.as_mut());
-            node.map_nodes_recursive_mut(f);
+        for node in self.inner().nodes.borrow_mut().iter_mut() {
+            f(node.borrow_mut().as_mut());
+            node.borrow_mut().map_nodes_recursive_mut(f);
         }
     }
 
     fn clear(&mut self) {
-        self.inner_mut().clear();
+        self.inner().clear();
     }
 
     /// Send the specified `CircuitEvent` to all handlers attached to the
@@ -2354,24 +2391,24 @@ where
     }
 
     fn edges(&self) -> Ref<'_, [Edge]> {
-        let circuit = self.inner();
-        Ref::map(circuit, |c| c.edges.as_slice())
+        Ref::map(self.inner().edges.borrow(), |edges| edges.as_slice())
     }
 
     fn num_nodes(&self) -> usize {
-        self.inner().nodes.len()
+        self.inner().nodes.borrow().len()
     }
 
-    fn global_id(&self) -> Ref<'_, GlobalNodeId> {
-        Ref::map(self.inner(), |c| &c.global_node_id)
+    fn global_id(&self) -> &GlobalNodeId {
+        &self.inner().global_node_id
     }
 
     /// Returns vector of local node ids in the circuit.
     fn node_ids(&self) -> Vec<NodeId> {
         self.inner()
             .nodes
+            .borrow()
             .iter()
-            .map(|node| node.local_id())
+            .map(|node| node.borrow().local_id())
             .collect()
     }
 
@@ -2425,15 +2462,19 @@ where
     {
         // Don't use `store.entry()`, since `f` may need to perform
         // its own cache lookup.
-        if self.inner().store.contains_key(&key) {
-            return RefMut::map(self.inner_mut(), |c| c.store.get_mut(&key).unwrap());
+        if self.inner().store.borrow().contains_key(&key) {
+            return RefMut::map(self.inner().store.borrow_mut(), |store| {
+                store.get_mut(&key).unwrap()
+            });
         }
 
         let new = f();
 
         // TODO: Use `RefMut::filter_map()` to only perform one lookup in the happy path
         //       https://github.com/rust-lang/rust/issues/81061
-        RefMut::map(self.inner_mut(), |c| c.store.entry(key).or_insert(new))
+        RefMut::map(self.inner().store.borrow_mut(), |store| {
+            store.entry(key).or_insert(new)
+        })
     }
 
     fn connect_stream<T>(
@@ -2449,10 +2490,10 @@ where
         ));
 
         // Safe because the circuit isn't running yet.
-        unsafe { (*stream.val.get()).consumers += 1 };
+        stream.val.get_mut().consumers += 1;
 
         debug_assert_eq!(self.global_node_id(), stream.circuit.global_node_id());
-        self.inner_mut().add_edge(Edge {
+        self.inner().add_edge(Edge {
             from: stream.local_node_id(),
             to,
             origin: stream.origin_node_id().clone(),
@@ -2466,16 +2507,14 @@ where
     }
 
     fn clock_start(&self, scope: Scope) {
-        for node in self.inner_mut().nodes.iter_mut() {
-            node.clock_start(scope);
+        for node in self.inner().nodes.borrow_mut().iter_mut() {
+            node.borrow_mut().clock_start(scope);
         }
     }
 
     fn clock_end(&self, scope: Scope) {
-        for node in self.inner_mut().nodes.iter_mut() {
-            unsafe {
-                node.clock_end(scope);
-            }
+        for node in self.inner().nodes.borrow_mut().iter_mut() {
+            node.borrow_mut().clock_end(scope);
         }
 
         let mut time = self.time.borrow_mut();
@@ -2483,21 +2522,21 @@ where
     }
 
     fn ready(&self, id: NodeId) -> bool {
-        self.inner().nodes[id.0].ready()
+        self.inner().nodes.borrow()[id.0].borrow().ready()
     }
 
     fn cache_insert<K>(&self, key: K, val: K::Value)
     where
         K: TypedMapKey<CircuitStoreMarker> + 'static,
     {
-        self.inner_mut().store.insert(key, val);
+        self.inner().store.borrow_mut().insert(key, val);
     }
 
     fn cache_contains<K>(&self, key: &K) -> bool
     where
         K: TypedMapKey<CircuitStoreMarker> + 'static,
     {
-        self.inner_mut().store.contains_key(key)
+        self.inner().store.borrow().contains_key(key)
     }
 
     fn cache_get<K>(&self, key: &K) -> Option<K::Value>
@@ -2505,38 +2544,40 @@ where
         K: TypedMapKey<CircuitStoreMarker> + 'static,
         K::Value: Clone,
     {
-        self.inner_mut().store.get(key).cloned()
+        self.inner().store.borrow().get(key).cloned()
     }
 
     fn register_ready_callback(&self, id: NodeId, cb: Box<dyn Fn() + Send + Sync>) {
-        self.inner_mut().nodes[id.0].register_ready_callback(cb);
+        self.inner().nodes.borrow()[id.0]
+            .borrow_mut()
+            .register_ready_callback(cb);
     }
 
     fn is_async_node(&self, id: NodeId) -> bool {
-        self.inner().nodes[id.0].is_async()
+        self.inner().nodes.borrow()[id.0].borrow().is_async()
     }
 
-    fn eval_node(&self, id: NodeId) -> Result<(), SchedulerError> {
-        let mut circuit = self.inner_mut();
-        debug_assert!(id.0 < circuit.nodes.len());
+    // Justification: the scheduler must not call `eval()` on a node twice.
+    #[allow(clippy::await_holding_refcell_ref)]
+    async fn eval_node(&self, id: NodeId) -> Result<(), SchedulerError> {
+        let circuit = self.inner();
+        debug_assert!(id.0 < circuit.nodes.borrow().len());
 
         // Notify loggers while holding a reference to the inner circuit.
         // We normally avoid this, since a nested call from event handler
         // will panic in `self.inner()`, but we do it here as an
         // optimization.
-        circuit.log_scheduler_event(&SchedulerEvent::eval_start(circuit.nodes[id.0].as_ref()));
+        circuit.log_scheduler_event(&SchedulerEvent::eval_start(
+            circuit.nodes.borrow()[id.0].borrow().as_ref(),
+        ));
 
-        // Safety: `eval` cannot invoke the
-        // `eval` method of another node.  To circumvent
-        // this invariant the user would have to extract a
-        // reference to a node and pass it to an operator,
-        // but this module doesn't expose nodes, only
-        // streams.
-        unsafe { circuit.nodes[id.0].eval()? };
+        circuit.nodes.borrow()[id.0].borrow_mut().eval().await?;
 
-        circuit.nodes[id.0].metrics();
+        circuit.nodes.borrow()[id.0].borrow().metrics();
 
-        circuit.log_scheduler_event(&SchedulerEvent::eval_end(circuit.nodes[id.0].as_ref()));
+        circuit.log_scheduler_event(&SchedulerEvent::eval_end(
+            circuit.nodes.borrow()[id.0].borrow().as_ref(),
+        ));
 
         Ok(())
     }
@@ -3008,7 +3049,7 @@ where
                 operator.location(),
             ));
 
-            let operator = Rc::new(UnsafeCell::new(operator));
+            let operator = Rc::new(RefCell::new(operator));
             let connector = FeedbackConnector::new(id, self.clone(), operator.clone());
             let output_node = FeedbackOutputNode::new(operator, self.clone(), id);
             let local = output_node.output_stream();
@@ -3032,7 +3073,7 @@ where
                 operator.location(),
             ));
 
-            let operator = Rc::new(UnsafeCell::new(operator));
+            let operator = Rc::new(RefCell::new(operator));
             let connector = FeedbackConnector::new(id, self.clone(), operator.clone());
             let output_node = FeedbackOutputNode::with_export(operator, self.clone(), id);
             let local = output_node.output_stream();
@@ -3044,7 +3085,7 @@ where
     fn connect_feedback_with_preference<I, O, Op>(
         &self,
         output_node_id: NodeId,
-        operator: Rc<UnsafeCell<Op>>,
+        operator: Rc<RefCell<Op>>,
         input_stream: &Stream<Self, I>,
         input_preference: OwnershipPreference,
     ) where
@@ -3334,22 +3375,28 @@ where
         self.operator.register_ready_callback(cb);
     }
 
-    unsafe fn eval(&mut self) -> Result<(), SchedulerError> {
-        self.output_stream.put(self.operator.eval());
-        Ok(())
+    fn eval<'a>(&'a mut self) -> Pin<Box<dyn Future<Output = Result<(), SchedulerError>> + 'a>> {
+        Box::pin(async {
+            self.output_stream.put(self.operator.eval().await);
+            Ok(())
+        })
     }
 
     fn clock_start(&mut self, scope: Scope) {
         self.operator.clock_start(scope);
         if scope == 0 {
-            match unsafe { self.parent_stream.take() } {
-                Cow::Borrowed(val) => self.operator.import(val),
-                Cow::Owned(val) => self.operator.import_owned(val),
+            match StreamValue::take(self.parent_stream.val()) {
+                None => self
+                    .operator
+                    .import(StreamValue::peek(&self.parent_stream.get())),
+                Some(val) => self.operator.import_owned(val),
             }
+
+            self.parent_stream.get_mut().consume_token();
         }
     }
 
-    unsafe fn clock_end(&mut self, scope: Scope) {
+    fn clock_end(&mut self, scope: Scope) {
         self.operator.clock_end(scope);
     }
 
@@ -3432,16 +3479,18 @@ where
         self.operator.register_ready_callback(cb);
     }
 
-    unsafe fn eval(&mut self) -> Result<(), SchedulerError> {
-        self.output_stream.put(self.operator.eval());
-        Ok(())
+    fn eval<'a>(&'a mut self) -> Pin<Box<dyn Future<Output = Result<(), SchedulerError>> + 'a>> {
+        Box::pin(async {
+            self.output_stream.put(self.operator.eval().await);
+            Ok(())
+        })
     }
 
     fn clock_start(&mut self, scope: Scope) {
         self.operator.clock_start(scope);
     }
 
-    unsafe fn clock_end(&mut self, scope: Scope) {
+    fn clock_end(&mut self, scope: Scope) {
         self.operator.clock_end(scope);
     }
 
@@ -3527,19 +3576,29 @@ where
         self.operator.register_ready_callback(cb);
     }
 
-    unsafe fn eval(&mut self) -> Result<(), SchedulerError> {
-        self.output_stream.put(match self.input_stream.take() {
-            Cow::Owned(v) => self.operator.eval_owned(v),
-            Cow::Borrowed(v) => self.operator.eval(v),
-        });
-        Ok(())
+    // Justification: see StreamValue::take() comment.
+    #[allow(clippy::await_holding_refcell_ref)]
+    fn eval<'a>(&'a mut self) -> Pin<Box<dyn Future<Output = Result<(), SchedulerError>> + 'a>> {
+        Box::pin(async {
+            self.output_stream
+                .put(match StreamValue::take(self.input_stream.val()) {
+                    Some(v) => self.operator.eval_owned(v).await,
+                    None => {
+                        self.operator
+                            .eval(StreamValue::peek(&self.input_stream.get()))
+                            .await
+                    }
+                });
+            self.input_stream.get_mut().consume_token();
+            Ok(())
+        })
     }
 
     fn clock_start(&mut self, scope: Scope) {
         self.operator.clock_start(scope);
     }
 
-    unsafe fn clock_end(&mut self, scope: Scope) {
+    fn clock_end(&mut self, scope: Scope) {
         self.operator.clock_end(scope);
     }
 
@@ -3618,19 +3677,28 @@ where
         self.operator.register_ready_callback(cb);
     }
 
-    unsafe fn eval(&mut self) -> Result<(), SchedulerError> {
-        match self.input_stream.take() {
-            Cow::Owned(v) => self.operator.eval_owned(v),
-            Cow::Borrowed(v) => self.operator.eval(v),
-        };
-        Ok(())
+    // Justification: see StreamValue::take() comment.
+    #[allow(clippy::await_holding_refcell_ref)]
+    fn eval<'a>(&'a mut self) -> Pin<Box<dyn Future<Output = Result<(), SchedulerError>> + 'a>> {
+        Box::pin(async {
+            match StreamValue::take(self.input_stream.val()) {
+                Some(v) => self.operator.eval_owned(v).await,
+                None => {
+                    self.operator
+                        .eval(StreamValue::peek(&self.input_stream.get()))
+                        .await
+                }
+            };
+            self.input_stream.get_mut().consume_token();
+            Ok(())
+        })
     }
 
     fn clock_start(&mut self, scope: Scope) {
         self.operator.clock_start(scope);
     }
 
-    unsafe fn clock_end(&mut self, scope: Scope) {
+    fn clock_end(&mut self, scope: Scope) {
         self.operator.clock_end(scope);
     }
 
@@ -3724,24 +3792,71 @@ where
         self.operator.register_ready_callback(cb);
     }
 
-    unsafe fn eval(&mut self) -> Result<(), SchedulerError> {
-        let input1 = if self.is_alias {
-            Cow::Borrowed(self.input_stream1.peek())
-        } else {
-            self.input_stream1.take()
-        };
+    // Justification: see StreamValue::take() comment.
+    #[allow(clippy::await_holding_refcell_ref)]
+    fn eval<'a>(&'a mut self) -> Pin<Box<dyn Future<Output = Result<(), SchedulerError>> + 'a>> {
+        Box::pin(async {
+            if self.is_alias {
+                {
+                    let val1 = self.input_stream1.get();
+                    let val2 = self.input_stream2.get();
+                    self.operator
+                        .eval(
+                            Cow::Borrowed(StreamValue::peek(&val1)),
+                            Cow::Borrowed(StreamValue::peek(&val2)),
+                        )
+                        .await;
+                }
 
-        let input2 = self.input_stream2.take();
+                self.input_stream1.get_mut().consume_token();
+                self.input_stream2.get_mut().consume_token();
+            } else {
+                let val1 = StreamValue::take(self.input_stream1.val());
+                let val2 = StreamValue::take(self.input_stream2.val());
 
-        self.operator.eval(input1, input2);
-        Ok(())
+                match (val1, val2) {
+                    (Some(val1), Some(val2)) => {
+                        self.operator.eval(Cow::Owned(val1), Cow::Owned(val2)).await;
+                    }
+                    (Some(val1), None) => {
+                        self.operator
+                            .eval(
+                                Cow::Owned(val1),
+                                Cow::Borrowed(StreamValue::peek(&self.input_stream2.get())),
+                            )
+                            .await;
+                    }
+                    (None, Some(val2)) => {
+                        self.operator
+                            .eval(
+                                Cow::Borrowed(StreamValue::peek(&self.input_stream1.get())),
+                                Cow::Owned(val2),
+                            )
+                            .await;
+                    }
+                    (None, None) => {
+                        self.operator
+                            .eval(
+                                Cow::Borrowed(StreamValue::peek(&self.input_stream1.get())),
+                                Cow::Borrowed(StreamValue::peek(&self.input_stream2.get())),
+                            )
+                            .await;
+                    }
+                }
+
+                self.input_stream1.get_mut().consume_token();
+                self.input_stream2.get_mut().consume_token();
+            };
+
+            Ok(())
+        })
     }
 
     fn clock_start(&mut self, scope: Scope) {
         self.operator.clock_start(scope);
     }
 
-    unsafe fn clock_end(&mut self, scope: Scope) {
+    fn clock_end(&mut self, scope: Scope) {
         self.operator.clock_end(scope);
     }
 
@@ -3840,39 +3955,66 @@ where
         self.operator.register_ready_callback(cb);
     }
 
-    unsafe fn eval(&mut self) -> Result<(), SchedulerError> {
-        // If the two input streams are aliases, we cannot remove the owned
-        // value from `input_stream2`, as this will invalidate the borrow
-        // from `input_stream1`.  Instead use `peek` to obtain the value by
-        // reference.
-        if self.is_alias {
-            self.output_stream.put(
-                match (self.input_stream1.take(), self.input_stream2.peek()) {
-                    (Cow::Borrowed(v1), v2) => self.operator.eval(v1, v2),
-                    _ => unreachable!(),
-                },
-            );
-            // It is now safe to call `take`, and we must do so to decrement
-            // the ref counter.
-            let _ = self.input_stream2.take();
-        } else {
-            self.output_stream.put(
-                match (self.input_stream1.take(), self.input_stream2.take()) {
-                    (Cow::Owned(v1), Cow::Owned(v2)) => self.operator.eval_owned(v1, v2),
-                    (Cow::Owned(v1), Cow::Borrowed(v2)) => self.operator.eval_owned_and_ref(v1, v2),
-                    (Cow::Borrowed(v1), Cow::Owned(v2)) => self.operator.eval_ref_and_owned(v1, v2),
-                    (Cow::Borrowed(v1), Cow::Borrowed(v2)) => self.operator.eval(v1, v2),
-                },
-            );
-        }
-        Ok(())
+    // Justification: see StreamValue::take() comment.
+    #[allow(clippy::await_holding_refcell_ref)]
+    fn eval<'a>(&'a mut self) -> Pin<Box<dyn Future<Output = Result<(), SchedulerError>> + 'a>> {
+        Box::pin(async {
+            // If the two input streams are aliases, we cannot remove the owned
+            // value from `input_stream2`, as this will invalidate the borrow
+            // from `input_stream1`.  Instead use `peek` to obtain the value by
+            // reference.
+            if self.is_alias {
+                {
+                    let val1 = self.input_stream1.get();
+                    let val2 = self.input_stream2.get();
+
+                    self.output_stream.put(
+                        self.operator
+                            .eval(StreamValue::peek(&val1), StreamValue::peek(&val2))
+                            .await,
+                    );
+                }
+                // It is now safe to call `take`, and we must do so to decrement
+                // the ref counter.
+                self.input_stream1.get_mut().consume_token();
+                self.input_stream2.get_mut().consume_token();
+            } else {
+                let val1 = StreamValue::take(self.input_stream1.val());
+                let val2 = StreamValue::take(self.input_stream2.val());
+
+                self.output_stream.put(match (val1, val2) {
+                    (Some(val1), Some(val2)) => self.operator.eval_owned(val1, val2).await,
+                    (Some(val1), None) => {
+                        self.operator
+                            .eval_owned_and_ref(val1, StreamValue::peek(&self.input_stream2.get()))
+                            .await
+                    }
+                    (None, Some(val2)) => {
+                        self.operator
+                            .eval_ref_and_owned(StreamValue::peek(&self.input_stream1.get()), val2)
+                            .await
+                    }
+                    (None, None) => {
+                        self.operator
+                            .eval(
+                                StreamValue::peek(&self.input_stream1.get()),
+                                StreamValue::peek(&self.input_stream2.get()),
+                            )
+                            .await
+                    }
+                });
+                self.input_stream1.get_mut().consume_token();
+                self.input_stream2.get_mut().consume_token();
+            }
+            Ok(())
+        })
     }
 
     fn clock_start(&mut self, scope: Scope) {
         self.operator.clock_start(scope);
     }
 
-    unsafe fn clock_end(&mut self, scope: Scope) {
+    fn clock_end(&mut self, scope: Scope) {
         self.operator.clock_end(scope);
     }
 
@@ -3908,10 +4050,6 @@ struct TernaryNode<C, I1, I2, I3, O, Op> {
     input_stream2: Stream<C, I2>,
     input_stream3: Stream<C, I3>,
     output_stream: Stream<C, O>,
-    // `true` if `input_stream1` is an alias to `input_stream2` or `input_stream3`.
-    is_alias1: bool,
-    // `true` if `input_stream2` is an alias to `input_stream3`.
-    is_alias2: bool,
 }
 
 impl<C, I1, I2, I3, O, Op> TernaryNode<C, I1, I2, I3, O, Op>
@@ -3930,17 +4068,14 @@ where
         circuit: C,
         id: NodeId,
     ) -> Self {
-        let is_alias1 =
-            input_stream1.ptr_eq(&input_stream2) || input_stream1.ptr_eq(&input_stream3);
-        let is_alias2 = input_stream2.ptr_eq(&input_stream3);
         Self {
             id: circuit.global_node_id().child(id),
             operator,
             input_stream1,
             input_stream2,
             input_stream3,
-            is_alias1,
-            is_alias2,
+            // is_alias1,
+            // is_alias2,
             output_stream: Stream::new(circuit, id),
         }
     }
@@ -3983,31 +4118,35 @@ where
         self.operator.register_ready_callback(cb);
     }
 
-    unsafe fn eval(&mut self) -> Result<(), SchedulerError> {
-        let input1 = if self.is_alias1 {
-            Cow::Borrowed(self.input_stream1.peek())
-        } else {
-            self.input_stream1.take()
-        };
+    // Justification: see StreamValue::take() comment.
+    #[allow(clippy::await_holding_refcell_ref)]
+    fn eval<'a>(&'a mut self) -> Pin<Box<dyn Future<Output = Result<(), SchedulerError>> + 'a>> {
+        Box::pin(async {
+            {
+                self.output_stream.put(
+                    self.operator
+                        .eval(
+                            Cow::Borrowed(StreamValue::peek(&self.input_stream1.get())),
+                            Cow::Borrowed(StreamValue::peek(&self.input_stream2.get())),
+                            Cow::Borrowed(StreamValue::peek(&self.input_stream3.get())),
+                        )
+                        .await,
+                );
+            }
 
-        let input2 = if self.is_alias2 {
-            Cow::Borrowed(self.input_stream2.peek())
-        } else {
-            self.input_stream2.take()
-        };
+            self.input_stream1.get_mut().consume_token();
+            self.input_stream2.get_mut().consume_token();
+            self.input_stream3.get_mut().consume_token();
 
-        let input3 = self.input_stream3.take();
-
-        self.output_stream
-            .put(self.operator.eval(input1, input2, input3));
-        Ok(())
+            Ok(())
+        })
     }
 
     fn clock_start(&mut self, scope: Scope) {
         self.operator.clock_start(scope);
     }
 
-    unsafe fn clock_end(&mut self, scope: Scope) {
+    fn clock_end(&mut self, scope: Scope) {
         self.operator.clock_end(scope);
     }
 
@@ -4044,13 +4183,13 @@ struct QuaternaryNode<C, I1, I2, I3, I4, O, Op> {
     input_stream3: Stream<C, I3>,
     input_stream4: Stream<C, I4>,
     output_stream: Stream<C, O>,
-    // `true` if `input_stream1` is an alias to `input_stream2`, `input_stream3` or
-    // `input_stream4`.
-    is_alias1: bool,
-    // `true` if `input_stream2` is an alias to `input_stream3` or `input_stream4`.
-    is_alias2: bool,
-    // `true` if `input_stream3` is an alias to `input_stream4`.
-    is_alias3: bool,
+    // // `true` if `input_stream1` is an alias to `input_stream2`, `input_stream3` or
+    // // `input_stream4`.
+    // is_alias1: bool,
+    // // `true` if `input_stream2` is an alias to `input_stream3` or `input_stream4`.
+    // is_alias2: bool,
+    // // `true` if `input_stream3` is an alias to `input_stream4`.
+    // is_alias3: bool,
 }
 
 impl<C, I1, I2, I3, I4, O, Op> QuaternaryNode<C, I1, I2, I3, I4, O, Op>
@@ -4071,12 +4210,12 @@ where
         circuit: C,
         id: NodeId,
     ) -> Self {
-        let is_alias1 = input_stream1.ptr_eq(&input_stream2)
-            || input_stream1.ptr_eq(&input_stream3)
-            || input_stream1.ptr_eq(&input_stream4);
-        let is_alias2 =
-            input_stream2.ptr_eq(&input_stream3) || input_stream2.ptr_eq(&input_stream4);
-        let is_alias3 = input_stream3.ptr_eq(&input_stream4);
+        // let is_alias1 = input_stream1.ptr_eq(&input_stream2)
+        //     || input_stream1.ptr_eq(&input_stream3)
+        //     || input_stream1.ptr_eq(&input_stream4);
+        // let is_alias2 =
+        //     input_stream2.ptr_eq(&input_stream3) || input_stream2.ptr_eq(&input_stream4);
+        // let is_alias3 = input_stream3.ptr_eq(&input_stream4);
         Self {
             id: circuit.global_node_id().child(id),
             operator,
@@ -4084,9 +4223,9 @@ where
             input_stream2,
             input_stream3,
             input_stream4,
-            is_alias1,
-            is_alias2,
-            is_alias3,
+            // is_alias1,
+            // is_alias2,
+            // is_alias3,
             output_stream: Stream::new(circuit, id),
         }
     }
@@ -4130,37 +4269,37 @@ where
         self.operator.register_ready_callback(cb);
     }
 
-    unsafe fn eval(&mut self) -> Result<(), SchedulerError> {
-        let input1 = if self.is_alias1 {
-            Cow::Borrowed(self.input_stream1.peek())
-        } else {
-            self.input_stream1.take()
-        };
+    // Justification: see StreamValue::take() comment.
+    #[allow(clippy::await_holding_refcell_ref)]
+    fn eval<'a>(&'a mut self) -> Pin<Box<dyn Future<Output = Result<(), SchedulerError>> + 'a>> {
+        Box::pin(async {
+            {
+                self.output_stream.put(
+                    self.operator
+                        .eval(
+                            Cow::Borrowed(StreamValue::peek(&self.input_stream1.get())),
+                            Cow::Borrowed(StreamValue::peek(&self.input_stream2.get())),
+                            Cow::Borrowed(StreamValue::peek(&self.input_stream3.get())),
+                            Cow::Borrowed(StreamValue::peek(&self.input_stream4.get())),
+                        )
+                        .await,
+                );
+            }
 
-        let input2 = if self.is_alias2 {
-            Cow::Borrowed(self.input_stream2.peek())
-        } else {
-            self.input_stream2.take()
-        };
+            self.input_stream1.get_mut().consume_token();
+            self.input_stream2.get_mut().consume_token();
+            self.input_stream3.get_mut().consume_token();
+            self.input_stream4.get_mut().consume_token();
 
-        let input3 = if self.is_alias3 {
-            Cow::Borrowed(self.input_stream3.peek())
-        } else {
-            self.input_stream3.take()
-        };
-
-        let input4 = self.input_stream4.take();
-
-        self.output_stream
-            .put(self.operator.eval(input1, input2, input3, input4));
-        Ok(())
+            Ok(())
+        })
     }
 
     fn clock_start(&mut self, scope: Scope) {
         self.operator.clock_start(scope);
     }
 
-    unsafe fn clock_end(&mut self, scope: Scope) {
+    fn clock_end(&mut self, scope: Scope) {
         self.operator.clock_end(scope);
     }
 
@@ -4197,9 +4336,9 @@ where
     operator: Op,
     // The second field of the tuple indicates if the stream is an
     // alias to an earlier stream.
-    input_streams: Vec<(Stream<C, I>, bool)>,
-    // Streams that are aliases.
-    aliases: Vec<usize>,
+    input_streams: Vec<Stream<C, I>>,
+    // // Streams that are aliases.
+    // aliases: Vec<usize>,
     output_stream: Stream<C, O>,
 }
 
@@ -4213,27 +4352,24 @@ where
     where
         Iter: IntoIterator<Item = Stream<C, I>>,
     {
-        let mut input_streams: Vec<_> = input_streams
-            .into_iter()
-            .map(|stream| (stream, false))
-            .collect();
-        let mut aliases = Vec::new();
-        for i in 0..input_streams.len() {
-            for j in 0..i {
-                if input_streams[i].0.ptr_eq(&input_streams[j].0) {
-                    input_streams[i].1 = true;
-                    aliases.push(i);
-                    break;
-                }
-            }
-        }
-        aliases.shrink_to_fit();
+        let mut input_streams: Vec<_> = input_streams.into_iter().collect();
+        // let mut aliases = Vec::new();
+        // for i in 0..input_streams.len() {
+        //     for j in 0..i {
+        //         if input_streams[i].0.ptr_eq(&input_streams[j].0) {
+        //             input_streams[i].1 = true;
+        //             aliases.push(i);
+        //             break;
+        //         }
+        //     }
+        // }
+        //aliases.shrink_to_fit();
         input_streams.shrink_to_fit();
         Self {
             id: circuit.global_node_id().child(id),
             operator,
             input_streams,
-            aliases,
+            //aliases,
             output_stream: Stream::new(circuit, id),
         }
     }
@@ -4274,31 +4410,34 @@ where
         self.operator.register_ready_callback(cb);
     }
 
-    unsafe fn eval(&mut self) -> Result<(), SchedulerError> {
-        self.output_stream
-            .put(
+    fn eval<'a>(&'a mut self) -> Pin<Box<dyn Future<Output = Result<(), SchedulerError>> + 'a>> {
+        Box::pin(async {
+            let refs = self
+                .input_streams
+                .iter()
+                .map(|stream| stream.get())
+                .collect::<Vec<_>>();
+
+            self.output_stream.put(
                 self.operator
-                    .eval(self.input_streams.iter().map(|(stream, alias)| {
-                        // Don't take owned value via an alias.
-                        if *alias {
-                            Cow::Borrowed(stream.peek())
-                        } else {
-                            stream.take()
-                        }
-                    })),
+                    .eval(refs.iter().map(|r| Cow::Borrowed(StreamValue::peek(r))))
+                    .await,
             );
 
-        for i in self.aliases.iter() {
-            let _ = self.input_streams[*i].0.take();
-        }
-        Ok(())
+            std::mem::drop(refs);
+
+            for i in self.input_streams.iter() {
+                i.get_mut().consume_token();
+            }
+            Ok(())
+        })
     }
 
     fn clock_start(&mut self, scope: Scope) {
         self.operator.clock_start(scope);
     }
 
-    unsafe fn clock_end(&mut self, scope: Scope) {
+    fn clock_end(&mut self, scope: Scope) {
         self.operator.clock_end(scope);
     }
 
@@ -4337,7 +4476,7 @@ where
     C: Circuit,
 {
     id: GlobalNodeId,
-    operator: Rc<UnsafeCell<Op>>,
+    operator: Rc<RefCell<Op>>,
     output_stream: Stream<C, O>,
     export_stream: Option<Stream<C::Parent, O>>,
     phantom_input: PhantomData<I>,
@@ -4348,7 +4487,7 @@ where
     C: Circuit,
     Op: StrictUnaryOperator<I, O>,
 {
-    fn new(operator: Rc<UnsafeCell<Op>>, circuit: C, id: NodeId) -> Self {
+    fn new(operator: Rc<RefCell<Op>>, circuit: C, id: NodeId) -> Self {
         Self {
             id: circuit.global_node_id().child(id),
             operator,
@@ -4358,7 +4497,7 @@ where
         }
     }
 
-    fn with_export(operator: Rc<UnsafeCell<Op>>, circuit: C, id: NodeId) -> Self {
+    fn with_export(operator: Rc<RefCell<Op>>, circuit: C, id: NodeId) -> Self {
         let mut result = Self::new(operator, circuit.clone(), id);
         result.export_stream = Some(Stream::with_origin(
             circuit.parent(),
@@ -4390,61 +4529,68 @@ where
     }
 
     fn name(&self) -> Cow<'static, str> {
-        unsafe { &*self.operator.get() }.name()
+        self.operator.borrow().name()
     }
 
     fn is_async(&self) -> bool {
-        unsafe { &*self.operator.get() }.is_async()
+        self.operator.borrow().is_async()
     }
 
     fn ready(&self) -> bool {
-        unsafe { &*self.operator.get() }.ready()
+        self.operator.borrow().ready()
     }
 
     fn register_ready_callback(&mut self, cb: Box<dyn Fn() + Send + Sync>) {
-        unsafe { &mut *self.operator.get() }.register_ready_callback(cb);
+        self.operator.borrow_mut().register_ready_callback(cb);
     }
 
-    unsafe fn eval(&mut self) -> Result<(), SchedulerError> {
-        self.output_stream.put((*self.operator.get()).get_output());
-        Ok(())
+    fn eval<'a>(&'a mut self) -> Pin<Box<dyn Future<Output = Result<(), SchedulerError>> + 'a>> {
+        Box::pin(async {
+            self.output_stream
+                .put(self.operator.borrow_mut().get_output());
+            Ok(())
+        })
     }
 
     fn clock_start(&mut self, scope: Scope) {
-        unsafe { (*self.operator.get()).clock_start(scope) }
+        self.operator.borrow_mut().clock_start(scope)
     }
 
-    unsafe fn clock_end(&mut self, scope: Scope) {
+    fn clock_end(&mut self, scope: Scope) {
         if scope == 0 {
             if let Some(export_stream) = &mut self.export_stream {
-                export_stream.put((*self.operator.get()).get_final_output());
+                export_stream.put(self.operator.borrow_mut().get_final_output());
             }
         }
-        (*self.operator.get()).clock_end(scope);
+        self.operator.borrow_mut().clock_end(scope);
     }
 
     fn init(&mut self, gid: &GlobalNodeId) {
-        unsafe { (*self.operator.get()).init(gid) };
+        self.operator.borrow_mut().init(gid);
     }
 
     fn metrics(&self) {
-        unsafe { (*self.operator.get()).metrics() }
+        self.operator.borrow().metrics()
     }
 
     fn metadata(&self, output: &mut OperatorMeta) {
-        unsafe { (*self.operator.get()).metadata(output) }
+        self.operator.borrow().metadata(output)
     }
 
     fn fixedpoint(&self, scope: Scope) -> bool {
-        unsafe { (*self.operator.get()).fixedpoint(scope) }
+        self.operator.borrow().fixedpoint(scope)
     }
 
     fn commit(&mut self, cid: Uuid) -> Result<(), Error> {
-        unsafe { (*self.operator.get()).commit(cid, self.global_id().persistent_id()) }
+        self.operator
+            .borrow_mut()
+            .commit(cid, self.global_id().persistent_id())
     }
 
     fn restore(&mut self, cid: Uuid) -> Result<(), DbspError> {
-        unsafe { (*self.operator.get()).restore(cid, self.global_id().persistent_id()) }
+        self.operator
+            .borrow_mut()
+            .restore(cid, self.global_id().persistent_id())
     }
 }
 
@@ -4452,7 +4598,7 @@ where
 struct FeedbackInputNode<C, I, O, Op> {
     // Id of this node (the input half).
     id: GlobalNodeId,
-    operator: Rc<UnsafeCell<Op>>,
+    operator: Rc<RefCell<Op>>,
     input_stream: Stream<C, I>,
     phantom_output: PhantomData<O>,
 }
@@ -4462,7 +4608,7 @@ where
     Op: StrictUnaryOperator<I, O>,
     C: Circuit,
 {
-    fn new(operator: Rc<UnsafeCell<Op>>, input_stream: Stream<C, I>, id: NodeId) -> Self {
+    fn new(operator: Rc<RefCell<Op>>, input_stream: Stream<C, I>, id: NodeId) -> Self {
         Self {
             id: input_stream.circuit().global_node_id().child(id),
             operator,
@@ -4478,7 +4624,7 @@ where
     I: Data,
 {
     fn name(&self) -> Cow<'static, str> {
-        unsafe { &*self.operator.get() }.name()
+        self.operator.borrow().name()
     }
 
     fn local_id(&self) -> NodeId {
@@ -4490,45 +4636,56 @@ where
     }
 
     fn is_async(&self) -> bool {
-        unsafe { &*self.operator.get() }.is_async()
+        self.operator.borrow().is_async()
     }
 
     fn ready(&self) -> bool {
-        unsafe { &*self.operator.get() }.ready()
+        self.operator.borrow().ready()
     }
 
     fn register_ready_callback(&mut self, cb: Box<dyn Fn() + Send + Sync>) {
-        unsafe { &mut *self.operator.get() }.register_ready_callback(cb);
+        self.operator.borrow_mut().register_ready_callback(cb);
     }
 
-    unsafe fn eval(&mut self) -> Result<(), SchedulerError> {
-        match self.input_stream.take() {
-            Cow::Owned(v) => (*self.operator.get()).eval_strict_owned(v),
-            Cow::Borrowed(v) => (*self.operator.get()).eval_strict(v),
-        };
-        Ok(())
+    // Justification: see StreamValue::take() comment.
+    #[allow(clippy::await_holding_refcell_ref)]
+    fn eval<'a>(&'a mut self) -> Pin<Box<dyn Future<Output = Result<(), SchedulerError>> + 'a>> {
+        Box::pin(async {
+            match StreamValue::take(self.input_stream.val()) {
+                Some(v) => self.operator.borrow_mut().eval_strict_owned(v).await,
+                None => {
+                    self.operator
+                        .borrow_mut()
+                        .eval_strict(StreamValue::peek(&self.input_stream.get()))
+                        .await
+                }
+            };
+
+            self.input_stream.get_mut().consume_token();
+            Ok(())
+        })
     }
 
     // Don't call `clock_start`/`clock_end` on the operator.  `FeedbackOutputNode`
     // will do that.
     fn clock_start(&mut self, _scope: Scope) {}
 
-    unsafe fn clock_end(&mut self, _scope: Scope) {}
+    fn clock_end(&mut self, _scope: Scope) {}
 
     fn init(&mut self, gid: &GlobalNodeId) {
-        unsafe { (*self.operator.get()).init(gid) };
+        self.operator.borrow_mut().init(gid);
     }
 
     fn metrics(&self) {
-        unsafe { (*self.operator.get()).metrics() }
+        self.operator.borrow().metrics()
     }
 
     fn metadata(&self, output: &mut OperatorMeta) {
-        unsafe { (*self.operator.get()).metadata(output) }
+        self.operator.borrow().metadata(output)
     }
 
     fn fixedpoint(&self, scope: Scope) -> bool {
-        unsafe { (*self.operator.get()).fixedpoint(scope) }
+        self.operator.borrow().fixedpoint(scope)
     }
 
     fn commit(&mut self, _cid: Uuid) -> Result<(), Error> {
@@ -4557,7 +4714,7 @@ where
 pub struct FeedbackConnector<C, I, O, Op> {
     output_node_id: NodeId,
     circuit: C,
-    operator: Rc<UnsafeCell<Op>>,
+    operator: Rc<RefCell<Op>>,
     phantom_input: PhantomData<I>,
     phantom_output: PhantomData<O>,
 }
@@ -4566,7 +4723,7 @@ impl<C, I, O, Op> FeedbackConnector<C, I, O, Op>
 where
     Op: StrictUnaryOperator<I, O>,
 {
-    fn new(output_node_id: NodeId, circuit: C, operator: Rc<UnsafeCell<Op>>) -> Self {
+    fn new(output_node_id: NodeId, circuit: C, operator: Rc<RefCell<Op>>) -> Self {
         Self {
             output_node_id,
             circuit,
@@ -4667,15 +4824,15 @@ where
         true
     }
 
-    unsafe fn eval(&mut self) -> Result<(), SchedulerError> {
-        self.executor.run(&self.circuit)
+    fn eval<'a>(&'a mut self) -> Pin<Box<dyn Future<Output = Result<(), SchedulerError>> + 'a>> {
+        Box::pin(async { self.executor.run(&self.circuit).await })
     }
 
     fn clock_start(&mut self, scope: Scope) {
         self.circuit.clock_start(scope + 1);
     }
 
-    unsafe fn clock_end(&mut self, scope: Scope) {
+    fn clock_end(&mut self, scope: Scope) {
         self.circuit.clock_end(scope + 1);
     }
 
@@ -4706,6 +4863,7 @@ where
 pub struct CircuitHandle {
     circuit: RootCircuit,
     executor: Box<dyn Executor<RootCircuit>>,
+    tokio_runtime: TokioRuntime,
 }
 
 impl Drop for CircuitHandle {
@@ -4737,9 +4895,12 @@ impl CircuitHandle {
     /// handle.  Each call stores a value in each output stream so, after
     /// calling, the client may obtain these values using their output handles.
     pub fn step(&self) -> Result<(), SchedulerError> {
-        // TODO: Add a runtime check to prevent re-entering this method from an
-        // operator.
-        self.executor.run(&self.circuit)
+        self.tokio_runtime.block_on(async {
+            let local_set = LocalSet::new();
+            local_set
+                .run_until(async { self.executor.run(&self.circuit).await })
+                .await
+        })
     }
 
     pub fn commit(&mut self, cid: Uuid) -> Result<(), SchedulerError> {
@@ -4805,19 +4966,13 @@ impl CircuitHandle {
 #[cfg(test)]
 mod tests {
     use crate::{
-        circuit::schedule::{DynamicScheduler, Scheduler, StaticScheduler},
+        circuit::schedule::{DynamicScheduler, Scheduler},
         monitor::TraceMonitor,
         operator::{Generator, Z1},
         Circuit, Error as DbspError, RootCircuit,
     };
     use anyhow::anyhow;
     use std::{cell::RefCell, ops::Deref, rc::Rc, vec::Vec};
-
-    // Compute the sum of numbers from 0 to 99.
-    #[test]
-    fn sum_circuit_static() {
-        sum_circuit::<StaticScheduler>();
-    }
 
     #[test]
     fn sum_circuit_dynamic() {
@@ -4857,12 +5012,6 @@ mod tests {
             expected_output.push(sum);
         }
         assert_eq!(&expected_output, actual_output.borrow().deref());
-    }
-
-    // Recursive circuit
-    #[test]
-    fn recursive_sum_circuit_static() {
-        recursive_sum_circuit::<StaticScheduler>()
     }
 
     #[test]
@@ -4907,11 +5056,6 @@ mod tests {
             expected_output.push(sum);
         }
         assert_eq!(&expected_output, actual_output.borrow().deref());
-    }
-
-    #[test]
-    fn factorial_static() {
-        factorial::<StaticScheduler>();
     }
 
     #[test]

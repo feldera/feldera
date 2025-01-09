@@ -354,7 +354,7 @@ where
     T: IndexedZSetReader,
 {
     #[trace]
-    fn eval<'a>(
+    async fn eval(
         &mut self,
         input_trace: &T,
         descr: &Option<Box<DynNeighborhoodDescr<T::Key, T::Val>>>,
@@ -487,7 +487,7 @@ where
     T: IndexedZSetReader + Clone,
 {
     #[trace]
-    fn eval<'a>(
+    async fn eval(
         &mut self,
         input_trace: &T,
         descr: &Option<Box<DynNeighborhoodDescr<T::Key, T::Val>>>,

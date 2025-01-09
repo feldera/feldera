@@ -363,11 +363,11 @@ where
     O: PartitionedRadixTreeBatch<TS, Acc, Key = Z::Key>,
 {
     #[trace]
-    fn eval<'a>(
+    async fn eval(
         &mut self,
-        delta: Cow<'a, Z>,
-        input_trace: Cow<'a, IT>,
-        output_trace: Cow<'a, OT>,
+        delta: Cow<'_, Z>,
+        input_trace: Cow<'_, IT>,
+        output_trace: Cow<'_, OT>,
     ) -> O {
         let mut builder =
             O::Builder::with_capacity(&self.factories.output_factories, (), delta.len() * 2);

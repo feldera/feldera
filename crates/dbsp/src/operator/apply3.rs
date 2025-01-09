@@ -104,7 +104,7 @@ where
     T2: Clone + 'static,
     T3: Clone + 'static,
 {
-    fn eval<'a>(&mut self, i1: Cow<'a, T1>, i2: Cow<'a, T2>, i3: Cow<'a, T3>) -> T4 {
+    async fn eval(&mut self, i1: Cow<'_, T1>, i2: Cow<'_, T2>, i3: Cow<'_, T3>) -> T4 {
         (self.func)(i1, i2, i3)
     }
 }
