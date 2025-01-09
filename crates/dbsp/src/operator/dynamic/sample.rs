@@ -222,7 +222,7 @@ where
     T: IndexedZSetReader,
 {
     #[trace]
-    fn eval(&mut self, input_trace: &T, &sample_size: &usize) -> VecZSet<T::Key> {
+    async fn eval(&mut self, input_trace: &T, &sample_size: &usize) -> VecZSet<T::Key> {
         let sample_size = min(sample_size, MAX_SAMPLE_SIZE);
 
         if sample_size != 0 {
@@ -289,7 +289,11 @@ where
     T: IndexedZSetReader,
 {
     #[trace]
-    fn eval(&mut self, input_trace: &T, &sample_size: &usize) -> VecZSet<DynPair<T::Key, T::Val>> {
+    async fn eval(
+        &mut self,
+        input_trace: &T,
+        &sample_size: &usize,
+    ) -> VecZSet<DynPair<T::Key, T::Val>> {
         let sample_size = min(sample_size, MAX_SAMPLE_SIZE);
 
         if sample_size != 0 {

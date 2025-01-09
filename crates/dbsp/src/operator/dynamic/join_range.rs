@@ -198,7 +198,7 @@ where
     O: IndexedZSet,
 {
     #[trace]
-    fn eval(&mut self, i1: &I1, i2: &I2) -> O {
+    async fn eval(&mut self, i1: &I1, i2: &I2) -> O {
         let mut tuples = self
             .factories
             .output_factories

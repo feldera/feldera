@@ -141,18 +141,13 @@ impl<C> Condition<C> {
 #[cfg(test)]
 mod test {
     use crate::{
-        circuit::schedule::{DynamicScheduler, Scheduler, StaticScheduler},
+        circuit::schedule::{DynamicScheduler, Scheduler},
         monitor::TraceMonitor,
         operator::{DelayedFeedback, Generator},
         typed_batch::{OrdIndexedZSet, OrdZSet},
         utils::Tup2,
         zset, ChildCircuit, Circuit, RootCircuit, Stream,
     };
-
-    #[test]
-    fn iterate_with_conditions_static() {
-        iterate_with_conditions::<StaticScheduler>();
-    }
 
     #[test]
     fn iterate_with_conditions_dynamic() {

@@ -80,7 +80,7 @@ impl<T1, T2, T3, F> BinaryOperator<T1, T2, T3> for Apply2<F>
 where
     F: Fn(&T1, &T2) -> T3 + 'static,
 {
-    fn eval(&mut self, i1: &T1, i2: &T2) -> T3 {
+    async fn eval(&mut self, i1: &T1, i2: &T2) -> T3 {
         (self.func)(i1, i2)
     }
 }
@@ -124,15 +124,15 @@ impl<T1, T2, T3, F> BinaryOperator<T1, T2, T3> for Apply2Owned<F>
 where
     F: Fn(T1, &T2) -> T3 + 'static,
 {
-    fn eval(&mut self, _i1: &T1, _i2: &T2) -> T3 {
+    async fn eval(&mut self, _i1: &T1, _i2: &T2) -> T3 {
         panic!("Apply2Owned: owned input expected")
     }
 
-    fn eval_owned_and_ref(&mut self, i1: T1, i2: &T2) -> T3 {
+    async fn eval_owned_and_ref(&mut self, i1: T1, i2: &T2) -> T3 {
         (self.func)(i1, i2)
     }
 
-    fn eval_owned(&mut self, i1: T1, i2: T2) -> T3 {
+    async fn eval_owned(&mut self, i1: T1, i2: T2) -> T3 {
         (self.func)(i1, &i2)
     }
 

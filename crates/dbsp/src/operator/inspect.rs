@@ -86,11 +86,11 @@ where
     T: Clone + 'static,
     F: FnMut(&T) + 'static,
 {
-    fn eval(&mut self, i: &T) -> T {
+    async fn eval(&mut self, i: &T) -> T {
         (self.callback)(i);
         i.clone()
     }
-    fn eval_owned(&mut self, i: T) -> T {
+    async fn eval_owned(&mut self, i: T) -> T {
         (self.callback)(&i);
         i
     }

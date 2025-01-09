@@ -130,7 +130,7 @@ where
         self.fixedpoint = false;
     }
 
-    fn eval(&mut self) -> D {
+    async fn eval(&mut self) -> D {
         if self.val.is_none() {
             self.fixedpoint = true;
         }

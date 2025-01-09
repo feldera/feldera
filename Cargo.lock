@@ -3687,7 +3687,6 @@ dependencies = [
  "petgraph",
  "pprof",
  "pretty_assertions",
- "priority-queue",
  "proptest",
  "proptest-derive",
  "proptest-state-machine",
@@ -7684,16 +7683,6 @@ checksum = "479cf940fbbb3426c32c5d5176f62ad57549a0bb84773423ba8be9d089f5faba"
 dependencies = [
  "proc-macro2",
  "syn 2.0.90",
-]
-
-[[package]]
-name = "priority-queue"
-version = "1.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a0bda9164fe05bc9225752d54aae413343c36f684380005398a6a8fde95fe785"
-dependencies = [
- "autocfg",
- "indexmap 1.9.3",
 ]
 
 [[package]]

@@ -8,11 +8,10 @@ use std::{
     borrow::Cow,
     error::Error as StdError,
     fmt::{Display, Error as FmtError, Formatter},
+    future::Future,
+    pin::Pin,
     string::ToString,
 };
-
-mod static_scheduler;
-pub use static_scheduler::StaticScheduler;
 
 mod dynamic_scheduler;
 pub use dynamic_scheduler::DynamicScheduler;
@@ -29,10 +28,15 @@ pub enum Error {
         consumers: Vec<GlobalNodeId>,
     },
     /// Ownership constraints introduce a cycle in the circuit graph.
-    CyclicCircuit { node_id: GlobalNodeId },
+    CyclicCircuit {
+        node_id: GlobalNodeId,
+    },
     /// Execution of the circuit interrupted by the user (via
     /// [`RuntimeHandle::kill`](`crate::circuit::RuntimeHandle::kill`)).
     Killed,
+    TokioError {
+        error: String,
+    },
 }
 
 impl DetailedError for Error {
@@ -41,6 +45,7 @@ impl DetailedError for Error {
             Self::OwnershipConflict { .. } => Cow::from("OwnershipConflict"),
             Self::CyclicCircuit { .. } => Cow::from("CyclicCircuit"),
             Self::Killed => Cow::from("Killed"),
+            Self::TokioError { .. } => Cow::from("TokioError"),
         }
     }
 }
@@ -56,6 +61,7 @@ impl Display for Error {
                 write!(f, "unschedulable circuit due to a cyclic topology: cycle through node '{node_id}'")
             }
             Self::Killed => f.write_str("circuit has been killed by the user"),
+            Self::TokioError { error } => write!(f, "tokio error: {error}"),
         }
     }
 }
@@ -102,7 +108,7 @@ where
     ///
     /// * `circuit` - circuit to schedule, this must be the same circuit for
     ///   which the schedule was computed.
-    fn step<C>(&self, circuit: &C) -> Result<(), Error>
+    fn step<C>(&self, circuit: &C) -> impl Future<Output = Result<(), Error>>
     where
         C: Circuit;
 }
@@ -111,7 +117,7 @@ where
 /// `Scheduler`. It can run the circuit exactly once or multiple times, until
 /// some termination condition is reached.
 pub trait Executor<C>: 'static {
-    fn run(&self, circuit: &C) -> Result<(), Error>;
+    fn run<'a>(&'a self, circuit: &'a C) -> Pin<Box<dyn Future<Output = Result<(), Error>> + 'a>>;
 }
 
 /// An iterative executor evaluates the circuit until the `termination_check`
@@ -143,20 +149,23 @@ where
     C: Circuit,
     S: Scheduler + 'static,
 {
-    fn run(&self, circuit: &C) -> Result<(), Error> {
-        circuit.log_scheduler_event(&SchedulerEvent::clock_start());
-        circuit.clock_start(0);
+    fn run<'a>(&'a self, circuit: &C) -> Pin<Box<dyn Future<Output = Result<(), Error>> + 'a>> {
+        let circuit = circuit.clone();
+        Box::pin(async move {
+            circuit.log_scheduler_event(&SchedulerEvent::clock_start());
+            circuit.clock_start(0);
 
-        loop {
-            self.scheduler.step(circuit)?;
-            if (self.termination_check)()? {
-                break;
+            loop {
+                self.scheduler.step(&circuit).await?;
+                if (self.termination_check)()? {
+                    break;
+                }
             }
-        }
 
-        circuit.log_scheduler_event(&SchedulerEvent::clock_end());
-        circuit.clock_end(0);
-        Ok(())
+            circuit.log_scheduler_event(&SchedulerEvent::clock_end());
+            circuit.clock_end(0);
+            Ok(())
+        })
     }
 }
 
@@ -186,8 +195,8 @@ where
     C: Circuit,
     S: Scheduler + 'static,
 {
-    fn run(&self, circuit: &C) -> Result<(), Error> {
-        self.scheduler.step(circuit)
+    fn run<'a>(&'a self, circuit: &'a C) -> Pin<Box<dyn Future<Output = Result<(), Error>> + 'a>> {
+        Box::pin(async { self.scheduler.step(circuit).await })
     }
 }
 

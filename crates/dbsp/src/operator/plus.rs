@@ -136,21 +136,21 @@ impl<D> BinaryOperator<D, D, D> for Plus<D>
 where
     D: AddByRef + AddAssignByRef + Clone + 'static,
 {
-    fn eval(&mut self, i1: &D, i2: &D) -> D {
+    async fn eval(&mut self, i1: &D, i2: &D) -> D {
         i1.add_by_ref(i2)
     }
 
-    fn eval_owned_and_ref(&mut self, mut i1: D, i2: &D) -> D {
+    async fn eval_owned_and_ref(&mut self, mut i1: D, i2: &D) -> D {
         i1.add_assign_by_ref(i2);
         i1
     }
 
-    fn eval_ref_and_owned(&mut self, i1: &D, mut i2: D) -> D {
+    async fn eval_ref_and_owned(&mut self, i1: &D, mut i2: D) -> D {
         i2.add_assign_by_ref(i1);
         i2
     }
 
-    fn eval_owned(&mut self, i1: D, i2: D) -> D {
+    async fn eval_owned(&mut self, i1: D, i2: D) -> D {
         i1.add_by_ref(&i2)
     }
 
@@ -203,21 +203,21 @@ impl<D> BinaryOperator<D, D, D> for Minus<D>
 where
     D: AddByRef + AddAssignByRef + Neg<Output = D> + NegByRef + Clone + 'static,
 {
-    fn eval(&mut self, i1: &D, i2: &D) -> D {
+    async fn eval(&mut self, i1: &D, i2: &D) -> D {
         let mut i2neg = i2.neg_by_ref();
         i2neg.add_assign_by_ref(i1);
         i2neg
     }
 
-    fn eval_owned_and_ref(&mut self, i1: D, i2: &D) -> D {
+    async fn eval_owned_and_ref(&mut self, i1: D, i2: &D) -> D {
         i1.add_by_ref(&i2.neg_by_ref())
     }
 
-    fn eval_ref_and_owned(&mut self, i1: &D, i2: D) -> D {
+    async fn eval_ref_and_owned(&mut self, i1: &D, i2: D) -> D {
         i2.neg().add_by_ref(i1)
     }
 
-    fn eval_owned(&mut self, i1: D, i2: D) -> D {
+    async fn eval_owned(&mut self, i1: D, i2: D) -> D {
         i1.add_by_ref(&i2.neg())
     }
 

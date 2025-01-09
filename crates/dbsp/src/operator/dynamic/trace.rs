@@ -638,26 +638,26 @@ impl<T> BinaryOperator<T, T::Batch, T> for UntimedTraceAppend<T>
 where
     T: Trace + 'static,
 {
-    fn eval(&mut self, _trace: &T, _batch: &T::Batch) -> T {
+    async fn eval(&mut self, _trace: &T, _batch: &T::Batch) -> T {
         // Refuse to accept trace by reference.  This should not happen in a correctly
         // constructed circuit.
         panic!("UntimedTraceAppend::eval(): cannot accept trace by reference")
     }
 
     #[trace]
-    fn eval_owned_and_ref(&mut self, mut trace: T, batch: &T::Batch) -> T {
+    async fn eval_owned_and_ref(&mut self, mut trace: T, batch: &T::Batch) -> T {
         trace.insert(batch.clone());
         trace
     }
 
-    fn eval_ref_and_owned(&mut self, _trace: &T, _batch: T::Batch) -> T {
+    async fn eval_ref_and_owned(&mut self, _trace: &T, _batch: T::Batch) -> T {
         // Refuse to accept trace by reference.  This should not happen in a correctly
         // constructed circuit.
         panic!("UntimedTraceAppend::eval_ref_and_owned(): cannot accept trace by reference")
     }
 
     #[trace]
-    fn eval_owned(&mut self, mut trace: T, batch: T::Batch) -> T {
+    async fn eval_owned(&mut self, mut trace: T, batch: T::Batch) -> T {
         trace.insert(batch);
         trace
     }
@@ -707,14 +707,14 @@ where
     T: Trace<Key = B::Key, Val = B::Val, R = B::R, Time = Clk::Time>,
 {
     #[trace]
-    fn eval(&mut self, _trace: &T, _batch: &B) -> T {
+    async fn eval(&mut self, _trace: &T, _batch: &B) -> T {
         // Refuse to accept trace by reference.  This should not happen in a correctly
         // constructed circuit.
         unimplemented!()
     }
 
     #[trace]
-    fn eval_owned_and_ref(&mut self, mut trace: T, batch: &B) -> T {
+    async fn eval_owned_and_ref(&mut self, mut trace: T, batch: &B) -> T {
         // TODO: extend `trace` type to feed untimed batches directly
         // (adding fixed timestamp on the fly).
         trace.insert(T::Batch::from_batch(
@@ -725,14 +725,14 @@ where
         trace
     }
 
-    fn eval_ref_and_owned(&mut self, _trace: &T, _batch: B) -> T {
+    async fn eval_ref_and_owned(&mut self, _trace: &T, _batch: B) -> T {
         // Refuse to accept trace by reference.  This should not happen in a correctly
         // constructed circuit.
         unimplemented!()
     }
 
     #[trace]
-    fn eval_owned(&mut self, mut trace: T, batch: B) -> T {
+    async fn eval_owned(&mut self, mut trace: T, batch: B) -> T {
         trace.insert(T::Batch::from_batch(
             &batch,
             &self.clock.time(),
@@ -902,12 +902,12 @@ impl<T> StrictUnaryOperator<T, T> for Z1Trace<T>
 where
     T: Trace,
 {
-    fn eval_strict(&mut self, _i: &T) {
+    async fn eval_strict(&mut self, _i: &T) {
         unimplemented!()
     }
 
     #[trace]
-    fn eval_strict_owned(&mut self, mut i: T) {
+    async fn eval_strict_owned(&mut self, mut i: T) {
         self.time = self.time.advance(0);
 
         let dirty = i.dirty();

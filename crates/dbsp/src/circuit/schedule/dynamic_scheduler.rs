@@ -42,9 +42,8 @@
 use std::{
     cell::{RefCell, RefMut},
     collections::{HashMap, HashSet},
-    ops::Deref,
+    panic,
     sync::{Arc, Mutex},
-    thread::Thread,
 };
 
 use crate::circuit::{
@@ -57,7 +56,7 @@ use crate::circuit::{
     Circuit, GlobalNodeId, NodeId,
 };
 use petgraph::algo::toposort;
-use priority_queue::PriorityQueue;
+use tokio::{select, sync::Notify, task::JoinSet};
 
 /// A task is a unit of work scheduled by the dynamic scheduler.
 /// It contains a reference to a node in the circuit and associted metadata.
@@ -72,10 +71,6 @@ struct Task {
 
     /// Successors of the node in the circuit graph.
     successors: Vec<NodeId>,
-
-    /// Scheduling priority.  The scheduler picks the top priority node out
-    /// of all runnable nodes in the current state.
-    priority: isize,
 
     /// `true` if this is an async node.  The node can only be evaluated in a
     /// ready state.
@@ -102,49 +97,27 @@ struct Notifications {
     /// Nodes that received notifications.
     nodes: Arc<Mutex<HashSet<NodeId>>>,
 
-    /// Handle to wake up the scheduler thread when a notification arrives.
-    unparker: Thread,
+    /// Notifier to wake up the scheduler thread when a notification arrives.
+    notify: Arc<Notify>,
 }
 
 impl Notifications {
-    fn new(size: usize, unparker: Thread) -> Self {
+    fn new(size: usize) -> Self {
         Self {
             nodes: Arc::new(Mutex::new(HashSet::with_capacity(size))),
-            unparker,
+            notify: Arc::new(Notify::new()),
         }
     }
 
     /// Add a new notification.
     fn notify(&self, node_id: NodeId) {
         self.nodes.lock().unwrap().insert(node_id);
-        self.unparker.unpark();
-    }
-}
-
-/// Runnable tasks sorted by priority.
-struct RunQueue(PriorityQueue<NodeId, isize>);
-
-impl RunQueue {
-    fn with_capacity(capacity: usize) -> Self {
-        Self(PriorityQueue::with_capacity(capacity))
+        self.notify.notify_one();
     }
 
-    fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-
-    /// Add `task` to runnable queue.
-    fn push(&mut self, task: &mut Task) {
-        debug_assert!(task.unsatisfied_dependencies == 0);
-        debug_assert!(task.is_ready);
-        debug_assert!(!task.scheduled);
-
-        self.0.push(task.node_id, task.priority);
-        task.scheduled = true;
-    }
-
-    fn pop(&mut self) -> Option<(NodeId, isize)> {
-        self.0.pop()
+    /// Wait for at least one notification.
+    async fn wait(&self) {
+        self.notify.notified().await
     }
 }
 
@@ -160,36 +133,33 @@ struct Inner {
     /// Ready notifications received while the scheduler was busy or sleeping.
     notifications: Notifications,
 
-    /// Tasks that are ready to be executed.
-    runnable: RunQueue,
+    /// Currently running tasks. Each task returns node id along with status,
+    /// so that the scheduler can match it back to the circuit node.
+    handles: JoinSet<(NodeId, Result<(), Error>)>,
+
+    /// True when the scheduler is waiting for at least one task to become ready.
+    waiting: bool,
 }
 
 impl Inner {
-    /// Dequeue a highest-priority task from the runnable queue.
-    /// Update all successors of the task, reducing their unsatisfied
-    /// dependencies by 1.  Move successors to the runnable queue
-    /// when possible.
-    fn dequeue_next_task(&mut self) -> Option<NodeId> {
-        if let Some((node_id, _)) = self.runnable.pop() {
-            let id = node_id.id();
-            debug_assert!(id < self.tasks.len());
+    /// Called when task `node_id` has completed to update unsatisfied dependencies of
+    /// all successors and spawn any tasks that are ready to run.
+    fn schedule_successors<C>(&mut self, circuit: &C, node_id: NodeId)
+    where
+        C: Circuit,
+    {
+        let id = node_id.id();
 
-            // Update its successor dependencies.
-
-            // Don't use iterator, as we will borrow `tasks` again below.
-            for i in 0..self.tasks[id].successors.len() {
-                let succ_id = self.tasks[id].successors[i];
-                debug_assert!(succ_id.id() < self.tasks.len());
-                let successor = &mut self.tasks[succ_id.id()];
-                debug_assert!(successor.unsatisfied_dependencies != 0);
-                successor.unsatisfied_dependencies -= 1;
-                if successor.unsatisfied_dependencies == 0 && successor.is_ready {
-                    self.runnable.push(successor);
-                }
+        // Don't use iterator, as we will borrow `tasks` again below.
+        for i in 0..self.tasks[id].successors.len() {
+            let succ_id = self.tasks[id].successors[i];
+            debug_assert!(succ_id.id() < self.tasks.len());
+            let successor = &mut self.tasks[succ_id.id()];
+            debug_assert_ne!(successor.unsatisfied_dependencies, 0);
+            successor.unsatisfied_dependencies -= 1;
+            if successor.unsatisfied_dependencies == 0 && successor.is_ready {
+                self.spawn_task(circuit, succ_id);
             }
-            Some(node_id)
-        } else {
-            None
         }
     }
 
@@ -198,7 +168,8 @@ impl Inner {
     where
         C: Circuit,
     {
-        let mut nodes = self.notifications.nodes.lock().unwrap();
+        // Don't hold the mutex during iteration below to avoid reentering the lock.
+        let mut nodes = std::mem::take(&mut *self.notifications.nodes.lock().unwrap());
 
         // False positive via rust-clippy/#8963
         #[allow(unknown_lints)]
@@ -216,12 +187,14 @@ impl Inner {
             if circuit.ready(id) {
                 task.is_ready = true;
 
+                let node_id = task.node_id;
+
                 // We can see a notification for an already scheduled task
                 // indicating that it's become ready again.
                 // This notification should take effect at the next clock
                 // cycle.
                 if task.unsatisfied_dependencies == 0 && !task.scheduled {
-                    self.runnable.push(task);
+                    self.spawn_task(circuit, node_id);
                 }
             }
         }
@@ -268,13 +241,7 @@ impl Inner {
             // We rely on node id to be equal to its index.
             assert!(i == node_id.id());
 
-            // A naive heuristic priority assignment algorithm
-            // (not sure if it is any good).
-            // We attempt to minimize the amount of data buffered in
-            // streams during the evaluation of the circuit.
             let num_predecessors = predecessors.entry(node_id).or_default().len();
-            let num_successors = successors.entry(node_id).or_default().len();
-            let priority = num_predecessors as isize - num_successors as isize;
 
             let is_async = circuit.is_async_node(node_id);
             if is_async {
@@ -285,7 +252,6 @@ impl Inner {
                 node_id,
                 num_predecessors,
                 successors: successors.entry(node_id).or_default().clone(),
-                priority,
                 is_async,
                 unsatisfied_dependencies: num_predecessors,
                 is_ready: !is_async,
@@ -295,8 +261,9 @@ impl Inner {
 
         let scheduler = Self {
             tasks,
-            notifications: Notifications::new(num_async_nodes, std::thread::current()),
-            runnable: RunQueue::with_capacity(num_nodes),
+            notifications: Notifications::new(num_async_nodes),
+            handles: JoinSet::new(),
+            waiting: false,
         };
 
         // Setup scheduler callbacks.
@@ -319,62 +286,122 @@ impl Inner {
         Ok(scheduler)
     }
 
-    fn step<C>(&mut self, circuit: &C) -> Result<(), Error>
+    /// Spawn a tokio task to evaluate `node_id`.
+    fn spawn_task<C>(&mut self, circuit: &C, node_id: NodeId)
     where
         C: Circuit,
     {
-        circuit.log_scheduler_event(&SchedulerEvent::step_start(circuit.global_id().deref()));
+        let task = &mut self.tasks[node_id.id()];
+        debug_assert_eq!(task.unsatisfied_dependencies, 0);
+        debug_assert!(task.is_ready);
+        debug_assert!(!task.scheduled);
 
+        task.scheduled = true;
+
+        if self.handles.is_empty() && self.waiting {
+            self.waiting = false;
+            circuit.log_scheduler_event(&SchedulerEvent::wait_end(circuit.global_id()));
+        }
+
+        let circuit = circuit.clone();
+
+        self.handles.spawn_local(async move {
+            let result = circuit.eval_node(node_id).await;
+            (node_id, result)
+        });
+    }
+
+    async fn abort(&mut self) {
+        // Wait for all started tasks to abort.
+        // TODO: we could use self.handles.abort_all() instead to terminate any slow (or stuck),
+        // IO operations, but that requires all operators to handle cancelation gracefully.
+        while !self.handles.is_empty() {
+            let _ = self.handles.join_next().await;
+        }
+    }
+
+    async fn step<C>(&mut self, circuit: &C) -> Result<(), Error>
+    where
+        C: Circuit,
+    {
         let mut completed_tasks = 0;
+        self.waiting = false;
+
+        // Special case: empty circuit.
+        if self.tasks.is_empty() {
+            return Ok(());
+        }
 
         // Reset unsatisfied dependencies, initialize runnable queue.
-        for task in self.tasks.iter_mut() {
+        for i in 0..self.tasks.len() {
+            let task = &mut self.tasks[i];
             task.unsatisfied_dependencies = task.num_predecessors;
             task.scheduled = false;
 
+            let node_id = task.node_id;
+
             if task.unsatisfied_dependencies == 0 && task.is_ready {
-                self.runnable.push(task);
+                self.spawn_task(circuit, node_id);
             }
         }
 
-        while completed_tasks < self.tasks.len() {
-            if Runtime::kill_in_progress() {
-                return Err(Error::Killed);
-            }
+        loop {
+            select! {
+                ret = self.handles.join_next(), if !self.handles.is_empty() => {
+                    completed_tasks += 1;
 
-            match self.dequeue_next_task() {
-                None => {
-                    // No more tasks in the run queue -- try to add some by
-                    // processing notifications.
-                    self.process_notifications(circuit);
+                    // The !self.handles.is_empty() check above should guarantee that this
+                    // cannot be None.
+                    let result = ret.expect("JoinSet::join_next returned None on a non-empty join set.");
 
-                    // Still nothing to do -- sleep waiting for a notification to
-                    // unpark us.
-                    if self.runnable.is_empty() {
-                        circuit.log_scheduler_event(&SchedulerEvent::wait_start(
-                            circuit.global_id().deref(),
-                        ));
-                        std::thread::park();
-                        circuit.log_scheduler_event(&SchedulerEvent::wait_end(
-                            circuit.global_id().deref(),
-                        ));
-                    }
-                }
+                    let (node_id, task_result) = match result {
+                        Err(error) => {
+                            self.abort().await;
+                            if error.is_panic() {
+                                // Give our panic handler a chance to handle this.
+                                panic::resume_unwind(error.into_panic());
+                            } else {
+                                return Err(Error::TokioError { error: error.to_string() });
+                            }
+                        },
+                        Ok(result) => result
+                    };
 
-                Some(node_id) => {
-                    circuit.eval_node(node_id)?;
                     if self.tasks[node_id.id()].is_async {
                         self.tasks[node_id.id()].is_ready = false;
                     }
 
-                    completed_tasks += 1;
+                    if let Err(error) = task_result {
+                        self.abort().await;
+                        return Err(error);
+                    }
+
+                    if Runtime::kill_in_progress() {
+                        self.abort().await;
+                        return Err(Error::Killed);
+                    }
+
+                    // Are we done?
+                    debug_assert!(completed_tasks <= self.tasks.len());
+                    if completed_tasks == self.tasks.len() {
+                        return Ok(());
+                    }
+
+                    // Spawn any new tasks that are now ready to run.
+                    self.schedule_successors(circuit, node_id);
+
+                    // No tasks are ready to run -- account any time until we have something to run as wait time
+                    if self.handles.is_empty() {
+                        self.waiting = true;
+                        circuit.log_scheduler_event(
+                            &SchedulerEvent::wait_start(circuit.global_id()));
+                    }
+                }
+                _ = self.notifications.wait() => {
+                    self.process_notifications(circuit);
                 }
             }
         }
-        circuit.tick();
-
-        circuit.log_scheduler_event(&SchedulerEvent::step_end(circuit.global_id().deref()));
-        Ok(())
     }
 }
 
@@ -394,10 +421,19 @@ impl Scheduler for DynamicScheduler {
         Ok(Self(RefCell::new(Inner::prepare(circuit)?)))
     }
 
-    fn step<C>(&self, circuit: &C) -> Result<(), Error>
+    #[allow(clippy::await_holding_refcell_ref)]
+    async fn step<C>(&self, circuit: &C) -> Result<(), Error>
     where
         C: Circuit,
     {
-        self.inner_mut().step(circuit)
+        circuit.log_scheduler_event(&SchedulerEvent::step_start(circuit.global_id()));
+
+        let inner = &mut *self.inner_mut();
+
+        let result = inner.step(circuit).await;
+        circuit.tick();
+
+        circuit.log_scheduler_event(&SchedulerEvent::step_end(circuit.global_id()));
+        result
     }
 }

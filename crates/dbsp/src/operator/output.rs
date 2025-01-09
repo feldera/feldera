@@ -303,11 +303,11 @@ impl<T> SinkOperator<T> for Output<T>
 where
     T: Debug + Clone + 'static,
 {
-    fn eval(&mut self, val: &T) {
+    async fn eval(&mut self, val: &T) {
         self.mailbox.set(Some(val.clone()));
     }
 
-    fn eval_owned(&mut self, val: T) {
+    async fn eval_owned(&mut self, val: T) {
         self.mailbox.set(Some(val));
     }
 
@@ -351,7 +351,7 @@ impl<T> BinarySinkOperator<T, bool> for OutputGuarded<T>
 where
     T: Clone + 'static,
 {
-    fn eval<'a>(&mut self, val: Cow<'a, T>, guard: Cow<'a, bool>) {
+    async fn eval<'a>(&mut self, val: Cow<'a, T>, guard: Cow<'a, bool>) {
         if *guard {
             self.mailbox.set(Some(val.into_owned()));
         }

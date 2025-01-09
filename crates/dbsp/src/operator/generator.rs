@@ -45,7 +45,7 @@ where
     F: FnMut() -> T + 'static,
     T: Data,
 {
-    fn eval(&mut self) -> T {
+    async fn eval(&mut self) -> T {
         (self.generator)()
     }
 }
@@ -96,7 +96,7 @@ impl<T> SourceOperator<T> for GeneratorNested<T>
 where
     T: Data,
 {
-    fn eval(&mut self) -> T {
+    async fn eval(&mut self) -> T {
         (self.generator.as_mut().unwrap())()
     }
 }

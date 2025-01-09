@@ -389,11 +389,11 @@ where
     OT: ZTrace<Key = B::Key, Val = OB::Val, Time = ()> + Clone,
 {
     #[trace]
-    fn eval<'a>(
+    async fn eval(
         &mut self,
-        delta: Cow<'a, B>,
-        input_trace: Cow<'a, T>,
-        output_trace: Cow<'a, OT>,
+        delta: Cow<'_, B>,
+        input_trace: Cow<'_, T>,
+        output_trace: Cow<'_, OT>,
     ) -> OB {
         let mut delta_cursor = delta.cursor();
         let mut input_trace_cursor = input_trace.cursor();

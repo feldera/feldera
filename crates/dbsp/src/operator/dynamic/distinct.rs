@@ -218,12 +218,12 @@ where
     Z: IndexedZSet,
 {
     #[trace]
-    fn eval(&mut self, input: &Z) -> Z {
+    async fn eval(&mut self, input: &Z) -> Z {
         input.distinct()
     }
 
     #[trace]
-    fn eval_owned(&mut self, input: Z) -> Z {
+    async fn eval_owned(&mut self, input: Z) -> Z {
         input.distinct_owned()
     }
 }
@@ -269,7 +269,7 @@ where
     I: IndexedZSetReader<Key = Z::Key, Val = Z::Val>,
 {
     #[trace]
-    fn eval(&mut self, delta: &Z, delayed_integral: &I) -> Z {
+    async fn eval(&mut self, delta: &Z, delayed_integral: &I) -> Z {
         let mut builder = Z::Builder::with_capacity(&self.input_factories, (), delta.len());
         let mut delta_cursor = delta.cursor();
         let mut integral_cursor = delayed_integral.cursor();
@@ -325,12 +325,12 @@ where
     }
 
     // TODO: owned implementation.
-    fn eval_owned_and_ref(&mut self, delta: Z, delayed_integral: &I) -> Z {
-        self.eval(&delta, delayed_integral)
+    async fn eval_owned_and_ref(&mut self, delta: Z, delayed_integral: &I) -> Z {
+        self.eval(&delta, delayed_integral).await
     }
 
-    fn eval_owned(&mut self, delta: Z, delayed_integral: I) -> Z {
-        self.eval_owned_and_ref(delta, &delayed_integral)
+    async fn eval_owned(&mut self, delta: Z, delayed_integral: I) -> Z {
+        self.eval_owned_and_ref(delta, &delayed_integral).await
     }
 }
 
@@ -664,7 +664,7 @@ where
     // TODO: add eval_owned, so we can use keys and values from `delta` without
     // cloning.
     #[trace]
-    fn eval(&mut self, delta: &Z, trace: &T) -> Z {
+    async fn eval(&mut self, delta: &Z, trace: &T) -> Z {
         let time = self.clock.time();
 
         Self::init_distinct_vals(&mut self.distinct_vals, Some(time.clone()));

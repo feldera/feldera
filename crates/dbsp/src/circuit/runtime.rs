@@ -330,7 +330,6 @@ impl Runtime {
     /// // Create a runtime with 4 worker threads.
     /// let hruntime = Runtime::run(4, || {
     ///     // This closure runs within each worker thread.
-    ///
     ///     let root = RootCircuit::build(move |circuit| {
     ///         // Populate `circuit` with operators.
     ///         Ok(())
@@ -733,7 +732,7 @@ mod tests {
     use super::Runtime;
     use crate::{
         circuit::{
-            schedule::{DynamicScheduler, Scheduler, StaticScheduler},
+            schedule::{DynamicScheduler, Scheduler},
             CircuitConfig, Layout,
         },
         operator::Generator,
@@ -748,12 +747,6 @@ mod tests {
         time::Duration,
     };
     use uuid::Uuid;
-
-    #[test]
-    #[cfg_attr(miri, ignore)]
-    fn test_runtime_static() {
-        test_runtime::<StaticScheduler>();
-    }
 
     #[test]
     #[cfg_attr(miri, ignore)]
@@ -867,12 +860,6 @@ mod tests {
         .expect("failed to start runtime");
 
         hruntime.join().unwrap();
-    }
-
-    #[test]
-    #[cfg_attr(miri, ignore)]
-    fn test_kill_static() {
-        test_kill::<StaticScheduler>();
     }
 
     #[test]

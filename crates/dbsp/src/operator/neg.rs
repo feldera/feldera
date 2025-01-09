@@ -62,11 +62,11 @@ impl<T> UnaryOperator<T, T> for UnaryMinus<T>
 where
     T: 'static + NegByRef + Neg<Output = T> + Clone,
 {
-    fn eval(&mut self, input: &T) -> T {
+    async fn eval(&mut self, input: &T) -> T {
         input.neg_by_ref()
     }
 
-    fn eval_owned(&mut self, i: T) -> T {
+    async fn eval_owned(&mut self, i: T) -> T {
         i.neg()
     }
 

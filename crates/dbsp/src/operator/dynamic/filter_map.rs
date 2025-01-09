@@ -439,7 +439,7 @@ where
     B: Batch<Time = ()>,
 {
     #[trace]
-    fn eval(&mut self, input: &B) -> B {
+    async fn eval(&mut self, input: &B) -> B {
         // We can use Builder because cursor yields ordered values.  This
         // is a nice property of the filter operation.
         //
@@ -548,7 +548,7 @@ where
     B: Batch<Time = ()>,
 {
     #[trace]
-    fn eval(&mut self, input: &B) -> B {
+    async fn eval(&mut self, input: &B) -> B {
         // We can use Builder because cursor yields ordered values.  This
         // is a nice property of the filter operation.
 
@@ -653,7 +653,7 @@ where
     CO: Batch<Time = (), R = CI::R>,
 {
     #[trace]
-    fn eval(&mut self, i: &CI) -> CO {
+    async fn eval(&mut self, i: &CI) -> CO {
         let mut batch = self.output_factories.weighted_items_factory().default_box();
         batch.reserve(i.len());
         let mut item = self.output_factories.weighted_item_factory().default_box();
@@ -730,7 +730,7 @@ where
     CO: Batch<Time = (), R = CI::R>,
 {
     #[trace]
-    fn eval(&mut self, i: &CI) -> CO {
+    async fn eval(&mut self, i: &CI) -> CO {
         let mut batch = self.output_factories.weighted_items_factory().default_box();
         batch.reserve(i.len());
         let mut item = self.output_factories.weighted_item_factory().default_box();
@@ -799,7 +799,7 @@ where
     CO: Batch<Time = (), R = CI::R>,
 {
     #[trace]
-    fn eval(&mut self, i: &CI) -> CO {
+    async fn eval(&mut self, i: &CI) -> CO {
         let mut batch = self.output_factories.weighted_items_factory().default_box();
         batch.reserve(i.len());
 
@@ -889,7 +889,7 @@ where
     CO: Batch<Time = (), R = CI::R>,
 {
     #[trace]
-    fn eval(&mut self, i: &CI) -> CO {
+    async fn eval(&mut self, i: &CI) -> CO {
         let mut batch = self.output_factories.weighted_items_factory().default_box();
         batch.reserve(i.len());
 

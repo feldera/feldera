@@ -72,12 +72,12 @@ where
     T: Trace<Time = ()>,
 {
     #[trace]
-    fn eval(&mut self, _i: &T) -> T::Batch {
+    async fn eval(&mut self, _i: &T) -> T::Batch {
         unimplemented!()
     }
 
     #[trace]
-    fn eval_owned(&mut self, i: T) -> T::Batch {
+    async fn eval_owned(&mut self, i: T) -> T::Batch {
         i.consolidate()
             .unwrap_or_else(|| T::Batch::dyn_empty(&self.factories))
     }

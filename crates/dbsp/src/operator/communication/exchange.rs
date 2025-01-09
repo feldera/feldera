@@ -844,11 +844,11 @@ where
     T: Clone + Send + Rkyv + 'static,
     L: FnMut(D, &mut Vec<T>) + 'static,
 {
-    fn eval(&mut self, input: &D) {
-        self.eval_owned(input.clone());
+    async fn eval(&mut self, input: &D) {
+        self.eval_owned(input.clone()).await
     }
 
-    fn eval_owned(&mut self, input: D) {
+    async fn eval_owned(&mut self, input: D) {
         debug_assert!(self.ready());
         self.outputs.clear();
         (self.partition)(input, &mut self.outputs);
@@ -955,7 +955,7 @@ where
     IF: Fn() -> D + 'static,
     L: Fn(&mut D, T) + 'static,
 {
-    fn eval(&mut self) -> D {
+    async fn eval(&mut self) -> D {
         debug_assert!(self.ready());
         let mut combined = (self.init)();
         let res = self
@@ -1039,7 +1039,7 @@ mod tests {
     use super::Exchange;
     use crate::{
         circuit::{
-            schedule::{DynamicScheduler, Scheduler, StaticScheduler},
+            schedule::{DynamicScheduler, Scheduler},
             Runtime,
         },
         operator::{communication::new_exchange_operators, Generator},
@@ -1090,12 +1090,6 @@ mod tests {
         .expect("failed to start runtime");
 
         hruntime.join().unwrap();
-    }
-
-    #[test]
-    #[cfg_attr(miri, ignore)]
-    fn test_exchange_operators_static() {
-        test_exchange_operators::<StaticScheduler>();
     }
 
     #[test]

@@ -122,7 +122,7 @@ where
     Out: ZSet<Key = DynPair<Pairs::Key, Pairs::Val>>,
 {
     #[trace]
-    fn eval(&mut self, pairs: &Pairs, keys: &Keys) -> Out {
+    async fn eval(&mut self, pairs: &Pairs, keys: &Keys) -> Out {
         let mut pair_cursor = pairs.cursor();
         let mut key_cursor = keys.cursor();
 
