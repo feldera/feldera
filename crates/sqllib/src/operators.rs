@@ -20,16 +20,6 @@ where
 for_all_compare!(eq, bool, T where Eq);
 
 #[doc(hidden)]
-pub fn is_same__<T>(left: T, right: T) -> bool
-where
-    T: Eq,
-{
-    left == right
-}
-
-// There is only one is_same__ function; no macros are needed.
-
-#[doc(hidden)]
 #[inline(always)]
 pub(crate) fn neq<T>(left: T, right: T) -> bool
 where

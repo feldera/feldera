@@ -26,6 +26,7 @@ package org.dbsp.sqlCompiler.compiler.visitors.inner;
 import org.apache.calcite.util.DateString;
 import org.apache.calcite.util.TimeString;
 import org.apache.commons.lang3.StringUtils;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPUnaryOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
@@ -425,7 +426,7 @@ public class Simplify extends InnerRewriteVisitor {
                     try {
                         result = lit.to(IsNumericLiteral.class).negate().to(DBSPExpression.class);
                     } catch (ArithmeticException ex) {
-                        // ignore
+                        // leave unchanged
                     }
                 }
             }
@@ -445,6 +446,12 @@ public class Simplify extends InnerRewriteVisitor {
                     result = b;
                 else
                     result = new DBSPBoolLiteral(expression.getNode(), expression.getType(), !b.value);
+            } else if (source.is(DBSPUnaryOperator.class)) {
+                // !!e = e, true in ternary logic too
+                DBSPUnaryExpression unarySource = source.to(DBSPUnaryExpression.class);
+                if (unarySource.operation == DBSPOpcode.NOT) {
+                    result = unarySource.source;
+                }
             }
         }
         this.map(expression, result.cast(expression.getType()));

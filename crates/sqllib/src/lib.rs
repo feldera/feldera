@@ -1187,11 +1187,7 @@ pub fn is_distinct_N_N<T>(left: Option<T>, right: Option<T>) -> bool
 where
     T: Eq,
 {
-    match (left, right) {
-        (Some(a), Some(b)) => a != b,
-        (None, None) => false,
-        _ => true,
-    }
+    left != right
 }
 
 #[doc(hidden)]

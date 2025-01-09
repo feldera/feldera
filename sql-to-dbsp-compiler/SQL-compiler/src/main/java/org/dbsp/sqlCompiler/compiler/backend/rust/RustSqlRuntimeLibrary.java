@@ -57,7 +57,6 @@ public class RustSqlRuntimeLibrary {
         this.universalFunctions.put("gt", DBSPOpcode.GT);
         this.universalFunctions.put("lte", DBSPOpcode.LTE);
         this.universalFunctions.put("gte", DBSPOpcode.GTE);
-        this.universalFunctions.put("is_same", DBSPOpcode.IS_NOT_DISTINCT);
         this.universalFunctions.put(DBSPOpcode.IS_DISTINCT.toString(), DBSPOpcode.IS_DISTINCT);
         this.universalFunctions.put(DBSPOpcode.MIN.toString(), DBSPOpcode.MIN);
         this.universalFunctions.put(DBSPOpcode.MAX.toString(), DBSPOpcode.MAX);
@@ -171,7 +170,7 @@ public class RustSqlRuntimeLibrary {
             opcode == DBSPOpcode.MAX || opcode == DBSPOpcode.MIN ||
             opcode == DBSPOpcode.AGG_GTE || opcode == DBSPOpcode.AGG_LTE ||
             opcode == DBSPOpcode.AGG_MIN || opcode == DBSPOpcode.AGG_MAX ||
-            opcode == DBSPOpcode.IS_DISTINCT || opcode == DBSPOpcode.IS_NOT_DISTINCT) {
+            opcode == DBSPOpcode.IS_DISTINCT) {
             map = this.universalFunctions;
         } else if (ltype.as(DBSPTypeBool.class) != null) {
             map = this.booleanFunctions;
@@ -211,11 +210,6 @@ public class RustSqlRuntimeLibrary {
             suffixl = ltype.nullableSuffix();
             assert rtype != null;
             suffixr = rtype.nullableSuffix();
-            if (opcode == DBSPOpcode.IS_NOT_DISTINCT || opcode == DBSPOpcode.IS_DISTINCT) {
-                // Argument types always match
-                suffixl = "";
-                suffixr = "";
-            }
         } else if (opcode == DBSPOpcode.CONTROLLED_FILTER_GTE) {
             tsuffixl = "";
             tsuffixr = "";

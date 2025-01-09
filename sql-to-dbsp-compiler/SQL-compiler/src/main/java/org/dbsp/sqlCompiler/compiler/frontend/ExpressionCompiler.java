@@ -457,7 +457,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
             }
             if (opcode.isComparison()) {
                 expressionResultType = DBSPTypeBool.create(anyNull);
-            } else if (opcode == DBSPOpcode.IS_DISTINCT || opcode == DBSPOpcode.IS_NOT_DISTINCT)
+            } else if (opcode == DBSPOpcode.IS_DISTINCT)
                 // Never null
                 expressionResultType = DBSPTypeBool.create(false);
             if (commonBase.is(DBSPTypeNull.class)) {

@@ -40,7 +40,6 @@ public enum DBSPOpcode {
     MIN("min", false),
     CONCAT("||", false),
     IS_DISTINCT("is_distinct", false),
-    IS_NOT_DISTINCT("is_not_distinct", false),
     SQL_INDEX("[]", false),
     MAP_INDEX("[]", false),
     // map index in a variant value
