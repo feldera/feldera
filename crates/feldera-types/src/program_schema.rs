@@ -291,6 +291,8 @@ impl<'de> Deserialize<'de> for Field {
             scale: Option<i64>,
             component: Option<Box<ColumnType>>,
             fields: Option<serde_json::Value>,
+            key: Option<Box<ColumnType>>,
+            value: Option<Box<ColumnType>>,
             default: Option<String>,
             lateness: Option<String>,
             watermark: Option<String>,
@@ -329,8 +331,8 @@ impl<'de> Deserialize<'de> for Field {
                     scale: helper.scale,
                     component: helper.component,
                     fields: None,
-                    key: None,
-                    value: None,
+                    key: helper.key,
+                    value: helper.value,
                 }
             };
 
@@ -867,7 +869,7 @@ impl ColumnType {
 #[cfg(test)]
 mod tests {
     use super::{IntervalUnit, SqlIdentifier};
-    use crate::program_schema::SqlType;
+    use crate::program_schema::{ColumnType, Field, SqlType};
 
     #[test]
     fn serde_sql_type() {
@@ -1273,5 +1275,91 @@ mod tests {
         assert_eq!(SqlIdentifier::from("foo").sql_name(), "foo");
         assert_eq!(SqlIdentifier::from("bAr").sql_name(), "bAr");
         assert_eq!(SqlIdentifier::from("\"bAr\"").sql_name(), "\"bAr\"");
+    }
+
+    #[test]
+    fn issue3277() {
+        let schema = r#"{
+      "name" : "j",
+      "case_sensitive" : false,
+      "columntype" : {
+        "fields" : [ {
+          "key" : {
+            "nullable" : false,
+            "precision" : -1,
+            "type" : "VARCHAR"
+          },
+          "name" : "s",
+          "nullable" : true,
+          "type" : "MAP",
+          "value" : {
+            "nullable" : true,
+            "precision" : -1,
+            "type" : "VARCHAR"
+          }
+        } ],
+        "nullable" : true
+      }
+    }"#;
+        let field: Field = serde_json::from_str(schema).unwrap();
+        println!("field: {:#?}", field);
+        assert_eq!(
+            field,
+            Field {
+                name: SqlIdentifier {
+                    name: "j".to_string(),
+                    case_sensitive: false,
+                },
+                columntype: ColumnType {
+                    typ: SqlType::Struct,
+                    nullable: true,
+                    precision: None,
+                    scale: None,
+                    component: None,
+                    fields: Some(vec![Field {
+                        name: SqlIdentifier {
+                            name: "s".to_string(),
+                            case_sensitive: false,
+                        },
+                        columntype: ColumnType {
+                            typ: SqlType::Map,
+                            nullable: true,
+                            precision: None,
+                            scale: None,
+                            component: None,
+                            fields: None,
+                            key: Some(Box::new(ColumnType {
+                                typ: SqlType::Varchar,
+                                nullable: false,
+                                precision: Some(-1),
+                                scale: None,
+                                component: None,
+                                fields: None,
+                                key: None,
+                                value: None,
+                            })),
+                            value: Some(Box::new(ColumnType {
+                                typ: SqlType::Varchar,
+                                nullable: true,
+                                precision: Some(-1),
+                                scale: None,
+                                component: None,
+                                fields: None,
+                                key: None,
+                                value: None,
+                            })),
+                        },
+                        lateness: None,
+                        default: None,
+                        watermark: None,
+                    }]),
+                    key: None,
+                    value: None,
+                },
+                lateness: None,
+                default: None,
+                watermark: None,
+            }
+        );
     }
 }
