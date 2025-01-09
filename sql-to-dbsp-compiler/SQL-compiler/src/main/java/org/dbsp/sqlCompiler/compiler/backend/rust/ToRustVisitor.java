@@ -1148,7 +1148,7 @@ public class ToRustVisitor extends CircuitVisitor {
         while (comparator.is(DBSPFieldComparatorExpression.class)) {
             DBSPFieldComparatorExpression fc = comparator.to(DBSPFieldComparatorExpression.class);
             DBSPExpression eq = new DBSPBinaryExpression(node, new DBSPTypeBool(node, false),
-                    DBSPOpcode.IS_NOT_DISTINCT, left.deref().field(fc.fieldNo), right.deref().field(fc.fieldNo));
+                    DBSPOpcode.IS_DISTINCT, left.deref().field(fc.fieldNo), right.deref().field(fc.fieldNo)).not();
             result = new DBSPBinaryExpression(node, eq.getType(), DBSPOpcode.AND, result, eq);
             comparator = fc.source;
         }

@@ -1553,4 +1553,12 @@ public class RegressionTests extends SqlIoTest {
                  -------------------""");
         this.addRustTestCase(ccs);
     }
+
+    @Test
+    public void issue3278() {
+        this.compileRustTestCase("""
+                CREATE TABLE t1(c0 varchar);
+                CREATE TABLE t2(c0 varchar);
+                CREATE VIEW v2 AS (SELECT 1 FROM t1 JOIN t2 ON (1 IS NOT DISTINCT FROM NULL));""");
+    }
 }
