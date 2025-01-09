@@ -1,6 +1,5 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
-import org.apache.calcite.tools.Program;
 import org.dbsp.sqlCompiler.circuit.DBSPDeclaration;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.annotation.Recursive;
@@ -190,13 +189,6 @@ public class RecursiveComponents extends Passes {
                 for (DBSPOperator operator: operators) {
                     // We only have simple operators at this stage
                     DBSPSimpleOperator simple = operator.to(DBSPSimpleOperator.class);
-                    if (simple.is(DBSPViewDeclarationOperator.class) && operators.size() == 1) {
-                        DBSPViewDeclarationOperator decl = simple.to(DBSPViewDeclarationOperator.class);
-                        this.compiler.reportWarning(simple.getSourcePosition(), "View is not recursive",
-                                "View " + decl.originalViewName().singleQuote() + " is declared" +
-                                " recursive, but is not used in any recursive computation");
-                    }
-
                     List<OutputPort> newSources = new ArrayList<>(simple.inputs.size());
                     for (OutputPort port: simple.inputs) {
                         DBSPSimpleOperator source = port.simpleNode();
@@ -245,10 +237,6 @@ public class RecursiveComponents extends Passes {
                     } else if (result.is(DBSPViewDeclarationOperator.class)) {
                         DBSPViewDeclarationOperator view = result.to(DBSPViewDeclarationOperator.class);
                         Utilities.putNew(declByName, view.originalViewName(), view);
-                        if (operators.size() == 1) {
-                            // If the declaration is in an SCC by itself, remove it from the graph.
-                            continue;
-                        }
                     }
                     result.setDerivedFrom(operator.id);
                     this.map(simple, result, true);
@@ -272,12 +260,15 @@ public class RecursiveComponents extends Passes {
         final Set<DBSPNestedOperator> toAdd;
         /** Maps each view in an SCC to its output. */
         final Map<ProgramIdentifier, OutputPort> viewPort;
+        /** Maps each component and operator to the delta that contains its output */
+        final Map<DBSPNestedOperator, Map<OutputPort, DBSPDeltaOperator>> deltasCreated;
 
         BuildNestedOperators(DBSPCompiler compiler, CircuitGraphs graphs) {
             super(compiler, graphs, false);
             this.components = new HashMap<>();
             this.toAdd = new HashSet<>();
             this.viewPort = new HashMap<>();
+            this.deltasCreated = new HashMap<>();
         }
 
         @Override
@@ -287,6 +278,17 @@ public class RecursiveComponents extends Passes {
             int myComponent = Utilities.getExists(this.scc.componentId, operator);
             List<DBSPOperator> component = Utilities.getExists(this.scc.component, myComponent);
             if (component.size() == 1) {
+                if (operator.is(DBSPViewDeclarationOperator.class)) {
+                    DBSPViewDeclarationOperator decl = operator.to(DBSPViewDeclarationOperator.class);
+                    // If the corresponding view is materialized we don't produce a warning, since
+                    // the declaration is necessary.
+                    DBSPViewOperator view = this.getCircuit().getView(decl.originalViewName());
+                    if (view == null || view.metadata.viewKind != SqlCreateView.ViewKind.MATERIALIZED) {
+                        this.compiler.reportWarning(operator.getSourcePosition(), "View is not recursive",
+                                "View " + decl.originalViewName().singleQuote() + " is declared" +
+                                        " recursive, but is not used in any recursive computation");
+                    }
+                }
                 super.replace(operator);
                 return;
             }
@@ -300,7 +302,7 @@ public class RecursiveComponents extends Passes {
             } else {
                 block = this.components.get(myComponent);
                 if (operator.is(DBSPViewOperator.class) && this.toAdd.contains(block)) {
-                    // This ensures that the whole recursive circuit is inserted in topological order
+                    // This ensures that the whole recursive block is inserted in topological order
                     this.addOperator(block);
                     this.toAdd.remove(block);
                 }
@@ -313,8 +315,21 @@ public class RecursiveComponents extends Passes {
                 if (sourceComp != myComponent) {
                     // Check if any inputs of the operator are in a different component
                     // If they are, insert a delta + integrator operator in front.
-                    DBSPDeltaOperator delta = new DBSPDeltaOperator(operator.getNode(), source);
-                    block.addOperator(delta);
+                    DBSPDeltaOperator delta = null;
+                    Map<OutputPort, DBSPDeltaOperator> deltas;
+                    if (this.deltasCreated.containsKey(block)) {
+                        deltas = this.deltasCreated.get(block);
+                        if (deltas.containsKey(source))
+                            delta = deltas.get(source);
+                    } else {
+                        deltas = Utilities.putNew(this.deltasCreated, block, new HashMap<>());
+                    }
+                    if (delta == null) {
+                        delta = new DBSPDeltaOperator(operator.getNode(), source);
+                        block.addOperator(delta);
+                        Utilities.putNew(deltas, source, delta);
+                    }
+
                     DBSPIntegrateOperator integral = new DBSPIntegrateOperator(operator.getNode(), delta.outputPort());
                     block.addOperator(integral);
                     sources.add(integral.outputPort());
