@@ -12,7 +12,7 @@ authorization model in addition to incremental updates to the object graph.
 The key idea is to model FGA rules as relational data instead of hard-coding them as SQL queries.
 
 The implementation described below is available as a [pre-packaged use case
-in the Feldera online sandbox](try.feldera.com/create/?name=dynamic-fga) as well
+in the Feldera online sandbox](https://try.feldera.com/create/?name=dynamic-fga) as well
 as in your local Feldera installation.
 
 :::note

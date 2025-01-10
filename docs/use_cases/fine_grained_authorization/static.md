@@ -11,7 +11,7 @@ the application and doesn't change at runtime: the application can create and de
 users, groups, and files, but not change the access control rules.
 
 The implementation described in this section is available as a [pre-packaged example
-in the Feldera online sandbox](try.feldera.com/create/?name=fine-grained-auth) as well
+in the Feldera online sandbox](https://try.feldera.com/create/?name=fine-grained-auth) as well
 as in your local Feldera installation.
 
 ## Modeling the object graph
