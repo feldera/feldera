@@ -227,6 +227,11 @@ public class ExpandOperators extends CircuitCloneVisitor {
     }
 
     @Override
+    public void postorder(DBSPStreamJoinIndexOperator operator) {
+        this.identity(operator);
+    }
+
+    @Override
     public void postorder(DBSPJoinOperator operator) {
         List<OutputPort> inputs = Linq.map(operator.inputs, this::mapped);
 

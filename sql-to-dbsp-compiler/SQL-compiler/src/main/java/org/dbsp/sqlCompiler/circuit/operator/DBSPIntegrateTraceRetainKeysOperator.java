@@ -38,7 +38,7 @@ public final class DBSPIntegrateTraceRetainKeysOperator
         DBSPTypeTupleBase controlTuple = controlType.to(DBSPTypeTupleBase.class);
         assert controlTuple.size() == 2;
         DBSPType leftSliceType = Objects.requireNonNull(dataProjection.getProjectedType());
-        assert leftSliceType.sameType(controlTuple.getFieldType(1)):
+        assert leftSliceType.sameType(controlTuple.getFieldType(1)) :
                 "Projection type does not match control type " + leftSliceType + "/" + controlType;
 
         DBSPParameter param;

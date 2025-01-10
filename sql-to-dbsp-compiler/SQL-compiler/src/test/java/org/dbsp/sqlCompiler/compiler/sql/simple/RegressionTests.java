@@ -1555,6 +1555,33 @@ public class RegressionTests extends SqlIoTest {
     }
 
     @Test
+    public void projectionBug() {
+        String sql = """
+                CREATE TABLE flows(ts TIMESTAMP NOT NULL LATENESS INTERVAL 5 SECONDS)
+                WITH ('append_only' = 'true');
+                
+                CREATE LOCAL VIEW tumble AS SELECT
+                            MIN(ts) AS ts_min,
+                            MAX(ts) AS ts_max,
+                            window_start,
+                            window_end
+                    FROM TABLE(
+                        TUMBLE(
+                            TABLE flows,
+                            DESCRIPTOR(ts),
+                            INTERVAL '1' MINUTES
+                        )
+                    )
+                    GROUP BY window_start, window_end;
+
+                CREATE VIEW final
+                    WITH ('emit_final' = 'window_end')
+                    AS SELECT window_start, window_end
+                    FROM tumble;""";
+        this.getCCS(sql);
+    }
+
+    @Test
     public void issue3278() {
         this.compileRustTestCase("""
                 CREATE TABLE t1(c0 varchar);
