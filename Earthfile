@@ -275,8 +275,8 @@ test-python:
     COPY python/tests tests
 
     # Reuse `Cargo.lock` to ensure consistent crate versions.
-    RUN mkdir -p /working-dir/cargo_workspace
-    COPY Cargo.lock /working-dir/cargo_workspace/Cargo.lock
+    RUN mkdir -p /working-dir/compiler/rust-compilation
+    COPY Cargo.lock /working-dir/compiler/rust-compilation/Cargo.lock
 
     ENV PGHOST=localhost
     ENV PGUSER=postgres
@@ -320,8 +320,8 @@ build-pipeline-manager-container:
     COPY +build-sql/sql2dbsp-jar-with-dependencies.jar database-stream-processor/sql-to-dbsp-compiler/SQL-compiler/target/
 
     # Reuse `Cargo.lock` to ensure consistent crate versions.
-    RUN mkdir -p .feldera/cargo_workspace
-    COPY --chown=feldera Cargo.lock .feldera/cargo_workspace/Cargo.lock
+    RUN mkdir -p .feldera/compiler/rust-compilation
+    COPY --chown=feldera Cargo.lock .feldera/compiler/rust-compilation/Cargo.lock
 
     # Copy over demos
     RUN mkdir -p demos
@@ -547,8 +547,8 @@ benchmark:
     COPY benchmark/feldera-sql/benchmarks benchmark/feldera-sql/benchmarks
     COPY +build-manager/pipeline-manager .
     COPY +build-sql/sql-to-dbsp-compiler sql-to-dbsp-compiler
-    RUN mkdir -p /working-dir/cargo_workspace
-    COPY Cargo.lock /working-dir/cargo_workspace/Cargo.lock
+    RUN mkdir -p /working-dir/compiler/rust-compilation
+    COPY Cargo.lock /working-dir/compiler/rust-compilation/Cargo.lock
     ENV PGHOST=localhost
     ENV PGUSER=postgres
     ENV PGCLIENTENCODING=UTF8
