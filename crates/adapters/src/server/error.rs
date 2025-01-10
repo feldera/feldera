@@ -186,7 +186,11 @@ impl From<ControllerError> for PipelineError {
 impl From<DataFusionError> for PipelineError {
     fn from(error: DataFusionError) -> Self {
         Self::AdHocQueryError {
-            error: error.to_string(),
+            // Until https://github.com/apache/datafusion/issues/14080 is fixed, we'll
+            // remove the `DataFusionError::External` strings of the error message
+            //
+            // Tracking issue: https://github.com/feldera/feldera/issues/3215
+            error: error.to_string().replace("External error: ", ""),
             df: Some(error),
         }
     }
