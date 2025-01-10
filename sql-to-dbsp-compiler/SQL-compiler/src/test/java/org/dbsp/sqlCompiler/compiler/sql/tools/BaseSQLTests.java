@@ -90,7 +90,7 @@ public class BaseSQLTests {
 
     @SuppressWarnings("unused")
     protected void showFinal() {
-        Logger.INSTANCE.setLoggingLevel(DBSPCompiler.class, 2);
+        Logger.INSTANCE.setLoggingLevel(DBSPCompiler.class, 1);
     }
 
     @SuppressWarnings("unused")

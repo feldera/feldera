@@ -36,6 +36,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateWith
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAntiJoinOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSubtractOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSumOperator;
@@ -662,6 +663,18 @@ public class InsertLimiters extends CircuitCloneVisitor {
             operator.addAnnotation(new NoIntegrator(info.leftIsKey(), !info.leftIsKey()));
     }
 
+    @Override
+    public void postorder(DBSPStreamJoinIndexOperator operator) {
+        ReplacementExpansion expanded = this.getReplacement(operator);
+        if (expanded != null)
+            this.processJoin(expanded.replacement.to(DBSPStreamJoinIndexOperator.class));
+        else
+            this.nonMonotone(operator);
+        this.addJoinAnnotations(operator);
+        super.postorder(operator);
+    }
+
+    @Override
     public void postorder(DBSPStreamJoinOperator operator) {
         ReplacementExpansion expanded = this.getReplacement(operator);
         if (expanded != null)
@@ -1685,6 +1698,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
                     PartiallyMonotoneTuple tuple = bodyType.to(PartiallyMonotoneTuple.class);
                     if (!tuple.getField(monotoneFieldIndex).mayBeMonotone()) {
                         throw new CompilationError("Compiler could not infer a waterline for column " +
+                                operator.viewName.singleQuote() + "." +
                                 operator.metadata.columns.get(monotoneFieldIndex).columnName.singleQuote(),
                                 operator.getNode());
                     }
@@ -1730,6 +1744,22 @@ public class InsertLimiters extends CircuitCloneVisitor {
                     PartiallyMonotoneTuple projection = new PartiallyMonotoneTuple(
                             // We project the key of the index node, which is always the first field.
                             Linq.list(new MonotoneType(tsType)), false, false);
+
+                    // The boundSource may have more than 1 monotone field, keep only the one we care about.
+                    DBSPTypeTuple monotoneFields = boundSource.outputType()
+                            .to(DBSPTypeTuple.class)
+                            .getFieldType(1)
+                            .to(DBSPTypeTuple.class);
+                    if (monotoneFields.size() > 1) {
+                        DBSPVariablePath v = boundSource.outputType().ref().var();
+                        DBSPExpression dropFields = new DBSPTupleExpression(
+                                v.deref().field(0),
+                                new DBSPTupleExpression(v.deref().field(1).field(controlFieldIndex)));
+                        DBSPApplyOperator dropOp = new DBSPApplyOperator(
+                                operator.getNode(), dropFields.closure(v.asParameter()), boundSource, "");
+                        this.addOperator(dropOp);
+                        boundSource = dropOp.outputPort();
+                    }
                     this.createRetainKeys(operator.getNode(), ix.outputPort(), projection, boundSource);
 
                     DBSPSimpleOperator deindex = new DBSPDeindexOperator(operator.getNode(), window.outputPort());
@@ -1740,9 +1770,9 @@ public class InsertLimiters extends CircuitCloneVisitor {
                 }
             }
             throw new CompilationError("Could not infer a waterline for column " +
+                    operator.viewName.singleQuote() + "." +
                     operator.metadata.columns.get(monotoneFieldIndex).columnName.singleQuote() +
-                    " of view " + operator.viewName.singleQuote() + " which has an " +
-                    "'emit_final' annotation", operator.getNode());
+                    " which has an 'emit_final' annotation", operator.getNode());
         }
         super.postorder(operator);
     }
