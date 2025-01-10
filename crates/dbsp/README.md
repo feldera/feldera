@@ -42,7 +42,7 @@ Continuous Analytics Platform](https://www.feldera.com).
 
 [1]: https://docs.feldera.com/
 
-[paper]: https://www.feldera.com/vldb23.pdf
+[paper]: https://docs.feldera.com/vldb23.pdf
 
 [video]: https://www.youtube.com/watch?v=iT4k5DCnvPU
 
