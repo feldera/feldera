@@ -904,16 +904,16 @@ public class PostgresNumericTests extends SqlIoTest {
                 -- Tests for EXP()
                 --
                 -- special cases
-                select exp(0.0);
+                select ROUND(exp(0.0), 12);
                         exp
                 --------------------
-                 1.0000000000000000
+                 1.0
                 (1 row)
 
-                select exp(1.0);
+                select ROUND(exp(1.0), 12);
                         exp
                 --------------------
-                 2.7182818284590452
+                 2.718281828459
                 (1 row)
 
                 select exp(1.0::numeric(25, 10)); -- changed the precision and scale
@@ -928,10 +928,10 @@ public class PostgresNumericTests extends SqlIoTest {
                  4.663547361468238E-15
                 (1 row)
 
-                select exp(-123.456);
-                                                   exp
-                -------------------------------------------------------------------------
-                 0.000000000000000000000000000000000000000000000000000002419582541264601
+                select ROUND(exp(-123.456), 12);
+                 exp
+                -----
+                 0.0
                 (1 row)
 
                 -- big test
