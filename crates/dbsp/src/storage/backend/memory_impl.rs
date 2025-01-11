@@ -113,7 +113,7 @@ impl Storage for MemoryBackend {
         let files = self.files.read().unwrap();
         match files.get(name) {
             Some(file) => Ok(file.clone()),
-            None => Err(StorageError::StdIo(IoError::from(ErrorKind::NotFound))),
+            None => Err(StorageError::StdIo(ErrorKind::NotFound)),
         }
     }
 }
