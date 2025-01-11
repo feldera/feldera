@@ -201,7 +201,7 @@ public abstract class SqlIoTest extends BaseSQLTests {
         queryAndOutput = this.removeComments(queryAndOutput);
         int semicolon = queryAndOutput.indexOf(';');
         if (semicolon < 0)
-            throw new RuntimeException("Could not parse query and output");
+            throw new RuntimeException("Could not parse query and output: " + queryAndOutput);
         String query = queryAndOutput.substring(0, semicolon);
         String expected = queryAndOutput.substring(semicolon + 1);
         if (to == TestOptimizations.Both || to == TestOptimizations.Optimized)
