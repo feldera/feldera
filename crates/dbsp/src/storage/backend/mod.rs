@@ -14,6 +14,7 @@ use serde::{ser::SerializeStruct, Serialize, Serializer};
 use std::{
     fmt::Display,
     fs::OpenOptions,
+    io::ErrorKind,
     path::{Path, PathBuf},
     sync::{
         atomic::{AtomicU64, Ordering},
@@ -52,11 +53,11 @@ fn append_to_path(p: PathBuf, s: &str) -> PathBuf {
 }
 
 /// An error that can occur when using the storage backend.
-#[derive(Error, Debug)]
+#[derive(Clone, Error, Debug)]
 pub enum StorageError {
     /// I/O error.
     #[error("{0}")]
-    StdIo(#[from] std::io::Error),
+    StdIo(ErrorKind),
 
     /// A process already locked the provided storage directory.
     ///
@@ -70,6 +71,12 @@ pub enum StorageError {
     CheckpointNotFound(Uuid),
 }
 
+impl From<std::io::Error> for StorageError {
+    fn from(value: std::io::Error) -> Self {
+        Self::StdIo(value.kind())
+    }
+}
+
 impl Serialize for StorageError {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -78,8 +85,7 @@ impl Serialize for StorageError {
         match self {
             Self::StdIo(error) => {
                 let mut ser = serializer.serialize_struct("IOError", 2)?;
-                ser.serialize_field("kind", &error.kind().to_string())?;
-                ser.serialize_field("os_error", &error.raw_os_error())?;
+                ser.serialize_field("kind", &error.to_string())?;
                 ser.end()
             }
             error => error.serialize(serializer),
