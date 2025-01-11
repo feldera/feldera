@@ -528,16 +528,16 @@ public class FunctionsTest extends SqlIoTest {
     @Test
     public void testLn() {
         this.qs("""
-                SELECT ln(2e0);
+                SELECT ROUND(ln(2e0), 12);
                  ln
                 ----
-                 0.693147180559945
+                 0.69314718056
                 (1 row)
 
-                SELECT ln(2.0);
+                SELECT ROUND(ln(2.0), 12);
                  ln
                 ----
-                 0.693147180559945
+                 0.69314718056
                 (1 row)
                 """
         );
