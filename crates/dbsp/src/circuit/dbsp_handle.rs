@@ -490,15 +490,25 @@ enum Response {
 /// A handle to control the execution of a circuit in a multithreaded runtime.
 #[derive(Debug)]
 pub struct DBSPHandle {
-    // Time when the handle was created.
+    /// Time when the handle was created.
     start_time: Instant,
+
+    /// The underlying runtime.
+    ///
+    /// Normally this will be some runtime, but we take it out if we need to
+    /// kill the runtime.
     runtime: Option<RuntimeHandle>,
-    // Channels used to send commands to workers.
+
+    /// Channels used to send commands to workers.
     command_senders: Vec<Sender<Command>>,
-    // Channels used to receive command completion status from
-    // workers.
+
+    /// Channels used to receive command completion status from workers.
     status_receivers: Vec<Receiver<Result<Response, SchedulerError>>>,
+
+    /// For creating checkpoints.
     checkpointer: Checkpointer,
+
+    /// Cached fingerprint of the circuit, if we've calculated it already.
     fingerprint: Option<u64>,
 }
 
