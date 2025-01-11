@@ -291,12 +291,15 @@ pub trait Trace: BatchReader {
     /// or at all.  This method is just a hint that keys that don't pass the
     /// filter are no longer of interest to the consumer of the trace and
     /// can be garbage collected.
-    // This API is similar to `BatchReader::truncate_keys_below`, however we make
-    // it a method of `trait Trace` rather than `trait BatchReader`.  The difference
-    // is that a batch can truncate its keys instanly by simply moving an internal
-    // pointer to the first remaining key.  However, there is no similar way to
-    // retain keys based on arbitrary predicates, this can only be done efficiently
-    // as part of trace maintenance when either merging or compacting batches.
+    ///
+    /// # Rationale
+    ///
+    /// This API is similar to the old API `BatchReader::truncate_keys_below`,
+    /// but in [Trace] instead of [BatchReader].  The difference is that a batch
+    /// can truncate its keys instanly by simply moving an internal pointer to
+    /// the first remaining key.  However, there is no similar way to retain
+    /// keys based on arbitrary predicates, this can only be done efficiently as
+    /// part of trace maintenance when either merging or compacting batches.
     fn retain_keys(&mut self, filter: Filter<Self::Key>);
 
     /// Informs the trace that values that don't pass the filter are no longer
@@ -341,6 +344,11 @@ pub enum BatchLocation {
 ///
 /// See [crate documentation](crate::trace) for more information on batches and
 /// traces.
+///
+/// # Object safety
+///
+/// `BatchReader` is not object safe (it cannot be used as `dyn BatchReader`),
+/// but [Cursor] is, which can often be a useful substitute.
 pub trait BatchReader: Debug + NumEntries + Rkyv + SizeOf + 'static
 where
     Self: Sized,
@@ -640,7 +648,10 @@ where
         batch: &mut Box<DynWeightedPairs<DynPair<Output::Key, Output::Val>, Output::R>>,
     );
 
-    /// Adds a consolidated batch of elements to the batcher
+    /// Adds a consolidated batch of elements to the batcher.
+    ///
+    /// A consolidated batch is sorted and contains no duplicates or zero
+    /// weights.
     fn push_consolidated_batch(
         &mut self,
         batch: &mut Box<DynWeightedPairs<DynPair<Output::Key, Output::Val>, Output::R>>,
