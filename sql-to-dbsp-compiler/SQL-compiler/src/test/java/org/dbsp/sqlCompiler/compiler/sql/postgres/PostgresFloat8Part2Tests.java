@@ -6,8 +6,7 @@ import org.junit.Test;
 
 /*
  * Tests manually adapted from
- * https://github.com/postgres/postgres/blob/master/src/test/regress/expected/float8.out
- */
+ * https://github.com/postgres/postgres/blob/master/src/test/regress/expected/float8.out */
 public class PostgresFloat8Part2Tests extends SqlIoTest {
     @Override
     public void prepareInputs(DBSPCompiler compiler) {

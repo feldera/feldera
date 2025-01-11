@@ -16,9 +16,6 @@ use std::collections::BTreeMap;
 use std::error::Error;
 use std::string::String;
 
-const FLOAT_DISPLAY_PRECISION: usize = 6;
-const DOUBLE_DISPLAY_PRECISION: usize = 15;
-
 // Creates three cast functions based on an existing one
 macro_rules! cast_function {
     ($result_name: ident, $result_type: ty, $type_name: ident, $arg_type: ty) => {
@@ -991,33 +988,37 @@ pub fn cast_to_s_decimal(value: Decimal, size: i32, fixed: bool) -> String {
 #[doc(hidden)]
 #[inline]
 pub fn cast_to_s_d(value: F64, size: i32, fixed: bool) -> String {
-    let result = format!("{1:.0$}", DOUBLE_DISPLAY_PRECISION, value);
-    let result = result.trim_end_matches('0').to_string();
-    let result = result.trim_end_matches('.').to_string();
+    let v = value.into_inner();
+    cast_to_s_fp(v, size, fixed)
+}
 
-    let result = match result.parse::<f64>() {
-        Ok(val) if val.is_infinite() && val.is_sign_positive() => String::from("Infinity"),
-        Ok(val) if val.is_infinite() && val.is_sign_negative() => String::from("-Infinity"),
-        _ => result,
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_s_fp<T>(v: T, size: i32, fixed: bool) -> String
+where
+    T: num::Float + std::fmt::Display,
+{
+    let result = if v.is_infinite() {
+        if v.is_sign_positive() {
+            "Infinity".to_string()
+        } else {
+            "-Infinity".to_string()
+        }
+    } else if v.is_nan() {
+        "NaN".to_string()
+    } else {
+        let result = format!("{}", v);
+        let result = result.trim_end_matches('0').to_string();
+        result.trim_end_matches('.').to_string()
     };
-
     limit_or_size_string(result, size, fixed)
 }
 
 #[doc(hidden)]
 #[inline]
 pub fn cast_to_s_f(value: F32, size: i32, fixed: bool) -> String {
-    let result = format!("{1:.0$}", FLOAT_DISPLAY_PRECISION, value);
-    let result = result.trim_end_matches('0').to_string();
-    let result = result.trim_end_matches('.').to_string();
-
-    let result = match result.parse::<f32>() {
-        Ok(val) if val.is_infinite() && val.is_sign_positive() => String::from("Infinity"),
-        Ok(val) if val.is_infinite() && val.is_sign_negative() => String::from("-Infinity"),
-        _ => result,
-    };
-
-    limit_or_size_string(result, size, fixed)
+    let v = value.into_inner();
+    cast_to_s_fp(v, size, fixed)
 }
 
 #[doc(hidden)]

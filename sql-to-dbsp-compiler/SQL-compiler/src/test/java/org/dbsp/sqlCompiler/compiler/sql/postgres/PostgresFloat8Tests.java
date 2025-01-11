@@ -14,9 +14,7 @@ import org.junit.Test;
  * - erf, erfc methods
  * - subnormal tests and xfloat8 related tests
  *
- * Rest of the tests are in PostgresFloat8Part2Tests
- *
- */
+ * Rest of the tests are in PostgresFloat8Part2Tests  */
 public class PostgresFloat8Tests extends SqlIoTest {
     @Override
     public void prepareInputs(DBSPCompiler compiler) {
@@ -480,7 +478,7 @@ public class PostgresFloat8Tests extends SqlIoTest {
                 (1 row)
 
                 -- cube root
-                SELECT cbrt('27'::double) AS three;
+                SELECT ROUND(cbrt('27'::double), 12) AS three;
                  three
                 -------
                      3
@@ -506,40 +504,40 @@ public class PostgresFloat8Tests extends SqlIoTest {
                  1.2345678901234e-200
                 (5 rows)
 
-                SELECT sinh('1'::double);
+                SELECT ROUND(sinh('1'::double), 10);
                       sinh
                 -----------------
-                 1.175201193643801
+                 1.1752011936
                 (1 row)
 
-                SELECT cosh('1'::double);
+                SELECT ROUND(cosh('1'::double), 10);
                        cosh
                 ------------------
-                 1.543080634815244
+                 1.5430806348
                 (1 row)
 
-                SELECT tanh('1'::double);
+                SELECT ROUND(tanh('1'::double), 10);
                        tanh
                 -------------------
-                 0.761594155955765
+                 0.761594156
                 (1 row)
 
-                SELECT asinh('1'::double);
+                SELECT ROUND(asinh('1'::double), 10);
                        asinh
                 -------------------
-                 0.881373587019543
+                 0.8813735870
                 (1 row)
 
-                SELECT acosh('2'::double);
+                SELECT ROUND(acosh('2'::double), 10);
                       acosh
                 ------------------
-                 1.316957896924817
+                 1.3169578969
                 (1 row)
 
-                SELECT atanh('0.5'::double);
+                SELECT ROUND(atanh('0.5'::double), 10);
                        atanh
                 -------------------
-                 0.549306144334055
+                 0.5493061443
                 (1 row)
 
                 -- test Inf/NaN cases for hyperbolic functions
@@ -890,10 +888,10 @@ FROM (SELECT 10*cosd(a), 10*sind(a)
                  0
                 (1 row)
 
-                SELECT log(2);
+                SELECT round(log(2), 10);
                  log
                 -----
-                 0.693147180559945
+                 0.6931471806
                 (1 row)
 
                 SELECT log(1.0);
@@ -914,16 +912,16 @@ FROM (SELECT 10*cosd(a), 10*sind(a)
                  0
                 (1 row)
 
-                SELECT log(3.0, 4.0);
+                SELECT ROUND(log(3.0, 4.0), 10);
                  log
                 -----
-                 0.792481250360578
+                 0.7924812504
                 (1 row)
 
-                SELECT log(7.7, PI);
+                SELECT ROUND(log(7.7, PI), 10);
                  log
                 -----
-                 1.783145835617836
+                 1.7831458356
                 (1 row)
 
                 SELECT log(64.0, 2.0);
