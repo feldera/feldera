@@ -1,4 +1,4 @@
-# Index of Functions and SQL Constructs Supported in Feldera SQL
+# Index of functions and SQL constructs supported in Feldera SQL
 
 * `%`: [operators](operators.md)
 * `*`: [operators](operators.md)
@@ -106,6 +106,7 @@
 * `GUNZIP`: [binary](binary.md)
 * `HOP`: [table](table.md)
 * `HOUR`: [datetime](datetime.md)
+* `IF`: [comparisons](comparisons.md)
 * `IGNORE NULLS`: [grammar](grammar.md)
 * `ILIKE`: [string](string.md#ilike)
 * `IN`: [grammar](grammar.md)

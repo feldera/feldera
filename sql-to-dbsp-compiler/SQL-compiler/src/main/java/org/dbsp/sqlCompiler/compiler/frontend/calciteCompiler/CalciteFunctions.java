@@ -226,6 +226,7 @@ public class CalciteFunctions implements FunctionDocumentation.FunctionRegistry 
             new Func(SqlLibraryOperators.DATE_ADD, "DATE_ADD", SqlLibrary.BIG_QUERY, "datetime", false),
             new Func(SqlLibraryOperators.DATE_SUB, "DATE_SUB", SqlLibrary.BIG_QUERY, "datetime", false),
             new Func(SqlLibraryOperators.DATE_PART, "DATE_PART", SqlLibrary.POSTGRESQL, "datetime", false),
+            new Func(SqlLibraryOperators.IF, "IF", SqlLibrary.BIG_QUERY, "comparisons", false),
             new Func(SqlLibraryOperators.LEN, "LEN", SqlLibrary.SPARK, "string", false),
             new Func(SqlLibraryOperators.LENGTH, "LENGTH", SqlLibrary.POSTGRESQL, "string", false),
             new Func(SqlLibraryOperators.SUBSTR_BIG_QUERY, "SUBSTR", SqlLibrary.BIG_QUERY, "string", false),
