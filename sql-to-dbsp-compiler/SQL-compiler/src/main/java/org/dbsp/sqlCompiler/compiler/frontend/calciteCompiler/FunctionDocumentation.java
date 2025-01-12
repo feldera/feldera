@@ -38,7 +38,7 @@ public class FunctionDocumentation {
         Set<String> docFiles = new HashSet<>(Linq.list(Objects.requireNonNull(dir.list())));
 
         PrintWriter writer = new PrintWriter(f.getAbsolutePath());
-        writer.println("# Index of functions and SQL constructs supported in Feldera SQL");
+        writer.println("# Index of Functions and SQL Constructs Supported in Feldera SQL");
         writer.println();
         List<FunctionDescription> sorted = new ArrayList<>();
         sorted.addAll(CalciteFunctions.INSTANCE.getDescriptions());
@@ -60,7 +60,13 @@ public class FunctionDocumentation {
             writer.print(": ");
             boolean first = true;
             for (String doc: files) {
-                String docFile = doc + ".md";
+                String anchor = "";
+                String docFile = doc;
+                if (doc.contains("#")) {
+                    anchor = doc.substring(doc.indexOf("#") + 1);
+                    docFile = docFile.substring(0, doc.indexOf("#"));
+                }
+                docFile = docFile + ".md";
                 if (!docFiles.contains(docFile))
                     // Check that the file exists
                     throw new RuntimeException("File `" + docFile + "` not found for function " + func.functionName());
@@ -73,10 +79,17 @@ public class FunctionDocumentation {
                 if (!contents.contains(func.functionName()))
                     // Check that the file does indeed mention this function
                     throw new RuntimeException("Function `" + func.functionName() + "` does not appear in file " + docFile);
+                if (!anchor.isEmpty()) {
+                    if (!contents.contains("<a id=\"" + anchor + "\">")) {
+                        // Check that the file contains an anchor
+                        throw new RuntimeException("Anchor `" + anchor + "` does not appear in file " + docFile);
+                    }
+                    anchor = "#" + anchor;
+                }
                 if (!first)
                     writer.print(", ");
                 first = false;
-                writer.print("[" + doc + "](" + docFile + ")");
+                writer.print("[" + Utilities.getBaseName(docFile) + "](" + docFile + anchor + ")");
             }
             writer.println();
         }

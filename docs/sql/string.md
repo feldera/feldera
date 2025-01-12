@@ -83,6 +83,7 @@ addition to the normal way of `''`.
     <th>Examples</th>
   </tr>
   <tr>
+    <a id="concat"></a>
     <td><code>||</code></td>
     <td>String concatenation (infix).  Note that concatenation does *not* strip trailing spaces
         from CHAR(N) values, unlike other SQL dialects.  If such behavior is desired, an explicit
@@ -90,7 +91,7 @@ addition to the normal way of `''`.
     <td><code>'Post' || 'greSQL'</code> => <code>PostgreSQL</code></td>
   </tr>
   <tr>
-    <td><code>string LIKE pattern [ESCAPE escape-character]</code> and
+    <td><a id="like"></a><code>string LIKE pattern [ESCAPE escape-character]</code> and
         <code>string NOT LIKE pattern [ESCAPE escape-character]</code></td>
     <td>The LIKE expression returns true if the string matches the supplied pattern.
      (As expected, the <code>NOT LIKE</code> expression returns false if LIKE returns true.</td>
@@ -98,6 +99,7 @@ addition to the normal way of `''`.
   </tr>
   <tr>
     <td>
+        <a id="ilike"></a>
         <code>string ILIKE pattern </code> and
         <code>string NOT ILIKE pattern</code>
     </td>
@@ -112,7 +114,7 @@ addition to the normal way of `''`.
     </td>
   </tr>
   <tr>
-    <td><code>string RLIKE pattern</code> and
+    <td><a id="rlike"></a><code>string RLIKE pattern</code> and
         <code>string NOT RLIKE pattern</code></td>
     <td>The RLIKE expression returns true if the string matches the supplied pattern.
         The pattern is a standard Java regular expression.</td>
