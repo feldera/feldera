@@ -145,14 +145,6 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         Assert.assertEquals(expected, str);
     }
 
-    @Test @Ignore("To be invoked manually")
-    public void generateFunctionIndex() throws IOException {
-        // When invoked it generates documentation for the supported functions and operators
-        // in the specified file.
-        String file = "../../docs/sql/function-index.md";
-        FunctionDocumentation.generateIndex(file);
-    }
-
     @Test
     public void testIntCastWarning() {
         DBSPCompiler compiler = this.testCompiler();
@@ -623,6 +615,14 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
                 new DBSPStringLiteral("Z", true)), -1);
         boolean same = change.getSet(0).sameValue(expected);
         Assert.assertTrue(same);
+    }
+
+    @Test @Ignore("To be invoked manually")
+    public void generateFunctionIndex() throws IOException {
+        // When invoked it generates documentation for the supported functions and operators
+        // in the specified file.
+        String file = "../../docs/sql/function-index.md";
+        FunctionDocumentation.generateIndex(file);
     }
 
     @Test
