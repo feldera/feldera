@@ -696,7 +696,7 @@ public class PostgresNumericTests extends SqlIoTest {
                           x1 - x2 AS diff,
                           x1 * x2 AS prod
                         FROM v AS v1(x1), v AS v2(x2);
-                            x1     |    x2     |    sum    |   diff    |   prod   \s
+                            x1     |    x2     |    sum    |   diff    |   prod
                         -----------+-----------+-----------+-----------+-----------
                                  0 |         0 |         0 |         0 |         0
                                  0 |         1 |         1 |        -1 |         0
@@ -829,7 +829,7 @@ public class PostgresNumericTests extends SqlIoTest {
                   (VALUES(0),(1),(-1),(4.2),(-7.777))
                 SELECT x, -x as minusx, abs(x), floor(x), ceil(x), sign(x)
                 FROM v;
-                     x     |  minusx   |   abs    |   floor   |   ceil    | sign\s
+                     x     |  minusx   |   abs    |   floor   |   ceil    | sign
                 -----------+-----------+----------+-----------+-----------+------
                          0 |         0 |        0 |         0 |         0 |    0
                          1 |        -1 |        1 |         1 |         1 |    1
@@ -848,7 +848,7 @@ public class PostgresNumericTests extends SqlIoTest {
                   (VALUES(0),(1),(-1),(4.2),(-7.777))
                 SELECT x, round(x), round(x,1) as round1, truncate(x), truncate(x,1) as trunc1
                 FROM v;
-                     x     |   round   |  round1   |   trunc   |  trunc1  \s
+                     x     |   round   |  round1   |   trunc   |  trunc1
                 -----------+-----------+-----------+-----------+-----------
                          0 |         0 |       0.0 |         0 |       0.0
                          1 |         1 |       1.0 |         1 |       1.0
@@ -890,7 +890,7 @@ public class PostgresNumericTests extends SqlIoTest {
                   (VALUES(0),(1),(4.2))
                 SELECT x, sqrt(x)
                 FROM v;
-                    x     |       sqrt       \s
+                    x     |       sqrt
                 ----------+-------------------
                         0 | 0.000000000000000
                         1 | 1.000000000000000

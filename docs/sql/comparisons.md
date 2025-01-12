@@ -128,19 +128,19 @@ with `NULL` values are compared smaller than any other value.
 <table>
   <tr>
     <td><code>CASE value WHEN value1 [, value11 ]* THEN result1 [ WHEN valueN [, valueN1 ]* THEN resultN ]* [ ELSE resultZ ] END</code></td>
-    <td>Simple case</td>
+    <td>Simple case expression: returns the result corresponding to the first valueN that matches value.</td>
   </tr>
   <tr>
     <td><code>CASE WHEN condition1 THEN result1 [ WHEN conditionN THEN resultN ]* [ ELSE resultZ ] END</code></td>
-    <td>Searched case</td>
+    <td>Searched case: returns result corresponding to first condition that evaluates to 'true'.</td>
   </tr>
   <tr>
-    <td><code>NULLIF(value, value)</code></td>
-    <td>Returns `NULL` if the values are the same. For example, <code>NULLIF(5, 5)</code> returns NULL; <code>NULLIF(5, 0)</code> returns 5.</td>
+    <td><code>NULLIF(value0, value1)</code></td>
+    <td>Returns `NULL` if the value0 and value1 are the same. For example, <code>NULLIF(5, 5)</code> returns NULL; <code>NULLIF(5, 0)</code> returns 5.</td>
   </tr>
   <tr>
-    <td><code>COALESCE(value, value [, value ]*)</code></td>
-    <td>Provides a value if the first value is NULL. For example, <code>COALESCE(NULL, 5)</code> returns 5.</td>
+    <td><code>COALESCE(value0, value1 [, valueN ]*)</code></td>
+    <td>Returns the first non-null value. For example, <code>COALESCE(NULL, 5)</code> returns 5.</td>
   </tr>
   <tr>
     <td><code>GREATEST( expr [, expr ]* )</code></td>
@@ -149,5 +149,9 @@ with `NULL` values are compared smaller than any other value.
   <tr>
     <td><code>LEAST( expr [, expr ]* )</code></td>
     <td>The smallest of a number of expressions.</td>
+  </tr>
+  <tr>
+    <td><code>IF( condition, ifTrue, ifFalse )</code></td>
+    <td>Returns ifTrue if the condition evaluates to 'true', returns ifFalse otherwise.</td>
   </tr>
 </table>

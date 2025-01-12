@@ -6,6 +6,52 @@ import org.junit.Test;
 /** Tests taken from Calcite SqlOperatorTest */
 public class CalciteSqlOperatorTest extends SqlIoTest {
     @Test
+    public void testIf() {
+        this.qs("""
+                SELECT if(1 = 2, 1, 2);
+                 result
+                --------
+                 2
+                (1 row)
+                
+                SELECT if('abc'='xyz', 'abc', 'xyz');
+                 result
+                --------
+                 xyz
+                (1 row)
+                
+                SELECT if(substring('abc',1,2)='ab', 'abc', 'xyz');
+                 result
+                --------
+                 abc
+                (1 row)
+                
+                SELECT if(substring('abc',1,2)='ab', 'abc', 'xyz');
+                 result
+                --------
+                 abc
+                (1 row)
+
+                SELECT if(nullif(true,false), 5, 10);
+                 result
+                --------
+                 5
+                (1 row)
+                
+                SELECT if(nullif(true,true), 5, 10);
+                 result
+                --------
+                 10
+                (1 row)
+                
+                SELECT if(nullif(true,true), 5, 10);
+                 result
+                --------
+                 10
+                (1 row)""");
+    }
+
+    @Test
     public void testRegexReplace2Func() {
         this.qs("""
                 select regexp_replace('a b c', 'b');
