@@ -36,5 +36,5 @@ fn filter<T>(f: &Option<Filter<T>>, t: &T) -> bool
 where
     T: ?Sized,
 {
-    f.as_ref().map_or(true, |f| f(t))
+    f.as_ref().map_or(true, |f| (f.filter_func)(t))
 }

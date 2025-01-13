@@ -1,7 +1,8 @@
 use crate::{
+    circuit::metadata::MetaItem,
     dynamic::{DowncastTrait, DynData, Erase},
     operator::TraceBound,
-    trace::BatchReaderFactories,
+    trace::{BatchReaderFactories, Filter},
     typed_batch::{Batch, DynBatch, DynBatchReader, Spine, TypedBatch, TypedBox},
     Circuit, DBData, DBWeight, Stream,
 };
@@ -168,13 +169,15 @@ where
         self.inner().dyn_integrate_trace_retain_keys(
             &bounds_stream.inner_data(),
             Box::new(move |ts| {
+                let metadata = MetaItem::String(format!("{ts:?}"));
                 let ts = clone_box(ts);
                 let retain_key_func = retain_key_func.clone();
-                Box::new(move |k| {
+                Filter::new(Box::new(move |k: &B::DynK| {
                     retain_key_func(unsafe { k.downcast::<B::Key>() }, unsafe {
                         ts.as_ref().downcast::<TS>()
                     })
-                })
+                }))
+                .with_metadata(metadata)
             }),
         );
     }
@@ -194,13 +197,15 @@ where
         self.inner().dyn_integrate_trace_retain_values(
             &bounds_stream.inner_data(),
             Box::new(move |ts: &DynData| {
+                let metadata = MetaItem::String(format!("{ts:?}"));
                 let ts = clone_box(ts);
                 let retain_val_func = retain_value_func.clone();
-                Box::new(move |v| {
+                Filter::new(Box::new(move |v: &B::DynV| {
                     retain_val_func(unsafe { v.downcast::<B::Val>() }, unsafe {
                         ts.as_ref().downcast::<TS>()
                     })
-                })
+                }))
+                .with_metadata(metadata)
             }),
         );
     }

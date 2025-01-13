@@ -563,8 +563,8 @@ where
                 self.result.push_merge_retain_values_fueled(
                     (&source1.layer, &mut self.lower1, self.upper1),
                     (&source2.layer, &mut self.lower2, self.upper2),
-                    key_filter,
-                    value_filter,
+                    &key_filter.filter_func,
+                    &value_filter.filter_func,
                     None,
                     fuel,
                 );
@@ -573,7 +573,7 @@ where
                 self.result.push_merge_retain_keys_fueled(
                     (&source1.layer, &mut self.lower1, self.upper1),
                     (&source2.layer, &mut self.lower2, self.upper2),
-                    key_filter,
+                    &key_filter.filter_func,
                     None,
                     fuel,
                 );
@@ -583,7 +583,7 @@ where
                     (&source1.layer, &mut self.lower1, self.upper1),
                     (&source2.layer, &mut self.lower2, self.upper2),
                     &|_| true,
-                    value_filter,
+                    &value_filter.filter_func,
                     None,
                     fuel,
                 );

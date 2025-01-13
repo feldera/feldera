@@ -162,11 +162,11 @@ where
     T: Trace,
 {
     if let Some(filter) = trace.value_filter() {
-        tuples.retain(|((_k, v, _t), _r)| filter(v.as_ref()));
+        tuples.retain(|((_k, v, _t), _r)| (filter.filter_func)(v.as_ref()));
     }
 
     if let Some(filter) = trace.key_filter() {
-        tuples.retain(|((k, _v, _t), _r)| filter(k.as_ref()));
+        tuples.retain(|((k, _v, _t), _r)| (filter.filter_func)(k.as_ref()));
     }
 
     tuples
@@ -878,7 +878,7 @@ where
             .filter(|((k, v, _t), _r)| {
                 fn include<K: ?Sized>(x: &Box<K>, filter: &Option<Filter<K>>) -> bool {
                     match filter {
-                        Some(filter) => filter(x),
+                        Some(filter) => (filter.filter_func)(x),
                         None => true,
                     }
                 }
@@ -1296,12 +1296,14 @@ where
     }
 
     fn retain_keys(&mut self, filter: Filter<Self::Key>) {
-        self.data.retain(|(k, _v, _t), _r| filter(k.as_ref()));
+        self.data
+            .retain(|(k, _v, _t), _r| (filter.filter_func)(k.as_ref()));
         self.key_filter = Some(filter);
     }
 
     fn retain_values(&mut self, filter: Filter<Self::Val>) {
-        self.data.retain(|(_k, v, _t), _r| filter(v.as_ref()));
+        self.data
+            .retain(|(_k, v, _t), _r| (filter.filter_func)(v.as_ref()));
         self.value_filter = Some(filter);
     }
 

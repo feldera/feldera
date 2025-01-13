@@ -442,7 +442,7 @@ where
             self.result.push_merge_retain_keys(
                 source1.layer.cursor(),
                 source2.layer.cursor(),
-                key_filter,
+                &key_filter.filter_func,
                 None,
             );
         } else {

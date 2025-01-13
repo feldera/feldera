@@ -328,14 +328,14 @@ where
             let (key, val) = kv.split();
 
             if let Some(key_filter) = &key_filter {
-                if !key_filter(key) {
+                if !(key_filter.filter_func())(key) {
                     continue;
                 }
             }
 
             if let Some(val) = val.get() {
                 if let Some(val_filter) = &val_filter {
-                    if !val_filter(val) {
+                    if !(val_filter.filter_func())(val) {
                         continue;
                     }
                 }
