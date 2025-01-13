@@ -569,7 +569,10 @@ where
         );
 
         circuit.cache_insert(TraceId::new(stream.stream_id()), trace.clone());
-        circuit.cache_insert(BoundsId::<T>::new(stream.stream_id()), self.bounds.clone());
+        circuit.cache_insert(
+            BoundsId::<T::Batch>::new(stream.stream_id()),
+            self.bounds.clone(),
+        );
         circuit.cache_insert(ExportId::new(trace.stream_id()), self.export_trace);
     }
 }
