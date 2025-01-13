@@ -22,6 +22,7 @@ use std::{
     borrow::Cow,
     cell::{Ref, RefCell},
     cmp::Ordering,
+    fmt::Debug,
     marker::PhantomData,
     ops::Deref,
     rc::Rc,
@@ -42,13 +43,18 @@ circuit_cache_key!(SpillId<C, D>(StreamId => Stream<C, D>));
 ///
 /// The writer can update the value of the bound at each clock
 /// cycle.  The bound can only increase monotonically.
-#[derive(Debug)]
 #[repr(transparent)]
 pub struct TraceBound<T: ?Sized>(Rc<RefCell<Option<Box<T>>>>);
 
 impl<T: DataTrait + ?Sized> Clone for TraceBound<T> {
     fn clone(&self) -> Self {
         Self(self.0.clone())
+    }
+}
+
+impl<T: Debug + ?Sized> Debug for TraceBound<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.borrow().fmt(f)
     }
 }
 
@@ -169,7 +175,11 @@ impl<K: DataTrait + ?Sized, V: DataTrait + ?Sized> TraceBounds<K, V> {
                 .as_ref()
                 .map(|bx| Arc::from(clone_box(bx.as_ref())))
                 .map(|bound: Arc<K>| {
-                    Box::new(move |k: &K| bound.as_ref().cmp(k) != Ordering::Greater) as Filter<K>
+                    let metadata = MetaItem::String(format!("{bound:?}"));
+                    Filter::new(Box::new(move |k: &K| {
+                        bound.as_ref().cmp(k) != Ordering::Greater
+                    }))
+                    .with_metadata(metadata)
                 }),
             Predicate::Filter(filter) => Some(filter.clone()),
         }
@@ -190,10 +200,18 @@ impl<K: DataTrait + ?Sized, V: DataTrait + ?Sized> TraceBounds<K, V> {
                 .as_ref()
                 .map(|bx| Arc::from(clone_box(bx.as_ref())))
                 .map(|bound: Arc<V>| {
-                    Box::new(move |v: &V| bound.as_ref().cmp(v) != Ordering::Greater) as Filter<V>
+                    let metadata = MetaItem::String(format!("{bound:?}"));
+                    Filter::new(Box::new(move |v: &V| {
+                        bound.as_ref().cmp(v) != Ordering::Greater
+                    }))
+                    .with_metadata(metadata)
                 }),
             Predicate::Filter(filter) => Some(filter.clone()),
         }
+    }
+
+    pub(crate) fn metadata(&self) -> MetaItem {
+        self.0.borrow().metadata()
     }
 }
 
@@ -206,11 +224,37 @@ enum Predicate<V: ?Sized> {
     Filter(Filter<V>),
 }
 
+impl<V: Debug + ?Sized> Predicate<V> {
+    pub fn metadata(&self) -> MetaItem {
+        match self {
+            Self::Bounds(bounds) => MetaItem::Array(
+                bounds
+                    .iter()
+                    .map(|b| MetaItem::String(format!("{b:?}")))
+                    .collect(),
+            ),
+            Self::Filter(filter) => filter.metadata().clone(),
+        }
+    }
+}
+
 struct TraceBoundsInner<K: ?Sized + 'static, V: ?Sized + 'static> {
     /// Key bounds _or_ retainment condition.
     key_predicate: Predicate<K>,
     /// Value bounds _or_ retainment condition.
     val_predicate: Predicate<V>,
+}
+
+impl<K: Debug + ?Sized + 'static, V: Debug + ?Sized + 'static> TraceBoundsInner<K, V> {
+    pub fn metadata(&self) -> MetaItem {
+        MetaItem::Map(
+            metadata! {
+                "key" => self.key_predicate.metadata(),
+                "value" => self.val_predicate.metadata()
+            }
+            .into(),
+        )
+    }
 }
 
 /// A key-only [`Spine`] of `C`'s default batch type, with key and weight types
@@ -374,11 +418,10 @@ where
     {
         // We handle moving from the sharded to unsharded stream directly here.
         // Moving from spilled to unspilled is handled by `spill()`.
+        let stream_id = self.try_unsharded_version().stream_id();
+
         self.circuit()
-            .cache_get_or_insert_with(
-                BoundsId::<B>::new(self.try_unsharded_version().stream_id()),
-                TraceBounds::new,
-            )
+            .cache_get_or_insert_with(BoundsId::<B>::new(stream_id), TraceBounds::new)
             .clone()
     }
 
@@ -524,6 +567,7 @@ where
             DelayedTraceId::new(trace.stream_id()),
             self.delayed_trace.clone(),
         );
+
         circuit.cache_insert(TraceId::new(stream.stream_id()), trace.clone());
         circuit.cache_insert(BoundsId::<T>::new(stream.stream_id()), self.bounds.clone());
         circuit.cache_insert(ExportId::new(trace.stream_id()), self.export_trace);
@@ -853,6 +897,7 @@ where
             USED_BYTES_LABEL => MetaItem::bytes(bytes.used_bytes()),
             "allocations" => MetaItem::Count(bytes.distinct_allocations()),
             SHARED_BYTES_LABEL => MetaItem::bytes(bytes.shared_bytes()),
+            "bounds" => self.bounds.metadata()
         });
 
         if let Some(trace) = self.trace.as_ref() {

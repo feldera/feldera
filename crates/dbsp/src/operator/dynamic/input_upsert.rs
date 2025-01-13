@@ -319,7 +319,7 @@ where
 
 fn passes_filter<T: ?Sized>(filter: &Option<Filter<T>>, val: &T) -> bool {
     if let Some(filter) = filter {
-        filter(val)
+        (filter.filter_func())(val)
     } else {
         true
     }

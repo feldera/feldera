@@ -32,7 +32,7 @@
 //! and upper bounds, one for each category of incomparable time, in an
 //! [`Antichain`].
 
-use crate::circuit::metadata::OperatorMeta;
+use crate::circuit::metadata::{MetaItem, OperatorMeta};
 use crate::circuit::GlobalNodeId;
 use crate::dynamic::{ClonableTrait, DynUnit, Weight};
 pub use crate::storage::file::{Deserializable, Deserializer, Rkyv, Serializer};
@@ -149,7 +149,42 @@ pub trait FilterFunc<V: ?Sized>: Fn(&V) -> bool + DynClone + Send + Sync {}
 impl<V: ?Sized, F> FilterFunc<V> for F where F: Fn(&V) -> bool + Clone + Send + Sync + 'static {}
 
 dyn_clone::clone_trait_object! {<V: ?Sized> FilterFunc<V>}
-pub type Filter<V> = Box<dyn FilterFunc<V>>;
+
+pub struct Filter<V: ?Sized> {
+    filter_func: Box<dyn FilterFunc<V>>,
+    metadata: MetaItem,
+}
+
+impl<V: ?Sized> Filter<V> {
+    pub fn new(filter_func: Box<dyn FilterFunc<V>>) -> Self {
+        Self {
+            filter_func,
+            metadata: MetaItem::String(String::new()),
+        }
+    }
+
+    pub fn with_metadata(mut self, metadata: MetaItem) -> Self {
+        self.metadata = metadata;
+        self
+    }
+
+    pub fn filter_func(&self) -> &dyn FilterFunc<V> {
+        self.filter_func.as_ref()
+    }
+
+    pub fn metadata(&self) -> &MetaItem {
+        &self.metadata
+    }
+}
+
+impl<V: ?Sized> Clone for Filter<V> {
+    fn clone(&self) -> Self {
+        Self {
+            filter_func: self.filter_func.clone(),
+            metadata: self.metadata.clone(),
+        }
+    }
+}
 
 pub trait BatchReaderFactories<
     K: DataTrait + ?Sized,

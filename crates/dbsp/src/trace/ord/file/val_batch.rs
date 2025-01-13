@@ -375,7 +375,7 @@ where
 
 fn include<K: ?Sized>(x: &K, filter: &Option<Filter<K>>) -> bool {
     match filter {
-        Some(filter) => filter(x),
+        Some(filter) => (filter.filter_func)(x),
         None => true,
     }
 }

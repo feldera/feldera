@@ -427,7 +427,7 @@ where
             self.result.push_merge_retain_keys_fueled(
                 (&source1.layer, &mut self.lower1, self.upper1),
                 (&source2.layer, &mut self.lower2, self.upper2),
-                key_filter,
+                &key_filter.filter_func,
                 time_map_func,
                 fuel,
             );
