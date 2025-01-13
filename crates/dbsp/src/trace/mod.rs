@@ -33,7 +33,6 @@
 //! [`Antichain`].
 
 use crate::circuit::metadata::{MetaItem, OperatorMeta};
-use crate::circuit::GlobalNodeId;
 use crate::dynamic::{ClonableTrait, DynDataTyped, DynUnit, Weight};
 pub use crate::storage::file::{Deserializable, Deserializer, Rkyv, Serializer};
 use crate::time::Antichain;
@@ -317,8 +316,6 @@ pub trait Trace: BatchReader {
     fn restore<P: AsRef<str>>(&mut self, _cid: Uuid, _pid: P) -> Result<(), Error> {
         Ok(())
     }
-    fn init(&mut self, _gid: &GlobalNodeId) {}
-    fn metrics(&self) {}
 
     /// Allows the trace to report additional metadata.
     fn metadata(&self, _meta: &mut OperatorMeta) {}
