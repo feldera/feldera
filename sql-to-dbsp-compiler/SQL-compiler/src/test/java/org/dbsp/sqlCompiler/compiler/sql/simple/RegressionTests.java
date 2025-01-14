@@ -1480,6 +1480,13 @@ public class RegressionTests extends SqlIoTest {
     }
 
     @Test
+    public void issue3313() {
+        this.compileRustTestCase("""
+                CREATE FUNCTION RF(R REAL) RETURNS REAL AS ROUND(R, 6);
+                CREATE TABLE real_tbl(c1 REAL);""");
+    }
+
+    @Test
     public void issue3196() {
         var ccs = this.getCCS("""
                 CREATE TABLE row_tbl(
