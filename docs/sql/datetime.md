@@ -6,31 +6,31 @@ The following are legal time units:
 
 | Time unit         | Meaning                                                                                                                                                                                                                                                                                                    |
 |-------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `MILLENNIUM`      | A thousand years                                                                                                                                                                                                                                                                                           |
-| `CENTURY`         | A hundred years; a number between 1 and 10                                                                                                                                                                                                                                                                 |
-| `DECADE`          | Ten years; a number between 1 and 10                                                                                                                                                                                                                                                                       |
-| `YEAR`            | One year; can be positive or negative                                                                                                                                                                                                                                                                      |
-| `QUARTER`         | 1/4 of a year; a number between 1 and 4                                                                                                                                                                                                                                                                    |
-| `MONTH`           | One month; a number between 1 and 12                                                                                                                                                                                                                                                                       |
-| `WEEK`            | Seven days. The definition of "week" is quite involved: The year's first week is the week containing the first Thursday of the year or either the week containing the 4th of January or either the week that begins between 29th of Dec. and 4th of Jan. The week number is thus a value between 0 and 53. |
-| `DOY`             | Day of year, a number between 1 and 366                                                                                                                                                                                                                                                                    |
-| `DOW`             | Day of week, with Sunday being 1 and Saturday being 7                                                                                                                                                                                                                                                      |
-| `ISODOW`          | ISO day of the week, with Monday 1 and Sunday 7                                                                                                                                                                                                                                                            |
-| `DAY`             | A day within a month, a number between 1 and 31                                                                                                                                                                                                                                                            |
-| `HOUR`            | An hour within a day, a number between 0 and 23                                                                                                                                                                                                                                                            |
-| `MINUTE`          | A minute within an hour, a number between 0 and 59                                                                                                                                                                                                                                                         |
-| `SECOND`          | A second within a minute, a number between 0 and 59                                                                                                                                                                                                                                                        |
-| `MILLISECOND`     | A millisecond within a *minute*, including the number of seconds multiplied by 1000, a number between 0 and 59,999                                                                                                                                                                                         |
-| `MICROSECOND`     | A microsecond within a *minute*, including the number of seconds multiplied by 1,000,000, a number between 0 and 59,999,999                                                                                                                                                                                |
-| `EPOCH`           | Number of seconds from Unix epoch, i.e., 1970/01/01.                                                                                                                                                                                                                                                       |
-| `SQL_TSI_YEAR`    | Same as `YEAR`                                                                                                                                                                                                                                                                                             |
-| `SQL_TSI_QUARTER` | Same as `QUARTER`                                                                                                                                                                                                                                                                                          |
-| `SQL_TSI_MONTH`   | Same as `MONTH`                                                                                                                                                                                                                                                                                            |
-| `SQL_TSI_WEEK`    | Same as `WEEK`                                                                                                                                                                                                                                                                                             |
-| `SQL_TSI_HOUR`    | Same as `HOUR`                                                                                                                                                                                                                                                                                             |
-| `SQL_TSI_DAY`     | Same as `DAY`                                                                                                                                                                                                                                                                                              |
-| `SQL_TSI_MINUTE`  | Same as `MINUTE`                                                                                                                                                                                                                                                                                           |
-| `SQL_TSI_SECOND`  | Same as `SECOND`                                                                                                                                                                                                                                                                                           |
+| <a id="millenium></a>`MILLENNIUM`      | A thousand years                                                                                                                                                                                                                                                                                           |
+| <a id="century"></a>`CENTURY`         | A hundred years; a number between 1 and 10                                                                                                                                                                                                                                                                 |
+| <a id="decade"></a>`DECADE`          | Ten years; a number between 1 and 10                                                                                                                                                                                                                                                                       |
+| <a id="year"></a>`YEAR`            | One year; can be positive or negative                                                                                                                                                                                                                                                                      |
+| <a id="quarter"></a>`QUARTER`         | 1/4 of a year; a number between 1 and 4                                                                                                                                                                                                                                                                    |
+| <a id="month"></a>`MONTH`           | One month; a number between 1 and 12                                                                                                                                                                                                                                                                       |
+| <a id="week"></a>`WEEK`            | Seven days. The definition of "week" is quite involved: The year's first week is the week containing the first Thursday of the year or either the week containing the 4th of January or either the week that begins between 29th of Dec. and 4th of Jan. The week number is thus a value between 0 and 53. |
+| <a id="doy"></a>`DOY`             | Day of year, a number between 1 and 366                                                                                                                                                                                                                                                                    |
+| <a id="dow"></a>`DOW`             | Day of week, with Sunday being 1 and Saturday being 7                                                                                                                                                                                                                                                      |
+| <a id="isodow"></a>`ISODOW`          | ISO day of the week, with Monday 1 and Sunday 7                                                                                                                                                                                                                                                            |
+| <a id="day"></a>`DAY`             | A day within a month, a number between 1 and 31                                                                                                                                                                                                                                                            |
+| <a id="hour"></a>`HOUR`            | An hour within a day, a number between 0 and 23                                                                                                                                                                                                                                                            |
+| <a id="minute"></a>`MINUTE`          | A minute within an hour, a number between 0 and 59                                                                                                                                                                                                                                                         |
+| <a id="second"></a>`SECOND`          | A second within a minute, a number between 0 and 59                                                                                                                                                                                                                                                        |
+| <a id="millisecond"></a>`MILLISECOND`     | A millisecond within a *minute*, including the number of seconds multiplied by 1000, a number between 0 and 59,999                                                                                                                                                                                         |
+| <a id="microsecond"></a>`MICROSECOND`     | A microsecond within a *minute*, including the number of seconds multiplied by 1,000,000, a number between 0 and 59,999,999                                                                                                                                                                                |
+| <a id="epoch"></a>`EPOCH`           | Number of seconds from Unix epoch, i.e., 1970/01/01.                                                                                                                                                                                                                                                       |
+| <a id="sql_tsi_year"></a>`SQL_TSI_YEAR`    | Same as `YEAR`                                                                                                                                                                                                                                                                                             |
+| <a id="sql_tsi_quarter"></a>`SQL_TSI_QUARTER` | Same as `QUARTER`                                                                                                                                                                                                                                                                                          |
+| <a id="sql_tsi_month"></a>`SQL_TSI_MONTH`   | Same as `MONTH`                                                                                                                                                                                                                                                                                            |
+| <a id="sql_tsi_week"></a>`SQL_TSI_WEEK`    | Same as `WEEK`                                                                                                                                                                                                                                                                                             |
+| <a id="sql_tsi_hour"></a>`SQL_TSI_HOUR`    | Same as `HOUR`                                                                                                                                                                                                                                                                                             |
+| <a id="sql_tsi_day"></a>`SQL_TSI_DAY`     | Same as `DAY`                                                                                                                                                                                                                                                                                              |
+| <a id="sql_tsi_minute"></a>`SQL_TSI_MINUTE`  | Same as `MINUTE`                                                                                                                                                                                                                                                                                           |
+| <a id="sql_tsi_second`"></a>`SQL_TSI_SECOND`  | Same as `SECOND`                                                                                                                                                                                                                                                                                           |
 
 ## Dates
 
@@ -52,44 +52,56 @@ Values BC or values greater than 10,000 years are not supported.
 
 The following operations are available on dates:
 
+<a id="date_trunc"></a>
 `DATE_TRUNC(date, <unit>)`, where `<unit>` is a time unit, as
 described above, between `MILLENNIUM` and `DAY`.  Result is a `DATE`.
 Rounds down the date to the specified time unit.  Example:
 `DATE_TRUNC('2020-01-10', MONTH)` produces the result
 `2020-01-01`.
 
+<a id="date_extract"></a>
 `EXTRACT(<unit> FROM date)` where `<unit>` is a time unit, as
 described above.  Result is always a `BIGINT` value.
 `DATE_PART` is a synonym for `EXTRACT`.
 
 The following abbreviations can be used as well:
 
+<a id="date_year"></a>
 `YEAR(date)` is an abbreviation for `EXTRACT(YEAR FROM date)`.
 
+<a id="date_month"></a>
 `MONTH(date)` is an abbreviation for `EXTRACT(MONTH FROM date)`.
 
+<a id="date_dayofmonth"></a>
 `DAYOFMONTH(date)` is an abbreviation for `EXTRACT(DAY FROM
 date)`.
 
+<a id="date_dayofweek"></a>
 `DAYOFWEEK(date)` is an abbreviation for `EXTRACT(DOW FROM
 date)`.
 
+<a id="date_hour"></a>
 `HOUR(date)` is an abbreviation for `EXTRACT(HOUR FROM date)`.
 For dates it always returns 0, since dates have no time component.
 
+<a id="date_minute"></a>
 `MINUTE(date)` is an abbreviation for `EXTRACT(MINUTE FROM date)`.
 For dates it always returns 0, since dates have no time component.
 
+<a id="date_second"></a>
 `SECOND(date)` is an abbreviation for `EXTRACT(SECOND FROM date)`.
 For dates it always returns 0, since dates have no time component.
 
-`FLOOR(datetime TO <unit>)`, where `<unit>` is a time unit.
+<a id="date_floor"></a>
+`FLOOR(date TO <unit>)`, where `<unit>` is a time unit.
 
-`CEIL(datetime TO <unit>)`, where `<unit>` is a time unit.
+<a id="date_ceil"></a>
+`CEIL(date TO <unit>)`, where `<unit>` is a time unit.
 
 Values of type `DATE` can be compared using `=`, `<>`, `!=`, `<`, `>`,
 `<=`, `>=`, `<=>`, `BETWEEN`; the result is a Boolean.
 
+<a id="date_timestampdiff"></a>
 `TIMESTAMPDIFF(<unit>, left, right)` computes the difference between
 two dates values and expresses the result in the specified time units.
 The result is a 32-bit integer.
@@ -120,28 +132,34 @@ not allowed between quotes.
 
 ### Time operations
 
+<a id="time_trunc"></a>
 `TIME_TRUNC(time, <unit>)`, where `<unit>` is a time unit,
 as described above, between `HOUR` and `SECOND`.  Result is a
 `TIME`.  Rounds down the time to the specified time unit.
 Example: `TIME_TRUNC('12:34:56.78', MINUTE)` produces the
 result `12:34:00`.
 
+<a id="time_extract"></a>
 `EXTRACT(<unit> FROM time)` where `<unit>` is a time unit from
 `HOUR`, `MINUTE`, `SECOND`, `MILLISECOND`; the semantics is as
 described above.  Result is always a `BIGINT` value.
 
 The following abbreviations can be used as well:
 
+<a id="time_hour"></a>
 `HOUR(time)` is an abbreviation for `EXTRACT(HOUR FROM time)`.
 
+<a id="time_minute"></a>
 `MINUTE(time)` is an abbreviation for `EXTRACT(MINUTE FROM time)`.
 
+<a id="time_second"></a>
 `SECOND(time)` is an abbreviation for `EXTRACT(SECOND FROM
 time)`.
 
 Values of type `TIME` can be compared using `=`, `<>`, `!=`, `<`, `>`,
 `<=`, `>=`, `<=>`, `BETWEEN`; the result is a Boolean.
 
+<a id="timestamp_timestampdiff"></a>
 `TIMESTAMPDIFF(<unit>, left, right)` computes the difference between
 two time values and expresses the result in the specified time units.
 The result is a 32-bit integer.
@@ -173,43 +191,53 @@ value as an (big integer) number of milliseconds since the Unix epoch.
 Conversely, a cast from a `TIMESTAMP` to a numeric value retrieves the
 number of milliseconds since the Unix epoch from the timestamp.
 
-`DATE_TRUNC(timestamp, <unit>)`, where `<unit>` is a time unit, as
-described above, between `MILLENNIUM` and `DAY`.  Result is a
-`TIMESTAMP`.  Rounds down the timestamp to the specified time unit.
-Example: `DATE_TRUNC('2020-01-10 10:00:00', MONTH)` produces the
-result `2020-01-01 00:00:00`.
-
+<a id="timestamp_trunc"></a>
 `TIMESTAMP_TRUNC(timestamp, <unit>)`, where `<unit>` is a time unit,
 as described above, between `MILLENNIUM` and `SECOND`.  Result is a
 `TIMESTAMP`.  Rounds down the timestamp to the specified time unit.
 Example: `TIMESTAMP_TRUNC('2020-01-10 10:00:00', MONTH)` produces the
 result `2020-01-01 00:00:00`.
 
+<a id="timestamp_extract"></a>
 `EXTRACT(<unit> FROM timestamp)` where `<unit>` is a time unit, as
 described above.  Result is always a `BIGINT` value.
 
 The following abbreviations can be used as well:
 
+<a id="timestamp_year"></a>
 `YEAR(timestamp)` is an abbreviation for `EXTRACT(YEAR FROM timestamp)`.
 
+<a id="timestamp_month"></a>
 `MONTH(timestamp)` is an abbreviation for `EXTRACT(MONTH FROM timestamp)`.
 
+<a id="timestamp_dayofmonth"></a>
 `DAYOFMONTH(timestamp)` is an abbreviation for `EXTRACT(DAY FROM
 timestamp)`.
 
+<a id="timestamp_dayofweek"></a>
 `DAYOFWEEK(timestamp)` is an abbreviation for `EXTRACT(DOW FROM
 timestamp)`.
 
+<a id="timestamp_hour"></a>
 `HOUR(timestamp)` is an abbreviation for `EXTRACT(HOUR FROM timestamp)`.
 
+<a id="timestamp_minute"></a>
 `MINUTE(timestamp)` is an abbreviation for `EXTRACT(MINUTE FROM timestamp)`.
 
+<a id="timestamp_second"></a>
 `SECOND(timestamp)` is an abbreviation for `EXTRACT(SECOND FROM
 timestamp)`.
+
+<a id="timestamp_floor"></a>
+`FLOOR(timestamp TO <unit>)`, where `<unit>` is a time unit.
+
+<a id="timestamp_ceil"></a>
+`CEIL(timestamp TO <unit>)`, where `<unit>` is a time unit.
 
 Values of type `TIMESTAMP` can be compared using `=`, `<>`, `!=`, `<`,
 `>`, `<=`, `>=`, `<=>`, `BETWEEN`; the result is a Boolean.
 
+<a id="timestamp_timestampdiff"></a>
 `TIMESTAMPDIFF(<unit>, left, right)` computes the difference between
 two timestamps and expresses the result in the specified time units.
 The result is a 32-bit integer.  `DATEDIFF` is a synonym for
@@ -217,8 +245,11 @@ The result is a 32-bit integer.  `DATEDIFF` is a synonym for
 month has increased and the calendar day and time is greater than or equal
 to the start. Weeks, quarters, and years follow from that.
 
+<a id="timestampadd"></a>
 `TIMESTAMPADD(<unit>, integer, timestamp)` adds an interval in the
-specified unit to a timestamp.  `DATEADD` is a synonym for
+specified unit to a timestamp.
+<a id="dateadd"></a>
+`DATEADD` is a synonym for
 `TIMESTAMPADD`.  The added value can be negative.  The type of the
 result is as follows:
 
@@ -321,14 +352,16 @@ Arithmetic between a `DATE` and an `INTERVAL` first converts the
 interval to a whole number days (rounding down) and then performs the
 computation on whole days.
 
-`DATE_SUB` is a synonim for `DATE` - `INTERVAL`.  `DATE_ADD` is a
-synonim for `DATE` + `INTERVAL`.
+<a id="date_sub"></a>
+`DATE_SUB` is a synonim for `DATE` - `INTERVAL`.
+<a id="date_add"></a>
+`DATE_ADD` is a synonim for `DATE` + `INTERVAL`.
 
 ## Timezones
 
 `DATE`, `TIME` and `TIMESTAMP` have no time zone.
 
-## The `NOW` function
+## `NOW`
 
 The `NOW()` function returns the current date and time as a
 `TIMESTAMP` value.  More precisely, it returns the date and time

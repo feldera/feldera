@@ -24,12 +24,12 @@ This table shows the operators associativity, starting from highest to lowest:
      <td>Collection element</td>
   </tr>
   <tr>
-    <td><code>+, -</code></td>
+    <td><a id="plusminus"></a><code>+, -</code></td>
     <td>right</td>
     <td>Unary plus, minus</td>
   </tr>
   <tr>
-    <td><code>*, /, %, ||</code></td>
+    <td><a id="muldiv"></a><code>*, /, %, ||</code></td>
     <td>left</td>
     <td>arithmetic</td>
   </tr>
@@ -39,7 +39,7 @@ This table shows the operators associativity, starting from highest to lowest:
     <td>arithmetic</td>
   </tr>
   <tr>
-    <td><code>BETWEEN, IN, LIKE, SIMILAR, OVERLAPS, CONTAINS</code></td>
+    <td><a id="between"></a><code>BETWEEN, IN, LIKE, SIMILAR, OVERLAPS, CONTAINS</code></td>
     <td>N/A</td>
     <td></td>
   </tr>
@@ -49,7 +49,7 @@ This table shows the operators associativity, starting from highest to lowest:
     <td>comparisons</td>
   </tr>
   <tr>
-    <td><code>IS NULL, IS FALSE, IS TRUE, IS UNKNOWN, IS NOT NULL, IS NOT TRUE, IS NOT FALSE, IS NOT UNKNOWN</code></td>
+    <td><a id="isnull"></a><code>IS NULL, IS FALSE, IS TRUE, IS UNKNOWN, IS NOT NULL, IS NOT TRUE, IS NOT FALSE, IS NOT UNKNOWN</code></td>
     <td>unary</td>
     <td></td>
   </tr>

@@ -64,15 +64,15 @@ of minimum integer value by -1) produce run time errors.
     <th>Description</th>
   </tr>
   <tr>
-    <td><code>ABS(value)</code></td>
+    <td><a id="abs"></a><code>ABS(value)</code></td>
     <td>return absolute value.</td>
   </tr>
   <tr>
-    <td><code>MOD(left, right)</code></td>
+    <td><a id="mod"></a><code>MOD(left, right)</code></td>
     <td>integer modulus. Same as <code>left % right</code>.</td>
   </tr>
   <tr>
-    <td><code>SEQUENCE(start, end)</code></td>
+    <td><a id="sequence"></a><code>SEQUENCE(start, end)</code></td>
     <td>returns an array of integers from start to end (inclusive). If end &lt; start, an empty array is returned. If any of the arguments are NULL, NULL is returned.</td>
   </tr>
 </table>

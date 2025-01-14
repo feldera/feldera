@@ -39,12 +39,12 @@ aggregation functions `BIT_AND`, `BIT_OR`, and `BIT_XOR`.
     <th>Examples</th>
   </tr>
   <tr>
-    <td><code>||</code></td>
+    <td><a id="concat"></a><code>||</code></td>
     <td>Concatenation of binary values</td>
     <td><code>x'ab' || x'cd'</code> => <code>x'ABCD'</code></td>
   </tr>
   <tr>
-    <td><code>GUNZIP</code>(binary)</td>
+    <td><a id="gunzip"></a><code>GUNZIP</code>(binary)</td>
     <td>
         Decompresses a binary string using the GZIP algorithm.
         If the input data is not in the gzip format this function fails at runtime.
@@ -54,12 +54,12 @@ aggregation functions `BIT_AND`, `BIT_OR`, and `BIT_XOR`.
     <td><code>SELECT gunzip(x'1f8b08000000000000ff4b4bcd49492d4a0400218115ac07000000')</code> => <code>feldera</code></td>
   </tr>
   <tr>
-    <td><code>OCTET_LENGTH</code>(binary)</td>
+    <td><a id="octet_length"></a><code>OCTET_LENGTH</code>(binary)</td>
     <td>Returns the number of bytes in the binary</td>
     <td><code>OCTET_LENGTH(x'0abc')</code> => <code>2</code></td>
   </tr>
   <tr>
-    <td><code>OVERLAY</code>(binary1 PLACING binary2 FROM integer1 [ FOR integer2 ])</td>
+    <td><a id="overlay"></a><code>OVERLAY</code>(binary1 PLACING binary2 FROM integer1 [ FOR integer2 ])</td>
     <td>
         Generate a binary string that replaces substring of binary1 with binary2.
         The substring of binary1 starts at the byte specified by integer1 and extends for integer2 bytes.
@@ -69,12 +69,12 @@ aggregation functions `BIT_AND`, `BIT_OR`, and `BIT_XOR`.
     <td><code>SELECT overlay(x'1234567890'::bytea placing x'0203' from 2 for 3)</code> => <code>x'12020390'</code></td>
   </tr>
   <tr>
-    <td><code>POSITION</code>(binary1 IN binary2)</td>
+    <td><a id="position"></a><code>POSITION</code>(binary1 IN binary2)</td>
     <td>Returns the position of the first occurrence of binary1 in binary2. The first offset is 1. If binary1 isn't found in binary2, 0 is returned</td>
     <td><code>POSITION(x'20' IN x'102023')</code> => <code>2</code></td>
   </tr>
   <tr>
-    <td><code>SUBSTRING</code>(binary FROM integer)</td>
+    <td><a id="substring"></a><code>SUBSTRING</code>(binary FROM integer)</td>
     <td>Generate a substring of binary starting at the given offset in bytes. The first offset is 1. If the start position integer is less than 1, it is treated as 1</td>
     <td><code>SUBSTRING(x'123456', 3)</code> => <code>x'56'</code></td>
   </tr>
@@ -84,12 +84,12 @@ aggregation functions `BIT_AND`, `BIT_OR`, and `BIT_XOR`.
     <td><code>SUBSTRING(x'1234567890' FROM 3 FOR 2)</code> => <code>x'5678'</code></td>
   </tr>
   <tr>
-    <td><code>TO_HEX</code>(binary)</td>
+    <td><a id="to_hex"></a><code>TO_HEX</code>(binary)</td>
     <td>Generate a `VARCHAR` string describing the value in hexadecimal</td>
     <td><code>TO_HEX(x'0abc')</code> => <code>'0ABC'</code></td>
   </tr>
   <tr>
-    <td><code>TO_INT</code>(binary)</td>
+    <td><a id="to_int"></a><a id="to_int"></a><code>TO_INT</code>(binary)</td>
     <td>Generate an `INT` value from the first 4 bytes of the `binary`, where the 0-th byte is the MSB</td>
     <td><code>TO_INT(x'0abc')</code> => <code>2748</code></td>
   </tr>

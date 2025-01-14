@@ -46,10 +46,11 @@ The compiler supports the following SQL data types:
 
 - `VARIANT` is used to implement JSON.  See [JSON support](json.md)
 
-- Values of type `ROW` can be constructed using the `ROW(x, y, z)`
-  syntax, or, when not ambiguous, using the tuple syntax `(x, y, z)`,
-  where `x`, `y`, and `z` are expressions.  E.g. `SELECT x, (y, z+2)
-  FROM T`, is equivalent to `SELECT x, ROW(y, z+2) FROM T`.
+- <a id="row_constructor"></a>Values of type `ROW` can be constructed
+  using the `ROW(x, y, z)` syntax, or, when not ambiguous, using the
+  tuple syntax `(x, y, z)`, where `x`, `y`, and `z` are expressions.
+  E.g. `SELECT x, (y, z+2) FROM T`, is equivalent to `SELECT x, ROW(y,
+  z+2) FROM T`.
 
 ## Computations on nullable types
 

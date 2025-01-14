@@ -617,7 +617,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         Assert.assertTrue(same);
     }
 
-    @Test @Ignore("To be invoked manually")
+    @Test @Ignore("To be invoked manually every time a new function is added")
     public void generateFunctionIndex() throws IOException {
         // When invoked it generates documentation for the supported functions and operators
         // in the specified file.

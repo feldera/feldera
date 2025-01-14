@@ -53,457 +53,458 @@ public class PostgresNumericTests extends SqlIoTest {
                 "CREATE TABLE num_exp_log10 (id int4, expected numeric(" + WIDTH + ",10));\n" +
                 "CREATE TABLE num_exp_power_10_ln (id int4, expected numeric(" + WIDTH + ",10));\n";
         // division results are very different because the result type is different in Calcite
-        String insert =
-                "INSERT INTO num_exp_add VALUES (0,0,'0');\n" +
-                "INSERT INTO num_exp_sub VALUES (0,0,'0');\n" +
-                "INSERT INTO num_exp_mul VALUES (0,0,'0');\n" +
-                //"INSERT INTO num_exp_div VALUES (0,0,NaN);\n" +  // No NaN
-                "INSERT INTO num_exp_add VALUES (0,1,'0');\n" +
-                "INSERT INTO num_exp_sub VALUES (0,1,'0');\n" +
-                "INSERT INTO num_exp_mul VALUES (0,1,'0');\n" +
-                "INSERT INTO num_exp_div VALUES (0,1,'0');\n" +
-                "INSERT INTO num_exp_add VALUES (0,2,'-34338492.215397047');\n" +
-                "INSERT INTO num_exp_sub VALUES (0,2,'34338492.215397047');\n" +
-                "INSERT INTO num_exp_mul VALUES (0,2,'0');\n" +
-                "INSERT INTO num_exp_div VALUES (0,2,'0');\n" +
-                "INSERT INTO num_exp_add VALUES (0,3,'4.31');\n" +
-                "INSERT INTO num_exp_sub VALUES (0,3,'-4.31');\n" +
-                "INSERT INTO num_exp_mul VALUES (0,3,'0');\n" +
-                "INSERT INTO num_exp_div VALUES (0,3,'0');\n" +
-                "INSERT INTO num_exp_add VALUES (0,4,'7799461.4119');\n" +
-                "INSERT INTO num_exp_sub VALUES (0,4,'-7799461.4119');\n" +
-                "INSERT INTO num_exp_mul VALUES (0,4,'0');\n" +
-                "INSERT INTO num_exp_div VALUES (0,4,'0');\n" +
-                "INSERT INTO num_exp_add VALUES (0,5,'16397.038491');\n" +
-                "INSERT INTO num_exp_sub VALUES (0,5,'-16397.038491');\n" +
-                "INSERT INTO num_exp_mul VALUES (0,5,'0');\n" +
-                "INSERT INTO num_exp_div VALUES (0,5,'0');\n" +
-                "INSERT INTO num_exp_add VALUES (0,6,'93901.57763026');\n" +
-                "INSERT INTO num_exp_sub VALUES (0,6,'-93901.57763026');\n" +
-                "INSERT INTO num_exp_mul VALUES (0,6,'0');\n" +
-                "INSERT INTO num_exp_div VALUES (0,6,'0');\n" +
-                "INSERT INTO num_exp_add VALUES (0,7,'-83028485');\n" +
-                "INSERT INTO num_exp_sub VALUES (0,7,'83028485');\n" +
-                "INSERT INTO num_exp_mul VALUES (0,7,'0');\n" +
-                "INSERT INTO num_exp_div VALUES (0,7,'0');\n" +
-                "INSERT INTO num_exp_add VALUES (0,8,'74881');\n" +
-                "INSERT INTO num_exp_sub VALUES (0,8,'-74881');\n" +
-                "INSERT INTO num_exp_mul VALUES (0,8,'0');\n" +
-                "INSERT INTO num_exp_div VALUES (0,8,'0');\n" +
-                "INSERT INTO num_exp_add VALUES (0,9,'-24926804.045047420');\n" +
-                "INSERT INTO num_exp_sub VALUES (0,9,'24926804.045047420');\n" +
-                "INSERT INTO num_exp_mul VALUES (0,9,'0');\n" +
-                "INSERT INTO num_exp_div VALUES (0,9,'0');\n" +
-                "INSERT INTO num_exp_add VALUES (1,0,'0');\n" +
-                "INSERT INTO num_exp_sub VALUES (1,0,'0');\n" +
-                "INSERT INTO num_exp_mul VALUES (1,0,'0');\n" +
-                //"INSERT INTO num_exp_div VALUES (1,0,NaN);\n" +
-                "INSERT INTO num_exp_add VALUES (1,1,'0');\n" +
-                "INSERT INTO num_exp_sub VALUES (1,1,'0');\n" +
-                "INSERT INTO num_exp_mul VALUES (1,1,'0');\n" +
-                "INSERT INTO num_exp_div VALUES (1,1,'0');\n" +
-                "INSERT INTO num_exp_add VALUES (1,2,'-34338492.215397047');\n" +
-                "INSERT INTO num_exp_sub VALUES (1,2,'34338492.215397047');\n" +
-                "INSERT INTO num_exp_mul VALUES (1,2,'0');\n" +
-                "INSERT INTO num_exp_div VALUES (1,2,'0');\n" +
-                "INSERT INTO num_exp_add VALUES (1,3,'4.31');\n" +
-                "INSERT INTO num_exp_sub VALUES (1,3,'-4.31');\n" +
-                "INSERT INTO num_exp_mul VALUES (1,3,'0');\n" +
-                "INSERT INTO num_exp_div VALUES (1,3,'0');\n" +
-                "INSERT INTO num_exp_add VALUES (1,4,'7799461.4119');\n" +
-                "INSERT INTO num_exp_sub VALUES (1,4,'-7799461.4119');\n" +
-                "INSERT INTO num_exp_mul VALUES (1,4,'0');\n" +
-                "INSERT INTO num_exp_div VALUES (1,4,'0');\n" +
-                "INSERT INTO num_exp_add VALUES (1,5,'16397.038491');\n" +
-                "INSERT INTO num_exp_sub VALUES (1,5,'-16397.038491');\n" +
-                "INSERT INTO num_exp_mul VALUES (1,5,'0');\n" +
-                "INSERT INTO num_exp_div VALUES (1,5,'0');\n" +
-                "INSERT INTO num_exp_add VALUES (1,6,'93901.57763026');\n" +
-                "INSERT INTO num_exp_sub VALUES (1,6,'-93901.57763026');\n" +
-                "INSERT INTO num_exp_mul VALUES (1,6,'0');\n" +
-                "INSERT INTO num_exp_div VALUES (1,6,'0');\n" +
-                "INSERT INTO num_exp_add VALUES (1,7,'-83028485');\n" +
-                "INSERT INTO num_exp_sub VALUES (1,7,'83028485');\n" +
-                "INSERT INTO num_exp_mul VALUES (1,7,'0');\n" +
-                "INSERT INTO num_exp_div VALUES (1,7,'0');\n" +
-                "INSERT INTO num_exp_add VALUES (1,8,'74881');\n" +
-                "INSERT INTO num_exp_sub VALUES (1,8,'-74881');\n" +
-                "INSERT INTO num_exp_mul VALUES (1,8,'0');\n" +
-                "INSERT INTO num_exp_div VALUES (1,8,'0');\n" +
-                "INSERT INTO num_exp_add VALUES (1,9,'-24926804.045047420');\n" +
-                "INSERT INTO num_exp_sub VALUES (1,9,'24926804.045047420');\n" +
-                "INSERT INTO num_exp_mul VALUES (1,9,'0');\n" +
-                "INSERT INTO num_exp_div VALUES (1,9,'0');\n" +
-                "INSERT INTO num_exp_add VALUES (2,0,'-34338492.215397047');\n" +
-                "INSERT INTO num_exp_sub VALUES (2,0,'-34338492.215397047');\n" +
-                "INSERT INTO num_exp_mul VALUES (2,0,'0');\n" +
-                //"INSERT INTO num_exp_div VALUES (2,0,NaN);\n" +
-                "INSERT INTO num_exp_add VALUES (2,1,'-34338492.215397047');\n" +
-                "INSERT INTO num_exp_sub VALUES (2,1,'-34338492.215397047');\n" +
-                "INSERT INTO num_exp_mul VALUES (2,1,'0');\n" +
-                "INSERT INTO num_exp_div VALUES (2,1,2);\n" +
-                "INSERT INTO num_exp_add VALUES (2,2,'-68676984.430794094');\n" +
-                "INSERT INTO num_exp_sub VALUES (2,2,'0');\n" +
-                "INSERT INTO num_exp_mul VALUES (2,2,'1179132047626883.5968621358');\n" +
-                "INSERT INTO num_exp_div VALUES (2,2,'1.00000000000000000000');\n" +
-                "INSERT INTO num_exp_add VALUES (2,3,'-34338487.905397047');\n" +
-                "INSERT INTO num_exp_sub VALUES (2,3,'-34338496.525397047');\n" +
-                "INSERT INTO num_exp_mul VALUES (2,3,'-147998901.4483612725');\n" +
-                "INSERT INTO num_exp_div VALUES (2,3,'-7967167.567377');\n" +
-                "INSERT INTO num_exp_add VALUES (2,4,'-26539030.803497047');\n" +
-                "INSERT INTO num_exp_sub VALUES (2,4,'-42137953.627297047');\n" +
-                "INSERT INTO num_exp_mul VALUES (2,4,'-267821744976817.8111137106');\n" +
-                "INSERT INTO num_exp_div VALUES (2,4,'-4.402674');\n" +
-                "INSERT INTO num_exp_add VALUES (2,5,'-34322095.176906047');\n" +
-                "INSERT INTO num_exp_sub VALUES (2,5,'-34354889.253888047');\n" +
-                "INSERT INTO num_exp_mul VALUES (2,5,'-563049578578.769242506736077');\n" +
-                "INSERT INTO num_exp_div VALUES (2,5,'-2094.188669');\n" +
-                "INSERT INTO num_exp_add VALUES (2,6,'-34244590.637766787');\n" +
-                "INSERT INTO num_exp_sub VALUES (2,6,'-34432393.793027307');\n" +
-                "INSERT INTO num_exp_mul VALUES (2,6,'-3224438592470.1844981192');\n" +
-                "INSERT INTO num_exp_div VALUES (2,6,'-365.685998');\n" +
-                "INSERT INTO num_exp_add VALUES (2,7,'-117366977.215397047');\n" +
-                "INSERT INTO num_exp_sub VALUES (2,7,'48689992.784602953');\n" +
-                "INSERT INTO num_exp_mul VALUES (2,7,'2851072985828710.485883795');\n" +
-                "INSERT INTO num_exp_div VALUES (2,7,'.413574');\n" +
-                "INSERT INTO num_exp_add VALUES (2,8,'-34263611.215397047');\n" +
-                "INSERT INTO num_exp_sub VALUES (2,8,'-34413373.215397047');\n" +
-                "INSERT INTO num_exp_mul VALUES (2,8,'-2571300635581.146276407');\n" +
-                "INSERT INTO num_exp_div VALUES (2,8,'-458.574167');\n" +
-                "INSERT INTO num_exp_add VALUES (2,9,'-59265296.260444467');\n" +
-                "INSERT INTO num_exp_sub VALUES (2,9,'-9411688.170349627');\n" +
-                "INSERT INTO num_exp_mul VALUES (2,9,'855948866655588.453741509242968740');\n" +
-                "INSERT INTO num_exp_div VALUES (2,9,'1.377572');\n" +
-                "INSERT INTO num_exp_add VALUES (3,0,'4.31');\n" +
-                "INSERT INTO num_exp_sub VALUES (3,0,'4.31');\n" +
-                "INSERT INTO num_exp_mul VALUES (3,0,'0');\n" +
-                //"INSERT INTO num_exp_div VALUES (3,0,NaN);\n" +
-                "INSERT INTO num_exp_add VALUES (3,1,'4.31');\n" +
-                "INSERT INTO num_exp_sub VALUES (3,1,'4.31');\n" +
-                "INSERT INTO num_exp_mul VALUES (3,1,'0');\n" +
-                "INSERT INTO num_exp_div VALUES (3,1,'3');\n" +
-                "INSERT INTO num_exp_add VALUES (3,2,'-34338487.905397047');\n" +
-                "INSERT INTO num_exp_sub VALUES (3,2,'34338496.525397047');\n" +
-                "INSERT INTO num_exp_mul VALUES (3,2,'-147998901.4483612725');\n" +
-                "INSERT INTO num_exp_div VALUES (3,2,'-.000000');\n" +
-                "INSERT INTO num_exp_add VALUES (3,3,'8.62');\n" +
-                "INSERT INTO num_exp_sub VALUES (3,3,'0');\n" +
-                "INSERT INTO num_exp_mul VALUES (3,3,'18.5761');\n" +
-                "INSERT INTO num_exp_div VALUES (3,3,'1.00000000000000000000');\n" +
-                "INSERT INTO num_exp_add VALUES (3,4,'7799465.7219');\n" +
-                "INSERT INTO num_exp_sub VALUES (3,4,'-7799457.1019');\n" +
-                "INSERT INTO num_exp_mul VALUES (3,4,'33615678.685289');\n" +
-                "INSERT INTO num_exp_div VALUES (3,4,'.000000');\n" +
-                "INSERT INTO num_exp_add VALUES (3,5,'16401.348491');\n" +
-                "INSERT INTO num_exp_sub VALUES (3,5,'-16392.728491');\n" +
-                "INSERT INTO num_exp_mul VALUES (3,5,'70671.23589621');\n" +
-                "INSERT INTO num_exp_div VALUES (3,5,'.000262');\n" +
-                "INSERT INTO num_exp_add VALUES (3,6,'93905.88763026');\n" +
-                "INSERT INTO num_exp_sub VALUES (3,6,'-93897.26763026');\n" +
-                "INSERT INTO num_exp_mul VALUES (3,6,'404715.7995864206');\n" +
-                "INSERT INTO num_exp_div VALUES (3,6,'.000045');\n" +
-                "INSERT INTO num_exp_add VALUES (3,7,'-83028480.69');\n" +
-                "INSERT INTO num_exp_sub VALUES (3,7,'83028489.31');\n" +
-                "INSERT INTO num_exp_mul VALUES (3,7,'-357852770.35');\n" +
-                "INSERT INTO num_exp_div VALUES (3,7,'-.000000');\n" +
-                "INSERT INTO num_exp_add VALUES (3,8,'74885.31');\n" +
-                "INSERT INTO num_exp_sub VALUES (3,8,'-74876.69');\n" +
-                "INSERT INTO num_exp_mul VALUES (3,8,'322737.11');\n" +
-                "INSERT INTO num_exp_div VALUES (3,8,'.000057');\n" +
-                "INSERT INTO num_exp_add VALUES (3,9,'-24926799.735047420');\n" +
-                "INSERT INTO num_exp_sub VALUES (3,9,'24926808.355047420');\n" +
-                "INSERT INTO num_exp_mul VALUES (3,9,'-107434525.43415438020');\n" +
-                "INSERT INTO num_exp_div VALUES (3,9,'-.000000');\n" +
-                "INSERT INTO num_exp_add VALUES (4,0,'7799461.4119');\n" +
-                "INSERT INTO num_exp_sub VALUES (4,0,'7799461.4119');\n" +
-                "INSERT INTO num_exp_mul VALUES (4,0,'0');\n" +
-                //"INSERT INTO num_exp_div VALUES (4,0,NaN);\n" +
-                "INSERT INTO num_exp_add VALUES (4,1,'7799461.4119');\n" +
-                "INSERT INTO num_exp_sub VALUES (4,1,'7799461.4119');\n" +
-                "INSERT INTO num_exp_mul VALUES (4,1,'0');\n" +
-                "INSERT INTO num_exp_div VALUES (4,1,'4');\n" +
-                "INSERT INTO num_exp_add VALUES (4,2,'-26539030.803497047');\n" +
-                "INSERT INTO num_exp_sub VALUES (4,2,'42137953.627297047');\n" +
-                "INSERT INTO num_exp_mul VALUES (4,2,'-267821744976817.8111137106');\n" +
-                "INSERT INTO num_exp_div VALUES (4,2,'-.227134');\n" +
-                "INSERT INTO num_exp_add VALUES (4,3,'7799465.7219');\n" +
-                "INSERT INTO num_exp_sub VALUES (4,3,'7799457.1019');\n" +
-                "INSERT INTO num_exp_mul VALUES (4,3,'33615678.685289');\n" +
-                "INSERT INTO num_exp_div VALUES (4,3,'1809619.817146');\n" +
-                "INSERT INTO num_exp_add VALUES (4,4,'15598922.8238');\n" +
-                "INSERT INTO num_exp_sub VALUES (4,4,'0');\n" +
-                "INSERT INTO num_exp_mul VALUES (4,4,'60831598315717.14146161');\n" +
-                "INSERT INTO num_exp_div VALUES (4,4,'1.00000000000000000000');\n" +
-                "INSERT INTO num_exp_add VALUES (4,5,'7815858.450391');\n" +
-                "INSERT INTO num_exp_sub VALUES (4,5,'7783064.373409');\n" +
-                "INSERT INTO num_exp_mul VALUES (4,5,'127888068979.9935054429');\n" +
-                "INSERT INTO num_exp_div VALUES (4,5,'475.662810');\n" +
-                "INSERT INTO num_exp_add VALUES (4,6,'7893362.98953026');\n" +
-                "INSERT INTO num_exp_sub VALUES (4,6,'7705559.83426974');\n" +
-                "INSERT INTO num_exp_mul VALUES (4,6,'732381731243.7451157640');\n" +
-                "INSERT INTO num_exp_div VALUES (4,6,'83.059961');\n" +
-                "INSERT INTO num_exp_add VALUES (4,7,'-75229023.5881');\n" +
-                "INSERT INTO num_exp_sub VALUES (4,7,'90827946.4119');\n" +
-                "INSERT INTO num_exp_mul VALUES (4,7,'-647577464846017.9715');\n" +
-                "INSERT INTO num_exp_div VALUES (4,7,'-.093937');\n" +
-                "INSERT INTO num_exp_add VALUES (4,8,'7874342.4119');\n" +
-                "INSERT INTO num_exp_sub VALUES (4,8,'7724580.4119');\n" +
-                "INSERT INTO num_exp_mul VALUES (4,8,'584031469984.4839');\n" +
-                "INSERT INTO num_exp_div VALUES (4,8,'104.158082');\n" +
-                "INSERT INTO num_exp_add VALUES (4,9,'-17127342.633147420');\n" +
-                "INSERT INTO num_exp_sub VALUES (4,9,'32726265.456947420');\n" +
-                "INSERT INTO num_exp_mul VALUES (4,9,'-194415646271340.1815956522');\n" +
-                "INSERT INTO num_exp_div VALUES (4,9,'-.312894');\n" +
-                "INSERT INTO num_exp_add VALUES (5,0,'16397.038491');\n" +
-                "INSERT INTO num_exp_sub VALUES (5,0,'16397.038491');\n" +
-                "INSERT INTO num_exp_mul VALUES (5,0,'0');\n" +
-                //"INSERT INTO num_exp_div VALUES (5,0,NaN);\n" +
-                "INSERT INTO num_exp_add VALUES (5,1,'16397.038491');\n" +
-                "INSERT INTO num_exp_sub VALUES (5,1,'16397.038491');\n" +
-                "INSERT INTO num_exp_mul VALUES (5,1,'0');\n" +
-                "INSERT INTO num_exp_div VALUES (5,1,'5');\n" +
-                "INSERT INTO num_exp_add VALUES (5,2,'-34322095.176906047');\n" +
-                "INSERT INTO num_exp_sub VALUES (5,2,'34354889.253888047');\n" +
-                "INSERT INTO num_exp_mul VALUES (5,2,'-563049578578.769242506736077');\n" +
-                "INSERT INTO num_exp_div VALUES (5,2,'-.000477');\n" +
-                "INSERT INTO num_exp_add VALUES (5,3,'16401.348491');\n" +
-                "INSERT INTO num_exp_sub VALUES (5,3,'16392.728491');\n" +
-                "INSERT INTO num_exp_mul VALUES (5,3,'70671.23589621');\n" +
-                "INSERT INTO num_exp_div VALUES (5,3,'3804.417283');\n" +
-                "INSERT INTO num_exp_add VALUES (5,4,'7815858.450391');\n" +
-                "INSERT INTO num_exp_sub VALUES (5,4,'-7783064.373409');\n" +
-                "INSERT INTO num_exp_mul VALUES (5,4,'127888068979.9935054429');\n" +
-                "INSERT INTO num_exp_div VALUES (5,4,'.002102');\n" +
-                "INSERT INTO num_exp_add VALUES (5,5,'32794.076982');\n" +
-                "INSERT INTO num_exp_sub VALUES (5,5,'0');\n" +
-                "INSERT INTO num_exp_mul VALUES (5,5,'268862871.2753355570');\n" +
-                "INSERT INTO num_exp_div VALUES (5,5,'1.00000000000000000000');\n" +
-                "INSERT INTO num_exp_add VALUES (5,6,'110298.61612126');\n" +
-                "INSERT INTO num_exp_sub VALUES (5,6,'-77504.53913926');\n" +
-                "INSERT INTO num_exp_mul VALUES (5,6,'1539707782.76899778633766');\n" +
-                "INSERT INTO num_exp_div VALUES (5,6,'.174619');\n" +
-                "INSERT INTO num_exp_add VALUES (5,7,'-83012087.961509');\n" +
-                "INSERT INTO num_exp_sub VALUES (5,7,'83044882.038491');\n" +
-                "INSERT INTO num_exp_mul VALUES (5,7,'-1361421264394.416135');\n" +
-                "INSERT INTO num_exp_div VALUES (5,7,'-.000197');\n" +
-                "INSERT INTO num_exp_add VALUES (5,8,'91278.038491');\n" +
-                "INSERT INTO num_exp_sub VALUES (5,8,'-58483.961509');\n" +
-                "INSERT INTO num_exp_mul VALUES (5,8,'1227826639.244571');\n" +
-                "INSERT INTO num_exp_div VALUES (5,8,'.218974');\n" +
-                "INSERT INTO num_exp_add VALUES (5,9,'-24910407.006556420');\n" +
-                "INSERT INTO num_exp_sub VALUES (5,9,'24943201.083538420');\n" +
-                "INSERT INTO num_exp_mul VALUES (5,9,'-408725765384.257043660243220');\n" +
-                "INSERT INTO num_exp_div VALUES (5,9,'-.000657');\n" +
-                "INSERT INTO num_exp_add VALUES (6,0,'93901.57763026');\n" +
-                "INSERT INTO num_exp_sub VALUES (6,0,'93901.57763026');\n" +
-                "INSERT INTO num_exp_mul VALUES (6,0,'0');\n" +
-                //"INSERT INTO num_exp_div VALUES (6,0,NaN);\n" +
-                "INSERT INTO num_exp_add VALUES (6,1,'93901.57763026');\n" +
-                "INSERT INTO num_exp_sub VALUES (6,1,'93901.57763026');\n" +
-                "INSERT INTO num_exp_mul VALUES (6,1,'0');\n" +
-                "INSERT INTO num_exp_div VALUES (6,1,'6');\n" +
-                "INSERT INTO num_exp_add VALUES (6,2,'-34244590.637766787');\n" +
-                "INSERT INTO num_exp_sub VALUES (6,2,'34432393.793027307');\n" +
-                "INSERT INTO num_exp_mul VALUES (6,2,'-3224438592470.1844981192');\n" +
-                "INSERT INTO num_exp_div VALUES (6,2,'-.002734');\n" +
-                "INSERT INTO num_exp_add VALUES (6,3,'93905.88763026');\n" +
-                "INSERT INTO num_exp_sub VALUES (6,3,'93897.26763026');\n" +
-                "INSERT INTO num_exp_mul VALUES (6,3,'404715.7995864206');\n" +
-                "INSERT INTO num_exp_div VALUES (6,3,'21786.908962');\n" +
-                "INSERT INTO num_exp_add VALUES (6,4,'7893362.98953026');\n" +
-                "INSERT INTO num_exp_sub VALUES (6,4,'-7705559.83426974');\n" +
-                "INSERT INTO num_exp_mul VALUES (6,4,'732381731243.7451157640');\n" +
-                "INSERT INTO num_exp_div VALUES (6,4,'.012039');\n" +
-                "INSERT INTO num_exp_add VALUES (6,5,'110298.61612126');\n" +
-                "INSERT INTO num_exp_sub VALUES (6,5,'77504.53913926');\n" +
-                "INSERT INTO num_exp_mul VALUES (6,5,'1539707782.76899778633766');\n" +
-                "INSERT INTO num_exp_div VALUES (6,5,'5.726740');\n" +
-                "INSERT INTO num_exp_add VALUES (6,6,'187803.15526052');\n" +
-                "INSERT INTO num_exp_sub VALUES (6,6,'0');\n" +
-                "INSERT INTO num_exp_mul VALUES (6,6,'8817506281.4517452372');\n" +
-                "INSERT INTO num_exp_div VALUES (6,6,'1.00000000000000000000');\n" +
-                "INSERT INTO num_exp_add VALUES (6,7,'-82934583.42236974');\n" +
-                "INSERT INTO num_exp_sub VALUES (6,7,'83122386.57763026');\n" +
-                "INSERT INTO num_exp_mul VALUES (6,7,'-7796505729750.37795610');\n" +
-                "INSERT INTO num_exp_div VALUES (6,7,'-.001130');\n" +
-                "INSERT INTO num_exp_add VALUES (6,8,'168782.57763026');\n" +
-                "INSERT INTO num_exp_sub VALUES (6,8,'19020.57763026');\n" +
-                "INSERT INTO num_exp_mul VALUES (6,8,'7031444034.53149906');\n" +
-                "INSERT INTO num_exp_div VALUES (6,8,'1.254010');\n" +
-                "INSERT INTO num_exp_add VALUES (6,9,'-24832902.467417160');\n" +
-                "INSERT INTO num_exp_sub VALUES (6,9,'25020705.622677680');\n" +
-                "INSERT INTO num_exp_mul VALUES (6,9,'-2340666225110.29929521292692920');\n" +
-                "INSERT INTO num_exp_div VALUES (6,9,'-.003767');\n" +
-                "INSERT INTO num_exp_add VALUES (7,0,'-83028485');\n" +
-                "INSERT INTO num_exp_sub VALUES (7,0,'-83028485');\n" +
-                "INSERT INTO num_exp_mul VALUES (7,0,'0');\n" +
-                //"INSERT INTO num_exp_div VALUES (7,0,NaN);\n" +
-                "INSERT INTO num_exp_add VALUES (7,1,'-83028485');\n" +
-                "INSERT INTO num_exp_sub VALUES (7,1,'-83028485');\n" +
-                "INSERT INTO num_exp_mul VALUES (7,1,'0');\n" +
-                "INSERT INTO num_exp_div VALUES (7,1,'7');\n" +
-                "INSERT INTO num_exp_add VALUES (7,2,'-117366977.215397047');\n" +
-                "INSERT INTO num_exp_sub VALUES (7,2,'-48689992.784602953');\n" +
-                "INSERT INTO num_exp_mul VALUES (7,2,'2851072985828710.485883795');\n" +
-                "INSERT INTO num_exp_div VALUES (7,2,'2.417942');\n" +
-                "INSERT INTO num_exp_add VALUES (7,3,'-83028480.69');\n" +
-                "INSERT INTO num_exp_sub VALUES (7,3,'-83028489.31');\n" +
-                "INSERT INTO num_exp_mul VALUES (7,3,'-357852770.35');\n" +
-                "INSERT INTO num_exp_div VALUES (7,3,'-19264149.651972');\n" +
-                "INSERT INTO num_exp_add VALUES (7,4,'-75229023.5881');\n" +
-                "INSERT INTO num_exp_sub VALUES (7,4,'-90827946.4119');\n" +
-                "INSERT INTO num_exp_mul VALUES (7,4,'-647577464846017.9715');\n" +
-                "INSERT INTO num_exp_div VALUES (7,4,'-10.645412');\n" +
-                "INSERT INTO num_exp_add VALUES (7,5,'-83012087.961509');\n" +
-                "INSERT INTO num_exp_sub VALUES (7,5,'-83044882.038491');\n" +
-                "INSERT INTO num_exp_mul VALUES (7,5,'-1361421264394.416135');\n" +
-                "INSERT INTO num_exp_div VALUES (7,5,'-5063.626888');\n" +
-                "INSERT INTO num_exp_add VALUES (7,6,'-82934583.42236974');\n" +
-                "INSERT INTO num_exp_sub VALUES (7,6,'-83122386.57763026');\n" +
-                "INSERT INTO num_exp_mul VALUES (7,6,'-7796505729750.37795610');\n" +
-                "INSERT INTO num_exp_div VALUES (7,6,'-884.207561');\n" +
-                "INSERT INTO num_exp_add VALUES (7,7,'-166056970');\n" +
-                "INSERT INTO num_exp_sub VALUES (7,7,'0');\n" +
-                "INSERT INTO num_exp_mul VALUES (7,7,'6893729321395225');\n" +
-                "INSERT INTO num_exp_div VALUES (7,7,'1.00000000000000000000');\n" +
-                "INSERT INTO num_exp_add VALUES (7,8,'-82953604');\n" +
-                "INSERT INTO num_exp_sub VALUES (7,8,'-83103366');\n" +
-                "INSERT INTO num_exp_mul VALUES (7,8,'-6217255985285');\n" +
-                "INSERT INTO num_exp_div VALUES (7,8,'-1108.805771');\n" +
-                "INSERT INTO num_exp_add VALUES (7,9,'-107955289.045047420');\n" +
-                "INSERT INTO num_exp_sub VALUES (7,9,'-58101680.954952580');\n" +
-                "INSERT INTO num_exp_mul VALUES (7,9,'2069634775752159.035758700');\n" +
-                "INSERT INTO num_exp_div VALUES (7,9,'3.330891');\n" +
-                "INSERT INTO num_exp_add VALUES (8,0,'74881');\n" +
-                "INSERT INTO num_exp_sub VALUES (8,0,'74881');\n" +
-                "INSERT INTO num_exp_mul VALUES (8,0,'0');\n" +
-                //"INSERT INTO num_exp_div VALUES (8,0,NaN);\n" +
-                "INSERT INTO num_exp_add VALUES (8,1,'74881');\n" +
-                "INSERT INTO num_exp_sub VALUES (8,1,'74881');\n" +
-                "INSERT INTO num_exp_mul VALUES (8,1,'0');\n" +
-                "INSERT INTO num_exp_div VALUES (8,1,'8');\n" +
-                "INSERT INTO num_exp_add VALUES (8,2,'-34263611.215397047');\n" +
-                "INSERT INTO num_exp_sub VALUES (8,2,'34413373.215397047');\n" +
-                "INSERT INTO num_exp_mul VALUES (8,2,'-2571300635581.146276407');\n" +
-                "INSERT INTO num_exp_div VALUES (8,2,'-.002180');\n" +
-                "INSERT INTO num_exp_add VALUES (8,3,'74885.31');\n" +
-                "INSERT INTO num_exp_sub VALUES (8,3,'74876.69');\n" +
-                "INSERT INTO num_exp_mul VALUES (8,3,'322737.11');\n" +
-                "INSERT INTO num_exp_div VALUES (8,3,'17373.781902');\n" +
-                "INSERT INTO num_exp_add VALUES (8,4,'7874342.4119');\n" +
-                "INSERT INTO num_exp_sub VALUES (8,4,'-7724580.4119');\n" +
-                "INSERT INTO num_exp_mul VALUES (8,4,'584031469984.4839');\n" +
-                "INSERT INTO num_exp_div VALUES (8,4,'.009600');\n" +
-                "INSERT INTO num_exp_add VALUES (8,5,'91278.038491');\n" +
-                "INSERT INTO num_exp_sub VALUES (8,5,'58483.961509');\n" +
-                "INSERT INTO num_exp_mul VALUES (8,5,'1227826639.244571');\n" +
-                "INSERT INTO num_exp_div VALUES (8,5,'4.566739');\n" +
-                "INSERT INTO num_exp_add VALUES (8,6,'168782.57763026');\n" +
-                "INSERT INTO num_exp_sub VALUES (8,6,'-19020.57763026');\n" +
-                "INSERT INTO num_exp_mul VALUES (8,6,'7031444034.53149906');\n" +
-                "INSERT INTO num_exp_div VALUES (8,6,'.797441');\n" +
-                "INSERT INTO num_exp_add VALUES (8,7,'-82953604');\n" +
-                "INSERT INTO num_exp_sub VALUES (8,7,'83103366');\n" +
-                "INSERT INTO num_exp_mul VALUES (8,7,'-6217255985285');\n" +
-                "INSERT INTO num_exp_div VALUES (8,7,'-.000901');\n" +
-                "INSERT INTO num_exp_add VALUES (8,8,'149762');\n" +
-                "INSERT INTO num_exp_sub VALUES (8,8,'0');\n" +
-                "INSERT INTO num_exp_mul VALUES (8,8,'5607164161');\n" +
-                "INSERT INTO num_exp_div VALUES (8,8,'1.000000');\n" +
-                "INSERT INTO num_exp_add VALUES (8,9,'-24851923.045047420');\n" +
-                "INSERT INTO num_exp_sub VALUES (8,9,'25001685.045047420');\n" +
-                "INSERT INTO num_exp_mul VALUES (8,9,'-1866544013697.195857020');\n" +
-                "INSERT INTO num_exp_div VALUES (8,9,'-.003004');\n" +
-                "INSERT INTO num_exp_add VALUES (9,0,'-24926804.045047420');\n" +
-                "INSERT INTO num_exp_sub VALUES (9,0,'-24926804.045047420');\n" +
-                "INSERT INTO num_exp_mul VALUES (9,0,'0');\n" +
-                //"INSERT INTO num_exp_div VALUES (9,0,NaN);\n" + // No NaN
-                "INSERT INTO num_exp_add VALUES (9,1,'-24926804.045047420');\n" +
-                "INSERT INTO num_exp_sub VALUES (9,1,'-24926804.045047420');\n" +
-                "INSERT INTO num_exp_mul VALUES (9,1,'0');\n" +
-                "INSERT INTO num_exp_div VALUES (9,1,'9');\n" +
-                "INSERT INTO num_exp_add VALUES (9,2,'-59265296.260444467');\n" +
-                "INSERT INTO num_exp_sub VALUES (9,2,'9411688.170349627');\n" +
-                "INSERT INTO num_exp_mul VALUES (9,2,'855948866655588.453741509242968740');\n" +
-                "INSERT INTO num_exp_div VALUES (9,2,'.725914');\n" +
-                "INSERT INTO num_exp_add VALUES (9,3,'-24926799.735047420');\n" +
-                "INSERT INTO num_exp_sub VALUES (9,3,'-24926808.355047420');\n" +
-                "INSERT INTO num_exp_mul VALUES (9,3,'-107434525.43415438020');\n" +
-                "INSERT INTO num_exp_div VALUES (9,3,'-5783481.216948');\n" +
-                "INSERT INTO num_exp_add VALUES (9,4,'-17127342.633147420');\n" +
-                "INSERT INTO num_exp_sub VALUES (9,4,'-32726265.456947420');\n" +
-                "INSERT INTO num_exp_mul VALUES (9,4,'-194415646271340.1815956522');\n" +
-                "INSERT INTO num_exp_div VALUES (9,4,'-3.195964');\n" +
-                "INSERT INTO num_exp_add VALUES (9,5,'-24910407.006556420');\n" +
-                "INSERT INTO num_exp_sub VALUES (9,5,'-24943201.083538420');\n" +
-                "INSERT INTO num_exp_mul VALUES (9,5,'-408725765384.257043660243220');\n" +
-                "INSERT INTO num_exp_div VALUES (9,5,'-1520.201593');\n" +
-                "INSERT INTO num_exp_add VALUES (9,6,'-24832902.467417160');\n" +
-                "INSERT INTO num_exp_sub VALUES (9,6,'-25020705.622677680');\n" +
-                "INSERT INTO num_exp_mul VALUES (9,6,'-2340666225110.29929521292692920');\n" +
-                "INSERT INTO num_exp_div VALUES (9,6,'-265.456711');\n" +
-                "INSERT INTO num_exp_add VALUES (9,7,'-107955289.045047420');\n" +
-                "INSERT INTO num_exp_sub VALUES (9,7,'58101680.954952580');\n" +
-                "INSERT INTO num_exp_mul VALUES (9,7,'2069634775752159.035758700');\n" +
-                "INSERT INTO num_exp_div VALUES (9,7,'.300219');\n" +
-                "INSERT INTO num_exp_add VALUES (9,8,'-24851923.045047420');\n" +
-                "INSERT INTO num_exp_sub VALUES (9,8,'-25001685.045047420');\n" +
-                "INSERT INTO num_exp_mul VALUES (9,8,'-1866544013697.195857020');\n" +
-                "INSERT INTO num_exp_div VALUES (9,8,'-332.885565');\n" +
-                "INSERT INTO num_exp_add VALUES (9,9,'-49853608.090094840');\n" +
-                "INSERT INTO num_exp_sub VALUES (9,9,'0');\n" +
-                "INSERT INTO num_exp_mul VALUES (9,9,'621345559900192.420120630048656400');\n" +
-                "INSERT INTO num_exp_div VALUES (9,9,'1.0000000');\n" +
-                "INSERT INTO num_exp_sqrt VALUES (0,'0');\n" +
-                "INSERT INTO num_exp_sqrt VALUES (1,'0');\n" +
-                "INSERT INTO num_exp_sqrt VALUES (2,'5859.9054783671');\n" +
-                "INSERT INTO num_exp_sqrt VALUES (3,'2.0760539492');\n" +
-                "INSERT INTO num_exp_sqrt VALUES (4,'2792.7515843518');\n" +
-                "INSERT INTO num_exp_sqrt VALUES (5,'128.0509214765');\n" +
-                "INSERT INTO num_exp_sqrt VALUES (6,'306.4336431109');\n" +
-                "INSERT INTO num_exp_sqrt VALUES (7,'9111.9967625104');\n" +
-                "INSERT INTO num_exp_sqrt VALUES (8,'273.6439292218');\n" +
-                "INSERT INTO num_exp_sqrt VALUES (9,'4992.6750389993');\n" +
-                "INSERT INTO num_exp_ln VALUES (0,NULL);\n" + // No NaN
-                "INSERT INTO num_exp_ln VALUES (1,NULL);\n" + // No NaN
-                "INSERT INTO num_exp_ln VALUES (2,'17.3517775049');\n" +
-                "INSERT INTO num_exp_ln VALUES (3,'1.4609379041');\n" +
-                "INSERT INTO num_exp_ln VALUES (4,'15.8695652395');\n" +
-                "INSERT INTO num_exp_ln VALUES (5,'9.7048560176');\n" +
-                "INSERT INTO num_exp_ln VALUES (6,'11.4500024662');\n" +
-                "INSERT INTO num_exp_ln VALUES (7,'18.2346942996');\n" +
-                "INSERT INTO num_exp_ln VALUES (8,'11.2236554657');\n" +
-                "INSERT INTO num_exp_ln VALUES (9,'17.0314542501');\n" +
-                "INSERT INTO num_exp_log10 VALUES (0,NULL);\n" +  // No NaN
-                "INSERT INTO num_exp_log10 VALUES (1,NULL);\n" +  // No NaN
-                "INSERT INTO num_exp_log10 VALUES (2,'7.5357812216');\n" +
-                "INSERT INTO num_exp_log10 VALUES (3,'.6344772701');\n" +
-                "INSERT INTO num_exp_log10 VALUES (4,'6.8920646137');\n" +
-                "INSERT INTO num_exp_log10 VALUES (5,'4.2147654161');\n" +
-                "INSERT INTO num_exp_log10 VALUES (6,'4.9726728888');\n" +
-                "INSERT INTO num_exp_log10 VALUES (7,'7.9192271135');\n" +
-                "INSERT INTO num_exp_log10 VALUES (8,'4.8743716355');\n" +
-                "INSERT INTO num_exp_log10 VALUES (9,'7.3966665996');\n" +
-                "INSERT INTO num_exp_power_10_ln VALUES (0,NULL);\n" + // No NaN
-                "INSERT INTO num_exp_power_10_ln VALUES (1,NULL);\n" + // No NaN
-                "INSERT INTO num_exp_power_10_ln VALUES (2,'224790267919917955.13261618583642653184');\n" +
-                "INSERT INTO num_exp_power_10_ln VALUES (3,'28.90266599445155957393');\n" +
-                "INSERT INTO num_exp_power_10_ln VALUES (4,'7405685069594999.07733999469386277636');\n" +
-                "INSERT INTO num_exp_power_10_ln VALUES (5,'5068226527.32127265408584640098');\n" +
-                "INSERT INTO num_exp_power_10_ln VALUES (6,'281839893606.99372343357047819067');\n" +
-                // "INSERT INTO num_exp_power_10_ln VALUES (7,'1716699575118597095.42330819910640247627');\n" + // doesn't fit in DECIMAL(28, 10)
-                "INSERT INTO num_exp_power_10_ln VALUES (8,'167361463828.07491320069016125952');\n" +
-                "INSERT INTO num_exp_power_10_ln VALUES (9,'107511333880052007.04141124673540337457');\n" +
-                "INSERT INTO num_data VALUES (0, '0');\n" +
-                "INSERT INTO num_data VALUES (1, '0');\n" +
-                "INSERT INTO num_data VALUES (2, '-34338492.215397047');\n" +
-                "INSERT INTO num_data VALUES (3, '4.31');\n" +
-                "INSERT INTO num_data VALUES (4, '7799461.4119');\n" +
-                "INSERT INTO num_data VALUES (5, '16397.038491');\n" +
-                "INSERT INTO num_data VALUES (6, '93901.57763026');\n" +
-                "INSERT INTO num_data VALUES (7, '-83028485');\n" +
-                "INSERT INTO num_data VALUES (8, '74881');\n" +
-                "INSERT INTO num_data VALUES (9, '-24926804.045047420');";
+        String insert = """
+            INSERT INTO num_exp_add VALUES (0,0,'0');
+            INSERT INTO num_exp_sub VALUES (0,0,'0');
+            INSERT INTO num_exp_mul VALUES (0,0,'0');
+            -- INSERT INTO num_exp_div VALUES (0,0,NaN);
+            INSERT INTO num_exp_add VALUES (0,1,'0');
+            INSERT INTO num_exp_sub VALUES (0,1,'0');
+            INSERT INTO num_exp_mul VALUES (0,1,'0');
+            INSERT INTO num_exp_div VALUES (0,1,'0');
+            INSERT INTO num_exp_add VALUES (0,2,'-34338492.215397047');
+            INSERT INTO num_exp_sub VALUES (0,2,'34338492.215397047');
+            INSERT INTO num_exp_mul VALUES (0,2,'0');
+            INSERT INTO num_exp_div VALUES (0,2,'0');
+            INSERT INTO num_exp_add VALUES (0,3,'4.31');
+            INSERT INTO num_exp_sub VALUES (0,3,'-4.31');
+            INSERT INTO num_exp_mul VALUES (0,3,'0');
+            INSERT INTO num_exp_div VALUES (0,3,'0');
+            INSERT INTO num_exp_add VALUES (0,4,'7799461.4119');
+            INSERT INTO num_exp_sub VALUES (0,4,'-7799461.4119');
+            INSERT INTO num_exp_mul VALUES (0,4,'0');
+            INSERT INTO num_exp_div VALUES (0,4,'0');
+            INSERT INTO num_exp_add VALUES (0,5,'16397.038491');
+            INSERT INTO num_exp_sub VALUES (0,5,'-16397.038491');
+            INSERT INTO num_exp_mul VALUES (0,5,'0');
+            INSERT INTO num_exp_div VALUES (0,5,'0');
+            INSERT INTO num_exp_add VALUES (0,6,'93901.57763026');
+            INSERT INTO num_exp_sub VALUES (0,6,'-93901.57763026');
+            INSERT INTO num_exp_mul VALUES (0,6,'0');
+            INSERT INTO num_exp_div VALUES (0,6,'0');
+            INSERT INTO num_exp_add VALUES (0,7,'-83028485');
+            INSERT INTO num_exp_sub VALUES (0,7,'83028485');
+            INSERT INTO num_exp_mul VALUES (0,7,'0');
+            INSERT INTO num_exp_div VALUES (0,7,'0');
+            INSERT INTO num_exp_add VALUES (0,8,'74881');
+            INSERT INTO num_exp_sub VALUES (0,8,'-74881');
+            INSERT INTO num_exp_mul VALUES (0,8,'0');
+            INSERT INTO num_exp_div VALUES (0,8,'0');
+            INSERT INTO num_exp_add VALUES (0,9,'-24926804.045047420');
+            INSERT INTO num_exp_sub VALUES (0,9,'24926804.045047420');
+            INSERT INTO num_exp_mul VALUES (0,9,'0');
+            INSERT INTO num_exp_div VALUES (0,9,'0');
+            INSERT INTO num_exp_add VALUES (1,0,'0');
+            INSERT INTO num_exp_sub VALUES (1,0,'0');
+            INSERT INTO num_exp_mul VALUES (1,0,'0');
+            -- INSERT INTO num_exp_div VALUES (1,0,NaN);
+            INSERT INTO num_exp_add VALUES (1,1,'0');
+            INSERT INTO num_exp_sub VALUES (1,1,'0');
+            INSERT INTO num_exp_mul VALUES (1,1,'0');
+            INSERT INTO num_exp_div VALUES (1,1,'0');
+            INSERT INTO num_exp_add VALUES (1,2,'-34338492.215397047');
+            INSERT INTO num_exp_sub VALUES (1,2,'34338492.215397047');
+            INSERT INTO num_exp_mul VALUES (1,2,'0');
+            INSERT INTO num_exp_div VALUES (1,2,'0');
+            INSERT INTO num_exp_add VALUES (1,3,'4.31');
+            INSERT INTO num_exp_sub VALUES (1,3,'-4.31');
+            INSERT INTO num_exp_mul VALUES (1,3,'0');
+            INSERT INTO num_exp_div VALUES (1,3,'0');
+            INSERT INTO num_exp_add VALUES (1,4,'7799461.4119');
+            INSERT INTO num_exp_sub VALUES (1,4,'-7799461.4119');
+            INSERT INTO num_exp_mul VALUES (1,4,'0');
+            INSERT INTO num_exp_div VALUES (1,4,'0');
+            INSERT INTO num_exp_add VALUES (1,5,'16397.038491');
+            INSERT INTO num_exp_sub VALUES (1,5,'-16397.038491');
+            INSERT INTO num_exp_mul VALUES (1,5,'0');
+            INSERT INTO num_exp_div VALUES (1,5,'0');
+            INSERT INTO num_exp_add VALUES (1,6,'93901.57763026');
+            INSERT INTO num_exp_sub VALUES (1,6,'-93901.57763026');
+            INSERT INTO num_exp_mul VALUES (1,6,'0');
+            INSERT INTO num_exp_div VALUES (1,6,'0');
+            INSERT INTO num_exp_add VALUES (1,7,'-83028485');
+            INSERT INTO num_exp_sub VALUES (1,7,'83028485');
+            INSERT INTO num_exp_mul VALUES (1,7,'0');
+            INSERT INTO num_exp_div VALUES (1,7,'0');
+            INSERT INTO num_exp_add VALUES (1,8,'74881');
+            INSERT INTO num_exp_sub VALUES (1,8,'-74881');
+            INSERT INTO num_exp_mul VALUES (1,8,'0');
+            INSERT INTO num_exp_div VALUES (1,8,'0');
+            INSERT INTO num_exp_add VALUES (1,9,'-24926804.045047420');
+            INSERT INTO num_exp_sub VALUES (1,9,'24926804.045047420');
+            INSERT INTO num_exp_mul VALUES (1,9,'0');
+            INSERT INTO num_exp_div VALUES (1,9,'0');
+            INSERT INTO num_exp_add VALUES (2,0,'-34338492.215397047');
+            INSERT INTO num_exp_sub VALUES (2,0,'-34338492.215397047');
+            INSERT INTO num_exp_mul VALUES (2,0,'0');
+            -- INSERT INTO num_exp_div VALUES (2,0,NaN);
+            INSERT INTO num_exp_add VALUES (2,1,'-34338492.215397047');
+            INSERT INTO num_exp_sub VALUES (2,1,'-34338492.215397047');
+            INSERT INTO num_exp_mul VALUES (2,1,'0');
+            INSERT INTO num_exp_div VALUES (2,1,2);
+            INSERT INTO num_exp_add VALUES (2,2,'-68676984.430794094');
+            INSERT INTO num_exp_sub VALUES (2,2,'0');
+            INSERT INTO num_exp_mul VALUES (2,2,'1179132047626883.5968621358');
+            INSERT INTO num_exp_div VALUES (2,2,'1.00000000000000000000');
+            INSERT INTO num_exp_add VALUES (2,3,'-34338487.905397047');
+            INSERT INTO num_exp_sub VALUES (2,3,'-34338496.525397047');
+            INSERT INTO num_exp_mul VALUES (2,3,'-147998901.4483612725');
+            INSERT INTO num_exp_div VALUES (2,3,'-7967167.567377');
+            INSERT INTO num_exp_add VALUES (2,4,'-26539030.803497047');
+            INSERT INTO num_exp_sub VALUES (2,4,'-42137953.627297047');
+            INSERT INTO num_exp_mul VALUES (2,4,'-267821744976817.8111137106');
+            INSERT INTO num_exp_div VALUES (2,4,'-4.402674');
+            INSERT INTO num_exp_add VALUES (2,5,'-34322095.176906047');
+            INSERT INTO num_exp_sub VALUES (2,5,'-34354889.253888047');
+            INSERT INTO num_exp_mul VALUES (2,5,'-563049578578.769242506736077');
+            INSERT INTO num_exp_div VALUES (2,5,'-2094.188669');
+            INSERT INTO num_exp_add VALUES (2,6,'-34244590.637766787');
+            INSERT INTO num_exp_sub VALUES (2,6,'-34432393.793027307');
+            INSERT INTO num_exp_mul VALUES (2,6,'-3224438592470.1844981192');
+            INSERT INTO num_exp_div VALUES (2,6,'-365.685998');
+            INSERT INTO num_exp_add VALUES (2,7,'-117366977.215397047');
+            INSERT INTO num_exp_sub VALUES (2,7,'48689992.784602953');
+            INSERT INTO num_exp_mul VALUES (2,7,'2851072985828710.485883795');
+            INSERT INTO num_exp_div VALUES (2,7,'.413574');
+            INSERT INTO num_exp_add VALUES (2,8,'-34263611.215397047');
+            INSERT INTO num_exp_sub VALUES (2,8,'-34413373.215397047');
+            INSERT INTO num_exp_mul VALUES (2,8,'-2571300635581.146276407');
+            INSERT INTO num_exp_div VALUES (2,8,'-458.574167');
+            INSERT INTO num_exp_add VALUES (2,9,'-59265296.260444467');
+            INSERT INTO num_exp_sub VALUES (2,9,'-9411688.170349627');
+            INSERT INTO num_exp_mul VALUES (2,9,'855948866655588.453741509242968740');
+            INSERT INTO num_exp_div VALUES (2,9,'1.377572');
+            INSERT INTO num_exp_add VALUES (3,0,'4.31');
+            INSERT INTO num_exp_sub VALUES (3,0,'4.31');
+            INSERT INTO num_exp_mul VALUES (3,0,'0');
+            -- INSERT INTO num_exp_div VALUES (3,0,NaN);
+            INSERT INTO num_exp_add VALUES (3,1,'4.31');
+            INSERT INTO num_exp_sub VALUES (3,1,'4.31');
+            INSERT INTO num_exp_mul VALUES (3,1,'0');
+            INSERT INTO num_exp_div VALUES (3,1,'3');
+            INSERT INTO num_exp_add VALUES (3,2,'-34338487.905397047');
+            INSERT INTO num_exp_sub VALUES (3,2,'34338496.525397047');
+            INSERT INTO num_exp_mul VALUES (3,2,'-147998901.4483612725');
+            INSERT INTO num_exp_div VALUES (3,2,'-.000000');
+            INSERT INTO num_exp_add VALUES (3,3,'8.62');
+            INSERT INTO num_exp_sub VALUES (3,3,'0');
+            INSERT INTO num_exp_mul VALUES (3,3,'18.5761');
+            INSERT INTO num_exp_div VALUES (3,3,'1.00000000000000000000');
+            INSERT INTO num_exp_add VALUES (3,4,'7799465.7219');
+            INSERT INTO num_exp_sub VALUES (3,4,'-7799457.1019');
+            INSERT INTO num_exp_mul VALUES (3,4,'33615678.685289');
+            INSERT INTO num_exp_div VALUES (3,4,'.000000');
+            INSERT INTO num_exp_add VALUES (3,5,'16401.348491');
+            INSERT INTO num_exp_sub VALUES (3,5,'-16392.728491');
+            INSERT INTO num_exp_mul VALUES (3,5,'70671.23589621');
+            INSERT INTO num_exp_div VALUES (3,5,'.000262');
+            INSERT INTO num_exp_add VALUES (3,6,'93905.88763026');
+            INSERT INTO num_exp_sub VALUES (3,6,'-93897.26763026');
+            INSERT INTO num_exp_mul VALUES (3,6,'404715.7995864206');
+            INSERT INTO num_exp_div VALUES (3,6,'.000045');
+            INSERT INTO num_exp_add VALUES (3,7,'-83028480.69');
+            INSERT INTO num_exp_sub VALUES (3,7,'83028489.31');
+            INSERT INTO num_exp_mul VALUES (3,7,'-357852770.35');
+            INSERT INTO num_exp_div VALUES (3,7,'-.000000');
+            INSERT INTO num_exp_add VALUES (3,8,'74885.31');
+            INSERT INTO num_exp_sub VALUES (3,8,'-74876.69');
+            INSERT INTO num_exp_mul VALUES (3,8,'322737.11');
+            INSERT INTO num_exp_div VALUES (3,8,'.000057');
+            INSERT INTO num_exp_add VALUES (3,9,'-24926799.735047420');
+            INSERT INTO num_exp_sub VALUES (3,9,'24926808.355047420');
+            INSERT INTO num_exp_mul VALUES (3,9,'-107434525.43415438020');
+            INSERT INTO num_exp_div VALUES (3,9,'-.000000');
+            INSERT INTO num_exp_add VALUES (4,0,'7799461.4119');
+            INSERT INTO num_exp_sub VALUES (4,0,'7799461.4119');
+            INSERT INTO num_exp_mul VALUES (4,0,'0');
+            -- INSERT INTO num_exp_div VALUES (4,0,NaN);
+            INSERT INTO num_exp_add VALUES (4,1,'7799461.4119');
+            INSERT INTO num_exp_sub VALUES (4,1,'7799461.4119');
+            INSERT INTO num_exp_mul VALUES (4,1,'0');
+            INSERT INTO num_exp_div VALUES (4,1,'4');
+            INSERT INTO num_exp_add VALUES (4,2,'-26539030.803497047');
+            INSERT INTO num_exp_sub VALUES (4,2,'42137953.627297047');
+            INSERT INTO num_exp_mul VALUES (4,2,'-267821744976817.8111137106');
+            INSERT INTO num_exp_div VALUES (4,2,'-.227134');
+            INSERT INTO num_exp_add VALUES (4,3,'7799465.7219');
+            INSERT INTO num_exp_sub VALUES (4,3,'7799457.1019');
+            INSERT INTO num_exp_mul VALUES (4,3,'33615678.685289');
+            INSERT INTO num_exp_div VALUES (4,3,'1809619.817146');
+            INSERT INTO num_exp_add VALUES (4,4,'15598922.8238');
+            INSERT INTO num_exp_sub VALUES (4,4,'0');
+            INSERT INTO num_exp_mul VALUES (4,4,'60831598315717.14146161');
+            INSERT INTO num_exp_div VALUES (4,4,'1.00000000000000000000');
+            INSERT INTO num_exp_add VALUES (4,5,'7815858.450391');
+            INSERT INTO num_exp_sub VALUES (4,5,'7783064.373409');
+            INSERT INTO num_exp_mul VALUES (4,5,'127888068979.9935054429');
+            INSERT INTO num_exp_div VALUES (4,5,'475.662810');
+            INSERT INTO num_exp_add VALUES (4,6,'7893362.98953026');
+            INSERT INTO num_exp_sub VALUES (4,6,'7705559.83426974');
+            INSERT INTO num_exp_mul VALUES (4,6,'732381731243.7451157640');
+            INSERT INTO num_exp_div VALUES (4,6,'83.059961');
+            INSERT INTO num_exp_add VALUES (4,7,'-75229023.5881');
+            INSERT INTO num_exp_sub VALUES (4,7,'90827946.4119');
+            INSERT INTO num_exp_mul VALUES (4,7,'-647577464846017.9715');
+            INSERT INTO num_exp_div VALUES (4,7,'-.093937');
+            INSERT INTO num_exp_add VALUES (4,8,'7874342.4119');
+            INSERT INTO num_exp_sub VALUES (4,8,'7724580.4119');
+            INSERT INTO num_exp_mul VALUES (4,8,'584031469984.4839');
+            INSERT INTO num_exp_div VALUES (4,8,'104.158082');
+            INSERT INTO num_exp_add VALUES (4,9,'-17127342.633147420');
+            INSERT INTO num_exp_sub VALUES (4,9,'32726265.456947420');
+            INSERT INTO num_exp_mul VALUES (4,9,'-194415646271340.1815956522');
+            INSERT INTO num_exp_div VALUES (4,9,'-.312894');
+            INSERT INTO num_exp_add VALUES (5,0,'16397.038491');
+            INSERT INTO num_exp_sub VALUES (5,0,'16397.038491');
+            INSERT INTO num_exp_mul VALUES (5,0,'0');
+            -- INSERT INTO num_exp_div VALUES (5,0,NaN);
+            INSERT INTO num_exp_add VALUES (5,1,'16397.038491');
+            INSERT INTO num_exp_sub VALUES (5,1,'16397.038491');
+            INSERT INTO num_exp_mul VALUES (5,1,'0');
+            INSERT INTO num_exp_div VALUES (5,1,'5');
+            INSERT INTO num_exp_add VALUES (5,2,'-34322095.176906047');
+            INSERT INTO num_exp_sub VALUES (5,2,'34354889.253888047');
+            INSERT INTO num_exp_mul VALUES (5,2,'-563049578578.769242506736077');
+            INSERT INTO num_exp_div VALUES (5,2,'-.000477');
+            INSERT INTO num_exp_add VALUES (5,3,'16401.348491');
+            INSERT INTO num_exp_sub VALUES (5,3,'16392.728491');
+            INSERT INTO num_exp_mul VALUES (5,3,'70671.23589621');
+            INSERT INTO num_exp_div VALUES (5,3,'3804.417283');
+            INSERT INTO num_exp_add VALUES (5,4,'7815858.450391');
+            INSERT INTO num_exp_sub VALUES (5,4,'-7783064.373409');
+            INSERT INTO num_exp_mul VALUES (5,4,'127888068979.9935054429');
+            INSERT INTO num_exp_div VALUES (5,4,'.002102');
+            INSERT INTO num_exp_add VALUES (5,5,'32794.076982');
+            INSERT INTO num_exp_sub VALUES (5,5,'0');
+            INSERT INTO num_exp_mul VALUES (5,5,'268862871.2753355570');
+            INSERT INTO num_exp_div VALUES (5,5,'1.00000000000000000000');
+            INSERT INTO num_exp_add VALUES (5,6,'110298.61612126');
+            INSERT INTO num_exp_sub VALUES (5,6,'-77504.53913926');
+            INSERT INTO num_exp_mul VALUES (5,6,'1539707782.76899778633766');
+            INSERT INTO num_exp_div VALUES (5,6,'.174619');
+            INSERT INTO num_exp_add VALUES (5,7,'-83012087.961509');
+            INSERT INTO num_exp_sub VALUES (5,7,'83044882.038491');
+            INSERT INTO num_exp_mul VALUES (5,7,'-1361421264394.416135');
+            INSERT INTO num_exp_div VALUES (5,7,'-.000197');
+            INSERT INTO num_exp_add VALUES (5,8,'91278.038491');
+            INSERT INTO num_exp_sub VALUES (5,8,'-58483.961509');
+            INSERT INTO num_exp_mul VALUES (5,8,'1227826639.244571');
+            INSERT INTO num_exp_div VALUES (5,8,'.218974');
+            INSERT INTO num_exp_add VALUES (5,9,'-24910407.006556420');
+            INSERT INTO num_exp_sub VALUES (5,9,'24943201.083538420');
+            INSERT INTO num_exp_mul VALUES (5,9,'-408725765384.257043660243220');
+            INSERT INTO num_exp_div VALUES (5,9,'-.000657');
+            INSERT INTO num_exp_add VALUES (6,0,'93901.57763026');
+            INSERT INTO num_exp_sub VALUES (6,0,'93901.57763026');
+            INSERT INTO num_exp_mul VALUES (6,0,'0');
+            -- INSERT INTO num_exp_div VALUES (6,0,NaN);
+            INSERT INTO num_exp_add VALUES (6,1,'93901.57763026');
+            INSERT INTO num_exp_sub VALUES (6,1,'93901.57763026');
+            INSERT INTO num_exp_mul VALUES (6,1,'0');
+            INSERT INTO num_exp_div VALUES (6,1,'6');
+            INSERT INTO num_exp_add VALUES (6,2,'-34244590.637766787');
+            INSERT INTO num_exp_sub VALUES (6,2,'34432393.793027307');
+            INSERT INTO num_exp_mul VALUES (6,2,'-3224438592470.1844981192');
+            INSERT INTO num_exp_div VALUES (6,2,'-.002734');
+            INSERT INTO num_exp_add VALUES (6,3,'93905.88763026');
+            INSERT INTO num_exp_sub VALUES (6,3,'93897.26763026');
+            INSERT INTO num_exp_mul VALUES (6,3,'404715.7995864206');
+            INSERT INTO num_exp_div VALUES (6,3,'21786.908962');
+            INSERT INTO num_exp_add VALUES (6,4,'7893362.98953026');
+            INSERT INTO num_exp_sub VALUES (6,4,'-7705559.83426974');
+            INSERT INTO num_exp_mul VALUES (6,4,'732381731243.7451157640');
+            INSERT INTO num_exp_div VALUES (6,4,'.012039');
+            INSERT INTO num_exp_add VALUES (6,5,'110298.61612126');
+            INSERT INTO num_exp_sub VALUES (6,5,'77504.53913926');
+            INSERT INTO num_exp_mul VALUES (6,5,'1539707782.76899778633766');
+            INSERT INTO num_exp_div VALUES (6,5,'5.726740');
+            INSERT INTO num_exp_add VALUES (6,6,'187803.15526052');
+            INSERT INTO num_exp_sub VALUES (6,6,'0');
+            INSERT INTO num_exp_mul VALUES (6,6,'8817506281.4517452372');
+            INSERT INTO num_exp_div VALUES (6,6,'1.00000000000000000000');
+            INSERT INTO num_exp_add VALUES (6,7,'-82934583.42236974');
+            INSERT INTO num_exp_sub VALUES (6,7,'83122386.57763026');
+            INSERT INTO num_exp_mul VALUES (6,7,'-7796505729750.37795610');
+            INSERT INTO num_exp_div VALUES (6,7,'-.001130');
+            INSERT INTO num_exp_add VALUES (6,8,'168782.57763026');
+            INSERT INTO num_exp_sub VALUES (6,8,'19020.57763026');
+            INSERT INTO num_exp_mul VALUES (6,8,'7031444034.53149906');
+            INSERT INTO num_exp_div VALUES (6,8,'1.254010');
+            INSERT INTO num_exp_add VALUES (6,9,'-24832902.467417160');
+            INSERT INTO num_exp_sub VALUES (6,9,'25020705.622677680');
+            INSERT INTO num_exp_mul VALUES (6,9,'-2340666225110.29929521292692920');
+            INSERT INTO num_exp_div VALUES (6,9,'-.003767');
+            INSERT INTO num_exp_add VALUES (7,0,'-83028485');
+            INSERT INTO num_exp_sub VALUES (7,0,'-83028485');
+            INSERT INTO num_exp_mul VALUES (7,0,'0');
+            -- INSERT INTO num_exp_div VALUES (7,0,NaN);
+            INSERT INTO num_exp_add VALUES (7,1,'-83028485');
+            INSERT INTO num_exp_sub VALUES (7,1,'-83028485');
+            INSERT INTO num_exp_mul VALUES (7,1,'0');
+            INSERT INTO num_exp_div VALUES (7,1,'7');
+            INSERT INTO num_exp_add VALUES (7,2,'-117366977.215397047');
+            INSERT INTO num_exp_sub VALUES (7,2,'-48689992.784602953');
+            INSERT INTO num_exp_mul VALUES (7,2,'2851072985828710.485883795');
+            INSERT INTO num_exp_div VALUES (7,2,'2.417942');
+            INSERT INTO num_exp_add VALUES (7,3,'-83028480.69');
+            INSERT INTO num_exp_sub VALUES (7,3,'-83028489.31');
+            INSERT INTO num_exp_mul VALUES (7,3,'-357852770.35');
+            INSERT INTO num_exp_div VALUES (7,3,'-19264149.651972');
+            INSERT INTO num_exp_add VALUES (7,4,'-75229023.5881');
+            INSERT INTO num_exp_sub VALUES (7,4,'-90827946.4119');
+            INSERT INTO num_exp_mul VALUES (7,4,'-647577464846017.9715');
+            INSERT INTO num_exp_div VALUES (7,4,'-10.645412');
+            INSERT INTO num_exp_add VALUES (7,5,'-83012087.961509');
+            INSERT INTO num_exp_sub VALUES (7,5,'-83044882.038491');
+            INSERT INTO num_exp_mul VALUES (7,5,'-1361421264394.416135');
+            INSERT INTO num_exp_div VALUES (7,5,'-5063.626888');
+            INSERT INTO num_exp_add VALUES (7,6,'-82934583.42236974');
+            INSERT INTO num_exp_sub VALUES (7,6,'-83122386.57763026');
+            INSERT INTO num_exp_mul VALUES (7,6,'-7796505729750.37795610');
+            INSERT INTO num_exp_div VALUES (7,6,'-884.207561');
+            INSERT INTO num_exp_add VALUES (7,7,'-166056970');
+            INSERT INTO num_exp_sub VALUES (7,7,'0');
+            INSERT INTO num_exp_mul VALUES (7,7,'6893729321395225');
+            INSERT INTO num_exp_div VALUES (7,7,'1.00000000000000000000');
+            INSERT INTO num_exp_add VALUES (7,8,'-82953604');
+            INSERT INTO num_exp_sub VALUES (7,8,'-83103366');
+            INSERT INTO num_exp_mul VALUES (7,8,'-6217255985285');
+            INSERT INTO num_exp_div VALUES (7,8,'-1108.805771');
+            INSERT INTO num_exp_add VALUES (7,9,'-107955289.045047420');
+            INSERT INTO num_exp_sub VALUES (7,9,'-58101680.954952580');
+            INSERT INTO num_exp_mul VALUES (7,9,'2069634775752159.035758700');
+            INSERT INTO num_exp_div VALUES (7,9,'3.330891');
+            INSERT INTO num_exp_add VALUES (8,0,'74881');
+            INSERT INTO num_exp_sub VALUES (8,0,'74881');
+            INSERT INTO num_exp_mul VALUES (8,0,'0');
+            -- INSERT INTO num_exp_div VALUES (8,0,NaN);
+            INSERT INTO num_exp_add VALUES (8,1,'74881');
+            INSERT INTO num_exp_sub VALUES (8,1,'74881');
+            INSERT INTO num_exp_mul VALUES (8,1,'0');
+            INSERT INTO num_exp_div VALUES (8,1,'8');
+            INSERT INTO num_exp_add VALUES (8,2,'-34263611.215397047');
+            INSERT INTO num_exp_sub VALUES (8,2,'34413373.215397047');
+            INSERT INTO num_exp_mul VALUES (8,2,'-2571300635581.146276407');
+            INSERT INTO num_exp_div VALUES (8,2,'-.002180');
+            INSERT INTO num_exp_add VALUES (8,3,'74885.31');
+            INSERT INTO num_exp_sub VALUES (8,3,'74876.69');
+            INSERT INTO num_exp_mul VALUES (8,3,'322737.11');
+            INSERT INTO num_exp_div VALUES (8,3,'17373.781902');
+            INSERT INTO num_exp_add VALUES (8,4,'7874342.4119');
+            INSERT INTO num_exp_sub VALUES (8,4,'-7724580.4119');
+            INSERT INTO num_exp_mul VALUES (8,4,'584031469984.4839');
+            INSERT INTO num_exp_div VALUES (8,4,'.009600');
+            INSERT INTO num_exp_add VALUES (8,5,'91278.038491');
+            INSERT INTO num_exp_sub VALUES (8,5,'58483.961509');
+            INSERT INTO num_exp_mul VALUES (8,5,'1227826639.244571');
+            INSERT INTO num_exp_div VALUES (8,5,'4.566739');
+            INSERT INTO num_exp_add VALUES (8,6,'168782.57763026');
+            INSERT INTO num_exp_sub VALUES (8,6,'-19020.57763026');
+            INSERT INTO num_exp_mul VALUES (8,6,'7031444034.53149906');
+            INSERT INTO num_exp_div VALUES (8,6,'.797441');
+            INSERT INTO num_exp_add VALUES (8,7,'-82953604');
+            INSERT INTO num_exp_sub VALUES (8,7,'83103366');
+            INSERT INTO num_exp_mul VALUES (8,7,'-6217255985285');
+            INSERT INTO num_exp_div VALUES (8,7,'-.000901');
+            INSERT INTO num_exp_add VALUES (8,8,'149762');
+            INSERT INTO num_exp_sub VALUES (8,8,'0');
+            INSERT INTO num_exp_mul VALUES (8,8,'5607164161');
+            INSERT INTO num_exp_div VALUES (8,8,'1.000000');
+            INSERT INTO num_exp_add VALUES (8,9,'-24851923.045047420');
+            INSERT INTO num_exp_sub VALUES (8,9,'25001685.045047420');
+            INSERT INTO num_exp_mul VALUES (8,9,'-1866544013697.195857020');
+            INSERT INTO num_exp_div VALUES (8,9,'-.003004');
+            INSERT INTO num_exp_add VALUES (9,0,'-24926804.045047420');
+            INSERT INTO num_exp_sub VALUES (9,0,'-24926804.045047420');
+            INSERT INTO num_exp_mul VALUES (9,0,'0');
+            -- INSERT INTO num_exp_div VALUES (9,0,NaN);
+            INSERT INTO num_exp_add VALUES (9,1,'-24926804.045047420');
+            INSERT INTO num_exp_sub VALUES (9,1,'-24926804.045047420');
+            INSERT INTO num_exp_mul VALUES (9,1,'0');
+            INSERT INTO num_exp_div VALUES (9,1,'9');
+            INSERT INTO num_exp_add VALUES (9,2,'-59265296.260444467');
+            INSERT INTO num_exp_sub VALUES (9,2,'9411688.170349627');
+            INSERT INTO num_exp_mul VALUES (9,2,'855948866655588.453741509242968740');
+            INSERT INTO num_exp_div VALUES (9,2,'.725914');
+            INSERT INTO num_exp_add VALUES (9,3,'-24926799.735047420');
+            INSERT INTO num_exp_sub VALUES (9,3,'-24926808.355047420');
+            INSERT INTO num_exp_mul VALUES (9,3,'-107434525.43415438020');
+            INSERT INTO num_exp_div VALUES (9,3,'-5783481.216948');
+            INSERT INTO num_exp_add VALUES (9,4,'-17127342.633147420');
+            INSERT INTO num_exp_sub VALUES (9,4,'-32726265.456947420');
+            INSERT INTO num_exp_mul VALUES (9,4,'-194415646271340.1815956522');
+            INSERT INTO num_exp_div VALUES (9,4,'-3.195964');
+            INSERT INTO num_exp_add VALUES (9,5,'-24910407.006556420');
+            INSERT INTO num_exp_sub VALUES (9,5,'-24943201.083538420');
+            INSERT INTO num_exp_mul VALUES (9,5,'-408725765384.257043660243220');
+            INSERT INTO num_exp_div VALUES (9,5,'-1520.201593');
+            INSERT INTO num_exp_add VALUES (9,6,'-24832902.467417160');
+            INSERT INTO num_exp_sub VALUES (9,6,'-25020705.622677680');
+            INSERT INTO num_exp_mul VALUES (9,6,'-2340666225110.29929521292692920');
+            INSERT INTO num_exp_div VALUES (9,6,'-265.456711');
+            INSERT INTO num_exp_add VALUES (9,7,'-107955289.045047420');
+            INSERT INTO num_exp_sub VALUES (9,7,'58101680.954952580');
+            INSERT INTO num_exp_mul VALUES (9,7,'2069634775752159.035758700');
+            INSERT INTO num_exp_div VALUES (9,7,'.300219');
+            INSERT INTO num_exp_add VALUES (9,8,'-24851923.045047420');
+            INSERT INTO num_exp_sub VALUES (9,8,'-25001685.045047420');
+            INSERT INTO num_exp_mul VALUES (9,8,'-1866544013697.195857020');
+            INSERT INTO num_exp_div VALUES (9,8,'-332.885565');
+            INSERT INTO num_exp_add VALUES (9,9,'-49853608.090094840');
+            INSERT INTO num_exp_sub VALUES (9,9,'0');
+            INSERT INTO num_exp_mul VALUES (9,9,'621345559900192.420120630048656400');
+            INSERT INTO num_exp_div VALUES (9,9,'1.0000000');
+            INSERT INTO num_exp_sqrt VALUES (0,'0');
+            INSERT INTO num_exp_sqrt VALUES (1,'0');
+            INSERT INTO num_exp_sqrt VALUES (2,'5859.9054783671');
+            INSERT INTO num_exp_sqrt VALUES (3,'2.0760539492');
+            INSERT INTO num_exp_sqrt VALUES (4,'2792.7515843518');
+            INSERT INTO num_exp_sqrt VALUES (5,'128.0509214765');
+            INSERT INTO num_exp_sqrt VALUES (6,'306.4336431109');
+            INSERT INTO num_exp_sqrt VALUES (7,'9111.9967625104');
+            INSERT INTO num_exp_sqrt VALUES (8,'273.6439292218');
+            INSERT INTO num_exp_sqrt VALUES (9,'4992.6750389993');
+            INSERT INTO num_exp_ln VALUES (0,NULL);
+            INSERT INTO num_exp_ln VALUES (1,NULL);
+            INSERT INTO num_exp_ln VALUES (2,'17.3517775049');
+            INSERT INTO num_exp_ln VALUES (3,'1.4609379041');
+            INSERT INTO num_exp_ln VALUES (4,'15.8695652395');
+            INSERT INTO num_exp_ln VALUES (5,'9.7048560176');
+            INSERT INTO num_exp_ln VALUES (6,'11.4500024662');
+            INSERT INTO num_exp_ln VALUES (7,'18.2346942996');
+            INSERT INTO num_exp_ln VALUES (8,'11.2236554657');
+            INSERT INTO num_exp_ln VALUES (9,'17.0314542501');
+            INSERT INTO num_exp_log10 VALUES (0,NULL);
+            INSERT INTO num_exp_log10 VALUES (1,NULL);
+            INSERT INTO num_exp_log10 VALUES (2,'7.5357812216');
+            INSERT INTO num_exp_log10 VALUES (3,'.6344772701');
+            INSERT INTO num_exp_log10 VALUES (4,'6.8920646137');
+            INSERT INTO num_exp_log10 VALUES (5,'4.2147654161');
+            INSERT INTO num_exp_log10 VALUES (6,'4.9726728888');
+            INSERT INTO num_exp_log10 VALUES (7,'7.9192271135');
+            INSERT INTO num_exp_log10 VALUES (8,'4.8743716355');
+            INSERT INTO num_exp_log10 VALUES (9,'7.3966665996');
+            INSERT INTO num_exp_power_10_ln VALUES (0,NULL);
+            INSERT INTO num_exp_power_10_ln VALUES (1,NULL);
+            INSERT INTO num_exp_power_10_ln VALUES (2,'224790267919917955.13261618583642653184');
+            INSERT INTO num_exp_power_10_ln VALUES (3,'28.90266599445155957393');
+            INSERT INTO num_exp_power_10_ln VALUES (4,'7405685069594999.07733999469386277636');
+            INSERT INTO num_exp_power_10_ln VALUES (5,'5068226527.32127265408584640098');
+            INSERT INTO num_exp_power_10_ln VALUES (6,'281839893606.99372343357047819067');
+            -- INSERT INTO num_exp_power_10_ln VALUES (7,'1716699575118597095.42330819910640247627');
+            -- doesn't fit in DECIMAL(28, 10)
+            INSERT INTO num_exp_power_10_ln VALUES (8,'167361463828.07491320069016125952');
+            INSERT INTO num_exp_power_10_ln VALUES (9,'107511333880052007.04141124673540337457');
+            INSERT INTO num_data VALUES (0, '0');
+            INSERT INTO num_data VALUES (1, '0');
+            INSERT INTO num_data VALUES (2, '-34338492.215397047');
+            INSERT INTO num_data VALUES (3, '4.31');
+            INSERT INTO num_data VALUES (4, '7799461.4119');
+            INSERT INTO num_data VALUES (5, '16397.038491');
+            INSERT INTO num_data VALUES (6, '93901.57763026');
+            INSERT INTO num_data VALUES (7, '-83028485');
+            INSERT INTO num_data VALUES (8, '74881');
+            INSERT INTO num_data VALUES (9, '-24926804.045047420');""";
         compiler.compileStatements(createTables);
         compiler.compileStatements(insert);
     }
