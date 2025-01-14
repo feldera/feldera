@@ -66,6 +66,10 @@ const sidebars = {
         {
             type: 'category',
             label: 'Guides',
+            link: {
+                type: 'doc',
+                id: 'tutorials/index',
+            },
             items: [
                 {
                     type: 'category',
