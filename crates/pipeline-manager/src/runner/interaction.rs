@@ -304,6 +304,7 @@ impl RunnerInteraction {
                     // transitions within the cache ttl of 5 secs).
                     let mut cache = self.endpoint_cache.write().unwrap();
                     cache.remove(&(tenant_id, pipeline_name.to_string()));
+                    drop(cache);
                     Box::pin(self.forward_http_request_to_pipeline_by_name(
                         tenant_id,
                         pipeline_name,
