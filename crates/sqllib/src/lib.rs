@@ -1231,9 +1231,10 @@ where
 #[doc(hidden)]
 #[inline(always)]
 pub fn truncate_d_i32(left: F64, right: i32) -> F64 {
-    let mut left = left.into_inner() * 10.0_f64.pow(right);
+    let tens = 10.0_f64.pow(right);
+    let mut left = left.into_inner() * tens;
     left = left.trunc();
-    left /= 10.0_f64.pow(right);
+    left /= tens;
 
     if left.is_zero() {
         // normalize the sign to match Calcite
@@ -1246,10 +1247,28 @@ some_polymorphic_function2!(truncate, d, F64, i32, i32, F64);
 
 #[doc(hidden)]
 #[inline(always)]
+pub fn truncate_f_i32(left: F32, right: i32) -> F32 {
+    let tens = 10.0_f32.pow(right);
+    let mut left = left.into_inner() * tens;
+    left = left.trunc();
+    left /= tens;
+
+    if left.is_zero() {
+        // normalize the sign to match Calcite
+        left = 0.0;
+    }
+    (left).into()
+}
+
+some_polymorphic_function2!(truncate, f, F32, i32, i32, F32);
+
+#[doc(hidden)]
+#[inline(always)]
 pub fn round_d_i32(left: F64, right: i32) -> F64 {
-    let mut left = left.into_inner() * 10.0_f64.pow(right);
+    let tens = 10.0_f64.pow(right);
+    let mut left = left.into_inner() * tens;
     left = left.round();
-    left /= 10.0_f64.pow(right);
+    left /= tens;
 
     if left.is_zero() {
         // normalize the sign to match Calcite
@@ -1260,6 +1279,24 @@ pub fn round_d_i32(left: F64, right: i32) -> F64 {
 }
 
 some_polymorphic_function2!(round, d, F64, i32, i32, F64);
+
+#[doc(hidden)]
+#[inline(always)]
+pub fn round_f_i32(left: F32, right: i32) -> F32 {
+    let tens = 10.0_f32.pow(right);
+    let mut left = left.into_inner() * tens;
+    left = left.round();
+    left /= tens;
+
+    if left.is_zero() {
+        // normalize the sign to match Calcite
+        left = 0.0;
+    }
+
+    (left).into()
+}
+
+some_polymorphic_function2!(round, f, F32, i32, i32, F32);
 
 #[doc(hidden)]
 pub fn power_i32_d(left: i32, right: F64) -> F64 {
