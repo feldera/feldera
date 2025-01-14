@@ -142,11 +142,11 @@ To learn more about Feldera Platform, we recommend going through the
 [documentation](https://docs.feldera.com).
 
 * [Getting started](https://docs.feldera.com/get-started)
-* [UI tour](https://docs.feldera.com/tour)
+* [Feldera basics](https://docs.feldera.com/tutorials/basics/)
 * [Tutorials](https://docs.feldera.com/tutorials)
-* [Demo](https://docs.feldera.com/demo)
-* [SQL reference](https://docs.feldera.com/sql/intro)
-* [API reference](https://www.feldera.com/api)
+* [SQL reference](https://docs.feldera.com/sql/)
+* [API reference](https://docs.feldera.com/api)
+* [Python SDK](https://docs.feldera.com/python/)
 
 ## 🤖 Benchmarks
 
