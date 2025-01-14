@@ -144,20 +144,20 @@ public class CustomFunctions {
 
     static class FormatDateFunction extends CalciteFunctionClone {
         private FormatDateFunction() {
-            super(SqlLibraryOperators.FORMAT_DATE, "datetime");
+            super(SqlLibraryOperators.FORMAT_DATE, "datetime#date-parsing-and-formatting");
         }
     }
 
     static class ArrayContainsFunction extends CalciteFunctionClone {
-        private ArrayContainsFunction() { super(SqlLibraryOperators.ARRAY_CONTAINS, "array"); }
+        private ArrayContainsFunction() { super(SqlLibraryOperators.ARRAY_CONTAINS, "array#contains"); }
     }
 
     static class ArrayRemoveFunction extends CalciteFunctionClone {
-        private ArrayRemoveFunction() { super(SqlLibraryOperators.ARRAY_REMOVE, "array"); }
+        private ArrayRemoveFunction() { super(SqlLibraryOperators.ARRAY_REMOVE, "array#remove"); }
     }
 
     static class ArrayPositionFunction extends CalciteFunctionClone {
-        private ArrayPositionFunction() { super(SqlLibraryOperators.ARRAY_POSITION, "array"); }
+        private ArrayPositionFunction() { super(SqlLibraryOperators.ARRAY_POSITION, "array#position"); }
     }
 
     static class ParseJsonFunction extends NonOptimizedFunction {
@@ -165,7 +165,7 @@ public class CustomFunctions {
             super("PARSE_JSON",
                     ReturnTypes.VARIANT.andThen(SqlTypeTransforms.TO_NULLABLE),
                     OperandTypes.STRING,
-                    SqlFunctionCategory.STRING, "json");
+                    SqlFunctionCategory.STRING, "json#parse_json");
         }
     }
 
@@ -177,7 +177,7 @@ public class CustomFunctions {
                     ArrayInsertFunction::arrayInsertReturnType,
                     OperandTypes.ARRAY_INSERT,
                     SqlFunctionCategory.USER_DEFINED_FUNCTION,
-                    "array");
+                    "array#insert");
         }
 
         private static RelDataType arrayInsertReturnType(SqlOperatorBinding opBinding) {
@@ -287,7 +287,7 @@ public class CustomFunctions {
                     ReturnTypes.BOOLEAN_NULLABLE,
                     SAME_TYPE.and(OperandTypes.family(SqlTypeFamily.ARRAY, SqlTypeFamily.ARRAY)),
                     SqlFunctionCategory.USER_DEFINED_FUNCTION,
-                    "array");
+                    "array#overlap");
         }
     }
 
@@ -296,7 +296,7 @@ public class CustomFunctions {
             super("TO_JSON",
                     ReturnTypes.VARCHAR.andThen(SqlTypeTransforms.FORCE_NULLABLE),
                     OperandTypes.VARIANT,
-                    SqlFunctionCategory.STRING, "json");
+                    SqlFunctionCategory.STRING, "json#to_json");
         }
     }
 
@@ -304,7 +304,8 @@ public class CustomFunctions {
     static class ParseTimeFunction extends NonOptimizedFunction {
         private ParseTimeFunction() {
             super("PARSE_TIME", ReturnTypes.TIME.andThen(SqlTypeTransforms.FORCE_NULLABLE),
-                    OperandTypes.STRING_STRING, SqlFunctionCategory.TIMEDATE, "datetime");
+                    OperandTypes.STRING_STRING, SqlFunctionCategory.TIMEDATE,
+                    "datetime#date-parsing-and-formatting");
         }
     }
 
@@ -312,7 +313,8 @@ public class CustomFunctions {
     static class ParseDateFunction extends NonOptimizedFunction {
         private ParseDateFunction() {
             super("PARSE_DATE", ReturnTypes.DATE.andThen(SqlTypeTransforms.FORCE_NULLABLE),
-                    OperandTypes.STRING_STRING, SqlFunctionCategory.TIMEDATE, "datetime");
+                    OperandTypes.STRING_STRING, SqlFunctionCategory.TIMEDATE,
+                    "datetime#date-parsing-and-formatting");
         }
     }
 
@@ -320,7 +322,8 @@ public class CustomFunctions {
     static class ParseTimestampFunction extends NonOptimizedFunction {
         private ParseTimestampFunction() {
             super("PARSE_TIMESTAMP", ReturnTypes.TIMESTAMP.andThen(SqlTypeTransforms.FORCE_NULLABLE),
-                    OperandTypes.STRING_STRING, SqlFunctionCategory.TIMEDATE, "datetime");
+                    OperandTypes.STRING_STRING, SqlFunctionCategory.TIMEDATE,
+                    "datetime#date-parsing-and-formatting");
         }
     }
 
@@ -331,7 +334,7 @@ public class CustomFunctions {
                     SqlKind.RLIKE,
                     ReturnTypes.BOOLEAN_NULLABLE,
                     OperandTypes.STRING_STRING,
-                    SqlFunctionCategory.STRING, "string");
+                    SqlFunctionCategory.STRING, "string#rlike");
         }
     }
 
@@ -340,7 +343,7 @@ public class CustomFunctions {
             super("NOW",
                     ReturnTypes.TIMESTAMP,
                     OperandTypes.NILADIC,
-                    SqlFunctionCategory.TIMEDATE, "datetime");
+                    SqlFunctionCategory.TIMEDATE, "datetime#now");
         }
     }
 
@@ -353,7 +356,7 @@ public class CustomFunctions {
                     ReturnTypes.VARCHAR
                             .andThen(SqlTypeTransforms.TO_NULLABLE),
                     OperandTypes.BINARY,
-                    SqlFunctionCategory.STRING, "binary");
+                    SqlFunctionCategory.STRING, "binary#gunzip");
         }
     }
 
@@ -378,7 +381,7 @@ public class CustomFunctions {
                             .andThen(SqlTypeTransforms.TO_ARRAY)
                             .andThen(SqlTypeTransforms.TO_NULLABLE),
                     family(SqlTypeFamily.INTEGER, SqlTypeFamily.INTEGER),
-                    SqlFunctionCategory.USER_DEFINED_FUNCTION, "integer");
+                    SqlFunctionCategory.USER_DEFINED_FUNCTION, "integer#sequence");
         }
     }
 
@@ -390,7 +393,7 @@ public class CustomFunctions {
                     ReturnTypes.INTEGER
                             .andThen(SqlTypeTransforms.TO_NULLABLE),
                     OperandTypes.BINARY,
-                    SqlFunctionCategory.NUMERIC, "binary");
+                    SqlFunctionCategory.NUMERIC, "binary#to_int");
         }
     }
 
@@ -407,7 +410,7 @@ public class CustomFunctions {
     // establish the order of elements in the result.
     static class ArrayExcept extends CalciteFunctionClone {
         private ArrayExcept() {
-            super(SqlLibraryOperators.ARRAY_EXCEPT, "array");
+            super(SqlLibraryOperators.ARRAY_EXCEPT, "array#except");
         }
     }
 
@@ -415,7 +418,7 @@ public class CustomFunctions {
     // establish the order of elements in the result.
     static class ArrayUnion extends CalciteFunctionClone {
         private ArrayUnion() {
-            super(SqlLibraryOperators.ARRAY_UNION, "array");
+            super(SqlLibraryOperators.ARRAY_UNION, "array#union");
         }
     }
 
@@ -423,7 +426,7 @@ public class CustomFunctions {
     // establish the order of elements in the result.
     static class ArrayIntersect extends CalciteFunctionClone {
         private ArrayIntersect() {
-            super(SqlLibraryOperators.ARRAY_INTERSECT, "array");
+            super(SqlLibraryOperators.ARRAY_INTERSECT, "array#intersect");
         }
     }
 

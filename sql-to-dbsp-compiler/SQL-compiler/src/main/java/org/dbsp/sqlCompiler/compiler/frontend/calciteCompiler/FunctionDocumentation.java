@@ -76,15 +76,26 @@ public class FunctionDocumentation {
                     Utilities.putNew(fileContents, docFile, contents);
                 }
                 String contents = Utilities.getExists(fileContents, docFile);
-                if (!contents.contains(func.functionName()))
+                String funcName = func.functionName();
+                if (!contents.contains(funcName)) {
                     // Check that the file does indeed mention this function
-                    throw new RuntimeException("Function `" + func.functionName() + "` does not appear in file " + docFile);
+                    if (funcName.contains(" "))
+                        // These don't appear ad-literam, e.g., NOT IN, EXCEPT ALL
+                        funcName = funcName.substring(0, funcName.indexOf(" "));
+                    if (!contents.contains(funcName))
+                        throw new RuntimeException("Function `" + func.functionName() + "` does not appear in file " + docFile);
+                }
                 if (!anchor.isEmpty()) {
-                    if (!contents.contains("<a id=\"" + anchor + "\">")) {
-                        // Check that the file contains an anchor
-                        throw new RuntimeException("Anchor `" + anchor + "` does not appear in file " + docFile);
+                    if (!contents.contains("<a id=\"" + anchor + "\"></a>")) {
+                        // Check that the file contains an anchor.
+                        // It can be either <a id="anchor"> or # anchor
+                        if (!contents.toLowerCase().replace("`", "")
+                                .contains("# " + anchor.replace("-", " ")))
+                            throw new RuntimeException("Anchor `" + anchor + "` does not appear in file " + docFile);
                     }
                     anchor = "#" + anchor;
+                } else {
+                    throw new RuntimeException("No anchor for " + func.functionName());
                 }
                 if (!first)
                     writer.print(", ");

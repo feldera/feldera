@@ -9,7 +9,7 @@ in this case insert implicit type conversion operations, also called
 An explicit cast can be specified in three ways:
 
 * using the `CAST` operator: <code>CAST(value AS type)</code>
-* using an infix operator <code>::</code> from Postgres:
+* <a id="coloncolon"></a>using an infix operator <code>::</code> from Postgres:
   <code>value :: type</code>
 * using the `CONVERT` function: `CONVERT(value, type)`
 

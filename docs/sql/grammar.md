@@ -49,6 +49,7 @@ See [user-defined structures](types.md#user-defined-structures)
 
 ## Creating tables
 
+<a id="default"></a>
 ```
 createTableStatement
   :   CREATE TABLE name
@@ -197,7 +198,10 @@ createViewStatement
       [ '(' columnName [, columnName ]* ')' ]
       [ 'WITH' keyValueList ]
       AS query
+```
 
+<a id="setop"></a>
+```
 query
   :   values
   |   WITH withItem [ , withItem ]* query
@@ -217,7 +221,10 @@ withItem
   :   name
       [ '(' column [, column ]* ')' ]
       AS '(' query ')'
+```
 
+<a id="values"></a>
+```
 values
   :   { VALUES | VALUE } expression [, expression ]*
 
@@ -228,14 +235,20 @@ select
       [ WHERE booleanExpression ]
       [ GROUP BY [ ALL | DISTINCT ] { groupItem [, groupItem ]* } ]
       [ HAVING booleanExpression ]
+```
 
+<a id="lateral"></a>
+```
 tablePrimary
   :   tableName '(' TABLE tableName ')'
   |   tablePrimary '(' columnDecl [, columnDecl ]* ')'
   |   [ LATERAL ] '(' query ')'
   |   UNNEST '(' expression ')' [ WITH ORDINALITY ]
   |   TABLE '(' functionName '(' expression [, expression ]* ')' ')'
+```
 
+<a id="cube"></a>
+```
 groupItem:
       expression
   |   '(' ')'
@@ -246,14 +259,23 @@ groupItem:
 selectWithoutFrom
   :   SELECT [ ALL | DISTINCT ]
           { * | projectItem [, projectItem ]* }
+```
 
+<a id="order"></a>
+```
 orderItem
   :   expression [ ASC | DESC ] [ NULLS FIRST | NULLS LAST ]
+```
 
+<a id="as"></a>
+```
 projectItem
   :   expression [ [ AS ] columnAlias ]
   |   tableAlias . *
+```
 
+<a id="join"></a>
+```
 tableExpression
   :   tableReference [, tableReference ]*
   |   tableExpression [ NATURAL ] [ { LEFT | RIGHT | FULL } [ OUTER | ASOF ] ] JOIN tableExpression [ joinCondition ]
@@ -294,8 +316,7 @@ exprOrList
 ```
 
 Beware that in the SQL `UNION`, `EXCEPT`, and `INTERSECT` statements
-the column names are *not* used to reorder columns.  The result of a
-uses the column names from the first table.
+the column names are *not* used to reorder columns.
 
 In `orderItem`, if expression is a positive integer n, it denotes the
 nth item in the `SELECT` clause.

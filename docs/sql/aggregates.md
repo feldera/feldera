@@ -6,6 +6,7 @@ A `SELECT` expression in the [SQL grammar](grammar.md) can contain one
 or more aggregation functions.  Aggregate functions are specified
 using the following grammar:
 
+<a id="filter"></a>
 ```
 aggregateCall:
       agg '(' [ ALL | DISTINCT ] value [, value ]* ')'
@@ -42,85 +43,85 @@ DECIMAL(10, 4))` if you expect 10-digit results to be possible.
     <th>Description</th>
   </tr>
   <tr>
-     <td><code>ARRAY_AGG([ ALL | DISTINCT ] value [ RESPECT NULLS | IGNORE NULLS ] )</code></td>
+     <td><a id="array_agg"></a><code>ARRAY_AGG([ ALL | DISTINCT ] value [ RESPECT NULLS | IGNORE NULLS ] )</code></td>
      <td>Gathers all values in an array.  The order of the values in the array is unspecified (but it is deterministic).</td>
   </tr>
   <tr>
-     <td><code>AVG( [ ALL | DISTINCT ] numeric)</code></td>
+     <td><a id="avg"></a><code>AVG( [ ALL | DISTINCT ] numeric)</code></td>
      <td>Returns the average (arithmetic mean) of numeric across all input values</td>
   </tr>
   <tr>
-     <td><code>ARG_MAX(value, compared)</code></td>
+     <td><a id="arg_max"></a><code>ARG_MAX(value, compared)</code></td>
      <td>Returns a <code>value</code> for one of the rows containing the maximum value of <code>compared</code> in the group.
          The rule for selecting the value is not specified if there are multiple rows with the same maximum value.</td>
   </tr>
   <tr>
-     <td><code>ARG_MIN(value, compared)</code></td>
+     <td><a id="arg_min"></a><code>ARG_MIN(value, compared)</code></td>
      <td>Returns a  <code>value</code> for one of the rows containing the minimum value of <code>compared</code> in the group.
          This rule for selecting the value is not specified if there are multiple rows with the same minimum value.</td>
   </tr>
   <tr>
-     <td><code>BIT_AND( [ ALL | DISTINCT ] value)</code></td>
+     <td><a id="bit_and"></a><code>BIT_AND( [ ALL | DISTINCT ] value)</code></td>
      <td>Returns the bitwise AND of all non-null input values, or null if none; integer and binary types are supported</td>
   </tr>
   <tr>
-     <td><code>BIT_OR( [ ALL | DISTINCT ] value)</code></td>
+     <td><a id="bit_or"></a><code>BIT_OR( [ ALL | DISTINCT ] value)</code></td>
      <td>Returns the bitwise OR of all non-null input values, or null if none; integer and binary types are supported</td>
   </tr>
   <tr>
-     <td><code>BIT_XOR( [ ALL | DISTINCT ] value)</code></td>
+     <td><a id="bit_xor"></a><code>BIT_XOR( [ ALL | DISTINCT ] value)</code></td>
      <td>Returns the bitwise XOR of all non-null input values, or null if none; integer and binary types are supported</td>
   </tr>
   <tr>
-     <td><code>COUNT(*)</code></td>
+     <td><a id="countstar"></a><code>COUNT(*)</code></td>
      <td>Returns the number of input rows</td>
   </tr>
   <tr>
-     <td><code>COUNT( [ ALL | DISTINCT ] value [, value ]*)</code></td>
+     <td><a id="count"></a><code>COUNT( [ ALL | DISTINCT ] value [, value ]*)</code></td>
      <td>Returns the number of input rows for which value is not null.  If the argument contains multiple expressions, it counts only expressions where *all* fields are non-null.</td>
   </tr>
   <tr>
-     <td><code>COUNTIF( boolean )</code></td>
+     <td><a id="countif"></a><code>COUNTIF( boolean )</code></td>
      <td>Returns the number of input rows for which the condition is true.</td>
   </tr>
   <tr>
-     <td><code>EVERY(condition)</code></td>
+     <td><a id="every"></a><code>EVERY(condition)</code></td>
      <td>Returns <code>TRUE</code> if all of the values of condition are <code>TRUE</code></td>
   </tr>
   <tr>
-     <td><code>LOGICAL_AND</code> or <code>BOOL_AND</code></td>
+     <td><a id="logical_and"></a><code>LOGICAL_AND</code> or <code>BOOL_AND</code></td>
      <td>Same as <code>EVERY</code></td>
   </tr>
   <tr>
-     <td><code>LOGICAL_OR</code> or <code>BOOL_OR</code></td>
+     <td><a id="logical_or"></a><code>LOGICAL_OR</code> or <code>BOOL_OR</code></td>
      <td>Same as <code>SOME</code></td>
   </tr>
   <tr>
-     <td><code>MAX( [ ALL | DISTINCT ] value)</code></td>
+     <td><a id="max"></a><code>MAX( [ ALL | DISTINCT ] value)</code></td>
      <td>Returns the maximum value of value across all input values</td>
   </tr>
   <tr>
-     <td><code>MIN( [ ALL | DISTINCT ] value)</code></td>
+     <td><a id="min"></a><code>MIN( [ ALL | DISTINCT ] value)</code></td>
      <td>Returns the minimum value of value across all input values</td>
   </tr>
   <tr>
-     <td><code>SOME(condition)</code></td>
+     <td><a id="some"></a><code>SOME(condition)</code></td>
      <td>Returns <code>TRUE</code> if one or more of the values of condition is <code>TRUE</code></td>
   </tr>
   <tr>
-     <td><code>SUM( [ ALL | DISTINCT ] numeric)</code></td>
+     <td><a id="sum"></a><code>SUM( [ ALL | DISTINCT ] numeric)</code></td>
      <td>Returns the sum of numeric across all input values</td>
   </tr>
   <tr>
-     <td><code>STDDEV( [ ALL | DISTINCT ] value)</code></td>
+     <td><a id="stddev"></a><code>STDDEV( [ ALL | DISTINCT ] value)</code></td>
      <td>Synonym for <code>STDDEV_SAMP</code></td>
   </tr>
   <tr>
-     <td><code>STDDEV_POP( [ ALL | DISTINCT ] value)</code></td>
+     <td><a id="stddev_pop"></a><code>STDDEV_POP( [ ALL | DISTINCT ] value)</code></td>
      <td>Returns the population standard deviation of numeric across all input values</td>
   </tr>
   <tr>
-     <td><code>STDDEV_SAMP( [ ALL | DISTINCT ] value)</code></td>
+     <td><a id="stddev_samp"></a><code>STDDEV_SAMP( [ ALL | DISTINCT ] value)</code></td>
      <td>Returns the sample standard deviation of numeric across all input values</td>
   </tr>
 </table>
@@ -142,6 +143,8 @@ FROM TABLE
 
 In addition, the following two constructors act as aggregates:
 
+<a id="array"></a>
+<a id="map"></a>
 | Constructor        | Description                                                                                                                           | Example                                                                                                    |
 |--------------------|---------------------------------------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------|
 | `ARRAY(sub-query)` | Creates an array from the result of a sub-query. If the subquery returns a tuple, the array will be an array of tuples.               | `SELECT ARRAY(SELECT empno FROM emp)` or `SELECT ARRAY(SELECT empno, dept FROM emp)`                       |
@@ -159,56 +162,56 @@ The following window aggregate functions are supported:
     <th>Description</th>
   </tr>
   <tr>
-    <td>AVG(numeric)</td>
+    <td><a id="window-avg"></a>AVG(numeric)</td>
     <td>Returns the average (arithmetic mean) of numeric across all values in window</td>
   </tr>
   <tr>
-    <td><code>COUNT(</code>value [, value ]*<code>)</code></td>
+    <td><a id="window-count"></a><code>COUNT(</code>value [, value ]*<code>)</code></td>
     <td>Returns the number of rows in window for which value is not null</td>
   </tr>
   <tr>
-    <td><code>COUNT(*)</code></td>
+    <td><a id="window-countstar"></a><code>COUNT(*)</code></td>
     <td>Returns the number of rows in window</td>
   </tr>
   <tr>
-    <td><code>DENSE_RANK()</code></td>
+    <td><a id="dense_rank"></a><code>DENSE_RANK()</code></td>
     <td>Returns the rank of the current row without gaps.  `DENSE_RANK` is currently only supported if
         the window is used to compute a TopK aggregate.</td>
   </tr>
   <tr>
-    <td><code>LAG(</code><em>expression</em>, [<em>offset</em>, [ <em>default</em> ] ]<code>)</code></td>
+    <td><a id="lag"></a><code>LAG(</code><em>expression</em>, [<em>offset</em>, [ <em>default</em> ] ]<code>)</code></td>
     <td>Returns <em>expression</em> evaluated at the row that is <em>offset</em> rows before the current row
         within the partition; if there is no such row, instead returns <em>default</em>.
         Both <em>offset</em> and <em>default</em> are evaluated with respect to the current row.
         If omitted, <em>offset</em> defaults to 1 and <em>default</em> to <code>NULL</code>.</td>
   </tr>
   <tr>
-    <td><code>LEAD(</code><em>expression</em>, [<em>offset</em>, [ <em>default</em> ] ]<code>)</code></td>
+    <td><a id="lead"></a><code>LEAD(</code><em>expression</em>, [<em>offset</em>, [ <em>default</em> ] ]<code>)</code></td>
     <td>Returns <em>expression</em> evaluated at the row that is <em>offset</em> rows after the current row
         within the partition; if there is no such row, instead returns <em>default</em>.
         Both <em>offset</em> and <em>default</em> are evaluated with respect to the current row.
         If omitted, <em>offset</em> defaults to 1 and <em>default</em> to <code>NULL</code>.</td>
   </tr>
   <tr>
-    <td><code>MAX</code>(<em>expression</em>)</td>
+    <td><a id="window-max"></a><code>MAX</code>(<em>expression</em>)</td>
     <td>Returns the maximum value of <em>expression</em> across all values in window</td>
   </tr>
   <tr>
-    <td><code>MIN</code>(<em>expression</em>)</td>
+    <td><a id="window-min"></a><code>MIN</code>(<em>expression</em>)</td>
     <td>Returns the minimum value of <em>expression</em> across all values in window</td>
   </tr>
   <tr>
-    <td><code>RANK()</code></td>
+    <td><a id="rank"></a><code>RANK()</code></td>
     <td>Returns the rank of the current row with gaps.  `DENSE_RANK` is currently only supported if
         the window is used to compute a TopK aggregate.</td>
   </tr>
   <tr>
-    <td><code>ROW_NUMBER()</code></td>
+    <td><a id="row_number"></a><code>ROW_NUMBER()</code></td>
     <td>Returns the number of the current row within its partition, counting from 1.
     `ROW_NUMBER` is currently only supported if the window is used to compute a TopK aggregate.</td>
   </tr>
   <tr>
-    <td><code>SUM</code>(<em>numeric</em>)</td>
+    <td><a id="window-sum"></a><code>SUM</code>(<em>numeric</em>)</td>
     <td>Returns the sum of <em>numeric</em> across all values in window</td>
   </tr>
 </table>

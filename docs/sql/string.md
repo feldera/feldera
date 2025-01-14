@@ -121,72 +121,80 @@ addition to the normal way of `''`.
     <td><code>'string' RLIKE 's..i.*'</code> => <code>TRUE</code></td>
   </tr>
   <tr>
-    <td><code>ASCII ( string )</code></td>
+    <td><a id="ascii"></a><code>ASCII ( string )</code></td>
     <td>Returns the numeric code of the first character of the argument. In UTF8 encoding, returns the Unicode code point of the character. In other multibyte encodings, the argument must be an ASCII character.  Returns 0 if the string is empty.</td>
     <td><code>ascii('x')</code> => <code>120</code></td>
   </tr>
   <tr>
-    <td><code>CHAR_LENGTH(string)</code> or <code>CHARACTER_LENGTH(string)</code> or <code>LENGTH(string)</code> or <code>LEN(string)</code></td>
+    <td><a id="char_length"></a><code>CHAR_LENGTH(string)</code> or <code>CHARACTER_LENGTH(string)</code> or <code>LENGTH(string)</code> or <code>LEN(string)</code></td>
     <td>Returns number of characters in the string.</td>
     <td><code>char_length('josé')</code> => <code>4</code></td>
   </tr>
   <tr>
-    <td><code>CHR ( integer )</code></td>
+    <td><a id="chr"></a><code>CHR ( integer )</code></td>
     <td>Returns a string containing the character with the given code. If the code is incorrect (e.g., negative), the result is an empty string.</td>
     <td><code>chr(65)</code> => <code>A</code></td>
   </tr>
   <tr>
-    <td><code>CONCAT(</code>string1, ..., stringN<code>)</code></td>
+    <td><a id="concat"></a><code>CONCAT(</code>string1, ..., stringN<code>)</code></td>
     <td>String concatenation.  Can have any number of arguments.</td>
     <td><code>CONCAT('Post', 'greSQL', 1)</code> => <code>PostgreSQL1</code></td>
   </tr>
   <tr>
-    <td><code>CONCAT_WS(</code>sep, string1, ..., stringN<code>)</code></td>
+    <td><a id="concat_ws"></a><code>CONCAT_WS(</code>sep, string1, ..., stringN<code>)</code></td>
     <td>String concatenation with separator <code>sep</code>.  Can have any number of arguments.  <code>sep</code> is intercalated between all strings.  If <code>sep</code> is <code>NULL</code> result is <code>NULL</code>.  Other <code>NULL</code> arguments are ignored.</td>
     <td><code>CONCAT_WS(',', 'Post', 'greSQL', NULL, '1')</code> => <code>Post,greSQL,,1</code></td>
   </tr>
   <tr>
-    <td><code>INITCAP ( string )</code></td>
+    <td><a id="initcap"></a><code>INITCAP ( string )</code></td>
     <td>Converts the first letter of each word to upper case and the rest to lower case. Words are sequences of alphanumeric characters separated by non-alphanumeric characters.</td>
     <td><code>initcap('hi THOMAS')</code> => <code>Hi Thomas</code></td>
   </tr>
   <tr>
-    <td><code>LEFT ( string, count )</code></td>
+    <td><a id="left"></a><code>LEFT ( string, count )</code></td>
     <td>Returns first <code>count</code> characters in the string.  If any argument is <code>NULL</code>, return <code>NULL</code>.</td>
     <td><code>left('abcde', 2)</code> => <code>ab</code></td>
   </tr>
   <tr>
-    <td><code>LOWER ( string )</code></td>
+    <td><a id="lower"></a><code>LOWER ( string )</code></td>
     <td>Converts the string to all lower case.</td>
     <td><code>lower('TOM')</code> => <code>tom</code></td>
   </tr>
   <tr>
-    <td><code>OVERLAY ( string PLACING newsubstring FROM start [ FOR remove ] )</code></td>
+    <td><a id="overlay"></a><code>OVERLAY ( string PLACING newsubstring FROM start [ FOR remove ] )</code></td>
     <td>Replaces the substring of string that starts at the start'th character and extends for remove characters with newsubstring. If count is omitted, it defaults to the length of newsubstring.  If 'start' is nott positive, the original string is unchanged.  If 'start' is bigger than the length of 'string', the result is the concatenation of the two strings.  If 'remove' is negative it is considered 0.</td>
     <td><code>overlay('Txxxxas' placing 'hom' from 2 for 4)</code> => <code>Thomas</code></td>
   </tr>
   <tr>
-    <td><code>POSITION(substring IN string)</code></td>
+    <td><a id="position"></a><code>POSITION(substring IN string)</code></td>
     <td>Returns first starting index of the specified substring within string, or zero if it's not present.  First character has index 1.</td>
     <td><code>position('om' in 'Thomas')</code> => <code>3</code></td>
   </tr>
   <tr>
-    <td><code>REPEAT ( string, count )</code></td>
+    <td><a id="regexp_replace"></a><code><code>REGEXP_REPLACE(expr, pat[, repl])</code></td>
+    <td>Replaces occurrences in the string `expr` that match the regular expression
+        specified by the pattern `pat` with the replacement string `repl`, and returns
+        the resulting string. If any one of `expr`, `pat`, or `repl` is `NULL`, the return value is `NULL`.
+        If `repl` is missing, it is assumed to be the empty string.  If the regular
+        expression is invalid, the original string is returned.</td>
+  </tr>
+  <tr>
+    <td><a id="repeat"></a><code>REPEAT ( string, count )</code></td>
     <td>Repeats string the specified number of times.  The result is an empty string for a negative or 0 count.</td>
     <td><code>repeat('Pg', 4)</code> => <code>PgPgPgPg</code></td>
   </tr>
   <tr>
-    <td><code>REPLACE ( haystack, needle, replacement )</code></td>
+    <td><a id="replace"></a><code>REPLACE ( haystack, needle, replacement )</code></td>
     <td>Replaces all occurrences of `needle` in `haystack` with `replacement`.</td>
     <td><code>replace('abcdefabcdef', 'cd', 'XX')</code> => <code>abXXefabXXef</code></td>
   </tr>
   <tr>
-    <td><code>RLIKE(string, pattern)</code></td>
+    <td>RLIKE(string, pattern)</code></td>
     <td>A function equivalent to the <code>RLIKE</code> operator above.</td>
     <td><code>RLIKE('string', 's..i.*')</code> => <code>TRUE</code></td>
   </tr>
   <tr>
-    <td><code>SPLIT(string [, delimiter])</code></td>
+    <td><a id="split"></a><code>SPLIT(string [, delimiter])</code></td>
     <td>Produce an array of strings, by splitting the first argument at each delimiter occurrence.
         If the delimiter is empty, return an array with the original string.  If the original
         string is empty, return an empty array.  If either argument is `NULL`, return `NULL`.
@@ -194,7 +202,7 @@ addition to the normal way of `''`.
     <td><code>SPLIT('a|b|c|', '|')</code> => { 'a', 'b', 'c', '' }</td>
   </tr>
   <tr>
-    <td><code>SPLIT_PART(string, delimiter, n)</code></td>
+    <td><a id="split_part"></a><code><code>SPLIT_PART(string, delimiter, n)</code></td>
     <td>
         This function uses 1-based indexing. It extracts the <code>n</code>'th part of the string by splitting it at each occurrence of the delimiter.
         <ul>
@@ -211,29 +219,27 @@ addition to the normal way of `''`.
     </td>
   </tr>
   <tr>
-    <td><code>SUBSTRING (</code> string <code>[ FROM</code> start <code>] [ FOR</code> count<code> ] )</code></td>
+    <td><a id="substr"></a><code><code>SUBSTR (</code> string, start, <code> [ ,</code> length <code>]</code></td>
+    <td>Extracts the substring of string starting at the "start"'th character if that is specified, and stopping after "length" characters if the value is specified. If "start" is negative, it is replaced with 1.  If "count" is negative the empty string is returned.  The index of the first character is 1.</td>
+    <td><code>SUBSTR('Thomas', 2, 3)</code> => <code>hom</code><br></br>
+        <code>SUBSTR('Thomas', 3)</code> => <code>omas</code><br></br>
+  </tr>
+  <tr>
+    <td><a id="substring"></a><code><code>SUBSTRING (</code> string <code>[ FROM</code> start <code>] [ FOR</code> count<code> ] )</code></td>
     <td>Extracts the substring of string starting at the "start"'th character if that is specified, and stopping after "count" characters if the value is specified. At least one of "start" or "count" must be provided.  If "start" is negative, it is replaced with 1.  If "count" is negative the empty string is returned.  The index of the first character is 1.</td>
     <td><code>SUBSTRING('Thomas' from 2 for 3)</code> => <code>hom</code><br></br>
         <code>SUBSTRING('Thomas' from 3)</code> => <code>omas</code><br></br>
         <code>SUBSTRING('Thomas' for 2)</code> => <code>Th</code></td>
   </tr>
   <tr>
-    <td><code>TRIM ( [ LEADING | TRAILING | BOTH ]</code> characters <code>FROM</code> string <code>)</code></td>
+    <td><a id="trim"></a><code><code>TRIM ( [ LEADING | TRAILING | BOTH ]</code> characters <code>FROM</code> string <code>)</code></td>
     <td>Remove the specified characters from the specified ends of the string argument</td>
     <td><code>TRIM(both 'xyz' from 'yxTomxx')</code> => <code>Tom</code><br></br><code>TRIM(leading 'xyz' from 'yxTomxx')</code> => <code>Tomxx</code></td>
   </tr>
   <tr>
-    <td><code>UPPER ( string )</code></td>
+    <td><a id="upper"></a><code><code>UPPER ( string )</code></td>
     <td>Converts the string to all upper case.</td>
     <td><code>upper('tom')</code> => <code>TOM</code></td>
-  </tr>
-  <tr>
-    <td><code>REGEXP_REPLACE(expr, pat[, repl])</code></td>
-    <td>Replaces occurrences in the string `expr` that match the regular expression
-        specified by the pattern `pat` with the replacement string `repl`, and returns
-        the resulting string. If any one of `expr`, `pat`, or `repl` is `NULL`, the return value is `NULL`.
-        If `repl` is missing, it is assumed to be the empty string.  If the regular
-        expression is invalid, the original string is returned.</td>
   </tr>
 </table>
 
