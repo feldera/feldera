@@ -116,6 +116,21 @@ impl Default for BinaryFormat {
     }
 }
 
+/// Representation of the SQL `BINARY` and `VARBINARY` types.
+#[derive(Clone, Debug)]
+pub enum UuidFormat {
+    /// Serialize as string.
+    String,
+    /// Serialize as binary.
+    Binary,
+}
+
+impl Default for UuidFormat {
+    fn default() -> Self {
+        Self::String
+    }
+}
+
 /// Deserializer configuration for parsing SQL records.
 #[derive(Clone, Default, Debug)]
 pub struct SqlSerdeConfig {
@@ -132,6 +147,8 @@ pub struct SqlSerdeConfig {
     /// 'VARBINARY', 'BINARY' format.
     // TODO: do we want separate settings for binary and varbinary.
     pub binary_format: BinaryFormat,
+    /// 'UUID' format.
+    pub uuid_format: UuidFormat,
 }
 
 impl SqlSerdeConfig {
@@ -166,6 +183,11 @@ impl SqlSerdeConfig {
         self.binary_format = binary_format;
         self
     }
+
+    pub fn with_uuid_format(mut self, uuid_format: UuidFormat) -> Self {
+        self.uuid_format = uuid_format;
+        self
+    }
 }
 
 impl From<JsonFlavor> for SqlSerdeConfig {
@@ -184,6 +206,7 @@ impl From<JsonFlavor> for SqlSerdeConfig {
                 decimal_format: DecimalFormat::String,
                 variant_format: VariantFormat::JsonString,
                 binary_format: BinaryFormat::Array,
+                uuid_format: UuidFormat::String,
             },
             JsonFlavor::DebeziumMySql => Self {
                 time_format: TimeFormat::Micros,
@@ -192,6 +215,7 @@ impl From<JsonFlavor> for SqlSerdeConfig {
                 decimal_format: DecimalFormat::String,
                 variant_format: VariantFormat::JsonString,
                 binary_format: BinaryFormat::Array,
+                uuid_format: UuidFormat::String,
             },
             JsonFlavor::DebeziumPostgres => Self {
                 time_format: TimeFormat::Micros,
@@ -200,6 +224,7 @@ impl From<JsonFlavor> for SqlSerdeConfig {
                 decimal_format: DecimalFormat::String,
                 variant_format: VariantFormat::JsonString,
                 binary_format: BinaryFormat::Array,
+                uuid_format: UuidFormat::String,
             },
             JsonFlavor::Snowflake => Self {
                 time_format: TimeFormat::String("%H:%M:%S%.f"),
@@ -208,6 +233,7 @@ impl From<JsonFlavor> for SqlSerdeConfig {
                 decimal_format: DecimalFormat::String,
                 variant_format: VariantFormat::JsonString,
                 binary_format: BinaryFormat::Array,
+                uuid_format: UuidFormat::String,
             },
             JsonFlavor::Pandas => Self {
                 time_format: TimeFormat::String("%H:%M:%S%.f"),
@@ -216,6 +242,7 @@ impl From<JsonFlavor> for SqlSerdeConfig {
                 decimal_format: DecimalFormat::String,
                 variant_format: VariantFormat::JsonString,
                 binary_format: BinaryFormat::Array,
+                uuid_format: UuidFormat::String,
             },
             JsonFlavor::ParquetConverter => Self {
                 time_format: TimeFormat::Nanos,
@@ -229,6 +256,7 @@ impl From<JsonFlavor> for SqlSerdeConfig {
                 decimal_format: DecimalFormat::String,
                 variant_format: VariantFormat::JsonString,
                 binary_format: BinaryFormat::Base64,
+                uuid_format: UuidFormat::String,
             },
         }
     }

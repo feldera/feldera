@@ -4,7 +4,7 @@ use arrow::array::{
 };
 use arrow::datatypes::{DataType, Schema, TimeUnit};
 use dbsp::utils::Tup2;
-use feldera_sqllib::{ByteArray, Date, Time, Timestamp, Variant, F32, F64};
+use feldera_sqllib::{ByteArray, Date, Time, Timestamp, Uuid, Variant, F32, F64};
 use feldera_types::program_schema::{ColumnType, Field, Relation, SqlIdentifier};
 use feldera_types::{
     deserialize_table_record, deserialize_without_context, serialize_struct, serialize_table_record,
@@ -805,6 +805,7 @@ pub struct DeltaTestStruct {
     pub string_string_map: BTreeMap<String, String>,
     pub string_struct_map: BTreeMap<String, TestStruct>,
     pub variant: Variant,
+    pub uuid: Uuid,
 }
 
 // TODO: INTERVAL, VOID, TIMESTAMP (with tz), Object, map with non-string keys
@@ -845,6 +846,7 @@ impl Arbitrary for DeltaTestStruct {
                     Default::default(),
                 )),
                 (0i32..1000),
+                <[u8; 16]>::arbitrary(),
             ),
         )
             .prop_map(
@@ -860,6 +862,7 @@ impl Arbitrary for DeltaTestStruct {
                         string_string_map,
                         string_struct_map,
                         variant,
+                        uuid,
                     ),
                 )| {
                     DeltaTestStruct {
@@ -887,6 +890,7 @@ impl Arbitrary for DeltaTestStruct {
                             ))
                             .collect(),
                         ),
+                        uuid: Uuid::from_bytes(uuid),
                     }
                 },
             )
@@ -952,6 +956,7 @@ impl DeltaTestStruct {
                 false,
             ),
             arrow::datatypes::Field::new("variant", DataType::Utf8, false),
+            arrow::datatypes::Field::new("uuid", DataType::Utf8, false),
         ]))
     }
 
@@ -998,6 +1003,7 @@ impl DeltaTestStruct {
                 ),
             ),
             Field::new("variant".into(), ColumnType::variant(false)),
+            Field::new("uuid".into(), ColumnType::uuid(false)),
         ]
     }
 
@@ -1045,6 +1051,7 @@ impl DeltaTestStruct {
                 ),
             ),
             Field::new("variant".into(), ColumnType::variant(false)),
+            Field::new("uuid".into(), ColumnType::uuid(false)),
         ];
 
         fields
@@ -1060,7 +1067,7 @@ impl DeltaTestStruct {
     }
 }
 
-serialize_table_record!(DeltaTestStruct[18]{
+serialize_table_record!(DeltaTestStruct[19]{
     bigint["bigint"]: i64,
     binary["binary"]: ByteArray,
     boolean["boolean"]: bool,
@@ -1078,10 +1085,11 @@ serialize_table_record!(DeltaTestStruct[18]{
     struct_array["struct_array"]: Vec<TestStruct>,
     string_string_map["string_string_map"]: BTreeMap<String, String>,
     string_struct_map["string_struct_map"]: BTreeMap<String, TestStruct>,
-    variant["variant"]: Variant
+    variant["variant"]: Variant,
+    uuid["uuid"]: Uuid
 });
 
-deserialize_table_record!(DeltaTestStruct["DeltaTestStruct", 18] {
+deserialize_table_record!(DeltaTestStruct["DeltaTestStruct", 19] {
     (bigint, "bigint", false, i64, None),
     (binary, "binary", false, ByteArray, None),
     (boolean, "boolean", false, bool, None),
@@ -1099,5 +1107,6 @@ deserialize_table_record!(DeltaTestStruct["DeltaTestStruct", 18] {
     (struct_array, "struct_array", false, Vec<TestStruct>, None),
     (string_string_map, "string_string_map", false, BTreeMap<String, String>, None),
     (string_struct_map, "string_struct_map", false, BTreeMap<String, TestStruct>, None),
-    (variant, "variant", false, Variant, None)
+    (variant, "variant", false, Variant, None),
+    (uuid, "uuid", false, Uuid, None)
 });

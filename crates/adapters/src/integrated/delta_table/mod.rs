@@ -4,7 +4,7 @@ mod output;
 #[cfg(test)]
 mod test;
 
-use feldera_types::serde_with_context::serde_config::DecimalFormat;
+use feldera_types::serde_with_context::serde_config::{DecimalFormat, UuidFormat};
 use feldera_types::serde_with_context::{DateFormat, SqlSerdeConfig, TimeFormat, TimestampFormat};
 pub use input::DeltaTableInputEndpoint;
 pub use output::DeltaTableWriter;
@@ -38,4 +38,9 @@ pub fn delta_input_serde_config() -> SqlSerdeConfig {
         .with_timestamp_format(TimestampFormat::String("%Y-%m-%dT%H:%M:%S%.f%Z"))
         .with_date_format(DateFormat::DaysSinceEpoch)
         .with_decimal_format(DecimalFormat::String)
+        // DeltaLake doesn't have a native UUID type. We assume that UUID
+        // is represented as a string. If a different representation is used, the user
+        // will have to deserialize into VARBINARY first. Alternatively, we can make
+        // this configurable.
+        .with_uuid_format(UuidFormat::String)
 }

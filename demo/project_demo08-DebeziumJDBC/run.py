@@ -12,11 +12,13 @@ import time
 import datetime
 import requests
 import argparse
+import uuid
 from plumbum.cmd import rpk
 import psycopg
 import random
 from feldera import PipelineBuilder, FelderaClient, Pipeline
 from typing import Dict
+
 
 # File locations
 SCRIPT_DIR = os.path.join(os.path.dirname(__file__))
@@ -242,10 +244,11 @@ create table test_table(
     f7 timestamp,
     f8 date,
     f9 binary,
-    f10 variant
+    f10 variant,
+    f11 uuid
 );
 
-create view test_view
+create materialized view test_view
 WITH (
     'connectors' = '[
     {{
@@ -331,6 +334,7 @@ def generate_inputs(pipeline: Pipeline):
                     "f8": date_time.strftime("%F"),
                     # "f9": list("bar".encode('utf-8')),
                     "f10": {"id": i + batch, "f1": True, "f2": "foo", "f4": 10.5},
+                    "f11": str(uuid.uuid4())
                 }
             )
         inserts = [{"insert": element} for element in data]

@@ -10,6 +10,11 @@
 #                -f deploy/docker-compose-extra.yml \
 #                up redpanda kafka-connect postgres --build --renew-anon-volumes --force-recreate
 # ```
+#
+# Example running the script with Feldera running locally (outside of docker compose):
+# ```bash
+# python3 run.py --kafka-url-from-pipeline=localhost:19092 --registry-url-from-pipeline=http://localhost:18081
+# ```
 
 import os
 import time
