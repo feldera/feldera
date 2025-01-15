@@ -1,5 +1,5 @@
 use crate::cd::Client;
-use crate::cli::{Cli, Commands};
+use crate::cli::{Cli, Commands, OutputFormat};
 use crate::{handle_errors_fatal, pipeline, UGPRADE_NOTICE};
 use clap::Parser;
 use directories::ProjectDirs;
@@ -40,7 +40,7 @@ materialized view.
 "#;
 
 /// Start an interactive shell for a pipeline.
-pub async fn shell(name: String, client: Client) {
+pub async fn shell(format: OutputFormat, name: String, client: Client) {
     let found_pipeline_name = client
         .list_pipelines()
         .send()
@@ -123,7 +123,7 @@ pub async fn shell(name: String, client: Client) {
                         match Cli::try_parse_from(&args) {
                             Ok(cli) => {
                                 if let Commands::Pipeline(pa) = cli.command {
-                                    Box::pin(pipeline(pa, client.clone())).await;
+                                    Box::pin(pipeline(format, pa, client.clone())).await;
                                 }
                             }
                             Err(e) => {
@@ -147,10 +147,14 @@ pub async fn shell(name: String, client: Client) {
 
                         // Print the SQL response, aborting if Ctrl+C is pressed
                         let mut req_handle = tokio::spawn(async move {
+                            let format = match format {
+                                OutputFormat::Text => "text",
+                                OutputFormat::Json => "json",
+                            };
                             match client
                                 .pipeline_adhoc_sql()
                                 .pipeline_name(name)
-                                .format("text")
+                                .format(format)
                                 .sql(trimmed_line)
                                 .send()
                                 .await
@@ -278,6 +282,10 @@ async fn handle_sql_response_error(err: Error<ErrorResponse>) {
         }
         Error::PreHookError(e) => {
             eprint!("ERROR: Unable to execute authentication pre-hook ({})", e);
+            eprintln!("{}", UGPRADE_NOTICE);
+        }
+        Error::PostHookError(e) => {
+            eprint!("ERROR: Unable to execute authentication post-hook ({})", e);
             eprintln!("{}", UGPRADE_NOTICE);
         }
     };

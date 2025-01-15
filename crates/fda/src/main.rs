@@ -9,9 +9,11 @@ use clap_complete::CompleteEnv;
 use feldera_types::config::{FtConfig, RuntimeConfig};
 use feldera_types::error::ErrorResponse;
 use futures_util::StreamExt;
+use json_to_table::json_to_table;
 use log::{debug, error, info, trace, warn};
 use reqwest::header::{HeaderMap, HeaderValue, InvalidHeaderValue};
 use reqwest::StatusCode;
+use serde_json::json;
 use tabled::builder::Builder;
 use tabled::settings::Style;
 use tempfile::tempfile;
@@ -235,12 +237,17 @@ fn handle_errors_fatal(
                 error!("Unable to execute authentication pre-hook ({})", e);
                 error!("{}", UGPRADE_NOTICE);
             }
+            Error::PostHookError(e) => {
+                eprintln!("{}: ", msg);
+                eprint!("ERROR: Unable to execute authentication post-hook ({})", e);
+                eprintln!("{}", UGPRADE_NOTICE);
+            }
         };
         std::process::exit(exit_code);
     })
 }
 
-async fn api_key_commands(action: ApiKeyActions, client: Client) {
+async fn api_key_commands(format: OutputFormat, action: ApiKeyActions, client: Client) {
     match action {
         ApiKeyActions::Create { name } => {
             debug!("Creating API key: {}", name);
@@ -255,7 +262,18 @@ async fn api_key_commands(action: ApiKeyActions, client: Client) {
                     1,
                 ))
                 .unwrap();
-            println!("API key '{}' created: {}", response.name, response.api_key);
+            match format {
+                OutputFormat::Text => {
+                    println!("API key '{}' created: {}", response.name, response.api_key);
+                }
+                OutputFormat::Json => {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&response.into_inner())
+                            .expect("Failed to serialize API key response")
+                    );
+                }
+            }
         }
         ApiKeyActions::Delete { name } => {
             debug!("Deleting API key: {}", name);
@@ -284,20 +302,31 @@ async fn api_key_commands(action: ApiKeyActions, client: Client) {
                     1,
                 ))
                 .unwrap();
-            let mut rows = vec![];
-            rows.push(["name".to_string(), "id".to_string()]);
-            for key in response.iter() {
-                rows.push([key.name.to_string(), key.id.0.to_string()]);
+            match format {
+                OutputFormat::Text => {
+                    let mut rows = vec![];
+                    rows.push(["name".to_string(), "id".to_string()]);
+                    for key in response.iter() {
+                        rows.push([key.name.to_string(), key.id.0.to_string()]);
+                    }
+                    println!(
+                        "{}",
+                        Builder::from_iter(rows).build().with(Style::rounded())
+                    );
+                }
+                OutputFormat::Json => {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&response.into_inner())
+                            .expect("Failed to serialize API key list")
+                    );
+                }
             }
-            println!(
-                "{}",
-                Builder::from_iter(rows).build().with(Style::rounded())
-            );
         }
     }
 }
 
-async fn pipelines(client: Client) {
+async fn pipelines(format: OutputFormat, client: Client) {
     debug!("Listing pipelines");
     let response = client
         .list_pipelines()
@@ -317,10 +346,21 @@ async fn pipelines(client: Client) {
             pipeline.deployment_status.to_string(),
         ]);
     }
-    println!(
-        "{}",
-        Builder::from_iter(rows).build().with(Style::rounded())
-    );
+    match format {
+        OutputFormat::Text => {
+            println!(
+                "{}",
+                Builder::from_iter(rows).build().with(Style::rounded())
+            );
+        }
+        OutputFormat::Json => {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&response.into_inner())
+                    .expect("Failed to serialize pipeline list")
+            );
+        }
+    }
 }
 
 fn patch_runtime_config(
@@ -483,7 +523,7 @@ async fn wait_for_status(
     }
 }
 
-async fn pipeline(action: PipelineAction, client: Client) {
+async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) {
     match action {
         PipelineAction::Create {
             name,
@@ -517,8 +557,19 @@ async fn pipeline(action: PipelineAction, client: Client) {
                         1,
                     ))
                     .unwrap();
-                println!("Pipeline created successfully.");
-                debug!("{:#?}", response);
+                match format {
+                    OutputFormat::Text => {
+                        println!("Pipeline created successfully.");
+                        debug!("{:#?}", response);
+                    }
+                    OutputFormat::Json => {
+                        println!(
+                            "{}",
+                            serde_json::to_string_pretty(&response.into_inner())
+                                .expect("Failed to serialize pipeline response")
+                        );
+                    }
+                }
             } else {
                 // Already reported error in read_program_code or read_file.
                 std::process::exit(1);
@@ -721,6 +772,7 @@ async fn pipeline(action: PipelineAction, client: Client) {
             }
 
             let _ = Box::pin(pipeline(
+                format,
                 PipelineAction::Start {
                     name,
                     recompile,
@@ -769,11 +821,23 @@ async fn pipeline(action: PipelineAction, client: Client) {
                     1,
                 ))
                 .unwrap();
-            println!(
-                "{}",
-                serde_json::to_string_pretty(response.as_ref())
-                    .expect("Failed to serialize pipeline stats")
-            );
+
+            match format {
+                OutputFormat::Text => {
+                    let table = json_to_table(&serde_json::Value::Object(response.into_inner()))
+                        .collapse()
+                        .into_pool_table()
+                        .to_string();
+                    println!("{}", table);
+                }
+                OutputFormat::Json => {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(response.as_ref())
+                            .expect("Failed to serialize pipeline stats")
+                    );
+                }
+            }
         }
         PipelineAction::Logs { name, watch } => {
             // The log endpoint is a stream that never ends. However, we want to be able for
@@ -847,11 +911,30 @@ async fn pipeline(action: PipelineAction, client: Client) {
                 ))
                 .unwrap();
 
-            println!(
-                "{}",
-                serde_json::to_string_pretty(&response.into_inner())
-                    .expect("Failed to serialize pipeline stats")
-            );
+            match format {
+                OutputFormat::Text => {
+                    let value = serde_json::to_value(json! {
+                        {
+                            "deployment_status": response.deployment_status,
+                            "deployment_status_since": response.deployment_status_since,
+                            "deployment_desired_status": response.deployment_desired_status.to_string(),
+                            "deployment_error": response.deployment_error,
+                            "program_status": response.program_status,
+                            "program_status_since": response.program_status_since,
+                        }
+                    })
+                    .unwrap();
+                    let table = json_to_table(&value).collapse().to_string();
+                    println!("{}", table);
+                }
+                OutputFormat::Json => {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&response.into_inner())
+                            .expect("Failed to serialize pipeline stats")
+                    );
+                }
+            }
         }
         PipelineAction::Config { name } => {
             let response = client
@@ -865,11 +948,20 @@ async fn pipeline(action: PipelineAction, client: Client) {
                     1,
                 ))
                 .unwrap();
-            println!(
-                "{}",
-                serde_json::to_string_pretty(&response.runtime_config)
-                    .expect("Failed to serialize pipeline stats")
-            );
+            match format {
+                OutputFormat::Text => {
+                    let value = serde_json::to_value(&response.runtime_config).unwrap();
+                    let table = json_to_table(&value).collapse().to_string();
+                    println!("{}", table);
+                }
+                OutputFormat::Json => {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&response.runtime_config)
+                            .expect("Failed to serialize pipeline stats")
+                    );
+                }
+            }
         }
         PipelineAction::SetConfig { name, key, value } => {
             let mut rc = client
@@ -914,14 +1006,23 @@ async fn pipeline(action: PipelineAction, client: Client) {
                     1,
                 ))
                 .unwrap();
-            println!("Runtime config updated successfully.");
-            println!(
-                "{}",
-                serde_json::to_string_pretty(&response.runtime_config)
-                    .expect("Failed to serialize pipeline stats")
-            );
+            match format {
+                OutputFormat::Text => {
+                    println!("Runtime config updated successfully.");
+                    let value = serde_json::to_value(&response.runtime_config).unwrap();
+                    let table = json_to_table(&value).collapse().to_string();
+                    println!("{}", table);
+                }
+                OutputFormat::Json => {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&response.runtime_config)
+                            .expect("Failed to serialize pipeline stats")
+                    );
+                }
+            }
         }
-        PipelineAction::Program { action } => program(action, client).await,
+        PipelineAction::Program { action } => program(format, action, client).await,
         PipelineAction::TableConnector {
             name,
             table_name,
@@ -1005,6 +1106,7 @@ async fn pipeline(action: PipelineAction, client: Client) {
             let client2 = client.clone();
             if start {
                 let _ = Box::pin(pipeline(
+                    format,
                     PipelineAction::Start {
                         name: name.clone(),
                         recompile: false,
@@ -1014,13 +1116,18 @@ async fn pipeline(action: PipelineAction, client: Client) {
                 ))
                 .await;
             }
-            shell(name, client2).await
+            shell(format, name, client2).await
         }
         PipelineAction::Query { name, sql, stdin } => {
+            let format = match format {
+                OutputFormat::Text => "text",
+                OutputFormat::Json => "json",
+            };
+
             let response = client
                 .pipeline_adhoc_sql()
                 .pipeline_name(name)
-                .format("text")
+                .format(format)
                 .sql(sql.unwrap_or_else(|| {
                     if stdin {
                         let mut program_code = String::new();
@@ -1109,7 +1216,7 @@ async fn table_connector(
     };
 }
 
-async fn program(action: ProgramAction, client: Client) {
+async fn program(format: OutputFormat, action: ProgramAction, client: Client) {
     match action {
         ProgramAction::Get {
             name,
@@ -1127,14 +1234,26 @@ async fn program(action: ProgramAction, client: Client) {
                     1,
                 ))
                 .unwrap();
-            if !udf_rs && !udf_toml {
-                println!("{}", response.program_code.clone().unwrap());
-            }
-            if udf_rs {
-                println!("{}", response.udf_rust.clone().unwrap());
-            }
-            if udf_toml {
-                println!("{}", response.udf_toml.clone().unwrap());
+
+            match format {
+                OutputFormat::Text => {
+                    if !udf_rs && !udf_toml {
+                        println!("{}", response.program_code.clone().unwrap());
+                    }
+                    if udf_rs {
+                        println!("{}", response.udf_rust.clone().unwrap());
+                    }
+                    if udf_toml {
+                        println!("{}", response.udf_toml.clone().unwrap());
+                    }
+                }
+                OutputFormat::Json => {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&response.into_inner())
+                            .expect("Failed to serialize pipeline stats")
+                    );
+                }
             }
         }
         ProgramAction::Config { name } => {
@@ -1149,11 +1268,20 @@ async fn program(action: ProgramAction, client: Client) {
                     1,
                 ))
                 .unwrap();
-            println!(
-                "{}",
-                serde_json::to_string_pretty(&response.program_config)
-                    .expect("Failed to serialize pipeline stats")
-            );
+            match format {
+                OutputFormat::Text => {
+                    let value = serde_json::to_value(&response.program_config).unwrap();
+                    let table = json_to_table(&value).collapse().to_string();
+                    println!("{}", table);
+                }
+                OutputFormat::Json => {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&response.program_config)
+                            .expect("Failed to serialize pipeline stats")
+                    );
+                }
+            }
         }
         ProgramAction::SetConfig { name, profile } => {
             let pp = PatchPipeline {
@@ -1168,7 +1296,7 @@ async fn program(action: ProgramAction, client: Client) {
                 }),
                 runtime_config: None,
             };
-            client
+            let response = client
                 .patch_pipeline()
                 .pipeline_name(name)
                 .body(pp)
@@ -1180,7 +1308,21 @@ async fn program(action: ProgramAction, client: Client) {
                     1,
                 ))
                 .unwrap();
-            println!("Program config updated successfully.");
+            match format {
+                OutputFormat::Text => {
+                    println!("Program config updated successfully.");
+                    let value = serde_json::to_value(&response.program_config).unwrap();
+                    let table = json_to_table(&value).collapse().to_string();
+                    println!("{}", table);
+                }
+                OutputFormat::Json => {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&response.program_config)
+                            .expect("Failed to serialize pipeline stats")
+                    );
+                }
+            }
         }
         ProgramAction::Status { name } => {
             let response = client
@@ -1194,10 +1336,24 @@ async fn program(action: ProgramAction, client: Client) {
                     1,
                 ))
                 .unwrap();
-            println!(
-                "{:#?} (version {}, last updated {})",
-                response.program_status, response.program_version.0, response.program_status_since
-            );
+
+            match format {
+                OutputFormat::Text => {
+                    println!(
+                        "{:#?} (version {}, last updated {})",
+                        response.program_status,
+                        response.program_version.0,
+                        response.program_status_since
+                    );
+                }
+                OutputFormat::Json => {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&response.into_inner())
+                            .expect("Failed to serialize pipeline stats")
+                    );
+                }
+            }
         }
         ProgramAction::Set {
             name,
@@ -1220,7 +1376,7 @@ async fn program(action: ProgramAction, client: Client) {
                     program_config: None,
                     runtime_config: None,
                 };
-                client
+                let response = client
                     .patch_pipeline()
                     .pipeline_name(name)
                     .body(pp)
@@ -1232,7 +1388,19 @@ async fn program(action: ProgramAction, client: Client) {
                         1,
                     ))
                     .unwrap();
-                println!("Program updated successfully.");
+
+                match format {
+                    OutputFormat::Text => {
+                        println!("Program updated successfully.");
+                    }
+                    OutputFormat::Json => {
+                        println!(
+                            "{}",
+                            serde_json::to_string_pretty(&response.into_inner())
+                                .expect("Failed to serialize pipeline stats")
+                        );
+                    }
+                }
             } else {
                 // Already reported error in read_program_code or read_file.
                 std::process::exit(1);
@@ -1241,7 +1409,7 @@ async fn program(action: ProgramAction, client: Client) {
     }
 }
 
-fn debug(action: DebugActions) {
+fn debug(_format: OutputFormat, action: DebugActions) {
     match action {
         DebugActions::MsgpCat { path } => {
             let mut file = match File::open(&path) {
@@ -1300,9 +1468,9 @@ async fn main() {
     };
 
     match cli.command {
-        Commands::Apikey { action } => api_key_commands(action, client()).await,
-        Commands::Pipelines => pipelines(client()).await,
-        Commands::Pipeline(action) => pipeline(action, client()).await,
-        Commands::Debug { action } => debug(action),
+        Commands::Apikey { action } => api_key_commands(cli.format, action, client()).await,
+        Commands::Pipelines => pipelines(cli.format, client()).await,
+        Commands::Pipeline(action) => pipeline(cli.format, action, client()).await,
+        Commands::Debug { action } => debug(cli.format, action),
     }
 }

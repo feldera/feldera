@@ -43,7 +43,10 @@ fn pipeline_names(current: &std::ffi::OsStr) -> Vec<CompletionCandidate> {
 pub struct Cli {
     #[command(subcommand)]
     pub command: Commands,
-    /// The format in which the output should be displayed.
+    /// The format in which the outputs from feldera should be displayed.
+    ///
+    /// Note that this flag may have no effect on some commands in case
+    /// the requested output format is not supported for it.
     #[arg(
         long,
         env = "FELDERA_OUTPUT_FORMAT",
@@ -91,10 +94,15 @@ pub struct Cli {
     pub timeout: Option<u64>,
 }
 
-#[derive(ValueEnum, Clone, Copy, Debug)]
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]
 #[value(rename_all = "snake_case")]
 pub enum OutputFormat {
+    /// Return the output in a human-readable text format.
     Text,
+    /// Return the output in JSON format.
+    ///
+    /// This usually corresponds to the exact response returned from the server.
+    Json,
 }
 
 #[derive(Subcommand)]
