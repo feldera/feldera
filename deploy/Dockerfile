@@ -3,6 +3,7 @@
 # as of now. This will change later.
 FROM ubuntu:24.04 AS base
 ENV DEBIAN_FRONTEND=noninteractive
+
 # These two environment variables are used to make openssl-sys pick
 # up libssl-dev and statically link it. Without it, our build defaults
 # to building a vendored version of OpenSSL.
@@ -77,6 +78,8 @@ RUN /root/.cargo/bin/cargo chef prepare --recipe-path recipe.json
 # layer for faster incremental builds of source-code only changes
 FROM chef AS builder
 ENV CARGO_INCREMENTAL=0
+# Making gcc, installed as a part of build-essentials, a default C compiler to build Rust dependencies
+ENV CC=gcc-13
 COPY --from=planner /app/recipe.json recipe.json
 RUN /root/.cargo/bin/cargo chef cook --release --recipe-path recipe.json --bin=pipeline-manager --features=pg-embed
 COPY Cargo.toml Cargo.toml
@@ -85,11 +88,10 @@ COPY crates crates
 RUN mkdir sql-to-dbsp-compiler || true
 COPY sql-to-dbsp-compiler/lib sql-to-dbsp-compiler/lib
 COPY --from=web-ui-builder /web-console/build web-console-build
-ENV WEBUI_BUILD_DIR=/app/web-console-out
 ENV WEBCONSOLE_BUILD_DIR=/app/web-console-build
 RUN /root/.cargo/bin/cargo build --release --bin=pipeline-manager --features=pg-embed
 
-# Java build can be performed in parallel
+# Java build can be performed in parallel. Outputs should be architecture independent
 FROM base AS javabuild
 RUN apt install maven git -y
 RUN mkdir sql

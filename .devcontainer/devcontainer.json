@@ -1,5 +1,5 @@
 {
-	"name": "DBSP",
+	"name": "Feldera dev",
 	"dockerComposeFile": [
 		"./docker-compose.devcontainer.yml",
 		"../deploy/docker-compose.yml"
@@ -8,7 +8,7 @@
 	"runServices": [
 		"redpanda"
 	],
-	"workspaceFolder": "/workspaces/dbsp",
+	"workspaceFolder": "/workspaces/feldera",
 	"shutdownAction": "stopCompose",
 	"customizations": {
 		"vscode": {
@@ -42,5 +42,5 @@
 	"mounts": [
 		"source=${localWorkspaceFolder},target=${containerWorkspaceFolder},type=bind"
 	],
-	"postCreateCommand": "chmod +x /workspaces/dbsp/.devcontainer/postCreate.sh && /workspaces/dbsp/.devcontainer/postCreate.sh"
+	"postCreateCommand": "bash /workspaces/feldera/.devcontainer/postCreate.sh"
 }
