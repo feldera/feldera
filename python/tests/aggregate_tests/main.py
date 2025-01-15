@@ -41,6 +41,8 @@ from tests.aggregate_tests.test_date_min import *  # noqa: F403
 from tests.aggregate_tests.test_date_tbl import *  # noqa: F403
 
 from tests.aggregate_tests.test_decimal_avg import *  # noqa: F403
+from tests.aggregate_tests.test_decimal_max import *  # noqa: F403
+from tests.aggregate_tests.test_decimal_min import *  # noqa: F403
 from tests.aggregate_tests.test_decimal_sum import *  # noqa: F403
 from tests.aggregate_tests.test_decimal_table import *  # noqa: F403
 from tests.aggregate_tests.test_every import *  # noqa: F403
