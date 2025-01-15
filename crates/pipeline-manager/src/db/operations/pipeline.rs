@@ -532,19 +532,19 @@ pub(crate) async fn set_program_status(
 ) -> Result<(), DBError> {
     let current = get_pipeline_by_id(txn, tenant_id, pipeline_id).await?;
 
-    // Pipeline program status update is only possible if it is shutdown.
-    // The desired status does not necessarily have to be shutdown,
-    // in order to accommodate the compilation during early start.
-    if current.deployment_status != PipelineStatus::Shutdown {
-        return Err(DBError::CannotUpdateProgramStatusOfNonShutdownPipeline);
-    }
-
     // Only if the program whose status is being transitioned is the same one can it be updated
     if current.program_version != program_version_guard {
         return Err(DBError::OutdatedProgramVersion {
             outdated_version: program_version_guard,
             latest_version: current.program_version,
         });
+    }
+
+    // Pipeline program status update is only possible if it is shutdown.
+    // The desired status does not necessarily have to be shutdown,
+    // in order to accommodate the compilation during early start.
+    if current.deployment_status != PipelineStatus::Shutdown {
+        return Err(DBError::CannotUpdateProgramStatusOfNonShutdownPipeline);
     }
 
     // Check that the transition from the current status to the new status is permitted
@@ -698,16 +698,26 @@ pub(crate) async fn set_deployment_desired_status(
 }
 
 /// Sets pipeline deployment status.
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn set_deployment_status(
     txn: &Transaction<'_>,
     tenant_id: TenantId,
     pipeline_id: PipelineId,
+    version_guard: Version,
     new_deployment_status: PipelineStatus,
     new_deployment_error: Option<ErrorResponse>,
     new_deployment_config: Option<serde_json::Value>,
     new_deployment_location: Option<String>,
 ) -> Result<(), DBError> {
     let current = get_pipeline_by_id(txn, tenant_id, pipeline_id).await?;
+
+    // Use the version guard to check that the deployment is the intended one
+    if current.version != version_guard {
+        return Err(DBError::OutdatedPipelineVersion {
+            outdated_version: version_guard,
+            latest_version: current.version,
+        });
+    }
 
     // Due to early start, the following do not require a successfully compiled program:
     // (1) Shutdown -> Failed

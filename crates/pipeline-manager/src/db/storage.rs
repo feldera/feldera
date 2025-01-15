@@ -277,6 +277,7 @@ pub(crate) trait Storage {
         &self,
         tenant_id: TenantId,
         pipeline_id: PipelineId,
+        version_guard: Version,
         deployment_config: serde_json::Value,
     ) -> Result<(), DBError>;
 
@@ -285,6 +286,7 @@ pub(crate) trait Storage {
         &self,
         tenant_id: TenantId,
         pipeline_id: PipelineId,
+        version_guard: Version,
         deployment_location: &str,
     ) -> Result<(), DBError>;
 
@@ -293,6 +295,7 @@ pub(crate) trait Storage {
         &self,
         tenant_id: TenantId,
         pipeline_id: PipelineId,
+        version_guard: Version,
     ) -> Result<(), DBError>;
 
     /// Transitions deployment status to `Paused`.
@@ -300,6 +303,7 @@ pub(crate) trait Storage {
         &self,
         tenant_id: TenantId,
         pipeline_id: PipelineId,
+        version_guard: Version,
     ) -> Result<(), DBError>;
 
     /// Transitions deployment status to `Unavailable`.
@@ -307,6 +311,7 @@ pub(crate) trait Storage {
         &self,
         tenant_id: TenantId,
         pipeline_id: PipelineId,
+        version_guard: Version,
     ) -> Result<(), DBError>;
 
     /// Transitions deployment status to `ShuttingDown`.
@@ -314,6 +319,7 @@ pub(crate) trait Storage {
         &self,
         tenant_id: TenantId,
         pipeline_id: PipelineId,
+        version_guard: Version,
     ) -> Result<(), DBError>;
 
     /// Transitions deployment status to `Shutdown`.
@@ -321,6 +327,7 @@ pub(crate) trait Storage {
         &self,
         tenant_id: TenantId,
         pipeline_id: PipelineId,
+        version_guard: Version,
     ) -> Result<(), DBError>;
 
     /// Transitions deployment status to `Failed`.
@@ -328,6 +335,7 @@ pub(crate) trait Storage {
         &self,
         tenant_id: TenantId,
         pipeline_id: PipelineId,
+        version_guard: Version,
         deployment_error: &ErrorResponse,
     ) -> Result<(), DBError>;
 
