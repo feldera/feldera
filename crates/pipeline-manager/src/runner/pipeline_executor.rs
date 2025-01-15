@@ -1,5 +1,5 @@
-use crate::db::types::common::Version;
 use crate::db::types::pipeline::PipelineId;
+use crate::db::types::version::Version;
 use crate::error::ManagerError;
 use crate::runner::logs_buffer::LogsBuffer;
 use async_trait::async_trait;

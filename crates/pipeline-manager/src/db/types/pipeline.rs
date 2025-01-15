@@ -1,8 +1,7 @@
 use crate::db::error::DBError;
-use crate::db::types::common::Version;
-use crate::db::types::program::{ProgramConfig, ProgramInfo, ProgramStatus};
+use crate::db::types::program::ProgramStatus;
+use crate::db::types::version::Version;
 use chrono::{DateTime, Utc};
-use feldera_types::config::{PipelineConfig, RuntimeConfig};
 use feldera_types::error::ErrorResponse;
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -259,7 +258,7 @@ impl TryFrom<String> for PipelineDesiredStatus {
             "shutdown" => Ok(Self::Shutdown),
             "paused" => Ok(Self::Paused),
             "running" => Ok(Self::Running),
-            _ => Err(DBError::invalid_pipeline_status(value)),
+            _ => Err(DBError::invalid_desired_pipeline_status(value)),
         }
     }
 }
@@ -373,7 +372,7 @@ pub struct PipelineDescr {
     pub description: String,
 
     /// Pipeline runtime configuration.
-    pub runtime_config: RuntimeConfig,
+    pub runtime_config: serde_json::Value,
 
     /// Program SQL code.
     pub program_code: String,
@@ -385,7 +384,7 @@ pub struct PipelineDescr {
     pub udf_toml: String,
 
     /// Program compilation configuration.
-    pub program_config: ProgramConfig,
+    pub program_config: serde_json::Value,
 }
 
 /// Pipeline descriptor which besides the basic fields in direct regular control of the user
@@ -412,7 +411,7 @@ pub struct ExtendedPipelineDescr {
     pub platform_version: String,
 
     /// Pipeline runtime configuration.
-    pub runtime_config: RuntimeConfig,
+    pub runtime_config: serde_json::Value,
 
     /// Program SQL code.
     pub program_code: String,
@@ -424,7 +423,7 @@ pub struct ExtendedPipelineDescr {
     pub udf_toml: String,
 
     /// Program compilation configuration.
-    pub program_config: ProgramConfig,
+    pub program_config: serde_json::Value,
 
     /// Program version, incremented every time program_code, udf_rust,
     /// udf_toml, program_config or platform_version is modified.
@@ -439,7 +438,7 @@ pub struct ExtendedPipelineDescr {
     /// Program information which includes schema, input connectors and output connectors.
     /// It is set once SQL compilation has been successfully completed
     /// (i.e., the `program_status` field reaches >= `ProgramStatus::SqlCompiled`).
-    pub program_info: Option<ProgramInfo>,
+    pub program_info: Option<serde_json::Value>,
 
     /// Combined checksum of all the inputs that influenced Rust compilation to a binary.
     pub program_binary_source_checksum: Option<String>,
@@ -469,7 +468,7 @@ pub struct ExtendedPipelineDescr {
     pub deployment_error: Option<ErrorResponse>,
 
     // Pipeline deployment configuration.
-    pub deployment_config: Option<PipelineConfig>,
+    pub deployment_config: Option<serde_json::Value>,
 
     /// Location where the pipeline can be reached at runtime
     /// (e.g., a TCP port number or a URI).

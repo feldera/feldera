@@ -1,7 +1,8 @@
-use crate::db::types::common::Version;
 use crate::db::types::pipeline::{PipelineDesiredStatus, PipelineId, PipelineStatus};
 use crate::db::types::program::ProgramStatus;
 use crate::db::types::tenant::TenantId;
+use crate::db::types::utils::ValidationError;
+use crate::db::types::version::Version;
 use actix_web::{
     body::BoxBody, http::StatusCode, HttpResponse, HttpResponseBuilder, ResponseError,
 };
@@ -38,13 +39,6 @@ pub enum DBError {
         error: Box<pg_embed::pg_errors::PgEmbedError>,
         backtrace: Backtrace,
     },
-    // Catch-all error for unexpected invalid data extracted from the database.
-    // This error is thrown when deserialization fails.
-    #[serde(serialize_with = "serialize_invalid_data")]
-    InvalidData {
-        error: String,
-        backtrace: Backtrace,
-    },
     #[serde(serialize_with = "serialize_invalid_program_status")]
     InvalidProgramStatus {
         status: String,
@@ -54,6 +48,38 @@ pub enum DBError {
     InvalidPipelineStatus {
         status: String,
         backtrace: Backtrace,
+    },
+    #[serde(serialize_with = "serialize_invalid_desired_pipeline_status")]
+    InvalidDesiredPipelineStatus {
+        status: String,
+        backtrace: Backtrace,
+    },
+    InvalidJsonData {
+        data: String,
+        error: String,
+    },
+    InvalidRuntimeConfig {
+        value: serde_json::Value,
+        error: ValidationError,
+    },
+    InvalidProgramConfig {
+        value: serde_json::Value,
+        error: ValidationError,
+    },
+    InvalidProgramInfo {
+        value: serde_json::Value,
+        error: ValidationError,
+    },
+    InvalidDeploymentConfig {
+        value: serde_json::Value,
+        error: ValidationError,
+    },
+    InvalidErrorResponse {
+        value: serde_json::Value,
+        error: String,
+    },
+    FailedToSerializeErrorResponse {
+        error: String,
     },
     #[serde(serialize_with = "serialize_unique_key_violation")]
     UniqueKeyViolation {
@@ -103,9 +129,6 @@ pub enum DBError {
         outdated_version: Version,
         latest_version: Version,
     },
-    InvalidConnectorTransport {
-        reason: String,
-    },
     StartFailedDueToFailedCompilation {
         compiler_error: String,
     },
@@ -130,12 +153,6 @@ pub enum DBError {
 }
 
 impl DBError {
-    pub fn invalid_data(error: String) -> Self {
-        Self::InvalidData {
-            error,
-            backtrace: Backtrace::capture(),
-        }
-    }
     pub fn invalid_program_status(status: String) -> Self {
         Self::InvalidProgramStatus {
             status,
@@ -144,6 +161,12 @@ impl DBError {
     }
     pub fn invalid_pipeline_status(status: String) -> Self {
         Self::InvalidPipelineStatus {
+            status,
+            backtrace: Backtrace::capture(),
+        }
+    }
+    pub fn invalid_desired_pipeline_status(status: String) -> Self {
+        Self::InvalidDesiredPipelineStatus {
             status,
             backtrace: Backtrace::capture(),
         }
@@ -218,22 +241,8 @@ where
     ser.end()
 }
 
-fn serialize_invalid_data<S>(
-    error: &String,
-    backtrace: &Backtrace,
-    serializer: S,
-) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    let mut ser = serializer.serialize_struct("InvalidData", 2)?;
-    ser.serialize_field("error", error)?;
-    ser.serialize_field("backtrace", &backtrace.to_string())?;
-    ser.end()
-}
-
 fn serialize_invalid_program_status<S>(
-    error: &String,
+    status: &String,
     backtrace: &Backtrace,
     serializer: S,
 ) -> Result<S::Ok, S::Error>
@@ -241,7 +250,7 @@ where
     S: Serializer,
 {
     let mut ser = serializer.serialize_struct("InvalidProgramStatus", 2)?;
-    ser.serialize_field("error", error)?;
+    ser.serialize_field("status", status)?;
     ser.serialize_field("backtrace", &backtrace.to_string())?;
     ser.end()
 }
@@ -255,6 +264,20 @@ where
     S: Serializer,
 {
     let mut ser = serializer.serialize_struct("InvalidPipelineStatus", 2)?;
+    ser.serialize_field("status", &status.to_string())?;
+    ser.serialize_field("backtrace", &backtrace.to_string())?;
+    ser.end()
+}
+
+fn serialize_invalid_desired_pipeline_status<S>(
+    status: &String,
+    backtrace: &Backtrace,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    let mut ser = serializer.serialize_struct("InvalidDesiredPipelineStatus", 2)?;
     ser.serialize_field("status", &status.to_string())?;
     ser.serialize_field("backtrace", &backtrace.to_string())?;
     ser.end()
@@ -336,14 +359,53 @@ impl Display for DBError {
             DBError::PgEmbedError { error, .. } => {
                 write!(f, "PG-embed error: '{error}'")
             }
-            DBError::InvalidData { error, .. } => {
-                write!(f, "Invalid database data '{error}'")
-            }
             DBError::InvalidProgramStatus { status, .. } => {
-                write!(f, "Invalid program status string '{status}'")
+                write!(f, "String '{status}' is not a valid program status")
             }
             DBError::InvalidPipelineStatus { status, .. } => {
-                write!(f, "Invalid pipeline status string '{status}'")
+                write!(f, "String '{status}' is not a valid deployment status")
+            }
+            DBError::InvalidDesiredPipelineStatus { status, .. } => {
+                write!(
+                    f,
+                    "String '{status}' is not a valid desired deployment status"
+                )
+            }
+            DBError::InvalidJsonData { data, error, .. } => {
+                write!(
+                    f,
+                    "String data:\n{data}\n\n... is not valid JSON due to: {error}"
+                )
+            }
+            DBError::InvalidRuntimeConfig { value, error } => {
+                write!(
+                    f,
+                    "JSON for 'runtime_config' field:\n{value:#}\n\n... is not valid due to: {error}"
+                )
+            }
+            DBError::InvalidProgramConfig { value, error } => {
+                write!(
+                    f,
+                    "JSON for 'program_config' field:\n{value:#}\n\n... is not valid due to: {error}"
+                )
+            }
+            DBError::InvalidProgramInfo { value, error } => {
+                write!(
+                    f,
+                    "JSON for 'program_info' field:\n{value:#}\n\n... is not valid due to: {error}"
+                )
+            }
+            DBError::InvalidDeploymentConfig { value, error } => {
+                write!(
+                    f,
+                    "JSON for 'deployment_config' field:\n{value:#}\n\n... is not valid due to: {error}"
+                )
+            }
+            DBError::InvalidErrorResponse { value, error } => {
+                write!(f, "JSON for 'deployment_error' field:\n{value:#}\n\n... is not valid due to: {error}")
+            }
+            DBError::FailedToSerializeErrorResponse { error } => {
+                write!(f, "Unable to serialize error response for 'deployment_error' field as JSON due to: {error}")
             }
             DBError::UniqueKeyViolation { constraint, .. } => {
                 write!(f, "Unique key violation for '{constraint}'")
@@ -415,9 +477,6 @@ impl Display for DBError {
                     "Program version ({outdated_version}) is outdated by latest ({latest_version})"
                 )
             }
-            DBError::InvalidConnectorTransport { reason } => {
-                write!(f, "Invalid connector transport: '{reason}'")
-            }
             DBError::StartFailedDueToFailedCompilation { .. } => {
                 write!(
                     f,
@@ -474,9 +533,18 @@ impl DetailedError for DBError {
             Self::PostgresMigrationError { .. } => Cow::from("PostgresMigrationError"),
             #[cfg(feature = "pg-embed")]
             Self::PgEmbedError { .. } => Cow::from("PgEmbedError"),
-            Self::InvalidData { .. } => Cow::from("InvalidData"),
             Self::InvalidProgramStatus { .. } => Cow::from("InvalidProgramStatus"),
             Self::InvalidPipelineStatus { .. } => Cow::from("InvalidPipelineStatus"),
+            Self::InvalidDesiredPipelineStatus { .. } => Cow::from("InvalidDesiredPipelineStatus"),
+            Self::InvalidJsonData { .. } => Cow::from("InvalidJsonData"),
+            Self::InvalidRuntimeConfig { .. } => Cow::from("InvalidRuntimeConfig"),
+            Self::InvalidProgramConfig { .. } => Cow::from("InvalidProgramConfig"),
+            Self::InvalidProgramInfo { .. } => Cow::from("InvalidProgramInfo"),
+            Self::InvalidDeploymentConfig { .. } => Cow::from("InvalidDeploymentConfig"),
+            Self::InvalidErrorResponse { .. } => Cow::from("InvalidErrorResponse"),
+            Self::FailedToSerializeErrorResponse { .. } => {
+                Cow::from("FailedToSerializeErrorResponse")
+            }
             Self::UniqueKeyViolation { .. } => Cow::from("UniqueKeyViolation"),
             Self::DuplicateKey { .. } => Cow::from("DuplicateKey"),
             Self::MissingMigrations { .. } => Cow::from("MissingMigrations"),
@@ -502,7 +570,6 @@ impl DetailedError for DBError {
                 Cow::from("CannotRenameNonExistingPipeline")
             }
             Self::OutdatedProgramVersion { .. } => Cow::from("OutdatedProgramVersion"),
-            Self::InvalidConnectorTransport { .. } => Cow::from("InvalidConnectorTransport"),
             Self::StartFailedDueToFailedCompilation { .. } => {
                 Cow::from("StartFailedDueToFailedCompilation")
             }
@@ -532,9 +599,16 @@ impl ResponseError for DBError {
             Self::PostgresMigrationError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             #[cfg(feature = "pg-embed")]
             Self::PgEmbedError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
-            Self::InvalidData { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::InvalidProgramStatus { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::InvalidPipelineStatus { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::InvalidDesiredPipelineStatus { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::InvalidJsonData { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::InvalidRuntimeConfig { .. } => StatusCode::BAD_REQUEST,
+            Self::InvalidProgramConfig { .. } => StatusCode::BAD_REQUEST,
+            Self::InvalidProgramInfo { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::InvalidDeploymentConfig { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::InvalidErrorResponse { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::FailedToSerializeErrorResponse { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::UniqueKeyViolation { .. } => StatusCode::INTERNAL_SERVER_ERROR, // UUID conflict
             Self::DuplicateKey { .. } => StatusCode::INTERNAL_SERVER_ERROR, // This error should never bubble up till here
             Self::MissingMigrations { .. } => StatusCode::INTERNAL_SERVER_ERROR,
@@ -552,7 +626,6 @@ impl ResponseError for DBError {
             Self::CannotDeleteNonShutdownPipeline { .. } => StatusCode::BAD_REQUEST,
             Self::CannotRenameNonExistingPipeline { .. } => StatusCode::BAD_REQUEST,
             Self::OutdatedProgramVersion { .. } => StatusCode::CONFLICT,
-            Self::InvalidConnectorTransport { .. } => StatusCode::BAD_REQUEST,
             Self::StartFailedDueToFailedCompilation { .. } => StatusCode::BAD_REQUEST,
             Self::TransitionRequiresCompiledProgram { .. } => StatusCode::INTERNAL_SERVER_ERROR, // Runner error
             Self::InvalidProgramStatusTransition { .. } => StatusCode::INTERNAL_SERVER_ERROR, // Compiler error

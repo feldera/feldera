@@ -8,10 +8,11 @@ use crate::config::{CommonConfig, CompilerConfig};
 use crate::db::error::DBError;
 use crate::db::storage::Storage;
 use crate::db::storage_postgres::StoragePostgres;
-use crate::db::types::common::Version;
 use crate::db::types::pipeline::PipelineId;
 use crate::db::types::program::{CompilationProfile, ProgramConfig};
 use crate::db::types::tenant::TenantId;
+use crate::db::types::utils::{validate_program_config, validate_program_info};
+use crate::db::types::version::Version;
 use indoc::formatdoc;
 use log::{debug, error, info, trace, warn};
 use openssl::sha;
@@ -168,9 +169,6 @@ async fn attempt_end_to_end_rust_compilation(
         .await?;
 
     // (4) Perform Rust compilation
-    let program_info = pipeline
-        .program_info
-        .expect("program_info must be present if status is SqlCompiled");
     let compilation_result = perform_rust_compilation(
         common_config,
         config,
@@ -180,8 +178,7 @@ async fn attempt_end_to_end_rust_compilation(
         &pipeline.platform_version,
         pipeline.program_version,
         &pipeline.program_config,
-        &program_info.main_rust,
-        &program_info.udf_stubs,
+        &pipeline.program_info,
         &pipeline.udf_rust,
         &pipeline.udf_toml,
     )
@@ -373,9 +370,8 @@ pub async fn perform_rust_compilation(
     pipeline_id: PipelineId,
     platform_version: &str,
     program_version: Version,
-    program_config: &ProgramConfig,
-    main_rust: &str,
-    udf_stubs: &str,
+    program_config: &serde_json::Value,
+    program_info: &Option<serde_json::Value>,
     udf_rust: &str,
     udf_toml: &str,
 ) -> Result<(String, String, String, Duration, bool), RustCompilationError> {
@@ -390,6 +386,42 @@ pub async fn perform_rust_compilation(
         )));
     }
 
+    // Program configuration
+    let program_config = validate_program_config(program_config, true).map_err(|error| {
+        RustCompilationError::SystemError(formatdoc! {"
+                The program configuration:
+                {program_config:#}
+
+                ... is not valid due to: {error}.
+
+                This indicates a backward-incompatible platform upgrade occurred.
+                Update the 'program_config' field of the pipeline to resolve this.
+            "})
+    })?;
+
+    // Program info
+    let program_info = match program_info {
+        None => {
+            return Err(RustCompilationError::SystemError(
+                "Unable to Rust compile pipeline program because its program information is missing".to_string()
+            ));
+        }
+        Some(program_info) => program_info.clone(),
+    };
+    let program_info = validate_program_info(&program_info).map_err(|error| {
+        RustCompilationError::SystemError(formatdoc! {"
+                The program information:
+                {program_info:#}
+
+                ... is not valid due to: {error}.
+
+                This indicates a backward-incompatible platform upgrade occurred.
+                Recompile the pipeline to resolve this.
+            "})
+    })?;
+    let main_rust = program_info.main_rust.clone();
+    let udf_stubs = program_info.udf_stubs.clone();
+
     // Compilation profile is the one specified by the program configuration,
     // and if it is not, defaults to the one provided in the compiler arguments.
     let profile = program_config
@@ -402,9 +434,9 @@ pub async fn perform_rust_compilation(
         platform_version,
         &profile,
         config,
-        program_config,
-        main_rust,
-        udf_stubs,
+        &program_config,
+        &main_rust,
+        &udf_stubs,
         udf_rust,
         udf_toml,
     );
@@ -426,8 +458,8 @@ pub async fn perform_rust_compilation(
         prepare_project(
             config,
             &source_checksum,
-            main_rust,
-            udf_stubs,
+            &main_rust,
+            &udf_stubs,
             udf_rust,
             udf_toml,
         )

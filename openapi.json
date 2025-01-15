@@ -6,7 +6,7 @@
     "license": {
       "name": "MIT OR Apache-2.0"
     },
-    "version": "0.34.1"
+    "version": "0.34.1-b1"
   },
   "paths": {
     "/config": {
@@ -2426,6 +2426,26 @@
           "error_if_exists"
         ]
       },
+      "DeltaTableWriterConfig": {
+        "type": "object",
+        "description": "Delta table output connector configuration.",
+        "required": [
+          "uri"
+        ],
+        "properties": {
+          "mode": {
+            "$ref": "#/components/schemas/DeltaTableWriteMode"
+          },
+          "uri": {
+            "type": "string",
+            "description": "Table URI."
+          }
+        },
+        "additionalProperties": {
+          "type": "string",
+          "description": "Storage options for configuring backend object store.\n\nFor specific options available for different storage backends, see:\n* [Azure options](https://docs.rs/object_store/latest/object_store/azure/enum.AzureConfigKey.html)\n* [Amazon S3 options](https://docs.rs/object_store/latest/object_store/aws/enum.AmazonS3ConfigKey.html)\n* [Google Cloud Storage options](https://docs.rs/object_store/latest/object_store/gcp/enum.GoogleConfigKey.html)"
+        }
+      },
       "Demo": {
         "type": "object",
         "required": [
@@ -3322,7 +3342,7 @@
       },
       "PipelineInfo": {
         "type": "object",
-        "description": "Pipeline information.",
+        "description": "Pipeline information.\nIt both includes fields which are user-provided and system-generated.",
         "required": [
           "id",
           "name",
@@ -3417,7 +3437,7 @@
       },
       "PipelineSelectedInfo": {
         "type": "object",
-        "description": "Pipeline information which has a selected subset of optional fields.\nIf an optional field is not selected (i.e., is `None`), it will not be serialized.",
+        "description": "Pipeline information which has a selected subset of optional fields.\nIt both includes fields which are user-provided and system-generated.\nIf an optional field is not selected (i.e., is `None`), it will not be serialized.",
         "required": [
           "id",
           "name",
@@ -3534,7 +3554,7 @@
       },
       "PostPutPipeline": {
         "type": "object",
-        "description": "Create a new pipeline (POST), or fully update an existing pipeline (PUT).\nLeft-out fields will be set to their default value.",
+        "description": "Create a new pipeline (POST), or fully update an existing pipeline (PUT).\nFields which are optional and not provided will be set to their empty type value\n(for strings: an empty string `\"\"`, for objects: an empty dictionary `{}`).",
         "required": [
           "name",
           "program_code"

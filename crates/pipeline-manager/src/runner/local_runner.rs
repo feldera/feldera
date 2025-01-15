@@ -3,15 +3,15 @@
 
 use crate::common_error::CommonError;
 use crate::config::LocalRunnerConfig;
-use crate::db::types::common::Version;
 use crate::db::types::pipeline::PipelineId;
+use crate::db::types::version::Version;
 use crate::error::ManagerError;
 use crate::runner::error::RunnerError;
 use crate::runner::logs_buffer::LogsBuffer;
 use crate::runner::pipeline_executor::{LogMessage, PipelineExecutor};
 use async_trait::async_trait;
 use feldera_types::config::{PipelineConfig, StorageCacheConfig, StorageConfig};
-use log::{debug, error, info};
+use log::{debug, error};
 use reqwest::StatusCode;
 use std::path::Path;
 use std::process::Stdio;
@@ -201,7 +201,7 @@ impl LocalRunner {
                     // Terminate
                     _ = &mut terminate_receiver => {
                         Self::end_log_of_followers(&mut log_followers, LogMessage::End("LOG STREAM END: pipeline is being shutdown".to_string())).await;
-                        debug!("Terminating logging by request");
+                        debug!("Logs ended: pipeline {pipeline_id} -- terminating logging by request");
                         break;
                     }
                     // New follower
@@ -212,7 +212,7 @@ impl LocalRunner {
                             // The automata cannot recover from this as this is the only method to receive log followers from the runner.
                             // Operational logging should not be active when the pipeline is shutdown, and only if the pipeline is
                             // shutdown should it be deleted (which would cause this). As such, this is an error.
-                            error!("Log request channel closed during operational logging. Logs for this pipeline will no longer work.");
+                            error!("Logs failed: pipeline {pipeline_id} -- request channel closed during operational logging. Logs for this pipeline will no longer work.");
                             break;
                         }
                     }
@@ -225,7 +225,7 @@ impl LocalRunner {
                                     if stderr_finished {
                                         let explanation = "stdout and stderr are finished";
                                         Self::end_log_of_followers(&mut log_followers, LogMessage::End(format!("LOG STREAM END: {explanation}"))).await;
-                                        info!("Logs of pipeline {pipeline_id} ended: {explanation}");
+                                        debug!("Logs ended: pipeline {pipeline_id} -- {explanation}");
                                         break;
                                     }
                                 }
@@ -237,7 +237,7 @@ impl LocalRunner {
                             Err(e) => {
                                 let explanation = format!("stdout experienced I/O error. Logs for this pipeline until restarted will no longer work. Error: {e}");
                                 Self::end_log_of_followers(&mut log_followers, LogMessage::End(format!("LOG STREAM END: {explanation}"))).await;
-                                error!("Logs of pipeline {pipeline_id} ended incorrectly: {explanation}");
+                                error!("Logs ended (unexpected): pipeline {pipeline_id} -- {explanation}");
                                 break;
                             }
                         }
@@ -251,7 +251,7 @@ impl LocalRunner {
                                     if stdout_finished {
                                         let explanation = "stdout and stderr are finished";
                                         Self::end_log_of_followers(&mut log_followers, LogMessage::End(format!("LOG STREAM END: {explanation}"))).await;
-                                        info!("Logs of pipeline {pipeline_id} ended: {explanation}");
+                                        debug!("Logs ended: pipeline {pipeline_id} -- {explanation}");
                                         break;
                                     }
                                 }
@@ -263,7 +263,7 @@ impl LocalRunner {
                             Err(e) => {
                                 let explanation = format!("stderr experienced I/O error. Logs for this pipeline until restarted will no longer work. Error: {e}");
                                 Self::end_log_of_followers(&mut log_followers, LogMessage::End(format!("LOG STREAM END: {explanation}"))).await;
-                                error!("Logs of pipeline {pipeline_id} ended incorrectly: {explanation}");
+                                error!("Logs ended (unexpected): {pipeline_id} -- {explanation}");
                                 break;
                             }
                         }

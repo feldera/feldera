@@ -212,7 +212,7 @@ mod test {
         db::storage::Storage,
         db_notifier::{DbNotification, Operation},
     };
-    use feldera_types::config::RuntimeConfig;
+    use serde_json::json;
     use std::sync::Arc;
     use uuid::Uuid;
 
@@ -236,14 +236,15 @@ mod test {
                     PipelineDescr {
                         name: format!("example{i}"),
                         description: "Description of example".to_string(),
-                        runtime_config: RuntimeConfig::from_yaml(""),
+                        runtime_config: json!({}),
                         program_code: "CREATE TABLE example ( col1 INT );".to_string(),
                         udf_rust: "".to_string(),
                         udf_toml: "".to_string(),
-                        program_config: ProgramConfig {
+                        program_config: serde_json::to_value(ProgramConfig {
                             profile: Some(CompilationProfile::Unoptimized),
                             cache: true,
-                        },
+                        })
+                        .unwrap(),
                     },
                 )
                 .await
@@ -316,14 +317,15 @@ mod test {
                 PipelineDescr {
                     name: "example1".to_string(),
                     description: "Description of example1".to_string(),
-                    runtime_config: RuntimeConfig::from_yaml(""),
+                    runtime_config: json!({}),
                     program_code: "CREATE TABLE example1 ( col1 INT );".to_string(),
                     udf_rust: "".to_string(),
                     udf_toml: "".to_string(),
-                    program_config: ProgramConfig {
+                    program_config: serde_json::to_value(ProgramConfig {
                         profile: Some(CompilationProfile::Unoptimized),
                         cache: true,
-                    },
+                    })
+                    .unwrap(),
                 },
             )
             .await

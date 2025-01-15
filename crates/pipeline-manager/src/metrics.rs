@@ -78,12 +78,9 @@ async fn metrics(
         // Get the metrics for all running pipelines,
         // don't write anything if the request fails.
         if pipeline.deployment_status == PipelineStatus::Running {
-            let location = pipeline.deployment_location.ok_or(
-                RunnerError::PipelineMissingDeploymentLocation {
-                    pipeline_id: pipeline.id,
-                    pipeline_name: pipeline.name.clone(),
-                },
-            )?;
+            let location = pipeline
+                .deployment_location
+                .ok_or(RunnerError::PipelineMissingDeploymentLocation)?;
             if let Ok((_url, response)) = RunnerInteraction::http_request_to_pipeline(
                 pipeline.id,
                 Some(pipeline.name.clone()),

@@ -2,21 +2,48 @@ use crate::db::error::DBError;
 use crate::db::operations::utils::{
     maybe_tenant_id_foreign_key_constraint_err, maybe_unique_violation,
 };
-use crate::db::types::common::{validate_name, Version};
 use crate::db::types::pipeline::{
     validate_deployment_desired_status_transition, validate_deployment_status_transition,
     ExtendedPipelineDescr, ExtendedPipelineDescrMonitoring, PipelineDescr, PipelineDesiredStatus,
     PipelineId, PipelineStatus,
 };
-use crate::db::types::program::{
-    validate_program_status_transition, ProgramConfig, ProgramInfo, ProgramStatus,
-};
+use crate::db::types::program::{validate_program_status_transition, ProgramStatus};
 use crate::db::types::tenant::TenantId;
+use crate::db::types::utils::{
+    validate_deployment_config, validate_name, validate_program_config, validate_program_info,
+    validate_runtime_config,
+};
+use crate::db::types::version::Version;
 use deadpool_postgres::Transaction;
-use feldera_types::config::{PipelineConfig, RuntimeConfig};
 use feldera_types::error::ErrorResponse;
 use tokio_postgres::Row;
 use uuid::Uuid;
+
+/// Parses string as a JSON value.
+fn deserialize_json_value(s: &str) -> Result<serde_json::Value, DBError> {
+    serde_json::from_str::<serde_json::Value>(s).map_err(|e| DBError::InvalidJsonData {
+        data: s.to_string(),
+        error: format!("unable to deserialize data string as JSON due to: {e}"),
+    })
+}
+
+/// Serializes the [`ErrorResponse`] as a string of JSON.
+fn serialize_error_response(error_response: &ErrorResponse) -> Result<String, DBError> {
+    serde_json::to_string(error_response).map_err(|e| DBError::FailedToSerializeErrorResponse {
+        error: e.to_string(),
+    })
+}
+
+/// Deserializes the string of JSON as an [`ErrorResponse`].
+fn deserialize_error_response(s: &str) -> Result<ErrorResponse, DBError> {
+    let json_value = deserialize_json_value(s)?;
+    let error_response: ErrorResponse =
+        serde_json::from_value(json_value.clone()).map_err(|e| DBError::InvalidErrorResponse {
+            value: json_value,
+            error: e.to_string(),
+        })?;
+    Ok(error_response)
+}
 
 /// All pipeline columns.
 const RETRIEVE_PIPELINE_COLUMNS: &str =
@@ -28,11 +55,29 @@ const RETRIEVE_PIPELINE_COLUMNS: &str =
      p.deployment_error, p.deployment_config, p.deployment_location";
 
 /// Converts a pipeline table row to its extended descriptor with all fields.
+///
+/// Backward compatibility:
+/// - Fields `runtime_config`, `program_config`, `program_info`, and `deployment_config`
+///   are deserialized as JSON values -- they are not deserialized as their actual types.
+///   Backward incompatible changes in those actual types will not prevent retrieval of
+///   pipelines as long as they are serialized as valid JSON.
+/// - All other fields are deserialized as their actual types.
+///   Backwards incompatible changes therein will prevent retrieval of pipelines
+///   because an error will be returned instead.
 fn row_to_extended_pipeline_descriptor(row: &Row) -> Result<ExtendedPipelineDescr, DBError> {
     assert_eq!(row.len(), 26);
-    let program_info_str = row.get::<_, Option<String>>(16);
-    let deployment_config_str = row.get::<_, Option<String>>(24);
-    let deployment_error_str = row.get::<_, Option<String>>(23);
+    let program_info = match row.get::<_, Option<String>>(16) {
+        None => None,
+        Some(s) => Some(deserialize_json_value(&s)?),
+    };
+    let deployment_error = match row.get::<_, Option<String>>(23) {
+        None => None,
+        Some(s) => Some(deserialize_error_response(&s)?),
+    };
+    let deployment_config = match row.get::<_, Option<String>>(24) {
+        None => None,
+        Some(s) => Some(deserialize_json_value(&s)?),
+    };
     Ok(ExtendedPipelineDescr {
         id: PipelineId(row.get(0)),
         // tenant_id is not used
@@ -41,23 +86,23 @@ fn row_to_extended_pipeline_descriptor(row: &Row) -> Result<ExtendedPipelineDesc
         created_at: row.get(4),
         version: Version(row.get(5)),
         platform_version: row.get(6),
-        runtime_config: RuntimeConfig::from_yaml(row.get(7)),
+        runtime_config: deserialize_json_value(row.get(7))?,
         program_code: row.get(8),
         udf_rust: row.get(9),
         udf_toml: row.get(10),
-        program_config: ProgramConfig::from_yaml(row.get(11)),
+        program_config: deserialize_json_value(row.get(11))?,
         program_version: Version(row.get(12)),
         program_status: ProgramStatus::from_columns(row.get(13), row.get(15))?,
         program_status_since: row.get(14),
-        program_info: program_info_str.map(|s| ProgramInfo::from_yaml(&s)),
+        program_info,
         program_binary_source_checksum: row.get(17),
         program_binary_integrity_checksum: row.get(18),
         program_binary_url: row.get(19),
         deployment_status: row.get::<_, String>(20).try_into()?,
         deployment_status_since: row.get(21),
         deployment_desired_status: row.get::<_, String>(22).try_into()?,
-        deployment_error: deployment_error_str.map(|s| ErrorResponse::from_yaml(&s)),
-        deployment_config: deployment_config_str.map(|s| PipelineConfig::from_yaml(&s)),
+        deployment_error,
+        deployment_config,
         deployment_location: row.get(25),
     })
 }
@@ -74,7 +119,10 @@ fn row_to_extended_pipeline_descriptor_monitoring(
     row: &Row,
 ) -> Result<ExtendedPipelineDescrMonitoring, DBError> {
     assert_eq!(row.len(), 16);
-    let deployment_error_str = row.get::<_, Option<String>>(14);
+    let deployment_error = match row.get::<_, Option<String>>(14) {
+        None => None,
+        Some(s) => Some(deserialize_error_response(&s)?),
+    };
     Ok(ExtendedPipelineDescrMonitoring {
         id: PipelineId(row.get(0)),
         // tenant_id is not used
@@ -89,7 +137,7 @@ fn row_to_extended_pipeline_descriptor_monitoring(
         deployment_status: row.get::<_, String>(11).try_into()?,
         deployment_status_since: row.get(12),
         deployment_desired_status: row.get::<_, String>(13).try_into()?,
-        deployment_error: deployment_error_str.map(|s| ErrorResponse::from_yaml(&s)),
+        deployment_error,
         deployment_location: row.get(15),
     })
 }
@@ -224,6 +272,18 @@ pub(crate) async fn new_pipeline(
     pipeline: PipelineDescr,
 ) -> Result<(PipelineId, Version), DBError> {
     validate_name(&pipeline.name)?;
+    let _ = validate_runtime_config(&pipeline.runtime_config, false).map_err(|error| {
+        DBError::InvalidRuntimeConfig {
+            value: pipeline.runtime_config.clone(),
+            error,
+        }
+    })?;
+    let _ = validate_program_config(&pipeline.program_config, false).map_err(|error| {
+        DBError::InvalidProgramConfig {
+            value: pipeline.program_config.clone(),
+            error,
+        }
+    })?;
     let stmt = txn
 
         .prepare_cached(
@@ -232,13 +292,13 @@ pub(crate) async fn new_pipeline(
                                    program_status_since, program_error, program_info,
                                    program_binary_source_checksum, program_binary_integrity_checksum, program_binary_url,
                                    deployment_status, deployment_status_since, deployment_desired_status,
-                                   deployment_error, deployment_config, deployment_location)
+                                   deployment_error, deployment_config, deployment_location, uses_json)
             VALUES ($1, $2, $3, $4, now(), $5, $6, $7,
                     $8, $9, $10, $11, $12, $13,
                     now(), NULL, NULL,
                     NULL, NULL, NULL,
                     $14, now(), $15,
-                    NULL, NULL, NULL)",
+                    NULL, NULL, NULL, TRUE)",
         )
         .await?;
     txn.execute(
@@ -250,11 +310,11 @@ pub(crate) async fn new_pipeline(
             &pipeline.description,                  // $4: description
             &Version(1).0,                          // $5: version
             &platform_version.to_string(),          // $6: platform_version
-            &pipeline.runtime_config.to_yaml(),     // $7: runtime_config
+            &pipeline.runtime_config.to_string(),   // $7: runtime_config
             &pipeline.program_code,                 // $8: program_code
             &pipeline.udf_rust,                     // $9: udf_rust
             &pipeline.udf_toml,                     // $10: udf_toml
-            &pipeline.program_config.to_yaml(),     // $11: program_config
+            &pipeline.program_config.to_string(),   // $11: program_config
             &Version(1).0,                          // $12: program_version
             &ProgramStatus::Pending.to_columns().0, // $13: program_status
             &PipelineStatus::Shutdown.to_string(),  // $14: deployment_status
@@ -276,14 +336,30 @@ pub(crate) async fn update_pipeline(
     name: &Option<String>,
     description: &Option<String>,
     platform_version: &str,
-    runtime_config: &Option<RuntimeConfig>,
+    runtime_config: &Option<serde_json::Value>,
     program_code: &Option<String>,
     udf_rust: &Option<String>,
     udf_toml: &Option<String>,
-    program_config: &Option<ProgramConfig>,
+    program_config: &Option<serde_json::Value>,
 ) -> Result<Version, DBError> {
     if let Some(name) = name {
         validate_name(name)?;
+    }
+    if let Some(runtime_config) = runtime_config {
+        let _ = validate_runtime_config(runtime_config, false).map_err(|error| {
+            DBError::InvalidRuntimeConfig {
+                value: runtime_config.clone(),
+                error,
+            }
+        })?;
+    }
+    if let Some(program_config) = program_config {
+        let _ = validate_program_config(program_config, false).map_err(|error| {
+            DBError::InvalidProgramConfig {
+                value: program_config.clone(),
+                error,
+            }
+        })?;
     }
 
     // Fetch current pipeline to decide how to update.
@@ -361,11 +437,11 @@ pub(crate) async fn update_pipeline(
                 &name,
                 &description,
                 &platform_version.to_string(),
-                &runtime_config.as_ref().map(|v| v.to_yaml()),
+                &runtime_config.as_ref().map(|v| v.to_string()),
                 &program_code,
                 &udf_rust,
                 &udf_toml,
-                &program_config.as_ref().map(|v| v.to_yaml()),
+                &program_config.as_ref().map(|v| v.to_string()),
                 &tenant_id.0,
                 &original_name,
             ],
@@ -449,7 +525,7 @@ pub(crate) async fn set_program_status(
     pipeline_id: PipelineId,
     program_version_guard: Version,
     new_program_status: &ProgramStatus,
-    new_program_info: &Option<ProgramInfo>,
+    new_program_info: &Option<serde_json::Value>,
     new_program_binary_source_checksum: &Option<String>,
     new_program_binary_integrity_checksum: &Option<String>,
     new_program_binary_url: &Option<String>,
@@ -537,6 +613,15 @@ pub(crate) async fn set_program_status(
         ProgramStatus::SystemError(_) => (current.program_info, None, None, None),
     };
 
+    // Validate that the new or existing program information is valid
+    if let Some(program_info) = &final_program_info {
+        let _ =
+            validate_program_info(program_info).map_err(|error| DBError::InvalidProgramInfo {
+                value: program_info.clone(),
+                error,
+            })?;
+    }
+
     // Perform query
     let stmt = txn
         .prepare_cached(
@@ -558,7 +643,7 @@ pub(crate) async fn set_program_status(
             &[
                 &new_program_status_columns.0,
                 &new_program_status_columns.1,
-                &final_program_info.as_ref().map(|v| v.to_yaml()),
+                &final_program_info.as_ref().map(|v| v.to_string()),
                 &final_program_binary_source_checksum,
                 &final_program_binary_integrity_checksum,
                 &final_program_binary_url,
@@ -619,7 +704,7 @@ pub(crate) async fn set_deployment_status(
     pipeline_id: PipelineId,
     new_deployment_status: PipelineStatus,
     new_deployment_error: Option<ErrorResponse>,
-    new_deployment_config: Option<PipelineConfig>,
+    new_deployment_config: Option<serde_json::Value>,
     new_deployment_location: Option<String>,
 ) -> Result<(), DBError> {
     let current = get_pipeline_by_id(txn, tenant_id, pipeline_id).await?;
@@ -679,6 +764,16 @@ pub(crate) async fn set_deployment_status(
         current.deployment_config
     };
 
+    // Validate that the new or existing deployment configuration is valid
+    if let Some(deployment_config) = &final_deployment_config {
+        let _ = validate_deployment_config(deployment_config).map_err(|error| {
+            DBError::InvalidDeploymentConfig {
+                value: deployment_config.clone(),
+                error,
+            }
+        })?;
+    }
+
     // Deployment location is set when becoming...
     // - Initializing: a value
     // - ShuttingDown: NULL
@@ -711,8 +806,11 @@ pub(crate) async fn set_deployment_status(
             &stmt,
             &[
                 &new_deployment_status.to_string(),
-                &final_deployment_error.map(|v| v.to_yaml()),
-                &final_deployment_config.map(|v| v.to_yaml()),
+                &match final_deployment_error {
+                    None => None,
+                    Some(v) => Some(serialize_error_response(&v)?),
+                },
+                &final_deployment_config.map(|v| v.to_string()),
                 &final_deployment_location,
                 &tenant_id.0,
                 &pipeline_id.0,
@@ -868,4 +966,86 @@ pub(crate) async fn list_pipeline_programs_across_all_tenants(
             )
         })
         .collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::db::error::DBError;
+    use crate::db::operations::pipeline::{
+        deserialize_error_response, deserialize_json_value, serialize_error_response,
+    };
+    use feldera_types::error::ErrorResponse;
+    use serde_json::json;
+    use std::borrow::Cow;
+
+    #[test]
+    fn json_value_deserialization() {
+        // Valid
+        for (s, expected) in [
+            ("\"\"", json!("")),
+            ("\"a\"", json!("a")),
+            ("123", json!(123)),
+            ("{}", json!({})),
+            ("[1, 2, 3]", json!([1, 2, 3])),
+            ("[1, { \"a\": 2 }, 3]", json!([1, { "a": 2 }, 3])),
+            ("{\"a\": 1, \"b\": \"c\"}", json!({ "a": 1, "b": "c"})),
+        ] {
+            match deserialize_json_value(s) {
+                Ok(value) => {
+                    assert_eq!(
+                        value, expected,
+                        "Deserializing '{s}': resulting JSON does not match"
+                    );
+                }
+                Err(e) => {
+                    panic!("Deserializing '{s}': unable to deserialize as JSON: {e}");
+                }
+            }
+        }
+
+        // Invalid
+        for s in [
+            "",
+            "\"a", // String not terminated
+            "a: 1",
+            "a: b",
+            "a: \n- b\n- c",
+        ] {
+            assert!(matches!(
+                deserialize_json_value(s).unwrap_err(),
+                DBError::InvalidJsonData { data: _, error: _ }
+            ));
+        }
+    }
+
+    #[test]
+    fn error_response_de_serialization() {
+        // ErrorResponse -> JSON string -> ErrorResponse is the same as original
+        let error_response = ErrorResponse {
+            message: "Example error response message".to_string(),
+            error_code: Cow::from("Abc".to_string()),
+            details: json!({}),
+        };
+        let data = serialize_error_response(&error_response).unwrap();
+        assert_eq!(error_response, deserialize_error_response(&data).unwrap());
+
+        // Valid JSON for ErrorResponse
+        assert_eq!(
+            deserialize_error_response(
+                "{\"message\": \"a\", \"error_code\": \"b\", \"details\": { \"c\": 1 } }"
+            )
+            .unwrap(),
+            ErrorResponse {
+                message: "a".to_string(),
+                error_code: Cow::from("b".to_string()),
+                details: json!({ "c": 1 }),
+            }
+        );
+
+        // Invalid JSON for ErrorResponse (misses mandatory fields)
+        assert!(matches!(
+            deserialize_error_response("{}"),
+            Err(DBError::InvalidErrorResponse { value: _, error: _ })
+        ));
+    }
 }

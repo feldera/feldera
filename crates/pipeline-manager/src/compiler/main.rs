@@ -1,4 +1,5 @@
 use crate::api::error::ApiError;
+use crate::common_error::CommonError;
 use crate::compiler::error::CompilerError;
 use crate::compiler::rust_compiler::{
     perform_rust_compilation, rust_compiler_task, RustCompilationError,
@@ -9,10 +10,10 @@ use crate::compiler::sql_compiler::{
 use crate::compiler::util::{recreate_dir, validate_is_sha256_checksum};
 use crate::config::{CommonConfig, CompilerConfig};
 use crate::db::storage_postgres::StoragePostgres;
-use crate::db::types::common::Version;
 use crate::db::types::pipeline::PipelineId;
 use crate::db::types::program::ProgramConfig;
 use crate::db::types::tenant::TenantId;
+use crate::db::types::version::Version;
 use crate::error::ManagerError;
 use crate::probe::Probe;
 use actix_files::NamedFile;
@@ -132,6 +133,12 @@ pub async fn compiler_precompile(
         profile: None, // The pre-compilation will use the compiler configuration default profile
         cache: false,
     };
+    let program_config = serde_json::to_value(&program_config).map_err(|e| {
+        CommonError::json_serialization_error(
+            "serialize precompile program_config as JSON value".to_string(),
+            e,
+        )
+    })?;
     let program_code = "";
     let udf_rust = "";
     let udf_toml = "";
@@ -175,8 +182,7 @@ pub async fn compiler_precompile(
         platform_version,
         program_version,
         &program_config,
-        &program_info.main_rust,
-        &program_info.udf_stubs,
+        &Some(program_info),
         udf_rust,
         udf_toml,
     )

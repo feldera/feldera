@@ -7,13 +7,13 @@ use crate::config::{CommonConfig, CompilerConfig};
 use crate::db::error::DBError;
 use crate::db::storage::Storage;
 use crate::db::storage_postgres::StoragePostgres;
-use crate::db::types::common::Version;
 use crate::db::types::pipeline::PipelineId;
-use crate::db::types::program::{
-    generate_program_info, ProgramConfig, ProgramInfo, SqlCompilerMessage,
-};
+use crate::db::types::program::{generate_program_info, SqlCompilerMessage};
 use crate::db::types::tenant::TenantId;
+use crate::db::types::utils::validate_program_config;
+use crate::db::types::version::Version;
 use feldera_types::program_schema::ProgramSchema;
+use indoc::formatdoc;
 use log::{debug, error, info, trace};
 use std::path::Path;
 use std::time::Instant;
@@ -287,7 +287,7 @@ impl From<CommonError> for SqlCompilationError {
 /// Performs the SQL compilation:
 /// - Prepares a working directory for input and output
 /// - Call the SQL-to-DBSP compiler executable via a process
-/// - Returns the outcome from the output
+/// - Returns the outcome from the output (namely, the [`ProgramInfo`] serialized as a JSON value)
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn perform_sql_compilation(
     common_config: &CommonConfig,
@@ -297,9 +297,9 @@ pub(crate) async fn perform_sql_compilation(
     pipeline_id: PipelineId,
     platform_version: &str,
     program_version: Version,
-    _program_config: &ProgramConfig, // Might be used in the future to pass SQL compiler flags
+    program_config: &serde_json::Value,
     program_code: &str,
-) -> Result<(ProgramInfo, Duration), SqlCompilationError> {
+) -> Result<(serde_json::Value, Duration), SqlCompilationError> {
     let start = Instant::now();
 
     // These must always be the same, the SQL compiler should never pick up
@@ -310,6 +310,20 @@ pub(crate) async fn perform_sql_compilation(
             common_config.platform_version
         )));
     }
+
+    // Program configuration
+    // Might be used in the future to pass SQL compiler flags
+    let _program_config = validate_program_config(program_config, true).map_err(|error| {
+        SqlCompilationError::SystemError(formatdoc! {"
+                The program configuration:
+                {program_config:#}
+
+                ... is not valid due to: {error}.
+
+                This indicates a backward-incompatible platform upgrade occurred.
+                Update the 'program_config' field of the pipeline to resolve this.
+            "})
+    })?;
 
     // Recreate working directory for the input/output of the SQL compiler
     let working_dir = config
@@ -439,7 +453,17 @@ pub(crate) async fn perform_sql_compilation(
 
         // Generate the program information
         match generate_program_info(schema, main_rust, stubs) {
-            Ok(program_info) => Ok((program_info, start.elapsed())),
+            Ok(program_info) => {
+                let program_info = match serde_json::to_value(program_info) {
+                    Ok(value) => value,
+                    Err(error) => {
+                        return Err(SqlCompilationError::SystemError(format!(
+                            "Failed to serialize program information due to: {error}"
+                        )));
+                    }
+                };
+                Ok((program_info, start.elapsed()))
+            }
             Err(e) => {
                 // The SQL compilation itself was successful, however the connectors JSON within the
                 // WITH statement could not be deserialized into connectors
@@ -560,8 +584,9 @@ mod test {
     use crate::auth::TenantRecord;
     use crate::compiler::test::{list_content_as_sorted_names, CompilerTest};
     use crate::compiler::util::{create_new_file, recreate_dir};
-    use crate::db::types::common::Version;
     use crate::db::types::program::ProgramStatus;
+    use crate::db::types::utils::validate_program_info;
+    use crate::db::types::version::Version;
     use feldera_types::config::TransportConfig;
     use feldera_types::program_schema::{SqlIdentifier, SqlType};
     use indoc::formatdoc;
@@ -646,7 +671,7 @@ mod test {
             .await;
 
         // Check the types of the table and view
-        let program_info = pipeline_descr.program_info.unwrap();
+        let program_info = validate_program_info(&pipeline_descr.program_info.unwrap()).unwrap();
         let table = program_info.schema.inputs.first().unwrap();
         assert_eq!(table.name, SqlIdentifier::new("t_all", false));
         let view = program_info.schema.outputs.get(1).unwrap();
@@ -809,7 +834,7 @@ mod test {
             .await;
 
         // Check materialized outcome
-        let program_info = pipeline_descr.program_info.unwrap();
+        let program_info = validate_program_info(&pipeline_descr.program_info.unwrap()).unwrap();
         assert_eq!(program_info.schema.inputs.len(), 3);
         for table in program_info.schema.inputs {
             match table.name.name().as_str() {
@@ -870,10 +895,9 @@ mod test {
         let (pipeline_descr, _, _, _, _, _, _) = test
             .check_outcome_sql_compiled(tenant_id, pipeline_id, program_code)
             .await;
-        let input_connectors = pipeline_descr
-            .program_info
-            .clone()
+        let input_connectors = validate_program_info(&pipeline_descr.program_info.unwrap())
             .unwrap()
+            .clone()
             .input_connectors;
         assert_eq!(input_connectors.len(), 1);
         let connector_config = input_connectors

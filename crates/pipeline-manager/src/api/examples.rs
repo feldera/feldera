@@ -1,12 +1,18 @@
 // Example errors for use in OpenAPI docs.
 use crate::api::error::ApiError;
-use crate::api::pipeline::{PatchPipeline, PipelineInfo, PipelineSelectedInfo, PostPutPipeline};
+use crate::api::pipeline::{
+    PatchPipeline, PipelineInfo, PipelineInfoInternal, PipelineSelectedInfo,
+    PipelineSelectedInfoInternal, PostPutPipeline,
+};
 use crate::db::error::DBError;
-use crate::db::types::common::Version;
 use crate::db::types::pipeline::{
     ExtendedPipelineDescr, PipelineDesiredStatus, PipelineId, PipelineStatus,
 };
 use crate::db::types::program::{CompilationProfile, ProgramConfig, ProgramStatus};
+use crate::db::types::utils::{
+    validate_program_config, validate_program_info, validate_runtime_config,
+};
+use crate::db::types::version::Version;
 use crate::error::ManagerError;
 use crate::runner::error::RunnerError;
 use feldera_types::config::ResourceConfig;
@@ -46,25 +52,7 @@ pub(crate) fn error_stream_terminated() -> ErrorResponse {
     })
 }
 
-pub(crate) fn pipeline_post_put() -> PostPutPipeline {
-    PostPutPipeline {
-        name: "example1".to_string(),
-        description: Some("Description of the pipeline example1".to_string()),
-        runtime_config: Some(RuntimeConfig {
-            workers: 16,
-            tracing_endpoint_jaeger: "".to_string(),
-            ..RuntimeConfig::default()
-        }),
-        program_code: "CREATE TABLE table1 ( col1 INT );".to_string(),
-        udf_rust: None,
-        udf_toml: None,
-        program_config: Some(ProgramConfig {
-            profile: Some(CompilationProfile::Optimized),
-            cache: true,
-        }),
-    }
-}
-
+/// First example [`ExtendedPipelineDescr`] the database could return.
 fn extended_pipeline_1() -> ExtendedPipelineDescr {
     ExtendedPipelineDescr {
         id: PipelineId(uuid!("67e55044-10b1-426f-9247-bb680e5fe0c8")),
@@ -73,18 +61,20 @@ fn extended_pipeline_1() -> ExtendedPipelineDescr {
         created_at: Default::default(),
         version: Version(4),
         platform_version: "v0".to_string(),
-        runtime_config: RuntimeConfig {
+        runtime_config: serde_json::to_value(RuntimeConfig {
             workers: 16,
             tracing_endpoint_jaeger: "".to_string(),
             ..RuntimeConfig::default()
-        },
+        })
+        .unwrap(),
         program_code: "CREATE TABLE table1 ( col1 INT );".to_string(),
         udf_rust: "".to_string(),
         udf_toml: "".to_string(),
-        program_config: ProgramConfig {
+        program_config: serde_json::to_value(ProgramConfig {
             profile: Some(CompilationProfile::Optimized),
             cache: true,
-        },
+        })
+        .unwrap(),
         program_version: Version(2),
         program_info: None,
         program_status: ProgramStatus::Pending,
@@ -101,6 +91,7 @@ fn extended_pipeline_1() -> ExtendedPipelineDescr {
     }
 }
 
+/// Second example [`ExtendedPipelineDescr`] the database could return.
 fn extended_pipeline_2() -> ExtendedPipelineDescr {
     ExtendedPipelineDescr {
         id: PipelineId(uuid!("67e55044-10b1-426f-9247-bb680e5fe0c9")),
@@ -109,7 +100,7 @@ fn extended_pipeline_2() -> ExtendedPipelineDescr {
         created_at: Default::default(),
         version: Version(1),
         platform_version: "v0".to_string(),
-        runtime_config: RuntimeConfig {
+        runtime_config: serde_json::to_value(RuntimeConfig {
             workers: 10,
             storage: true,
             fault_tolerance: None,
@@ -128,14 +119,16 @@ fn extended_pipeline_2() -> ExtendedPipelineDescr {
             },
             min_storage_bytes: None,
             clock_resolution_usecs: Some(100_000),
-        },
+        })
+        .unwrap(),
         program_code: "CREATE TABLE table2 ( col2 VARCHAR );".to_string(),
         udf_rust: "".to_string(),
         udf_toml: "".to_string(),
-        program_config: ProgramConfig {
+        program_config: serde_json::to_value(ProgramConfig {
             profile: Some(CompilationProfile::Unoptimized),
             cache: true,
-        },
+        })
+        .unwrap(),
         program_version: Version(1),
         program_info: None,
         program_status: ProgramStatus::Pending,
@@ -152,20 +145,112 @@ fn extended_pipeline_2() -> ExtendedPipelineDescr {
     }
 }
 
+/// Converts the actual serialized type [`PipelineInfoInternal`] to the type the endpoint
+/// OpenAPI specification states it will return ([`PipelineInfo`]). The conversion for this
+/// example should always succeed as it uses field values that were directly serialized prior.
+fn pipeline_info_internal_to_external(pipeline: PipelineInfoInternal) -> PipelineInfo {
+    PipelineInfo {
+        id: pipeline.id,
+        name: pipeline.name,
+        description: pipeline.description,
+        created_at: pipeline.created_at,
+        version: pipeline.version,
+        platform_version: pipeline.platform_version,
+        runtime_config: validate_runtime_config(&pipeline.runtime_config, true)
+            .expect("example must have a valid runtime_config"),
+        program_code: pipeline.program_code,
+        udf_rust: pipeline.udf_rust,
+        udf_toml: pipeline.udf_toml,
+        program_config: validate_program_config(&pipeline.program_config, true)
+            .expect("example must have a valid program_config"),
+        program_version: pipeline.program_version,
+        program_status: pipeline.program_status,
+        program_status_since: pipeline.program_status_since,
+        program_info: pipeline.program_info.map(|v| {
+            validate_program_info(&v).expect("example must have a valid program_info if specified")
+        }),
+        deployment_status: pipeline.deployment_status,
+        deployment_status_since: pipeline.deployment_status_since,
+        deployment_desired_status: pipeline.deployment_desired_status,
+        deployment_error: pipeline.deployment_error,
+    }
+}
+
 pub(crate) fn pipeline_1_info() -> PipelineInfo {
-    PipelineInfo::new(&extended_pipeline_1())
+    pipeline_info_internal_to_external(PipelineInfoInternal::new(&extended_pipeline_1()))
+}
+
+/// Converts the actual serialized type [`PipelineSelectedInfoInternal`] to the type the endpoint
+/// OpenAPI specification states it will return ([`PipelineSelectedInfo`]). The conversion for this
+/// example should always succeed as it uses field values that were directly serialized prior.
+fn pipeline_selected_info_internal_to_external(
+    pipeline: PipelineSelectedInfoInternal,
+) -> PipelineSelectedInfo {
+    PipelineSelectedInfo {
+        id: pipeline.id,
+        name: pipeline.name,
+        description: pipeline.description,
+        created_at: pipeline.created_at,
+        version: pipeline.version,
+        platform_version: pipeline.platform_version,
+        runtime_config: pipeline.runtime_config.map(|v| {
+            validate_runtime_config(&v, true).expect("example must have a valid runtime_config")
+        }),
+        program_code: pipeline.program_code,
+        udf_rust: pipeline.udf_rust,
+        udf_toml: pipeline.udf_toml,
+        program_config: pipeline.program_config.map(|v| {
+            validate_program_config(&v, true).expect("example must have a valid program_config")
+        }),
+        program_version: pipeline.program_version,
+        program_status: pipeline.program_status,
+        program_status_since: pipeline.program_status_since,
+        program_info: pipeline.program_info.map(|v| {
+            v.map(|v| {
+                validate_program_info(&v)
+                    .expect("example must have a valid program_info if specified")
+            })
+        }),
+        deployment_status: pipeline.deployment_status,
+        deployment_status_since: pipeline.deployment_status_since,
+        deployment_desired_status: pipeline.deployment_desired_status,
+        deployment_error: pipeline.deployment_error,
+    }
 }
 
 pub(crate) fn pipeline_1_selected_info() -> PipelineSelectedInfo {
-    PipelineSelectedInfo::new_all(&extended_pipeline_1())
+    pipeline_selected_info_internal_to_external(PipelineSelectedInfoInternal::new_all(
+        &extended_pipeline_1(),
+    ))
 }
 
 pub(crate) fn pipeline_2_selected_info() -> PipelineSelectedInfo {
-    PipelineSelectedInfo::new_all(&extended_pipeline_2())
+    pipeline_selected_info_internal_to_external(PipelineSelectedInfoInternal::new_all(
+        &extended_pipeline_2(),
+    ))
 }
 
 pub(crate) fn list_pipeline_selected_info() -> Vec<PipelineSelectedInfo> {
     vec![pipeline_1_selected_info(), pipeline_2_selected_info()]
+}
+
+pub(crate) fn pipeline_post_put() -> PostPutPipeline {
+    PostPutPipeline {
+        name: "example1".to_string(),
+        description: Some("Description of the pipeline example1".to_string()),
+        runtime_config: Some(RuntimeConfig {
+            workers: 16,
+            tracing_endpoint_jaeger: "".to_string(),
+            ..RuntimeConfig::default()
+        }),
+        program_code: "CREATE TABLE table1 ( col1 INT );".to_string(),
+        udf_rust: None,
+        udf_toml: None,
+        program_config: Some(ProgramConfig {
+            profile: Some(CompilationProfile::Optimized),
+            cache: true,
+        }),
+    }
 }
 
 pub(crate) fn patch_pipeline() -> PatchPipeline {
