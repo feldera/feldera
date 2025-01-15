@@ -1457,6 +1457,20 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                     op0 = this.makeStaticConstant(op0).borrow();
                 } else if (collectionType.is(DBSPTypeVariant.class)) {
                     opcode = DBSPOpcode.VARIANT_INDEX;
+                } else if (collectionType.is(DBSPTypeTuple.class)) {
+                    DBSPTypeTuple tuple = collectionType.to(DBSPTypeTuple.class);
+                    assert index.is(DBSPStringLiteral.class);
+                    DBSPStringLiteral lit = index.to(DBSPStringLiteral.class);
+                    assert lit.value != null;
+                    String fieldName = lit.value;
+                    assert tuple.originalStruct != null;
+                    DBSPTypeStruct.Field field = tuple.originalStruct.getField(
+                            new ProgramIdentifier(fieldName, false));
+                    assert field != null;
+                    int fieldIndex = field.index;
+                    return op0.field(fieldIndex);
+                } else {
+                    assert collectionType.is(DBSPTypeVec.class);
                 }
                 return new DBSPBinaryExpression(node, type, opcode, op0, index);
             }
