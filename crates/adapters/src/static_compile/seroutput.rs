@@ -1,12 +1,9 @@
+use crate::catalog::{SerBatchReader, SerBatchReaderHandle, SerTrace, SyncSerBatchReader};
 #[cfg(feature = "with-avro")]
 use crate::format::avro::serializer::{avro_ser_config, AvroSchemaSerializer, AvroSerializerError};
 use crate::{
     catalog::{RecordFormat, SerBatch, SerCollectionHandle, SerCursor},
     ControllerError,
-};
-use crate::{
-    catalog::{SerBatchReader, SerBatchReaderHandle, SerTrace, SyncSerBatchReader},
-    format::parquet::arrow_serde_config,
 };
 use anyhow::Result as AnyResult;
 #[cfg(feature = "with-avro")]
@@ -414,7 +411,7 @@ where
                     &self.batch, JsonSerializer::create(config)
                 ))
             }
-            RecordFormat::Parquet(_schema) => Box::new(<SerCursorImpl<
+            RecordFormat::Parquet(serde_config) => Box::new(<SerCursorImpl<
                 'a,
                 ParquetSerializer,
                 B,
@@ -423,7 +420,7 @@ where
                 SqlSerdeConfig,
             >>::new(
                 &self.batch,
-                ParquetSerializer::create(arrow_serde_config().clone()),
+                ParquetSerializer::create(serde_config),
             )),
             #[cfg(feature = "with-avro")]
             RecordFormat::Avro => {

@@ -13,7 +13,7 @@ use feldera_types::{
     format::avro::{AvroParserConfig, AvroUpdateFormat},
     program_schema::Relation,
     serde_with_context::{
-        serde_config::{BinaryFormat, DecimalFormat, VariantFormat},
+        serde_config::{BinaryFormat, DecimalFormat, UuidFormat, VariantFormat},
         DateFormat, SqlSerdeConfig, TimeFormat, TimestampFormat,
     },
 };
@@ -45,6 +45,11 @@ pub const fn avro_de_config() -> &'static SqlSerdeConfig {
         decimal_format: DecimalFormat::String,
         variant_format: VariantFormat::JsonString,
         binary_format: BinaryFormat::Array,
+        // Both Debezium and JDBC connectors use string encoding for UUIDs.
+        // Avro doesn't have a built-in UUID type, and it's possible that some
+        // other formats use byte array encoding. If we have to support those, this
+        // will need to be made configurable.
+        uuid_format: UuidFormat::String,
     }
 }
 

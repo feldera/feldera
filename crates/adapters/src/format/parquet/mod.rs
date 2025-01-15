@@ -11,7 +11,9 @@ use arrow::datatypes::{
 use bytes::Bytes;
 use erased_serde::Serialize as ErasedSerialize;
 use feldera_types::config::ConnectorConfig;
-use feldera_types::serde_with_context::serde_config::{BinaryFormat, DecimalFormat, VariantFormat};
+use feldera_types::serde_with_context::serde_config::{
+    BinaryFormat, DecimalFormat, UuidFormat, VariantFormat,
+};
 use feldera_types::serde_with_context::{DateFormat, SqlSerdeConfig, TimeFormat, TimestampFormat};
 use parquet::arrow::ArrowWriter;
 use parquet::file::properties::WriterProperties;
@@ -38,7 +40,8 @@ use super::{InputBuffer, Sponge};
 #[cfg(test)]
 pub mod test;
 
-pub const fn arrow_serde_config() -> &'static SqlSerdeConfig {
+/// Default arrow serder config used to encode data in Parquet.
+pub const fn default_arrow_serde_config() -> &'static SqlSerdeConfig {
     &SqlSerdeConfig {
         timestamp_format: TimestampFormat::MicrosSinceEpoch,
         time_format: TimeFormat::NanosSigned,
@@ -46,6 +49,7 @@ pub const fn arrow_serde_config() -> &'static SqlSerdeConfig {
         decimal_format: DecimalFormat::String,
         variant_format: VariantFormat::JsonString,
         binary_format: BinaryFormat::Array,
+        uuid_format: UuidFormat::String,
     }
 }
 
@@ -262,7 +266,11 @@ pub fn relation_to_arrow_fields(fields: &[Field], delta_lake: bool) -> Vec<Arrow
             ),
             SqlType::Date => DataType::Date32,
             SqlType::Null => DataType::Null,
-            SqlType::Uuid => DataType::LargeBinary,
+            // Today all supported connectors happen to use string encoding for UUID.
+            // In the future, we will have connectors thay use byte array representation,
+            // notably Iceberg. We will need to make this mapping configurable to support
+            // such connectors.
+            SqlType::Uuid => DataType::Utf8,
             SqlType::Binary => DataType::LargeBinary,
             SqlType::Varbinary => DataType::LargeBinary,
             SqlType::Interval(
@@ -373,7 +381,8 @@ impl Encoder for ParquetEncoder {
 
         let mut num_records = 0;
         let mut cursor = CursorWithPolarity::new(
-            batch.cursor(RecordFormat::Parquet(self.parquet_schema.clone()))?,
+            // TODO: make this configurable instead of using the default.
+            batch.cursor(RecordFormat::Parquet(default_arrow_serde_config().clone()))?,
         );
         while cursor.key_valid() {
             if !cursor.val_valid() {

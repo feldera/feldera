@@ -10,7 +10,7 @@ use std::sync::{Arc, LazyLock};
 use std::thread::Thread;
 use std::time::Duration as StdDuration;
 
-use anyhow::{anyhow, Result as AnyResult};
+use anyhow::{anyhow, bail, Result as AnyResult};
 use async_channel::Receiver as AsyncReceiver;
 use chrono::format::{Item, StrftimeItems};
 use chrono::{DateTime, Days, Duration, NaiveDate, NaiveTime, Timelike};
@@ -116,6 +116,51 @@ fn field_is_number(field: &Field, value: &Value) -> AnyResult<()> {
         ));
     }
     Ok(())
+}
+
+fn field_is_uuid(field: &Field, value: &Value) -> AnyResult<()> {
+    match value {
+        Value::String(s) => {
+            uuid::Uuid::parse_str(s).map_err(|e| {
+                anyhow!(
+                    "Invalid UUID string `{s}` found in `values` for field {:?}: {e}",
+                    field.name
+                )
+            })?;
+        }
+        _ => bail!(
+            "Invalid type found in `values` for field {:?} with type {:?}",
+            field.name,
+            field.columntype.typ
+        ),
+    }
+
+    Ok(())
+}
+
+/// Tries to parse a range as a UUID range.
+fn parse_range_for_uuid(
+    field: &SqlIdentifier,
+    range: &Option<(Value, Value)>,
+) -> AnyResult<Option<(u128, u128)>> {
+    match range {
+        Some((min, max)) => {
+            let min = serde_json::from_value::<uuid::Uuid>(min.clone()).map_err(|e| {
+                anyhow!(
+                    "Failed to parse the left bound of the range for the field {:?} as a UUID: {e}",
+                    field.sql_name()
+                )
+            })?;
+            let max = serde_json::from_value::<uuid::Uuid>(max.clone()).map_err(|e| {
+                anyhow!(
+                    "Failed to parse the right bound of the range for the field {:?} as a UUID: {e}",
+                    field.sql_name()
+                )
+            })?;
+            Ok(Some((min.as_u128(), max.as_u128())))
+        }
+        None => Ok(None),
+    }
 }
 
 /// Tries to parse a range as a date range which is days since UNIX epoch
@@ -1809,37 +1854,69 @@ impl<'a> RecordGenerator<'a> {
         &self,
         field: &Field,
         settings: &RngFieldSettings,
-        _incr: usize,
+        incr: usize,
         rng: &mut SmallRng,
         obj: &mut Value,
     ) -> AnyResult<()> {
+        let range = parse_range_for_uuid(&field.name, &settings.range)?;
+        if let Some((a, b)) = range {
+            if a > b {
+                return Err(anyhow!(
+                    "Invalid range, min > max for field {:?}",
+                    field.name
+                ));
+            }
+        }
+        let scale = settings.scale;
+
         if let Some(nl) = Self::maybe_null(field, settings, rng) {
             *obj = nl;
             return Ok(());
         }
 
-        *obj = match (&settings.strategy, &settings.values) {
-            (DatagenStrategy::Increment, None) => {
-                unimplemented!()
+        match (&settings.strategy, &settings.values, &range) {
+            (DatagenStrategy::Increment, None, None) => {
+                let val = (incr as u128 * scale as u128) % u128::MAX;
+                *obj = Value::String(uuid::Uuid::from_u128(val).to_string());
             }
-            (DatagenStrategy::Increment, Some(_values)) => {
-                unimplemented!()
+            (DatagenStrategy::Increment, None, Some((a, b))) => {
+                let range = b - a;
+                let val_in_range = (incr as u128 * scale as u128) % range;
+                let val = a + val_in_range;
+                debug_assert!(val >= *a && val < *b);
+                *obj = Value::String(uuid::Uuid::from_u128(val).to_string());
             }
-            (DatagenStrategy::Uniform, None) => {
-                unimplemented!()
+            (DatagenStrategy::Increment, Some(values), _) => {
+                let new_value = values[incr % values.len()].clone();
+                field_is_uuid(field, &new_value)?;
+                *obj = new_value;
             }
-            (DatagenStrategy::Uniform, Some(values)) => {
-                values[rand::random::<usize>() % values.len()].clone()
+            (DatagenStrategy::Uniform, None, None) => {
+                let dist = Uniform::from(0..u128::MAX);
+                *obj = Value::String(
+                    uuid::Uuid::from_u128(rng.sample(dist) * scale as u128).to_string(),
+                );
             }
-            (DatagenStrategy::Zipf, None) => {
-                unimplemented!()
+            (DatagenStrategy::Uniform, None, Some((a, b))) => {
+                let dist = Uniform::from(*a..*b);
+                *obj = Value::String(
+                    uuid::Uuid::from_u128(rng.sample(dist) * scale as u128).to_string(),
+                );
             }
-            (DatagenStrategy::Zipf, Some(values)) => {
+            (DatagenStrategy::Uniform, Some(values), _) => {
+                let dist = Uniform::from(0..values.len());
+                let new_value = values[rng.sample(dist)].clone();
+                field_is_uuid(field, &new_value)?;
+                *obj = new_value;
+            }
+            (DatagenStrategy::Zipf, Some(values), _) => {
                 let zipf = Zipf::new(values.len() as u64, settings.e as f64).unwrap();
                 let idx = rng.sample(zipf) as usize - 1;
-                values[idx].clone()
+                let new_value = values[idx].clone();
+                field_is_uuid(field, &new_value)?;
+                *obj = new_value;
             }
-            (m, _) => {
+            (m, _, _) => {
                 return Err(anyhow!(
                     "Invalid strategy `{m:?}` for field: `{:?}` with type {:?}",
                     field.name,

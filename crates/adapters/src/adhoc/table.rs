@@ -32,7 +32,9 @@ use feldera_types::config::{
     InputEndpointConfig, TransportConfig,
 };
 use feldera_types::program_schema::SqlIdentifier;
-use feldera_types::serde_with_context::serde_config::{BinaryFormat, DecimalFormat, VariantFormat};
+use feldera_types::serde_with_context::serde_config::{
+    BinaryFormat, DecimalFormat, UuidFormat, VariantFormat,
+};
 use feldera_types::serde_with_context::{DateFormat, SqlSerdeConfig, TimeFormat, TimestampFormat};
 use feldera_types::transport::adhoc::AdHocInputConfig;
 use serde_arrow::schema::SerdeArrowSchema;
@@ -42,7 +44,7 @@ use tokio::sync::mpsc::Sender;
 use tracing::{info_span, Instrument};
 use uuid::Uuid;
 
-pub const fn datafusion_arrow_serde_config() -> &'static SqlSerdeConfig {
+pub const fn input_adhoc_arrow_serde_config() -> &'static SqlSerdeConfig {
     &SqlSerdeConfig {
         timestamp_format: TimestampFormat::String("%FT%T%.f"),
         time_format: TimeFormat::String("%T"),
@@ -50,6 +52,23 @@ pub const fn datafusion_arrow_serde_config() -> &'static SqlSerdeConfig {
         decimal_format: DecimalFormat::String,
         variant_format: VariantFormat::JsonString,
         binary_format: BinaryFormat::Array,
+        uuid_format: UuidFormat::String,
+    }
+}
+
+/// Arrow serde config for encoding result of ad hoc queries.
+pub const fn output_adhoc_arrow_serde_config() -> &'static SqlSerdeConfig {
+    &SqlSerdeConfig {
+        timestamp_format: TimestampFormat::MicrosSinceEpoch,
+        time_format: TimeFormat::NanosSigned,
+        date_format: DateFormat::String("%Y-%m-%d"),
+        decimal_format: DecimalFormat::String,
+        variant_format: VariantFormat::JsonString,
+        binary_format: BinaryFormat::Array,
+        // Datafusion doesn't have a builtin UUID type, so we map UUID columns into strings.
+        // Alternatively we can use byte array encoding. I tried it and it works, but requires
+        // adjusting uuid type encoding in `columntype_to_datatype`.
+        uuid_format: UuidFormat::String,
     }
 }
 
@@ -278,7 +297,7 @@ impl DataSink for AdHocTableSink {
 
         let arrow_inserter = self
             .collection_handle
-            .configure_arrow_deserializer(datafusion_arrow_serde_config().clone())
+            .configure_arrow_deserializer(input_adhoc_arrow_serde_config().clone())
             .map_err(|e| DataFusionError::External(e.into()))?;
 
         // Call endpoint to complete request.
@@ -443,7 +462,9 @@ use `with ('materialized' = 'true')` for tables, or `create materialized view` f
 
             builder.spawn(async move {
                 let mut cursor = batch_reader
-                    .cursor(RecordFormat::Parquet(sas.clone()))
+                    .cursor(RecordFormat::Parquet(
+                        output_adhoc_arrow_serde_config().clone(),
+                    ))
                     .map_err(|e| DataFusionError::External(Box::new(e)))?;
                 let mut insert_builder = SendableArrowBuilder::new(sas)?;
 

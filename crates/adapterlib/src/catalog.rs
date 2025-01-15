@@ -12,7 +12,6 @@ use feldera_types::format::csv::CsvParserConfig;
 use feldera_types::format::json::JsonFlavor;
 use feldera_types::program_schema::{Relation, SqlIdentifier};
 use feldera_types::serde_with_context::SqlSerdeConfig;
-use serde_arrow::schema::SerdeArrowSchema;
 use serde_arrow::ArrayBuilder;
 
 use crate::errors::controller::ControllerError;
@@ -30,7 +29,7 @@ pub enum RecordFormat {
     // tables that store raw JSON or binary data to be parsed using SQL.
     Json(JsonFlavor),
     Csv(CsvParserConfig),
-    Parquet(SerdeArrowSchema),
+    Parquet(SqlSerdeConfig),
     #[cfg(feature = "with-avro")]
     Avro,
 }

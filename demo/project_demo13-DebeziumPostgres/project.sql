@@ -10,7 +10,7 @@ CREATE TABLE json_test_table (
     dt DATE,
     json1 VARCHAR,
     json2 VARIANT,
-    uuid_ VARCHAR
+    uuid_ UUID
 ) with (
   'materialized' = 'true',
   'connectors' = '[{
@@ -43,7 +43,7 @@ CREATE TABLE avro_test_table (
     dt DATE,
     json1 VARCHAR,
     json2 VARIANT,
-    uuid_ VARCHAR
+    uuid_ UUID
 ) with (
   'materialized' = 'true',
   'connectors' = '[{
