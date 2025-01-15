@@ -4730,6 +4730,7 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 1.0.64",
+ "uuid",
 ]
 
 [[package]]
@@ -10761,9 +10762,9 @@ dependencies = [
 
 [[package]]
 name = "uuid"
-version = "1.10.0"
+version = "1.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "81dfa00651efa65069b0b6b651f4aaa31ba9e3c3ce0137aaad053604ee7e0314"
+checksum = "744018581f9a3454a9e15beb8a33b017183f1e7c0cd170232a2d1453b23a51c4"
 dependencies = [
  "getrandom",
  "serde",
