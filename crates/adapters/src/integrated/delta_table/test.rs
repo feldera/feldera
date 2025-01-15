@@ -617,7 +617,7 @@ async fn delta_table_follow_file_test_common(snapshot: bool) {
     let input_table_dir = TempDir::new().unwrap();
     let input_table_uri = input_table_dir.path().display().to_string();
 
-    let output_table_dir = TempDir::new().unwrap();
+    let output_table_dir: TempDir = TempDir::new().unwrap();
     let output_table_uri = output_table_dir.path().display().to_string();
 
     test_follow(

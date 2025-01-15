@@ -20,6 +20,10 @@ use deltalake::operations::transaction::{CommitBuilder, TableReference};
 use deltalake::operations::writer::{DeltaWriter, WriterConfig};
 use deltalake::protocol::{DeltaOperation, SaveMode};
 use deltalake::DeltaTable;
+use feldera_types::serde_with_context::serde_config::{
+    BinaryFormat, DecimalFormat, UuidFormat, VariantFormat,
+};
+use feldera_types::serde_with_context::{DateFormat, SqlSerdeConfig, TimeFormat, TimestampFormat};
 use feldera_types::transport::delta_table::DeltaTableWriteMode;
 use feldera_types::{program_schema::Relation, transport::delta_table::DeltaTableWriterConfig};
 use serde_arrow::schema::SerdeArrowSchema;
@@ -28,6 +32,19 @@ use std::cmp::min;
 use std::sync::{Arc, Weak};
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tracing::{debug, error, info, trace};
+
+/// Arrow serde config for reading/writing Delta tables.
+pub const fn delta_arrow_serde_config() -> &'static SqlSerdeConfig {
+    &SqlSerdeConfig {
+        timestamp_format: TimestampFormat::MicrosSinceEpoch,
+        time_format: TimeFormat::NanosSigned,
+        date_format: DateFormat::String("%Y-%m-%d"),
+        decimal_format: DecimalFormat::String,
+        variant_format: VariantFormat::JsonString,
+        binary_format: BinaryFormat::Array,
+        uuid_format: UuidFormat::String,
+    }
+}
 
 struct DeltaTableWriterInner {
     endpoint_id: EndpointId,
@@ -423,7 +440,7 @@ impl Encoder for DeltaTableWriter {
         let mut num_insert_records = 0;
 
         let mut cursor = CursorWithPolarity::new(
-            batch.cursor(RecordFormat::Parquet(self.inner.serde_arrow_schema.clone()))?,
+            batch.cursor(RecordFormat::Parquet(delta_arrow_serde_config().clone()))?,
         );
         while cursor.key_valid() {
             if !cursor.val_valid() {

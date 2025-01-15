@@ -1,6 +1,6 @@
 use apache_avro::schema::{Name, NamesRef, RecordSchema};
 use apache_avro::{types::Value as AvroValue, Decimal, Schema as AvroSchema};
-use feldera_types::serde_with_context::serde_config::DecimalFormat;
+use feldera_types::serde_with_context::serde_config::{DecimalFormat, UuidFormat};
 use feldera_types::serde_with_context::{DateFormat, SqlSerdeConfig, TimeFormat, TimestampFormat};
 use rust_decimal::Decimal as RustDecimal;
 use serde::ser::{
@@ -22,6 +22,7 @@ pub fn avro_ser_config() -> SqlSerdeConfig {
         .with_time_format(TimeFormat::Micros)
         .with_date_format(DateFormat::DaysSinceEpoch)
         .with_decimal_format(DecimalFormat::U128)
+        .with_uuid_format(UuidFormat::String)
 }
 
 #[derive(Debug)]

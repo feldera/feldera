@@ -2245,7 +2245,8 @@ CREATE TABLE "TaBle1"(id bigint not null) with ('materialized' = 'true');
 
 CREATE TABLE t1 (
     id INT NOT NULL,
-    dt DATE NOT NULL
+    dt DATE NOT NULL,
+    uid UUID NOT NULL
 ) with (
   'materialized' = 'true',
   'connectors' = '[{
@@ -2275,11 +2276,12 @@ CREATE TABLE t2 (
     }
   }]'
 );
-CREATE MATERIALIZED VIEW joined AS ( SELECT t1.dt AS c1, t2.st AS c2 FROM t1, t2 WHERE t1.id = t2.id );
+CREATE MATERIALIZED VIEW joined AS ( SELECT t1.dt AS c1, t2.st AS c2, t1.uid as c3 FROM t1, t2 WHERE t1.id = t2.id );
 CREATE MATERIALIZED VIEW view_of_not_materialized AS ( SELECT * FROM not_materialized );
 "#;
     const ADHOC_SQL_A: &str = "SELECT * FROM joined";
-    const ADHOC_SQL_B: &str = "SELECT t1.dt AS c1, t2.st AS c2 FROM t1, t2 WHERE t1.id = t2.id";
+    const ADHOC_SQL_B: &str =
+        "SELECT t1.dt AS c1, t2.st AS c2, t1.uid as c3 FROM t1, t2 WHERE t1.id = t2.id";
 
     let config = setup().await;
     create_and_deploy_test_pipeline(&config, PROGRAM).await;
@@ -2334,14 +2336,14 @@ CREATE MATERIALIZED VIEW view_of_not_materialized AS ( SELECT * FROM not_materia
     }
 
     // Test parquet format, here we can't just sort it, so we ensure that view and adhoc join have the same order
-    let q1 = format!("{} ORDER BY c1, c2", ADHOC_SQL_A);
+    let q1 = format!("{} ORDER BY c1, c2, c3", ADHOC_SQL_A);
     let mut r1 = config
         .adhoc_query("/v0/pipelines/test/query", q1.as_str(), "parquet")
         .await;
     assert_eq!(r1.status(), StatusCode::OK);
     let b1_body = r1.body().await.unwrap();
 
-    let q2 = format!("{} ORDER BY c1, c2", ADHOC_SQL_B);
+    let q2 = format!("{} ORDER BY c1, c2, c3", ADHOC_SQL_B);
     let mut r2 = config
         .adhoc_query("/v0/pipelines/test/query", q2.as_str(), "parquet")
         .await;
@@ -2383,7 +2385,7 @@ CREATE MATERIALIZED VIEW view_of_not_materialized AS ( SELECT * FROM not_materia
 
     // Test insert statements for materialized tables
     const ADHOC_SQL_COUNT: &str = "SELECT COUNT(*) from t1";
-    const ADHOC_SQL_INSERT: &str = "INSERT INTO t1 VALUES (99, '2020-01-01'), (100, '2020-01-01')";
+    const ADHOC_SQL_INSERT: &str = "INSERT INTO t1 VALUES (99, '2020-01-01', 'c32d330f-5757-4ada-bcf6-1fac2d54e37f'), (100, '2020-01-01', '00000000-0000-0000-0000-000000000000')";
 
     let mut r = config
         .adhoc_query("/v0/pipelines/test/query", ADHOC_SQL_COUNT, "json")
