@@ -37,8 +37,6 @@ public class Port<Node> {
 
     @Override
     public String toString() {
-        return "Port[" +
-                "node=" + node + ", " +
-                "port=" + port + ']';
+        return "Port[" + this.node + ":" + this.port + ']';
     }
 }

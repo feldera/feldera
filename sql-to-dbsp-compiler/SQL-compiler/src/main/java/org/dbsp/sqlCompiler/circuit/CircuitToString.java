@@ -32,7 +32,8 @@ public class CircuitToString {
                     .append(":")
                     .append(index++)
                     .append(" = ");
-            port(o);
+            if (o != null)
+                port(o);
             this.builder.newline();
         }
         builder.decrease().append("}").newline();

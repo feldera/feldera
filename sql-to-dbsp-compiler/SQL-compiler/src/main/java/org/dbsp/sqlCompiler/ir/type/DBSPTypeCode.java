@@ -31,7 +31,7 @@ public enum DBSPTypeCode {
     UINT64(null, "u64", "u64"),
     UINT128(null, "u128", "u128"),
     USIZE(null, "u", "usize"),
-    VOID(null, "void", ""),
+    VOID(null, "void", "()"),
     WEIGHT(null, "Weight", "Weight"),
     // Derived types
     FUNCTION("FUNCTION", "", ""),

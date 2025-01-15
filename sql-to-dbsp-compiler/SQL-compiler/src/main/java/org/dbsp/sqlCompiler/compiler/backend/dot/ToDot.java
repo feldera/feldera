@@ -78,6 +78,11 @@ public class ToDot {
                 ToDot.dump(compiler, file, details, "png", circuit);
                 return circuit;
             }
+
+            @Override
+            public String toString() {
+                return "toDot";
+            }
         };
     }
 }
