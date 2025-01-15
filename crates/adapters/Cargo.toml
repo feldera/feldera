@@ -115,6 +115,7 @@ nonzero_ext = "0.3.0"
 xxhash-rust = { version = "0.8.6", features = ["xxh3"] }
 tracing = "0.1.40"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
+comfy-table = "7.1.3"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 jemalloc_pprof = "0.1.0"

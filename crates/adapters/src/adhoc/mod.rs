@@ -22,6 +22,7 @@ use std::convert::Infallible;
 use tokio::sync::oneshot::Receiver;
 use tokio::sync::{mpsc, oneshot};
 
+mod format;
 pub(crate) mod table;
 
 struct ChannelWriter {
@@ -100,7 +101,7 @@ pub async fn stream_adhoc_result(
                                 let batch_result = batch.map_err(PipelineError::from);
                                 match batch_result {
                                     Ok(batch) => {
-                                        let txt_table_format = pretty_format_batches(&[batch])
+                                        let txt_table_format = format::create_table(&[batch])
                                             .map_err(|e| PipelineError::AdHocQueryError { error: e.to_string(), df: None });
                                         match txt_table_format {
                                             Ok(txt_table) => {
