@@ -638,6 +638,7 @@ impl Storage for StoragePostgres {
         &self,
         tenant_id: TenantId,
         pipeline_id: PipelineId,
+        version_guard: Version,
         deployment_config: serde_json::Value,
     ) -> Result<(), DBError> {
         let mut client = self.pool.get().await?;
@@ -646,6 +647,7 @@ impl Storage for StoragePostgres {
             &txn,
             tenant_id,
             pipeline_id,
+            version_guard,
             PipelineStatus::Provisioning,
             None,
             Some(deployment_config),
@@ -660,6 +662,7 @@ impl Storage for StoragePostgres {
         &self,
         tenant_id: TenantId,
         pipeline_id: PipelineId,
+        version_guard: Version,
         deployment_location: &str,
     ) -> Result<(), DBError> {
         let mut client = self.pool.get().await?;
@@ -668,6 +671,7 @@ impl Storage for StoragePostgres {
             &txn,
             tenant_id,
             pipeline_id,
+            version_guard,
             PipelineStatus::Initializing,
             None,
             None,
@@ -682,6 +686,7 @@ impl Storage for StoragePostgres {
         &self,
         tenant_id: TenantId,
         pipeline_id: PipelineId,
+        version_guard: Version,
     ) -> Result<(), DBError> {
         let mut client = self.pool.get().await?;
         let txn = client.transaction().await?;
@@ -689,6 +694,7 @@ impl Storage for StoragePostgres {
             &txn,
             tenant_id,
             pipeline_id,
+            version_guard,
             PipelineStatus::Running,
             None,
             None,
@@ -703,6 +709,7 @@ impl Storage for StoragePostgres {
         &self,
         tenant_id: TenantId,
         pipeline_id: PipelineId,
+        version_guard: Version,
     ) -> Result<(), DBError> {
         let mut client = self.pool.get().await?;
         let txn = client.transaction().await?;
@@ -710,6 +717,7 @@ impl Storage for StoragePostgres {
             &txn,
             tenant_id,
             pipeline_id,
+            version_guard,
             PipelineStatus::Paused,
             None,
             None,
@@ -724,6 +732,7 @@ impl Storage for StoragePostgres {
         &self,
         tenant_id: TenantId,
         pipeline_id: PipelineId,
+        version_guard: Version,
     ) -> Result<(), DBError> {
         let mut client = self.pool.get().await?;
         let txn = client.transaction().await?;
@@ -731,6 +740,7 @@ impl Storage for StoragePostgres {
             &txn,
             tenant_id,
             pipeline_id,
+            version_guard,
             PipelineStatus::Unavailable,
             None,
             None,
@@ -745,6 +755,7 @@ impl Storage for StoragePostgres {
         &self,
         tenant_id: TenantId,
         pipeline_id: PipelineId,
+        version_guard: Version,
     ) -> Result<(), DBError> {
         let mut client = self.pool.get().await?;
         let txn = client.transaction().await?;
@@ -752,6 +763,7 @@ impl Storage for StoragePostgres {
             &txn,
             tenant_id,
             pipeline_id,
+            version_guard,
             PipelineStatus::ShuttingDown,
             None,
             None,
@@ -766,6 +778,7 @@ impl Storage for StoragePostgres {
         &self,
         tenant_id: TenantId,
         pipeline_id: PipelineId,
+        version_guard: Version,
     ) -> Result<(), DBError> {
         let mut client = self.pool.get().await?;
         let txn = client.transaction().await?;
@@ -773,6 +786,7 @@ impl Storage for StoragePostgres {
             &txn,
             tenant_id,
             pipeline_id,
+            version_guard,
             PipelineStatus::Shutdown,
             None,
             None,
@@ -787,6 +801,7 @@ impl Storage for StoragePostgres {
         &self,
         tenant_id: TenantId,
         pipeline_id: PipelineId,
+        version_guard: Version,
         deployment_error: &ErrorResponse,
     ) -> Result<(), DBError> {
         let mut client = self.pool.get().await?;
@@ -795,6 +810,7 @@ impl Storage for StoragePostgres {
             &txn,
             tenant_id,
             pipeline_id,
+            version_guard,
             PipelineStatus::Failed,
             Some(deployment_error.clone()),
             None,

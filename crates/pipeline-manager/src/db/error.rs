@@ -129,6 +129,10 @@ pub enum DBError {
         outdated_version: Version,
         latest_version: Version,
     },
+    OutdatedPipelineVersion {
+        outdated_version: Version,
+        latest_version: Version,
+    },
     StartFailedDueToFailedCompilation {
         compiler_error: String,
     },
@@ -477,6 +481,15 @@ impl Display for DBError {
                     "Program version ({outdated_version}) is outdated by latest ({latest_version})"
                 )
             }
+            DBError::OutdatedPipelineVersion {
+                outdated_version,
+                latest_version,
+            } => {
+                write!(
+                    f,
+                    "Pipeline version ({outdated_version}) is outdated by latest ({latest_version})"
+                )
+            }
             DBError::StartFailedDueToFailedCompilation { .. } => {
                 write!(
                     f,
@@ -570,6 +583,7 @@ impl DetailedError for DBError {
                 Cow::from("CannotRenameNonExistingPipeline")
             }
             Self::OutdatedProgramVersion { .. } => Cow::from("OutdatedProgramVersion"),
+            Self::OutdatedPipelineVersion { .. } => Cow::from("OutdatedPipelineVersion"),
             Self::StartFailedDueToFailedCompilation { .. } => {
                 Cow::from("StartFailedDueToFailedCompilation")
             }
@@ -626,6 +640,7 @@ impl ResponseError for DBError {
             Self::CannotDeleteNonShutdownPipeline { .. } => StatusCode::BAD_REQUEST,
             Self::CannotRenameNonExistingPipeline { .. } => StatusCode::BAD_REQUEST,
             Self::OutdatedProgramVersion { .. } => StatusCode::CONFLICT,
+            Self::OutdatedPipelineVersion { .. } => StatusCode::CONFLICT,
             Self::StartFailedDueToFailedCompilation { .. } => StatusCode::BAD_REQUEST,
             Self::TransitionRequiresCompiledProgram { .. } => StatusCode::INTERNAL_SERVER_ERROR, // Runner error
             Self::InvalidProgramStatusTransition { .. } => StatusCode::INTERNAL_SERVER_ERROR, // Compiler error
