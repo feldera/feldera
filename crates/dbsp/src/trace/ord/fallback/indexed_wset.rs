@@ -1,9 +1,6 @@
 use crate::{
     algebra::{AddAssignByRef, AddByRef, NegByRef, ZRingValue},
-    dynamic::{
-        DataTrait, DynDataTyped, DynPair, DynVec, DynWeightedPairs, Erase, Factory, WeightTrait,
-        WeightTraitTyped,
-    },
+    dynamic::{DataTrait, DynPair, DynVec, Erase, WeightTrait, WeightTraitTyped},
     storage::file::reader::Error as ReaderError,
     time::{Antichain, AntichainRef},
     trace::{
@@ -12,14 +9,13 @@ use crate::{
             file::indexed_wset_batch::{FileIndexedWSetBuilder, FileIndexedWSetMerger},
             merge_batcher::MergeBatcher,
             vec::indexed_wset_batch::{
-                VecIndexedWSet, VecIndexedWSetBuilder, VecIndexedWSetFactories,
-                VecIndexedWSetMerger,
+                VecIndexedWSet, VecIndexedWSetBuilder, VecIndexedWSetMerger,
             },
         },
-        Batch, BatchFactories, BatchLocation, BatchReader, BatchReaderFactories, Builder,
-        FileIndexedWSet, FileIndexedWSetFactories, Filter, Merger, TimedBuilder, WeightedItem,
+        Batch, BatchLocation, BatchReader, Builder, FileIndexedWSet, FileIndexedWSetFactories,
+        Filter, Merger, TimedBuilder,
     },
-    DBData, DBWeight, NumEntries,
+    DBWeight, NumEntries,
 };
 use rand::Rng;
 use rkyv::{ser::Serializer, Archive, Archived, Deserialize, Fallible, Serialize};
@@ -30,89 +26,7 @@ use std::{ops::Neg, path::PathBuf};
 
 use super::utils::{copy_to_builder, pick_merge_destination, BuildTo, GenericMerger};
 
-pub struct FallbackIndexedWSetFactories<K, V, R>
-where
-    K: DataTrait + ?Sized,
-    V: DataTrait + ?Sized,
-    R: WeightTrait + ?Sized,
-{
-    file: FileIndexedWSetFactories<K, V, R>,
-    vec: VecIndexedWSetFactories<K, V, R>,
-}
-
-impl<K, V, R> Clone for FallbackIndexedWSetFactories<K, V, R>
-where
-    K: DataTrait + ?Sized,
-    V: DataTrait + ?Sized,
-    R: WeightTrait + ?Sized,
-{
-    fn clone(&self) -> Self {
-        Self {
-            file: self.file.clone(),
-            vec: self.vec.clone(),
-        }
-    }
-}
-
-impl<K, V, R> BatchReaderFactories<K, V, (), R> for FallbackIndexedWSetFactories<K, V, R>
-where
-    K: DataTrait + ?Sized,
-    V: DataTrait + ?Sized,
-    R: WeightTrait + ?Sized,
-{
-    fn new<KType, VType, RType>() -> Self
-    where
-        KType: DBData + Erase<K>,
-        VType: DBData + Erase<V>,
-        RType: DBWeight + Erase<R>,
-    {
-        Self {
-            file: FileIndexedWSetFactories::new::<KType, VType, RType>(),
-            vec: VecIndexedWSetFactories::new::<KType, VType, RType>(),
-        }
-    }
-
-    fn key_factory(&self) -> &'static dyn Factory<K> {
-        self.file.key_factory()
-    }
-
-    fn keys_factory(&self) -> &'static dyn Factory<DynVec<K>> {
-        self.file.keys_factory()
-    }
-
-    fn val_factory(&self) -> &'static dyn Factory<V> {
-        self.file.val_factory()
-    }
-
-    fn weight_factory(&self) -> &'static dyn Factory<R> {
-        self.file.weight_factory()
-    }
-}
-
-impl<K, V, R> BatchFactories<K, V, (), R> for FallbackIndexedWSetFactories<K, V, R>
-where
-    K: DataTrait + ?Sized,
-    V: DataTrait + ?Sized,
-    R: WeightTrait + ?Sized,
-{
-    fn item_factory(&self) -> &'static dyn Factory<DynPair<K, V>> {
-        self.file.item_factory()
-    }
-
-    fn weighted_item_factory(&self) -> &'static dyn Factory<WeightedItem<K, V, R>> {
-        self.file.weighted_item_factory()
-    }
-
-    fn weighted_items_factory(&self) -> &'static dyn Factory<DynWeightedPairs<DynPair<K, V>, R>> {
-        self.file.weighted_items_factory()
-    }
-
-    fn time_diffs_factory(
-        &self,
-    ) -> Option<&'static dyn Factory<DynWeightedPairs<DynDataTyped<()>, R>>> {
-        None
-    }
-}
+pub type FallbackIndexedWSetFactories<K, V, R> = FileIndexedWSetFactories<K, V, R>;
 
 #[derive(SizeOf)]
 pub struct FallbackIndexedWSet<K, V, R>
@@ -299,7 +213,7 @@ where
     V: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
-    type Factories = FallbackIndexedWSetFactories<K, V, R>;
+    type Factories = FileIndexedWSetFactories<K, V, R>;
     type Key = K;
     type Val = V;
     type Time = ();
@@ -391,7 +305,7 @@ where
     fn persisted(&self) -> Option<Self> {
         match &self.inner {
             Inner::Vec(vec) => {
-                let mut file = FileIndexedWSetBuilder::with_capacity(&self.factories.file, (), 0);
+                let mut file = FileIndexedWSetBuilder::with_capacity(&self.factories, (), 0);
                 copy_to_builder(&mut file, vec.cursor());
                 Some(Self {
                     inner: Inner::File(file.done()),
@@ -412,7 +326,7 @@ where
     fn from_path(factories: &Self::Factories, path: &Path) -> Result<Self, ReaderError> {
         Ok(FallbackIndexedWSet {
             factories: factories.clone(),
-            inner: Inner::File(FileIndexedWSet::from_path(&factories.file, path)?),
+            inner: Inner::File(FileIndexedWSet::from_path(factories, path)?),
         })
     }
 }
@@ -468,7 +382,7 @@ where
                     MergerInner::AllVec(VecIndexedWSetMerger::new_merger(vec1, vec2, dst_hint))
                 }
                 (BatchLocation::Memory, _, _) => MergerInner::ToVec(GenericMerger::new(
-                    &batch1.factories.vec,
+                    &batch1.factories.vec_indexed_wset_factory,
                     None,
                     batch1,
                     batch2,
@@ -476,12 +390,9 @@ where
                 (BatchLocation::Storage, Inner::File(file1), Inner::File(file2)) => {
                     MergerInner::AllFile(FileIndexedWSetMerger::new_merger(file1, file2, dst_hint))
                 }
-                (BatchLocation::Storage, _, _) => MergerInner::ToFile(GenericMerger::new(
-                    &batch1.factories.file,
-                    None,
-                    batch1,
-                    batch2,
-                )),
+                (BatchLocation::Storage, _, _) => {
+                    MergerInner::ToFile(GenericMerger::new(&batch1.factories, None, batch1, batch2))
+                }
             },
         }
     }
@@ -604,7 +515,7 @@ where
     /// to storage as `BuilderInner::File`, writing `vec` as the initial
     /// contents.
     fn spill(&mut self, vec: VecIndexedWSet<K, V, R, usize>) {
-        let mut file = FileIndexedWSetBuilder::with_capacity(&self.factories.file, (), 0);
+        let mut file = FileIndexedWSetBuilder::with_capacity(&self.factories, (), 0);
         copy_to_builder(&mut file, vec.cursor());
         self.inner = BuilderInner::File(file);
     }
@@ -631,8 +542,8 @@ where
         Self {
             factories: factories.clone(),
             inner: match BuildTo::for_capacity(
-                &factories.vec,
-                &factories.file,
+                &factories.vec_indexed_wset_factory,
+                factories,
                 time,
                 capacity,
                 VecIndexedWSetBuilder::with_capacity,
@@ -658,7 +569,11 @@ where
                 if size > *remaining {
                     let vec = replace(
                         vec,
-                        VecIndexedWSetBuilder::with_capacity(&self.factories.vec, (), 0),
+                        VecIndexedWSetBuilder::with_capacity(
+                            &self.factories.vec_indexed_wset_factory,
+                            (),
+                            0,
+                        ),
                     )
                     .done();
                     self.spill(vec);
@@ -679,7 +594,11 @@ where
                 if size > *remaining {
                     let vec = replace(
                         vec,
-                        VecIndexedWSetBuilder::with_capacity(&self.factories.vec, (), 0),
+                        VecIndexedWSetBuilder::with_capacity(
+                            &self.factories.vec_indexed_wset_factory,
+                            (),
+                            0,
+                        ),
                     )
                     .done();
                     self.spill(vec);
@@ -700,7 +619,11 @@ where
                 if size > *remaining {
                     let vec = replace(
                         vec,
-                        VecIndexedWSetBuilder::with_capacity(&self.factories.vec, (), 0),
+                        VecIndexedWSetBuilder::with_capacity(
+                            &self.factories.vec_indexed_wset_factory,
+                            (),
+                            0,
+                        ),
                     )
                     .done();
                     self.spill(vec);
@@ -746,13 +669,13 @@ where
             factories: factories.clone(),
             inner: match pick_merge_destination(batches.iter().map(Deref::deref), None) {
                 BatchLocation::Memory => BuilderInner::Vec(VecIndexedWSetBuilder::with_capacity(
-                    &factories.vec,
+                    &factories.vec_indexed_wset_factory,
                     (),
                     cap,
                 )),
-                BatchLocation::Storage => BuilderInner::File(
-                    FileIndexedWSetBuilder::with_capacity(&factories.file, (), cap),
-                ),
+                BatchLocation::Storage => {
+                    BuilderInner::File(FileIndexedWSetBuilder::with_capacity(factories, (), cap))
+                }
             },
         }
     }

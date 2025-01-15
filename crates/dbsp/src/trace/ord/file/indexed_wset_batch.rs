@@ -2,7 +2,7 @@ use crate::{
     algebra::{AddAssignByRef, AddByRef, NegByRef},
     dynamic::{
         DataTrait, DynDataTyped, DynOpt, DynPair, DynUnit, DynVec, DynWeightedPairs, Erase,
-        Factory, LeanVec, WeightTrait, WeightTraitTyped, WithFactory,
+        Factory, WeightTrait, WeightTraitTyped, WithFactory,
     },
     storage::file::{
         reader::{Cursor as FileCursor, Error as ReaderError, Reader},
@@ -14,9 +14,8 @@ use crate::{
         cursor::{HasTimeDiffCursor, SingletonTimeDiffCursor},
         ord::{filter, merge_batcher::MergeBatcher},
         Batch, BatchFactories, BatchLocation, BatchReader, BatchReaderFactories, Builder, Cursor,
-        Filter, Merger, TimedBuilder, WeightedItem,
+        Filter, Merger, TimedBuilder, VecIndexedWSetFactories, WeightedItem,
     },
-    utils::Tup2,
     DBData, DBWeight, NumEntries, Runtime,
 };
 use dyn_clone::clone_box;
@@ -36,16 +35,10 @@ where
     V: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
-    key_factory: &'static dyn Factory<K>,
-    val_factory: &'static dyn Factory<V>,
-    weight_factory: &'static dyn Factory<R>,
-    keys_factory: &'static dyn Factory<DynVec<K>>,
-    item_factory: &'static dyn Factory<DynPair<K, V>>,
     factories0: FileFactories<K, DynUnit>,
     factories1: FileFactories<V, R>,
     opt_key_factory: &'static dyn Factory<DynOpt<K>>,
-    weighted_item_factory: &'static dyn Factory<WeightedItem<K, V, R>>,
-    weighted_items_factory: &'static dyn Factory<DynWeightedPairs<DynPair<K, V>, R>>,
+    pub vec_indexed_wset_factory: VecIndexedWSetFactories<K, V, R>,
 }
 
 impl<K, V, R> Clone for FileIndexedWSetFactories<K, V, R>
@@ -56,16 +49,10 @@ where
 {
     fn clone(&self) -> Self {
         Self {
-            key_factory: self.key_factory,
-            val_factory: self.val_factory,
-            weight_factory: self.weight_factory,
-            keys_factory: self.keys_factory,
-            item_factory: self.item_factory,
             factories0: self.factories0.clone(),
             factories1: self.factories1.clone(),
             opt_key_factory: self.opt_key_factory,
-            weighted_item_factory: self.weighted_item_factory,
-            weighted_items_factory: self.weighted_items_factory,
+            vec_indexed_wset_factory: self.vec_indexed_wset_factory.clone(),
         }
     }
 }
@@ -83,34 +70,27 @@ where
         RType: DBWeight + Erase<R>,
     {
         Self {
-            key_factory: WithFactory::<KType>::FACTORY,
-            val_factory: WithFactory::<VType>::FACTORY,
-            weight_factory: WithFactory::<RType>::FACTORY,
-            keys_factory: WithFactory::<LeanVec<KType>>::FACTORY,
-            item_factory: WithFactory::<Tup2<KType, VType>>::FACTORY,
             factories0: FileFactories::new::<KType, ()>(),
             factories1: FileFactories::new::<VType, RType>(),
             opt_key_factory: WithFactory::<Option<KType>>::FACTORY,
-            weighted_item_factory: WithFactory::<Tup2<Tup2<KType, VType>, RType>>::FACTORY,
-            weighted_items_factory:
-                WithFactory::<LeanVec<Tup2<Tup2<KType, VType>, RType>>>::FACTORY,
+            vec_indexed_wset_factory: VecIndexedWSetFactories::new::<KType, VType, RType>(),
         }
     }
 
     fn key_factory(&self) -> &'static dyn Factory<K> {
-        self.key_factory
+        self.vec_indexed_wset_factory.key_factory()
     }
 
     fn keys_factory(&self) -> &'static dyn Factory<DynVec<K>> {
-        self.keys_factory
+        self.vec_indexed_wset_factory.keys_factory()
     }
 
     fn val_factory(&self) -> &'static dyn Factory<V> {
-        self.val_factory
+        self.vec_indexed_wset_factory.val_factory()
     }
 
     fn weight_factory(&self) -> &'static dyn Factory<R> {
-        self.weight_factory
+        self.vec_indexed_wset_factory.weight_factory()
     }
 }
 
@@ -121,15 +101,15 @@ where
     R: WeightTrait + ?Sized,
 {
     fn item_factory(&self) -> &'static dyn Factory<DynPair<K, V>> {
-        self.item_factory
+        self.vec_indexed_wset_factory.item_factory()
     }
 
     fn weighted_item_factory(&self) -> &'static dyn Factory<WeightedItem<K, V, R>> {
-        self.weighted_item_factory
+        self.vec_indexed_wset_factory.weighted_item_factory()
     }
 
     fn weighted_items_factory(&self) -> &'static dyn Factory<DynWeightedPairs<DynPair<K, V>, R>> {
-        self.weighted_items_factory
+        self.vec_indexed_wset_factory.weighted_items_factory()
     }
 
     fn time_diffs_factory(
@@ -514,7 +494,7 @@ where
         value_filter: &Option<Filter<V>>,
     ) -> bool {
         let mut n = 0;
-        let mut sum = self.factories.weight_factory.default_box();
+        let mut sum = self.factories.weight_factory().default_box();
 
         while cursor1.val_valid() && cursor2.val_valid() {
             let value1 = cursor1.val();
@@ -695,12 +675,12 @@ where
             .subset(lower_bound as u64..)
             .first()
             .unwrap();
-        let mut key = wset.factories.key_factory.default_box();
+        let mut key = wset.factories.key_factory().default_box();
         unsafe { key_cursor.key(&mut key) };
 
         let val_cursor = key_cursor.next_column().unwrap().first().unwrap();
-        let mut val = wset.factories.val_factory.default_box();
-        let mut diff = wset.factories.weight_factory.default_box();
+        let mut val = wset.factories.val_factory().default_box();
+        let mut diff = wset.factories.weight_factory().default_box();
         unsafe { val_cursor.item((&mut val, &mut diff)) };
         Self {
             wset,
@@ -742,7 +722,7 @@ where
     R: WeightTrait + ?Sized,
 {
     fn weight_factory(&self) -> &'static dyn Factory<R> {
-        self.wset.factories.weight_factory
+        self.wset.factories.weight_factory()
     }
 
     fn key(&self) -> &K {
