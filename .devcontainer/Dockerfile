@@ -1,4 +1,4 @@
-FROM ubuntu:22.04 AS base
+FROM ubuntu:24.04 AS base
 
 ## Add non-root user for startup of pg-embed with rust backend
 
@@ -33,17 +33,14 @@ RUN apt-get update --fix-missing && \
 
 RUN apt-get install -y \
    gcc clang libclang-dev python3-pip python3-plumbum \
-   hub numactl openjdk-19-jre-headless maven
+   hub numactl openjdk-21-jre-headless maven
 
-## Install nodejs and global packages (optional)
-# - nodejs
+## Install nodejs (optional)
 RUN mkdir -p /etc/apt/keyrings
 RUN curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | sudo gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg
 ENV NODE_MAJOR=20
 RUN echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_$NODE_MAJOR.x nodistro main" | sudo tee /etc/apt/sources.list.d/nodesource.list
 RUN apt update --fix-missing && apt install nodejs
-RUN npm install --global yarn
-RUN npm install --global openapi-typescript-codegen
 
 ## Install Redpanda rpk to enable preparing demos
 
@@ -55,8 +52,7 @@ RUN ARCH=`dpkg --print-architecture`; \
 
 ## Install python dependencies for the demos
 
-RUN \
-   pip3 install gdown kafka-python
+RUN pip3 install --break-system-packages gdown kafka-python-ng
 
 ## Switch to non-root user
 
@@ -71,13 +67,12 @@ ENV PATH="$HOME/.cargo/bin:$PATH"
 ## Install Bun.js
 RUN curl -fsSL https://bun.sh/install | bash
 ENV PATH="$HOME/.bun/bin:$PATH"
+RUN $HOME/.bun/bin/bun install --global @hey-api/openapi-ts
 
 RUN \
-   rustup install nightly && \
+   rustup install 1.82.0 && \
    rustup component add rustfmt && \
-   rustup component add rustfmt --toolchain nightly && \
    rustup component add clippy && \
-   rustup component add clippy --toolchain nightly && \
    cargo install cargo-make
 
 ENV PATH="$HOME/.local/bin:$PATH"

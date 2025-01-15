@@ -1,4 +1,4 @@
-name: Docker Build
+name: Build release images
 
 on:
   schedule:
@@ -10,41 +10,43 @@ on:
 env:
   REGISTRY: ghcr.io
   PIPELINE_MANAGER_IMAGE: ghcr.io/${{ github.repository_owner }}/pipeline-manager
-  KAFKA_CONNECT_IMAGE:  ghcr.io/${{ github.repository_owner }}/kafka-connect
 
 jobs:
   build-and-push-image:
-    runs-on: [self-hosted, skylake40]
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      matrix:
+        include:
+          - runner: [self-hosted, skylake40]
+            os: linux
+            arch: amd64
+          - runner: blacksmith-8vcpu-ubuntu-2204-arm
+            os: linux
+            arch: arm64
     permissions:
       contents: read
       packages: write
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           submodules: true
 
       - name: Docker meta (pipeline-manager)
         id: meta_pipeline_manager
-        uses: docker/metadata-action@v4
+        uses: docker/metadata-action@v5
         with:
           images: ${{ env.PIPELINE_MANAGER_IMAGE }}
           tags: |
             type=semver,pattern={{version}}
-
-      - name: Docker meta (kafka-connect)
-        id: meta_kafka_connect
-        uses: docker/metadata-action@v4
-        with:
-          images: ${{ env.KAFKA_CONNECT_IMAGE }}
-          tags: |
-            type=semver,pattern={{version}}
-
-      - name: Build Kafka Connect container
-        run: |
-          cd deploy && \
-          docker build -f Dockerfile.kafka-connect --target kafka-connect -t ${{ env.KAFKA_CONNECT_IMAGE }}  .
+            type=raw,value=latest
+          # Single image description
+          labels: |
+            org.opencontainers.image.description=The Pipeline Manager lets you create and run pipelines inside Feldera instance
+          # Multiarch manifest description
+          annotations: |
+            org.opencontainers.image.description=The Pipeline Manager lets you create and run pipelines inside Feldera instance
 
       - name: Run standard demo that checks a couple endpoints are reachable
         run: |
@@ -56,31 +58,71 @@ jobs:
                                                             --exit-code-from demo-standard --renew-anon-volumes
 
       - name: Log in to the Container registry
-        uses: docker/login-action@f054a8b539a109f9f41c372932f1ae047eff08c9
+        uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Push untagged images when the workflow is not triggered by a release
-      - name: Push containers
-        if: github.event_name != 'release'
-        run: docker push ${{ env.PIPELINE_MANAGER_IMAGE }} && docker push ${{ env.KAFKA_CONNECT_IMAGE }}
-
-      # Tagged pipeline-manager image
-      - name: Push (pipeline-manager)
-        uses: docker/build-push-action@v4
-        if: github.event_name == 'release'
+      - name: Build and push pipeline-manager image
+        id: build_pipeline_manager
+        uses: docker/build-push-action@v6
         with:
           context: .
+          platforms: ${{matrix.os}}/${{matrix.arch}}
           file: deploy/Dockerfile
           push: true
           tags: ${{ steps.meta_pipeline_manager.outputs.tags }}
           labels: ${{ steps.meta_pipeline_manager.outputs.labels }}
+          annotations: ${{ steps.meta_pipeline_manager.outputs.annotations }}
 
-      - uses: actions/delete-package-versions@v4
+      - name: Export multiarch image digest
+        id: export_image_digest
+        run: |
+          echo "digest-pipeline-manager-${{matrix.os}}-${{matrix.arch}}=${{ steps.build_pipeline_manager.outputs.digest }}" >> $GITHUB_OUTPUT
+
+      # - uses: actions/delete-package-versions@v4
+      #   with:
+      #     package-name: pipeline-manager
+      #     package-type: 'container'
+      #     min-versions-to-keep: 5
+      #     delete-only-untagged-versions: 'true'
+
+    outputs:
+      digest-pipeline-manager-linux-amd64: ${{ steps.export_image_digest.outputs.digest-pipeline-manager-linux-amd64 }}
+      digest-pipeline-manager-linux-arm64: ${{ steps.export_image_digest.outputs.digest-pipeline-manager-linux-arm64 }}
+
+  push-docker-manifest:
+    needs: build-and-push-image
+    runs-on: blacksmith-2vcpu-ubuntu-2204-arm
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Docker meta
+        id: meta_pipeline_manager
+        uses: docker/metadata-action@v5
         with:
-          package-name: pipeline-manager
-          package-type: 'container'
-          min-versions-to-keep: 5
-          delete-only-untagged-versions: 'true'
+          images: |
+            ${{ env.PIPELINE_MANAGER_IMAGE }}
+          tags: |
+            type=semver,pattern={{version}}
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Push latest manifest
+        run: |
+          docker manifest create ${{ env.PIPELINE_MANAGER_IMAGE }} \
+            ${{ env.PIPELINE_MANAGER_IMAGE }}@${{needs.build-and-push-image.outputs.digest-pipeline-manager-linux-amd64}} \
+            ${{ env.PIPELINE_MANAGER_IMAGE }}@${{needs.build-and-push-image.outputs.digest-pipeline-manager-linux-arm64}}
+          docker manifest push ${{ env.PIPELINE_MANAGER_IMAGE }}:latest
+      - name: Push versioned manifest
+        if: github.event_name == 'release'
+        run: |
+          docker manifest create ${{ env.PIPELINE_MANAGER_IMAGE }} \
+            ${{ env.PIPELINE_MANAGER_IMAGE }}@${{needs.build-and-push-image.outputs.digest-pipeline-manager-linux-amd64}} \
+            ${{ env.PIPELINE_MANAGER_IMAGE }}@${{needs.build-and-push-image.outputs.digest-pipeline-manager-linux-arm64}}
+          docker manifest push ${{ env.PIPELINE_MANAGER_IMAGE }}:${{ github.event.release.tag_name }}
