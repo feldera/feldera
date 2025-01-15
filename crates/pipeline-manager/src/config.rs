@@ -1,6 +1,6 @@
-use crate::db::types::common::Version;
 use crate::db::types::pipeline::PipelineId;
 use crate::db::types::program::CompilationProfile;
+use crate::db::types::version::Version;
 use actix_web::http::header;
 use anyhow::{Error as AnyError, Result as AnyResult};
 use clap::Parser;
@@ -205,8 +205,7 @@ impl std::fmt::Display for AuthProviderType {
     }
 }
 
-/// Pipeline manager configuration read from a YAML config file or from command
-/// line arguments.
+/// API server configuration read from command-line arguments.
 #[derive(Parser, Deserialize, Debug, Clone)]
 #[command(author, version, about, long_about = None)]
 pub struct ApiServerConfig {
@@ -321,8 +320,7 @@ impl ApiServerConfig {
     }
 }
 
-/// Pipeline manager configuration read from a YAML config file or from command
-/// line arguments.
+/// Compiler server configuration read from command-line arguments.
 #[derive(Parser, Deserialize, Debug, Clone)]
 pub struct CompilerConfig {
     /// Directory where the manager stores its filesystem state:

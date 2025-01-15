@@ -1,6 +1,6 @@
 use crate::db::error::DBError;
-use crate::db::types::common::validate_name;
 use crate::db::types::pipeline::PipelineId;
+use crate::db::types::utils::validate_name;
 use clap::Parser;
 use feldera_types::config::{
     ConnectorConfig, InputEndpointConfig, OutputEndpointConfig, PipelineConfig, RuntimeConfig,
@@ -258,7 +258,7 @@ fn default_program_config_cache() -> bool {
 }
 
 /// Program configuration.
-#[derive(Clone, Debug, Eq, PartialEq, Default, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct ProgramConfig {
     /// Compilation profile.
     /// If none is specified, the compiler default compilation profile is used.
@@ -270,16 +270,6 @@ pub struct ProgramConfig {
     /// and as well can result in overriding an existing binary.
     #[serde(default = "default_program_config_cache")]
     pub cache: bool,
-}
-
-impl ProgramConfig {
-    pub fn from_yaml(s: &str) -> Self {
-        serde_yaml::from_str(s).unwrap()
-    }
-
-    pub fn to_yaml(&self) -> String {
-        serde_yaml::to_string(self).unwrap()
-    }
 }
 
 #[derive(ThisError, Serialize, Deserialize, Debug, ToSchema)]
@@ -463,17 +453,17 @@ fn convert_connectors_with_unique_names(
 ///
 /// It includes information needed for Rust compilation (e.g., generated Rust code)
 /// as well as only for runtime (e.g., schema, input/output connectors).
-#[derive(Default, Deserialize, Serialize, ToSchema, Eq, PartialEq, Debug, Clone)]
+#[derive(Deserialize, Serialize, ToSchema, Eq, PartialEq, Debug, Clone)]
 pub struct ProgramInfo {
     /// Schema of the compiled SQL.
     pub schema: ProgramSchema,
 
     /// Generated main program Rust code: main.rs
-    #[serde(default)]
+    #[serde(default)] // TODO: when a breaking migration can happen, remove this default
     pub main_rust: String,
 
     /// Generated user defined function (UDF) stubs Rust code: stubs.rs
-    #[serde(default)]
+    #[serde(default)] // TODO: when a breaking migration can happen, remove this default
     pub udf_stubs: String,
 
     /// Input connectors derived from the schema.
@@ -481,16 +471,6 @@ pub struct ProgramInfo {
 
     /// Output connectors derived from the schema.
     pub output_connectors: BTreeMap<Cow<'static, str>, OutputEndpointConfig>,
-}
-
-impl ProgramInfo {
-    pub fn from_yaml(s: &str) -> Self {
-        serde_yaml::from_str(s).unwrap()
-    }
-
-    pub fn to_yaml(&self) -> String {
-        serde_yaml::to_string(self).unwrap()
-    }
 }
 
 /// Generates the program info using the program schema.

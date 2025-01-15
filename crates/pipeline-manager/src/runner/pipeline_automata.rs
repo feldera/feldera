@@ -7,13 +7,15 @@ use crate::db::types::pipeline::{
 };
 use crate::db::types::program::{generate_pipeline_config, ProgramStatus};
 use crate::db::types::tenant::TenantId;
+use crate::db::types::utils::{
+    validate_deployment_config, validate_program_info, validate_runtime_config,
+};
 use crate::error::ManagerError;
 use crate::runner::error::RunnerError;
 use crate::runner::interaction::RunnerInteraction;
 use crate::runner::pipeline_executor::PipelineExecutor;
 use actix_web::http::{Method, StatusCode};
 use chrono::{DateTime, Utc};
-use feldera_types::config::PipelineConfig;
 use feldera_types::error::ErrorResponse;
 use log::{debug, error, info, warn};
 use std::sync::Arc;
@@ -45,12 +47,18 @@ async fn automaton_http_request_to_pipeline_json(
 /// Utility type for the pipeline automaton to describe state changes.
 #[derive(Debug, PartialEq)]
 enum State {
-    TransitionToProvisioning { deployment_config: PipelineConfig },
-    TransitionToInitializing { deployment_location: String },
+    TransitionToProvisioning {
+        deployment_config: serde_json::Value,
+    },
+    TransitionToInitializing {
+        deployment_location: String,
+    },
     TransitionToPaused,
     TransitionToRunning,
     TransitionToUnavailable,
-    TransitionToFailed { error: ErrorResponse },
+    TransitionToFailed {
+        error: ErrorResponse,
+    },
     TransitionToShuttingDown,
     TransitionToShutdown,
     Unchanged,
@@ -141,6 +149,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
     /// Runs until the pipeline is deleted or an unexpected error occurs.
     pub async fn run(mut self) -> Result<(), ManagerError> {
         let pipeline_id = self.pipeline_id;
+        debug!("Automaton started: pipeline {pipeline_id}");
         let mut poll_timeout = Self::DEFAULT_PIPELINE_POLL_PERIOD;
         loop {
             // Wait until the timeout expires, or we get notified that the
@@ -164,14 +173,14 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                     match &e {
                         // Pipeline deletions should not lead to errors in the logs.
                         DBError::UnknownPipeline { pipeline_id } => {
-                            info!("Pipeline {pipeline_id} no longer exists: shutting down its automaton");
+                            info!("Automaton ended: pipeline {pipeline_id}");
                         }
                         _ => {
-                            error!("Pipeline automaton {pipeline_id} terminated with database error: {e}")
+                            error!("Automaton ended (unexpected): pipeline {pipeline_id} -- due to database error: {e}")
                         }
                     };
 
-                    // By leaving the run loop, the automata will consume itself.
+                    // By leaving the run loop, the automaton will consume itself.
                     // As such, the pipeline_handle it owns will be dropped,
                     // which in turn will shut down by itself as a consequence.
                     return Err(ManagerError::from(e));
@@ -470,10 +479,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         pipeline: &ExtendedPipelineDescrMonitoring,
     ) -> Result<String, RunnerError> {
         match pipeline.deployment_location.clone() {
-            None => Err(RunnerError::PipelineMissingDeploymentLocation {
-                pipeline_id: pipeline.id,
-                pipeline_name: pipeline.name.clone(),
-            }),
+            None => Err(RunnerError::PipelineMissingDeploymentLocation),
             Some(location) => Ok(location),
         }
     }
@@ -636,31 +642,70 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         assert_eq!(pipeline.program_status, ProgramStatus::Success);
         assert_eq!(self.platform_version, pipeline.platform_version);
 
-        // Input and output connectors
-        let (inputs, outputs) = match pipeline.program_info.clone() {
-            None => {
+        // Required runtime_config
+        let runtime_config = match validate_runtime_config(&pipeline.runtime_config, true) {
+            Ok(runtime_config) => runtime_config,
+            Err(e) => {
                 return Ok(State::TransitionToFailed {
                     error: ErrorResponse::from_error_nolog(
-                        &RunnerError::PipelineMissingProgramInfo {
-                            pipeline_name: pipeline.name.clone(),
-                            pipeline_id: pipeline.id,
+                        &RunnerError::PipelineInvalidRuntimeConfig {
+                            value: pipeline.runtime_config.clone(),
+                            error: e,
                         },
                     ),
                 });
             }
-            Some(program_info) => (
-                program_info.input_connectors,
-                program_info.output_connectors,
-            ),
+        };
+
+        // Input and output connectors from required program_info
+        let (inputs, outputs) = match &pipeline.program_info {
+            None => {
+                return Ok(State::TransitionToFailed {
+                    error: ErrorResponse::from_error_nolog(
+                        &RunnerError::PipelineMissingProgramInfo,
+                    ),
+                });
+            }
+            Some(program_info) => {
+                let program_info = match validate_program_info(program_info) {
+                    Ok(program_info) => program_info,
+                    Err(e) => {
+                        return Ok(State::TransitionToFailed {
+                            error: ErrorResponse::from_error_nolog(
+                                &RunnerError::PipelineInvalidProgramInfo {
+                                    value: program_info.clone(),
+                                    error: e,
+                                },
+                            ),
+                        });
+                    }
+                };
+                (
+                    program_info.input_connectors,
+                    program_info.output_connectors,
+                )
+            }
         };
 
         // Deployment configuration
         let mut deployment_config =
-            generate_pipeline_config(pipeline.id, &pipeline.runtime_config, &inputs, &outputs);
+            generate_pipeline_config(pipeline.id, &runtime_config, &inputs, &outputs);
         deployment_config.storage_config = if deployment_config.global.storage {
             Some(self.pipeline_handle.generate_storage_config().await)
         } else {
             None
+        };
+        let deployment_config = match serde_json::to_value(&deployment_config) {
+            Ok(deployment_config) => deployment_config,
+            Err(error) => {
+                return Ok(State::TransitionToFailed {
+                    error: ErrorResponse::from_error_nolog(
+                        &RunnerError::FailedToSerializeDeploymentConfig {
+                            error: error.to_string(),
+                        },
+                    ),
+                });
+            }
         };
 
         Ok(State::TransitionToProvisioning { deployment_config })
@@ -677,28 +722,48 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
     ) -> State {
         assert!(!self.provision_called);
 
+        // The runner is only able to provision a pipeline of the current platform version.
+        // If in the meanwhile (e.g., due to runner restart during upgrade) the platform
+        // version has changed, provisioning will fail.
+        if pipeline.platform_version != self.platform_version {
+            return State::TransitionToFailed {
+                error: ErrorResponse::from_error_nolog(
+                    &RunnerError::CannotProvisionDifferentPlatformVersion {
+                        pipeline_platform_version: pipeline.platform_version.clone(),
+                        runner_platform_version: self.platform_version.clone(),
+                    },
+                ),
+            };
+        }
+
         // Deployment configuration and program binary URL are expected to be set
-        let deployment_config = match pipeline.deployment_config.clone() {
+        let deployment_config = match &pipeline.deployment_config {
             None => {
                 return State::TransitionToFailed {
                     error: ErrorResponse::from_error_nolog(
-                        &RunnerError::PipelineMissingDeploymentConfig {
-                            pipeline_id: pipeline.id,
-                            pipeline_name: pipeline.name.clone(),
-                        },
+                        &RunnerError::PipelineMissingDeploymentConfig,
                     ),
                 }
             }
-            Some(deployment_config) => deployment_config,
+            Some(deployment_config) => match validate_deployment_config(deployment_config) {
+                Ok(deployment_config) => deployment_config,
+                Err(e) => {
+                    return State::TransitionToFailed {
+                        error: ErrorResponse::from_error_nolog(
+                            &RunnerError::PipelineInvalidDeploymentConfig {
+                                value: deployment_config.clone(),
+                                error: e,
+                            },
+                        ),
+                    };
+                }
+            },
         };
         let program_binary_url = match pipeline.program_binary_url.clone() {
             None => {
                 return State::TransitionToFailed {
                     error: ErrorResponse::from_error_nolog(
-                        &RunnerError::PipelineMissingProgramBinaryUrl {
-                            pipeline_id: pipeline.id,
-                            pipeline_name: pipeline.name.clone(),
-                        },
+                        &RunnerError::PipelineMissingProgramBinaryUrl,
                     ),
                 }
             }
@@ -977,15 +1042,16 @@ mod test {
     use crate::auth::TenantRecord;
     use crate::db::storage::Storage;
     use crate::db::storage_postgres::StoragePostgres;
-    use crate::db::types::common::Version;
     use crate::db::types::pipeline::{PipelineDescr, PipelineId, PipelineStatus};
-    use crate::db::types::program::{CompilationProfile, ProgramConfig, ProgramInfo};
+    use crate::db::types::program::ProgramInfo;
+    use crate::db::types::version::Version;
     use crate::error::ManagerError;
     use crate::logging;
     use crate::runner::pipeline_automata::PipelineAutomaton;
     use crate::runner::pipeline_executor::{LogMessage, PipelineExecutor};
     use async_trait::async_trait;
-    use feldera_types::config::{PipelineConfig, RuntimeConfig, StorageConfig};
+    use feldera_types::config::{PipelineConfig, StorageConfig};
+    use feldera_types::program_schema::ProgramSchema;
     use serde_json::json;
     use std::sync::Arc;
     use std::time::Duration;
@@ -1126,14 +1192,14 @@ mod test {
                 PipelineDescr {
                     name: "example1".to_string(),
                     description: "Description of example1".to_string(),
-                    runtime_config: RuntimeConfig::from_yaml(""),
+                    runtime_config: json!({}),
                     program_code: "CREATE TABLE example1 ( col1 INT );".to_string(),
                     udf_rust: "".to_string(),
                     udf_toml: "".to_string(),
-                    program_config: ProgramConfig {
-                        profile: Some(CompilationProfile::Unoptimized),
-                        cache: false,
-                    },
+                    program_config: json!({
+                        "profile": "unoptimized",
+                        "cache": false
+                    }),
                 },
             )
             .await
@@ -1151,7 +1217,17 @@ mod test {
                 tenant_id,
                 pipeline_id,
                 Version(1),
-                &ProgramInfo::default(),
+                &serde_json::to_value(ProgramInfo {
+                    schema: ProgramSchema {
+                        inputs: vec![],
+                        outputs: vec![],
+                    },
+                    main_rust: "".to_string(),
+                    udf_stubs: "".to_string(),
+                    input_connectors: Default::default(),
+                    output_connectors: Default::default(),
+                })
+                .unwrap(),
             )
             .await
             .unwrap();

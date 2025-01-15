@@ -3,7 +3,6 @@ use crate::db::error::DBError;
 use crate::db::storage::{ExtendedPipelineDescrRunner, Storage};
 use crate::db::storage_postgres::StoragePostgres;
 use crate::db::types::api_key::{ApiKeyDescr, ApiKeyId, ApiPermission};
-use crate::db::types::common::{validate_name, Version};
 use crate::db::types::pipeline::{
     validate_deployment_desired_status_transition, validate_deployment_status_transition,
     ExtendedPipelineDescr, ExtendedPipelineDescrMonitoring, PipelineDescr, PipelineDesiredStatus,
@@ -14,10 +13,16 @@ use crate::db::types::program::{
     ProgramConfig, ProgramInfo, ProgramStatus, SqlCompilerMessage,
 };
 use crate::db::types::tenant::TenantId;
+use crate::db::types::utils::{
+    validate_deployment_config, validate_name, validate_program_config, validate_program_info,
+    validate_runtime_config,
+};
+use crate::db::types::version::Version;
 use async_trait::async_trait;
 use chrono::{TimeZone, Utc};
 use feldera_types::config::{PipelineConfig, ResourceConfig, RuntimeConfig};
 use feldera_types::error::ErrorResponse;
+use feldera_types::program_schema::ProgramSchema;
 use openssl::sha;
 use proptest::prelude::*;
 use proptest::test_runner::{Config, TestRunner};
@@ -193,6 +198,7 @@ type PipelineNamePropVal = u8;
 #[derive(Clone, Debug, PartialEq, Eq, Ord, PartialOrd)]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 struct RuntimeConfigPropVal {
+    invalid0: u8,
     val0: u16,
     val1: bool,
     val2: u64,
@@ -209,8 +215,8 @@ struct RuntimeConfigPropVal {
     val13: Option<usize>,
     val14: Option<u64>,
 }
-type ProgramConfigPropVal = (bool, bool, bool);
-type ProgramInfoPropVal = ();
+type ProgramConfigPropVal = (u8, bool, bool, bool);
+type ProgramInfoPropVal = (u8, u8, u8);
 
 /// Generates a limited pipeline name.
 fn map_val_to_limited_pipeline_name(val: PipelineNamePropVal) -> String {
@@ -222,47 +228,71 @@ fn map_val_to_limited_pipeline_name(val: PipelineNamePropVal) -> String {
     }
 }
 
-/// Generates a limited runtime configuration.
-fn map_val_to_limited_runtime_config(val: RuntimeConfigPropVal) -> RuntimeConfig {
-    RuntimeConfig {
-        workers: val.val0,
-        cpu_profiler: val.val1,
-        min_batch_size_records: val.val2,
-        max_buffering_delay_usecs: val.val3,
-        storage: val.val4,
-        fault_tolerance: None,
-        tracing: val.val5,
-        tracing_endpoint_jaeger: val.val6,
-        resources: ResourceConfig {
-            cpu_cores_min: val.val7,
-            cpu_cores_max: val.val8,
-            memory_mb_min: val.val9,
-            memory_mb_max: val.val10,
-            storage_mb_max: val.val11,
-            storage_class: val.val12,
-        },
-        min_storage_bytes: val.val13,
-        clock_resolution_usecs: val.val14,
+/// Generates a limited runtime configuration (1/8 is invalid).
+fn map_val_to_limited_runtime_config(val: RuntimeConfigPropVal) -> serde_json::Value {
+    if val.invalid0 % 8 == 0 {
+        json!({ "workers": "abc" }) // An invalid runtime configuration
+    } else {
+        serde_json::to_value(RuntimeConfig {
+            workers: val.val0,
+            cpu_profiler: val.val1,
+            min_batch_size_records: val.val2,
+            max_buffering_delay_usecs: val.val3,
+            storage: val.val4,
+            fault_tolerance: None,
+            tracing: val.val5,
+            tracing_endpoint_jaeger: val.val6,
+            resources: ResourceConfig {
+                cpu_cores_min: val.val7,
+                cpu_cores_max: val.val8,
+                memory_mb_min: val.val9,
+                memory_mb_max: val.val10,
+                storage_mb_max: val.val11,
+                storage_class: val.val12,
+            },
+            min_storage_bytes: val.val13,
+            clock_resolution_usecs: val.val14,
+        })
+        .unwrap()
     }
 }
 
-/// Generates a limited program configuration.
-fn map_val_to_limited_program_config(val: ProgramConfigPropVal) -> ProgramConfig {
-    ProgramConfig {
-        profile: if val.0 {
-            None
-        } else if val.1 {
-            Some(CompilationProfile::Unoptimized)
-        } else {
-            Some(CompilationProfile::Optimized)
-        },
-        cache: val.2,
+/// Generates a limited program configuration (1/8 is invalid).
+fn map_val_to_limited_program_config(val: ProgramConfigPropVal) -> serde_json::Value {
+    if val.0 % 8 == 0 {
+        json!({ "profile": 111 }) // An invalid program configuration
+    } else {
+        serde_json::to_value(ProgramConfig {
+            profile: if val.1 {
+                None
+            } else if val.2 {
+                Some(CompilationProfile::Unoptimized)
+            } else {
+                Some(CompilationProfile::Optimized)
+            },
+            cache: val.3,
+        })
+        .unwrap()
     }
 }
 
-/// Generates a limited program information.
-fn map_val_to_limited_program_info(_val: ProgramInfoPropVal) -> ProgramInfo {
-    ProgramInfo::default()
+/// Generates a limited program information (1/8 is invalid).
+fn map_val_to_limited_program_info(val: ProgramInfoPropVal) -> serde_json::Value {
+    if val.0 % 8 == 0 {
+        json!({ "schema": 222 }) // An invalid program information
+    } else {
+        serde_json::to_value(ProgramInfo {
+            schema: ProgramSchema {
+                inputs: vec![],
+                outputs: vec![],
+            },
+            main_rust: format!("main-rust-{}", val.1),
+            udf_stubs: format!("udf-stubs-{}", val.2),
+            input_connectors: BTreeMap::new(),
+            output_connectors: BTreeMap::new(),
+        })
+        .unwrap()
+    }
 }
 
 /// Generates pipeline name limited to only 5 variants.
@@ -331,31 +361,39 @@ fn limited_option_pipeline_name() -> impl Strategy<Value = Option<String>> {
 }
 
 /// Generates different optional runtime configurations.
-fn limited_option_runtime_config() -> impl Strategy<Value = Option<RuntimeConfig>> {
+fn limited_option_runtime_config() -> impl Strategy<Value = Option<serde_json::Value>> {
     any::<Option<RuntimeConfigPropVal>>().prop_map(|val| val.map(map_val_to_limited_runtime_config))
 }
 
 /// Generates different optional program configurations.
-fn limited_option_program_config() -> impl Strategy<Value = Option<ProgramConfig>> {
+fn limited_option_program_config() -> impl Strategy<Value = Option<serde_json::Value>> {
     any::<Option<ProgramConfigPropVal>>().prop_map(|val| val.map(map_val_to_limited_program_config))
 }
 
 /// Generates different optional program information.
-fn limited_program_info() -> impl Strategy<Value = ProgramInfo> {
+fn limited_program_info() -> impl Strategy<Value = serde_json::Value> {
     any::<ProgramInfoPropVal>().prop_map(map_val_to_limited_program_info)
 }
 
 /// Generates different pipeline configurations.
-fn limited_pipeline_config() -> impl Strategy<Value = PipelineConfig> {
-    any::<(PipelineId, RuntimeConfigPropVal, ProgramInfoPropVal)>().prop_map(|val| {
-        let runtime_config = map_val_to_limited_runtime_config(val.1);
-        let program_info = { map_val_to_limited_program_info(()) };
-        PipelineConfig {
-            global: runtime_config,
-            name: Some(format!("pipeline-{}", val.0)),
-            storage_config: None,
-            inputs: program_info.input_connectors,
-            outputs: program_info.output_connectors,
+fn limited_pipeline_config() -> impl Strategy<Value = serde_json::Value> {
+    any::<(u8, PipelineId, RuntimeConfigPropVal, ProgramInfoPropVal)>().prop_map(|mut val| {
+        if val.0 % 8 == 0 {
+            json!({ "name": 222 }) // An invalid pipeline configuration
+        } else {
+            val.2.invalid0 = 1; // Prevent it from being invalid
+            let runtime_config = map_val_to_limited_runtime_config(val.2);
+            val.3 .0 = 1; // Prevent it from being invalid
+            let program_info: ProgramInfo =
+                serde_json::from_value(map_val_to_limited_program_info(val.3)).unwrap();
+            serde_json::to_value(PipelineConfig {
+                global: serde_json::from_value(runtime_config).unwrap(),
+                name: Some(format!("pipeline-{}", val.1)),
+                storage_config: None,
+                inputs: program_info.input_connectors,
+                outputs: program_info.output_connectors,
+            })
+            .unwrap()
         }
     })
 }
@@ -469,14 +507,15 @@ async fn pipeline_creation() {
     let new_descriptor = PipelineDescr {
         name: "test1".to_string(),
         description: "Test description".to_string(),
-        runtime_config: Default::default(),
+        runtime_config: json!({}),
         program_code: "".to_string(),
         udf_rust: "".to_string(),
         udf_toml: "".to_string(),
-        program_config: ProgramConfig {
+        program_config: serde_json::to_value(ProgramConfig {
             profile: Some(CompilationProfile::Unoptimized),
             cache: false,
-        },
+        })
+        .unwrap(),
     };
     let new_result = handle
         .db
@@ -556,14 +595,15 @@ async fn pipeline_retrieval() {
             PipelineDescr {
                 name: "test1".to_string(),
                 description: "d1".to_string(),
-                runtime_config: Default::default(),
+                runtime_config: json!({}),
                 program_code: "c1".to_string(),
                 udf_rust: "r1".to_string(),
                 udf_toml: "t1".to_string(),
-                program_config: ProgramConfig {
+                program_config: serde_json::to_value(ProgramConfig {
                     profile: Some(CompilationProfile::Unoptimized),
                     cache: true,
-                },
+                })
+                .unwrap(),
             },
         )
         .await
@@ -597,14 +637,15 @@ async fn pipeline_retrieval() {
             PipelineDescr {
                 name: "test2".to_string(),
                 description: "d2".to_string(),
-                runtime_config: Default::default(),
+                runtime_config: json!({}),
                 program_code: "c2".to_string(),
                 udf_rust: "r2".to_string(),
                 udf_toml: "t2".to_string(),
-                program_config: ProgramConfig {
+                program_config: serde_json::to_value(ProgramConfig {
                     profile: Some(CompilationProfile::Unoptimized),
                     cache: false,
-                },
+                })
+                .unwrap(),
             },
         )
         .await
@@ -686,11 +727,11 @@ async fn pipeline_versioning() {
             PipelineDescr {
                 name: "example".to_string(),
                 description: "d1".to_string(),
-                runtime_config: Default::default(),
+                runtime_config: json!({}),
                 program_code: "c1".to_string(),
                 udf_rust: "r1".to_string(),
                 udf_toml: "t1".to_string(),
-                program_config: Default::default(),
+                program_config: json!({}),
             },
         )
         .await
@@ -844,10 +885,11 @@ async fn pipeline_versioning() {
     assert_eq!(current.program_version, Version(4));
 
     // Edit program configuration -> increment version and program version
-    let new_program_config = ProgramConfig {
+    let new_program_config = serde_json::to_value(ProgramConfig {
         profile: Some(CompilationProfile::Dev),
         cache: false,
-    };
+    })
+    .unwrap();
     handle
         .db
         .update_pipeline(
@@ -892,11 +934,27 @@ async fn pipeline_versioning() {
     assert_eq!(current.program_version, Version(5));
 
     // Edit runtime configuration -> increment version
-    let new_runtime_config = RuntimeConfig {
+    let new_runtime_config = serde_json::to_value(RuntimeConfig {
         workers: 100,
+        storage: false,
+        fault_tolerance: None,
+        cpu_profiler: false,
+        tracing: false,
         tracing_endpoint_jaeger: "".to_string(),
-        ..RuntimeConfig::default()
-    };
+        min_batch_size_records: 0,
+        max_buffering_delay_usecs: 0,
+        resources: ResourceConfig {
+            cpu_cores_min: None,
+            cpu_cores_max: None,
+            memory_mb_min: None,
+            memory_mb_max: None,
+            storage_mb_max: None,
+            storage_class: None,
+        },
+        min_storage_bytes: None,
+        clock_resolution_usecs: None,
+    })
+    .unwrap();
     handle
         .db
         .update_pipeline(
@@ -933,11 +991,11 @@ async fn pipeline_duplicate() {
             PipelineDescr {
                 name: "example".to_string(),
                 description: "d1".to_string(),
-                runtime_config: Default::default(),
+                runtime_config: json!({}),
                 program_code: "c1".to_string(),
                 udf_rust: "r1".to_string(),
                 udf_toml: "t1".to_string(),
-                program_config: Default::default(),
+                program_config: json!({}),
             },
         )
         .await
@@ -952,11 +1010,11 @@ async fn pipeline_duplicate() {
             PipelineDescr {
                 name: "example".to_string(),
                 description: "d2".to_string(),
-                runtime_config: Default::default(),
+                runtime_config: json!({}),
                 program_code: "c2".to_string(),
                 udf_rust: "r2".to_string(),
                 udf_toml: "t2".to_string(),
-                program_config: Default::default(),
+                program_config: json!({}),
             },
         )
         .await
@@ -991,11 +1049,11 @@ async fn pipeline_program_compilation() {
             PipelineDescr {
                 name: "example1".to_string(),
                 description: "d1".to_string(),
-                runtime_config: Default::default(),
+                runtime_config: json!({}),
                 program_code: "c1".to_string(),
                 udf_rust: "r1".to_string(),
                 udf_toml: "t1".to_string(),
-                program_config: Default::default(),
+                program_config: json!({}),
             },
         )
         .await
@@ -1009,11 +1067,11 @@ async fn pipeline_program_compilation() {
             PipelineDescr {
                 name: "example2".to_string(),
                 description: "d2".to_string(),
-                runtime_config: Default::default(),
+                runtime_config: json!({}),
                 program_code: "c2".to_string(),
                 udf_rust: "r2".to_string(),
                 udf_toml: "t2".to_string(),
-                program_config: Default::default(),
+                program_config: json!({}),
             },
         )
         .await
@@ -1037,7 +1095,17 @@ async fn pipeline_program_compilation() {
             tenant_id,
             pipeline1.id,
             Version(1),
-            &ProgramInfo::default(),
+            &serde_json::to_value(ProgramInfo {
+                schema: ProgramSchema {
+                    inputs: vec![],
+                    outputs: vec![],
+                },
+                main_rust: "".to_string(),
+                udf_stubs: "".to_string(),
+                input_connectors: BTreeMap::new(),
+                output_connectors: BTreeMap::new(),
+            })
+            .unwrap(),
         )
         .await
         .unwrap();
@@ -1106,11 +1174,11 @@ async fn pipeline_deployment() {
             PipelineDescr {
                 name: "example1".to_string(),
                 description: "d1".to_string(),
-                runtime_config: Default::default(),
+                runtime_config: json!({}),
                 program_code: "c1".to_string(),
                 udf_rust: "r1".to_string(),
                 udf_toml: "t2".to_string(),
-                program_config: Default::default(),
+                program_config: json!({}),
             },
         )
         .await
@@ -1128,7 +1196,17 @@ async fn pipeline_deployment() {
             tenant_id,
             pipeline1.id,
             Version(1),
-            &ProgramInfo::default(),
+            &serde_json::to_value(ProgramInfo {
+                schema: ProgramSchema {
+                    inputs: vec![],
+                    outputs: vec![],
+                },
+                main_rust: "".to_string(),
+                udf_stubs: "".to_string(),
+                input_connectors: BTreeMap::new(),
+                output_connectors: BTreeMap::new(),
+            })
+            .unwrap(),
         )
         .await
         .unwrap();
@@ -1161,12 +1239,13 @@ async fn pipeline_deployment() {
         .transit_deployment_status_to_provisioning(
             tenant_id,
             pipeline1.id,
-            generate_pipeline_config(
+            serde_json::to_value(generate_pipeline_config(
                 pipeline1.id,
-                &pipeline1.runtime_config,
+                &serde_json::from_value(pipeline1.runtime_config).unwrap(),
                 &BTreeMap::default(),
                 &BTreeMap::default(),
-            ),
+            ))
+            .unwrap(),
         )
         .await
         .unwrap();
@@ -1257,11 +1336,11 @@ enum StorageAction {
         #[proptest(strategy = "limited_option_pipeline_name()")] Option<String>,
         Option<String>,
         #[proptest(strategy = "limited_platform_version()")] String,
-        #[proptest(strategy = "limited_option_runtime_config()")] Option<RuntimeConfig>,
+        #[proptest(strategy = "limited_option_runtime_config()")] Option<serde_json::Value>,
         Option<String>,
         Option<String>,
         Option<String>,
-        #[proptest(strategy = "limited_option_program_config()")] Option<ProgramConfig>,
+        #[proptest(strategy = "limited_option_program_config()")] Option<serde_json::Value>,
     ),
     DeletePipeline(
         TenantId,
@@ -1273,7 +1352,7 @@ enum StorageAction {
         TenantId,
         PipelineId,
         Version,
-        #[proptest(strategy = "limited_program_info()")] ProgramInfo,
+        #[proptest(strategy = "limited_program_info()")] serde_json::Value,
     ),
     TransitProgramStatusToCompilingRust(TenantId, PipelineId, Version),
     TransitProgramStatusToSuccess(
@@ -1302,7 +1381,7 @@ enum StorageAction {
     TransitDeploymentStatusToProvisioning(
         TenantId,
         PipelineId,
-        #[proptest(strategy = "limited_pipeline_config()")] PipelineConfig,
+        #[proptest(strategy = "limited_pipeline_config()")] serde_json::Value,
     ),
     TransitDeploymentStatusToInitializing(TenantId, PipelineId, String),
     TransitDeploymentStatusToRunning(TenantId, PipelineId),
@@ -1616,7 +1695,11 @@ fn db_impl_behaves_like_model() {
         .run(
             &prop::collection::vec(any::<StorageAction>(), 0..256),
             |actions: Vec<StorageAction>| {
-                let model = Mutex::new(DbModel::default());
+                let model = Mutex::new(DbModel {
+                    tenants: BTreeMap::new(),
+                    api_keys: BTreeMap::new(),
+                    pipelines: BTreeMap::new(),
+                });
                 runtime.block_on(async {
                     // We empty all tables in the database before each test
                     // (with TRUNCATE TABLE). We also reset the sequence ids
@@ -1897,7 +1980,7 @@ fn db_impl_behaves_like_model() {
 }
 
 /// Model of the database to which its operations are compared.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 struct DbModel {
     pub tenants: BTreeMap<TenantId, TenantRecord>,
     pub api_keys: BTreeMap<(TenantId, String), (ApiKeyId, String, Vec<ApiPermission>)>,
@@ -1915,11 +1998,11 @@ trait ModelHelpers {
         name: &Option<String>,
         description: &Option<String>,
         platform_version: &str,
-        runtime_config: &Option<RuntimeConfig>,
+        runtime_config: &Option<serde_json::Value>,
         program_code: &Option<String>,
         udf_rust: &Option<String>,
         udf_toml: &Option<String>,
-        program_config: &Option<ProgramConfig>,
+        program_config: &Option<serde_json::Value>,
     ) -> Result<ExtendedPipelineDescr, DBError>;
 
     /// Fetches the existing pipeline, checks the version guard matches,
@@ -1961,14 +2044,30 @@ impl ModelHelpers for Mutex<DbModel> {
         name: &Option<String>,
         description: &Option<String>,
         platform_version: &str,
-        runtime_config: &Option<RuntimeConfig>,
+        runtime_config: &Option<serde_json::Value>,
         program_code: &Option<String>,
         udf_rust: &Option<String>,
         udf_toml: &Option<String>,
-        program_config: &Option<ProgramConfig>,
+        program_config: &Option<serde_json::Value>,
     ) -> Result<ExtendedPipelineDescr, DBError> {
         if let Some(name) = name {
             validate_name(name)?;
+        }
+        if let Some(runtime_config) = runtime_config {
+            validate_runtime_config(runtime_config, false).map_err(|e| {
+                DBError::InvalidRuntimeConfig {
+                    value: runtime_config.clone(),
+                    error: e,
+                }
+            })?;
+        }
+        if let Some(program_config) = program_config {
+            validate_program_config(program_config, false).map_err(|e| {
+                DBError::InvalidProgramConfig {
+                    value: program_config.clone(),
+                    error: e,
+                }
+            })?;
         }
 
         // Fetch existing pipeline
@@ -2404,6 +2503,18 @@ impl Storage for Mutex<DbModel> {
         let mut state = self.lock().await;
 
         validate_name(&pipeline.name)?;
+        validate_runtime_config(&pipeline.runtime_config, false).map_err(|e| {
+            DBError::InvalidRuntimeConfig {
+                value: pipeline.runtime_config.clone(),
+                error: e,
+            }
+        })?;
+        validate_program_config(&pipeline.program_config, false).map_err(|e| {
+            DBError::InvalidProgramConfig {
+                value: pipeline.program_config.clone(),
+                error: e,
+            }
+        })?;
 
         // Constraint: UUID is unique
         if state.pipelines.keys().any(|(_, pid)| pid.0 == new_id) {
@@ -2508,11 +2619,11 @@ impl Storage for Mutex<DbModel> {
         name: &Option<String>,
         description: &Option<String>,
         platform_version: &str,
-        runtime_config: &Option<RuntimeConfig>,
+        runtime_config: &Option<serde_json::Value>,
         program_code: &Option<String>,
         udf_rust: &Option<String>,
         udf_toml: &Option<String>,
-        program_config: &Option<ProgramConfig>,
+        program_config: &Option<serde_json::Value>,
     ) -> Result<ExtendedPipelineDescr, DBError> {
         self.help_update_pipeline(
             false,
@@ -2598,12 +2709,16 @@ impl Storage for Mutex<DbModel> {
         tenant_id: TenantId,
         pipeline_id: PipelineId,
         program_version_guard: Version,
-        program_info: &ProgramInfo,
+        program_info: &serde_json::Value,
     ) -> Result<(), DBError> {
         let new_status = ProgramStatus::SqlCompiled;
         let mut pipeline = self
             .help_transit_program_status(tenant_id, pipeline_id, program_version_guard, &new_status)
             .await?;
+        validate_program_info(program_info).map_err(|e| DBError::InvalidProgramInfo {
+            value: program_info.clone(),
+            error: e,
+        })?;
         pipeline.program_status = new_status;
         pipeline.program_status_since = Utc::now();
         pipeline.program_info = Some(program_info.clone());
@@ -2774,12 +2889,18 @@ impl Storage for Mutex<DbModel> {
         &self,
         tenant_id: TenantId,
         pipeline_id: PipelineId,
-        deployment_config: PipelineConfig,
+        deployment_config: serde_json::Value,
     ) -> Result<(), DBError> {
         let new_status = PipelineStatus::Provisioning;
         let mut pipeline = self
             .help_transit_deployment_status(tenant_id, pipeline_id, &new_status)
             .await?;
+        validate_deployment_config(&deployment_config).map_err(|e| {
+            DBError::InvalidDeploymentConfig {
+                value: deployment_config.clone(),
+                error: e,
+            }
+        })?;
         pipeline.deployment_status = new_status;
         pipeline.deployment_status_since = Utc::now();
         pipeline.deployment_config = Some(deployment_config);

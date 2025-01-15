@@ -6,13 +6,13 @@ use crate::api::ServerState;
 use crate::common_error::CommonError;
 use crate::db::error::DBError;
 use crate::db::storage::Storage;
-use crate::db::types::common::Version;
 use crate::db::types::pipeline::{
     ExtendedPipelineDescr, ExtendedPipelineDescrMonitoring, PipelineDescr, PipelineDesiredStatus,
     PipelineId, PipelineStatus,
 };
 use crate::db::types::program::{ProgramConfig, ProgramInfo, ProgramStatus};
 use crate::db::types::tenant::TenantId;
+use crate::db::types::version::Version;
 use actix_http::StatusCode;
 use actix_web::{
     delete, get,
@@ -28,11 +28,13 @@ use feldera_types::error::ErrorResponse;
 use feldera_types::program_schema::SqlIdentifier;
 use log::info;
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use std::time::Duration;
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
 /// Pipeline information.
+/// It both includes fields which are user-provided and system-generated.
 #[derive(Serialize, ToSchema, Eq, PartialEq, Debug, Clone)]
 pub struct PipelineInfo {
     pub id: PipelineId,
@@ -56,9 +58,41 @@ pub struct PipelineInfo {
     pub deployment_error: Option<ErrorResponse>,
 }
 
-impl PipelineInfo {
+/// Pipeline information (internal).
+///
+/// This is the struct that is actually serialized when a response body type
+/// is [`PipelineInfo`] according to the OpenAPI specification.
+/// The difference are the types of `runtime_config`, `program_config` and
+/// `program_info` fields, which are JSON values rather than their actual ones.
+/// This ensures that even when a backward incompatible change occurred for
+/// any of these fields, the API still works (i.e., able to serialize them in
+/// order to return pipeline(s)).
+#[derive(Serialize, Eq, PartialEq, Debug, Clone)]
+pub struct PipelineInfoInternal {
+    pub id: PipelineId,
+    pub name: String,
+    pub description: String,
+    pub created_at: DateTime<Utc>,
+    pub version: Version,
+    pub platform_version: String,
+    pub runtime_config: serde_json::Value,
+    pub program_code: String,
+    pub udf_rust: String,
+    pub udf_toml: String,
+    pub program_config: serde_json::Value,
+    pub program_version: Version,
+    pub program_status: ProgramStatus,
+    pub program_status_since: DateTime<Utc>,
+    pub program_info: Option<serde_json::Value>,
+    pub deployment_status: PipelineStatus,
+    pub deployment_status_since: DateTime<Utc>,
+    pub deployment_desired_status: PipelineDesiredStatus,
+    pub deployment_error: Option<ErrorResponse>,
+}
+
+impl PipelineInfoInternal {
     pub(crate) fn new(extended_pipeline: &ExtendedPipelineDescr) -> Self {
-        PipelineInfo {
+        PipelineInfoInternal {
             id: extended_pipeline.id,
             name: extended_pipeline.name.clone(),
             description: extended_pipeline.description.clone(),
@@ -83,6 +117,7 @@ impl PipelineInfo {
 }
 
 /// Pipeline information which has a selected subset of optional fields.
+/// It both includes fields which are user-provided and system-generated.
 /// If an optional field is not selected (i.e., is `None`), it will not be serialized.
 #[derive(Serialize, ToSchema, Eq, PartialEq, Debug, Clone)]
 pub struct PipelineSelectedInfo {
@@ -113,9 +148,45 @@ pub struct PipelineSelectedInfo {
     pub deployment_error: Option<ErrorResponse>,
 }
 
-impl PipelineSelectedInfo {
+/// Pipeline information which has a selected subset of optional fields (internal).
+///
+/// This is the struct that is actually serialized when a response body type
+/// is [`PipelineSelectedInfo`] according to the OpenAPI specification.
+/// This distinction is to have the API work even if there were backward
+/// incompatible changes in the complex struct fields, for more information see:
+/// [`PipelineInfoInternal`].
+#[derive(Serialize, Eq, PartialEq, Debug, Clone)]
+pub struct PipelineSelectedInfoInternal {
+    pub id: PipelineId,
+    pub name: String,
+    pub description: String,
+    pub created_at: DateTime<Utc>,
+    pub version: Version,
+    pub platform_version: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub runtime_config: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub program_code: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub udf_rust: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub udf_toml: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub program_config: Option<serde_json::Value>,
+    pub program_version: Version,
+    pub program_status: ProgramStatus,
+    pub program_status_since: DateTime<Utc>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub program_info: Option<Option<serde_json::Value>>,
+    pub deployment_status: PipelineStatus,
+    pub deployment_status_since: DateTime<Utc>,
+    pub deployment_desired_status: PipelineDesiredStatus,
+    pub deployment_error: Option<ErrorResponse>,
+}
+
+impl PipelineSelectedInfoInternal {
     pub(crate) fn new_all(extended_pipeline: &ExtendedPipelineDescr) -> Self {
-        PipelineSelectedInfo {
+        PipelineSelectedInfoInternal {
             id: extended_pipeline.id,
             name: extended_pipeline.name.clone(),
             description: extended_pipeline.description.clone(),
@@ -139,7 +210,7 @@ impl PipelineSelectedInfo {
     }
 
     pub(crate) fn new_status(extended_pipeline: &ExtendedPipelineDescrMonitoring) -> Self {
-        PipelineSelectedInfo {
+        PipelineSelectedInfoInternal {
             id: extended_pipeline.id,
             name: extended_pipeline.name.clone(),
             description: extended_pipeline.description.clone(),
@@ -225,7 +296,8 @@ pub struct GetPipelineParameters {
 }
 
 /// Create a new pipeline (POST), or fully update an existing pipeline (PUT).
-/// Left-out fields will be set to their default value.
+/// Fields which are optional and not provided will be set to their empty type value
+/// (for strings: an empty string `""`, for objects: an empty dictionary `{}`).
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct PostPutPipeline {
     pub name: String,
@@ -237,18 +309,35 @@ pub struct PostPutPipeline {
     pub program_config: Option<ProgramConfig>,
 }
 
-impl PostPutPipeline {
-    /// Converts the optional fields with the default value
-    /// as alternative (e.g., a string will be empty).
-    fn to_descr(&self) -> PipelineDescr {
+/// Create a new pipeline (POST), or fully update an existing pipeline (PUT) (internal).
+/// Fields which are optional and not provided will be set to their default value.
+///
+/// This is the struct that is actually serialized when a request body type
+/// is [`PostPutPipeline`] according to the OpenAPI specification.
+/// This preserves the original JSON for the `runtime_config` and `program_config` fields.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct PostPutPipelineInternal {
+    pub name: String,
+    pub description: Option<String>,
+    pub runtime_config: Option<serde_json::Value>,
+    pub program_code: String,
+    pub udf_rust: Option<String>,
+    pub udf_toml: Option<String>,
+    pub program_config: Option<serde_json::Value>,
+}
+
+impl From<PostPutPipelineInternal> for PipelineDescr {
+    /// Fills in any missing optional field with its empty type value
+    /// (for strings: an empty string `""`, for objects: an empty dictionary `{}`).
+    fn from(value: PostPutPipelineInternal) -> Self {
         PipelineDescr {
-            name: self.name.clone(),
-            description: self.description.clone().unwrap_or_default(),
-            runtime_config: self.runtime_config.clone().unwrap_or_default(),
-            program_code: self.program_code.clone(),
-            udf_rust: self.udf_rust.clone().unwrap_or_default(),
-            udf_toml: self.udf_toml.clone().unwrap_or_default(),
-            program_config: self.program_config.clone().unwrap_or_default(),
+            name: value.name.clone(),
+            description: value.description.clone().unwrap_or("".to_string()),
+            runtime_config: value.runtime_config.clone().unwrap_or(json!({})),
+            program_code: value.program_code.clone(),
+            udf_rust: value.udf_rust.clone().unwrap_or("".to_string()),
+            udf_toml: value.udf_toml.clone().unwrap_or("".to_string()),
+            program_config: value.program_config.clone().unwrap_or(json!({})),
         }
     }
 }
@@ -268,6 +357,22 @@ pub struct PatchPipeline {
     pub udf_rust: Option<String>,
     pub udf_toml: Option<String>,
     pub program_config: Option<ProgramConfig>,
+}
+
+/// Partially update the pipeline (PATCH) (internal).
+///
+/// This is the struct that is actually serialized when a request body type
+/// is [`PatchPipeline`] according to the OpenAPI specification.
+/// This preserves the original JSON for the `runtime_config` and `program_config` fields.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct PatchPipelineInternal {
+    pub name: Option<String>,
+    pub description: Option<String>,
+    pub runtime_config: Option<serde_json::Value>,
+    pub program_code: Option<String>,
+    pub udf_rust: Option<String>,
+    pub udf_toml: Option<String>,
+    pub program_config: Option<serde_json::Value>,
 }
 
 /// Retrieve the list of pipelines.
@@ -291,12 +396,12 @@ pub(crate) async fn list_pipelines(
     tenant_id: ReqData<TenantId>,
     query: web::Query<GetPipelineParameters>,
 ) -> Result<HttpResponse, DBError> {
-    let returned_pipelines: Vec<PipelineSelectedInfo> = match &query.selector {
+    let returned_pipelines: Vec<PipelineSelectedInfoInternal> = match &query.selector {
         PipelineFieldSelector::All => {
             let pipelines = state.db.lock().await.list_pipelines(*tenant_id).await?;
             pipelines
                 .iter()
-                .map(PipelineSelectedInfo::new_all)
+                .map(PipelineSelectedInfoInternal::new_all)
                 .collect()
         }
         PipelineFieldSelector::Status => {
@@ -308,11 +413,10 @@ pub(crate) async fn list_pipelines(
                 .await?;
             pipelines
                 .iter()
-                .map(PipelineSelectedInfo::new_status)
+                .map(PipelineSelectedInfoInternal::new_status)
                 .collect()
         }
     };
-
     Ok(HttpResponse::Ok()
         .insert_header(CacheControl(vec![CacheDirective::NoCache]))
         .json(returned_pipelines))
@@ -355,7 +459,7 @@ pub(crate) async fn get_pipeline(
                 .await
                 .get_pipeline(*tenant_id, &pipeline_name)
                 .await?;
-            PipelineSelectedInfo::new_all(&pipeline)
+            PipelineSelectedInfoInternal::new_all(&pipeline)
         }
         PipelineFieldSelector::Status => {
             let pipeline = state
@@ -364,10 +468,9 @@ pub(crate) async fn get_pipeline(
                 .await
                 .get_pipeline_for_monitoring(*tenant_id, &pipeline_name)
                 .await?;
-            PipelineSelectedInfo::new_status(&pipeline)
+            PipelineSelectedInfoInternal::new_status(&pipeline)
         }
     };
-
     Ok(HttpResponse::Ok()
         .insert_header(CacheControl(vec![CacheDirective::NoCache]))
         .json(&returned_pipeline))
@@ -400,10 +503,9 @@ pub(crate) async fn get_pipeline(
 pub(crate) async fn post_pipeline(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
-    body: web::Json<PostPutPipeline>,
+    body: web::Json<PostPutPipelineInternal>,
 ) -> Result<HttpResponse, ManagerError> {
-    let pipeline_descr = body.into_inner().to_descr();
-    check_runtime_config(&pipeline_descr.runtime_config)?;
+    let pipeline_descr: PipelineDescr = body.into_inner().into();
     let pipeline = state
         .db
         .lock()
@@ -415,7 +517,7 @@ pub(crate) async fn post_pipeline(
             pipeline_descr,
         )
         .await?;
-    let returned_pipeline = PipelineInfo::new(&pipeline);
+    let returned_pipeline = PipelineInfoInternal::new(&pipeline);
 
     info!("Created pipeline {} (tenant: {})", pipeline.id, *tenant_id);
     Ok(HttpResponse::Created()
@@ -458,11 +560,10 @@ async fn put_pipeline(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
     path: web::Path<String>,
-    body: web::Json<PostPutPipeline>,
+    body: web::Json<PostPutPipelineInternal>,
 ) -> Result<HttpResponse, ManagerError> {
     let pipeline_name = path.into_inner();
-    let pipeline_descr = body.into_inner().to_descr();
-    check_runtime_config(&pipeline_descr.runtime_config)?;
+    let pipeline_descr: PipelineDescr = body.into_inner().into();
     let (is_new, pipeline) = state
         .db
         .lock()
@@ -475,7 +576,7 @@ async fn put_pipeline(
             pipeline_descr,
         )
         .await?;
-    let returned_pipeline = PipelineInfo::new(&pipeline);
+    let returned_pipeline = PipelineInfoInternal::new(&pipeline);
 
     if is_new {
         info!("Created pipeline {} (tenant: {})", pipeline.id, *tenant_id);
@@ -528,12 +629,9 @@ pub(crate) async fn patch_pipeline(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
     path: web::Path<String>,
-    body: web::Json<PatchPipeline>,
+    body: web::Json<PatchPipelineInternal>,
 ) -> Result<HttpResponse, ManagerError> {
     let pipeline_name = path.into_inner();
-    if let Some(config) = &body.runtime_config {
-        check_runtime_config(config)?;
-    }
     let pipeline = state
         .db
         .lock()
@@ -551,7 +649,7 @@ pub(crate) async fn patch_pipeline(
             &body.program_config,
         )
         .await?;
-    let returned_pipeline = PipelineInfo::new(&pipeline);
+    let returned_pipeline = PipelineInfoInternal::new(&pipeline);
 
     info!(
         "Partially updated pipeline {} to version {} (tenant: {})",
@@ -1067,16 +1165,4 @@ pub(crate) async fn pipeline_adhoc_sql(
             Some(Duration::MAX),
         )
         .await
-}
-
-fn check_runtime_config(config: &RuntimeConfig) -> Result<(), ManagerError> {
-    #[cfg(not(feature = "feldera-enterprise"))]
-    if config.fault_tolerance.is_some() {
-        return Err(CommonError::EnterpriseFeature("fault tolerance").into());
-    }
-
-    #[cfg(feature = "feldera-enterprise")]
-    let _ = config;
-
-    Ok(())
 }

@@ -1,6 +1,6 @@
 [package]
 name = "pipeline-manager"
-version = "0.34.1"
+version = "0.34.1-b1"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 description = "Data pipeline manager for the Feldera continuous analytics platform."
@@ -30,7 +30,7 @@ log = "0.4.20"
 env_logger = "0.10.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0.127"
-serde_yaml = "0.9.14"
+serde_yaml = "0.9.34"
 clap = { version = "4.0.32", features = ["derive", "env"] }
 utoipa = { version = "4.2", features = ["actix_extras", "chrono", "uuid"] }
 utoipa-swagger-ui = { version = "7.1", features = ["actix-web"] }

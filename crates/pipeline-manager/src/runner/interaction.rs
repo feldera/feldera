@@ -33,10 +33,7 @@ impl CachedPipelineDescr {
         Ok((
             self.pipeline.clone(),
             match &self.pipeline.deployment_location {
-                None => Err(RunnerError::PipelineMissingDeploymentLocation {
-                    pipeline_id: self.pipeline.id,
-                    pipeline_name: self.pipeline.name.clone(),
-                })?,
+                None => Err(RunnerError::PipelineMissingDeploymentLocation)?,
                 Some(location) => location.clone(),
             },
         ))

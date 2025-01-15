@@ -1,4 +1,5 @@
 use crate::db::types::pipeline::PipelineId;
+use crate::db::types::utils::ValidationError;
 use actix_web::{
     body::BoxBody, http::StatusCode, HttpResponse, HttpResponseBuilder, ResponseError,
 };
@@ -12,22 +13,29 @@ use std::{borrow::Cow, error::Error as StdError, fmt, fmt::Display, time::Durati
 #[derive(Debug, Serialize)]
 #[serde(untagged)]
 pub enum RunnerError {
-    // Pipeline information missing
-    PipelineMissingDeploymentConfig {
-        pipeline_id: PipelineId,
-        pipeline_name: String,
+    // The runner received information from the database about the pipeline which is erroneous.
+    PipelineMissingProgramInfo,
+    PipelineMissingProgramBinaryUrl,
+    PipelineMissingDeploymentConfig,
+    PipelineMissingDeploymentLocation,
+    PipelineInvalidRuntimeConfig {
+        value: serde_json::Value,
+        error: ValidationError,
     },
-    PipelineMissingDeploymentLocation {
-        pipeline_id: PipelineId,
-        pipeline_name: String,
+    PipelineInvalidProgramInfo {
+        value: serde_json::Value,
+        error: ValidationError,
     },
-    PipelineMissingProgramInfo {
-        pipeline_id: PipelineId,
-        pipeline_name: String,
+    PipelineInvalidDeploymentConfig {
+        value: serde_json::Value,
+        error: ValidationError,
     },
-    PipelineMissingProgramBinaryUrl {
-        pipeline_id: PipelineId,
-        pipeline_name: String,
+    FailedToSerializeDeploymentConfig {
+        error: String,
+    },
+    CannotProvisionDifferentPlatformVersion {
+        pipeline_platform_version: String,
+        runner_platform_version: String,
     },
     // Runner web server interaction
     RunnerEndpointSendError {
@@ -115,15 +123,22 @@ pub enum RunnerError {
 impl DetailedError for RunnerError {
     fn error_code(&self) -> Cow<'static, str> {
         match self {
-            Self::PipelineMissingDeploymentConfig { .. } => {
-                Cow::from("PipelineMissingDeploymentConfig")
-            }
-            Self::PipelineMissingDeploymentLocation { .. } => {
+            Self::PipelineMissingProgramInfo => Cow::from("PipelineMissingProgramInfo"),
+            Self::PipelineMissingProgramBinaryUrl => Cow::from("PipelineMissingProgramBinaryUrl"),
+            Self::PipelineMissingDeploymentConfig => Cow::from("PipelineMissingDeploymentConfig"),
+            Self::PipelineMissingDeploymentLocation => {
                 Cow::from("PipelineMissingDeploymentLocation")
             }
-            Self::PipelineMissingProgramInfo { .. } => Cow::from("PipelineMissingProgramInfo"),
-            Self::PipelineMissingProgramBinaryUrl { .. } => {
-                Cow::from("PipelineMissingProgramBinaryUrl")
+            Self::PipelineInvalidRuntimeConfig { .. } => Cow::from("PipelineInvalidRuntimeConfig"),
+            Self::PipelineInvalidProgramInfo { .. } => Cow::from("PipelineInvalidProgramInfo"),
+            Self::PipelineInvalidDeploymentConfig { .. } => {
+                Cow::from("PipelineInvalidDeploymentConfig")
+            }
+            Self::FailedToSerializeDeploymentConfig { .. } => {
+                Cow::from("FailedToSerializeDeploymentConfig")
+            }
+            Self::CannotProvisionDifferentPlatformVersion { .. } => {
+                Cow::from("CannotProvisionDifferentPlatformVersion")
             }
             Self::RunnerEndpointSendError { .. } => Cow::from("RunnerEndpointSendError"),
             Self::RunnerUnreachable { .. } => Cow::from("RunnerUnreachable"),
@@ -161,40 +176,78 @@ impl DetailedError for RunnerError {
 impl Display for RunnerError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::PipelineMissingDeploymentConfig {
-                pipeline_id,
-                pipeline_name,
-            } => {
+            Self::PipelineMissingProgramInfo => {
                 write!(
                     f,
-                    "Pipeline {pipeline_name} ({pipeline_id}) is missing its deployment configuration"
+                    "Unable to provision pipeline because its program information is missing, which is necessary to construct the deployment configuration"
                 )
             }
-            Self::PipelineMissingDeploymentLocation {
-                pipeline_id,
-                pipeline_name,
-            } => {
+            Self::PipelineMissingProgramBinaryUrl => {
                 write!(
                     f,
-                    "Pipeline {pipeline_name} ({pipeline_id}) is missing its deployment location"
+                    "Unable to provision pipeline because its program binary URL is missing"
                 )
             }
-            Self::PipelineMissingProgramInfo {
-                pipeline_id,
-                pipeline_name,
-            } => {
+            Self::PipelineMissingDeploymentConfig => {
                 write!(
                     f,
-                    "Pipeline {pipeline_name} ({pipeline_id}) is missing its program info"
+                    "Unable to provision pipeline because its deployment configuration is missing"
                 )
             }
-            Self::PipelineMissingProgramBinaryUrl {
-                pipeline_id,
-                pipeline_name,
+            Self::PipelineMissingDeploymentLocation => {
+                write!(
+                    f,
+                    "Unable to reach out to the pipeline because its deployment location is missing"
+                )
+            }
+            Self::PipelineInvalidRuntimeConfig {
+                value,
+                error,
             } => {
                 write!(
                     f,
-                    "Pipeline {pipeline_name} ({pipeline_id}) is missing its program binary URL"
+                    "The runtime configuration:\n{value:#}\n\n... is not valid due to: {error}.\n\n\
+                    This indicates a backward-incompatible platform upgrade occurred. \
+                    Shut down and update the 'runtime_config' field of the pipeline to resolve this."
+                )
+            }
+            Self::PipelineInvalidProgramInfo {
+                value,
+                error,
+            } => {
+                write!(
+                    f,
+                    "The program information:\n{value:#}\n\n... is not valid due to: {error}.\n\n\
+                    This indicates a backward-incompatible platform upgrade occurred. \
+                    Shut down and recompile the pipeline to resolve this."
+                )
+            }
+            Self::PipelineInvalidDeploymentConfig {
+                value,
+                error,
+            } => {
+                write!(
+                    f,
+                    "The deployment configuration:\n{value:#}\n\n... is not valid due to: {error}.\n\n\
+                    This indicates a backward-incompatible platform upgrade occurred. \
+                    Shut down and restart the pipeline to resolve this."
+                )
+            }
+            Self::FailedToSerializeDeploymentConfig {
+                error,
+            } => {
+                write!(
+                    f,
+                    "Failed to serialize deployment configuration due to: {error}"
+                )
+            }
+            Self::CannotProvisionDifferentPlatformVersion {
+                pipeline_platform_version,
+                runner_platform_version,
+            } => {
+                write!(
+                    f,
+                    "Unable to provision pipeline because the pipeline platform version ({pipeline_platform_version}) differs from the runner platform version ({runner_platform_version})"
                 )
             }
             Self::RunnerEndpointSendError {
@@ -358,10 +411,17 @@ impl StdError for RunnerError {}
 impl ResponseError for RunnerError {
     fn status_code(&self) -> StatusCode {
         match self {
-            Self::PipelineMissingDeploymentConfig { .. } => StatusCode::INTERNAL_SERVER_ERROR,
-            Self::PipelineMissingDeploymentLocation { .. } => StatusCode::INTERNAL_SERVER_ERROR,
-            Self::PipelineMissingProgramInfo { .. } => StatusCode::INTERNAL_SERVER_ERROR,
-            Self::PipelineMissingProgramBinaryUrl { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::PipelineMissingProgramInfo => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::PipelineMissingProgramBinaryUrl => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::PipelineMissingDeploymentConfig => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::PipelineMissingDeploymentLocation => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::PipelineInvalidRuntimeConfig { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::PipelineInvalidProgramInfo { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::PipelineInvalidDeploymentConfig { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::FailedToSerializeDeploymentConfig { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::CannotProvisionDifferentPlatformVersion { .. } => {
+                StatusCode::INTERNAL_SERVER_ERROR
+            }
             Self::RunnerEndpointSendError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::RunnerUnreachable { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::LogFollowRequestChannelFull { .. } => StatusCode::INTERNAL_SERVER_ERROR,

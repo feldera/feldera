@@ -6,20 +6,20 @@ use crate::db::operations;
 use crate::db::pg_setup;
 use crate::db::storage::{ExtendedPipelineDescrRunner, Storage};
 use crate::db::types::api_key::{ApiKeyDescr, ApiPermission};
-use crate::db::types::common::Version;
 use crate::db::types::pipeline::{
     ExtendedPipelineDescr, ExtendedPipelineDescrMonitoring, PipelineDescr, PipelineDesiredStatus,
     PipelineId, PipelineStatus,
 };
 use crate::db::types::program::{ProgramConfig, ProgramInfo, ProgramStatus, SqlCompilerMessage};
 use crate::db::types::tenant::TenantId;
+use crate::db::types::version::Version;
 use crate::{auth::TenantRecord, config::DatabaseConfig};
 use async_trait::async_trait;
 use deadpool_postgres::{Manager, Pool, RecyclingMethod};
 use feldera_types::config::{PipelineConfig, RuntimeConfig};
 use feldera_types::error::ErrorResponse;
 use log::{debug, info, log, Level};
-use tokio_postgres::NoTls;
+use tokio_postgres::{NoTls, Row};
 use uuid::Uuid;
 
 mod embedded {
@@ -333,11 +333,11 @@ impl Storage for StoragePostgres {
         name: &Option<String>,
         description: &Option<String>,
         platform_version: &str,
-        runtime_config: &Option<RuntimeConfig>,
+        runtime_config: &Option<serde_json::Value>,
         program_code: &Option<String>,
         udf_rust: &Option<String>,
         udf_toml: &Option<String>,
-        program_config: &Option<ProgramConfig>,
+        program_config: &Option<serde_json::Value>,
     ) -> Result<ExtendedPipelineDescr, DBError> {
         let mut client = self.pool.get().await?;
         let txn = client.transaction().await?;
@@ -434,7 +434,7 @@ impl Storage for StoragePostgres {
         tenant_id: TenantId,
         pipeline_id: PipelineId,
         program_version_guard: Version,
-        program_info: &ProgramInfo,
+        program_info: &serde_json::Value,
     ) -> Result<(), DBError> {
         let mut client = self.pool.get().await?;
         let txn = client.transaction().await?;
@@ -638,7 +638,7 @@ impl Storage for StoragePostgres {
         &self,
         tenant_id: TenantId,
         pipeline_id: PipelineId,
-        deployment_config: PipelineConfig,
+        deployment_config: serde_json::Value,
     ) -> Result<(), DBError> {
         let mut client = self.pool.get().await?;
         let txn = client.transaction().await?;
@@ -1066,6 +1066,10 @@ impl StoragePostgres {
             "Database migrations finished: {} migrations were applied",
             report.applied_migrations().len()
         );
+
+        // YAML -> JSON migration
+        self.perform_yaml_to_json_migration().await?;
+
         let default_tenant = TenantRecord::default();
         self.get_or_create_tenant_id(
             default_tenant.id.0,
@@ -1073,6 +1077,83 @@ impl StoragePostgres {
             default_tenant.provider,
         )
         .await?;
+        Ok(())
+    }
+
+    /// Performs the conversion of the pipeline table fields which are YAML to become JSON.
+    async fn perform_yaml_to_json_migration(&self) -> Result<(), DBError> {
+        let mut client = self.pool.get().await?;
+        let txn = client.transaction().await?;
+        let stmt = txn
+            .prepare_cached(
+                "SELECT p.id, p.runtime_config, p.program_config, p.program_info, p.deployment_error, p.deployment_config
+                 FROM pipeline AS p
+                 WHERE p.uses_json = FALSE
+                 ORDER BY p.id ASC"
+            )
+            .await?;
+        let rows: Vec<Row> = txn.query(&stmt, &[]).await?;
+        if !rows.is_empty() {
+            let stmt_update = txn
+                .prepare_cached(
+                    "UPDATE pipeline
+                     SET runtime_config = $1,
+                         program_config = $2,
+                         program_info = $3,
+                         deployment_error = $4,
+                         deployment_config = $5,
+                         uses_json = TRUE
+                     WHERE id = $6",
+                )
+                .await?;
+            let mut rows_affected = 0;
+            for row in rows {
+                let pipeline_id = PipelineId(row.get(0));
+                let runtime_config = serde_yaml::from_str::<RuntimeConfig>(row.get(1))
+                    .expect("Deserialize RuntimeConfig from YAML");
+                let program_config = serde_yaml::from_str::<ProgramConfig>(row.get(2))
+                    .expect("Deserialize ProgramConfig from YAML");
+                let program_info = row.get::<_, Option<String>>(3).map(|s| {
+                    serde_yaml::from_str::<ProgramInfo>(&s)
+                        .expect("Deserialize ProgramInfo from YAML")
+                });
+                let deployment_error = row.get::<_, Option<String>>(4).map(|s| {
+                    serde_yaml::from_str::<ErrorResponse>(&s)
+                        .expect("Deserialize ErrorResponse from YAML")
+                });
+                let deployment_config = row.get::<_, Option<String>>(5).map(|s| {
+                    serde_yaml::from_str::<PipelineConfig>(&s)
+                        .expect("Deserialize PipelineConfig from YAML")
+                });
+                rows_affected += txn
+                    .execute(
+                        &stmt_update,
+                        &[
+                            &serde_json::to_string(&runtime_config)
+                                .expect("Serialize RuntimeConfig as JSON"),
+                            &serde_json::to_string(&program_config)
+                                .expect("Serialize ProgramConfig as JSON"),
+                            &program_info.as_ref().map(|v| {
+                                serde_json::to_string(&v).expect("Serialize ProgramInfo as JSON")
+                            }),
+                            &deployment_error.as_ref().map(|v| {
+                                serde_json::to_string(&v).expect("Serialize ErrorResponse as JSON")
+                            }),
+                            &deployment_config.as_ref().map(|v| {
+                                serde_json::to_string(&v).expect("Serialize PipelineConfig as JSON")
+                            }),
+                            &pipeline_id.0,
+                        ],
+                    )
+                    .await?;
+            }
+            txn.commit().await?;
+            if rows_affected > 0 {
+                info!("Converted YAML to JSON for {rows_affected} row(s)");
+            }
+        } else {
+            txn.rollback().await?;
+        }
         Ok(())
     }
 

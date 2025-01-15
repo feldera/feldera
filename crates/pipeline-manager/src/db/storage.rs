@@ -1,13 +1,12 @@
 use crate::db::error::DBError;
 use crate::db::types::api_key::{ApiKeyDescr, ApiPermission};
-use crate::db::types::common::Version;
 use crate::db::types::pipeline::{
     ExtendedPipelineDescr, ExtendedPipelineDescrMonitoring, PipelineDescr, PipelineId,
 };
-use crate::db::types::program::{ProgramConfig, ProgramInfo, SqlCompilerMessage};
+use crate::db::types::program::SqlCompilerMessage;
 use crate::db::types::tenant::TenantId;
+use crate::db::types::version::Version;
 use async_trait::async_trait;
-use feldera_types::config::{PipelineConfig, RuntimeConfig};
 use feldera_types::error::ErrorResponse;
 use uuid::Uuid;
 
@@ -167,11 +166,11 @@ pub(crate) trait Storage {
         name: &Option<String>,
         description: &Option<String>,
         platform_version: &str,
-        runtime_config: &Option<RuntimeConfig>,
+        runtime_config: &Option<serde_json::Value>,
         program_code: &Option<String>,
         udf_rust: &Option<String>,
         udf_toml: &Option<String>,
-        program_config: &Option<ProgramConfig>,
+        program_config: &Option<serde_json::Value>,
     ) -> Result<ExtendedPipelineDescr, DBError>;
 
     /// Deletes an existing pipeline.
@@ -203,7 +202,7 @@ pub(crate) trait Storage {
         tenant_id: TenantId,
         pipeline_id: PipelineId,
         program_version_guard: Version,
-        program_info: &ProgramInfo,
+        program_info: &serde_json::Value,
     ) -> Result<(), DBError>;
 
     /// Transitions program status to `CompilingRust`.
@@ -278,7 +277,7 @@ pub(crate) trait Storage {
         &self,
         tenant_id: TenantId,
         pipeline_id: PipelineId,
-        deployment_config: PipelineConfig,
+        deployment_config: serde_json::Value,
     ) -> Result<(), DBError>;
 
     /// Transitions deployment status to `Initializing`.

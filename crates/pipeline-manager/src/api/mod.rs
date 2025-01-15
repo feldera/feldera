@@ -137,7 +137,7 @@ The program version is used internally by the compiler to know when to recompile
         crate::auth::ProviderGoogleIdentity,
 
         // Common
-        crate::db::types::common::Version,
+        crate::db::types::version::Version,
         crate::api::config_api::Configuration,
 
         // Pipeline
@@ -204,6 +204,7 @@ The program version is used internally by the compiler to know when to recompile
         feldera_types::transport::delta_table::DeltaTableIngestMode,
         feldera_types::transport::delta_table::DeltaTableWriteMode,
         feldera_types::transport::delta_table::DeltaTableReaderConfig,
+        feldera_types::transport::delta_table::DeltaTableWriterConfig,
         feldera_types::transport::iceberg::IcebergReaderConfig,
         feldera_types::transport::iceberg::IcebergIngestMode,
         feldera_types::transport::iceberg::IcebergCatalogType,

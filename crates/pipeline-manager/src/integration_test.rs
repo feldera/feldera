@@ -291,17 +291,16 @@ impl TestConfig {
             .unwrap()
     }
 
-    // TODO: currently unused
-    // async fn put<S: AsRef<str>>(
-    //     &self,
-    //     endpoint: S,
-    //     json: &Value,
-    // ) -> ClientResponse<Decoder<Payload>> {
-    //     self.maybe_attach_bearer_token(self.client.put(self.endpoint_url(endpoint)))
-    //         .send_json(&json)
-    //         .await
-    //         .unwrap()
-    // }
+    async fn put<S: AsRef<str>>(
+        &self,
+        endpoint: S,
+        json: &Value,
+    ) -> ClientResponse<Decoder<Payload>> {
+        self.maybe_attach_bearer_token(self.client.put(self.endpoint_url(endpoint)))
+            .send_json(&json)
+            .await
+            .unwrap()
+    }
 
     async fn post<S: AsRef<str>>(
         &self,
@@ -803,11 +802,11 @@ async fn pipeline_post() {
     .await;
     assert_eq!(pipeline["name"], json!("test-1"));
     assert_eq!(pipeline["description"], json!(""));
-    assert!(pipeline["runtime_config"].is_object());
+    assert_eq!(pipeline["runtime_config"], json!({}));
     assert_eq!(pipeline["program_code"], json!(""));
     assert_eq!(pipeline["udf_rust"], json!(""));
     assert_eq!(pipeline["udf_toml"], json!(""));
-    assert!(pipeline["program_config"].is_object());
+    assert_eq!(pipeline["program_config"], json!({}));
 
     // Body with SQL
     let pipeline = TestConfig::check_status_and_decode_json(
@@ -825,11 +824,11 @@ async fn pipeline_post() {
     .await;
     assert_eq!(pipeline["name"], json!("test-2"));
     assert_eq!(pipeline["description"], json!(""));
-    assert!(pipeline["runtime_config"].is_object());
+    assert_eq!(pipeline["runtime_config"], json!({}));
     assert_eq!(pipeline["program_code"], json!("sql-2"));
     assert_eq!(pipeline["udf_rust"], json!(""));
     assert_eq!(pipeline["udf_toml"], json!(""));
-    assert!(pipeline["program_config"].is_object());
+    assert_eq!(pipeline["program_config"], json!({}));
 
     // All fields
     let pipeline = TestConfig::check_status_and_decode_json(
@@ -856,13 +855,11 @@ async fn pipeline_post() {
     .await;
     assert_eq!(pipeline["name"], json!("test-3"));
     assert_eq!(pipeline["description"], json!("description-3"));
-    assert!(pipeline["runtime_config"].is_object());
-    assert_eq!(pipeline["runtime_config"]["workers"], json!(123));
+    assert_eq!(pipeline["runtime_config"], json!({ "workers": 123 }));
     assert_eq!(pipeline["program_code"], json!("sql-3"));
     assert_eq!(pipeline["udf_rust"], json!("rust-3"));
     assert_eq!(pipeline["udf_toml"], json!("toml-3"));
-    assert!(pipeline["program_config"].is_object());
-    assert_eq!(pipeline["program_config"]["profile"], json!("dev"));
+    assert_eq!(pipeline["program_config"], json!({ "profile": "dev" }));
 }
 
 /// Tests the retrieval of a pipeline and list of pipelines.
@@ -1231,70 +1228,208 @@ async fn pipeline_restart() {
         .await;
 }
 
-/// Tests that the pipeline runtime configuration is correctly stored
-/// and that patching it only works at the top level fields.
+/// Tests that the pipeline runtime configuration is validated and stored correctly,
+/// and that patching works on the field as whole.
 #[actix_web::test]
 #[serial]
-async fn pipeline_runtime_configuration() {
+async fn pipeline_runtime_config() {
     let config = setup().await;
 
-    // Create pipeline with a runtime configuration
-    let request = json!({
-        "name":  "pipeline_runtime_configuration",
-        "description": "desc",
+    // Valid JSON for runtime_config
+    for (runtime_config, expected) in [
+        (None, json!({})),
+        (Some(json!(null)), json!({})),
+        (Some(json!({})), json!({})),
+        (Some(json!({ "workers": 12 })), json!({ "workers": 12 })),
+        (
+            Some(json!({
+                "workers": 100,
+                "resources": {
+                    "cpu_cores_min": 5,
+                    "storage_mb_max": 2000,
+                    "storage_class": "normal"
+                }
+            })),
+            json!({
+                "workers": 100,
+                "resources": {
+                    "cpu_cores_min": 5,
+                    "storage_mb_max": 2000,
+                    "storage_class": "normal"
+                }
+            }),
+        ),
+    ] {
+        let mut body = json!({
+            "name":  "test-1",
+            "program_code": "sql-1"
+        });
+        if let Some(json) = runtime_config {
+            body["runtime_config"] = json;
+        }
+        let mut response = config.put("/v0/pipelines/test-1", &body).await;
+        assert!(response.status() == StatusCode::CREATED || response.status() == StatusCode::OK);
+        let value: Value = response.json().await.unwrap();
+        assert_eq!(value["runtime_config"], expected);
+    }
+
+    // Invalid JSON for runtime_config
+    for runtime_config in [
+        json!({ "workers": "not-a-number" }),
+        json!({ "resources": { "storage_mb_max": "not-a-number" } }),
+    ] {
+        let body = json!({
+            "name":  "test-1",
+            "program_code": "sql-1",
+            "runtime_config": runtime_config
+        });
+        let mut response = config.put("/v0/pipelines/test-1", &body).await;
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let value: Value = response.json().await.unwrap();
+        assert_eq!(value["error_code"], json!("InvalidRuntimeConfig"));
+    }
+
+    // Patching: original
+    let body = json!({
+        "name":  "test-2",
+        "program_code": "sql-2",
         "runtime_config": {
             "workers": 100,
+            "storage": true,
             "resources": {
-                "cpu_cores_min": 5,
-                "storage_mb_max": 2000,
-                "storage_class": "normal"
-            }
-        },
-        "program_code": "",
-        "program_config": {}
-    });
-    let mut response = config.post("/v0/pipelines", &request).await;
-    assert_eq!(response.status(), StatusCode::CREATED);
-    let value: Value = response.json().await.unwrap();
-    assert_eq!(value["runtime_config"]["workers"].as_i64().unwrap(), 100);
-    assert_eq!(
-        value["runtime_config"]["resources"],
-        json!({
-            "cpu_cores_min": 5,
-            "cpu_cores_max": null,
-            "memory_mb_min": null,
-            "memory_mb_max": null,
-            "storage_mb_max": 2000,
-            "storage_class": "normal"
-        })
-    );
-
-    // Partially update the runtime configuration and check updated content
-    let patch = json!({
-        "runtime_config": {
-            "workers": 5,
-            "resources": {
-                "memory_mb_max": 100
+                "cpu_cores_min": 2,
+                "storage_mb_max": 500,
+                "storage_class": "fast"
             }
         }
     });
-    let mut response = config
-        .patch("/v0/pipelines/pipeline_runtime_configuration", &patch)
-        .await;
+    let response = config.post("/v0/pipelines", &body).await;
+    assert_eq!(response.status(), StatusCode::CREATED);
+
+    // Patching: apply patch which does not affect runtime_config
+    let mut response = config.patch("/v0/pipelines/test-2", &json!({})).await;
     assert_eq!(response.status(), StatusCode::OK);
     let value: Value = response.json().await.unwrap();
-    assert_eq!(5, value["runtime_config"]["workers"].as_i64().unwrap());
     assert_eq!(
-        value["runtime_config"]["resources"],
+        value["runtime_config"],
         json!({
-            "cpu_cores_min": null,
-            "cpu_cores_max": null,
-            "memory_mb_min": null,
-            "memory_mb_max": 100,
-            "storage_mb_max": null,
-            "storage_class": null
-        }),
+            "workers": 100,
+            "storage": true,
+            "resources": {
+                "cpu_cores_min": 2,
+                "storage_mb_max": 500,
+                "storage_class": "fast"
+            }
+        })
     );
+
+    // Patching: apply patch which affects runtime_config
+    let body = json!({
+        "runtime_config": {
+            "workers": 1,
+            "resources": {
+                "storage_mb_max": 123,
+            }
+        }
+    });
+    let mut response = config.patch("/v0/pipelines/test-2", &body).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let value: Value = response.json().await.unwrap();
+    assert_eq!(
+        value["runtime_config"],
+        json!({
+            "workers": 1,
+            "resources": {
+                "storage_mb_max": 123
+            }
+        })
+    );
+}
+
+/// Tests that the pipeline program configuration is validated and stored correctly,
+/// and that patching works on the field as whole.
+#[actix_web::test]
+#[serial]
+async fn pipeline_program_config() {
+    let config = setup().await;
+
+    // Valid JSON for program_config
+    for (program_config, expected) in [
+        (None, json!({})),
+        (Some(json!(null)), json!({})),
+        (Some(json!({})), json!({})),
+        (
+            Some(json!({ "profile": "dev" })),
+            json!({ "profile": "dev" }),
+        ),
+        (Some(json!({ "cache": true })), json!({ "cache": true })),
+        (
+            Some(json!({ "profile": "dev", "cache": false })),
+            json!({ "profile": "dev", "cache": false }),
+        ),
+    ] {
+        let mut body = json!({
+            "name":  "test-1",
+            "program_code": "sql-1"
+        });
+        if let Some(json) = program_config {
+            body["program_config"] = json;
+        }
+        let mut response = config.put("/v0/pipelines/test-1", &body).await;
+        assert!(response.status() == StatusCode::CREATED || response.status() == StatusCode::OK);
+        let value: Value = response.json().await.unwrap();
+        assert_eq!(value["program_config"], expected);
+    }
+
+    // Invalid JSON for program_config
+    for program_config in [
+        json!({ "profile": "does-not-exist" }),
+        json!({ "cache": 123 }),
+        json!({ "profile": 123 }),
+        json!({ "profile": "unknown", "cache": "a" }),
+    ] {
+        let body = json!({
+            "name":  "test-1",
+            "program_code": "sql-1",
+            "program_config": program_config
+        });
+        let mut response = config.put("/v0/pipelines/test-1", &body).await;
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let value: Value = response.json().await.unwrap();
+        assert_eq!(value["error_code"], json!("InvalidProgramConfig"));
+    }
+
+    // Patching: original
+    let body = json!({
+        "name":  "test-2",
+        "program_code": "sql-2",
+        "program_config": {
+            "profile": "unoptimized",
+            "cache": false
+        }
+    });
+    let response = config.post("/v0/pipelines", &body).await;
+    assert_eq!(response.status(), StatusCode::CREATED);
+
+    // Patching: apply patch which does not affect program_config
+    let mut response = config.patch("/v0/pipelines/test-2", &json!({})).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let value: Value = response.json().await.unwrap();
+    assert_eq!(
+        value["program_config"],
+        json!({ "profile": "unoptimized", "cache": false })
+    );
+
+    // Patching: apply patch which affects program_config
+    let body = json!({
+        "program_config": {
+            "cache": true
+        }
+    });
+    let mut response = config.patch("/v0/pipelines/test-2", &body).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let value: Value = response.json().await.unwrap();
+    assert_eq!(value["program_config"], json!({ "cache": true }));
 }
 
 /// Attempt to start a pipeline without it having finished its compilation fully.

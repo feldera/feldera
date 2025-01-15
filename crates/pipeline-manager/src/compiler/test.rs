@@ -4,8 +4,9 @@ use crate::config::{CommonConfig, CompilerConfig};
 use crate::db::storage::Storage;
 use crate::db::storage_postgres::StoragePostgres;
 use crate::db::types::pipeline::{ExtendedPipelineDescr, PipelineDescr, PipelineId};
-use crate::db::types::program::{CompilationProfile, ProgramStatus};
+use crate::db::types::program::{CompilationProfile, ProgramInfo, ProgramStatus};
 use crate::db::types::tenant::TenantId;
+use serde_json::json;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tempfile::TempDir;
@@ -90,11 +91,11 @@ impl CompilerTest {
                 PipelineDescr {
                     name: name.to_string(),
                     description: "not-used".to_string(),
-                    runtime_config: Default::default(),
+                    runtime_config: json!({}),
                     program_code: program_code.to_string(),
                     udf_rust: "not-used".to_string(),
                     udf_toml: "not-used".to_string(),
-                    program_config: Default::default(),
+                    program_config: json!({}),
                 },
             )
             .await
@@ -222,7 +223,9 @@ impl CompilerTest {
         assert_ne!(content_main_rs, "");
         assert_eq!(
             content_main_rs,
-            pipeline_descr.program_info.clone().unwrap().main_rust
+            serde_json::from_value::<ProgramInfo>(pipeline_descr.program_info.clone().unwrap())
+                .unwrap()
+                .main_rust
         );
         assert_eq!(content_program_sql, program_code);
         assert_ne!(content_schema_json, "");
