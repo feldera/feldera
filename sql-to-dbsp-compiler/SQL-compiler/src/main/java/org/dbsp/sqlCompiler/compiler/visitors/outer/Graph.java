@@ -13,6 +13,7 @@ import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
+import org.dbsp.util.Logger;
 import org.dbsp.util.Utilities;
 
 import java.util.HashMap;
@@ -100,6 +101,9 @@ public class Graph extends CircuitVisitor {
     public void postorder(DBSPCircuit circuit) {
         this.postCircuit(circuit);
         super.postorder(circuit);
+        Logger.INSTANCE.belowLevel(this, 1)
+                .append(this.graphs)
+                .newline();
     }
 
     @Override

@@ -26,6 +26,7 @@ package org.dbsp.sqlCompiler.compiler.backend.rust;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
+import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.circuit.annotation.CompactName;
 import org.dbsp.sqlCompiler.circuit.annotation.Recursive;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessOperator;
@@ -448,7 +449,6 @@ public class ToRustVisitor extends CircuitVisitor {
         for (DBSPDeclaration item: circuit.declarations) {
             // Generate functions used locally
             if (item.item.is(DBSPFunctionItem.class)) {
-                DBSPFunctionItem func = item.item.to(DBSPFunctionItem.class);
                 // Do not generate code for functions not used.
                 // TODO: does not work, need to compute the transitive closure
                 // if (!funcFinder.found.contains(func.function.name)) continue;
@@ -556,9 +556,12 @@ public class ToRustVisitor extends CircuitVisitor {
 
         this.builder.append("Ok((");
         for (int i = 0; i < operator.outputCount(); i++) {
-            this.builder
-                    .append(operator.internalOutputs.get(i).getOutputName())
-                    .append(", ");
+            OutputPort port = operator.internalOutputs.get(i);
+            if (port != null)
+                this.builder.append(port.getOutputName());
+            else
+                this.builder.append("()");
+            this.builder.append(", ");
         }
         this.builder.append("))").newline()
                 .decrease()

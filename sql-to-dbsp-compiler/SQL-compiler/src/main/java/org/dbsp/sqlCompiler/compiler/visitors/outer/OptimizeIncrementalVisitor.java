@@ -32,6 +32,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
 
+import javax.annotation.Nullable;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -270,16 +271,18 @@ public class OptimizeIncrementalVisitor extends CircuitCloneVisitor {
 
         for (int i = 0; i < operator.outputCount(); i++) {
             OutputPort originalOutput = operator.internalOutputs.get(i);
-            OutputPort newPort = this.mapped(originalOutput);
+            @Nullable OutputPort newPort = this.remap.get(originalOutput);
             if (result != operator) {
                 result.addOutput(operator.outputViews.get(i), newPort);
             }
-            // The integrator receives the input from 'result', not from 'newPort'
-            DBSPIntegrateOperator integral = new DBSPIntegrateOperator(
-                    operator.getNode(), new OutputPort(result, i));
-            // The integral will be inserted in the next circuit
-            OutputPort nestedPort = new OutputPort(operator, i);
-            this.map(nestedPort, integral.outputPort());
+            if (newPort != null) {
+                // The integrator receives the input from 'result', not from 'newPort'
+                DBSPIntegrateOperator integral = new DBSPIntegrateOperator(
+                        operator.getNode(), new OutputPort(result, i));
+                // The integral will be inserted in the next circuit
+                OutputPort nestedPort = new OutputPort(operator, i);
+                this.map(nestedPort, integral.outputPort());
+            }
         }
     }
 }

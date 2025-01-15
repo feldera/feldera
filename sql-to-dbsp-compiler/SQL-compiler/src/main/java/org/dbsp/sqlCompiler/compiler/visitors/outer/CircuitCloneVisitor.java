@@ -37,6 +37,7 @@ import org.dbsp.util.Linq;
 import org.dbsp.util.Logger;
 import org.dbsp.util.Utilities;
 
+import javax.annotation.Nullable;
 import java.util.*;
 
 /** This visitor rewrites a circuit by replacing each operator
@@ -462,12 +463,13 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs, 
             result = operator;
         for (int i = 0; i < operator.outputCount(); i++) {
             OutputPort originalOutput = operator.internalOutputs.get(i);
-            OutputPort newPort = this.mapped(originalOutput);
-            if (result != operator) {
+            @Nullable OutputPort newPort = this.remap.get(originalOutput);
+            // Output may have been deleted if it was unused, so newPort can be null
+            if (result != operator)
                 result.addOutput(operator.outputViews.get(i), newPort);
-            }
             this.map(new OutputPort(operator, i), new OutputPort(result, i), false);
         }
+        assert operator.outputCount() == result.outputCount();
         this.map(operator, result);
     }
 

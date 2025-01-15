@@ -58,7 +58,8 @@ public class RecursiveComponents extends Passes {
         this.add(graph2);
         this.add(new BuildNestedOperators(compiler, graph2.getGraphs()));
         this.add(new ValidateRecursiveOperators(compiler));
-        // this.add(new ShowCircuit(compiler));
+        //this.add(new ShowCircuit(compiler));
+        //this.add(new Graph(compiler));
     }
 
     /** Check that all operators in recursive components are supported */
@@ -340,14 +341,10 @@ public class RecursiveComponents extends Passes {
                     sources.add(integral.outputPort());
                 } else if (input.node().is(DBSPViewOperator.class)) {
                     // Same component and input is a view.  Can't use 'source', because
-                    // that is mapped to the differentiator in the check below if the view is recursive.
+                    // that is mapped to the differentiator.
                     DBSPViewOperator view = input.node().to(DBSPViewOperator.class);
-                    if (view.metadata.recursive) {
-                        OutputPort port = Utilities.getExists(this.viewPort, view.viewName);
-                        sources.add(port);
-                    } else {
-                        sources.add(source);
-                    }
+                    OutputPort port = Utilities.getExists(this.viewPort, view.viewName);
+                    sources.add(port);
                 } else {
                     sources.add(source);
                 }
@@ -358,12 +355,11 @@ public class RecursiveComponents extends Passes {
             block.addOperator(result);
             DBSPViewOperator view = result.as(DBSPViewOperator.class);
             OutputPort port = result.outputPort();
-            if (view != null && view.metadata.recursive) {
-                // Insert a differentiator after the views.
-                // All their outputs are in different SCCs from the previous pass
+            if (view != null) {
+                // Insert a differentiator after each view
                 DBSPDifferentiateOperator diff = new DBSPDifferentiateOperator(operator.getNode(), view.outputPort());
                 block.addOperator(diff);
-                // Use as port the output of the NestedOperator, and not the source view
+                // Map the output to the NestedOperator, and not the source view
                 port = block.addOutput(view.viewName, diff.outputPort());
                 Utilities.putNew(this.viewPort, view.viewName, view.outputPort());
             }

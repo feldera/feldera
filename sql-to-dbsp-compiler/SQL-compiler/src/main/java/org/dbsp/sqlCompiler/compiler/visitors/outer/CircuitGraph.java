@@ -2,7 +2,10 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
 import org.dbsp.sqlCompiler.circuit.ICircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.util.IHasId;
+import org.dbsp.util.IIndentStream;
+import org.dbsp.util.ToIndentableString;
 import org.dbsp.util.graph.DiGraph;
 import org.dbsp.util.graph.Port;
 import org.dbsp.util.Utilities;
@@ -16,7 +19,7 @@ import java.util.Set;
 
 /* The Graph represents edges source->destination,
  * while the circuit represents edges destination->source. */
-public class CircuitGraph implements DiGraph<DBSPOperator>, IHasId {
+public class CircuitGraph implements DiGraph<DBSPOperator>, IHasId, ToIndentableString {
     private static long crtId = 0;
     private final long id;
     private final Set<DBSPOperator> nodeSet = new HashSet<>();
@@ -79,5 +82,40 @@ public class CircuitGraph implements DiGraph<DBSPOperator>, IHasId {
 
     public List<Port<DBSPOperator>> getSuccessors(DBSPOperator source) {
         return Utilities.getExists(this.edges, source);
+    }
+
+    @Override
+    public IIndentStream toString(IIndentStream builder) {
+        builder.append("CircuitGraph ")
+                .append(this.id)
+                .append("(")
+                .append(this.circuit.getId())
+                .append(") {")
+                .increase();
+        for (var node: this.nodes) {
+            builder.append(node.toString());
+            List<Port<DBSPOperator>> ports = this.edges.get(node);
+            if (!ports.isEmpty())
+                builder.append("->");
+            if (ports.size() > 1) {
+                builder.append("[").increase();
+            }
+            boolean first = true;
+            for (Port<DBSPOperator> port: ports) {
+                if (!first)
+                    builder.append(", ");
+                if (port.node().is(DBSPSimpleOperator.class)) {
+                    builder.append(port.node().toString());
+                } else {
+                    builder.append(port.toString());
+                }
+                first = false;
+            }
+            builder.newline();
+            if (ports.size() > 1) {
+                builder.decrease().append("]").newline();
+            }
+        }
+        return builder.decrease().append("}");
     }
 }

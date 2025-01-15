@@ -9,6 +9,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVoid;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
@@ -30,9 +31,9 @@ public class DBSPNestedOperator extends DBSPOperator implements ICircuit {
     public final Map<ProgramIdentifier, DBSPViewDeclarationOperator> declarationByName;
     public final List<DBSPDeltaOperator> deltaInputs;
     /** For each output port of this, the actual port of an operator inside,
-     * which produces the result. */
+     * which produces the result.  Some of these may become null if they are found to be dead. */
     public final List<OutputPort> internalOutputs;
-    /** Outputs always correspond to recursive views.  Names of these views in order */
+    /** Outputs correspond to views (recursive or not).  Names of these views in order. */
     public final List<ProgramIdentifier> outputViews;
 
     public DBSPNestedOperator(CalciteObject node) {
@@ -73,10 +74,16 @@ public class DBSPNestedOperator extends DBSPOperator implements ICircuit {
         }
     }
 
-    public OutputPort addOutput(ProgramIdentifier view, OutputPort port) {
+    /** Add an output for this nested operator.  The port may be null if the corresponding output
+     * has actually been deleted.
+     * @param view  View corresponding to output.
+     * @param port  Output port corresponding to the view (may be in a differentiator).
+     * @return      A port of this operator that corresponds
+     */
+    public OutputPort addOutput(ProgramIdentifier view, @Nullable OutputPort port) {
         this.outputViews.add(view);
         this.internalOutputs.add(port);
-        assert this.operators.contains(port.node());
+        assert port == null || this.operators.contains(port.node());
         return new OutputPort(this, this.internalOutputs.size() - 1);
     }
 
@@ -132,7 +139,10 @@ public class DBSPNestedOperator extends DBSPOperator implements ICircuit {
 
     @Override
     public String getOutputName(int outputNo) {
-        return this.internalOutputs.get(outputNo).getOutputName();
+        OutputPort port = this.internalOutputs.get(outputNo);
+        if (port == null)
+            return "_";
+        return port.getOutputName();
     }
 
     @Override
@@ -164,6 +174,8 @@ public class DBSPNestedOperator extends DBSPOperator implements ICircuit {
     @Override
     public DBSPType streamType(int outputNumber) {
         OutputPort port = this.internalOutputs.get(outputNumber);
+        if (port == null)
+            return new DBSPTypeVoid();
         return port.node().streamType(port.outputNumber);
     }
 }
