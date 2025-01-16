@@ -14,7 +14,8 @@ from typing import Callable, Optional, Any, Union, Mapping, Sequence, List
 
 
 def json_serialize(body: Any) -> str:
-    return json.dumps(body) if body else "" if body == "" else "null"
+    # serialize as string if this object cannot be serialized (e.g. UUID)
+    return json.dumps(body, default=str) if body else "" if body == "" else "null"
 
 
 class HttpRequests:

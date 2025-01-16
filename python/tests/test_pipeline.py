@@ -17,12 +17,15 @@ class TestPipeline(unittest.TestCase):
         for pipeline in pipelines:
             TEST_CLIENT.delete_pipeline(pipeline.name)
 
-    def test_create_pipeline(self, name: str = "blah", delete=False):
+    def test_create_pipeline(
+        self, name: str = "blah", delete=False, runtime_config: dict = {}
+    ):
+        self.test_delete_all_pipelines()
         sql = """
         CREATE TABLE tbl(id INT) WITH ('append_only' = 'true');
         CREATE VIEW V AS SELECT * FROM tbl;
         """
-        pipeline = Pipeline(name, sql, "", "", {}, {})
+        pipeline = Pipeline(name, sql, "", "", {}, runtime_config)
         pipeline = TEST_CLIENT.create_pipeline(pipeline)
 
         if delete:
@@ -84,12 +87,12 @@ class TestPipeline(unittest.TestCase):
 
     def test_get_pipeline_config(self):
         name = str(uuid.uuid4())
-        self.test_create_pipeline(name, False)
+        self.test_create_pipeline(name, False, {"workers": 2, "storage": False})
         config = TEST_CLIENT.get_runtime_config(name)
 
         assert config is not None
-        assert config.get("workers") is not None
-        assert config.get("storage") is not None
+        assert config.get("workers") == 2
+        assert not config.get("storage")
 
         TEST_CLIENT.delete_pipeline(name)
 

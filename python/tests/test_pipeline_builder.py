@@ -1,6 +1,8 @@
 import os
 import time
 import unittest
+import uuid
+
 import pandas as pd
 from kafka import KafkaProducer, KafkaConsumer
 from kafka.admin import KafkaAdminClient, NewTopic
@@ -1056,6 +1058,30 @@ Code snippet:
 
         pipeline.shutdown()
         pipeline.delete()
+
+    def test_uuid(self):
+        name = "test_uuid"
+        sql = """
+        CREATE TABLE t0(c0 UUID);
+        CREATE MATERIALIZED VIEW v0 AS SELECT c0 FROM t0;
+        """
+
+        pipeline = PipelineBuilder(TEST_CLIENT, name, sql=sql).create_or_replace()
+        out = pipeline.listen("v0")
+        pipeline.start()
+
+        data = [{"c0": uuid.uuid4()}]
+        pipeline.input_json("t0", data)
+
+        for datum in data:
+            datum.update({"insert_delete": 1})
+
+        pipeline.wait_for_completion(True)
+
+        got = out.to_dict()
+        pipeline.shutdown()
+
+        assert got == data
 
 
 if __name__ == "__main__":
