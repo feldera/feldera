@@ -334,7 +334,7 @@ def generate_inputs(pipeline: Pipeline):
                     "f8": date_time.strftime("%F"),
                     # "f9": list("bar".encode('utf-8')),
                     "f10": {"id": i + batch, "f1": True, "f2": "foo", "f4": 10.5},
-                    "f11": str(uuid.uuid4())
+                    "f11": str(uuid.uuid4()),
                 }
             )
         inserts = [{"insert": element} for element in data]
