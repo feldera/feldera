@@ -1,3 +1,5 @@
+import uuid
+
 import pandas as pd
 from decimal import Decimal
 
@@ -8,6 +10,8 @@ def sql_type_to_pandas_type(sql_type: str):
     """
 
     match sql_type.upper():
+        case "UUID":
+            return None
         case "BOOLEAN":
             return "boolean"
         case "TINYINT":
@@ -64,6 +68,7 @@ def dataframe_from_response(buffer: list[list[dict]], schema: dict):
     pd_schema = {}
 
     decimal_col = []
+    uuid_col = []
 
     for column in schema["fields"]:
         column_name = column["name"]
@@ -72,6 +77,8 @@ def dataframe_from_response(buffer: list[list[dict]], schema: dict):
         column_type = column["columntype"]["type"]
         if column_type == "DECIMAL":
             decimal_col.append(column_name)
+        elif column_type == "UUID":
+            uuid_col.append(column_name)
 
         pd_schema[column_name] = sql_type_to_pandas_type(column_type)
 
@@ -88,6 +95,12 @@ def dataframe_from_response(buffer: list[list[dict]], schema: dict):
             for col in decimal_col:
                 if datum[col] is not None:
                     datum[col] = Decimal(datum[col])
+
+    if len(uuid_col) != 0:
+        for datum in data:
+            for col in uuid_col:
+                if datum[col] is not None:
+                    datum[col] = uuid.UUID(datum[col])
 
     df = pd.DataFrame(data)
     df = df.astype(pd_schema)
