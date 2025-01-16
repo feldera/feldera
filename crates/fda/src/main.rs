@@ -105,7 +105,7 @@ impl TemporaryCacheDisable {
     ) {
         let pc = if disable {
             let mut disabled_cache_pc = original_pc.clone();
-            disabled_cache_pc.cache = Some(false);
+            disabled_cache_pc.cache = false;
             disabled_cache_pc
         } else {
             original_pc.clone()
@@ -1292,7 +1292,7 @@ async fn program(format: OutputFormat, action: ProgramAction, client: Client) {
                 udf_toml: None,
                 program_config: Some(ProgramConfig {
                     profile: Some(profile.into()),
-                    cache: None,
+                    cache: true,
                 }),
                 runtime_config: None,
             };

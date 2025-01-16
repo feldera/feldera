@@ -66,18 +66,39 @@ const RETRIEVE_PIPELINE_COLUMNS: &str =
 ///   because an error will be returned instead.
 fn row_to_extended_pipeline_descriptor(row: &Row) -> Result<ExtendedPipelineDescr, DBError> {
     assert_eq!(row.len(), 26);
+
+    // Runtime configuration: RuntimeConfig
+    let runtime_config = deserialize_json_value(row.get(7))?;
+    let _ = validate_runtime_config(&runtime_config, true); // Prints to log if validation failed
+
+    // Program configuration: ProgramConfig
+    let program_config = deserialize_json_value(row.get(11))?;
+    let _ = validate_program_config(&program_config, true); // Prints to log if validation failed
+
+    // Program information: ProgramInfo
     let program_info = match row.get::<_, Option<String>>(16) {
         None => None,
         Some(s) => Some(deserialize_json_value(&s)?),
     };
+    if let Some(value) = &program_info {
+        let _ = validate_program_info(value); // Prints to log if validation failed
+    }
+
+    // Deployment error: ErrorResponse
     let deployment_error = match row.get::<_, Option<String>>(23) {
         None => None,
         Some(s) => Some(deserialize_error_response(&s)?),
     };
+
+    // Deployment configuration: PipelineConfig
     let deployment_config = match row.get::<_, Option<String>>(24) {
         None => None,
         Some(s) => Some(deserialize_json_value(&s)?),
     };
+    if let Some(value) = &deployment_config {
+        let _ = validate_deployment_config(value); // Prints to log if validation failed
+    }
+
     Ok(ExtendedPipelineDescr {
         id: PipelineId(row.get(0)),
         // tenant_id is not used
@@ -86,11 +107,11 @@ fn row_to_extended_pipeline_descriptor(row: &Row) -> Result<ExtendedPipelineDesc
         created_at: row.get(4),
         version: Version(row.get(5)),
         platform_version: row.get(6),
-        runtime_config: deserialize_json_value(row.get(7))?,
+        runtime_config,
         program_code: row.get(8),
         udf_rust: row.get(9),
         udf_toml: row.get(10),
-        program_config: deserialize_json_value(row.get(11))?,
+        program_config,
         program_version: Version(row.get(12)),
         program_status: ProgramStatus::from_columns(row.get(13), row.get(15))?,
         program_status_since: row.get(14),
@@ -272,18 +293,36 @@ pub(crate) async fn new_pipeline(
     pipeline: PipelineDescr,
 ) -> Result<(PipelineId, Version), DBError> {
     validate_name(&pipeline.name)?;
-    let _ = validate_runtime_config(&pipeline.runtime_config, false).map_err(|error| {
-        DBError::InvalidRuntimeConfig {
-            value: pipeline.runtime_config.clone(),
-            error,
+    // Validate runtime configuration JSON when deserializing it
+    // and reserialize it to have it contain current default values
+    let runtime_config =
+        validate_runtime_config(&pipeline.runtime_config, false).map_err(|error| {
+            DBError::InvalidRuntimeConfig {
+                value: pipeline.runtime_config.clone(),
+                error,
+            }
+        })?;
+    let runtime_config = serde_json::to_value(&runtime_config).map_err(|e| {
+        DBError::FailedToSerializeRuntimeConfig {
+            error: e.to_string(),
         }
     })?;
-    let _ = validate_program_config(&pipeline.program_config, false).map_err(|error| {
-        DBError::InvalidProgramConfig {
-            value: pipeline.program_config.clone(),
-            error,
+
+    // Validate program configuration JSON when deserializing it
+    // and reserialize it to have it contain current default values
+    let program_config =
+        validate_program_config(&pipeline.program_config, false).map_err(|error| {
+            DBError::InvalidProgramConfig {
+                value: pipeline.program_config.clone(),
+                error,
+            }
+        })?;
+    let program_config = serde_json::to_value(&program_config).map_err(|e| {
+        DBError::FailedToSerializeProgramConfig {
+            error: e.to_string(),
         }
     })?;
+
     let stmt = txn
 
         .prepare_cached(
@@ -310,11 +349,11 @@ pub(crate) async fn new_pipeline(
             &pipeline.description,                  // $4: description
             &Version(1).0,                          // $5: version
             &platform_version.to_string(),          // $6: platform_version
-            &pipeline.runtime_config.to_string(),   // $7: runtime_config
+            &runtime_config.to_string(),            // $7: runtime_config
             &pipeline.program_code,                 // $8: program_code
             &pipeline.udf_rust,                     // $9: udf_rust
             &pipeline.udf_toml,                     // $10: udf_toml
-            &pipeline.program_config.to_string(),   // $11: program_config
+            &program_config.to_string(),            // $11: program_config
             &Version(1).0,                          // $12: program_version
             &ProgramStatus::Pending.to_columns().0, // $13: program_status
             &PipelineStatus::Shutdown.to_string(),  // $14: deployment_status
@@ -345,22 +384,46 @@ pub(crate) async fn update_pipeline(
     if let Some(name) = name {
         validate_name(name)?;
     }
-    if let Some(runtime_config) = runtime_config {
-        let _ = validate_runtime_config(runtime_config, false).map_err(|error| {
-            DBError::InvalidRuntimeConfig {
-                value: runtime_config.clone(),
-                error,
-            }
-        })?;
-    }
-    if let Some(program_config) = program_config {
-        let _ = validate_program_config(program_config, false).map_err(|error| {
-            DBError::InvalidProgramConfig {
-                value: program_config.clone(),
-                error,
-            }
-        })?;
-    }
+
+    // Validate runtime configuration JSON when deserializing it
+    // and reserialize it to have it contain current default values
+    let runtime_config = match runtime_config {
+        None => None,
+        Some(runtime_config) => {
+            let runtime_config =
+                validate_runtime_config(runtime_config, false).map_err(|error| {
+                    DBError::InvalidRuntimeConfig {
+                        value: runtime_config.clone(),
+                        error,
+                    }
+                })?;
+            Some(serde_json::to_value(&runtime_config).map_err(|e| {
+                DBError::FailedToSerializeRuntimeConfig {
+                    error: e.to_string(),
+                }
+            })?)
+        }
+    };
+
+    // Validate program configuration JSON when deserializing it
+    // and reserialize it to have it contain current default values
+    let program_config = match program_config {
+        None => None,
+        Some(program_config) => {
+            let program_config =
+                validate_program_config(program_config, false).map_err(|error| {
+                    DBError::InvalidProgramConfig {
+                        value: program_config.clone(),
+                        error,
+                    }
+                })?;
+            Some(serde_json::to_value(&program_config).map_err(|e| {
+                DBError::FailedToSerializeProgramConfig {
+                    error: e.to_string(),
+                }
+            })?)
+        }
+    };
 
     // Fetch current pipeline to decide how to update.
     // This will also return an error if the pipeline does not exist.

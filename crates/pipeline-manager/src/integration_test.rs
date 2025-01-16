@@ -56,13 +56,14 @@ use crate::config::CommonConfig;
 #[cfg(feature = "pg-embed")]
 use crate::config::PgEmbedConfig;
 use crate::db::storage_postgres::StoragePostgres;
-use crate::db::types::program::{CompilationProfile, ProgramStatus};
+use crate::db::types::program::{CompilationProfile, ProgramConfig, ProgramStatus};
 use crate::runner::local_runner::LocalRunner;
 use crate::{
     config::{ApiServerConfig, CompilerConfig, DatabaseConfig, LocalRunnerConfig},
     db::types::pipeline::PipelineStatus,
 };
 use anyhow::{bail, Result as AnyResult};
+use feldera_types::config::{ResourceConfig, RuntimeConfig};
 use feldera_types::program_schema::SqlIdentifier;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -802,11 +803,17 @@ async fn pipeline_post() {
     .await;
     assert_eq!(pipeline["name"], json!("test-1"));
     assert_eq!(pipeline["description"], json!(""));
-    assert_eq!(pipeline["runtime_config"], json!({}));
+    assert_eq!(
+        pipeline["runtime_config"],
+        serde_json::to_value(RuntimeConfig::default()).unwrap()
+    );
     assert_eq!(pipeline["program_code"], json!(""));
     assert_eq!(pipeline["udf_rust"], json!(""));
     assert_eq!(pipeline["udf_toml"], json!(""));
-    assert_eq!(pipeline["program_config"], json!({}));
+    assert_eq!(
+        pipeline["program_config"],
+        serde_json::to_value(ProgramConfig::default()).unwrap()
+    );
 
     // Body with SQL
     let pipeline = TestConfig::check_status_and_decode_json(
@@ -824,11 +831,17 @@ async fn pipeline_post() {
     .await;
     assert_eq!(pipeline["name"], json!("test-2"));
     assert_eq!(pipeline["description"], json!(""));
-    assert_eq!(pipeline["runtime_config"], json!({}));
+    assert_eq!(
+        pipeline["runtime_config"],
+        serde_json::to_value(RuntimeConfig::default()).unwrap()
+    );
     assert_eq!(pipeline["program_code"], json!("sql-2"));
     assert_eq!(pipeline["udf_rust"], json!(""));
     assert_eq!(pipeline["udf_toml"], json!(""));
-    assert_eq!(pipeline["program_config"], json!({}));
+    assert_eq!(
+        pipeline["program_config"],
+        serde_json::to_value(ProgramConfig::default()).unwrap()
+    );
 
     // All fields
     let pipeline = TestConfig::check_status_and_decode_json(
@@ -855,11 +868,26 @@ async fn pipeline_post() {
     .await;
     assert_eq!(pipeline["name"], json!("test-3"));
     assert_eq!(pipeline["description"], json!("description-3"));
-    assert_eq!(pipeline["runtime_config"], json!({ "workers": 123 }));
+    assert_eq!(
+        pipeline["runtime_config"],
+        serde_json::to_value(RuntimeConfig {
+            workers: 123,
+            ..Default::default()
+        })
+        .unwrap()
+    );
     assert_eq!(pipeline["program_code"], json!("sql-3"));
     assert_eq!(pipeline["udf_rust"], json!("rust-3"));
     assert_eq!(pipeline["udf_toml"], json!("toml-3"));
-    assert_eq!(pipeline["program_config"], json!({ "profile": "dev" }));
+    assert_eq!(
+        pipeline["program_config"],
+        serde_json::to_value(ProgramConfig {
+            profile: Some(CompilationProfile::Dev),
+            ..Default::default()
+        })
+        .unwrap()
+    );
+    assert_eq!(pipeline["program_config"]["profile"], json!("dev"));
 }
 
 /// Tests the retrieval of a pipeline and list of pipelines.
@@ -1237,10 +1265,26 @@ async fn pipeline_runtime_config() {
 
     // Valid JSON for runtime_config
     for (runtime_config, expected) in [
-        (None, json!({})),
-        (Some(json!(null)), json!({})),
-        (Some(json!({})), json!({})),
-        (Some(json!({ "workers": 12 })), json!({ "workers": 12 })),
+        (
+            None,
+            serde_json::to_value(RuntimeConfig::default()).unwrap(),
+        ),
+        (
+            Some(json!(null)),
+            serde_json::to_value(RuntimeConfig::default()).unwrap(),
+        ),
+        (
+            Some(json!({})),
+            serde_json::to_value(RuntimeConfig::default()).unwrap(),
+        ),
+        (
+            Some(json!({ "workers": 12 })),
+            serde_json::to_value(RuntimeConfig {
+                workers: 12,
+                ..Default::default()
+            })
+            .unwrap(),
+        ),
         (
             Some(json!({
                 "workers": 100,
@@ -1250,14 +1294,17 @@ async fn pipeline_runtime_config() {
                     "storage_class": "normal"
                 }
             })),
-            json!({
-                "workers": 100,
-                "resources": {
-                    "cpu_cores_min": 5,
-                    "storage_mb_max": 2000,
-                    "storage_class": "normal"
-                }
-            }),
+            serde_json::to_value(RuntimeConfig {
+                workers: 100,
+                resources: ResourceConfig {
+                    cpu_cores_min: Some(5),
+                    storage_mb_max: Some(2000),
+                    storage_class: Some("normal".to_string()),
+                    ..Default::default()
+                },
+                ..Default::default()
+            })
+            .unwrap(),
         ),
     ] {
         let mut body = json!({
@@ -1312,15 +1359,18 @@ async fn pipeline_runtime_config() {
     let value: Value = response.json().await.unwrap();
     assert_eq!(
         value["runtime_config"],
-        json!({
-            "workers": 100,
-            "storage": true,
-            "resources": {
-                "cpu_cores_min": 2,
-                "storage_mb_max": 500,
-                "storage_class": "fast"
-            }
+        serde_json::to_value(RuntimeConfig {
+            workers: 100,
+            storage: true,
+            resources: ResourceConfig {
+                cpu_cores_min: Some(2),
+                storage_mb_max: Some(500),
+                storage_class: Some("fast".to_string()),
+                ..Default::default()
+            },
+            ..Default::default()
         })
+        .unwrap()
     );
 
     // Patching: apply patch which affects runtime_config
@@ -1337,12 +1387,15 @@ async fn pipeline_runtime_config() {
     let value: Value = response.json().await.unwrap();
     assert_eq!(
         value["runtime_config"],
-        json!({
-            "workers": 1,
-            "resources": {
-                "storage_mb_max": 123
-            }
+        serde_json::to_value(RuntimeConfig {
+            workers: 1,
+            resources: ResourceConfig {
+                storage_mb_max: Some(123),
+                ..Default::default()
+            },
+            ..Default::default()
         })
+        .unwrap()
     );
 }
 
@@ -1355,17 +1408,42 @@ async fn pipeline_program_config() {
 
     // Valid JSON for program_config
     for (program_config, expected) in [
-        (None, json!({})),
-        (Some(json!(null)), json!({})),
-        (Some(json!({})), json!({})),
+        (
+            None,
+            serde_json::to_value(ProgramConfig::default()).unwrap(),
+        ),
+        (
+            Some(json!(null)),
+            serde_json::to_value(ProgramConfig::default()).unwrap(),
+        ),
+        (
+            Some(json!({})),
+            serde_json::to_value(ProgramConfig::default()).unwrap(),
+        ),
         (
             Some(json!({ "profile": "dev" })),
-            json!({ "profile": "dev" }),
+            serde_json::to_value(ProgramConfig {
+                profile: Some(CompilationProfile::Dev),
+                ..Default::default()
+            })
+            .unwrap(),
         ),
-        (Some(json!({ "cache": true })), json!({ "cache": true })),
+        (
+            Some(json!({ "cache": true })),
+            serde_json::to_value(ProgramConfig {
+                cache: true,
+                ..Default::default()
+            })
+            .unwrap(),
+        ),
         (
             Some(json!({ "profile": "dev", "cache": false })),
-            json!({ "profile": "dev", "cache": false }),
+            serde_json::to_value(ProgramConfig {
+                profile: Some(CompilationProfile::Dev),
+                cache: false,
+                ..Default::default()
+            })
+            .unwrap(),
         ),
     ] {
         let mut body = json!({
@@ -1417,7 +1495,12 @@ async fn pipeline_program_config() {
     let value: Value = response.json().await.unwrap();
     assert_eq!(
         value["program_config"],
-        json!({ "profile": "unoptimized", "cache": false })
+        serde_json::to_value(ProgramConfig {
+            profile: Some(CompilationProfile::Unoptimized),
+            cache: false,
+            ..Default::default()
+        })
+        .unwrap()
     );
 
     // Patching: apply patch which affects program_config
@@ -1429,7 +1512,14 @@ async fn pipeline_program_config() {
     let mut response = config.patch("/v0/pipelines/test-2", &body).await;
     assert_eq!(response.status(), StatusCode::OK);
     let value: Value = response.json().await.unwrap();
-    assert_eq!(value["program_config"], json!({ "cache": true }));
+    assert_eq!(
+        value["program_config"],
+        serde_json::to_value(ProgramConfig {
+            cache: true,
+            ..Default::default()
+        })
+        .unwrap()
+    );
 }
 
 /// Attempt to start a pipeline without it having finished its compilation fully.

@@ -3602,7 +3602,8 @@
         "properties": {
           "cache": {
             "type": "boolean",
-            "description": "If `true` (default), when a prior compilation with the same checksum\nalready exists, the output of that (i.e., binary) is used.\nSet `false` to always trigger a new compilation, which might take longer\nand as well can result in overriding an existing binary."
+            "description": "If `true` (default), when a prior compilation with the same checksum\nalready exists, the output of that (i.e., binary) is used.\nSet `false` to always trigger a new compilation, which might take longer\nand as well can result in overriding an existing binary.",
+            "default": true
           },
           "profile": {
             "allOf": [
@@ -3610,6 +3611,7 @@
                 "$ref": "#/components/schemas/CompilationProfile"
               }
             ],
+            "default": null,
             "nullable": true
           }
         }

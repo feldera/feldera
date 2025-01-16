@@ -507,15 +507,15 @@ async fn pipeline_creation() {
     let new_descriptor = PipelineDescr {
         name: "test1".to_string(),
         description: "Test description".to_string(),
-        runtime_config: json!({}),
+        runtime_config: json!({
+            "workers": 123
+        }),
         program_code: "".to_string(),
         udf_rust: "".to_string(),
         udf_toml: "".to_string(),
-        program_config: serde_json::to_value(ProgramConfig {
-            profile: Some(CompilationProfile::Unoptimized),
-            cache: false,
-        })
-        .unwrap(),
+        program_config: json!({
+            "profile": "unoptimized"
+        }),
     };
     let new_result = handle
         .db
@@ -530,9 +530,21 @@ async fn pipeline_creation() {
     // Core fields
     assert_eq!(actual.name, new_descriptor.name);
     assert_eq!(actual.description, new_descriptor.description);
-    assert_eq!(actual.runtime_config, new_descriptor.runtime_config);
+    assert_eq!(
+        actual.runtime_config,
+        serde_json::to_value(
+            serde_json::from_value::<RuntimeConfig>(new_descriptor.runtime_config).unwrap()
+        )
+        .unwrap()
+    );
     assert_eq!(actual.program_code, new_descriptor.program_code);
-    assert_eq!(actual.program_config, new_descriptor.program_config);
+    assert_eq!(
+        actual.program_config,
+        serde_json::to_value(
+            serde_json::from_value::<ProgramConfig>(new_descriptor.program_config).unwrap()
+        )
+        .unwrap()
+    );
 
     // Core metadata fields
     // actual.id

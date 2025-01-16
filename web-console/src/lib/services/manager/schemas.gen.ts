@@ -2092,7 +2092,8 @@ export const $ProgramConfig = {
       description: `If \`true\` (default), when a prior compilation with the same checksum
 already exists, the output of that (i.e., binary) is used.
 Set \`false\` to always trigger a new compilation, which might take longer
-and as well can result in overriding an existing binary.`
+and as well can result in overriding an existing binary.`,
+      default: true
     },
     profile: {
       allOf: [
@@ -2100,6 +2101,7 @@ and as well can result in overriding an existing binary.`
           $ref: '#/components/schemas/CompilationProfile'
         }
       ],
+      default: null,
       nullable: true
     }
   }

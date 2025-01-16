@@ -252,13 +252,9 @@ pub fn validate_program_status_transition(
     }
 }
 
-/// Default value for program configuration: cache.
-fn default_program_config_cache() -> bool {
-    true
-}
-
 /// Program configuration.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
+#[serde(default)]
 pub struct ProgramConfig {
     /// Compilation profile.
     /// If none is specified, the compiler default compilation profile is used.
@@ -268,8 +264,16 @@ pub struct ProgramConfig {
     /// already exists, the output of that (i.e., binary) is used.
     /// Set `false` to always trigger a new compilation, which might take longer
     /// and as well can result in overriding an existing binary.
-    #[serde(default = "default_program_config_cache")]
     pub cache: bool,
+}
+
+impl Default for ProgramConfig {
+    fn default() -> Self {
+        Self {
+            profile: None,
+            cache: true,
+        }
+    }
 }
 
 #[derive(ThisError, Serialize, Deserialize, Debug, ToSchema)]
