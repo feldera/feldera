@@ -78,6 +78,12 @@ pub enum DBError {
         value: serde_json::Value,
         error: String,
     },
+    FailedToSerializeRuntimeConfig {
+        error: String,
+    },
+    FailedToSerializeProgramConfig {
+        error: String,
+    },
     FailedToSerializeErrorResponse {
         error: String,
     },
@@ -408,6 +414,12 @@ impl Display for DBError {
             DBError::InvalidErrorResponse { value, error } => {
                 write!(f, "JSON for 'deployment_error' field:\n{value:#}\n\n... is not valid due to: {error}")
             }
+            DBError::FailedToSerializeRuntimeConfig { error } => {
+                write!(f, "Unable to serialize runtime configuration for 'runtime_config' field as JSON due to: {error}")
+            }
+            DBError::FailedToSerializeProgramConfig { error } => {
+                write!(f, "Unable to serialize program configuration for 'program_config' field as JSON due to: {error}")
+            }
             DBError::FailedToSerializeErrorResponse { error } => {
                 write!(f, "Unable to serialize error response for 'deployment_error' field as JSON due to: {error}")
             }
@@ -555,6 +567,12 @@ impl DetailedError for DBError {
             Self::InvalidProgramInfo { .. } => Cow::from("InvalidProgramInfo"),
             Self::InvalidDeploymentConfig { .. } => Cow::from("InvalidDeploymentConfig"),
             Self::InvalidErrorResponse { .. } => Cow::from("InvalidErrorResponse"),
+            Self::FailedToSerializeRuntimeConfig { .. } => {
+                Cow::from("FailedToSerializeRuntimeConfig")
+            }
+            Self::FailedToSerializeProgramConfig { .. } => {
+                Cow::from("FailedToSerializeProgramConfig")
+            }
             Self::FailedToSerializeErrorResponse { .. } => {
                 Cow::from("FailedToSerializeErrorResponse")
             }
@@ -622,6 +640,8 @@ impl ResponseError for DBError {
             Self::InvalidProgramInfo { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::InvalidDeploymentConfig { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::InvalidErrorResponse { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::FailedToSerializeRuntimeConfig { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::FailedToSerializeProgramConfig { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::FailedToSerializeErrorResponse { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::UniqueKeyViolation { .. } => StatusCode::INTERNAL_SERVER_ERROR, // UUID conflict
             Self::DuplicateKey { .. } => StatusCode::INTERNAL_SERVER_ERROR, // This error should never bubble up till here
