@@ -135,7 +135,7 @@
           <div class="">Your pipelines will appear here</div>
           <div class="relative flex gap-5">
             <CreatePipelineButton btnClass="preset-filled-surface-50-950"></CreatePipelineButton>
-            <a class="btn text-sm preset-tonal-surface" href="https://docs.feldera.com">
+            <a class="btn preset-tonal-surface" href="https://docs.feldera.com">
               <span class="fd fd-book-open text-2xl"></span>
               Documentation
             </a>

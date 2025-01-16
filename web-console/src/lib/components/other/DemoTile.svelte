@@ -2,7 +2,7 @@
   import { useTryPipeline } from '$lib/compositions/pipelines/useTryPipeline'
   import type { Demo } from '$lib/services/manager'
 
-  let { demo }: { demo: Demo & { type: 'Use Case' | 'Tutorial' | 'Example' } } = $props()
+  let { demo }: { demo: Demo & { type: string } } = $props()
   const tryPipeline = useTryPipeline()
 </script>
 

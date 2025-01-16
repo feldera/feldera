@@ -10,9 +10,10 @@
   import NavigationExtras from '$lib/components/layout/NavigationExtras.svelte'
   import CreatePipelineButton from '$lib/components/pipelines/CreatePipelineButton.svelte'
   import Footer from '$lib/components/layout/Footer.svelte'
+  import { nubLast } from '$lib/functions/common/array'
 
   let { data }: { data: PageData } = $props()
-  let demosType = $state<(typeof typeLabels)[number]>('All')
+  let demosType = $state('All')
   const drawer = useDrawer('right')
   const breadcrumbs = $derived([
     ...(drawer.isMobileDrawer
@@ -28,13 +29,12 @@
       href: `${base}/demos/`
     }
   ])
-  const typeLabels = ['All', 'Use Cases', 'Tutorials', 'Examples'] as const
-  const types = {
-    All: undefined,
-    'Use Cases': 'Use Case',
-    Tutorials: 'Tutorial',
-    Examples: 'Example'
-  } as const
+  const types = $derived(['All', ...nubLast(data.demos.map((d) => d.type))])
+  const plurals: Record<string, string> = {
+    'Use Case': 'Use Cases',
+    Tutorial: 'Tutorials',
+    Example: 'Examples'
+  }
 </script>
 
 <AppHeader>
@@ -69,9 +69,9 @@
     rounded="rounded"
     gap="sm:gap-2"
   >
-    {#each typeLabels as type}
+    {#each types as type}
       <Segment.Item value={type} base="btn cursor-pointer z-[1] px-5 sm:px-8 h-6 text-sm">
-        {type}
+        {plurals[type] ?? type}
       </Segment.Item>
     {/each}
   </Segment>
@@ -81,8 +81,7 @@
     class="grid grid-cols-1 gap-x-6 gap-y-5 px-2 sm:grid-cols-2 md:px-8 lg:grid-cols-3 2xl:grid-cols-5"
   >
     {#each data.demos.filter((demo) => {
-      const target = types[demosType]
-      return !target || demo.type === target
+      return demosType === 'All' || demo.type === demosType
     }) as demo}
       <DemoTile {demo}></DemoTile>
     {/each}
