@@ -17,7 +17,9 @@ class TestPipeline(unittest.TestCase):
         for pipeline in pipelines:
             TEST_CLIENT.delete_pipeline(pipeline.name)
 
-    def test_create_pipeline(self, name: str = "blah", delete=False, runtime_config: dict = {}):
+    def test_create_pipeline(
+        self, name: str = "blah", delete=False, runtime_config: dict = {}
+    ):
         self.test_delete_all_pipelines()
         sql = """
         CREATE TABLE tbl(id INT) WITH ('append_only' = 'true');
