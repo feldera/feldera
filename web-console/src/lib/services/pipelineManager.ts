@@ -421,14 +421,13 @@ export const relationIngress = async (
   })
 }
 
-const extractDemoType = (demo: { title: string }) =>
-  ((match) => (match ? tuple(match, 'Use Case' as const) : undefined))(
-    /^Use Case:(.*)/.exec(demo.title)?.[1]
-  ) ??
-  ((match) => (match ? tuple(match, 'Tutorial' as const) : undefined))(
-    /^Tutorial:(.*)/.exec(demo.title)?.[1]
-  ) ??
-  tuple(demo.title, 'Example' as const)
+const extractDemoType = (demo: { title: string }) => {
+  const match = /([\w \-_\/\\\(\)\[\]+]+):?(.*)?/.exec(demo.title)
+  if (match && match[2]) {
+    return tuple(match[2], match[1])
+  }
+  return tuple('Example', match?.[1] ?? '')
+}
 
 export const getDemos = () =>
   handled(getConfigDemos)().then((demos) =>

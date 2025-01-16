@@ -35,7 +35,7 @@
 </script>
 
 <div
-  class="relative mb-6 mt-5 flex h-10 flex-col items-center justify-end gap-4 sm:-mt-8 sm:flex-row md:mb-0"
+  class="relative mb-6 mt-5 flex h-10 flex-col items-center justify-end gap-4 sm:-mt-7 sm:flex-row md:mb-0"
 >
   <select
     class="select ml-auto w-40 sm:ml-0"

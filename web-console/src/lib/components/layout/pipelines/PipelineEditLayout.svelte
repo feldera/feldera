@@ -260,7 +260,7 @@ example = "1.0"`
               }}
               disabled={editDisabled}
               class="inline overflow-hidden overflow-ellipsis"
-              inputClass="input flex -ml-2 mr-2 py-0 pl-2 text-base"
+              inputClass="input flex -ml-1 mr-2 py-0 pl-1 text-base"
             >
               <span class="text-base">
                 {pipeline.current.name}
