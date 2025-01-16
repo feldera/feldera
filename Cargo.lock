@@ -1929,7 +1929,7 @@ dependencies = [
  "rustversion",
  "serde",
  "sync_wrapper 1.0.1",
- "tower 0.5.2",
+ "tower 0.5.1",
  "tower-layer",
  "tower-service",
 ]
@@ -2591,23 +2591,23 @@ dependencies = [
 
 [[package]]
 name = "clap"
-version = "4.5.26"
+version = "4.5.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a8eb5e908ef3a6efbe1ed62520fb7287959888c88485abe072543190ecc66783"
+checksum = "b97f376d85a664d5837dbae44bf546e6477a679ff6610010f17276f686d867e8"
 dependencies = [
  "clap_builder",
- "clap_derive 4.5.24",
+ "clap_derive 4.5.18",
 ]
 
 [[package]]
 name = "clap_builder"
-version = "4.5.26"
+version = "4.5.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "96b01801b5fc6a0a232407abc821660c9c6d25a1cafc0d4f85f29fb8d9afc121"
+checksum = "19bc80abd44e4bed93ca373a0704ccbd1b710dc5749406201bb018272808dc54"
 dependencies = [
  "anstream",
  "anstyle",
- "clap_lex 0.7.4",
+ "clap_lex 0.7.2",
  "strsim 0.11.1",
  "terminal_size",
 ]
@@ -2618,8 +2618,8 @@ version = "4.5.33"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9646e2e245bf62f45d39a0f3f36f1171ad1ea0d6967fd114bca72cb02a8fcdfb"
 dependencies = [
- "clap 4.5.26",
- "clap_lex 0.7.4",
+ "clap 4.5.20",
+ "clap_lex 0.7.2",
  "is_executable",
  "shlex",
 ]
@@ -2639,9 +2639,9 @@ dependencies = [
 
 [[package]]
 name = "clap_derive"
-version = "4.5.24"
+version = "4.5.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "54b755194d6389280185988721fffba69495eed5ee9feeee9a599b53db80318c"
+checksum = "4ac6a0c7b1a9e9a5186361f67dfa1b88213572f427fb9ab038efb2bd8c582dab"
 dependencies = [
  "heck 0.5.0",
  "proc-macro2",
@@ -2660,9 +2660,9 @@ dependencies = [
 
 [[package]]
 name = "clap_lex"
-version = "0.7.4"
+version = "0.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f46ad14479a25103f283c0f10005961cf086d8dc42205bb44c46ac563475dca6"
+checksum = "1462739cb27611015575c0c11df5df7601141071f07518d56fcc1be504cbec97"
 
 [[package]]
 name = "clipboard-win"
@@ -2857,7 +2857,7 @@ dependencies = [
  "anes",
  "cast",
  "ciborium",
- "clap 4.5.26",
+ "clap 4.5.20",
  "criterion-plot",
  "is-terminal",
  "itertools 0.10.5",
@@ -3646,7 +3646,7 @@ dependencies = [
  "arc-swap",
  "binrw",
  "chrono",
- "clap 4.5.26",
+ "clap 4.5.20",
  "crc32c",
  "criterion",
  "crossbeam",
@@ -3733,7 +3733,7 @@ dependencies = [
  "bytestring",
  "chrono",
  "circular-queue",
- "clap 4.5.26",
+ "clap 4.5.20",
  "colored",
  "comfy-table",
  "crossbeam",
@@ -4579,7 +4579,7 @@ name = "fda"
 version = "0.34.1"
 dependencies = [
  "chrono",
- "clap 4.5.26",
+ "clap 4.5.20",
  "clap_complete",
  "directories",
  "env_logger 0.11.5",
@@ -4592,7 +4592,7 @@ dependencies = [
  "progenitor",
  "progenitor-client 0.9.1",
  "reqwest 0.11.27",
- "reqwest 0.12.12",
+ "reqwest 0.12.8",
  "rmpv",
  "rustyline",
  "serde",
@@ -4652,6 +4652,7 @@ dependencies = [
  "fake",
  "feldera-adapterlib",
  "feldera-types",
+ "feldera_rust_decimal",
  "governor 0.6.3",
  "num-traits",
  "rand",
@@ -5138,7 +5139,7 @@ dependencies = [
  "google-cloud-token",
  "home",
  "jsonwebtoken 9.3.0",
- "reqwest 0.12.12",
+ "reqwest 0.12.8",
  "serde",
  "serde_json",
  "thiserror 1.0.64",
@@ -5181,7 +5182,7 @@ version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "04f945a208886a13d07636f38fb978da371d0abc3e34bad338124b9f8c135a8f"
 dependencies = [
- "reqwest 0.12.12",
+ "reqwest 0.12.8",
  "thiserror 1.0.64",
  "tokio",
 ]
@@ -5660,9 +5661,9 @@ dependencies = [
 
 [[package]]
 name = "hyper-util"
-version = "0.1.10"
+version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "df2dcfbe0677734ab2f3ffa7fa7bfd4706bfdc1ef393f2ee30184aed67e631b4"
+checksum = "41296eb09f183ac68eec06e03cdbea2e759633d4067b2f6552fc2e009bcad08b"
 dependencies = [
  "bytes",
  "futures-channel",
@@ -5733,7 +5734,7 @@ dependencies = [
  "parquet",
  "paste",
  "rand",
- "reqwest 0.12.12",
+ "reqwest 0.12.8",
  "rust_decimal",
  "serde",
  "serde_bytes",
@@ -5776,7 +5777,7 @@ dependencies = [
  "iceberg",
  "itertools 0.13.0",
  "log",
- "reqwest 0.12.12",
+ "reqwest 0.12.8",
  "serde",
  "serde_derive",
  "serde_json",
@@ -6884,7 +6885,7 @@ dependencies = [
  "percent-encoding",
  "quick-xml 0.36.2",
  "rand",
- "reqwest 0.12.12",
+ "reqwest 0.12.8",
  "ring 0.17.8",
  "rustls-pemfile 2.2.0",
  "serde",
@@ -6942,7 +6943,7 @@ dependencies = [
  "percent-encoding",
  "quick-xml 0.36.2",
  "reqsign",
- "reqwest 0.12.12",
+ "reqwest 0.12.8",
  "serde",
  "serde_json",
  "tokio",
@@ -7460,7 +7461,7 @@ dependencies = [
  "cached 0.43.0",
  "change-detection",
  "chrono",
- "clap 4.5.26",
+ "clap 4.5.20",
  "colored",
  "crossbeam",
  "deadpool-postgres",
@@ -7828,7 +7829,7 @@ dependencies = [
  "bytes",
  "futures-core",
  "percent-encoding",
- "reqwest 0.12.12",
+ "reqwest 0.12.8",
  "serde",
  "serde_json",
  "serde_urlencoded",
@@ -8471,7 +8472,7 @@ dependencies = [
  "percent-encoding",
  "quick-xml 0.35.0",
  "rand",
- "reqwest 0.12.12",
+ "reqwest 0.12.8",
  "rust-ini 0.21.1",
  "serde",
  "serde_json",
@@ -8523,9 +8524,9 @@ dependencies = [
 
 [[package]]
 name = "reqwest"
-version = "0.12.12"
+version = "0.12.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "43e734407157c3c2034e0258f5e4473ddb361b1e85f95a66690d67264d7cd1da"
+checksum = "f713147fbe92361e52392c73b8c9e48c04c6625bce969ef54dc901e58e042a7b"
 dependencies = [
  "base64 0.22.1",
  "bytes",
@@ -8563,7 +8564,6 @@ dependencies = [
  "tokio-native-tls",
  "tokio-rustls 0.26.0",
  "tokio-util",
- "tower 0.5.2",
  "tower-service",
  "url",
  "wasm-bindgen",
@@ -9097,7 +9097,7 @@ dependencies = [
  "byteorder",
  "dashmap 6.1.0",
  "futures",
- "reqwest 0.12.12",
+ "reqwest 0.12.8",
  "serde",
  "serde_json",
 ]
@@ -10437,15 +10437,14 @@ dependencies = [
 
 [[package]]
 name = "tower"
-version = "0.5.2"
+version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d039ad9159c98b70ecfd540b2573b97f7f52c3e8d9f8ad57a24b916a536975f9"
+checksum = "2873938d487c3cfb9aed7546dc9f2711d867c9f90c46b889989a2cb84eba6b4f"
 dependencies = [
  "futures-core",
  "futures-util",
  "pin-project-lite",
- "sync_wrapper 1.0.1",
- "tokio",
+ "sync_wrapper 0.1.2",
  "tower-layer",
  "tower-service",
 ]
@@ -10849,7 +10848,7 @@ dependencies = [
  "actix-web",
  "mime_guess",
  "regex",
- "reqwest 0.12.12",
+ "reqwest 0.12.8",
  "rust-embed",
  "serde",
  "serde_json",
