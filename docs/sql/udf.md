@@ -17,7 +17,7 @@ CREATE VIEW V0 AS SELECT contains_number(CAST('YES: 10 NO:5' AS VARCHAR), 5)
 
 ## User-defined functions written in Rust
 
-:::caution Experimental feature
+:::warning Experimental feature
 
 Rust UDF support is currently experimental and may undergo significant changes, including
 non-backward-compatible modifications, in future releases of Feldera.

@@ -168,6 +168,7 @@ const sidebars = {
                         'sql/float',
                         'sql/decimal',
                         'sql/string',
+                        'sql/uuid',
                         'sql/binary',
                         'sql/array',
                         'sql/map',
@@ -180,7 +181,6 @@ const sidebars = {
                         'sql/system',
                         'sql/table',
                         'sql/udf',
-                        'sql/uuid',
                         'sql/function-index'
                     ]
                 },
