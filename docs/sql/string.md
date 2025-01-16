@@ -83,8 +83,7 @@ addition to the normal way of `''`.
     <th>Examples</th>
   </tr>
   <tr>
-    <a id="concat"></a>
-    <td><code>||</code></td>
+    <td><a id="concat"></a><code>||</code></td>
     <td>String concatenation (infix).  Note that concatenation does *not* strip trailing spaces
         from CHAR(N) values, unlike other SQL dialects.  If such behavior is desired, an explicit
         cast to `varchar` can be added.</td>
@@ -171,12 +170,13 @@ addition to the normal way of `''`.
     <td><code>position('om' in 'Thomas')</code> => <code>3</code></td>
   </tr>
   <tr>
-    <td><a id="regexp_replace"></a><code><code>REGEXP_REPLACE(expr, pat[, repl])</code></td>
+    <td><a id="regexp_replace"></a><code>REGEXP_REPLACE(expr, pat[, repl])</code></td>
     <td>Replaces occurrences in the string `expr` that match the regular expression
         specified by the pattern `pat` with the replacement string `repl`, and returns
         the resulting string. If any one of `expr`, `pat`, or `repl` is `NULL`, the return value is `NULL`.
         If `repl` is missing, it is assumed to be the empty string.  If the regular
         expression is invalid, the original string is returned.</td>
+    <td></td>
   </tr>
   <tr>
     <td><a id="repeat"></a><code>REPEAT ( string, count )</code></td>
@@ -189,7 +189,7 @@ addition to the normal way of `''`.
     <td><code>replace('abcdefabcdef', 'cd', 'XX')</code> => <code>abXXefabXXef</code></td>
   </tr>
   <tr>
-    <td>RLIKE(string, pattern)</code></td>
+    <td><code>RLIKE(string, pattern)</code></td>
     <td>A function equivalent to the <code>RLIKE</code> operator above.</td>
     <td><code>RLIKE('string', 's..i.*')</code> => <code>TRUE</code></td>
   </tr>
@@ -202,7 +202,7 @@ addition to the normal way of `''`.
     <td><code>SPLIT('a|b|c|', '|')</code> => { 'a', 'b', 'c', '' }</td>
   </tr>
   <tr>
-    <td><a id="split_part"></a><code><code>SPLIT_PART(string, delimiter, n)</code></td>
+    <td><a id="split_part"></a><code>SPLIT_PART(string, delimiter, n)</code></td>
     <td>
         This function uses 1-based indexing. It extracts the <code>n</code>'th part of the string by splitting it at each occurrence of the delimiter.
         <ul>
@@ -219,25 +219,25 @@ addition to the normal way of `''`.
     </td>
   </tr>
   <tr>
-    <td><a id="substr"></a><code><code>SUBSTR (</code> string, start, <code> [ ,</code> length <code>]</code></td>
+    <td><a id="substr"></a><code>SUBSTR (</code> string, start, <code> [ ,</code> length <code>]</code></td>
     <td>Extracts the substring of string starting at the "start"'th character if that is specified, and stopping after "length" characters if the value is specified. If "start" is negative, it is replaced with 1.  If "count" is negative the empty string is returned.  The index of the first character is 1.</td>
     <td><code>SUBSTR('Thomas', 2, 3)</code> => <code>hom</code><br></br>
-        <code>SUBSTR('Thomas', 3)</code> => <code>omas</code><br></br>
+        <code>SUBSTR('Thomas', 3)</code> => <code>omas</code><br></br></td>
   </tr>
   <tr>
-    <td><a id="substring"></a><code><code>SUBSTRING (</code> string <code>[ FROM</code> start <code>] [ FOR</code> count<code> ] )</code></td>
+    <td><a id="substring"></a><code>SUBSTRING (</code> string <code>[ FROM</code> start <code>] [ FOR</code> count<code> ] )</code></td>
     <td>Extracts the substring of string starting at the "start"'th character if that is specified, and stopping after "count" characters if the value is specified. At least one of "start" or "count" must be provided.  If "start" is negative, it is replaced with 1.  If "count" is negative the empty string is returned.  The index of the first character is 1.</td>
     <td><code>SUBSTRING('Thomas' from 2 for 3)</code> => <code>hom</code><br></br>
         <code>SUBSTRING('Thomas' from 3)</code> => <code>omas</code><br></br>
         <code>SUBSTRING('Thomas' for 2)</code> => <code>Th</code></td>
   </tr>
   <tr>
-    <td><a id="trim"></a><code><code>TRIM ( [ LEADING | TRAILING | BOTH ]</code> characters <code>FROM</code> string <code>)</code></td>
+    <td><a id="trim"></a><code>TRIM ( [ LEADING | TRAILING | BOTH ]</code> characters <code>FROM</code> string <code>)</code></td>
     <td>Remove the specified characters from the specified ends of the string argument</td>
     <td><code>TRIM(both 'xyz' from 'yxTomxx')</code> => <code>Tom</code><br></br><code>TRIM(leading 'xyz' from 'yxTomxx')</code> => <code>Tomxx</code></td>
   </tr>
   <tr>
-    <td><a id="upper"></a><code><code>UPPER ( string )</code></td>
+    <td><a id="upper"></a><code>UPPER ( string )</code></td>
     <td>Converts the string to all upper case.</td>
     <td><code>upper('tom')</code> => <code>TOM</code></td>
   </tr>
