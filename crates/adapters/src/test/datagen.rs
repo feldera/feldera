@@ -10,6 +10,7 @@ use feldera_types::program_schema::{ColumnType, Field, Relation};
 use feldera_types::serde_with_context::{DeserializeWithContext, SqlSerdeConfig};
 use feldera_types::transport::datagen::GenerationPlan;
 use feldera_types::{deserialize_table_record, serialize_table_record};
+use rust_decimal::Decimal;
 use size_of::SizeOf;
 use std::collections::BTreeMap;
 use std::hash::Hash;
@@ -70,19 +71,36 @@ deserialize_table_record!(ByteStruct["ByteStruct", 1] {
 struct RealStruct {
     #[serde(rename = "double")]
     field: F64,
+    #[serde(rename = "dec")]
+    field_1: Decimal,
+    #[serde(rename = "dec_scale")]
+    field_2: Decimal,
+    #[serde(rename = "dec_w_scale")]
+    field_3: Decimal,
 }
 
 impl RealStruct {
     pub fn schema() -> Vec<Field> {
-        vec![Field::new("double".into(), ColumnType::double(false))]
+        vec![
+            Field::new("double".into(), ColumnType::double(false)),
+            Field::new("dec".into(), ColumnType::decimal(28, 0, false)),
+            Field::new("dec_scale".into(), ColumnType::decimal(10, 10, false)),
+            Field::new("dec_w_scale".into(), ColumnType::decimal(2, 1, false)),
+        ]
     }
 }
-serialize_table_record!(RealStruct[1]{
-    r#field["double"]: F64
+serialize_table_record!(RealStruct[4]{
+    r#field["double"]: F64,
+    r#field_1["dec"]: Decimal,
+    r#field_2["dec_scale"]: Decimal,
+    r#field_3["dec_w_scale"]: Decimal
 });
 
-deserialize_table_record!(RealStruct["RealStruct", 1] {
-    (r#field, "double", false, F64, None)
+deserialize_table_record!(RealStruct["RealStruct", 4] {
+    (r#field, "double", false, F64, None),
+    (r#field_1, "dec", false, Decimal, None),
+    (r#field_2, "dec_scale", false, Decimal, None),
+    (r#field_3, "dec_w_scale", false, Decimal, None)
 });
 
 fn mk_pipeline<T, U>(
@@ -199,6 +217,124 @@ transport:
         idx += 1.0;
     }
     assert!(idx > 0.0);
+}
+
+#[test]
+fn test_decimal_increment() {
+    let config_str = r#"
+stream: test_input
+transport:
+    name: datagen
+    config:
+        plan: [ { limit: 20, fields: { "dec": { "strategy": "increment" }, "dec_w_scale": { "strategy": "increment" } } } ]
+"#;
+    let (endpoint, consumer, zset) =
+        mk_pipeline::<RealStruct, RealStruct>(config_str, RealStruct::schema()).unwrap();
+
+    wait_for_data(endpoint.as_ref(), &consumer);
+
+    let zst = zset.state();
+    let iter = zst.flushed.iter();
+    for upd in iter {
+        let record = upd.unwrap_insert();
+        assert!(record.field_1 >= Decimal::new(0, 0));
+        assert!(record.field_1 < Decimal::new(20, 0));
+
+        assert!(record.field_2 >= Decimal::new(0, 0));
+        assert!(record.field_2 < Decimal::new(1, 0));
+
+        assert!(record.field_3 >= Decimal::new(0, 1));
+        assert!(record.field_3 < Decimal::new(10, 0));
+    }
+
+    let config_str = r#"
+stream: test_input
+transport:
+    name: datagen
+    config:
+        plan: [ { limit: 20, fields: { "dec": { "strategy": "increment", "range": [1, 5] }, "dec_w_scale": { values: [0.1, 1.0, 9.9] } } } ]
+"#;
+    let (endpoint, consumer, zset) =
+        mk_pipeline::<RealStruct, RealStruct>(config_str, RealStruct::schema()).unwrap();
+
+    wait_for_data(endpoint.as_ref(), &consumer);
+
+    let zst = zset.state();
+    let iter = zst.flushed.iter();
+    for upd in iter {
+        let record = upd.unwrap_insert();
+        assert!(record.field_1 >= Decimal::new(1, 0));
+        assert!(record.field_1 < Decimal::new(5, 0));
+        assert!(
+            record.field_3 == Decimal::new(1, 1)
+                || record.field_3 == Decimal::new(1, 0)
+                || record.field_3 == Decimal::new(99, 1)
+        );
+    }
+}
+
+#[test]
+fn test_decimal_uniform() {
+    let config_str = r#"
+stream: test_input
+transport:
+    name: datagen
+    config:
+        plan: [ { limit: 1000, fields: { "dec_scale": { "strategy": "uniform", "range": [0.5, 0.6] }, "dec_w_scale": { "strategy": "uniform" }, "dec": { "strategy": "uniform", "values": [0.1, 1.0, 2.0] } } } ]
+"#;
+    let (endpoint, consumer, zset) =
+        mk_pipeline::<RealStruct, RealStruct>(config_str, RealStruct::schema()).unwrap();
+
+    wait_for_data(endpoint.as_ref(), &consumer);
+
+    let zst = zset.state();
+    let iter = zst.flushed.iter();
+    for upd in iter {
+        let record = upd.unwrap_insert();
+        assert!(
+            record.field_1 == Decimal::new(1, 1)
+                || record.field_1 == Decimal::ONE
+                || record.field_1 == Decimal::new(2, 0)
+        );
+
+        assert!(record.field_2 >= Decimal::new(5, 1));
+        assert!(record.field_2 < Decimal::new(6, 1));
+
+        assert!(record.field_3 >= Decimal::new(-99, 1));
+        assert!(record.field_3 < Decimal::new(99, 1));
+    }
+}
+
+#[test]
+fn test_decimal_zipf() {
+    let config_str = r#"
+stream: test_input
+transport:
+    name: datagen
+    config:
+        plan: [ { limit: 1000, fields: { "dec_scale": { "strategy": "zipf", "range": [0, 1] }, "dec_w_scale": { "strategy": "zipf" }, "dec": { "strategy": "zipf", "values": [0.1, 1.0, 2.0] } } } ]
+"#;
+    let (endpoint, consumer, zset) =
+        mk_pipeline::<RealStruct, RealStruct>(config_str, RealStruct::schema()).unwrap();
+
+    wait_for_data(endpoint.as_ref(), &consumer);
+
+    let zst = zset.state();
+    let iter = zst.flushed.iter();
+    for upd in iter {
+        let record = upd.unwrap_insert();
+        assert!(
+            record.field_1 == Decimal::new(1, 1)
+                || record.field_1 == Decimal::ONE
+                || record.field_1 == Decimal::new(2, 0)
+        );
+
+        assert!(record.field_2 >= Decimal::new(0, 0));
+        assert!(record.field_2 < Decimal::new(1, 0));
+
+        assert!(record.field_3 >= Decimal::new(0, 0));
+        assert!(record.field_3 < Decimal::new(99, 1));
+    }
 }
 
 #[test]
