@@ -23,10 +23,10 @@ use crate::{
     operator::dynamic::upsert::UpsertFactories,
     time::Timestamp,
     trace::{
-        cursor::CursorGroup, Batch, BatchReader, BatchReaderFactories, Builder, Cursor, OrdWSet,
-        OrdWSetFactories,
+        cursor::CursorGroup, Batch, BatchReader, BatchReaderFactories, Builder, Cursor, Filter,
+        OrdWSet, OrdWSetFactories,
     },
-    DBData, DBWeight, ZWeight,
+    DBData, DBWeight, RootCircuit, ZWeight,
 };
 
 mod aggregator;
@@ -523,6 +523,40 @@ where
 
         output.mark_sharded_if(self);
         output
+    }
+}
+
+impl<Z> Stream<RootCircuit, Z>
+where
+    Z: Clone + 'static,
+{
+    pub fn dyn_aggregate_linear_retain_keys_generic<A, O, TS>(
+        &self,
+        factories: &IncAggregateLinearFactories<Z, A, O, ()>,
+        waterline: &Stream<RootCircuit, Box<TS>>,
+        retain_key_func: Box<dyn Fn(&TS) -> Filter<Z::Key>>,
+        agg_func: Box<dyn Fn(&Z::Key, &Z::Val, &Z::R, &mut A)>,
+        out_func: Box<dyn WeightedCountOutFunc<A, O::Val>>,
+    ) -> Stream<RootCircuit, O>
+    where
+        Z: IndexedZSet<Time = ()>,
+        O: IndexedZSet<Key = Z::Key>,
+        A: WeightTrait + ?Sized,
+        TS: DataTrait + ?Sized,
+        Box<TS>: Clone,
+    {
+        let weighted = self.dyn_weigh(&factories.aggregate_factories.input_factories, agg_func);
+        weighted.dyn_integrate_trace_retain_keys(waterline, retain_key_func);
+
+        weighted.dyn_aggregate_generic(
+            &factories.aggregate_factories,
+            &WeightedCount::new(
+                factories.out_factory,
+                factories.agg_factory,
+                factories.option_agg_factory,
+                out_func,
+            ),
+        )
     }
 }
 
@@ -1335,25 +1369,38 @@ pub mod test {
             }
         }
 
-        let (mut dbsp, (input_handle, output_handle)) = Runtime::init_circuit(4, |circuit| {
-            let (input, input_handle) = circuit.add_input_zset::<Tup2<i32, Option<i32>>>();
+        let (mut dbsp, (input_handle, _waterline_handle, output_handle)) =
+            Runtime::init_circuit(4, |circuit| {
+                let (input, input_handle) = circuit.add_input_zset::<Tup2<i32, Option<i32>>>();
+                let (waterline, waterline_handle) = circuit.add_input_stream::<i32>();
 
-            let indexed_input = input.map_index(|Tup2(k, v)| (*k, *v));
+                let indexed_input = input.map_index(|Tup2(k, v)| (*k, *v));
 
-            let sum = indexed_input.aggregate_linear_postprocess(agg_func, postprocess_func);
+                let sum = indexed_input.aggregate_linear_postprocess(agg_func, postprocess_func);
+                let sum_retain = indexed_input.aggregate_linear_postprocess_retain_keys(
+                    &waterline.typed_box(),
+                    |k, ts| k >= ts,
+                    agg_func,
+                    postprocess_func,
+                );
 
-            // aggregate_linear_postprocess must be equivalent to aggregate_linear().map_index().
-            let sum_slow = indexed_input
-                .aggregate_linear(agg_func)
-                .map_index(|(k, v)| (*k, postprocess_func(*v)));
+                // aggregate_linear_postprocess must be equivalent to aggregate_linear().map_index().
+                let sum_slow = indexed_input
+                    .aggregate_linear(agg_func)
+                    .map_index(|(k, v)| (*k, postprocess_func(*v)));
+                let sum_slow_retain = indexed_input
+                    .aggregate_linear_retain_keys(&waterline.typed_box(), |k, ts| k >= ts, agg_func)
+                    .map_index(|(k, v)| (*k, postprocess_func(*v)));
 
-            sum.apply2(&sum_slow, |sum, sum_slow| assert_eq!(sum, sum_slow));
+                sum.apply2(&sum_slow, |sum, sum_slow| assert_eq!(sum, sum_slow));
+                sum_retain.apply2(&sum_slow, |sum, sum_slow| assert_eq!(sum, sum_slow));
+                sum_slow_retain.apply2(&sum_slow, |sum, sum_slow| assert_eq!(sum, sum_slow));
 
-            let output_handle = sum.integrate().output();
+                let output_handle = sum.integrate().output();
 
-            Ok((input_handle, output_handle))
-        })
-        .unwrap();
+                Ok((input_handle, waterline_handle, output_handle))
+            })
+            .unwrap();
 
         // A single NULL element -> aggregate is NULL
         input_handle.append(&mut vec![Tup2(Tup2(1i32, None), 2)]);
