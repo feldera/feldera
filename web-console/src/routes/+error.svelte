@@ -8,7 +8,7 @@
 
   <div class="pt:16 p-8 text-center sm:pt-32">
     <div
-      class="h1 inline-block bg-gradient-to-br from-fuchsia-300 via-amber-50 to-orange-300 bg-clip-text text-[160px] text-transparent sm:text-[300px] dark:from-fuchsia-700 dark:via-amber-950 dark:to-orange-700"
+      class="h1 leading-none inline-block bg-gradient-to-br from-fuchsia-300 via-amber-50 to-orange-300 bg-clip-text text-[160px] text-transparent sm:text-[300px] dark:from-fuchsia-700 dark:via-amber-950 dark:to-orange-700"
     >
       {page.status}
     </div>
