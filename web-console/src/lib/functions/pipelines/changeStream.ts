@@ -21,7 +21,7 @@ export const parseCancellable = <T, Transformer extends TransformStream<Uint8Arr
   cbs: {
     pushChanges: (changes: T[]) => void
     onBytesSkipped?: (bytes: number) => void
-    onParseEnded?: () => void
+    onParseEnded?: (reason: 'ended' | 'cancelled') => void
     onNetworkError?: (e: TypeError, injectValue: (value: T) => void) => void
   },
   transformer: Transformer,
@@ -45,7 +45,7 @@ export const parseCancellable = <T, Transformer extends TransformStream<Uint8Arr
         resultBuffer.push(value)
       } catch (e) {
         cbs.onNetworkError?.(e as TypeError, (value: T) => resultBuffer.push(value))
-        cbs.onParseEnded?.()
+        cbs.onParseEnded?.('ended')
         break
       }
     }
@@ -56,31 +56,31 @@ export const parseCancellable = <T, Transformer extends TransformStream<Uint8Arr
       resultBuffer.length = 0
     }
   }
-  let closed = false
+  let closedReason: null | 'ended' | 'cancelled' = null
   setTimeout(async () => {
     reader.closed.then(
       () => {
-        closed = true
+        closedReason ??= 'ended'
       },
       (e) => {
-        closed = true
+        closedReason = 'ended'
         cbs.onNetworkError?.(e, (value: T) => resultBuffer.push(value))
       }
     )
     while (true) {
       flush()
-      if (closed) {
+      if (closedReason) {
         break
       }
       await new Promise((resolve) => setTimeout(resolve, 100))
     }
-    cbs.onParseEnded?.()
+    cbs.onParseEnded?.(closedReason)
   })
   return {
     cancel: () => {
       flush()
+      closedReason = 'cancelled'
       reader.cancel().catch((e) => {
-        closed = true
         cbs.onNetworkError?.(e, (value: T) => resultBuffer.push(value))
       })
     }
