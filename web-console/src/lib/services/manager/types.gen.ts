@@ -1985,6 +1985,7 @@ export type SqlType =
   | 'Struct'
   | 'Map'
   | 'Null'
+  | 'Uuid'
   | 'Variant'
 
 /**

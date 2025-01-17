@@ -145,9 +145,9 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "example": {
-                  "details": null,
+                  "message": "An entity with this name already exists",
                   "error_code": "DuplicateName",
-                  "message": "An entity with this name already exists"
+                  "details": null
                 }
               }
             }
@@ -197,11 +197,11 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "example": {
+                  "message": "Unknown API key 'unknown_api_key'",
+                  "error_code": "UnknownApiKey",
                   "details": {
                     "name": "unknown_api_key"
-                  },
-                  "error_code": "UnknownApiKey",
-                  "message": "Unknown API key 'unknown_api_key'"
+                  }
                 }
               }
             }
@@ -242,11 +242,11 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "example": {
+                  "message": "Unknown API key 'unknown_api_key'",
+                  "error_code": "UnknownApiKey",
                   "details": {
                     "name": "unknown_api_key"
-                  },
-                  "error_code": "UnknownApiKey",
-                  "message": "Unknown API key 'unknown_api_key'"
+                  }
                 }
               }
             }
@@ -358,90 +358,90 @@
                 },
                 "example": [
                   {
-                    "created_at": "1970-01-01T00:00:00Z",
-                    "deployment_desired_status": "Shutdown",
-                    "deployment_error": null,
-                    "deployment_status": "Shutdown",
-                    "deployment_status_since": "1970-01-01T00:00:00Z",
-                    "description": "Description of the pipeline example1",
                     "id": "67e55044-10b1-426f-9247-bb680e5fe0c8",
                     "name": "example1",
+                    "description": "Description of the pipeline example1",
+                    "created_at": "1970-01-01T00:00:00Z",
+                    "version": 4,
                     "platform_version": "v0",
-                    "program_code": "CREATE TABLE table1 ( col1 INT );",
-                    "program_config": {
-                      "cache": true,
-                      "profile": "optimized"
-                    },
-                    "program_info": null,
-                    "program_status": "Pending",
-                    "program_status_since": "1970-01-01T00:00:00Z",
-                    "program_version": 2,
                     "runtime_config": {
-                      "clock_resolution_usecs": 100000,
-                      "cpu_profiler": true,
-                      "fault_tolerance": null,
-                      "max_buffering_delay_usecs": 0,
-                      "min_batch_size_records": 0,
-                      "min_storage_bytes": null,
-                      "resources": {
-                        "cpu_cores_max": null,
-                        "cpu_cores_min": null,
-                        "memory_mb_max": null,
-                        "memory_mb_min": null,
-                        "storage_class": null,
-                        "storage_mb_max": null
-                      },
+                      "workers": 16,
                       "storage": false,
+                      "fault_tolerance": null,
+                      "cpu_profiler": true,
                       "tracing": false,
                       "tracing_endpoint_jaeger": "",
-                      "workers": 16
+                      "min_batch_size_records": 0,
+                      "max_buffering_delay_usecs": 0,
+                      "resources": {
+                        "cpu_cores_min": null,
+                        "cpu_cores_max": null,
+                        "memory_mb_min": null,
+                        "memory_mb_max": null,
+                        "storage_mb_max": null,
+                        "storage_class": null
+                      },
+                      "min_storage_bytes": null,
+                      "clock_resolution_usecs": 100000
                     },
+                    "program_code": "CREATE TABLE table1 ( col1 INT );",
                     "udf_rust": "",
                     "udf_toml": "",
-                    "version": 4
-                  },
-                  {
-                    "created_at": "1970-01-01T00:00:00Z",
-                    "deployment_desired_status": "Shutdown",
-                    "deployment_error": null,
+                    "program_config": {
+                      "profile": "optimized",
+                      "cache": true
+                    },
+                    "program_version": 2,
+                    "program_status": "Pending",
+                    "program_status_since": "1970-01-01T00:00:00Z",
+                    "program_info": null,
                     "deployment_status": "Shutdown",
                     "deployment_status_since": "1970-01-01T00:00:00Z",
-                    "description": "Description of the pipeline example2",
+                    "deployment_desired_status": "Shutdown",
+                    "deployment_error": null
+                  },
+                  {
                     "id": "67e55044-10b1-426f-9247-bb680e5fe0c9",
                     "name": "example2",
+                    "description": "Description of the pipeline example2",
+                    "created_at": "1970-01-01T00:00:00Z",
+                    "version": 1,
                     "platform_version": "v0",
-                    "program_code": "CREATE TABLE table2 ( col2 VARCHAR );",
-                    "program_config": {
-                      "cache": true,
-                      "profile": "unoptimized"
-                    },
-                    "program_info": null,
-                    "program_status": "Pending",
-                    "program_status_since": "1970-01-01T00:00:00Z",
-                    "program_version": 1,
                     "runtime_config": {
-                      "clock_resolution_usecs": 100000,
-                      "cpu_profiler": false,
-                      "fault_tolerance": null,
-                      "max_buffering_delay_usecs": 0,
-                      "min_batch_size_records": 100000,
-                      "min_storage_bytes": null,
-                      "resources": {
-                        "cpu_cores_max": null,
-                        "cpu_cores_min": null,
-                        "memory_mb_max": null,
-                        "memory_mb_min": 1000,
-                        "storage_class": null,
-                        "storage_mb_max": 10000
-                      },
+                      "workers": 10,
                       "storage": true,
+                      "fault_tolerance": null,
+                      "cpu_profiler": false,
                       "tracing": false,
                       "tracing_endpoint_jaeger": "",
-                      "workers": 10
+                      "min_batch_size_records": 100000,
+                      "max_buffering_delay_usecs": 0,
+                      "resources": {
+                        "cpu_cores_min": null,
+                        "cpu_cores_max": null,
+                        "memory_mb_min": 1000,
+                        "memory_mb_max": null,
+                        "storage_mb_max": 10000,
+                        "storage_class": null
+                      },
+                      "min_storage_bytes": null,
+                      "clock_resolution_usecs": 100000
                     },
+                    "program_code": "CREATE TABLE table2 ( col2 VARCHAR );",
                     "udf_rust": "",
                     "udf_toml": "",
-                    "version": 1
+                    "program_config": {
+                      "profile": "unoptimized",
+                      "cache": true
+                    },
+                    "program_version": 1,
+                    "program_status": "Pending",
+                    "program_status_since": "1970-01-01T00:00:00Z",
+                    "program_info": null,
+                    "deployment_status": "Shutdown",
+                    "deployment_status_since": "1970-01-01T00:00:00Z",
+                    "deployment_desired_status": "Shutdown",
+                    "deployment_error": null
                   }
                 ]
               }
@@ -477,35 +477,35 @@
                 "$ref": "#/components/schemas/PostPutPipeline"
               },
               "example": {
-                "description": "Description of the pipeline example1",
                 "name": "example1",
-                "program_code": "CREATE TABLE table1 ( col1 INT );",
-                "program_config": {
-                  "cache": true,
-                  "profile": "optimized"
-                },
+                "description": "Description of the pipeline example1",
                 "runtime_config": {
-                  "clock_resolution_usecs": 100000,
-                  "cpu_profiler": true,
-                  "fault_tolerance": null,
-                  "max_buffering_delay_usecs": 0,
-                  "min_batch_size_records": 0,
-                  "min_storage_bytes": null,
-                  "resources": {
-                    "cpu_cores_max": null,
-                    "cpu_cores_min": null,
-                    "memory_mb_max": null,
-                    "memory_mb_min": null,
-                    "storage_class": null,
-                    "storage_mb_max": null
-                  },
+                  "workers": 16,
                   "storage": false,
+                  "fault_tolerance": null,
+                  "cpu_profiler": true,
                   "tracing": false,
                   "tracing_endpoint_jaeger": "",
-                  "workers": 16
+                  "min_batch_size_records": 0,
+                  "max_buffering_delay_usecs": 0,
+                  "resources": {
+                    "cpu_cores_min": null,
+                    "cpu_cores_max": null,
+                    "memory_mb_min": null,
+                    "memory_mb_max": null,
+                    "storage_mb_max": null,
+                    "storage_class": null
+                  },
+                  "min_storage_bytes": null,
+                  "clock_resolution_usecs": 100000
                 },
+                "program_code": "CREATE TABLE table1 ( col1 INT );",
                 "udf_rust": null,
-                "udf_toml": null
+                "udf_toml": null,
+                "program_config": {
+                  "profile": "optimized",
+                  "cache": true
+                }
               }
             }
           },
@@ -520,47 +520,47 @@
                   "$ref": "#/components/schemas/PipelineInfo"
                 },
                 "example": {
-                  "created_at": "1970-01-01T00:00:00Z",
-                  "deployment_desired_status": "Shutdown",
-                  "deployment_error": null,
-                  "deployment_status": "Shutdown",
-                  "deployment_status_since": "1970-01-01T00:00:00Z",
-                  "description": "Description of the pipeline example1",
                   "id": "67e55044-10b1-426f-9247-bb680e5fe0c8",
                   "name": "example1",
+                  "description": "Description of the pipeline example1",
+                  "created_at": "1970-01-01T00:00:00Z",
+                  "version": 4,
                   "platform_version": "v0",
-                  "program_code": "CREATE TABLE table1 ( col1 INT );",
-                  "program_config": {
-                    "cache": true,
-                    "profile": "optimized"
-                  },
-                  "program_info": null,
-                  "program_status": "Pending",
-                  "program_status_since": "1970-01-01T00:00:00Z",
-                  "program_version": 2,
                   "runtime_config": {
-                    "clock_resolution_usecs": 100000,
-                    "cpu_profiler": true,
-                    "fault_tolerance": null,
-                    "max_buffering_delay_usecs": 0,
-                    "min_batch_size_records": 0,
-                    "min_storage_bytes": null,
-                    "resources": {
-                      "cpu_cores_max": null,
-                      "cpu_cores_min": null,
-                      "memory_mb_max": null,
-                      "memory_mb_min": null,
-                      "storage_class": null,
-                      "storage_mb_max": null
-                    },
+                    "workers": 16,
                     "storage": false,
+                    "fault_tolerance": null,
+                    "cpu_profiler": true,
                     "tracing": false,
                     "tracing_endpoint_jaeger": "",
-                    "workers": 16
+                    "min_batch_size_records": 0,
+                    "max_buffering_delay_usecs": 0,
+                    "resources": {
+                      "cpu_cores_min": null,
+                      "cpu_cores_max": null,
+                      "memory_mb_min": null,
+                      "memory_mb_max": null,
+                      "storage_mb_max": null,
+                      "storage_class": null
+                    },
+                    "min_storage_bytes": null,
+                    "clock_resolution_usecs": 100000
                   },
+                  "program_code": "CREATE TABLE table1 ( col1 INT );",
                   "udf_rust": "",
                   "udf_toml": "",
-                  "version": 4
+                  "program_config": {
+                    "profile": "optimized",
+                    "cache": true
+                  },
+                  "program_version": 2,
+                  "program_status": "Pending",
+                  "program_status_since": "1970-01-01T00:00:00Z",
+                  "program_info": null,
+                  "deployment_status": "Shutdown",
+                  "deployment_status_since": "1970-01-01T00:00:00Z",
+                  "deployment_desired_status": "Shutdown",
+                  "deployment_error": null
                 }
               }
             }
@@ -573,11 +573,11 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "example": {
+                  "message": "Name 'invalid-name.db' contains characters which are not lowercase (a-z), uppercase (A-Z), numbers (0-9), underscores (_) or hyphens (-)",
+                  "error_code": "NameDoesNotMatchPattern",
                   "details": {
                     "name": "invalid-name.db"
-                  },
-                  "error_code": "NameDoesNotMatchPattern",
-                  "message": "Name 'invalid-name.db' contains characters which are not lowercase (a-z), uppercase (A-Z), numbers (0-9), underscores (_) or hyphens (-)"
+                  }
                 }
               }
             }
@@ -590,9 +590,9 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "example": {
-                  "details": null,
+                  "message": "An entity with this name already exists",
                   "error_code": "DuplicateName",
-                  "message": "An entity with this name already exists"
+                  "details": null
                 }
               }
             }
@@ -642,47 +642,47 @@
                   "$ref": "#/components/schemas/PipelineSelectedInfo"
                 },
                 "example": {
-                  "created_at": "1970-01-01T00:00:00Z",
-                  "deployment_desired_status": "Shutdown",
-                  "deployment_error": null,
-                  "deployment_status": "Shutdown",
-                  "deployment_status_since": "1970-01-01T00:00:00Z",
-                  "description": "Description of the pipeline example1",
                   "id": "67e55044-10b1-426f-9247-bb680e5fe0c8",
                   "name": "example1",
+                  "description": "Description of the pipeline example1",
+                  "created_at": "1970-01-01T00:00:00Z",
+                  "version": 4,
                   "platform_version": "v0",
-                  "program_code": "CREATE TABLE table1 ( col1 INT );",
-                  "program_config": {
-                    "cache": true,
-                    "profile": "optimized"
-                  },
-                  "program_info": null,
-                  "program_status": "Pending",
-                  "program_status_since": "1970-01-01T00:00:00Z",
-                  "program_version": 2,
                   "runtime_config": {
-                    "clock_resolution_usecs": 100000,
-                    "cpu_profiler": true,
-                    "fault_tolerance": null,
-                    "max_buffering_delay_usecs": 0,
-                    "min_batch_size_records": 0,
-                    "min_storage_bytes": null,
-                    "resources": {
-                      "cpu_cores_max": null,
-                      "cpu_cores_min": null,
-                      "memory_mb_max": null,
-                      "memory_mb_min": null,
-                      "storage_class": null,
-                      "storage_mb_max": null
-                    },
+                    "workers": 16,
                     "storage": false,
+                    "fault_tolerance": null,
+                    "cpu_profiler": true,
                     "tracing": false,
                     "tracing_endpoint_jaeger": "",
-                    "workers": 16
+                    "min_batch_size_records": 0,
+                    "max_buffering_delay_usecs": 0,
+                    "resources": {
+                      "cpu_cores_min": null,
+                      "cpu_cores_max": null,
+                      "memory_mb_min": null,
+                      "memory_mb_max": null,
+                      "storage_mb_max": null,
+                      "storage_class": null
+                    },
+                    "min_storage_bytes": null,
+                    "clock_resolution_usecs": 100000
                   },
+                  "program_code": "CREATE TABLE table1 ( col1 INT );",
                   "udf_rust": "",
                   "udf_toml": "",
-                  "version": 4
+                  "program_config": {
+                    "profile": "optimized",
+                    "cache": true
+                  },
+                  "program_version": 2,
+                  "program_status": "Pending",
+                  "program_status_since": "1970-01-01T00:00:00Z",
+                  "program_info": null,
+                  "deployment_status": "Shutdown",
+                  "deployment_status_since": "1970-01-01T00:00:00Z",
+                  "deployment_desired_status": "Shutdown",
+                  "deployment_error": null
                 }
               }
             }
@@ -695,11 +695,11 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "example": {
+                  "message": "Unknown pipeline id '2e79afe1-ff4d-44d3-af5f-9397de7746c0'",
+                  "error_code": "UnknownPipeline",
                   "details": {
                     "pipeline_id": "2e79afe1-ff4d-44d3-af5f-9397de7746c0"
-                  },
-                  "error_code": "UnknownPipeline",
-                  "message": "Unknown pipeline id '2e79afe1-ff4d-44d3-af5f-9397de7746c0'"
+                  }
                 }
               }
             }
@@ -735,35 +735,35 @@
                 "$ref": "#/components/schemas/PostPutPipeline"
               },
               "example": {
-                "description": "Description of the pipeline example1",
                 "name": "example1",
-                "program_code": "CREATE TABLE table1 ( col1 INT );",
-                "program_config": {
-                  "cache": true,
-                  "profile": "optimized"
-                },
+                "description": "Description of the pipeline example1",
                 "runtime_config": {
-                  "clock_resolution_usecs": 100000,
-                  "cpu_profiler": true,
-                  "fault_tolerance": null,
-                  "max_buffering_delay_usecs": 0,
-                  "min_batch_size_records": 0,
-                  "min_storage_bytes": null,
-                  "resources": {
-                    "cpu_cores_max": null,
-                    "cpu_cores_min": null,
-                    "memory_mb_max": null,
-                    "memory_mb_min": null,
-                    "storage_class": null,
-                    "storage_mb_max": null
-                  },
+                  "workers": 16,
                   "storage": false,
+                  "fault_tolerance": null,
+                  "cpu_profiler": true,
                   "tracing": false,
                   "tracing_endpoint_jaeger": "",
-                  "workers": 16
+                  "min_batch_size_records": 0,
+                  "max_buffering_delay_usecs": 0,
+                  "resources": {
+                    "cpu_cores_min": null,
+                    "cpu_cores_max": null,
+                    "memory_mb_min": null,
+                    "memory_mb_max": null,
+                    "storage_mb_max": null,
+                    "storage_class": null
+                  },
+                  "min_storage_bytes": null,
+                  "clock_resolution_usecs": 100000
                 },
+                "program_code": "CREATE TABLE table1 ( col1 INT );",
                 "udf_rust": null,
-                "udf_toml": null
+                "udf_toml": null,
+                "program_config": {
+                  "profile": "optimized",
+                  "cache": true
+                }
               }
             }
           },
@@ -778,47 +778,47 @@
                   "$ref": "#/components/schemas/PipelineInfo"
                 },
                 "example": {
-                  "created_at": "1970-01-01T00:00:00Z",
-                  "deployment_desired_status": "Shutdown",
-                  "deployment_error": null,
-                  "deployment_status": "Shutdown",
-                  "deployment_status_since": "1970-01-01T00:00:00Z",
-                  "description": "Description of the pipeline example1",
                   "id": "67e55044-10b1-426f-9247-bb680e5fe0c8",
                   "name": "example1",
+                  "description": "Description of the pipeline example1",
+                  "created_at": "1970-01-01T00:00:00Z",
+                  "version": 4,
                   "platform_version": "v0",
-                  "program_code": "CREATE TABLE table1 ( col1 INT );",
-                  "program_config": {
-                    "cache": true,
-                    "profile": "optimized"
-                  },
-                  "program_info": null,
-                  "program_status": "Pending",
-                  "program_status_since": "1970-01-01T00:00:00Z",
-                  "program_version": 2,
                   "runtime_config": {
-                    "clock_resolution_usecs": 100000,
-                    "cpu_profiler": true,
-                    "fault_tolerance": null,
-                    "max_buffering_delay_usecs": 0,
-                    "min_batch_size_records": 0,
-                    "min_storage_bytes": null,
-                    "resources": {
-                      "cpu_cores_max": null,
-                      "cpu_cores_min": null,
-                      "memory_mb_max": null,
-                      "memory_mb_min": null,
-                      "storage_class": null,
-                      "storage_mb_max": null
-                    },
+                    "workers": 16,
                     "storage": false,
+                    "fault_tolerance": null,
+                    "cpu_profiler": true,
                     "tracing": false,
                     "tracing_endpoint_jaeger": "",
-                    "workers": 16
+                    "min_batch_size_records": 0,
+                    "max_buffering_delay_usecs": 0,
+                    "resources": {
+                      "cpu_cores_min": null,
+                      "cpu_cores_max": null,
+                      "memory_mb_min": null,
+                      "memory_mb_max": null,
+                      "storage_mb_max": null,
+                      "storage_class": null
+                    },
+                    "min_storage_bytes": null,
+                    "clock_resolution_usecs": 100000
                   },
+                  "program_code": "CREATE TABLE table1 ( col1 INT );",
                   "udf_rust": "",
                   "udf_toml": "",
-                  "version": 4
+                  "program_config": {
+                    "profile": "optimized",
+                    "cache": true
+                  },
+                  "program_version": 2,
+                  "program_status": "Pending",
+                  "program_status_since": "1970-01-01T00:00:00Z",
+                  "program_info": null,
+                  "deployment_status": "Shutdown",
+                  "deployment_status_since": "1970-01-01T00:00:00Z",
+                  "deployment_desired_status": "Shutdown",
+                  "deployment_error": null
                 }
               }
             }
@@ -831,47 +831,47 @@
                   "$ref": "#/components/schemas/PipelineInfo"
                 },
                 "example": {
-                  "created_at": "1970-01-01T00:00:00Z",
-                  "deployment_desired_status": "Shutdown",
-                  "deployment_error": null,
-                  "deployment_status": "Shutdown",
-                  "deployment_status_since": "1970-01-01T00:00:00Z",
-                  "description": "Description of the pipeline example1",
                   "id": "67e55044-10b1-426f-9247-bb680e5fe0c8",
                   "name": "example1",
+                  "description": "Description of the pipeline example1",
+                  "created_at": "1970-01-01T00:00:00Z",
+                  "version": 4,
                   "platform_version": "v0",
-                  "program_code": "CREATE TABLE table1 ( col1 INT );",
-                  "program_config": {
-                    "cache": true,
-                    "profile": "optimized"
-                  },
-                  "program_info": null,
-                  "program_status": "Pending",
-                  "program_status_since": "1970-01-01T00:00:00Z",
-                  "program_version": 2,
                   "runtime_config": {
-                    "clock_resolution_usecs": 100000,
-                    "cpu_profiler": true,
-                    "fault_tolerance": null,
-                    "max_buffering_delay_usecs": 0,
-                    "min_batch_size_records": 0,
-                    "min_storage_bytes": null,
-                    "resources": {
-                      "cpu_cores_max": null,
-                      "cpu_cores_min": null,
-                      "memory_mb_max": null,
-                      "memory_mb_min": null,
-                      "storage_class": null,
-                      "storage_mb_max": null
-                    },
+                    "workers": 16,
                     "storage": false,
+                    "fault_tolerance": null,
+                    "cpu_profiler": true,
                     "tracing": false,
                     "tracing_endpoint_jaeger": "",
-                    "workers": 16
+                    "min_batch_size_records": 0,
+                    "max_buffering_delay_usecs": 0,
+                    "resources": {
+                      "cpu_cores_min": null,
+                      "cpu_cores_max": null,
+                      "memory_mb_min": null,
+                      "memory_mb_max": null,
+                      "storage_mb_max": null,
+                      "storage_class": null
+                    },
+                    "min_storage_bytes": null,
+                    "clock_resolution_usecs": 100000
                   },
+                  "program_code": "CREATE TABLE table1 ( col1 INT );",
                   "udf_rust": "",
                   "udf_toml": "",
-                  "version": 4
+                  "program_config": {
+                    "profile": "optimized",
+                    "cache": true
+                  },
+                  "program_version": 2,
+                  "program_status": "Pending",
+                  "program_status_since": "1970-01-01T00:00:00Z",
+                  "program_info": null,
+                  "deployment_status": "Shutdown",
+                  "deployment_status_since": "1970-01-01T00:00:00Z",
+                  "deployment_desired_status": "Shutdown",
+                  "deployment_error": null
                 }
               }
             }
@@ -884,9 +884,9 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "example": {
-                  "details": null,
+                  "message": "Cannot update a pipeline which is not fully shutdown. Shutdown the pipeline first by invoking the '/shutdown' endpoint.",
                   "error_code": "CannotUpdateNonShutdownPipeline",
-                  "message": "Cannot update a pipeline which is not fully shutdown. Shutdown the pipeline first by invoking the '/shutdown' endpoint."
+                  "details": null
                 }
               }
             }
@@ -899,9 +899,9 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "example": {
-                  "details": null,
+                  "message": "An entity with this name already exists",
                   "error_code": "DuplicateName",
-                  "message": "An entity with this name already exists"
+                  "details": null
                 }
               }
             }
@@ -942,9 +942,9 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "example": {
-                  "details": null,
+                  "message": "Cannot delete a pipeline which is not fully shutdown. Shutdown the pipeline first by invoking the '/shutdown' endpoint.",
                   "error_code": "CannotDeleteNonShutdownPipeline",
-                  "message": "Cannot delete a pipeline which is not fully shutdown. Shutdown the pipeline first by invoking the '/shutdown' endpoint."
+                  "details": null
                 }
               }
             }
@@ -957,11 +957,11 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "example": {
+                  "message": "Unknown pipeline id '2e79afe1-ff4d-44d3-af5f-9397de7746c0'",
+                  "error_code": "UnknownPipeline",
                   "details": {
                     "pipeline_id": "2e79afe1-ff4d-44d3-af5f-9397de7746c0"
-                  },
-                  "error_code": "UnknownPipeline",
-                  "message": "Unknown pipeline id '2e79afe1-ff4d-44d3-af5f-9397de7746c0'"
+                  }
                 }
               }
             }
@@ -997,13 +997,13 @@
                 "$ref": "#/components/schemas/PatchPipeline"
               },
               "example": {
-                "description": "This is a new description",
                 "name": null,
-                "program_code": "CREATE TABLE table3 ( col3 INT );",
-                "program_config": null,
+                "description": "This is a new description",
                 "runtime_config": null,
+                "program_code": "CREATE TABLE table3 ( col3 INT );",
                 "udf_rust": null,
-                "udf_toml": null
+                "udf_toml": null,
+                "program_config": null
               }
             }
           },
@@ -1018,47 +1018,47 @@
                   "$ref": "#/components/schemas/PipelineInfo"
                 },
                 "example": {
-                  "created_at": "1970-01-01T00:00:00Z",
-                  "deployment_desired_status": "Shutdown",
-                  "deployment_error": null,
-                  "deployment_status": "Shutdown",
-                  "deployment_status_since": "1970-01-01T00:00:00Z",
-                  "description": "Description of the pipeline example1",
                   "id": "67e55044-10b1-426f-9247-bb680e5fe0c8",
                   "name": "example1",
+                  "description": "Description of the pipeline example1",
+                  "created_at": "1970-01-01T00:00:00Z",
+                  "version": 4,
                   "platform_version": "v0",
-                  "program_code": "CREATE TABLE table1 ( col1 INT );",
-                  "program_config": {
-                    "cache": true,
-                    "profile": "optimized"
-                  },
-                  "program_info": null,
-                  "program_status": "Pending",
-                  "program_status_since": "1970-01-01T00:00:00Z",
-                  "program_version": 2,
                   "runtime_config": {
-                    "clock_resolution_usecs": 100000,
-                    "cpu_profiler": true,
-                    "fault_tolerance": null,
-                    "max_buffering_delay_usecs": 0,
-                    "min_batch_size_records": 0,
-                    "min_storage_bytes": null,
-                    "resources": {
-                      "cpu_cores_max": null,
-                      "cpu_cores_min": null,
-                      "memory_mb_max": null,
-                      "memory_mb_min": null,
-                      "storage_class": null,
-                      "storage_mb_max": null
-                    },
+                    "workers": 16,
                     "storage": false,
+                    "fault_tolerance": null,
+                    "cpu_profiler": true,
                     "tracing": false,
                     "tracing_endpoint_jaeger": "",
-                    "workers": 16
+                    "min_batch_size_records": 0,
+                    "max_buffering_delay_usecs": 0,
+                    "resources": {
+                      "cpu_cores_min": null,
+                      "cpu_cores_max": null,
+                      "memory_mb_min": null,
+                      "memory_mb_max": null,
+                      "storage_mb_max": null,
+                      "storage_class": null
+                    },
+                    "min_storage_bytes": null,
+                    "clock_resolution_usecs": 100000
                   },
+                  "program_code": "CREATE TABLE table1 ( col1 INT );",
                   "udf_rust": "",
                   "udf_toml": "",
-                  "version": 4
+                  "program_config": {
+                    "profile": "optimized",
+                    "cache": true
+                  },
+                  "program_version": 2,
+                  "program_status": "Pending",
+                  "program_status_since": "1970-01-01T00:00:00Z",
+                  "program_info": null,
+                  "deployment_status": "Shutdown",
+                  "deployment_status_since": "1970-01-01T00:00:00Z",
+                  "deployment_desired_status": "Shutdown",
+                  "deployment_error": null
                 }
               }
             }
@@ -1071,9 +1071,9 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "example": {
-                  "details": null,
+                  "message": "Cannot update a pipeline which is not fully shutdown. Shutdown the pipeline first by invoking the '/shutdown' endpoint.",
                   "error_code": "CannotUpdateNonShutdownPipeline",
-                  "message": "Cannot update a pipeline which is not fully shutdown. Shutdown the pipeline first by invoking the '/shutdown' endpoint."
+                  "details": null
                 }
               }
             }
@@ -1086,11 +1086,11 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "example": {
+                  "message": "Unknown pipeline id '2e79afe1-ff4d-44d3-af5f-9397de7746c0'",
+                  "error_code": "UnknownPipeline",
                   "details": {
                     "pipeline_id": "2e79afe1-ff4d-44d3-af5f-9397de7746c0"
-                  },
-                  "error_code": "UnknownPipeline",
-                  "message": "Unknown pipeline id '2e79afe1-ff4d-44d3-af5f-9397de7746c0'"
+                  }
                 }
               }
             }
@@ -1103,9 +1103,9 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "example": {
-                  "details": null,
+                  "message": "An entity with this name already exists",
                   "error_code": "DuplicateName",
-                  "message": "An entity with this name already exists"
+                  "details": null
                 }
               }
             }
@@ -1148,12 +1148,12 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "example": {
+                  "message": "Pipeline example (2e79afe1-ff4d-44d3-af5f-9397de7746c0) is not currently running or paused.",
+                  "error_code": "PipelineNotRunningOrPaused",
                   "details": {
                     "pipeline_id": "2e79afe1-ff4d-44d3-af5f-9397de7746c0",
                     "pipeline_name": "example"
-                  },
-                  "error_code": "PipelineNotRunningOrPaused",
-                  "message": "Pipeline example (2e79afe1-ff4d-44d3-af5f-9397de7746c0) is not currently running or paused."
+                  }
                 }
               }
             }
@@ -1166,11 +1166,11 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "example": {
+                  "message": "Unknown pipeline id '2e79afe1-ff4d-44d3-af5f-9397de7746c0'",
+                  "error_code": "UnknownPipeline",
                   "details": {
                     "pipeline_id": "2e79afe1-ff4d-44d3-af5f-9397de7746c0"
-                  },
-                  "error_code": "UnknownPipeline",
-                  "message": "Unknown pipeline id '2e79afe1-ff4d-44d3-af5f-9397de7746c0'"
+                  }
                 }
               }
             }
@@ -1220,12 +1220,12 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "example": {
+                  "message": "Pipeline example (2e79afe1-ff4d-44d3-af5f-9397de7746c0) is not currently running or paused.",
+                  "error_code": "PipelineNotRunningOrPaused",
                   "details": {
                     "pipeline_id": "2e79afe1-ff4d-44d3-af5f-9397de7746c0",
                     "pipeline_name": "example"
-                  },
-                  "error_code": "PipelineNotRunningOrPaused",
-                  "message": "Pipeline example (2e79afe1-ff4d-44d3-af5f-9397de7746c0) is not currently running or paused."
+                  }
                 }
               }
             }
@@ -1238,11 +1238,11 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "example": {
+                  "message": "Unknown pipeline id '2e79afe1-ff4d-44d3-af5f-9397de7746c0'",
+                  "error_code": "UnknownPipeline",
                   "details": {
                     "pipeline_id": "2e79afe1-ff4d-44d3-af5f-9397de7746c0"
-                  },
-                  "error_code": "UnknownPipeline",
-                  "message": "Unknown pipeline id '2e79afe1-ff4d-44d3-af5f-9397de7746c0'"
+                  }
                 }
               }
             }
@@ -1351,12 +1351,12 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "example": {
+                  "message": "Pipeline example (2e79afe1-ff4d-44d3-af5f-9397de7746c0) is not currently running or paused.",
+                  "error_code": "PipelineNotRunningOrPaused",
                   "details": {
                     "pipeline_id": "2e79afe1-ff4d-44d3-af5f-9397de7746c0",
                     "pipeline_name": "example"
-                  },
-                  "error_code": "PipelineNotRunningOrPaused",
-                  "message": "Pipeline example (2e79afe1-ff4d-44d3-af5f-9397de7746c0) is not currently running or paused."
+                  }
                 }
               }
             }
@@ -1417,12 +1417,12 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "example": {
+                  "message": "Pipeline example (2e79afe1-ff4d-44d3-af5f-9397de7746c0) is not currently running or paused.",
+                  "error_code": "PipelineNotRunningOrPaused",
                   "details": {
                     "pipeline_id": "2e79afe1-ff4d-44d3-af5f-9397de7746c0",
                     "pipeline_name": "example"
-                  },
-                  "error_code": "PipelineNotRunningOrPaused",
-                  "message": "Pipeline example (2e79afe1-ff4d-44d3-af5f-9397de7746c0) is not currently running or paused."
+                  }
                 }
               }
             }
@@ -1435,11 +1435,11 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "example": {
+                  "message": "Unknown pipeline id '2e79afe1-ff4d-44d3-af5f-9397de7746c0'",
+                  "error_code": "UnknownPipeline",
                   "details": {
                     "pipeline_id": "2e79afe1-ff4d-44d3-af5f-9397de7746c0"
-                  },
-                  "error_code": "UnknownPipeline",
-                  "message": "Unknown pipeline id '2e79afe1-ff4d-44d3-af5f-9397de7746c0'"
+                  }
                 }
               }
             }
@@ -1555,12 +1555,12 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "example": {
+                  "message": "Pipeline example (2e79afe1-ff4d-44d3-af5f-9397de7746c0) is not currently running or paused.",
+                  "error_code": "PipelineNotRunningOrPaused",
                   "details": {
                     "pipeline_id": "2e79afe1-ff4d-44d3-af5f-9397de7746c0",
                     "pipeline_name": "example"
-                  },
-                  "error_code": "PipelineNotRunningOrPaused",
-                  "message": "Pipeline example (2e79afe1-ff4d-44d3-af5f-9397de7746c0) is not currently running or paused."
+                  }
                 }
               }
             }
@@ -1622,11 +1622,11 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "example": {
+                  "message": "Unknown pipeline id '2e79afe1-ff4d-44d3-af5f-9397de7746c0'",
+                  "error_code": "UnknownPipeline",
                   "details": {
                     "pipeline_id": "2e79afe1-ff4d-44d3-af5f-9397de7746c0"
-                  },
-                  "error_code": "UnknownPipeline",
-                  "message": "Unknown pipeline id '2e79afe1-ff4d-44d3-af5f-9397de7746c0'"
+                  }
                 }
               }
             }
@@ -1695,12 +1695,12 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "example": {
+                  "message": "Pipeline example (2e79afe1-ff4d-44d3-af5f-9397de7746c0) is not currently running or paused.",
+                  "error_code": "PipelineNotRunningOrPaused",
                   "details": {
                     "pipeline_id": "2e79afe1-ff4d-44d3-af5f-9397de7746c0",
                     "pipeline_name": "example"
-                  },
-                  "error_code": "PipelineNotRunningOrPaused",
-                  "message": "Pipeline example (2e79afe1-ff4d-44d3-af5f-9397de7746c0) is not currently running or paused."
+                  }
                 }
               }
             }
@@ -1713,11 +1713,11 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "example": {
+                  "message": "Unknown pipeline id '2e79afe1-ff4d-44d3-af5f-9397de7746c0'",
+                  "error_code": "UnknownPipeline",
                   "details": {
                     "pipeline_id": "2e79afe1-ff4d-44d3-af5f-9397de7746c0"
-                  },
-                  "error_code": "UnknownPipeline",
-                  "message": "Unknown pipeline id '2e79afe1-ff4d-44d3-af5f-9397de7746c0'"
+                  }
                 }
               }
             }
@@ -1730,14 +1730,14 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "example": {
+                  "message": "Sending request to URL https://localhost:1234/query of pipeline example (67e55044-10b1-426f-9247-bb680e5fe0c8) failed: Failed to connect to host: Internal error: connector has been disconnected",
+                  "error_code": "PipelineEndpointSendError",
                   "details": {
-                    "error": "Failed to connect to host: Internal error: connector has been disconnected",
                     "pipeline_id": "67e55044-10b1-426f-9247-bb680e5fe0c8",
                     "pipeline_name": "example",
-                    "url": "https://localhost:1234/query"
-                  },
-                  "error_code": "PipelineEndpointSendError",
-                  "message": "Sending request to URL https://localhost:1234/query of pipeline example (67e55044-10b1-426f-9247-bb680e5fe0c8) failed: Failed to connect to host: Internal error: connector has been disconnected"
+                    "url": "https://localhost:1234/query",
+                    "error": "Failed to connect to host: Internal error: connector has been disconnected"
+                  }
                 }
               }
             }
@@ -1787,12 +1787,12 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "example": {
+                  "message": "Pipeline example (2e79afe1-ff4d-44d3-af5f-9397de7746c0) is not currently running or paused.",
+                  "error_code": "PipelineNotRunningOrPaused",
                   "details": {
                     "pipeline_id": "2e79afe1-ff4d-44d3-af5f-9397de7746c0",
                     "pipeline_name": "example"
-                  },
-                  "error_code": "PipelineNotRunningOrPaused",
-                  "message": "Pipeline example (2e79afe1-ff4d-44d3-af5f-9397de7746c0) is not currently running or paused."
+                  }
                 }
               }
             }
@@ -1805,11 +1805,11 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "example": {
+                  "message": "Unknown pipeline id '2e79afe1-ff4d-44d3-af5f-9397de7746c0'",
+                  "error_code": "UnknownPipeline",
                   "details": {
                     "pipeline_id": "2e79afe1-ff4d-44d3-af5f-9397de7746c0"
-                  },
-                  "error_code": "UnknownPipeline",
-                  "message": "Unknown pipeline id '2e79afe1-ff4d-44d3-af5f-9397de7746c0'"
+                  }
                 }
               }
             }
@@ -1933,34 +1933,34 @@
                   "Illegal action": {
                     "description": "Action is not applicable in the current state",
                     "value": {
-                      "details": {
-                        "desired_status": "Shutdown",
-                        "hint": "Cannot restart the pipeline while it is shutting down. Wait for the shutdown to complete before starting a new instance of the pipeline.",
-                        "requested_desired_status": "Running",
-                        "status": "ShuttingDown"
-                      },
+                      "message": "Deployment status (current: 'ShuttingDown', desired: 'Shutdown') cannot have desired changed to 'Running'. Cannot restart the pipeline while it is shutting down. Wait for the shutdown to complete before starting a new instance of the pipeline.",
                       "error_code": "IllegalPipelineStateTransition",
-                      "message": "Deployment status (current: 'ShuttingDown', desired: 'Shutdown') cannot have desired changed to 'Running'. Cannot restart the pipeline while it is shutting down. Wait for the shutdown to complete before starting a new instance of the pipeline."
+                      "details": {
+                        "hint": "Cannot restart the pipeline while it is shutting down. Wait for the shutdown to complete before starting a new instance of the pipeline.",
+                        "status": "ShuttingDown",
+                        "desired_status": "Shutdown",
+                        "requested_desired_status": "Running"
+                      }
                     }
                   },
                   "Invalid action": {
                     "description": "Invalid action specified",
                     "value": {
+                      "message": "Invalid pipeline action 'dance'; valid actions are: 'start', 'pause', or 'shutdown'",
+                      "error_code": "InvalidPipelineAction",
                       "details": {
                         "action": "dance"
-                      },
-                      "error_code": "InvalidPipelineAction",
-                      "message": "Invalid pipeline action 'dance'; valid actions are: 'start', 'pause', or 'shutdown'"
+                      }
                     }
                   },
                   "Program failed compilation": {
                     "description": "Program failed compilation",
                     "value": {
+                      "message": "Not possible to start the pipeline because the program failed to compile",
+                      "error_code": "StartFailedDueToFailedCompilation",
                       "details": {
                         "compiler_error": "error: failed to compile: error: linking with `cc` failed: exit code: 1"
-                      },
-                      "error_code": "StartFailedDueToFailedCompilation",
-                      "message": "Not possible to start the pipeline because the program failed to compile"
+                      }
                     }
                   }
                 }
@@ -1975,11 +1975,11 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "example": {
+                  "message": "Unknown pipeline id '2e79afe1-ff4d-44d3-af5f-9397de7746c0'",
+                  "error_code": "UnknownPipeline",
                   "details": {
                     "pipeline_id": "2e79afe1-ff4d-44d3-af5f-9397de7746c0"
-                  },
-                  "error_code": "UnknownPipeline",
-                  "message": "Unknown pipeline id '2e79afe1-ff4d-44d3-af5f-9397de7746c0'"
+                  }
                 }
               }
             }
@@ -2264,10 +2264,10 @@
             "description": "The sequence of generations to perform.\n\nIf not set, the generator will produce a single sequence with default settings.\nIf set, the generator will produce the specified sequences in sequential order.\n\nNote that if one of the sequences before the last one generates an unlimited number of rows\nthe following sequences will not be executed.",
             "default": [
               {
-                "fields": {},
-                "limit": null,
                 "rate": null,
-                "worker_chunk_size": null
+                "limit": null,
+                "worker_chunk_size": null,
+                "fields": {}
               }
             ]
           },
@@ -3250,12 +3250,12 @@
                   }
                 ],
                 "default": {
-                  "cpu_cores_max": null,
                   "cpu_cores_min": null,
-                  "memory_mb_max": null,
+                  "cpu_cores_max": null,
                   "memory_mb_min": null,
-                  "storage_class": null,
-                  "storage_mb_max": null
+                  "memory_mb_max": null,
+                  "storage_mb_max": null,
+                  "storage_class": null
                 }
               },
               "storage": {
@@ -4148,12 +4148,12 @@
               }
             ],
             "default": {
-              "cpu_cores_max": null,
               "cpu_cores_min": null,
-              "memory_mb_max": null,
+              "cpu_cores_max": null,
               "memory_mb_min": null,
-              "storage_class": null,
-              "storage_mb_max": null
+              "memory_mb_max": null,
+              "storage_mb_max": null,
+              "storage_class": null
             }
           },
           "storage": {

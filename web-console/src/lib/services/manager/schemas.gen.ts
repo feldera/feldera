@@ -332,10 +332,10 @@ Note that if one of the sequences before the last one generates an unlimited num
 the following sequences will not be executed.`,
       default: [
         {
-          fields: {},
-          limit: null,
           rate: null,
-          worker_chunk_size: null
+          limit: null,
+          worker_chunk_size: null,
+          fields: {}
         }
       ]
     },
@@ -1658,12 +1658,12 @@ storage.`,
             }
           ],
           default: {
-            cpu_cores_max: null,
             cpu_cores_min: null,
-            memory_mb_max: null,
+            cpu_cores_max: null,
             memory_mb_min: null,
-            storage_class: null,
-            storage_mb_max: null
+            memory_mb_max: null,
+            storage_mb_max: null,
+            storage_class: null
           }
         },
         storage: {
@@ -2731,12 +2731,12 @@ storage.`,
         }
       ],
       default: {
-        cpu_cores_max: null,
         cpu_cores_min: null,
-        memory_mb_max: null,
+        cpu_cores_max: null,
         memory_mb_min: null,
-        storage_class: null,
-        storage_mb_max: null
+        memory_mb_max: null,
+        storage_mb_max: null,
+        storage_class: null
       }
     },
     storage: {
@@ -3025,6 +3025,11 @@ export const $SqlType = {
       type: 'string',
       description: 'SQL `NULL` type.',
       enum: ['Null']
+    },
+    {
+      type: 'string',
+      description: 'SQL `UUID` type.',
+      enum: ['Uuid']
     },
     {
       type: 'string',
