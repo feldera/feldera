@@ -6,14 +6,12 @@ use actix_web::{
 };
 use awc::body::MessageBody as _;
 
-use crate::{
-    api::ServerState,
-    db::{
-        storage::Storage as _,
-        types::{pipeline::PipelineStatus, tenant::TenantId},
-    },
-    error::ManagerError,
+use crate::api::main::ServerState;
+use crate::db::{
+    storage::Storage as _,
+    types::{pipeline::PipelineStatus, tenant::TenantId},
 };
+use crate::error::ManagerError;
 
 /// Retrieve the metrics of all running pipelines belonging to this tenant.
 ///

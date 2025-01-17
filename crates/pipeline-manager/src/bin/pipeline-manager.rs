@@ -3,7 +3,7 @@
 use clap::{Args, Command, FromArgMatches};
 
 use colored::Colorize;
-use pipeline_manager::api::ApiDoc;
+use pipeline_manager::api::main::ApiDoc;
 use pipeline_manager::compiler::main::{compiler_main, compiler_precompile};
 #[cfg(feature = "pg-embed")]
 use pipeline_manager::config::PgEmbedConfig;
@@ -104,7 +104,7 @@ async fn main() -> anyhow::Result<()> {
     });
     pipeline_manager::metrics::create_endpoint(metrics_handle, db.clone()).await;
     // The api-server blocks forever
-    pipeline_manager::api::run(db, common_config, api_config)
+    pipeline_manager::api::main::run(db, common_config, api_config)
         .await
         .expect("API server main failed");
     Ok(())

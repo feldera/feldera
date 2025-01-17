@@ -4,7 +4,8 @@ use serde::Serialize;
 use serde_json::json;
 use utoipa::ToSchema;
 
-use super::{ManagerError, ServerState};
+use crate::api::main::ServerState;
+use crate::error::ManagerError;
 
 #[derive(Clone, Serialize, ToSchema)]
 pub(crate) struct Configuration {

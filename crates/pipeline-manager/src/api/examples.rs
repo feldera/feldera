@@ -1,9 +1,9 @@
 // Example errors for use in OpenAPI docs.
-use crate::api::error::ApiError;
-use crate::api::pipeline::{
+use crate::api::endpoints::pipeline::{
     PatchPipeline, PipelineInfo, PipelineInfoInternal, PipelineSelectedInfo,
     PipelineSelectedInfoInternal, PostPutPipeline,
 };
+use crate::api::error::ApiError;
 use crate::db::error::DBError;
 use crate::db::types::pipeline::{
     ExtendedPipelineDescr, PipelineDesiredStatus, PipelineId, PipelineStatus,
