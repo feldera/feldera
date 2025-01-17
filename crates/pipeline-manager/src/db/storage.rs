@@ -11,6 +11,7 @@ use feldera_types::error::ErrorResponse;
 use uuid::Uuid;
 
 #[derive(Debug, PartialEq, Eq)]
+#[allow(clippy::large_enum_variant)]
 pub(crate) enum ExtendedPipelineDescrRunner {
     Monitoring(ExtendedPipelineDescrMonitoring),
     Complete(ExtendedPipelineDescr),
