@@ -35,8 +35,8 @@
 
 <svelte:head>
   <!-- TODO: Check if preloading works -->
-	<link rel="preload" as="font" href={dmSans} type="font/woff2" crossorigin="anonymous">
-	<link rel="preload" as="font" href={dmSansExt} type="font/woff2" crossorigin="anonymous">
+	<link rel="preload" href={dmSans} as="font" type="font/woff2" crossorigin="anonymous">
+	<link rel="preload" href={dmSansExt} as="font" type="font/woff2" crossorigin="anonymous">
 </svelte:head>
 
 <BodyAttr
