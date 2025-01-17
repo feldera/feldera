@@ -1,4 +1,4 @@
-/// API to read from tables/views and write into tables using HTTP
+// API to read from tables/views and write into tables using HTTP
 use actix_web::{
     post,
     web::{self, Data as WebData, ReqData},
@@ -8,10 +8,10 @@ use log::debug;
 
 use crate::api::error::ApiError;
 use crate::api::examples;
+use crate::api::main::ServerState;
 use crate::api::util::parse_url_parameter;
 use crate::db::types::tenant::TenantId;
-
-use super::{ManagerError, ServerState};
+use crate::error::ManagerError;
 
 /// Push data to a SQL table.
 ///

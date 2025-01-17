@@ -1,8 +1,9 @@
-/// API to create and delete API keys
-use super::{ManagerError, ServerState};
+// API to create and delete API keys
+use crate::api::main::ServerState;
 use crate::api::util::parse_url_parameter;
 use crate::db::types::api_key::{ApiKeyId, ApiPermission};
 use crate::db::types::tenant::TenantId;
+use crate::error::ManagerError;
 use crate::{api::examples, db::storage::Storage};
 use actix_web::{
     delete, get,

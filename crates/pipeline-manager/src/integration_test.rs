@@ -187,7 +187,7 @@ async fn initialize_local_pipeline_manager_instance() -> TempDir {
                     .unwrap();
                 });
                 // The api-server blocks forever
-                crate::api::run(db, common_config, api_config)
+                crate::api::main::run(db, common_config, api_config)
                     .await
                     .unwrap();
             })

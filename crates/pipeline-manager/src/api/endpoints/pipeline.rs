@@ -1,7 +1,6 @@
-use super::ManagerError;
 use crate::api::error::ApiError;
 use crate::api::examples;
-use crate::api::ServerState;
+use crate::api::main::ServerState;
 #[cfg(not(feature = "feldera-enterprise"))]
 use crate::common_error::CommonError;
 use crate::db::error::DBError;
@@ -13,6 +12,7 @@ use crate::db::types::pipeline::{
 use crate::db::types::program::{ProgramConfig, ProgramInfo, ProgramStatus};
 use crate::db::types::tenant::TenantId;
 use crate::db::types::version::Version;
+use crate::error::ManagerError;
 use actix_http::StatusCode;
 use actix_web::{
     delete, get,

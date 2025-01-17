@@ -65,7 +65,7 @@ use static_assertions::assert_impl_any;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-use crate::api::ServerState;
+use crate::api::main::ServerState;
 use crate::db::error::DBError;
 use crate::db::storage::Storage;
 use crate::db::storage_postgres::StoragePostgres;
@@ -630,7 +630,7 @@ mod test {
     use crate::config::CommonConfig;
     use crate::db::types::api_key::ApiPermission;
     use crate::{
-        api::ServerState,
+        api::main::ServerState,
         auth::{
             self, fetch_jwk_aws_cognito_keys, AuthConfiguration, AuthProvider, AwsCognitoClaim,
         },
