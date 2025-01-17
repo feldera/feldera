@@ -66,8 +66,7 @@ public class ExpandWriteLog extends InnerRewriteVisitor {
                         if (castToStr == null) {
                             DBSPTypeString stringType = new DBSPTypeString(
                                     CalciteObject.EMPTY, DBSPTypeString.UNLIMITED_PRECISION, false, type.mayBeNull);
-                            castToStr = new DBSPCastExpression(
-                                    expression.getNode(), arguments[1], stringType);
+                            castToStr = arguments[1].cast(stringType, false);
                             // do not print argument first time around the loop
                         } else {
                             String printFunction = type.mayBeNull ? "print_opt" : "print";

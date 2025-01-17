@@ -137,17 +137,15 @@ class aggtst_some_emp_test_row(TstView):
     def __init__(self):
         self.data = [{"sme": None}]
         self.sql = """CREATE MATERIALIZED VIEW some_emp_row AS SELECT
-                      SOME(c1 > c2) AS sme
+                      SOME(c1 > SAFE_CAST(c2 AS INT)) AS sme
                       FROM row_tbl"""
-
 
 class aggtst_every_emp_test_row(TstView):
     def __init__(self):
         self.data = [{"evry": None}]
         self.sql = """CREATE MATERIALIZED VIEW every_emp_row AS SELECT
-                      EVERY(c1 > c2) AS evry
+                      EVERY(c1 > SAFE_CAST(c2 AS INT)) AS evry
                       FROM row_tbl"""
-
 
 # Map
 class aggtst_count_emp_test_map(TstView):

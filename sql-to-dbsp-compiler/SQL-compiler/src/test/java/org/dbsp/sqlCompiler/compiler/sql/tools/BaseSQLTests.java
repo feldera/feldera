@@ -276,6 +276,7 @@ public class BaseSQLTests {
         options.languageOptions.generateInputForEveryTable = true;
         options.ioOptions.quiet = true;
         options.ioOptions.emitHandles = true;
+        options.ioOptions.verbosity = 1;
         options.languageOptions.incrementalize = incremental;
         options.languageOptions.unrestrictedIOTypes = true;
         options.languageOptions.optimizationLevel = optimize ? 2 : 1;

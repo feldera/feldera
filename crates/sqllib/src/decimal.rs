@@ -14,7 +14,9 @@ use std::str::FromStr;
 #[inline(always)]
 pub fn new_decimal(s: &str, precision: u32, scale: u32) -> Option<Decimal> {
     let value = Decimal::from_str(s).ok()?;
-    Some(cast_to_decimal_decimal(value, precision, scale))
+    Some(unwrap_cast(cast_to_decimal_decimal(
+        value, precision, scale,
+    )))
 }
 
 #[doc(hidden)]

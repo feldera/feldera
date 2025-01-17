@@ -137,7 +137,7 @@ public final class DBSPZSetExpression extends DBSPExpression
 
     public DBSPExpression castRecursive(DBSPExpression expression, DBSPType type) {
         if (type.is(DBSPTypeBaseType.class)) {
-            return expression.cast(type);
+            return expression.cast(type, false);
         } else if (type.is(DBSPTypeVec.class)) {
             DBSPTypeVec vec = type.to(DBSPTypeVec.class);
             DBSPVecExpression vecLit = expression.to(DBSPVecExpression.class);

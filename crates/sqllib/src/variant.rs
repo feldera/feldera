@@ -2,7 +2,8 @@
 //! the values in a SQL program.
 
 use crate::{
-    binary::ByteArray, casts::*, Date, GeoPoint, LongInterval, ShortInterval, Time, Timestamp, Uuid,
+    binary::ByteArray, casts::*, error::SqlRuntimeError, tn, ttn, Date, GeoPoint, LongInterval,
+    ShortInterval, Time, Timestamp, Uuid,
 };
 use dbsp::algebra::{F32, F64};
 use feldera_types::serde_with_context::serde_config::VariantFormat;
@@ -22,7 +23,6 @@ use std::fmt;
 use std::fmt::Display;
 use std::str::FromStr;
 use std::{collections::BTreeMap, fmt::Debug, hash::Hash};
-use thiserror::Error;
 
 /// Represents a Sql value with a VARIANT type.
 #[derive(
@@ -529,26 +529,6 @@ where
 
 //////////////////// Reverse conversions Variant -> T
 
-/// Error that may be reported when converting Variant
-/// values to other values.
-#[derive(Error, Debug)]
-pub enum ConversionError {
-    #[error("{0}")]
-    CustomError(String),
-}
-
-impl ConversionError {
-    /// Create a Boxed ConversionError from a message string
-    pub fn from_string(message: String) -> Box<Self> {
-        Box::new(ConversionError::CustomError(message))
-    }
-
-    /// Create a Boxed ConversionError from a message slice
-    pub fn from_strng(message: &str) -> Box<Self> {
-        Box::new(ConversionError::CustomError(message.to_string()))
-    }
-}
-
 macro_rules! into {
     ($variant:ident, $type:ty) => {
         #[doc(hidden)]
@@ -559,9 +539,10 @@ macro_rules! into {
             fn try_from(value: Variant) -> Result<Self, Self::Error> {
                 match value {
                     Variant::$variant(x) => Ok(x),
-                    _ => Err(ConversionError::from_strng(concat!(
-                        "not an ",
-                        stringify!($variant)
+                    _ => Err(SqlRuntimeError::from_string(format!(
+                        "variant is {}, which cannot be converted to {}",
+                        typeof_(value),
+                        ttn!($type),
                     ))),
                 }
             }
@@ -578,7 +559,7 @@ macro_rules! into {
                     Variant::VariantNull => Ok(None),
                     _ => match <$type>::try_from(value) {
                         Ok(result) => Ok(Some(result)),
-                        Err(e) => Err(ConversionError::from_string(e.to_string())),
+                        Err(e) => Err(SqlRuntimeError::from_string(e.to_string())),
                     },
                 }
             }
@@ -601,20 +582,24 @@ macro_rules! into_numeric {
     ($type:ty, $type_name: ident) => {
         #[doc(hidden)]
         impl TryFrom<Variant> for $type {
-            type Error = Box<dyn Error>;
+            type Error = Box<SqlRuntimeError>;
 
             ::paste::paste! {
                 #[doc(hidden)]
                 fn try_from(value: Variant) -> Result<Self, Self::Error> {
                     match value {
-                        Variant::TinyInt(x) => Ok([< cast_to_ $type_name _i8>](x)),
-                        Variant::SmallInt(x) => Ok([< cast_to_ $type_name _i16>](x)),
-                        Variant::Int(x) => Ok([< cast_to_ $type_name _i32 >](x)),
-                        Variant::BigInt(x) => Ok([< cast_to_ $type_name _i64 >](x)),
-                        Variant::Real(x) => Ok([< cast_to_ $type_name _f >](x)),
-                        Variant::Double(x) => Ok([< cast_to_ $type_name _d >](x)) ,
-                        Variant::Decimal(x) => Ok([< cast_to_ $type_name _decimal >](x)),
-                        _ => Err(ConversionError::from_strng(concat!("not an ", stringify!($variant)))),
+                        Variant::TinyInt(x) => [< cast_to_ $type_name _i8>](x),
+                        Variant::SmallInt(x) => [< cast_to_ $type_name _i16>](x),
+                        Variant::Int(x) => [< cast_to_ $type_name _i32 >](x),
+                        Variant::BigInt(x) => [< cast_to_ $type_name _i64 >](x),
+                        Variant::Real(x) => [< cast_to_ $type_name _f >](x),
+                        Variant::Double(x) => [< cast_to_ $type_name _d >](x),
+                        Variant::Decimal(x) => [< cast_to_ $type_name _decimal >](x),
+                        _ => Err(SqlRuntimeError::from_string(format!(
+                            "variant is {}, which cannot be converted to {}",
+                            typeof_(value),
+                            tn!($type),
+                        ))),
                     }
                 }
             }
@@ -631,8 +616,8 @@ macro_rules! into_numeric {
                     Variant::SqlNull => Ok(None),
                     _ => match <$type>::try_from(value) {
                         Ok(result) => Ok(Some(result)),
-                        Err(e) => Err(ConversionError::from_string(e.to_string())),
-                    }
+                        Err(e) => Err(SqlRuntimeError::from_string(e.to_string())),
+                    },
                 }
             }
         }
@@ -654,27 +639,28 @@ impl TryFrom<Variant> for Decimal {
     fn try_from(value: Variant) -> Result<Self, Self::Error> {
         match value {
             Variant::TinyInt(x) => {
-                Decimal::from_i8(x).ok_or(ConversionError::from_strng("out of range"))
+                Decimal::from_i8(x).ok_or(SqlRuntimeError::from_strng("out of range"))
             }
             Variant::SmallInt(x) => {
-                Decimal::from_i16(x).ok_or(ConversionError::from_strng("out of range"))
+                Decimal::from_i16(x).ok_or(SqlRuntimeError::from_strng("out of range"))
             }
             Variant::Int(x) => {
-                Decimal::from_i32(x).ok_or(ConversionError::from_strng("out of range"))
+                Decimal::from_i32(x).ok_or(SqlRuntimeError::from_strng("out of range"))
             }
             Variant::BigInt(x) => {
-                Decimal::from_i64(x).ok_or(ConversionError::from_strng("out of range"))
+                Decimal::from_i64(x).ok_or(SqlRuntimeError::from_strng("out of range"))
             }
             Variant::Real(x) => {
-                Decimal::from_f32(x.into_inner()).ok_or(ConversionError::from_strng("out of range"))
+                Decimal::from_f32(x.into_inner()).ok_or(SqlRuntimeError::from_strng("out of range"))
             }
             Variant::Double(x) => {
-                Decimal::from_f64(x.into_inner()).ok_or(ConversionError::from_strng("out of range"))
+                Decimal::from_f64(x.into_inner()).ok_or(SqlRuntimeError::from_strng("out of range"))
             }
             Variant::Decimal(x) => Ok(x),
-            _ => Err(ConversionError::from_strng(concat!(
-                "not an ",
-                stringify!($variant)
+            _ => Err(SqlRuntimeError::from_string(format!(
+                "variant is {}, which cannot be converted to {}",
+                typeof_(value),
+                "DECIMAL",
             ))),
         }
     }
@@ -691,7 +677,7 @@ impl TryFrom<Variant> for Option<Decimal> {
             Variant::SqlNull => Ok(None),
             _ => match Decimal::try_from(value) {
                 Ok(result) => Ok(Some(result)),
-                Err(e) => Err(ConversionError::from_string(e.to_string())),
+                Err(e) => Err(SqlRuntimeError::from_string(e.to_string())),
             },
         }
     }
@@ -714,12 +700,12 @@ where
                     let converted = T::try_from(e);
                     match converted {
                         Ok(value) => result.push(value),
-                        Err(e) => return Err(ConversionError::from_string(e.to_string())),
+                        Err(e) => return Err(SqlRuntimeError::from_string(e.to_string())),
                     }
                 }
                 Ok(result)
             }
-            _ => Err(Box::new(ConversionError::CustomError(
+            _ => Err(Box::new(SqlRuntimeError::CustomError(
                 "not an array".to_string(),
             ))),
         }
@@ -741,7 +727,7 @@ where
             Variant::SqlNull => Ok(None),
             _ => match Vec::<T>::try_from(value) {
                 Ok(result) => Ok(Some(result)),
-                Err(e) => Err(ConversionError::from_string(e.to_string())),
+                Err(e) => Err(SqlRuntimeError::from_string(e.to_string())),
             },
         }
     }
@@ -767,17 +753,17 @@ where
                     let convertedValue = V::try_from(value);
                     let k = match convertedKey {
                         Ok(result) => result,
-                        Err(e) => return Err(ConversionError::from_string(e.to_string())),
+                        Err(e) => return Err(SqlRuntimeError::from_string(e.to_string())),
                     };
                     let v = match convertedValue {
                         Ok(result) => result,
-                        Err(e) => return Err(ConversionError::from_string(e.to_string())),
+                        Err(e) => return Err(SqlRuntimeError::from_string(e.to_string())),
                     };
                     result.insert(k, v);
                 }
                 Ok(result)
             }
-            _ => Err(Box::new(ConversionError::CustomError(
+            _ => Err(Box::new(SqlRuntimeError::CustomError(
                 "not a map".to_string(),
             ))),
         }
@@ -801,7 +787,7 @@ where
             Variant::SqlNull => Ok(None),
             _ => match BTreeMap::<K, V>::try_from(value) {
                 Ok(result) => Ok(Some(result)),
-                Err(e) => Err(ConversionError::from_string(e.to_string())),
+                Err(e) => Err(SqlRuntimeError::from_string(e.to_string())),
             },
         }
     }

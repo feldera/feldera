@@ -857,8 +857,8 @@ FROM (SELECT 10*cosd(a), 10*sind(a)
 
     @Test
     public void castToInt() {
-        this.qf("SELECT '32768.6'::double::int2", "out of range");
-        this.qf("SELECT '-9223372036854780000'::float8::int8", "out of range");
+        this.qf("SELECT '32768.6'::double::int2", "Cannot convert");
+        this.qf("SELECT '-9223372036854780000'::float8::int8", "Cannot convert");
     }
 
     @Test

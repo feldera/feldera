@@ -112,16 +112,16 @@ public class DBSPTypeRawTuple extends DBSPTypeTupleBase {
      * @return A closure that casts every member of a tuple to
      * generate a raw tuple of this type. */
     @Override
-    public DBSPClosureExpression caster(DBSPType to) {
+    public DBSPClosureExpression caster(DBSPType to, boolean safe) {
         if (!to.is(DBSPTypeRawTuple.class))
-            return super.caster(to);  // throw
+            return super.caster(to, safe);  // throw
         DBSPTypeRawTuple tuple = to.to(DBSPTypeRawTuple.class);
         if (tuple.size() != this.size())
-            return super.caster(to);  // throw
+            return super.caster(to, safe);  // throw
         DBSPVariablePath var = this.ref().var();
         DBSPExpression[] casts = new DBSPExpression[this.tupFields.length];
         for (int i = 0; i < this.tupFields.length; i++) {
-            casts[i] = this.tupFields[i].caster(tuple.tupFields[i]);
+            casts[i] = this.tupFields[i].caster(tuple.tupFields[i], safe);
             casts[i] = casts[i].call(var.deref().field(i));
         }
         return new DBSPRawTupleExpression(casts).closure(var);

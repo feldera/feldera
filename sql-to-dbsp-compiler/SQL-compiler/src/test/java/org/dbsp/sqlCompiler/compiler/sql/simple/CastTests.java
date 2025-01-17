@@ -79,8 +79,7 @@ public class CastTests extends SqlIoTest {
 
     @Test
     public void testTinyInt() {
-        String query = "SELECT CAST(256 AS TINYINT)";
-        this.runtimeConstantFail(query, "Value '256' out of range for type");
+        this.runtimeConstantFail("SELECT CAST(256 AS TINYINT)", "out of range integral type conversion attempted");
     }
 
     @Test
@@ -118,7 +117,7 @@ public class CastTests extends SqlIoTest {
     @Test
     public void decimalOutOfRange() {
         this.runtimeFail("SELECT CAST(100103123 AS DECIMAL(10, 4))",
-                "cannot represent 100103123 as DECIMAL(10, 4)",
+                "Cannot represent 100103123 as DECIMAL(10, 4)",
                 this.streamWithEmptyChanges());
     }
 

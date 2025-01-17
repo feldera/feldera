@@ -243,7 +243,9 @@ impl SqlLogicTestFormat for SltSqlValue {
             (SltSqlValue::OptStr(None), 'T') => String::from("NULL"),
             (SltSqlValue::OptStr(Some(x)), 'T') => slt_translate_string(x),
             (SltSqlValue::OptStr(None), 'I') => String::from("NULL"),
-            (SltSqlValue::OptStr(Some(x)), 'I') => format!("{}", cast_to_i32_s(x.clone())),
+            (SltSqlValue::OptStr(Some(x)), 'I') => {
+                format!("{}", unwrap_cast(cast_to_i32_s(x.clone())))
+            }
 
             (SltSqlValue::OptBool(None), _) => String::from("NULL"),
             (SltSqlValue::Bool(b), _) => format!("{}", b),

@@ -92,7 +92,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
             e0plus1 = new DBSPBinaryExpression(flatmap.getNode(),
                     new DBSPTypeUSize(CalciteObject.EMPTY, false), DBSPOpcode.ADD,
                     e.field(0),
-                    new DBSPUSizeLiteral(1)).cast(flatmap.ordinalityIndexType);
+                    new DBSPUSizeLiteral(1)).cast(flatmap.ordinalityIndexType, false);
         }
 
         if (flatmap.rightProjections != null) {

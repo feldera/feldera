@@ -10,6 +10,8 @@ pub mod casts;
 #[doc(hidden)]
 pub mod decimal;
 #[doc(hidden)]
+pub mod error;
+#[doc(hidden)]
 pub mod geopoint;
 pub mod interval;
 #[doc(hidden)]

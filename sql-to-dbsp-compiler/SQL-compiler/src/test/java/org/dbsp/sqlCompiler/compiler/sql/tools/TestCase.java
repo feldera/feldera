@@ -156,7 +156,8 @@ public class TestCase {
                     for (int index = 0; index < tuple.size(); index++) {
                         DBSPType fieldType = tuple.getFieldType(index);
                         if (fieldType.is(DBSPTypeFP.class)) {
-                            converted[index] = var.deref().field(index).cast(DBSPTypeString.varchar(fieldType.mayBeNull));
+                            converted[index] = var.deref().field(index)
+                                    .cast(DBSPTypeString.varchar(fieldType.mayBeNull), false);
                             foundFp = true;
                         } else {
                             converted[index] = var.deref().field(index).applyCloneIfNeeded();

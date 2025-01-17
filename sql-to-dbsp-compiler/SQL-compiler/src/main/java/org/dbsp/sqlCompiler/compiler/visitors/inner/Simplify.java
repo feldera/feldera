@@ -140,7 +140,7 @@ public class Simplify extends InnerRewriteVisitor {
         DBSPExpression source = this.transform(expression.source);
         this.pop(expression);
         DBSPType type = expression.getType();
-        DBSPExpression result = source.cast(type);
+        DBSPExpression result = source.cast(type, expression.safe);
         DBSPLiteral lit = source.as(DBSPLiteral.class);
         if (lit != null) {
             DBSPType litType = lit.getType();
@@ -455,7 +455,7 @@ public class Simplify extends InnerRewriteVisitor {
                 }
             }
         }
-        this.map(expression, result.cast(expression.getType()));
+        this.map(expression, result.cast(expression.getType(), false));
         return VisitDecision.STOP;
     }
 
@@ -542,7 +542,7 @@ public class Simplify extends InnerRewriteVisitor {
                     IsNumericType iLeftType = leftType.to(IsNumericType.class);
                     if (iLeftType.isOne(leftLit)) {
                         // This works even for null
-                        result = right.cast(expression.getType());
+                        result = right.cast(expression.getType(), false);
                     } else if (iLeftType.isZero(leftLit) && !rightMayBeNull) {
                         // This is not true for null values
                         result = left;
@@ -597,7 +597,7 @@ public class Simplify extends InnerRewriteVisitor {
         } catch (ArithmeticException unused) {
             // ignore, defer to runtime
         }
-        this.map(expression, result.cast(expression.getType()));
+        this.map(expression, result.cast(expression.getType(), false));
         return VisitDecision.STOP;
     }
 
