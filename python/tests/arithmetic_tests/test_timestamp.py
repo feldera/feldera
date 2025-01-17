@@ -20,12 +20,33 @@ class arithtst_timestamp_minus_timestamp_res(TstView):
     def __init__(self):
         # Validated on MySQL
         self.data = [
-            {'id': 0, 'sec_res': 160342920, 'min_res': 2672382, 'hrs_res': 44539, 'days_res': 1855, 'mths_res': 60,
-             'yrs_res': 5},
-            {'id': 1, 'sec_res': -84686400, 'min_res': -1411440, 'hrs_res': -23524, 'days_res': -980, 'mths_res': -32,
-             'yrs_res': -2},
-            {'id': 2, 'sec_res': 332907420, 'min_res': 5548457, 'hrs_res': 92474, 'days_res': 3853, 'mths_res': 126,
-             'yrs_res': 10}
+            {
+                "id": 0,
+                "sec_res": 160342920,
+                "min_res": 2672382,
+                "hrs_res": 44539,
+                "days_res": 1855,
+                "mths_res": 60,
+                "yrs_res": 5,
+            },
+            {
+                "id": 1,
+                "sec_res": -84686400,
+                "min_res": -1411440,
+                "hrs_res": -23524,
+                "days_res": -980,
+                "mths_res": -32,
+                "yrs_res": -2,
+            },
+            {
+                "id": 2,
+                "sec_res": 332907420,
+                "min_res": 5548457,
+                "hrs_res": 92474,
+                "days_res": 3853,
+                "mths_res": 126,
+                "yrs_res": 10,
+            },
         ]
         self.sql = """CREATE MATERIALIZED VIEW timestamp_minus_timestamp_res AS SELECT
                       id,
@@ -56,12 +77,27 @@ class arithtst_timestamp_minus_sinterval(TstView):
         self.data = [
             # for hours_c1(column 4) MySQL returns different time for row 1 and row 3
             # for days_c1(column 5) MySQL returns different time for all rows and different day for row 1
-            {'id': 0, 'seconds_c1': '2014-11-05T12:45:00', 'minutes_c1': '2014-11-05T12:45:00',
-             'hours_c1': '2014-11-05T12:45:00', 'days_c1': '2014-11-05T12:45:00'},
-            {'id': 1, 'seconds_c1': '2023-02-26T18:00:00', 'minutes_c1': '2023-02-26T18:00:00',
-             'hours_c1': '2023-02-26T18:00:00', 'days_c1': '2023-02-26T18:00:00'},
-            {'id': 2, 'seconds_c1': '1948-12-02T09:15:00', 'minutes_c1': '1948-12-02T09:15:00',
-             'hours_c1': '1948-12-02T09:15:00', 'days_c1': '1948-12-02T09:15:00'}
+            {
+                "id": 0,
+                "seconds_c1": "2014-11-05T12:45:00",
+                "minutes_c1": "2014-11-05T12:45:00",
+                "hours_c1": "2014-11-05T12:45:00",
+                "days_c1": "2014-11-05T12:45:00",
+            },
+            {
+                "id": 1,
+                "seconds_c1": "2023-02-26T18:00:00",
+                "minutes_c1": "2023-02-26T18:00:00",
+                "hours_c1": "2023-02-26T18:00:00",
+                "days_c1": "2023-02-26T18:00:00",
+            },
+            {
+                "id": 2,
+                "seconds_c1": "1948-12-02T09:15:00",
+                "minutes_c1": "1948-12-02T09:15:00",
+                "hours_c1": "1948-12-02T09:15:00",
+                "days_c1": "1948-12-02T09:15:00",
+            },
         ]
         self.sql = """CREATE MATERIALIZED VIEW timestamp_minus_sinterval AS SELECT
                       v1.id,
@@ -78,9 +114,21 @@ class arithtst_timestamp_minus_linterval(TstView):
         # Validated on MySQL
         self.data = [
             # for years_c1(column 2) MySQL subtracts the specified number of years to the timestamp while keeping the month and day intact for row 2 and 3
-            {'id': 0, 'months_c1': '2014-12-05T08:27:00', 'years_c1': '2014-12-05T08:27:00'},
-            {'id': 1, 'months_c1': '2023-02-21T14:00:00', 'years_c1': '2023-02-21T14:00:00'},
-            {'id': 2, 'months_c1': '1948-12-21T11:32:00', 'years_c1': '1948-12-21T11:32:00'}
+            {
+                "id": 0,
+                "months_c1": "2014-12-05T08:27:00",
+                "years_c1": "2014-12-05T08:27:00",
+            },
+            {
+                "id": 1,
+                "months_c1": "2023-02-21T14:00:00",
+                "years_c1": "2023-02-21T14:00:00",
+            },
+            {
+                "id": 2,
+                "months_c1": "1948-12-21T11:32:00",
+                "years_c1": "1948-12-21T11:32:00",
+            },
         ]
         self.sql = """CREATE MATERIALIZED VIEW timestamp_minus_linterval AS SELECT
                       v1.id,
@@ -96,12 +144,27 @@ class arithtst_timestamp_plus_sinterval(TstView):
         self.data = [
             # for hours_c1(column 4) MySQL returns different time for row 1 and row 3
             # for days_c1(column 5) MySQL returns different time for all rows and different day for row 1
-            {'id': 0, 'seconds_c1': '2025-01-03T04:09:00', 'minutes_c1': '2025-01-03T04:09:00',
-             'hours_c1': '2025-01-03T04:09:00', 'days_c1': '2025-01-03T04:09:00'},
-            {'id': 1, 'seconds_c1': '2017-10-15T10:00:00', 'minutes_c1': '2017-10-15T10:00:00',
-             'hours_c1': '2017-10-15T10:00:00', 'days_c1': '2017-10-15T10:00:00'},
-            {'id': 2, 'seconds_c1': '1970-01-07T13:49:00', 'minutes_c1': '1970-01-07T13:49:00',
-             'hours_c1': '1970-01-07T13:49:00', 'days_c1': '1970-01-07T13:49:00'}
+            {
+                "id": 0,
+                "seconds_c1": "2025-01-03T04:09:00",
+                "minutes_c1": "2025-01-03T04:09:00",
+                "hours_c1": "2025-01-03T04:09:00",
+                "days_c1": "2025-01-03T04:09:00",
+            },
+            {
+                "id": 1,
+                "seconds_c1": "2017-10-15T10:00:00",
+                "minutes_c1": "2017-10-15T10:00:00",
+                "hours_c1": "2017-10-15T10:00:00",
+                "days_c1": "2017-10-15T10:00:00",
+            },
+            {
+                "id": 2,
+                "seconds_c1": "1970-01-07T13:49:00",
+                "minutes_c1": "1970-01-07T13:49:00",
+                "hours_c1": "1970-01-07T13:49:00",
+                "days_c1": "1970-01-07T13:49:00",
+            },
         ]
         self.sql = """CREATE MATERIALIZED VIEW timestamp_plus_interval AS SELECT
                       v1.id,
@@ -118,9 +181,21 @@ class arithtst_timestamp_plus_linterval(TstView):
         # Validated on MySQL
         self.data = [
             # for years_c1(column 2) MySQL adds the specified number of years to the timestamp while keeping the month and day intact for row 2 and 3
-            {'id': 0, 'months_c1': '2024-12-05T08:27:00', 'years_c1': '2024-12-05T08:27:00'},
-            {'id': 1, 'months_c1': '2017-10-21T14:00:00', 'years_c1': '2017-10-21T14:00:00'},
-            {'id': 2, 'months_c1': '1969-12-21T11:32:00', 'years_c1': '1969-12-21T11:32:00'}
+            {
+                "id": 0,
+                "months_c1": "2024-12-05T08:27:00",
+                "years_c1": "2024-12-05T08:27:00",
+            },
+            {
+                "id": 1,
+                "months_c1": "2017-10-21T14:00:00",
+                "years_c1": "2017-10-21T14:00:00",
+            },
+            {
+                "id": 2,
+                "months_c1": "1969-12-21T11:32:00",
+                "years_c1": "1969-12-21T11:32:00",
+            },
         ]
         self.sql = """CREATE MATERIALIZED VIEW timestamp_plus_linterval AS SELECT
                       v1.id,
@@ -154,15 +229,33 @@ class arithtst_neg_timestamp_res(TstView):
     def __init__(self):
         # checked manually
         self.data = [
-            {'id': 0, 'seconds_neg_res': -160342920, 'minutes_neg_res': -2672382, 'hours_neg_res': -44539,
-             'days_neg_res': -1855, 'months_neg_res': -60,
-             'years_neg_res': -5},
-            {'id': 1, 'seconds_neg_res': 84686400, 'minutes_neg_res': 1411440, 'hours_neg_res': 23524,
-             'days_neg_res': 980, 'months_neg_res': 32,
-             'years_neg_res': 2},
-            {'id': 2, 'seconds_neg_res': -332907420, 'minutes_neg_res': -5548457, 'hours_neg_res': -92474,
-             'days_neg_res': -3853, 'months_neg_res': -126,
-             'years_neg_res': -10}
+            {
+                "id": 0,
+                "seconds_neg_res": -160342920,
+                "minutes_neg_res": -2672382,
+                "hours_neg_res": -44539,
+                "days_neg_res": -1855,
+                "months_neg_res": -60,
+                "years_neg_res": -5,
+            },
+            {
+                "id": 1,
+                "seconds_neg_res": 84686400,
+                "minutes_neg_res": 1411440,
+                "hours_neg_res": 23524,
+                "days_neg_res": 980,
+                "months_neg_res": 32,
+                "years_neg_res": 2,
+            },
+            {
+                "id": 2,
+                "seconds_neg_res": -332907420,
+                "minutes_neg_res": -5548457,
+                "hours_neg_res": -92474,
+                "days_neg_res": -3853,
+                "months_neg_res": -126,
+                "years_neg_res": -10,
+            },
         ]
         self.sql = """CREATE MATERIALIZED VIEW neg_timestamp_res AS SELECT
                       id,
