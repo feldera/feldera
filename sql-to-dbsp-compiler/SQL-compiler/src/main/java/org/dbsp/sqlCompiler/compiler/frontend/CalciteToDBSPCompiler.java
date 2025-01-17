@@ -654,7 +654,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                         .deref()
                         .field(index)
                         .applyCloneIfNeeded()
-                        .cast(slice.getFieldType(groupSetIndex));
+                        .cast(slice.getFieldType(groupSetIndex), false);
                 keyFieldIndex++;
             }
             groupSetIndex++;
@@ -807,14 +807,14 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPExpression[] flattenFields = new DBSPExpression[aggregate.getGroupCount() + aggType.size()];
         for (int i = 0; i < aggregate.getGroupCount(); i++) {
             DBSPExpression cast = kv.field(0).deref().field(i).applyCloneIfNeeded()
-                    .cast(tuple.getFieldType(i));
+                    .cast(tuple.getFieldType(i), false);
             flattenFields[i] = cast;
         }
         for (int i = 0; i < aggType.size(); i++) {
             DBSPExpression flattenField = kv.field(1).deref().field(i).applyCloneIfNeeded();
             // Here we correct from the type produced by the Folder (typeFromAggregate) to the
             // actual expected type aggType (which is the tuple of aggTypes).
-            DBSPExpression cast = flattenField.cast(aggTypes[i]);
+            DBSPExpression cast = flattenField.cast(aggTypes[i], false);
             flattenFields[aggregate.getGroupCount() + i] = cast;
         }
 
@@ -939,7 +939,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 DBSPType expectedType = tuple.getFieldType(index);
                 if (!exp.getType().sameType(expectedType)) {
                     // Calcite's optimizations do not preserve types!
-                    exp = exp.applyCloneIfNeeded().cast(expectedType);
+                    exp = exp.applyCloneIfNeeded().cast(expectedType, false);
                 }
                 resultColumns[index] = exp;
                 index++;
@@ -957,7 +957,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPType inputElementType = operator.getOutputZSetElementType();
         if (inputElementType.sameType(outputElementType))
             return operator;
-        DBSPExpression function = inputElementType.caster(outputElementType).reduce(this.compiler);
+        DBSPExpression function = inputElementType.caster(outputElementType, false).reduce(this.compiler);
         DBSPSimpleOperator map = new DBSPMapOperator(
                 node, function, this.makeZSet(outputElementType), operator.outputPort());
         this.addOperator(map);
@@ -1124,10 +1124,10 @@ public class CalciteToDBSPCompiler extends RelVisitor
             DBSPVariablePath r = rightElementType.ref().var();
             List<DBSPExpression> leftKeyFields = Linq.map(
                     decomposition.comparisons,
-                    c -> l.deref().field(c.leftColumn()).applyCloneIfNeeded().cast(c.commonType()));
+                    c -> l.deref().field(c.leftColumn()).applyCloneIfNeeded().cast(c.commonType(), false));
             List<DBSPExpression> rightKeyFields = Linq.map(
                     decomposition.comparisons,
-                    c -> r.deref().field(c.rightColumn()).applyCloneIfNeeded().cast(c.commonType()));
+                    c -> r.deref().field(c.rightColumn()).applyCloneIfNeeded().cast(c.commonType(), false));
             DBSPExpression leftKey = new DBSPTupleExpression(node, leftKeyFields);
             keyType = leftKey.getType();
 
@@ -1235,7 +1235,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
             DBSPVariablePath t = new DBSPVariablePath(lrType.ref());
             DBSPExpression[] casts = new DBSPExpression[lrType.size()];
             for (int index = 0; index < lrType.size(); index++) {
-                casts[index] = t.deref().field(index).applyCloneIfNeeded().cast(resultType.getFieldType(index));
+                casts[index] = t.deref().field(index).applyCloneIfNeeded()
+                        .cast(resultType.getFieldType(index), false);
             }
             DBSPTupleExpression allFields = new DBSPTupleExpression(casts);
             this.addOperator(joinResult);
@@ -1456,10 +1457,10 @@ public class CalciteToDBSPCompiler extends RelVisitor
             DBSPVariablePath r = rightElementType.ref().var();
             List<DBSPExpression> leftKeyFields = Linq.map(
                     comparisons,
-                    c -> l.deref().field(c.leftColumn()).applyCloneIfNeeded().cast(c.commonType()));
+                    c -> l.deref().field(c.leftColumn()).applyCloneIfNeeded().cast(c.commonType(), false));
             List<DBSPExpression> rightKeyFields = Linq.map(
                     comparisons,
-                    c -> r.deref().field(c.rightColumn()).applyCloneIfNeeded().cast(c.commonType()));
+                    c -> r.deref().field(c.rightColumn()).applyCloneIfNeeded().cast(c.commonType(), false));
             DBSPExpression leftKey = new DBSPTupleExpression(node, leftKeyFields);
             keyType = leftKey.getType().to(DBSPTypeTuple.class);
             DBSPExpression rightKey = new DBSPTupleExpression(node, rightKeyFields);
@@ -1517,8 +1518,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPType commonTSType = leftTSType.withMayBeNull(nullable);
         assert commonTSType.sameType(rightTSType.withMayBeNull(nullable));
 
-        DBSPClosureExpression leftTimestamp = leftTS.cast(commonTSType).closure(leftVar);
-        DBSPClosureExpression rightTimestamp = rightTS.cast(commonTSType).closure(rightVar);
+        DBSPClosureExpression leftTimestamp = leftTS.cast(commonTSType, false).closure(leftVar);
+        DBSPClosureExpression rightTimestamp = rightTS.cast(commonTSType, false).closure(rightVar);
 
         // Currently not used
         DBSPComparatorExpression comparator = new DBSPNoComparatorExpression(node, leftTimestamp.getResultType());
@@ -1677,7 +1678,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                         expr = DBSPLiteral.none(resultFieldType);
                 }
                 if (!expr.getType().sameType(resultFieldType)) {
-                    DBSPExpression cast = expr.cast(resultFieldType);
+                    DBSPExpression cast = expr.cast(resultFieldType, false);
                     expressions.add(cast);
                 } else {
                     expressions.add(expr);
@@ -2066,7 +2067,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                         .field(field)
                         // cast the results to whatever Calcite says they will be.
                         .applyCloneIfNeeded()
-                        .cast(this.windowResultType.getFieldType(this.windowFieldIndex + i));
+                        .cast(this.windowResultType.getFieldType(this.windowFieldIndex + i), false);
                 lagColumnExpressions.add(expression);
             }
             DBSPTupleExpression lagTuple = new DBSPTupleExpression(
@@ -2084,7 +2085,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                             // Same type as field i
                             window.getRowType().getFieldList().get(i).getType());
                     // a default argument is present
-                    defaultValues[i] = eComp.compile(ri).cast(resultType);
+                    defaultValues[i] = eComp.compile(ri).cast(resultType, false);
                 } else {
                     defaultValues[i] = resultType.none();
                 }
@@ -2244,7 +2245,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                     throw new UnsupportedException("Window bounds must be positive: " + literal.toSqlString(), node);
                 }
                 if (literal.getType().is(DBSPTypeInteger.class)) {
-                    numericBound = value.cast(unsignedType);
+                    numericBound = value.cast(unsignedType, false);
                 } else {
                     RustSqlRuntimeLibrary.FunctionDescription desc =
                             RustSqlRuntimeLibrary.getWindowBound(node, unsignedType, sortType, literal.getType());
@@ -2295,7 +2296,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                         originalOrderField = new DBSPBinaryExpression(
                                 node, mulType, DBSPOpcode.SHIFT_LEFT, originalOrderField,
                                 new DBSPI32Literal(dec.scale));
-                        originalOrderField = originalOrderField.cast(intType);
+                        originalOrderField = originalOrderField.cast(intType, false);
                         sortType = intType;
                     }
                 }
@@ -2395,7 +2396,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                     DBSPTypeDecimal dec = originalSortType.to(DBSPTypeDecimal.class);
                     // convert back to decimal and rescale
                     var intermediateType = new DBSPTypeDecimal(node, dec.precision + dec.scale, 0, originalSortType.mayBeNull);
-                    unwrap = unwrap.cast(intermediateType);
+                    unwrap = unwrap.cast(intermediateType, false);
                     unwrap = new DBSPBinaryExpression(node, originalSortType,
                             DBSPOpcode.SHIFT_LEFT, unwrap, new DBSPI32Literal(-dec.scale));
                 }
@@ -2478,7 +2479,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                     // for these aggregates.  So we have to cast the results to whatever
                     // Calcite says they will be.
                     allFields[i + lastTupleType.size()] = right.deref().field(i).applyCloneIfNeeded().cast(
-                            this.windowResultType.getFieldType(this.windowFieldIndex + i));
+                            this.windowResultType.getFieldType(this.windowFieldIndex + i), false);
                 }
                 DBSPTupleExpression addExtraFieldBody = new DBSPTupleExpression(allFields);
                 DBSPClosureExpression addExtraField =
@@ -2685,7 +2686,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         this.addOperator(agg);
 
         if (limit != null)
-            limit = limit.cast(new DBSPTypeUSize(node, false));
+            limit = limit.cast(new DBSPTypeUSize(node, false), false);
         DBSPSortExpression sorter = new DBSPSortExpression(node, inputRowType, comparator, limit);
         DBSPSimpleOperator result = new DBSPMapOperator(
                 node, sorter, this.makeZSet(vecType), agg.outputPort());
@@ -2761,7 +2762,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPExpression defaultValue = null;
         if (metadata.defaultValue != null) {
             defaultValue = expressionCompiler.compile(metadata.defaultValue);
-            defaultValue = defaultValue.cast(type);
+            defaultValue = defaultValue.cast(type, false);
         }
         return new InputColumnMetadata(metadata.getNode(), metadata.getName(), type,
                 metadata.isPrimaryKey, lateness, watermark, defaultValue, metadata.defaultValuePosition);
@@ -3096,7 +3097,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             DBSPType expectedType = tuple.getFieldType(index);
             if (!exp.getType().sameType(expectedType)) {
                 // Calcite's optimizations do not preserve types!
-                exp = exp.applyCloneIfNeeded().cast(expectedType);
+                exp = exp.applyCloneIfNeeded().cast(expectedType, false);
             }
             resultColumns.add(exp);
             index++;

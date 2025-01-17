@@ -1195,7 +1195,7 @@ public class ToRustVisitor extends CircuitVisitor {
                 }
                 this.builder.append(">(");
         DBSPExpression cast = operator.limit.cast(
-                new DBSPTypeUSize(CalciteObject.EMPTY, operator.limit.getType().mayBeNull));
+                new DBSPTypeUSize(CalciteObject.EMPTY, operator.limit.getType().mayBeNull), false);
         cast.accept(this.innerVisitor);
         if (operator.outputProducer != null) {
             if (operator.numbering != DBSPIndexedTopKOperator.TopKNumbering.ROW_NUMBER) {

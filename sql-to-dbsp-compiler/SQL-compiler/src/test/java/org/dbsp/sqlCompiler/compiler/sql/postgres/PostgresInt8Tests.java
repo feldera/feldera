@@ -539,19 +539,20 @@ public class PostgresInt8Tests extends SqlIoTest {
 
     @Test
     public void testOutOfRangeCast() {
-        this.runtimeConstantFail("select '-9223372036854775809'::int64", "Could not parse");
-        this.runtimeConstantFail("select '9223372036854775808'::int64", "Could not parse");
-        this.runtimeConstantFail("SELECT CAST('4567890123456789' AS int4)", "Could not parse");
-        this.runtimeConstantFail("SELECT CAST('4567890123456789' AS int2)", "Could not parse");
-        this.runtimeConstantFail("SELECT CAST('+4567890123456789' AS int4)", "Could not parse");
-        this.runtimeConstantFail("SELECT CAST('+4567890123456789' AS int2)", "Could not parse");
-        this.runtimeConstantFail("SELECT CAST('-4567890123456789' AS int4)", "Could not parse");
-        this.runtimeConstantFail("SELECT CAST('-4567890123456789' AS int2)", "Could not parse");
+        this.runtimeConstantFail("select '-9223372036854775809'::int64", "number too small to fit");
+        this.runtimeConstantFail("select '9223372036854775808'::int64", "number too large to fit");
+        this.runtimeConstantFail("SELECT CAST('4567890123456789' AS int4)", "number too large to fit");
+        this.runtimeConstantFail("SELECT CAST('4567890123456789' AS int2)", "number too large to fit");
+        this.runtimeConstantFail("SELECT CAST('+4567890123456789' AS int4)", "number too large to fit");
+        this.runtimeConstantFail("SELECT CAST('+4567890123456789' AS int2)", "number too large to fit");
+        this.runtimeConstantFail("SELECT CAST('-4567890123456789' AS int4)", "number too small to fit");
+        this.runtimeConstantFail("SELECT CAST('-4567890123456789' AS int2)", "number too small to fit");
     }
 
     @Test
     public void issue1199() {
-        this.runtimeConstantFail("SELECT CAST('922337203685477580700.0'::float8 AS int64)", "out of range for type");
+        this.runtimeConstantFail("SELECT CAST('922337203685477580700.0'::float8 AS int64)",
+                "Cannot convert 922337203685477600000 to BIGINT");
     }
 
     @Test

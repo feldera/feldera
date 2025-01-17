@@ -135,16 +135,16 @@ public class DBSPTypeTuple extends DBSPTypeTupleBase {
     /** Returns a lambda which casts every field of a tuple
      * to the corresponding field of this type. */
     @Override
-    public DBSPClosureExpression caster(DBSPType to) {
+    public DBSPClosureExpression caster(DBSPType to, boolean safe) {
         if (!to.is(DBSPTypeTuple.class))
-            return super.caster(to);  // throw
+            return super.caster(to, safe);  // throw
         DBSPTypeTuple tuple = to.to(DBSPTypeTuple.class);
         if (tuple.size() != this.size())
-            return super.caster(to);  // throw
+            return super.caster(to, safe);  // throw
         DBSPVariablePath var = this.ref().var();
         DBSPExpression[] casts = new DBSPExpression[this.tupFields.length];
         for (int i = 0; i < this.tupFields.length; i++) {
-            casts[i] = this.tupFields[i].caster(tuple.tupFields[i]);
+            casts[i] = this.tupFields[i].caster(tuple.tupFields[i], safe);
             casts[i] = casts[i].call(var.deepCopy().deref().field(i));
         }
         return new DBSPTupleExpression(casts).closure(var);

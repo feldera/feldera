@@ -742,7 +742,7 @@ public class EndToEndTests extends BaseSQLTests {
     @Test
     public void divZero0() {
         String query = "SELECT 'Infinity' / 0";
-        this.runtimeConstantFail(query, "Could not parse");
+        this.runtimeConstantFail(query, "invalid digit found in string");
     }
 
     @Test

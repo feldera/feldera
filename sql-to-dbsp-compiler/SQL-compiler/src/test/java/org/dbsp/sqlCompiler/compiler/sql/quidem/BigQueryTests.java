@@ -6,6 +6,124 @@ import org.junit.Test;
 /** Tests from babel/src/test/resources/sql/big-query.iq */
 public class BigQueryTests extends SqlIoTest {
     @Test
+    public void testSafeCast() {
+        this.qs("""
+                -- SAFE_CAST(x AS type)
+                -- Identical to CAST(), except it returns NULL instead of raising an error.
+                WITH Casted AS (
+                  SELECT SAFE_CAST('a' as int) as casted, 'a' as input, 'int' as as UNION ALL
+                  SELECT SAFE_CAST('a' as varchar(1)), 'a', 'varchar(1)' UNION ALL
+                  SELECT SAFE_CAST('2023-03-07' as DATE), DATE('2023-03-07'), 'date' UNION ALL
+                  SELECT SAFE_CAST('2023-03-07a' as DATE), '2023-03-07a', 'date' UNION ALL
+                  SELECT SAFE_CAST(0 as BOOLEAN), 0, 'boolean'
+                )
+                SELECT
+                  *
+                FROM Casted;
+                +------------+-------------+------------+
+                | casted     | input       | as         |
+                +------------+-------------+------------+
+                |NULL        | a           | int        |
+                | a          | a           | varchar(1) |
+                | 2023-03-07 | 2023-03-07  | date       |
+                |NULL        | 2023-03-07a | date       |
+                | FALSE      | 0           | boolean    |
+                +------------+-------------+------------+
+                (5 rows)
+                
+                WITH Casted AS (
+                  SELECT SAFE_CAST('12:12:11' as TIME) as casted,
+                   '12:12:11' as input, 'time' as as UNION ALL
+                  SELECT SAFE_CAST('12:12:11a' as TIME), '12:12:11a', 'time'
+                )
+                SELECT
+                  *
+                FROM Casted;
+                +----------+-----------+-----+
+                | casted   | input     | as  |
+                +----------+-----------+-----+
+                | 12:12:11 | 12:12:11  | time|
+                |          | 12:12:11a | time|
+                +----------+-----------+-----+
+                (2 rows)
+                
+                WITH Casted AS (
+                  SELECT SAFE_CAST(TRUE as BOOLEAN) as casted, 'true' as input,
+                   'boolean' as as UNION ALL
+                  SELECT SAFE_CAST(FALSE as BOOLEAN) as casted, 'false' as input,
+                   'boolean' as as
+                )
+                SELECT
+                  *
+                FROM Casted;
+                +--------+-------+--------+
+                | casted | input | as     |
+                +--------+-------+--------+
+                | true   | true  | boolean|
+                | false  | false | boolean|
+                +--------+-------+--------+
+                (2 rows)
+                
+                WITH Casted AS (
+                  SELECT SAFE_CAST(interval '12' month as interval year) as casted,
+                   'interval 1 month' as input,
+                   'interval year' as as UNION ALL
+                   SELECT SAFE_CAST('a' as interval year), 'a',
+                     'interval year' UNION ALL
+                   SELECT SAFE_CAST(null as interval year), 'null', 'interval year'
+                )
+                SELECT
+                  *
+                FROM Casted;
+                +--------+------------------+--------------+
+                | casted | input            | as           |
+                +--------+------------------+--------------+
+                | 1 year | interval 1 month | interval year|
+                |        | a                | interval year|
+                |        | null             | interval year|
+                +--------+------------------+--------------+
+                (3 rows)
+                
+                WITH Casted AS (
+                  SELECT SAFE_CAST(interval '1:1' hour to minute as interval minute to second)
+                   as casted, 'interval 1:1 hour to minute' as input,
+                    'interval minute to second' as as UNION ALL
+                  SELECT SAFE_CAST('a' as interval minute to second),
+                   'a', 'interval minute to second'
+                )
+                SELECT
+                  *
+                FROM Casted;
+                +---------------+-----------------------------+--------------------------+
+                | casted        | input                       | as                       |
+                +---------------+-----------------------------+--------------------------+
+                | 61 mins       | interval 1:1 hour to minute | interval minute to second|
+                |               | a                           | interval minute to second|
+                +---------------+-----------------------------+--------------------------+
+                (2 rows)
+                
+                WITH Casted AS (
+                  SELECT SAFE_CAST('true' as BIGINT) as casted, 'true' as input,
+                    'bigint' as as UNION ALL
+                  SELECT SAFE_CAST(1.0 as BIGINT), '1.0', 'bigint' UNION ALL
+                  SELECT SAFE_CAST(1 as BIGINT), '1', 'bigint' -- UNION ALL
+                  -- SELECT SAFE_CAST(SAFE_CAST(TRUE AS BOOLEAN) AS BIGINT), 'TRUE', 'bigint'
+                  -- deleted, since our type system does not seem to support cast of bool to bigint
+                )
+                SELECT
+                  *
+                FROM Casted;
+                +--------+-------+-------+
+                | casted | input | as    |
+                +--------+-------+-------+
+                |        | true  | bigint|
+                |      1 | 1.0   | bigint|
+                |      1 | 1     | bigint|
+                +--------+-------+-------+
+                (3 rows)""");
+    }
+
+    @Test
     public void testRegexpReplace() {
         this.qs("""
                 -- REGEXP_REPLACE(value, regexp, replacement)

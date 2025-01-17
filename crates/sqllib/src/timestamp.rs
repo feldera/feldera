@@ -351,7 +351,7 @@ polymorphic_return_function2!(
 
 #[doc(hidden)]
 pub fn plus_Date_ShortInterval_Timestamp(left: Date, right: ShortInterval) -> Timestamp {
-    plus_Timestamp_ShortInterval_Timestamp(cast_to_Timestamp_Date(left), right)
+    plus_Timestamp_ShortInterval_Timestamp(cast_to_Timestamp_Date(left).unwrap(), right)
 }
 
 polymorphic_return_function2!(
@@ -403,7 +403,7 @@ polymorphic_return_function2!(
 
 #[doc(hidden)]
 pub fn minus_Date_ShortInterval_Timestamp(left: Date, right: ShortInterval) -> Timestamp {
-    minus_Timestamp_ShortInterval_Timestamp(cast_to_Timestamp_Date(left), right)
+    minus_Timestamp_ShortInterval_Timestamp(cast_to_Timestamp_Date(left).unwrap(), right)
 }
 
 polymorphic_return_function2!(
@@ -521,7 +521,7 @@ polymorphic_return_function2!(
 
 #[doc(hidden)]
 pub fn minus_Date_Timestamp_LongInterval(left: Date, right: Timestamp) -> LongInterval {
-    minus_Timestamp_Timestamp_LongInterval(cast_to_Timestamp_Date(left), right)
+    minus_Timestamp_Timestamp_LongInterval(cast_to_Timestamp_Date(left).unwrap(), right)
 }
 
 polymorphic_return_function2!(
@@ -536,7 +536,7 @@ polymorphic_return_function2!(
 
 #[doc(hidden)]
 pub fn minus_Timestamp_Date_LongInterval(left: Timestamp, right: Date) -> LongInterval {
-    minus_Timestamp_Timestamp_LongInterval(left, cast_to_Timestamp_Date(right))
+    minus_Timestamp_Timestamp_LongInterval(left, cast_to_Timestamp_Date(right).unwrap())
 }
 
 polymorphic_return_function2!(

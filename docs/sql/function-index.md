@@ -181,6 +181,7 @@
 * `ROUND`: [float](float.md#round), [float](float.md#round2), [decimal](decimal.md#round), [decimal](decimal.md#round2)
 * `ROW`: [types](types.md#row_constructor)
 * `ROW_NUMBER` (aggregate): [aggregates](aggregates.md#row_number)
+* `SAFE_CAST`: [casts](casts.md#safe-casts)
 * `SEC`: [float](float.md#sec)
 * `SECH`: [float](float.md#sech)
 * `SECOND`: [datetime](datetime.md#date_second), [datetime](datetime.md#time_second), [datetime](datetime.md#timestamp_second)

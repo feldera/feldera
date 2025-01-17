@@ -85,7 +85,7 @@ public class DateFormatsTests extends SqlIoTest {
     public void testIncorrectOrder() {
         // Returns NULL in MySQL
         this.runtimeConstantFail("SELECT format_date(1151414896, '%Y-%m-%d %H:%i:%s')",
-                "Could not parse string '%Y-%m-%d %H:%i:%s' as a Date");
+                "input contains invalid characters");
     }
 
     @Test

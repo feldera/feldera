@@ -80,7 +80,10 @@ some_polymorphic_function2!(make_geopoint, d, F64, d, F64, GeoPoint);
 
 #[doc(hidden)]
 pub fn make_geopoint_decimal_decimal(left: Decimal, right: Decimal) -> GeoPoint {
-    GeoPoint::new(cast_to_d_decimal(left), cast_to_d_decimal(right))
+    GeoPoint::new(
+        cast_to_d_decimal(left).unwrap(),
+        cast_to_d_decimal(right).unwrap(),
+    )
 }
 
 some_polymorphic_function2!(make_geopoint, decimal, Decimal, decimal, Decimal, GeoPoint);

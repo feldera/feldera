@@ -36,15 +36,19 @@ import org.dbsp.util.IIndentStream;
  * It represents a cast of an expression to a given type. */
 public final class DBSPCastExpression extends DBSPExpression {
     public final DBSPExpression source;
+    /** If true this is a safe cast */
+    public final boolean safe;
 
-    public DBSPCastExpression(CalciteObject node, DBSPExpression source, DBSPType to) {
+    public DBSPCastExpression(CalciteObject node, DBSPExpression source, DBSPType to, boolean safe) {
         super(node, to);
         this.source = source;
+        this.safe = safe;
+        assert !safe || to.mayBeNull;
     }
 
     public DBSPCastExpression replaceSource(DBSPExpression source) {
         assert source.getType().sameType(this.source.getType());
-        return new DBSPCastExpression(this.getNode(), source, this.type);
+        return new DBSPCastExpression(this.getNode(), source, this.type, this.safe);
     }
 
     @Override
@@ -64,6 +68,7 @@ public final class DBSPCastExpression extends DBSPExpression {
         if (o == null)
             return false;
         return this.source == o.source &&
+                this.safe == o.safe &&
                 this.hasSameType(o);
     }
 
@@ -78,7 +83,7 @@ public final class DBSPCastExpression extends DBSPExpression {
 
     @Override
     public DBSPExpression deepCopy() {
-        return new DBSPCastExpression(this.getNode(), this.source.deepCopy(), this.getType());
+        return new DBSPCastExpression(this.getNode(), this.source.deepCopy(), this.getType(), this.safe);
     }
 
     @Override
@@ -87,6 +92,7 @@ public final class DBSPCastExpression extends DBSPExpression {
         if (otherExpression == null)
             return false;
         return context.equivalent(this.source, otherExpression.source) &&
+                this.safe == otherExpression.safe &&
                 this.hasSameType(other);
     }
 }

@@ -72,7 +72,7 @@ public class ProfilingTests extends StreamingTestBase {
                 use feldera_sqllib::{
                     append_to_collection_handle,
                     read_output_handle,
-                    casts::cast_to_Timestamp_s,
+                    casts::{cast_to_Timestamp_s,unwrap_cast},
                 };
 
                 use std::{
@@ -177,7 +177,7 @@ public class ProfilingTests extends StreamingTestBase {
         // Rust program which profiles the circuit.
         String main = this.createMain("""
                     // Initial data value for timestamp
-                    let mut timestamp = cast_to_Timestamp_s("2024-01-10 10:10:10".to_string());
+                    let mut timestamp = unwrap_cast(cast_to_Timestamp_s("2024-01-10 10:10:10".to_string()));
                     for i in 0..1000000 {
                         let value = Some(F64::new(i.into()));
                         timestamp = timestamp.add(20000);
@@ -236,7 +236,7 @@ public class ProfilingTests extends StreamingTestBase {
         // Rust program which profiles the circuit.
         String main = this.createMain("""
                     // Initial data value for timestamp
-                    let mut timestamp = cast_to_Timestamp_s("2024-01-10 10:10:10".to_string());
+                    let mut timestamp = unwrap_cast(cast_to_Timestamp_s("2024-01-10 10:10:10".to_string()));
                     for i in 0..1000000 {
                         let expire = timestamp.add(1000000);
                         timestamp = timestamp.add(20000);

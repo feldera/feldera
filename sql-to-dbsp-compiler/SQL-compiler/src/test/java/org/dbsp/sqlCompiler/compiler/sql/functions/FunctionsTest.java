@@ -182,13 +182,14 @@ public class FunctionsTest extends SqlIoTest {
 
     @Test
     public void issue1180() {
-        this.runtimeConstantFail("SELECT '1_000'::INT4", "Could not parse");
+        this.runtimeConstantFail("SELECT '1_000'::INT4",
+                "invalid digit found in string");
     }
 
     @Test
     public void issue1192() {
-        this.runtimeConstantFail("select '-9223372036854775809'::int64", "Could not parse");
-        this.runtimeConstantFail("select '9223372036854775808'::int64", "Could not parse");
+        this.runtimeConstantFail("select '-9223372036854775809'::int64", "number too small to fit in target type");
+        this.runtimeConstantFail("select '9223372036854775808'::int64", "number too large to fit in target type");
     }
 
     // this is an edge case for negative integer modulo
@@ -511,18 +512,18 @@ public class FunctionsTest extends SqlIoTest {
     @Test
     public void testDecimalErrors() {
         this.runtimeConstantFail("select cast(1234.1234 AS DECIMAL(6, 3))",
-                "cannot represent 1234.123 as DECIMAL(6, 3): precision of DECIMAL type too small to represent value");
+                "Cannot represent 1234.123 as DECIMAL(6, 3): precision of DECIMAL type too small to represent value");
         this.runtimeConstantFail("select cast(1234.1236 AS DECIMAL(6, 3))",
-                "cannot represent 1234.123 as DECIMAL(6, 3): precision of DECIMAL type too small to represent value");
+                "Cannot represent 1234.123 as DECIMAL(6, 3): precision of DECIMAL type too small to represent value");
         this.runtimeConstantFail("select cast(143.481 as decimal(2, 1))",
-                "cannot represent 143.4 as DECIMAL(2, 1): precision of DECIMAL type too small to represent value");
+                "Cannot represent 143.4 as DECIMAL(2, 1): precision of DECIMAL type too small to represent value");
         this.q("""
                 select cast(99.6 as decimal(2, 0));
                  result
                 --------
                  99""");
         this.runtimeConstantFail("select cast(-13.4 as decimal(2,1))",
-                "cannot represent -13.4 as DECIMAL(2, 1)");
+                "Cannot represent -13.4 as DECIMAL(2, 1)");
     }
 
     @Test

@@ -30,13 +30,8 @@ import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeVec;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDate;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMillisInterval;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMonthsInterval;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTime;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
 
@@ -76,9 +71,9 @@ public class TableParser {
 
     /** Convert a timestamp from a format like Sat Feb 16 17:32:01 1996 to
      * a format like 1996-02-16 17:32:01 */
-    public static DBSPExpression convertTimestamp(@Nullable String timestamp, boolean mayBeNull) {
+    public static DBSPExpression convertTimestamp(@Nullable String timestamp, DBSPType type) {
         if (timestamp == null)
-            return DBSPLiteral.none(new DBSPTypeTimestamp(CalciteObject.EMPTY, true));
+            return DBSPLiteral.none(type);
         for (SimpleDateFormat input: TIMESTAMP_INPUT_FORMAT) {
             String out;
             try {
@@ -91,16 +86,16 @@ public class TableParser {
             } catch (ParseException ignored) {
                 continue;
             }
-            return new DBSPTimestampLiteral(out, mayBeNull);
+            return new DBSPTimestampLiteral(out, type.mayBeNull);
         }
         throw new RuntimeException("Could not parse " + timestamp + " as timestamp");
     }
 
     /** Convert a date from the MM-DD-YYYY format (which is used in the Postgres output)
      * to a DBSPLiteral. */
-    static DBSPExpression parseDate(@Nullable String date, boolean mayBeNull) {
+    static DBSPExpression parseDate(@Nullable String date, DBSPType type) {
         if (date == null || date.isEmpty() || date.equalsIgnoreCase("null"))
-            return DBSPLiteral.none(new DBSPTypeDate(CalciteObject.EMPTY, mayBeNull));
+            return DBSPLiteral.none(type);
         try {
             if (date.length() != 10)
                 throw new RuntimeException("Unexpected date " + date);
@@ -113,17 +108,16 @@ public class TableParser {
                 throw new RuntimeException("Unexpected date " + date);
             Date converted = inputFormat.parse(date);
             String out = DATE_OUTPUT_FORMAT.format(converted);
-            return new DBSPDateLiteral(out, mayBeNull);
+            return new DBSPDateLiteral(out, type.mayBeNull);
         } catch (ParseException ex) {
             throw new RuntimeException("Could not parse " + date);
         }
     }
 
-    static DBSPExpression parseTime(@Nullable String time, boolean mayBeNull) {
+    static DBSPExpression parseTime(@Nullable String time, DBSPType type) {
         if (time == null || time.isEmpty() || time.equalsIgnoreCase("null"))
-            return DBSPLiteral.none(new DBSPTypeTime(CalciteObject.EMPTY, mayBeNull));
-        return new DBSPTimeLiteral(CalciteObject.EMPTY,
-                new DBSPTypeTime(CalciteObject.EMPTY, mayBeNull), new TimeString(time));
+            return DBSPLiteral.none(type);
+        return new DBSPTimeLiteral(CalciteObject.EMPTY, type, new TimeString(time));
     }
 
     static int longIntervalToMonths(String interval) {
@@ -243,30 +237,30 @@ public class TableParser {
             result = switch (fieldType.code) {
                 case DOUBLE -> {
                     double value = Double.parseDouble(trimmed);
-                    yield new DBSPDoubleLiteral(value, fieldType.mayBeNull);
+                    yield new DBSPDoubleLiteral(CalciteObject.EMPTY, fieldType, value, false);
                 }
                 case REAL -> {
                     float value = Float.parseFloat(trimmed);
-                    yield new DBSPRealLiteral(value, fieldType.mayBeNull);
+                    yield new DBSPRealLiteral(CalciteObject.EMPTY, fieldType, value, false);
                 }
                 case DECIMAL -> {
                     BigDecimal value = new BigDecimal(trimmed);
                     yield new DBSPDecimalLiteral(fieldType, value);
                 }
-                case TIMESTAMP -> convertTimestamp(trimmed, fieldType.mayBeNull);
-                case DATE -> parseDate(trimmed, fieldType.mayBeNull);
-                case TIME -> parseTime(trimmed, fieldType.mayBeNull);
-                case INT8 -> new DBSPI8Literal(Byte.parseByte(trimmed), fieldType.mayBeNull);
-                case INT16 -> new DBSPI16Literal(Short.parseShort(trimmed), fieldType.mayBeNull);
-                case INT32 -> new DBSPI32Literal(Integer.parseInt(trimmed), fieldType.mayBeNull);
-                case INT64 -> new DBSPI64Literal(Long.parseLong(trimmed), fieldType.mayBeNull);
+                case TIMESTAMP -> convertTimestamp(trimmed, fieldType);
+                case DATE -> parseDate(trimmed, fieldType);
+                case TIME -> parseTime(trimmed, fieldType);
+                case INT8 -> new DBSPI8Literal(CalciteObject.EMPTY, fieldType, Byte.parseByte(trimmed));
+                case INT16 -> new DBSPI16Literal(CalciteObject.EMPTY, fieldType, Short.parseShort(trimmed));
+                case INT32 -> new DBSPI32Literal(CalciteObject.EMPTY, fieldType, Integer.parseInt(trimmed));
+                case INT64 -> new DBSPI64Literal(CalciteObject.EMPTY, fieldType, Long.parseLong(trimmed));
                 case INTERVAL_SHORT -> {
                     long value = shortIntervalToMilliseconds(trimmed);
-                    yield new DBSPIntervalMillisLiteral(fieldType.to(DBSPTypeMillisInterval.class).units, value, fieldType.mayBeNull);
+                    yield new DBSPIntervalMillisLiteral(CalciteObject.EMPTY, fieldType, value);
                 }
                 case INTERVAL_LONG -> {
                     int months = longIntervalToMonths(trimmed);
-                    yield new DBSPIntervalMonthsLiteral(fieldType.to(DBSPTypeMonthsInterval.class).units, months);
+                    yield new DBSPIntervalMonthsLiteral(CalciteObject.EMPTY, fieldType, months);
                 }
                 case STRING -> {
                     // If there is no space in front of the string, we expect a NULL.
