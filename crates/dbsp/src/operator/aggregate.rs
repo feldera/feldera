@@ -1,17 +1,19 @@
 use std::mem::take;
 
+use dyn_clone::clone_box;
+
 use crate::{
     algebra::MulByRef,
-    circuit::WithClock,
+    circuit::{metadata::MetaItem, WithClock},
     dynamic::{ClonableTrait, DowncastTrait, DynData, DynUnit, DynWeight, Erase},
     operator::dynamic::aggregate::{
         Aggregator, DynAggregatorImpl, IncAggregateFactories, IncAggregateLinearFactories,
         StreamAggregateFactories, StreamLinearAggregateFactories,
     },
     storage::file::Deserializable,
-    trace::BatchReaderFactories,
+    trace::{BatchReaderFactories, Filter},
     typed_batch::{Batch, BatchReader, DynOrdIndexedZSet, IndexedZSet, OrdIndexedZSet, OrdWSet},
-    Circuit, DBData, DBWeight, DynZWeight, Stream, ZWeight,
+    Circuit, DBData, DBWeight, DynZWeight, RootCircuit, Stream, TypedBox, ZWeight,
 };
 
 impl<C, K, V> Stream<C, OrdIndexedZSet<K, V>>
@@ -314,6 +316,111 @@ where
                 Box::new(move |k, v, r, acc: &mut DynWeight| unsafe {
                     *acc.downcast_mut() = f(k.downcast(), v.downcast()).mul_by_ref(r.downcast())
                 }),
+            )
+            .typed()
+    }
+}
+
+impl<Z> Stream<RootCircuit, Z> {
+    /// Like `aggregate_linear_postprocess`, but additionally applies `waterline` to the internal integral
+    ///
+    /// See `aggregate_linear_retain_keys` for details.
+    pub fn aggregate_linear_postprocess_retain_keys<F, A, OF, OV, TS, RK>(
+        &self,
+        waterline: &Stream<RootCircuit, TypedBox<TS, DynData>>,
+        retain_key_func: RK,
+        f: F,
+        of: OF,
+    ) -> Stream<RootCircuit, OrdIndexedZSet<Z::Key, OV>>
+    where
+        Z: IndexedZSet<DynK = DynData>,
+        A: DBWeight + MulByRef<ZWeight, Output = A>,
+        OV: DBData,
+        TS: DBData,
+        RK: Fn(&Z::Key, &TS) -> bool + Clone + Send + Sync + 'static,
+        F: Fn(&Z::Val) -> A + Clone + 'static,
+        OF: Fn(A) -> OV + Clone + 'static,
+        <Z::Key as Deserializable>::ArchivedDeser: Ord,
+    {
+        let factories: IncAggregateLinearFactories<
+            Z::Inner,
+            DynWeight,
+            DynOrdIndexedZSet<DynData, DynData>,
+            (),
+        > = IncAggregateLinearFactories::new::<Z::Key, A, OV>();
+
+        self.inner()
+            .dyn_aggregate_linear_retain_keys_generic(
+                &factories,
+                &waterline.inner_data(),
+                Box::new(move |ts| {
+                    let metadata = MetaItem::String(format!("{ts:?}"));
+                    let ts = clone_box(ts);
+                    let retain_key_func = retain_key_func.clone();
+                    Filter::new(Box::new(move |k: &Z::DynK| {
+                        retain_key_func(unsafe { k.downcast::<Z::Key>() }, unsafe {
+                            ts.as_ref().downcast::<TS>()
+                        })
+                    }))
+                    .with_metadata(metadata)
+                }),
+                Box::new(move |_k, v, r, acc| unsafe {
+                    *acc.downcast_mut::<A>() = f(v.downcast::<Z::Val>()).mul_by_ref(&**r)
+                }),
+                Box::new(move |w, out| unsafe {
+                    *out.downcast_mut::<OV>() = of(take(w.downcast_mut::<A>()))
+                }),
+            )
+            .typed()
+    }
+
+    /// Like `aggregate_linear`, but additionally applies `waterline` to the internal integral
+    ///
+    /// The linear aggregate operator internally invokes the regular aggregation operator, which
+    /// creates two integrals: for input and output streams.  The latter stream is returned as
+    /// output of this operator and can be GC'd using regular means (integrate_trace_retain_keys),
+    /// but the former integral is internal to this operator.  When aggregating a stream that has
+    /// a waterline, use this function to GC keys in the internal stream that fall below the waterline.
+    pub fn aggregate_linear_retain_keys<F, A, TS, RK>(
+        &self,
+        waterline: &Stream<RootCircuit, TypedBox<TS, DynData>>,
+        retain_key_func: RK,
+        f: F,
+    ) -> Stream<RootCircuit, OrdIndexedZSet<Z::Key, A>>
+    where
+        Z: IndexedZSet<DynK = DynData>,
+        A: DBWeight + MulByRef<ZWeight, Output = A>,
+        TS: DBData,
+        RK: Fn(&Z::Key, &TS) -> bool + Clone + Send + Sync + 'static,
+        F: Fn(&Z::Val) -> A + Clone + 'static,
+        <Z::Key as Deserializable>::ArchivedDeser: Ord,
+    {
+        let factories: IncAggregateLinearFactories<
+            Z::Inner,
+            DynWeight,
+            DynOrdIndexedZSet<DynData, DynData>,
+            (),
+        > = IncAggregateLinearFactories::new::<Z::Key, A, A>();
+
+        self.inner()
+            .dyn_aggregate_linear_retain_keys_generic(
+                &factories,
+                &waterline.inner_data(),
+                Box::new(move |ts| {
+                    let metadata = MetaItem::String(format!("{ts:?}"));
+                    let ts = clone_box(ts);
+                    let retain_key_func = retain_key_func.clone();
+                    Filter::new(Box::new(move |k: &Z::DynK| {
+                        retain_key_func(unsafe { k.downcast::<Z::Key>() }, unsafe {
+                            ts.as_ref().downcast::<TS>()
+                        })
+                    }))
+                    .with_metadata(metadata)
+                }),
+                Box::new(move |_k, v, r, acc| unsafe {
+                    *acc.downcast_mut::<A>() = f(v.downcast::<Z::Val>()).mul_by_ref(&**r)
+                }),
+                Box::new(|w, out| w.as_data_mut().move_to(out)),
             )
             .typed()
     }
