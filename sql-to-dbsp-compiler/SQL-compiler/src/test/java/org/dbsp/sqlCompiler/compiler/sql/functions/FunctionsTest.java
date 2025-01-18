@@ -21,7 +21,7 @@ public class FunctionsTest extends SqlIoTest {
                 RETURNS BOOLEAN NOT NULL
                 AS (str LIKE ('%' || COALESCE(CAST(value AS VARCHAR), 'NULL') || '%'));
                 """;
-        compiler.compileStatements(setup);
+        compiler.submitStatementsForCompilation(setup);
     }
 
     @Test

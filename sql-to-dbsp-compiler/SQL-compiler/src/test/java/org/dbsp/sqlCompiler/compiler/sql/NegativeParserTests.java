@@ -110,7 +110,7 @@ public class NegativeParserTests extends BaseSQLTests {
         // TODO: this test may become invalid once we add support, so we need
         // here some truly invalid SQL.
         DBSPCompiler compiler = this.testCompiler();
-        compiler.compileStatements("""
+        compiler.submitStatementsForCompilation("""
                 create table PART_ORDER (
                     id bigint,
                     part bigint,

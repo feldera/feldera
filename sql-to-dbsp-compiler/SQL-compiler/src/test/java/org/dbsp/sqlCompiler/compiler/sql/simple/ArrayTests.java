@@ -50,7 +50,7 @@ import java.util.Objects;
 public class ArrayTests extends BaseSQLTests {
     public DBSPCompiler compileQuery(String statements, String query) {
         DBSPCompiler compiler = this.testCompiler();
-        compiler.compileStatements(statements);
+        compiler.submitStatementsForCompilation(statements);
         compiler.compileStatement(query);
         return compiler;
     }

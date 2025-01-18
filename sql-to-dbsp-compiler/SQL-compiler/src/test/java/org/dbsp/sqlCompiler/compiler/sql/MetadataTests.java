@@ -54,6 +54,21 @@ public class MetadataTests extends BaseSQLTests {
     }
 
     @Test
+    public void issue3341() {
+        String sql = """
+                CREATE FUNCTION F(x INTEGER NOT NULL) RETURNS INTEGER;
+                CREATE TABLE T(x INTEGER);
+                CREATE VIEW V AS SELECT F(x) FROM T;""";
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.options.languageOptions.throwOnError = false;
+        compiler.options.ioOptions.quiet = false;
+        compiler.submitStatementsForCompilation(sql);
+        compiler.getFinalCircuit(true);
+        TestUtil.assertMessagesContain(compiler,
+                "Nullable argument: Argument 0 is nullable, while 'f' expects a not nullable value");
+    }
+
+    @Test
     public void propertiesTest() {
         String ddl = """
                CREATE TABLE T (
@@ -71,7 +86,7 @@ public class MetadataTests extends BaseSQLTests {
                   }]'
                ) AS SELECT * FROM T;""";
         DBSPCompiler compiler = this.testCompiler();
-        compiler.compileStatements(ddl);
+        compiler.submitStatementsForCompilation(ddl);
         getCircuit(compiler);
         JsonNode meta = compiler.getIOMetadataAsJson();
         JsonNode inputs = meta.get("inputs");
@@ -262,7 +277,7 @@ public class MetadataTests extends BaseSQLTests {
                CREATE VIEW V AS SELECT * FROM T;""";
         DBSPCompiler compiler = this.testCompiler();
         compiler.options.languageOptions.throwOnError = false;
-        compiler.compileStatements(ddl);
+        compiler.submitStatementsForCompilation(ddl);
         TestUtil.assertMessagesContain(compiler, "Duplicate key");
         TestUtil.assertMessagesContain(compiler, "Previous declaration");
     }
@@ -273,7 +288,7 @@ public class MetadataTests extends BaseSQLTests {
         DBSPCompiler compiler = this.testCompiler();
         compiler.options.languageOptions.throwOnError = false;
         compiler.options.ioOptions.quiet = false;
-        compiler.compileStatements(ddl);
+        compiler.submitStatementsForCompilation(ddl);
         TestUtil.assertMessagesContain(compiler, "please use 'CREATE MATERIALIZED VIEW' instead");
     }
 
@@ -282,7 +297,7 @@ public class MetadataTests extends BaseSQLTests {
         DBSPCompiler compiler = this.testCompiler();
         compiler.options.languageOptions.throwOnError = false;
         compiler.options.ioOptions.quiet = false;
-        compiler.compileStatements("""
+        compiler.submitStatementsForCompilation("""
                 CREATE TABLE T(used INTEGER, unused INTEGER);
                 CREATE TABLE T1(used INTEGER, unused INTEGER) with ('materialized' = 'true');
                 CREATE VIEW V AS SELECT used FROM ((SELECT * FROM T) UNION ALL (SELECT * FROM T1));""");
@@ -292,7 +307,7 @@ public class MetadataTests extends BaseSQLTests {
     @Test
     public void testNestedMap() {
         DBSPCompiler compiler = this.testCompiler();
-        compiler.compileStatements("""
+        compiler.submitStatementsForCompilation("""
                 CREATE TABLE fails (
                         j ROW(
                             s MAP<VARCHAR, ROW(
@@ -344,7 +359,7 @@ public class MetadataTests extends BaseSQLTests {
         DBSPCompiler compiler = this.testCompiler();
         compiler.options.languageOptions.throwOnError = false;
         compiler.options.ioOptions.trimInputs = true;
-        compiler.compileStatements("""
+        compiler.submitStatementsForCompilation("""
                 CREATE TABLE T(used INTEGER, unused INTEGER);
                 CREATE TABLE T1(used INTEGER, unused INTEGER) with ('materialized' = 'true');
                 CREATE VIEW V AS SELECT used FROM ((SELECT * FROM T) UNION ALL (SELECT * FROM T1));""");
@@ -374,7 +389,7 @@ public class MetadataTests extends BaseSQLTests {
         compiler.options.languageOptions.throwOnError = false;
         compiler.options.languageOptions.lenient = true;  // produces warning for primary key
         compiler.options.ioOptions.quiet = false; // show warnings
-        compiler.compileStatements(ddl);
+        compiler.submitStatementsForCompilation(ddl);
         DBSPCircuit circuit = getCircuit(compiler);
         TestUtil.assertMessagesContain(compiler, "PRIMARY KEY cannot be nullable");
         DBSPSourceTableOperator t = circuit.getInput(new ProgramIdentifier("t", false));

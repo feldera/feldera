@@ -19,7 +19,7 @@ public class PostgresFloat8Part2Tests extends SqlIoTest {
                 INSERT INTO FLOAT8_TBL(f1) VALUES ('-1.2345678901234e-200');
                 """;
 
-        compiler.compileStatements(prepareQuery);
+        compiler.submitStatementsForCompilation(prepareQuery);
     }
 
     @Test

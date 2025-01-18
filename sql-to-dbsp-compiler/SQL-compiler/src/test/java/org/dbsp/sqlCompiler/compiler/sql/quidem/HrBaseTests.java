@@ -16,7 +16,7 @@ public class HrBaseTests extends SqlIoTest {
 
     @Override
     public void prepareInputs(DBSPCompiler compiler) {
-        compiler.compileStatements("""
+        compiler.submitStatementsForCompilation("""
                 CREATE TYPE Employee AS (
                    empid      INT,
                    deptno     INT,

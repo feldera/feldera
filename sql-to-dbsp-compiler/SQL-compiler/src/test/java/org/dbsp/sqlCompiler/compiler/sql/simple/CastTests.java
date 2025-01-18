@@ -57,7 +57,7 @@ public class CastTests extends SqlIoTest {
                 ", COL5 DECIMAL(10,4) NOT NULL" +
                 ");" +
                 "INSERT INTO T VALUES(10, 12.0, 100100, NULL, 100103);";
-        compiler.compileStatements(ddl);
+        compiler.submitStatementsForCompilation(ddl);
     }
 
     public Change createInput() {

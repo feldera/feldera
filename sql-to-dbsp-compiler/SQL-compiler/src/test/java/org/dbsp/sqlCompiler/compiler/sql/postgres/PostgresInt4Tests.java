@@ -2,7 +2,6 @@ package org.dbsp.sqlCompiler.compiler.sql.postgres;
 
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
-import org.junit.Ignore;
 import org.junit.Test;
 
 /* Tests manually adopted from
@@ -19,7 +18,7 @@ public class PostgresInt4Tests extends SqlIoTest {
                           ('2147483647'),
                           ('-2147483647');""";
         compiler.compileStatement(createTable);
-        compiler.compileStatements(insert);
+        compiler.submitStatementsForCompilation(insert);
     }
 
     @Test

@@ -197,7 +197,7 @@ public class CatalogTests extends BaseSQLTests {
                 CREATE VIEW V AS SELECT * FROM T;
                 """;
         DBSPCompiler compiler = this.testCompiler();
-        compiler.compileStatements(sql);
+        compiler.submitStatementsForCompilation(sql);
         DBSPCircuit circuit = getCircuit(compiler);
         compiler.showErrors(System.err);
         Assert.assertNotNull(circuit);

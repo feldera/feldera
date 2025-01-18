@@ -18,7 +18,7 @@ public class PostgresInt2Tests extends SqlIoTest {
                   (32767),
                   (-32767);""";
         compiler.compileStatement(createTable);
-        compiler.compileStatements(insert);
+        compiler.submitStatementsForCompilation(insert);
     }
 
     @Test

@@ -24,7 +24,7 @@ public class TopKTests extends SqlIoTest {
                 INSERT INTO DocumentStatusLog VALUES(5, 2, 'S3', '2011-08-01');
                 INSERT INTO DocumentStatusLog VALUES(6, 3, 'S1', '2011-08-02');
                 """;
-        compiler.compileStatements(sql);
+        compiler.submitStatementsForCompilation(sql);
     }
 
     @Test
@@ -115,7 +115,7 @@ public class TopKTests extends SqlIoTest {
                 WHERE   rnum <= 3
                 ;""";
         DBSPCompiler compiler = this.testCompiler();
-        compiler.compileStatements(sql);
+        compiler.submitStatementsForCompilation(sql);
         Assert.assertEquals(0, compiler.messages.errorCount());
     }
 
@@ -150,7 +150,7 @@ public class TopKTests extends SqlIoTest {
                 ORDER BY 1 DESC
                 ;""";
         DBSPCompiler compiler = this.testCompiler();
-        compiler.compileStatements(sql);
+        compiler.submitStatementsForCompilation(sql);
         Assert.assertEquals(0, compiler.messages.errorCount());
     }
 
@@ -184,7 +184,7 @@ public class TopKTests extends SqlIoTest {
                 WHERE   rnum = 1
                 ;""";
         DBSPCompiler compiler = this.testCompiler();
-        compiler.compileStatements(sql);
+        compiler.submitStatementsForCompilation(sql);
         Assert.assertEquals(0, compiler.messages.errorCount());
     }
 
@@ -218,7 +218,7 @@ public class TopKTests extends SqlIoTest {
                 WHERE   rnum <= 3
                 ;""";
         DBSPCompiler compiler = this.testCompiler();
-        compiler.compileStatements(sql);
+        compiler.submitStatementsForCompilation(sql);
         Assert.assertEquals(0, compiler.messages.errorCount());
     }
 

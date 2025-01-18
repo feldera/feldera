@@ -2,7 +2,6 @@ package org.dbsp.sqlCompiler.compiler.sql.simple;
 
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
-import org.junit.Ignore;
 import org.junit.Test;
 
 public class TinyintTests extends SqlIoTest {
@@ -18,7 +17,7 @@ public class TinyintTests extends SqlIoTest {
                   (-127);""";
 
         compiler.compileStatement(createTable);
-        compiler.compileStatements(insert);
+        compiler.submitStatementsForCompilation(insert);
     }
 
     @Test

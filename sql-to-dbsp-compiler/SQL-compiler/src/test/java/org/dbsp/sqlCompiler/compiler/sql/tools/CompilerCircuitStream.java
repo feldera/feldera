@@ -40,7 +40,7 @@ public class CompilerCircuitStream {
      * into a Change. */
     public Change toChange(String script) {
         this.compiler.clearTables();
-        this.compiler.compileStatements(script);
+        this.compiler.submitStatementsForCompilation(script);
         TableContents tableContents = this.compiler.getTableContents();
         return new Change(tableContents);
     }

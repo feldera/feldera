@@ -55,7 +55,7 @@ public class VariantTests extends BaseSQLTests {
 
     @Override
     public void prepareInputs(DBSPCompiler compiler) {
-        compiler.compileStatements("""
+        compiler.submitStatementsForCompilation("""
         CREATE TYPE s AS (
            i INT,
            s VARCHAR,

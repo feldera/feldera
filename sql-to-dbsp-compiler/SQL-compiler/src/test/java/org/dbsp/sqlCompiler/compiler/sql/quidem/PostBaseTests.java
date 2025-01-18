@@ -18,7 +18,7 @@ public class PostBaseTests extends SqlIoTest {
 
     @Override
     public void prepareInputs(DBSPCompiler compiler) {
-        compiler.compileStatements("""
+        compiler.submitStatementsForCompilation("""
                 CREATE TABLE EMP(
                    ename VARCHAR,
                    deptno INTEGER,

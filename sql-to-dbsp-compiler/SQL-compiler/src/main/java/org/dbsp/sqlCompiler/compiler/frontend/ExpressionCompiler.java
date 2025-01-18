@@ -1745,6 +1745,17 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
             throw new CompilationError("Function " + function.singleQuote() + " is unknown", node);
         List<DBSPType> operandTypes = Linq.map(ef.parameterList,
                 p -> this.typeCompiler.convertType(p.getType(), false));
+        // Give warnings if we have to insert casts that cast away nullability,
+        // these can cause runtime crashes.
+        for (int i = 0; i < ops.size(); i++) {
+            if (ops.get(i).getType().mayBeNull && !operandTypes.get(i).mayBeNull) {
+                this.compiler.reportWarning(new SourcePositionRange(call.getParserPosition()),
+                        "Nullable argument",
+                        "Argument " + i + " is nullable, while " +
+                        function.singleQuote() + " expects a not nullable value; this may cause a runtime crash");
+            }
+        }
+
         List<DBSPExpression> converted = Linq.zip(ops, operandTypes, DBSPExpression::cast);
         DBSPExpression[] arguments = new DBSPExpression[converted.size()];
         for (int i = 0; i < converted.size(); i++)

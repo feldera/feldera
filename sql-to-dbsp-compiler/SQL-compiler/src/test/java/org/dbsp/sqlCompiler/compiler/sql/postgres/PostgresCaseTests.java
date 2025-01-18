@@ -8,7 +8,7 @@ import org.junit.Test;
 public class PostgresCaseTests extends SqlIoTest {
     @Override
     public void prepareInputs(DBSPCompiler compiler) {
-        compiler.compileStatements("""
+        compiler.submitStatementsForCompilation("""
                 CREATE TABLE CASE_TBL (
                   i integer,
                   f double precision

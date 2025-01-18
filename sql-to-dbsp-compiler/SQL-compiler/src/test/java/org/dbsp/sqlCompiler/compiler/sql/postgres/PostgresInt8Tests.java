@@ -2,7 +2,6 @@ package org.dbsp.sqlCompiler.compiler.sql.postgres;
 
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
-import org.junit.Ignore;
 import org.junit.Test;
 
 /* `BIGINT` and `INT64` tests manually adopted from
@@ -20,7 +19,7 @@ public class PostgresInt8Tests extends SqlIoTest {
                   ('+4567890123456789','-4567890123456789');""";
 
         compiler.compileStatement(createTable);
-        compiler.compileStatements(insert);
+        compiler.submitStatementsForCompilation(insert);
     }
 
     @Test

@@ -8,7 +8,7 @@ import org.junit.Test;
 public class DateFormatsTests extends SqlIoTest {
     @Override
     public void prepareInputs(DBSPCompiler compiler) {
-        compiler.compileStatements("""
+        compiler.submitStatementsForCompilation("""
                 -- initially named T1
                 create table t2 (d date);
                 insert into t2 values ('2004-07-14'),('2005-07-14');

@@ -11,7 +11,7 @@ public class PostgresTimeTests extends SqlIoTest {
     @Override
     public void prepareInputs(DBSPCompiler compiler) {
         // Calcite format is much stricter.  Converted to the right format
-        compiler.compileStatements("""
+        compiler.submitStatementsForCompilation("""
                 CREATE TABLE TIME_TBL (f1 time(2));
                 INSERT INTO TIME_TBL VALUES ('00:00:00');
                 INSERT INTO TIME_TBL VALUES ('01:00:00');

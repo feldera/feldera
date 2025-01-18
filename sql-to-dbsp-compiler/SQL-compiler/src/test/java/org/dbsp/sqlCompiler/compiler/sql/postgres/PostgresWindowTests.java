@@ -11,7 +11,7 @@ import static org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest.TestOptimization
 public class PostgresWindowTests extends SqlIoTest {
     @Override
     public void prepareInputs(DBSPCompiler compiler) {
-        compiler.compileStatements("""
+        compiler.submitStatementsForCompilation("""
                 CREATE TABLE empsalary (
                     depname varchar,
                     empno bigint,

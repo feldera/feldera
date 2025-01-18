@@ -7,7 +7,7 @@ import org.junit.Test;
 public class AggregateTests extends SqlIoTest {
     @Override
     public void prepareInputs(DBSPCompiler compiler) {
-        compiler.compileStatements("""
+        compiler.submitStatementsForCompilation("""
                 CREATE TABLE T(
                    B BIGINT,
                    I INTEGER,

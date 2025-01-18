@@ -149,7 +149,7 @@ public class StructTests extends SqlIoTest {
             CREATE VIEW V AS SELECT PERS.p0.street[1] FROM PERS;
             """;
         DBSPCompiler compiler = this.testCompiler();
-        compiler.compileStatements(ddl);
+        compiler.submitStatementsForCompilation(ddl);
         CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
         DBSPExpression pers = new DBSPTupleExpression(true,
                 new DBSPVecExpression(true,
@@ -235,7 +235,7 @@ public class StructTests extends SqlIoTest {
             CREATE TABLE T(col vec);
             CREATE VIEW V AS SELECT A.s + 1 FROM (T CROSS JOIN UNNEST(T.col.fields) A)""";
         DBSPCompiler compiler = this.testCompiler();
-        compiler.compileStatements(ddl);
+        compiler.submitStatementsForCompilation(ddl);
         CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
         DBSPBoolLiteral t = new DBSPBoolLiteral(true, true);
         DBSPExpression t0 = new DBSPTupleExpression(true,
@@ -270,7 +270,7 @@ public class StructTests extends SqlIoTest {
             CREATE TABLE T(col vec);
             CREATE VIEW V AS SELECT A.s + 1 FROM (T CROSS JOIN UNNEST(T.col.fields) WITH ORDINALITY A)""";
         DBSPCompiler compiler = this.testCompiler();
-        compiler.compileStatements(ddl);
+        compiler.submitStatementsForCompilation(ddl);
         CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
         DBSPBoolLiteral t = new DBSPBoolLiteral(true, true);
         DBSPExpression t0 = new DBSPTupleExpression(true,
@@ -313,7 +313,7 @@ public class StructTests extends SqlIoTest {
             CREATE VIEW V AS SELECT PERS.p0.address[1] FROM PERS WHERE PERS.p0.firstname = 'Mike';
             """;
         DBSPCompiler compiler = this.testCompiler();
-        compiler.compileStatements(ddl);
+        compiler.submitStatementsForCompilation(ddl);
         CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
         DBSPExpression address0 = new DBSPTupleExpression(true,
                 new DBSPStringLiteral("Broadway", true),
@@ -343,7 +343,7 @@ public class StructTests extends SqlIoTest {
             CREATE VIEW V AS SELECT Address.a.code FROM Address WHERE Address.a.id = 1;
             """;
         DBSPCompiler compiler = this.testCompiler();
-        compiler.compileStatements(ddl);
+        compiler.submitStatementsForCompilation(ddl);
         CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
         DBSPType tuple = new DBSPTypeTuple(
                 new DBSPTypeInteger(CalciteObject.EMPTY, 32, true, true),

@@ -22,7 +22,7 @@ public class StreamTests extends SqlIoTest {
                 ('2015-02-15 10:24:45', 3, 'brush', 12),
                 ('2015-02-15 10:58:00', 4, 'paint', 3),
                 ('2015-02-15 11:10:00', 5, 'paint', 3);""";
-        compiler.compileStatements(sql);
+        compiler.submitStatementsForCompilation(sql);
     }
 
     @Test

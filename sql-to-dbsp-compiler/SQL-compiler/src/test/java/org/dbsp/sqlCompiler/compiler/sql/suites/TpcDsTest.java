@@ -26,7 +26,7 @@ public class TpcDsTest extends BaseSQLTests {
         options.languageOptions.ignoreOrderBy = true;
         options.languageOptions.lenient = true;
         options.ioOptions.quiet = true;  // lots of warnings
-        compiler.compileStatements(tpcds);
+        compiler.submitStatementsForCompilation(tpcds);
         CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
         ccs.showErrors();
         // This crashes the Rust compiler!

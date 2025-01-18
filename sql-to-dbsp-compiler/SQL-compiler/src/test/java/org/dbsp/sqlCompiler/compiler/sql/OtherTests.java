@@ -300,7 +300,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         String sql = EndToEndTests.E2E_TABLE + "; " +
                 "CREATE VIEW V AS SELECT T1.COL3 FROM T AS T1 JOIN T AS T2 ON T1.COL2 = T2.COL6";
         DBSPCompiler compiler = this.testCompiler();
-        compiler.compileStatements(sql);
+        compiler.submitStatementsForCompilation(sql);
         DBSPCircuit circuit = getCircuit(compiler);
         CircuitVisitor noMap = new CircuitVisitor(compiler) {
             @Override
@@ -328,7 +328,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
             compiler.options.languageOptions.throwOnError = true;
             compiler.options.ioOptions.emitHandles = false;
             compiler.options.languageOptions.incrementalize = true;
-            compiler.compileStatements(script);
+            compiler.submitStatementsForCompilation(script);
             CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
             this.addRustTestCase(ccs);
         }
@@ -389,7 +389,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         compiler.options.ioOptions.quiet = false;
         String query = "CREATE VIEW V AS SELECT * FROM T ORDER BY T.COL2";
         compiler.compileStatement(ddl);
-        compiler.compileStatements(query);
+        compiler.submitStatementsForCompilation(query);
         DBSPCircuit circuit = compiler.getFinalCircuit(false);
         Assert.assertNotNull(circuit);
         DBSPTypeZSet outputType = circuit.getSingleOutputType().to(DBSPTypeZSet.class);
@@ -409,7 +409,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         compiler.options.languageOptions.outputsAreSets = true;
         String query = "CREATE VIEW V AS SELECT T.COL1 FROM T";
         compiler.compileStatement(ddl);
-        compiler.compileStatements(query);
+        compiler.submitStatementsForCompilation(query);
         DBSPCircuit circuit = compiler.getFinalCircuit(false);
         Assert.assertNotNull(circuit);
         DBSPSinkOperator sink = circuit.getSink(compiler.canonicalName("V", false));
@@ -580,13 +580,13 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
                     CREATE TABLE T(I INTEGER, S VARCHAR);
                     CREATE LOCAL VIEW V AS SELECT * FROM T;""";
         DBSPCompiler compiler = this.testCompiler();
-        compiler.compileStatements(sql);
+        compiler.submitStatementsForCompilation(sql);
         DBSPCircuit circuit = getCircuit(compiler);
         Assert.assertEquals(1, circuit.getOutputCount());
 
         String oneMore = "CREATE VIEW W AS SELECT * FROM V;";
         compiler = this.testCompiler();
-        compiler.compileStatements(sql + oneMore);
+        compiler.submitStatementsForCompilation(sql + oneMore);
         circuit = getCircuit(compiler);
         Assert.assertEquals(2, circuit.getOutputCount());
     }

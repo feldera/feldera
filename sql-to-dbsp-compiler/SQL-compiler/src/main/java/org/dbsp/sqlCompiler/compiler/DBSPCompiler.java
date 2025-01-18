@@ -647,7 +647,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         return ios;
     }
 
-    public void compileStatements(String program) {
+    public void submitStatementsForCompilation(String program) {
         this.setSource(InputSource.API);
         this.compileInternal(program, true);
     }
