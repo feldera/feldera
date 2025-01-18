@@ -68,7 +68,7 @@ Create a Delta Lake output connector that writes a stream of updates to a table
 stored in an S3 bucket, truncating any existing contents of the table.
 
 ```sql
-CREATE VIEW V AS ...
+CREATE VIEW V
 WITH (
  'connectors' = '[{
     "transport": {
@@ -85,3 +85,5 @@ WITH (
     }
  }]'
 )
+AS SELECT * FROM my_table;
+```
