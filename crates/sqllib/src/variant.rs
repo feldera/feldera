@@ -458,6 +458,18 @@ from!(Geometry, GeoPoint);
 from!(Binary, ByteArray);
 from!(Uuid, Uuid);
 
+#[doc(hidden)]
+impl From<Option<Variant>> for Variant {
+    #[doc(hidden)]
+    fn from(value: Option<Variant>) -> Self {
+        match value {
+            None => Variant::SqlNull,
+            Some(value) => value,
+        }
+    }
+}
+
+#[doc(hidden)]
 impl<T> From<Vec<T>> for Variant
 where
     Variant: From<T>,
@@ -468,6 +480,7 @@ where
     }
 }
 
+#[doc(hidden)]
 impl<T> From<Option<Vec<T>>> for Variant
 where
     Variant: From<T>,
@@ -481,6 +494,7 @@ where
     }
 }
 
+#[doc(hidden)]
 impl<K, V> From<BTreeMap<K, V>> for Variant
 where
     Variant: From<K> + From<V>,
@@ -497,6 +511,7 @@ where
     }
 }
 
+#[doc(hidden)]
 impl<K, V> From<Option<BTreeMap<K, V>>> for Variant
 where
     Variant: From<K> + From<V>,
