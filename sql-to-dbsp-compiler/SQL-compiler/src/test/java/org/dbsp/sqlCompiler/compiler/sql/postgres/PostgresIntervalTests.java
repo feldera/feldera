@@ -10,7 +10,7 @@ public class PostgresIntervalTests extends SqlIoTest {
     @Override
     public void prepareInputs(DBSPCompiler compiler) {
         // was a table, but we don't support intervals in tables
-        compiler.compileStatements("""
+        compiler.submitStatementsForCompilation("""
                 CREATE LOCAL VIEW SHORT_INTERVAL_TBL(i) AS SELECT * FROM (VALUES
                 (INTERVAL 1 MINUTES),
                 (INTERVAL 5 HOUR),

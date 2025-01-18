@@ -16,7 +16,7 @@ public class ScottBaseTests extends SqlIoTest {
     @Override
     public void prepareInputs(DBSPCompiler compiler) {
         // Changed UNIQUE KEY to PRIMARY KEY
-        compiler.compileStatements("""
+        compiler.submitStatementsForCompilation("""
 CREATE TABLE DEPT(
     DEPTNO TINYINT NOT NULL,
     DNAME VARCHAR(50) NOT NULL,

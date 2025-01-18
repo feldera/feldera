@@ -29,7 +29,7 @@ public class PostgresAggregatesTests extends SqlIoTest {
                 INSERT INTO bool_test VALUES(TRUE, null, FALSE, null);
                 INSERT INTO bool_test VALUES(FALSE, TRUE, null, null);
                 INSERT INTO bool_test VALUES(null, TRUE, FALSE, null);""";
-        compiler.compileStatements(setup);
+        compiler.submitStatementsForCompilation(setup);
     }
 
     @Test

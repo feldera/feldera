@@ -560,7 +560,7 @@ SELECT
 
     @Override
     public void prepareInputs(DBSPCompiler compiler) {
-        compiler.compileStatements(tables);
+        compiler.submitStatementsForCompilation(tables);
     }
 
     @Override
@@ -579,7 +579,7 @@ SELECT
         assert scriptsAndTables.length % 2 == 0;
         DBSPCompiler compiler = this.testCompiler();
         this.prepareInputs(compiler);
-        compiler.compileStatements(queries[query]);
+        compiler.submitStatementsForCompilation(queries[query]);
         final boolean debug = false;
         Class<?> module = DBSPCompiler.class;
         int previous;
@@ -936,7 +936,7 @@ INSERT INTO auction VALUES(101, 'item-name', 'description', 5, 10, '2020-01-01 0
         int index = 0;
         for (String query: queries) {
             if (!unsupported.contains(index)) {
-                compiler.compileStatements(query);
+                compiler.submitStatementsForCompilation(query);
             }
             index++;
         }

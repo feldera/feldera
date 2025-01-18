@@ -720,7 +720,7 @@ public class StreamingTests extends StreamingTestBase {
         DBSPCompiler compiler = this.testCompiler();
         compiler.options.ioOptions.quiet = false;  // show warnings
         compiler.compileStatement(OtherTests.ddl);
-        compiler.compileStatements(query);
+        compiler.submitStatementsForCompilation(query);
         DBSPCircuit circuit = getCircuit(compiler);
         CircuitVisitor visitor = new CircuitVisitor(compiler) {
             boolean found = false;

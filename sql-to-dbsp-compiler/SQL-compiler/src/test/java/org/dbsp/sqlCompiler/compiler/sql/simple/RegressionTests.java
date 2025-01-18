@@ -1145,7 +1145,7 @@ public class RegressionTests extends SqlIoTest {
                 WHERE
                     users.age >= 21;""";
         DBSPCompiler compiler = this.testCompiler();
-        compiler.compileStatements(sql);
+        compiler.submitStatementsForCompilation(sql);
         DBSPCircuit circuit = getCircuit(compiler);
         CircuitVisitor visitor = new CircuitVisitor(compiler) {
             int filterJoin = 0;
@@ -1308,7 +1308,7 @@ public class RegressionTests extends SqlIoTest {
                     window_100 AS (PARTITION BY part ORDER BY id RANGE BETWEEN 100 PRECEDING AND CURRENT ROW);""";
         DBSPCompiler compiler = this.testCompiler();
         compiler.options.languageOptions.throwOnError = false;
-        compiler.compileStatements(sql);
+        compiler.submitStatementsForCompilation(sql);
         TestUtil.assertMessagesContain(compiler, "OVER must be applied to aggregate function");
     }
 
@@ -1446,7 +1446,7 @@ public class RegressionTests extends SqlIoTest {
 
         DBSPCompiler compiler = this.testCompiler();
         compiler.options.languageOptions.incrementalize = true;
-        compiler.compileStatements(sql);
+        compiler.submitStatementsForCompilation(sql);
         DBSPCircuit circuit = getCircuit(compiler);
         CircuitVisitor visitor = new CircuitVisitor(compiler) {
             int mapIndex = 0;
@@ -1576,7 +1576,7 @@ public class RegressionTests extends SqlIoTest {
                     window_30_day AS (PARTITION BY cc_num ORDER BY unix_time RANGE BETWEEN 2592000 PRECEDING AND CURRENT ROW);""";
         DBSPCompiler compiler = this.testCompiler();
         compiler.options.languageOptions.incrementalize = true;
-        compiler.compileStatements(sql);
+        compiler.submitStatementsForCompilation(sql);
         DBSPCircuit circuit = getCircuit(compiler);
         CircuitVisitor visitor = new CircuitVisitor(compiler) {
             int count = 0;

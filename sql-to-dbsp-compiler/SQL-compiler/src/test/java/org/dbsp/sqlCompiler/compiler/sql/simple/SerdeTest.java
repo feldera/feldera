@@ -27,7 +27,7 @@ public class SerdeTest extends SqlIoTest {
         DBSPCompiler compiler = this.testCompiler();
         // This test behaves very differnetly if we don't use this option.
         compiler.options.languageOptions.unquotedCasing = "lower";
-        compiler.compileStatements(ddl);
+        compiler.submitStatementsForCompilation(ddl);
         CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
         // This will be converted properly to a struct
         DBSPExpression address0 = new DBSPTupleExpression(

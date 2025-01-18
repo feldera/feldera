@@ -18,7 +18,7 @@ public class TpchTest extends BaseSQLTests {
         CompilerOptions options = this.testOptions(true, true);
         DBSPCompiler compiler = new DBSPCompiler(options);
         options.languageOptions.ignoreOrderBy = true;
-        compiler.compileStatements(tpch);
+        compiler.submitStatementsForCompilation(tpch);
         CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
         ccs.showErrors();
         this.addRustTestCase(ccs);
@@ -33,7 +33,7 @@ public class TpchTest extends BaseSQLTests {
         CompilerOptions options = this.testOptions(true, true);
         DBSPCompiler compiler = new DBSPCompiler(options);
         options.languageOptions.ignoreOrderBy = true;
-        compiler.compileStatements(tpch);
+        compiler.submitStatementsForCompilation(tpch);
         CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
         ccs.showErrors();
         InnerVisitor visitor = new InnerVisitor(ccs.compiler) {

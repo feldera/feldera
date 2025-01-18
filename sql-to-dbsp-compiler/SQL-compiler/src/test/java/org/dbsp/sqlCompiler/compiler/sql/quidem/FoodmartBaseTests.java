@@ -10,7 +10,7 @@ public class FoodmartBaseTests extends SqlIoTest {
     @Override
     public void prepareInputs(DBSPCompiler compiler) {
         // https://github.com/apache/calcite/blob/main/innodb/src/test/resources/scott.sql
-        compiler.compileStatements("""
+        compiler.submitStatementsForCompilation("""
                 DROP TABLE IF EXISTS DEPT;
                 CREATE TABLE DEPT(
                     DEPTNO TINYINT NOT NULL,

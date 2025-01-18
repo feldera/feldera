@@ -526,7 +526,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
         DBSPCompiler compiler = this.testCompiler();
         compiler.options.languageOptions.throwOnError = false;
         compiler.options.languageOptions.unquotedCasing = "upper";
-        compiler.compileStatements(sql);
+        compiler.submitStatementsForCompilation(sql);
         getCircuit(compiler);
         Assert.assertEquals(0, compiler.messages.exitCode);
     }

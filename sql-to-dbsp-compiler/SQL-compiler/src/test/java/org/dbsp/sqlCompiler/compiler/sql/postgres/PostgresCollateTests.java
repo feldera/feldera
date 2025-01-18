@@ -18,7 +18,7 @@ public class PostgresCollateTests extends SqlIoTest {
                     y text -- COLLATE "POSIX"
                 );
                 INSERT INTO collate_test10 VALUES (1, 'hij', 'hij'), (2, 'HIJ', 'HIJ');""";
-        compiler.compileStatements(sql);
+        compiler.submitStatementsForCompilation(sql);
     }
 
     @Test

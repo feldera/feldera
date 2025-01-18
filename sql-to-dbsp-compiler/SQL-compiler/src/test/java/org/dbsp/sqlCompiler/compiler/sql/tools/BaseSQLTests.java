@@ -62,14 +62,14 @@ public class BaseSQLTests {
     public CompilerCircuitStream getCCS(String sql) {
         DBSPCompiler compiler = this.testCompiler();
         this.prepareInputs(compiler);
-        compiler.compileStatements(sql);
+        compiler.submitStatementsForCompilation(sql);
         return new CompilerCircuitStream(compiler);
     }
 
     public CompilerCircuitStream getCCS(String sql, List<String> inputs, List<String> outputs) {
         DBSPCompiler compiler = this.testCompiler();
         this.prepareInputs(compiler);
-        compiler.compileStatements(sql);
+        compiler.submitStatementsForCompilation(sql);
         return new CompilerCircuitStream(compiler, inputs, outputs);
     }
 
@@ -128,7 +128,7 @@ public class BaseSQLTests {
         DBSPCompiler compiler = this.testCompiler();
         compiler.options.languageOptions.throwOnError = false;
         this.prepareInputs(compiler);
-        compiler.compileStatements(statements);
+        compiler.submitStatementsForCompilation(statements);
         compiler.getFinalCircuit(true);
         if (compiler.messages.exitCode == 0) {
             throw new RuntimeException("Program was expected to fail: " + statements);
@@ -149,7 +149,7 @@ public class BaseSQLTests {
         DBSPCompiler compiler = this.testCompiler();
         compiler.options.languageOptions.throwOnError = false;
         this.prepareInputs(compiler);
-        compiler.compileStatements(statements);
+        compiler.submitStatementsForCompilation(statements);
         getCircuit(compiler);
         Assert.assertTrue(compiler.hasWarnings);
         String warnings = compiler.messages.messages.stream()
@@ -252,7 +252,7 @@ public class BaseSQLTests {
     /** Add a test case without inputs */
     public void compileRustTestCase(String statements) {
         DBSPCompiler compiler = this.testCompiler();
-        compiler.compileStatements(statements);
+        compiler.submitStatementsForCompilation(statements);
         Assert.assertFalse(compiler.hasErrors());
         CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
         this.addRustTestCase(ccs);

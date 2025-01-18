@@ -19,7 +19,7 @@ public class VarbinaryTests extends SqlIoTest {
                 (3, x'31393834', x'31393831'),
                 (4, x'31393835', x'31393832'),
                 (5, x'31393836', x'31303038');""";
-        compiler.compileStatements(sql);
+        compiler.submitStatementsForCompilation(sql);
     }
 
     @Test

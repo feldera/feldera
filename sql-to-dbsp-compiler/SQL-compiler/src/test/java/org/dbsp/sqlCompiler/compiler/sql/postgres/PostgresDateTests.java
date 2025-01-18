@@ -58,7 +58,7 @@ public class PostgresDateTests extends SqlIoTest {
                 "INSERT INTO DATE_TBL VALUES ('2040-04-10');\n";
         // Calcite does not seem to support dates BC
         //"INSERT INTO DATE_TBL VALUES ('2040-04-10 BC');";
-        compiler.compileStatements(data);
+        compiler.submitStatementsForCompilation(data);
     }
 
     @Test

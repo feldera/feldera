@@ -505,8 +505,8 @@ public class PostgresNumericTests extends SqlIoTest {
             INSERT INTO num_data VALUES (7, '-83028485');
             INSERT INTO num_data VALUES (8, '74881');
             INSERT INTO num_data VALUES (9, '-24926804.045047420');""";
-        compiler.compileStatements(createTables);
-        compiler.compileStatements(insert);
+        compiler.submitStatementsForCompilation(createTables);
+        compiler.submitStatementsForCompilation(insert);
     }
 
     /** @param intermediate  A SQL query that defines an intermediate view, which is not output by the circuit.

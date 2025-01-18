@@ -231,7 +231,7 @@ public class ComplexQueriesTest extends BaseSQLTests {
                       ;""";
         DBSPCompiler compiler = this.testCompiler();
         compiler.options.languageOptions.incrementalize = true;
-        compiler.compileStatements(sql);
+        compiler.submitStatementsForCompilation(sql);
         DBSPCircuit circuit = getCircuit(compiler);
         CircuitVisitor visitor = new CircuitVisitor(compiler) {
             int count = 0;
@@ -377,7 +377,7 @@ public class ComplexQueriesTest extends BaseSQLTests {
                     LEFT JOIN  demographics AS t2
                     ON t1.cc_num = t2.cc_num);""";
         DBSPCompiler compiler = testCompiler();
-        compiler.compileStatements(script);
+        compiler.submitStatementsForCompilation(script);
         DBSPZSetExpression[] inputs = new DBSPZSetExpression[] {
                 new DBSPZSetExpression(new DBSPTupleExpression(
                         new DBSPDoubleLiteral(0.0),
@@ -437,7 +437,7 @@ public class ComplexQueriesTest extends BaseSQLTests {
                     trans_freq_24
                 FROM transactions AS t1;""";
         DBSPCompiler compiler = testCompiler();
-        compiler.compileStatements(script);
+        compiler.submitStatementsForCompilation(script);
         DBSPZSetExpression[] inputs = new DBSPZSetExpression[] {
                 new DBSPZSetExpression(new DBSPTupleExpression(
                         new DBSPI64Literal(0, false),
