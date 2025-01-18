@@ -101,7 +101,7 @@ We define the following derived relationships in our file manager example:
 - `group-can-read(group, file)` - `group` is allowed to read `file`.
 - `group-can-write(group, file)` - `group` is allowed to write `file`.
 - `user-can-read(user, file)` - `user` is allowed to read `file`.
-- `user-can-write(user, file)` - `group` is allowed to write `file`.
+- `user-can-write(user, file)` - `user` is allowed to write `file`.
 
 These relationships are governed by the following rules:
 * **Rule 1:** `editor(group, file) -> group-can-write(group, file)` - if a group is an editor of a file, it can write this file.
