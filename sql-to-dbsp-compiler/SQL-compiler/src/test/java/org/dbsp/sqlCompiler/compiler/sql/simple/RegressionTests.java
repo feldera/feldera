@@ -19,6 +19,20 @@ import org.junit.Test;
 
 public class RegressionTests extends SqlIoTest {
     @Test
+    public void missingFrom() {
+        this.compileRustTestCase("""
+                CREATE TYPE i as(sets variant array);
+                CREATE TABLE f(
+                    ts TIMESTAMP NOT NULL LATENESS INTERVAL 5 SECONDS,
+                    i I);
+                
+                CREATE VIEW V AS
+                SELECT fs
+                FROM f,
+                     UNNEST(f.i.sets) as t(fs);""");
+    }
+
+    @Test
     public void issue3183() {
         var ccs = this.getCCS("""
                 CREATE TABLE row_tbl(id INT, c1 INT, c2 VARCHAR, c3 VARCHAR);

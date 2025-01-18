@@ -782,7 +782,12 @@ public class ToRustInnerVisitor extends InnerVisitor {
             if (destType.is(DBSPTypeVariant.class)) {
                 // cast vec to variant
                 functionName = "cast_to_" + destType.baseTypeWithSuffix() + "_vec" + sourceType.nullableSuffix();
-                this.builder.append(functionName).append("(").increase();
+                this.builder.append(functionName)
+                        .append("::<");
+                sourceVecType.getElementType().accept(this);
+                this.builder.append(">")
+                        .append("(")
+                        .increase();
                 expression.source.accept(this);
                 this.builder.decrease().append(")");
                 return VisitDecision.STOP;
@@ -1393,12 +1398,13 @@ public class ToRustInnerVisitor extends InnerVisitor {
                         .append(expression.fieldNo);
             } else {
                 expression.expression.accept(this);
-                this.builder
-                        .append(".as_ref().and_then(|x| x.")
+                this.builder.increase().append(".as_ref()").newline().append(".and_then(|x: ");
+                baseType.withMayBeNull(false).ref().accept(this);
+                this.builder.append("| x.")
                         .append(expression.fieldNo);
                 if (!baseType.hasCopy())
                     this.builder.append(".clone()");
-                this.builder.append(")");
+                this.builder.append(")").decrease();
             }
         } else {
             expression.expression.accept(this);
