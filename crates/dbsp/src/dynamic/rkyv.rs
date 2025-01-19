@@ -3,7 +3,10 @@ use crate::{
     derive_comparison_traits,
     storage::file::{Deserializer, Serializer},
 };
-use rkyv::{archived_value, Archive, Archived, Deserialize, Fallible, Infallible, Serialize};
+use rkyv::{
+    archived_value, de::deserializers::SharedDeserializeMap, Archive, Archived, Deserialize,
+    Fallible, Serialize,
+};
 use std::{cmp::Ordering, marker::PhantomData, mem::transmute};
 
 /// Trait for DBData that can be deserialized with [`rkyv`].
@@ -60,7 +63,9 @@ where
     unsafe fn deserialize_from_bytes(&mut self, bytes: &[u8], pos: usize) {
         let archived: &<Self as Archive>::Archived = archived_value::<Self>(bytes, pos);
 
-        *self = archived.deserialize(&mut Infallible).unwrap();
+        *self = archived
+            .deserialize(&mut SharedDeserializeMap::new())
+            .unwrap();
     }
 }
 
@@ -137,19 +142,22 @@ where
     Trait: DowncastTrait + ?Sized + 'static,
 {
     fn deserialize(&self, target: &mut Trait) {
-        *unsafe { target.downcast_mut::<T>() } = self.archived.deserialize(&mut Infallible).unwrap()
+        *unsafe { target.downcast_mut::<T>() } = self
+            .archived
+            .deserialize(&mut SharedDeserializeMap::new())
+            .unwrap()
     }
 
     fn eq_target(&self, other: &Trait) -> bool {
         self.archived
-            .deserialize(&mut Infallible)
+            .deserialize(&mut SharedDeserializeMap::new())
             .unwrap()
             .eq(unsafe { other.downcast::<T>() })
     }
 
     fn cmp_target(&self, other: &Trait) -> Option<Ordering> {
         self.archived
-            .deserialize(&mut Infallible)
+            .deserialize(&mut SharedDeserializeMap::new())
             .unwrap()
             .partial_cmp(unsafe { other.downcast::<T>() })
     }

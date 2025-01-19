@@ -24,7 +24,10 @@ use crate::trace::CommittedSpine;
 use crate::trace::Merger;
 use ouroboros::self_referencing;
 use rand::Rng;
-use rkyv::{ser::Serializer, Archive, Archived, Deserialize, Fallible, Serialize};
+use rkyv::{
+    de::deserializers::SharedDeserializeMap, ser::Serializer, Archive, Archived, Deserialize,
+    Fallible, Serialize,
+};
 use size_of::{Context, SizeOf};
 use std::sync::Mutex;
 use std::sync::{Arc, MutexGuard};
@@ -1136,7 +1139,9 @@ where
         let content = fs::read(pspine_path)?;
         let archived = unsafe { rkyv::archived_root::<CommittedSpine<B>>(&content) };
 
-        let committed: CommittedSpine<B> = archived.deserialize(&mut rkyv::Infallible).unwrap();
+        let committed: CommittedSpine<B> = archived
+            .deserialize(&mut SharedDeserializeMap::new())
+            .unwrap();
         self.lower = Antichain::from(committed.lower);
         self.upper = Antichain::from(committed.upper);
         self.dirty = committed.dirty;

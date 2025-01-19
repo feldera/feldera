@@ -39,7 +39,10 @@ use std::{collections::BTreeMap, fmt::Debug, hash::Hash};
     rkyv::Serialize,
     rkyv::Deserialize,
 )]
-#[archive(bound(serialize = "__S: rkyv::ser::ScratchSpace + rkyv::ser::Serializer"))]
+#[archive(bound(
+    serialize = "__S: rkyv::ser::ScratchSpace + rkyv::ser::Serializer + rkyv::ser::SharedSerializeRegistry",
+    deserialize = "__D: rkyv::de::SharedDeserializeRegistry"
+))]
 #[archive_attr(derive(Eq, Ord, PartialEq, PartialOrd))]
 pub enum Variant {
     /// A Variant with a `NULL` SQL value.
@@ -824,9 +827,9 @@ where
 
 #[cfg(test)]
 mod test {
-    use std::str::FromStr;
-
     use crate::{binary::ByteArray, Date, Time, Timestamp};
+    use std::str::FromStr;
+    use std::sync::Arc;
 
     use super::Variant;
     use chrono::{DateTime, NaiveDate, NaiveTime};
@@ -839,9 +842,18 @@ mod test {
 
     #[test]
     fn circuit_accepts_variant() {
-        let (_circuit, _input_handle) = RootCircuit::build(move |circuit| {
-            let (_stream, input_handle) = circuit.add_input_zset::<Variant>();
-            Ok(input_handle)
+        let (_circuit, (_input_handle, _output_handle)) = RootCircuit::build(move |circuit| {
+            let (stream, input_handle) = circuit.add_input_zset::<Variant>();
+            Ok((input_handle, stream.output()))
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn circuit_accepts_arc_variant() {
+        let (_circuit, (_input_handle, _output_handle)) = RootCircuit::build(move |circuit| {
+            let (stream, input_handle) = circuit.add_input_zset::<Arc<Variant>>();
+            Ok((input_handle, stream.output()))
         })
         .unwrap();
     }
