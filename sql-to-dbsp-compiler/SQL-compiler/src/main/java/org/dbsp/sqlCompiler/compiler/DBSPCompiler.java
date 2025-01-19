@@ -462,12 +462,14 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
                     this.messages.reportError((BaseCompilerException) e.getCause());
                 } else {
                     this.messages.reportError(e);
+                    this.rethrow(new RuntimeException(e), SqlParserPos.ZERO);
                 }
             } catch (CalciteException e) {
                 this.messages.reportError(e);
+                this.rethrow(e, SqlParserPos.ZERO);
             } catch (Throwable e) {
                 this.messages.reportError(e);
-                this.printMessages(SqlParserPos.ZERO);
+                this.rethrow(new RuntimeException(e), SqlParserPos.ZERO);
                 parsed.clear();
             }
         }

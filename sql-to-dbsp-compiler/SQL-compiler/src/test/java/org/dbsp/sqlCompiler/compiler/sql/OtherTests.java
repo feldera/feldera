@@ -125,21 +125,21 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         String str = circuit.toString();
         String expected = """
                 Circuit circuit {
-                    // DBSPSourceMultisetOperator s0
+                    // DBSPConstantOperator s0
+                    let s0: stream<WSet<Tup3<s, s, VARIANT>>> = (zset!());
+                    // DBSPSourceMultisetOperator s1
                     // CREATE TABLE `t` (`col1` INTEGER NOT NULL, `col2` DOUBLE NOT NULL, `col3` BOOLEAN NOT NULL, `col4` VARCHAR NOT NULL, `col5` INTEGER, `col6` DOUBLE)
-                    let s0 = t();
-                    // DBSPMapOperator s1
-                    let s1: stream<WSet<Tup1<b>>> = s0.map((|t_3: &Tup6<i32, d, b, s, i32?, d?>| Tup1::new(((*t_3).2), )));
+                    let s1 = t();
+                    // DBSPMapOperator s2
+                    let s2: stream<WSet<Tup1<b>>> = s1.map((|t_3: &Tup6<i32, d, b, s, i32?, d?>| Tup1::new(((*t_3).2), )));
                     // CREATE VIEW `v` AS
                     // SELECT `t`.`col3`
                     // FROM `schema`.`t` AS `t`
-                    let s2: stream<WSet<Tup1<b>>> = s1;
-                    // DBSPConstantOperator s3
-                    let s3: stream<WSet<Tup3<s, s, VARIANT>>> = (zset!());
+                    let s3: stream<WSet<Tup1<b>>> = s2;
                     // CREATE VIEW `error_view` AS
                     // SELECT `error_table`.`table_or_view_name`, `error_table`.`message`, `error_table`.`metadata`
                     // FROM `schema`.`error_table` AS `error_table`
-                    let s4: stream<WSet<Tup3<s, s, VARIANT>>> = s3;
+                    let s4: stream<WSet<Tup3<s, s, VARIANT>>> = s0;
                 }
                 """;
         Assert.assertEquals(expected, str);

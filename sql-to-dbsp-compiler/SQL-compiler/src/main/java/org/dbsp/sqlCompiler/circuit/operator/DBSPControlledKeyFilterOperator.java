@@ -138,4 +138,13 @@ public final class DBSPControlledKeyFilterOperator extends DBSPOperatorWithError
                 .append(this.error)
                 .append(");");
     }
+
+    @Override
+    public String toString() {
+        return this.getClass()
+                .getSimpleName()
+                .replace("DBSP", "")
+                .replace("Operator", "")
+                + " " + this.getIdString();
+    }
 }

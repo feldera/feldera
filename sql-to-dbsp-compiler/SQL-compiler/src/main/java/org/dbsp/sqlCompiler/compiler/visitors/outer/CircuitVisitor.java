@@ -227,6 +227,10 @@ public abstract class CircuitVisitor
         return this.preorder((DBSPUnaryOperator) node);
     }
 
+    public VisitDecision preorder(DBSPAggregateLinearPostprocessRetainKeysOperator node) {
+        return this.preorder((DBSPBinaryOperator) node);
+    }
+
     public VisitDecision preorder(DBSPPartitionedRollingAggregateOperator node) {
         return this.preorder((DBSPAggregateOperatorBase) node);
     }
@@ -480,6 +484,10 @@ public abstract class CircuitVisitor
 
     public void postorder(DBSPAggregateLinearPostprocessOperator node) {
         this.postorder((DBSPUnaryOperator) node);
+    }
+
+    public void postorder(DBSPAggregateLinearPostprocessRetainKeysOperator node) {
+        this.postorder((DBSPBinaryOperator) node);
     }
 
     public void postorder(DBSPPartitionedRollingAggregateOperator node) {

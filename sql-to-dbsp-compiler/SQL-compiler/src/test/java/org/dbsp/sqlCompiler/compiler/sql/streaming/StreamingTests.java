@@ -1,6 +1,7 @@
 package org.dbsp.sqlCompiler.compiler.sql.streaming;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessRetainKeysOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPControlledKeyFilterOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesOperator;
@@ -484,6 +485,39 @@ public class StreamingTests extends StreamingTestBase {
                 FROM bid
                 GROUP BY channel, CAST(date_time AS DATE);""";
         this.compileRustTestCase(sql);
+    }
+
+    @Test
+    public void issue3344() {
+        String sql = """
+                CREATE TABLE bid (
+                    channel  VARCHAR,
+                    date_time TIMESTAMP(3) NOT NULL LATENESS INTERVAL 4 SECONDS
+                );
+
+                CREATE VIEW REST AS
+                SELECT
+                    channel,
+                    count(*) AS total_bids
+                FROM bid
+                GROUP BY channel, CAST(date_time AS DATE);
+                """;
+        var ccs = this.getCCS(sql);
+        CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
+            int aggregate_retain = 0;
+
+            @Override
+            public void postorder(DBSPAggregateLinearPostprocessRetainKeysOperator operator) {
+                this.aggregate_retain++;
+            }
+
+            @Override
+            public void endVisit() {
+                Assert.assertEquals(1, this.aggregate_retain);
+            }
+        };
+        visitor.apply(ccs.circuit);
+        this.addRustTestCase(ccs);
     }
 
     @Test

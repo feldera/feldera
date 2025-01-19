@@ -78,6 +78,33 @@ public final class DBSPCircuit extends DBSPNode
         this.allOperators.sort(comparator);
     }
 
+    /** Sort the nodes to be compatible with a topological order
+     * on the specified graph.
+     * @param graph Topological order to enforce.
+     *              Mutated by the method. */
+    public void resort(CircuitGraph graph) {
+        this.allOperators.clear();
+        DBSPOperator previous = null;
+        for (DBSPSourceTableOperator source: this.sourceOperators.values()) {
+            if (previous != null) {
+                // Preserve the input order
+                graph.addEdge(previous, source, 0);
+            }
+            previous = source;
+        }
+
+        previous = null;
+        for (DBSPSinkOperator sink: this.sinkOperators.values()) {
+            if (previous != null) {
+                // Preserve the output order
+                graph.addEdge(previous, sink, 0);
+            }
+            previous = sink;
+        }
+        for (DBSPOperator op: graph.sort())
+            this.allOperators.add(op);
+    }
+
     /** @return the names of the input tables.
      * The order of the tables corresponds to the inputs of the generated circuit. */
     public Set<ProgramIdentifier> getInputTables() {
