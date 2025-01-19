@@ -70,8 +70,10 @@
 // Warn about missing docs, but not for item declared with `#[cfg(test)]`.
 #![cfg_attr(not(test), warn(missing_docs))]
 
+use crate::storage::buffer_cache::{FBuf, FBufSerializer};
 #[cfg(doc)]
 use crc32c::crc32c;
+use rkyv::de::deserializers::SharedDeserializeMap;
 use rkyv::{
     ser::{
         serializers::{
@@ -79,12 +81,10 @@ use rkyv::{
         },
         Serializer as _,
     },
-    Archive, Archived, Deserialize, Fallible, Infallible, Serialize,
+    Archive, Archived, Deserialize, Fallible, Serialize,
 };
 use std::fmt::Debug;
 use std::{any::Any, sync::Arc};
-
-use crate::storage::buffer_cache::{FBuf, FBufSerializer};
 
 pub mod cache;
 pub mod format;
@@ -279,7 +279,7 @@ pub type Serializer = CompositeSerializer<
 >;
 
 /// The particular [`rkyv`] deserializer that we use.
-pub type Deserializer = Infallible;
+pub type Deserializer = SharedDeserializeMap;
 
 /// Serializes the given value and returns the resulting bytes.
 ///

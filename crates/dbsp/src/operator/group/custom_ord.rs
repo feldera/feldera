@@ -1,5 +1,5 @@
 use crate::trace::Deserializable;
-use rkyv::{Archive, Deserialize, Infallible, Serialize};
+use rkyv::{de::deserializers::SharedDeserializeMap, Archive, Deserialize, Serialize};
 use size_of::SizeOf;
 use std::{
     cmp::Ordering,
@@ -159,8 +159,14 @@ where
         // TODO(deserialization): Not ideal -- we're deserializing the values just to
         // compare them. Better would be to have `F: CmpFunc<T::Archived>` for
         // the Archived (we already know that T::Archived implements Ord).
-        let real_self: T = self.val.deserialize(&mut Infallible).unwrap();
-        let real_other: T = other.val.deserialize(&mut Infallible).unwrap();
+        let real_self: T = self
+            .val
+            .deserialize(&mut SharedDeserializeMap::new())
+            .unwrap();
+        let real_other: T = other
+            .val
+            .deserialize(&mut SharedDeserializeMap::new())
+            .unwrap();
         F::cmp(&real_self, &real_other)
     }
 }
