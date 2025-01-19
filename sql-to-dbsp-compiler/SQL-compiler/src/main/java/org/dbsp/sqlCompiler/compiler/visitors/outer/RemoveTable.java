@@ -30,6 +30,6 @@ public class RemoveTable extends CircuitCloneVisitor {
 
     @Override
     public String toString() {
-        return super.toString() + " " + this.tableName.singleQuote();
+        return super.toString() + "-" + this.tableName;
     }
 }

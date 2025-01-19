@@ -6,6 +6,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.util.IHasId;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.ToIndentableString;
+import org.dbsp.util.graph.DFSOrder;
 import org.dbsp.util.graph.DiGraph;
 import org.dbsp.util.graph.Port;
 import org.dbsp.util.Utilities;
@@ -47,7 +48,7 @@ public class CircuitGraph implements DiGraph<DBSPOperator>, IHasId, ToIndentable
         assert this.circuit.contains(node);
     }
 
-    void addEdge(DBSPOperator source, DBSPOperator dest, int input) {
+    public void addEdge(DBSPOperator source, DBSPOperator dest, int input) {
         if (!this.nodeSet.contains(source)) {
             throw new RuntimeException(
                     "Adding edge from node " + source + " to " + dest +
@@ -117,5 +118,11 @@ public class CircuitGraph implements DiGraph<DBSPOperator>, IHasId, ToIndentable
             }
         }
         return builder.decrease().append("}");
+    }
+
+    /** Return a topological sort of this graph */
+    public Iterable<DBSPOperator> sort() {
+        DFSOrder<DBSPOperator> dfs = new DFSOrder<>(this);
+        return dfs.reversePost();
     }
 }

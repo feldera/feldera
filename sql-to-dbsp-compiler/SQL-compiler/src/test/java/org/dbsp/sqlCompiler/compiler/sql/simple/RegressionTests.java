@@ -1702,7 +1702,7 @@ public class RegressionTests extends SqlIoTest {
                 CAST((c2) AS VARCHAR) AS c2
                 FROM double_tbl;""");
         ccs.step("""
-                INSERT INTO double_tbl values(" +
+                INSERT INTO double_tbl values(
                    (-34567891.312, 98765432.12),
                    (8765432.147, -2344579.923));""", """
                  c1            |            c2 | weight

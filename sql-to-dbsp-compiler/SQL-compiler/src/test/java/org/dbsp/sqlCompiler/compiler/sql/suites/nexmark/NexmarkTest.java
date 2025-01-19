@@ -867,7 +867,8 @@ INSERT INTO auction VALUES(101, 'item-name', 'description', 5, 10, '2020-01-01 0
         CircuitVisitor v = new CircuitVisitor(ccs.compiler) {
             @Override
             public VisitDecision preorder(DBSPSimpleOperator node) {
-                assert !node.operation.contains("aggregate") || node.operation.equals("aggregate_linear_postprocess");
+                assert !node.operation.contains("aggregate") ||
+                       node.operation.equals("aggregate_linear_postprocess_retain_keys");
                 return super.preorder(node);
             }
         };

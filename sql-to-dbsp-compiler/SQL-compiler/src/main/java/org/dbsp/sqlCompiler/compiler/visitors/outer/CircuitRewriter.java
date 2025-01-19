@@ -24,6 +24,7 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessRetainKeysOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAsofJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPChainAggregateOperator;
@@ -315,6 +316,31 @@ public class CircuitRewriter extends CircuitCloneVisitor {
                 || function != operator.function) {
             result = new DBSPAggregateLinearPostprocessOperator(operator.getNode(),
                     outputType.to(DBSPTypeIndexedZSet.class), function, postProcess.to(DBSPClosureExpression.class), input)
+                    .copyAnnotations(operator);
+        }
+        this.map(operator, result);
+    }
+
+    @Override
+    public void postorder(DBSPAggregateLinearPostprocessRetainKeysOperator operator) {
+        DBSPType outputType = this.transform(operator.outputType);
+        DBSPExpression function = this.transform(operator.getFunction());
+        DBSPExpression postProcess = this.transform(operator.postProcess);
+        DBSPExpression retainKeysFunction = this.transform(operator.retainKeysFunction);
+        OutputPort left = this.mapped(operator.left());
+        OutputPort right = this.mapped(operator.right());
+        DBSPSimpleOperator result = operator;
+        if (!outputType.sameType(operator.outputType)
+                || !left.equals(operator.left())
+                || !right.equals(operator.right())
+                || postProcess != operator.postProcess
+                || retainKeysFunction != operator.retainKeysFunction
+                || function != operator.function) {
+            result = new DBSPAggregateLinearPostprocessRetainKeysOperator(operator.getNode(),
+                    outputType.to(DBSPTypeIndexedZSet.class), function,
+                    postProcess.to(DBSPClosureExpression.class),
+                    retainKeysFunction.to(DBSPClosureExpression.class),
+                    left, right)
                     .copyAnnotations(operator);
         }
         this.map(operator, result);

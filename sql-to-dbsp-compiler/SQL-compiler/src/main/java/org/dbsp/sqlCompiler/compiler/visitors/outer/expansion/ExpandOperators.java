@@ -1,6 +1,7 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer.expansion;
 
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessRetainKeysOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAntiJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAsofJoinOperator;
@@ -38,6 +39,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
+import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitCloneVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity.KeyPropagation;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
@@ -219,6 +221,12 @@ public class ExpandOperators extends CircuitCloneVisitor {
     public void postorder(DBSPAggregateLinearPostprocessOperator operator) {
         // This is not true, but we don't care here about the internal structure
         this.identity(operator);
+    }
+
+    @Override
+    public void postorder(DBSPAggregateLinearPostprocessRetainKeysOperator operator) {
+        throw new UnsupportedException("These operators should not have been introduced yet",
+                operator.getNode());
     }
 
     @Override

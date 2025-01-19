@@ -30,6 +30,7 @@ import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.circuit.annotation.CompactName;
 import org.dbsp.sqlCompiler.circuit.annotation.Recursive;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessRetainKeysOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAsofJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPBinaryOperator;
@@ -42,6 +43,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPDeltaOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDistinctOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceTableOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIndexedTopKOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperator;
@@ -132,8 +134,6 @@ import java.util.Set;
 /** This visitor generates a Rust implementation of a circuit. */
 public class ToRustVisitor extends CircuitVisitor {
     protected final IndentStream builder;
-    // Assemble here the list of streams that is output by the circuit
-    protected final IndentStream streams;
     final ToRustInnerVisitor innerVisitor;
     final boolean useHandles;
     final CompilerOptions options;
@@ -158,8 +158,6 @@ public class ToRustVisitor extends CircuitVisitor {
         this.options = compiler.options;
         this.builder = builder;
         this.useHandles = compiler.options.ioOptions.emitHandles;
-        StringBuilder streams = new StringBuilder();
-        this.streams = new IndentStream(streams);
         this.metadata = metadata;
         this.structsGenerated = new HashSet<>();
         this.innerVisitor = this.createInnerVisitor(builder);
@@ -466,7 +464,7 @@ public class ToRustVisitor extends CircuitVisitor {
             }
         }
 
-        // Process sources first, this will add them to the "streams" output in the right order
+        // Process sources first
         for (IDBSPNode node : circuit.getAllOperators())
             if (node.is(DBSPSourceBaseOperator.class))
                 this.processNode(node);
@@ -500,10 +498,14 @@ public class ToRustVisitor extends CircuitVisitor {
 
         if (!this.useHandles)
             this.builder.append("Ok(catalog)");
-        else
-            this.builder.append("Ok((")
-                    .append(this.streams.toString())
-                    .append("))");
+        else {
+            this.builder.append("Ok((");
+            for (DBSPSourceTableOperator operator: circuit.sourceOperators.values())
+                this.builder.append(this.handleName(operator)).append(", ");
+            for (DBSPSinkOperator operator: circuit.sinkOperators.values())
+                this.builder.append(this.handleName(operator)).append(", ");
+            this.builder.append("))");
+        }
         this.builder.newline()
                 .decrease()
                 .append("})?;")
@@ -677,9 +679,6 @@ public class ToRustVisitor extends CircuitVisitor {
             json.accept(this.innerVisitor);
             this.builder.append(");")
                     .newline();
-        } else {
-            this.streams.append(this.handleName(operator))
-                    .append(", ");
         }
         return VisitDecision.STOP;
     }
@@ -791,9 +790,6 @@ public class ToRustVisitor extends CircuitVisitor {
             json.accept(this.innerVisitor);
             this.builder.append(");")
                     .newline();
-        } else {
-            this.streams.append(this.handleName(operator))
-                    .append(", ");
         }
         return VisitDecision.STOP;
     }
@@ -851,8 +847,7 @@ public class ToRustVisitor extends CircuitVisitor {
                 .append(operator.operation)
                 .append("(&")
                 .append(operator.right().getOutputName())
-                // FIXME: temporary workaround until the compiler learns about
-                // TypedBox's
+                // FIXME: temporary workaround until the compiler learns about TypedBox
                 .append(".apply(|bound| TypedBox::<_, DynData>::new(bound.clone()))")
                 .append(", ");
         operator.getFunction().accept(this.innerVisitor);
@@ -964,8 +959,6 @@ public class ToRustVisitor extends CircuitVisitor {
                     .append(" = ")
                     .append(operator.input().getOutputName())
                     .append(".output();").newline();
-            this.streams.append(this.handleName(operator))
-                    .append(", ");
         }
         return VisitDecision.STOP;
     }
@@ -1220,7 +1213,7 @@ public class ToRustVisitor extends CircuitVisitor {
         return VisitDecision.STOP;
     }
 
-    String markDistinct(DBSPOperator operator, int outputNo) {
+    String markDistinct(DBSPOperator operator, @SuppressWarnings("SameParameterValue") int outputNo) {
         if (!operator.isMultiset(outputNo))
             return ".mark_distinct()";
         return "";
@@ -1417,6 +1410,34 @@ public class ToRustVisitor extends CircuitVisitor {
                 .append(".");
         this.builder.append(operator.operation)
                 .append("(");
+        operator.getFunction().accept(this.innerVisitor);
+        this.builder.append(", ");
+        operator.postProcess.accept(this.innerVisitor);
+        this.builder.append(")")
+                .append(this.markDistinct(operator))
+                .append(";");
+        return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPAggregateLinearPostprocessRetainKeysOperator operator) {
+        DBSPType streamType = new DBSPTypeStream(operator.outputType);
+        this.writeComments(operator)
+                .append("let ")
+                .append(operator.getOutputName())
+                .append(": ");
+        streamType.accept(this.innerVisitor);
+        this.builder.append(" = ");
+        this.builder.append(operator.left().getOutputName())
+                .append(".");
+        this.builder.append(operator.operation)
+                .append("(&");
+        this.builder.append(operator.right().getOutputName())
+                // FIXME: temporary workaround until the compiler learns about TypedBox
+                .append(".apply(|bound| TypedBox::<_, DynData>::new(bound.clone()))")
+                .append(", ");
+        operator.retainKeysFunction.accept(this.innerVisitor);
+        this.builder.append(", ");
         operator.getFunction().accept(this.innerVisitor);
         this.builder.append(", ");
         operator.postProcess.accept(this.innerVisitor);

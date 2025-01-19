@@ -95,9 +95,10 @@ public record CircuitOptimizer(DBSPCompiler compiler) implements ICompilerCompon
         passes.add(new OptimizeWithGraph(compiler, g -> new FilterJoinVisitor(compiler, g)));
         passes.add(new MonotoneAnalyzer(compiler));
         passes.add(new RemoveTable(compiler, DBSPCompiler.ERROR_TABLE_NAME));
-
         // The circuit is complete here, start optimizing for real.
         // Doing this after the monotone analysis only
+
+        passes.add(new LinearPostprocessRetainKeys(compiler));
         if (!options.ioOptions.emitHandles)
             passes.add(new IndexedInputs(compiler));
         passes.add(new OptimizeWithGraph(compiler, g -> new FilterJoinVisitor(compiler, g)));

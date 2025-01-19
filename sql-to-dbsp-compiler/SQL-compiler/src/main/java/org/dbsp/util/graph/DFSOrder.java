@@ -11,7 +11,7 @@ import java.util.Map;
 import java.util.Set;
 
 /** Computes depth-first order of a graph */
-class DFSOrder<Node> {
+public class DFSOrder<Node> {
     final Set<Node> marked;
     final Map<Node, Integer> post;
     final List<Node> preorder;
