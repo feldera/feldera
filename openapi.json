@@ -4202,6 +4202,11 @@
             "type": "string",
             "description": "S3 bucket name to access."
           },
+          "endpoint_url": {
+            "type": "string",
+            "description": "The endpoint URL used to communicate with this service. Can be used to make this connector\ntalk to non-AWS services with an S3 API.",
+            "nullable": true
+          },
           "key": {
             "type": "string",
             "description": "Read a single object specified by a key.",

@@ -25,4 +25,8 @@ pub struct S3InputConfig {
 
     /// S3 bucket name to access.
     pub bucket_name: String,
+
+    /// The endpoint URL used to communicate with this service. Can be used to make this connector
+    /// talk to non-AWS services with an S3 API.
+    pub endpoint_url: Option<String>,
 }

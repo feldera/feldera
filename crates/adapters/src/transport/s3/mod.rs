@@ -478,8 +478,13 @@ impl<T> BufferedReceiver<T> {
 }
 
 fn to_s3_config(config: &Arc<S3InputConfig>) -> aws_sdk_s3::Config {
-    let config_builder =
-        aws_sdk_s3::Config::builder().region(aws_types::region::Region::new(config.region.clone()));
+    let config_builder = if let Some(endpoint) = &config.endpoint_url {
+        aws_sdk_s3::Config::builder()
+            .region(aws_types::region::Region::new(config.region.clone()))
+            .endpoint_url(endpoint)
+    } else {
+        aws_sdk_s3::Config::builder().region(aws_types::region::Region::new(config.region.clone()))
+    };
     if config.no_sign_request {
         config_builder.build()
     } else {
