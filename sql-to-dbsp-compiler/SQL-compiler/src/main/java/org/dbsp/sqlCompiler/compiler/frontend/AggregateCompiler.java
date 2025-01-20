@@ -397,7 +397,7 @@ public class AggregateCompiler implements ICompilerComponent {
         if (!leftType.withMayBeNull(rightType.mayBeNull).sameType(rightType)) {
             if (!rightType.is(DBSPTypeBaseType.class)) {
                 // These can also be different DECIMAL types
-                right = right.cast(leftType.withMayBeNull(rightType.mayBeNull), false);
+                right = right.applyCloneIfNeeded().cast(leftType.withMayBeNull(rightType.mayBeNull), false);
             }
         }
 

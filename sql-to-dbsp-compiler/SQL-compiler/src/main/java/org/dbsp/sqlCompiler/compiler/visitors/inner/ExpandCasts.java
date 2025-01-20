@@ -69,7 +69,7 @@ public class ExpandCasts extends InnerRewriteVisitor {
                 keys.add(new DBSPStringLiteral(fieldName.toString()));
 
                 DBSPExpression field = source.field(i).simplify();
-                if (field.getType().is(DBSPTypeBaseType.class) || field.getType().is(DBSPTypeMap.class))
+                if (!field.getType().hasCopy())
                     field = field.applyCloneIfNeeded();
                 DBSPExpression rec = field.cast(new DBSPTypeVariant(false), false);
                 values.add(rec);

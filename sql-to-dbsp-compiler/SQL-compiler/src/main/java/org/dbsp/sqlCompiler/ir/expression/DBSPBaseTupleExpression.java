@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.expression;
 
+import org.dbsp.sqlCompiler.compiler.IConstructor;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.ir.ISameValue;
@@ -38,7 +39,7 @@ import java.util.Objects;
 
 public abstract class DBSPBaseTupleExpression
         extends DBSPExpression
-        implements ISameValue {
+        implements ISameValue, IConstructor {
     // Nullable only for constant null tuple expressions
     @Nullable
     public final DBSPExpression[] fields;

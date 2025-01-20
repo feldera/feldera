@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.ir.expression;
 
+import org.dbsp.sqlCompiler.compiler.IConstructor;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
@@ -26,7 +27,7 @@ import java.util.Objects;
 import java.util.function.Function;
 
 public final class DBSPZSetExpression extends DBSPExpression
-        implements IDBSPContainer, ToIndentableString, ISameValue {
+        implements IDBSPContainer, ToIndentableString, ISameValue, IConstructor {
     public final Map<DBSPExpression, Long> data;
     public final DBSPType elementType;
 

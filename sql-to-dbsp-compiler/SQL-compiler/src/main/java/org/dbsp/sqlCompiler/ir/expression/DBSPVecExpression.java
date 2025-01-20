@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.expression;
 
+import org.dbsp.sqlCompiler.compiler.IConstructor;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -43,7 +44,7 @@ import java.util.List;
 import java.util.Objects;
 
 /** Represents a vector described by its elements. */
-public final class DBSPVecExpression extends DBSPExpression implements IDBSPContainer, ISameValue {
+public final class DBSPVecExpression extends DBSPExpression implements IDBSPContainer, ISameValue, IConstructor {
     @Nullable
     public final List<DBSPExpression> data;
     public final DBSPTypeVec vecType;

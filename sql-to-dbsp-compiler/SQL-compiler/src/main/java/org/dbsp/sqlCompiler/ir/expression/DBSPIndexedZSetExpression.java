@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.ir.expression;
 
+import org.dbsp.sqlCompiler.compiler.IConstructor;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -17,7 +18,8 @@ import javax.annotation.Nullable;
  * An IndexedZSet is a map from keys to tuples to integer weights.
  * Currently, we only support empty indexed zsets since we found no
  * need for other constants yet. */
-public final class DBSPIndexedZSetExpression extends DBSPExpression implements IDBSPContainer, ISameValue {
+public final class DBSPIndexedZSetExpression extends DBSPExpression
+        implements IDBSPContainer, ISameValue, IConstructor {
     public final DBSPTypeIndexedZSet indexedZSetType;
 
     public DBSPIndexedZSetExpression(CalciteObject node, DBSPType type) {
