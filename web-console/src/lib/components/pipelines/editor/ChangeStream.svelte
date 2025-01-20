@@ -33,14 +33,16 @@
 </script>
 
 <div
-  class="bg-white-dark absolute m-0 w-max max-w-lg -translate-x-[4.5px] -translate-y-[2.5px] whitespace-break-spaces break-words border border-surface-500 px-2 py-1 text-surface-950-50"
+  class="bg-white-dark absolute m-0 max-h-[90%] w-max max-w-lg -translate-x-[4.5px] -translate-y-[2.5px] overflow-auto border border-surface-500 px-2 py-2 scrollbar"
   popover="manual"
   bind:this={popupRef}
   style={tooltip.data
     ? `left: ${tooltip.data.x}px; top: ${tooltip.data.y}px; min-width: ${tooltip.data.targetWidth + 8}px`
     : ''}
 >
-  {tooltip.data?.text}
+  <div class="whitespace-break-spaces break-words text-surface-950-50">
+    {tooltip.data?.text}
+  </div>
 </div>
 
 <div class="bg-white-dark relative flex w-full flex-1 flex-col rounded">
@@ -81,7 +83,7 @@
         </table>
       </div>
     {/snippet}
-    {#snippet item(row, style, padding, isSticky)}
+    {#snippet item(row, index, style, padding, isSticky)}
       {#if 'skippedBytes' in row}
         <tr class="h-7" style="{style} {padding}">
           <td colspan="99">
@@ -116,6 +118,7 @@
               >Delete</td
             >
           {/if}
+
           {#each Object.values(data) as value}
             <SQLValue
               {value}

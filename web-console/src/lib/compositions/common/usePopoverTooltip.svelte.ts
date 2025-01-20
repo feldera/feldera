@@ -35,11 +35,11 @@ export const usePopoverTooltip = (popoverElement: () => HTMLElement | undefined)
     }
     el.addEventListener('mouseenter', onmouseenter)
     el.addEventListener('mouseleave', onmouseleave)
-    el.addEventListener('wheel', onwheel)
+    // el.addEventListener('wheel', onwheel)
     return () => {
       el.removeEventListener('mouseenter', onmouseenter)
       el.removeEventListener('mouseleave', onmouseleave)
-      el.removeEventListener('wheel', onwheel)
+      // el.removeEventListener('wheel', onwheel)
       hoverCount = 0
     }
   })

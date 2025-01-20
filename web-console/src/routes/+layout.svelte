@@ -3,8 +3,8 @@
   import { useDarkMode } from '$lib/compositions/useDarkMode.svelte'
   import { BodyAttr } from 'svelte-attr'
   import '@fortawesome/fontawesome-free/css/brands.min.css'
-  import dmSans from "@fontsource-variable/dm-sans/files/dm-sans-latin-wght-normal.woff2"
-  import dmSansExt from "@fontsource-variable/dm-sans/files/dm-sans-latin-ext-wght-normal.woff2"
+  import dmSans from '@fontsource-variable/dm-sans/files/dm-sans-latin-wght-normal.woff2'
+  import dmSansExt from '@fontsource-variable/dm-sans/files/dm-sans-latin-ext-wght-normal.woff2'
 
   import posthog from 'posthog-js'
   import { browser } from '$app/environment'
@@ -35,8 +35,8 @@
 
 <svelte:head>
   <!-- TODO: Check if preloading works -->
-	<link rel="preload" href={dmSans} as="font" type="font/woff2" crossorigin="anonymous">
-	<link rel="preload" href={dmSansExt} as="font" type="font/woff2" crossorigin="anonymous">
+  <link rel="preload" href={dmSans} as="font" type="font/woff2" crossorigin="anonymous" />
+  <link rel="preload" href={dmSansExt} as="font" type="font/woff2" crossorigin="anonymous" />
 </svelte:head>
 
 <BodyAttr

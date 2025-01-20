@@ -402,7 +402,10 @@ export const adHocQuery = async (pipelineName: string, query: string) => {
   // return { rows: entries.map(Object.values), columns }
 }
 
-export type XgressEntry = { insert: XgressRecord } | { delete: XgressRecord }
+export type XgressEntry = { previewSlice: string } & (
+  | { insert: XgressRecord }
+  | { delete: XgressRecord }
+)
 
 /**
  * @param force Insert changes immediately even if pipeline is stopped
