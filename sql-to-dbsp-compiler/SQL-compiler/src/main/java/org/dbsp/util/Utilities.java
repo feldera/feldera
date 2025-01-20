@@ -273,7 +273,7 @@ public class Utilities {
         runProcess(directory, new HashMap<>(), commands);
     }
 
-    static void compile(String directory, boolean quiet, String... extraArgs) throws IOException, InterruptedException {
+    static void compileAndTest(String directory, boolean quiet, String... extraArgs) throws IOException, InterruptedException {
         List<String> args = new ArrayList<>();
         args.add("cargo");
         args.add("test");
@@ -288,17 +288,27 @@ public class Utilities {
     }
 
     static final boolean retry = false;
+    /** Compile the rust code generated and run it using 'cargo test' */
     public static void compileAndTestRust(String directory, boolean quiet, String... extraArgs)
             throws IOException, InterruptedException {
         try {
-           compile(directory, quiet, extraArgs);
+           compileAndTest(directory, quiet, extraArgs);
         } catch (RuntimeException ex) {
             if (!retry)
                 throw ex;
             // Sometimes the rust compiler crashes; retry.
             runProcess(directory, "cargo", "clean");
-            compile(directory, quiet, extraArgs);
+            compileAndTest(directory, quiet, extraArgs);
         }
+    }
+
+    /** Compile the rust code generated and check it using 'cargo check' */
+    public static void compileAndCheckRust(String directory)
+            throws IOException, InterruptedException {
+        List<String> args = new ArrayList<>();
+        args.add("cargo");
+        args.add("check");
+        runProcess(directory, args.toArray(new String[0]));
     }
 
     public static <T> T last(List<T> data) {

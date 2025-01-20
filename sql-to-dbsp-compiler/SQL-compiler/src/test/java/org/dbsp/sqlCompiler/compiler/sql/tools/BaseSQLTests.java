@@ -30,6 +30,7 @@ import org.dbsp.sqlCompiler.compiler.backend.rust.RustFileWriter;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.SqlToRelCompiler;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.LowerCircuitVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity.MonotoneAnalyzer;
+import org.dbsp.util.Linq;
 import org.dbsp.util.Logger;
 import org.dbsp.util.ProgramAndTester;
 import org.dbsp.util.Utilities;
@@ -178,6 +179,7 @@ public class BaseSQLTests {
     public static final String testFilePath = rustDirectory + "/lib.rs";
 
     public static int testsExecuted = 0;
+    public static int testsChecked = 0;
 
     /** Collect here all the tests to run and execute them using a single Rust compilation. */
     static final List<TestCase> testsToRun = new ArrayList<>();
@@ -213,29 +215,63 @@ public class BaseSQLTests {
     public static void runAllTests() throws IOException, InterruptedException {
         if (testsToRun.isEmpty())
             return;
-        createEmptyStubs();
-        PrintStream outputStream = new PrintStream(Files.newOutputStream(Paths.get(testFilePath)));
-        // Use the compiler from the first test case.
-        DBSPCompiler firstCompiler = testsToRun.get(0).ccs.compiler;
-        RustFileWriter writer = new RustFileWriter(outputStream);
         int testNumber = 0;
-        for (TestCase test: testsToRun) {
-            if (!test.ccs.compiler.options.same(firstCompiler.options))
-                throw new RuntimeException("Test " + Utilities.singleQuote(testsToRun.get(0).javaTestName) +
-                        " and " + Utilities.singleQuote(test.javaTestName) +
-                        " are not compiled with the same options: "
-                        + test.ccs.compiler.options.diff(firstCompiler.options));
-            ProgramAndTester pt;
-            test.ccs.circuit.setName("circuit" + testNumber);
-            pt = new ProgramAndTester(test.ccs.circuit, test.createTesterCode(testNumber, rustDirectory));
-            BaseSQLTests.testsExecuted++;
-            // Filter here tests
-            // if (pt.program() != null && !pt.program().toString().contains(".flatmap")) continue;
-            writer.add(pt);
-            testNumber++;
+
+        List<TestCase> toRun = Linq.where(testsToRun, TestCase::hasData);
+        List<TestCase> toCheck = Linq.where(testsToRun, testCase -> !testCase.hasData());
+
+        if (!toRun.isEmpty()) {
+            PrintStream outputStream = new PrintStream(Files.newOutputStream(Paths.get(testFilePath)));
+            RustFileWriter writer = new RustFileWriter(outputStream);
+            createEmptyStubs();
+            // Use the compiler from the first test case.
+            DBSPCompiler firstCompiler = null;
+            for (TestCase test : toRun) {
+                if (firstCompiler == null)
+                    firstCompiler = test.ccs.compiler;
+                if (!test.ccs.compiler.options.same(firstCompiler.options))
+                    throw new RuntimeException("Test " + Utilities.singleQuote(toRun.get(0).javaTestName) +
+                            " and " + Utilities.singleQuote(test.javaTestName) +
+                            " are not compiled with the same options: "
+                            + test.ccs.compiler.options.diff(firstCompiler.options));
+                test.ccs.circuit.setName("circuit" + testNumber);
+                ProgramAndTester pt = new ProgramAndTester(test.ccs.circuit, test.createTesterCode(testNumber, rustDirectory));
+                BaseSQLTests.testsExecuted++;
+                // Filter here tests
+                // if (pt.program() != null && !pt.program().toString().contains(".flatmap")) continue;
+                writer.add(pt);
+                testNumber++;
+            }
+            assert firstCompiler != null;
+            writer.writeAndClose(firstCompiler);
+            Utilities.compileAndTestRust(rustDirectory, true);
         }
-        writer.writeAndClose(firstCompiler);
-        Utilities.compileAndTestRust(rustDirectory, true);
+
+        if (!toCheck.isEmpty()) {
+            createEmptyStubs();
+            PrintStream outputStream = new PrintStream(Files.newOutputStream(Paths.get(testFilePath)));
+            RustFileWriter writer = new RustFileWriter(outputStream);
+            DBSPCompiler firstCompiler = null;
+            for (TestCase test : toCheck) {
+                if (firstCompiler == null)
+                    firstCompiler = test.ccs.compiler;
+                if (!test.ccs.compiler.options.same(firstCompiler.options))
+                    throw new RuntimeException("Test " + Utilities.singleQuote(toCheck.get(0).javaTestName) +
+                            " and " + Utilities.singleQuote(test.javaTestName) +
+                            " are not compiled with the same options: "
+                            + test.ccs.compiler.options.diff(firstCompiler.options));
+                test.ccs.circuit.setName("circuit" + testNumber);
+                ProgramAndTester pt = new ProgramAndTester(test.ccs.circuit, test.createTesterCode(testNumber, rustDirectory));
+                BaseSQLTests.testsChecked++;
+                // Filter here tests
+                // if (pt.program() != null && !pt.program().toString().contains(".flatmap")) continue;
+                writer.add(pt);
+                testNumber++;
+            }
+            assert firstCompiler != null;
+            writer.writeAndClose(firstCompiler);
+            Utilities.compileAndCheckRust(rustDirectory);
+        }
         testsToRun.clear();
     }
 

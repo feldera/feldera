@@ -57,6 +57,10 @@ public class TestCase {
         this.message = message;
     }
 
+    boolean hasData() {
+        return !this.ccs.stream.changes.isEmpty();
+    }
+
     /**
      * Generates a Rust function which tests a {@link DBSPCircuit}.
      *
