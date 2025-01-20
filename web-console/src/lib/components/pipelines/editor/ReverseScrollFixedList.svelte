@@ -17,7 +17,7 @@
     marginTop
   }: {
     items: Row[]
-    item: Snippet<[item: Row, style?: string, padding?: string, isSticky?: boolean]>
+    item: Snippet<[item: Row, index?: number, style?: string, padding?: string, isSticky?: boolean]>
     emptyItem: Snippet
     listContainer?: Snippet<[Snippet, ListContainer, Snippet | undefined]>
     header?: Snippet
@@ -66,7 +66,7 @@
 >
   {#snippet item({ index, style, padding, isSticky })}
     {#if items[index]}
-      {@render renderItem(items[index], style, padding, isSticky)}
+      {@render renderItem(items[index], index, style, padding, isSticky)}
     {/if}
   {/snippet}
 </List>

@@ -124,7 +124,7 @@
       isSticky: true
     })}
   {/if}
-  {#each indices as index, i}
+  {#each indices as index, i (index)}
     {@render item({
       index,
       style: `transform: translateY(${(indices[0] - (stickyRow === undefined ? 0 : 1)) * itemSize}px);`

@@ -77,8 +77,8 @@
             streams[pipelineName].stream = { closed: {} }
             if (
               reason === 'cancelled' ||
-              typeof pipeline.current.status === 'string' &&
-              ['Shutdown', 'ShuttingDown'].includes(pipeline.current.status)
+              (typeof pipeline.current.status === 'string' &&
+                ['Shutdown', 'ShuttingDown'].includes(pipeline.current.status))
             ) {
               return
             }
@@ -116,13 +116,13 @@
       return
     }
     untrack(() => {
-    if (
-      (typeof pipelineStatus === 'string' &&
-        ['Initializing', 'Running', 'Paused'].includes(pipelineStatus)) ||
-      (typeof pipelineStatus === 'object' && 'PipelineError' in pipelineStatus)
-    ) {
-      startStream(pipelineName)
-    }
+      if (
+        (typeof pipelineStatus === 'string' &&
+          ['Initializing', 'Running', 'Paused'].includes(pipelineStatus)) ||
+        (typeof pipelineStatus === 'object' && 'PipelineError' in pipelineStatus)
+      ) {
+        startStream(pipelineName)
+      }
     })
   })
 
