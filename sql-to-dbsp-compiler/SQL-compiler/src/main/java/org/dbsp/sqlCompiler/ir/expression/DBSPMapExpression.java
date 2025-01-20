@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.ir.expression;
 
+import org.dbsp.sqlCompiler.compiler.IConstructor;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -19,7 +20,7 @@ import java.util.List;
 import java.util.Objects;
 
 /** Represents a map constructor. */
-public final class DBSPMapExpression extends DBSPExpression implements ISameValue {
+public final class DBSPMapExpression extends DBSPExpression implements ISameValue, IConstructor {
     // Both lists must have the same length
     @Nullable
     public final List<DBSPExpression> keys;

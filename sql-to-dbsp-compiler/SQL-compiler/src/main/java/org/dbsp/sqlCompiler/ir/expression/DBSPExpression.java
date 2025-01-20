@@ -24,6 +24,7 @@
 package org.dbsp.sqlCompiler.ir.expression;
 
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.IConstructor;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.BetaReduction;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
@@ -200,8 +201,9 @@ public abstract class DBSPExpression
     public DBSPExpression applyCloneIfNeeded() {
         if (this.getType().hasCopy())
             return this;
-        if (this.is(DBSPBaseTupleExpression.class))
-            // No need to clone a Tuple constructor
+        if (this.is(DBSPLiteral.class))
+            return this;
+        if (this.is(IConstructor.class))
             return this;
         return this.applyClone();
     }

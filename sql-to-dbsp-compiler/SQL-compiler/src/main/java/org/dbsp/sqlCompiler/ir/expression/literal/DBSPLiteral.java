@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.expression.literal;
 
+import org.dbsp.sqlCompiler.compiler.IConstructor;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
@@ -46,7 +47,7 @@ import javax.annotation.Nullable;
 import java.nio.charset.StandardCharsets;
 import java.util.Objects;
 
-public abstract class DBSPLiteral extends DBSPExpression implements ISameValue {
+public abstract class DBSPLiteral extends DBSPExpression implements ISameValue, IConstructor {
     protected final boolean isNull;
 
     protected DBSPLiteral(CalciteObject node, DBSPType type, boolean isNull) {

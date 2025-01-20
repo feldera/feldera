@@ -894,7 +894,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
             case CAST:
             case SAFE_CAST:
             case REINTERPRET:
-                return ops.get(0).cast(type, call.op.kind == SqlKind.SAFE_CAST);
+                return ops.get(0).applyCloneIfNeeded().cast(type, call.op.kind == SqlKind.SAFE_CAST);
             case IS_NULL:
             case IS_NOT_NULL: {
                 if (!type.sameType(new DBSPTypeBool(CalciteObject.EMPTY, false)))
@@ -953,12 +953,12 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                     }
 
                     if (!result.getType().sameType(finalType))
-                        result = result.cast(finalType, false);
+                        result = result.applyCloneIfNeeded().cast(finalType, false);
                     for (int i = 0; i < ops.size() - 1; i += 2) {
                         int index = ops.size() - i - 2;
                         DBSPExpression alt = ops.get(index);
                         if (!alt.getType().sameType(finalType))
-                            alt = alt.cast(finalType, false);
+                            alt = alt.applyCloneIfNeeded().cast(finalType, false);
                         DBSPExpression condition = wrapBoolIfNeeded(ops.get(index - 1));
                         result = new DBSPIfExpression(node, condition, alt, result);
                     }
@@ -1460,7 +1460,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 if (collectionType.is(DBSPTypeMap.class)) {
                     // index into a map
                     DBSPTypeMap map = collectionType.to(DBSPTypeMap.class);
-                    index = index.cast(map.getKeyType(), false);
+                    index = index.applyCloneIfNeeded().cast(map.getKeyType(), false);
                     opcode = DBSPOpcode.MAP_INDEX;
                     op0 = this.makeStaticConstant(op0).borrow();
                 } else if (collectionType.is(DBSPTypeVariant.class)) {
