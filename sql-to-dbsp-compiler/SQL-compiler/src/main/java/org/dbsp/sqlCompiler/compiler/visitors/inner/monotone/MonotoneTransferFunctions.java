@@ -645,7 +645,7 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
             reduced = expression.replaceSource(source.getReducedExpression());
             resultType = source.copyMonotonicity(expression.getType());
         } else {
-            resultType = new NonMonotoneType(expression.type);
+            resultType = NonMonotoneType.nonMonotone(expression.type);
         }
         if (this.positiveExpressions.contains(expression.source) &&
                 expression.type.is(IsNumericType.class))
