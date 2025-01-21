@@ -11,6 +11,7 @@
 
 use feldera_types::config::StorageCacheConfig;
 use serde::{ser::SerializeStruct, Serialize, Serializer};
+use std::fs::File;
 use std::{
     fs::OpenOptions,
     path::{Path, PathBuf},
@@ -186,6 +187,10 @@ pub trait FileWriter: HasFileId {
     /// reader is dropped without first calling
     /// [FileReader::mark_for_checkpoint].
     fn complete(self: Box<Self>) -> Result<(Arc<dyn FileReader>, PathBuf), StorageError>;
+
+    fn as_file(&self) -> Arc<File> {
+        unreachable!("file() not implemented")
+    }
 }
 
 /// A readable file.

@@ -291,7 +291,7 @@ impl VarintReader {
                 count,
                 each: varint.len(),
             }
-            .into()),
+                .into()),
         }
     }
     fn new_opt(
@@ -340,7 +340,7 @@ impl StrideReader {
             stride,
             count,
         }
-        .into())
+            .into())
     }
     fn get(&self, index: usize) -> usize {
         debug_assert!(index < self.count);
@@ -441,7 +441,7 @@ impl InnerDataBlock {
                 start,
                 end,
             }
-            .into())
+                .into())
         }
     }
 }
@@ -493,7 +493,7 @@ where
                 n_rows: inner.n_values() as u64,
                 expected_rows,
             }
-            .into());
+                .into());
         }
 
         Ok(Self {
@@ -693,7 +693,7 @@ impl InnerIndexBlock {
                 size: location.size,
                 offset: location.offset,
             }
-            .into());
+                .into());
         }
 
         let row_totals = VarintReader::new(
@@ -712,7 +712,7 @@ impl InnerIndexBlock {
                     prev,
                     next,
                 }
-                .into());
+                    .into());
             }
         }
 
@@ -791,7 +791,7 @@ where
                 depth: node.depth,
                 max_depth: MAX_DEPTH,
             }
-            .into());
+                .into());
         }
 
         let inner = InnerIndexBlock::new(file, node)?;
@@ -805,7 +805,7 @@ where
                 n_rows,
                 expected_rows,
             }
-            .into());
+                .into());
         }
 
         Ok(Self {
@@ -854,10 +854,10 @@ where
     fn rows(&self) -> Range<u64> {
         self.first_row
             ..self.first_row
-                + self
-                    .inner
-                    .row_totals
-                    .get(&self.inner.raw, self.inner.row_totals.count - 1)
+            + self
+            .inner
+            .row_totals
+            .get(&self.inner.raw, self.inner.row_totals.count - 1)
     }
 
     fn get_rows(&self, index: usize) -> Range<u64> {
@@ -1165,7 +1165,7 @@ where
                 version: file_trailer.version,
                 expected_version: VERSION_NUMBER,
             }
-            .into());
+                .into());
         }
 
         assert_eq!(factories.len(), file_trailer.columns.len());
@@ -1194,7 +1194,7 @@ where
                     prev_n_rows,
                     this_n_rows,
                 }
-                .into());
+                    .into());
             }
         }
 
