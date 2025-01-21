@@ -67,27 +67,25 @@ the program version is incremented.
 The program version is used internally by the compiler to know when to recompile."
     ),
     paths(
-        // Regular pipeline endpoints
-        endpoints::pipeline::list_pipelines,
-        endpoints::pipeline::get_pipeline,
-        endpoints::pipeline::post_pipeline,
-        endpoints::pipeline::put_pipeline,
-        endpoints::pipeline::patch_pipeline,
-        endpoints::pipeline::delete_pipeline,
+        // Pipeline management endpoints
+        endpoints::pipeline_management::list_pipelines,
+        endpoints::pipeline_management::get_pipeline,
+        endpoints::pipeline_management::post_pipeline,
+        endpoints::pipeline_management::put_pipeline,
+        endpoints::pipeline_management::patch_pipeline,
+        endpoints::pipeline_management::delete_pipeline,
+        endpoints::pipeline_management::post_pipeline_action,
 
-        // Special pipeline endpoints
-        endpoints::pipeline::post_pipeline_action,
-        endpoints::pipeline::post_pipeline_input_connector_action,
-        endpoints::pipeline::get_pipeline_logs,
-        endpoints::pipeline::get_pipeline_stats,
-        endpoints::pipeline::get_pipeline_circuit_profile,
-        endpoints::pipeline::get_pipeline_heap_profile,
-        endpoints::pipeline::pipeline_adhoc_sql,
-        endpoints::pipeline::checkpoint_pipeline,
-
-        // HTTP input/output
-        endpoints::http_io::http_input,
-        endpoints::http_io::http_output,
+        // Pipeline interaction endpoints
+        endpoints::pipeline_interaction::http_input,
+        endpoints::pipeline_interaction::http_output,
+        endpoints::pipeline_interaction::post_pipeline_input_connector_action,
+        endpoints::pipeline_interaction::get_pipeline_logs,
+        endpoints::pipeline_interaction::get_pipeline_stats,
+        endpoints::pipeline_interaction::get_pipeline_circuit_profile,
+        endpoints::pipeline_interaction::get_pipeline_heap_profile,
+        endpoints::pipeline_interaction::pipeline_adhoc_sql,
+        endpoints::pipeline_interaction::checkpoint_pipeline,
 
         // API keys
         endpoints::api_key::list_api_keys,
@@ -117,12 +115,12 @@ The program version is used internally by the compiler to know when to recompile
         crate::db::types::pipeline::PipelineId,
         crate::db::types::pipeline::PipelineStatus,
         crate::db::types::pipeline::PipelineDesiredStatus,
-        crate::api::endpoints::pipeline::PipelineInfo,
-        crate::api::endpoints::pipeline::PipelineSelectedInfo,
-        crate::api::endpoints::pipeline::PipelineFieldSelector,
-        crate::api::endpoints::pipeline::GetPipelineParameters,
-        crate::api::endpoints::pipeline::PostPutPipeline,
-        crate::api::endpoints::pipeline::PatchPipeline,
+        crate::api::endpoints::pipeline_management::PipelineInfo,
+        crate::api::endpoints::pipeline_management::PipelineSelectedInfo,
+        crate::api::endpoints::pipeline_management::PipelineFieldSelector,
+        crate::api::endpoints::pipeline_management::GetPipelineParameters,
+        crate::api::endpoints::pipeline_management::PostPutPipeline,
+        crate::api::endpoints::pipeline_management::PatchPipeline,
 
         // Demo
         crate::demo::Demo,
@@ -198,10 +196,6 @@ The program version is used internally by the compiler to know when to recompile
         feldera_types::program_schema::PropertyValue,
         feldera_types::program_schema::SqlIdentifier,
         feldera_types::error::ErrorResponse,
-
-        // Configuration
-        feldera_types::config::OutputBufferConfig,
-        feldera_types::config::OutputEndpointConfig,
     ),),
     tags(
         (name = "Pipelines", description = "Manage pipelines and their deployment."),
@@ -236,30 +230,29 @@ fn public_scope() -> Scope {
 fn api_scope() -> Scope {
     // Make APIs available under the /v0/ prefix
     web::scope("/v0")
-        // Typical pipeline endpoints
-        .service(endpoints::pipeline::list_pipelines)
-        .service(endpoints::pipeline::get_pipeline)
-        .service(endpoints::pipeline::post_pipeline)
-        .service(endpoints::pipeline::put_pipeline)
-        .service(endpoints::pipeline::patch_pipeline)
-        .service(endpoints::pipeline::delete_pipeline)
-        // Special pipeline endpoints
-        .service(endpoints::pipeline::checkpoint_pipeline)
-        .service(endpoints::pipeline::post_pipeline_action)
-        .service(endpoints::pipeline::post_pipeline_input_connector_action)
-        .service(endpoints::pipeline::get_pipeline_logs)
-        .service(endpoints::pipeline::get_pipeline_stats)
-        .service(endpoints::pipeline::get_pipeline_circuit_profile)
-        .service(endpoints::pipeline::get_pipeline_heap_profile)
-        .service(endpoints::pipeline::pipeline_adhoc_sql)
+        // Pipeline management endpoints
+        .service(endpoints::pipeline_management::list_pipelines)
+        .service(endpoints::pipeline_management::get_pipeline)
+        .service(endpoints::pipeline_management::post_pipeline)
+        .service(endpoints::pipeline_management::put_pipeline)
+        .service(endpoints::pipeline_management::patch_pipeline)
+        .service(endpoints::pipeline_management::delete_pipeline)
+        .service(endpoints::pipeline_management::post_pipeline_action)
+        // Pipeline interaction endpoints
+        .service(endpoints::pipeline_interaction::http_input)
+        .service(endpoints::pipeline_interaction::http_output)
+        .service(endpoints::pipeline_interaction::checkpoint_pipeline)
+        .service(endpoints::pipeline_interaction::post_pipeline_input_connector_action)
+        .service(endpoints::pipeline_interaction::get_pipeline_logs)
+        .service(endpoints::pipeline_interaction::get_pipeline_stats)
+        .service(endpoints::pipeline_interaction::get_pipeline_circuit_profile)
+        .service(endpoints::pipeline_interaction::get_pipeline_heap_profile)
+        .service(endpoints::pipeline_interaction::pipeline_adhoc_sql)
         // API keys endpoints
         .service(endpoints::api_key::list_api_keys)
         .service(endpoints::api_key::get_api_key)
         .service(endpoints::api_key::post_api_key)
         .service(endpoints::api_key::delete_api_key)
-        // HTTP input/output endpoints
-        .service(endpoints::http_io::http_input)
-        .service(endpoints::http_io::http_output)
         // Configuration endpoints
         .service(endpoints::config::get_config_authentication)
         .service(endpoints::config::get_config_demos)

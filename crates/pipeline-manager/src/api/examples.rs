@@ -1,5 +1,5 @@
 // Example errors for use in OpenAPI docs.
-use crate::api::endpoints::pipeline::{
+use crate::api::endpoints::pipeline_management::{
     PatchPipeline, PipelineInfo, PipelineInfoInternal, PipelineSelectedInfo,
     PipelineSelectedInfoInternal, PostPutPipeline,
 };
