@@ -11,7 +11,7 @@ in a Kubernetes cluster.
    LICENSE_KEY="00000000-0000-0000-0000-000000000000"  # Set to own
 
    helm upgrade --install feldera \
-       oci://public.ecr.aws/feldera/feldera-chart --version 0.15.1 \
+       oci://public.ecr.aws/feldera/feldera-chart --version 0.16.1 \
        --namespace feldera --create-namespace \
        --set felderaVersion="0.15.1" \
        --set felderaAccountId="${ACCOUNT_ID}" \
