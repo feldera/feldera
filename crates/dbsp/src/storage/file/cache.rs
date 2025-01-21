@@ -2,8 +2,8 @@
 //!
 //! This implements an approximately LRU cache for layer files.  The
 //! [`Reader`](super::reader::Reader) and [writer](super::writer) use it.
-use std::mem::size_of;
 use std::sync::Arc;
+use std::{mem::size_of, sync::LazyLock};
 
 use crc32c::crc32c;
 
@@ -11,7 +11,6 @@ use binrw::{
     io::{self},
     BinRead,
 };
-use lazy_static::lazy_static;
 use snap::raw::{decompress_len, Decoder};
 
 use crate::storage::{
@@ -128,13 +127,10 @@ impl FileCacheEntry {
     }
 }
 
-lazy_static! {
-    static ref DEFAULT_CACHE: Arc<FileCache> = Arc::new(FileCache::new());
-}
-
 /// Returns a global `FileCache` suitable for examples, tests, and other
 /// programs that don't need a specific backend configuration.
 pub fn default_cache() -> Arc<FileCache> {
+    static DEFAULT_CACHE: LazyLock<Arc<FileCache>> = LazyLock::new(|| Arc::new(FileCache::new()));
     DEFAULT_CACHE.clone()
 }
 

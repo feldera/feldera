@@ -40,6 +40,8 @@ pub use timestamp::{Date, Time, Timestamp};
 pub use uuid::Uuid;
 pub use variant::Variant;
 
+use std::sync::LazyLock;
+
 // Re-export these types, so they can be used in UDFs without having to import the dbsp crate directly.
 // Perhaps they should be defined in sqllib in the first place?
 pub use dbsp::algebra::{F32, F64};
@@ -59,7 +61,6 @@ use dbsp::{
     DBData, OrdIndexedZSet, OrdZSet, OutputHandle, SetHandle, ZSetHandle, ZWeight,
 };
 use itertools::Itertools;
-use lazy_static::lazy_static;
 use metrics::{counter, Counter};
 use num::{PrimInt, ToPrimitive};
 use num_traits::{Pow, Zero};
@@ -1633,9 +1634,8 @@ where
 
 #[doc(hidden)]
 pub fn late() {
-    lazy_static! {
-        static ref TOTAL_LATE_RECORDS_COUNTER: Counter = counter!(TOTAL_LATE_RECORDS);
-    }
+    static TOTAL_LATE_RECORDS_COUNTER: LazyLock<Counter> =
+        LazyLock::new(|| counter!(TOTAL_LATE_RECORDS));
 
     // println!("Late record");
     TOTAL_LATE_RECORDS_COUNTER.increment(1);

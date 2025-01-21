@@ -16,7 +16,6 @@ use crate::{
 
 use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 use dbsp::algebra::{HasOne, HasZero, F32, F64};
-use lazy_static::lazy_static;
 use num::{FromPrimitive, One, ToPrimitive, Zero};
 use num_traits::cast::NumCast;
 use regex::{Captures, Regex};
@@ -24,6 +23,7 @@ use rust_decimal::{Decimal, RoundingStrategy};
 use std::cmp::Ordering;
 use std::error::Error;
 use std::string::String;
+use std::sync::LazyLock;
 
 /// Maps a short type name to a SQL type name.
 /// Maybe we should not have short type names at all...
@@ -1968,9 +1968,8 @@ pub fn cast_to_LongInterval_YEARS_s(value: String) -> SqlResult<LongInterval> {
     }
 }
 
-lazy_static! {
-    static ref YEARS_TO_MONTHS: Regex = Regex::new(r"^(-?\d+)(-(\d+))?$").unwrap();
-}
+static YEARS_TO_MONTHS: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^(-?\d+)(-(\d+))?$").unwrap());
 
 #[doc(hidden)]
 #[inline]
@@ -2036,18 +2035,21 @@ pub fn cast_to_ShortInterval_ShortInterval(value: ShortInterval) -> SqlResult<Sh
 cast_function!(LongInterval, LongInterval, LongInterval, LongInterval);
 cast_function!(ShortInterval, ShortInterval, ShortInterval, ShortInterval);
 
-lazy_static! {
-    static ref DAYS_TO_HOURS: Regex = Regex::new(r"^(-)?(\d+)\s+(\d{1,2})$").unwrap();
-    static ref DAYS_TO_MINUTES: Regex = Regex::new(r"^(-)?(\d+)\s+(\d{1,2}):(\d{1,2})$").unwrap();
-    static ref DAYS_TO_SECONDS: Regex =
-        Regex::new(r"^(-)?(\d+)\s+(\d{1,2}):(\d{1,2}):(\d{1,2})([.](\d{1,6}))?$").unwrap();
-    static ref HOURS_TO_MINUTES: Regex = Regex::new(r"^(-)?(\d+):(\d{1,2})$").unwrap();
-    static ref HOURS_TO_SECONDS: Regex =
-        Regex::new(r"^(-)?(\d+):(\d{1,2}):(\d{1,2})([.](\d{1,6}))?$").unwrap();
-    static ref MINUTES_TO_SECONDS: Regex =
-        Regex::new(r"^(-)?(\d+):(\d{1,2})([.](\d{1,6}))?$").unwrap();
-    static ref SECONDS: Regex = Regex::new(r"^(-)?(\d+)([.](\d{1,6}))?$").unwrap();
-}
+static DAYS_TO_HOURS: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^(-)?(\d+)\s+(\d{1,2})$").unwrap());
+static DAYS_TO_MINUTES: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^(-)?(\d+)\s+(\d{1,2}):(\d{1,2})$").unwrap());
+static DAYS_TO_SECONDS: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^(-)?(\d+)\s+(\d{1,2}):(\d{1,2}):(\d{1,2})([.](\d{1,6}))?$").unwrap()
+});
+static HOURS_TO_MINUTES: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^(-)?(\d+):(\d{1,2})$").unwrap());
+static HOURS_TO_SECONDS: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^(-)?(\d+):(\d{1,2}):(\d{1,2})([.](\d{1,6}))?$").unwrap());
+static MINUTES_TO_SECONDS: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^(-)?(\d+):(\d{1,2})([.](\d{1,6}))?$").unwrap());
+static SECONDS: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^(-)?(\d+)([.](\d{1,6}))?$").unwrap());
 
 fn validate_unit(value: i64, name: &str, max: i64) {
     if num::abs(value) >= max {

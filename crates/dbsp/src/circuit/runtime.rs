@@ -16,7 +16,6 @@ use crate::{
     DetailedError,
 };
 use feldera_types::config::StorageCacheConfig;
-use lazy_static::lazy_static;
 use once_cell::sync::Lazy;
 use serde::Serialize;
 use std::sync::{LazyLock, Mutex};
@@ -446,10 +445,8 @@ impl Runtime {
 
     /// Returns the storage backend.
     pub fn storage() -> Arc<BufferCache<FileCacheEntry>> {
-        lazy_static! {
-            pub static ref NO_RUNTIME_CACHE: Arc<BufferCache<FileCacheEntry>> =
-                Arc::new(BufferCache::new());
-        }
+        static NO_RUNTIME_CACHE: LazyLock<Arc<BufferCache<FileCacheEntry>>> =
+            LazyLock::new(|| Arc::new(BufferCache::new()));
         if let Some(rt) = Runtime::runtime() {
             // The goal is to share the cache between the worker and the
             // corresponding background thread in case we have a Runtime
