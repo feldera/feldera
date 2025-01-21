@@ -72,7 +72,6 @@ uuid = { version = "1.11.0", features = ["v4", "std"] }
 # Make sure this is the same rustls version used by the `tonic` crate.
 # See the `ensure_default_crypto_provider` function at the root of this crate.
 rustls = "0.23.12"
-lazy_static = "1.4.0"
 rkyv = { version = "0.7.45", default-features = false, features = ["std", "size_64"] }
 csv-core = "0.1.10"
 rand = { version = "0.8.5", features = ["small_rng"] }
