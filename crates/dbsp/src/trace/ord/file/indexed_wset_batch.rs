@@ -234,7 +234,8 @@ where
         let mut writer = Writer2::new(
             &self.factories.factories0,
             &self.factories.factories1,
-            &Runtime::storage(),
+            &Runtime::buffer_cache(),
+            &*Runtime::storage_backend(),
             Parameters::default(),
         )
         .unwrap();
@@ -399,7 +400,11 @@ where
     fn from_path(factories: &Self::Factories, path: &Path) -> Result<Self, ReaderError> {
         let any_factory0 = factories.factories0.any_factories();
         let any_factory1 = factories.factories1.any_factories();
-        let file = Reader::open(&[&any_factory0, &any_factory1], &Runtime::storage(), path)?;
+        let file = Reader::open(
+            &[&any_factory0, &any_factory1],
+            &Runtime::buffer_cache(),
+            path,
+        )?;
         Ok(Self {
             factories: factories.clone(),
             file,
@@ -546,7 +551,8 @@ where
             writer: Writer2::new(
                 &batch1.factories.factories0,
                 &batch1.factories.factories1,
-                &Runtime::storage(),
+                &Runtime::buffer_cache(),
+                &*Runtime::storage_backend(),
                 Parameters::default(),
             )
             .unwrap(),
@@ -869,7 +875,8 @@ where
             writer: Writer2::new(
                 &factories.factories0,
                 &factories.factories1,
-                &Runtime::storage(),
+                &Runtime::buffer_cache(),
+                &*Runtime::storage_backend(),
                 Parameters::default(),
             )
             .unwrap(),
