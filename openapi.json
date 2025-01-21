@@ -6,7 +6,7 @@
     "license": {
       "name": "MIT OR Apache-2.0"
     },
-    "version": "0.34.1-b1"
+    "version": "0.34.1-b2"
   },
   "paths": {
     "/config": {
