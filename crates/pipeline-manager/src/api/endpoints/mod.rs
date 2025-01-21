@@ -1,5 +1,5 @@
 pub mod api_key;
 pub mod config;
-pub mod http_io;
 pub mod metrics;
-pub mod pipeline;
+pub mod pipeline_interaction;
+pub mod pipeline_management;
