@@ -28,7 +28,7 @@
       chunksLength += tmp.length
       ++i
     }
-    return `[${str.join(',\n  ')}${i < value.length ? '': ']'}`
+    return `[${str.join(',\n  ')}${i < value.length ? '' : ']'}`
   }
 
   let {
