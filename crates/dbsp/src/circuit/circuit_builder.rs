@@ -1048,9 +1048,9 @@ impl GlobalNodeId {
     /// Generate unique id for use in persistent storage.
     pub(crate) fn persistent_id(&self) -> String {
         let mut pid = String::with_capacity(3 + self.0.len() * 3);
-        pid += format!("{}", Runtime::worker_index()).as_str();
+        write!(&mut pid, "{}", Runtime::worker_index()).unwrap();
         for e in &self.0 {
-            pid += format!("-{}", &e.0.to_string()).as_str();
+            write!(&mut pid, "-{}", e.0).unwrap();
         }
         pid
     }
@@ -1063,13 +1063,12 @@ impl GlobalNodeId {
 
         if path.is_empty() {
             mid.push_str("root");
-            return mid;
-        }
-
-        for i in 0..path.len() {
-            mid.push_str(&path[i].0.to_string());
-            if i < path.len() - 1 {
-                mid.push('_');
+        } else {
+            for (i, node) in path.iter().enumerate() {
+                if i > 0 {
+                    mid.push('_');
+                }
+                write!(&mut mid, "{}", node.0).unwrap();
             }
         }
 
