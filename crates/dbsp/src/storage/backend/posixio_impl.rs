@@ -1,4 +1,4 @@
-//! Implementation of the storage backend ([`Storage`] APIs using POSIX I/O.
+//! [StorageBackend] implementation using POSIX I/O.
 
 use feldera_types::config::StorageCacheConfig;
 use metrics::{counter, histogram};
@@ -17,7 +17,7 @@ use std::{
 use tracing::warn;
 
 use super::{
-    append_to_path, tempdir_for_thread, FileId, FileReader, FileWriter, HasFileId, Storage,
+    append_to_path, tempdir_for_thread, FileId, FileReader, FileWriter, HasFileId, StorageBackend,
     StorageCacheFlags, StorageError, MUTABLE_EXTENSION,
 };
 use crate::circuit::metrics::{
@@ -280,7 +280,7 @@ impl PosixBackend {
     }
 }
 
-impl Storage for PosixBackend {
+impl StorageBackend for PosixBackend {
     fn create_named(&self, name: &Path) -> Result<Box<dyn FileWriter>, StorageError> {
         let path = append_to_path(self.base.join(name), MUTABLE_EXTENSION);
         let file = OpenOptions::new()
@@ -300,19 +300,19 @@ impl Storage for PosixBackend {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
+    use std::{path::Path, rc::Rc};
 
     use feldera_types::config::StorageCacheConfig;
 
     use crate::storage::backend::{
         tests::{random_sizes, test_backend},
-        Backend,
+        StorageBackend,
     };
 
     use super::PosixBackend;
 
-    fn create_posix_backend(path: &Path) -> Backend {
-        Box::new(PosixBackend::new(path, StorageCacheConfig::default()))
+    fn create_posix_backend(path: &Path) -> Rc<dyn StorageBackend> {
+        Rc::new(PosixBackend::new(path, StorageCacheConfig::default()))
     }
 
     /// Write 10 MiB total in 1 KiB chunks.  `VectoredWrite` flushes its buffer when it

@@ -2,16 +2,16 @@
 //!
 //! The main test makes sure we correspond to the model defined in
 //! [`InMemoryBackend`].
-use std::path::Path;
+use std::{path::Path, rc::Rc};
 
 use feldera_types::config::StorageCacheConfig;
 
 use crate::storage::backend::io_uring_impl::IoUringBackend;
 use crate::storage::backend::tests::{random_sizes, test_backend};
-use crate::storage::backend::Backend;
+use crate::storage::backend::StorageBackend;
 
-fn create_iouring_backend(path: &Path) -> Backend {
-    Box::new(IoUringBackend::new(path, StorageCacheConfig::default()).unwrap())
+fn create_iouring_backend(path: &Path) -> Rc<dyn StorageBackend> {
+    Rc::new(IoUringBackend::new(path, StorageCacheConfig::default()).unwrap())
 }
 
 /// Write 10 MiB total in 1 KiB chunks.  `VectoredWrite` flushes its buffer when it
