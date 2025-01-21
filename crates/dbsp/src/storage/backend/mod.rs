@@ -1,7 +1,7 @@
 //! Storage backend APIs for Feldera.
 //!
-//! This module provides the [`Storage`] trait that need to be implemented by a
-//! storage backend.
+//! This module provides the [`StorageBackend`] trait that need to be
+//! implemented by a storage backend.
 //!
 //! A file transitions from being created to being written to, to being read
 //! to (eventually) deleted.
@@ -16,6 +16,7 @@ use std::{
     fs::OpenOptions,
     io::ErrorKind,
     path::{Path, PathBuf},
+    rc::Rc,
     sync::{
         atomic::{AtomicU64, Ordering},
         Arc, LazyLock,
@@ -142,8 +143,8 @@ pub trait FileReader: Send + Sync + HasFileId {
     ///
     /// This is used to prevent the file from being deleted when it is dropped.
     /// This is only useful for files obtained via [FileWriter::complete],
-    /// because files that were opened with [Storage::open] are never deleted on
-    /// drop.
+    /// because files that were opened with [StorageBackend::open] are never
+    /// deleted on drop.
     fn mark_for_checkpoint(&self);
 
     /// Reads data at `location` from the file.  If successful, the result will
@@ -156,7 +157,7 @@ pub trait FileReader: Send + Sync + HasFileId {
 }
 
 /// A storage backend.
-pub trait Storage {
+pub trait StorageBackend {
     /// Create a new file with the given `name`, which is relative to the
     /// backend's base directory.
     fn create_named(&self, name: &Path) -> Result<Box<dyn FileWriter>, StorageError>;
@@ -181,9 +182,6 @@ pub trait Storage {
     fn open(&self, name: &Path) -> Result<Arc<dyn FileReader>, StorageError>;
 }
 
-/// A dynamically chosen storage engine.
-pub type Backend = Box<dyn Storage>;
-
 /// Returns a per-thread temporary directory.
 pub fn tempdir_for_thread() -> PathBuf {
     thread_local! {
@@ -192,19 +190,22 @@ pub fn tempdir_for_thread() -> PathBuf {
     TEMPDIR.with(|dir| dir.path().to_path_buf())
 }
 
-/// Create and returns a backend of the default kind.
-pub fn new_default_backend(tempdir: PathBuf, cache: StorageCacheConfig) -> Backend {
-    trace!("new_default_backend: dir={:?}", tempdir);
+/// Create and returns a backend of the default kind based in `directory`.
+pub fn new_default_backend(
+    directory: PathBuf,
+    cache: StorageCacheConfig,
+) -> Rc<dyn StorageBackend> {
+    trace!("new_default_backend: dir={directory:?}");
 
     #[cfg(target_os = "linux")]
     {
         use nix::sys::statfs::{statfs, TMPFS_MAGIC};
-        if let Ok(s) = statfs(&tempdir) {
+        if let Ok(s) = statfs(&directory) {
             if s.filesystem_type() == TMPFS_MAGIC {
                 static ONCE: std::sync::Once = std::sync::Once::new();
                 ONCE.call_once(|| {
                     warn!("initializing storage on in-memory tmpfs filesystem at {}; consider configuring physical storage",
-                          tempdir.to_string_lossy())
+                          directory.to_string_lossy())
                 });
             }
         }
@@ -212,8 +213,8 @@ pub fn new_default_backend(tempdir: PathBuf, cache: StorageCacheConfig) -> Backe
 
     #[cfg(target_os = "linux")]
     if std::env::var("FELDERA_USE_IO_URING").is_ok_and(|s| s != "0") {
-        match io_uring_impl::IoUringBackend::new(&tempdir, cache) {
-            Ok(backend) => return Box::new(backend),
+        match io_uring_impl::IoUringBackend::new(&directory, cache) {
+            Ok(backend) => return Rc::new(backend),
             Err(error) => {
                 static ONCE: std::sync::Once = std::sync::Once::new();
                 ONCE.call_once(|| {
@@ -227,7 +228,7 @@ pub fn new_default_backend(tempdir: PathBuf, cache: StorageCacheConfig) -> Backe
         );
     }
 
-    Box::new(posixio_impl::PosixBackend::new(tempdir, cache))
+    Rc::new(posixio_impl::PosixBackend::new(directory, cache))
 }
 
 trait StorageCacheFlags {

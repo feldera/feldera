@@ -6,9 +6,10 @@ use crate::circuit::metrics::describe_metrics;
 use crate::error::Error as DbspError;
 use crate::storage::file::format::Compression;
 use crate::storage::file::writer::Parameters;
+use crate::storage::backend::StorageBackend;
 use crate::{
     storage::{
-        backend::{new_default_backend, tempdir_for_thread, Backend, StorageError},
+        backend::{new_default_backend, tempdir_for_thread, StorageError},
         buffer_cache::BufferCache,
         dirlock::LockedDirectory,
         file::cache::FileCacheEntry,
@@ -30,6 +31,7 @@ use std::{
     fmt::{Debug, Display, Error as FmtError, Formatter},
     panic::{self, Location, PanicHookInfo},
     path::{Path, PathBuf},
+    rc::Rc,
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc, RwLock,
@@ -429,28 +431,42 @@ impl Runtime {
         RUNTIME.with(|rt| rt.borrow().clone())
     }
 
-    pub(crate) fn new_backend() -> Backend {
-        let rt = Runtime::runtime();
-        let (dir, cache) = if let Some(rt) = rt {
-            (rt.inner().storage.clone(), rt.inner().cache)
-        } else {
-            (tempdir_for_thread(), StorageCacheConfig::default())
-        };
-        new_default_backend(dir, cache)
+    /// Returns this thread's storage backend.
+    ///
+    /// Storage backends are thread-local.
+    pub fn storage_backend() -> Rc<dyn StorageBackend> {
+        fn new_backend() -> Rc<dyn StorageBackend> {
+            let rt = Runtime::runtime();
+            let (dir, cache) = if let Some(rt) = rt {
+                (rt.inner().storage.clone(), rt.inner().cache)
+            } else {
+                (tempdir_for_thread(), StorageCacheConfig::default())
+            };
+            new_default_backend(dir, cache)
+        }
+
+        thread_local! {
+            pub static DEFAULT_BACKEND: Rc<dyn StorageBackend> = new_backend();
+        }
+        DEFAULT_BACKEND.with(|rc| rc.clone())
     }
 
-    /// Returns the storage backend.
-    pub fn storage() -> Arc<BufferCache<FileCacheEntry>> {
-        static NO_RUNTIME_CACHE: LazyLock<Arc<BufferCache<FileCacheEntry>>> =
-            LazyLock::new(|| Arc::new(BufferCache::new()));
+    /// Returns this thread's buffer cache.
+    ///
+    /// The buffer cache is shared between a worker and its background thread,
+    /// because they access the same files. They are otherwise independent,
+    /// because different workers access different files.
+    pub fn buffer_cache() -> Arc<BufferCache<FileCacheEntry>> {
         if let Some(rt) = Runtime::runtime() {
-            // The goal is to share the cache between the worker and the
-            // corresponding background thread in case we have a Runtime
             let cache = rt
                 .local_store()
                 .get(&BufferCacheId(Runtime::worker_index()));
             cache.unwrap().clone()
         } else {
+            // No `Runtime` means there's only a single worker, so use a single
+            // global cache.
+            static NO_RUNTIME_CACHE: LazyLock<Arc<BufferCache<FileCacheEntry>>> =
+                LazyLock::new(|| Arc::new(BufferCache::new()));
             NO_RUNTIME_CACHE.clone()
         }
     }

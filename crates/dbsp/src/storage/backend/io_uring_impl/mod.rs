@@ -1,5 +1,4 @@
-//! Implementation of the storage backend [`Storage`] API using the [`io_uring`]
-//! library.
+//! [StorageBackend] implementation with [io_uring].
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -17,10 +16,9 @@ use io_uring::{opcode, types::Fd, IoUring};
 use libc::{c_void, iovec};
 use metrics::counter;
 
-use crate::circuit::metrics::FILES_CREATED;
-use crate::storage::backend::Storage;
 use crate::storage::buffer_cache::FBuf;
 use crate::storage::init;
+use crate::{circuit::metrics::FILES_CREATED, storage::backend::StorageBackend};
 
 use super::posixio_impl::PosixReader;
 use super::{FileId, FileReader, FileWriter, HasFileId, StorageCacheFlags, StorageError, IOV_MAX};
@@ -439,7 +437,7 @@ impl IoUringBackend {
     }
 }
 
-impl Storage for IoUringBackend {
+impl StorageBackend for IoUringBackend {
     fn create_named(&self, name: &Path) -> Result<Box<dyn FileWriter>, StorageError> {
         let path = self.base.join(name);
         let file = OpenOptions::new()
