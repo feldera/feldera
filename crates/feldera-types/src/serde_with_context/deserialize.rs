@@ -601,7 +601,8 @@ macro_rules! deserialize_table_record {
 
 #[cfg(test)]
 mod test {
-    use lazy_static::lazy_static;
+    use std::sync::LazyLock;
+
     use rust_decimal::Decimal;
     use rust_decimal_macros::dec;
 
@@ -611,9 +612,7 @@ mod test {
     struct TUPLE0;
     deserialize_table_record!(TUPLE0["EmptyTable", 0] {});
 
-    lazy_static! {
-        static ref DEFAULT_CONFIG: SqlSerdeConfig = SqlSerdeConfig::default();
-    }
+    static DEFAULT_CONFIG: LazyLock<SqlSerdeConfig> = LazyLock::new(SqlSerdeConfig::default);
 
     fn deserialize_with_default_context<'de, T>(json: &'de str) -> Result<T, serde_json::Error>
     where
