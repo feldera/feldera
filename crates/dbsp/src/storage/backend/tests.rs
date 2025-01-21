@@ -4,13 +4,13 @@
 //! TODO: Currently only functional STM, should later be expanded to cover
 //! error/corner cases.
 
-use std::path::Path;
+use std::{path::Path, rc::Rc};
 
 use rand::{thread_rng, Fill, Rng};
 
 use crate::storage::{backend::BlockLocation, buffer_cache::FBuf, test::init_test_logger};
 
-use super::{Backend, FileReader};
+use super::{FileReader, StorageBackend};
 
 fn test_read_block(reader: &dyn FileReader, data: &[u8], offset: usize) -> usize {
     let remaining = data.len() - offset;
@@ -43,7 +43,7 @@ fn test_read(reader: &dyn FileReader, data: &[u8]) {
 }
 
 pub(super) fn test_backend(
-    create_backend: Box<dyn FnOnce(&Path) -> Backend>,
+    create_backend: Box<dyn FnOnce(&Path) -> Rc<dyn StorageBackend>>,
     writes: &[usize],
     sequential: bool,
     mark_for_checkpoint: bool,

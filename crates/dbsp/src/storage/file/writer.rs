@@ -22,7 +22,7 @@ use dyn_clone::clone_box;
 use snap::raw::{max_compress_len, Encoder};
 
 use crate::storage::{
-    backend::{BlockLocation, FileReader, FileWriter, Storage, StorageError},
+    backend::{BlockLocation, FileReader, FileWriter, StorageBackend, StorageError},
     buffer_cache::{FBuf, FBufSerializer},
     file::format::{
         BlockHeader, DataBlockHeader, FileTrailer, FileTrailerColumn, FixedLen, IndexBlockHeader,
@@ -1010,7 +1010,8 @@ struct Writer {
 impl Writer {
     pub fn new(
         factories: &[&AnyFactories],
-        writer: &Arc<FileCache>,
+        buffer_cache: &Arc<FileCache>,
+        storage_backend: &dyn StorageBackend,
         parameters: Parameters,
         n_columns: usize,
     ) -> Result<Self, StorageError> {
@@ -1025,7 +1026,7 @@ impl Writer {
         let finished_columns = Vec::with_capacity(n_columns);
         let worker = format!("w{}-", Runtime::worker_index());
         let writer = Self {
-            writer: BlockWriter::new(writer, writer.create_with_prefix(&worker)?),
+            writer: BlockWriter::new(buffer_cache, storage_backend.create_with_prefix(&worker)?),
             cws,
             finished_columns,
         };
@@ -1106,11 +1107,19 @@ impl Writer {
 /// ```
 /// # use dbsp::dynamic::{DynData, Erase, DynUnit};
 /// # use dbsp::storage::file::{writer::{Parameters, Writer1}};
-/// use dbsp::storage::file::cache::default_cache;
-/// use dbsp::storage::file::Factories;
+/// use dbsp::storage::{
+///     backend::new_default_backend,
+///     file::{cache::default_cache, Factories},
+/// };
 /// let factories = Factories::<DynData, DynUnit>::new::<u32, ()>();
+/// let tempdir = tempfile::tempdir().unwrap();
+/// let storage_backend = new_default_backend(
+///     tempdir.path().to_path_buf(),
+///    Default::default(),
+/// );
+/// let parameters = Parameters::default();
 /// let mut file =
-///     Writer1::new(&factories, &default_cache(), Parameters::default()).unwrap();
+///     Writer1::new(&factories, &default_cache(), &*storage_backend, parameters).unwrap();
 /// for i in 0..1000_u32 {
 ///     file.write0((i.erase(), ().erase())).unwrap();
 /// }
@@ -1136,12 +1145,19 @@ where
     /// Creates a new writer with the given parameters.
     pub fn new(
         factories: &Factories<K0, A0>,
-        storage: &Arc<FileCache>,
+        buffer_cache: &Arc<FileCache>,
+        storage_backend: &dyn StorageBackend,
         parameters: Parameters,
     ) -> Result<Self, StorageError> {
         Ok(Self {
             factories: factories.clone(),
-            inner: Writer::new(&[&factories.any_factories()], storage, parameters, 1)?,
+            inner: Writer::new(
+                &[&factories.any_factories()],
+                buffer_cache,
+                storage_backend,
+                parameters,
+                1,
+            )?,
             _phantom: PhantomData,
             #[cfg(debug_assertions)]
             prev0: None,
@@ -1216,11 +1232,20 @@ where
 ///
 /// ```
 /// # use dbsp::dynamic::{DynData, DynUnit};
-/// use dbsp::storage::file::{cache::default_cache, writer::{Parameters, Writer2}};
-/// # use dbsp::storage::file::Factories;
+/// # use dbsp::storage::file::{writer::{Parameters, Writer2}};
+/// use dbsp::storage::{
+///     backend::new_default_backend,
+///     file::{cache::default_cache, Factories},
+/// };
 /// let factories = Factories::<DynData, DynUnit>::new::<u32, ()>();
+/// let tempdir = tempfile::tempdir().unwrap();
+/// let storage_backend = new_default_backend(
+///     tempdir.path().to_path_buf(),
+///    Default::default(),
+/// );
+/// let parameters = Parameters::default();
 /// let mut file =
-///     Writer2::new(&factories, &factories, &default_cache(), Parameters::default()).unwrap();
+///     Writer2::new(&factories, &factories, &default_cache(), &*storage_backend, parameters).unwrap();
 /// for i in 0..1000_u32 {
 ///     for j in 0..10_u32 {
 ///         file.write1((&j, &())).unwrap();
@@ -1257,7 +1282,8 @@ where
     pub fn new(
         factories0: &Factories<K0, A0>,
         factories1: &Factories<K1, A1>,
-        storage: &Arc<FileCache>,
+        buffer_cache: &Arc<FileCache>,
+        storage_backend: &dyn StorageBackend,
         parameters: Parameters,
     ) -> Result<Self, StorageError> {
         Ok(Self {
@@ -1265,7 +1291,8 @@ where
             factories1: factories1.clone(),
             inner: Writer::new(
                 &[&factories0.any_factories(), &factories1.any_factories()],
-                storage,
+                buffer_cache,
+                storage_backend,
                 parameters,
                 2,
             )?,
