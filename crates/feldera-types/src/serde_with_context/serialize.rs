@@ -444,7 +444,8 @@ macro_rules! serialize_table_record {
 
 #[cfg(test)]
 mod test {
-    use lazy_static::lazy_static;
+    use std::sync::LazyLock;
+
     use serde::{Deserialize, Serialize};
 
     use crate::serde_with_context::{SerializationContext, SerializeWithContext, SqlSerdeConfig};
@@ -453,9 +454,7 @@ mod test {
     struct TUPLE0;
     serialize_struct!(TUPLE0()[0] {});
 
-    lazy_static! {
-        static ref DEFAULT_CONFIG: SqlSerdeConfig = SqlSerdeConfig::default();
-    }
+    static DEFAULT_CONFIG: LazyLock<SqlSerdeConfig> = LazyLock::new(SqlSerdeConfig::default);
 
     fn serialize_json_with_default_context<T>(val: &T) -> Result<String, serde_json::Error>
     where

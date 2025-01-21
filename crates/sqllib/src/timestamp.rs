@@ -1729,13 +1729,14 @@ pub fn parse_timeNN(format: Option<String>, st: Option<String>) -> Option<Time> 
 
 #[cfg(test)]
 mod test {
+    use std::sync::LazyLock;
+
     use super::{Date, Time, Timestamp};
     use feldera_types::format::json::JsonFlavor;
     use feldera_types::serde_with_context::{
         DeserializeWithContext, SerializeWithContext, SqlSerdeConfig,
     };
     use feldera_types::{deserialize_table_record, serialize_table_record};
-    use lazy_static::lazy_static;
 
     #[derive(Debug, Eq, PartialEq, serde::Serialize)]
     #[allow(non_snake_case)]
@@ -1756,12 +1757,11 @@ mod test {
         timestamp["timestamp"]:  Timestamp
     });
 
-    lazy_static! {
-        static ref DEFAULT_CONFIG: SqlSerdeConfig = SqlSerdeConfig::default();
-        static ref DEBEZIUM_CONFIG: SqlSerdeConfig =
-            SqlSerdeConfig::from(JsonFlavor::DebeziumMySql);
-        static ref SNOWFLAKE_CONFIG: SqlSerdeConfig = SqlSerdeConfig::from(JsonFlavor::Snowflake);
-    }
+    static DEFAULT_CONFIG: LazyLock<SqlSerdeConfig> = LazyLock::new(SqlSerdeConfig::default);
+    static DEBEZIUM_CONFIG: LazyLock<SqlSerdeConfig> =
+        LazyLock::new(|| SqlSerdeConfig::from(JsonFlavor::DebeziumMySql));
+    static SNOWFLAKE_CONFIG: LazyLock<SqlSerdeConfig> =
+        LazyLock::new(|| SqlSerdeConfig::from(JsonFlavor::Snowflake));
 
     fn deserialize_with_default_config<'de, T>(json: &'de str) -> Result<T, serde_json::Error>
     where
