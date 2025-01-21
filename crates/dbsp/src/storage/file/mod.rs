@@ -296,7 +296,7 @@ where
 
 #[cfg(test)]
 mod test {
-    use crate::storage::test::init_test_logger;
+    use crate::{storage::test::init_test_logger, Runtime};
 
     use super::{
         cache::default_cache,
@@ -568,8 +568,15 @@ mod test {
         let factories0 = Factories::<DynData, DynData>::new::<T::K0, T::A0>();
         let factories1 = Factories::<DynData, DynData>::new::<T::K1, T::A1>();
 
-        let mut layer_file =
-            Writer2::new(&factories0, &factories1, &default_cache(), parameters).unwrap();
+        let cache = default_cache();
+        let mut layer_file = Writer2::new(
+            &factories0,
+            &factories1,
+            &cache,
+            &*Runtime::storage_backend(),
+            parameters,
+        )
+        .unwrap();
         let n0 = T::n0();
         for row0 in 0..n0 {
             for row1 in 0..T::n1(row0) {
@@ -662,7 +669,9 @@ mod test {
         A: DBData,
     {
         let factories = Factories::<DynData, DynData>::new::<K, A>();
-        let mut writer = Writer1::new(&factories, &default_cache(), parameters).unwrap();
+        let cache = default_cache();
+        let mut writer =
+            Writer1::new(&factories, &cache, &*Runtime::storage_backend(), parameters).unwrap();
         for row in 0..n {
             let (_before, key, _after, aux) = expected(row);
             writer.write0((&key, &aux)).unwrap();

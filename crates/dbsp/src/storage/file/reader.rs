@@ -18,6 +18,7 @@ use std::{
 use crate::{
     dynamic::{DataTrait, DeserializeDyn, Factory},
     storage::backend::FileReader,
+    Runtime,
 };
 use binrw::{
     io::{self},
@@ -26,7 +27,7 @@ use binrw::{
 use thiserror::Error as ThisError;
 
 use crate::storage::{
-    backend::{Storage, StorageError},
+    backend::StorageError,
     buffer_cache::{BufferCache, FBuf},
     file::format::{
         DataBlockHeader, FileTrailerColumn, IndexBlockHeader, NodeType, Varint, VERSION_NUMBER,
@@ -1209,7 +1210,7 @@ impl ImmutableFileRef {
         cache: &Arc<BufferCache<FileCacheEntry>>,
         path: &IoPath,
     ) -> Result<Self, Error> {
-        let file_handle = cache.open(path)?;
+        let file_handle = Runtime::storage_backend().open(path)?;
         Ok(Self::new(cache, file_handle, path.to_path_buf()))
     }
 
@@ -1341,7 +1342,7 @@ where
     /// This internally creates an empty temporary file, which means that it can
     /// fail with an I/O error.
     pub fn empty(cache: &Arc<BufferCache<FileCacheEntry>>) -> Result<Self, Error> {
-        let file_handle = cache.create()?;
+        let file_handle = Runtime::storage_backend().create()?;
         let (file_handle, path) = file_handle.complete()?;
         Ok(Self(Arc::new(ReaderInner {
             file: Arc::new(ImmutableFileRef::new(cache, file_handle, path)),

@@ -3,14 +3,12 @@
 //! This is a layer over a storage backend that adds a cache of a
 //! client-provided function of the blocks.
 use std::fmt::Debug;
-use std::path::Path;
-use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use std::{collections::BTreeMap, ops::Range};
 
-use crate::storage::backend::{Backend, FileId, FileReader, FileWriter, Storage};
+use crate::storage::backend::{FileId, FileReader, FileWriter};
 use crate::storage::file::reader::{CorruptionError, Error};
-use crate::{storage::backend::StorageError, storage::buffer_cache::FBuf, Runtime};
+use crate::{storage::backend::StorageError, storage::buffer_cache::FBuf};
 
 /// A key for the block cache.
 ///
@@ -227,14 +225,8 @@ where
         }
     }
 
-    /// Returns the (thread-local) storage backend.
-    pub fn backend() -> Rc<Backend> {
-        thread_local! {
-            pub static DEFAULT_BACKEND: Rc<Backend> = Rc::new(Runtime::new_backend());
-        }
-        DEFAULT_BACKEND.with(|rc| rc.clone())
-    }
-
+    /// Reads `size` bytes at the given `offset` from `file` from the cache, or
+    /// from the underlying storage if it is not cached.
     pub fn read<F, T>(
         &self,
         file: &dyn FileReader,
@@ -277,21 +269,5 @@ where
 
     pub fn evict(&self, file: &dyn FileReader) {
         self.inner.lock().unwrap().delete_file(file.file_id());
-    }
-}
-
-impl<E> Storage for BufferCache<E>
-where
-    E: CacheEntry,
-{
-    fn create(&self) -> Result<Box<dyn FileWriter>, StorageError> {
-        Self::backend().create()
-    }
-    fn create_named(&self, name: &Path) -> Result<Box<dyn FileWriter>, StorageError> {
-        Self::backend().create_named(name)
-    }
-
-    fn open(&self, name: &Path) -> Result<Arc<dyn FileReader>, StorageError> {
-        Self::backend().open(name)
     }
 }
