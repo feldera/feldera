@@ -12,6 +12,7 @@
   import { useUpdatePipelineList } from '$lib/compositions/pipelines/usePipelineList.svelte'
   import DeleteDialog, { deleteDialogProps } from '$lib/components/dialogs/DeleteDialog.svelte'
   import { useGlobalDialog } from '$lib/compositions/useGlobalDialog.svelte'
+  import { isPipelineIdle } from '$lib/functions/pipelines/status'
   let {
     pipelines,
     selectedPipelines = $bindable()
@@ -39,7 +40,7 @@
       .with('ShuttingDown', () => ['shutdown'])
       .with('Unavailable', () => ['delete'])
       .with({ SqlError: P.any }, { RustError: P.any }, { SystemError: P.any }, () => ['delete'])
-      .with({ PipelineError: P.any }, () => ['shutdown'])
+      .with({ PipelineError: P.any }, () => ['shutdown', 'delete'])
       .exhaustive()
   let selected = $derived(
     join(
@@ -47,11 +48,12 @@
       pipelines,
       (name) => name,
       (pipeline) => pipeline.name,
-      (name, p) => p.status
+      (_, p) => p
     )
   )
   let actions = $derived(
     selected
+      .map((p) => p.status)
       .map(statusActions)
       .reduce(
         (acc, cur) =>
@@ -79,7 +81,12 @@
     selectedPipelines = []
   }
   let deletePipelines = () => {
-    selectedPipelines.forEach((pipelineName) => deletePipeline(pipelineName))
+    selected.forEach(async (pipeline) => {
+      if (!isPipelineIdle(pipeline.status)) {
+        await postPipelineAction(pipeline.name, 'shutdown').then((waitFor) => waitFor())
+      }
+      return deletePipeline(pipeline.name)
+    })
     updatePipelines((ps) => ps.filter((p) => !selectedPipelines.includes(p.name)))
     selectedPipelines = []
   }
