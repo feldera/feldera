@@ -152,6 +152,7 @@
     </div>
 
     {#if result}
+    {@const itemHeight = 'h-7'}
       {#key result.columns}
         <div class="pr-4 pt-2">
           <div class="relative h-full w-fit max-w-full">
@@ -184,7 +185,7 @@
                       <thead>
                         <tr>
                           {#each result.columns as column}
-                            <SqlColumnHeader {column} class="bg-white-dark sticky top-0 z-10 h-7"
+                            <SqlColumnHeader {column} class="bg-white-dark sticky top-0 z-10 {itemHeight}"
                             ></SqlColumnHeader>
                           {/each}
                         </tr>
@@ -196,9 +197,9 @@
                   </table>
                 </div>
               {/snippet}
-              {#snippet item(row, style, padding, isSticky)}
+              {#snippet item(row, index, style, padding, isSticky)}
                 {#if 'cells' in row}
-                  <tr {style} class="h-7 whitespace-nowrap odd:bg-white odd:even:bg-black">
+                  <tr {style} class="{itemHeight} whitespace-nowrap odd:bg-white odd:even:bg-black">
                     {#each row.cells as value}
                       <SQLValue
                         {value}
@@ -211,11 +212,11 @@
                     {/each}
                   </tr>
                 {:else if 'error' in row}
-                  <tr {style} class="h-7">
+                  <tr {style} class="{itemHeight}">
                     <td colspan="99999999" class="px-2 preset-tonal-error">{row.error}</td>
                   </tr>
                 {:else}
-                  <tr {style} class="h-7">
+                  <tr {style} class="{itemHeight}">
                     <td colspan="99999999" class="px-2 preset-tonal-warning">{row.warning}</td>
                   </tr>
                 {/if}
