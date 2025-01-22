@@ -91,7 +91,7 @@ where
     pub fn is_distinct(&self) -> bool {
         self.circuit()
             .cache_get(&DistinctIncrementalId::new(self.stream_id()))
-            .map_or(false, |value: Stream<C, D>| value.ptr_eq(self))
+            .is_some_and(|value: Stream<C, D>| value.ptr_eq(self))
     }
 
     /// Returns the distinct version of the stream if it exists

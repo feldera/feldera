@@ -216,7 +216,7 @@ where
                 self.stream_id(),
                 sharding_policy(self.circuit()),
             )))
-            .map_or(false, |sharded| sharded.ptr_eq(self))
+            .is_some_and(|sharded| sharded.ptr_eq(self))
     }
 
     /// Marks `self` as sharded if `input` has a sharded version of itself
