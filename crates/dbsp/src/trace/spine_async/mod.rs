@@ -18,7 +18,7 @@ use crate::{
 };
 
 use crate::storage::file::to_bytes;
-use crate::storage::{checkpoint_path, write_commit_metadata};
+use crate::storage::write_commit_metadata;
 pub use crate::trace::spine_async::snapshot::SpineSnapshot;
 use crate::trace::CommittedSpine;
 use ouroboros::self_referencing;
@@ -41,7 +41,6 @@ use std::{
     sync::Condvar,
 };
 use textwrap::indent;
-use uuid::Uuid;
 
 mod list_merger;
 mod snapshot;
@@ -827,20 +826,13 @@ where
     /// - `cid`: The checkpoint id.
     /// - `persistent_id`: The persistent id that identifies the spine within
     ///   the circuit for a given checkpoint.
-    fn checkpoint_file<P: AsRef<str>>(cid: Uuid, persistent_id: P) -> PathBuf {
-        let mut path = checkpoint_path(cid);
-        path.push(format!("pspine-{}.dat", persistent_id.as_ref()));
-        path
+    fn checkpoint_file(base: &Path, persistent_id: &str) -> PathBuf {
+        base.join(format!("pspine-{}.dat", persistent_id))
     }
 
     /// Return the absolute path of the file for this Spine's batchlist.
-    ///
-    /// # Arguments
-    /// - `sid`: The step id of the checkpoint.
-    fn batchlist_file<P: AsRef<str>>(&self, cid: Uuid, persistent_id: P) -> PathBuf {
-        let mut path = checkpoint_path(cid);
-        path.push(format!("pspine-batches-{}.dat", persistent_id.as_ref()));
-        path
+    fn batchlist_file(&self, base: &Path, persistent_id: &str) -> PathBuf {
+        base.join(format!("pspine-batches-{}.dat", persistent_id))
     }
 }
 
@@ -1072,7 +1064,7 @@ where
         &self.value_filter
     }
 
-    fn commit<P: AsRef<str>>(&mut self, cid: Uuid, persistent_id: P) -> Result<(), Error> {
+    fn commit(&mut self, base: &Path, persistent_id: &str) -> Result<(), Error> {
         fn persist_batches<B>(batches: Vec<Arc<B>>) -> Vec<Arc<B>>
         where
             B: Batch,
@@ -1115,7 +1107,7 @@ where
         let committed: CommittedSpine<B> = (ids, self as &Self).into();
         let as_bytes = to_bytes(&committed).expect("Serializing CommittedSpine should work.");
         write_commit_metadata(
-            Self::checkpoint_file(cid, &persistent_id),
+            Self::checkpoint_file(base, persistent_id),
             as_bytes.as_slice(),
         )?;
 
@@ -1124,15 +1116,15 @@ where
         let batches = committed.batches;
         let as_bytes = to_bytes(&batches).expect("Serializing batches to Vec<String> should work.");
         write_commit_metadata(
-            self.batchlist_file(cid, &persistent_id),
+            self.batchlist_file(base, persistent_id),
             as_bytes.as_slice(),
         )?;
 
         Ok(())
     }
 
-    fn restore<P: AsRef<str>>(&mut self, cid: Uuid, persistent_id: P) -> Result<(), Error> {
-        let pspine_path = Self::checkpoint_file(cid, persistent_id);
+    fn restore(&mut self, base: &Path, persistent_id: &str) -> Result<(), Error> {
+        let pspine_path = Self::checkpoint_file(base, persistent_id);
         let content = fs::read(pspine_path)?;
         let archived = unsafe { rkyv::archived_root::<CommittedSpine<B>>(&content) };
 
