@@ -142,7 +142,6 @@ def configure_program(pipeline_name, program, ft):
                 "workers": cores,
                 "storage": storage,
                 "fault_tolerance": ft,
-                "min_storage_bytes": min_storage_bytes,
                 "cpu_profiler": True,
                 "resources": {
                     # "cpu_cores_min": 0,
@@ -365,15 +364,18 @@ def main():
         all_queries |= load_queries(disabled_folder, save_results)
     profile = parser.parse_args().circuit_profile
 
-    global storage, min_storage_bytes
+    global storage
     queries = sort_queries(parse_queries(all_queries, parser.parse_args().query))
-    storage = parser.parse_args().storage or ft
+    if parser.parse_args().storage or ft:
+        storage = {}
+        min_storage_bytes = parser.parse_args().min_storage_bytes
+        if min_storage_bytes is not None:
+            storage["min_storage_bytes"] = int(min_storage_bytes)
+    else:
+        storage = None
     poller_threads = parser.parse_args().poller_threads
     if poller_threads is not None:
         kafka_options["poller_threads"] = poller_threads
-    min_storage_bytes = parser.parse_args().min_storage_bytes
-    if min_storage_bytes is not None:
-        min_storage_bytes = int(min_storage_bytes)
     csvfile = parser.parse_args().csv
     csvmetricsfile = parser.parse_args().csv_metrics
     metricsinterval = float(parser.parse_args().metrics_interval)

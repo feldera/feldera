@@ -366,7 +366,7 @@
                     "platform_version": "v0",
                     "runtime_config": {
                       "workers": 16,
-                      "storage": false,
+                      "storage": null,
                       "fault_tolerance": null,
                       "cpu_profiler": true,
                       "tracing": false,
@@ -381,7 +381,6 @@
                         "storage_mb_max": null,
                         "storage_class": null
                       },
-                      "min_storage_bytes": null,
                       "clock_resolution_usecs": 100000
                     },
                     "program_code": "CREATE TABLE table1 ( col1 INT );",
@@ -409,7 +408,12 @@
                     "platform_version": "v0",
                     "runtime_config": {
                       "workers": 10,
-                      "storage": true,
+                      "storage": {
+                        "backend": {
+                          "name": "default"
+                        },
+                        "min_storage_bytes": null
+                      },
                       "fault_tolerance": null,
                       "cpu_profiler": false,
                       "tracing": false,
@@ -424,7 +428,6 @@
                         "storage_mb_max": 10000,
                         "storage_class": null
                       },
-                      "min_storage_bytes": null,
                       "clock_resolution_usecs": 100000
                     },
                     "program_code": "CREATE TABLE table2 ( col2 VARCHAR );",
@@ -481,7 +484,7 @@
                 "description": "Description of the pipeline example1",
                 "runtime_config": {
                   "workers": 16,
-                  "storage": false,
+                  "storage": null,
                   "fault_tolerance": null,
                   "cpu_profiler": true,
                   "tracing": false,
@@ -496,7 +499,6 @@
                     "storage_mb_max": null,
                     "storage_class": null
                   },
-                  "min_storage_bytes": null,
                   "clock_resolution_usecs": 100000
                 },
                 "program_code": "CREATE TABLE table1 ( col1 INT );",
@@ -528,7 +530,7 @@
                   "platform_version": "v0",
                   "runtime_config": {
                     "workers": 16,
-                    "storage": false,
+                    "storage": null,
                     "fault_tolerance": null,
                     "cpu_profiler": true,
                     "tracing": false,
@@ -543,7 +545,6 @@
                       "storage_mb_max": null,
                       "storage_class": null
                     },
-                    "min_storage_bytes": null,
                     "clock_resolution_usecs": 100000
                   },
                   "program_code": "CREATE TABLE table1 ( col1 INT );",
@@ -650,7 +651,7 @@
                   "platform_version": "v0",
                   "runtime_config": {
                     "workers": 16,
-                    "storage": false,
+                    "storage": null,
                     "fault_tolerance": null,
                     "cpu_profiler": true,
                     "tracing": false,
@@ -665,7 +666,6 @@
                       "storage_mb_max": null,
                       "storage_class": null
                     },
-                    "min_storage_bytes": null,
                     "clock_resolution_usecs": 100000
                   },
                   "program_code": "CREATE TABLE table1 ( col1 INT );",
@@ -739,7 +739,7 @@
                 "description": "Description of the pipeline example1",
                 "runtime_config": {
                   "workers": 16,
-                  "storage": false,
+                  "storage": null,
                   "fault_tolerance": null,
                   "cpu_profiler": true,
                   "tracing": false,
@@ -754,7 +754,6 @@
                     "storage_mb_max": null,
                     "storage_class": null
                   },
-                  "min_storage_bytes": null,
                   "clock_resolution_usecs": 100000
                 },
                 "program_code": "CREATE TABLE table1 ( col1 INT );",
@@ -786,7 +785,7 @@
                   "platform_version": "v0",
                   "runtime_config": {
                     "workers": 16,
-                    "storage": false,
+                    "storage": null,
                     "fault_tolerance": null,
                     "cpu_profiler": true,
                     "tracing": false,
@@ -801,7 +800,6 @@
                       "storage_mb_max": null,
                       "storage_class": null
                     },
-                    "min_storage_bytes": null,
                     "clock_resolution_usecs": 100000
                   },
                   "program_code": "CREATE TABLE table1 ( col1 INT );",
@@ -839,7 +837,7 @@
                   "platform_version": "v0",
                   "runtime_config": {
                     "workers": 16,
-                    "storage": false,
+                    "storage": null,
                     "fault_tolerance": null,
                     "cpu_profiler": true,
                     "tracing": false,
@@ -854,7 +852,6 @@
                       "storage_mb_max": null,
                       "storage_class": null
                     },
-                    "min_storage_bytes": null,
                     "clock_resolution_usecs": 100000
                   },
                   "program_code": "CREATE TABLE table1 ( col1 INT );",
@@ -1026,7 +1023,7 @@
                   "platform_version": "v0",
                   "runtime_config": {
                     "workers": 16,
-                    "storage": false,
+                    "storage": null,
                     "fault_tolerance": null,
                     "cpu_profiler": true,
                     "tracing": false,
@@ -1041,7 +1038,6 @@
                       "storage_mb_max": null,
                       "storage_class": null
                     },
-                    "min_storage_bytes": null,
                     "clock_resolution_usecs": 100000
                   },
                   "program_code": "CREATE TABLE table1 ( col1 INT );",
@@ -3259,13 +3255,6 @@
                 "default": 0,
                 "minimum": 0
               },
-              "min_storage_bytes": {
-                "type": "integer",
-                "description": "The minimum estimated number of bytes in a batch of data to write it to\nstorage.  This is provided for debugging and fine-tuning and should\nordinarily be left unset. It only has an effect when `storage` is set to\ntrue.\n\nA value of 0 will write even empty batches to storage, and nonzero\nvalues provide a threshold.  `usize::MAX` would effectively disable\nstorage.",
-                "default": null,
-                "nullable": true,
-                "minimum": 0
-              },
               "resources": {
                 "allOf": [
                   {
@@ -3282,9 +3271,13 @@
                 }
               },
               "storage": {
-                "type": "boolean",
-                "description": "Should storage be enabled for this pipeline?\n\n- If `false` (default), the pipeline's state is kept in in-memory\ndata-structures.  This is useful if the pipeline's state will fit in\nmemory and if the pipeline is ephemeral and does not need to be\nrecovered after a restart. The pipeline will most likely run faster\nsince it does not need to access storage.\n\n- If `true`, the pipeline's state is kept on storage.  This allows the\npipeline to work with state that will not fit into memory. It also\nallows the state to be checkpointed and recovered across restarts.\nThis feature is currently experimental.",
-                "default": false
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/StorageOptions"
+                  }
+                ],
+                "default": null,
+                "nullable": true
               },
               "tracing": {
                 "type": "boolean",
@@ -4121,13 +4114,6 @@
             "default": 0,
             "minimum": 0
           },
-          "min_storage_bytes": {
-            "type": "integer",
-            "description": "The minimum estimated number of bytes in a batch of data to write it to\nstorage.  This is provided for debugging and fine-tuning and should\nordinarily be left unset. It only has an effect when `storage` is set to\ntrue.\n\nA value of 0 will write even empty batches to storage, and nonzero\nvalues provide a threshold.  `usize::MAX` would effectively disable\nstorage.",
-            "default": null,
-            "nullable": true,
-            "minimum": 0
-          },
           "resources": {
             "allOf": [
               {
@@ -4144,9 +4130,13 @@
             }
           },
           "storage": {
-            "type": "boolean",
-            "description": "Should storage be enabled for this pipeline?\n\n- If `false` (default), the pipeline's state is kept in in-memory\ndata-structures.  This is useful if the pipeline's state will fit in\nmemory and if the pipeline is ephemeral and does not need to be\nrecovered after a restart. The pipeline will most likely run faster\nsince it does not need to access storage.\n\n- If `true`, the pipeline's state is kept on storage.  This allows the\npipeline to work with state that will not fit into memory. It also\nallows the state to be checkpointed and recovered across restarts.\nThis feature is currently experimental.",
-            "default": false
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StorageOptions"
+              }
+            ],
+            "default": null,
+            "nullable": true
           },
           "tracing": {
             "type": "boolean",
@@ -4464,6 +4454,32 @@
         ],
         "description": "The available SQL types as specified in `CREATE` statements."
       },
+      "StorageBackendConfig": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "name",
+              "config"
+            ],
+            "properties": {
+              "config": {
+                "type": "string",
+                "enum": [
+                  "default"
+                ]
+              },
+              "name": {
+                "type": "string",
+                "enum": [
+                  "config"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "Storage configuration for users."
+      },
       "StorageCacheConfig": {
         "type": "string",
         "description": "How to cache access to storage within a Feldera pipeline.",
@@ -4484,7 +4500,30 @@
           },
           "path": {
             "type": "string",
-            "description": "The location where the pipeline state is stored or will be stored.\n\nIt should point to a path on the file-system of the machine/container\nwhere the pipeline will run. If that path doesn't exist yet, or if it\ndoes not contain any checkpoints, then the pipeline creates it and\nstarts from an initial state in which no data has yet been received. If\nit does exist, then the pipeline starts from the most recent checkpoint\nthat already exists there. In either case, (further) checkpoints will be\nwritten there."
+            "description": "A directory to keep pipeline state, as a path on the filesystem of the\nmachine or container where the pipeline will run.\n\nWhen storage is enabled, this directory stores the data for\n[StorageBackendConfig::Default].\n\nWhen fault tolerance is enabled, this directory stores checkpoints and\nthe log."
+          }
+        }
+      },
+      "StorageOptions": {
+        "type": "object",
+        "description": "Storage configuration for a pipeline.",
+        "properties": {
+          "backend": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StorageBackendConfig"
+              }
+            ],
+            "default": {
+              "name": "default"
+            }
+          },
+          "min_storage_bytes": {
+            "type": "integer",
+            "description": "The minimum estimated number of bytes in a batch of data to write it to\nstorage.  This is provided for debugging and fine-tuning and should\nordinarily be left unset.\n\nA value of 0 will write even empty batches to storage, and nonzero\nvalues provide a threshold.  `usize::MAX` would effectively disable\nstorage.",
+            "default": null,
+            "nullable": true,
+            "minimum": 0
           }
         }
       },

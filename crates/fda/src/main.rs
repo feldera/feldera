@@ -6,7 +6,7 @@ use std::io::{ErrorKind, Read, Write};
 
 use clap::{CommandFactory, Parser};
 use clap_complete::CompleteEnv;
-use feldera_types::config::{FtConfig, RuntimeConfig};
+use feldera_types::config::{FtConfig, RuntimeConfig, StorageOptions};
 use feldera_types::error::ErrorResponse;
 use futures_util::StreamExt;
 use json_to_table::json_to_table;
@@ -373,7 +373,10 @@ fn patch_runtime_config(
             rc.workers = value.parse().map_err(|_| ())?;
         }
         RuntimeConfigKey::Storage => {
-            rc.storage = value.parse().map_err(|_| ())?;
+            let enable: bool = value.parse().map_err(|_| ())?;
+            if enable != rc.storage.is_some() {
+                rc.storage = enable.then(StorageOptions::default);
+            }
         }
         RuntimeConfigKey::FaultTolerance => {
             let enable: bool = value.parse().map_err(|_| ())?;
@@ -420,7 +423,9 @@ fn patch_runtime_config(
             rc.resources.storage_class = Some(value.parse().map_err(|_| ())?);
         }
         RuntimeConfigKey::MinStorageBytes => {
-            rc.min_storage_bytes = Some(value.parse().map_err(|_| ())?);
+            if let Some(storage) = rc.storage.as_mut() {
+                storage.min_storage_bytes = Some(value.parse().map_err(|_| ())?);
+            }
         }
         RuntimeConfigKey::ClockResolutionUsecs => {
             rc.clock_resolution_usecs = Some(value.parse().map_err(|_| ())?);

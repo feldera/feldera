@@ -789,7 +789,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         // Deployment configuration
         let mut deployment_config =
             generate_pipeline_config(pipeline.id, &runtime_config, &inputs, &outputs);
-        deployment_config.storage_config = if deployment_config.global.storage {
+        deployment_config.storage_config = if deployment_config.global.storage.is_some() {
             Some(self.pipeline_handle.generate_storage_config().await)
         } else {
             None
