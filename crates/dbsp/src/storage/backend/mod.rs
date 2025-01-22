@@ -70,6 +70,10 @@ pub enum StorageError {
     /// Unknown checkpoint specified in configuration.
     #[error("Couldn't find the specified checkpoint ({0:?}).")]
     CheckpointNotFound(Uuid),
+
+    /// Cannot perform operation because storage is not enabled.
+    #[error("Cannot perform operation because storage is not enabled.")]
+    StorageDisabled,
 }
 
 impl From<std::io::Error> for StorageError {
