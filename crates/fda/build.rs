@@ -9,6 +9,10 @@ fn type_replacement() -> Vec<(&'static str, &'static str)> {
             "StorageCacheConfig",
             "feldera_types::config::StorageCacheConfig",
         ),
+        (
+            "StorageBackendConfig",
+            "feldera_types::config::StorageBackendConfig",
+        ),
         ("RuntimeConfig", "feldera_types::config::RuntimeConfig"),
         (
             "InputEndpointConfig",

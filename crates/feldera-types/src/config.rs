@@ -71,15 +71,14 @@ pub struct PipelineConfig {
 /// Configuration for persistent storage in a [`PipelineConfig`].
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct StorageConfig {
-    /// The location where the pipeline state is stored or will be stored.
+    /// A directory to keep pipeline state, as a path on the filesystem of the
+    /// machine or container where the pipeline will run.
     ///
-    /// It should point to a path on the file-system of the machine/container
-    /// where the pipeline will run. If that path doesn't exist yet, or if it
-    /// does not contain any checkpoints, then the pipeline creates it and
-    /// starts from an initial state in which no data has yet been received. If
-    /// it does exist, then the pipeline starts from the most recent checkpoint
-    /// that already exists there. In either case, (further) checkpoints will be
-    /// written there.
+    /// When storage is enabled, this directory stores the data for
+    /// [StorageBackendConfig::Default].
+    ///
+    /// When fault tolerance is enabled, this directory stores checkpoints and
+    /// the log.
     pub path: String,
 
     /// How to cache access to storage in this pipeline.
@@ -125,6 +124,34 @@ impl StorageCacheConfig {
     }
 }
 
+/// Storage configuration for a pipeline.
+#[derive(Debug, Clone, Default, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
+#[serde(default)]
+pub struct StorageOptions {
+    /// How to connect to the underlying storage.
+    pub backend: StorageBackendConfig,
+
+    /// The minimum estimated number of bytes in a batch of data to write it to
+    /// storage.  This is provided for debugging and fine-tuning and should
+    /// ordinarily be left unset.
+    ///
+    /// A value of 0 will write even empty batches to storage, and nonzero
+    /// values provide a threshold.  `usize::MAX` would effectively disable
+    /// storage.
+    pub min_storage_bytes: Option<usize>,
+}
+
+/// Storage configuration for users.
+#[derive(Debug, Clone, Default, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
+#[serde(tag = "name", content = "config", rename_all = "snake_case")]
+pub enum StorageBackendConfig {
+    /// Use the default storage location.
+    ///
+    /// Currently this is the pipeline's local filesystem.
+    #[default]
+    Default,
+}
+
 /// Global pipeline configuration settings. This is the publicly
 /// exposed type for users to configure pipelines.
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
@@ -133,22 +160,22 @@ pub struct RuntimeConfig {
     /// Number of DBSP worker threads.
     pub workers: u16,
 
-    /// Should storage be enabled for this pipeline?
+    /// Storage configuration.
     ///
-    /// - If `false` (default), the pipeline's state is kept in in-memory
-    ///   data-structures.  This is useful if the pipeline's state will fit in
-    ///   memory and if the pipeline is ephemeral and does not need to be
-    ///   recovered after a restart. The pipeline will most likely run faster
-    ///   since it does not need to access storage.
+    /// - If this is `None`, the default, the pipeline's state is kept in
+    ///   in-memory data-structures.  This is useful if the pipeline's state
+    ///   will fit in memory and if the pipeline is ephemeral and does not need
+    ///   to be recovered after a restart. The pipeline will most likely run
+    ///   faster since it does not need to access storage.
     ///
-    /// - If `true`, the pipeline's state is kept on storage.  This allows the
+    /// - If set, the pipeline's state is kept on storage.  This allows the
     ///   pipeline to work with state that will not fit into memory. It also
     ///   allows the state to be checkpointed and recovered across restarts.
     ///   This feature is currently experimental.
-    pub storage: bool,
+    pub storage: Option<StorageOptions>,
 
     /// Configures fault tolerance with the specified start up behavior. Fault
-    /// tolerance is disabled if this is `None` or if `storage` is false.
+    /// tolerance is disabled if this or `storage` is `None`.
     #[serde(deserialize_with = "deserialize_fault_tolerance")]
     pub fault_tolerance: Option<FtConfig>,
 
@@ -179,16 +206,6 @@ pub struct RuntimeConfig {
     /// Resource reservations and limits. This is enforced
     /// only in Feldera Cloud.
     pub resources: ResourceConfig,
-
-    /// The minimum estimated number of bytes in a batch of data to write it to
-    /// storage.  This is provided for debugging and fine-tuning and should
-    /// ordinarily be left unset. It only has an effect when `storage` is set to
-    /// true.
-    ///
-    /// A value of 0 will write even empty batches to storage, and nonzero
-    /// values provide a threshold.  `usize::MAX` would effectively disable
-    /// storage.
-    pub min_storage_bytes: Option<usize>,
 
     /// Real-time clock resolution in microseconds.
     ///
@@ -257,7 +274,7 @@ impl Default for RuntimeConfig {
     fn default() -> Self {
         Self {
             workers: 8,
-            storage: false,
+            storage: None,
             fault_tolerance: None,
             cpu_profiler: true,
             tracing: {
@@ -269,7 +286,6 @@ impl Default for RuntimeConfig {
             min_batch_size_records: 0,
             max_buffering_delay_usecs: 0,
             resources: ResourceConfig::default(),
-            min_storage_bytes: None,
             clock_resolution_usecs: {
                 // Every 100 ms.
                 Some(100_000)

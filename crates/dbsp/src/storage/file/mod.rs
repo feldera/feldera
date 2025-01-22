@@ -298,7 +298,7 @@ where
 mod test {
     use crate::{
         circuit::tokio::TOKIO,
-        storage::{backend::new_default_backend, test::init_test_logger},
+        storage::{backend::StorageBackend, test::init_test_logger},
     };
 
     use super::{
@@ -312,6 +312,7 @@ mod test {
         dynamic::{DynData, Erase},
         DBData,
     };
+    use feldera_types::config::StorageConfig;
     use rand::{seq::SliceRandom, thread_rng, Rng};
     use tempfile::tempdir;
 
@@ -768,7 +769,10 @@ mod test {
 
         let cache = default_cache();
         let tempdir = tempdir().unwrap();
-        let storage_backend = new_default_backend(tempdir.path().to_path_buf(), Default::default());
+        let storage_backend = <dyn StorageBackend>::new_default(&StorageConfig {
+            path: tempdir.path().to_string_lossy().to_string(),
+            cache: Default::default(),
+        });
         let mut layer_file = Writer2::new(
             &factories0,
             &factories1,
@@ -902,7 +906,10 @@ mod test {
         let factories = Factories::<DynData, DynData>::new::<K, A>();
         let cache = default_cache();
         let tempdir = tempdir().unwrap();
-        let storage_backend = new_default_backend(tempdir.path().to_path_buf(), Default::default());
+        let storage_backend = <dyn StorageBackend>::new_default(&StorageConfig {
+            path: tempdir.path().to_string_lossy().to_string(),
+            cache: Default::default(),
+        });
         let mut writer = Writer1::new(&factories, &cache, &*storage_backend, parameters).unwrap();
         for row in 0..n {
             let (_before, key, _after, aux) = expected(row);
