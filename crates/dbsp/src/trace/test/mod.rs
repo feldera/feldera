@@ -1,4 +1,10 @@
-use std::cmp::max;
+use std::{
+    cmp::max,
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    },
+};
 
 use proptest::{collection::vec, prelude::*, strategy::BoxedStrategy};
 use size_of::SizeOf;
@@ -8,6 +14,7 @@ use crate::{
         IndexedZSet, OrdIndexedZSet, OrdIndexedZSetFactories, OrdZSet, OrdZSetFactories, ZBatch,
         ZSet,
     },
+    circuit::mkconfig,
     dynamic::{pair::DynPair, DowncastTrait, DynData, DynUnit, DynWeightedPairs, Erase, LeanVec},
     trace::{
         cursor::CursorPair,
@@ -23,7 +30,7 @@ use crate::{
         Batch, BatchReader, BatchReaderFactories, Spine, Trace,
     },
     utils::{Tup2, Tup3, Tup4},
-    DynZWeight, ZWeight,
+    DynZWeight, Runtime, ZWeight,
 };
 
 use super::{Builder, Filter, TimedBuilder};
@@ -600,8 +607,10 @@ proptest! {
 
     #[test]
     fn test_file_zset_trace_spine(batches in kr_batches(100, 2, 200, 10), seed in 0..u64::MAX) {
-        let factories = <FileKeyBatchFactories<DynI32, u32, DynZWeight>>::new::<i32, (), ZWeight>();
-        test_zset_trace_spine::<FileKeyBatch<DynI32, u32, DynZWeight>>(&factories, batches, seed)
+        run_in_circuit_with_storage(move || {
+            let factories = <FileKeyBatchFactories<DynI32, u32, DynZWeight>>::new::<i32, (), ZWeight>();
+            test_zset_trace_spine::<FileKeyBatch<DynI32, u32, DynZWeight>>(&factories, batches, seed);
+        });
     }
 
     #[test]
@@ -613,10 +622,11 @@ proptest! {
 
     #[test]
     fn test_file_indexed_zset_trace_spine(batches in kvr_batches(100, 5, 2, 100, 10), seed in 0..u64::MAX) {
-        let factories =
-        <FileValBatchFactories<DynI32, DynI32, u32, DynZWeight>>::new::<i32, i32, ZWeight>();
-
-        test_indexed_zset_trace_spine::<FileValBatch<DynI32, DynI32, u32, DynZWeight>>(&factories, batches, seed)
+        run_in_circuit_with_storage(move || {
+            let factories =
+                <FileValBatchFactories<DynI32, DynI32, u32, DynZWeight>>::new::<i32, i32, ZWeight>();
+            test_indexed_zset_trace_spine::<FileValBatch<DynI32, DynI32, u32, DynZWeight>>(&factories, batches, seed);
+        });
     }
 
     // Like `test_indexed_zset_trace_spine` but keeps even values only.
@@ -684,6 +694,32 @@ proptest! {
 
 }
 
+/// Executes `f`, once, inside a circuit initialized so that it has access to
+/// storage.
+///
+/// This is necessary because the batches in `crate::trace::ord::file` require
+/// access to storage, which they get per-thread from a [Runtime], and which is
+/// only available within a circuit initialized with storage.
+fn run_in_circuit_with_storage<F>(f: F)
+where
+    F: FnOnce() + Clone + Send + 'static,
+{
+    let (_temp_dir, config) = mkconfig();
+    let count = Arc::new(AtomicUsize::new(0));
+    Runtime::init_circuit(config, {
+        let count = count.clone();
+        move |_| {
+            count.fetch_add(1, Ordering::Relaxed);
+            f();
+            Ok(())
+        }
+    })
+    .unwrap();
+
+    // Make sure that the callback executes exactly once.
+    assert_eq!(count.load(Ordering::Relaxed), 1);
+}
+
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(1000))]
 
@@ -696,9 +732,10 @@ proptest! {
 
     #[test]
     fn test_file_indexed_zset_builder(batch in kvtr_batch(5, 5, 5, 5, 20), seed in 0..u64::MAX) {
-        let factories = <FileValBatchFactories<DynI32, DynI32, u32, DynZWeight>>::new::<i32, i32, ZWeight>();
-
-        test_indexed_zset_trace_builder::<FileValBatch<DynI32, DynI32, u32, DynZWeight>>(&factories, batch, seed)
+        run_in_circuit_with_storage(move || {
+            let factories = <FileValBatchFactories<DynI32, DynI32, u32, DynZWeight>>::new::<i32, i32, ZWeight>();
+            test_indexed_zset_trace_builder::<FileValBatch<DynI32, DynI32, u32, DynZWeight>>(&factories, batch, seed);
+        });
     }
 
     #[test]
@@ -710,8 +747,9 @@ proptest! {
 
     #[test]
     fn test_file_zset_builder(batch in ktr_batch(5, 5, 5, 20), seed in 0..u64::MAX) {
-        let factories = <FileKeyBatchFactories<DynI32, u32, DynZWeight>>::new::<i32, (), ZWeight>();
-
-        test_zset_trace_builder::<FileKeyBatch<DynI32, u32, DynZWeight>>(&factories, batch, seed)
+        run_in_circuit_with_storage(move || {
+            let factories = <FileKeyBatchFactories<DynI32, u32, DynZWeight>>::new::<i32, (), ZWeight>();
+            test_zset_trace_builder::<FileKeyBatch<DynI32, u32, DynZWeight>>(&factories, batch, seed);
+        });
     }
 }
