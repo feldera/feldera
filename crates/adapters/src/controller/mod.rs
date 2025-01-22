@@ -1371,17 +1371,11 @@ impl ControllerInit {
             layout: Layout::new_solo(pipeline_config.global.workers as usize),
             // Put the circuit's checkpoints in a `circuit` subdirectory of the
             // storage directory.
-            storage: if pipeline_config.global.storage {
+            storage: if let Some(options) = &pipeline_config.global.storage {
                 if let Some(config) = &pipeline_config.storage_config {
                     Some(CircuitStorageConfig {
                         config: config.clone(),
-                        min_storage_bytes: {
-                            // This reduces the files stored on disk to a reasonable number.
-                            pipeline_config
-                                .global
-                                .min_storage_bytes
-                                .unwrap_or(1024 * 1024)
-                        },
+                        options: options.clone(),
                         init_checkpoint,
                     })
                 } else {

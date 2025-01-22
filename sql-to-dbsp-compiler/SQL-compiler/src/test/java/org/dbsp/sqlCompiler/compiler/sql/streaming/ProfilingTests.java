@@ -116,12 +116,7 @@ public class ProfilingTests extends StreamingTestBase {
                     recorder.install().unwrap();
 
                     let (mut circuit, streams) = circuit(
-                         CircuitConfig {
-                             layout: Layout::new_solo(2),
-                             storage: None,
-                             min_storage_bytes: usize::MAX,
-                             init_checkpoint: Uuid::nil(),
-                         }).expect("could not build circuit");
+                        CircuitConfig::with_workers(2)).expect("could not build circuit");
                     // uncomment if you want a CPU profile
                     // let _ = circuit.enable_cpu_profiler();
                     let start = SystemTime::now();

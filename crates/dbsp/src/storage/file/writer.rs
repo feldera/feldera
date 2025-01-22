@@ -1107,16 +1107,17 @@ impl Writer {
 /// ```
 /// # use dbsp::dynamic::{DynData, Erase, DynUnit};
 /// # use dbsp::storage::file::{writer::{Parameters, Writer1}};
+/// use feldera_types::config::{StorageConfig, StorageOptions};
 /// use dbsp::storage::{
-///     backend::new_default_backend,
+///     backend::StorageBackend,
 ///     file::{cache::default_cache, Factories},
 /// };
 /// let factories = Factories::<DynData, DynUnit>::new::<u32, ()>();
 /// let tempdir = tempfile::tempdir().unwrap();
-/// let storage_backend = new_default_backend(
-///     tempdir.path().to_path_buf(),
-///    Default::default(),
-/// );
+/// let storage_backend = <dyn StorageBackend>::new(&StorageConfig {
+///     path: tempdir.path().to_string_lossy().to_string(),
+///    cache: Default::default(),
+/// }, &StorageOptions::default()).unwrap();
 /// let parameters = Parameters::default();
 /// let mut file =
 ///     Writer1::new(&factories, &default_cache(), &*storage_backend, parameters).unwrap();
@@ -1233,16 +1234,17 @@ where
 /// ```
 /// # use dbsp::dynamic::{DynData, DynUnit};
 /// # use dbsp::storage::file::{writer::{Parameters, Writer2}};
+/// use feldera_types::config::{StorageConfig, StorageOptions};
 /// use dbsp::storage::{
-///     backend::new_default_backend,
+///     backend::StorageBackend,
 ///     file::{cache::default_cache, Factories},
 /// };
 /// let factories = Factories::<DynData, DynUnit>::new::<u32, ()>();
 /// let tempdir = tempfile::tempdir().unwrap();
-/// let storage_backend = new_default_backend(
-///     tempdir.path().to_path_buf(),
-///    Default::default(),
-/// );
+/// let storage_backend = <dyn StorageBackend>::new(&StorageConfig {
+///     path: tempdir.path().to_string_lossy().to_string(),
+///    cache: Default::default(),
+/// }, &StorageOptions::default()).unwrap();
 /// let parameters = Parameters::default();
 /// let mut file =
 ///     Writer2::new(&factories, &factories, &default_cache(), &*storage_backend, parameters).unwrap();

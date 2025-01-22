@@ -15,7 +15,7 @@ use crate::db::types::utils::{
 use crate::db::types::version::Version;
 use crate::error::ManagerError;
 use crate::runner::error::RunnerError;
-use feldera_types::config::ResourceConfig;
+use feldera_types::config::{ResourceConfig, StorageOptions};
 use feldera_types::{config::RuntimeConfig, error::ErrorResponse};
 use uuid::uuid;
 
@@ -103,7 +103,7 @@ fn extended_pipeline_2() -> ExtendedPipelineDescr {
         platform_version: "v0".to_string(),
         runtime_config: serde_json::to_value(RuntimeConfig {
             workers: 10,
-            storage: true,
+            storage: Some(StorageOptions::default()),
             fault_tolerance: None,
             cpu_profiler: false,
             tracing: false,
@@ -118,7 +118,6 @@ fn extended_pipeline_2() -> ExtendedPipelineDescr {
                 storage_mb_max: Some(10000),
                 storage_class: None,
             },
-            min_storage_bytes: None,
             clock_resolution_usecs: Some(100_000),
         })
         .unwrap(),

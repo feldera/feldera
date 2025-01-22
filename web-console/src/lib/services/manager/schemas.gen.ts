@@ -1666,20 +1666,6 @@ Defaults to 0.`,
           default: 0,
           minimum: 0
         },
-        min_storage_bytes: {
-          type: 'integer',
-          description: `The minimum estimated number of bytes in a batch of data to write it to
-storage.  This is provided for debugging and fine-tuning and should
-ordinarily be left unset. It only has an effect when \`storage\` is set to
-true.
-
-A value of 0 will write even empty batches to storage, and nonzero
-values provide a threshold.  \`usize::MAX\` would effectively disable
-storage.`,
-          default: null,
-          nullable: true,
-          minimum: 0
-        },
         resources: {
           allOf: [
             {
@@ -1696,20 +1682,13 @@ storage.`,
           }
         },
         storage: {
-          type: 'boolean',
-          description: `Should storage be enabled for this pipeline?
-
-- If \`false\` (default), the pipeline's state is kept in in-memory
-data-structures.  This is useful if the pipeline's state will fit in
-memory and if the pipeline is ephemeral and does not need to be
-recovered after a restart. The pipeline will most likely run faster
-since it does not need to access storage.
-
-- If \`true\`, the pipeline's state is kept on storage.  This allows the
-pipeline to work with state that will not fit into memory. It also
-allows the state to be checkpointed and recovered across restarts.
-This feature is currently experimental.`,
-          default: false
+          allOf: [
+            {
+              $ref: '#/components/schemas/StorageOptions'
+            }
+          ],
+          default: null,
+          nullable: true
         },
         tracing: {
           type: 'boolean',
@@ -2711,20 +2690,6 @@ Defaults to 0.`,
       default: 0,
       minimum: 0
     },
-    min_storage_bytes: {
-      type: 'integer',
-      description: `The minimum estimated number of bytes in a batch of data to write it to
-storage.  This is provided for debugging and fine-tuning and should
-ordinarily be left unset. It only has an effect when \`storage\` is set to
-true.
-
-A value of 0 will write even empty batches to storage, and nonzero
-values provide a threshold.  \`usize::MAX\` would effectively disable
-storage.`,
-      default: null,
-      nullable: true,
-      minimum: 0
-    },
     resources: {
       allOf: [
         {
@@ -2741,20 +2706,13 @@ storage.`,
       }
     },
     storage: {
-      type: 'boolean',
-      description: `Should storage be enabled for this pipeline?
-
-- If \`false\` (default), the pipeline's state is kept in in-memory
-data-structures.  This is useful if the pipeline's state will fit in
-memory and if the pipeline is ephemeral and does not need to be
-recovered after a restart. The pipeline will most likely run faster
-since it does not need to access storage.
-
-- If \`true\`, the pipeline's state is kept on storage.  This allows the
-pipeline to work with state that will not fit into memory. It also
-allows the state to be checkpointed and recovered across restarts.
-This feature is currently experimental.`,
-      default: false
+      allOf: [
+        {
+          $ref: '#/components/schemas/StorageOptions'
+        }
+      ],
+      default: null,
+      nullable: true
     },
     tracing: {
       type: 'boolean',
@@ -3047,10 +3005,50 @@ export const $SqlType = {
   description: 'The available SQL types as specified in `CREATE` statements.'
 } as const
 
+export const $StorageBackendConfig = {
+  oneOf: [
+    {
+      type: 'object',
+      required: ['name', 'config'],
+      properties: {
+        config: {
+          type: 'string',
+          enum: ['default']
+        },
+        name: {
+          type: 'string',
+          enum: ['config']
+        }
+      }
+    },
+    {
+      type: 'object',
+      required: ['name', 'config'],
+      properties: {
+        config: {
+          type: 'string',
+          enum: ['io_uring']
+        },
+        name: {
+          type: 'string',
+          enum: ['config']
+        }
+      }
+    }
+  ],
+  description: 'Backend storage configuration.'
+} as const
+
 export const $StorageCacheConfig = {
   type: 'string',
   description: 'How to cache access to storage within a Feldera pipeline.',
   enum: ['page_cache', 'feldera_cache']
+} as const
+
+export const $StorageCompression = {
+  type: 'string',
+  description: 'Storage compression algorithm.',
+  enum: ['default', 'none', 'snappy']
 } as const
 
 export const $StorageConfig = {
@@ -3063,15 +3061,52 @@ export const $StorageConfig = {
     },
     path: {
       type: 'string',
-      description: `The location where the pipeline state is stored or will be stored.
+      description: `A directory to keep pipeline state, as a path on the filesystem of the
+machine or container where the pipeline will run.
 
-It should point to a path on the file-system of the machine/container
-where the pipeline will run. If that path doesn't exist yet, or if it
-does not contain any checkpoints, then the pipeline creates it and
-starts from an initial state in which no data has yet been received. If
-it does exist, then the pipeline starts from the most recent checkpoint
-that already exists there. In either case, (further) checkpoints will be
-written there.`
+When storage is enabled, this directory stores the data for
+[StorageBackendConfig::Default].
+
+When fault tolerance is enabled, this directory stores checkpoints and
+the log.`
+    }
+  }
+} as const
+
+export const $StorageOptions = {
+  type: 'object',
+  description: 'Storage configuration for a pipeline.',
+  properties: {
+    backend: {
+      allOf: [
+        {
+          $ref: '#/components/schemas/StorageBackendConfig'
+        }
+      ],
+      default: {
+        name: 'default'
+      }
+    },
+    compression: {
+      allOf: [
+        {
+          $ref: '#/components/schemas/StorageCompression'
+        }
+      ],
+      default: 'default'
+    },
+    min_storage_bytes: {
+      type: 'integer',
+      description: `The minimum estimated number of bytes in a batch of data to write it to
+storage.  This is provided for debugging and fine-tuning and should
+ordinarily be left unset.
+
+A value of 0 will write even empty batches to storage, and nonzero
+values provide a threshold.  \`usize::MAX\` would effectively disable
+storage.`,
+      default: null,
+      nullable: true,
+      minimum: 0
     }
   }
 } as const

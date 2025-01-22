@@ -3,7 +3,6 @@
 
 use crate::circuit::metrics::describe_metrics;
 use crate::error::Error as DbspError;
-use crate::storage::backend::new_default_backend;
 use crate::storage::backend::StorageBackend;
 use crate::storage::file::format::Compression;
 use crate::storage::file::writer::Parameters;
@@ -14,6 +13,7 @@ use crate::{
     },
     DetailedError,
 };
+use feldera_types::config::StorageCompression;
 use once_cell::sync::Lazy;
 use serde::Serialize;
 use std::path::Path;
@@ -382,17 +382,24 @@ impl Runtime {
     /// Returns this thread's storage backend, if storage is configured.
     ///
     /// Storage backends are thread-local.
-    pub fn storage_backend() -> Option<Rc<dyn StorageBackend>> {
-        fn new_backend() -> Option<Rc<dyn StorageBackend>> {
-            Runtime::runtime().and_then(|runtime| {
-                runtime.inner().storage.as_ref().map(|storage| {
-                    new_default_backend(storage.config.path().to_path_buf(), storage.config.cache)
+    ///
+    /// # Panic
+    ///
+    /// Panics if this thread is not in a [Runtime].
+    pub fn storage_backend() -> Result<Rc<dyn StorageBackend>, StorageError> {
+        fn new_backend() -> Result<Rc<dyn StorageBackend>, StorageError> {
+            Runtime::runtime()
+                .unwrap()
+                .inner()
+                .storage
+                .as_ref()
+                .map_or(Err(StorageError::StorageDisabled), |storage| {
+                    <dyn StorageBackend>::new(&storage.config, &storage.options)
                 })
-            })
         }
 
         thread_local! {
-            pub static BACKEND: Option<Rc<dyn StorageBackend>> = new_backend();
+            pub static BACKEND: Result<Rc<dyn StorageBackend>, StorageError> = new_backend();
         }
         BACKEND.with(|rc| rc.clone())
     }
@@ -435,26 +442,31 @@ impl Runtime {
                     .inner()
                     .storage
                     .as_ref()?
-                    .min_storage_bytes,
+                    .options
+                    .min_storage_bytes
+                    .unwrap_or({
+                        // This reduces the files stored on disk to a reasonable number.
+
+                        1024 * 1024
+                    }),
             )
         })
     }
 
     pub fn file_writer_parameters() -> Parameters {
-        static DEFAULT_COMPRESSION: LazyLock<Option<Compression>> = LazyLock::new(|| {
-            let var = std::env::var("FELDERA_COMPRESSION").unwrap_or_default();
-            let compression = match var.as_str() {
-                "none" => None,
-                "" | "snappy" => Some(Compression::Snappy),
-                _ => {
-                    tracing::warn!("unknown compression algorithm {var:?}");
-                    Some(Compression::Snappy)
-                }
-            };
-            tracing::info!("storage using compression={compression:?}");
-            compression
-        });
-        Parameters::default().with_compression(*DEFAULT_COMPRESSION)
+        let compression = Runtime::runtime()
+            .unwrap()
+            .inner()
+            .storage
+            .as_ref()
+            .unwrap()
+            .options
+            .compression;
+        let compression = match compression {
+            StorageCompression::Default | StorageCompression::Snappy => Some(Compression::Snappy),
+            StorageCompression::None => None,
+        };
+        Parameters::default().with_compression(compression)
     }
 
     fn inner(&self) -> &RuntimeInner {
@@ -710,7 +722,7 @@ mod tests {
         operator::Generator,
         Circuit, RootCircuit,
     };
-    use feldera_types::config::{StorageCacheConfig, StorageConfig};
+    use feldera_types::config::{StorageCacheConfig, StorageConfig, StorageOptions};
     use std::{cell::RefCell, rc::Rc, thread::sleep, time::Duration};
 
     #[test]
@@ -732,7 +744,7 @@ mod tests {
                     path: path.to_string_lossy().into_owned(),
                     cache: StorageCacheConfig::default(),
                 },
-                min_storage_bytes: usize::MAX,
+                options: StorageOptions::default(),
                 init_checkpoint: None,
             }),
         };
