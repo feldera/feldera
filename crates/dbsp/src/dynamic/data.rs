@@ -3,10 +3,7 @@ use std::{fmt::Debug, ops::DerefMut};
 
 use crate::{
     declare_trait_object, declare_typed_trait_object,
-    dynamic::{
-        rkyv::SerializeDyn, ArchiveTrait, AsAny, Clonable, ClonableTrait, Comparable,
-        DeserializableDyn, DowncastTrait,
-    },
+    dynamic::{AsAny, Clonable, ClonableTrait, Comparable, DowncastTrait},
     hash::default_hash,
     DBData, NumEntries,
 };
@@ -15,9 +12,7 @@ use crate::{
 /// all data types stored in DBSP batches.
 ///
 /// This trait is object safe and can be invoked via dynamic dispatch.
-pub trait Data:
-    Comparable + Clonable + SerializeDyn + DeserializableDyn + Send + Sync + Debug + AsAny + SizeOf
-{
+pub trait Data: Comparable + Clonable + Send + Sync + Debug + AsAny + SizeOf {
     /// Compute a hash of the object using default hasher and seed.
     fn default_hash(&self) -> u64;
 

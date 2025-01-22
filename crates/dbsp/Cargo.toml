@@ -41,7 +41,6 @@ arc-swap = "1.5.1"
 mimalloc-rust-sys = "1.7.2"
 rand = "0.8.5"
 rust_decimal = { package = "feldera_rust_decimal", version = "1.33.1-feldera.1" }
-rkyv = { version = "0.7.45", default-features = false, features = ["std", "size_64", "validation", "uuid"] }
 size-of = { version = "0.1.5", package = "feldera-size-of", features = ["hashbrown", "time-std", "xxhash-xxh3", "arcstr", "chrono", "ordered-float"] }
 tarpc = { version = "0.33.0", features = ["full"] }
 futures = "0.3"
@@ -73,7 +72,7 @@ minitrace = "0.6"
 ouroboros = "0.18.4"
 tracing = "0.1.40"
 parquet = { version = "54", features = ["async"] }
-
+arrow_convert = "0.8.0"
 
 [dependencies.time]
 version = "0.3.20"
