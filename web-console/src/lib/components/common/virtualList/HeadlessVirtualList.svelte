@@ -127,7 +127,7 @@
   {#each indices as index, i (index)}
     {@render item({
       index,
-      style: `transform: translateY(${(indices[0] - (stickyRow === undefined ? 0 : 1)) * itemSize}px);`
+      style: `transform: translateY(${(indexOffset - (stickyRow === undefined ? 0 : 1)) * itemSize}px);`
     })}
   {/each}
   {@render footer?.()}
