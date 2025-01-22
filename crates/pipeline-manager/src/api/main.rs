@@ -237,7 +237,6 @@ fn api_scope() -> Scope {
         .service(endpoints::pipeline_management::put_pipeline)
         .service(endpoints::pipeline_management::patch_pipeline)
         .service(endpoints::pipeline_management::delete_pipeline)
-        .service(endpoints::pipeline_management::post_pipeline_action)
         // Pipeline interaction endpoints
         .service(endpoints::pipeline_interaction::http_input)
         .service(endpoints::pipeline_interaction::http_output)
@@ -248,6 +247,8 @@ fn api_scope() -> Scope {
         .service(endpoints::pipeline_interaction::get_pipeline_circuit_profile)
         .service(endpoints::pipeline_interaction::get_pipeline_heap_profile)
         .service(endpoints::pipeline_interaction::pipeline_adhoc_sql)
+        // Pipeline management endpoint (placed here to prevent {action} from matching e.g., "checkpoint")
+        .service(endpoints::pipeline_management::post_pipeline_action)
         // API keys endpoints
         .service(endpoints::api_key::list_api_keys)
         .service(endpoints::api_key::get_api_key)
