@@ -68,8 +68,8 @@
 
   let scrollTop = $state(0)
   let clientHeight = $state(0)
-  let indexOffset = $derived(Math.max(Math.round(scrollTop / itemSize) - overScan - 1, 0))
-  let visibleCount = $derived(Math.round(clientHeight / itemSize) + 2 + 2 * overScan)
+  let indexOffset = $derived(Math.max(Math.round((scrollTop - marginTop) / itemSize) - overScan - 1, 0))
+  let visibleCount = $derived(Math.round((clientHeight - marginTop) / itemSize) + 2 + 2 * overScan)
 
   let stickyRow = $derived(
     ((i) => (i === -1 ? undefined : stickyIndices[i]))(
