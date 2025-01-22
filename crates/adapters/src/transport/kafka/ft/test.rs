@@ -15,6 +15,7 @@ use crossbeam::sync::{Parker, Unparker};
 use csv::ReaderBuilder as CsvReaderBuilder;
 use feldera_types::program_schema::Relation;
 use rmpv::Value as RmpValue;
+use std::fs::create_dir;
 use std::hash::Hasher;
 use std::ops::Range;
 use std::sync::atomic::AtomicUsize;
@@ -815,6 +816,7 @@ fn test_ft(topic: &str, rounds: &[FtTestRound]) {
     //println!("{}", tempdir_path.display());
 
     let storage_dir = tempdir_path.join("storage");
+    create_dir(&storage_dir).unwrap();
     let output_path = tempdir_path.join("output.csv");
 
     let config_str = format!(

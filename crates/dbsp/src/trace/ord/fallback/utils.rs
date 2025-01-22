@@ -517,7 +517,7 @@ where
     // This is equivalent to `batch1.byte_size() + batch2.byte_size() >=
     // Runtime::min_storage_bytes()` but it avoids calling `byte_size()` any
     // more than necessary since it can be expensive.
-    match Runtime::min_storage_bytes() {
+    match Runtime::min_storage_bytes().unwrap_or(usize::MAX) {
         0 => BatchLocation::Storage,
         usize::MAX => BatchLocation::Memory,
         min_storage_bytes => {

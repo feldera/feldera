@@ -33,8 +33,9 @@ use crossbeam::{
     sync::{Parker, ShardedLock, Unparker},
 };
 use datafusion::prelude::*;
+use dbsp::circuit::CircuitStorageConfig;
 use dbsp::{
-    circuit::{CircuitConfig, Layout, StorageConfig},
+    circuit::{CircuitConfig, Layout},
     profile::GraphProfile,
     DBSPHandle,
 };
@@ -1370,38 +1371,27 @@ impl ControllerInit {
             layout: Layout::new_solo(pipeline_config.global.workers as usize),
             // Put the circuit's checkpoints in a `circuit` subdirectory of the
             // storage directory.
-            storage: pipeline_config
-                .storage_config
-                .as_ref()
-                .map(|storage| {
-                    let path = storage.path().join("circuit");
-                    fs::create_dir_all(&path)?;
-                    Ok(StorageConfig {
-                        path: {
-                            // This `unwrap` should be OK because `path` came
-                            // from a `String` anyway.
-                            path.into_os_string().into_string().unwrap()
+            storage: if pipeline_config.global.storage {
+                if let Some(config) = &pipeline_config.storage_config {
+                    Some(CircuitStorageConfig {
+                        config: config.clone(),
+                        min_storage_bytes: {
+                            // This reduces the files stored on disk to a reasonable number.
+                            pipeline_config
+                                .global
+                                .min_storage_bytes
+                                .unwrap_or(1024 * 1024)
                         },
-                        cache: storage.cache,
+                        init_checkpoint,
                     })
-                })
-                .transpose()
-                .map_err(|error| {
-                    ControllerError::io_error(
-                        String::from("Failed to create checkpoint storage directory"),
-                        error,
-                    )
-                })?,
-            min_storage_bytes: if pipeline_config.global.storage {
-                // This reduces the files stored on disk to a reasonable number.
-                pipeline_config
-                    .global
-                    .min_storage_bytes
-                    .unwrap_or(1024 * 1024)
+                } else {
+                    return Err(ControllerError::not_supported(
+                        "Pipeline requires storage but runner does not have storage configured",
+                    ));
+                }
             } else {
-                usize::MAX
+                None
             },
-            init_checkpoint,
         })
     }
 }
@@ -2566,7 +2556,7 @@ mod test {
     };
     use csv::{ReaderBuilder as CsvReaderBuilder, WriterBuilder as CsvWriterBuilder};
     use std::{
-        fs::{remove_file, File},
+        fs::{create_dir, remove_file, File},
         thread::sleep,
         time::Duration,
     };
@@ -2715,6 +2705,7 @@ outputs:
         //println!("{}", tempdir_path.display());
 
         let storage_dir = tempdir_path.join("storage");
+        create_dir(&storage_dir).unwrap();
         let input_path = tempdir_path.join("input.csv");
         let input_file = File::create(&input_path).unwrap();
         let output_path = tempdir_path.join("output.csv");
