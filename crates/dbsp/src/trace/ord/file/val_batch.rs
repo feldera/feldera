@@ -355,6 +355,7 @@ where
         let file = Reader::open(
             &[&any_factory0, &any_factory1],
             &Runtime::buffer_cache(),
+            &*Runtime::storage_backend().unwrap(),
             path,
         )?;
         Ok(Self {
@@ -626,7 +627,7 @@ where
             &source1.factories.factories0,
             &source1.factories().factories1,
             &Runtime::buffer_cache(),
-            &*Runtime::storage_backend(),
+            &*Runtime::storage_backend().unwrap(),
             Runtime::file_writer_parameters(),
         )
         .unwrap();
@@ -725,10 +726,13 @@ where
     fn done(mut self) -> FileValBatch<K, V, T, R> {
         FileValBatch {
             factories: self.factories,
-            file: self
-                .result
-                .take()
-                .unwrap_or(Reader::empty(&Runtime::buffer_cache()).unwrap()),
+            file: self.result.take().unwrap_or(
+                Reader::empty(
+                    &Runtime::buffer_cache(),
+                    &*Runtime::storage_backend().unwrap(),
+                )
+                .unwrap(),
+            ),
             lower: self.lower,
             upper: self.upper,
         }
@@ -1183,7 +1187,7 @@ where
                 &factories.factories0,
                 &factories.factories1,
                 &Runtime::buffer_cache(),
-                &*Runtime::storage_backend(),
+                &*Runtime::storage_backend().unwrap(),
                 Runtime::file_writer_parameters(),
             )
             .unwrap(),

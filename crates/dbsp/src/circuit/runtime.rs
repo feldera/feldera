@@ -4,12 +4,12 @@
 use crate::circuit::checkpointer::Checkpointer;
 use crate::circuit::metrics::describe_metrics;
 use crate::error::Error as DbspError;
+use crate::storage::backend::StorageBackend;
 use crate::storage::file::format::Compression;
 use crate::storage::file::writer::Parameters;
-use crate::storage::backend::StorageBackend;
 use crate::{
     storage::{
-        backend::{new_default_backend, tempdir_for_thread, StorageError},
+        backend::{new_default_backend, StorageError},
         buffer_cache::BufferCache,
         dirlock::LockedDirectory,
         file::cache::FileCacheEntry,
@@ -431,24 +431,20 @@ impl Runtime {
         RUNTIME.with(|rt| rt.borrow().clone())
     }
 
-    /// Returns this thread's storage backend.
+    /// Returns this thread's storage backend, if storage is configured.
     ///
     /// Storage backends are thread-local.
-    pub fn storage_backend() -> Rc<dyn StorageBackend> {
-        fn new_backend() -> Rc<dyn StorageBackend> {
-            let rt = Runtime::runtime();
-            let (dir, cache) = if let Some(rt) = rt {
-                (rt.inner().storage.clone(), rt.inner().cache)
-            } else {
-                (tempdir_for_thread(), StorageCacheConfig::default())
-            };
-            new_default_backend(dir, cache)
+    pub fn storage_backend() -> Option<Rc<dyn StorageBackend>> {
+        fn new_backend() -> Option<Rc<dyn StorageBackend>> {
+            Runtime::runtime().map(|runtime| {
+                new_default_backend(runtime.inner().storage.clone(), runtime.inner().cache)
+            })
         }
 
         thread_local! {
-            pub static DEFAULT_BACKEND: Rc<dyn StorageBackend> = new_backend();
+            pub static BACKEND: Option<Rc<dyn StorageBackend>> = new_backend();
         }
-        DEFAULT_BACKEND.with(|rc| rc.clone())
+        BACKEND.with(|rc| rc.clone())
     }
 
     /// Returns this thread's buffer cache.
