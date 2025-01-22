@@ -382,7 +382,7 @@ pub struct PatchPipelineInternal {
             , example = json!(examples::list_pipeline_selected_info())),
         (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
     ),
-    tag = "Pipelines"
+    tag = "Pipeline management"
 )]
 #[get("/pipelines")]
 pub(crate) async fn list_pipelines(
@@ -435,7 +435,7 @@ pub(crate) async fn list_pipelines(
             , body = ErrorResponse
             , example = json!(examples::error_unknown_pipeline()))
     ),
-    tag = "Pipelines"
+    tag = "Pipeline management"
 )]
 #[get("/pipelines/{pipeline_name}")]
 pub(crate) async fn get_pipeline(
@@ -491,7 +491,7 @@ pub(crate) async fn get_pipeline(
             , body = ErrorResponse
             , example = json!(examples::error_invalid_name()))
     ),
-    tag = "Pipelines"
+    tag = "Pipeline management"
 )]
 #[post("/pipelines")]
 pub(crate) async fn post_pipeline(
@@ -547,7 +547,7 @@ pub(crate) async fn post_pipeline(
             , body = ErrorResponse
             , example = json!(examples::error_cannot_update_non_shutdown_pipeline()))
     ),
-    tag = "Pipelines"
+    tag = "Pipeline management"
 )]
 #[put("/pipelines/{pipeline_name}")]
 async fn put_pipeline(
@@ -616,7 +616,7 @@ async fn put_pipeline(
             , body = ErrorResponse
             , example = json!(examples::error_cannot_update_non_shutdown_pipeline()))
     ),
-    tag = "Pipelines"
+    tag = "Pipeline management"
 )]
 #[patch("/pipelines/{pipeline_name}")]
 pub(crate) async fn patch_pipeline(
@@ -673,7 +673,7 @@ pub(crate) async fn patch_pipeline(
             , body = ErrorResponse
             , example = json!(examples::error_cannot_delete_non_shutdown_pipeline()))
     ),
-    tag = "Pipelines"
+    tag = "Pipeline management"
 )]
 #[delete("/pipelines/{pipeline_name}")]
 pub(crate) async fn delete_pipeline(
@@ -693,20 +693,22 @@ pub(crate) async fn delete_pipeline(
     Ok(HttpResponse::Ok().finish())
 }
 
-/// Start, pause or shutdown a pipeline.
+/// Sets the desired deployment state of a pipeline.
 ///
-/// The endpoint returns immediately after performing initial request validation
-/// (e.g., upon start checking the program is compiled) and initiating the relevant
-/// procedure (e.g., informing the runner or the already running pipeline).
-/// The state changes completely asynchronously. On error, the pipeline
-/// transitions to the `Failed` state. The user can monitor the current status
-/// of the pipeline by polling the `GET /pipelines` and
-/// `GET /pipelines/{pipeline_name}` endpoint.
+/// The desired state is set based on the `action` path parameter:
+/// - `/start` sets desired state to `Running`
+/// - `/pause` sets desired state to `Paused`
+/// - `/shutdown` sets desired state to `Shutdown`
 ///
-/// The following values of the `action` argument are accepted:
-/// - `start`: Start the pipeline
-/// - `pause`: Pause the pipeline
-/// - `shutdown`: Terminate the pipeline
+/// The endpoint returns immediately after setting the desired state.
+/// The relevant procedure to get to the desired state is performed asynchronously,
+/// and, as such, progress should be monitored by polling the pipeline using the
+/// `GET` endpoints.
+///
+/// Note the following:
+/// - A shutdown pipeline can be started through calling either `/start` or `/pause`
+/// - Both starting as running and resuming a pipeline is done by calling `/start`
+/// - Both starting as paused and pausing a pipeline is done by calling `/pause`
 #[utoipa::path(
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
@@ -725,13 +727,12 @@ pub(crate) async fn delete_pipeline(
             , description = "Unable to accept action"
             , body = ErrorResponse
             , examples(
-                ("Program failed compilation" = (description = "Program failed compilation", value = json!(examples::error_program_failed_compilation()))),
                 ("Illegal action" = (description = "Action is not applicable in the current state", value = json!(examples::error_illegal_pipeline_action()))),
                 ("Invalid action" = (description = "Invalid action specified", value = json!(examples::error_invalid_pipeline_action()))),
             )
         ),
     ),
-    tag = "Pipelines"
+    tag = "Pipeline management"
 )]
 #[post("/pipelines/{pipeline_name}/{action}")]
 pub(crate) async fn post_pipeline_action(

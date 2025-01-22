@@ -50,21 +50,17 @@ The API is centered around the **pipeline**, which most importantly consists
 out of the SQL program, but also has accompanying metadata and configuration parameters
 (e.g., compilation profile, number of workers, etc.).
 
-* A pipeline is identified and referred to by a user-provided unique name.
+* A pipeline is identified and referred to by its user-provided unique name.
 * The pipeline program is asynchronously compiled when the pipeline is first created or
-  its program code or configuration is updated.
-* Running the pipeline (*deployment*) is only possible once the program is compiled
-* A pipeline cannot be updated while it is running
+  when its program is subsequently updated.
+* Pipeline deployment is only possible once the program is successfully compiled.
+* A pipeline cannot be updated while it is deployed.
 
 ## Concurrency
 
-Both the pipeline and its program have an associated *version*.
-A version is a monotonically increasing number.
-Anytime the core fields (name, description, runtime_config, program_code, program_config) are modified,
-the pipeline version is incremented.
-Anytime the program core fields (program_code, program_config) are modified,
-the program version is incremented.
-The program version is used internally by the compiler to know when to recompile."
+Each pipeline has a version, which is incremented each time its core fields are updated.
+The version is monotonically increasing. There is additionally a program version which covers
+only the program-related core fields, and is used by the compiler to discern when to recompile."
     ),
     paths(
         // Pipeline management endpoints
@@ -198,12 +194,11 @@ The program version is used internally by the compiler to know when to recompile
         feldera_types::error::ErrorResponse,
     ),),
     tags(
-        (name = "Pipelines", description = "Manage pipelines and their deployment."),
-        (name = "HTTP input/output", description = "Interact with running pipelines using HTTP."),
-        (name = "Authentication", description = "Retrieve authentication configuration."),
-        (name = "Configuration", description = "Retrieve general configuration."),
-        (name = "API keys", description = "Manage API keys."),
-        (name = "Metrics", description = "Retrieve pipeline metrics."),
+        (name = "Pipeline management", description = "Create, retrieve, update, delete and deploy pipelines."),
+        (name = "Pipeline interaction", description = "Interact with deployed pipelines."),
+        (name = "Configuration", description = "Retrieve configuration."),
+        (name = "API keys", description = "Create, retrieve and delete API keys."),
+        (name = "Metrics", description = "Retrieve metrics across pipelines."),
     ),
 )]
 pub struct ApiDoc;
@@ -255,7 +250,6 @@ fn api_scope() -> Scope {
         .service(endpoints::api_key::post_api_key)
         .service(endpoints::api_key::delete_api_key)
         // Configuration endpoints
-        .service(endpoints::config::get_config_authentication)
         .service(endpoints::config::get_config_demos)
         // Metrics of all pipelines belonging to this tenant
         .service(endpoints::metrics::get_metrics)

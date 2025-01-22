@@ -30,6 +30,22 @@ use std::time::Duration;
 /// ingested successfully.
 // TODO: implement chunked and batch modes.
 #[utoipa::path(
+    context_path = "/v0",
+    security(("JSON web token (JWT) or API key" = [])),
+    params(
+        ("pipeline_name" = String, Path, description = "Unique pipeline name"),
+        ("table_name" = String, Path,
+            description = "SQL table name. Unquoted SQL names have to be capitalized. Quoted SQL names have to exactly match the case from the SQL program."),
+        ("force" = bool, Query, description = "When `true`, push data to the pipeline even if the pipeline is paused. The default value is `false`"),
+        ("format" = String, Query, description = "Input data format, e.g., 'csv' or 'json'."),
+        ("array" = Option<bool>, Query, description = "Set to `true` if updates in this stream are packaged into JSON arrays (used in conjunction with `format=json`). The default values is `false`."),
+        ("update_format" = Option<JsonUpdateFormat>, Query, description = "JSON data change event format (used in conjunction with `format=json`).  The default value is 'insert_delete'."),
+    ),
+    request_body(
+        content = String,
+        description = "Contains the new input data in CSV.",
+        content_type = "text/plain",
+    ),
     responses(
         (status = OK
             , description = "Data successfully delivered to the pipeline."
@@ -65,23 +81,7 @@ use std::time::Duration;
             , description = "Request failed."
             , body = ErrorResponse),
     ),
-    params(
-        ("pipeline_name" = String, Path, description = "Unique pipeline name"),
-        ("table_name" = String, Path,
-            description = "SQL table name. Unquoted SQL names have to be capitalized. Quoted SQL names have to exactly match the case from the SQL program."),
-        ("force" = bool, Query, description = "When `true`, push data to the pipeline even if the pipeline is paused. The default value is `false`"),
-        ("format" = String, Query, description = "Input data format, e.g., 'csv' or 'json'."),
-        ("array" = Option<bool>, Query, description = "Set to `true` if updates in this stream are packaged into JSON arrays (used in conjunction with `format=json`). The default values is `false`."),
-        ("update_format" = Option<JsonUpdateFormat>, Query, description = "JSON data change event format (used in conjunction with `format=json`).  The default value is 'insert_delete'."),
-    ),
-    context_path = "/v0",
-    security(("JSON web token (JWT) or API key" = [])),
-    tag = "HTTP input/output",
-    request_body(
-        content = String,
-        description = "Contains the new input data in CSV.",
-        content_type = "text/plain",
-    ),
+    tag = "Pipeline interaction",
 )]
 #[post("/pipelines/{pipeline_name}/ingress/{table_name}")]
 async fn http_input(
@@ -127,6 +127,18 @@ async fn http_input(
 /// The pipeline continues sending updates until the client closes the
 /// connection or the pipeline is shut down.
 #[utoipa::path(
+    context_path = "/v0",
+    security(("JSON web token (JWT) or API key" = [])),
+    params(
+        ("pipeline_name" = String, Path, description = "Unique pipeline name"),
+        ("table_name" = String, Path,
+            description = "SQL table name. Unquoted SQL names have to be capitalized. Quoted SQL names have to exactly match the case from the SQL program."),
+        ("format" = String, Query, description = "Output data format, e.g., 'csv' or 'json'."),
+        ("array" = Option<bool>, Query, description = "Set to `true` to group updates in this stream into JSON arrays (used in conjunction with `format=json`). The default value is `false`"),
+        ("backpressure" = Option<bool>, Query, description = r#"Apply backpressure on the pipeline when the HTTP client cannot receive data fast enough.
+        When this flag is set to false (the default), the HTTP connector drops data chunks if the client is not keeping up with its output.  This prevents a slow HTTP client from slowing down the entire pipeline.
+        When the flag is set to true, the connector waits for the client to receive each chunk and blocks the pipeline if the client cannot keep up."#)
+    ),
     responses(
         (status = OK
             , description = "Connection to the endpoint successfully established. The body of the response contains a stream of data chunks."
@@ -158,19 +170,7 @@ async fn http_input(
             , description = "Request failed."
             , body = ErrorResponse),
     ),
-    params(
-        ("pipeline_name" = String, Path, description = "Unique pipeline name"),
-        ("table_name" = String, Path,
-            description = "SQL table name. Unquoted SQL names have to be capitalized. Quoted SQL names have to exactly match the case from the SQL program."),
-        ("format" = String, Query, description = "Output data format, e.g., 'csv' or 'json'."),
-        ("array" = Option<bool>, Query, description = "Set to `true` to group updates in this stream into JSON arrays (used in conjunction with `format=json`). The default value is `false`"),
-        ("backpressure" = Option<bool>, Query, description = r#"Apply backpressure on the pipeline when the HTTP client cannot receive data fast enough.
-        When this flag is set to false (the default), the HTTP connector drops data chunks if the client is not keeping up with its output.  This prevents a slow HTTP client from slowing down the entire pipeline.
-        When the flag is set to true, the connector waits for the client to receive each chunk and blocks the pipeline if the client cannot keep up."#)
-    ),
-    context_path = "/v0",
-    security(("JSON web token (JWT) or API key" = [])),
-    tag = "HTTP input/output"
+    tag = "Pipeline interaction"
 )]
 #[post("/pipelines/{pipeline_name}/egress/{table_name}")]
 async fn http_output(
@@ -254,7 +254,7 @@ async fn http_output(
             , description = "Input connector with that name does not exist"
             , body = ErrorResponse),
     ),
-    tag = "Pipelines"
+    tag = "Pipeline interaction"
 )]
 #[post("/pipelines/{pipeline_name}/tables/{table_name}/connectors/{connector_name}/{action}")]
 pub(crate) async fn post_pipeline_input_connector_action(
@@ -332,7 +332,7 @@ pub(crate) async fn post_pipeline_input_connector_action(
             , body = ErrorResponse
             , example = json!(examples::error_unknown_pipeline()))
     ),
-    tag = "Pipelines"
+    tag = "Pipeline interaction"
 )]
 #[get("/pipelines/{pipeline_name}/logs")]
 pub(crate) async fn get_pipeline_logs(
@@ -370,7 +370,7 @@ pub(crate) async fn get_pipeline_logs(
             , body = ErrorResponse
             , example = json!(examples::error_pipeline_not_running_or_paused()))
     ),
-    tag = "Pipelines"
+    tag = "Pipeline interaction"
 )]
 #[get("/pipelines/{pipeline_name}/stats")]
 pub(crate) async fn get_pipeline_stats(
@@ -414,7 +414,7 @@ pub(crate) async fn get_pipeline_stats(
             , body = ErrorResponse
             , example = json!(examples::error_pipeline_not_running_or_paused()))
     ),
-    tag = "Pipelines"
+    tag = "Pipeline interaction"
 )]
 #[get("/pipelines/{pipeline_name}/circuit_profile")]
 pub(crate) async fn get_pipeline_circuit_profile(
@@ -456,7 +456,7 @@ pub(crate) async fn get_pipeline_circuit_profile(
             , body = ErrorResponse
             , example = json!(examples::error_pipeline_not_running_or_paused()))
     ),
-    tag = "Pipelines"
+    tag = "Pipeline interaction"
 )]
 #[post("/pipelines/{pipeline_name}/checkpoint")]
 pub(crate) async fn checkpoint_pipeline(
@@ -509,7 +509,7 @@ pub(crate) async fn checkpoint_pipeline(
             , body = ErrorResponse
             , example = json!(examples::error_pipeline_not_running_or_paused()))
     ),
-    tag = "Pipelines"
+    tag = "Pipeline interaction"
 )]
 #[get("/pipelines/{pipeline_name}/heap_profile")]
 pub(crate) async fn get_pipeline_heap_profile(
@@ -559,7 +559,7 @@ pub(crate) async fn get_pipeline_heap_profile(
         , body = ErrorResponse
         , example = json!(examples::error_stream_terminated()))
     ),
-    tag = "Pipelines"
+    tag = "Pipeline interaction"
 )]
 #[get("/pipelines/{pipeline_name}/query")]
 pub(crate) async fn pipeline_adhoc_sql(
