@@ -18,6 +18,7 @@ use crate::{
 use dyn_clone::clone_box;
 use minitrace::trace;
 use size_of::SizeOf;
+use std::path::Path;
 use std::{
     borrow::Cow,
     cell::{Ref, RefCell},
@@ -28,7 +29,6 @@ use std::{
     rc::Rc,
     sync::Arc,
 };
-use uuid::Uuid;
 
 circuit_cache_key!(TraceId<C, D: BatchReader>(StreamId => Stream<C, D>));
 circuit_cache_key!(BoundsId<D: BatchReader>(StreamId => TraceBounds<<D as BatchReader>::Key, <D as BatchReader>::Val>));
@@ -912,17 +912,17 @@ where
         !self.dirty[scope as usize]
     }
 
-    fn commit<P: AsRef<str>>(&mut self, cid: Uuid, pid: P) -> Result<(), Error> {
+    fn commit(&mut self, base: &Path, pid: &str) -> Result<(), Error> {
         self.trace
             .as_mut()
-            .map(|trace| trace.commit(cid, pid))
+            .map(|trace| trace.commit(base, pid))
             .unwrap_or(Ok(()))
     }
 
-    fn restore<P: AsRef<str>>(&mut self, cid: Uuid, pid: P) -> Result<(), Error> {
+    fn restore(&mut self, base: &Path, pid: &str) -> Result<(), Error> {
         self.trace
             .as_mut()
-            .map(|trace| trace.restore(cid, pid))
+            .map(|trace| trace.restore(base, pid))
             .unwrap_or(Ok(()))
     }
 }

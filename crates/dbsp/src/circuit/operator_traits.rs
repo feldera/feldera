@@ -8,8 +8,7 @@ use crate::circuit::{
     OwnershipPreference, Scope,
 };
 use crate::Error;
-use std::{borrow::Cow, future::Future};
-use uuid::Uuid;
+use std::{borrow::Cow, future::Future, path::Path};
 
 use super::GlobalNodeId;
 
@@ -205,17 +204,22 @@ pub trait Operator: 'static {
     /// ([`Stream::integrate`](`crate::circuit::Stream::integrate`)).
     fn fixedpoint(&self, scope: Scope) -> bool;
 
-    /// Instructors operator to checkpoint its state to persistent storage.
+    /// Instructs the operator to checkpoint its state to persistent storage in
+    /// directory `base`. Any files that the operator creates should have
+    /// `persistent_id` in their names to keep them unique.
     ///
     /// For most operators this method is a no-op.
-    fn commit<P: AsRef<str>>(&mut self, _cid: Uuid, _persistent_id: P) -> Result<(), Error> {
+    #[allow(unused_variables)]
+    fn commit(&mut self, base: &Path, persistent_id: &str) -> Result<(), Error> {
         Ok(())
     }
 
-    /// Instructors operator to restore its state from persistent storage.
+    /// Instruct the operator to restore its state from persistent storage in
+    /// directory `base`, using `persistent_id` to find its files.
     ///
     /// For most operators this method is a no-op.
-    fn restore<P: AsRef<str>>(&mut self, _cid: Uuid, _persistent_id: P) -> Result<(), Error> {
+    #[allow(unused_variables)]
+    fn restore(&mut self, base: &Path, persistent_id: &str) -> Result<(), Error> {
         Ok(())
     }
 }

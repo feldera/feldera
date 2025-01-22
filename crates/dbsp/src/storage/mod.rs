@@ -13,26 +13,11 @@ mod test;
 use fdlimit::{raise_fd_limit, Outcome::LimitRaised};
 use std::fs::OpenOptions;
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use tracing::{info, warn};
 
-use crate::{Error, Runtime};
+use crate::Error;
 use std::sync::Once;
-use uuid::Uuid;
-
-/// Return the absolute path for a checkpoint.
-///
-/// # Panics
-/// - If the `Runtime` is unavailable.
-///
-/// # Arguments
-/// - `cid`: The checkpoint id.
-pub(crate) fn checkpoint_path(cid: Uuid) -> PathBuf {
-    let rt = Runtime::runtime().unwrap();
-    let mut path = rt.storage_path();
-    path.push(cid.to_string());
-    path
-}
 
 /// A helper function to write the commit metadata to a file.
 ///
