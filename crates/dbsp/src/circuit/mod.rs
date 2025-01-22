@@ -38,3 +38,6 @@ pub use dbsp_handle::{CircuitConfig, DBSPHandle, Host, Layout, StorageCacheConfi
 pub use runtime::{Error as RuntimeError, LocalStore, LocalStoreMarker, Runtime, RuntimeHandle};
 
 pub use schedule::Error as SchedulerError;
+
+#[cfg(test)]
+pub(crate) use dbsp_handle::tests::mkconfig;

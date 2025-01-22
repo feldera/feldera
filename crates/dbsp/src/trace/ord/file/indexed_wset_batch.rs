@@ -235,7 +235,7 @@ where
             &self.factories.factories0,
             &self.factories.factories1,
             &Runtime::buffer_cache(),
-            &*Runtime::storage_backend(),
+            &*Runtime::storage_backend().unwrap(),
             Parameters::default(),
         )
         .unwrap();
@@ -456,6 +456,7 @@ where
         let file = Reader::open(
             &[&any_factory0, &any_factory1],
             &Runtime::buffer_cache(),
+            &*Runtime::storage_backend().unwrap(),
             path,
         )?;
         Ok(Self {
@@ -605,7 +606,7 @@ where
                 &batch1.factories.factories0,
                 &batch1.factories.factories1,
                 &Runtime::buffer_cache(),
-                &*Runtime::storage_backend(),
+                &*Runtime::storage_backend().unwrap(),
                 Parameters::default(),
             )
             .unwrap(),
@@ -929,7 +930,7 @@ where
                 &factories.factories0,
                 &factories.factories1,
                 &Runtime::buffer_cache(),
-                &*Runtime::storage_backend(),
+                &*Runtime::storage_backend().unwrap(),
                 Parameters::default(),
             )
             .unwrap(),
