@@ -36,7 +36,7 @@ pub use circuit_builder::{
 };
 pub use dbsp_handle::{
     CircuitConfig, CircuitStorageConfig, DBSPHandle, Host, Layout, StorageCacheConfig,
-    StorageConfig,
+    StorageConfig, StorageOptions,
 };
 pub use runtime::{Error as RuntimeError, LocalStore, LocalStoreMarker, Runtime, RuntimeHandle};
 

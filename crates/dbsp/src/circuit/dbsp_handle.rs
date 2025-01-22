@@ -7,7 +7,7 @@ use crate::{
 };
 use anyhow::Error as AnyError;
 use crossbeam::channel::{bounded, Receiver, Select, Sender, TryRecvError};
-pub use feldera_types::config::{StorageCacheConfig, StorageConfig};
+pub use feldera_types::config::{StorageCacheConfig, StorageConfig, StorageOptions};
 use itertools::Either;
 use metrics::counter;
 use minitrace::collector::SpanContext;
@@ -228,6 +228,9 @@ pub struct CircuitConfig {
 pub struct CircuitStorageConfig {
     /// Runner configuration.
     pub config: StorageConfig,
+
+    /// User options.
+    pub options: StorageOptions,
 
     /// Estimated minimum number of bytes in a data batch to spill it to
     /// storage. If this is 0, then all batches will be stored on disk; if it is
@@ -780,7 +783,7 @@ pub(crate) mod tests {
         TypedBox, ZSetHandle, ZWeight,
     };
     use anyhow::anyhow;
-    use feldera_types::config::{StorageCacheConfig, StorageConfig};
+    use feldera_types::config::{StorageCacheConfig, StorageConfig, StorageOptions};
     use tempfile::{tempdir, TempDir};
     use uuid::Uuid;
 
@@ -1031,6 +1034,7 @@ pub(crate) mod tests {
                     path: temp.path().to_string_lossy().into_owned(),
                     cache: StorageCacheConfig::default(),
                 },
+                options: StorageOptions::default(),
                 min_storage_bytes: 0,
                 init_checkpoint: None,
             }),

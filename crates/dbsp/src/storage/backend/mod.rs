@@ -9,7 +9,9 @@
 //! The API also prevents reading from a file that is not completed.
 #![warn(missing_docs)]
 
-use feldera_types::config::StorageCacheConfig;
+use feldera_types::config::{
+    StorageBackendConfig, StorageCacheConfig, StorageConfig, StorageOptions,
+};
 use serde::{ser::SerializeStruct, Serialize, Serializer};
 use std::{
     fs::OpenOptions,
@@ -216,43 +218,49 @@ pub fn tempdir_for_thread() -> PathBuf {
     TEMPDIR.with(|dir| dir.path().to_path_buf())
 }
 
-/// Create and returns a backend of the default kind based in `directory`.
-pub fn new_default_backend(
-    directory: PathBuf,
-    cache: StorageCacheConfig,
-) -> Rc<dyn StorageBackend> {
-    trace!("new_default_backend: dir={directory:?}");
-
-    #[cfg(target_os = "linux")]
-    {
-        use nix::sys::statfs::{statfs, TMPFS_MAGIC};
-        if let Ok(s) = statfs(&directory) {
-            if s.filesystem_type() == TMPFS_MAGIC {
-                static ONCE: std::sync::Once = std::sync::Once::new();
-                ONCE.call_once(|| {
-                    warn!("initializing storage on in-memory tmpfs filesystem at {}; consider configuring physical storage",
-                          directory.to_string_lossy())
-                });
-            }
+impl dyn StorageBackend {
+    /// Creates and returns a new backend configured according to `config` and `options`.
+    pub fn new(config: &StorageConfig, options: &StorageOptions) -> Result<Rc<Self>, StorageError> {
+        match &options.backend {
+            StorageBackendConfig::Default => Ok(Self::new_default(config)),
         }
     }
 
-    #[cfg(target_os = "linux")]
-    if std::env::var("FELDERA_USE_IO_URING").is_ok_and(|s| s != "0") {
-        match io_uring_impl::IoUringBackend::new(&directory, cache) {
-            Ok(backend) => return Rc::new(backend),
-            Err(error) => {
-                static ONCE: std::sync::Once = std::sync::Once::new();
-                ONCE.call_once(|| {
-                    warn!("could not initialize io_uring backend ({error}), falling back to POSIX I/O")
-                });
+    /// Creates and returns a backend of the default kind.
+    pub fn new_default(config: &StorageConfig) -> Rc<Self> {
+        let path = config.path();
+        trace!("new_default_backend: dir={}", path.display());
+
+        #[cfg(target_os = "linux")]
+        {
+            use nix::sys::statfs::{statfs, TMPFS_MAGIC};
+            if let Ok(s) = statfs(path) {
+                if s.filesystem_type() == TMPFS_MAGIC {
+                    static ONCE: std::sync::Once = std::sync::Once::new();
+                    ONCE.call_once(|| {
+                        warn!("initializing storage on in-memory tmpfs filesystem at {}; consider configuring physical storage", path.display())
+                    });
+                }
             }
         }
-    } else {
-        info!("io_uring backend disabled by default (set FELDERA_USE_IO_URING=1 to enable");
-    }
 
-    Rc::new(posixio_impl::PosixBackend::new(directory, cache))
+        #[cfg(target_os = "linux")]
+        if std::env::var("FELDERA_USE_IO_URING").is_ok_and(|s| s != "0") {
+            match io_uring_impl::IoUringBackend::new(path, config.cache) {
+                Ok(backend) => return Rc::new(backend),
+                Err(error) => {
+                    static ONCE: std::sync::Once = std::sync::Once::new();
+                    ONCE.call_once(|| {
+                        warn!("could not initialize io_uring backend ({error}), falling back to POSIX I/O")
+                    });
+                }
+            }
+        } else {
+            info!("io_uring backend disabled by default (set FELDERA_USE_IO_URING=1 to enable");
+        }
+
+        Rc::new(posixio_impl::PosixBackend::new(path, config.cache))
+    }
 }
 
 trait StorageCacheFlags {
