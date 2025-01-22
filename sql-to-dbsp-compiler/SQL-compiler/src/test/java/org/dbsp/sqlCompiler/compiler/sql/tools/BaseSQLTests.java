@@ -95,8 +95,8 @@ public class BaseSQLTests {
     }
 
     @SuppressWarnings("unused")
-    protected void showFinalVerbose() {
-        Logger.INSTANCE.setLoggingLevel(DBSPCompiler.class, 4);
+    protected void showFinalVerbose(int verbosity) {
+        Logger.INSTANCE.setLoggingLevel(DBSPCompiler.class, verbosity);
     }
 
     /** Run a query that is expected to fail in compilation.

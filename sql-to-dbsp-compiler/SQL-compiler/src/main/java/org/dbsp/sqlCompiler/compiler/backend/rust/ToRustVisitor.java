@@ -378,6 +378,15 @@ public class ToRustVisitor extends CircuitVisitor {
         }
         operator.accept(this);
         this.builder.newline();
+        if (operator.is(DBSPSimpleOperator.class)) {
+            DBSPSimpleOperator simple = operator.to(DBSPSimpleOperator.class);
+            this.builder.append("// ")
+                    .append(simple.getOutputName())
+                    .append(".inspect(|batch| println!(\"")
+                    .append(simple.getOutputName())
+                    .append("={batch:?}\"));")
+                    .newline();
+        }
     }
 
     String handleName(DBSPSimpleOperator operator) {

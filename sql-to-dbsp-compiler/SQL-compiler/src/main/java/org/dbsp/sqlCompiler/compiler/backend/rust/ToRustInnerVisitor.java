@@ -1685,16 +1685,18 @@ public class ToRustInnerVisitor extends InnerVisitor {
     public VisitDecision preorder(DBSPTypeTuple type) {
         this.optionPrefix(type);
         this.builder.append(type.getName());
-        if (type.size() > 0) {
-            this.builder.append("<");
-            boolean first = true;
-            for (DBSPType fType : type.tupFields) {
-                if (!first)
-                    this.builder.append(", ");
-                first = false;
-                fType.accept(this);
+        if (!this.compact && type.size() < 16) {
+            if (type.size() > 0) {
+                this.builder.append("<");
+                boolean first = true;
+                for (DBSPType fType : type.tupFields) {
+                    if (!first)
+                        this.builder.append(", ");
+                    first = false;
+                    fType.accept(this);
+                }
+                this.builder.append(">");
             }
-            this.builder.append(">");
         }
         this.optionSuffix(type);
         return VisitDecision.STOP;

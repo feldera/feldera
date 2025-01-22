@@ -183,11 +183,15 @@ public class TestCase {
                     actual = new DBSPApplyExpression("zset_map", convertedValue.getType(), actual.borrow(), converterVar);
                 }
 
+                var produced = new DBSPLetStatement("produced_result", actual);
+                list.add(produced);
+                list.add(new DBSPComment("println!(\"result={:?}\", produced_result);"));
+
                 DBSPStatement compare =
                         new DBSPApplyExpression("assert!", new DBSPTypeVoid(),
                                 new DBSPApplyExpression("must_equal",
                                         new DBSPTypeBool(CalciteObject.EMPTY, false),
-                                        actual.borrow(),
+                                        produced.getVarReference().borrow(),
                                         expected.borrow()),
                                 new DBSPStrLiteral(message, false, true)).toStatement();
                 list.add(compare);
