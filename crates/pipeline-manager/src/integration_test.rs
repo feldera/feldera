@@ -3233,3 +3233,25 @@ async fn pipeline_orchestration_scenarios() {
             .await;
     }
 }
+
+/// Checkpoint should return NOT_IMPLEMENTED status if `feldera-enterprise` feature is not set.
+#[actix_web::test]
+#[serial]
+async fn checkpoint() {
+    let config = setup().await;
+    create_and_deploy_test_pipeline(&config, "").await;
+    let mut response = config.post_no_body("/v0/pipelines/test/checkpoint").await;
+    let value: Value = response.json().await.unwrap();
+    assert_ne!(value["error_code"], json!("InvalidPipelineAction"));
+
+    #[cfg(not(feature = "feldera-enterprise"))]
+    {
+        assert_eq!(response.status(), StatusCode::NOT_IMPLEMENTED);
+        assert_eq!(value["error_code"], json!("EnterpriseFeature"));
+    }
+
+    #[cfg(feature = "feldera-enterprise")]
+    {
+        assert_ne!(response.status(), StatusCode::NOT_IMPLEMENTED);
+    }
+}
