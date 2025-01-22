@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "Feldera API",
-    "description": "\nWith Feldera, users create data pipelines out of SQL programs.\nA SQL program comprises tables and views, and includes as well the definition of\ninput and output connectors for each respectively. A connector defines a data\nsource or data sink to feed input data into tables or receive output data\ncomputed by the views respectively.\n\n## Pipeline\n\nThe API is centered around the **pipeline**, which most importantly consists\nout of the SQL program, but also has accompanying metadata and configuration parameters\n(e.g., compilation profile, number of workers, etc.).\n\n* A pipeline is identified and referred to by a user-provided unique name.\n* The pipeline program is asynchronously compiled when the pipeline is first created or\n  its program code or configuration is updated.\n* Running the pipeline (*deployment*) is only possible once the program is compiled\n* A pipeline cannot be updated while it is running\n\n## Concurrency\n\nBoth the pipeline and its program have an associated *version*.\nA version is a monotonically increasing number.\nAnytime the core fields (name, description, runtime_config, program_code, program_config) are modified,\nthe pipeline version is incremented.\nAnytime the program core fields (program_code, program_config) are modified,\nthe program version is incremented.\nThe program version is used internally by the compiler to know when to recompile.",
+    "description": "\nWith Feldera, users create data pipelines out of SQL programs.\nA SQL program comprises tables and views, and includes as well the definition of\ninput and output connectors for each respectively. A connector defines a data\nsource or data sink to feed input data into tables or receive output data\ncomputed by the views respectively.\n\n## Pipeline\n\nThe API is centered around the **pipeline**, which most importantly consists\nout of the SQL program, but also has accompanying metadata and configuration parameters\n(e.g., compilation profile, number of workers, etc.).\n\n* A pipeline is identified and referred to by its user-provided unique name.\n* The pipeline program is asynchronously compiled when the pipeline is first created or\n  when its program is subsequently updated.\n* Pipeline deployment is only possible once the program is successfully compiled.\n* A pipeline cannot be updated while it is deployed.\n\n## Concurrency\n\nEach pipeline has a version, which is incremented each time its core fields are updated.\nThe version is monotonically increasing. There is additionally a program version which covers\nonly the program-related core fields, and is used by the compiler to discern when to recompile.",
     "license": {
       "name": "MIT OR Apache-2.0"
     },
@@ -329,7 +329,7 @@
     "/v0/pipelines": {
       "get": {
         "tags": [
-          "Pipelines"
+          "Pipeline management"
         ],
         "summary": "Retrieve the list of pipelines.",
         "description": "Configure which fields are included using the `selector` query parameter.",
@@ -466,7 +466,7 @@
       },
       "post": {
         "tags": [
-          "Pipelines"
+          "Pipeline management"
         ],
         "summary": "Create a new pipeline.",
         "operationId": "post_pipeline",
@@ -608,7 +608,7 @@
     "/v0/pipelines/{pipeline_name}": {
       "get": {
         "tags": [
-          "Pipelines"
+          "Pipeline management"
         ],
         "summary": "Retrieve a pipeline.",
         "description": "Configure which fields are included using the `selector` query parameter.",
@@ -713,7 +713,7 @@
       },
       "put": {
         "tags": [
-          "Pipelines"
+          "Pipeline management"
         ],
         "summary": "Fully update a pipeline if it already exists, otherwise create a new pipeline.",
         "operationId": "put_pipeline",
@@ -915,7 +915,7 @@
       },
       "delete": {
         "tags": [
-          "Pipelines"
+          "Pipeline management"
         ],
         "summary": "Delete a pipeline.",
         "operationId": "delete_pipeline",
@@ -975,7 +975,7 @@
       },
       "patch": {
         "tags": [
-          "Pipelines"
+          "Pipeline management"
         ],
         "summary": "Partially update a pipeline.",
         "operationId": "patch_pipeline",
@@ -1121,7 +1121,7 @@
     "/v0/pipelines/{pipeline_name}/checkpoint": {
       "post": {
         "tags": [
-          "Pipelines"
+          "Pipeline interaction"
         ],
         "summary": "Checkpoint a running or paused pipeline.",
         "operationId": "checkpoint_pipeline",
@@ -1186,7 +1186,7 @@
     "/v0/pipelines/{pipeline_name}/circuit_profile": {
       "get": {
         "tags": [
-          "Pipelines"
+          "Pipeline interaction"
         ],
         "summary": "Retrieve the circuit performance profile of a running or paused pipeline.",
         "operationId": "get_pipeline_circuit_profile",
@@ -1258,7 +1258,7 @@
     "/v0/pipelines/{pipeline_name}/egress/{table_name}": {
       "post": {
         "tags": [
-          "HTTP input/output"
+          "Pipeline interaction"
         ],
         "summary": "Subscribe to a stream of updates from a SQL view or table.",
         "description": "The pipeline responds with a continuous stream of changes to the specified\ntable or view, encoded using the format specified in the `?format=`\nparameter. Updates are split into `Chunk`s.\n\nThe pipeline continues sending updates until the client closes the\nconnection or the pipeline is shut down.",
@@ -1382,7 +1382,7 @@
     "/v0/pipelines/{pipeline_name}/heap_profile": {
       "get": {
         "tags": [
-          "Pipelines"
+          "Pipeline interaction"
         ],
         "summary": "Retrieve the heap profile of a running or paused pipeline.",
         "operationId": "get_pipeline_heap_profile",
@@ -1455,7 +1455,7 @@
     "/v0/pipelines/{pipeline_name}/ingress/{table_name}": {
       "post": {
         "tags": [
-          "HTTP input/output"
+          "Pipeline interaction"
         ],
         "summary": "Push data to a SQL table.",
         "description": "The client sends data encoded using the format specified in the `?format=`\nparameter as a body of the request.  The contents of the data must match\nthe SQL table schema specified in `table_name`\n\nThe pipeline ingests data as it arrives without waiting for the end of\nthe request.  Successful HTTP response indicates that all data has been\ningested successfully.",
@@ -1586,7 +1586,7 @@
     "/v0/pipelines/{pipeline_name}/logs": {
       "get": {
         "tags": [
-          "Pipelines"
+          "Pipeline interaction"
         ],
         "summary": "Retrieve pipeline logs as a stream.",
         "description": "The logs stream catches up to the extent of the internally configured per-pipeline\ncircular logs buffer (limited to a certain byte size and number of lines, whichever\nis reached first). After the catch-up, new lines are pushed whenever they become\navailable.\n\nThe logs stream will end when the pipeline is shut down. It is also possible for the\nlogs stream to end prematurely due to the runner back-end (temporarily) losing\nconnectivity to the pipeline instance (e.g., process). In this case, it is needed\nto issue again a new request to this endpoint.",
@@ -1642,7 +1642,7 @@
     "/v0/pipelines/{pipeline_name}/query": {
       "get": {
         "tags": [
-          "Pipelines"
+          "Pipeline interaction"
         ],
         "summary": "Execute an ad-hoc query in a running or paused pipeline.",
         "operationId": "pipeline_adhoc_sql",
@@ -1753,7 +1753,7 @@
     "/v0/pipelines/{pipeline_name}/stats": {
       "get": {
         "tags": [
-          "Pipelines"
+          "Pipeline interaction"
         ],
         "summary": "Retrieve pipeline statistics (e.g., metrics, performance counters).",
         "operationId": "get_pipeline_stats",
@@ -1825,7 +1825,7 @@
     "/v0/pipelines/{pipeline_name}/tables/{table_name}/connectors/{connector_name}/{action}": {
       "post": {
         "tags": [
-          "Pipelines"
+          "Pipeline interaction"
         ],
         "summary": "Start (resume) or pause the input connector.",
         "description": "The following values of the `action` argument are accepted: `start` and `pause`.\n\nInput connectors can be in either the `Running` or `Paused` state. By default,\nconnectors are initialized in the `Running` state when a pipeline is deployed.\nIn this state, the connector actively fetches data from its configured data\nsource and forwards it to the pipeline. If needed, a connector can be created\nin the `Paused` state by setting its\n[`paused`](https://docs.feldera.com/connectors/#generic-attributes) property\nto `true`. When paused, the connector remains idle until reactivated using the\n`start` command. Conversely, a connector in the `Running` state can be paused\nat any time by issuing the `pause` command.\n\nThe current connector state can be retrieved via the\n`GET /v0/pipelines/{pipeline_name}/stats` endpoint.\n\nNote that only if both the pipeline *and* the connector state is `Running`,\nis the input connector active.\n```text\nPipeline state    Connector state    Connector is active?\n--------------    ---------------    --------------------\nPaused            Paused             No\nPaused            Running            No\nRunning           Paused             No\nRunning           Running            Yes\n```",
@@ -1893,10 +1893,10 @@
     "/v0/pipelines/{pipeline_name}/{action}": {
       "post": {
         "tags": [
-          "Pipelines"
+          "Pipeline management"
         ],
-        "summary": "Start, pause or shutdown a pipeline.",
-        "description": "The endpoint returns immediately after performing initial request validation\n(e.g., upon start checking the program is compiled) and initiating the relevant\nprocedure (e.g., informing the runner or the already running pipeline).\nThe state changes completely asynchronously. On error, the pipeline\ntransitions to the `Failed` state. The user can monitor the current status\nof the pipeline by polling the `GET /pipelines` and\n`GET /pipelines/{pipeline_name}` endpoint.\n\nThe following values of the `action` argument are accepted:\n- `start`: Start the pipeline\n- `pause`: Pause the pipeline\n- `shutdown`: Terminate the pipeline",
+        "summary": "Sets the desired deployment state of a pipeline.",
+        "description": "The desired state is set based on the `action` path parameter:\n- `/start` sets desired state to `Running`\n- `/pause` sets desired state to `Paused`\n- `/shutdown` sets desired state to `Shutdown`\n\nThe endpoint returns immediately after setting the desired state.\nThe relevant procedure to get to the desired state is performed asynchronously,\nand, as such, progress should be monitored by polling the pipeline using the\n`GET` endpoints.\n\nNote the following:\n- A shutdown pipeline can be started through calling either `/start` or `/pause`\n- Both starting as running and resuming a pipeline is done by calling `/start`\n- Both starting as paused and pausing a pipeline is done by calling `/pause`",
         "operationId": "post_pipeline_action",
         "parameters": [
           {
@@ -1950,16 +1950,6 @@
                       "error_code": "InvalidPipelineAction",
                       "details": {
                         "action": "dance"
-                      }
-                    }
-                  },
-                  "Program failed compilation": {
-                    "description": "Program failed compilation",
-                    "value": {
-                      "message": "Not possible to start the pipeline because the program failed to compile",
-                      "error_code": "StartFailedDueToFailedCompilation",
-                      "details": {
-                        "compiler_error": "error: failed to compile: error: linking with `cc` failed: exit code: 1"
                       }
                     }
                   }
@@ -4811,28 +4801,24 @@
   },
   "tags": [
     {
-      "name": "Pipelines",
-      "description": "Manage pipelines and their deployment."
+      "name": "Pipeline management",
+      "description": "Create, retrieve, update, delete and deploy pipelines."
     },
     {
-      "name": "HTTP input/output",
-      "description": "Interact with running pipelines using HTTP."
-    },
-    {
-      "name": "Authentication",
-      "description": "Retrieve authentication configuration."
+      "name": "Pipeline interaction",
+      "description": "Interact with deployed pipelines."
     },
     {
       "name": "Configuration",
-      "description": "Retrieve general configuration."
+      "description": "Retrieve configuration."
     },
     {
       "name": "API keys",
-      "description": "Manage API keys."
+      "description": "Create, retrieve and delete API keys."
     },
     {
       "name": "Metrics",
-      "description": "Retrieve pipeline metrics."
+      "description": "Retrieve metrics across pipelines."
     }
   ]
 }

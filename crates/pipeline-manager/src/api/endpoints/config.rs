@@ -65,7 +65,8 @@ async fn get_config_authentication(
 
 /// Retrieve the list of demos.
 #[utoipa::path(
-    path="/config/demos",
+    context_path = "/v0",
+    security(("JSON web token (JWT) or API key" = [])),
     responses(
         (status = OK
             , description = "List of demos"
@@ -75,8 +76,6 @@ async fn get_config_authentication(
             , description = "Failed to read demos from the demos directories"
             , body = ErrorResponse),
     ),
-    context_path = "/v0",
-    security(("JSON web token (JWT) or API key" = [])),
     tag = "Configuration",
 )]
 #[get("/config/demos")]
