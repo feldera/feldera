@@ -785,7 +785,7 @@ impl Drop for DBSPHandle {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use std::fs::{create_dir_all, File};
     use std::io;
     use std::path::Path;
@@ -1048,7 +1048,7 @@ mod tests {
         })
     }
 
-    fn mkconfig() -> (TempDir, CircuitConfig) {
+    pub(crate) fn mkconfig() -> (TempDir, CircuitConfig) {
         let temp = tempdir().expect("Can't create temp dir for storage");
         let cconf = CircuitConfig {
             layout: Layout::new_solo(1),

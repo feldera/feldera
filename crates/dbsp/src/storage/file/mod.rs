@@ -296,7 +296,10 @@ where
 
 #[cfg(test)]
 mod test {
-    use crate::{circuit::tokio::TOKIO, storage::test::init_test_logger, Runtime};
+    use crate::{
+        circuit::tokio::TOKIO,
+        storage::{backend::new_default_backend, test::init_test_logger},
+    };
 
     use super::{
         cache::default_cache,
@@ -310,6 +313,7 @@ mod test {
         DBData,
     };
     use rand::{seq::SliceRandom, thread_rng, Rng};
+    use tempfile::tempdir;
 
     trait TwoColumns {
         type K0: DBData;
@@ -763,11 +767,13 @@ mod test {
         let factories1 = Factories::<DynData, DynData>::new::<T::K1, T::A1>();
 
         let cache = default_cache();
+        let tempdir = tempdir().unwrap();
+        let storage_backend = new_default_backend(tempdir.path().to_path_buf(), Default::default());
         let mut layer_file = Writer2::new(
             &factories0,
             &factories1,
             &cache,
-            &*Runtime::storage_backend(),
+            &*storage_backend,
             parameters,
         )
         .unwrap();
@@ -895,8 +901,9 @@ mod test {
     {
         let factories = Factories::<DynData, DynData>::new::<K, A>();
         let cache = default_cache();
-        let mut writer =
-            Writer1::new(&factories, &cache, &*Runtime::storage_backend(), parameters).unwrap();
+        let tempdir = tempdir().unwrap();
+        let storage_backend = new_default_backend(tempdir.path().to_path_buf(), Default::default());
+        let mut writer = Writer1::new(&factories, &cache, &*storage_backend, parameters).unwrap();
         for row in 0..n {
             let (_before, key, _after, aux) = expected(row);
             writer.write0((&key, &aux)).unwrap();
