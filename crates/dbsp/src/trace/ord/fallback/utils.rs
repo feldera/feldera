@@ -517,7 +517,7 @@ where
     // This is equivalent to `batch1.byte_size() + batch2.byte_size() >=
     // Runtime::min_storage_bytes()` but it avoids calling `byte_size()` any
     // more than necessary since it can be expensive.
-    let spill = match Runtime::min_storage_bytes() {
+    let spill = match Runtime::min_storage_bytes().unwrap_or(usize::MAX) {
         0 => true,
         usize::MAX => false,
         min_storage_bytes => {
