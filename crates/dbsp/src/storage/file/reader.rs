@@ -17,8 +17,7 @@ use std::{
 
 use crate::{
     dynamic::{DataTrait, DeserializeDyn, Factory},
-    storage::backend::{BlockLocation, FileReader, InvalidBlockLocation},
-    Runtime,
+    storage::backend::{BlockLocation, FileReader, InvalidBlockLocation, StorageBackend},
 };
 use binrw::{
     io::{self},
@@ -1095,9 +1094,10 @@ impl ImmutableFileRef {
 
     pub(crate) fn open(
         cache: &Arc<BufferCache<FileCacheEntry>>,
+        storage_backend: &dyn StorageBackend,
         path: &IoPath,
     ) -> Result<Self, Error> {
-        let file_handle = Runtime::storage_backend().open(path)?;
+        let file_handle = storage_backend.open(path)?;
         Ok(Self::new(cache, file_handle, path.to_path_buf()))
     }
 
@@ -1227,9 +1227,11 @@ where
     ///
     /// This internally creates an empty temporary file, which means that it can
     /// fail with an I/O error.
-    pub fn empty(cache: &Arc<BufferCache<FileCacheEntry>>) -> Result<Self, Error> {
-        let file_handle = Runtime::storage_backend().create()?;
-        let (file_handle, path) = file_handle.complete()?;
+    pub fn empty(
+        cache: &Arc<BufferCache<FileCacheEntry>>,
+        storage_backend: &dyn StorageBackend,
+    ) -> Result<Self, Error> {
+        let (file_handle, path) = storage_backend.create()?.complete()?;
         Ok(Self(Arc::new(ReaderInner {
             file: Arc::new(ImmutableFileRef::new(cache, file_handle, path)),
             columns: (0..T::n_columns()).map(|_| Column::empty()).collect(),
@@ -1247,9 +1249,10 @@ where
     pub fn open(
         factories: &[&AnyFactories],
         cache: &Arc<BufferCache<FileCacheEntry>>,
+        storage_backend: &dyn StorageBackend,
         path: &IoPath,
     ) -> Result<Self, Error> {
-        let file = ImmutableFileRef::open(cache, path)?;
+        let file = ImmutableFileRef::open(cache, storage_backend, path)?;
         Self::new(factories, Arc::new(file))
     }
 
