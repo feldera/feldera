@@ -7,7 +7,7 @@ use crate::{
 };
 use anyhow::Error as AnyError;
 use crossbeam::channel::{bounded, Receiver, Select, Sender, TryRecvError};
-pub use feldera_types::config::{StorageCacheConfig, StorageConfig};
+pub use feldera_types::config::{StorageCacheConfig, StorageConfig, StorageOptions};
 use itertools::Either;
 use metrics::counter;
 use minitrace::collector::SpanContext;
@@ -229,11 +229,8 @@ pub struct CircuitStorageConfig {
     /// Runner configuration.
     pub config: StorageConfig,
 
-    /// Estimated minimum number of bytes in a data batch to spill it to
-    /// storage. If this is 0, then all batches will be stored on disk; if it is
-    /// `usize::MAX`, then all batches will be kept in memory; and intermediate
-    /// values specify a threshold.
-    pub min_storage_bytes: usize,
+    /// User options.
+    pub options: StorageOptions,
 
     /// The initial checkpoint to start the circuit from, or `None` to start
     /// fresh from a new circuit.
@@ -780,7 +777,7 @@ pub(crate) mod tests {
         TypedBox, ZSetHandle, ZWeight,
     };
     use anyhow::anyhow;
-    use feldera_types::config::{StorageCacheConfig, StorageConfig};
+    use feldera_types::config::{StorageCacheConfig, StorageConfig, StorageOptions};
     use tempfile::{tempdir, TempDir};
     use uuid::Uuid;
 
@@ -1031,7 +1028,10 @@ pub(crate) mod tests {
                     path: temp.path().to_string_lossy().into_owned(),
                     cache: StorageCacheConfig::default(),
                 },
-                min_storage_bytes: 0,
+                options: StorageOptions {
+                    min_storage_bytes: Some(0),
+                    ..StorageOptions::default()
+                },
                 init_checkpoint: None,
             }),
         };

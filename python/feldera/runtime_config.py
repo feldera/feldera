@@ -37,6 +37,24 @@ class Resources:
         self.__dict__.update(config)
 
 
+class Storage:
+    """Storage configuration for a pipeline.
+
+    :param min_storage_bytes: The minimum estimated number of bytes in a batch of data to write it to storage.
+    """
+
+    def __init__(
+        self,
+        config: Optional[Mapping[str, Any]] = None,
+        min_storage_bytes: Optional[int] = None,
+    ):
+        config = config or {}
+
+        self.min_storage_bytes = min_storage_bytes
+
+        self.__dict__.update(config)
+
+
 class RuntimeConfig:
     """
     Runtime configuration class to define the configuration for a pipeline.
@@ -45,13 +63,12 @@ class RuntimeConfig:
     def __init__(
         self,
         workers: Optional[int] = None,
-        storage: Optional[bool] = False,
+        storage: Optional[Storage] = None,
         tracing: Optional[bool] = False,
         tracing_endpoint_jaeger: Optional[str] = "",
         cpu_profiler: bool = True,
         max_buffering_delay_usecs: int = 0,
         min_batch_size_records: int = 0,
-        min_storage_bytes: Optional[int] = None,
         clock_resolution_usecs: Optional[int] = None,
         resources: Optional[Resources] = None,
     ):
@@ -62,7 +79,6 @@ class RuntimeConfig:
         self.cpu_profiler = cpu_profiler
         self.max_buffering_delay_usecs = max_buffering_delay_usecs
         self.min_batch_size_records = min_batch_size_records
-        self.min_storage_bytes = min_storage_bytes
         self.clock_resolution_usecs = clock_resolution_usecs
         if resources is not None:
             self.resources = resources.__dict__

@@ -63,7 +63,7 @@ use crate::{
     db::types::pipeline::PipelineStatus,
 };
 use anyhow::{bail, Result as AnyResult};
-use feldera_types::config::{ResourceConfig, RuntimeConfig};
+use feldera_types::config::{ResourceConfig, RuntimeConfig, StorageOptions};
 use feldera_types::program_schema::SqlIdentifier;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -1391,7 +1391,7 @@ async fn pipeline_runtime_config() {
         value["runtime_config"],
         serde_json::to_value(RuntimeConfig {
             workers: 100,
-            storage: true,
+            storage: Some(StorageOptions::default()),
             resources: ResourceConfig {
                 cpu_cores_min: Some(2),
                 storage_mb_max: Some(500),

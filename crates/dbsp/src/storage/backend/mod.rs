@@ -9,7 +9,9 @@
 //! The API also prevents reading from a file that is not completed.
 #![warn(missing_docs)]
 
-use feldera_types::config::StorageCacheConfig;
+use feldera_types::config::{
+    StorageBackendConfig, StorageCacheConfig, StorageConfig, StorageOptions,
+};
 use serde::{ser::SerializeStruct, Serialize, Serializer};
 use std::{
     fmt::Display,
@@ -24,7 +26,7 @@ use std::{
 };
 use tempfile::TempDir;
 use thiserror::Error;
-use tracing::{trace, warn};
+use tracing::warn;
 use uuid::Uuid;
 
 use crate::storage::buffer_cache::FBuf;
@@ -194,45 +196,61 @@ pub fn tempdir_for_thread() -> PathBuf {
     TEMPDIR.with(|dir| dir.path().to_path_buf())
 }
 
-/// Create and returns a backend of the default kind based in `directory`.
-pub fn new_default_backend(
-    directory: PathBuf,
-    cache: StorageCacheConfig,
-) -> Rc<dyn StorageBackend> {
-    trace!("new_default_backend: dir={directory:?}");
+impl dyn StorageBackend {
+    /// Creates and returns a new backend configured according to `config` and `options`.
+    pub fn new(config: &StorageConfig, options: &StorageOptions) -> Result<Rc<Self>, StorageError> {
+        Self::warn_about_tmpfs(config.path());
 
-    #[cfg(target_os = "linux")]
-    {
-        use nix::sys::statfs::{statfs, TMPFS_MAGIC};
-        if let Ok(s) = statfs(&directory) {
-            if s.filesystem_type() == TMPFS_MAGIC {
-                static ONCE: std::sync::Once = std::sync::Once::new();
-                ONCE.call_once(|| {
-                    warn!("initializing storage on in-memory tmpfs filesystem at {}; consider configuring physical storage",
-                          directory.to_string_lossy())
-                });
-            }
+        match &options.backend {
+            StorageBackendConfig::Default => Ok(Self::new_default(config)),
+            StorageBackendConfig::IoUring => Ok(Self::new_iouring(config)),
         }
     }
 
-    #[cfg(target_os = "linux")]
-    if std::env::var("FELDERA_USE_IO_URING").is_ok_and(|s| s != "0") {
-        match io_uring_impl::IoUringBackend::new(&directory, cache) {
+    fn is_tmpfs(path: &Path) -> bool {
+        #[cfg(target_os = "linux")]
+        {
+            use nix::sys::statfs;
+            statfs::statfs(path).is_ok_and(|s| s.filesystem_type() == statfs::TMPFS_MAGIC)
+        }
+
+        #[cfg(not(target_os = "linux"))]
+        false
+    }
+
+    fn warn_about_tmpfs(path: &Path) {
+        if Self::is_tmpfs(path) {
+            static ONCE: std::sync::Once = std::sync::Once::new();
+            ONCE.call_once(|| {
+                warn!("initializing storage on in-memory tmpfs filesystem at {}; consider configuring physical storage", path.display())
+            });
+        }
+    }
+
+    fn new_default(config: &StorageConfig) -> Rc<Self> {
+        Rc::new(posixio_impl::PosixBackend::new(config.path(), config.cache))
+    }
+
+    fn new_iouring(config: &StorageConfig) -> Rc<Self> {
+        static ONCE: std::sync::Once = std::sync::Once::new();
+
+        #[cfg(target_os = "linux")]
+        match io_uring_impl::IoUringBackend::new(config.path(), config.cache) {
             Ok(backend) => return Rc::new(backend),
             Err(error) => {
-                static ONCE: std::sync::Once = std::sync::Once::new();
                 ONCE.call_once(|| {
                     warn!("could not initialize io_uring backend ({error}), falling back to POSIX I/O")
                 });
             }
         }
-    } else {
-        tracing::info!(
-            "io_uring backend disabled by default (set FELDERA_USE_IO_URING=1 to enable"
-        );
-    }
 
-    Rc::new(posixio_impl::PosixBackend::new(directory, cache))
+        #[cfg(not(target_os = "linux"))]
+        ONCE.call_once(|| {
+            warn!("io_uring backend not supported on this operating system, falling back to POSIX I/O")
+        });
+
+        Self::new_default(config)
+    }
 }
 
 trait StorageCacheFlags {

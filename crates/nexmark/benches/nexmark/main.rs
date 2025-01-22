@@ -10,7 +10,9 @@ use dbsp::circuit::metrics::{
     FILES_CREATED, READS_SUCCESS, TOTAL_BYTES_READ, TOTAL_BYTES_WRITTEN, TOTAL_COMPACTIONS,
     WRITES_SUCCESS,
 };
-use dbsp::circuit::{CircuitConfig, CircuitStorageConfig, StorageCacheConfig, StorageConfig};
+use dbsp::circuit::{
+    CircuitConfig, CircuitStorageConfig, StorageCacheConfig, StorageConfig, StorageOptions,
+};
 use dbsp::storage::backend::tempdir_for_thread;
 use dbsp::utils::Tup2;
 use dbsp::{
@@ -256,7 +258,7 @@ fn run_query(config: &NexmarkConfig, snapshotter: &Snapshotter, query: Query) ->
                         StorageCacheConfig::PageCache
                     },
                 },
-                min_storage_bytes: config.min_storage_bytes,
+                options: StorageOptions::default(),
                 init_checkpoint: None,
             })
         } else {
