@@ -39,7 +39,6 @@ jobs:
         with:
           images: ${{ env.PIPELINE_MANAGER_IMAGE }}
           tags: |
-            type=semver,pattern={{version}}
             type=raw,value=latest
           # Single image description
           labels: |
@@ -122,7 +121,7 @@ jobs:
       - name: Push versioned manifest
         if: github.event_name == 'release'
         run: |
-          docker manifest create ${{ env.PIPELINE_MANAGER_IMAGE }} \
+          docker manifest create --amend ${{ env.PIPELINE_MANAGER_IMAGE }} \
             ${{ env.PIPELINE_MANAGER_IMAGE }}@${{needs.build-and-push-image.outputs.digest-pipeline-manager-linux-amd64}} \
             ${{ env.PIPELINE_MANAGER_IMAGE }}@${{needs.build-and-push-image.outputs.digest-pipeline-manager-linux-arm64}}
-          docker manifest push ${{ env.PIPELINE_MANAGER_IMAGE }}:${{ github.event.release.tag_name }}
+          docker manifest push ${{ env.PIPELINE_MANAGER_IMAGE }}:${{ steps.meta_pipeline_manager.outputs.version }}
