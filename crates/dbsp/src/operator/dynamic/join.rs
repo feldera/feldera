@@ -194,7 +194,7 @@ where
 pub struct AntijoinFactories<I1, I2, T>
 where
     I1: IndexedZSet,
-    I2: IndexedZSet,
+    I2: ZSet,
     T: Timestamp,
 {
     pub join_factories: JoinFactories<I1, I2, T, I1>,
@@ -204,18 +204,17 @@ where
 impl<I1, I2, T> AntijoinFactories<I1, I2, T>
 where
     I1: IndexedZSet,
-    I2: IndexedZSet<Key = I1::Key>,
+    I2: ZSet<Key = I1::Key>,
     T: Timestamp,
 {
-    pub fn new<KType, V1Type, V2Type>() -> Self
+    pub fn new<KType, V1Type>() -> Self
     where
         KType: DBData + Erase<I1::Key>,
         V1Type: DBData + Erase<I1::Val>,
-        V2Type: DBData + Erase<I2::Val>,
     {
         Self {
-            join_factories: JoinFactories::new::<KType, V1Type, V2Type, KType, V1Type>(),
-            distinct_factories: DistinctFactories::new::<KType, V2Type>(),
+            join_factories: JoinFactories::new::<KType, V1Type, (), KType, V1Type>(),
+            distinct_factories: DistinctFactories::new::<KType, ()>(),
         }
     }
 }
@@ -223,7 +222,7 @@ where
 impl<I1, I2, T> Clone for AntijoinFactories<I1, I2, T>
 where
     I1: IndexedZSet,
-    I2: IndexedZSet,
+    I2: ZSet,
     T: Timestamp,
 {
     fn clone(&self) -> Self {
@@ -242,11 +241,11 @@ where
     O: DataTrait + ?Sized,
 {
     pub join_factories: JoinFactories<I1, I2, T, OrdZSet<O>>,
-    pub left_join_factories: JoinFactories<I1, I2, T, I1>,
-    pub right_join_factories: JoinFactories<I2, I1, T, I2>,
+    pub left_join_factories: JoinFactories<I1, OrdZSet<I2::Key>, T, I1>,
+    pub right_join_factories: JoinFactories<I2, OrdZSet<I1::Key>, T, I2>,
 
-    pub left_distinct_factories: DistinctFactories<I1, T>,
-    pub right_distinct_factories: DistinctFactories<I2, T>,
+    pub left_distinct_factories: DistinctFactories<OrdZSet<I1::Key>, T>,
+    pub right_distinct_factories: DistinctFactories<OrdZSet<I2::Key>, T>,
     pub output_factories: <OrdZSet<O> as BatchReader>::Factories,
 }
 
@@ -266,10 +265,10 @@ where
     {
         Self {
             join_factories: JoinFactories::new::<KType, V1Type, V2Type, OType, ()>(),
-            left_join_factories: JoinFactories::new::<KType, V1Type, V2Type, KType, V1Type>(),
-            right_join_factories: JoinFactories::new::<KType, V2Type, V1Type, KType, V2Type>(),
-            left_distinct_factories: DistinctFactories::new::<KType, V1Type>(),
-            right_distinct_factories: DistinctFactories::new::<KType, V2Type>(),
+            left_join_factories: JoinFactories::new::<KType, V1Type, (), KType, V1Type>(),
+            right_join_factories: JoinFactories::new::<KType, V2Type, (), KType, V2Type>(),
+            left_distinct_factories: DistinctFactories::new::<KType, ()>(),
+            right_distinct_factories: DistinctFactories::new::<KType, ()>(),
             output_factories: BatchReaderFactories::new::<OType, (), ZWeight>(),
         }
     }
@@ -553,11 +552,11 @@ where
     /// See [`Stream::antijoin`].
     pub fn dyn_antijoin<I2>(
         &self,
-        factories: &AntijoinFactories<I1, I2, C::Time>,
+        factories: &AntijoinFactories<I1, OrdZSet<I2::Key>, C::Time>,
         other: &Stream<C, I2>,
     ) -> Stream<C, I1>
     where
-        I2: IndexedZSet<Key = I1::Key> + Send,
+        I2: IndexedZSet<Key = I1::Key> + DynFilterMap + Send,
         Box<I1::Key>: Clone,
         Box<I1::Val>: Clone,
     {
@@ -568,8 +567,18 @@ where
                     self.circuit().region("antijoin", || {
                         let stream1 = self.dyn_shard(&factories.join_factories.left_factories);
                         let stream2 = other
+                            .dyn_map(
+                                &factories.join_factories.right_factories,
+                                Box::new(|item: <I2 as DynFilterMap>::DynItemRef<'_>, output| {
+                                    <I2 as DynFilterMap>::item_ref_keyval(item)
+                                        .0
+                                        .clone_to(output.fst_mut())
+                                }),
+                            )
                             .dyn_distinct(&factories.distinct_factories)
                             .dyn_shard(&factories.join_factories.right_factories);
+
+                        //map_func: Box<dyn Fn(B::DynItemRef<'_>, &mut DynPair<K, DynUnit>)>,
 
                         let mut key = factories
                             .join_factories
@@ -1864,6 +1873,12 @@ mod test {
             &*output.lock().unwrap(),
             &indexed_zset! { 2 => { 0 => -1, 1 => -1 }, 4 => { 1 => 1 } }
         );
+
+        // Issue https://github.com/feldera/feldera/issues/3365. Multiple values per key in the right-hand input shouldn't
+        // produce outputs with negative weights.
+        input2.append(&mut vec![Tup2(2, Tup2(6, 1))]);
+        circuit.step().unwrap();
+        assert_eq!(&*output.lock().unwrap(), &indexed_zset! {});
 
         circuit.kill().unwrap();
     }

@@ -343,11 +343,11 @@ where
     pub fn antijoin<I2>(&self, other: &Stream<C, I2>) -> Stream<C, I1>
     where
         I2: IndexedZSet<Key = I1::Key, DynK = I1::DynK>,
-        I2::InnerBatch: Send,
+        I2::InnerBatch: Send + DynFilterMap,
         Box<I1::DynK>: Clone,
         Box<I1::DynV>: Clone,
     {
-        let factories = AntijoinFactories::new::<I1::Key, I1::Val, I2::Val>();
+        let factories = AntijoinFactories::new::<I1::Key, I1::Val>();
 
         self.inner()
             .dyn_antijoin(&factories, &other.inner())
