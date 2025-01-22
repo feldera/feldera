@@ -68,7 +68,6 @@ pub use ord::{
 };
 
 use rkyv::{archived_root, de::deserializers::SharedDeserializeMap, Deserialize};
-use uuid::Uuid;
 
 use crate::{
     algebra::MonoidValue,
@@ -313,10 +312,10 @@ pub trait Trace: BatchReader {
 
     fn key_filter(&self) -> &Option<Filter<Self::Key>>;
     fn value_filter(&self) -> &Option<Filter<Self::Val>>;
-    fn commit<P: AsRef<str>>(&mut self, _cid: Uuid, _pid: P) -> Result<(), Error> {
+    fn commit(&mut self, _base: &Path, _pid: &str) -> Result<(), Error> {
         Ok(())
     }
-    fn restore<P: AsRef<str>>(&mut self, _cid: Uuid, _pid: P) -> Result<(), Error> {
+    fn restore(&mut self, _base: &Path, _pid: &str) -> Result<(), Error> {
         Ok(())
     }
 

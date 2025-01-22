@@ -393,14 +393,14 @@ impl Runtime {
                             return;
                         }
                     }
-                    Ok(Command::Commit(cid)) => {
-                        circuit.commit(cid).expect("commit failed");
+                    Ok(Command::Commit(base)) => {
+                        circuit.commit(&base).expect("commit failed");
                         if status_sender.send(Ok(Response::CheckpointCreated)).is_err() {
                             return;
                         }
                     }
-                    Ok(Command::Restore(cid)) => {
-                        circuit.restore(cid).expect("restore failed");
+                    Ok(Command::Restore(base)) => {
+                        circuit.restore(&base).expect("restore failed");
                         if status_sender
                             .send(Ok(Response::CheckpointRestored))
                             .is_err()
@@ -457,7 +457,14 @@ impl Runtime {
         let mut dbsp = DBSPHandle::new(runtime, command_senders, status_receivers);
         let result = init_status[0].take();
         if config.init_checkpoint != Uuid::nil() {
-            dbsp.send_restore(config.init_checkpoint)?;
+            dbsp.send_restore(
+                dbsp.runtime
+                    .as_ref()
+                    .unwrap()
+                    .runtime()
+                    .storage_path()
+                    .join(config.init_checkpoint.to_string()),
+            )?;
         }
 
         // `constructor` should return identical results in all workers.  Use
@@ -472,8 +479,8 @@ enum Command {
     EnableProfiler,
     DumpProfile,
     RetrieveProfile,
-    Commit(Uuid),
-    Restore(Uuid),
+    Commit(PathBuf),
+    Restore(PathBuf),
     Fingerprint,
 }
 
@@ -670,14 +677,14 @@ impl DBSPHandle {
     }
 
     /// Used by the checkpointer to initiate a commit on the circuit.
-    pub(super) fn send_commit(&mut self, uuid: Uuid) -> Result<(), DbspError> {
-        self.broadcast_command(Command::Commit(uuid), |_, _| {})?;
+    pub(super) fn send_commit(&mut self, base: PathBuf) -> Result<(), DbspError> {
+        self.broadcast_command(Command::Commit(base), |_, _| {})?;
         Ok(())
     }
 
     /// Used to reset operator state to the point of the given Commit.
-    fn send_restore(&mut self, uuid: Uuid) -> Result<(), DbspError> {
-        self.broadcast_command(Command::Restore(uuid), |_, _| {})?;
+    fn send_restore(&mut self, base: PathBuf) -> Result<(), DbspError> {
+        self.broadcast_command(Command::Restore(base), |_, _| {})?;
         Ok(())
     }
 
@@ -688,7 +695,14 @@ impl DBSPHandle {
     ) -> Result<CheckpointMetadata, DbspError> {
         let fingerprint = self.fingerprint()?;
         self.checkpointer.create_checkpoint_dir(uuid)?;
-        self.send_commit(uuid)?;
+        self.send_commit(
+            self.runtime
+                .as_ref()
+                .unwrap()
+                .runtime()
+                .storage_path()
+                .join(uuid.to_string()),
+        )?;
         let md = self.checkpointer.commit(uuid, identifier, fingerprint)?;
         Ok(md)
     }
