@@ -10,12 +10,23 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
+import org.dbsp.util.Utilities;
 import org.junit.Assert;
 import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
 import org.junit.Test;
 
+import java.io.IOException;
+import java.nio.file.Paths;
+
 /** Regression tests that failed in incremental mode using the Catalog API */
 public class IncrementalRegressionTests extends SqlIoTest {
+    @Test
+    public void t() throws IOException {
+        this.showFinalVerbose(2);
+        String sql = Utilities.readFile(Paths.get("/home/mbudiu/win/Downloads/procore_sql.txt"));
+        this.getCCS(sql);
+    }
+
     @Override
     public DBSPCompiler testCompiler() {
         CompilerOptions options = this.testOptions(true, true);

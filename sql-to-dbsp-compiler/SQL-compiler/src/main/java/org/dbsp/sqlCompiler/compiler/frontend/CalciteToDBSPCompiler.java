@@ -1070,6 +1070,127 @@ public class CalciteToDBSPCompiler extends RelVisitor
         return filter;
     }
 
+    static int getTypeSize(DBSPExpression expr) {
+        return expr.getType().deref().to(DBSPTypeTupleBase.class).size();
+    }
+
+    /** Keeps track of the fields of a tuple that are used as key fields. */
+    static class KeyFields {
+        /** Map each key field to a consecutive integer: 0, 1, 2, 3... */
+        private final Map<Integer, Integer> keyFields;
+
+        public KeyFields() {
+            this.keyFields = new HashMap<>();
+        }
+
+        public boolean isKeyField(int i) {
+            return this.keyFields.containsKey(i);
+        }
+
+        public int getCompactIndex(int index) {
+            return Utilities.getExists(this.keyFields, index);
+        }
+
+        public void add(int index) {
+            Utilities.putNew(this.keyFields, index, this.keyFields.size());
+        }
+
+        /** Extract the non-key fields from a tuple.
+         *
+         * @param var       Var that is a reference to a tuple.
+         * @return          A tuple containing just the non-key fields, in order.
+         */
+        DBSPTupleExpression nonKeyFields(DBSPVariablePath var) {
+            return this.nonKeyFields(var, var.getType().deref().to(DBSPTypeTupleBase.class), 0);
+        }
+
+        /** Extract the non-key fields from a tuple.
+         *
+         * @param var       Var that is a reference to a tuple.
+         * @param desiredType Type to cast var to in the result.
+         * @param offset    Start at this offset in var.
+         * @return          A tuple containing just the non-key fields, in order.
+         */
+        DBSPTupleExpression nonKeyFields(DBSPVariablePath var, DBSPTypeTupleBase desiredType, int offset) {
+            List<DBSPExpression> fields = new ArrayList<>();
+            assert offset >= 0;
+            assert getTypeSize(var) >= desiredType.size() + offset;
+            for (int i = offset; i < offset + desiredType.size(); i++) {
+                if (this.isKeyField(i))
+                    continue;
+                fields.add(var.deref().field(i)
+                        .applyCloneIfNeeded()
+                        .cast(desiredType.getFieldType(i - offset), false));
+            }
+            return new DBSPTupleExpression(fields, false);
+        }
+
+        /** Extract the key fields from a tuple.
+         *
+         * @param var       Var that is a reference to a tuple.
+         * @param desiredType Type desired for result; may indicate a prefix of the fields of var.
+         * @param offset    Offset to start from in var.
+         * @return          A tuple containing just the key fields, in order.
+         */
+        DBSPTupleExpression keyFields(DBSPVariablePath var, DBSPTypeTupleBase desiredType, int offset) {
+            List<DBSPExpression> fields = new ArrayList<>();
+            assert offset >= 0;
+            assert getTypeSize(var) >= desiredType.size() + offset;
+            for (int i = offset; i < offset + desiredType.size(); i++) {
+                if (this.isKeyField(i))
+                    fields.add(var.deref().field(i)
+                            .applyCloneIfNeeded()
+                            .cast(desiredType.getFieldType(i - offset), false));
+            }
+            return new DBSPTupleExpression(fields, false);
+        }
+
+        /** Extract the key fields from a tuple.
+         *
+         * @param var       Var that is a reference to a tuple.
+         * @return          A tuple containing just the key fields, in order.
+         */
+        @SuppressWarnings("unused")
+        DBSPTupleExpression keyFields(DBSPVariablePath var) {
+            return this.keyFields(var, var.getType().deref().to(DBSPTypeTupleBase.class), 0);
+        }
+
+        /**
+         * Given a variable with the key fields and a variable with the data fields of a join,
+         * put the fields back together in a list.
+         * @param key       Expression corresponding to key, has a tuple type.
+         * @param data      Expression corresponding to data, has a tuple type.
+         * @param result    A list of the unshuffled fields.  The list consists of all fields in
+         *                  data, with fields of k in their right positions.
+         */
+        void unshuffleKeyAndDataFields(DBSPExpression key, DBSPExpression data, List<DBSPExpression> result) {
+            int size = getTypeSize(key) + getTypeSize(data);
+            int skipped = 0;
+            for (int i = 0; i < size; i++) {
+                if (this.isKeyField(i)) {
+                    result.add(key.deref().field(this.getCompactIndex(i)).applyCloneIfNeeded());
+                    skipped++;
+                } else {
+                    result.add(data.deref().field(i - skipped).applyCloneIfNeeded());
+                }
+            }
+        }
+
+        /** Change the offset of each field by the specified amount */
+        public KeyFields offset(int size) {
+            KeyFields fields = new KeyFields();
+            for (var e : this.keyFields.entrySet()) {
+                Utilities.putNew(fields.keyFields, e.getKey() + size, e.getValue());
+            }
+            return fields;
+        }
+
+        @Override
+        public String toString() {
+            return "KeyFields: " + this.keyFields;
+        }
+    }
+
     private void visitJoin(LogicalJoin join) {
         CalciteObject node = CalciteObject.create(join);
         JoinRelType joinType = join.getJoinType();
@@ -1106,14 +1227,12 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPTypeTuple leftResultType = resultType.slice(0, leftColumns);
         DBSPTypeTuple rightResultType = resultType.slice(leftColumns, leftColumns + rightColumns);
         // Map a left variable field that is used as key field into the corresponding key field index
-        Map<Integer, Integer> lkf = new HashMap<>();
-        Map<Integer, Integer> rkf = new HashMap<>();
+        KeyFields lkf = new KeyFields();
+        KeyFields rkf = new KeyFields();
         {
-            int index = 0;
             for (var x : decomposition.comparisons) {
-                Utilities.putNew(lkf, x.leftColumn(), index);
-                Utilities.putNew(rkf, x.rightColumn(), index);
-                index++;
+                lkf.add(x.leftColumn());
+                rkf.add(x.rightColumn());
             }
         }
 
@@ -1131,21 +1250,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
             DBSPExpression leftKey = new DBSPTupleExpression(node, leftKeyFields);
             keyType = leftKey.getType();
 
-            // Copy all the fields from the except the partition fields
-            List<DBSPExpression> leftFields = new ArrayList<>();
-            List<DBSPExpression> rightFields = new ArrayList<>();
-            for (int i = 0; i < leftElementType.size(); i++) {
-                if (lkf.containsKey(i))
-                    continue;
-                leftFields.add(l.deref().field(i).applyCloneIfNeeded());
-            }
-            for (int i = 0; i < rightElementType.size(); i++) {
-                if (rkf.containsKey(i))
-                    continue;
-                rightFields.add(r.deref().field(i).applyCloneIfNeeded());
-            }
-            DBSPTupleExpression leftTuple = new DBSPTupleExpression(leftFields, false);
-            DBSPTupleExpression rightTuple = new DBSPTupleExpression(rightFields, false);
+            DBSPTupleExpression leftTuple = lkf.nonKeyFields(l);
+            DBSPTupleExpression rightTuple = rkf.nonKeyFields(r);
             leftTupleType = leftTuple.getType();
             rightTupleType = rightTuple.getType();
             DBSPClosureExpression toLeftKey = new DBSPRawTupleExpression(leftKey, leftTuple)
@@ -1167,30 +1273,15 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPSimpleOperator joinResult;
         DBSPSimpleOperator inner;
         DBSPTypeTuple lrType;
+        boolean hasFilter = false;
         {
             DBSPVariablePath k = keyType.ref().var();
             DBSPVariablePath l0 = leftTupleType.ref().var();
             DBSPVariablePath r0 = rightTupleType.ref().var();
 
             List<DBSPExpression> joinFields = new ArrayList<>();
-            int skipped = 0;
-            for (int i = 0; i < leftElementType.size(); i++) {
-                if (lkf.containsKey(i)) {
-                    joinFields.add(k.deref().field(lkf.get(i)).applyCloneIfNeeded());
-                    skipped++;
-                } else {
-                    joinFields.add(l0.deref().field(i - skipped).applyCloneIfNeeded());
-                }
-            }
-            skipped = 0;
-            for (int i = 0; i < rightElementType.size(); i++) {
-                if (rkf.containsKey(i)) {
-                    joinFields.add(k.deref().field(rkf.get(i)).applyCloneIfNeeded());
-                    skipped++;
-                } else {
-                    joinFields.add(r0.deref().field(i - skipped).applyCloneIfNeeded());
-                }
-            }
+            lkf.unshuffleKeyAndDataFields(k, l0, joinFields);
+            rkf.unshuffleKeyAndDataFields(k, r0, joinFields);
             DBSPTupleExpression lr = new DBSPTupleExpression(joinFields, false);
             lrType = lr.getType().to(DBSPTypeTuple.class);
             @Nullable
@@ -1225,6 +1316,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                     this.addOperator(joinResult);
                     inner = new DBSPFilterOperator(node, condition, joinResult.outputPort());
                     joinResult = inner;
+                    hasFilter = true;
                 }
                 // if bLit it true we don't need to filter.
             }
@@ -1249,85 +1341,170 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPVariablePath joinVar = lrType.ref().var();
         if (joinType == JoinRelType.LEFT || joinType == JoinRelType.FULL) {
             this.addOperator(result);
-            DBSPTypeIndexedZSet indexType = new DBSPTypeIndexedZSet(node, leftResultType, new DBSPTypeTuple());
+            DBSPSimpleOperator expand;
+            if (!hasFilter) {
+                // If there is no filter we can do a more efficient antijoin
 
-            // Project the join on the left columns and index with the entire tuple
-            DBSPClosureExpression toLeftColumns =
-                    new DBSPRawTupleExpression(
-                            DBSPTupleExpression.flatten(
-                                    joinVar.deref()).slice(0, leftColumns)
-                                    .pointwiseCast(leftResultType),
-                            new DBSPTupleExpression()).closure(joinVar);
-            DBSPSimpleOperator joinLeftColumns = new DBSPMapIndexOperator(
-                    node, toLeftColumns, indexType, inner.outputPort());
-            this.addOperator(joinLeftColumns);
+                // Project the join on the left columns and index with the key
+                DBSPExpression keyFields = lkf.keyFields(joinVar, leftResultType, 0);
+                DBSPExpression nonKeyFields = lkf.nonKeyFields(joinVar, leftResultType, 0);
+                DBSPClosureExpression toLeftColumns =
+                        new DBSPRawTupleExpression(keyFields, nonKeyFields).closure(joinVar);
 
-            // Index the left collection in the same way
-            DBSPVariablePath l1 = leftElementType.ref().var();
-            DBSPClosureExpression castLeft = new DBSPRawTupleExpression(
-                    DBSPTupleExpression.flatten(l1.deref()).pointwiseCast(leftResultType),
-                    new DBSPTupleExpression()).closure(l1);
-            DBSPSimpleOperator fullLeftIndex = new DBSPMapIndexOperator(node, castLeft, indexType, left.outputPort());
-            this.addOperator(fullLeftIndex);
+                DBSPTypeIndexedZSet indexType = new DBSPTypeIndexedZSet(node, keyFields.getType(), nonKeyFields.getType());
+                DBSPSimpleOperator joinLeftColumns = new DBSPMapIndexOperator(
+                        node, toLeftColumns, indexType, inner.outputPort());
+                this.addOperator(joinLeftColumns);
 
-            // subtract join from left relation
-            DBSPSimpleOperator sub = new DBSPStreamAntiJoinOperator(
-                    node, fullLeftIndex.outputPort(), joinLeftColumns.outputPort());
-            this.addOperator(sub);
+                // Index the left collection in the same way
+                DBSPVariablePath l1 = leftElementType.ref().var();
+                DBSPClosureExpression castLeft = new DBSPRawTupleExpression(
+                        lkf.keyFields(l1, leftResultType, 0),
+                        lkf.nonKeyFields(l1, leftResultType, 0)).closure(l1);
+                DBSPSimpleOperator fullLeftIndex = new DBSPMapIndexOperator(node, castLeft, indexType, left.outputPort());
+                this.addOperator(fullLeftIndex);
 
-            // fill nulls in the right relation fields and drop index
-            DBSPVariablePath var = indexType.getKVRefType().var();
-            DBSPTupleExpression rEmpty = new DBSPTupleExpression(
-                    Linq.map(rightElementType.tupFields,
-                             et -> DBSPLiteral.none(et.withMayBeNull(true)), DBSPExpression.class));
-            DBSPClosureExpression leftRow =
-                    DBSPTupleExpression.flatten(var.field(0).deref(), rEmpty).closure(var);
-            DBSPSimpleOperator expand = new DBSPMapOperator(
-                    node, leftRow, this.makeZSet(resultType), sub.outputPort());
+                // subtract join from left relation
+                DBSPSimpleOperator sub = new DBSPStreamAntiJoinOperator(
+                        node, fullLeftIndex.outputPort(), joinLeftColumns.outputPort());
+                this.addOperator(sub);
+
+                // fill nulls in the right relation fields and reconstruct tuple
+                DBSPVariablePath var = indexType.getKVRefType().var();
+                DBSPTupleExpression rNulls = new DBSPTupleExpression(
+                        Linq.map(rightElementType.tupFields,
+                                et -> DBSPLiteral.none(et.withMayBeNull(true)), DBSPExpression.class));
+                List<DBSPExpression> fields = new ArrayList<>();
+                lkf.unshuffleKeyAndDataFields(var.field(0), var.field(1), fields);
+                DBSPClosureExpression leftRow =
+                        DBSPTupleExpression.flatten(new DBSPTupleExpression(fields, false), rNulls).closure(var);
+                expand = new DBSPMapOperator(
+                        node, leftRow, this.makeZSet(resultType), sub.outputPort());
+            } else {
+                DBSPTypeIndexedZSet indexType = new DBSPTypeIndexedZSet(node, leftResultType, new DBSPTypeTuple());
+
+                // Project the join on the left columns and index with the entire tuple
+                DBSPClosureExpression toLeftColumns =
+                        new DBSPRawTupleExpression(
+                                DBSPTupleExpression.flatten(
+                                                joinVar.deref()).slice(0, leftColumns)
+                                        .pointwiseCast(leftResultType),
+                                new DBSPTupleExpression()).closure(joinVar);
+                DBSPSimpleOperator joinLeftColumns = new DBSPMapIndexOperator(
+                        node, toLeftColumns, indexType, inner.outputPort());
+                this.addOperator(joinLeftColumns);
+
+                // Index the left collection in the same way
+                DBSPVariablePath l1 = leftElementType.ref().var();
+                DBSPClosureExpression castLeft = new DBSPRawTupleExpression(
+                        DBSPTupleExpression.flatten(l1.deref()).pointwiseCast(leftResultType),
+                        new DBSPTupleExpression()).closure(l1);
+                DBSPSimpleOperator fullLeftIndex = new DBSPMapIndexOperator(node, castLeft, indexType, left.outputPort());
+                this.addOperator(fullLeftIndex);
+
+                // subtract join from left relation
+                DBSPSimpleOperator sub = new DBSPStreamAntiJoinOperator(
+                        node, fullLeftIndex.outputPort(), joinLeftColumns.outputPort());
+                this.addOperator(sub);
+
+                // fill nulls in the right relation fields and drop index
+                DBSPVariablePath var = indexType.getKVRefType().var();
+                DBSPTupleExpression rEmpty = new DBSPTupleExpression(
+                        Linq.map(rightElementType.tupFields,
+                                et -> DBSPLiteral.none(et.withMayBeNull(true)), DBSPExpression.class));
+                DBSPClosureExpression leftRow =
+                        DBSPTupleExpression.flatten(var.field(0).deref(), rEmpty).closure(var);
+                expand = new DBSPMapOperator(
+                        node, leftRow, this.makeZSet(resultType), sub.outputPort());
+            }
             this.addOperator(expand);
             result = new DBSPSumOperator(node, result.outputPort(), expand.outputPort());
         }
         if (joinType == JoinRelType.RIGHT || joinType == JoinRelType.FULL) {
             this.addOperator(result);
-            DBSPTypeIndexedZSet indexType = new DBSPTypeIndexedZSet(node, rightResultType, new DBSPTypeTuple());
 
-            // project the join on the right columns
-            DBSPClosureExpression toRightColumns =
-                    new DBSPRawTupleExpression(
-                            DBSPTupleExpression.flatten(
-                                    joinVar.deref()).slice(leftColumns, totalColumns)
-                                    .pointwiseCast(rightResultType),
-                            new DBSPTupleExpression()).closure(joinVar);
-            DBSPSimpleOperator joinRightColumns = new DBSPMapIndexOperator(
-                    node, toRightColumns, indexType, inner.outputPort());
-            this.addOperator(joinRightColumns);
+            if (!hasFilter) {
+                int offset = leftResultType.size();
+                KeyFields shiftedRkf = rkf.offset(offset);
+                // Project the join on the left columns and index with the key
+                DBSPExpression keyFields = shiftedRkf.keyFields(joinVar, rightResultType, offset);
+                DBSPExpression nonKeyFields = shiftedRkf.nonKeyFields(joinVar, rightResultType, offset);
+                DBSPClosureExpression toRightColumns =
+                        new DBSPRawTupleExpression(keyFields, nonKeyFields).closure(joinVar);
 
-            // Index the right collection in the same way
-            DBSPVariablePath r1 = rightElementType.ref().var();
-            DBSPClosureExpression castRight = new DBSPRawTupleExpression(
-                    DBSPTupleExpression.flatten(r1.deref()).pointwiseCast(rightResultType),
-                    new DBSPTupleExpression()).closure(r1);
-            DBSPSimpleOperator fullRightIndex = new DBSPMapIndexOperator(node, castRight, indexType, right.outputPort());
-            this.addOperator(fullRightIndex);
+                // project the join on the right columns
+                DBSPTypeIndexedZSet indexType = new DBSPTypeIndexedZSet(
+                        node, keyFields.getType(), nonKeyFields.getType());
+                DBSPSimpleOperator joinRightColumns = new DBSPMapIndexOperator(
+                        node, toRightColumns, indexType, inner.outputPort());
+                this.addOperator(joinRightColumns);
 
-            // subtract join from left relation
-            DBSPSimpleOperator sub = new DBSPStreamAntiJoinOperator(
-                    node, fullRightIndex.outputPort(), joinRightColumns.outputPort());
-            this.addOperator(sub);
+                // Index the right collection in the same way
+                DBSPVariablePath r1 = rightElementType.ref().var();
+                DBSPClosureExpression castRight = new DBSPRawTupleExpression(
+                        rkf.keyFields(r1, rightResultType, 0),
+                        rkf.nonKeyFields(r1, rightResultType, 0)).closure(r1);
+                DBSPSimpleOperator fullRightIndex = new DBSPMapIndexOperator(node, castRight, indexType, right.outputPort());
+                this.addOperator(fullRightIndex);
 
-            // fill nulls in the right relation fields and drop index
-            DBSPVariablePath var = indexType.getKVRefType().var();
-            DBSPTupleExpression lEmpty = new DBSPTupleExpression(
-                    Linq.map(leftElementType.tupFields,
-                            et -> DBSPLiteral.none(et.withMayBeNull(true)), DBSPExpression.class));
-            DBSPClosureExpression rightRow =
-                    DBSPTupleExpression.flatten(lEmpty, var.field(0).deref()).closure(var);
-            DBSPSimpleOperator expand = new DBSPMapOperator(
-                    node, rightRow, this.makeZSet(resultType), sub.outputPort());
-            this.addOperator(expand);
-            result = new DBSPSumOperator(node, result.outputPort(), expand.outputPort());
+                // subtract join from left relation
+                DBSPSimpleOperator sub = new DBSPStreamAntiJoinOperator(
+                        node, fullRightIndex.outputPort(), joinRightColumns.outputPort());
+                this.addOperator(sub);
+
+                // fill nulls in the right relation fields and drop index
+                DBSPVariablePath var = indexType.getKVRefType().var();
+                DBSPTupleExpression lNulls = new DBSPTupleExpression(
+                        Linq.map(leftElementType.tupFields,
+                                et -> DBSPLiteral.none(et.withMayBeNull(true)), DBSPExpression.class));
+                List<DBSPExpression> fields = new ArrayList<>();
+                rkf.unshuffleKeyAndDataFields(var.field(0), var.field(1), fields);
+                DBSPClosureExpression rightRow =
+                        DBSPTupleExpression.flatten(lNulls, new DBSPTupleExpression(fields, false)).closure(var);
+                DBSPSimpleOperator expand = new DBSPMapOperator(
+                        node, rightRow, this.makeZSet(resultType), sub.outputPort());
+                this.addOperator(expand);
+                result = new DBSPSumOperator(node, result.outputPort(), expand.outputPort());
+            } else {
+                DBSPTypeIndexedZSet indexType = new DBSPTypeIndexedZSet(node, rightResultType, new DBSPTypeTuple());
+
+                // project the join on the right columns
+                DBSPClosureExpression toRightColumns =
+                        new DBSPRawTupleExpression(
+                                DBSPTupleExpression.flatten(
+                                                joinVar.deref()).slice(leftColumns, totalColumns)
+                                        .pointwiseCast(rightResultType),
+                                new DBSPTupleExpression()).closure(joinVar);
+                DBSPSimpleOperator joinRightColumns = new DBSPMapIndexOperator(
+                        node, toRightColumns, indexType, inner.outputPort());
+                this.addOperator(joinRightColumns);
+
+                // Index the right collection in the same way
+                DBSPVariablePath r1 = rightElementType.ref().var();
+                DBSPClosureExpression castRight = new DBSPRawTupleExpression(
+                        DBSPTupleExpression.flatten(r1.deref()).pointwiseCast(rightResultType),
+                        new DBSPTupleExpression()).closure(r1);
+                DBSPSimpleOperator fullRightIndex = new DBSPMapIndexOperator(node, castRight, indexType, right.outputPort());
+                this.addOperator(fullRightIndex);
+
+                // subtract join from left relation
+                DBSPSimpleOperator sub = new DBSPStreamAntiJoinOperator(
+                        node, fullRightIndex.outputPort(), joinRightColumns.outputPort());
+                this.addOperator(sub);
+
+                // fill nulls in the right relation fields and drop index
+                DBSPVariablePath var = indexType.getKVRefType().var();
+                DBSPTupleExpression lEmpty = new DBSPTupleExpression(
+                        Linq.map(leftElementType.tupFields,
+                                et -> DBSPLiteral.none(et.withMayBeNull(true)), DBSPExpression.class));
+                DBSPClosureExpression rightRow =
+                        DBSPTupleExpression.flatten(lEmpty, var.field(0).deref()).closure(var);
+                DBSPSimpleOperator expand = new DBSPMapOperator(
+                        node, rightRow, this.makeZSet(resultType), sub.outputPort());
+                this.addOperator(expand);
+                result = new DBSPSumOperator(node, result.outputPort(), expand.outputPort());
+            }
         }
-
         this.assignOperator(join, Objects.requireNonNull(result));
     }
 
