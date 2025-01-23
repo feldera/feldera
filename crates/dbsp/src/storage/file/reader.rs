@@ -1291,24 +1291,14 @@ where
 /// for a row in column 0 and calling [`Cursor::next_column`] to get its row
 /// group in column 1, and then repeating as many times as necessary to get to
 /// the desired column.
-pub struct RowGroup<'a, K, A, N, T>
-where
-    K: DataTrait + ?Sized,
-    A: DataTrait + ?Sized,
-    T: ColumnSpec,
-{
+pub struct RowGroup<'a, K: ?Sized, A: ?Sized, N, T> {
     reader: &'a Reader<T>,
     column: usize,
     rows: Range<u64>,
     _phantom: PhantomData<fn(&K, &A, N)>,
 }
 
-impl<K, A, N, T> Clone for RowGroup<'_, K, A, N, T>
-where
-    K: DataTrait + ?Sized,
-    A: DataTrait + ?Sized,
-    T: ColumnSpec,
-{
+impl<K: ?Sized, A: ?Sized, N, T> Clone for RowGroup<'_, K, A, N, T> {
     fn clone(&self) -> Self {
         Self {
             reader: self.reader,
@@ -1319,12 +1309,7 @@ where
     }
 }
 
-impl<K, A, N, T> Debug for RowGroup<'_, K, A, N, T>
-where
-    K: DataTrait + ?Sized,
-    A: DataTrait + ?Sized,
-    T: ColumnSpec,
-{
+impl<K: ?Sized, A: ?Sized, N, T> Debug for RowGroup<'_, K, A, N, T> {
     fn fmt(&self, f: &mut Formatter) -> FmtResult {
         write!(f, "RowGroup(column={}, rows={:?})", self.column, self.rows)
     }
@@ -1517,7 +1502,6 @@ pub struct Cursor<'a, K, A, N, T>
 where
     K: DataTrait + ?Sized,
     A: DataTrait + ?Sized,
-    T: ColumnSpec,
 {
     row_group: RowGroup<'a, K, A, N, T>,
     position: Position<K, A>,
@@ -1527,7 +1511,6 @@ impl<K, A, N, T> Clone for Cursor<'_, K, A, N, T>
 where
     K: DataTrait + ?Sized,
     A: DataTrait + ?Sized,
-    T: ColumnSpec,
 {
     fn clone(&self) -> Self {
         Self {
@@ -1541,7 +1524,6 @@ impl<K, A, N, T> Debug for Cursor<'_, K, A, N, T>
 where
     K: DataTrait + ?Sized,
     A: DataTrait + ?Sized,
-    T: ColumnSpec,
 {
     fn fmt(&self, f: &mut Formatter) -> FmtResult {
         write!(f, "Cursor({:?}, {:?})", self.row_group, self.position)
