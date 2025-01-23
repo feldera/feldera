@@ -232,26 +232,6 @@ pub trait Storage {
     /// Opens a file for reading.  The file `name` is relative to the base of
     /// the storage backend.
     fn open(&self, name: &Path) -> Result<Arc<dyn FileReader>, StorageError>;
-
-    /// Returns the root of the storage backend.
-    fn base(&self) -> PathBuf;
-}
-
-impl<S> Storage for Box<S>
-where
-    S: Storage + ?Sized,
-{
-    fn create_named(&self, name: &Path) -> Result<Box<dyn FileWriter>, StorageError> {
-        (**self).create_named(name)
-    }
-
-    fn open(&self, name: &Path) -> Result<Arc<dyn FileReader>, StorageError> {
-        (**self).open(name)
-    }
-
-    fn base(&self) -> PathBuf {
-        (**self).base()
-    }
 }
 
 /// A dynamically chosen storage engine.
