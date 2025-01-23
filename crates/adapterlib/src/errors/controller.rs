@@ -793,8 +793,9 @@ impl Display for ControllerError {
             } => {
                 write!(
                     f,
-                    "{}error on input endpoint '{endpoint_name}': {error}",
-                    if *fatal { "FATAL " } else { "" }
+                    "{}error on input endpoint '{endpoint_name}': {}",
+                    if *fatal { "FATAL " } else { "" },
+                    error.root_cause()
                 )
             }
             Self::OutputTransportError {
@@ -804,8 +805,9 @@ impl Display for ControllerError {
             } => {
                 write!(
                     f,
-                    "{}error on output endpoint '{endpoint_name}': {error}",
-                    if *fatal { "FATAL " } else { "" }
+                    "{}error on output endpoint '{endpoint_name}': {}",
+                    if *fatal { "FATAL " } else { "" },
+                    error.root_cause()
                 )
             }
             Self::ParseError {
