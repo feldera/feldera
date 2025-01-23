@@ -73,10 +73,8 @@ class arithtst_timestamp_minus_timestamp_res(TstView):
 
 class arithtst_timestamp_minus_sinterval(TstView):
     def __init__(self):
-        # Validated on MySQL
+        # checked manually
         self.data = [
-            # for hours_c1(column 4) MySQL returns different time for row 1 and row 3
-            # for days_c1(column 5) MySQL returns different time for all rows and different day for row 1
             {
                 "id": 0,
                 "seconds_c1": "2014-11-05T12:45:00",
@@ -111,9 +109,8 @@ class arithtst_timestamp_minus_sinterval(TstView):
 
 class arithtst_timestamp_minus_linterval(TstView):
     def __init__(self):
-        # Validated on MySQL
+        # checked manually
         self.data = [
-            # for years_c1(column 2) MySQL subtracts the specified number of years to the timestamp while keeping the month and day intact for row 2 and 3
             {
                 "id": 0,
                 "months_c1": "2014-12-05T08:27:00",
@@ -140,10 +137,8 @@ class arithtst_timestamp_minus_linterval(TstView):
 
 class arithtst_timestamp_plus_sinterval(TstView):
     def __init__(self):
-        # Validated on MySQL
+        # checked manually
         self.data = [
-            # for hours_c1(column 4) MySQL returns different time for row 1 and row 3
-            # for days_c1(column 5) MySQL returns different time for all rows and different day for row 1
             {
                 "id": 0,
                 "seconds_c1": "2025-01-03T04:09:00",
@@ -178,9 +173,8 @@ class arithtst_timestamp_plus_sinterval(TstView):
 
 class arithtst_timestamp_plus_linterval(TstView):
     def __init__(self):
-        # Validated on MySQL
+        # checked manually
         self.data = [
-            # for years_c1(column 2) MySQL adds the specified number of years to the timestamp while keeping the month and day intact for row 2 and 3
             {
                 "id": 0,
                 "months_c1": "2024-12-05T08:27:00",
@@ -205,9 +199,82 @@ class arithtst_timestamp_plus_linterval(TstView):
                       JOIN timestamp_tbl v2 ON v1.id = v2.id;"""
 
 
+class arithtst_interval_values(TstView):
+    def __init__(self):
+        # Validated on MySQL
+        self.data = [
+            {'id': 0, 'seconds': 160342920, 'minutes': 2672382, 'hours': 44539, 'days': 1855, 'months': 60, 'years': 5},
+            {'id': 1, 'seconds': -84686400, 'minutes': -1411440, 'hours': -23524, 'days': -980, 'months': -32, 'years': -2},
+            {'id': 2, 'seconds': 332907420, 'minutes': 5548457, 'hours': 92474, 'days': 3853, 'months': 126, 'years': 10}
+        ]
+        self.sql = """CREATE MATERIALIZED VIEW interval_values AS SELECT
+                      id,
+                      TIMESTAMPDIFF(SECOND, c2, c1) AS seconds,
+                      TIMESTAMPDIFF(MINUTE, c2, c1) AS minutes,
+                      TIMESTAMPDIFF(HOUR, c2, c1) AS hours,
+                      TIMESTAMPDIFF(DAY, c2, c1) AS days,
+                      TIMESTAMPDIFF(MONTH, c2, c1) AS months,
+                      TIMESTAMPDIFF(YEAR, c2, c1) AS years
+                      FROM timestamp_tbl"""
+
+
+class arithtst_ts_sub_sinterval(TstView):
+    def __init__(self):
+        # Validated on MySQL
+        self.data = [
+            {'id': 0, 'sec_c1': '2014-11-05T12:45:00', 'min_c1': '2014-11-05T12:45:00', 'hrs_c1': '2014-11-05T13:27:00', 'day_c1': '2014-11-06T08:27:00'},
+            {'id': 1, 'sec_c1': '2023-02-26T18:00:00', 'min_c1': '2023-02-26T18:00:00', 'hrs_c1': '2023-02-26T18:00:00', 'day_c1': '2023-02-26T14:00:00'},
+            {'id': 2, 'sec_c1': '1948-12-02T09:15:00', 'min_c1': '1948-12-02T09:15:00', 'hrs_c1': '1948-12-02T09:32:00', 'day_c1': '1948-12-02T11:32:00'}
+        ]
+        self.sql = """CREATE MATERIALIZED VIEW ts_sub_sinterval AS SELECT
+                      v1.id,
+                      c1 - INTERVAL v1.seconds SECOND AS sec_c1,
+                      c1 - INTERVAL v1.minutes MINUTE AS min_c1,
+                      c1 - INTERVAL v1.hours HOUR AS hrs_c1,
+                      c1 - INTERVAL v1.days DAY AS day_c1
+                      FROM interval_values v1
+                      JOIN timestamp_tbl v2 ON v1.id = v2.id;"""
+
+
+class arithtst_ts_sub_linterval(TstView):
+    def __init__(self):
+        # Validated on MySQL
+        self.data = [
+            {'id': 0, 'mths_c1': '2014-12-05T08:27:00', 'yrs_c1': '2014-12-05T08:27:00'},
+            {'id': 1, 'mths_c1': '2023-02-21T14:00:00', 'yrs_c1': '2022-06-21T14:00:00'},
+            {'id': 2, 'mths_c1': '1948-12-21T11:32:00', 'yrs_c1': '1949-06-21T11:32:00'}
+        ]
+        self.sql = """CREATE MATERIALIZED VIEW ts_sub_linterval AS SELECT
+                      v1.id,
+                      c1 - INTERVAL v1.months MONTH AS mths_c1,
+                      c1 - INTERVAL v1.years YEAR AS yrs_c1
+                      FROM interval_values v1
+                      JOIN timestamp_tbl v2 ON v1.id = v2.id;"""
+
+
 # Equivalent SQL for MySQL
-# SELECT DATE_SUB('timestamp_value', INTERVAL value SECOND/MINUTE/HOUR/DAYS/MONTH/YEAR) AS sub_res;
-# SELECT DATE_ADD('timestamp_value', INTERVAL value SECOND/MINUTE/HOUR/DAYS/MONTH/YEAR) AS add_res;
+# CREATE VIEW interval_values AS
+# SELECT
+#     id,
+#     TIMESTAMPDIFF(SECOND, c2, c1) AS seconds,
+#     TIMESTAMPDIFF(MINUTE, c2, c1) AS minutes,
+#     TIMESTAMPDIFF(HOUR, c2, c1) AS hours,
+#     TIMESTAMPDIFF(DAY, c2, c1) AS days,
+#     TIMESTAMPDIFF(MONTH, c2, c1) AS months,
+#     TIMESTAMPDIFF(YEAR, c2, c1) AS years
+# FROM timestamp_tbl;
+#
+# SELECT
+#     v1.id,
+#     DATE_SUB(c1, INTERVAL v1.seconds SECOND) AS sec_c1,
+#     DATE_SUB(c1, INTERVAL v1.minutes MINUTE) AS min_c1,
+#     DATE_SUB(c1, INTERVAL v1.hours HOUR) AS hrs_c1,
+#     DATE_SUB(c1, INTERVAL v1.days DAY) AS day_c1,
+#     DATE_SUB(c1, INTERVAL v1.months MONTH) AS mths_c1,
+#     DATE_SUB(c1, INTERVAL v1.years YEAR) AS yrs_c1
+#
+# FROM interval_values v1
+# JOIN timestamp_tbl v2 ON v1.id = v2.id;
 
 
 class arithtst_bneg_timestamp(TstView):
