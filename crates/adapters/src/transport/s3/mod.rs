@@ -303,7 +303,7 @@ impl S3InputReader {
                         .get_object(&config.bucket_name, &key, offset, None)
                         .await
                         .map(|object| (key.clone(), object, offset));
-                    tx.send(result).await.expect("Enqueue failed");
+                    tx.send(result).await?;
                     Some(key)
                 }
                 Some((key, None)) => Some(key),
@@ -325,7 +325,7 @@ impl S3InputReader {
                             Ok(ret) => ret,
                             Err(e) => {
                                 error!("Could not fetch object keys (Error: {e:?}).");
-                                tx.send(Err(e)).await.expect("Enqueue failed");
+                                tx.send(Err(e)).await?;
                                 break;
                             }
                         }
@@ -339,13 +339,14 @@ impl S3InputReader {
                         .get_object(&config.bucket_name, key, 0, None)
                         .await
                         .map(|object| (key.clone(), object, 0));
-                    tx.send(result).await.expect("Enqueue failed");
+                    tx.send(result).await?;
                 }
                 if continuation_token.is_none() {
                     break;
                 }
             }
             drop(tx); // We're done. Close the channel.
+            Ok::<(), mpsc::error::SendError<_>>(())
         });
 
         let mut running = false;
