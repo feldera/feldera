@@ -46,7 +46,7 @@ pub struct ChildPtr<TS: DBData, A: DBData> {
     child_agg: A,
 }
 
-impl<TS: ArrowFormat, A: ArrowFormat> ArrowFormat for ChildPtr<TS, A> {
+impl<TS: DBData, A: DBData> ArrowFormat for ChildPtr<TS, A> {
     fn new_builder(&self) -> Box<dyn ArrayBuilder> {
         unimplemented!()
     }
@@ -158,7 +158,7 @@ pub struct TreeNode<TS: DBData, A: DBData> {
     children: [Option<ChildPtr<TS, A>>; RADIX],
 }
 
-impl<TS: ArrowFormat, A: ArrowFormat> ArrowFormat for TreeNode<TS, A> {
+impl<TS: DBData, A: DBData> ArrowFormat for TreeNode<TS, A> {
     fn new_builder(&self) -> Box<dyn ArrayBuilder> {
         unimplemented!()
     }
@@ -372,7 +372,7 @@ pub struct TreeNodeUpdate<TS: DBData, A: DBData> {
     pub new: Option<TreeNode<TS, A>>,
 }
 
-impl<TS: ArrowFormat, A: ArrowFormat> ArrowFormat for TreeNodeUpdate<TS, A> {
+impl<TS: DBData, A: DBData> ArrowFormat for TreeNodeUpdate<TS, A> {
     fn new_builder(&self) -> Box<dyn ArrayBuilder> {
         unimplemented!()
     }

@@ -15,6 +15,7 @@ use std::{
     str::FromStr,
 };
 
+use crate::dynamic::arrow::ArrowFormat;
 use serde::{Deserialize, Serialize};
 
 macro_rules! float {
@@ -395,6 +396,34 @@ serialize_without_context!(F32);
 serialize_without_context!(F64);
 deserialize_without_context!(F32);
 deserialize_without_context!(F64);
+
+impl ArrowFormat for F64 {
+    fn new_builder(&self) -> Box<dyn arrow::array::ArrayBuilder> {
+        unimplemented!()
+    }
+
+    fn serialize_into_arrow_builder(&self, builder: &mut dyn arrow::array::ArrayBuilder) {
+        unimplemented!()
+    }
+
+    fn deserialize_from_arrow(&mut self, array: &arrow::array::ArrayRef, index: usize) {
+        unimplemented!()
+    }
+}
+
+impl ArrowFormat for F32 {
+    fn new_builder(&self) -> Box<dyn arrow::array::ArrayBuilder> {
+        unimplemented!()
+    }
+
+    fn serialize_into_arrow_builder(&self, builder: &mut dyn arrow::array::ArrayBuilder) {
+        unimplemented!()
+    }
+
+    fn deserialize_from_arrow(&mut self, array: &arrow::array::ArrayRef, index: usize) {
+        unimplemented!()
+    }
+}
 
 impl From<F32> for F64 {
     #[inline]

@@ -113,9 +113,11 @@ macro_rules! declare_typed_trait_object {
 
 #[cfg(test)]
 mod test {
+    use arrow::array::{ArrayBuilder, ArrayRef};
     use rkyv::{Archive, Deserialize, Serialize};
     use size_of::SizeOf;
 
+    use crate::dynamic::arrow::ArrowFormat;
     use crate::{
         declare_trait_object,
         dynamic::{Data, DataTrait, DataTraitTyped, Erase, WeightTrait, WeightTraitTyped},
@@ -141,6 +143,20 @@ mod test {
     struct Foo<T1: DBData, T2: DBData> {
         x: T1,
         y: T2,
+    }
+
+    impl<T1: DBData, T2: DBData> ArrowFormat for Foo<T1, T2> {
+        fn new_builder(&self) -> Box<dyn ArrayBuilder> {
+            unimplemented!()
+        }
+
+        fn serialize_into_arrow_builder(&self, builder: &mut dyn ArrayBuilder) {
+            unimplemented!()
+        }
+
+        fn deserialize_from_arrow(&mut self, array: &ArrayRef, index: usize) {
+            unimplemented!()
+        }
     }
 
     pub trait Bar<T1: DataTrait + ?Sized, T2: WeightTrait + ?Sized>: Data {

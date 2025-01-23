@@ -1,4 +1,8 @@
+use super::{Data, DataTrait, Erase};
+use crate::dynamic::arrow::ArrowFormat;
+use crate::utils::Tup2;
 use crate::{declare_trait_object, trace::Deserializable, DBData};
+use arrow::array::{ArrayBuilder, ArrayRef};
 use rkyv::Archive;
 use size_of::SizeOf;
 use std::{
@@ -7,8 +11,6 @@ use std::{
     mem::take,
     ops::{Deref, DerefMut},
 };
-
-use super::{Data, DataTrait, Erase};
 
 /// A dynamically typed interface to `BTreeSet`.
 pub trait Set<T: DataTrait + ?Sized>: Data {
@@ -71,6 +73,20 @@ where
     rkyv::Deserialize,
 )]
 pub struct BSet<T>(BTreeSet<T>);
+
+impl<T: ArrowFormat> ArrowFormat for BSet<T> {
+    fn new_builder(&self) -> Box<dyn ArrayBuilder> {
+        unimplemented!()
+    }
+
+    fn serialize_into_arrow_builder(&self, builder: &mut dyn ArrayBuilder) {
+        unimplemented!()
+    }
+
+    fn deserialize_from_arrow(&mut self, array: &ArrayRef, index: usize) {
+        unimplemented!()
+    }
+}
 
 impl<T> Deref for BSet<T> {
     type Target = BTreeSet<T>;

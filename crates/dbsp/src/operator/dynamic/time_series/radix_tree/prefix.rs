@@ -36,7 +36,7 @@ pub struct Prefix<TS: DBData> {
     pub prefix_len: u32,
 }
 
-impl<TS: ArrowFormat> ArrowFormat for Prefix<TS> {
+impl<TS: DBData> ArrowFormat for Prefix<TS> {
     fn new_builder(&self) -> Box<dyn ArrayBuilder> {
         unimplemented!()
     }

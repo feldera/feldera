@@ -45,7 +45,7 @@ pub enum Update<V: DBData, U: DBData> {
     Update(U),
 }
 
-impl<V: ArrowFormat, U: ArrowFormat> ArrowFormat for Update<V, U> {
+impl<V: DBData, U: DBData> ArrowFormat for Update<V, U> {
     fn new_builder(&self) -> Box<dyn ArrayBuilder> {
         unimplemented!()
     }

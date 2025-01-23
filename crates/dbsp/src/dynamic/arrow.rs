@@ -1,6 +1,6 @@
 use crate::dynamic::LeanVec;
 use crate::operator::group::WithCustomOrd;
-use crate::utils::Tup2;
+use crate::utils::{Tup1, Tup2, Tup3, Tup4};
 use arrow::array::{ArrayBuilder, ArrayRef, Int32Array, Int32Builder};
 
 pub trait ArrowFormat {
@@ -38,9 +38,95 @@ macro_rules! impl_arrow_format {
     };
 }
 
-impl_arrow_format!(u8, u32, u64, i8, i32, i64, f32, f64, bool, (), String);
+impl_arrow_format!(
+    u8,
+    u16,
+    u32,
+    u64,
+    i8,
+    i16,
+    i32,
+    i64,
+    f32,
+    f64,
+    bool,
+    (),
+    String,
+    char
+);
+
+impl<T1: ArrowFormat> ArrowFormat for Tup1<T1> {
+    fn new_builder(&self) -> Box<dyn ArrayBuilder> {
+        unimplemented!()
+    }
+
+    fn serialize_into_arrow_builder(&self, builder: &mut dyn ArrayBuilder) {
+        unimplemented!()
+    }
+
+    fn deserialize_from_arrow(&mut self, array: &ArrayRef, index: usize) {
+        unimplemented!()
+    }
+}
 
 impl<T1: ArrowFormat, T2: ArrowFormat> ArrowFormat for Tup2<T1, T2> {
+    fn new_builder(&self) -> Box<dyn ArrayBuilder> {
+        unimplemented!()
+    }
+
+    fn serialize_into_arrow_builder(&self, builder: &mut dyn ArrayBuilder) {
+        unimplemented!()
+    }
+
+    fn deserialize_from_arrow(&mut self, array: &ArrayRef, index: usize) {
+        unimplemented!()
+    }
+}
+
+impl<T1: ArrowFormat, T2: ArrowFormat, T3: ArrowFormat> ArrowFormat for Tup3<T1, T2, T3> {
+    fn new_builder(&self) -> Box<dyn ArrayBuilder> {
+        unimplemented!()
+    }
+
+    fn serialize_into_arrow_builder(&self, builder: &mut dyn ArrayBuilder) {
+        unimplemented!()
+    }
+
+    fn deserialize_from_arrow(&mut self, array: &ArrayRef, index: usize) {
+        unimplemented!()
+    }
+}
+
+impl<T1: ArrowFormat, T2: ArrowFormat, T3: ArrowFormat, T4: ArrowFormat> ArrowFormat
+    for Tup4<T1, T2, T3, T4>
+{
+    fn new_builder(&self) -> Box<dyn ArrayBuilder> {
+        unimplemented!()
+    }
+
+    fn serialize_into_arrow_builder(&self, builder: &mut dyn ArrayBuilder) {
+        unimplemented!()
+    }
+
+    fn deserialize_from_arrow(&mut self, array: &ArrayRef, index: usize) {
+        unimplemented!()
+    }
+}
+
+impl<T1: ArrowFormat, T2: ArrowFormat> ArrowFormat for (T1, T2) {
+    fn new_builder(&self) -> Box<dyn ArrayBuilder> {
+        unimplemented!()
+    }
+
+    fn serialize_into_arrow_builder(&self, builder: &mut dyn ArrayBuilder) {
+        unimplemented!()
+    }
+
+    fn deserialize_from_arrow(&mut self, array: &ArrayRef, index: usize) {
+        unimplemented!()
+    }
+}
+impl<T1: ArrowFormat, T2: ArrowFormat, T3: ArrowFormat> ArrowFormat for (T1, T2, T3) {
     fn new_builder(&self) -> Box<dyn ArrayBuilder> {
         unimplemented!()
     }

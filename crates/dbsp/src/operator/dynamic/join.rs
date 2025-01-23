@@ -1289,6 +1289,7 @@ where
 
 #[cfg(test)]
 mod test {
+    use crate::dynamic::arrow::ArrowFormat;
     use crate::{
         circuit::WithClock,
         indexed_zset,
@@ -1297,6 +1298,7 @@ mod test {
         utils::Tup2,
         zset, Circuit, FallbackZSet, RootCircuit, Runtime, Stream, Timestamp,
     };
+    use arrow::array::{ArrayBuilder, ArrayRef};
     use rkyv::{Archive, Deserialize, Serialize};
     use size_of::SizeOf;
     use std::{
@@ -1605,6 +1607,20 @@ mod test {
         }
     }
 
+    impl ArrowFormat for Label {
+        fn new_builder(&self) -> Box<dyn ArrayBuilder> {
+            todo!()
+        }
+
+        fn serialize_into_arrow_builder(&self, builder: &mut dyn ArrayBuilder) {
+            todo!()
+        }
+
+        fn deserialize_from_arrow(&mut self, array: &ArrayRef, index: usize) {
+            todo!()
+        }
+    }
+
     #[derive(
         Clone,
         Debug,
@@ -1622,6 +1638,20 @@ mod test {
     #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
     #[archive(compare(PartialEq, PartialOrd))]
     struct Edge(pub u64, pub u64);
+
+    impl ArrowFormat for Edge {
+        fn new_builder(&self) -> Box<dyn ArrayBuilder> {
+            todo!()
+        }
+
+        fn serialize_into_arrow_builder(&self, builder: &mut dyn ArrayBuilder) {
+            todo!()
+        }
+
+        fn deserialize_from_arrow(&mut self, array: &ArrayRef, index: usize) {
+            todo!()
+        }
+    }
 
     impl Display for Edge {
         fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {

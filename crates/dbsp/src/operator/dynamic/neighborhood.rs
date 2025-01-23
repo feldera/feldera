@@ -18,6 +18,8 @@ use rkyv::Archive;
 use serde::{Deserialize, Serialize};
 use size_of::SizeOf;
 use std::{borrow::Cow, marker::PhantomData};
+use arrow::array::{ArrayBuilder, ArrayRef};
+use crate::dynamic::arrow::ArrowFormat;
 
 /// A contiguous range of rows preceding and following a fixed "anchor"
 /// point.
@@ -114,6 +116,20 @@ impl<K: DBData, V: DBData> NeighborhoodDescr<K, V> {
             before,
             after,
         }
+    }
+}
+
+impl<K: DBData, V: DBData> ArrowFormat for NeighborhoodDescr<K, V> {
+    fn new_builder(&self) -> Box<dyn ArrayBuilder> {
+        todo!()
+    }
+
+    fn serialize_into_arrow_builder(&self, builder: &mut dyn ArrayBuilder) {
+        todo!()
+    }
+
+    fn deserialize_from_arrow(&mut self, array: &ArrayRef, index: usize) {
+        todo!()
     }
 }
 

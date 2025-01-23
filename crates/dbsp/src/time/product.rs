@@ -1,3 +1,5 @@
+use crate::dynamic::arrow::ArrowFormat;
+use crate::dynamic::BSet;
 use crate::{
     algebra::{Lattice, PartialOrder},
     dynamic::{DataTrait, WeightTrait},
@@ -5,6 +7,7 @@ use crate::{
     trace::{FallbackKeyBatch, FallbackValBatch, OrdKeyBatch, OrdValBatch},
     Scope,
 };
+use arrow::array::{ArrayBuilder, ArrayRef};
 use rkyv::{Archive, Deserialize, Serialize};
 use size_of::SizeOf;
 use std::fmt::{Debug, Display, Formatter};
@@ -34,6 +37,20 @@ pub struct Product<TOuter, TInner> {
     pub outer: TOuter,
     /// Inner timestamp.
     pub inner: TInner,
+}
+
+impl<TOuter: ArrowFormat, TInner: ArrowFormat> ArrowFormat for Product<TOuter, TInner> {
+    fn new_builder(&self) -> Box<dyn ArrayBuilder> {
+        unimplemented!()
+    }
+
+    fn serialize_into_arrow_builder(&self, builder: &mut dyn ArrayBuilder) {
+        unimplemented!()
+    }
+
+    fn deserialize_from_arrow(&mut self, array: &ArrayRef, index: usize) {
+        unimplemented!()
+    }
 }
 
 impl<TOuter, TInner> Product<TOuter, TInner> {

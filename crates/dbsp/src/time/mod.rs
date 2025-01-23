@@ -44,6 +44,7 @@
 mod antichain;
 mod product;
 
+use crate::dynamic::DynUnit;
 use crate::{
     algebra::{Lattice, PartialOrder},
     dynamic::{DataTrait, WeightTrait},
@@ -53,13 +54,13 @@ use crate::{
     },
     DBData, Scope,
 };
+pub use antichain::{Antichain, AntichainRef};
+use arrow::array::{ArrayBuilder, ArrayRef};
 use rkyv::{Archive, Deserialize, Serialize};
 use size_of::SizeOf;
 use std::{fmt::Debug, hash::Hash};
-
-use crate::dynamic::DynUnit;
-pub use antichain::{Antichain, AntichainRef};
 //pub use nested_ts32::NestedTimestamp32;
+use crate::dynamic::arrow::ArrowFormat;
 pub use product::Product;
 
 /// Logical timestamp.
@@ -172,6 +173,20 @@ pub trait Timestamp: DBData + PartialOrder + Lattice {
 #[archive(compare(PartialEq, PartialOrd))]
 #[archive_attr(doc(hidden))]
 pub struct UnitTimestamp;
+
+impl ArrowFormat for UnitTimestamp {
+    fn new_builder(&self) -> Box<dyn ArrayBuilder> {
+        unimplemented!()
+    }
+
+    fn serialize_into_arrow_builder(&self, builder: &mut dyn ArrayBuilder) {
+        unimplemented!()
+    }
+
+    fn deserialize_from_arrow(&mut self, array: &ArrayRef, index: usize) {
+        unimplemented!()
+    }
+}
 
 impl Default for UnitTimestamp {
     fn default() -> Self {
