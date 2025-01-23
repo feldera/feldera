@@ -1,6 +1,7 @@
 use size_of::SizeOf;
 use std::{fmt::Debug, ops::DerefMut};
 
+use crate::dynamic::arrow::ArrowFormat;
 use crate::{
     declare_trait_object, declare_typed_trait_object,
     dynamic::{
@@ -16,7 +17,16 @@ use crate::{
 ///
 /// This trait is object safe and can be invoked via dynamic dispatch.
 pub trait Data:
-    Comparable + Clonable + SerializeDyn + DeserializableDyn + Send + Sync + Debug + AsAny + SizeOf
+    Comparable
+    + Clonable
+    + SerializeDyn
+    + DeserializableDyn
+    + ArrowFormat
+    + Send
+    + Sync
+    + Debug
+    + AsAny
+    + SizeOf
 {
     /// Compute a hash of the object using default hasher and seed.
     fn default_hash(&self) -> u64;

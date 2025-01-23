@@ -1,3 +1,5 @@
+use super::trace::BoundsId;
+use crate::dynamic::arrow::ArrowFormat;
 use crate::{
     algebra::{AddAssignByRef, HasOne, HasZero, IndexedZSet, PartialOrder, ZTrace},
     circuit::{
@@ -14,12 +16,11 @@ use crate::{
     },
     Circuit, DBData, NumEntries, Stream, Timestamp, ZWeight,
 };
+use arrow::array::{ArrayBuilder, ArrayRef};
 use minitrace::trace;
 use rkyv::{Archive, Deserialize, Serialize};
 use size_of::SizeOf;
 use std::{borrow::Cow, marker::PhantomData, mem::take, ops::Neg};
-
-use super::trace::BoundsId;
 
 #[derive(
     Clone,
@@ -42,6 +43,20 @@ pub enum Update<V: DBData, U: DBData> {
     #[default]
     Delete,
     Update(U),
+}
+
+impl<V: ArrowFormat, U: ArrowFormat> ArrowFormat for Update<V, U> {
+    fn new_builder(&self) -> Box<dyn ArrayBuilder> {
+        unimplemented!()
+    }
+
+    fn serialize_into_arrow_builder(&self, builder: &mut dyn ArrayBuilder) {
+        unimplemented!()
+    }
+
+    fn deserialize_from_arrow(&mut self, array: &ArrayRef, index: usize) {
+        unimplemented!()
+    }
 }
 
 pub enum UpdateRef<'a, V: DataTrait + ?Sized, U: DataTrait + ?Sized> {

@@ -1,16 +1,16 @@
+use arrow::array::{ArrayBuilder, ArrayRef};
+use num::PrimInt;
+use rkyv::{Archive, Deserialize, Serialize};
+use size_of::SizeOf;
 use std::{
     cmp::min,
     fmt::{self, Debug, Display, Formatter},
     mem::size_of,
 };
 
-use num::PrimInt;
-use rkyv::{Archive, Deserialize, Serialize};
-use size_of::SizeOf;
-
-use crate::{dynamic::DynDataTyped, operator::dynamic::time_series::Range, DBData};
-
 use super::{RADIX, RADIX_BITS};
+use crate::dynamic::arrow::ArrowFormat;
+use crate::{dynamic::DynDataTyped, operator::dynamic::time_series::Range, DBData};
 
 /// Describes a range of timestamps that share a common prefix.
 #[derive(
@@ -34,6 +34,20 @@ pub struct Prefix<TS: DBData> {
     pub key: TS,
     /// Prefix length.
     pub prefix_len: u32,
+}
+
+impl<TS: ArrowFormat> ArrowFormat for Prefix<TS> {
+    fn new_builder(&self) -> Box<dyn ArrayBuilder> {
+        unimplemented!()
+    }
+
+    fn serialize_into_arrow_builder(&self, builder: &mut dyn ArrayBuilder) {
+        unimplemented!()
+    }
+
+    fn deserialize_from_arrow(&mut self, array: &ArrayRef, index: usize) {
+        unimplemented!()
+    }
 }
 
 impl<TS> Display for Prefix<TS>

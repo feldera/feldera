@@ -1,13 +1,15 @@
+use arrow::array::{ArrayBuilder, ArrayRef};
+use num::PrimInt;
+use rkyv::{Archive, Deserialize, Serialize};
+use size_of::SizeOf;
 use std::{
     fmt::{self, Debug, Display, Formatter, Write},
     mem::take,
 };
 
-use num::PrimInt;
-use rkyv::{Archive, Deserialize, Serialize};
-use size_of::SizeOf;
-
 use super::{Prefix, RADIX};
+use crate::dynamic::arrow::ArrowFormat;
+use crate::operator::Avg;
 use crate::{
     declare_trait_object,
     dynamic::{Data, DataTrait, DowncastTrait, DynOpt, Erase},
@@ -42,6 +44,20 @@ pub struct ChildPtr<TS: DBData, A: DBData> {
     child_prefix: Prefix<TS>,
     /// Aggregate over all timestamps covered by the child subtree.
     child_agg: A,
+}
+
+impl<TS: ArrowFormat, A: ArrowFormat> ArrowFormat for ChildPtr<TS, A> {
+    fn new_builder(&self) -> Box<dyn ArrayBuilder> {
+        unimplemented!()
+    }
+
+    fn serialize_into_arrow_builder(&self, builder: &mut dyn ArrayBuilder) {
+        unimplemented!()
+    }
+
+    fn deserialize_from_arrow(&mut self, array: &ArrayRef, index: usize) {
+        unimplemented!()
+    }
 }
 
 impl<TS: DBData, A: DBData> ChildPtr<TS, A> {
@@ -142,6 +158,19 @@ pub struct TreeNode<TS: DBData, A: DBData> {
     children: [Option<ChildPtr<TS, A>>; RADIX],
 }
 
+impl<TS: ArrowFormat, A: ArrowFormat> ArrowFormat for TreeNode<TS, A> {
+    fn new_builder(&self) -> Box<dyn ArrayBuilder> {
+        unimplemented!()
+    }
+
+    fn serialize_into_arrow_builder(&self, builder: &mut dyn ArrayBuilder) {
+        unimplemented!()
+    }
+
+    fn deserialize_from_arrow(&mut self, array: &ArrayRef, index: usize) {
+        unimplemented!()
+    }
+}
 // For some unknown reason we cant jsut use `#[archive(compare(PartialEq,
 // PartialOrd))]` and `#[archive_attr(derive(Clone, Ord, PartialOrd, Eq,
 // PartialEq))]` so we define these traits for now. They don't get called so
@@ -341,6 +370,20 @@ pub struct TreeNodeUpdate<TS: DBData, A: DBData> {
     pub old: Option<TreeNode<TS, A>>,
     /// New value of the node or `None` if we are deleting an existing node.
     pub new: Option<TreeNode<TS, A>>,
+}
+
+impl<TS: ArrowFormat, A: ArrowFormat> ArrowFormat for TreeNodeUpdate<TS, A> {
+    fn new_builder(&self) -> Box<dyn ArrayBuilder> {
+        unimplemented!()
+    }
+
+    fn serialize_into_arrow_builder(&self, builder: &mut dyn ArrayBuilder) {
+        unimplemented!()
+    }
+
+    fn deserialize_from_arrow(&mut self, array: &ArrayRef, index: usize) {
+        unimplemented!()
+    }
 }
 
 pub trait TreeNodeUpdateTrait<TS, A>: Data

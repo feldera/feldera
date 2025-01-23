@@ -1,4 +1,5 @@
 use super::{AggOutputFunc, IncAggregateLinearFactories};
+use crate::dynamic::arrow::ArrowFormat;
 use crate::{
     algebra::{
         AddAssignByRef, AddByRef, HasZero, IndexedZSet, IndexedZSetReader, MulByRef, NegByRef,
@@ -9,6 +10,7 @@ use crate::{
     trace::Deserializable,
     Circuit, DBData, DBWeight, DynZWeight, Stream, Timestamp, ZWeight,
 };
+use arrow::array::{ArrayBuilder, ArrayRef};
 use rkyv::{Archive, Deserialize, Serialize};
 use size_of::SizeOf;
 use std::{
@@ -120,6 +122,20 @@ impl<T, R> Avg<T, R> {
         } else {
             Some(self.sum.clone() / T::from(self.count.clone()))
         }
+    }
+}
+
+impl<T: ArrowFormat, R: ArrowFormat> ArrowFormat for Avg<T, R> {
+    fn new_builder(&self) -> Box<dyn ArrayBuilder> {
+        unimplemented!()
+    }
+
+    fn serialize_into_arrow_builder(&self, builder: &mut dyn ArrayBuilder) {
+        unimplemented!()
+    }
+
+    fn deserialize_from_arrow(&mut self, array: &ArrayRef, index: usize) {
+        unimplemented!()
     }
 }
 

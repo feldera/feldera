@@ -72,7 +72,8 @@ zip = "0.6.2"
 minitrace = "0.6"
 ouroboros = "0.18.4"
 tracing = "0.1.40"
-
+arrow = "54.0.0"
+parquet = "54.0.0"
 
 [dependencies.time]
 version = "0.3.20"

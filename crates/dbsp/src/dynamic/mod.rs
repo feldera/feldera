@@ -116,6 +116,7 @@
 //! * [`DynWeightedPairs`] - a vector of key-value pairs, where the value behaves as weight,
 //!   meaning that tuples with the same key can be consolidated by adding their weights.
 
+pub(crate) mod arrow;
 mod clonable;
 mod comparable;
 pub(crate) mod data;

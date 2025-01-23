@@ -72,7 +72,10 @@ use uuid::Uuid;
 
 use crate::{
     algebra::MonoidValue,
-    dynamic::{DataTrait, DynPair, DynVec, DynWeightedPairs, Erase, Factory, WeightTrait},
+    dynamic::{
+        arrow::ArrowFormat, DataTrait, DynPair, DynVec, DynWeightedPairs, Erase, Factory,
+        WeightTrait,
+    },
     storage::file::reader::Error as ReaderError,
     time::AntichainRef,
     Error, NumEntries, Timestamp,
@@ -88,13 +91,35 @@ pub use layers::Trie;
 /// `DBData` as a trait bound on types.  Conversely, a trait bound of the form
 /// `B: BatchReader` implies `B::Key: DBData` and `B::Val: DBData`.
 pub trait DBData:
-    Default + Clone + Eq + Ord + Hash + SizeOf + Send + Sync + Debug + ArchivedDBData + 'static
+    Default
+    + Clone
+    + Eq
+    + Ord
+    + Hash
+    + SizeOf
+    + Send
+    + Sync
+    + Debug
+    + ArchivedDBData
+    + ArrowFormat
+    + 'static
 {
 }
 
 /// Automatically implement DBData for everything that satisfied the bounds.
 impl<T> DBData for T where
-    T: Default + Clone + Eq + Ord + Hash + SizeOf + Send + Sync + Debug + ArchivedDBData + 'static /* as ArchivedDBData>::Repr: Ord + PartialOrd<T>, */
+    T: Default
+        + Clone
+        + Eq
+        + Ord
+        + Hash
+        + SizeOf
+        + Send
+        + Sync
+        + Debug
+        + ArchivedDBData
+        + ArrowFormat
+        + 'static /* as ArchivedDBData>::Repr: Ord + PartialOrd<T>, */
 {
 }
 

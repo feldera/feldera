@@ -736,6 +736,7 @@ async fn call_compiler(
         // Set compiler stack size to 20MB (10x the default) to prevent
         // SIGSEGV when the compiler runs out of stack on large programs.
         .env("RUST_MIN_STACK", "20971520")
+        //.env("RUSTFLAGS", "-C code-model=large")
         .current_dir(config.working_dir().join("rust-compilation"))
         .arg("build")
         .arg("--workspace")
