@@ -22,9 +22,9 @@ import java.nio.file.Paths;
 public class IncrementalRegressionTests extends SqlIoTest {
     @Test
     public void t() throws IOException {
-        this.showFinalVerbose(2);
+        // this.showFinalVerbose(2);
         String sql = Utilities.readFile(Paths.get("/home/mbudiu/win/Downloads/procore_sql.txt"));
-        this.getCCS(sql);
+        this.compileRustTestCase(sql);
     }
 
     @Override

@@ -931,7 +931,7 @@ INSERT INTO auction VALUES(101, 'item-name', 'description', 5, 10, '2020-01-01 0
         Set<Integer> unsupported = new HashSet<>() {{
             add(6);  // over with rows
             add(11); // session
-            add(21); // regexp_extract
+            add(21); // regexp_extract, needs to be done as a UDF
         }};
 
         int index = 0;

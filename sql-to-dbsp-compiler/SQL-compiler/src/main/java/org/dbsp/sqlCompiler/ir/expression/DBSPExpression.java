@@ -61,9 +61,9 @@ public abstract class DBSPExpression
         this.type = type;
     }
 
-    public boolean isConstantLiteral() {
-        return this.is(DBSPLiteral.class) &&
-                this.to(DBSPLiteral.class).isConstant();
+    public boolean isConstant() {
+        return this.is(IConstructor.class) &&
+                this.to(IConstructor.class).isConstant();
     }
 
     /** Generates an expression that calls clone() on this. */

@@ -1,14 +1,17 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
 import org.dbsp.sqlCompiler.circuit.OutputPort;
-import org.dbsp.sqlCompiler.circuit.annotation.Projection;
+import org.dbsp.sqlCompiler.circuit.annotation.IsProjection;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.InputColumnMetadata;
 import org.dbsp.sqlCompiler.compiler.TableMetadata;
+import org.dbsp.sqlCompiler.compiler.backend.dot.ToDot;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.unusedFields.FieldUseMap;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.unusedFields.FindCommonProjections;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.unusedFields.FindUnusedFields;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.unusedFields.RemoveUnusedFields;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
@@ -31,15 +34,18 @@ public class UnusedFields extends Passes {
         static class OnePass extends Passes {
             OnePass(DBSPCompiler compiler) {
                 super("RemoveUnusedFields", compiler);
+                Graph graph = new Graph(compiler);
                 this.add(new RemoveUnusedFields(compiler));
-                this.add(new DeadCode(compiler, true, false));
                 this.add(new OptimizeWithGraph(compiler, g -> new OptimizeMaps(compiler, true, g)));
+                this.add(graph);
+                this.add(new FindCommonProjections(compiler, graph.getGraphs()));
+                this.add(new DeadCode(compiler, true, false));
             }
         }
     }
 
     static class UnusedInputFields extends CircuitVisitor {
-        final Map<DBSPSourceMultisetOperator, FindUnusedFields.SizedBitSet> fieldsUsed;
+        final Map<DBSPSourceMultisetOperator, FieldUseMap> fieldsUsed;
         final Map<DBSPSourceMultisetOperator, DBSPMapOperator> successor;
         final CircuitGraphs graphs;
 
@@ -64,12 +70,12 @@ public class UnusedFields extends Passes {
                 unused.apply(function.ensureTree(this.compiler));
 
                 if (unused.foundUnusedFields() && !src.metadata.materialized) {
-                    FindUnusedFields.SizedBitSet map = unused.usedFields.get(function.parameters[0]);
+                    FieldUseMap map = unused.allParameters.get(function.parameters[0]).deref();
                     Utilities.putNew(this.fieldsUsed, src, map);
 
-                    if (map.hasUnusedBits()) {
+                    if (map.hasUnusedFields()) {
                         for (int i = 0; i < map.size(); i++) {
-                            if (!map.get(i)) {
+                            if (!map.isUsed(i)) {
                                 InputColumnMetadata meta = src.metadata.getColumnMetadata(i);
                                 this.compiler.reportWarning(
                                         meta.getPositionRange(), "Unused column",
@@ -79,7 +85,7 @@ public class UnusedFields extends Passes {
                         }
                     }
                 }
-                if (operator.hasAnnotation(a -> a.is(Projection.class))) {
+                if (operator.hasAnnotation(a -> a.is(IsProjection.class))) {
                     Utilities.putNew(this.successor, src, operator);
                 }
             }
@@ -102,12 +108,12 @@ public class UnusedFields extends Passes {
                 return;
             }
 
-            FindUnusedFields.SizedBitSet used = data.fieldsUsed.get(source);
+            FieldUseMap used = data.fieldsUsed.get(source);
             if (used == null) {
                 super.postorder(source);
                 return;
             }
-            assert used.hasUnusedBits();
+            assert used.hasUnusedFields();
 
             DBSPMapOperator map = this.data.successor.get(source);
             List<InputColumnMetadata> remainingColumns = new ArrayList<>();
@@ -115,7 +121,7 @@ public class UnusedFields extends Passes {
             Iterator<ProgramIdentifier> fieldNames = source.originalRowType.getFieldNames();
             for (int i = 0; i < used.size(); i++) {
                 ProgramIdentifier fieldName = fieldNames.next();
-                if (used.get(i)) {
+                if (used.isUsed(i)) {
                     InputColumnMetadata meta = source.metadata.getColumnMetadata(i);
                     remainingColumns.add(meta);
                     DBSPTypeStruct.Field field = source.originalRowType.getField(fieldName);

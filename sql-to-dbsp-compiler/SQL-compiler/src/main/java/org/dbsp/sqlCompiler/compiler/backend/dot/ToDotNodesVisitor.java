@@ -137,7 +137,7 @@ public class ToDotNodesVisitor extends CircuitVisitor {
                  "stream_aggregate", "chain_aggregate",
                  // some joins require integrators
                  "join", "join_flatmap", "asof_join", "join_index", "antijoin",
-                 "stream_join", "stream_antijoin",
+                 "stream_join", "stream_join_index", "stream_antijoin",
                  // delays contain state, but not that much
                  "delay_trace", // "delay", "differentiate",
                  // group operators

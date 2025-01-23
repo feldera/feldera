@@ -50,11 +50,6 @@ public final class DBSPIntervalMillisLiteral
         this(CalciteObject.EMPTY, new DBSPTypeMillisInterval(CalciteObject.EMPTY, units, true), null);
     }
 
-    @Override
-    public boolean isConstant() {
-        return true;
-    }
-
     public DBSPIntervalMillisLiteral(CalciteObject node, DBSPType type, @Nullable Long value) {
         super(node, type, value == null);
         this.value = value;

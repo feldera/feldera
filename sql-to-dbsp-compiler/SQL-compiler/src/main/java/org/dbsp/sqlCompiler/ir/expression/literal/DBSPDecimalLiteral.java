@@ -49,11 +49,6 @@ public final class DBSPDecimalLiteral extends DBSPLiteral implements IsNumericLi
         this.value = value;
     }
 
-    @Override
-    public boolean isConstant() {
-        return true;
-    }
-
     public DBSPDecimalLiteral(DBSPType type, @Nullable BigDecimal value) {
         this(type.getNode(), type, value);
     }

@@ -12,7 +12,11 @@ import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPDerefExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFieldExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
+import org.dbsp.sqlCompiler.ir.expression.DBSPVariantExpression;
+
+import javax.annotation.Nullable;
 
 /** Rewrite field accesses according to a {@link ParameterFieldRemap}.
  * Very similar to the {@link CanonicalForm} visitor. */
@@ -23,25 +27,46 @@ public class RewriteFields extends InnerRewriteVisitor {
         by the 'newParam' table, and Y is given by fieldRemap[param][X]. */
     final ParameterFieldRemap fieldRemap;
     final ResolveReferences resolver;
+    final int depth;
+    /** Field use map for the currently evaluated expression */
+    @Nullable FieldUseMap current;
+    int currentDepth;
 
     public RewriteFields(DBSPCompiler compiler,
                          Substitution<DBSPParameter, DBSPParameter> newParam,
-                         ParameterFieldRemap fieldRemap) {
+                         ParameterFieldRemap fieldRemap,
+                         int depth) {
         super(compiler, false);
         this.fieldRemap = fieldRemap;
         this.newParam = newParam;
         this.resolver = new ResolveReferences(compiler, false);
+        this.depth = depth;
+        this.current = null;
+        this.currentDepth = 0;
     }
 
-    public void changeToIdentity(DBSPParameter parameter) {
-        this.fieldRemap.changeMap(parameter, FieldMap.identity(parameter.getType()));
+    /** Essentially says that "all fields of this parameter are used */
+    public void parameterFullyUsed(DBSPParameter parameter) {
+        this.fieldRemap.changeMap(parameter, FieldUseMap.identity(parameter.getType()));
         this.newParam.substitute(parameter, parameter);
+    }
+
+    void setCurrent(@Nullable FieldUseMap map, int depth) {
+        this.current = map;
+        this.currentDepth = depth;
+    }
+
+    @Override
+    public void push(IDBSPInnerNode node) {
+
+        super.push(node);
     }
 
     @Override
     public VisitDecision preorder(DBSPParameter param) {
         DBSPParameter replacement = this.newParam.get(param);
         this.map(param, replacement);
+        this.setCurrent(this.fieldRemap.get(param), 0);
         return VisitDecision.STOP;
     }
 
@@ -49,42 +74,56 @@ public class RewriteFields extends InnerRewriteVisitor {
     public VisitDecision preorder(DBSPVariablePath var) {
         IDBSPDeclaration declaration = this.resolver.reference.getDeclaration(var);
         if (declaration.is(DBSPParameter.class)) {
-            DBSPParameter replacement = this.newParam.get(declaration.to(DBSPParameter.class));
+            DBSPParameter param = declaration.to(DBSPParameter.class);
+            DBSPParameter replacement = this.newParam.get(param);
             this.map(var, replacement.asVariable());
+            this.setCurrent(this.fieldRemap.get(param), 0);
             return VisitDecision.STOP;
+        } else {
+            this.setCurrent(null, 0);
         }
         return super.preorder(var);
     }
 
     @Override
+    public VisitDecision preorder(DBSPDerefExpression expression) {
+        super.preorder(expression);
+        if (this.current != null)
+            this.setCurrent(this.current.deref(), this.currentDepth);
+        return VisitDecision.STOP;
+    }
+
+    @Override
+    public void visitingExpression(DBSPExpression expression) {
+        if (expression.is(DBSPDerefExpression.class) ||
+                expression.is(DBSPFieldExpression.class) ||
+                expression.is(DBSPVariablePath.class)) return;
+        this.setCurrent(null, 0);
+    }
+
+    @Override
     public VisitDecision preorder(DBSPFieldExpression expression) {
-        // Check for a pattern of the form (*param).x
-        // to rewrite them as (*newParam).y
         int field = expression.fieldNo;
-        if (expression.expression.is(DBSPDerefExpression.class)) {
-            DBSPDerefExpression deref = expression.expression.to(DBSPDerefExpression.class);
-            if (deref.expression.is(DBSPVariablePath.class)) {
-                DBSPVariablePath var = deref.expression.to(DBSPVariablePath.class);
-                IDBSPDeclaration declaration = this.resolver.reference.getDeclaration(var);
-                if (declaration.is(DBSPParameter.class)) {
-                    FieldMap remap = this.fieldRemap.get(declaration.to(DBSPParameter.class));
-                    if (remap != null) {
-                        field = remap.getNewIndex(field);
-                    }
-                }
-                this.push(expression);
-                DBSPExpression source = this.transform(expression.expression);
-                this.pop(expression);
-                this.map(expression, source.field(field));
-                return VisitDecision.STOP;
-            }
+        this.push(expression);
+        DBSPExpression source = this.transform(expression.expression);
+        this.pop(expression);
+        if (this.current != null && this.currentDepth < this.depth) {
+            FieldUseMap next = this.current.field(field);
+            field = this.current.getNewIndex(field);
+            this.setCurrent(next, currentDepth+1);
         }
-        return super.preorder(expression);
+        DBSPExpression result = source.field(field);
+        this.map(expression, result);
+        return VisitDecision.STOP;
     }
 
     @Override
     public void startVisit(IDBSPInnerNode node) {
         this.resolver.apply(node);
         super.startVisit(node);
+    }
+
+    public FieldUseMap getUseMap(DBSPParameter param) {
+        return this.fieldRemap.get(param);
     }
 }

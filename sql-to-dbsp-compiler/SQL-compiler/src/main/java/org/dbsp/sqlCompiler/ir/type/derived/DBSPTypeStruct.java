@@ -232,7 +232,7 @@ public class DBSPTypeStruct extends DBSPType {
         } else if (type.is(DBSPTypeTupleBase.class)) {
             DBSPTypeTupleBase tuple = type.to(DBSPTypeTupleBase.class);
             DBSPType[] fields = Linq.map(tuple.tupFields, DBSPTypeStruct::toTupleDeep, DBSPType.class);
-            return tuple.makeType(Linq.list(fields));
+            return tuple.makeRelatedTupleType(Linq.list(fields));
         }
         return type;
     }

@@ -1,15 +1,14 @@
 package org.dbsp.sqlCompiler.compiler.ir;
 
-import org.apache.calcite.util.Pair;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.rust.ToRustInnerVisitor;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.CanonicalForm;
-import org.dbsp.sqlCompiler.compiler.visitors.inner.unusedFields.FieldMap;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.unusedFields.FieldUseMap;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.unusedFields.FindUnusedFields;
-import org.dbsp.sqlCompiler.compiler.visitors.inner.unusedFields.ParameterFieldRemap;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.unusedFields.RewriteFields;
+import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
@@ -23,6 +22,8 @@ import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeVec;
 import org.dbsp.util.Maybe;
 import org.junit.Assert;
 import org.junit.Test;
+
+import java.util.Objects;
 
 public class UnusedFieldsTest {
     @Test
@@ -70,25 +71,25 @@ public class UnusedFieldsTest {
         fu.apply(closure);
         Assert.assertTrue(fu.foundUnusedFields());
 
-        Pair<ParameterFieldRemap, RewriteFields> pair = fu.getFieldRemap();
-        RewriteFields rw = pair.right;
-        DBSPClosureExpression result = cf.apply(rw.apply(closure)).to(DBSPClosureExpression.class);
+        RewriteFields rw = fu.createFieldRewriter(1);
+        IDBSPInnerNode rewritten = rw.apply(closure);
+        DBSPClosureExpression result = cf.apply(rewritten).to(DBSPClosureExpression.class);
         Assert.assertEquals("(|p0: &Tup3<i32?, b?, Tup2<s?, s>>| Tup3::new(((*p0).0), ((*p0).1), (((*p0).2).0), ))",
                 result.toString());
 
-        FieldMap fm = pair.left.get(closure.parameters[0]);
-        assert fm != null;
-        DBSPClosureExpression projection = fm.getProjection();
+        FieldUseMap fm = rw.getUseMap(closure.parameters[0]);
+        DBSPClosureExpression projection = Objects.requireNonNull(fm.getProjection(1));
 
         projection = cf.apply(projection).to(DBSPClosureExpression.class);
         Assert.assertEquals(
-                "(|p0: &Tup4<i32?, b, b?, Tup2<s?, s>>| Tup3::new(((*p0).0), ((*p0).2), (((*p0).3).clone()), ))",
+                "(|p0: &Tup4<i32?, b, b?, Tup2<s?, s>>| " +
+                        "Tup3::new(((*p0).0), ((*p0).2), Tup2::new(((((*p0).3).0).clone()), ((((*p0).3).1).clone()), ), ))",
                 projection.toString());
 
         DBSPClosureExpression compose = result.applyAfter(compiler, projection, Maybe.YES);
         compose = cf.apply(compose).to(DBSPClosureExpression.class);
         Assert.assertEquals(
-                "(|p0: &Tup4<i32?, b, b?, Tup2<s?, s>>| Tup3::new(((*p0).0), ((*p0).2), ((((*p0).3).clone()).0), ))",
+                "(|p0: &Tup4<i32?, b, b?, Tup2<s?, s>>| Tup3::new(((*p0).0), ((*p0).2), ((((*p0).3).0).clone()), ))",
                 compose.toString());
         // This last assertion does not exactly hold because of the extra clone of p0.3
         // Assert.assertTrue(compose.equivalent(closure));

@@ -67,7 +67,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDateLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDecimalLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDoubleLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPGeoPointLiteral;
+import org.dbsp.sqlCompiler.ir.expression.DBSPGeoPointConstructor;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI16Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI64Literal;
@@ -256,10 +256,10 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
             } else if (type.is(DBSPTypeGeoPoint.class)) {
                 Point point = literal.getValueAs(Point.class);
                 Coordinate c = Objects.requireNonNull(point).getCoordinate();
-                return new DBSPGeoPointLiteral(node,
+                return new DBSPGeoPointConstructor(node,
                         new DBSPDoubleLiteral(c.getOrdinate(0)),
                         new DBSPDoubleLiteral(c.getOrdinate(1)),
-                        type.mayBeNull);
+                        type);
             } else if (type.is(DBSPTypeTime.class)) {
                 return new DBSPTimeLiteral(node, type, Objects.requireNonNull(
                         literal.getValueAs(TimeString.class)));
@@ -809,8 +809,8 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
         return new DBSPStaticExpression(lit.getNode(), init).borrow();
     }
 
-    DBSPExpression makeStaticConstant(DBSPExpression literal) {
-        if (literal.isConstantLiteral())
+    DBSPExpression makeStaticConstantIfPossible(DBSPExpression literal) {
+        if (literal.isConstant())
             return new DBSPStaticExpression(literal.getNode(), literal);
         return literal;
     }
@@ -1186,7 +1186,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                                     arg0Type.asSqlString() + " not yet implemented", 1265, node);
                         if (arg0Type.mayBeNull)
                             name += "N";
-                        op0 = this.makeStaticConstant(op0);
+                        op0 = this.makeStaticConstantIfPossible(op0);
                         return new DBSPApplyExpression(node, name, type, op0.borrow());
                     }
                     case "writelog":
@@ -1462,7 +1462,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                     DBSPTypeMap map = collectionType.to(DBSPTypeMap.class);
                     index = index.applyCloneIfNeeded().cast(map.getKeyType(), false);
                     opcode = DBSPOpcode.MAP_INDEX;
-                    op0 = this.makeStaticConstant(op0).borrow();
+                    op0 = this.makeStaticConstantIfPossible(op0).borrow();
                 } else if (collectionType.is(DBSPTypeVariant.class)) {
                     opcode = DBSPOpcode.VARIANT_INDEX;
                 } else if (collectionType.is(DBSPTypeTuple.class)) {
@@ -1517,7 +1517,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 DBSPExpression op0 = ops.get(0);
                 if (op0.getType().mayBeNull)
                     name += "N";
-                op0 = this.makeStaticConstant(op0);
+                op0 = this.makeStaticConstantIfPossible(op0);
                 return new DBSPApplyExpression(node, name, type, op0.borrow());
             }
             case ARRAY_EXCEPT:
@@ -1638,7 +1638,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 if (keyType.mayBeNull) {
                     arg1 = new DBSPApplyExpression(arg1.getNode(), "Some", arg1.type.withMayBeNull(true), arg1);
                 }
-                arg0 = this.makeStaticConstant(arg0);
+                arg0 = this.makeStaticConstantIfPossible(arg0);
                 return new DBSPApplyExpression(node, method, type, arg0.borrow(), arg1);
             }
             case ARRAY_DISTINCT: {

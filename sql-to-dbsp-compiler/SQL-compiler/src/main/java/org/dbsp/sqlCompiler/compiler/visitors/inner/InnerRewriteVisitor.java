@@ -13,7 +13,6 @@ import org.dbsp.sqlCompiler.ir.aggregate.LinearAggregate;
 import org.dbsp.sqlCompiler.ir.aggregate.NonLinearAggregate;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyMethodExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPAsExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPAssignmentExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
@@ -58,7 +57,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDateLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDecimalLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDoubleLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPGeoPointLiteral;
+import org.dbsp.sqlCompiler.ir.expression.DBSPGeoPointConstructor;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI128Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI16Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
@@ -474,12 +473,13 @@ public abstract class InnerRewriteVisitor
     }
 
     @Override
-    public VisitDecision preorder(DBSPGeoPointLiteral expression) {
+    public VisitDecision preorder(DBSPGeoPointConstructor expression) {
         this.push(expression);
         @Nullable DBSPExpression left = this.transformN(expression.left);
         @Nullable DBSPExpression right = this.transformN(expression.right);
+        DBSPType type = this.transform(expression.type);
         this.pop(expression);
-        DBSPExpression result = new DBSPGeoPointLiteral(expression.getNode(), left, right, expression.mayBeNull());
+        DBSPExpression result = new DBSPGeoPointConstructor(expression.getNode(), left, right, type);
         this.map(expression, result);
         return VisitDecision.STOP;
     }
@@ -746,17 +746,6 @@ public abstract class InnerRewriteVisitor
         DBSPExpression source = this.transform(expression.source);
         this.pop(expression);
         DBSPExpression result = source.question();
-        this.map(expression, result);
-        return VisitDecision.STOP;
-    }
-
-    @Override
-    public VisitDecision preorder(DBSPAsExpression expression) {
-        this.push(expression);
-        DBSPExpression source = this.transform(expression.source);
-        DBSPType type = this.transform(expression.getType());
-        this.pop(expression);
-        DBSPExpression result = new DBSPAsExpression(source, type);
         this.map(expression, result);
         return VisitDecision.STOP;
     }

@@ -51,11 +51,6 @@ public final class DBSPTimestampLiteral extends DBSPLiteral {
         this(node, type, value.getMillisSinceEpoch());
     }
 
-    @Override
-    public boolean isConstant() {
-        return true;
-    }
-
     public DBSPTimestampLiteral(long value) {
         this(value, false);
     }

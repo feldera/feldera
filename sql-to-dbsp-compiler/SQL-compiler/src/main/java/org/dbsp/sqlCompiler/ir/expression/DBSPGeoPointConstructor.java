@@ -21,51 +21,70 @@
  * SOFTWARE.
  */
 
-package org.dbsp.sqlCompiler.ir.expression.literal;
+package org.dbsp.sqlCompiler.ir.expression;
 
+import org.dbsp.sqlCompiler.compiler.IConstructor;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.ISameValue;
-import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
+import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeGeoPoint;
 import org.dbsp.util.IIndentStream;
 
 import javax.annotation.Nullable;
 import java.util.Objects;
 
-public final class DBSPGeoPointLiteral extends DBSPLiteral {
+public final class DBSPGeoPointConstructor
+        extends DBSPExpression
+        implements IConstructor, ISameValue {
     // Null only when the literal itself is null.
     @Nullable
     public final DBSPExpression left;
     @Nullable
     public final DBSPExpression right;
 
-    public DBSPGeoPointLiteral(CalciteObject node,
-                               @Nullable DBSPExpression left, @Nullable DBSPExpression right,
-                               boolean mayBeNull) {
-        super(node, new DBSPTypeGeoPoint(CalciteObject.EMPTY, mayBeNull), left == null || right == null);
+    public DBSPGeoPointConstructor(CalciteObject node,
+                                   @Nullable DBSPExpression left, @Nullable DBSPExpression right,
+                                   DBSPType type) {
+        super(node, type);
+        assert type.is(DBSPTypeGeoPoint.class);
         this.left = left;
         this.right = right;
     }
 
-    public DBSPGeoPointLiteral() {
-        super(CalciteObject.EMPTY, new DBSPTypeGeoPoint(CalciteObject.EMPTY, true), true);
+    public DBSPGeoPointConstructor() {
+        super(CalciteObject.EMPTY, new DBSPTypeGeoPoint(CalciteObject.EMPTY, true));
         this.left = null;
         this.right = null;
     }
 
+    public boolean isNull() {
+        return this.left == null || this.right == null;
+    }
+
     @Override
     public DBSPExpression deepCopy() {
-        return new DBSPGeoPointLiteral(this.getNode(),
+        return new DBSPGeoPointConstructor(this.getNode(),
                 DBSPExpression.nullableDeepCopy(this.left), DBSPExpression.nullableDeepCopy(this.right),
-                this.type.mayBeNull);
+                this.type);
+    }
+
+    @Override
+    public boolean equivalent(EquivalenceContext context, DBSPExpression other) {
+        if (!other.is(DBSPGeoPointConstructor.class))
+            return false;
+        DBSPGeoPointConstructor o = other.to(DBSPGeoPointConstructor.class);
+        return context.equivalent(this.left, o.left) &&
+                context.equivalent(this.right, o.right);
     }
 
     @Override
     public boolean isConstant() {
-        return (this.left == null || this.left.isConstantLiteral())
-                && (this.right == null || this.right.isConstantLiteral());
+        return (this.left == null || this.left.isConstant())
+                && (this.right == null || this.right.isConstant());
     }
 
     @Override
@@ -78,24 +97,18 @@ public final class DBSPGeoPointLiteral extends DBSPLiteral {
     }
 
     @Override
-    public DBSPLiteral getWithNullable(boolean mayBeNull) {
-        return new DBSPGeoPointLiteral(
-                this.getNode(), this.checkIfNull(this.left, mayBeNull),
-                this.checkIfNull(this.right, mayBeNull), mayBeNull);
-    }
-
-    @Override
-    public String toSqlString() {
-        if (this.left == null)
-            return DBSPNullLiteral.NULL;
-        return "POINT(" + this.left + ", " + this.right + ")";
+    public boolean sameFields(IDBSPNode other) {
+        DBSPGeoPointConstructor o = other.as(DBSPGeoPointConstructor.class);
+        if (o == null)
+            return false;
+        return this.left == o.left && this.right == o.right;
     }
 
     @Override
     public boolean sameValue(@Nullable ISameValue o) {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
-        DBSPGeoPointLiteral that = (DBSPGeoPointLiteral) o;
+        DBSPGeoPointConstructor that = (DBSPGeoPointConstructor) o;
         if (!Objects.equals(left, that.left)) return false;
         return Objects.equals(right, that.right);
     }

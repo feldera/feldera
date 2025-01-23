@@ -50,11 +50,6 @@ public final class DBSPUuidLiteral extends DBSPLiteral {
     }
 
     @Override
-    public boolean isConstant() {
-        return true;
-    }
-
-    @Override
     public DBSPExpression deepCopy() {
         return new DBSPUuidLiteral(this.getNode(), this.type, this.value);
     }

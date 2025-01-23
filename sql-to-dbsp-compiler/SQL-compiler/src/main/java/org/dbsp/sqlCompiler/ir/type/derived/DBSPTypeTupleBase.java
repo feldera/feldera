@@ -94,13 +94,14 @@ public abstract class DBSPTypeTupleBase extends DBSPType {
         return this.makeTuple(fields);
     }
 
-    public abstract DBSPTypeTupleBase makeType(List<DBSPType> fields);
+    /** Make a tuple of the same kind and nullability as this tuple, but with the specified fields */
+    public abstract DBSPTypeTupleBase makeRelatedTupleType(List<DBSPType> fields);
 
     public DBSPTypeTupleBase concat(DBSPTypeTupleBase other) {
         List<DBSPType> fields = new ArrayList<>(this.size() + other.size());
         fields.addAll(Arrays.asList(this.tupFields));
         fields.addAll(Arrays.asList(other.tupFields));
-        return this.makeType(fields);
+        return this.makeRelatedTupleType(fields);
     }
 
     /** Generates a closure that computes a binary operation pairwise for two values of this type.

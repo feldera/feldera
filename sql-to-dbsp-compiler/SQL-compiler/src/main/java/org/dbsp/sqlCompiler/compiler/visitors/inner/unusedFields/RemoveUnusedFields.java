@@ -1,8 +1,7 @@
 package org.dbsp.sqlCompiler.compiler.visitors.inner.unusedFields;
 
-import org.apache.calcite.util.Pair;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
-import org.dbsp.sqlCompiler.circuit.annotation.Projection;
+import org.dbsp.sqlCompiler.circuit.annotation.IsProjection;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinOperator;
@@ -16,6 +15,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.TypeCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitCloneVisitor;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
+import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
@@ -49,10 +49,10 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
         this.find = new FindUnusedFields(compiler);
     }
 
-    DBSPMapIndexOperator getProjection(CalciteObject node, FieldMap fieldMap, OutputPort input) {
+    DBSPMapIndexOperator getProjection(CalciteObject node, FieldUseMap fieldMap, OutputPort input) {
         DBSPType inputType = input.getOutputIndexedZSetType().getKVRefType();
         DBSPVariablePath var = inputType.var();
-        List<DBSPExpression> resultFields = Linq.map(fieldMap.getUsedFields(),
+        List<DBSPExpression> resultFields = Linq.map(fieldMap.deref().getUsedFields(),
                 f -> var.field(1).deref().field(f).applyCloneIfNeeded());
         DBSPRawTupleExpression raw = new DBSPRawTupleExpression(
                 DBSPTupleExpression.flatten(var.field(0).deref()),
@@ -81,19 +81,17 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
         DBSPParameter left = joinFunction.parameters[1];
         DBSPParameter right = joinFunction.parameters[2];
 
-        var pair = this.find.getFieldRemap();
-        ParameterFieldRemap remap = pair.left;
-        FieldMap leftRemap = Objects.requireNonNull(remap.get(left));
-        FieldMap rightRemap = Objects.requireNonNull(remap.get(right));
+        RewriteFields rw = this.find.createFieldRewriter(1);
+        FieldUseMap leftRemap = rw.getUseMap(left);
+        FieldUseMap rightRemap = rw.getUseMap(right);
         if (!leftRemap.hasUnusedFields() && !rightRemap.hasUnusedFields())
             return false;
 
         DBSPSimpleOperator leftMap = getProjection(join.getNode(), leftRemap, join.left());
         DBSPSimpleOperator rightMap = getProjection(join.getNode(), rightRemap, join.right());
 
-        RewriteFields rw = pair.right;
-        // Parameter 0 is not used in the body of the function, leave it unchanged
-        rw.changeToIdentity(joinFunction.parameters[0]);
+        // Parameter 0 is not fields in the body of the function, leave it unchanged
+        rw.parameterFullyUsed(joinFunction.parameters[0]);
         DBSPExpression newJoinFunction = rw.apply(joinFunction).to(DBSPExpression.class);
         DBSPSimpleOperator replacement =
                 join.withFunctionAndInputs(newJoinFunction, leftMap.outputPort(), rightMap.outputPort());
@@ -131,9 +129,9 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
 
     @Override
     public void postorder(DBSPMapOperator operator) {
-        if (!operator.input().outputType().is(DBSPTypeZSet.class) ||
-                // avoid infinite recursion
-                operator.hasAnnotation(a -> a.is(Projection.class))) {
+        if (operator.hasAnnotation(a -> a.is(IsProjection.class))
+            || !operator.getFunction().is(DBSPClosureExpression.class)) {
+            // avoid infinite recursion
             super.postorder(operator);
             return;
         }
@@ -146,19 +144,41 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
             return;
         }
 
-        Pair<ParameterFieldRemap, RewriteFields> pair = this.find.getFieldRemap();
-        FieldMap fm = pair.left.get(closure.parameters[0]);
-        assert fm != null;
+        if (operator.input().outputType().is(DBSPTypeZSet.class)) {
+            RewriteFields rw = this.find.createFieldRewriter(1);
+            FieldUseMap fm = rw.getUseMap(closure.parameters[0]);
+            DBSPClosureExpression compressed = rw.apply(closure).to(DBSPClosureExpression.class);
+            OutputPort source = this.mapped(operator.input());
+            DBSPClosureExpression projection = Objects.requireNonNull(fm.getProjection(1));
+            DBSPSimpleOperator adjust = new DBSPMapOperator(operator.getNode(), projection,
+                    new DBSPTypeZSet(projection.getResultType()), source).addAnnotation(new IsProjection());
+            this.addOperator(adjust);
 
-        DBSPClosureExpression compressed = pair.right.apply(closure).to(DBSPClosureExpression.class);
-        OutputPort source = this.mapped(operator.input());
-        DBSPClosureExpression projection = fm.getProjection();
-        DBSPSimpleOperator adjust = new DBSPMapOperator(operator.getNode(), projection,
-                new DBSPTypeZSet(projection.getResultType()), source).addAnnotation(new Projection());
-        this.addOperator(adjust);
+            DBSPSimpleOperator result = new DBSPMapOperator(
+                    operator.getNode(), compressed, operator.getOutputZSetType(), adjust.outputPort());
+            this.map(operator, result);
+        } else {
+            // closure = compressed \circ projection
+            RewriteFields rw = this.find.createFieldRewriter(2);
+            FieldUseMap fm = rw.getUseMap(closure.parameters[0]);
+            DBSPClosureExpression compressed = rw.apply(closure).to(DBSPClosureExpression.class);
+            OutputPort source = this.mapped(operator.input());
+            DBSPClosureExpression projection = Objects.requireNonNull(fm.getProjection(2));
+            DBSPType resultType = projection.getResultType();
+            DBSPTypeRawTuple raw = resultType.to(DBSPTypeRawTuple.class);
+            DBSPSimpleOperator adjust = new DBSPMapIndexOperator(operator.getNode(), projection,
+                    new DBSPTypeIndexedZSet(raw), source)
+                    .addAnnotation(new IsProjection());
+            this.addOperator(adjust);
+            DBSPSimpleOperator result = new DBSPMapOperator(
+                    operator.getNode(), compressed, operator.getOutputZSetType(), adjust.outputPort());
+            this.map(operator, result);
+        }
+    }
 
-        DBSPSimpleOperator result = new DBSPMapOperator(
-                operator.getNode(), compressed, operator.getOutputZSetType(), adjust.outputPort());
-        this.map(operator, result);
+    @Override
+    public Token startVisit(IDBSPOuterNode circuit) {
+        // ToDot.dumper(compiler, "x.png", 2).apply(circuit.to(DBSPCircuit.class));
+        return super.startVisit(circuit);
     }
 }
