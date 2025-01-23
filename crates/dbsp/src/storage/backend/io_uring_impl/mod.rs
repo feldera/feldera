@@ -460,8 +460,4 @@ impl Storage for IoUringBackend {
     fn open(&self, name: &Path) -> Result<Arc<dyn FileReader>, StorageError> {
         PosixReader::open(self.base.join(name), self.cache)
     }
-
-    fn base(&self) -> PathBuf {
-        self.base.clone()
-    }
 }

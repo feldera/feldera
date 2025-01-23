@@ -3,7 +3,7 @@
 //! This is a layer over a storage backend that adds a cache of a
 //! client-provided function of the blocks.
 use std::fmt::Debug;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use std::{collections::BTreeMap, ops::Range};
@@ -262,9 +262,5 @@ where
 
     fn open(&self, name: &Path) -> Result<Arc<dyn FileReader>, StorageError> {
         Self::backend().open(name)
-    }
-
-    fn base(&self) -> PathBuf {
-        Self::backend().base()
     }
 }
