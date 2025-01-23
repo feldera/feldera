@@ -68,11 +68,6 @@ public final class DBSPNullLiteral extends DBSPLiteral {
     }
 
     @Override
-    public boolean isConstant() {
-        return true;
-    }
-
-    @Override
     public boolean equivalent(EquivalenceContext context, DBSPExpression other) {
         return other.is(DBSPNullLiteral.class);
     }

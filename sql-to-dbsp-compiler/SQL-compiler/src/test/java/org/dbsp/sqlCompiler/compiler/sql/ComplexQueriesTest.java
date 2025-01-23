@@ -113,7 +113,7 @@ public class ComplexQueriesTest extends BaseSQLTests {
         InnerVisitor typeWidth = new InnerVisitor(ccs.compiler) {
             @Override
             public void postorder(DBSPTypeTupleBase type) {
-                // Without NarrowJoins the width of the tuples can be 9
+                // Without UnusedFields the width of the tuples can be 9
                 assert type.size() <= 5;
             }
         };

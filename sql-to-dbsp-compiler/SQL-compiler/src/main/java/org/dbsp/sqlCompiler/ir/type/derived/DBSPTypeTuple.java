@@ -165,8 +165,8 @@ public class DBSPTypeTuple extends DBSPTypeTupleBase {
     }
 
     @Override
-    public DBSPTypeTuple makeType(List<DBSPType> fields) {
-        return new DBSPTypeTuple(CalciteObject.EMPTY, fields);
+    public DBSPTypeTuple makeRelatedTupleType(List<DBSPType> fields) {
+        return new DBSPTypeTuple(CalciteObject.EMPTY, this.mayBeNull, fields);
     }
 
     public String getName() {

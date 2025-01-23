@@ -33,6 +33,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.ISameValue;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPGeoPointConstructor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPMapExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariantExpression;
@@ -47,7 +48,8 @@ import javax.annotation.Nullable;
 import java.nio.charset.StandardCharsets;
 import java.util.Objects;
 
-public abstract class DBSPLiteral extends DBSPExpression implements ISameValue, IConstructor {
+public abstract class DBSPLiteral extends DBSPExpression
+        implements ISameValue, IConstructor {
     protected final boolean isNull;
 
     protected DBSPLiteral(CalciteObject node, DBSPType type, boolean isNull) {
@@ -57,9 +59,7 @@ public abstract class DBSPLiteral extends DBSPExpression implements ISameValue, 
             throw new UnsupportedException("Type " + type + " cannot represent null", node);
     }
 
-    /** Ideally all literals are constant, but with the current representation this
-     * may not be true for vectors and maps. */
-    public abstract boolean isConstant();
+    public boolean isConstant() { return true; }
 
     public boolean isNull() {
         return this.isNull;
@@ -80,7 +80,7 @@ public abstract class DBSPLiteral extends DBSPExpression implements ISameValue, 
             case DECIMAL -> new DBSPDecimalLiteral(type.getNode(), type, null);
             case DOUBLE -> new DBSPDoubleLiteral();
             case REAL -> new DBSPRealLiteral();
-            case GEOPOINT -> new DBSPGeoPointLiteral();
+            case GEOPOINT -> new DBSPGeoPointConstructor();
             case INTERVAL_SHORT -> new DBSPIntervalMillisLiteral(type.getNode(), type, null);
             case INTERVAL_LONG -> new DBSPIntervalMonthsLiteral(type.getNode(), type, null);
             case STRING -> new DBSPStringLiteral(CalciteObject.EMPTY, type, null, StandardCharsets.UTF_8);

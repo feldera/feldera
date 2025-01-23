@@ -40,7 +40,6 @@ import org.dbsp.sqlCompiler.ir.aggregate.AggregateBase;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregate;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyMethodExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPAsExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPAssignmentExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
@@ -82,7 +81,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDateLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDecimalLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDoubleLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPGeoPointLiteral;
+import org.dbsp.sqlCompiler.ir.expression.DBSPGeoPointConstructor;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI128Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI16Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
@@ -409,17 +408,20 @@ public class ToRustInnerVisitor extends InnerVisitor {
     }
 
     @Override
-    public VisitDecision preorder(DBSPGeoPointLiteral literal) {
-        if (literal.isNull())
-            return this.doNull(literal);
-        if (literal.mayBeNull())
+    public VisitDecision preorder(DBSPGeoPointConstructor constructor) {
+        if (constructor.isNull()) {
+            this.builder.append("None::<");
+            constructor.getType().withMayBeNull(false).accept(this);
+            this.builder.append(">");
+        }
+        if (constructor.getType().mayBeNull)
             this.builder.append("Some(");
         this.builder.append("GeoPoint::new(");
-        Objects.requireNonNull(literal.left).accept(this);
+        Objects.requireNonNull(constructor.left).accept(this);
         this.builder.append(", ");
-        Objects.requireNonNull(literal.right).accept(this);
+        Objects.requireNonNull(constructor.right).accept(this);
         this.builder.append(")");
-        if (literal.mayBeNull())
+        if (constructor.getType().mayBeNull)
             this.builder.append(")");
         return VisitDecision.STOP;
     }
@@ -1244,16 +1246,6 @@ public class ToRustInnerVisitor extends InnerVisitor {
     }
 
     @Override
-    public VisitDecision preorder(DBSPAsExpression expression) {
-        this.builder.append("(");
-        expression.source.accept(this);
-        this.builder.append(" as ");
-        expression.getType().accept(this);
-        this.builder.append(")");
-        return VisitDecision.STOP;
-    }
-
-    @Override
     public VisitDecision preorder(DBSPAssignmentExpression expression) {
         expression.left.accept(this);
         this.builder.append(" = ");
@@ -1685,9 +1677,9 @@ public class ToRustInnerVisitor extends InnerVisitor {
     public VisitDecision preorder(DBSPTypeTuple type) {
         this.optionPrefix(type);
         this.builder.append(type.getName());
-        if (!this.compact && type.size() < 16) {
-            if (type.size() > 0) {
-                this.builder.append("<");
+        if (type.size() > 0) {
+            this.builder.append("<");
+            if (!this.compact || type.size() <= 10) {
                 boolean first = true;
                 for (DBSPType fType : type.tupFields) {
                     if (!first)
@@ -1695,8 +1687,8 @@ public class ToRustInnerVisitor extends InnerVisitor {
                     first = false;
                     fType.accept(this);
                 }
-                this.builder.append(">");
             }
+            this.builder.append(">");
         }
         this.optionSuffix(type);
         return VisitDecision.STOP;

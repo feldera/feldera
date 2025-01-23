@@ -38,7 +38,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBinaryLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDecimalLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDoubleLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPGeoPointLiteral;
+import org.dbsp.sqlCompiler.ir.expression.DBSPGeoPointConstructor;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI64Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
@@ -50,6 +50,7 @@ import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDouble;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeGeoPoint;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
 import org.junit.Test;
@@ -560,9 +561,10 @@ public class EndToEndTests extends BaseSQLTests {
         String query = "SELECT ST_POINT(0, 0)";
         this.testConstantOutput(query, new DBSPZSetExpression(
                 new DBSPTupleExpression(
-                        new DBSPGeoPointLiteral(CalciteObject.EMPTY,
+                        new DBSPGeoPointConstructor(CalciteObject.EMPTY,
                                 new DBSPDoubleLiteral(0),
-                                new DBSPDoubleLiteral(0), false).some())));
+                                new DBSPDoubleLiteral(0),
+                                new DBSPTypeGeoPoint(CalciteObject.EMPTY, false)).some())));
     }
 
     @Test

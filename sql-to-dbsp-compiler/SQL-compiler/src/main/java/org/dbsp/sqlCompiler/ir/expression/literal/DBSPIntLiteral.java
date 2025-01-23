@@ -19,9 +19,4 @@ public abstract class DBSPIntLiteral extends DBSPLiteral {
 
     @Nullable
     public abstract BigInteger getValue();
-
-    @Override
-    public boolean isConstant() {
-        return true;
-    }
 }

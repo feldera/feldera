@@ -28,6 +28,7 @@ import org.dbsp.sqlCompiler.circuit.annotation.Waterline;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.ICompilerComponent;
+import org.dbsp.sqlCompiler.compiler.backend.dot.ToDot;
 import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.BetaReduction;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EliminateDump;
@@ -62,7 +63,7 @@ public record CircuitOptimizer(DBSPCompiler compiler) implements ICompilerCompon
         DBSPCompiler compiler = this.compiler();
         CompilerOptions options = this.compiler().options;
         // Example dumping circuit to a png file
-        // passes.add(ToDot.dumper(compiler, "x.png", 4));
+        // passes.add(ToDot.dumper(compiler, "x.png", 2));
         // First part of optimizations may still synthesize some circuit components
         passes.add(new ImplementNow(compiler));
         passes.add(new DeterministicDefault(compiler));
@@ -72,6 +73,7 @@ public record CircuitOptimizer(DBSPCompiler compiler) implements ICompilerCompon
         if (options.languageOptions.outputsAreSets)
             passes.add(new EnsureDistinctOutputs(compiler));
         passes.add(new UnusedFields(compiler));
+        // passes.add(ToDot.dumper(compiler, "y.png", 2));
         passes.add(new CSE(compiler));
         passes.add(new MinMaxOptimize(compiler, compiler.weightVar));
         passes.add(new ExpandAggregateZero(compiler));

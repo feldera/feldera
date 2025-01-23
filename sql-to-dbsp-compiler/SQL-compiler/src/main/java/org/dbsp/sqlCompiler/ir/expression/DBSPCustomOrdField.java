@@ -11,7 +11,7 @@ import org.dbsp.util.IIndentStream;
 
 /** An expression of the form '(*expression).0.field' or
  * Some((*expression).0.field), where
- * - expression has a type of the form Option[&WithCustomOrd[T, S]]
+ * expression has a type of the form Option[&WithCustomOrd[T, S]]
  * The result type is always nullable */
 public final class DBSPCustomOrdField extends DBSPExpression {
     public final DBSPExpression expression;

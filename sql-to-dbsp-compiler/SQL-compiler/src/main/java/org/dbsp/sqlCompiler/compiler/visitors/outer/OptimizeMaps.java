@@ -1,8 +1,11 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
+import org.apache.calcite.util.Pair;
+import org.dbsp.sqlCompiler.circuit.annotation.IsProjection;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAntiJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPApplyOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAsofJoinOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPBinaryOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDeindexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDelayOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDifferentiateOperator;
@@ -24,23 +27,29 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPSubtractOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSumOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
+import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerRewriteVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Projection;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.ResolveReferences;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.Substitution;
+import org.dbsp.sqlCompiler.ir.DBSPParameter;
+import org.dbsp.sqlCompiler.ir.IDBSPDeclaration;
+import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Maybe;
 
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * Optimizes patterns containing Map operators.
- * - Merge Maps operations into the previous operation (Map, Join) if possible.
- * - Swap Maps with operations such as Distinct, Integral, Differential, etc.
- * - Merge Maps with subsequent MapIndex operators
- * - Merge consecutive apply operators
- */
+/** Optimizes patterns containing Map operators. */
 public class OptimizeMaps extends CircuitCloneWithGraphsVisitor {
     /** If true only optimize projections after joins */
     final boolean onlyProjections;
@@ -58,18 +67,7 @@ public class OptimizeMaps extends CircuitCloneWithGraphsVisitor {
             super.postorder(operator);
             return;
         }
-        if (source.node().is(DBSPAntiJoinOperator.class) || source.node().is(DBSPStreamAntiJoinOperator.class)) {
-            // Swap
-            List<OutputPort> newSources = new ArrayList<>();
-            for (OutputPort sourceSource: source.node().inputs) {
-                DBSPSimpleOperator newProjection = operator.withInputs(Linq.list(sourceSource), true);
-                newSources.add(newProjection.outputPort());
-                this.addOperator(newProjection);
-            }
-            DBSPSimpleOperator result = source.simpleNode().withInputs(newSources, true);
-            this.map(operator, result);
-            return;
-        } else if (source.node().is(DBSPMapOperator.class)) {
+        if (source.node().is(DBSPMapOperator.class)) {
             // mapindex(map) = mapindex
             DBSPClosureExpression expression = source.simpleNode().getClosureFunction();
             DBSPClosureExpression newFunction = operator.getClosureFunction()
@@ -112,8 +110,105 @@ public class OptimizeMaps extends CircuitCloneWithGraphsVisitor {
                     return;
                 }
             }
+            if (projection.isProjection && operator.hasAnnotation(a -> a.is(IsProjection.class)) &&
+                    (source.node().is(DBSPAntiJoinOperator.class)
+                    || source.node().is(DBSPStreamAntiJoinOperator.class))) {
+                DBSPBinaryOperator join = source.node().to(DBSPBinaryOperator.class);
+                OutputPort left = join.left();
+                OutputPort right = join.right();
+
+                DBSPClosureExpression proj = operator.getClosureFunction();
+                // We must preserve keys unchanged, but we can project away any values
+                Pair<DBSPClosureExpression, DBSPClosureExpression> split = this.splitClosure(proj);
+
+                // Identical index operators on both sides
+                DBSPSimpleOperator leftIndex = new DBSPMapIndexOperator(operator.getNode(),
+                        split.left, toIx(split.left), left).addAnnotation(new IsProjection());
+                this.addOperator(leftIndex);
+                DBSPSimpleOperator rightIndex = new DBSPMapIndexOperator(operator.getNode(),
+                        split.left, toIx(split.left), right).addAnnotation(new IsProjection());
+                this.addOperator(rightIndex);
+                DBSPSimpleOperator newJoin = join.withInputs(Linq.list(leftIndex.outputPort(), rightIndex.outputPort()), false);
+                this.addOperator(newJoin);
+
+                // Now project the keys after the join
+                DBSPSimpleOperator result = new DBSPMapIndexOperator(operator.getNode(),
+                        split.right, toIx(split.right), newJoin.outputPort());
+                this.map(operator, result);
+                return;
+            }
         }
         super.postorder(operator);
+    }
+
+    DBSPTypeIndexedZSet toIx(DBSPClosureExpression expression) {
+        return new DBSPTypeIndexedZSet(expression.getResultType().to(DBSPTypeRawTuple.class));
+    }
+
+    /** Split a closure that produces elements of an IndexedZSet into two closures
+     * that compose to the same result.
+     * @param closure  A closure with signature (A, B) -> (C, D)
+     * @return         A pair of closures.
+     *                 The first one has signature (A, B) -> (A, D).  First component is identity.
+     *                 The second one has signature (A, D) -> (C, D).  Second component is identity.
+     */
+    Pair<DBSPClosureExpression, DBSPClosureExpression> splitClosure(DBSPClosureExpression closure) {
+        assert closure.parameters.length == 1;
+        DBSPParameter param = closure.parameters[0];
+        DBSPTypeRawTuple paramType = param.getType().to(DBSPTypeRawTuple.class);
+
+        DBSPRawTupleExpression tuple = closure.body.to(DBSPRawTupleExpression.class);
+        assert tuple.fields != null;
+        DBSPVariablePath var0 = param.asVariable();
+        DBSPClosureExpression first =
+                new DBSPRawTupleExpression(
+                        new DBSPTupleExpression(DBSPTypeTupleBase.flatten(var0.field(0).deref()), false),
+                        tuple.fields[1].applyCloneIfNeeded()).closure(param);
+
+        // Use same name as parameter
+        DBSPVariablePath var1 = new DBSPVariablePath(param.name, new DBSPTypeRawTuple(
+                paramType.tupFields[0],
+                tuple.fields[1].getType().ref()));
+        // The variable has a different type from the parameter.
+        // References to the parameter are not free variables in 'tuple'.
+        ReplaceFreeVariable replace = new ReplaceFreeVariable(this.compiler, var1);
+        DBSPExpression replaced = replace.apply(tuple.fields[0]).to(DBSPExpression.class);
+        DBSPClosureExpression second = new DBSPRawTupleExpression(
+                replaced.applyCloneIfNeeded(),
+                new DBSPTupleExpression(DBSPTypeTupleBase.flatten(var1.field(1).deref()), false))
+                .closure(var1);
+
+        return new Pair<>(first, second);
+    }
+
+    /** Replace all references to the (only) free variable with another variable */
+    static class ReplaceFreeVariable extends InnerRewriteVisitor {
+        final Substitution<DBSPVariablePath, DBSPVariablePath> newParam;
+        final ResolveReferences resolver;
+        final DBSPVariablePath replacement;
+
+        protected ReplaceFreeVariable(DBSPCompiler compiler, DBSPVariablePath replacement) {
+            super(compiler, false);
+            this.newParam = new Substitution<>();
+            this.replacement = replacement;
+            this.resolver = new ResolveReferences(compiler, true);
+        }
+
+        @Override
+        public VisitDecision preorder(DBSPVariablePath var) {
+            IDBSPDeclaration declaration = this.resolver.reference.get(var);
+            if (declaration == null) {
+                this.map(var, this.replacement);
+                return VisitDecision.STOP;
+            }
+            return super.preorder(var);
+        }
+
+        @Override
+        public void startVisit(IDBSPInnerNode node) {
+            this.resolver.apply(node);
+            super.startVisit(node);
+        }
     }
 
     @Override

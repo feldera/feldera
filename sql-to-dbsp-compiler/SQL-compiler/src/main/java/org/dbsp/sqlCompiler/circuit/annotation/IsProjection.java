@@ -6,4 +6,4 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.UnusedFields;
  * These are created by the {@link UnusedFields} analysis.
  * This annotation prevents such maps from being themselves optimized,
  * since this would lead to an infinite loop. */
-public class Projection extends Annotation {}
+public class IsProjection extends Annotation {}

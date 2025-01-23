@@ -76,11 +76,6 @@ public final class DBSPIntervalMonthsLiteral
     }
 
     @Override
-    public boolean isConstant() {
-        return true;
-    }
-
-    @Override
     public void accept(InnerVisitor visitor) {
         VisitDecision decision = visitor.preorder(this);
         if (decision.stop()) return;

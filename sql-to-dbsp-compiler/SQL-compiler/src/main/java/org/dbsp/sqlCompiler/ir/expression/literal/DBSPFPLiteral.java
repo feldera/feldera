@@ -14,9 +14,4 @@ public abstract class DBSPFPLiteral extends DBSPLiteral {
         super(node, type, value == null);
         this.raw = raw;
     }
-
-    @Override
-    public boolean isConstant() {
-        return true;
-    }
 }

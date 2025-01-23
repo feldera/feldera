@@ -174,6 +174,11 @@ public class TestCase {
                 DBSPExpression expected = outputs.getSet(i);
                 DBSPExpression actual = new DBSPApplyExpression("read_output_handle", DBSPTypeAny.getDefault(),
                         streams.getVarReference().field(changes.inputs.getSetCount() + i + skippedOutputs).borrow());
+                var produced = new DBSPLetStatement("produced_result", actual);
+                list.add(produced);
+                list.add(new DBSPComment("println!(\"result={:?}\", produced_result);"));
+                actual = produced.getVarReference();
+
                 if (foundFp) {
                     DBSPExpression convertedValue = new DBSPTupleExpression(converted);
                     DBSPExpression converter = convertedValue.closure(var);
@@ -182,17 +187,11 @@ public class TestCase {
                     expected = new DBSPApplyExpression("zset_map", convertedValue.getType(), expected.borrow(), converterVar);
                     actual = new DBSPApplyExpression("zset_map", convertedValue.getType(), actual.borrow(), converterVar);
                 }
-
-                var produced = new DBSPLetStatement("produced_result", actual);
-                list.add(produced);
-                list.add(new DBSPComment("println!(\"result={:?}\", produced_result);"));
-
                 DBSPStatement compare =
                         new DBSPApplyExpression("assert!", new DBSPTypeVoid(),
                                 new DBSPApplyExpression("must_equal",
                                         new DBSPTypeBool(CalciteObject.EMPTY, false),
-                                        produced.getVarReference().borrow(),
-                                        expected.borrow()),
+                                        actual.borrow(), expected.borrow()),
                                 new DBSPStrLiteral(message, false, true)).toStatement();
                 list.add(compare);
             }

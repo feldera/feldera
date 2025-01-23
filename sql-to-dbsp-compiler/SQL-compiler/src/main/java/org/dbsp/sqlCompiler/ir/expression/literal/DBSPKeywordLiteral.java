@@ -46,11 +46,6 @@ public final class DBSPKeywordLiteral extends DBSPLiteral {
         return keyword.equals(that.keyword);
     }
 
-    @Override
-    public boolean isConstant() {
-        return true;
-    }
-
     public DBSPKeywordLiteral(CalciteObject node, String keyword) {
         super(node, new DBSPTypeKeyword(), false);
         this.keyword = keyword.toLowerCase();

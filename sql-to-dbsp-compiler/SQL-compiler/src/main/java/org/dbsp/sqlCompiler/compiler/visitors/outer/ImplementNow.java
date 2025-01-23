@@ -172,7 +172,7 @@ public class ImplementNow extends Passes {
             DBSPTypeTuple paramType = param.getType().to(DBSPTypeRef.class).deref().to(DBSPTypeTuple.class);
             List<DBSPType> fields = Linq.list(paramType.tupFields);
             fields.add(ContainsNow.timestampType());
-            DBSPParameter newParam = new DBSPParameter(param.getName(), paramType.makeType(fields).ref());
+            DBSPParameter newParam = new DBSPParameter(param.getName(), paramType.makeRelatedTupleType(fields).ref());
             this.parameterReplacement = newParam.asVariable();
             this.nowReplacement = newParam.asVariable().deref().field(paramType.size());
             ResolveReferences ref = new ResolveReferences(this.compiler, false);

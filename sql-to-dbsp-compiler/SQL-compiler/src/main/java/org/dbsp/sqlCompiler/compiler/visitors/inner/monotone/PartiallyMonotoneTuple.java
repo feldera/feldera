@@ -29,7 +29,8 @@ public class PartiallyMonotoneTuple
         this.raw = raw;
         this.mayBeNull = mayBeNull;
         List<DBSPType> fieldTypes = Linq.map(fields, IMaybeMonotoneType::getType);
-        this.anyMonotone = Linq.any(fields, IMaybeMonotoneType::mayBeMonotone);
+        // An empty tuple is always monotone
+        this.anyMonotone = Linq.any(fields, IMaybeMonotoneType::mayBeMonotone) || fields.isEmpty();
         if (raw) {
             assert !mayBeNull;
             this.type = new DBSPTypeRawTuple(CalciteObject.EMPTY, fieldTypes);

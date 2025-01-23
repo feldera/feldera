@@ -417,7 +417,7 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
         if (tuple.mayBeMonotone()) {
             MonotoneExpression[] monotoneFields = Linq.where(
                     fields, f -> f.getMonotoneType().mayBeMonotone(), MonotoneExpression.class);
-            assert monotoneFields.length > 0;
+            assert monotoneFields.length > 0 || fields.length == 0;
             DBSPExpression[] monotoneComponents = Linq.map(
                     monotoneFields, MonotoneExpression::getReducedExpression, DBSPExpression.class);
             DBSPTypeTuple type = new DBSPTypeTuple(CalciteObject.EMPTY,

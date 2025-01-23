@@ -48,11 +48,6 @@ public final class DBSPBinaryLiteral extends DBSPLiteral {
         this(null);
     }
 
-    @Override
-    public boolean isConstant() {
-        return true;
-    }
-
     public DBSPBinaryLiteral(@Nullable byte[] value) {
         this(CalciteObject.EMPTY, new DBSPTypeBinary(CalciteObject.EMPTY, value == null), value);
     }

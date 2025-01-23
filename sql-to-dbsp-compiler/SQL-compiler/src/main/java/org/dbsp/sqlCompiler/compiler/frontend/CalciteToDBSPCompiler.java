@@ -1101,7 +1101,16 @@ public class CalciteToDBSPCompiler extends RelVisitor
          * @return          A tuple containing just the non-key fields, in order.
          */
         DBSPTupleExpression nonKeyFields(DBSPVariablePath var) {
-            return this.nonKeyFields(var, var.getType().deref().to(DBSPTypeTupleBase.class), 0);
+            // Almost like the following invocation, except we don't insert casts
+            // return this.nonKeyFields(var, var.getType().deref().to(DBSPTypeTupleBase.class), 0);
+            List<DBSPExpression> fields = new ArrayList<>();
+            DBSPTypeTupleBase tuple = var.getType().deref().to(DBSPTypeTupleBase.class);
+            for (int i = 0; i < tuple.size(); i++) {
+                if (this.isKeyField(i))
+                    continue;
+                fields.add(var.deref().field(i).applyCloneIfNeeded());
+            }
+            return new DBSPTupleExpression(fields, false);
         }
 
         /** Extract the non-key fields from a tuple.
@@ -1143,16 +1152,6 @@ public class CalciteToDBSPCompiler extends RelVisitor
                             .cast(desiredType.getFieldType(i - offset), false));
             }
             return new DBSPTupleExpression(fields, false);
-        }
-
-        /** Extract the key fields from a tuple.
-         *
-         * @param var       Var that is a reference to a tuple.
-         * @return          A tuple containing just the key fields, in order.
-         */
-        @SuppressWarnings("unused")
-        DBSPTupleExpression keyFields(DBSPVariablePath var) {
-            return this.keyFields(var, var.getType().deref().to(DBSPTypeTupleBase.class), 0);
         }
 
         /**

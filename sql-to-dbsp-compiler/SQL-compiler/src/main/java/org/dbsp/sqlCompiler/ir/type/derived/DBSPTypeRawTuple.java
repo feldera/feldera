@@ -37,7 +37,7 @@ import org.dbsp.util.IIndentStream;
 import java.util.Arrays;
 import java.util.List;
 
-/** A Raw Rust tuple. */
+/** A Raw Rust tuple.  Very seldom can be nullable. */
 public class DBSPTypeRawTuple extends DBSPTypeTupleBase {
     private DBSPTypeRawTuple(CalciteObject node, DBSPTypeCode code, boolean mayBeNull, DBSPType... tupArgs) {
         super(node, code, mayBeNull, tupArgs);
@@ -62,7 +62,7 @@ public class DBSPTypeRawTuple extends DBSPTypeTupleBase {
     }
 
     @Override
-    public DBSPTypeTupleBase makeType(List<DBSPType> fields) {
+    public DBSPTypeTupleBase makeRelatedTupleType(List<DBSPType> fields) {
         return new DBSPTypeRawTuple(CalciteObject.EMPTY, fields);
     }
 

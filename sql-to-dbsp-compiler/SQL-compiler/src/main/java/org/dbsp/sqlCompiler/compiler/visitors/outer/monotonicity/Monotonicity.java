@@ -184,7 +184,7 @@ public class Monotonicity extends CircuitVisitor {
         if (pairOfReferences) {
             DBSPTypeTupleBase tpl = varType.to(DBSPTypeTupleBase.class);
             assert tpl.size() == 2: "Expected a pair, got " + varType;
-            varType = tpl.makeType(Linq.list(tpl.tupFields[0].ref(), tpl.tupFields[1].ref()));
+            varType = tpl.makeRelatedTupleType(Linq.list(tpl.tupFields[0].ref(), tpl.tupFields[1].ref()));
             var = varType.var();
             body = tpl.makeTuple(var.field(0).deref(), var.deepCopy().field(1).deref());
             argumentType = MonotoneTransferFunctions.ArgumentKind.IndexedZSet;

@@ -44,7 +44,8 @@ import java.util.List;
 import java.util.Objects;
 
 /** Represents a vector described by its elements. */
-public final class DBSPVecExpression extends DBSPExpression implements IDBSPContainer, ISameValue, IConstructor {
+public final class DBSPVecExpression extends DBSPExpression
+        implements IDBSPContainer, ISameValue, IConstructor {
     @Nullable
     public final List<DBSPExpression> data;
     public final DBSPTypeVec vecType;
@@ -179,7 +180,7 @@ public final class DBSPVecExpression extends DBSPExpression implements IDBSPCont
     }
 
     public boolean isConstant() {
-        return this.data == null || Linq.all(this.data, DBSPExpression::isConstantLiteral);
+        return this.data == null || Linq.all(this.data, DBSPExpression::isConstant);
     }
 
     @Override

@@ -243,7 +243,7 @@ public class CalciteOptimizer implements IWritesLogs {
                 CoreRules.PROJECT_WINDOW_TRANSPOSE,
                 CoreRules.PROJECT_SET_OP_TRANSPOSE,
                 CoreRules.FILTER_PROJECT_TRANSPOSE
-                // Rule is unsound, replaced with NarrowJoins done later.
+                // Rule is unsound, replaced with UnusedFieldsF done later.
                 //CoreRules.PROJECT_JOIN_TRANSPOSE
         ));
 

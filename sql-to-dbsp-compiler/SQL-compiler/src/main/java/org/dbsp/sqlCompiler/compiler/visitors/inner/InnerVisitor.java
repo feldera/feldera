@@ -37,7 +37,6 @@ import org.dbsp.sqlCompiler.ir.aggregate.NonLinearAggregate;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyBaseExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyMethodExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPAsExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPAssignmentExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBaseTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
@@ -85,7 +84,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDateLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDecimalLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDoubleLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPFPLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPGeoPointLiteral;
+import org.dbsp.sqlCompiler.ir.expression.DBSPGeoPointConstructor;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI128Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI16Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
@@ -204,8 +203,14 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
         return this.id;
     }
 
+    // A chance for subclasses to do something for every expression visited
+    public void visitingExpression(DBSPExpression expression) {}
+
     public void push(IDBSPInnerNode node) {
         this.context.add(node);
+        if (node.is(DBSPExpression.class)) {
+            this.visitingExpression(node.to(DBSPExpression.class));
+        }
     }
 
     public void pop(IDBSPInnerNode node) {
@@ -656,10 +661,6 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
         return this.preorder(node.to(DBSPExpression.class));
     }
 
-    public VisitDecision preorder(DBSPAsExpression node) {
-        return this.preorder(node.to(DBSPExpression.class));
-    }
-
     public VisitDecision preorder(DBSPVariablePath node) {
         return this.preorder(node.to(DBSPExpression.class));
     }
@@ -815,8 +816,8 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
         return this.preorder(node.to(DBSPLiteral.class));
     }
 
-    public VisitDecision preorder(DBSPGeoPointLiteral node) {
-        return this.preorder(node.to(DBSPLiteral.class));
+    public VisitDecision preorder(DBSPGeoPointConstructor node) {
+        return this.preorder(node.to(DBSPExpression.class));
     }
 
     /*************************** POSTORDER *****************************/
@@ -1210,6 +1211,10 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
         this.postorder(node.to(DBSPExpression.class));
     }
 
+    public void postorder(DBSPApplyBaseExpression node) {
+        this.postorder(node.to(DBSPExpression.class));
+    }
+
     public void postorder(DBSPApplyExpression node) {
         this.postorder(node.to(DBSPApplyBaseExpression.class));
     }
@@ -1223,10 +1228,6 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
     }
 
     public void postorder(DBSPQuestionExpression node) {
-        this.postorder(node.to(DBSPExpression.class));
-    }
-
-    public void postorder(DBSPAsExpression node) {
         this.postorder(node.to(DBSPExpression.class));
     }
 
@@ -1387,8 +1388,8 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
         this.postorder(node.to(DBSPLiteral.class));
     }
 
-    public void postorder(DBSPGeoPointLiteral node)  {
-        this.postorder(node.to(DBSPLiteral.class));
+    public void postorder(DBSPGeoPointConstructor node)  {
+        this.postorder(node.to(DBSPExpression.class));
     }
 
     @Override
