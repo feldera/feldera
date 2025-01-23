@@ -203,9 +203,33 @@ class arithtst_interval_values(TstView):
     def __init__(self):
         # Validated on MySQL
         self.data = [
-            {'id': 0, 'seconds': 160342920, 'minutes': 2672382, 'hours': 44539, 'days': 1855, 'months': 60, 'years': 5},
-            {'id': 1, 'seconds': -84686400, 'minutes': -1411440, 'hours': -23524, 'days': -980, 'months': -32, 'years': -2},
-            {'id': 2, 'seconds': 332907420, 'minutes': 5548457, 'hours': 92474, 'days': 3853, 'months': 126, 'years': 10}
+            {
+                "id": 0,
+                "seconds": 160342920,
+                "minutes": 2672382,
+                "hours": 44539,
+                "days": 1855,
+                "months": 60,
+                "years": 5,
+            },
+            {
+                "id": 1,
+                "seconds": -84686400,
+                "minutes": -1411440,
+                "hours": -23524,
+                "days": -980,
+                "months": -32,
+                "years": -2,
+            },
+            {
+                "id": 2,
+                "seconds": 332907420,
+                "minutes": 5548457,
+                "hours": 92474,
+                "days": 3853,
+                "months": 126,
+                "years": 10,
+            },
         ]
         self.sql = """CREATE MATERIALIZED VIEW interval_values AS SELECT
                       id,
@@ -222,9 +246,27 @@ class arithtst_ts_sub_sinterval(TstView):
     def __init__(self):
         # Validated on MySQL
         self.data = [
-            {'id': 0, 'sec_c1': '2014-11-05T12:45:00', 'min_c1': '2014-11-05T12:45:00', 'hrs_c1': '2014-11-05T13:27:00', 'day_c1': '2014-11-06T08:27:00'},
-            {'id': 1, 'sec_c1': '2023-02-26T18:00:00', 'min_c1': '2023-02-26T18:00:00', 'hrs_c1': '2023-02-26T18:00:00', 'day_c1': '2023-02-26T14:00:00'},
-            {'id': 2, 'sec_c1': '1948-12-02T09:15:00', 'min_c1': '1948-12-02T09:15:00', 'hrs_c1': '1948-12-02T09:32:00', 'day_c1': '1948-12-02T11:32:00'}
+            {
+                "id": 0,
+                "sec_c1": "2014-11-05T12:45:00",
+                "min_c1": "2014-11-05T12:45:00",
+                "hrs_c1": "2014-11-05T13:27:00",
+                "day_c1": "2014-11-06T08:27:00",
+            },
+            {
+                "id": 1,
+                "sec_c1": "2023-02-26T18:00:00",
+                "min_c1": "2023-02-26T18:00:00",
+                "hrs_c1": "2023-02-26T18:00:00",
+                "day_c1": "2023-02-26T14:00:00",
+            },
+            {
+                "id": 2,
+                "sec_c1": "1948-12-02T09:15:00",
+                "min_c1": "1948-12-02T09:15:00",
+                "hrs_c1": "1948-12-02T09:32:00",
+                "day_c1": "1948-12-02T11:32:00",
+            },
         ]
         self.sql = """CREATE MATERIALIZED VIEW ts_sub_sinterval AS SELECT
                       v1.id,
@@ -240,9 +282,21 @@ class arithtst_ts_sub_linterval(TstView):
     def __init__(self):
         # Validated on MySQL
         self.data = [
-            {'id': 0, 'mths_c1': '2014-12-05T08:27:00', 'yrs_c1': '2014-12-05T08:27:00'},
-            {'id': 1, 'mths_c1': '2023-02-21T14:00:00', 'yrs_c1': '2022-06-21T14:00:00'},
-            {'id': 2, 'mths_c1': '1948-12-21T11:32:00', 'yrs_c1': '1949-06-21T11:32:00'}
+            {
+                "id": 0,
+                "mths_c1": "2014-12-05T08:27:00",
+                "yrs_c1": "2014-12-05T08:27:00",
+            },
+            {
+                "id": 1,
+                "mths_c1": "2023-02-21T14:00:00",
+                "yrs_c1": "2022-06-21T14:00:00",
+            },
+            {
+                "id": 2,
+                "mths_c1": "1948-12-21T11:32:00",
+                "yrs_c1": "1949-06-21T11:32:00",
+            },
         ]
         self.sql = """CREATE MATERIALIZED VIEW ts_sub_linterval AS SELECT
                       v1.id,
