@@ -116,8 +116,4 @@ impl Storage for MemoryBackend {
             None => Err(StorageError::StdIo(IoError::from(ErrorKind::NotFound))),
         }
     }
-
-    fn base(&self) -> PathBuf {
-        todo!()
-    }
 }
