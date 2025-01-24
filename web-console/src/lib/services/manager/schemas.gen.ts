@@ -1528,6 +1528,35 @@ connected to.`
   description: 'Describes an output connector configuration'
 } as const
 
+export const $PartialProgramInfo = {
+  type: 'object',
+  description: 'Program information is the result of the SQL compilation.',
+  required: ['schema', 'udf_stubs', 'input_connectors', 'output_connectors'],
+  properties: {
+    input_connectors: {
+      type: 'object',
+      description: 'Input connectors derived from the schema.',
+      additionalProperties: {
+        $ref: '#/components/schemas/InputEndpointConfig'
+      }
+    },
+    output_connectors: {
+      type: 'object',
+      description: 'Output connectors derived from the schema.',
+      additionalProperties: {
+        $ref: '#/components/schemas/OutputEndpointConfig'
+      }
+    },
+    schema: {
+      $ref: '#/components/schemas/ProgramSchema'
+    },
+    udf_stubs: {
+      type: 'string',
+      description: 'Generated user defined function (UDF) stubs Rust code: stubs.rs'
+    }
+  }
+} as const
+
 export const $PatchPipeline = {
   type: 'object',
   description: `Partially update the pipeline (PATCH).
@@ -1825,7 +1854,7 @@ It both includes fields which are user-provided and system-generated.`,
     program_info: {
       allOf: [
         {
-          $ref: '#/components/schemas/ProgramInfo'
+          $ref: '#/components/schemas/PartialProgramInfo'
         }
       ],
       nullable: true
@@ -1924,7 +1953,7 @@ If an optional field is not selected (i.e., is \`None\`), it will not be seriali
     program_info: {
       allOf: [
         {
-          $ref: '#/components/schemas/ProgramInfo'
+          $ref: '#/components/schemas/PartialProgramInfo'
         }
       ],
       nullable: true
@@ -2103,42 +2132,6 @@ and as well can result in overriding an existing binary.`,
       ],
       default: null,
       nullable: true
-    }
-  }
-} as const
-
-export const $ProgramInfo = {
-  type: 'object',
-  description: `Program information is the output of the SQL compiler.
-
-It includes information needed for Rust compilation (e.g., generated Rust code)
-as well as only for runtime (e.g., schema, input/output connectors).`,
-  required: ['schema', 'input_connectors', 'output_connectors'],
-  properties: {
-    input_connectors: {
-      type: 'object',
-      description: 'Input connectors derived from the schema.',
-      additionalProperties: {
-        $ref: '#/components/schemas/InputEndpointConfig'
-      }
-    },
-    main_rust: {
-      type: 'string',
-      description: 'Generated main program Rust code: main.rs'
-    },
-    output_connectors: {
-      type: 'object',
-      description: 'Output connectors derived from the schema.',
-      additionalProperties: {
-        $ref: '#/components/schemas/OutputEndpointConfig'
-      }
-    },
-    schema: {
-      $ref: '#/components/schemas/ProgramSchema'
-    },
-    udf_stubs: {
-      type: 'string',
-      description: 'Generated user defined function (UDF) stubs Rust code: stubs.rs'
     }
   }
 } as const
@@ -2795,6 +2788,12 @@ export const $S3InputConfig = {
     bucket_name: {
       type: 'string',
       description: 'S3 bucket name to access.'
+    },
+    endpoint_url: {
+      type: 'string',
+      description: `The endpoint URL used to communicate with this service. Can be used to make this connector
+talk to non-AWS services with an S3 API.`,
+      nullable: true
     },
     key: {
       type: 'string',

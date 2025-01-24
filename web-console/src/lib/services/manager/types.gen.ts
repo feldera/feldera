@@ -1174,6 +1174,29 @@ export type OutputEndpointConfig = ConnectorConfig & {
 }
 
 /**
+ * Program information is the result of the SQL compilation.
+ */
+export type PartialProgramInfo = {
+  /**
+   * Input connectors derived from the schema.
+   */
+  input_connectors: {
+    [key: string]: InputEndpointConfig
+  }
+  /**
+   * Output connectors derived from the schema.
+   */
+  output_connectors: {
+    [key: string]: OutputEndpointConfig
+  }
+  schema: ProgramSchema
+  /**
+   * Generated user defined function (UDF) stubs Rust code: stubs.rs
+   */
+  udf_stubs: string
+}
+
+/**
  * Partially update the pipeline (PATCH).
  *
  * Note that the patching only applies to the main fields, not subfields.
@@ -1318,7 +1341,7 @@ export type PipelineInfo = {
   platform_version: string
   program_code: string
   program_config: ProgramConfig
-  program_info?: ProgramInfo | null
+  program_info?: PartialProgramInfo | null
   program_status: ProgramStatus
   program_status_since: string
   program_version: Version
@@ -1345,7 +1368,7 @@ export type PipelineSelectedInfo = {
   platform_version: string
   program_code?: string | null
   program_config?: ProgramConfig | null
-  program_info?: ProgramInfo | null
+  program_info?: PartialProgramInfo | null
   program_status: ProgramStatus
   program_status_since: string
   program_version: Version
@@ -1458,36 +1481,6 @@ export type ProgramConfig = {
    */
   cache?: boolean
   profile?: CompilationProfile | null
-}
-
-/**
- * Program information is the output of the SQL compiler.
- *
- * It includes information needed for Rust compilation (e.g., generated Rust code)
- * as well as only for runtime (e.g., schema, input/output connectors).
- */
-export type ProgramInfo = {
-  /**
-   * Input connectors derived from the schema.
-   */
-  input_connectors: {
-    [key: string]: InputEndpointConfig
-  }
-  /**
-   * Generated main program Rust code: main.rs
-   */
-  main_rust?: string
-  /**
-   * Output connectors derived from the schema.
-   */
-  output_connectors: {
-    [key: string]: OutputEndpointConfig
-  }
-  schema: ProgramSchema
-  /**
-   * Generated user defined function (UDF) stubs Rust code: stubs.rs
-   */
-  udf_stubs?: string
 }
 
 /**
@@ -1893,6 +1886,11 @@ export type S3InputConfig = {
    * S3 bucket name to access.
    */
   bucket_name: string
+  /**
+   * The endpoint URL used to communicate with this service. Can be used to make this connector
+   * talk to non-AWS services with an S3 API.
+   */
+  endpoint_url?: string | null
   /**
    * Read a single object specified by a key.
    */

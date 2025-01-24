@@ -1,6 +1,6 @@
 // Example errors for use in OpenAPI docs.
 use crate::api::endpoints::pipeline_management::{
-    PatchPipeline, PipelineInfo, PipelineInfoInternal, PipelineSelectedInfo,
+    PartialProgramInfo, PatchPipeline, PipelineInfo, PipelineInfoInternal, PipelineSelectedInfo,
     PipelineSelectedInfoInternal, PostPutPipeline,
 };
 use crate::api::error::ApiError;
@@ -167,7 +167,14 @@ fn pipeline_info_internal_to_external(pipeline: PipelineInfoInternal) -> Pipelin
         program_status: pipeline.program_status,
         program_status_since: pipeline.program_status_since,
         program_info: pipeline.program_info.map(|v| {
-            validate_program_info(&v).expect("example must have a valid program_info if specified")
+            let program_info = validate_program_info(&v)
+                .expect("example must have a valid program_info if specified");
+            PartialProgramInfo {
+                schema: program_info.schema,
+                udf_stubs: program_info.udf_stubs,
+                input_connectors: program_info.input_connectors,
+                output_connectors: program_info.output_connectors,
+            }
         }),
         deployment_status: pipeline.deployment_status,
         deployment_status_since: pipeline.deployment_status_since,
@@ -177,7 +184,7 @@ fn pipeline_info_internal_to_external(pipeline: PipelineInfoInternal) -> Pipelin
 }
 
 pub(crate) fn pipeline_1_info() -> PipelineInfo {
-    pipeline_info_internal_to_external(PipelineInfoInternal::new(&extended_pipeline_1()))
+    pipeline_info_internal_to_external(PipelineInfoInternal::new(extended_pipeline_1()))
 }
 
 /// Converts the actual serialized type [`PipelineSelectedInfoInternal`] to the type the endpoint
@@ -207,8 +214,14 @@ fn pipeline_selected_info_internal_to_external(
         program_status_since: pipeline.program_status_since,
         program_info: pipeline.program_info.map(|v| {
             v.map(|v| {
-                validate_program_info(&v)
-                    .expect("example must have a valid program_info if specified")
+                let program_info = validate_program_info(&v)
+                    .expect("example must have a valid program_info if specified");
+                PartialProgramInfo {
+                    schema: program_info.schema,
+                    udf_stubs: program_info.udf_stubs,
+                    input_connectors: program_info.input_connectors,
+                    output_connectors: program_info.output_connectors,
+                }
             })
         }),
         deployment_status: pipeline.deployment_status,
@@ -220,13 +233,13 @@ fn pipeline_selected_info_internal_to_external(
 
 pub(crate) fn pipeline_1_selected_info() -> PipelineSelectedInfo {
     pipeline_selected_info_internal_to_external(PipelineSelectedInfoInternal::new_all(
-        &extended_pipeline_1(),
+        extended_pipeline_1(),
     ))
 }
 
 pub(crate) fn pipeline_2_selected_info() -> PipelineSelectedInfo {
     pipeline_selected_info_internal_to_external(PipelineSelectedInfoInternal::new_all(
-        &extended_pipeline_2(),
+        extended_pipeline_2(),
     ))
 }
 

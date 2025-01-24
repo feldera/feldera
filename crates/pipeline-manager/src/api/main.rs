@@ -126,7 +126,7 @@ only the program-related core fields, and is used by the compiler to discern whe
         crate::db::types::program::SqlCompilerMessage,
         crate::db::types::program::ProgramStatus,
         crate::db::types::program::ProgramConfig,
-        crate::db::types::program::ProgramInfo,
+        crate::api::endpoints::pipeline_management::PartialProgramInfo,
 
         // API key
         crate::db::types::api_key::ApiKeyId,
