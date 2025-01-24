@@ -23,7 +23,7 @@ use super::{
     format::{
         BlockHeader, FileTrailer, DATA_BLOCK_MAGIC, FILE_TRAILER_BLOCK_MAGIC, INDEX_BLOCK_MAGIC,
     },
-    reader::{CorruptionError, Error, InnerDataBlock, InnerIndexBlock},
+    reader::{CorruptionError, Error, InnerDataBlock, InnerFileTrailer, InnerIndexBlock},
 };
 
 /// Buffer cache type for [`Reader`](super::reader::Reader) and
@@ -34,7 +34,7 @@ pub type FileCache = BufferCache<FileCacheEntry>;
 #[derive(Clone)]
 pub enum FileCacheEntry {
     /// File trailer block.
-    FileTrailer(Arc<FileTrailer>),
+    FileTrailer(Arc<InnerFileTrailer>),
 
     /// Index block.
     Index(Arc<InnerIndexBlock>),
@@ -119,10 +119,43 @@ impl FileCacheEntry {
             INDEX_BLOCK_MAGIC => Ok(Self::Index(Arc::new(InnerIndexBlock::from_raw(
                 raw, location,
             )?))),
-            FILE_TRAILER_BLOCK_MAGIC => Ok(Self::FileTrailer(Arc::new(FileTrailer::read_le(
-                &mut io::Cursor::new(raw.as_slice()),
-            )?))),
+            FILE_TRAILER_BLOCK_MAGIC => Ok(Self::FileTrailer(Arc::new(
+                InnerFileTrailer::from_raw(raw, location)?,
+            ))),
             _ => Err(Error::Corruption(CorruptionError::BadBlockType(location))),
+        }
+    }
+
+    fn location(&self) -> BlockLocation {
+        match self {
+            FileCacheEntry::FileTrailer(inner) => inner.location,
+            FileCacheEntry::Index(inner) => inner.location(),
+            FileCacheEntry::Data(inner) => inner.location(),
+        }
+    }
+
+    fn bad_type_error(&self) -> Error {
+        Error::Corruption(CorruptionError::BadBlockType(self.location()))
+    }
+
+    pub(super) fn into_data_block(self) -> Result<Arc<InnerDataBlock>, Error> {
+        match self {
+            FileCacheEntry::Data(inner) => Ok(inner),
+            _ => Err(self.bad_type_error()),
+        }
+    }
+
+    pub(super) fn into_index_block(self) -> Result<Arc<InnerIndexBlock>, Error> {
+        match self {
+            FileCacheEntry::Index(inner) => Ok(inner),
+            _ => Err(self.bad_type_error()),
+        }
+    }
+
+    pub(super) fn into_file_trailer_block(self) -> Result<Arc<InnerFileTrailer>, Error> {
+        match self {
+            FileCacheEntry::FileTrailer(inner) => Ok(inner),
+            _ => Err(self.bad_type_error()),
         }
     }
 }
@@ -135,7 +168,7 @@ pub fn default_cache() -> Arc<FileCache> {
 }
 
 impl BufferCache<FileCacheEntry> {
-    fn get_entry(
+    pub(super) fn read_blocking(
         &self,
         file: &dyn FileReader,
         location: BlockLocation,
@@ -149,46 +182,6 @@ impl BufferCache<FileCacheEntry> {
                 self.insert(file.file_id(), location.offset, entry.clone());
                 Ok(entry)
             }
-        }
-    }
-
-    /// Reads `location` from `file` and returns it converted to
-    /// `InnerDataBlock`.
-    pub(super) fn read_data_block(
-        &self,
-        file: &dyn FileReader,
-        location: BlockLocation,
-        compression: Option<Compression>,
-    ) -> Result<Arc<InnerDataBlock>, Error> {
-        match self.get_entry(file, location, compression)? {
-            FileCacheEntry::Data(inner) => Ok(inner),
-            _ => Err(Error::Corruption(CorruptionError::BadBlockType(location))),
-        }
-    }
-
-    /// Reads `location` from `file` and returns it converted to
-    /// `InnerIndexBlock`.
-    pub(super) fn read_index_block(
-        &self,
-        file: &dyn FileReader,
-        location: BlockLocation,
-        compression: Option<Compression>,
-    ) -> Result<Arc<InnerIndexBlock>, Error> {
-        match self.get_entry(file, location, compression)? {
-            FileCacheEntry::Index(inner) => Ok(inner),
-            _ => Err(Error::Corruption(CorruptionError::BadBlockType(location))),
-        }
-    }
-
-    /// Reads `location` from `file` and returns it converted to `FileTrailer`.
-    pub(super) fn read_file_trailer_block(
-        &self,
-        file: &dyn FileReader,
-        location: BlockLocation,
-    ) -> Result<Arc<FileTrailer>, Error> {
-        match self.get_entry(file, location, None)? {
-            FileCacheEntry::FileTrailer(inner) => Ok(inner),
-            _ => Err(Error::Corruption(CorruptionError::BadBlockType(location))),
         }
     }
 }
