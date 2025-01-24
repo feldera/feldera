@@ -7,12 +7,12 @@ use crate::{
 use anyhow::Error as AnyError;
 use crossbeam::channel::{bounded, Receiver, Select, Sender, TryRecvError};
 pub use feldera_types::config::{StorageCacheConfig, StorageConfig};
-use hashbrown::HashMap;
 use itertools::Either;
 use metrics::counter;
 use minitrace::collector::SpanContext;
 use minitrace::local::LocalSpan;
 use minitrace::Span;
+use std::fs::create_dir_all;
 use std::sync::Arc;
 use std::{
     collections::HashSet,
@@ -344,7 +344,7 @@ impl Runtime {
             };
             let (mut circuit, profiler) = match RootCircuit::build(circuit_fn) {
                 Ok((circuit, (res, profiler))) => {
-                    if init_sender.send(Ok(res)).is_err() {
+                    if init_sender.send(Ok((res, circuit.fingerprint()))).is_err() {
                         return;
                     }
                     (circuit, profiler)
@@ -406,12 +406,6 @@ impl Runtime {
                             return;
                         }
                     }
-                    Ok(Command::Fingerprint) => {
-                        let fip = circuit.fingerprint().expect("fingerprint failed");
-                        if status_sender.send(Ok(Response::Fingerprint(fip))).is_err() {
-                            return;
-                        }
-                    }
                     // Nothing to do: do some housekeeping and relinquish the CPU if there's none
                     // left.
                     Err(TryRecvError::Empty) => std::thread::park(),
@@ -422,38 +416,42 @@ impl Runtime {
             }
         })?;
 
-        // Receive initialization status from all workers.
-
-        let mut init_status = Vec::with_capacity(nworkers);
-
-        for receiver in init_receivers.iter() {
-            match receiver.recv() {
-                Ok(Err(error)) => init_status.push(Some(Err(error))),
-                Ok(Ok(ret)) => init_status.push(Some(Ok(ret))),
-                Err(_) => {
-                    let panic_info = runtime.collect_panic_info();
-                    init_status.push(Some(Err(DbspError::Runtime(RuntimeError::WorkerPanic {
-                        panic_info,
-                    }))))
+        // Receive initialization status from all workers and take the return
+        // value and fingerprint from the first worker, or the first error among
+        // all the workers.
+        //
+        // The return value should return be the same in all workers (we don't
+        // check).
+        //
+        // The fingerprint might differ between workers (even if the circuit is
+        // really the same, because of differing effects of e.g. the "gather"
+        // operator).
+        let result = init_receivers
+            .into_iter()
+            .map(|receiver| {
+                receiver.recv().unwrap_or_else(|_| {
+                    Err(DbspError::Runtime(RuntimeError::WorkerPanic {
+                        panic_info: runtime.collect_panic_info(),
+                    }))
+                })
+            })
+            .reduce(|old, new| {
+                if old.is_ok() && new.is_err() {
+                    new
+                } else {
+                    old
                 }
+            })
+            .unwrap();
+        let (ret, fingerprint) = match result {
+            Err(error) => {
+                let _ = runtime.kill();
+                return Err(error);
             }
-        }
+            Ok(result) => result,
+        };
 
-        // On error, kill the runtime.
-        if init_status
-            .iter()
-            .any(|status| status.as_ref().unwrap().is_err())
-        {
-            let error = init_status
-                .into_iter()
-                .find_map(|status| status.unwrap().err())
-                .unwrap();
-            let _ = runtime.kill();
-            return Err(error);
-        }
-
-        let mut dbsp = DBSPHandle::new(runtime, command_senders, status_receivers);
-        let result = init_status[0].take();
+        let mut dbsp = DBSPHandle::new(runtime, command_senders, status_receivers, fingerprint)?;
         if let Some(init_checkpoint) = config.init_checkpoint {
             dbsp.send_restore(
                 dbsp.runtime
@@ -465,9 +463,7 @@ impl Runtime {
             )?;
         }
 
-        // `constructor` should return identical results in all workers.  Use
-        // worker 0 output.
-        Ok((dbsp, result.unwrap().unwrap()))
+        Ok((dbsp, ret))
     }
 }
 
@@ -479,7 +475,6 @@ enum Command {
     RetrieveProfile,
     Commit(PathBuf),
     Restore(PathBuf),
-    Fingerprint,
 }
 
 #[derive(Debug)]
@@ -489,7 +484,6 @@ enum Response {
     Profile(WorkerProfile),
     CheckpointCreated,
     CheckpointRestored,
-    Fingerprint(u64),
 }
 
 /// A handle to control the execution of a circuit in a multithreaded runtime.
@@ -512,9 +506,6 @@ pub struct DBSPHandle {
 
     /// For creating checkpoints.
     checkpointer: Checkpointer,
-
-    /// Cached fingerprint of the circuit, if we've calculated it already.
-    fingerprint: Option<u64>,
 }
 
 impl DBSPHandle {
@@ -522,21 +513,17 @@ impl DBSPHandle {
         runtime: RuntimeHandle,
         command_senders: Vec<Sender<Command>>,
         status_receivers: Vec<Receiver<Result<Response, SchedulerError>>>,
-    ) -> Self {
+        fingerprint: u64,
+    ) -> Result<Self, DbspError> {
         let storage_path = runtime.runtime().storage_path();
-        let checkpointer = Checkpointer::new(storage_path.clone());
-        let mut dbsp_handle = Self {
+        let checkpointer = Checkpointer::new(storage_path.clone(), fingerprint)?;
+        Ok(Self {
             start_time: Instant::now(),
             runtime: Some(runtime),
             command_senders,
             status_receivers,
             checkpointer,
-            fingerprint: None,
-        };
-        dbsp_handle
-            .verify_storage_compatibility()
-            .expect("Storage directory should match with fingerprint of current circuit");
-        dbsp_handle
+        })
     }
 
     fn kill_inner(&mut self) -> ThreadResult<()> {
@@ -619,44 +606,8 @@ impl DBSPHandle {
         self.broadcast_command(Command::Step(span), |_, _| {})
     }
 
-    /// Used by the checkpointer to initiate a commit on the circuit.
-    fn send_fingerprint(&mut self) -> Result<u64, DbspError> {
-        let mut fps: HashMap<usize, u64> = HashMap::new();
-        self.broadcast_command(Command::Fingerprint, |idx, res| {
-            if let Response::Fingerprint(fp) = res {
-                fps.insert(idx, fp);
-            } else {
-                panic!("Unexpected response: {:?}", res);
-            }
-        })?;
-
-        #[cfg(debug_assertions)]
-        for fp in fps.values() {
-            if *fp != *fps.values().next().unwrap() {
-                panic!("Fingerprints do not match: {:?}", fps);
-            }
-        }
-
-        Ok(fps.values().next().copied().unwrap_or_default())
-    }
-
-    pub fn fingerprint(&mut self) -> Result<u64, DbspError> {
-        if let Some(fp) = self.fingerprint {
-            Ok(fp)
-        } else {
-            let fp = self.send_fingerprint()?;
-            self.fingerprint = Some(fp);
-            Ok(fp)
-        }
-    }
-
-    fn verify_storage_compatibility(&mut self) -> Result<(), DbspError> {
-        for cpm in self.checkpointer.list_checkpoints()? {
-            if cpm.fingerprint != self.fingerprint()? {
-                return Err(DbspError::Runtime(RuntimeError::IncompatibleStorage));
-            }
-        }
-        Ok(())
+    pub fn fingerprint(&self) -> u64 {
+        self.checkpointer.fingerprint()
     }
 
     /// Create a new checkpoint by taking consistent snapshot of the state in
@@ -691,18 +642,10 @@ impl DBSPHandle {
         uuid: Uuid,
         identifier: Option<String>,
     ) -> Result<CheckpointMetadata, DbspError> {
-        let fingerprint = self.fingerprint()?;
-        self.checkpointer.create_checkpoint_dir(uuid)?;
-        self.send_commit(
-            self.runtime
-                .as_ref()
-                .unwrap()
-                .runtime()
-                .storage_path()
-                .join(uuid.to_string()),
-        )?;
-        let md = self.checkpointer.commit(uuid, identifier, fingerprint)?;
-        Ok(md)
+        let checkpoint_dir = self.checkpointer.checkpoint_dir(uuid);
+        create_dir_all(&checkpoint_dir)?;
+        self.send_commit(checkpoint_dir)?;
+        self.checkpointer.commit(uuid, identifier)
     }
 
     /// List all currently available checkpoints.
@@ -1158,7 +1101,7 @@ pub(crate) mod tests {
         }
 
         {
-            let (mut dbsp, _) = mkcircuit(&cconf).unwrap();
+            let (dbsp, _) = mkcircuit(&cconf).unwrap();
             let cpm = &dbsp.checkpointer.list_checkpoints().unwrap()[0];
             assert_ne!(cpm.uuid, Uuid::nil());
             assert_eq!(cpm.identifier, Some(String::from("test-commit")));
@@ -1337,21 +1280,20 @@ pub(crate) mod tests {
     #[test]
     fn fingerprint_is_different() {
         let (_temp, cconf) = mkconfig();
-        let (mut dbsp, (_input_handle, _, _sample_size_handle)) = mkcircuit(&cconf).unwrap();
-        let fid1 = dbsp.fingerprint().unwrap();
+        let (dbsp, (_input_handle, _, _sample_size_handle)) = mkcircuit(&cconf).unwrap();
+        let fid1 = dbsp.fingerprint();
 
         let (_temp, cconf) = mkconfig();
-        let (mut dbsp, (_input_handle, _, _sample_size_handle)) =
-            mkcircuit_different(&cconf).unwrap();
-        let fid2 = dbsp.fingerprint().unwrap();
+        let (dbsp, (_input_handle, _, _sample_size_handle)) = mkcircuit_different(&cconf).unwrap();
+        let fid2 = dbsp.fingerprint();
         assert_ne!(fid1, fid2);
 
         // Unfortunately, the fingerprint isn't perfect, e.g., it thinks these two
         // circuits are the same:
         let (_temp, cconf) = mkconfig();
-        let (mut dbsp, (_input_handle, _, _sample_size_handle)) =
+        let (dbsp, (_input_handle, _, _sample_size_handle)) =
             mkcircuit_with_bounds(&cconf).unwrap();
-        let fid3 = dbsp.fingerprint().unwrap();
+        let fid3 = dbsp.fingerprint();
         assert_eq!(fid1, fid3); // Ideally, should be assert_ne
     }
 
