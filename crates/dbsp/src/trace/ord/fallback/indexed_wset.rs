@@ -4,7 +4,7 @@ use crate::{
     storage::{buffer_cache::CacheStats, file::reader::Error as ReaderError},
     time::{Antichain, AntichainRef},
     trace::{
-        cursor::DelegatingCursor,
+        cursor::{CursorFactory, DelegatingCursor},
         ord::{
             file::indexed_wset_batch::{FileIndexedWSetBuilder, FileIndexedWSetMerger},
             merge_batcher::MergeBatcher,
@@ -291,6 +291,19 @@ where
         match &self.inner {
             Inner::File(file) => file.sample_keys(rng, sample_size, sample),
             Inner::Vec(vec) => vec.sample_keys(rng, sample_size, sample),
+        }
+    }
+
+    async fn fetch<B>(
+        &self,
+        keys: &B,
+    ) -> Option<Box<dyn CursorFactory<Self::Key, Self::Val, Self::Time, Self::R>>>
+    where
+        B: Batch<Key = Self::Key, Time = ()>,
+    {
+        match &self.inner {
+            Inner::Vec(vec) => vec.fetch(keys).await,
+            Inner::File(file) => file.fetch(keys).await,
         }
     }
 }
