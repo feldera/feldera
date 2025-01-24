@@ -39,7 +39,7 @@ where
         let output_factories = BatchReaderFactories::new::<K, A, ZWeight>();
 
         self.inner()
-            .dyn_chain_aggregate(
+            .dyn_chain_aggregate_mono(
                 &input_factories,
                 &output_factories,
                 Box::new(move |acc: &mut DynData, v: &DynData, w: ZWeight| unsafe {

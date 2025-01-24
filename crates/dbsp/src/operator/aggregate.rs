@@ -32,6 +32,7 @@ where
     ///
     /// [`Min`](`crate::operator::Min`), [`crate::operator::Max`], and
     /// [`Fold`](`crate::operator::Fold`) are provided as example `Aggregator`s.
+    #[cfg(not(feature = "backend-mode"))]
     #[allow(clippy::type_complexity)]
     pub fn aggregate<A>(&self, aggregator: A) -> Stream<C, OrdIndexedZSet<K, A::Output>>
     where
@@ -203,6 +204,7 @@ where
     /// incorrect results if `f` is not linear.  The input of
     /// `aggregate_linear` is an indexed Zset, but the function `f` is only
     /// applied to the values, ignoring the keys.
+    #[track_caller]
     pub fn aggregate_linear<F, A>(&self, f: F) -> Stream<C, OrdIndexedZSet<Z::Key, A>>
     where
         Z: IndexedZSet<DynK = DynData>,
@@ -232,6 +234,8 @@ where
     ///
     /// Equivalent to `self.aggregate_linear(f).map_index(|(k,v)|(k, of(v)))`,
     /// but more efficient.  This operator is incremental.
+    #[cfg(not(feature = "backend-mode"))]
+    #[track_caller]
     pub fn aggregate_linear_postprocess<F, A, OF, OV>(
         &self,
         f: F,
@@ -321,51 +325,54 @@ where
     }
 }
 
-impl<Z> Stream<RootCircuit, Z> {
+impl<K, V> Stream<RootCircuit, OrdIndexedZSet<K, V>>
+where
+    K: DBData,
+    V: DBData,
+{
     /// Like `aggregate_linear_postprocess`, but additionally applies `waterline` to the internal integral
     ///
     /// See `aggregate_linear_retain_keys` for details.
+    #[track_caller]
     pub fn aggregate_linear_postprocess_retain_keys<F, A, OF, OV, TS, RK>(
         &self,
         waterline: &Stream<RootCircuit, TypedBox<TS, DynData>>,
         retain_key_func: RK,
         f: F,
         of: OF,
-    ) -> Stream<RootCircuit, OrdIndexedZSet<Z::Key, OV>>
+    ) -> Stream<RootCircuit, OrdIndexedZSet<K, OV>>
     where
-        Z: IndexedZSet<DynK = DynData>,
         A: DBWeight + MulByRef<ZWeight, Output = A>,
         OV: DBData,
         TS: DBData,
-        RK: Fn(&Z::Key, &TS) -> bool + Clone + Send + Sync + 'static,
-        F: Fn(&Z::Val) -> A + Clone + 'static,
+        RK: Fn(&K, &TS) -> bool + Clone + Send + Sync + 'static,
+        F: Fn(&V) -> A + Clone + 'static,
         OF: Fn(A) -> OV + Clone + 'static,
-        <Z::Key as Deserializable>::ArchivedDeser: Ord,
     {
         let factories: IncAggregateLinearFactories<
-            Z::Inner,
+            DynOrdIndexedZSet<DynData, DynData>,
             DynWeight,
             DynOrdIndexedZSet<DynData, DynData>,
             (),
-        > = IncAggregateLinearFactories::new::<Z::Key, A, OV>();
+        > = IncAggregateLinearFactories::new::<K, A, OV>();
 
         self.inner()
-            .dyn_aggregate_linear_retain_keys_generic(
+            .dyn_aggregate_linear_retain_keys_mono(
                 &factories,
                 &waterline.inner_data(),
                 Box::new(move |ts| {
                     let metadata = MetaItem::String(format!("{ts:?}"));
                     let ts = clone_box(ts);
                     let retain_key_func = retain_key_func.clone();
-                    Filter::new(Box::new(move |k: &Z::DynK| {
-                        retain_key_func(unsafe { k.downcast::<Z::Key>() }, unsafe {
+                    Filter::new(Box::new(move |k: &DynData| {
+                        retain_key_func(unsafe { k.downcast::<K>() }, unsafe {
                             ts.as_ref().downcast::<TS>()
                         })
                     }))
                     .with_metadata(metadata)
                 }),
                 Box::new(move |_k, v, r, acc| unsafe {
-                    *acc.downcast_mut::<A>() = f(v.downcast::<Z::Val>()).mul_by_ref(&**r)
+                    *acc.downcast_mut::<A>() = f(v.downcast::<V>()).mul_by_ref(&**r)
                 }),
                 Box::new(move |w, out| unsafe {
                     *out.downcast_mut::<OV>() = of(take(w.downcast_mut::<A>()))
@@ -381,44 +388,43 @@ impl<Z> Stream<RootCircuit, Z> {
     /// output of this operator and can be GC'd using regular means (integrate_trace_retain_keys),
     /// but the former integral is internal to this operator.  When aggregating a stream that has
     /// a waterline, use this function to GC keys in the internal stream that fall below the waterline.
+    #[track_caller]
     pub fn aggregate_linear_retain_keys<F, A, TS, RK>(
         &self,
         waterline: &Stream<RootCircuit, TypedBox<TS, DynData>>,
         retain_key_func: RK,
         f: F,
-    ) -> Stream<RootCircuit, OrdIndexedZSet<Z::Key, A>>
+    ) -> Stream<RootCircuit, OrdIndexedZSet<K, A>>
     where
-        Z: IndexedZSet<DynK = DynData>,
         A: DBWeight + MulByRef<ZWeight, Output = A>,
         TS: DBData,
-        RK: Fn(&Z::Key, &TS) -> bool + Clone + Send + Sync + 'static,
-        F: Fn(&Z::Val) -> A + Clone + 'static,
-        <Z::Key as Deserializable>::ArchivedDeser: Ord,
+        RK: Fn(&K, &TS) -> bool + Clone + Send + Sync + 'static,
+        F: Fn(&V) -> A + Clone + 'static,
     {
         let factories: IncAggregateLinearFactories<
-            Z::Inner,
+            DynOrdIndexedZSet<DynData, DynData>,
             DynWeight,
             DynOrdIndexedZSet<DynData, DynData>,
             (),
-        > = IncAggregateLinearFactories::new::<Z::Key, A, A>();
+        > = IncAggregateLinearFactories::new::<K, A, A>();
 
         self.inner()
-            .dyn_aggregate_linear_retain_keys_generic(
+            .dyn_aggregate_linear_retain_keys_mono(
                 &factories,
                 &waterline.inner_data(),
                 Box::new(move |ts| {
                     let metadata = MetaItem::String(format!("{ts:?}"));
                     let ts = clone_box(ts);
                     let retain_key_func = retain_key_func.clone();
-                    Filter::new(Box::new(move |k: &Z::DynK| {
-                        retain_key_func(unsafe { k.downcast::<Z::Key>() }, unsafe {
+                    Filter::new(Box::new(move |k: &DynData| {
+                        retain_key_func(unsafe { k.downcast::<K>() }, unsafe {
                             ts.as_ref().downcast::<TS>()
                         })
                     }))
                     .with_metadata(metadata)
                 }),
                 Box::new(move |_k, v, r, acc| unsafe {
-                    *acc.downcast_mut::<A>() = f(v.downcast::<Z::Val>()).mul_by_ref(&**r)
+                    *acc.downcast_mut::<A>() = f(v.downcast::<V>()).mul_by_ref(&**r)
                 }),
                 Box::new(|w, out| w.as_data_mut().move_to(out)),
             )

@@ -242,7 +242,7 @@ impl RootCircuit {
         K: DBData,
     {
         let factories = AddInputZSetFactories::new::<K>();
-        let (stream, handle) = self.dyn_add_input_zset(&factories);
+        let (stream, handle) = self.dyn_add_input_zset_mono(&factories);
 
         (stream.typed(), ZSetHandle::new(handle))
     }
@@ -277,7 +277,7 @@ impl RootCircuit {
         V: DBData,
     {
         let factories = AddInputIndexedZSetFactories::new::<K, V>();
-        let (stream, handle) = self.dyn_add_input_indexed_zset(&factories);
+        let (stream, handle) = self.dyn_add_input_indexed_zset_mono(&factories);
 
         (stream.typed(), IndexedZSetHandle::new(handle))
     }
@@ -359,7 +359,7 @@ impl RootCircuit {
         K: DBData,
     {
         let factories = AddInputSetFactories::new::<K>();
-        let (stream, handle) = self.dyn_add_input_set(&factories);
+        let (stream, handle) = self.dyn_add_input_set_mono(&factories);
 
         (stream.typed(), SetHandle::new(handle))
     }
@@ -463,7 +463,7 @@ impl RootCircuit {
         PF: Fn(&mut V, &U) + 'static,
     {
         let factories = AddInputMapFactories::new::<K, V, U>();
-        let (stream, handle) = self.dyn_add_input_map(
+        let (stream, handle) = self.dyn_add_input_map_mono(
             &factories,
             Box::new(move |v: &mut DynData, u: &DynData| unsafe {
                 patch_func(v.downcast_mut::<V>(), u.downcast::<U>())

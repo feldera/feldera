@@ -20,6 +20,7 @@ use crate::{
     trace::{Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor},
     DBData, Timestamp, ZWeight,
 };
+use crate::{NestedCircuit, RootCircuit};
 use minitrace::trace;
 use size_of::SizeOf;
 use std::panic::Location;
@@ -30,6 +31,8 @@ use std::{
     marker::PhantomData,
     ops::Neg,
 };
+
+use super::{MonoIndexedZSet, MonoZSet};
 
 circuit_cache_key!(DistinctId<C, D>(StreamId => Stream<C, D>));
 circuit_cache_key!(DistinctIncrementalId<C, D>(StreamId => Stream<C, D>));
@@ -115,6 +118,42 @@ where
         if input.has_distinct_version() {
             self.mark_distinct();
         }
+    }
+}
+
+impl Stream<RootCircuit, MonoIndexedZSet> {
+    pub fn dyn_distinct_mono(
+        &self,
+        factories: &DistinctFactories<MonoIndexedZSet, ()>,
+    ) -> Stream<RootCircuit, MonoIndexedZSet> {
+        self.dyn_distinct(factories)
+    }
+}
+
+impl Stream<RootCircuit, MonoZSet> {
+    pub fn dyn_distinct_mono(
+        &self,
+        factories: &DistinctFactories<MonoZSet, ()>,
+    ) -> Stream<RootCircuit, MonoZSet> {
+        self.dyn_distinct(factories)
+    }
+}
+
+impl Stream<NestedCircuit, MonoIndexedZSet> {
+    pub fn dyn_distinct_mono(
+        &self,
+        factories: &DistinctFactories<MonoIndexedZSet, <NestedCircuit as WithClock>::Time>,
+    ) -> Stream<NestedCircuit, MonoIndexedZSet> {
+        self.dyn_distinct(factories)
+    }
+}
+
+impl Stream<NestedCircuit, MonoZSet> {
+    pub fn dyn_distinct_mono(
+        &self,
+        factories: &DistinctFactories<MonoZSet, <NestedCircuit as WithClock>::Time>,
+    ) -> Stream<NestedCircuit, MonoZSet> {
+        self.dyn_distinct(factories)
     }
 }
 

@@ -8,12 +8,12 @@ use crate::{
     },
     dynamic::{
         rkyv::{DeserializableDyn, SerializeDyn},
-        ClonableTrait, DataTrait, WeightTrait,
+        ClonableTrait, DataTrait, DynData, WeightTrait,
     },
-    operator::dynamic::trace::TraceBound,
+    operator::dynamic::{trace::TraceBound, MonoIndexedZSet},
     storage::{file::to_bytes, write_commit_metadata},
-    trace::{BatchFactories, BatchReaderFactories, Cursor, Serializer, SpineSnapshot},
-    Error,
+    trace::{BatchFactories, BatchReader, BatchReaderFactories, Cursor, Serializer, SpineSnapshot},
+    Error, RootCircuit,
 };
 use minitrace::trace;
 use rkyv::Deserialize;
@@ -23,6 +23,17 @@ use std::{
     marker::PhantomData,
     path::{Path, PathBuf},
 };
+
+impl Stream<RootCircuit, MonoIndexedZSet> {
+    pub fn dyn_window_mono(
+        &self,
+        factories: &<MonoIndexedZSet as BatchReader>::Factories,
+        inclusive: (bool, bool),
+        bounds: &Stream<RootCircuit, (Box<DynData>, Box<DynData>)>,
+    ) -> Stream<RootCircuit, MonoIndexedZSet> {
+        self.dyn_window(factories, inclusive, bounds)
+    }
+}
 
 impl<C, B> Stream<C, B>
 where
@@ -671,7 +682,7 @@ mod test {
     #[test]
     fn bounded_memory() {
         let (mut dbsp, input_handle) = Runtime::init_circuit(8, |circuit| {
-            let (input, input_handle) = circuit.add_input_zset::<i64>();
+            let (input, input_handle) = circuit.add_input_indexed_zset::<i64, i64>();
             let bounds =
                 input
                     .waterline_monotonic(|| 0, |ts| *ts)
@@ -699,7 +710,7 @@ mod test {
 
         for i in 0..10000 {
             for j in i * 100..(i + 1) * 100 {
-                input_handle.push(j, 1);
+                input_handle.push(j, (1, 1));
             }
             dbsp.step().unwrap();
         }

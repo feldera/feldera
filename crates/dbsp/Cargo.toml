@@ -22,6 +22,10 @@ rustdoc-args = ["--cfg", "docsrs"]
 # main.yml and coverage.yml:
 default = []
 
+# Enable when using with compiler-generated code.
+# See comments in `mono/mod.rs`
+backend-mode = []
+
 [dependencies]
 num = "0.4.0"
 anyhow = "1.0.57"

@@ -3,6 +3,7 @@
 use crate::circuit::metadata::{MetaItem, OperatorLocation, OperatorMeta, NUM_INPUTS, NUM_OUTPUTS};
 use crate::circuit::metrics::Gauge;
 use crate::circuit::GlobalNodeId;
+use crate::dynamic::DynData;
 use crate::trace::VecWSet;
 use crate::{
     circuit::{
@@ -15,9 +16,12 @@ use crate::{
         Builder, Cursor, OrdIndexedWSet, OrdIndexedWSetFactories, OrdWSet, OrdWSetFactories,
     },
 };
+use crate::{NestedCircuit, RootCircuit};
 use minitrace::trace;
 use std::panic::Location;
 use std::{borrow::Cow, marker::PhantomData};
+
+use super::{MonoIndexedZSet, MonoIndexedZSetFactories, MonoZSet, MonoZSetFactories};
 
 /// See [`crate::operator::FilterMap`].
 pub trait DynFilterMap: BatchReader {
@@ -51,6 +55,178 @@ pub trait DynFilterMap: BatchReader {
     ) -> Stream<C, O>
     where
         O: Batch<Time = (), R = Self::R> + Clone + 'static;
+}
+
+impl Stream<RootCircuit, MonoIndexedZSet> {
+    #[track_caller]
+    pub fn dyn_filter_mono(&self, filter_func: Box<dyn Fn((&DynData, &DynData)) -> bool>) -> Self {
+        self.dyn_filter(filter_func)
+    }
+
+    #[track_caller]
+    pub fn dyn_map_mono(
+        &self,
+        output_factories: &MonoZSetFactories,
+        map_func: Box<dyn Fn((&DynData, &DynData), &mut DynPair<DynData, DynUnit>)>,
+    ) -> Stream<RootCircuit, MonoZSet> {
+        self.dyn_map(output_factories, map_func)
+    }
+
+    #[track_caller]
+    pub fn dyn_map_index_mono(
+        &self,
+        output_factories: &MonoIndexedZSetFactories,
+        map_func: Box<dyn Fn((&DynData, &DynData), &mut DynPair<DynData, DynData>)>,
+    ) -> Stream<RootCircuit, MonoIndexedZSet> {
+        self.dyn_map_index(output_factories, map_func)
+    }
+
+    #[track_caller]
+    pub fn dyn_flat_map_mono(
+        &self,
+        output_factories: &MonoZSetFactories,
+        func: Box<dyn FnMut((&DynData, &DynData), &mut dyn FnMut(&mut DynData, &mut DynUnit))>,
+    ) -> Stream<RootCircuit, MonoZSet> {
+        self.dyn_flat_map(output_factories, func)
+    }
+
+    #[track_caller]
+    pub fn dyn_flat_map_index_mono(
+        &self,
+        output_factories: &MonoIndexedZSetFactories,
+        func: Box<dyn FnMut((&DynData, &DynData), &mut dyn FnMut(&mut DynData, &mut DynData))>,
+    ) -> Stream<RootCircuit, MonoIndexedZSet> {
+        self.dyn_flat_map_index(output_factories, func)
+    }
+}
+
+impl Stream<RootCircuit, MonoZSet> {
+    #[track_caller]
+    pub fn dyn_filter_mono(&self, filter_func: Box<dyn Fn(&DynData) -> bool>) -> Self {
+        self.dyn_filter(filter_func)
+    }
+
+    #[track_caller]
+    pub fn dyn_map_mono(
+        &self,
+        output_factories: &MonoZSetFactories,
+        map_func: Box<dyn Fn(&DynData, &mut DynPair<DynData, DynUnit>)>,
+    ) -> Stream<RootCircuit, MonoZSet> {
+        self.dyn_map(output_factories, map_func)
+    }
+
+    #[track_caller]
+    pub fn dyn_map_index_mono(
+        &self,
+        output_factories: &MonoIndexedZSetFactories,
+        map_func: Box<dyn Fn(&DynData, &mut DynPair<DynData, DynData>)>,
+    ) -> Stream<RootCircuit, MonoIndexedZSet> {
+        self.dyn_map_index(output_factories, map_func)
+    }
+
+    #[track_caller]
+    pub fn dyn_flat_map_mono(
+        &self,
+        output_factories: &MonoZSetFactories,
+        func: Box<dyn FnMut(&DynData, &mut dyn FnMut(&mut DynData, &mut DynUnit))>,
+    ) -> Stream<RootCircuit, MonoZSet> {
+        self.dyn_flat_map(output_factories, func)
+    }
+
+    #[track_caller]
+    pub fn dyn_flat_map_index_mono(
+        &self,
+        output_factories: &MonoIndexedZSetFactories,
+        func: Box<dyn FnMut(&DynData, &mut dyn FnMut(&mut DynData, &mut DynData))>,
+    ) -> Stream<RootCircuit, MonoIndexedZSet> {
+        self.dyn_flat_map_index(output_factories, func)
+    }
+}
+
+impl Stream<NestedCircuit, MonoIndexedZSet> {
+    #[track_caller]
+    pub fn dyn_filter_mono(&self, filter_func: Box<dyn Fn((&DynData, &DynData)) -> bool>) -> Self {
+        self.dyn_filter(filter_func)
+    }
+
+    #[track_caller]
+    pub fn dyn_map_mono(
+        &self,
+        output_factories: &MonoZSetFactories,
+        map_func: Box<dyn Fn((&DynData, &DynData), &mut DynPair<DynData, DynUnit>)>,
+    ) -> Stream<NestedCircuit, MonoZSet> {
+        self.dyn_map(output_factories, map_func)
+    }
+
+    #[track_caller]
+    pub fn dyn_map_index_mono(
+        &self,
+        output_factories: &MonoIndexedZSetFactories,
+        map_func: Box<dyn Fn((&DynData, &DynData), &mut DynPair<DynData, DynData>)>,
+    ) -> Stream<NestedCircuit, MonoIndexedZSet> {
+        self.dyn_map_index(output_factories, map_func)
+    }
+
+    #[track_caller]
+    pub fn dyn_flat_map_mono(
+        &self,
+        output_factories: &MonoZSetFactories,
+        func: Box<dyn FnMut((&DynData, &DynData), &mut dyn FnMut(&mut DynData, &mut DynUnit))>,
+    ) -> Stream<NestedCircuit, MonoZSet> {
+        self.dyn_flat_map(output_factories, func)
+    }
+
+    #[track_caller]
+    pub fn dyn_flat_map_index_mono(
+        &self,
+        output_factories: &MonoIndexedZSetFactories,
+        func: Box<dyn FnMut((&DynData, &DynData), &mut dyn FnMut(&mut DynData, &mut DynData))>,
+    ) -> Stream<NestedCircuit, MonoIndexedZSet> {
+        self.dyn_flat_map_index(output_factories, func)
+    }
+}
+
+impl Stream<NestedCircuit, MonoZSet> {
+    #[track_caller]
+    pub fn dyn_filter_mono(&self, filter_func: Box<dyn Fn(&DynData) -> bool>) -> Self {
+        self.dyn_filter(filter_func)
+    }
+
+    #[track_caller]
+    pub fn dyn_map_mono(
+        &self,
+        output_factories: &MonoZSetFactories,
+        map_func: Box<dyn Fn(&DynData, &mut DynPair<DynData, DynUnit>)>,
+    ) -> Stream<NestedCircuit, MonoZSet> {
+        self.dyn_map(output_factories, map_func)
+    }
+
+    #[track_caller]
+    pub fn dyn_map_index_mono(
+        &self,
+        output_factories: &MonoIndexedZSetFactories,
+        map_func: Box<dyn Fn(&DynData, &mut DynPair<DynData, DynData>)>,
+    ) -> Stream<NestedCircuit, MonoIndexedZSet> {
+        self.dyn_map_index(output_factories, map_func)
+    }
+
+    #[track_caller]
+    pub fn dyn_flat_map_mono(
+        &self,
+        output_factories: &MonoZSetFactories,
+        func: Box<dyn FnMut(&DynData, &mut dyn FnMut(&mut DynData, &mut DynUnit))>,
+    ) -> Stream<NestedCircuit, MonoZSet> {
+        self.dyn_flat_map(output_factories, func)
+    }
+
+    #[track_caller]
+    pub fn dyn_flat_map_index_mono(
+        &self,
+        output_factories: &MonoIndexedZSetFactories,
+        func: Box<dyn FnMut(&DynData, &mut dyn FnMut(&mut DynData, &mut DynData))>,
+    ) -> Stream<NestedCircuit, MonoIndexedZSet> {
+        self.dyn_flat_map_index(output_factories, func)
+    }
 }
 
 impl<C: Circuit, B: DynFilterMap> Stream<C, B> {
