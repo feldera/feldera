@@ -37,7 +37,6 @@ use std::{
     thread::{Builder, JoinHandle, Result as ThreadResult},
 };
 use typedmap::{TypedDashMap, TypedMapKey};
-use uuid::Uuid;
 
 use super::dbsp_handle::Layout;
 use super::CircuitConfig;
@@ -238,14 +237,13 @@ impl RuntimeInner {
             .as_ref()
             .map_or(Default::default(), |storage| storage.cache);
         // Check if the selected checkpoint to resume from exists.
-        let checkpoint_dir = storage.join(config.init_checkpoint.to_string());
-        if config.init_checkpoint != Uuid::nil()
-            && !checkpoint_dir.exists()
-            && !checkpoint_dir.is_dir()
-        {
-            return Err(DbspError::Storage(StorageError::CheckpointNotFound(
-                config.init_checkpoint,
-            )));
+        if let Some(init_checkpoint) = config.init_checkpoint {
+            let checkpoint_dir = storage.join(init_checkpoint.to_string());
+            if !checkpoint_dir.is_dir() {
+                return Err(DbspError::Storage(StorageError::CheckpointNotFound(
+                    init_checkpoint,
+                )));
+            }
         }
         // Clean up any stale checkpoints / files.
         let checkpointer = Checkpointer::new(storage.clone());
@@ -358,9 +356,9 @@ impl Runtime {
             // Note that we use into_path() here which avoids deleting the temporary directory
             // we still clean it up when the runtime is dropped -- but keep it around on panic.
             || {
-                if config.init_checkpoint != Uuid::nil() {
+                if let Some(init_checkpoint) = config.init_checkpoint {
                     return Err(DbspError::Storage(StorageError::CheckpointNotFound(
-                        config.init_checkpoint,
+                        init_checkpoint,
                     )));
                 }
                 Ok(StorageLocation::Temporary(
@@ -751,7 +749,6 @@ mod tests {
         thread::sleep,
         time::Duration,
     };
-    use uuid::Uuid;
 
     #[test]
     #[cfg_attr(miri, ignore)]
@@ -772,7 +769,7 @@ mod tests {
                 cache: StorageCacheConfig::default(),
             }),
             min_storage_bytes: usize::MAX,
-            init_checkpoint: Uuid::nil(),
+            init_checkpoint: None,
         };
 
         let hruntime = Runtime::run(cconf, move || {
@@ -794,7 +791,7 @@ mod tests {
             layout: Layout::new_solo(4),
             storage: None,
             min_storage_bytes: usize::MAX,
-            init_checkpoint: Uuid::nil(),
+            init_checkpoint: None,
         };
         let storage_path_clone = storage_path.clone();
         let hruntime = Runtime::run(cconf, move || {
@@ -817,7 +814,7 @@ mod tests {
             layout: Layout::new_solo(4),
             storage: None,
             min_storage_bytes: usize::MAX,
-            init_checkpoint: Uuid::nil(),
+            init_checkpoint: None,
         };
         let storage_path_clone = storage_path.clone();
         let hruntime = Runtime::run(cconf, move || {

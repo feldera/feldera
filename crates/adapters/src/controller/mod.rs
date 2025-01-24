@@ -33,7 +33,6 @@ use crossbeam::{
     sync::{Parker, ShardedLock, Unparker},
 };
 use datafusion::prelude::*;
-use dbsp::circuit::checkpointer::CheckpointMetadata;
 use dbsp::{
     circuit::{CircuitConfig, Layout, StorageConfig},
     profile::GraphProfile,
@@ -912,7 +911,7 @@ impl FtState {
                 let _ = fs::remove_dir(&steps_path);
 
                 let checkpoint = Checkpoint {
-                    circuit: CheckpointMetadata::default(),
+                    circuit: None,
                     step: 0,
                     config,
                     processed_records: 0,
@@ -1093,7 +1092,7 @@ impl FtState {
             .map_err(ControllerError::from)
             .and_then(|circuit| {
                 let checkpoint = Checkpoint {
-                    circuit,
+                    circuit: Some(circuit),
                     step: self.step,
                     config,
                     processed_records: self
@@ -1329,7 +1328,7 @@ impl ControllerInit {
                 StepRw::create(&steps_path)?
             };
             Ok(Self {
-                circuit_config: Self::circuit_config(&config, Some(circuit.uuid))?,
+                circuit_config: Self::circuit_config(&config, circuit.map(|circuit| circuit.uuid))?,
                 pipeline_config: config,
                 ft: Some(FtInit {
                     step,
@@ -1402,7 +1401,7 @@ impl ControllerInit {
             } else {
                 usize::MAX
             },
-            init_checkpoint: init_checkpoint.unwrap_or(CheckpointMetadata::default().uuid),
+            init_checkpoint,
         })
     }
 }

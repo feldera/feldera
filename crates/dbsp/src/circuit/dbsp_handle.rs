@@ -224,12 +224,10 @@ pub struct CircuitConfig {
     /// `usize::MAX`, then all batches will be kept in memory; and intermediate
     /// values specify a threshold.
     pub min_storage_bytes: usize,
-    /// The initial checkpoint to start the circuit from.
-    ///
-    /// In case of a new circuit, this should be `Uuid::nil()`.
-    /// Setting this to an existing checkpoint will start the circuit from that
-    /// and requires that the checkpoint exists in the storage directory.
-    pub init_checkpoint: Uuid,
+
+    /// The initial checkpoint to start the circuit from, or `None` to start
+    /// fresh from a new circuit.
+    pub init_checkpoint: Option<Uuid>,
 }
 
 impl Default for CircuitConfig {
@@ -244,7 +242,7 @@ impl CircuitConfig {
             layout: Layout::new_solo(n),
             storage: None,
             min_storage_bytes: usize::MAX,
-            init_checkpoint: Uuid::nil(),
+            init_checkpoint: None,
         }
     }
 }
@@ -456,14 +454,14 @@ impl Runtime {
 
         let mut dbsp = DBSPHandle::new(runtime, command_senders, status_receivers);
         let result = init_status[0].take();
-        if config.init_checkpoint != Uuid::nil() {
+        if let Some(init_checkpoint) = config.init_checkpoint {
             dbsp.send_restore(
                 dbsp.runtime
                     .as_ref()
                     .unwrap()
                     .runtime()
                     .storage_path()
-                    .join(config.init_checkpoint.to_string()),
+                    .join(init_checkpoint.to_string()),
             )?;
         }
 
@@ -1071,7 +1069,7 @@ pub(crate) mod tests {
                 cache: StorageCacheConfig::default(),
             }),
             min_storage_bytes: 0,
-            init_checkpoint: Uuid::nil(),
+            init_checkpoint: None,
         };
         (temp, cconf)
     }
@@ -1114,7 +1112,7 @@ pub(crate) mod tests {
         // what we would expect it to be at the given point we restored it to
         let mut batches_to_insert = input.clone();
         for (i, cpm) in checkpoints.iter().enumerate() {
-            cconf.init_checkpoint = cpm.uuid;
+            cconf.init_checkpoint = Some(cpm.uuid);
             let (mut dbsp, (input_handle, output_handle, sample_size_handle)) =
                 mkcircuit(&cconf).unwrap();
             sample_size_handle.set_for_all(SAMPLE_SIZE);
@@ -1193,7 +1191,7 @@ pub(crate) mod tests {
         let (dbsp, _) = mkcircuit(&cconf).unwrap();
         drop(dbsp); // makes sure we can take ownership of storage dir again
 
-        cconf.init_checkpoint = Uuid::now_v7(); // this checkpoint doesn't exist
+        cconf.init_checkpoint = Some(Uuid::now_v7()); // this checkpoint doesn't exist
 
         let res = mkcircuit(&cconf);
         assert!(matches!(
@@ -1210,8 +1208,9 @@ pub(crate) mod tests {
         let (dbsp, _) = mkcircuit(&cconf).unwrap();
         drop(dbsp); // makes sure we can take ownership of storage dir again
 
-        cconf.init_checkpoint = Uuid::now_v7(); // A made-up checkpoint, that does not have the necessary files
-        let checkpoint_dir = temp.path().join(cconf.init_checkpoint.to_string());
+        let init_checkpoint = Uuid::now_v7(); // A made-up checkpoint, that does not have the necessary files
+        cconf.init_checkpoint = Some(init_checkpoint);
+        let checkpoint_dir = temp.path().join(init_checkpoint.to_string());
         create_dir_all(checkpoint_dir).expect("can't create checkpoint dir");
 
         // Initializing this circuit again will panic because it won't find the
@@ -1368,7 +1367,7 @@ pub(crate) mod tests {
         let cpi = dbsp.commit().expect("commit shouldn't fail");
         drop(dbsp);
 
-        cconf.init_checkpoint = cpi.uuid;
+        cconf.init_checkpoint = Some(cpi.uuid);
         let (dbsp_different, (_input_handle, _, _sample_size_handle)) =
             mkcircuit_different(&cconf).unwrap();
         drop(dbsp_different);
@@ -1418,7 +1417,7 @@ pub(crate) mod tests {
             input_handle.append(&mut batch);
             dbsp.step().unwrap();
             let cpm = dbsp.commit().unwrap();
-            cconf.init_checkpoint = cpm.uuid;
+            cconf.init_checkpoint = Some(cpm.uuid);
             dbsp.kill().unwrap();
         }
     }
@@ -1487,7 +1486,7 @@ pub(crate) mod tests {
             circuit.step().unwrap();
 
             let cpm = circuit.commit().unwrap();
-            cconf.init_checkpoint = cpm.uuid;
+            cconf.init_checkpoint = Some(cpm.uuid);
             circuit.kill().unwrap();
         }
     }
