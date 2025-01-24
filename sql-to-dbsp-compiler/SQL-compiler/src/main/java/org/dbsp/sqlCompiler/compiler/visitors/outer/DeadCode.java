@@ -13,6 +13,6 @@ public class DeadCode extends Passes {
         super("DeadCode", compiler);
         FindDeadCode finder = new FindDeadCode(compiler, keepAllSources, warn);
         super.add(finder);
-        super.add(new RemoveOperatorsVisitor(compiler, finder.toKeep));
+        super.add(new RemoveOperators(compiler, finder.toKeep));
     }
 }

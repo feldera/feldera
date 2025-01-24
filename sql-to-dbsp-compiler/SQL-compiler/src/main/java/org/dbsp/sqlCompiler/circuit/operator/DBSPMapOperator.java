@@ -37,17 +37,21 @@ import java.util.List;
 import java.util.Objects;
 
 public final class DBSPMapOperator extends DBSPUnaryOperator {
-    public DBSPMapOperator(CalciteObject node, DBSPExpression expression,
+    public DBSPMapOperator(CalciteObject node, DBSPExpression function,
                            DBSPTypeZSet outputType, OutputPort input) {
         // Currently the output type can only be a ZSet, but the input
         // type may be a ZSet or an IndexedZSet.
-        super(node, "map", expression, outputType, true, input);
+        super(node, "map", function, outputType, true, input);
         DBSPType elementType = this.getOutputZSetElementType();
-        if (expression.is(DBSPClosureExpression.class))
+        if (function.is(DBSPClosureExpression.class))
             // Could also be a SortExpression
-            this.checkParameterCount(expression,  1);
-        this.checkResultType(expression, elementType);
-        this.checkArgumentFunctionType(expression, 0, input);
+            this.checkParameterCount(function,  1);
+        this.checkResultType(function, elementType);
+        this.checkArgumentFunctionType(function, 0, input);
+    }
+
+    public DBSPMapOperator(CalciteObject node, DBSPClosureExpression function, OutputPort input) {
+        this(node, function, new DBSPTypeZSet(function.getResultType()), input);
     }
 
     @Override

@@ -711,8 +711,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
         byte[] bytes = literal.value.getBytes(literal.charset);
         String decoded = new String(bytes, literal.charset);
         decoded = Utilities.doubleQuote(decoded);
-        this.builder.append(literal.wrapSome(
-        "String::from(" + decoded + ")"));
+        this.builder.append(literal.wrapSome("String::from(" + decoded + ")"));
         return VisitDecision.STOP;
     }
 
@@ -753,6 +752,8 @@ public class ToRustInnerVisitor extends InnerVisitor {
     }
 
     void unimplementedCast(DBSPCastExpression expression) {
+        if (this.compact)
+            return;
         throw new UnimplementedException(
                 "Cast from " + expression.source.getType() + " to " + expression.getType() +
                 " not implemented", expression.getNode());

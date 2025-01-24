@@ -114,7 +114,6 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
                 DBSPExpression argument = new DBSPTupleExpression(
                         fields, flatmap.getCollectionElementType().mayBeNull);
                 resultColumns.add(clo.call(argument.borrow()));
-
             }
         } else {
             if (flatmap.ordinalityIndexType != null) {

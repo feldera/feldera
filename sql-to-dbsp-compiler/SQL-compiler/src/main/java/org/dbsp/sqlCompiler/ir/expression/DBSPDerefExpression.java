@@ -60,8 +60,7 @@ public final class DBSPDerefExpression extends DBSPExpression {
         DBSPDerefExpression o = other.as(DBSPDerefExpression.class);
         if (o == null)
             return false;
-        return this.expression == o.expression &&
-                this.hasSameType(o);
+        return this.expression == o.expression;
     }
 
     @Override

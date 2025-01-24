@@ -44,6 +44,11 @@ public class DBSPTypeStream extends DBSPType {
     }
 
     @Override
+    public int getToplevelFieldCount() {
+        return this.elementType.getToplevelFieldCount();
+    }
+
+    @Override
     public DBSPType withMayBeNull(boolean mayBeNull) {
         throw new UnsupportedOperationException();
     }

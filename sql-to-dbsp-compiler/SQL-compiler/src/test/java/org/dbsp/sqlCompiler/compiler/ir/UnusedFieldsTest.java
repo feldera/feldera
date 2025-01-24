@@ -5,10 +5,10 @@ import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.rust.ToRustInnerVisitor;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.CanonicalForm;
-import org.dbsp.sqlCompiler.compiler.visitors.inner.unusedFields.FieldUseMap;
-import org.dbsp.sqlCompiler.compiler.visitors.inner.unusedFields.FindUnusedFields;
-import org.dbsp.sqlCompiler.compiler.visitors.inner.unusedFields.RewriteFields;
-import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
+import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.FieldUseMap;
+import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.FindUnusedFields;
+import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.RewriteFields;
+import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
@@ -48,6 +48,44 @@ public class UnusedFieldsTest {
     }
 
     @Test
+    public void testReduce() {
+        DBSPCompiler compiler = new DBSPCompiler(new CompilerOptions());
+        DBSPTypeTuple tuple = new DBSPTypeTuple(
+                new DBSPTypeInteger(CalciteObject.EMPTY, 32, true, true),
+                DBSPTypeBool.create(false),
+                DBSPTypeBool.create(true),
+                new DBSPTypeTuple(
+                        DBSPTypeString.varchar(true),
+                        DBSPTypeString.varchar(false)));
+
+        DBSPVariablePath var0 = tuple.ref().var();
+        DBSPExpression body0 = new DBSPTupleExpression(
+                var0.deref().field(1),
+                var0.deref().field(3).field(0));
+        DBSPClosureExpression closure0 = body0.closure(var0.asParameter());
+
+        DBSPVariablePath var1 = tuple.ref().var();
+        DBSPExpression body1 = new DBSPTupleExpression(var1.deref().field(0));
+        DBSPClosureExpression closure1 = body1.closure(var1.asParameter());
+
+        FindUnusedFields fu = new FindUnusedFields(compiler);
+        fu.findUnusedFields(closure0);
+        Assert.assertTrue(fu.foundUnusedFields());
+        DBSPParameter param0 = fu.parameterFieldMap.getParameters().iterator().next();
+        FieldUseMap fieldMap0 = fu.parameterFieldMap.get(param0);
+        Assert.assertEquals("Ref([_, X, _, [X, _]])", fieldMap0.toString());
+
+        fu.findUnusedFields(closure1);
+        Assert.assertTrue(fu.foundUnusedFields());
+        DBSPParameter param1 = fu.parameterFieldMap.getParameters().iterator().next();
+        FieldUseMap fieldMap1 = fu.parameterFieldMap.get(param1);
+        Assert.assertEquals("Ref([X, _, _, [_, _]])", fieldMap1.toString());
+
+        FieldUseMap reduced = fieldMap0.reduce(fieldMap1);
+        Assert.assertEquals("Ref([X, X, _, [X, _]])", reduced.toString());
+    }
+
+    @Test
     public void unusedFieldsTest() {
         DBSPTypeTuple tuple = new DBSPTypeTuple(
                 new DBSPTypeInteger(CalciteObject.EMPTY, 32, true, true),
@@ -64,15 +102,14 @@ public class UnusedFieldsTest {
         DBSPClosureExpression closure = body.closure(var.asParameter());
 
         DBSPCompiler compiler = new DBSPCompiler(new CompilerOptions());
-        closure = closure.ensureTree(compiler).to(DBSPClosureExpression.class);
         CanonicalForm cf = new CanonicalForm(compiler);
 
         FindUnusedFields fu = new FindUnusedFields(compiler);
-        fu.apply(closure);
+        fu.findUnusedFields(closure);
         Assert.assertTrue(fu.foundUnusedFields());
 
-        RewriteFields rw = fu.createFieldRewriter(1);
-        IDBSPInnerNode rewritten = rw.apply(closure);
+        RewriteFields rw = fu.getFieldRewriter(1);
+        DBSPClosureExpression rewritten = rw.rewriteClosure(closure);
         DBSPClosureExpression result = cf.apply(rewritten).to(DBSPClosureExpression.class);
         Assert.assertEquals("(|p0: &Tup3<i32?, b?, Tup2<s?, s>>| Tup3::new(((*p0).0), ((*p0).1), (((*p0).2).0), ))",
                 result.toString());

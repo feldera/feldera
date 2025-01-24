@@ -1,4 +1,4 @@
-package org.dbsp.sqlCompiler.compiler.visitors.inner.monotone;
+package org.dbsp.sqlCompiler.compiler.visitors.monotone;
 
 /** Base class for monotone type information */
 public abstract class BaseMonotoneType implements IMaybeMonotoneType {

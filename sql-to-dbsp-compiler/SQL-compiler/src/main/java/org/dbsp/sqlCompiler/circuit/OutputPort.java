@@ -79,7 +79,7 @@ public class OutputPort {
     @Override
     public String toString() {
         if (this.node().is(DBSPSimpleOperator.class))
-            return Long.toString(this.node().id);
+            return this.node().toString();
         return this.node().id + ":" + this.port();
     }
 

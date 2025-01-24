@@ -1,4 +1,4 @@
-package org.dbsp.sqlCompiler.compiler.visitors.inner.unusedFields;
+package org.dbsp.sqlCompiler.compiler.visitors.unusedFields;
 
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
@@ -63,6 +63,10 @@ public class FieldUseMap {
                 return new Atomic(type, used);
             }
         }
+
+        public abstract FieldInfo reduce(FieldInfo fieldInfo);
+
+        public abstract double percentageUnused();
     }
 
     /** A reference to a FieldInfo */
@@ -99,8 +103,7 @@ public class FieldUseMap {
             throw new InternalCompilerError("Should not be called");
         }
 
-        @Nullable
-        @Override
+        @Nullable @Override
         public DBSPType compressedType(int depth) {
             DBSPType type = this.field.compressedType(depth);
             if (type == null)
@@ -108,10 +111,20 @@ public class FieldUseMap {
             return type.ref();
         }
 
-        @Nullable
-        @Override
+        @Nullable @Override
         public DBSPExpression allUsedFields(DBSPExpression from, int depth) {
             return this.field.allUsedFields(from.deref(), depth);
+        }
+
+        @Override
+        public FieldInfo reduce(FieldInfo fieldInfo) {
+            assert this.type.sameType(fieldInfo.type);
+            return new Ref(this.type, this.field.reduce(fieldInfo.to(Ref.class).field));
+        }
+
+        @Override
+        public double percentageUnused() {
+            return this.field.percentageUnused();
         }
 
         @Override
@@ -163,20 +176,30 @@ public class FieldUseMap {
             throw new RuntimeException("Compressed index of scalar type");
         }
 
-        @Nullable
-        @Override
+        @Nullable @Override
         public DBSPType compressedType(int depth) {
             if (!this.used)
                 return null;
             return this.type;
         }
 
-        @Override
-        @Nullable
+        @Override @Nullable
         public DBSPExpression allUsedFields(DBSPExpression from, int depth) {
             if (!this.used)
                 return null;
             return from.applyCloneIfNeeded();
+        }
+
+        @Override
+        public FieldInfo reduce(FieldInfo other) {
+            assert this.type.sameType(other.type);
+            Atomic oa = other.to(Atomic.class);
+            return new Atomic(this.type, this.used || oa.used);
+        }
+
+        @Override
+        public double percentageUnused() {
+            return this.used ? 1 : 0;
         }
     }
 
@@ -220,7 +243,7 @@ public class FieldUseMap {
 
         @Override
         public String toString() {
-            return "" + Linq.map(this.fields, Object::toString);
+            return (this.isRaw() ? "R" : "") + Linq.map(this.fields, Object::toString);
         }
 
         @Override
@@ -228,7 +251,7 @@ public class FieldUseMap {
             return this.fields.size();
         }
 
-        public int compressedSize() {
+        public int getCompressedSize() {
             int compressedSize = 0;
             for (int i = 0; i < this.size(); i++) {
                 if (this.fields.get(i).anyUsed() || this.isRaw())
@@ -278,7 +301,7 @@ public class FieldUseMap {
         @Override
         public DBSPExpression allUsedFields(DBSPExpression from, int depth) {
             boolean isRaw = this.getTupleType().isRaw();
-            int size = depth <= 0 || isRaw ? this.size() : this.compressedSize();
+            int size = depth <= 0 || isRaw ? this.size() : this.getCompressedSize();
             DBSPExpression[] fields = new DBSPExpression[size];
             int index = 0;
             for (int i = 0; i < this.size(); i++) {
@@ -302,6 +325,20 @@ public class FieldUseMap {
                     result.add(i);
             return result;
         }
+
+        @Override
+        public FieldInfo reduce(FieldInfo other) {
+            assert this.type.sameType(other.type);
+            BitList ol = other.to(BitList.class);
+            assert this.size() == ol.size();
+            List<FieldInfo> bits = Linq.zip(this.fields, ol.fields, FieldInfo::reduce);
+            return new BitList(this.getTupleType(), bits);
+        }
+
+        @Override
+        public double percentageUnused() {
+            return 1 - (double)this.getCompressedSize() / this.size();
+        }
     }
 
     private final FieldInfo fieldInfo;
@@ -321,6 +358,10 @@ public class FieldUseMap {
     @SuppressWarnings("BooleanMethodIsAlwaysInverted")
     public boolean hasUnusedFields() {
         return this.fieldInfo.anyUnused();
+    }
+
+    public double percentageUnused() {
+        return this.fieldInfo.percentageUnused();
     }
 
     public boolean isEmpty() {
@@ -389,5 +430,18 @@ public class FieldUseMap {
 
     public FieldUseMap deref() {
         return new FieldUseMap(this.fieldInfo.to(Ref.class).field);
+    }
+
+    public FieldUseMap reduce(FieldUseMap with) {
+        return new FieldUseMap(this.fieldInfo.reduce(with.fieldInfo));
+    }
+
+    public static FieldUseMap reduce(List<FieldUseMap> maps) {
+        assert !maps.isEmpty();
+        FieldUseMap current = maps.get(0);
+        for (int i = 1; i < maps.size(); i++) {
+            current = current.reduce(maps.get(i));
+        }
+        return current;
     }
 }

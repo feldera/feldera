@@ -22,6 +22,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeFunction;
 import org.dbsp.util.Maybe;
+import org.dbsp.util.Shuffle;
 
 /** Optimizes patterns containing projections.
  * - constant followed by projection
@@ -57,10 +58,12 @@ public class OptimizeProjectionVisitor extends CircuitCloneWithGraphsVisitor {
                     DBSPTypeFunction previousFunctionType = sourceFunction.getType().to(DBSPTypeFunction.class);
                     DBSPTypeFunction newFunctionType = new DBSPTypeFunction(
                             operator.getOutputZSetElementType(), previousFunctionType.parameterTypes);
+
+                    Shuffle shuffle = projection.getShuffle().after(sourceFunction.shuffle);
                     DBSPExpression newFunction = new DBSPFlatmap(
                             function.getNode(), newFunctionType, sourceFunction.inputElementType,
                             sourceFunction.collectionExpression, sourceFunction.leftInputIndexes,
-                            sourceFunction.rightProjections, sourceFunction.ordinalityIndexType, projection.getShuffle());
+                            sourceFunction.rightProjections, sourceFunction.ordinalityIndexType, shuffle);
                     DBSPSimpleOperator result = source.simpleNode().withFunction(newFunction, operator.outputType);
                     this.map(operator, result);
                     return;

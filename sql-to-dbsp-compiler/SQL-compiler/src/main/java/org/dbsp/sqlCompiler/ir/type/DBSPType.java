@@ -211,4 +211,8 @@ public abstract class DBSPType extends DBSPNode implements IDBSPInnerNode {
             throw new UnsupportedException("Type has no minimum value", this.getNode());
         }
     }
+
+    /** Number of fields in the type.  Note: containers have size 1.
+     * RAW tuples have the sum of the fields, while regular tuples have the count of the fields. */
+    public abstract int getToplevelFieldCount();
 }

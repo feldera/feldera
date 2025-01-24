@@ -12,11 +12,17 @@ public class Repeat implements IWritesLogs, CircuitTransform, ICompilerComponent
     final DBSPCompiler compiler;
     public final CircuitTransform transform;
     public final long id;
+    public final int repeats;
 
-    public Repeat(DBSPCompiler compiler, CircuitTransform visitor) {
+    public Repeat(DBSPCompiler compiler, CircuitTransform visitor, int repeats) {
         this.compiler = compiler;
         this.transform = visitor;
         this.id = CircuitVisitor.crtId++;
+        this.repeats = repeats;
+    }
+
+    public Repeat(DBSPCompiler compiler, CircuitTransform visitor) {
+        this(compiler, visitor, Integer.MAX_VALUE);
     }
 
     @Override
@@ -48,6 +54,8 @@ public class Repeat implements IWritesLogs, CircuitTransform, ICompilerComponent
                 return circuit;
             circuit = result;
             repeats++;
+            if (repeats == this.repeats)
+                return result;
             if (repeats == maxRepeats) {
                 this.compiler.reportError(SourcePositionRange.INVALID,
                         "InfiniteLoop",

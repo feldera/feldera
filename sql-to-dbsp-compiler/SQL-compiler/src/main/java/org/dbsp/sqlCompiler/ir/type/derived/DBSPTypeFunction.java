@@ -56,6 +56,11 @@ public class DBSPTypeFunction extends DBSPType {
     }
 
     @Override
+    public int getToplevelFieldCount() {
+        return this.resultType.getToplevelFieldCount();
+    }
+
+    @Override
     public void accept(InnerVisitor visitor) {
         VisitDecision decision = visitor.preorder(this);
         if (decision.stop()) return;

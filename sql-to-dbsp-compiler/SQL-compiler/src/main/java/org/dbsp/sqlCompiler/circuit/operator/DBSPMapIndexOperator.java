@@ -27,8 +27,10 @@ import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
+import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 
 import javax.annotation.Nullable;
@@ -47,6 +49,19 @@ public final class DBSPMapIndexOperator extends DBSPUnaryOperator {
                                 DBSPTypeIndexedZSet outputType,
                                 OutputPort input) {
         this(node, indexFunction, outputType, input.isMultiset(), input);
+    }
+
+    static DBSPTypeIndexedZSet extractType(DBSPClosureExpression expression) {
+        return new DBSPTypeIndexedZSet(expression.getResultType().to(DBSPTypeRawTuple.class));
+    }
+
+    /** Create an MapIndexOperator
+     * @param node            Corresponding Calcite node.
+     * @param indexFunction   Function that indexes.
+     * @param input           Source operator. */
+    public DBSPMapIndexOperator(CalciteObject node, DBSPClosureExpression indexFunction,
+                                OutputPort input) {
+        this(node, indexFunction, extractType(indexFunction), input.isMultiset(), input);
     }
 
     /** Create an MapIndexOperator

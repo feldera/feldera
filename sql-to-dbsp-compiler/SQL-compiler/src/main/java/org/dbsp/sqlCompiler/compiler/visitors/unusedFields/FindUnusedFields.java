@@ -1,4 +1,4 @@
-package org.dbsp.sqlCompiler.compiler.visitors.inner.unusedFields;
+package org.dbsp.sqlCompiler.compiler.visitors.unusedFields;
 
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
@@ -19,6 +19,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPBorrowExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCloneExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPConstructorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCustomOrdExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCustomOrdField;
@@ -45,6 +46,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 
+import javax.annotation.Nullable;
 import java.util.Objects;
 
 /** Analyze a closure and find unused fields in its parameters. */
@@ -52,30 +54,43 @@ public class FindUnusedFields extends SymbolicInterpreter<FieldUseMap> {
     /** Result is constructed here.  For each parameter we keep a {@link FieldUseMap}, which is
      * mutated by the dataflow analysis when referenced fields are found.
      * The value of these maps at the end of the analysis is the final result. */
-    public final ParameterFieldRemap allParameters;
+    public final ParameterFieldRemap parameterFieldMap;
     final ResolveReferences resolver;
+    @Nullable
+    public DBSPClosureExpression closure;
 
     public FindUnusedFields(DBSPCompiler compiler) {
         super(compiler);
-        this.allParameters = new ParameterFieldRemap();
+        this.parameterFieldMap = new ParameterFieldRemap();
         this.resolver = new ResolveReferences(compiler, false);
     }
 
+    /** The closure analyzed. If called before analysis, throws. */
+    public DBSPClosureExpression getClosure() {
+        return Objects.requireNonNull(this.closure);
+    }
+
     /** Create a visitor which will rewrite parameters to only contain the used fields.
-     * @param depth: Depth up to which unused fields are eliminated. */
-    public RewriteFields createFieldRewriter(int depth) {
+     * @param depth: Depth up to which unused fields are eliminated.
+     * Note: you cannot mutate the finder; it and the rewrite share state. */
+    public RewriteFields getFieldRewriter(int depth) {
         Substitution<DBSPParameter, DBSPParameter> newParam = new Substitution<>();
-        for (DBSPParameter param: this.allParameters.getParameters()) {
-            FieldUseMap map = this.allParameters.get(param);
+        for (DBSPParameter param: this.parameterFieldMap.getParameters()) {
+            FieldUseMap map = this.parameterFieldMap.get(param);
             DBSPType newType = Objects.requireNonNull(map.compressedType(depth));
             newParam.substitute(param, newType.var().asParameter());
         }
-        return new RewriteFields(this.compiler, newParam, this.allParameters, depth);
+        return new RewriteFields(this.compiler, newParam, this.parameterFieldMap, depth);
+    }
+
+    /** Set or change the map for a parameter */
+    public void setParameterUseMap(DBSPParameter param, FieldUseMap map) {
+        this.parameterFieldMap.changeMap(param, map);
     }
 
     /** True if the closure analyzed can be simplified */
     public boolean foundUnusedFields() {
-        return this.allParameters.hasUnusedFields();
+        return this.parameterFieldMap.hasUnusedFields();
     }
 
     @Override
@@ -92,7 +107,7 @@ public class FindUnusedFields extends SymbolicInterpreter<FieldUseMap> {
     public void postorder(DBSPParameter param) {
         // Create an empty FieldUseMap for each parameter of the closure analyzed
         FieldUseMap map = new FieldUseMap(param.getType(), false);
-        this.allParameters.add(param, map);
+        this.parameterFieldMap.add(param, map);
         this.set(param, map);
         this.setCurrentValue(param, map);
     }
@@ -123,6 +138,12 @@ public class FindUnusedFields extends SymbolicInterpreter<FieldUseMap> {
         for (DBSPExpression arg: expression.arguments) {
             this.used(arg);
         }
+    }
+
+    /** Don't call this function, call findUnusedFields */
+    @Override
+    public IDBSPInnerNode apply(IDBSPInnerNode node) {
+        return super.apply(node);
     }
 
     @Override
@@ -301,6 +322,9 @@ public class FindUnusedFields extends SymbolicInterpreter<FieldUseMap> {
     public void postorder(DBSPLiteral expression) {}
 
     @Override
+    public void postorder(DBSPComparatorExpression expression) {}
+
+    @Override
     public void postorder(DBSPBlockExpression block) {
         if (block.lastExpression != null) {
             FieldUseMap value = this.maybeGet(block.lastExpression);
@@ -312,7 +336,16 @@ public class FindUnusedFields extends SymbolicInterpreter<FieldUseMap> {
     @Override
     public void startVisit(IDBSPInnerNode node) {
         super.startVisit(node);
-        this.allParameters.clear();
+        this.parameterFieldMap.clear();
         this.resolver.startVisit(node);
+    }
+
+    /** Find unused fields in the closure.  Node: this ensures that the closure is a tree,
+     * and returns the tree-shaped equivalent closure too.  Often you want to use that function. */
+    public DBSPClosureExpression findUnusedFields(DBSPClosureExpression closure) {
+        closure = closure.ensureTree(this.compiler).to(DBSPClosureExpression.class);
+        this.closure = closure;
+        this.apply(closure);
+        return closure;
     }
 }

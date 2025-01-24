@@ -12,7 +12,6 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeVec;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 import org.junit.Assert;
-import org.junit.Ignore;
 import org.junit.Test;
 
 /** Tests that emit Rust code using the catalog. */
@@ -145,7 +144,9 @@ public class CatalogTests extends BaseSQLTests {
                 CREATE TABLE t4(c0 BOOLEAN, c1 DOUBLE, c2 VARCHAR);
                 CREATE MATERIALIZED VIEW v1(c0, c1, c2) AS (SELECT t4.c2, t4.c0, t4.c0 FROM t4 WHERE t4.c0);""";
         var ccs = this.getCCS(sql);
-        assert ccs.compiler.messages.messages.isEmpty();
+        // TestUtil.assertMessagesContain does not work for warnings is 'quiet' = true.
+        assert ccs.compiler.messages.messages.toString()
+                .contains("Column 'c1' of table 't4' is unused");
     }
 
     @Test

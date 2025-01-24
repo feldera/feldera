@@ -33,11 +33,11 @@ import org.dbsp.util.Logger;
 
 import java.util.Set;
 
-public class RemoveOperatorsVisitor extends CircuitCloneVisitor {
+public class RemoveOperators extends CircuitCloneVisitor {
     /** Keep all operators that appear in this list. */
     public final Set<DBSPOperator> keep;
 
-    public RemoveOperatorsVisitor(DBSPCompiler compiler, Set<DBSPOperator> keep) {
+    public RemoveOperators(DBSPCompiler compiler, Set<DBSPOperator> keep) {
         super(compiler, false);
         this.keep = keep;
     }

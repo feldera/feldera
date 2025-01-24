@@ -54,4 +54,9 @@ public abstract class DBSPTypeBaseType extends DBSPType {
         return builder.append(this.shortName())
                 .append(this.mayBeNull ? "?" : "");
     }
+
+    @Override
+    public int getToplevelFieldCount() {
+        return 1;
+    }
 }

@@ -589,6 +589,8 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
 
             this.sqlToRelCompiler.endCompilation(this.compiler());
             DBSPCircuit circuit = this.relToDBSPCompiler.getFinalCircuit();
+            if (circuit == null)
+                return null;
             if (this.getDebugLevel() > 0)
                 ToDot.dump(this, "initial.png", this.getDebugLevel(), "png", circuit);
 

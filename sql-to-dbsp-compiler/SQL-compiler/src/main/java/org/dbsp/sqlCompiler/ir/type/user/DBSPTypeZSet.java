@@ -56,6 +56,11 @@ public class DBSPTypeZSet extends DBSPTypeUser implements ICollectionType {
     }
 
     @Override
+    public int getToplevelFieldCount() {
+        return this.elementType.getToplevelFieldCount();
+    }
+
+    @Override
     public DBSPType getElementType() {
         return this.elementType;
     }

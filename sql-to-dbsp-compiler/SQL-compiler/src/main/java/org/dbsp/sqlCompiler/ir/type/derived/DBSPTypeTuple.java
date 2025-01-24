@@ -83,6 +83,12 @@ public class DBSPTypeTuple extends DBSPTypeTupleBase {
     }
 
     @Override
+    public int getToplevelFieldCount() {
+        // Note: do *not* recurse into children
+        return this.size();
+    }
+
+    @Override
     public DBSPTypeTupleBase project(List<Integer> fields) {
         DBSPType[] resultFields = new DBSPType[fields.size()];
         int index = 0;

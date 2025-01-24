@@ -83,9 +83,8 @@ public class TestCase {
         list.add(streams);
 
         int pair = 0;
-        Shuffle inputShuffle = new IdShuffle();
-        Shuffle outputShuffle = new IdShuffle();
         List<String> inputOrder = this.ccs.stream.inputTables;
+        Shuffle inputShuffle = new IdShuffle(this.ccs.circuit.getInputTables().size());
         if (!inputOrder.isEmpty()) {
             List<String> inputs = Linq.map(Linq.list(this.ccs.circuit.getInputTables()), ProgramIdentifier::name);
             assert inputOrder.size() == inputs.size() :
@@ -93,6 +92,7 @@ public class TestCase {
             inputShuffle = ExplicitShuffle.computePermutation(inputOrder, inputs);
         }
         List<String> outputOrder = this.ccs.stream.outputTables;
+        Shuffle outputShuffle = new IdShuffle(this.ccs.circuit.getOutputCount());
         if (!outputOrder.isEmpty()) {
             List<String> outputs = Linq.map(Linq.list(this.ccs.circuit.getOutputViews()), ProgramIdentifier::name);
             outputShuffle = ExplicitShuffle.computePermutation(outputOrder, outputs);

@@ -20,7 +20,12 @@ public class OptimizeWithGraph extends Repeat {
     }
 
     public OptimizeWithGraph(DBSPCompiler compiler,
+                             Function<CircuitGraphs, CircuitTransform> optimizerFactory, int maxRepeats) {
+        super(compiler, createOnePass(compiler, optimizerFactory), maxRepeats);
+    }
+
+    public OptimizeWithGraph(DBSPCompiler compiler,
                              Function<CircuitGraphs, CircuitTransform> optimizerFactory) {
-        super(compiler, createOnePass(compiler, optimizerFactory));
+        this(compiler, optimizerFactory, Integer.MAX_VALUE);
     }
 }

@@ -55,6 +55,11 @@ public class DBSPTypeAny extends DBSPType {
     }
 
     @Override
+    public int getToplevelFieldCount() {
+        throw new UnimplementedException();
+    }
+
+    @Override
     public int hashCode() {
         return Objects.hash(this.mayBeNull, 1);
     }

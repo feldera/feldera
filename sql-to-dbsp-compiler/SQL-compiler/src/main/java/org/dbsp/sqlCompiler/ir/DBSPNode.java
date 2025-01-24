@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir;
 
+import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.util.IndentStream;
@@ -38,7 +39,8 @@ import java.util.List;
 /** Base class for all DBSP nodes. */
 public abstract class DBSPNode
         implements IDBSPNode {
-    static long crtId = 0;
+    public static long innerId = 0;
+    public static long outerId = 0;
     public final long id;
 
     /** Original Calcite object node that produced this node. */
@@ -127,7 +129,10 @@ public abstract class DBSPNode
 
     protected DBSPNode(CalciteObject node) {
         this.node = node;
-        this.id = crtId++;
+        if (this.is(IDBSPInnerNode.class))
+            this.id = innerId++;
+        else
+            this.id = outerId++;
         if (log != null)
             log.add(this);
     }
@@ -135,7 +140,15 @@ public abstract class DBSPNode
     /** Do not call this method!
      * It is only used for testing. */
     public static void reset() {
-        crtId = 0;
+        innerId = 0;
+        outerId = 0;
+    }
+
+    public static void discardOuterNode(IDBSPOuterNode node) {
+        // This is called sometimes when an allocated outer node is not used.
+        // This makes it easier to track passes which allocate new nodes.
+        if (node.getId() == outerId - 1)
+            outerId--;
     }
 
     public CalciteObject getNode() { return this.node; }

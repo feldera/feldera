@@ -8,8 +8,8 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSumOperator;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
-import org.dbsp.sqlCompiler.compiler.frontend.TypeCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
@@ -28,9 +28,8 @@ public class ExpandAggregateZero extends CircuitCloneVisitor {
         DBSPExpression emptySetResult = operator.getFunction();
         OutputPort input = this.mapped(operator.input());
         DBSPVariablePath _t = emptySetResult.getType().ref().var();
-        DBSPExpression toZero = emptySetResult.closure(_t);
-        DBSPSimpleOperator map1 = new DBSPMapOperator(
-                node, toZero, TypeCompiler.makeZSet(emptySetResult.getType()), input);
+        DBSPClosureExpression toZero = emptySetResult.closure(_t);
+        DBSPSimpleOperator map1 = new DBSPMapOperator(node, toZero, input);
         this.addOperator(map1);
         DBSPSimpleOperator neg = new DBSPNegateOperator(node, map1.outputPort());
         this.addOperator(neg);

@@ -1,7 +1,6 @@
-package org.dbsp.sqlCompiler.compiler.visitors.outer;
+package org.dbsp.sqlCompiler.compiler.visitors.unusedFields;
 
 import org.dbsp.sqlCompiler.circuit.OutputPort;
-import org.dbsp.sqlCompiler.circuit.annotation.IsProjection;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
@@ -10,10 +9,17 @@ import org.dbsp.sqlCompiler.compiler.InputColumnMetadata;
 import org.dbsp.sqlCompiler.compiler.TableMetadata;
 import org.dbsp.sqlCompiler.compiler.backend.dot.ToDot;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
-import org.dbsp.sqlCompiler.compiler.visitors.inner.unusedFields.FieldUseMap;
-import org.dbsp.sqlCompiler.compiler.visitors.inner.unusedFields.FindCommonProjections;
-import org.dbsp.sqlCompiler.compiler.visitors.inner.unusedFields.FindUnusedFields;
-import org.dbsp.sqlCompiler.compiler.visitors.inner.unusedFields.RemoveUnusedFields;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.CSE;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitCloneVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitGraphs;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitWithGraphsVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.Conditional;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.DeadCode;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.Graph;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.OptimizeMaps;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.OptimizeWithGraph;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.Passes;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.Repeat;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
 import org.dbsp.util.Utilities;
@@ -33,33 +39,37 @@ public class UnusedFields extends Passes {
 
         static class OnePass extends Passes {
             OnePass(DBSPCompiler compiler) {
-                super("RemoveUnusedFields", compiler);
+                super("UnusedFieldsOnePass", compiler);
                 Graph graph = new Graph(compiler);
                 this.add(new RemoveUnusedFields(compiler));
-                this.add(new OptimizeWithGraph(compiler, g -> new OptimizeMaps(compiler, true, g)));
-                this.add(graph);
-                this.add(new FindCommonProjections(compiler, graph.getGraphs()));
+                // Very important, because OptimizeMaps works backward
                 this.add(new DeadCode(compiler, true, false));
+                this.add(new OptimizeWithGraph(compiler, g -> new OptimizeMaps(compiler, true, g), 1));
+                this.add(graph);
+                FindCommonProjections fcp = new FindCommonProjections(compiler, graph.getGraphs());
+                this.add(fcp);
+                // this.add(ToDot.dumper(compiler, "x.png", 2));
+                this.add(new ReplaceCommonProjections(compiler, fcp));
+                this.add(new OptimizeWithGraph(compiler, g -> new TrimFilters(compiler, g), 1));
+                this.add(new CSE(compiler));
             }
         }
     }
 
-    static class UnusedInputFields extends CircuitVisitor {
+    static class FindUnusedInputFields extends CircuitWithGraphsVisitor {
         final Map<DBSPSourceMultisetOperator, FieldUseMap> fieldsUsed;
         final Map<DBSPSourceMultisetOperator, DBSPMapOperator> successor;
-        final CircuitGraphs graphs;
 
-        public UnusedInputFields(DBSPCompiler compiler, CircuitGraphs graphs) {
-            super(compiler);
+        public FindUnusedInputFields(DBSPCompiler compiler, CircuitGraphs graphs) {
+            super(compiler, graphs);
             this.fieldsUsed = new HashMap<>();
             this.successor = new HashMap<>();
-            this.graphs = graphs;
         }
 
         @Override
         public void postorder(DBSPMapOperator operator) {
             OutputPort source = operator.input();
-            int inputFanout = this.graphs.getGraph(this.getParent()).getFanout(operator.input().node());
+            int inputFanout = this.getGraph().getFanout(operator.input().node());
             if (inputFanout > 1)
                 return;
             if (source.node().is(DBSPSourceMultisetOperator.class)) {
@@ -70,7 +80,7 @@ public class UnusedFields extends Passes {
                 unused.apply(function.ensureTree(this.compiler));
 
                 if (unused.foundUnusedFields() && !src.metadata.materialized) {
-                    FieldUseMap map = unused.allParameters.get(function.parameters[0]).deref();
+                    FieldUseMap map = unused.parameterFieldMap.get(function.parameters[0]).deref();
                     Utilities.putNew(this.fieldsUsed, src, map);
 
                     if (map.hasUnusedFields()) {
@@ -85,18 +95,16 @@ public class UnusedFields extends Passes {
                         }
                     }
                 }
-                if (operator.hasAnnotation(a -> a.is(IsProjection.class))) {
-                    Utilities.putNew(this.successor, src, operator);
-                }
+                Utilities.putNew(this.successor, src, operator);
             }
         }
     }
 
-    static class RemoveUnusedInputFields extends CircuitCloneVisitor {
-        final UnusedInputFields data;
+    static class TrimInputs extends CircuitCloneVisitor {
+        final FindUnusedInputFields data;
         final Map<DBSPSourceMultisetOperator, DBSPSourceMultisetOperator> replacement;
 
-        public RemoveUnusedInputFields(DBSPCompiler compiler, UnusedInputFields data) {
+        public TrimInputs(DBSPCompiler compiler, FindUnusedInputFields data) {
             super(compiler,false);
             this.data = data;
             this.replacement = new HashMap<>();
@@ -167,9 +175,10 @@ public class UnusedFields extends Passes {
         Graph graph = new Graph(compiler);
         this.add(new RepeatRemove(compiler));
         this.add(graph);
-        UnusedInputFields unusedInputs = new UnusedInputFields(compiler, graph.getGraphs());
+        FindUnusedInputFields unusedInputs = new FindUnusedInputFields(compiler, graph.getGraphs());
         this.add(unusedInputs);
         this.add(new Conditional(compiler,
-                new RemoveUnusedInputFields(compiler, unusedInputs), () -> this.compiler().options.ioOptions.trimInputs));
+                new TrimInputs(compiler, unusedInputs),
+                () -> this.compiler().options.ioOptions.trimInputs));
     }
 }
