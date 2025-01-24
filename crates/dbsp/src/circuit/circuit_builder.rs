@@ -4946,12 +4946,12 @@ impl CircuitHandle {
         Ok(())
     }
 
-    pub fn fingerprint(&mut self) -> Result<u64, SchedulerError> {
+    pub fn fingerprint(&self) -> u64 {
         let mut fip = Fingerprinter::default();
         self.circuit.map_nodes_recursive(&mut |node: &dyn Node| {
             node.fingerprint(&mut fip);
         });
-        Ok(fip.finish())
+        fip.finish()
     }
 
     /// Attach a scheduler event handler to the circuit.
