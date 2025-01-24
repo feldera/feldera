@@ -50,7 +50,7 @@ class aggtst_decimal_every_where(TstView):
         # Validated on Postgres
         self.data = [{"c1": False, "c2": False}]
         self.sql = """CREATE MATERIALIZED VIEW decimal_every_where AS SELECT
-                      EVERY(c1 > 1111.52) FILTER(WHERE c1 IS NOT NULL) AS c1, 
+                      EVERY(c1 > 1111.52) FILTER(WHERE c1 IS NOT NULL) AS c1,
                       EVERY(c2 > 3802.71) FILTER(WHERE c1 IS NOT NULL) AS c2
                       FROM decimal_tbl"""
 
@@ -63,8 +63,8 @@ class aggtst_decimal_every_where_groupby(TstView):
             {"id": 1, "c1": True, "c2": True},
         ]
         self.sql = """CREATE MATERIALIZED VIEW decimal_every_where_gby AS SELECT
-                      id, 
-                      EVERY(c1 > 1111.52) FILTER(WHERE c1 IS NOT NULL) AS c1, 
+                      id,
+                      EVERY(c1 > 1111.52) FILTER(WHERE c1 IS NOT NULL) AS c1,
                       EVERY(c2 > 3802.71) FILTER(WHERE c1 IS NOT NULL) AS c2
                       FROM decimal_tbl
                       GROUP BY id"""
