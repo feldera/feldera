@@ -22,7 +22,7 @@ use size_of::SizeOf;
 use std::fmt::{self, Debug, Display};
 
 pub struct VecWSetFactories<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> {
-    layer_factories: LeafFactories<K, R>,
+    pub layer_factories: LeafFactories<K, R>,
     item_factory: &'static dyn Factory<DynPair<K, DynUnit>>,
     weighted_item_factory: &'static dyn Factory<WeightedItem<K, DynUnit, R>>,
     weighted_items_factory: &'static dyn Factory<DynWeightedPairs<DynPair<K, DynUnit>, R>>,
@@ -122,6 +122,23 @@ where
     // weighted_item_factory: &'static WeightedFactory<K, R>,
     // #[size_of(skip)]
     // batch_item_factory: &'static BatchItemFactory<K, (), K, R>,
+}
+
+impl<K, R> VecWSet<K, R>
+where
+    K: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+{
+    pub fn from_parts(
+        factories: VecWSetFactories<K, R>,
+        keys: Box<DynVec<K>>,
+        diffs: Box<DynVec<R>>,
+    ) -> Self {
+        Self {
+            layer: Leaf::from_parts(&factories.layer_factories, keys, diffs),
+            factories,
+        }
+    }
 }
 
 impl<K, R> PartialEq for VecWSet<K, R>
@@ -344,6 +361,10 @@ impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> BatchReader for VecWSet<K, 
         RG: Rng,
     {
         self.layer.sample_keys(rng, sample_size, sample);
+    }
+
+    fn keys(&self) -> Option<&DynVec<Self::Key>> {
+        Some(&*self.layer.keys)
     }
 }
 

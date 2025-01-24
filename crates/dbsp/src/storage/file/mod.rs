@@ -68,8 +68,10 @@
 // Warn about missing docs, but not for item declared with `#[cfg(test)]`.
 #![cfg_attr(not(test), warn(missing_docs))]
 
-use crate::dynamic::ArchivedDBData;
-use crate::storage::buffer_cache::{FBuf, FBufSerializer};
+use crate::{
+    dynamic::{ArchivedDBData, DynVec, LeanVec},
+    storage::buffer_cache::{FBuf, FBufSerializer},
+};
 use rkyv::de::deserializers::SharedDeserializeMap;
 use rkyv::{
     ser::{
@@ -110,6 +112,12 @@ where
 
     /// Factory for creating instances of `Item<K, A>`.
     pub item_factory: &'static dyn ItemFactory<K, A>,
+
+    /// Factory for creating instances of `Vector<K>`.
+    pub keys_factory: &'static dyn Factory<DynVec<K>>,
+
+    /// Factory for creating instances of `Vector<A>`.
+    pub auxes_factory: &'static dyn Factory<DynVec<A>>,
 }
 
 impl<K, A> Clone for Factories<K, A>
@@ -121,6 +129,8 @@ where
         Self {
             key_factory: self.key_factory,
             item_factory: self.item_factory,
+            keys_factory: self.keys_factory,
+            auxes_factory: self.auxes_factory,
         }
     }
 }
@@ -140,6 +150,8 @@ where
         Self {
             key_factory: WithFactory::<KType>::FACTORY,
             item_factory: <RefTup2Factory<KType, AType> as WithItemFactory<K, A>>::ITEM_FACTORY,
+            keys_factory: WithFactory::<LeanVec<KType>>::FACTORY,
+            auxes_factory: WithFactory::<LeanVec<AType>>::FACTORY,
         }
     }
 
@@ -152,6 +164,8 @@ where
         AnyFactories {
             key_factory: Arc::new(self.key_factory),
             item_factory: Arc::new(self.item_factory),
+            keys_factory: Arc::new(self.keys_factory),
+            auxes_factory: Arc::new(self.auxes_factory),
         }
     }
 }
@@ -168,6 +182,8 @@ where
 pub struct AnyFactories {
     key_factory: Arc<(dyn Any + Send + Sync + 'static)>,
     item_factory: Arc<(dyn Any + Send + Sync + 'static)>,
+    keys_factory: Arc<(dyn Any + Send + Sync + 'static)>,
+    auxes_factory: Arc<(dyn Any + Send + Sync + 'static)>,
 }
 
 impl Debug for AnyFactories {
@@ -200,6 +216,28 @@ impl AnyFactories {
             .unwrap()
     }
 
+    fn keys_factory<K>(&self) -> &'static dyn Factory<DynVec<K>>
+    where
+        K: DataTrait + ?Sized,
+    {
+        *self
+            .keys_factory
+            .as_ref()
+            .downcast_ref::<&'static dyn Factory<DynVec<K>>>()
+            .unwrap()
+    }
+
+    fn auxes_factory<K>(&self) -> &'static dyn Factory<DynVec<K>>
+    where
+        K: DataTrait + ?Sized,
+    {
+        *self
+            .auxes_factory
+            .as_ref()
+            .downcast_ref::<&'static dyn Factory<DynVec<K>>>()
+            .unwrap()
+    }
+
     fn factories<K, A>(&self) -> Factories<K, A>
     where
         K: DataTrait + ?Sized,
@@ -208,6 +246,8 @@ impl AnyFactories {
         Factories {
             key_factory: self.key_factory(),
             item_factory: self.item_factory(),
+            keys_factory: self.keys_factory(),
+            auxes_factory: self.auxes_factory(),
         }
     }
 }

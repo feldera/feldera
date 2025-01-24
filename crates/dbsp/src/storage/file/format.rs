@@ -330,7 +330,7 @@ impl FixedLen for DataBlockHeader {
 /// structure.
 ///
 /// To save space, arrays of `Varint`s values aren't aligned.
-#[derive(Copy, Clone, PartialEq, Eq, FromPrimitive)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, FromPrimitive)]
 #[binrw]
 #[brw(repr(u8))]
 pub enum Varint {

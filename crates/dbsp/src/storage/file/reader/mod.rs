@@ -4,6 +4,7 @@
 
 use super::format::{Compression, FileTrailer};
 use super::{AnyFactories, Factories};
+use crate::dynamic::{DynVec, WeightTrait};
 use crate::storage::buffer_cache::{CacheAccess, CacheEntry};
 use crate::storage::file::format::FilterBlock;
 use crate::storage::{
@@ -29,6 +30,7 @@ use crc32c::crc32c;
 use fastbloom::BloomFilter;
 use feldera_storage::file::FileId;
 use feldera_storage::StoragePath;
+use smallvec::SmallVec;
 use snap::raw::{decompress_len, Decoder};
 use std::mem::replace;
 use std::time::Instant;
@@ -45,6 +47,14 @@ use std::{
 };
 use thiserror::Error as ThisError;
 
+mod bulk_rows;
+pub use bulk_rows::BulkRows;
+
+mod fetch_zset;
+pub use fetch_zset::FetchZSet;
+
+mod fetch_indexed_zset;
+pub use fetch_indexed_zset::FetchIndexedZSet;
 /// Any kind of error encountered reading a layer file.
 #[derive(ThisError, Debug)]
 pub enum Error {
@@ -645,6 +655,45 @@ where
         best
     }
 
+    /// Searches this data block for `target` and returns whether it was
+    /// successful.
+    ///
+    /// Maintains `key_stack` and `index_stack` as a cache of the keys along a
+    /// binary search through the data block.  When successful, the index of the
+    /// child found and its key are at the top of `index_stack` and `key_stack`,
+    /// respectively.
+    unsafe fn find_with_cache<const N: usize>(
+        &self,
+        factories: &Factories<K, A>,
+        key_stack: &mut DynVec<K>,
+        index_stack: &mut SmallVec<[usize; N]>,
+        target: &K,
+    ) -> bool {
+        let mut start = 0;
+        let mut end = self.n_values();
+        let mut i = 0;
+        while start < end {
+            let mid = start.midpoint(end);
+            if index_stack.get(i) != Some(&mid) {
+                index_stack.truncate(i);
+                index_stack.push(mid);
+                key_stack.truncate(i);
+                key_stack.push_with(&mut |key| self.key(factories, mid, key));
+            };
+            match target.cmp(&key_stack[i]) {
+                Less => end = mid,
+                Equal => {
+                    index_stack.truncate(i + 1);
+                    key_stack.truncate(i + 1);
+                    return true;
+                }
+                Greater => start = mid + 1,
+            };
+            i += 1;
+        }
+        false
+    }
+
     /// Returns the comparison of the key in `row` using `compare`.
     unsafe fn compare_row<C>(&self, factories: &Factories<K, A>, row: u64, compare: &C) -> Ordering
     where
@@ -1023,6 +1072,41 @@ where
         result
     }
 
+    /// Finds the child `child_index` that contains
+    /// `targets[target_indexes.start]`.  If found, some of the following
+    /// indexes within `target_indexes` might also be in the same child; this
+    /// function counts them as `n_targets` (which is at least 1, counting the
+    /// initial target).  Returns `Some((child_index, n_targets))`.
+    ///
+    /// `tmp_key` and `start` are temporary storage.
+    unsafe fn find_next(
+        &self,
+        targets: &DynVec<K>,
+        mut target_indexes: Range<usize>,
+        tmp_key: &mut K,
+        start: &mut usize,
+    ) -> Option<(usize, usize)> {
+        let start_index = target_indexes.next().unwrap();
+        let mut end = self.n_children();
+        while *start < end {
+            let mid = start.midpoint(end);
+            self.get_bound(mid * 2, tmp_key);
+            if &targets[start_index] < tmp_key {
+                end = mid;
+            } else {
+                *start = mid + 1;
+                self.get_bound(mid * 2 + 1, tmp_key);
+                if &targets[start_index] <= tmp_key {
+                    let n = 1 + target_indexes
+                        .take_while(|i| &targets[*i] <= tmp_key)
+                        .count();
+                    return Some((mid, n));
+                }
+            }
+        }
+        None
+    }
+
     fn n_children(&self) -> usize {
         self.child_offsets.count
     }
@@ -1311,6 +1395,8 @@ where
 ///
 /// `T` in `Reader<T>` must be a [`ColumnSpec`] that specifies the key and
 /// auxiliary data types for all of the columns in the file to be read.
+///
+/// Use [Reader::rows] to read data.
 #[derive(Debug)]
 pub struct Reader<T> {
     file: ImmutableFileRef,
@@ -1466,6 +1552,11 @@ where
     pub fn cache_stats(&self) -> CacheStats {
         self.file.stats.read()
     }
+
+    /// Returns the `FileReader` embedded in this `Reader`.
+    pub fn file_handle(&self) -> &dyn FileReader {
+        &*self.file.file_handle
+    }
 }
 
 impl<K, A, N> Reader<(&'static K, &'static A, N)>
@@ -1483,6 +1574,45 @@ where
     /// Returns a [`RowGroup`] for all of the rows in column 0.
     pub fn rows(&self) -> RowGroup<K, A, N, (&'static K, &'static A, N)> {
         RowGroup::new(self, 0, 0..self.columns[0].n_rows)
+    }
+
+    /// Returns a [`BulkRows`] for column 0.
+    pub fn bulk_rows(&self) -> Result<BulkRows<K, A, N, (&'static K, &'static A, N)>, Error> {
+        BulkRows::new(self, 0)
+    }
+}
+
+impl<K, A> Reader<(&'static K, &'static A, ())>
+where
+    K: DataTrait + ?Sized,
+    A: WeightTrait + ?Sized,
+{
+    /// Returns a [`FetchZSet`], which will subset this reader to just the rows
+    /// in colunn 0 whose keys are in `keys` (which must be sorted) and return
+    /// it as a Z-set, treating auxiliary values as weights.
+    pub fn fetch_zset<'a, 'b>(
+        &'a self,
+        keys: &'b DynVec<K>,
+    ) -> Result<FetchZSet<'a, 'b, K, A>, Error> {
+        FetchZSet::new(self, keys)
+    }
+}
+
+impl<K0, A0, K1, A1> Reader<(&'static K0, &'static A0, (&'static K1, &'static A1, ()))>
+where
+    K0: DataTrait + ?Sized,
+    A0: DataTrait + ?Sized,
+    K1: DataTrait + ?Sized,
+    A1: WeightTrait + ?Sized,
+{
+    /// Returns a [`FetchIndexedZSet`], which will build an indexed Z-set from
+    /// this reader containing just the rows whose keys are in `keys` (which
+    /// must be sorted).
+    pub fn fetch_indexed_zset<'a, 'b>(
+        &'a self,
+        keys: &'b DynVec<K0>,
+    ) -> Result<FetchIndexedZSet<'a, 'b, K0, A0, K1, A1>, Error> {
+        FetchIndexedZSet::new(self, keys)
     }
 }
 
@@ -2019,6 +2149,8 @@ where
     /// row.  If the cursor is on a row, the returned row group will contain at
     /// least one row.  If the cursor is before or after the row group, the
     /// returned row group will be empty.
+    ///
+    /// This method does not do I/O, but it can report [Error::Corruption].
     pub fn next_column<'b>(&'b self) -> Result<RowGroup<'a, NK, NA, NN, T>, Error> {
         Ok(RowGroup::new(
             self.row_group.reader,
@@ -2028,6 +2160,7 @@ where
     }
 }
 
+/// A path from the root of a column to a data block.
 struct Path<K: DataTrait + ?Sized, A: DataTrait + ?Sized> {
     row: u64,
     indexes: Vec<Arc<IndexBlock<K>>>,
@@ -2531,6 +2664,7 @@ where
             Position::After { hint } => hint.as_ref(),
         }
     }
+
     fn path(&self) -> Option<&Path<K, A>> {
         match self {
             Position::Before => None,

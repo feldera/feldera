@@ -488,7 +488,12 @@ where
 
         let mut builder = Z::Builder::with_capacity(&self.input_factories, delta.len());
         let mut delta_cursor = delta.cursor();
-        let mut integral_cursor = delayed_integral.cursor();
+
+        let fetched = delayed_integral.fetch(delta).await;
+        let mut integral_cursor = match &fetched {
+            Some(fetched) => fetched.get_cursor(),
+            None => Box::new(delayed_integral.cursor()),
+        };
 
         while delta_cursor.key_valid() {
             let mut any_values = false;

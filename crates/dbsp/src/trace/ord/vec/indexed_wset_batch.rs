@@ -168,6 +168,32 @@ where
     factories: VecIndexedWSetFactories<K, V, R>,
 }
 
+impl<K, V, R, O> VecIndexedWSet<K, V, R, O>
+where
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+    O: OrdOffset,
+{
+    pub fn from_parts(
+        factories: VecIndexedWSetFactories<K, V, R>,
+        keys: Box<DynVec<K>>,
+        offs: Vec<O>,
+        vals: Box<DynVec<V>>,
+        diffs: Box<DynVec<R>>,
+    ) -> Self {
+        Self {
+            layer: Layer::from_parts(
+                &factories.layer_factories,
+                keys,
+                offs,
+                Leaf::from_parts(&factories.layer_factories.child, vals, diffs),
+            ),
+            factories,
+        }
+    }
+}
+
 impl<K, V, R, O> PartialEq for VecIndexedWSet<K, V, R, O>
 where
     K: DataTrait + ?Sized,
@@ -426,6 +452,10 @@ where
         RG: Rng,
     {
         self.layer.sample_keys(rng, sample_size, sample);
+    }
+
+    fn keys(&self) -> Option<&DynVec<Self::Key>> {
+        Some(&*self.layer.keys)
     }
 }
 
@@ -806,15 +836,7 @@ where
     }
 
     fn done(self) -> VecIndexedWSet<K, V, R, O> {
-        VecIndexedWSet {
-            layer: Layer::from_parts(
-                &self.factories.layer_factories,
-                self.keys,
-                self.offs,
-                Leaf::from_parts(&self.factories.layer_factories.child, self.vals, self.diffs),
-            ),
-            factories: self.factories,
-        }
+        VecIndexedWSet::from_parts(self.factories, self.keys, self.offs, self.vals, self.diffs)
     }
 }
 

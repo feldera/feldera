@@ -4,7 +4,7 @@ use crate::{
     dynamic::{DataTrait, DynVec, Erase, WeightTrait, WeightTraitTyped},
     storage::{buffer_cache::CacheStats, file::reader::Error as ReaderError},
     trace::{
-        cursor::DelegatingCursor,
+        cursor::{CursorFactory, DelegatingCursor, PushCursor},
         deserialize_indexed_wset, merge_batches_by_reference,
         ord::{
             fallback::utils::BuildTo,
@@ -215,6 +215,15 @@ where
         })
     }
 
+    fn push_cursor(
+        &self,
+    ) -> Box<dyn PushCursor<Self::Key, Self::Val, Self::Time, Self::R> + Send + '_> {
+        match &self.inner {
+            Inner::Vec(vec) => vec.push_cursor(),
+            Inner::File(file) => file.push_cursor(),
+        }
+    }
+
     fn merge_cursor(
         &self,
         key_filter: Option<Filter<Self::Key>>,
@@ -290,6 +299,26 @@ where
         match &self.inner {
             Inner::Vec(vec) => vec.maybe_contains_key(key),
             Inner::File(file) => file.maybe_contains_key(key),
+        }
+    }
+
+    async fn fetch<B>(
+        &self,
+        keys: &B,
+    ) -> Option<Box<dyn CursorFactory<Self::Key, Self::Val, Self::Time, Self::R>>>
+    where
+        B: BatchReader<Key = Self::Key, Time = ()>,
+    {
+        match &self.inner {
+            Inner::Vec(vec) => vec.fetch(keys).await,
+            Inner::File(file) => file.fetch(keys).await,
+        }
+    }
+
+    fn keys(&self) -> Option<&DynVec<Self::Key>> {
+        match &self.inner {
+            Inner::Vec(vec) => vec.keys(),
+            Inner::File(file) => file.keys(),
         }
     }
 }

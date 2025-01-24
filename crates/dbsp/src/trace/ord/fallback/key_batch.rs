@@ -5,7 +5,7 @@ use crate::{
     },
     storage::{buffer_cache::CacheStats, file::reader::Error as ReaderError},
     trace::{
-        cursor::DelegatingCursor,
+        cursor::{DelegatingCursor, PushCursor},
         ord::{
             file::key_batch::FileKeyBuilder, merge_batcher::MergeBatcher,
             vec::key_batch::VecKeyBuilder, FileKeyBatch, OrdKeyBatch,
@@ -216,6 +216,15 @@ where
             Inner::Vec(vec) => Box::new(vec.cursor()),
             Inner::File(file) => Box::new(file.cursor()),
         })
+    }
+
+    fn push_cursor(
+        &self,
+    ) -> Box<dyn PushCursor<Self::Key, Self::Val, Self::Time, Self::R> + Send + '_> {
+        match &self.inner {
+            Inner::Vec(vec) => vec.push_cursor(),
+            Inner::File(file) => file.push_cursor(),
+        }
     }
 
     fn merge_cursor(

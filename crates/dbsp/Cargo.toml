@@ -94,6 +94,7 @@ time = { workspace = true, features = [
     "serde-human-readable",
 ] }
 feldera-ir = { workspace = true }
+smallvec = { workspace = true }
 
 [target.'cfg(target_family = "unix")'.dependencies]
 nix = { version = "0.27.1", features = ["uio", "feature", "fs"] }
