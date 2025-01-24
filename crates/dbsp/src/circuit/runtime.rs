@@ -1,7 +1,6 @@
 //! A multithreaded runtime for evaluating DBSP circuits in a data-parallel
 //! fashion.
 
-use crate::circuit::checkpointer::Checkpointer;
 use crate::circuit::metrics::describe_metrics;
 use crate::error::Error as DbspError;
 use crate::storage::backend::StorageBackend;
@@ -247,9 +246,6 @@ impl RuntimeInner {
                 )));
             }
         }
-        // Clean up any stale checkpoints / files.
-        let checkpointer = Checkpointer::new(storage.clone());
-        checkpointer.gc_startup()?;
 
         Ok(Self {
             layout: config.layout,
