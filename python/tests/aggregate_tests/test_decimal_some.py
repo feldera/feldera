@@ -50,7 +50,7 @@ class aggtst_decimal_some_where(TstView):
         # Validated on Postgres
         self.data = [{"c1": True, "c2": True}]
         self.sql = """CREATE MATERIALIZED VIEW decimal_some_where AS SELECT
-                      SOME(c1 > 1111.52) FILTER(WHERE c1 IS NOT NULL) AS c1, 
+                      SOME(c1 > 1111.52) FILTER(WHERE c1 IS NOT NULL) AS c1,
                       SOME(c2 > 3802.71) FILTER(WHERE c1 IS NOT NULL) AS c2
                       FROM decimal_tbl"""
 
@@ -63,8 +63,8 @@ class aggtst_decimal_some_where_groupby(TstView):
             {"id": 1, "c1": True, "c2": True},
         ]
         self.sql = """CREATE MATERIALIZED VIEW decimal_some_where_gby AS SELECT
-                      id, 
-                      SOME(c1 > 1111.52) FILTER(WHERE c1 IS NOT NULL) AS c1, 
+                      id,
+                      SOME(c1 > 1111.52) FILTER(WHERE c1 IS NOT NULL) AS c1,
                       SOME(c2 > 3802.71) FILTER(WHERE c1 IS NOT NULL) AS c2
                       FROM decimal_tbl
                       GROUP BY id"""
