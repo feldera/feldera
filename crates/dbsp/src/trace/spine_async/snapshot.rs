@@ -4,14 +4,16 @@
 use std::fmt::Debug;
 use std::sync::Arc;
 
+use futures::{stream::FuturesUnordered, StreamExt};
 use rand::Rng;
 use rkyv::ser::Serializer;
 use rkyv::{Archive, Archived, Deserialize, Fallible, Serialize};
 use size_of::SizeOf;
 
 use super::SpineCursor;
-use crate::dynamic::DynVec;
-use crate::trace::{Batch, BatchReader, Spine};
+use crate::dynamic::{DynVec, Factory};
+use crate::trace::cursor::{CursorFactory, CursorList};
+use crate::trace::{Batch, BatchReader, BatchReaderFactories, Cursor, Spine};
 use crate::NumEntries;
 
 #[derive(Clone, SizeOf)]
@@ -100,6 +102,78 @@ where
     {
         // This method probably shouldn't be in the BatchReader
         unimplemented!("Shouldn't be called on a snapshot");
+    }
+
+    async fn fetch<K>(
+        &self,
+        keys: &K,
+    ) -> Option<Box<dyn CursorFactory<Self::Key, Self::Val, Self::Time, Self::R>>>
+    where
+        K: BatchReader<Key = Self::Key, Time = ()>,
+    {
+        Some(Box::new(
+            FetchList::new(self.batches.clone(), keys, self.factories.weight_factory()).await,
+        ))
+    }
+}
+
+pub struct FetchList<B>
+where
+    B: BatchReader,
+{
+    weight_factory: &'static dyn Factory<B::R>,
+    batches: Vec<Arc<B>>,
+    fetched: Vec<Box<dyn CursorFactory<B::Key, B::Val, B::Time, B::R>>>,
+}
+
+impl<B> FetchList<B>
+where
+    B: BatchReader,
+{
+    pub async fn new<K>(
+        inputs: Vec<Arc<B>>,
+        keys: &K,
+        weight_factory: &'static dyn Factory<B::R>,
+    ) -> Self
+    where
+        K: BatchReader<Key = B::Key, Time = ()>,
+    {
+        let mut batches = Vec::new();
+        let mut fetched = Vec::new();
+        let mut futures = inputs
+            .into_iter()
+            .map(|b| async move { (b.clone(), b.fetch(keys).await) })
+            .collect::<FuturesUnordered<_>>();
+        while let Some((batch, fetch)) = futures.next().await {
+            if let Some(fetch) = fetch {
+                fetched.push(fetch);
+            } else {
+                batches.push(batch);
+            }
+        }
+
+        Self {
+            weight_factory,
+            batches,
+            fetched,
+        }
+    }
+}
+
+impl<B> CursorFactory<B::Key, B::Val, B::Time, B::R> for FetchList<B>
+where
+    B: Batch,
+{
+    fn get_cursor<'a>(&'a self) -> Box<dyn Cursor<B::Key, B::Val, B::Time, B::R> + 'a> {
+        let cursors =
+            self.fetched
+                .iter()
+                .map(|hc| hc.get_cursor())
+                .chain(self.batches.iter().map(|b| {
+                    Box::new(b.cursor()) as Box<dyn Cursor<B::Key, B::Val, B::Time, B::R>>
+                }))
+                .collect::<Vec<_>>();
+        Box::new(CursorList::new(self.weight_factory, cursors))
     }
 }
 

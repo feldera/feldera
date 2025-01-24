@@ -1,71 +1,14 @@
-use std::{cmp::Ordering, sync::Arc};
-
-use ouroboros::self_referencing;
+use std::cmp::Ordering;
 
 use crate::{
     algebra::Lattice,
     dynamic::{DynDataTyped, DynWeightedPairs, Weight, WeightTrait},
     time::Timestamp,
     trace::{
-        spine_async::index_set::IndexSet, Batch, BatchFactories, BatchReader, BatchReaderFactories,
-        Builder, Filter, MergeCursor,
+        spine_async::index_set::IndexSet, Batch, BatchFactories, BatchReaderFactories, Builder,
+        MergeCursor,
     },
 };
-
-pub struct ArcMerger<B>(ArcMergerInner<B>)
-where
-    B: Batch;
-
-#[self_referencing]
-struct ArcMergerInner<B>
-where
-    B: Batch,
-{
-    batches: Vec<Arc<B>>,
-    builder: B::Builder,
-    #[borrows(batches)]
-    #[not_covariant]
-    merger: ListMerger<Box<dyn MergeCursor<B::Key, B::Val, B::Time, B::R> + Send + 'this>, B>,
-}
-
-impl<B> ArcMerger<B>
-where
-    B: Batch,
-{
-    pub fn new(
-        factories: &B::Factories,
-        builder: B::Builder,
-        batches: Vec<Arc<B>>,
-        key_filter: &Option<Filter<B::Key>>,
-        value_filter: &Option<Filter<B::Val>>,
-    ) -> Self {
-        Self(
-            ArcMergerInnerBuilder {
-                batches,
-                builder,
-                merger_builder: |batches| {
-                    ListMerger::new(
-                        factories,
-                        batches
-                            .iter()
-                            .map(|b| b.merge_cursor(key_filter.clone(), value_filter.clone()))
-                            .collect(),
-                    )
-                },
-            }
-            .build(),
-        )
-    }
-
-    pub fn work(&mut self, frontier: &B::Time, fuel: &mut isize) {
-        self.0
-            .with_mut(|fields| fields.merger.work(fields.builder, frontier, fuel))
-    }
-
-    pub fn done(self) -> B {
-        self.0.into_heads().builder.done()
-    }
-}
 
 /// Merger that merges up to 64 batches at a time.
 pub struct ListMerger<C, B>
@@ -92,8 +35,7 @@ where
         builder.done()
     }
 
-    /// Creates a new merger for `batches`, using `key_filter` and
-    /// `value_filter` to remove tuples.
+    /// Creates a new merger for `cursors`.
     pub fn new(factories: &B::Factories, cursors: Vec<C>) -> Self {
         // [IndexSet] supports a maximum of 64 batches.
         assert!(cursors.len() <= 64);

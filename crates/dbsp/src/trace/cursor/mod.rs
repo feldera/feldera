@@ -936,3 +936,182 @@ where
         self.cursor.weight()
     }
 }
+
+/// Row is not available yet.
+///
+/// This value indicates that data may exist, but that it is not available yet,
+/// because it is being loaded asynchronously in the background.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct Pending;
+
+/// Cursor for non-blocking I/O.
+///
+/// Other implementations of cursors do not have a notion of whether data is in
+/// memory, which means that operations to retrieve data can block on I/O.  A
+/// `PushCursor` on the other hand, reports [Pending] if the data currently to
+/// be retrieved is not yet available because of pending I/O.  This allows
+/// merging using such a cursor to be more efficient.
+///
+/// `PushCursor` is optimized for reading all of the data in a batch.
+pub trait PushCursor<K, V, T, R>
+where
+    K: ?Sized,
+    V: ?Sized,
+    R: ?Sized,
+{
+    /// Returns the current key as `Ok(Some(key))`, or `Ok(None)` if the batch
+    /// is exhausted, or `Err(Pending)` if this key exists but isn't available
+    /// yet.
+    fn key(&self) -> Result<Option<&K>, Pending>;
+
+    /// Returns the current value as `Ok(Some(key))`, or `Ok(None)` if the key's
+    /// values are exhausted, or `Err(Pending)` if this value exists but isn't
+    /// available yet.
+    ///
+    /// It is an error if the batch is exhausted or the current key is not
+    /// available.  The implementation might panic or return an incorrect value
+    /// in this case (but it is not undefined behavior).
+    fn val(&self) -> Result<Option<&V>, Pending>;
+
+    /// Applies `logic` to each pair of time and difference for the current
+    /// key-value pair.
+    ///
+    /// When a key-value pair is available, all its time-diff pairs are
+    /// available.
+    ///
+    /// It is an error if the current key and value are not available.  The
+    /// implementation might panic or pass incorrect time-diff pairs to `logic`
+    /// in this case (but it is not undefined behavior).
+    fn map_times(&mut self, logic: &mut dyn FnMut(&T, &R));
+
+    /// Returns the weight associated with the current key/value pair.
+    ///
+    /// When a key-value pair is available, its weight is available.
+    ///
+    /// It is an error if the current key and value are not available.  The
+    /// implementation might panic or pass incorrect time-diff pairs to `logic`
+    /// in this case (but it is not undefined behavior).
+    fn weight(&mut self) -> &R
+    where
+        T: PartialEq<()>;
+
+    /// Advances to the next key.
+    ///
+    /// It is an error if the batch is exhausted or the current key is not
+    /// available.  The implementation might panic in this case (but it is not
+    /// undefined behavior).
+    fn step_key(&mut self);
+
+    /// Advances to the next value.
+    ///
+    /// It is an error if the batch is exhausted or the current key or value is
+    /// not available.  The implementation might panic in this case (but it is
+    /// not undefined behavior).
+    fn step_val(&mut self);
+
+    /// Gives the implementation an opportunity to process I/O results and
+    /// launch further I/O.  Implementations need this to called periodically.
+    fn run(&mut self);
+}
+
+impl<K, V, T, R, C> PushCursor<K, V, T, R> for Box<C>
+where
+    C: PushCursor<K, V, T, R> + ?Sized,
+    K: ?Sized,
+    V: ?Sized,
+    R: ?Sized,
+{
+    fn key(&self) -> Result<Option<&K>, Pending> {
+        (**self).key()
+    }
+
+    fn val(&self) -> Result<Option<&V>, Pending> {
+        (**self).val()
+    }
+
+    fn map_times(&mut self, logic: &mut dyn FnMut(&T, &R)) {
+        (**self).map_times(logic);
+    }
+
+    fn weight(&mut self) -> &R
+    where
+        T: PartialEq<()>,
+    {
+        (**self).weight()
+    }
+
+    fn step_key(&mut self) {
+        (**self).step_key();
+    }
+
+    fn step_val(&mut self) {
+        (**self).step_val();
+    }
+
+    fn run(&mut self) {
+        (**self).run();
+    }
+}
+
+pub struct DefaultPushCursor<K, V, T, R, C>
+where
+    K: ?Sized,
+    V: ?Sized,
+    R: ?Sized,
+    C: Cursor<K, V, T, R>,
+{
+    cursor: C,
+    phantom: PhantomData<(Box<K>, Box<V>, T, Box<R>)>,
+}
+
+impl<K, V, T, R, C> DefaultPushCursor<K, V, T, R, C>
+where
+    K: ?Sized,
+    V: ?Sized,
+    R: ?Sized,
+    C: Cursor<K, V, T, R>,
+{
+    pub fn new(cursor: C) -> Self {
+        Self {
+            cursor,
+            phantom: PhantomData,
+        }
+    }
+}
+
+impl<K, V, T, R, C> PushCursor<K, V, T, R> for DefaultPushCursor<K, V, T, R, C>
+where
+    K: ?Sized,
+    V: ?Sized,
+    R: ?Sized,
+    C: Cursor<K, V, T, R>,
+{
+    fn key(&self) -> Result<Option<&K>, Pending> {
+        Ok(self.cursor.get_key())
+    }
+
+    fn val(&self) -> Result<Option<&V>, Pending> {
+        Ok(self.cursor.get_val())
+    }
+
+    fn map_times(&mut self, logic: &mut dyn FnMut(&T, &R)) {
+        self.cursor.map_times(logic);
+    }
+
+    fn weight(&mut self) -> &R
+    where
+        T: PartialEq<()>,
+    {
+        self.cursor.weight()
+    }
+
+    fn step_key(&mut self) {
+        self.cursor.step_key();
+    }
+
+    fn step_val(&mut self) {
+        self.cursor.step_val();
+    }
+
+    fn run(&mut self) {}
+}

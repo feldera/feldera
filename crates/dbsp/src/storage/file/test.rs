@@ -1,14 +1,21 @@
-
-use std::sync::Arc;
+use std::{marker::PhantomData, sync::Arc};
 
 use crate::{
+    dynamic::{DynWeight, Factory, LeanVec, Vector, WithFactory},
     storage::{
         backend::StorageBackend,
         buffer_cache::BufferCache,
-        file::{format::Compression, reader::Reader},
+        file::{
+            format::Compression,
+            reader::{BulkRows, Reader},
+        },
         test::init_test_logger,
     },
-    Runtime,
+    trace::{
+        ord::vec::{indexed_wset_batch::VecIndexedWSetBuilder, wset_batch::VecWSetBuilder},
+        BatchReaderFactories, Builder, VecIndexedWSetFactories, VecWSetFactories,
+    },
+    DBWeight,
 };
 
 use super::{
@@ -46,7 +53,7 @@ trait TwoColumns {
     type K0: DBData;
     type A0: DBData;
     type K1: DBData;
-    type A1: DBData;
+    type A1: DBWeight;
 
     fn n0() -> usize;
     fn key0(row0: usize) -> Self::K0;
@@ -57,6 +64,77 @@ trait TwoColumns {
     fn key1(row0: usize, row1: usize) -> Self::K1;
     fn near1(row0: usize, row1: usize) -> (Self::K1, Self::K1);
     fn aux1(row0: usize, row1: usize) -> Self::A1;
+}
+
+struct Column0<T> {
+    row: usize,
+    _phantom: PhantomData<T>,
+}
+
+impl<T> Column0<T> {
+    pub fn new() -> Self {
+        Self {
+            row: 0,
+            _phantom: PhantomData,
+        }
+    }
+}
+
+impl<T> Iterator for Column0<T>
+where
+    T: TwoColumns,
+{
+    type Item = (T::K0, T::A0);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.row >= T::n0() {
+            None
+        } else {
+            let retval = Some((T::key0(self.row), T::aux0(self.row)));
+            self.row += 1;
+            retval
+        }
+    }
+}
+
+struct Column1<T> {
+    row0: usize,
+    row1: usize,
+    _phantom: PhantomData<T>,
+}
+
+impl<T> Column1<T>
+where
+    T: TwoColumns,
+{
+    fn new() -> Self {
+        Self {
+            row0: 0,
+            row1: 0,
+            _phantom: PhantomData,
+        }
+    }
+}
+
+impl<T> Iterator for Column1<T>
+where
+    T: TwoColumns,
+{
+    type Item = (T::K1, T::A1);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.row0 >= T::n0() {
+            None
+        } else {
+            let retval = Some((T::key1(self.row0, self.row1), T::aux1(self.row0, self.row1)));
+            self.row1 += 1;
+            if self.row1 >= T::n1(self.row0) {
+                self.row0 += 1;
+                self.row1 = 0;
+            }
+            retval
+        }
+    }
 }
 
 fn test_find<K, A, N, T>(
@@ -189,6 +267,22 @@ fn test_cursor_helper<K, A, N, T>(
     assert_eq!(rows.before().len(), n as u64);
     assert_eq!(rows.after().len() == 0, rows.after().is_empty());
 
+    if n > 0 {
+        let first = rows.first().unwrap();
+        let (_before, mut key, _after, mut aux) = expected(0);
+        assert_eq!(
+            unsafe { first.item((tmp_key, tmp_aux)) },
+            Some((key.erase_mut(), aux.erase_mut()))
+        );
+
+        let last = rows.last().unwrap();
+        let (_before, mut key, _after, mut aux) = expected(n - 1);
+        assert_eq!(
+            unsafe { last.item((tmp_key, tmp_aux)) },
+            Some((key.erase_mut(), aux.erase_mut()))
+        );
+    }
+
     let mut forward = rows.before();
     assert_eq!(unsafe { forward.item((tmp_key, tmp_aux)) }, None);
     forward.move_prev().unwrap();
@@ -273,6 +367,101 @@ fn test_cursor<K, A, N, T>(
     })
 }
 
+fn test_bulk_rows<K, A, N, T>(
+    mut bulk: BulkRows<DynData, DynData, N, T>,
+    mut expected: impl Iterator<Item = (K, A)>,
+) where
+    K: DBData,
+    A: DBData,
+    T: ColumnSpec,
+{
+    let mut tmp_key = K::default();
+    let mut tmp_aux = A::default();
+    let (tmp_key, tmp_aux): (&mut DynData, &mut DynData) =
+        (tmp_key.erase_mut(), tmp_aux.erase_mut());
+
+    while !bulk.at_eof() {
+        bulk.wait().unwrap();
+        let (mut key, mut aux) = expected.next().unwrap();
+        assert_eq!(
+            unsafe { bulk.item((tmp_key, tmp_aux)) },
+            Some((key.erase_mut(), aux.erase_mut()))
+        );
+        bulk.step();
+    }
+    assert!(expected.next().is_none());
+}
+
+fn test_multifetch_zset<K, A>(
+    reader: &Reader<(&'static DynData, &'static DynWeight, ())>,
+    n: usize,
+    expected_fn: impl Fn(usize) -> (K, K, K, A),
+) where
+    K: DBData,
+    A: DBWeight,
+{
+    let keys_factory: &dyn Factory<dyn Vector<DynData>> = WithFactory::<LeanVec<K>>::FACTORY;
+
+    let vec_wset_factories = VecWSetFactories::new::<K, (), A>();
+    let mut expected = VecWSetBuilder::new_builder(&vec_wset_factories);
+
+    let mut keys = keys_factory.default_box();
+    for i in 0..n {
+        if rand::random() {
+            let (_before, key, _after, diff) = (expected_fn)(i);
+            keys.push_ref(&key);
+            expected.push_val_diff(().erase(), diff.erase());
+            expected.push_key(key.erase());
+        }
+    }
+    let expected = expected.done();
+
+    let mut multifetch = reader.fetch_zset(&*keys).unwrap();
+    while !multifetch.is_done() {
+        multifetch.wait().unwrap();
+    }
+    let output = multifetch.results(vec_wset_factories);
+    assert_eq!(&output, &expected);
+}
+
+fn test_multifetch_two_columns<T>(
+    reader: &Reader<(
+        &'static DynData,
+        &'static DynData,
+        (&'static DynData, &'static DynWeight, ()),
+    )>,
+) where
+    T: TwoColumns,
+{
+    let keys_factory: &dyn Factory<dyn Vector<DynData>> = WithFactory::<LeanVec<T::K0>>::FACTORY;
+
+    let vec_indexed_wset_factories = VecIndexedWSetFactories::new::<T::K0, T::K1, T::A1>();
+    let mut expected = VecIndexedWSetBuilder::new_builder(&vec_indexed_wset_factories);
+
+    let mut keys = keys_factory.default_box();
+    for i in 0..T::n0() {
+        if rand::random() {
+            keys.push_ref(&T::key0(i));
+
+            for j in 0..T::n1(i) {
+                let val = T::key1(i, j);
+                let weight = T::aux1(i, j);
+                expected.push_val_diff(val.erase(), weight.erase());
+            }
+            let key = T::key0(i);
+            expected.push_key(key.erase());
+        }
+    }
+    let expected = expected.done();
+
+    let mut multifetch = reader.fetch_indexed_zset(&*keys).unwrap();
+    while !multifetch.is_done() {
+        multifetch.wait().unwrap();
+    }
+    let output = multifetch.results(vec_indexed_wset_factories);
+    assert_eq!(&output, &expected);
+}
+
 fn test_bloom<K, A, N>(
     reader: &Reader<(&'static DynData, &'static DynData, N)>,
     n: usize,
@@ -350,16 +539,62 @@ where
     test_cursor(&rows0, n0, expected0);
     test_bloom(&reader, n0, expected0);
 
+    let expected1 = |row0, row1| {
+        let key1 = T::key1(row0, row1);
+        let (before1, after1) = T::near1(row0, row1);
+        let aux1 = T::aux1(row0, row1);
+        (before1, key1, after1, aux1)
+    };
     for row0 in 0..n0 {
         let rows1 = rows0.nth(row0 as u64).unwrap().next_column().unwrap();
         let n1 = T::n1(row0);
-        test_cursor(&rows1, n1, |row1| {
-            let key1 = T::key1(row0, row1);
-            let (before1, after1) = T::near1(row0, row1);
-            let aux1 = T::aux1(row0, row1);
-            (before1, key1, after1, aux1)
-        });
+        test_cursor(&rows1, n1, |row1| expected1(row0, row1));
     }
+    test_bulk_rows(reader.bulk_rows().unwrap(), Column0::<T>::new());
+    test_bulk_rows(
+        reader.bulk_rows().unwrap().next_column().unwrap(),
+        Column1::<T>::new(),
+    );
+}
+
+fn test_two_columns_multifetch<T>(parameters: Parameters)
+where
+    T: TwoColumns,
+{
+    let factories0 = Factories::<DynData, DynData>::new::<T::K0, T::A0>();
+    let factories1 = Factories::<DynData, DynWeight>::new::<T::K1, T::A1>();
+
+    let tempdir = tempdir().unwrap();
+    let storage_backend = <dyn StorageBackend>::new(
+        &StorageConfig {
+            path: tempdir.path().to_string_lossy().to_string(),
+            cache: Default::default(),
+        },
+        &StorageOptions::default(),
+    )
+    .unwrap();
+    let mut layer_file = Writer2::new(
+        &factories0,
+        &factories1,
+        test_buffer_cache,
+        &*storage_backend,
+        parameters,
+        T::n0(),
+    )
+    .unwrap();
+    let n0 = T::n0();
+    for row0 in 0..n0 {
+        for row1 in 0..T::n1(row0) {
+            layer_file
+                .write1((&T::key1(row0, row1), &T::aux1(row0, row1)))
+                .unwrap();
+        }
+        layer_file.write0((&T::key0(row0), &T::aux0(row0))).unwrap();
+    }
+
+    let reader = layer_file.into_reader().unwrap();
+    reader.evict();
+    test_multifetch_two_columns::<T>(&reader);
 }
 
 fn test_2_columns_helper(parameters: Parameters) {
@@ -398,22 +633,74 @@ fn test_2_columns_helper(parameters: Parameters) {
             0x2222
         }
     }
-
-    for_each_compression_type(parameters, |parameters| {
-        test_two_columns::<TwoInts>(parameters)
-    });
+    test_two_columns::<TwoInts>(parameters.clone());
+    test_two_columns_multifetch::<TwoInts>(parameters);
 }
 
 #[test]
-fn test_2_columns() {
+fn two_columns_uncompressed() {
     init_test_logger();
-    test_2_columns_helper(Parameters::default());
+    test_2_columns_helper(Parameters::default().with_compression(None));
 }
 
 #[test]
-fn test_2_columns_max_branch_2() {
+fn two_columns_snappy() {
     init_test_logger();
-    test_2_columns_helper(Parameters::default().with_max_branch(2));
+    test_2_columns_helper(Parameters::default().with_compression(Some(Compression::Snappy)));
+}
+
+#[test]
+fn two_columns_max_branch_2_uncompressed() {
+    init_test_logger();
+    test_2_columns_helper(
+        Parameters::default()
+            .with_max_branch(2)
+            .with_compression(None),
+    );
+}
+
+#[test]
+fn two_columns_max_branch_2_snappy() {
+    init_test_logger();
+    test_2_columns_helper(
+        Parameters::default()
+            .with_max_branch(2)
+            .with_compression(Some(Compression::Snappy)),
+    );
+}
+
+struct OneColumn<'a, T> {
+    expected: &'a T,
+    row: usize,
+    n: usize,
+}
+
+impl<'a, T> OneColumn<'a, T> {
+    pub fn new(expected: &'a T, n: usize) -> Self {
+        Self {
+            expected,
+            row: 0,
+            n,
+        }
+    }
+}
+
+impl<'a, T, K, A> Iterator for OneColumn<'a, T>
+where
+    T: Fn(usize) -> (K, K, K, A),
+{
+    type Item = (K, A);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.row >= self.n {
+            None
+        } else {
+            let (_before, key, _after, aux) = (self.expected)(self.row);
+            let retval = Some((key, aux));
+            self.row += 1;
+            retval
+        }
+    }
 }
 
 fn test_one_column<K, A>(n: usize, expected: impl Fn(usize) -> (K, K, K, A), parameters: Parameters)
@@ -421,51 +708,102 @@ where
     K: DBData,
     A: DBData,
 {
-    for_each_compression_type(parameters, |parameters| {
-        for reopen in [false, true] {
-            let factories = Factories::<DynData, DynData>::new::<K, A>();
-            let tempdir = tempdir().unwrap();
-            let storage_backend = <dyn StorageBackend>::new(
-                &StorageConfig {
-                    path: tempdir.path().to_string_lossy().to_string(),
-                    cache: Default::default(),
-                },
-                &StorageOptions::default(),
-            )
-            .unwrap();
-            let mut writer = Writer1::new(
-                &factories,
+    for reopen in [false, true] {
+        let factories = Factories::<DynData, DynData>::new::<K, A>();
+        let tempdir = tempdir().unwrap();
+        let storage_backend = <dyn StorageBackend>::new(
+            &StorageConfig {
+                path: tempdir.path().to_string_lossy().to_string(),
+                cache: Default::default(),
+            },
+            &StorageOptions::default(),
+        )
+        .unwrap();
+        let mut writer = Writer1::new(
+            &factories,
+            test_buffer_cache,
+            &*storage_backend,
+            parameters.clone(),
+            n,
+        )
+        .unwrap();
+        for row in 0..n {
+            let (_before, key, _after, aux) = expected(row);
+            writer.write0((&key, &aux)).unwrap();
+        }
+
+        let reader = if reopen {
+            println!("closing writer and reopening as reader");
+            let (_file_handle, path, _bloom_filter) = writer.close().unwrap();
+            Reader::open(
+                &[&factories.any_factories()],
                 test_buffer_cache,
                 &*storage_backend,
-                parameters.clone(),
-                n,
+                &path,
             )
-            .unwrap();
-            for row in 0..n {
-                let (_before, key, _after, aux) = expected(row);
-                writer.write0((&key, &aux)).unwrap();
-            }
+            .unwrap()
+        } else {
+            println!("transforming writer into reader");
+            writer.into_reader().unwrap()
+        };
+        reader.evict();
+        assert_eq!(reader.rows().len(), n as u64);
+        test_cursor(&reader.rows(), n, &expected);
+        test_bloom(&reader, n, &expected);
+        test_bulk_rows(reader.bulk_rows().unwrap(), OneColumn::new(&expected, n));
+    }
+}
 
-            let reader = if reopen {
-                println!("closing writer and reopening as reader");
-                let (_file_handle, path, _bloom_filter) = writer.close().unwrap();
-                Reader::open(
-                    &[&factories.any_factories()],
-                    Runtime::buffer_cache,
-                    &*storage_backend,
-                    &path,
-                )
-                .unwrap()
-            } else {
-                println!("transforming writer into reader");
-                writer.into_reader().unwrap()
-            };
-            reader.evict();
-            assert_eq!(reader.rows().len(), n as u64);
-            test_cursor(&reader.rows(), n, &expected);
-            test_bloom(&reader, n, &expected);
+fn test_one_column_zset<K, A>(
+    n: usize,
+    expected: impl Fn(usize) -> (K, K, K, A),
+    parameters: Parameters,
+) where
+    K: DBData,
+    A: DBWeight,
+{
+    for reopen in [false, true] {
+        let factories = Factories::<DynData, DynWeight>::new::<K, A>();
+        let tempdir = tempdir().unwrap();
+        let storage_backend = <dyn StorageBackend>::new(
+            &StorageConfig {
+                path: tempdir.path().to_string_lossy().to_string(),
+                cache: Default::default(),
+            },
+            &StorageOptions::default(),
+        )
+        .unwrap();
+        let mut writer = Writer1::new(
+            &factories,
+            test_buffer_cache,
+            &*storage_backend,
+            parameters.clone(),
+            n,
+        )
+        .unwrap();
+        for row in 0..n {
+            let (_before, key, _after, aux) = expected(row);
+            writer.write0((&key, &aux)).unwrap();
         }
-    })
+
+        let reader = if reopen {
+            println!("closing writer and reopening as reader");
+            let (_file_handle, path, _bloom_filter) = writer.close().unwrap();
+            Reader::open(
+                &[&factories.any_factories()],
+                test_buffer_cache,
+                &*storage_backend,
+                &path,
+            )
+            .unwrap()
+        } else {
+            println!("transforming writer into reader");
+            writer.into_reader().unwrap()
+        };
+        reader.evict();
+        assert_eq!(reader.rows().len(), n as u64);
+        test_multifetch_zset(&reader, n, &expected);
+    }
 }
 
 fn test_i64_helper(parameters: Parameters) {
@@ -479,22 +817,48 @@ fn test_i64_helper(parameters: Parameters) {
 
 #[test]
 fn test_i64() {
-    test_i64_helper(Parameters::default());
+    for_each_compression_type(Parameters::default(), test_i64_helper);
 }
 
 #[test]
 fn test_i64_max_branch_32() {
-    test_i64_helper(Parameters::default().with_max_branch(32));
+    for_each_compression_type(Parameters::default().with_max_branch(32), test_i64_helper);
 }
 
 #[test]
-fn test_i64_max_branch_3() {
-    test_i64_helper(Parameters::default().with_max_branch(3));
+fn test_i64_max_branch_3_uncompressed() {
+    test_i64_helper(
+        Parameters::default()
+            .with_max_branch(3)
+            .with_compression(None),
+    );
 }
 
 #[test]
-fn test_i64_max_branch_2() {
-    test_i64_helper(Parameters::default().with_max_branch(2));
+fn test_i64_max_branch_3_snappy() {
+    test_i64_helper(
+        Parameters::default()
+            .with_max_branch(3)
+            .with_compression(Some(Compression::Snappy)),
+    );
+}
+
+#[test]
+fn test_i64_max_branch_2_uncompressed() {
+    test_i64_helper(
+        Parameters::default()
+            .with_max_branch(2)
+            .with_compression(None),
+    );
+}
+
+#[test]
+fn test_i64_max_branch_2_snappy() {
+    test_i64_helper(
+        Parameters::default()
+            .with_max_branch(2)
+            .with_compression(Some(Compression::Snappy)),
+    );
 }
 
 #[test]
@@ -504,28 +868,30 @@ fn test_string() {
     }
 
     init_test_logger();
-    test_one_column(
-        1000,
-        |row| (f(row * 2), f(row * 2 + 1), f(row * 2 + 2), ()),
-        Parameters::default(),
-    );
+    for_each_compression_type(Parameters::default(), |parameters| {
+        test_one_column(
+            1000,
+            |row| (f(row * 2), f(row * 2 + 1), f(row * 2 + 2), ()),
+            parameters,
+        )
+    });
 }
 
 #[test]
 fn test_tuple() {
     init_test_logger();
-    test_one_column(
-        1000,
-        |row| {
+    for_each_compression_type(Parameters::default(), |parameters| {
+        let expected = |row| {
             (
                 (row as u64, 0),
                 (row as u64, 1),
                 (row as u64, 2),
-                row as u64,
+                row as u64 + 1,
             )
-        },
-        Parameters::default(),
-    );
+        };
+        test_one_column(1000, &expected, parameters.clone());
+        test_one_column_zset(1000, &expected, parameters);
+    });
 }
 
 #[test]
@@ -534,9 +900,11 @@ fn test_big_values() {
         (0..row as i64).collect()
     }
     init_test_logger();
-    test_one_column(
-        500,
-        |row| (v(row * 2), v(row * 2 + 1), v(row * 2 + 2), ()),
-        Parameters::default(),
-    );
+    for_each_compression_type(Parameters::default(), |parameters| {
+        test_one_column(
+            500,
+            |row| (v(row * 2), v(row * 2 + 1), v(row * 2 + 2), ()),
+            parameters,
+        )
+    });
 }

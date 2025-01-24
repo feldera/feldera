@@ -1,7 +1,7 @@
 use std::fmt::{Display, Formatter};
 
 use crate::storage::buffer_cache::CacheStats;
-use crate::trace::cursor::DelegatingCursor;
+use crate::trace::cursor::{DelegatingCursor, PushCursor};
 use crate::trace::ord::file::val_batch::FileValBuilder;
 use crate::trace::ord::vec::val_batch::VecValBuilder;
 use crate::trace::{BatchLocation, MergeCursor};
@@ -228,6 +228,15 @@ where
             Inner::Vec(vec) => Box::new(vec.cursor()),
             Inner::File(file) => Box::new(file.cursor()),
         })
+    }
+
+    fn push_cursor(
+        &self,
+    ) -> Box<dyn PushCursor<Self::Key, Self::Val, Self::Time, Self::R> + Send + '_> {
+        match &self.inner {
+            Inner::Vec(vec) => vec.push_cursor(),
+            Inner::File(file) => file.push_cursor(),
+        }
     }
 
     fn merge_cursor(

@@ -7,15 +7,17 @@ use crate::{
     storage::{
         buffer_cache::CacheStats,
         file::{
-            reader::{Cursor as FileCursor, Error as ReaderError, Reader},
+            reader::{BulkRows, Cursor as FileCursor, Error as ReaderError, Reader},
             writer::Writer1,
             Factories as FileFactories,
         },
     },
     trace::{
-        merge_batches_by_reference, ord::merge_batcher::MergeBatcher, Batch, BatchFactories,
-        BatchLocation, BatchReader, BatchReaderFactories, Builder, Cursor, Deserializer,
-        Serializer, VecWSetFactories, WeightedItem,
+        cursor::{CursorFactoryWrapper, Pending, PushCursor},
+        merge_batches_by_reference,
+        ord::merge_batcher::MergeBatcher,
+        Batch, BatchFactories, BatchLocation, BatchReader, BatchReaderFactories, Builder, Cursor,
+        Deserializer, Serializer, VecWSetFactories, WeightedItem,
     },
     DBData, DBWeight, NumEntries, Runtime,
 };
@@ -331,6 +333,12 @@ where
         self.factories.clone()
     }
 
+    fn push_cursor(
+        &self,
+    ) -> Box<dyn PushCursor<Self::Key, Self::Val, Self::Time, Self::R> + Send + '_> {
+        Box::new(FileWSetPushCursor::new(self))
+    }
+
     #[inline]
     fn cursor(&self) -> Self::Cursor<'_> {
         FileWSetCursor::new(self)
@@ -387,6 +395,40 @@ where
             }
         }
     }
+
+    async fn fetch<B>(
+        &self,
+        keys: &B,
+    ) -> Option<
+        Box<dyn crate::trace::cursor::CursorFactory<Self::Key, Self::Val, Self::Time, Self::R>>,
+    >
+    where
+        B: BatchReader<Key = Self::Key, Time = ()>,
+    {
+        let mut keys_vec;
+        let keys = if let Some(keys) = keys.keys() {
+            keys
+        } else {
+            keys_vec = self.factories.vec_wset_factory.keys_factory().default_box();
+            keys_vec.reserve(keys.len());
+            let mut cursor = keys.cursor();
+            while cursor.key_valid() {
+                keys_vec.push_ref(cursor.key());
+                cursor.step_key();
+            }
+            &*keys_vec
+        };
+
+        let results = self
+            .file
+            .fetch_zset(keys)
+            .unwrap()
+            .async_results(self.factories.vec_wset_factory.clone())
+            .await
+            .unwrap();
+
+        Some(Box::new(CursorFactoryWrapper(results)))
+    }
 }
 
 impl<K, R> Batch for FileWSet<K, R>
@@ -415,6 +457,96 @@ where
             factories: factories.clone(),
             file,
         })
+    }
+}
+
+type FileWSetBulkRows<'s, K, R> = BulkRows<'s, K, R, (), (&'static K, &'static R, ())>;
+
+/// A [PushCursor] for [FileWSet].
+#[derive(Debug, SizeOf)]
+pub struct FileWSetPushCursor<'s, K, R>
+where
+    K: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+{
+    bulk_rows: FileWSetBulkRows<'s, K, R>,
+    key: Box<K>,
+    diff: Box<R>,
+    #[size_of(skip)]
+    key_valid: Result<bool, Pending>,
+    #[size_of(skip)]
+    val_valid: Result<bool, Pending>,
+}
+
+impl<'s, K, R> FileWSetPushCursor<'s, K, R>
+where
+    K: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+{
+    fn new(wset: &'s FileWSet<K, R>) -> Self {
+        let mut this = Self {
+            bulk_rows: wset.file.bulk_rows().unwrap(),
+            key: wset.factories.key_factory().default_box(),
+            diff: wset.factories.weight_factory().default_box(),
+            key_valid: Err(Pending),
+            val_valid: Err(Pending),
+        };
+        this.fetch_item();
+        this
+    }
+
+    fn fetch_item(&mut self) {
+        let valid = if unsafe { self.bulk_rows.item((&mut self.key, &mut self.diff)) }.is_some() {
+            Ok(true)
+        } else if self.bulk_rows.at_eof() {
+            Ok(false)
+        } else {
+            Err(Pending)
+        };
+        self.key_valid = valid;
+        self.val_valid = valid;
+    }
+}
+
+impl<'s, K, R> PushCursor<K, DynUnit, (), R> for FileWSetPushCursor<'s, K, R>
+where
+    K: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+{
+    fn key(&self) -> Result<Option<&K>, Pending> {
+        self.key_valid.map(|valid| valid.then(|| self.key.as_ref()))
+    }
+
+    fn val(&self) -> Result<Option<&DynUnit>, Pending> {
+        debug_assert_eq!(self.key_valid, Ok(true));
+        self.val_valid.map(|valid| valid.then_some(&() as &DynUnit))
+    }
+
+    fn map_times(&mut self, logic: &mut dyn FnMut(&(), &R)) {
+        debug_assert_eq!(self.val_valid, Ok(true));
+        logic(&(), self.diff.as_ref());
+    }
+
+    fn weight(&mut self) -> &R {
+        debug_assert_eq!(self.val_valid, Ok(true));
+        self.diff.as_ref()
+    }
+
+    fn step_key(&mut self) {
+        self.bulk_rows.step();
+        self.fetch_item();
+    }
+
+    fn step_val(&mut self) {
+        debug_assert_eq!(self.val_valid, Ok(true));
+        self.val_valid = Ok(false);
+    }
+
+    fn run(&mut self) {
+        self.bulk_rows.work().unwrap();
+        if self.key_valid == Err(Pending) {
+            self.fetch_item();
+        }
     }
 }
 
@@ -457,13 +589,8 @@ where
     K: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
-    fn new_from(wset: &'s FileWSet<K, R>, lower_bound: usize) -> Self {
-        let cursor = wset
-            .file
-            .rows()
-            .subset(lower_bound as u64..)
-            .first()
-            .unwrap();
+    fn new(wset: &'s FileWSet<K, R>) -> Self {
+        let cursor = wset.file.rows().first().unwrap();
         let mut key = wset.factories.key_factory().default_box();
         let mut diff = wset.factories.weight_factory().default_box();
         let valid = unsafe { cursor.item((&mut key, &mut diff)) }.is_some();
@@ -476,10 +603,6 @@ where
             key_valid: valid,
             val_valid: valid,
         }
-    }
-
-    fn new(wset: &'s FileWSet<K, R>) -> Self {
-        Self::new_from(wset, 0)
     }
 
     fn move_key<F>(&mut self, op: F)
@@ -533,6 +656,9 @@ where
 
     fn step_key(&mut self) {
         self.move_key(|key_cursor| key_cursor.move_next());
+        let valid = unsafe { self.cursor.item((&mut self.key, &mut self.diff)) }.is_some();
+        self.key_valid = valid;
+        self.val_valid = valid;
     }
 
     fn step_key_reverse(&mut self) {
