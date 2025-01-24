@@ -77,7 +77,7 @@ public class ExpandHop extends CircuitCloneVisitor {
         results[nextIndex] = new DBSPApplyExpression(node, functionName.toString(), resultType, operands);
         DBSPTupleExpression mapBody = new DBSPTupleExpression(results);
         DBSPClosureExpression func = mapBody.closure(row);
-        DBSPMapOperator map = new DBSPMapOperator(node, func, TypeCompiler.makeZSet(mapBody.getType()), source);
+        DBSPMapOperator map = new DBSPMapOperator(node, func, source);
         this.addOperator(map);
 
         // Flatmap flattens the array

@@ -62,6 +62,11 @@ public class DBSPTypeRef extends DBSPType {
     }
 
     @Override
+    public int getToplevelFieldCount() {
+        return this.type.getToplevelFieldCount();
+    }
+
+    @Override
     public int hashCode() {
         return Objects.hash(super.hashCode(), type.hashCode(), mutable);
     }

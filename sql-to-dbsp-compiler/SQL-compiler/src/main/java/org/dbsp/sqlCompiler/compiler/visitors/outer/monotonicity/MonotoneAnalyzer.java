@@ -8,7 +8,7 @@ import org.dbsp.sqlCompiler.compiler.backend.dot.ToDotEdgesVisitor;
 import org.dbsp.sqlCompiler.compiler.backend.dot.ToDot;
 import org.dbsp.sqlCompiler.compiler.backend.dot.ToDotNodesVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.IRTransform;
-import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.MonotoneExpression;
+import org.dbsp.sqlCompiler.compiler.visitors.monotone.MonotoneExpression;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.AppendOnly;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitGraph;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitRewriter;

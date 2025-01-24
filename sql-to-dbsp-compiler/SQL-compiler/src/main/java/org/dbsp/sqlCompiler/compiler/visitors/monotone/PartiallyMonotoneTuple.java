@@ -1,4 +1,4 @@
-package org.dbsp.sqlCompiler.compiler.visitors.inner.monotone;
+package org.dbsp.sqlCompiler.compiler.visitors.monotone;
 
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;

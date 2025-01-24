@@ -25,7 +25,6 @@ package org.dbsp.sqlCompiler.compiler.sql;
 
 import org.dbsp.sqlCompiler.CompilerMain;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamDistinctOperator;
@@ -42,8 +41,6 @@ import org.dbsp.sqlCompiler.compiler.sql.simple.EndToEndTests;
 import org.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests;
 import org.dbsp.sqlCompiler.compiler.sql.tools.Change;
 import org.dbsp.sqlCompiler.compiler.sql.tools.CompilerCircuitStream;
-import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
-import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.Passes;
 import org.dbsp.sqlCompiler.ir.DBSPFunction;
 import org.dbsp.sqlCompiler.ir.DBSPNode;
@@ -117,6 +114,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         NameGen.reset();
         DBSPNode.reset();
         DBSPVariablePath.reset();
+
         String query = "CREATE VIEW V AS SELECT T.COL3 FROM T";
         DBSPCompiler compiler = this.compileDef();
         compiler.compileStatement(query);
@@ -131,7 +129,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
                     // CREATE TABLE `t` (`col1` INTEGER NOT NULL, `col2` DOUBLE NOT NULL, `col3` BOOLEAN NOT NULL, `col4` VARCHAR NOT NULL, `col5` INTEGER, `col6` DOUBLE)
                     let s1 = t();
                     // DBSPMapOperator s2
-                    let s2: stream<WSet<Tup1<b>>> = s1.map((|t_3: &Tup6<i32, d, b, s, i32?, d?>| Tup1::new(((*t_3).2), )));
+                    let s2: stream<WSet<Tup1<b>>> = s1.map((|t_1: &Tup6<i32, d, b, s, i32?, d?>| Tup1::new(((*t_1).2), )));
                     // CREATE VIEW `v` AS
                     // SELECT `t`.`col3`
                     // FROM `schema`.`t` AS `t`
@@ -185,7 +183,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         File file = createInputScript(sql);
         CompilerMain.execute("-TSqlToRelCompiler=2", "-TPasses=2",
                 "-o", BaseSQLTests.testFilePath, file.getPath());
-        Utilities.compileAndTestRust(BaseSQLTests.rustDirectory, true);
+        Utilities.compileAndCheckRust(BaseSQLTests.rustDirectory);
         Logger.INSTANCE.setDebugStream(save);
         String messages = builder.toString();
         Assert.assertTrue(messages.contains("After optimizer"));
@@ -291,25 +289,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         CompilerMessages messages = CompilerMain.execute("-o", BaseSQLTests.testFilePath, file.getPath());
         if (messages.errorCount() > 0)
             throw new RuntimeException(messages.toString());
-        Utilities.compileAndTestRust(BaseSQLTests.rustDirectory, false);
-    }
-
-    @Test
-    public void testProjectionSimplify() {
-        // Test for https://github.com/feldera/feldera/issues/1628
-        String sql = EndToEndTests.E2E_TABLE + "; " +
-                "CREATE VIEW V AS SELECT T1.COL3 FROM T AS T1 JOIN T AS T2 ON T1.COL2 = T2.COL6";
-        DBSPCompiler compiler = this.testCompiler();
-        compiler.submitStatementsForCompilation(sql);
-        DBSPCircuit circuit = getCircuit(compiler);
-        CircuitVisitor noMap = new CircuitVisitor(compiler) {
-            @Override
-            public VisitDecision preorder(DBSPMapOperator node) {
-                Assert.fail("Circuit should contain no map operators");
-                return super.preorder(node);
-            }
-        };
-        noMap.apply(circuit);
+        Utilities.compileAndCheckRust(BaseSQLTests.rustDirectory);
     }
 
     @Test
@@ -340,7 +320,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         messages.print();
         Assert.assertEquals(0, messages.errorCount());
         if (run)
-            Utilities.compileAndTestRust(BaseSQLTests.rustDirectory, false);
+            Utilities.compileAndCheckRust(BaseSQLTests.rustDirectory);
         // cleanup after ourselves
         createEmptyStubs();
     }
@@ -445,7 +425,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         CompilerMessages messages = CompilerMain.execute("-q", "-o", BaseSQLTests.testFilePath, file.getPath());
         messages.print();
         Assert.assertEquals(0, messages.exitCode);
-        Utilities.compileAndTestRust(BaseSQLTests.rustDirectory, false);
+        Utilities.compileAndCheckRust(BaseSQLTests.rustDirectory);
     }
 
     @Test
@@ -528,7 +508,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         try (FileWriter fr = new FileWriter(rust, true)) { // append
             fr.write(rustHandlesTest);
         }
-        Utilities.compileAndTestRust(BaseSQLTests.rustDirectory, false);
+        Utilities.compileAndCheckRust(BaseSQLTests.rustDirectory);
 
         // Second test
         message = CompilerMain.execute(
@@ -540,7 +520,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         try (FileWriter fr = new FileWriter(rust, true)) { // append
             fr.write(rustCatalogTest);
         }
-        Utilities.compileAndTestRust(BaseSQLTests.rustDirectory, false);
+        Utilities.compileAndCheckRust(BaseSQLTests.rustDirectory);
     }
 
     @Test

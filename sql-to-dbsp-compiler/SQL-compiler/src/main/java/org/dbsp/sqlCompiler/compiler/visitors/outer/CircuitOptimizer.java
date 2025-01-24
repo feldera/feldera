@@ -28,7 +28,6 @@ import org.dbsp.sqlCompiler.circuit.annotation.Waterline;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.ICompilerComponent;
-import org.dbsp.sqlCompiler.compiler.backend.dot.ToDot;
 import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.BetaReduction;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EliminateDump;
@@ -36,6 +35,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.ExpandCasts;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.ExpandWriteLog;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Simplify;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.SimplifyWaterline;
+import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.UnusedFields;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity.MonotoneAnalyzer;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 
@@ -73,7 +73,6 @@ public record CircuitOptimizer(DBSPCompiler compiler) implements ICompilerCompon
         if (options.languageOptions.outputsAreSets)
             passes.add(new EnsureDistinctOutputs(compiler));
         passes.add(new UnusedFields(compiler));
-        // passes.add(ToDot.dumper(compiler, "y.png", 2));
         passes.add(new CSE(compiler));
         passes.add(new MinMaxOptimize(compiler, compiler.weightVar));
         passes.add(new ExpandAggregateZero(compiler));
@@ -135,7 +134,7 @@ public record CircuitOptimizer(DBSPCompiler compiler) implements ICompilerCompon
         passes.add(new CSE(compiler));
         passes.add(new RemoveViewOperators(compiler, true));
         passes.add(new CompactNames(compiler));
-        return new Passes("optimize", compiler, passes);
+        return new Passes("CircuitOptimizer", compiler, passes);
     }
 
     public DBSPCircuit optimize(DBSPCircuit input) {

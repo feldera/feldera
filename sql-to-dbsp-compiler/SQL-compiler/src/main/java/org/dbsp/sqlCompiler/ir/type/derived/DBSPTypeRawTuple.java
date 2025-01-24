@@ -128,6 +128,15 @@ public class DBSPTypeRawTuple extends DBSPTypeTupleBase {
     }
 
     @Override
+    public int getToplevelFieldCount() {
+        // Recurse into children
+        int result = 0;
+        for (DBSPType type: this.tupFields)
+            result += type.getToplevelFieldCount();
+        return result;
+    }
+
+    @Override
     public IIndentStream toString(IIndentStream builder) {
         return builder.append("(")
                 .intercalateI(", ", this.tupFields)

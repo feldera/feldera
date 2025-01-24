@@ -1,4 +1,4 @@
-package org.dbsp.sqlCompiler.compiler.visitors.inner.unusedFields;
+package org.dbsp.sqlCompiler.compiler.visitors.unusedFields;
 
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.util.Utilities;
@@ -33,11 +33,12 @@ public class ParameterFieldRemap {
         return Utilities.getExists(this.remap, param);
     }
 
-    public void setMap(DBSPParameter parameter, FieldUseMap map) {
+    public void set(DBSPParameter parameter, FieldUseMap map) {
         Utilities.putNew(this.remap, parameter, map);
     }
 
     public void changeMap(DBSPParameter parameter, FieldUseMap map) {
+        assert parameter.getType().sameType(map.getType());
         this.remap.put(parameter, map);
     }
 

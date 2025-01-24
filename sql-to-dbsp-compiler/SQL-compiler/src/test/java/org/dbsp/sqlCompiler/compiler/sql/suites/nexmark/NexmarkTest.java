@@ -583,9 +583,11 @@ SELECT
         final boolean debug = false;
         Class<?> module = DBSPCompiler.class;
         int previous;
+        //noinspection ConstantValue
         if (debug)
             previous = Logger.INSTANCE.setLoggingLevel(module, 1);
         CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
+        //noinspection ConstantValue
         if (debug)
             Logger.INSTANCE.setLoggingLevel(module, previous);
         for (int i = 0; i < scriptsAndTables.length; i += 2)

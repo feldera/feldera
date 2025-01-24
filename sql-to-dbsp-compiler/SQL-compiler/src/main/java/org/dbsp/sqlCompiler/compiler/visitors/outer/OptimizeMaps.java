@@ -1,6 +1,7 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
 import org.apache.calcite.util.Pair;
+import org.dbsp.sqlCompiler.circuit.annotation.Annotation;
 import org.dbsp.sqlCompiler.circuit.annotation.IsProjection;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAntiJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPApplyOperator;
@@ -41,8 +42,8 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
-import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Maybe;
 
@@ -59,6 +60,15 @@ public class OptimizeMaps extends CircuitCloneWithGraphsVisitor {
         this.onlyProjections = onlyProjections;
     }
 
+    boolean canMergeSource(OutputPort source, int size) {
+        if (!this.onlyProjections)
+            return true;
+        List<Annotation> proj = source.node().annotations.get(a -> a.is(IsProjection.class));
+        if (proj.isEmpty())
+            return true;
+        return proj.get(0).to(IsProjection.class).outputSize > size;
+    }
+
     @Override
     public void postorder(DBSPMapIndexOperator operator) {
         OutputPort source = this.mapped(operator.input());
@@ -67,7 +77,8 @@ public class OptimizeMaps extends CircuitCloneWithGraphsVisitor {
             super.postorder(operator);
             return;
         }
-        if (source.node().is(DBSPMapOperator.class)) {
+        int size = operator.outputType().getToplevelFieldCount();
+        if (source.node().is(DBSPMapOperator.class) && this.canMergeSource(source, size)) {
             // mapindex(map) = mapindex
             DBSPClosureExpression expression = source.simpleNode().getClosureFunction();
             DBSPClosureExpression newFunction = operator.getClosureFunction()
@@ -76,7 +87,7 @@ public class OptimizeMaps extends CircuitCloneWithGraphsVisitor {
                     operator.getNode(), newFunction, operator.getOutputIndexedZSetType(), source.node().inputs.get(0));
             this.map(operator, result);
             return;
-        } else if (source.node().is(DBSPMapIndexOperator.class)) {
+        } else if (source.node().is(DBSPMapIndexOperator.class) && this.canMergeSource(source, size)) {
             // mapindex(mapindex) = mapindex
             DBSPClosureExpression sourceFunction = source.simpleNode().getClosureFunction();
             DBSPClosureExpression thisFunction = operator.getClosureFunction();
@@ -123,26 +134,22 @@ public class OptimizeMaps extends CircuitCloneWithGraphsVisitor {
 
                 // Identical index operators on both sides
                 DBSPSimpleOperator leftIndex = new DBSPMapIndexOperator(operator.getNode(),
-                        split.left, toIx(split.left), left).addAnnotation(new IsProjection());
+                        split.left, left).addAnnotation(new IsProjection(size));
                 this.addOperator(leftIndex);
                 DBSPSimpleOperator rightIndex = new DBSPMapIndexOperator(operator.getNode(),
-                        split.left, toIx(split.left), right).addAnnotation(new IsProjection());
+                        split.left, right).addAnnotation(new IsProjection(size));
                 this.addOperator(rightIndex);
                 DBSPSimpleOperator newJoin = join.withInputs(Linq.list(leftIndex.outputPort(), rightIndex.outputPort()), false);
                 this.addOperator(newJoin);
 
                 // Now project the keys after the join
                 DBSPSimpleOperator result = new DBSPMapIndexOperator(operator.getNode(),
-                        split.right, toIx(split.right), newJoin.outputPort());
+                        split.right, newJoin.outputPort());
                 this.map(operator, result);
                 return;
             }
         }
         super.postorder(operator);
-    }
-
-    DBSPTypeIndexedZSet toIx(DBSPClosureExpression expression) {
-        return new DBSPTypeIndexedZSet(expression.getResultType().to(DBSPTypeRawTuple.class));
     }
 
     /** Split a closure that produces elements of an IndexedZSet into two closures
@@ -246,6 +253,8 @@ public class OptimizeMaps extends CircuitCloneWithGraphsVisitor {
         int inputFanout = this.getGraph().getFanout(operator.input().node());
         Projection projection = new Projection(this.compiler());
         projection.apply(operator.getFunction());
+
+        int size = operator.outputType().getToplevelFieldCount();
         if (source.node().is(DBSPJoinFilterMapOperator.class) && inputFanout == 1) {
             if (!this.onlyProjections || projection.isProjection) {
                 // map(joinfilter) = joinfilter
@@ -281,7 +290,8 @@ public class OptimizeMaps extends CircuitCloneWithGraphsVisitor {
                 this.map(operator, result);
                 return;
             }
-        } else if (source.node().is(DBSPMapOperator.class) && inputFanout == 1) {
+        } else if (source.node().is(DBSPMapOperator.class) && inputFanout == 1 &&
+                this.canMergeSource(source, size)) {
             DBSPClosureExpression expression = source.simpleNode().getClosureFunction();
             DBSPClosureExpression newFunction = operator.getClosureFunction()
                     .applyAfter(this.compiler(), expression, Maybe.MAYBE);

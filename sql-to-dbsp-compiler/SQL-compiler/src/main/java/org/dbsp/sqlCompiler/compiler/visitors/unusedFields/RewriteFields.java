@@ -1,4 +1,4 @@
-package org.dbsp.sqlCompiler.compiler.visitors.inner.unusedFields;
+package org.dbsp.sqlCompiler.compiler.visitors.unusedFields;
 
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -9,12 +9,11 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.Substitution;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.IDBSPDeclaration;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
+import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPDerefExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFieldExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
-import org.dbsp.sqlCompiler.ir.expression.DBSPVariantExpression;
 
 import javax.annotation.Nullable;
 
@@ -54,12 +53,6 @@ public class RewriteFields extends InnerRewriteVisitor {
     void setCurrent(@Nullable FieldUseMap map, int depth) {
         this.current = map;
         this.currentDepth = depth;
-    }
-
-    @Override
-    public void push(IDBSPInnerNode node) {
-
-        super.push(node);
     }
 
     @Override
@@ -115,6 +108,11 @@ public class RewriteFields extends InnerRewriteVisitor {
         DBSPExpression result = source.field(field);
         this.map(expression, result);
         return VisitDecision.STOP;
+    }
+
+    public DBSPClosureExpression rewriteClosure(DBSPClosureExpression closure) {
+        IDBSPInnerNode result = this.apply(closure);
+        return result.to(DBSPClosureExpression.class);
     }
 
     @Override

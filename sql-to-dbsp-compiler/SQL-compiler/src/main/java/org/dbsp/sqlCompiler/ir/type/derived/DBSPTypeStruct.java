@@ -242,6 +242,11 @@ public class DBSPTypeStruct extends DBSPType {
         throw new UnimplementedException();
     }
 
+    @Override
+    public int getToplevelFieldCount() {
+        return this.fields.size();
+    }
+
     /** Generate a tuple type by ignoring the struct and field names, recursively. */
     public DBSPType toTupleDeep() {
         return toTupleDeep(this);

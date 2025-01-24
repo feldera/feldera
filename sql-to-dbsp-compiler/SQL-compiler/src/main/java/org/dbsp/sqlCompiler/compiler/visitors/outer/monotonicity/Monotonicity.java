@@ -42,13 +42,13 @@ import org.dbsp.sqlCompiler.compiler.ViewColumnMetadata;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.ExpressionCompiler;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Projection;
-import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.IMaybeMonotoneType;
-import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.MonotoneClosureType;
-import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.MonotoneExpression;
-import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.MonotoneTransferFunctions;
-import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.MonotoneType;
-import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.NonMonotoneType;
-import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.PartiallyMonotoneTuple;
+import org.dbsp.sqlCompiler.compiler.visitors.monotone.IMaybeMonotoneType;
+import org.dbsp.sqlCompiler.compiler.visitors.monotone.MonotoneClosureType;
+import org.dbsp.sqlCompiler.compiler.visitors.monotone.MonotoneExpression;
+import org.dbsp.sqlCompiler.compiler.visitors.monotone.MonotoneTransferFunctions;
+import org.dbsp.sqlCompiler.compiler.visitors.monotone.MonotoneType;
+import org.dbsp.sqlCompiler.compiler.visitors.monotone.NonMonotoneType;
+import org.dbsp.sqlCompiler.compiler.visitors.monotone.PartiallyMonotoneTuple;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
@@ -764,11 +764,13 @@ public class Monotonicity extends CircuitVisitor {
 
     /** Create a NoExpression with the specified type.
      * NoExpressions are never monotone, so we can use them as placeholders for
-     * expressions that we do not want to look at. */
+     * expressions that we do not want to look at.
+     * *DOES NOT WORK PROPERLY FOR EMPTY TUPLES. */
     static DBSPExpression makeNoExpression(DBSPType type) {
         if (type.is(DBSPTypeBaseType.class) || type.is(DBSPTypeVec.class) || type.is(DBSPTypeMap.class)) {
             return new NoExpression(type);
         } else if (type.is(DBSPTypeTupleBase.class)) {
+            // Tricky if the tuple is empty, this *will* be monotone!
             DBSPTypeTupleBase tuple = type.to(DBSPTypeTupleBase.class);
             DBSPExpression[] fields = Linq.map(tuple.tupFields, Monotonicity::makeNoExpression, DBSPExpression.class);
             return tuple.makeTuple(fields);

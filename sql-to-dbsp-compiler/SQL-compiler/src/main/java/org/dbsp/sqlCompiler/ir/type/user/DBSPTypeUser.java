@@ -66,6 +66,11 @@ public class DBSPTypeUser extends DBSPType {
     }
 
     @Override
+    public int getToplevelFieldCount() {
+        return 1;
+    }
+
+    @Override
     public boolean sameType(DBSPType type) {
         if (!super.sameNullability(type))
             return false;

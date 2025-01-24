@@ -29,6 +29,7 @@ import org.dbsp.sqlCompiler.circuit.ICircuit;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.ICompilerComponent;
+import org.dbsp.sqlCompiler.ir.DBSPNode;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 import org.dbsp.sqlCompiler.circuit.operator.*;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -135,8 +136,11 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs, 
         ICircuit parent = this.getUnderConstruction();
         parent.addOperator(operator);
         if (!this.current.isEmpty()) {
-            // This can happen when operators are inserted in startVisit, for example.
+            // Current can be empty when operators are inserted in startVisit, for example.
             // Such operators are not derived from the "current" operator.
+            IDBSPOuterNode node = this.getCurrent();
+            if (node.is(ICircuit.class))
+                return;
             operator.setDerivedFrom(this.getCurrent().getId());
         }
     }
@@ -491,8 +495,10 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs, 
     @Override
     public void postorder(DBSPCircuit circuit) {
         DBSPCircuit result = Utilities.removeLast(this.underConstruction).to(DBSPCircuit.class);
-        if (result.sameCircuit(circuit))
+        if (result.sameCircuit(circuit)) {
+            DBSPNode.discardOuterNode(result);
             result = circuit;
+        }
         this.map(circuit, result);
     }
 

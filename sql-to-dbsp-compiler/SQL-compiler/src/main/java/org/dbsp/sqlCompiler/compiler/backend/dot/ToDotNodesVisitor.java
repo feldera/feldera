@@ -90,7 +90,9 @@ public class ToDotNodesVisitor extends CircuitVisitor {
     String convertFunction(DBSPExpression expression) {
         String result = ToRustInnerVisitor.toRustString(this.compiler(), expression, true);
         result = result.replace("\n", "\\l");
-        return Utilities.escapeDoubleQuotes(result);
+        // Replace non-backslash followed by quote with a backslash followed by quote.
+        result = result.replaceAll("(?<!\\\\)\"", "\\\\\"");
+        return result;
     }
 
     String getFunction(DBSPSimpleOperator node) {

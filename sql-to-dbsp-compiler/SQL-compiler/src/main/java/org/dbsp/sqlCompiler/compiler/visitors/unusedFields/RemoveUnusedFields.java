@@ -1,4 +1,4 @@
-package org.dbsp.sqlCompiler.compiler.visitors.inner.unusedFields;
+package org.dbsp.sqlCompiler.compiler.visitors.unusedFields;
 
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.circuit.annotation.IsProjection;
@@ -11,8 +11,8 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
-import org.dbsp.sqlCompiler.compiler.frontend.TypeCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitCloneVisitor;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
@@ -22,8 +22,6 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
-import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
-import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 import org.dbsp.util.Linq;
 
@@ -60,28 +58,20 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
         DBSPClosureExpression projection = raw.closure(var);
 
         OutputPort source = this.mapped(input);
-        DBSPTypeIndexedZSet ix = TypeCompiler.makeIndexedZSet(projection.getResultType().to(DBSPTypeRawTuple.class));
-        DBSPMapIndexOperator map = new DBSPMapIndexOperator(node, projection, ix, source);
+        DBSPMapIndexOperator map = new DBSPMapIndexOperator(node, projection, source);
         this.addOperator(map);
         return map;
     }
 
-    public DBSPClosureExpression findUnused(DBSPClosureExpression closure) {
-        closure = closure.ensureTree(this.compiler)
-                .to(DBSPClosureExpression.class);
-        this.find.apply(closure);
-        return closure;
-    }
-
     boolean processJoin(DBSPJoinBaseOperator join) {
         DBSPClosureExpression joinFunction = join.getClosureFunction();
-        joinFunction = this.findUnused(joinFunction);
+        joinFunction = this.find.findUnusedFields(joinFunction);
 
         assert joinFunction.parameters.length == 3;
         DBSPParameter left = joinFunction.parameters[1];
         DBSPParameter right = joinFunction.parameters[2];
 
-        RewriteFields rw = this.find.createFieldRewriter(1);
+        RewriteFields rw = this.find.getFieldRewriter(1);
         FieldUseMap leftRemap = rw.getUseMap(left);
         FieldUseMap rightRemap = rw.getUseMap(right);
         if (!leftRemap.hasUnusedFields() && !rightRemap.hasUnusedFields())
@@ -92,7 +82,7 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
 
         // Parameter 0 is not fields in the body of the function, leave it unchanged
         rw.parameterFullyUsed(joinFunction.parameters[0]);
-        DBSPExpression newJoinFunction = rw.apply(joinFunction).to(DBSPExpression.class);
+        DBSPClosureExpression newJoinFunction = rw.rewriteClosure(joinFunction);
         DBSPSimpleOperator replacement =
                 join.withFunctionAndInputs(newJoinFunction, leftMap.outputPort(), rightMap.outputPort());
         this.map(join, replacement);
@@ -138,20 +128,28 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
 
         DBSPClosureExpression closure = operator.getClosureFunction();
         assert closure.parameters.length == 1;
-        closure = this.findUnused(closure);
+        closure = this.find.findUnusedFields(closure);
         if (!this.find.foundUnusedFields()) {
             super.postorder(operator);
             return;
         }
 
+        int size = closure.getType().getToplevelFieldCount();
         if (operator.input().outputType().is(DBSPTypeZSet.class)) {
-            RewriteFields rw = this.find.createFieldRewriter(1);
+            RewriteFields rw = this.find.getFieldRewriter(1);
             FieldUseMap fm = rw.getUseMap(closure.parameters[0]);
-            DBSPClosureExpression compressed = rw.apply(closure).to(DBSPClosureExpression.class);
-            OutputPort source = this.mapped(operator.input());
             DBSPClosureExpression projection = Objects.requireNonNull(fm.getProjection(1));
-            DBSPSimpleOperator adjust = new DBSPMapOperator(operator.getNode(), projection,
-                    new DBSPTypeZSet(projection.getResultType()), source).addAnnotation(new IsProjection());
+            DBSPClosureExpression compressed = rw.rewriteClosure(closure);
+
+            if (EquivalenceContext.equiv(closure, projection) ||
+                    EquivalenceContext.equiv(closure, compressed)) {
+                // This optimization achieves nothing
+                super.postorder(operator);
+                return;
+            }
+            OutputPort source = this.mapped(operator.input());
+            DBSPSimpleOperator adjust = new DBSPMapOperator(operator.getNode(), projection, source)
+                    .addAnnotation(new IsProjection(size));
             this.addOperator(adjust);
 
             DBSPSimpleOperator result = new DBSPMapOperator(
@@ -159,19 +157,81 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
             this.map(operator, result);
         } else {
             // closure = compressed \circ projection
-            RewriteFields rw = this.find.createFieldRewriter(2);
+            RewriteFields rw = this.find.getFieldRewriter(2);
             FieldUseMap fm = rw.getUseMap(closure.parameters[0]);
-            DBSPClosureExpression compressed = rw.apply(closure).to(DBSPClosureExpression.class);
+            DBSPClosureExpression compressed = rw.rewriteClosure(closure);
+            if (EquivalenceContext.equiv(closure, compressed)) {
+                // This optimization achieves nothing
+                super.postorder(operator);
+                return;
+            }
+
             OutputPort source = this.mapped(operator.input());
             DBSPClosureExpression projection = Objects.requireNonNull(fm.getProjection(2));
-            DBSPType resultType = projection.getResultType();
-            DBSPTypeRawTuple raw = resultType.to(DBSPTypeRawTuple.class);
-            DBSPSimpleOperator adjust = new DBSPMapIndexOperator(operator.getNode(), projection,
-                    new DBSPTypeIndexedZSet(raw), source)
-                    .addAnnotation(new IsProjection());
+            DBSPSimpleOperator adjust = new DBSPMapIndexOperator(operator.getNode(), projection, source)
+                    .addAnnotation(new IsProjection(size));
             this.addOperator(adjust);
             DBSPSimpleOperator result = new DBSPMapOperator(
                     operator.getNode(), compressed, operator.getOutputZSetType(), adjust.outputPort());
+            this.map(operator, result);
+        }
+    }
+
+    @Override
+    public void postorder(DBSPMapIndexOperator operator) {
+        // almost identical to the Map case
+        if (operator.hasAnnotation(a -> a.is(IsProjection.class))) {
+            // avoid infinite recursion
+            super.postorder(operator);
+            return;
+        }
+
+        DBSPClosureExpression closure = operator.getClosureFunction();
+        assert closure.parameters.length == 1;
+        closure = this.find.findUnusedFields(closure);
+        if (!this.find.foundUnusedFields()) {
+            super.postorder(operator);
+            return;
+        }
+
+        int size = closure.getType().getToplevelFieldCount();
+        if (operator.input().outputType().is(DBSPTypeZSet.class)) {
+            RewriteFields rw = this.find.getFieldRewriter(1);
+            FieldUseMap fm = rw.getUseMap(closure.parameters[0]);
+            DBSPClosureExpression compressed = rw.rewriteClosure(closure);
+            OutputPort source = this.mapped(operator.input());
+            DBSPClosureExpression projection = Objects.requireNonNull(fm.getProjection(1));
+            if (EquivalenceContext.equiv(compressed, closure)) {
+                super.postorder(operator);
+                return;
+            }
+
+            DBSPSimpleOperator adjust = new DBSPMapOperator(operator.getNode(), projection, source)
+                    .addAnnotation(new IsProjection(size));
+            this.addOperator(adjust);
+
+            DBSPSimpleOperator result = new DBSPMapIndexOperator(
+                    operator.getNode(), compressed, operator.getOutputIndexedZSetType(), adjust.outputPort());
+            this.map(operator, result);
+        } else {
+            // closure = compressed \circ projection
+            RewriteFields rw = this.find.getFieldRewriter(2);
+            FieldUseMap fm = rw.getUseMap(closure.parameters[0]);
+            DBSPClosureExpression projection = Objects.requireNonNull(fm.getProjection(2));
+            if (EquivalenceContext.equiv(closure, projection) ||
+                    EquivalenceContext.equiv(closure, projection)) {
+                // This optimization achieves nothing
+                super.postorder(operator);
+                return;
+            }
+
+            DBSPClosureExpression compressed = rw.rewriteClosure(closure);
+            OutputPort source = this.mapped(operator.input());
+            DBSPSimpleOperator adjust = new DBSPMapIndexOperator(operator.getNode(), projection, source)
+                    .addAnnotation(new IsProjection(size));
+            this.addOperator(adjust);
+            DBSPSimpleOperator result = new DBSPMapIndexOperator(
+                    operator.getNode(), compressed, operator.getOutputIndexedZSetType(), adjust.outputPort());
             this.map(operator, result);
         }
     }

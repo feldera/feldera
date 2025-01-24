@@ -64,6 +64,8 @@ public class ToDot {
                 stream -> new ToDotEdgesVisitor(compiler, stream, details));
     }
 
+    static int counter = 0;
+
     /** Returns a circuit transform which can be inserted in the CircuitOptimizer to dump the
      * circuit at some point */
     public static CircuitTransform dumper(DBSPCompiler compiler, String file, int details) {
@@ -75,7 +77,7 @@ public class ToDot {
 
             @Override
             public DBSPCircuit apply(DBSPCircuit circuit) {
-                ToDot.dump(compiler, file, details, "png", circuit);
+                ToDot.dump(compiler, counter++ + file, details, "png", circuit);
                 return circuit;
             }
 

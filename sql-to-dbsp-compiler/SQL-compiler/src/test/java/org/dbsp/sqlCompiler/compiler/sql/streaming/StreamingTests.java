@@ -280,7 +280,7 @@ public class StreamingTests extends StreamingTestBase {
             @Override
             public void endVisit() {
                 // 2 for the lag, one for the window
-                Assert.assertEquals(1, this.integrate_trace);
+                Assert.assertEquals(3, this.integrate_trace);
                 Assert.assertEquals(1, this.window);
             }
         };

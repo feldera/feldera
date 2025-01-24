@@ -51,12 +51,11 @@ public class Projection extends InnerVisitor {
     /** If true consider casts from a type to the same type non-nullable as noops */
     final boolean allowNoopCasts;
 
-    /** If the description can be described as a shuffle,
-     * this is it.
+    /** If the description can be described as a shuffle, this is it.
      * For a projection to be described as a shuffle,
      * it cannot contain constant fields, or nested fields.
-     * (a.1, a.3) is simple
-     * (2, a.3, a.3.2) is not simple.
+     * (a.1, a.3) can
+     * (2, a.3, a.3.2) cannot
      * Only makes sense for functions with a single parameter. */
     @Nullable
     List<Integer> shuffle;
@@ -307,7 +306,10 @@ public class Projection extends InnerVisitor {
 
     public Shuffle getShuffle() {
         assert this.isProjection;
-        return new ExplicitShuffle(Objects.requireNonNull(this.shuffle));
+        assert this.parameters != null;
+        DBSPType type = this.parameters[0].getType();
+        int size = type.deref().to(DBSPTypeTupleBase.class).size();
+        return new ExplicitShuffle(size, Objects.requireNonNull(this.shuffle));
     }
 
     /** Compose this projection with a constant expression.
@@ -338,6 +340,9 @@ public class Projection extends InnerVisitor {
     public void startVisit(IDBSPInnerNode node) {
         this.resolver.apply(node);
         super.startVisit(node);
+        this.ioMap = new IOMap();
+        this.shuffle = new ArrayList<>();
+        this.isProjection = true;
     }
 
     @Override

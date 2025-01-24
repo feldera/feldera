@@ -1,4 +1,4 @@
-package org.dbsp.sqlCompiler.compiler.visitors.inner.monotone;
+package org.dbsp.sqlCompiler.compiler.visitors.monotone;
 
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
@@ -168,7 +168,8 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
              outputFields.add(field);
         }
 
-        DBSPTypeTupleBase tupleType = expression.getCollectionElementType().as(DBSPTypeTupleBase.class);
+        // If collection element is a tuple type, all fields are inlined.
+        DBSPTypeTupleBase elementTupleType = expression.getCollectionElementType().as(DBSPTypeTupleBase.class);
         if (expression.ordinalityIndexType != null) {
             outputFields.add(new NoExpression(expression.ordinalityIndexType));
         } else {
@@ -177,8 +178,8 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
                     // TODO: this is very conservative
                     outputFields.add(new NoExpression(clo.getResultType()));
                 }
-            } else if (tupleType != null) {
-                for (DBSPType elem: tupleType.tupFields) {
+            } else if (elementTupleType != null) {
+                for (DBSPType elem: elementTupleType.tupFields) {
                     outputFields.add(new NoExpression(elem));
                 }
             } else {

@@ -65,8 +65,10 @@ public abstract class DBSPOperator extends DBSPNode implements IDBSPOuterNode {
     }
 
     public void setDerivedFrom(long id) {
-        if (id != this.id)
+        if (id != this.id && this.derivedFrom < 0) {
             this.derivedFrom = id;
+            assert id < this.id;
+        }
     }
 
     protected void addInput(OutputPort port) {
