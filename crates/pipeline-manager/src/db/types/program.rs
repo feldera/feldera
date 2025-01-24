@@ -457,7 +457,7 @@ fn convert_connectors_with_unique_names(
 ///
 /// It includes information needed for Rust compilation (e.g., generated Rust code)
 /// as well as only for runtime (e.g., schema, input/output connectors).
-#[derive(Deserialize, Serialize, ToSchema, Eq, PartialEq, Debug, Clone)]
+#[derive(Deserialize, Serialize, Eq, PartialEq, Debug, Clone)]
 pub struct ProgramInfo {
     /// Schema of the compiled SQL.
     pub schema: ProgramSchema,

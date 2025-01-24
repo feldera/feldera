@@ -3142,6 +3142,39 @@
         ],
         "description": "Describes an output connector configuration"
       },
+      "PartialProgramInfo": {
+        "type": "object",
+        "description": "Program information is the result of the SQL compilation.",
+        "required": [
+          "schema",
+          "udf_stubs",
+          "input_connectors",
+          "output_connectors"
+        ],
+        "properties": {
+          "input_connectors": {
+            "type": "object",
+            "description": "Input connectors derived from the schema.",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/InputEndpointConfig"
+            }
+          },
+          "output_connectors": {
+            "type": "object",
+            "description": "Output connectors derived from the schema.",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/OutputEndpointConfig"
+            }
+          },
+          "schema": {
+            "$ref": "#/components/schemas/ProgramSchema"
+          },
+          "udf_stubs": {
+            "type": "string",
+            "description": "Generated user defined function (UDF) stubs Rust code: stubs.rs"
+          }
+        }
+      },
       "PatchPipeline": {
         "type": "object",
         "description": "Partially update the pipeline (PATCH).\n\nNote that the patching only applies to the main fields, not subfields.\nFor instance, it is not possible to update only the number of workers;\nit is required to again pass the whole runtime configuration with the\nchange.",
@@ -3396,7 +3429,7 @@
           "program_info": {
             "allOf": [
               {
-                "$ref": "#/components/schemas/ProgramInfo"
+                "$ref": "#/components/schemas/PartialProgramInfo"
               }
             ],
             "nullable": true
@@ -3492,7 +3525,7 @@
           "program_info": {
             "allOf": [
               {
-                "$ref": "#/components/schemas/ProgramInfo"
+                "$ref": "#/components/schemas/PartialProgramInfo"
               }
             ],
             "nullable": true
@@ -3603,42 +3636,6 @@
             ],
             "default": null,
             "nullable": true
-          }
-        }
-      },
-      "ProgramInfo": {
-        "type": "object",
-        "description": "Program information is the output of the SQL compiler.\n\nIt includes information needed for Rust compilation (e.g., generated Rust code)\nas well as only for runtime (e.g., schema, input/output connectors).",
-        "required": [
-          "schema",
-          "input_connectors",
-          "output_connectors"
-        ],
-        "properties": {
-          "input_connectors": {
-            "type": "object",
-            "description": "Input connectors derived from the schema.",
-            "additionalProperties": {
-              "$ref": "#/components/schemas/InputEndpointConfig"
-            }
-          },
-          "main_rust": {
-            "type": "string",
-            "description": "Generated main program Rust code: main.rs"
-          },
-          "output_connectors": {
-            "type": "object",
-            "description": "Output connectors derived from the schema.",
-            "additionalProperties": {
-              "$ref": "#/components/schemas/OutputEndpointConfig"
-            }
-          },
-          "schema": {
-            "$ref": "#/components/schemas/ProgramSchema"
-          },
-          "udf_stubs": {
-            "type": "string",
-            "description": "Generated user defined function (UDF) stubs Rust code: stubs.rs"
           }
         }
       },

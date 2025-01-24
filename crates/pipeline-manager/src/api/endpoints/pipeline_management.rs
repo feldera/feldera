@@ -7,7 +7,7 @@ use crate::db::types::pipeline::{
     ExtendedPipelineDescr, ExtendedPipelineDescrMonitoring, PipelineDescr, PipelineDesiredStatus,
     PipelineId, PipelineStatus,
 };
-use crate::db::types::program::{ProgramConfig, ProgramInfo, ProgramStatus};
+use crate::db::types::program::{ProgramConfig, ProgramStatus};
 use crate::db::types::tenant::TenantId;
 use crate::db::types::version::Version;
 use crate::error::ManagerError;
@@ -19,13 +19,42 @@ use actix_web::{
     HttpResponse,
 };
 use chrono::{DateTime, Utc};
-use feldera_types::config::RuntimeConfig;
+use feldera_types::config::{InputEndpointConfig, OutputEndpointConfig, RuntimeConfig};
 use feldera_types::error::ErrorResponse;
+use feldera_types::program_schema::ProgramSchema;
 use log::info;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use std::borrow::Cow;
+use std::collections::BTreeMap;
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
+
+/// Program information is the result of the SQL compilation.
+#[derive(Deserialize, Serialize, ToSchema, Eq, PartialEq, Debug, Clone)]
+pub struct PartialProgramInfo {
+    /// Schema of the compiled SQL.
+    pub schema: ProgramSchema,
+
+    /// Generated user defined function (UDF) stubs Rust code: stubs.rs
+    pub udf_stubs: String,
+
+    /// Input connectors derived from the schema.
+    pub input_connectors: BTreeMap<Cow<'static, str>, InputEndpointConfig>,
+
+    /// Output connectors derived from the schema.
+    pub output_connectors: BTreeMap<Cow<'static, str>, OutputEndpointConfig>,
+}
+
+/// Removes the `main_rust` field from the JSON of `program_info`.
+fn remove_main_rust_from_program_info(
+    mut program_info: Option<serde_json::Value>,
+) -> Option<serde_json::Value> {
+    if let Some(serde_json::Value::Object(m)) = &mut program_info {
+        let _ = m.shift_remove("main_rust");
+    }
+    program_info
+}
 
 /// Pipeline information.
 /// It both includes fields which are user-provided and system-generated.
@@ -45,7 +74,7 @@ pub struct PipelineInfo {
     pub program_version: Version,
     pub program_status: ProgramStatus,
     pub program_status_since: DateTime<Utc>,
-    pub program_info: Option<ProgramInfo>,
+    pub program_info: Option<PartialProgramInfo>,
     pub deployment_status: PipelineStatus,
     pub deployment_status_since: DateTime<Utc>,
     pub deployment_desired_status: PipelineDesiredStatus,
@@ -85,27 +114,27 @@ pub struct PipelineInfoInternal {
 }
 
 impl PipelineInfoInternal {
-    pub(crate) fn new(extended_pipeline: &ExtendedPipelineDescr) -> Self {
+    pub(crate) fn new(extended_pipeline: ExtendedPipelineDescr) -> Self {
         PipelineInfoInternal {
             id: extended_pipeline.id,
-            name: extended_pipeline.name.clone(),
-            description: extended_pipeline.description.clone(),
+            name: extended_pipeline.name,
+            description: extended_pipeline.description,
             created_at: extended_pipeline.created_at,
             version: extended_pipeline.version,
-            platform_version: extended_pipeline.platform_version.clone(),
-            runtime_config: extended_pipeline.runtime_config.clone(),
-            program_code: extended_pipeline.program_code.clone(),
-            udf_rust: extended_pipeline.udf_rust.clone(),
-            udf_toml: extended_pipeline.udf_toml.clone(),
-            program_config: extended_pipeline.program_config.clone(),
+            platform_version: extended_pipeline.platform_version,
+            runtime_config: extended_pipeline.runtime_config,
+            program_code: extended_pipeline.program_code,
+            udf_rust: extended_pipeline.udf_rust,
+            udf_toml: extended_pipeline.udf_toml,
+            program_config: extended_pipeline.program_config,
             program_version: extended_pipeline.program_version,
-            program_status: extended_pipeline.program_status.clone(),
+            program_status: extended_pipeline.program_status,
             program_status_since: extended_pipeline.program_status_since,
-            program_info: extended_pipeline.program_info.clone(),
+            program_info: remove_main_rust_from_program_info(extended_pipeline.program_info),
             deployment_status: extended_pipeline.deployment_status,
             deployment_status_since: extended_pipeline.deployment_status_since,
             deployment_desired_status: extended_pipeline.deployment_desired_status,
-            deployment_error: extended_pipeline.deployment_error.clone(),
+            deployment_error: extended_pipeline.deployment_error,
         }
     }
 }
@@ -135,7 +164,7 @@ pub struct PipelineSelectedInfo {
     pub program_status: ProgramStatus,
     pub program_status_since: DateTime<Utc>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub program_info: Option<Option<ProgramInfo>>,
+    pub program_info: Option<Option<PartialProgramInfo>>,
     pub deployment_status: PipelineStatus,
     pub deployment_status_since: DateTime<Utc>,
     pub deployment_desired_status: PipelineDesiredStatus,
@@ -179,51 +208,53 @@ pub struct PipelineSelectedInfoInternal {
 }
 
 impl PipelineSelectedInfoInternal {
-    pub(crate) fn new_all(extended_pipeline: &ExtendedPipelineDescr) -> Self {
+    pub(crate) fn new_all(extended_pipeline: ExtendedPipelineDescr) -> Self {
         PipelineSelectedInfoInternal {
             id: extended_pipeline.id,
-            name: extended_pipeline.name.clone(),
-            description: extended_pipeline.description.clone(),
+            name: extended_pipeline.name,
+            description: extended_pipeline.description,
             created_at: extended_pipeline.created_at,
             version: extended_pipeline.version,
-            platform_version: extended_pipeline.platform_version.clone(),
-            runtime_config: Some(extended_pipeline.runtime_config.clone()),
-            program_code: Some(extended_pipeline.program_code.clone()),
-            udf_rust: Some(extended_pipeline.udf_rust.clone()),
-            udf_toml: Some(extended_pipeline.udf_toml.clone()),
-            program_config: Some(extended_pipeline.program_config.clone()),
+            platform_version: extended_pipeline.platform_version,
+            runtime_config: Some(extended_pipeline.runtime_config),
+            program_code: Some(extended_pipeline.program_code),
+            udf_rust: Some(extended_pipeline.udf_rust),
+            udf_toml: Some(extended_pipeline.udf_toml),
+            program_config: Some(extended_pipeline.program_config),
             program_version: extended_pipeline.program_version,
-            program_status: extended_pipeline.program_status.clone(),
+            program_status: extended_pipeline.program_status,
             program_status_since: extended_pipeline.program_status_since,
-            program_info: Some(extended_pipeline.program_info.clone()),
+            program_info: Some(remove_main_rust_from_program_info(
+                extended_pipeline.program_info,
+            )),
             deployment_status: extended_pipeline.deployment_status,
             deployment_status_since: extended_pipeline.deployment_status_since,
             deployment_desired_status: extended_pipeline.deployment_desired_status,
-            deployment_error: extended_pipeline.deployment_error.clone(),
+            deployment_error: extended_pipeline.deployment_error,
         }
     }
 
-    pub(crate) fn new_status(extended_pipeline: &ExtendedPipelineDescrMonitoring) -> Self {
+    pub(crate) fn new_status(extended_pipeline: ExtendedPipelineDescrMonitoring) -> Self {
         PipelineSelectedInfoInternal {
             id: extended_pipeline.id,
-            name: extended_pipeline.name.clone(),
-            description: extended_pipeline.description.clone(),
+            name: extended_pipeline.name,
+            description: extended_pipeline.description,
             created_at: extended_pipeline.created_at,
             version: extended_pipeline.version,
-            platform_version: extended_pipeline.platform_version.clone(),
+            platform_version: extended_pipeline.platform_version,
             runtime_config: None,
             program_code: None,
             udf_rust: None,
             udf_toml: None,
             program_config: None,
             program_version: extended_pipeline.program_version,
-            program_status: extended_pipeline.program_status.clone(),
+            program_status: extended_pipeline.program_status,
             program_status_since: extended_pipeline.program_status_since,
             program_info: None,
             deployment_status: extended_pipeline.deployment_status,
             deployment_status_since: extended_pipeline.deployment_status_since,
             deployment_desired_status: extended_pipeline.deployment_desired_status,
-            deployment_error: extended_pipeline.deployment_error.clone(),
+            deployment_error: extended_pipeline.deployment_error,
         }
     }
 }
@@ -394,7 +425,7 @@ pub(crate) async fn list_pipelines(
         PipelineFieldSelector::All => {
             let pipelines = state.db.lock().await.list_pipelines(*tenant_id).await?;
             pipelines
-                .iter()
+                .into_iter()
                 .map(PipelineSelectedInfoInternal::new_all)
                 .collect()
         }
@@ -406,7 +437,7 @@ pub(crate) async fn list_pipelines(
                 .list_pipelines_for_monitoring(*tenant_id)
                 .await?;
             pipelines
-                .iter()
+                .into_iter()
                 .map(PipelineSelectedInfoInternal::new_status)
                 .collect()
         }
@@ -453,7 +484,7 @@ pub(crate) async fn get_pipeline(
                 .await
                 .get_pipeline(*tenant_id, &pipeline_name)
                 .await?;
-            PipelineSelectedInfoInternal::new_all(&pipeline)
+            PipelineSelectedInfoInternal::new_all(pipeline)
         }
         PipelineFieldSelector::Status => {
             let pipeline = state
@@ -462,7 +493,7 @@ pub(crate) async fn get_pipeline(
                 .await
                 .get_pipeline_for_monitoring(*tenant_id, &pipeline_name)
                 .await?;
-            PipelineSelectedInfoInternal::new_status(&pipeline)
+            PipelineSelectedInfoInternal::new_status(pipeline)
         }
     };
     Ok(HttpResponse::Ok()
@@ -511,9 +542,12 @@ pub(crate) async fn post_pipeline(
             pipeline_descr,
         )
         .await?;
-    let returned_pipeline = PipelineInfoInternal::new(&pipeline);
+    let returned_pipeline = PipelineInfoInternal::new(pipeline);
 
-    info!("Created pipeline {} (tenant: {})", pipeline.id, *tenant_id);
+    info!(
+        "Created pipeline {} (tenant: {})",
+        returned_pipeline.id, *tenant_id
+    );
     Ok(HttpResponse::Created()
         .insert_header(CacheControl(vec![CacheDirective::NoCache]))
         .json(returned_pipeline))
@@ -570,17 +604,20 @@ async fn put_pipeline(
             pipeline_descr,
         )
         .await?;
-    let returned_pipeline = PipelineInfoInternal::new(&pipeline);
+    let returned_pipeline = PipelineInfoInternal::new(pipeline);
 
     if is_new {
-        info!("Created pipeline {} (tenant: {})", pipeline.id, *tenant_id);
+        info!(
+            "Created pipeline {} (tenant: {})",
+            returned_pipeline.id, *tenant_id
+        );
         Ok(HttpResponse::Created()
             .insert_header(CacheControl(vec![CacheDirective::NoCache]))
             .json(returned_pipeline))
     } else {
         info!(
             "Fully updated pipeline {} to version {} (tenant: {})",
-            pipeline.id, pipeline.version, *tenant_id
+            returned_pipeline.id, returned_pipeline.version, *tenant_id
         );
         Ok(HttpResponse::Ok()
             .insert_header(CacheControl(vec![CacheDirective::NoCache]))
@@ -643,11 +680,11 @@ pub(crate) async fn patch_pipeline(
             &body.program_config,
         )
         .await?;
-    let returned_pipeline = PipelineInfoInternal::new(&pipeline);
+    let returned_pipeline = PipelineInfoInternal::new(pipeline);
 
     info!(
         "Partially updated pipeline {} to version {} (tenant: {})",
-        pipeline.id, pipeline.version, *tenant_id
+        returned_pipeline.id, returned_pipeline.version, *tenant_id
     );
     Ok(HttpResponse::Ok()
         .insert_header(CacheControl(vec![CacheDirective::NoCache]))

@@ -368,19 +368,21 @@ export const postPipelineInputConnectorAction = (
 }
 
 /**
- * Start, pause or shutdown a pipeline.
- * The endpoint returns immediately after performing initial request validation
- * (e.g., upon start checking the program is compiled) and initiating the relevant
- * procedure (e.g., informing the runner or the already running pipeline).
- * The state changes completely asynchronously. On error, the pipeline
- * transitions to the `Failed` state. The user can monitor the current status
- * of the pipeline by polling the `GET /pipelines` and
- * `GET /pipelines/{pipeline_name}` endpoint.
+ * Sets the desired deployment state of a pipeline.
+ * The desired state is set based on the `action` path parameter:
+ * - `/start` sets desired state to `Running`
+ * - `/pause` sets desired state to `Paused`
+ * - `/shutdown` sets desired state to `Shutdown`
  *
- * The following values of the `action` argument are accepted:
- * - `start`: Start the pipeline
- * - `pause`: Pause the pipeline
- * - `shutdown`: Terminate the pipeline
+ * The endpoint returns immediately after setting the desired state.
+ * The relevant procedure to get to the desired state is performed asynchronously,
+ * and, as such, progress should be monitored by polling the pipeline using the
+ * `GET` endpoints.
+ *
+ * Note the following:
+ * - A shutdown pipeline can be started through calling either `/start` or `/pause`
+ * - Both starting as running and resuming a pipeline is done by calling `/start`
+ * - Both starting as paused and pausing a pipeline is done by calling `/pause`
  */
 export const postPipelineAction = (options: Options<PostPipelineActionData>) => {
   return (options?.client ?? client).post<PostPipelineActionResponse, PostPipelineActionError>({
