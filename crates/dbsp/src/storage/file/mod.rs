@@ -255,13 +255,14 @@ where
 mod test {
     use std::sync::Arc;
 
+    use crate::circuit::tokio::TOKIO;
     use crate::storage::{
         backend::StorageBackend, file::format::Compression, test::init_test_logger,
     };
 
     use super::{
         cache::FileCache,
-        reader::{ColumnSpec, RowGroup},
+        reader::{AsyncRowGroup, ColumnSpec, RowGroup},
         writer::{Parameters, Writer1, Writer2},
         Factories,
     };
@@ -383,6 +384,41 @@ mod test {
             unsafe { cursor.item((tmp_key, tmp_aux)) },
             Some((key.erase_mut(), aux.erase_mut()))
         );
+
+        let cursor = unsafe { row_group.find_exact(&key) }.unwrap().unwrap();
+        assert_eq!(
+            unsafe { cursor.item((tmp_key, tmp_aux)) },
+            Some((key.erase_mut(), aux.erase_mut()))
+        );
+    }
+
+    async fn test_find_async<K, A, N, T>(
+        row_group: &AsyncRowGroup<'_, DynData, DynData, N, T>,
+        _before: &K,
+        key: &K,
+        _after: &K,
+        mut aux: A,
+    ) where
+        K: DBData,
+        A: DBData,
+        T: ColumnSpec,
+    {
+        let mut tmp_key = K::default();
+        let mut tmp_aux = A::default();
+        let (tmp_key, tmp_aux): (&mut DynData, &mut DynData) =
+            (tmp_key.erase_mut(), tmp_aux.erase_mut());
+
+        let mut key = key.clone();
+        //let (key, aux): (&mut DynData, &mut DynData) = (key.erase_mut(),
+        // aux.erase_mut());
+
+        let cursor = unsafe { row_group.find_exact(&key).await }
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            unsafe { cursor.item((tmp_key, tmp_aux)) },
+            Some((key.erase_mut(), aux.erase_mut()))
+        );
     }
 
     fn test_out_of_range<K, A, N, T>(
@@ -426,6 +462,25 @@ mod test {
         assert!(!unsafe { cursor.seek_exact(before) }.unwrap());
         let first2 = unsafe { cursor.item((key2, aux2)) };
         assert_eq!(first1, first2);
+
+        assert!(unsafe { row_group.find_exact(before) }.unwrap().is_none());
+        assert!(unsafe { row_group.find_exact(after) }.unwrap().is_none());
+    }
+
+    async fn test_out_of_range_async<K, N, T>(
+        row_group: &AsyncRowGroup<'_, DynData, DynData, N, T>,
+        before: &K,
+        after: &K,
+    ) where
+        K: DBData,
+        T: ColumnSpec,
+    {
+        assert!(unsafe { row_group.find_exact(before).await }
+            .unwrap()
+            .is_none());
+        assert!(unsafe { row_group.find_exact(after).await }
+            .unwrap()
+            .is_none());
     }
 
     #[allow(clippy::len_zero)]
@@ -449,6 +504,22 @@ mod test {
         assert_eq!(rows.len() == 0, rows.is_empty());
         assert_eq!(rows.before().len(), n as u64);
         assert_eq!(rows.after().len() == 0, rows.after().is_empty());
+
+        if n > 0 {
+            let first = rows.first().unwrap();
+            let (_before, mut key, _after, mut aux) = expected(0);
+            assert_eq!(
+                unsafe { first.item((tmp_key, tmp_aux)) },
+                Some((key.erase_mut(), aux.erase_mut()))
+            );
+
+            let last = rows.last().unwrap();
+            let (_before, mut key, _after, mut aux) = expected(n - 1);
+            assert_eq!(
+                unsafe { last.item((tmp_key, tmp_aux)) },
+                Some((key.erase_mut(), aux.erase_mut()))
+            );
+        }
 
         let mut forward = rows.before();
         assert_eq!(unsafe { forward.item((tmp_key, tmp_aux)) }, None);
@@ -514,6 +585,108 @@ mod test {
         }
     }
 
+    #[allow(clippy::len_zero)]
+    async fn test_cursor_helper_async<K, A, N, T>(
+        rows: &AsyncRowGroup<'_, DynData, DynData, N, T>,
+        offset: u64,
+        n: usize,
+        expected: impl Fn(usize) -> (K, K, K, A),
+    ) where
+        K: DBData,
+        A: DBData,
+        T: ColumnSpec,
+    {
+        let mut tmp_key = K::default();
+        let mut tmp_aux = A::default();
+        let (tmp_key, tmp_aux): (&mut DynData, &mut DynData) =
+            (tmp_key.erase_mut(), tmp_aux.erase_mut());
+
+        assert_eq!(rows.len(), n as u64);
+
+        assert_eq!(rows.len() == 0, rows.is_empty());
+        assert_eq!(rows.before().len(), n as u64);
+        assert_eq!(rows.after().len() == 0, rows.after().is_empty());
+
+        if n > 0 {
+            let first = rows.first().await.unwrap();
+            let (_before, mut key, _after, mut aux) = expected(0);
+            assert_eq!(
+                unsafe { first.item((tmp_key, tmp_aux)) },
+                Some((key.erase_mut(), aux.erase_mut()))
+            );
+
+            let last = rows.last().await.unwrap();
+            let (_before, mut key, _after, mut aux) = expected(n - 1);
+            assert_eq!(
+                unsafe { last.item((tmp_key, tmp_aux)) },
+                Some((key.erase_mut(), aux.erase_mut()))
+            );
+        }
+
+        let mut forward = rows.before();
+        assert_eq!(unsafe { forward.item((tmp_key, tmp_aux)) }, None);
+        forward.move_prev().await.unwrap();
+        assert_eq!(unsafe { forward.item((tmp_key, tmp_aux)) }, None);
+        forward.move_next().await.unwrap();
+        for row in 0..n {
+            let (_before, mut key, _after, mut aux) = expected(row);
+            assert_eq!(
+                unsafe { forward.item((tmp_key, tmp_aux)) },
+                Some((key.erase_mut(), aux.erase_mut()))
+            );
+            forward.move_next().await.unwrap();
+        }
+        assert_eq!(unsafe { forward.item((tmp_key, tmp_aux)) }, None);
+        forward.move_next().await.unwrap();
+        assert_eq!(unsafe { forward.item((tmp_key, tmp_aux)) }, None);
+
+        let mut backward = rows.after();
+        assert_eq!(unsafe { backward.item((tmp_key, tmp_aux)) }, None);
+        backward.move_next().await.unwrap();
+        assert_eq!(unsafe { backward.item((tmp_key, tmp_aux)) }, None);
+        backward.move_prev().await.unwrap();
+        for row in (0..n).rev() {
+            let (_before, mut key, _after, mut aux) = expected(row);
+            assert_eq!(
+                unsafe { backward.item((tmp_key, tmp_aux)) },
+                Some((key.erase_mut(), aux.erase_mut()))
+            );
+            backward.move_prev().await.unwrap();
+        }
+        assert_eq!(unsafe { backward.item((tmp_key, tmp_aux)) }, None);
+        backward.move_prev().await.unwrap();
+        assert_eq!(unsafe { backward.item((tmp_key, tmp_aux)) }, None);
+
+        for row in 0..n {
+            let (before, key, after, aux) = expected(row);
+            test_find_async(rows, &before, &key, &after, aux.clone()).await;
+        }
+
+        let mut random = rows.before();
+        let mut order: Vec<_> = (0..n + 10).collect();
+        order.shuffle(&mut thread_rng());
+        for row in order {
+            random.move_to_row(row as u64).await.unwrap();
+            assert_eq!(random.absolute_position(), offset + row.min(n) as u64);
+            assert_eq!(random.remaining_rows(), (n - row.min(n)) as u64);
+            if row < n {
+                let (_before, mut key, _after, mut aux) = expected(row);
+                assert_eq!(
+                    unsafe { random.item((tmp_key, tmp_aux)) },
+                    Some((key.erase_mut(), aux.erase_mut()))
+                );
+            } else {
+                assert_eq!(unsafe { random.item((tmp_key, tmp_aux)) }, None);
+            }
+        }
+
+        if n > 0 {
+            let (before, _, _, _) = expected(0);
+            let (_, _, after, _) = expected(n - 1);
+            test_out_of_range_async::<K, N, T>(rows, &before, &after).await;
+        }
+    }
+
     fn test_cursor<K, A, N, T>(
         rows: &RowGroup<DynData, DynData, N, T>,
         n: usize,
@@ -532,6 +705,27 @@ mod test {
         test_cursor_helper(&subset, offset + start as u64, end - start, |index| {
             expected(index + start)
         })
+    }
+
+    async fn test_cursor_async<K, A, N, T>(
+        rows: &AsyncRowGroup<'_, DynData, DynData, N, T>,
+        n: usize,
+        expected: impl Fn(usize) -> (K, K, K, A),
+    ) where
+        K: DBData,
+        A: DBData,
+        T: ColumnSpec,
+    {
+        let offset = rows.before().absolute_position();
+        test_cursor_helper_async(rows, offset, n, &expected).await;
+
+        let start = thread_rng().gen_range(0..n);
+        let end = thread_rng().gen_range(start..=n);
+        let subset = rows.subset(start as u64..end as u64);
+        test_cursor_helper_async(&subset, offset + start as u64, end - start, |index| {
+            expected(index + start)
+        })
+        .await;
     }
 
     fn test_two_columns<T>(parameters: Parameters)
@@ -554,7 +748,7 @@ mod test {
         let mut layer_file = Writer2::new(
             &factories0,
             &factories1,
-            cache,
+            cache.clone(),
             &*storage_backend,
             parameters,
         )
@@ -572,23 +766,54 @@ mod test {
         let reader = layer_file.into_reader().unwrap();
         reader.evict();
         let rows0 = reader.rows();
-        test_cursor(&rows0, n0, |row0| {
+        let expected0 = |row0| {
             let key0 = T::key0(row0);
             let (before0, after0) = T::near0(row0);
             let aux0 = T::aux0(row0);
             (before0, key0, after0, aux0)
-        });
+        };
+        test_cursor(&rows0, n0, expected0);
 
+        let expected1 = |row0, row1| {
+            let key1 = T::key1(row0, row1);
+            let (before1, after1) = T::near1(row0, row1);
+            let aux1 = T::aux1(row0, row1);
+            (before1, key1, after1, aux1)
+        };
         for row0 in 0..n0 {
             let rows1 = rows0.nth(row0 as u64).unwrap().next_column().unwrap();
             let n1 = T::n1(row0);
-            test_cursor(&rows1, n1, |row1| {
-                let key1 = T::key1(row0, row1);
-                let (before1, after1) = T::near1(row0, row1);
-                let aux1 = T::aux1(row0, row1);
-                (before1, key1, after1, aux1)
-            });
+            test_cursor(&rows1, n1, |row1| expected1(row0, row1));
         }
+
+        TOKIO.block_on(async {
+            // Force some blocking due to I/O, to test those cases in
+            // [AsyncCacheContext].
+            cache.evict(reader.file_handle());
+
+            let context = reader.new_async_context();
+            context
+                .execute_tasks(
+                    reader.file_handle(),
+                    [async {
+                        let rows0 = reader.rows_async(&context);
+                        test_cursor_async(&rows0, n0, expected0).await;
+
+                        for row0 in 0..n0 {
+                            let rows1 = rows0
+                                .nth(row0 as u64)
+                                .await
+                                .unwrap()
+                                .next_column()
+                                .await
+                                .unwrap();
+                            let n1 = T::n1(row0);
+                            test_cursor_async(&rows1, n1, |row1| expected1(row0, row1)).await;
+                        }
+                    }],
+                )
+                .await;
+        });
     }
 
     fn test_2_columns_helper(parameters: Parameters) {
@@ -666,17 +891,33 @@ mod test {
             )
             .unwrap();
             let mut writer =
-                Writer1::new(&factories, cache, &*storage_backend, parameters).unwrap();
+                Writer1::new(&factories, cache.clone(), &*storage_backend, parameters).unwrap();
             for row in 0..n {
                 let (_before, key, _after, aux) = expected(row);
                 writer.write0((&key, &aux)).unwrap();
             }
 
             let reader = writer.into_reader().unwrap();
-            reader.evict();
             assert_eq!(reader.rows().len(), n as u64);
             test_cursor(&reader.rows(), n, &expected);
-        })
+
+            TOKIO.block_on(async {
+                // Force some blocking due to I/O, to test those cases in
+                // [AsyncCacheContext].
+                cache.evict(reader.file_handle());
+
+                let context = reader.new_async_context();
+                context
+                    .execute_tasks(
+                        reader.file_handle(),
+                        [async {
+                            let row_group = reader.rows_async(&context);
+                            test_cursor_async(&row_group, n, &expected).await;
+                        }],
+                    )
+                    .await;
+            });
+        });
     }
 
     fn test_i64_helper(parameters: Parameters) {
