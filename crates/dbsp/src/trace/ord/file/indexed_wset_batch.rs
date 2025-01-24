@@ -14,7 +14,8 @@ use crate::{
     },
     time::{Antichain, AntichainRef},
     trace::{
-        ord::{filter, merge_batcher::MergeBatcher},
+        cursor::{CursorFactory, CursorFactoryWrapper},
+        ord::{filter, merge_batcher::MergeBatcher, vec::VecIndexedWSet},
         Batch, BatchFactories, BatchLocation, BatchReader, BatchReaderFactories, Builder, Cursor,
         Filter, Merger, VecIndexedWSetFactories, WeightedItem,
     },
@@ -397,6 +398,60 @@ where
                 output.push_ref(cursor.key());
             }
         }
+    }
+
+    async fn fetch<B>(
+        &self,
+        keys: &B,
+    ) -> Option<Box<dyn CursorFactory<Self::Key, Self::Val, Self::Time, Self::R>>>
+    where
+        B: Batch<Key = Self::Key>,
+    {
+        let context = self.file.new_async_context();
+        let mut tasks = Vec::new();
+        let mut keys = keys.cursor();
+        while let Some(key) = keys.get_key() {
+            let key = clone_box(key);
+            tasks.push(async {
+                let key = key; // Force moving `key`.
+                let mut values = self.factories.weighted_vals_factory().default_box();
+
+                let key_rows = self.file.rows_async(&context);
+                if let Some(key_cursor) = unsafe { key_rows.find_exact(&key) }.await.unwrap() {
+                    let value_rows = key_cursor.next_column().await.unwrap();
+                    values.reserve(value_rows.len() as usize);
+                    let mut value_cursor = value_rows.first().await.unwrap();
+                    while value_cursor.has_value() {
+                        values.push_with(&mut |vw| {
+                            let (val, weight) = vw.split_mut();
+                            unsafe { value_cursor.key(val) };
+                            unsafe { value_cursor.aux(weight) };
+                        });
+                        value_cursor.move_next().await.unwrap();
+                    }
+                }
+                (key, values)
+            });
+            keys.step_key();
+        }
+
+        let outputs = context.execute_tasks(self.file.file_handle(), tasks).await;
+
+        let mut builder =
+            <VecIndexedWSet<Self::Key, Self::Val, Self::R> as Batch>::Builder::with_capacity(
+                &self.factories.vec_indexed_wset_factory,
+                outputs.len(),
+            );
+        for (mut key, mut values) in outputs {
+            for value in values.dyn_iter_mut() {
+                let (val, weight) = value.split_mut();
+                builder.push_val_diff_mut(val, weight);
+            }
+            if !values.is_empty() {
+                builder.push_key_mut(&mut key);
+            }
+        }
+        Some(Box::new(CursorFactoryWrapper(builder.done())))
     }
 }
 

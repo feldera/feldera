@@ -1284,7 +1284,13 @@ where
         let mut output_tuples = self.timed_items_factory.default_box();
 
         let mut index_cursor = index.cursor();
-        let mut trace_cursor = trace.cursor();
+
+        let fetched = trace.fetch(index).await;
+        let mut trace_cursor = if let Some(fetched) = fetched.as_ref() {
+            fetched.get_cursor()
+        } else {
+            Box::new(trace.cursor())
+        };
 
         let time = self.clock.time();
 

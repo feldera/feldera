@@ -38,7 +38,7 @@ use crate::storage::buffer_cache::CacheStats;
 pub use crate::storage::file::{Deserializable, Deserializer, Rkyv, Serializer};
 use crate::time::Antichain;
 use crate::{dynamic::ArchivedDBData, storage::buffer_cache::FBuf};
-use cursor::CursorList;
+use cursor::{CursorFactory, CursorList};
 use dyn_clone::DynClone;
 use rand::Rng;
 use rkyv::ser::Serializer as _;
@@ -470,6 +470,43 @@ where
     where
         Self::Time: PartialEq<()>,
         RG: Rng;
+
+    /// Creates and returns a new batch that is a subset of this one, containing
+    /// only the key-value pairs whose keys are in `keys`. May also return
+    /// `None`, the default implementation, if the batch doesn't want to
+    /// implement this method.  In particular, a batch for which access through
+    /// a cursor is fast should return `None` to avoid the expense of copying
+    /// data.
+    ///
+    /// # Rationale
+    ///
+    /// This method enables performance optimizations for the case where these
+    /// assumptions hold:
+    ///
+    /// 1. Individual [Batch]es flowing through a circuit are small enough to
+    ///    fit comfortably in memory.
+    ///
+    /// 2. [Trace]s accumulated over time as a circuit executes may become large
+    ///    enough that they must be maintained in external storage.
+    ///
+    /// If an operator needs to fetch all of the data from a `trace` that
+    /// corresponds to some set of `keys`, then, given these assumptions, doing
+    /// so one key at a time with a cursor will be slow because every key fetch
+    /// potentially incurs a round trip to the storage, with total latency O(n)
+    /// in the number of keys. This method gives the batch implementation the
+    /// opportunity to implement parallel fetch for `trace.fetch(key)`, with
+    /// total latency O(1) in the number of keys.
+    #[allow(async_fn_in_trait)]
+    async fn fetch<B>(
+        &self,
+        keys: &B,
+    ) -> Option<Box<dyn CursorFactory<Self::Key, Self::Val, Self::Time, Self::R>>>
+    where
+        B: Batch<Key = Self::Key, Time = ()>,
+    {
+        let _ = keys;
+        None
+    }
 }
 
 /// A [`BatchReader`] plus features for constructing new batches.
