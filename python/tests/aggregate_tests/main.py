@@ -155,6 +155,7 @@ from tests.aggregate_tests.test_empty_set import *  # noqa: F403
 from tests.aggregate_tests.test_float_max import *  # noqa: F403
 from tests.aggregate_tests.test_float_min import *  # noqa: F403
 from tests.aggregate_tests.test_float_tbl import *  # noqa: F403
+from tests.aggregate_tests.test_uuid import *  # noqa: F403
 
 
 def register_tests_in_module(module, ta: TstAccumulator):
