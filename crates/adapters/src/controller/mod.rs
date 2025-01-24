@@ -1402,7 +1402,7 @@ impl ControllerInit {
             } else {
                 usize::MAX
             },
-            init_checkpoint: init_checkpoint.unwrap_or(CheckpointMetadata::default().uuid),
+            init_checkpoint,
         })
     }
 }
