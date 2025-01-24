@@ -1,11 +1,12 @@
 //! Logic to manage persistent checkpoints for a circuit.
 
+use super::RuntimeError;
 use crate::dynamic::{self, data::DataTyped, DataTrait, WeightTrait};
 use crate::trace::ord::{vec::VecIndexedWSet, FallbackIndexedWSet};
 use crate::{Error, TypedBox};
 
 use std::collections::{HashSet, VecDeque};
-use std::fs::{self, create_dir_all, File};
+use std::fs::{self, File};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
@@ -49,6 +50,7 @@ impl CheckpointMetadata {
 pub(crate) struct Checkpointer {
     storage_path: PathBuf,
     checkpoint_list: VecDeque<CheckpointMetadata>,
+    fingerprint: u64,
 }
 
 impl Checkpointer {
@@ -62,24 +64,34 @@ impl Checkpointer {
     /// A slice of all file-extension the system can create.
     const DBSP_FILE_EXTENSION: &'static [&'static str] = &["mut", "feldera"];
 
-    pub fn new(storage_path: PathBuf) -> Self {
-        let checkpoint_list =
-            Self::try_read_checkpoints_from_file(&storage_path).unwrap_or_else(|_| {
-                panic!(
-                    "The checkpoint file in '{}' should be valid",
-                    storage_path.display()
-                )
-            });
+    /// Create a new checkpointer for directory `storage_path`, verify that any
+    /// existing checkpoints in that directory have the given `fingerprint`, and
+    /// delete any unreferenced files in the directory.
+    pub fn new(storage_path: PathBuf, fingerprint: u64) -> Result<Self, Error> {
+        let checkpoint_list = Self::try_read_checkpoints_from_file(&storage_path)?;
 
-        Checkpointer {
+        let this = Checkpointer {
             storage_path,
             checkpoint_list,
+            fingerprint,
+        };
+        this.gc_startup()?;
+        for cpm in &this.checkpoint_list {
+            if cpm.fingerprint != fingerprint {
+                return Err(Error::Runtime(RuntimeError::IncompatibleStorage));
+            }
         }
+
+        Ok(this)
+    }
+
+    pub fn fingerprint(&self) -> u64 {
+        self.fingerprint
     }
 
     /// Remove unexpected/leftover files from a previous run in the storage
     /// directory.
-    pub(super) fn gc_startup(&self) -> Result<(), Error> {
+    fn gc_startup(&self) -> Result<(), Error> {
         if self.checkpoint_list.is_empty() {
             // This is a safety measure we take to ensure that we don't
             // accidentally remove files just in case we fail to read the checkpoint
@@ -139,22 +151,19 @@ impl Checkpointer {
         Ok(())
     }
 
-    pub(super) fn create_checkpoint_dir(&self, uuid: Uuid) -> Result<(), Error> {
-        let checkpoint_dir = self.storage_path.join(uuid.to_string());
-        create_dir_all(checkpoint_dir)?;
-        Ok(())
+    pub(super) fn checkpoint_dir(&self, uuid: Uuid) -> PathBuf {
+        self.storage_path.join(uuid.to_string())
     }
 
     pub(super) fn commit(
         &mut self,
         uuid: Uuid,
         identifier: Option<String>,
-        fingerprint: u64,
     ) -> Result<CheckpointMetadata, Error> {
         let md = CheckpointMetadata {
             uuid,
             identifier,
-            fingerprint,
+            fingerprint: self.fingerprint,
         };
         self.checkpoint_list.push_back(md.clone());
         self.update_checkpoint_file()?;
@@ -162,7 +171,7 @@ impl Checkpointer {
     }
 
     /// List all currently available checkpoints.
-    pub(super) fn list_checkpoints(&mut self) -> Result<Vec<CheckpointMetadata>, Error> {
+    pub(super) fn list_checkpoints(&self) -> Result<Vec<CheckpointMetadata>, Error> {
         Ok(self.checkpoint_list.clone().into())
     }
 
