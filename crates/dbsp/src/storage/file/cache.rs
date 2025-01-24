@@ -94,14 +94,14 @@ impl FileCacheEntry {
         }
     }
 
-    fn as_data_block(&self) -> Result<Arc<InnerDataBlock>, ()> {
+    pub(crate) fn as_data_block(&self) -> Result<Arc<InnerDataBlock>, ()> {
         match self {
             Self::Data(inner) => Ok(inner.clone()),
             _ => Err(()),
         }
     }
 
-    fn as_index_block(&self) -> Result<Arc<InnerIndexBlock>, ()> {
+    pub(crate) fn as_index_block(&self) -> Result<Arc<InnerIndexBlock>, ()> {
         match self {
             Self::Index(inner) => Ok(inner.clone()),
             _ => Err(()),
