@@ -5,6 +5,7 @@
 use std::any::Any;
 use std::borrow::Cow;
 use std::fmt::{Debug, Display};
+use std::future::Future;
 use std::ops::{Add, AddAssign};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -12,10 +13,20 @@ use std::time::Duration;
 use std::{collections::BTreeMap, ops::Range};
 
 use enum_map::{Enum, EnumMap};
+use futures::{
+    future::{self, Either},
+    pin_mut,
+    stream::FuturesUnordered,
+    StreamExt,
+};
+use tokio::sync::{oneshot, watch};
 
 use crate::circuit::metadata::{MetaItem, OperatorMeta};
 use crate::circuit::runtime::ThreadType;
 use crate::storage::backend::{BlockLocation, FileId, FileReader};
+use crate::storage::file::reader::Error;
+
+use super::FBuf;
 
 /// A key for the block cache.
 ///
@@ -58,7 +69,7 @@ struct CacheValue {
     serial: u64,
 }
 
-pub trait CacheEntry: Send + Sync {
+pub trait CacheEntry: Send + Sync + Debug {
     fn cost(&self) -> usize;
     fn as_any(self: Arc<Self>) -> Arc<dyn Any + Send + Sync>;
 }
@@ -384,5 +395,174 @@ impl AddAssign for CacheCounts {
         self.count += rhs.count;
         self.bytes += rhs.bytes;
         self.elapsed += rhs.elapsed;
+    }
+}
+
+/// Context for asynchronous cached I/O.
+///
+/// This context allows for batching cached I/O to a [FileReader] in async Rust.
+/// Each async task uses [Self::read] to do I/O, which blocks if the read cannot
+/// be satisfied from cache. [Self::execute_tasks] runs all of the tasks in
+/// parallel, launching a round of I/O whenever all of the unfinished tasks
+/// block.
+pub struct AsyncCacheContext {
+    /// The underlying cache.
+    cache: Arc<BufferCache>,
+
+    /// Identifies the file we're reading.
+    file_id: FileId,
+
+    /// [BTreeMap] is a better choice than `HashMap` for this because issuing
+    /// I/O in sorted order is usually a good idea.
+    requests: Mutex<BTreeMap<BlockLocation, AsyncCacheTask>>,
+
+    n_requests: watch::Sender<usize>,
+}
+
+struct AsyncCacheTask {
+    parse: Box<dyn FnOnce(Arc<FBuf>) -> Result<Arc<dyn CacheEntry>, Error> + 'static>,
+    send_replies: Vec<oneshot::Sender<Result<Arc<dyn CacheEntry>, Error>>>,
+}
+
+impl AsyncCacheTask {
+    fn new<F>(parse: F) -> Self
+    where
+        F: FnOnce(Arc<FBuf>) -> Result<Arc<dyn CacheEntry>, Error> + 'static,
+    {
+        Self {
+            parse: Box::new(parse),
+            send_replies: Vec::new(),
+        }
+    }
+}
+
+impl AsyncCacheContext {
+    pub fn new(cache: Arc<BufferCache>, file: &dyn FileReader) -> Self {
+        Self {
+            cache,
+            file_id: file.file_id(),
+            requests: Mutex::new(BTreeMap::new()),
+            n_requests: watch::channel(0).0,
+        }
+    }
+
+    /// Reads the bytes at `location` from the file.  If the read can be
+    /// satisfied from cache, this completes quickly. Otherwise, it blocks until
+    /// [Self::execute_tasks] runs I/O for all of the blocking tasks in a batch.
+    pub async fn read<F>(
+        &self,
+        location: BlockLocation,
+        parse: F,
+    ) -> Result<Arc<dyn CacheEntry>, Error>
+    where
+        F: FnOnce(Arc<FBuf>) -> Result<Arc<dyn CacheEntry>, Error> + 'static,
+    {
+        let key = CacheKey::new(self.file_id, location.offset);
+        if let Some(aux) = self.cache.inner.lock().unwrap().get(key) {
+            return Ok(aux.clone());
+        }
+
+        let (sender, receiver) = oneshot::channel();
+
+        self.requests
+            .lock()
+            .unwrap()
+            .entry(location)
+            .or_insert_with(|| AsyncCacheTask::new(parse))
+            .send_replies
+            .push(sender);
+
+        self.n_requests.send_modify(|n| *n += 1);
+        receiver.await.unwrap().map_err(|error| error.into()) // XXX unwrap
+    }
+
+    /// Waits until `goal` threads have blocked on I/O in [Self::read].
+    pub async fn wait(&self, goal: usize) {
+        self.n_requests
+            .subscribe()
+            .wait_for(|n| *n >= goal)
+            .await
+            .unwrap();
+    }
+
+    /// Runs all of the pending I/O and wakes up threads blocked in [Self::read].
+    pub async fn run_io_batch<R>(&self, file: &R)
+    where
+        R: FileReader + ?Sized,
+    {
+        let requests = std::mem::take(&mut *self.requests.lock().unwrap());
+        let n_requests = requests
+            .values()
+            .map(|task| task.send_replies.len())
+            .sum::<usize>();
+        self.n_requests.send_modify(|n| *n -= n_requests);
+        let blocks = requests.keys().cloned().collect::<Vec<_>>();
+        let (sender, receiver) = oneshot::channel();
+        file.read_async(
+            blocks,
+            Box::new(
+                move |result| sender.send(result).unwrap(), // XXX unwrap
+            ),
+        );
+        let result = receiver.await.unwrap(); // XXX unwrap
+        for (result, (location, task)) in result.into_iter().zip(requests.into_iter()) {
+            let result = result.map_or_else(|error| Err(error.into()), |block| (task.parse)(block));
+            if let Ok(cache_entry) = result.as_ref() {
+                self.cache.inner.lock().unwrap().insert(
+                    CacheKey::new(self.file_id, location.offset),
+                    cache_entry.clone(),
+                );
+            }
+            for send_reply in task.send_replies {
+                send_reply.send(result.clone()).unwrap(); // XXX unwrap
+            }
+        }
+    }
+
+    /// Execute all of the `tasks` on `file` until all of them run to
+    /// completion, returning a vector of their return values in the same order.
+    ///
+    /// Internally, this runs in a series of rounds, where in each round we run
+    /// each task until it either completes or blocks on I/O on `file`. At the
+    /// end of the round, if any tasks are still left, we do all of the I/O on
+    /// all of the tasks in a single batch of reads.
+    pub async fn execute_tasks<F, T, R>(
+        &self,
+        file: &R,
+        tasks: impl IntoIterator<Item = F>,
+    ) -> Vec<T>
+    where
+        F: Future<Output = T>,
+        R: FileReader + ?Sized,
+    {
+        let mut tasks = tasks
+            .into_iter()
+            .enumerate()
+            .map(|(index, future)| async move { (index, future.await) })
+            .collect::<FuturesUnordered<_>>();
+        let mut outputs = Vec::with_capacity(tasks.len());
+        for _ in 0..tasks.len() {
+            outputs.push(None);
+        }
+        while !tasks.is_empty() {
+            let wait = self.wait(tasks.len());
+            pin_mut!(wait);
+            match future::select(tasks.next(), wait).await {
+                Either::Left((Some((index, output)), _)) => {
+                    // A task has completed.
+                    outputs[index] = Some(output);
+                }
+                Either::Left((None, _)) => {
+                    // Unreachable because we know that `tasks` is not empty.
+                    unreachable!()
+                }
+                Either::Right((_, _)) => {
+                    // All of the tasks we launched have blocked on I/O. Launch a batch
+                    // of I/O and wait for it to complete.
+                    self.run_io_batch(file).await;
+                }
+            }
+        }
+        outputs.into_iter().map(|output| output.unwrap()).collect()
     }
 }

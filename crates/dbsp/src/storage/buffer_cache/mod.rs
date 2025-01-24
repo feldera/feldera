@@ -6,7 +6,7 @@ mod cache;
 mod fbuf;
 
 pub use cache::{
-    AtomicCacheCounts, AtomicCacheStats, BufferCache, CacheAccess, CacheCounts, CacheEntry,
-    CacheStats,
+    AsyncCacheContext, AtomicCacheCounts, AtomicCacheStats, BufferCache, CacheAccess, CacheCounts,
+    CacheEntry, CacheStats,
 };
 pub use fbuf::{FBuf, FBufSerializer, LimitExceeded};
