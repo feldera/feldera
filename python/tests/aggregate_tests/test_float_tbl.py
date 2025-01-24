@@ -5,7 +5,8 @@ class aggtst_real_table(TstTable):
     """Define the table used by REAL tests"""
 
     def __init__(self):
-        self.sql = """CREATE TABLE real_tbl(
+        self.sql = """CREATE FUNCTION RF(R REAL) RETURNS REAL AS ROUND(R, 6);
+                        CREATE TABLE real_tbl(
                         id INT,
                         c1 REAL,
                         c2 REAL NOT NULL);"""
