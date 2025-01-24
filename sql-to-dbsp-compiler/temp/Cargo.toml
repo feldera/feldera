@@ -10,7 +10,7 @@ default = []
 [dependencies]
 paste = { version = "1.0.12" }
 derive_more = { version = "0.99.17", features = ["add", "not", "from"] }
-dbsp = { path = "../../crates/dbsp" }
+dbsp = { path = "../../crates/dbsp", features = ["backend-mode"] }
 dbsp_adapters = { path = "../../crates/adapters", default-features = false }
 feldera-types = { path = "../../crates/feldera-types" }
 feldera-sqllib = { path = "../../crates/sqllib" }

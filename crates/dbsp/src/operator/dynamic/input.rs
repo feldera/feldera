@@ -4,8 +4,8 @@ use crate::{
     },
     circuit::RootCircuit,
     dynamic::{
-        ClonableTrait, DataTrait, DynBool, DynOpt, DynPair, DynPairs, DynUnit, DynWeightedPairs,
-        Erase, Factory, LeanVec, WithFactory,
+        ClonableTrait, DataTrait, DynBool, DynData, DynOpt, DynPair, DynPairs, DynUnit,
+        DynWeightedPairs, Erase, Factory, LeanVec, WithFactory,
     },
     operator::{
         dynamic::{
@@ -197,6 +197,47 @@ where
             input_pairs_factory: self.input_pairs_factory,
             upsert_pair_factory: self.upsert_pair_factory,
         }
+    }
+}
+
+impl RootCircuit {
+    pub fn dyn_add_input_zset_mono(
+        &self,
+        factories: &AddInputZSetFactories<DynData>,
+    ) -> (
+        ZSetStream<DynData>,
+        CollectionHandle<DynPair<DynData, DynUnit>, DynZWeight>,
+    ) {
+        self.dyn_add_input_zset(factories)
+    }
+
+    #[allow(clippy::type_complexity)]
+    pub fn dyn_add_input_indexed_zset_mono(
+        &self,
+        factories: &AddInputIndexedZSetFactories<DynData, DynData>,
+    ) -> (
+        IndexedZSetStream<DynData, DynData>,
+        CollectionHandle<DynData, DynPair<DynData, DynZWeight>>,
+    ) {
+        self.dyn_add_input_indexed_zset(factories)
+    }
+
+    pub fn dyn_add_input_set_mono(
+        &self,
+        factories: &AddInputSetFactories<OrdZSet<DynData>>,
+    ) -> (ZSetStream<DynData>, UpsertHandle<DynData, DynBool>) {
+        self.dyn_add_input_set(factories)
+    }
+
+    pub fn dyn_add_input_map_mono(
+        &self,
+        factories: &AddInputMapFactories<OrdIndexedZSet<DynData, DynData>, DynData>,
+        patch_func: PatchFunc<DynData, DynData>,
+    ) -> (
+        IndexedZSetStream<DynData, DynData>,
+        UpsertHandle<DynData, DynUpdate<DynData, DynData>>,
+    ) {
+        self.dyn_add_input_map(factories, patch_func)
     }
 }
 

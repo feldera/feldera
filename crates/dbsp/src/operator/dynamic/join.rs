@@ -1,6 +1,8 @@
 use crate::algebra::ZBatchReader;
 use crate::circuit::circuit_builder::StreamId;
 use crate::circuit::metrics::Gauge;
+use crate::dynamic::DynData;
+use crate::NestedCircuit;
 use crate::{
     algebra::{
         IndexedZSet, IndexedZSetReader, Lattice, MulByRef, OrdIndexedZSet, OrdZSet, PartialOrder,
@@ -37,6 +39,8 @@ use std::{
     ops::Deref,
     panic::Location,
 };
+
+use super::{MonoIndexedZSet, MonoZSet};
 
 circuit_cache_key!(AntijoinId<C, D>((StreamId, StreamId) => Stream<C, D>));
 
@@ -419,6 +423,80 @@ impl<I1> Stream<RootCircuit, I1> {
                 join_func,
                 Location::caller(),
             ))
+    }
+}
+
+impl Stream<RootCircuit, MonoIndexedZSet> {
+    #[track_caller]
+    pub fn dyn_join_mono(
+        &self,
+        factories: &JoinFactories<MonoIndexedZSet, MonoIndexedZSet, (), OrdZSet<DynData>>,
+        other: &Stream<RootCircuit, MonoIndexedZSet>,
+        join_funcs: TraceJoinFuncs<DynData, DynData, DynData, DynData, DynUnit>,
+    ) -> Stream<RootCircuit, MonoZSet> {
+        self.dyn_join(factories, other, join_funcs)
+    }
+
+    #[track_caller]
+    pub fn dyn_join_index_mono(
+        &self,
+        factories: &JoinFactories<MonoIndexedZSet, MonoIndexedZSet, (), MonoIndexedZSet>,
+        other: &Stream<RootCircuit, MonoIndexedZSet>,
+        join_funcs: TraceJoinFuncs<DynData, DynData, DynData, DynData, DynData>,
+    ) -> Stream<RootCircuit, MonoIndexedZSet> {
+        self.dyn_join_generic(factories, other, join_funcs)
+    }
+
+    pub fn dyn_antijoin_mono(
+        &self,
+        factories: &AntijoinFactories<MonoIndexedZSet, MonoZSet, ()>,
+        other: &Stream<RootCircuit, MonoIndexedZSet>,
+    ) -> Stream<RootCircuit, MonoIndexedZSet> {
+        self.dyn_antijoin(factories, other)
+    }
+}
+
+impl Stream<NestedCircuit, MonoIndexedZSet> {
+    #[track_caller]
+    pub fn dyn_join_mono(
+        &self,
+        factories: &JoinFactories<
+            MonoIndexedZSet,
+            MonoIndexedZSet,
+            <NestedCircuit as WithClock>::Time,
+            OrdZSet<DynData>,
+        >,
+        other: &Stream<NestedCircuit, MonoIndexedZSet>,
+        join_funcs: TraceJoinFuncs<DynData, DynData, DynData, DynData, DynUnit>,
+    ) -> Stream<NestedCircuit, MonoZSet> {
+        self.dyn_join(factories, other, join_funcs)
+    }
+
+    #[track_caller]
+    pub fn dyn_join_index_mono(
+        &self,
+        factories: &JoinFactories<
+            MonoIndexedZSet,
+            MonoIndexedZSet,
+            <NestedCircuit as WithClock>::Time,
+            MonoIndexedZSet,
+        >,
+        other: &Stream<NestedCircuit, MonoIndexedZSet>,
+        join_funcs: TraceJoinFuncs<DynData, DynData, DynData, DynData, DynData>,
+    ) -> Stream<NestedCircuit, MonoIndexedZSet> {
+        self.dyn_join_generic(factories, other, join_funcs)
+    }
+
+    pub fn dyn_antijoin_mono(
+        &self,
+        factories: &AntijoinFactories<
+            MonoIndexedZSet,
+            MonoZSet,
+            <NestedCircuit as WithClock>::Time,
+        >,
+        other: &Stream<NestedCircuit, MonoIndexedZSet>,
+    ) -> Stream<NestedCircuit, MonoIndexedZSet> {
+        self.dyn_antijoin(factories, other)
     }
 }
 
@@ -1299,18 +1377,13 @@ where
 #[cfg(test)]
 mod test {
     use crate::{
-        circuit::WithClock,
         indexed_zset,
-        operator::{DelayedFeedback, Generator},
-        typed_batch::{OrdIndexedZSet, OrdZSet, Spine},
+        operator::Generator,
+        typed_batch::{OrdIndexedZSet, OrdZSet},
         utils::Tup2,
-        zset, Circuit, FallbackZSet, RootCircuit, Runtime, Stream, Timestamp,
+        zset, Circuit, RootCircuit, Runtime, Stream,
     };
-    use rkyv::{Archive, Deserialize, Serialize};
-    use size_of::SizeOf;
     use std::{
-        fmt::{Display, Formatter},
-        hash::Hash,
         sync::{Arc, Mutex},
         vec,
     };
@@ -1589,6 +1662,81 @@ mod test {
             circuit.step().unwrap();
         }
     }
+    #[test]
+    fn antijoin_test() {
+        let output = Arc::new(Mutex::new(OrdIndexedZSet::empty()));
+        let output_clone = output.clone();
+
+        let (mut circuit, (input1, input2)) = Runtime::init_circuit(4, move |circuit| {
+            let (input1, input_handle1) = circuit.add_input_indexed_zset::<u64, u64>();
+            let (input2, input_handle2) = circuit.add_input_indexed_zset::<u64, u64>();
+
+            input1.antijoin(&input2).gather(0).inspect(move |batch| {
+                if Runtime::worker_index() == 0 {
+                    *output_clone.lock().unwrap() = batch.clone();
+                }
+            });
+
+            Ok((input_handle1, input_handle2))
+        })
+        .unwrap();
+
+        input1.append(&mut vec![
+            Tup2(1, Tup2(0, 1)),
+            Tup2(1, Tup2(1, 2)),
+            Tup2(2, Tup2(0, 1)),
+            Tup2(2, Tup2(1, 1)),
+        ]);
+        circuit.step().unwrap();
+        assert_eq!(
+            &*output.lock().unwrap(),
+            &indexed_zset! { 1 => { 0 => 1, 1 => 2}, 2 => { 0 => 1, 1 => 1 } }
+        );
+
+        input1.append(&mut vec![Tup2(3, Tup2(1, 1))]);
+        circuit.step().unwrap();
+        assert_eq!(&*output.lock().unwrap(), &indexed_zset! { 3 => { 1 => 1 } });
+
+        input2.append(&mut vec![Tup2(1, Tup2(1, 3))]);
+        circuit.step().unwrap();
+        assert_eq!(
+            &*output.lock().unwrap(),
+            &indexed_zset! { 1 => { 0 => -1, 1 => -2 } }
+        );
+
+        input2.append(&mut vec![Tup2(2, Tup2(5, 1))]);
+        input1.append(&mut vec![Tup2(2, Tup2(2, 1)), Tup2(4, Tup2(1, 1))]);
+        circuit.step().unwrap();
+        assert_eq!(
+            &*output.lock().unwrap(),
+            &indexed_zset! { 2 => { 0 => -1, 1 => -1 }, 4 => { 1 => 1 } }
+        );
+
+        // Issue https://github.com/feldera/feldera/issues/3365. Multiple values per key in the right-hand input shouldn't
+        // produce outputs with negative weights.
+        input2.append(&mut vec![Tup2(2, Tup2(6, 1))]);
+        circuit.step().unwrap();
+        assert_eq!(&*output.lock().unwrap(), &indexed_zset! {});
+
+        circuit.kill().unwrap();
+    }
+}
+
+#[cfg(all(test, not(feature = "backend-mode")))]
+mod propagate_test {
+    use crate::{
+        circuit::WithClock,
+        operator::{DelayedFeedback, Generator},
+        typed_batch::{OrdZSet, Spine},
+        zset, Circuit, FallbackZSet, RootCircuit, Stream, Timestamp,
+    };
+    use rkyv::{Archive, Deserialize, Serialize};
+    use size_of::SizeOf;
+    use std::{
+        fmt::{Display, Formatter},
+        hash::Hash,
+        vec,
+    };
 
     #[derive(
         Clone,
@@ -1822,64 +1970,5 @@ mod test {
             //eprintln!("{}", i);
             circuit.step().unwrap();
         }
-    }
-
-    #[test]
-    fn antijoin_test() {
-        let output = Arc::new(Mutex::new(OrdIndexedZSet::empty()));
-        let output_clone = output.clone();
-
-        let (mut circuit, (input1, input2)) = Runtime::init_circuit(4, move |circuit| {
-            let (input1, input_handle1) = circuit.add_input_indexed_zset::<u64, u64>();
-            let (input2, input_handle2) = circuit.add_input_indexed_zset::<u64, u64>();
-
-            input1.antijoin(&input2).gather(0).inspect(move |batch| {
-                if Runtime::worker_index() == 0 {
-                    *output_clone.lock().unwrap() = batch.clone();
-                }
-            });
-
-            Ok((input_handle1, input_handle2))
-        })
-        .unwrap();
-
-        input1.append(&mut vec![
-            Tup2(1, Tup2(0, 1)),
-            Tup2(1, Tup2(1, 2)),
-            Tup2(2, Tup2(0, 1)),
-            Tup2(2, Tup2(1, 1)),
-        ]);
-        circuit.step().unwrap();
-        assert_eq!(
-            &*output.lock().unwrap(),
-            &indexed_zset! { 1 => { 0 => 1, 1 => 2}, 2 => { 0 => 1, 1 => 1 } }
-        );
-
-        input1.append(&mut vec![Tup2(3, Tup2(1, 1))]);
-        circuit.step().unwrap();
-        assert_eq!(&*output.lock().unwrap(), &indexed_zset! { 3 => { 1 => 1 } });
-
-        input2.append(&mut vec![Tup2(1, Tup2(1, 3))]);
-        circuit.step().unwrap();
-        assert_eq!(
-            &*output.lock().unwrap(),
-            &indexed_zset! { 1 => { 0 => -1, 1 => -2 } }
-        );
-
-        input2.append(&mut vec![Tup2(2, Tup2(5, 1))]);
-        input1.append(&mut vec![Tup2(2, Tup2(2, 1)), Tup2(4, Tup2(1, 1))]);
-        circuit.step().unwrap();
-        assert_eq!(
-            &*output.lock().unwrap(),
-            &indexed_zset! { 2 => { 0 => -1, 1 => -1 }, 4 => { 1 => 1 } }
-        );
-
-        // Issue https://github.com/feldera/feldera/issues/3365. Multiple values per key in the right-hand input shouldn't
-        // produce outputs with negative weights.
-        input2.append(&mut vec![Tup2(2, Tup2(6, 1))]);
-        circuit.step().unwrap();
-        assert_eq!(&*output.lock().unwrap(), &indexed_zset! {});
-
-        circuit.kill().unwrap();
     }
 }

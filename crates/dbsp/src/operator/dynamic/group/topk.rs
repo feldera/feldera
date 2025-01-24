@@ -6,7 +6,8 @@ use crate::{
         AddAssignByRef, HasOne, HasZero, IndexedZSet, OrdIndexedZSet, OrdIndexedZSetFactories,
         ZCursor, ZRingValue,
     },
-    dynamic::{DataTrait, DynUnit, Erase, Factory, WeightTrait},
+    dynamic::{DataTrait, DynData, DynUnit, Erase, Factory, WeightTrait},
+    operator::dynamic::MonoIndexedZSet,
     trace::{BatchReaderFactories, OrdIndexedWSetFactories},
     DBData, DBWeight, DynZWeight, RootCircuit, Stream, ZWeight,
 };
@@ -130,6 +131,50 @@ where
                 TopK::desc(factories.input_factories.val_factory(), k),
             )),
         )
+    }
+}
+
+impl Stream<RootCircuit, MonoIndexedZSet> {
+    pub fn dyn_topk_custom_order_mono(
+        &self,
+        factories: &TopKCustomOrdFactories<DynData, DynData, DynData, DynZWeight>,
+        k: usize,
+        encode: Box<dyn Fn(&DynData, &mut DynData)>,
+        decode: Box<dyn Fn(&DynData) -> &DynData>,
+    ) -> Self {
+        self.dyn_topk_custom_order(factories, k, encode, decode)
+    }
+
+    pub fn dyn_topk_rank_custom_order_mono(
+        &self,
+        factories: &TopKRankCustomOrdFactories<DynData, DynData, DynData>,
+        k: usize,
+        encode: Box<dyn Fn(&DynData, &mut DynData)>,
+        rank_eq_func: Box<dyn Fn(&DynData, &DynData) -> bool>,
+        output_func: Box<dyn Fn(i64, &DynData, &mut DynData)>,
+    ) -> Stream<RootCircuit, MonoIndexedZSet> {
+        self.dyn_topk_rank_custom_order(factories, k, encode, rank_eq_func, output_func)
+    }
+
+    pub fn dyn_topk_dense_rank_custom_order_mono(
+        &self,
+        factories: &TopKRankCustomOrdFactories<DynData, DynData, DynData>,
+        k: usize,
+        encode: Box<dyn Fn(&DynData, &mut DynData)>,
+        rank_eq_func: Box<dyn Fn(&DynData, &DynData) -> bool>,
+        output_func: Box<dyn Fn(i64, &DynData, &mut DynData)>,
+    ) -> Stream<RootCircuit, MonoIndexedZSet> {
+        self.dyn_topk_dense_rank_custom_order(factories, k, encode, rank_eq_func, output_func)
+    }
+
+    pub fn dyn_topk_row_number_custom_order_mono(
+        &self,
+        factories: &TopKRankCustomOrdFactories<DynData, DynData, DynData>,
+        k: usize,
+        encode: Box<dyn Fn(&DynData, &mut DynData)>,
+        output_func: Box<dyn Fn(i64, &DynData, &mut DynData)>,
+    ) -> Stream<RootCircuit, MonoIndexedZSet> {
+        self.dyn_topk_row_number_custom_order(factories, k, encode, output_func)
     }
 }
 

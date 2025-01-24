@@ -77,7 +77,7 @@ where
         );
 
         self.inner()
-            .dyn_asof_join(
+            .dyn_asof_join_mono(
                 &join_factories,
                 &other.inner(),
                 dyn_ts_func1,

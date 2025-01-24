@@ -198,6 +198,7 @@ test-dbsp:
     FROM +build-dbsp
     ENV RUST_BACKTRACE 1
     DO rust+CARGO --args="test --package dbsp"
+    DO rust+CARGO --args="test --package dbsp --features backend-mode"
 
 test-nexmark:
     FROM +build-nexmark

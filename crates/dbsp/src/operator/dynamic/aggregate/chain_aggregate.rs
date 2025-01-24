@@ -6,11 +6,26 @@ use minitrace::trace;
 use crate::{
     algebra::IndexedZSet,
     circuit::operator_traits::{BinaryOperator, Operator},
-    dynamic::{ClonableTrait, Erase},
-    operator::dynamic::trace::{TraceBounds, TraceFeedback},
+    dynamic::{ClonableTrait, DynData, Erase},
+    operator::dynamic::{
+        trace::{TraceBounds, TraceFeedback},
+        MonoIndexedZSet,
+    },
     trace::{BatchReader, BatchReaderFactories, Builder, Cursor, Spine},
     Circuit, RootCircuit, Scope, Stream, ZWeight,
 };
+
+impl Stream<RootCircuit, MonoIndexedZSet> {
+    pub fn dyn_chain_aggregate_mono(
+        &self,
+        input_factories: &<MonoIndexedZSet as BatchReader>::Factories,
+        output_factories: &<MonoIndexedZSet as BatchReader>::Factories,
+        finit: Box<dyn Fn(&mut DynData, &DynData, ZWeight)>,
+        fupdate: Box<dyn Fn(&mut DynData, &DynData, ZWeight)>,
+    ) -> Stream<RootCircuit, MonoIndexedZSet> {
+        self.dyn_chain_aggregate(input_factories, output_factories, finit, fupdate)
+    }
+}
 
 impl<Z> Stream<RootCircuit, Z>
 where
