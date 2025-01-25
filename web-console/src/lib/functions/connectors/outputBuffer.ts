@@ -1,5 +1,5 @@
 import { bignumber, maxBigNumber, minBigNumber } from '$lib/functions/common/valibot'
-import { FormFieldOptions } from '$lib/functions/forms'
+import type { FormFieldOptions } from '$lib/functions/forms'
 import { BigNumber } from 'bignumber.js/bignumber.js'
 import * as va from 'valibot'
 
@@ -17,25 +17,22 @@ const maxU64 = BigNumber('18446744073709551615')
 export const outputBufferConfigSchema = va.object({
   enable_output_buffer: va.optional(va.boolean()),
   max_output_buffer_time_millis: va.optional(
-    bignumber([minBigNumber(minU64), maxBigNumber(maxU64)])
+    va.pipe(bignumber, minBigNumber(minU64), maxBigNumber(maxU64))
   ),
   max_output_buffer_size_records: va.optional(
-    bignumber([minBigNumber(minU64), maxBigNumber(maxU64)])
+    va.pipe(bignumber, minBigNumber(minU64), maxBigNumber(maxU64))
   )
 })
 
-export const outputBufferConfigValidation = <
-  T extends {
-    max_output_buffer_time_millis?: BigNumber
-    max_output_buffer_size_records?: BigNumber
-  }
->() =>
-  va.forward<T>(
-    va.custom(
-      (input) => !!input.max_output_buffer_time_millis || !!input.max_output_buffer_size_records,
+export const outputBufferConfigValidation = () =>
+  va.forward(
+    va.partialCheck(
+      [['max_output_buffer_time_millis'], ['max_output_buffer_size_records']],
+      (input: any) =>
+        !!input.max_output_buffer_time_millis || !!input.max_output_buffer_size_records,
       'Specify either max_output_buffer_time_millis or max_output_buffer_size_records'
     ),
-    ['max_output_buffer_time_millis'] as va.PathList<T>
+    ['max_output_buffer_time_millis']
   )
 
 export const outputBufferOptions: Record<string, FormFieldOptions> = {
