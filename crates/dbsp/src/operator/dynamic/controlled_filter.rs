@@ -6,10 +6,12 @@ use crate::{
         circuit_builder::RefStreamValue,
         operator_traits::{BinaryOperator, Operator},
     },
-    dynamic::{DataTrait, Erase},
+    dynamic::{DataTrait, DynData, DynUnit, Erase},
     trace::{Batch, BatchReader, BatchReaderFactories, Builder, Cursor},
-    Circuit, DBData, Scope, Stream, ZWeight,
+    Circuit, DBData, RootCircuit, Scope, Stream, ZWeight,
 };
+
+use super::{MonoIndexedZSet, MonoZSet};
 
 pub struct ControlledFilterFactories<Z, E>
 where
@@ -35,6 +37,35 @@ where
             batch_factories: BatchReaderFactories::new::<KType, VType, ZWeight>(),
             errors_factory: BatchReaderFactories::new::<EType, (), ZWeight>(),
         }
+    }
+}
+
+impl Stream<RootCircuit, MonoIndexedZSet> {
+    #[track_caller]
+    pub fn dyn_controlled_key_filter_mono(
+        &self,
+        factories: ControlledFilterFactories<MonoIndexedZSet, DynData>,
+        threshold: &Stream<RootCircuit, Box<DynData>>,
+        filter_func: Box<dyn Fn(&DynData, &DynData) -> bool>,
+        report_func: Box<dyn Fn(&DynData, &DynData, &DynData, ZWeight, &mut DynData)>,
+    ) -> (
+        Stream<RootCircuit, MonoIndexedZSet>,
+        Stream<RootCircuit, MonoZSet>,
+    ) {
+        self.dyn_controlled_key_filter(factories, threshold, filter_func, report_func)
+    }
+}
+
+impl Stream<RootCircuit, MonoZSet> {
+    #[track_caller]
+    pub fn dyn_controlled_key_filter_mono(
+        &self,
+        factories: ControlledFilterFactories<MonoZSet, DynData>,
+        threshold: &Stream<RootCircuit, Box<DynData>>,
+        filter_func: Box<dyn Fn(&DynData, &DynData) -> bool>,
+        report_func: Box<dyn Fn(&DynData, &DynData, &DynUnit, ZWeight, &mut DynData)>,
+    ) -> (Stream<RootCircuit, MonoZSet>, Stream<RootCircuit, MonoZSet>) {
+        self.dyn_controlled_key_filter(factories, threshold, filter_func, report_func)
     }
 }
 

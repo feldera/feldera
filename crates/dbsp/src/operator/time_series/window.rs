@@ -1,14 +1,12 @@
 use crate::{
-    trace::BatchReaderFactories,
-    typed_batch::{IndexedZSet, TypedBox},
-    Circuit, Stream, ZWeight,
+    dynamic::DynData, trace::BatchReaderFactories, typed_batch::TypedBox, DBData, OrdIndexedZSet,
+    RootCircuit, Stream, ZWeight,
 };
 
-impl<C, B> Stream<C, B>
+impl<K, V> Stream<RootCircuit, OrdIndexedZSet<K, V>>
 where
-    C: Circuit,
-    B: IndexedZSet,
-    Box<B::DynK>: Clone,
+    K: DBData,
+    V: DBData,
 {
     /// Extract a subset of values that fall within a moving window from a
     /// stream of time-indexed values.
@@ -68,13 +66,13 @@ where
     pub fn window(
         &self,
         inclusive: (bool, bool),
-        bounds: &Stream<C, (TypedBox<B::Key, B::DynK>, TypedBox<B::Key, B::DynK>)>,
-    ) -> Stream<C, B> {
-        let input_factories = BatchReaderFactories::new::<B::Key, B::Val, ZWeight>();
+        bounds: &Stream<RootCircuit, (TypedBox<K, DynData>, TypedBox<K, DynData>)>,
+    ) -> Stream<RootCircuit, OrdIndexedZSet<K, V>> {
+        let input_factories = BatchReaderFactories::new::<K, V, ZWeight>();
 
-        let bounds = unsafe { bounds.transmute_payload::<(Box<B::DynK>, Box<B::DynK>)>() };
+        let bounds = unsafe { bounds.transmute_payload::<(Box<DynData>, Box<DynData>)>() };
         self.inner()
-            .dyn_window(&input_factories, inclusive, &bounds)
+            .dyn_window_mono(&input_factories, inclusive, &bounds)
             .typed()
     }
 }
