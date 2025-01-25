@@ -93,7 +93,7 @@ CREATE TABLE purchase (
 The value of the `LATENESS` attribute is a constant expression that must have a
 type that can be subtracted from the column type.  In the above example,
 lateness for a column of type `TIMESTAMP` is specified as an `INTERVAL` type.
-`LATENESS` for an integer column is specified as an integer constant. 
+`LATENESS` for an integer column is specified as an integer constant.
 
 **Views can have lateness too**. Lateness is a property of input data; however
 it is not always possible to associate a lateness annotation with an input table
