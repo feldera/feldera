@@ -93,10 +93,6 @@ thread_local! {
     // if the current thread is not running in a multithreaded runtime.
     static RUNTIME: RefCell<Option<Runtime>> = const { RefCell::new(None) };
 
-    // Reference to the buffer cache used by storage. This is shared between the worker and
-    // the corresponding background thread as they typically operate on the same set of files.
-    static BUFFER_CACHE: RefCell<Option<Arc<BufferCache<FileCacheEntry>>>> = const { RefCell::new(None) };
-
     // 0-based index of the current worker thread within its runtime.
     // Returns `0` if the current thread in not running in a multithreaded
     // runtime.
