@@ -1008,15 +1008,16 @@ export const librdkafkaNonAuthFieldsSchema = (() => {
         match(o)
           .with({ type: 'number' }, (option) => {
             const error = `Must be in the range of ${option.range.min} to ${option.range.max}`
-            return va.number([
+            return va.pipe(
+              va.number(),
               va.minValue(option.range.min, error),
               va.maxValue(option.range.max, error)
-            ])
+            )
           })
           .with({ type: 'enum' }, (option) => va.picklist(option.range as [string, ...string[]]))
           .with({ type: 'array' }, { type: 'list' }, () => va.array(va.string()))
           .with({ type: 'boolean' }, () => va.boolean())
-          .with({ type: 'string' }, () => va.string([va.minLength(1)]))
+          .with({ type: 'string' }, () => va.pipe(va.string(), va.minLength(1)))
           .exhaustive()
       )
     )

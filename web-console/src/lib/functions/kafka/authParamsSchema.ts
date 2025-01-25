@@ -8,73 +8,97 @@ const sslSchema = va.object({
   ssl_ca_pem: va.optional(va.string())
 })
 
-const saslPassSchema = va.object({
-  sasl_mechanism: va.optional(
-    va.picklist(['GSSAPI', 'PLAIN', 'SCRAM-SHA-256', 'SCRAM-SHA-512']),
-    'PLAIN'
-  ),
-  sasl_username: va.optional(va.string()),
-  sasl_password: va.optional(va.string())
+const saslPassSchema = <T extends string>(security_protocol: va.LiteralSchema<T, undefined>) =>
+  va.object({
+    security_protocol,
+    sasl_mechanism: va.picklist(['GSSAPI', 'PLAIN', 'SCRAM-SHA-256', 'SCRAM-SHA-512']),
+    sasl_username: va.optional(va.string()),
+    sasl_password: va.optional(va.string())
+  })
+
+const saslOauthCommon = va.object({
+  sasl_mechanism: va.literal('OAUTHBEARER'),
+  sasl_oauthbearer_config: va.optional(va.string()),
+  enable_sasl_oauthbearer_unsecure_jwt: va.optional(va.boolean(), false)
 })
 
-const saslOauthSchema = va.intersect([
-  va.object({
-    sasl_mechanism: va.literal('OAUTHBEARER'),
-    sasl_oauthbearer_config: va.optional(va.string()),
-    enable_sasl_oauthbearer_unsecure_jwt: va.optional(va.boolean(), false)
-  }),
-  va.union([
+const saslOauthSchema = <
+  T extends string,
+  E extends va.ObjectEntries,
+  M extends va.ErrorMessage<va.ObjectIssue> | undefined
+>(
+  security_protocol: va.LiteralSchema<T, undefined>,
+  extra?: va.ObjectSchema<E, M>
+) =>
+  va.variant('sasl_oauthbearer_method', [
     va.object({
-      sasl_oauthbearer_method: va.optional(va.literal('default'), 'default')
+      security_protocol,
+      ...saslOauthCommon.entries,
+      sasl_oauthbearer_method: va.literal('default'),
+      ...extra?.entries
     }),
     va.object({
+      security_protocol,
+      ...saslOauthCommon.entries,
       sasl_oauthbearer_method: va.literal('oidc'),
-      sasl_oauthbearer_client_id: va.string([va.minLength(1)]),
-      sasl_oauthbearer_client_secret: va.string([va.minLength(1)]),
-      sasl_oauthbearer_token_endpoint_url: va.string([va.minLength(1)]),
+      sasl_oauthbearer_client_id: va.pipe(va.string(), va.minLength(1)),
+      sasl_oauthbearer_client_secret: va.pipe(va.string(), va.minLength(1)),
+      sasl_oauthbearer_token_endpoint_url: va.pipe(va.string(), va.minLength(1)),
       sasl_oauthbearer_scope: va.optional(va.string()),
-      sasl_oauthbearer_extensions: va.optional(va.string())
+      sasl_oauthbearer_extensions: va.optional(va.string()),
+      ...extra?.entries
     })
   ])
-])
 
-const saslGenericSchema = va.object({
-  sasl_mechanism: va.string()
-})
+const saslGenericSchema = <T extends string>(security_protocol: va.LiteralSchema<T, undefined>) =>
+  va.object({
+    security_protocol,
+    sasl_mechanism: va.string()
+  })
 
-const saslPlaintextSchema = va.union([saslPassSchema, saslOauthSchema, saslGenericSchema])
+const saslPlaintextSchema = <
+  T extends string,
+  E extends va.ObjectEntries,
+  M extends va.ErrorMessage<va.ObjectIssue> | undefined
+>(
+  security_protocol: va.LiteralSchema<T, undefined>,
+  extra?: va.ObjectSchema<E, M>
+) =>
+  va.variant('sasl_mechanism', [
+    va.object({
+      ...saslPassSchema(security_protocol).entries,
+      ...extra?.entries
+    }),
+    saslOauthSchema(security_protocol, extra),
+    va.object({
+      ...saslGenericSchema(security_protocol).entries,
+      ...extra?.entries
+    })
+  ])
 
-export const authParamsSchema = va.union([
+export const authParamsSchema = va.variant('security_protocol', [
   va.object({
     security_protocol: va.literal('PLAINTEXT')
   }),
-  va.merge([
-    va.object({
-      security_protocol: va.literal('SSL')
-    }),
-    sslSchema
-  ]),
-  va.intersect([
-    va.object({
-      security_protocol: va.literal('SASL_PLAINTEXT')
-    }),
-    saslPlaintextSchema
-  ]),
-  va.intersect([
-    va.object({
-      security_protocol: va.literal('SASL_SSL')
-    }),
-    sslSchema,
-    saslPlaintextSchema
-  ]),
   va.object({
-    security_protocol: va.optional(va.string())
+    security_protocol: va.literal('SSL'),
+    ...sslSchema.entries
+  }),
+  saslPlaintextSchema(va.literal('SASL_PLAINTEXT')),
+  saslPlaintextSchema(
+    va.literal('SASL_SSL'),
+    va.object({
+      sslSchema
+    })
+  ),
+  va.object({
+    security_protocol: va.string()
   })
 ])
 
 export const authFields = librdkafkaAuthOptions.map((option) => option.replaceAll('.', '_'))
 
-export type KafkaAuthSchema = va.Input<typeof authParamsSchema>
+export type KafkaAuthSchema = va.InferInput<typeof authParamsSchema>
 
 export const defaultLibrdkafkaAuthOptions = {
   security_protocol: 'PLAINTEXT',
