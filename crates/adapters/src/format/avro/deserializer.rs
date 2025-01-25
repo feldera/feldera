@@ -25,6 +25,7 @@
 // under the License.
 
 use apache_avro::{schema::SchemaKind, types::Value, Error};
+use erased_serde::Deserializer as ErasedDeserializer;
 use feldera_types::serde_with_context::{DeserializeWithContext, SqlSerdeConfig};
 use serde::{
     de::{self, DeserializeSeed, Visitor},
@@ -623,9 +624,12 @@ impl<'de> de::Deserializer<'de> for StringDeserializer {
 /// structure expected by `D`.
 pub fn from_avro_value<'de, D: DeserializeWithContext<'de, SqlSerdeConfig>>(
     value: &'de Value,
-) -> Result<D, Error> {
-    let de = Deserializer::new(value);
-    D::deserialize_with_context(&de, avro_de_config())
+) -> Result<D, erased_serde::Error> {
+    let deserializer = Deserializer::new(value);
+    let deserializer =
+        &mut <dyn ErasedDeserializer>::erase(&deserializer) as &mut dyn ErasedDeserializer;
+
+    D::deserialize_with_context(deserializer, avro_de_config())
 }
 
 #[cfg(test)]
