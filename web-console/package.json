@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "vite dev --host",
-    "build": "vite build",
+    "build": "svelte-kit sync && svelte-check && vite build",
     "preview": "vite preview --host",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
@@ -30,6 +30,7 @@
     "@fortawesome/fontawesome-free": "^6.7.2",
     "@hey-api/client-fetch": "0.1.10",
     "@hey-api/openapi-ts": "^0.47.2",
+    "@playwright/experimental-ct-svelte": "^1.50.0",
     "@playwright/test": "^1.50.0",
     "@poppanator/sveltekit-svg": "^5.0.0",
     "@revolist/svelte-datagrid": "^4.11.21",
