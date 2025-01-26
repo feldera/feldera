@@ -25,7 +25,7 @@ package org.dbsp.sqlCompiler.ir.expression;
 
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
-import org.dbsp.sqlCompiler.ir.IDBSPNode;
+import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.IIndentStream;
 
@@ -54,7 +54,7 @@ public final class DBSPNoComparatorExpression extends DBSPComparatorExpression {
     }
 
     @Override
-    public boolean sameFields(IDBSPNode other) {
+    public boolean sameFields(IDBSPInnerNode other) {
         DBSPNoComparatorExpression o = other.as(DBSPNoComparatorExpression.class);
         if (o == null)
             return false;

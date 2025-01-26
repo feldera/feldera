@@ -26,7 +26,7 @@ package org.dbsp.sqlCompiler.ir.expression;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
-import org.dbsp.sqlCompiler.ir.IDBSPNode;
+import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.util.IIndentStream;
 
 /** An expression of the form '*expression' */
@@ -43,7 +43,6 @@ public final class DBSPDerefExpression extends DBSPExpression {
         VisitDecision decision = visitor.preorder(this);
         if (decision.stop()) return;
         visitor.push(this);
-        this.type.accept(visitor);
         this.expression.accept(visitor);
         visitor.pop(this);
         visitor.postorder(this);
@@ -56,7 +55,7 @@ public final class DBSPDerefExpression extends DBSPExpression {
     }
 
     @Override
-    public boolean sameFields(IDBSPNode other) {
+    public boolean sameFields(IDBSPInnerNode other) {
         DBSPDerefExpression o = other.as(DBSPDerefExpression.class);
         if (o == null)
             return false;

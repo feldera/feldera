@@ -27,7 +27,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
-import org.dbsp.sqlCompiler.ir.IDBSPNode;
+import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.IIndentStream;
 
@@ -55,7 +55,6 @@ public final class DBSPBinaryExpression extends DBSPExpression {
         VisitDecision decision = visitor.preorder(this);
         if (decision.stop()) return;
         visitor.push(this);
-        this.type.accept(visitor);
         this.left.accept(visitor);
         this.right.accept(visitor);
         visitor.pop(this);
@@ -63,7 +62,7 @@ public final class DBSPBinaryExpression extends DBSPExpression {
     }
 
     @Override
-    public boolean sameFields(IDBSPNode other) {
+    public boolean sameFields(IDBSPInnerNode other) {
         DBSPBinaryExpression o = other.as(DBSPBinaryExpression.class);
         if (o == null)
             return false;

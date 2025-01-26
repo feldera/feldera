@@ -4,7 +4,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
-import org.dbsp.sqlCompiler.ir.IDBSPNode;
+import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeWithCustomOrd;
 import org.dbsp.util.IIndentStream;
 
@@ -34,13 +34,12 @@ public final class DBSPCustomOrdExpression extends DBSPExpression {
     }
 
     @Override
-    public boolean sameFields(IDBSPNode other) {
+    public boolean sameFields(IDBSPInnerNode other) {
         DBSPCustomOrdExpression o = other.as(DBSPCustomOrdExpression.class);
         if (o == null)
             return false;
         return this.source == o.source &&
-                this.comparator == o.comparator &&
-                this.hasSameType(o);
+                this.comparator == o.comparator;
     }
 
     @Override

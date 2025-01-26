@@ -249,62 +249,62 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
     }
 
     public VisitDecision preorder(DBSPAggregate node) {
-        return this.preorder(node.to(IDBSPInnerNode.class));
+        return this.preorder((IDBSPInnerNode) node);
     }
 
     public VisitDecision preorder(AggregateBase node) {
-        return this.preorder(node.to(IDBSPInnerNode.class));
+        return this.preorder((IDBSPInnerNode) node);
     }
     public VisitDecision preorder(NonLinearAggregate node) {
-        return this.preorder(node.to(AggregateBase.class));
+        return this.preorder((AggregateBase) node);
     }
 
     public VisitDecision preorder(LinearAggregate node) {
-        return this.preorder(node.to(AggregateBase.class));
+        return this.preorder((AggregateBase) node);
     }
 
     public VisitDecision preorder(DBSPExpression node) {
-        return this.preorder(node.to(IDBSPInnerNode.class));
+        return this.preorder((IDBSPInnerNode) node);
     }
 
     public VisitDecision preorder(DBSPStatement node) {
-        return this.preorder(node.to(IDBSPInnerNode.class));
+        return this.preorder((IDBSPInnerNode) node);
     }
 
     public VisitDecision preorder(DBSPItem node) {
-        return this.preorder(node.to(DBSPStatement.class));
+        return this.preorder((DBSPStatement) node);
     }
 
     public VisitDecision preorder(DBSPTypeStruct.Field node) {
-        return this.preorder(node.to(IDBSPInnerNode.class));
+        return this.preorder((IDBSPInnerNode) node);
     }
 
     public VisitDecision preorder(DBSPType node) {
-        return this.preorder(node.to(IDBSPInnerNode.class));
+        return this.preorder((IDBSPInnerNode) node);
     }
 
     public VisitDecision preorder(DBSPTypeBaseType node) {
-        return this.preorder(node.to(DBSPType.class));
+        return this.preorder((DBSPType) node);
     }
 
     public VisitDecision preorder(DBSPTypeDate node) {
-        return this.preorder(node.to(DBSPTypeBaseType.class));
+        return this.preorder((DBSPTypeBaseType) node);
     }
 
     public VisitDecision preorder(DBSPTypeTime node) {
-        return this.preorder(node.to(DBSPTypeBaseType.class));
+        return this.preorder((DBSPTypeBaseType) node);
     }
 
     public VisitDecision preorder(DBSPTypeMillisInterval node) {
-        return this.preorder(node.to(DBSPTypeBaseType.class));
+        return this.preorder((DBSPTypeBaseType) node);
     }
 
     public VisitDecision preorder(DBSPTypeMonthsInterval node) {
-        return this.preorder(node.to(DBSPTypeBaseType.class));
+        return this.preorder((DBSPTypeBaseType) node);
     }
 
     public VisitDecision preorder(DBSPTypeGeo node) {
-        return this.preorder(node.to(DBSPTypeBaseType.class));
+        return this.preorder((DBSPTypeBaseType) node);
     }
 
     public VisitDecision preorder(DBSPTypeGeoPoint node) {
@@ -312,213 +312,213 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
     }
 
     public VisitDecision preorder(DBSPFunction node) {
-        return this.preorder(node.to(IDBSPInnerNode.class));
+        return this.preorder((IDBSPInnerNode) node);
     }
 
     public VisitDecision preorder(DBSPPath node) {
-        return this.preorder(node.to(IDBSPInnerNode.class));
+        return this.preorder((IDBSPInnerNode) node);
     }
 
     public VisitDecision preorder(DBSPPattern node) {
-        return this.preorder(node.to(IDBSPInnerNode.class));
+        return this.preorder((IDBSPInnerNode) node);
     }
 
     public VisitDecision preorder(DBSPParameter node) {
-        return this.preorder(node.to(IDBSPInnerNode.class));
+        return this.preorder((IDBSPInnerNode) node);
     }
 
     // Statements
 
     public VisitDecision preorder(DBSPExpressionStatement node) {
-        return this.preorder(node.to(DBSPStatement.class));
+        return this.preorder((DBSPStatement) node);
     }
 
     public VisitDecision preorder(DBSPComment node) {
-        return this.preorder(node.to(DBSPStatement.class));
+        return this.preorder((DBSPStatement) node);
     }
 
     public VisitDecision preorder(DBSPLetStatement node) {
-        return this.preorder(node.to(DBSPStatement.class));
+        return this.preorder((DBSPStatement) node);
     }
 
     public VisitDecision preorder(DBSPConstItem node) {
-        return this.preorder(node.to(DBSPItem.class));
+        return this.preorder((DBSPItem) node);
     }
 
     public VisitDecision preorder(DBSPFunctionItem node) {
-        return this.preorder(node.to(DBSPItem.class));
+        return this.preorder((DBSPItem) node);
     }
 
     public VisitDecision preorder(DBSPStructItem node) {
-        return this.preorder(node.to(DBSPItem.class));
+        return this.preorder((DBSPItem) node);
     }
 
     public VisitDecision preorder(DBSPStructWithHelperItem node) {
-        return this.preorder(node.to(DBSPItem.class));
+        return this.preorder((DBSPItem) node);
     }
 
     // Various
 
     public VisitDecision preorder(DBSPPathSegment node) {
-        return this.preorder(node.to(IDBSPInnerNode.class));
+        return this.preorder((IDBSPInnerNode) node);
     }
 
     public VisitDecision preorder(DBSPSimplePathSegment node) {
-        return this.preorder(node.to(DBSPPathSegment.class));
+        return this.preorder((DBSPPathSegment) node);
     }
 
     // Types
 
     public VisitDecision preorder(DBSPTypeFP node) {
-        return this.preorder(node.to(DBSPTypeBaseType.class));
+        return this.preorder((DBSPTypeBaseType) node);
     }
 
     public VisitDecision preorder(DBSPTypeReal node) {
-        return this.preorder(node.to(DBSPTypeFP.class));
+        return this.preorder((DBSPTypeFP) node);
     }
 
     public VisitDecision preorder(DBSPTypeDouble node) {
-        return this.preorder(node.to(DBSPTypeFP.class));
+        return this.preorder((DBSPTypeFP) node);
     }
 
     public VisitDecision preorder(DBSPTypeISize node) {
-        return this.preorder(node.to(DBSPTypeBaseType.class));
+        return this.preorder((DBSPTypeBaseType) node);
     }
 
     public VisitDecision preorder(DBSPTypeStruct node) {
-        return this.preorder(node.to(DBSPType.class));
+        return this.preorder((DBSPType) node);
     }
 
     public VisitDecision preorder(DBSPTypeString node) {
-        return this.preorder(node.to(DBSPTypeBaseType.class));
+        return this.preorder((DBSPTypeBaseType) node);
     }
 
     public VisitDecision preorder(DBSPTypeBinary node) {
-        return this.preorder(node.to(DBSPTypeBaseType.class));
+        return this.preorder((DBSPTypeBaseType) node);
     }
 
     public VisitDecision preorder(DBSPTypeUSize node) {
-        return this.preorder(node.to(DBSPTypeBaseType.class));
+        return this.preorder((DBSPTypeBaseType) node);
     }
 
     public VisitDecision preorder(DBSPTypeTupleBase node) {
-        return this.preorder(node.to(DBSPType.class));
+        return this.preorder((DBSPType) node);
     }
 
     public VisitDecision preorder(DBSPTypeRawTuple node) {
-        return this.preorder(node.to(DBSPTypeTupleBase.class));
+        return this.preorder((DBSPTypeTupleBase) node);
     }
 
     public VisitDecision preorder(DBSPTypeTuple node) {
-        return this.preorder(node.to(DBSPTypeTupleBase.class));
+        return this.preorder((DBSPTypeTupleBase) node);
     }
 
     public VisitDecision preorder(DBSPTypeStr node) {
-        return this.preorder(node.to(DBSPTypeBaseType.class));
+        return this.preorder((DBSPTypeBaseType) node);
     }
 
     public VisitDecision preorder(DBSPTypeTimestamp node) {
-        return this.preorder(node.to(DBSPTypeBaseType.class));
+        return this.preorder((DBSPTypeBaseType) node);
     }
 
     public VisitDecision preorder(DBSPTypeInteger node) {
-        return this.preorder(node.to(DBSPTypeBaseType.class));
+        return this.preorder((DBSPTypeBaseType) node);
     }
 
     public VisitDecision preorder(DBSPTypeDecimal node) {
-        return this.preorder(node.to(DBSPTypeBaseType.class));
+        return this.preorder((DBSPTypeBaseType) node);
     }
 
     public VisitDecision preorder(DBSPTypeNull node) {
-        return this.preorder(node.to(DBSPTypeBaseType.class));
+        return this.preorder((DBSPTypeBaseType) node);
     }
 
     public VisitDecision preorder(DBSPTypeVoid node) {
-        return this.preorder(node.to(DBSPTypeBaseType.class));
+        return this.preorder((DBSPTypeBaseType) node);
     }
 
     public VisitDecision preorder(DBSPTypeFunction node) {
-        return this.preorder(node.to(DBSPType.class));
+        return this.preorder((DBSPType) node);
     }
 
     public VisitDecision preorder(DBSPTypeBool node) {
-        return this.preorder(node.to(DBSPTypeBaseType.class));
+        return this.preorder((DBSPTypeBaseType) node);
     }
 
     public VisitDecision preorder(DBSPTypeUuid node) {
-        return this.preorder(node.to(DBSPTypeBaseType.class));
+        return this.preorder((DBSPTypeBaseType) node);
     }
 
     public VisitDecision preorder(DBSPTypeStream node) {
-        return this.preorder(node.to(DBSPType.class));
+        return this.preorder((DBSPType) node);
     }
 
     public VisitDecision preorder(DBSPTypeUser node) {
-        return this.preorder(node.to(DBSPType.class));
+        return this.preorder((DBSPType) node);
     }
 
     public VisitDecision preorder(DBSPTypeIndexedZSet node) {
-        return this.preorder(node.to(DBSPTypeUser.class));
+        return this.preorder((DBSPTypeUser) node);
     }
 
     public VisitDecision preorder(DBSPTypeZSet node) {
-        return this.preorder(node.to(DBSPTypeUser.class));
+        return this.preorder((DBSPTypeUser) node);
     }
 
     public VisitDecision preorder(DBSPTypeVec node) {
-        return this.preorder(node.to(DBSPTypeUser.class));
+        return this.preorder((DBSPTypeUser) node);
     }
 
     public VisitDecision preorder(DBSPTypeMap node) {
-        return this.preorder(node.to(DBSPTypeUser.class));
+        return this.preorder((DBSPTypeUser) node);
     }
 
     public VisitDecision preorder(DBSPTypeWithCustomOrd node) {
-        return this.preorder(node.to(DBSPTypeUser.class));
+        return this.preorder((DBSPTypeUser) node);
     }
 
     public VisitDecision preorder(DBSPTypeResult node) {
-        return this.preorder(node.to(DBSPTypeUser.class));
+        return this.preorder((DBSPTypeUser) node);
     }
 
     public VisitDecision preorder(DBSPTypeTypedBox node) {
-        return this.preorder(node.to(DBSPTypeUser.class));
+        return this.preorder((DBSPTypeUser) node);
     }
 
     public VisitDecision preorder(DBSPTypeSemigroup node) {
-        return this.preorder(node.to(DBSPTypeUser.class));
+        return this.preorder((DBSPTypeUser) node);
     }
 
     public VisitDecision preorder(DBSPTypeAny node) {
-        return this.preorder(node.to(DBSPType.class));
+        return this.preorder((DBSPType) node);
     }
 
     public VisitDecision preorder(DBSPTypeRef node) {
-        return this.preorder(node.to(DBSPType.class));
+        return this.preorder((DBSPType) node);
     }
 
     public VisitDecision preorder(DBSPTypeVariant node) {
-        return this.preorder(node.to(DBSPTypeBaseType.class));
+        return this.preorder((DBSPTypeBaseType) node);
     }
 
     // Patterns
 
     public VisitDecision preorder(DBSPIdentifierPattern node) {
-        return this.preorder(node.to(DBSPPattern.class));
+        return this.preorder((DBSPPattern) node);
     }
 
     // Expressions
 
     public VisitDecision preorder(DBSPFlatmap node) {
-        return this.preorder(node.to(DBSPExpression.class));
+        return this.preorder((DBSPExpression) node);
     }
 
     public VisitDecision preorder(DBSPSortExpression node) {
-        return this.preorder(node.to(DBSPExpression.class));
+        return this.preorder((DBSPExpression) node);
     }
 
     public VisitDecision preorder(DBSPComparatorExpression node) {
-        return this.preorder(node.to(DBSPExpression.class));
+        return this.preorder((DBSPExpression) node);
     }
 
     public VisitDecision preorder(DBSPNoComparatorExpression node) {
@@ -542,186 +542,186 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
     }
 
     public VisitDecision preorder(DBSPConstructorExpression node) {
-        return this.preorder(node.to(DBSPExpression.class));
+        return this.preorder((DBSPExpression) node);
     }
 
     public VisitDecision preorder(DBSPConditionalAggregateExpression node) {
-        return this.preorder(node.to(DBSPExpression.class));
+        return this.preorder((DBSPExpression) node);
     }
 
     public VisitDecision preorder(DBSPBorrowExpression node) {
-        return this.preorder(node.to(DBSPExpression.class));
+        return this.preorder((DBSPExpression) node);
     }
 
     public VisitDecision preorder(DBSPCastExpression node) {
-        return this.preorder(node.to(DBSPExpression.class));
+        return this.preorder((DBSPExpression) node);
     }
 
     public VisitDecision preorder(DBSPCloneExpression node) {
-        return this.preorder(node.to(DBSPExpression.class));
+        return this.preorder((DBSPExpression) node);
     }
 
     public VisitDecision preorder(DBSPSomeExpression node) {
-        return this.preorder(node.to(DBSPExpression.class));
+        return this.preorder((DBSPExpression) node);
     }
 
     public VisitDecision preorder(DBSPIsNullExpression node) {
-        return this.preorder(node.to(DBSPExpression.class));
+        return this.preorder((DBSPExpression) node);
     }
 
     public VisitDecision preorder(DBSPClosureExpression node) {
-        return this.preorder(node.to(DBSPExpression.class));
+        return this.preorder((DBSPExpression) node);
     }
 
     public VisitDecision preorder(DBSPQualifyTypeExpression node) {
-        return this.preorder(node.to(DBSPExpression.class));
+        return this.preorder((DBSPExpression) node);
     }
 
     public VisitDecision preorder(DBSPBinaryExpression node) {
-        return this.preorder(node.to(DBSPExpression.class));
+        return this.preorder((DBSPExpression) node);
     }
 
     public VisitDecision preorder(DBSPEnumValue node) {
-        return this.preorder(node.to(DBSPExpression.class));
+        return this.preorder((DBSPExpression) node);
     }
 
     public VisitDecision preorder(DBSPDerefExpression node) {
-        return this.preorder(node.to(DBSPExpression.class));
+        return this.preorder((DBSPExpression) node);
     }
 
     public VisitDecision preorder(DBSPLetExpression node) {
-        return this.preorder(node.to(DBSPExpression.class));
+        return this.preorder((DBSPExpression) node);
     }
 
     public VisitDecision preorder(DBSPCustomOrdField node) {
-        return this.preorder(node.to(DBSPExpression.class));
+        return this.preorder((DBSPExpression) node);
     }
 
     public VisitDecision preorder(DBSPUnwrapExpression node) {
-        return this.preorder(node.to(DBSPExpression.class));
+        return this.preorder((DBSPExpression) node);
     }
 
     public VisitDecision preorder(DBSPPathExpression node) {
-        return this.preorder(node.to(DBSPExpression.class));
+        return this.preorder((DBSPExpression) node);
     }
 
     public VisitDecision preorder(DBSPForExpression node) {
-        return this.preorder(node.to(DBSPExpression.class));
+        return this.preorder((DBSPExpression) node);
     }
 
     public VisitDecision preorder(DBSPUnaryExpression node) {
-        return this.preorder(node.to(DBSPExpression.class));
+        return this.preorder((DBSPExpression) node);
     }
 
     public VisitDecision preorder(DBSPStaticExpression node) {
-        return this.preorder(node.to(DBSPExpression.class));
+        return this.preorder((DBSPExpression) node);
     }
 
     public VisitDecision preorder(DBSPBaseTupleExpression node) {
-        return this.preorder(node.to(DBSPExpression.class));
+        return this.preorder((DBSPExpression) node);
     }
 
     public VisitDecision preorder(DBSPTupleExpression node) {
-        return this.preorder(node.to(DBSPBaseTupleExpression.class));
+        return this.preorder((DBSPBaseTupleExpression) node);
     }
 
     public VisitDecision preorder(DBSPRawTupleExpression node) {
-        return this.preorder(node.to(DBSPBaseTupleExpression.class));
+        return this.preorder((DBSPBaseTupleExpression) node);
     }
 
     public VisitDecision preorder(DBSPFieldExpression node) {
-        return this.preorder(node.to(DBSPExpression.class));
+        return this.preorder((DBSPExpression) node);
     }
 
     public VisitDecision preorder(DBSPIfExpression node) {
-        return this.preorder(node.to(DBSPExpression.class));
+        return this.preorder((DBSPExpression) node);
     }
 
     public VisitDecision preorder(DBSPBlockExpression node) {
-        return this.preorder(node.to(DBSPExpression.class));
+        return this.preorder((DBSPExpression) node);
     }
 
     public VisitDecision preorder(DBSPApplyBaseExpression node) {
-        return this.preorder(node.to(DBSPExpression.class));
+        return this.preorder((DBSPExpression) node);
     }
 
     public VisitDecision preorder(DBSPApplyMethodExpression node) {
-        return this.preorder(node.to(DBSPApplyBaseExpression.class));
+        return this.preorder((DBSPApplyBaseExpression) node);
     }
 
     public VisitDecision preorder(DBSPApplyExpression node) {
-        return this.preorder(node.to(DBSPApplyBaseExpression.class));
+        return this.preorder((DBSPApplyBaseExpression) node);
     }
 
     public VisitDecision preorder(DBSPAssignmentExpression node) {
-        return this.preorder(node.to(DBSPExpression.class));
+        return this.preorder((DBSPExpression) node);
     }
 
     public VisitDecision preorder(DBSPQuestionExpression node) {
-        return this.preorder(node.to(DBSPExpression.class));
+        return this.preorder((DBSPExpression) node);
     }
 
     public VisitDecision preorder(DBSPVariablePath node) {
-        return this.preorder(node.to(DBSPExpression.class));
+        return this.preorder((DBSPExpression) node);
     }
 
     public VisitDecision preorder(NoExpression node) {
-        return this.preorder(node.to(DBSPExpression.class));
+        return this.preorder((DBSPExpression) node);
     }
 
-    public VisitDecision preorder(DBSPUnsignedWrapExpression node) { return this.preorder(node.to(DBSPExpression.class)); }
+    public VisitDecision preorder(DBSPUnsignedWrapExpression node) { return this.preorder((DBSPExpression) node); }
 
-    public VisitDecision preorder(DBSPUnsignedUnwrapExpression node) { return this.preorder(node.to(DBSPExpression.class)); }
+    public VisitDecision preorder(DBSPUnsignedUnwrapExpression node) { return this.preorder((DBSPExpression) node); }
 
-    public VisitDecision preorder(DBSPWindowBoundExpression node) { return this.preorder(node.to(DBSPExpression.class)); }
+    public VisitDecision preorder(DBSPWindowBoundExpression node) { return this.preorder((DBSPExpression) node); }
 
     // Literals
     public VisitDecision preorder(DBSPLiteral node) {
-        return this.preorder(node.to(DBSPExpression.class));
+        return this.preorder((DBSPExpression) node);
     }
 
     public VisitDecision preorder(DBSPNullLiteral node) {
-        return this.preorder(node.to(DBSPLiteral.class));
+        return this.preorder((DBSPLiteral) node);
     }
 
     public VisitDecision preorder(DBSPVariantExpression node) {
-        return this.preorder(node.to(DBSPExpression.class));
+        return this.preorder((DBSPExpression) node);
     }
 
     public VisitDecision preorder(DBSPVariantNullLiteral node) {
-        return this.preorder(node.to(DBSPLiteral.class));
+        return this.preorder((DBSPLiteral) node);
     }
 
     public VisitDecision preorder(DBSPVecExpression node) {
-        return this.preorder(node.to(DBSPExpression.class));
+        return this.preorder((DBSPExpression) node);
     }
 
     public VisitDecision preorder(DBSPMapExpression node) {
-        return this.preorder(node.to(DBSPExpression.class));
+        return this.preorder((DBSPExpression) node);
     }
 
     public VisitDecision preorder(DBSPTimestampLiteral node) {
-        return this.preorder(node.to(DBSPLiteral.class));
+        return this.preorder((DBSPLiteral) node);
     }
 
     public VisitDecision preorder(DBSPDateLiteral node) {
-        return this.preorder(node.to(DBSPLiteral.class));
+        return this.preorder((DBSPLiteral) node);
     }
 
     public VisitDecision preorder(DBSPTimeLiteral node) {
-        return this.preorder(node.to(DBSPLiteral.class));
+        return this.preorder((DBSPLiteral) node);
     }
 
     public VisitDecision preorder(DBSPIntervalMillisLiteral node) {
-        return this.preorder(node.to(DBSPLiteral.class));
+        return this.preorder((DBSPLiteral) node);
     }
 
     public VisitDecision preorder(DBSPIntervalMonthsLiteral node) {
-        return this.preorder(node.to(DBSPLiteral.class));
+        return this.preorder((DBSPLiteral) node);
     }
 
     public VisitDecision preorder(DBSPFPLiteral node) {
-        return this.preorder(node.to(DBSPLiteral.class));
+        return this.preorder((DBSPLiteral) node);
     }
 
     public VisitDecision preorder(DBSPRealLiteral node) {
@@ -729,79 +729,79 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
     }
 
     public VisitDecision preorder(DBSPUSizeLiteral node) {
-        return this.preorder(node.to(DBSPLiteral.class));
+        return this.preorder((DBSPLiteral) node);
     }
 
     public VisitDecision preorder(DBSPZSetExpression node) {
-        return this.preorder(node.to(DBSPExpression.class));
+        return this.preorder((DBSPExpression) node);
     }
 
     public VisitDecision preorder(DBSPIndexedZSetExpression node) {
-        return this.preorder(node.to(DBSPExpression.class));
+        return this.preorder((DBSPExpression) node);
     }
 
     public VisitDecision preorder(DBSPStrLiteral node) {
-        return this.preorder(node.to(DBSPLiteral.class));
+        return this.preorder((DBSPLiteral) node);
     }
 
     public VisitDecision preorder(DBSPDecimalLiteral node) {
-        return this.preorder(node.to(DBSPLiteral.class));
+        return this.preorder((DBSPLiteral) node);
     }
 
     public VisitDecision preorder(DBSPStringLiteral node) {
-        return this.preorder(node.to(DBSPLiteral.class));
+        return this.preorder((DBSPLiteral) node);
     }
 
     public VisitDecision preorder(DBSPBinaryLiteral node) {
-        return this.preorder(node.to(DBSPLiteral.class));
+        return this.preorder((DBSPLiteral) node);
     }
 
     public VisitDecision preorder(DBSPIntLiteral node) {
-        return this.preorder(node.to(DBSPLiteral.class));
+        return this.preorder((DBSPLiteral) node);
     }
 
     public VisitDecision preorder(DBSPI8Literal node) {
-        return this.preorder(node.to(DBSPIntLiteral.class));
+        return this.preorder((DBSPIntLiteral) node);
     }
 
     public VisitDecision preorder(DBSPI16Literal node) {
-        return this.preorder(node.to(DBSPIntLiteral.class));
+        return this.preorder((DBSPIntLiteral) node);
     }
 
     public VisitDecision preorder(DBSPI32Literal node) {
-        return this.preorder(node.to(DBSPIntLiteral.class));
+        return this.preorder((DBSPIntLiteral) node);
     }
 
     public VisitDecision preorder(DBSPU16Literal node) {
-        return this.preorder(node.to(DBSPIntLiteral.class));
+        return this.preorder((DBSPIntLiteral) node);
     }
 
     public VisitDecision preorder(DBSPU32Literal node) {
-        return this.preorder(node.to(DBSPIntLiteral.class));
+        return this.preorder((DBSPIntLiteral) node);
     }
 
     public VisitDecision preorder(DBSPI64Literal node) {
-        return this.preorder(node.to(DBSPIntLiteral.class));
+        return this.preorder((DBSPIntLiteral) node);
     }
 
     public VisitDecision preorder(DBSPI128Literal node) {
-        return this.preorder(node.to(DBSPIntLiteral.class));
+        return this.preorder((DBSPIntLiteral) node);
     }
 
     public VisitDecision preorder(DBSPU64Literal node) {
-        return this.preorder(node.to(DBSPIntLiteral.class));
+        return this.preorder((DBSPIntLiteral) node);
     }
 
     public VisitDecision preorder(DBSPU128Literal node) {
-        return this.preorder(node.to(DBSPIntLiteral.class));
+        return this.preorder((DBSPIntLiteral) node);
     }
 
     public VisitDecision preorder(DBSPBoolLiteral node) {
-        return this.preorder(node.to(DBSPLiteral.class));
+        return this.preorder((DBSPLiteral) node);
     }
 
     public VisitDecision preorder(DBSPUuidLiteral node) {
-        return this.preorder(node.to(DBSPLiteral.class));
+        return this.preorder((DBSPLiteral) node);
     }
 
     public VisitDecision preorder(DBSPDoubleLiteral node) {
@@ -809,15 +809,15 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
     }
 
     public VisitDecision preorder(DBSPKeywordLiteral node) {
-        return this.preorder(node.to(DBSPLiteral.class));
+        return this.preorder((DBSPLiteral) node);
     }
 
     public VisitDecision preorder(DBSPISizeLiteral node) {
-        return this.preorder(node.to(DBSPLiteral.class));
+        return this.preorder((DBSPLiteral) node);
     }
 
     public VisitDecision preorder(DBSPGeoPointConstructor node) {
-        return this.preorder(node.to(DBSPExpression.class));
+        return this.preorder((DBSPExpression) node);
     }
 
     /*************************** POSTORDER *****************************/
@@ -826,269 +826,269 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
     public void postorder(IDBSPInnerNode ignored) {}
 
     public void postorder(DBSPAggregate node) {
-        this.postorder(node.to(IDBSPInnerNode.class));
+        this.postorder((IDBSPInnerNode) node);
     }
 
     public void postorder(AggregateBase node) {
-        this.postorder(node.to(IDBSPInnerNode.class));
+        this.postorder((IDBSPInnerNode) node);
     }
 
     public void postorder(NonLinearAggregate node) {
-        this.postorder(node.to(AggregateBase.class));
+        this.postorder((AggregateBase) node);
     }
 
     public void postorder(LinearAggregate node) {
-        this.postorder(node.to(AggregateBase.class));
+        this.postorder((AggregateBase) node);
     }
 
     public void postorder(DBSPExpression node) {
-        this.postorder(node.to(IDBSPInnerNode.class));
+        this.postorder((IDBSPInnerNode) node);
     }
 
     public void postorder(DBSPStatement node) {
-        this.postorder(node.to(IDBSPInnerNode.class));
+        this.postorder((IDBSPInnerNode) node);
     }
 
     public void postorder(DBSPType node) {
-        this.postorder(node.to(IDBSPInnerNode.class));
+        this.postorder((IDBSPInnerNode) node);
     }
 
     public void postorder(DBSPTypeBaseType node) {
-        this.postorder(node.to(DBSPType.class));
+        this.postorder((DBSPType) node);
     }
 
     public void postorder(DBSPTypeDate node)  {
-        this.postorder(node.to(DBSPTypeBaseType.class));
+        this.postorder((DBSPTypeBaseType) node);
     }
 
     public void postorder(DBSPTypeTime node)  {
-        this.postorder(node.to(DBSPTypeBaseType.class));
+        this.postorder((DBSPTypeBaseType) node);
     }
 
     public void postorder(DBSPTypeMillisInterval node) {
-        this.postorder(node.to(DBSPTypeBaseType.class));
+        this.postorder((DBSPTypeBaseType) node);
     }
 
     public void postorder(DBSPTypeGeo node) {
-        this.postorder(node.to(DBSPTypeBaseType.class));
+        this.postorder((DBSPTypeBaseType) node);
     }
 
     public void postorder(DBSPTypeGeoPoint node) {
-        this.postorder(node.to(DBSPTypeGeo.class));
+        this.postorder((DBSPTypeGeo) node);
     }
 
     public void postorder(DBSPFunction node) {
-        this.postorder(node.to(IDBSPInnerNode.class));
+        this.postorder((IDBSPInnerNode) node);
     }
 
     public void postorder(DBSPPath node) {
-        this.postorder(node.to(IDBSPInnerNode.class));
+        this.postorder((IDBSPInnerNode) node);
     }
 
     public void postorder(DBSPPattern node) {
-        this.postorder(node.to(IDBSPInnerNode.class));
+        this.postorder((IDBSPInnerNode) node);
     }
 
     public void postorder(DBSPParameter node) {
-        this.postorder(node.to(IDBSPInnerNode.class));
+        this.postorder((IDBSPInnerNode) node);
     }
 
     // Statements
 
     public void postorder(DBSPItem node) {
-        this.postorder(node.to(DBSPStatement.class));
+        this.postorder((DBSPStatement) node);
     }
 
     public void postorder(DBSPConstItem node) {
-        this.postorder(node.to(DBSPItem.class));
+        this.postorder((DBSPItem) node);
     }
 
     public void postorder(DBSPFunctionItem node) {
-        this.postorder(node.to(DBSPItem.class));
+        this.postorder((DBSPItem) node);
     }
 
     public void postorder(DBSPStructItem node) {
-        this.postorder(node.to(DBSPItem.class));
+        this.postorder((DBSPItem) node);
     }
 
     public void postorder(DBSPStructWithHelperItem node) {
-        this.postorder(node.to(DBSPItem.class));
+        this.postorder((DBSPItem) node);
     }
 
     public void postorder(DBSPExpressionStatement node) {
-        this.postorder(node.to(DBSPStatement.class));
+        this.postorder((DBSPStatement) node);
     }
 
     public void postorder(DBSPComment node) {
-        this.postorder(node.to(DBSPStatement.class));
+        this.postorder((DBSPStatement) node);
     }
 
     public void postorder(DBSPLetStatement node) {
-        this.postorder(node.to(DBSPStatement.class));
+        this.postorder((DBSPStatement) node);
     }
 
     // Various
 
     public void postorder(DBSPPathSegment node) {
-        this.postorder(node.to(IDBSPInnerNode.class));
+        this.postorder((IDBSPInnerNode) node);
     }
 
     public void postorder(DBSPSimplePathSegment node) {
-        this.postorder(node.to(DBSPPathSegment.class));
+        this.postorder((DBSPPathSegment) node);
     }
 
     // Types
 
     public void postorder(DBSPTypeFP node) {
-        this.postorder(node.to(DBSPTypeBaseType.class));
+        this.postorder((DBSPTypeBaseType) node);
     }
 
     public void postorder(DBSPTypeReal node) {
-        this.postorder(node.to(DBSPTypeFP.class));
+        this.postorder((DBSPTypeFP) node);
     }
 
     public void postorder(DBSPTypeDouble node) {
-        this.postorder(node.to(DBSPTypeFP.class));
+        this.postorder((DBSPTypeFP) node);
     }
 
     public void postorder(DBSPTypeISize node) {
-        this.postorder(node.to(DBSPTypeBaseType.class));
+        this.postorder((DBSPTypeBaseType) node);
     }
 
     public void postorder(DBSPTypeStruct node) {
-        this.postorder(node.to(DBSPType.class));
+        this.postorder((DBSPType) node);
     }
 
     public void postorder(DBSPTypeStr node) {
-        this.postorder(node.to(DBSPTypeBaseType.class));
+        this.postorder((DBSPTypeBaseType) node);
     }
 
     public void postorder(DBSPTypeString node) {
-        this.postorder(node.to(DBSPTypeBaseType.class));
+        this.postorder((DBSPTypeBaseType) node);
     }
 
     public void postorder(DBSPTypeBinary node) {
-        this.postorder(node.to(DBSPTypeBaseType.class));
+        this.postorder((DBSPTypeBaseType) node);
     }
 
     public void postorder(DBSPTypeUSize node) {
-        this.postorder(node.to(DBSPTypeBaseType.class));
+        this.postorder((DBSPTypeBaseType) node);
     }
 
     public void postorder(DBSPTypeTupleBase node) {
-        this.postorder(node.to(DBSPType.class));
+        this.postorder((DBSPType) node);
     }
 
     public void postorder(DBSPTypeTuple node) {
-        this.postorder(node.to(DBSPTypeTupleBase.class));
+        this.postorder((DBSPTypeTupleBase) node);
     }
 
     public void postorder(DBSPTypeRawTuple node) {
-        this.postorder(node.to(DBSPTypeTupleBase.class));
+        this.postorder((DBSPTypeTupleBase) node);
     }
 
     public void postorder(DBSPTypeTimestamp node) {
-        this.postorder(node.to(DBSPTypeBaseType.class));
+        this.postorder((DBSPTypeBaseType) node);
     }
 
     public void postorder(DBSPTypeInteger node) {
-        this.postorder(node.to(DBSPTypeBaseType.class));
+        this.postorder((DBSPTypeBaseType) node);
     }
 
     public void postorder(DBSPTypeDecimal node) {
-        this.postorder(node.to(DBSPTypeBaseType.class));
+        this.postorder((DBSPTypeBaseType) node);
     }
 
     public void postorder(DBSPTypeNull node) {
-        this.postorder(node.to(DBSPTypeBaseType.class));
+        this.postorder((DBSPTypeBaseType) node);
     }
 
     public void postorder(DBSPTypeVoid node) {
-        this.postorder(node.to(DBSPTypeBaseType.class));
+        this.postorder((DBSPTypeBaseType) node);
     }
 
     public void postorder(DBSPTypeFunction node) {
-        this.postorder(node.to(DBSPType.class));
+        this.postorder((DBSPType) node);
     }
 
     public void postorder(DBSPTypeBool node) {
-        this.postorder(node.to(DBSPTypeBaseType.class));
+        this.postorder((DBSPTypeBaseType) node);
     }
 
     public void postorder(DBSPTypeUuid node) {
-        this.postorder(node.to(DBSPTypeBaseType.class));
+        this.postorder((DBSPTypeBaseType) node);
     }
 
     public void postorder(DBSPTypeStream node) {
-        this.postorder(node.to(DBSPType.class));
+        this.postorder((DBSPType) node);
     }
 
     public void postorder(DBSPTypeUser node) {
-        this.postorder(node.to(DBSPType.class));
+        this.postorder((DBSPType) node);
     }
 
     public void postorder(DBSPTypeIndexedZSet node) {
-        this.postorder(node.to(DBSPTypeUser.class));
+        this.postorder((DBSPTypeUser) node);
     }
 
     public void postorder(DBSPTypeZSet node) {
-        this.postorder(node.to(DBSPTypeUser.class));
+        this.postorder((DBSPTypeUser) node);
     }
 
     public void postorder(DBSPTypeVec node) {
-        this.postorder(node.to(DBSPTypeUser.class));
+        this.postorder((DBSPTypeUser) node);
     }
 
     public void postorder(DBSPTypeMap node) {
-        this.postorder(node.to(DBSPTypeUser.class));
+        this.postorder((DBSPTypeUser) node);
     }
 
     public void postorder(DBSPTypeWithCustomOrd node) {
-        this.postorder(node.to(DBSPTypeUser.class));
+        this.postorder((DBSPTypeUser) node);
     }
 
     public void postorder(DBSPTypeResult node) {
-        this.postorder(node.to(DBSPTypeUser.class));
+        this.postorder((DBSPTypeUser) node);
     }
 
     public void postorder(DBSPTypeTypedBox node) {
-        this.postorder(node.to(DBSPTypeUser.class));
+        this.postorder((DBSPTypeUser) node);
     }
 
     public void postorder(DBSPTypeSemigroup node) {
-        this.postorder(node.to(DBSPTypeUser.class));
+        this.postorder((DBSPTypeUser) node);
     }
 
     public void postorder(DBSPTypeAny node) {
-        this.postorder(node.to(DBSPType.class));
+        this.postorder((DBSPType) node);
     }
 
     public void postorder(DBSPTypeRef node) {
-        this.postorder(node.to(DBSPType.class));
+        this.postorder((DBSPType) node);
     }
 
     public void postorder(DBSPTypeVariant node) {
-        this.postorder(node.to(DBSPTypeBaseType.class));
+        this.postorder((DBSPTypeBaseType) node);
     }
 
     // Patterns
 
     public void postorder(DBSPIdentifierPattern node) {
-        this.postorder(node.to(DBSPPattern.class));
+        this.postorder((DBSPPattern) node);
     }
 
     // Expressions
 
     public void postorder(DBSPFlatmap node) {
-        this.postorder(node.to(DBSPExpression.class));
+        this.postorder((DBSPExpression) node);
     }
 
     public void postorder(DBSPSortExpression node) {
-        this.postorder(node.to(DBSPExpression.class));
+        this.postorder((DBSPExpression) node);
     }
 
     public void postorder(DBSPComparatorExpression node) {
-        this.postorder(node.to(DBSPExpression.class));
+        this.postorder((DBSPExpression) node);
     }
 
     public void postorder(DBSPNoComparatorExpression node) {
@@ -1112,188 +1112,188 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
     }
 
     public void postorder(DBSPConstructorExpression node) {
-        this.postorder(node.to(DBSPExpression.class));
+        this.postorder((DBSPExpression) node);
     }
 
     public void postorder(DBSPConditionalAggregateExpression node) {
-        this.postorder(node.to(DBSPExpression.class));
+        this.postorder((DBSPExpression) node);
     }
 
     public void postorder(DBSPBorrowExpression node) {
-        this.postorder(node.to(DBSPExpression.class));
+        this.postorder((DBSPExpression) node);
     }
 
     public void postorder(DBSPCastExpression node) {
-        this.postorder(node.to(DBSPExpression.class));
+        this.postorder((DBSPExpression) node);
     }
 
     public void postorder(DBSPCloneExpression node) {
-        this.postorder(node.to(DBSPExpression.class));
+        this.postorder((DBSPExpression) node);
     }
 
     public void postorder(DBSPSomeExpression node) {
-        this.postorder(node.to(DBSPExpression.class));
+        this.postorder((DBSPExpression) node);
     }
 
     public void postorder(DBSPIsNullExpression node) {
-        this.postorder(node.to(DBSPExpression.class));
+        this.postorder((DBSPExpression) node);
     }
 
     public void postorder(DBSPClosureExpression node) {
-        this.postorder(node.to(DBSPExpression.class));
+        this.postorder((DBSPExpression) node);
     }
 
     public void postorder(DBSPQualifyTypeExpression node) {
-        this.postorder(node.to(DBSPExpression.class));
+        this.postorder((DBSPExpression) node);
     }
 
     public void postorder(DBSPBinaryExpression node) {
-        this.postorder(node.to(DBSPExpression.class));
+        this.postorder((DBSPExpression) node);
     }
 
     public void postorder(DBSPEnumValue node) {
-        this.postorder(node.to(DBSPExpression.class));
+        this.postorder((DBSPExpression) node);
     }
 
     public void postorder(DBSPDerefExpression node) {
-        this.postorder(node.to(DBSPExpression.class));
+        this.postorder((DBSPExpression) node);
     }
 
     public void postorder(DBSPLetExpression node) {
-        this.postorder(node.to(DBSPExpression.class));
+        this.postorder((DBSPExpression) node);
     }
 
     public void postorder(DBSPCustomOrdField node) {
-        this.postorder(node.to(DBSPExpression.class));
+        this.postorder((DBSPExpression) node);
     }
 
     public void postorder(DBSPUnwrapExpression node) {
-        this.postorder(node.to(DBSPExpression.class));
+        this.postorder((DBSPExpression) node);
     }
 
     public void postorder(DBSPPathExpression node) {
-        this.postorder(node.to(DBSPExpression.class));
+        this.postorder((DBSPExpression) node);
     }
 
     public void postorder(DBSPForExpression node) {
-        this.postorder(node.to(DBSPExpression.class));
+        this.postorder((DBSPExpression) node);
     }
 
     public void postorder(DBSPUnaryExpression node) {
-        this.postorder(node.to(DBSPExpression.class));
+        this.postorder((DBSPExpression) node);
     }
 
     public void postorder(DBSPStaticExpression node) {
-        this.postorder(node.to(DBSPExpression.class));
+        this.postorder((DBSPExpression) node);
     }
 
     public void postorder(DBSPBaseTupleExpression node) {
-        this.postorder(node.to(DBSPExpression.class));
+        this.postorder((DBSPExpression) node);
     }
 
     public void postorder(DBSPTupleExpression node) {
-        this.postorder(node.to(DBSPBaseTupleExpression.class));
+        this.postorder((DBSPBaseTupleExpression) node);
     }
 
     public void postorder(DBSPRawTupleExpression node) {
-        this.postorder(node.to(DBSPBaseTupleExpression.class));
+        this.postorder((DBSPBaseTupleExpression) node);
     }
 
     public void postorder(DBSPFieldExpression node) {
-        this.postorder(node.to(DBSPExpression.class));
+        this.postorder((DBSPExpression) node);
     }
 
     public void postorder(DBSPIfExpression node) {
-        this.postorder(node.to(DBSPExpression.class));
+        this.postorder((DBSPExpression) node);
     }
 
     public void postorder(DBSPBlockExpression node) {
-        this.postorder(node.to(DBSPExpression.class));
+        this.postorder((DBSPExpression) node);
     }
 
     public void postorder(DBSPApplyBaseExpression node) {
-        this.postorder(node.to(DBSPExpression.class));
+        this.postorder((DBSPExpression) node);
     }
 
     public void postorder(DBSPApplyExpression node) {
-        this.postorder(node.to(DBSPApplyBaseExpression.class));
+        this.postorder((DBSPApplyBaseExpression) node);
     }
 
     public void postorder(DBSPApplyMethodExpression node) {
-        this.postorder(node.to(DBSPApplyBaseExpression.class));
+        this.postorder((DBSPApplyBaseExpression) node);
     }
 
     public void postorder(DBSPAssignmentExpression node) {
-        this.postorder(node.to(DBSPExpression.class));
+        this.postorder((DBSPExpression) node);
     }
 
     public void postorder(DBSPQuestionExpression node) {
-        this.postorder(node.to(DBSPExpression.class));
+        this.postorder((DBSPExpression) node);
     }
 
     public void postorder(DBSPVariablePath node) {
-        this.postorder(node.to(DBSPExpression.class));
+        this.postorder((DBSPExpression) node);
     }
 
     public void postorder(NoExpression node) {
-        this.postorder(node.to(DBSPExpression.class));
+        this.postorder((DBSPExpression) node);
     }
 
     public void postorder(DBSPUnsignedWrapExpression node) {
-        this.postorder(node.to(DBSPExpression.class));
+        this.postorder((DBSPExpression) node);
     }
 
     public void postorder(DBSPUnsignedUnwrapExpression node) {
-        this.postorder(node.to(DBSPExpression.class));
+        this.postorder((DBSPExpression) node);
     }
 
     public void postorder(DBSPWindowBoundExpression node) {
-        this.postorder(node.to(DBSPExpression.class));
+        this.postorder((DBSPExpression) node);
     }
 
     // Literals
     public void postorder(DBSPLiteral node) {
-        this.postorder(node.to(DBSPExpression.class));
+        this.postorder((DBSPExpression) node);
     }
 
     public void postorder(DBSPTimestampLiteral node) {
-        this.postorder(node.to(DBSPLiteral.class));
+        this.postorder((DBSPLiteral) node);
     }
 
     public void postorder(DBSPDateLiteral node) {
-        this.postorder(node.to(DBSPLiteral.class));
+        this.postorder((DBSPLiteral) node);
     }
 
     public void postorder(DBSPTimeLiteral node) {
-        this.postorder(node.to(DBSPLiteral.class));
+        this.postorder((DBSPLiteral) node);
     }
 
     public void postorder(DBSPIntervalMillisLiteral node) {
-        this.postorder(node.to(DBSPLiteral.class));
+        this.postorder((DBSPLiteral) node);
     }
 
     public void postorder(DBSPNullLiteral node) {
-        this.postorder(node.to(DBSPLiteral.class));
+        this.postorder((DBSPLiteral) node);
     }
 
     public void postorder(DBSPVariantExpression node) {
-        this.postorder(node.to(DBSPExpression.class));
+        this.postorder((DBSPExpression) node);
     }
 
     public void postorder(DBSPVariantNullLiteral node) {
-        this.postorder(node.to(DBSPLiteral.class));
+        this.postorder((DBSPLiteral) node);
     }
 
     public void postorder(DBSPVecExpression node) {
-        this.postorder(node.to(DBSPExpression.class));
+        this.postorder((DBSPExpression) node);
     }
 
     public void postorder(DBSPMapExpression node) {
-        this.postorder(node.to(DBSPExpression.class));
+        this.postorder((DBSPExpression) node);
     }
 
     public void postorder(DBSPFPLiteral node) {
-        this.postorder(node.to(DBSPLiteral.class));
+        this.postorder((DBSPLiteral) node);
     }
 
     public void postorder(DBSPRealLiteral node) {
@@ -1301,79 +1301,79 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
     }
 
     public void postorder(DBSPUSizeLiteral node) {
-        this.postorder(node.to(DBSPLiteral.class));
+        this.postorder((DBSPLiteral) node);
     }
 
     public void postorder(DBSPIndexedZSetExpression node) {
-        this.postorder(node.to(DBSPExpression.class));
+        this.postorder((DBSPExpression) node);
     }
 
     public void postorder(DBSPZSetExpression node) {
-        this.postorder(node.to(DBSPExpression.class));
+        this.postorder((DBSPExpression) node);
     }
 
     public void postorder(DBSPStrLiteral node) {
-        this.postorder(node.to(DBSPLiteral.class));
+        this.postorder((DBSPLiteral) node);
     }
 
     public void postorder(DBSPDecimalLiteral node) {
-        this.postorder(node.to(DBSPLiteral.class));
+        this.postorder((DBSPLiteral) node);
     }
 
     public void postorder(DBSPStringLiteral node) {
-        this.postorder(node.to(DBSPLiteral.class));
+        this.postorder((DBSPLiteral) node);
     }
 
     public void postorder(DBSPBinaryLiteral node) {
-        this.postorder(node.to(DBSPLiteral.class));
+        this.postorder((DBSPLiteral) node);
     }
 
     public void postorder(DBSPIntLiteral node) {
-        this.postorder(node.to(DBSPLiteral.class));
+        this.postorder((DBSPLiteral) node);
     }
 
     public void postorder(DBSPI8Literal node) {
-        this.postorder(node.to(DBSPIntLiteral.class));
+        this.postorder((DBSPIntLiteral) node);
     }
 
     public void postorder(DBSPI16Literal node) {
-        this.postorder(node.to(DBSPIntLiteral.class));
+        this.postorder((DBSPIntLiteral) node);
     }
 
     public void postorder(DBSPI32Literal node) {
-        this.postorder(node.to(DBSPIntLiteral.class));
+        this.postorder((DBSPIntLiteral) node);
     }
 
     public void postorder(DBSPU16Literal node) {
-        this.postorder(node.to(DBSPIntLiteral.class));
+        this.postorder((DBSPIntLiteral) node);
     }
 
     public void postorder(DBSPU32Literal node) {
-        this.postorder(node.to(DBSPIntLiteral.class));
+        this.postorder((DBSPIntLiteral) node);
     }
 
     public void postorder(DBSPI64Literal node) {
-        this.postorder(node.to(DBSPIntLiteral.class));
+        this.postorder((DBSPIntLiteral) node);
     }
 
     public void postorder(DBSPI128Literal node) {
-        this.postorder(node.to(DBSPIntLiteral.class));
+        this.postorder((DBSPIntLiteral) node);
     }
 
     public void postorder(DBSPU64Literal node) {
-        this.postorder(node.to(DBSPIntLiteral.class));
+        this.postorder((DBSPIntLiteral) node);
     }
 
     public void postorder(DBSPU128Literal node) {
-        this.postorder(node.to(DBSPIntLiteral.class));
+        this.postorder((DBSPIntLiteral) node);
     }
 
     public void postorder(DBSPBoolLiteral node) {
-        this.postorder(node.to(DBSPLiteral.class));
+        this.postorder((DBSPLiteral) node);
     }
 
     public void postorder(DBSPUuidLiteral node) {
-        this.postorder(node.to(DBSPLiteral.class));
+        this.postorder((DBSPLiteral) node);
     }
 
     public void postorder(DBSPDoubleLiteral node) {
@@ -1381,15 +1381,15 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
     }
 
     public void postorder(DBSPKeywordLiteral node) {
-        this.postorder(node.to(DBSPLiteral.class));
+        this.postorder((DBSPLiteral) node);
     }
 
     public void postorder(DBSPISizeLiteral node) {
-        this.postorder(node.to(DBSPLiteral.class));
+        this.postorder((DBSPLiteral) node);
     }
 
     public void postorder(DBSPGeoPointConstructor node)  {
-        this.postorder(node.to(DBSPExpression.class));
+        this.postorder((DBSPExpression) node);
     }
 
     @Override

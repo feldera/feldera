@@ -26,11 +26,9 @@ import java.nio.file.Paths;
 public class IncrementalRegressionTests extends SqlIoTest {
     @Test @Ignore
     public void t() throws IOException {
-        Logger.INSTANCE.setLoggingLevel(Passes.class, 2);
         this.showFinalVerbose(2);
         String sql = Utilities.readFile(Paths.get("/home/mbudiu/win/Downloads/procore_sql.txt"));
-        this.getCCS(sql);
-        // this.compileRustTestCase(sql);
+        this.compileRustTestCase(sql);
     }
 
     @Override

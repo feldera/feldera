@@ -27,6 +27,7 @@ import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
@@ -36,12 +37,14 @@ import java.util.Objects;
 
 /** An unknown type, represented in code as _. */
 public class DBSPTypeAny extends DBSPType {
-    public DBSPTypeAny() {
+    DBSPTypeAny() {
         super(CalciteObject.EMPTY, DBSPTypeCode.ANY, false);
     }
 
+    public static DBSPTypeAny INSTANCE = new DBSPTypeAny();
+
     public static DBSPTypeAny getDefault() {
-        return new DBSPTypeAny();
+        return DBSPTypeAny.INSTANCE;
     }
 
     @Override
@@ -57,6 +60,14 @@ public class DBSPTypeAny extends DBSPType {
     @Override
     public int getToplevelFieldCount() {
         throw new UnimplementedException();
+    }
+
+    @Override
+    public boolean sameFields(IDBSPInnerNode other) {
+        if (this.sameNullability(other)) return false;
+        DBSPTypeAny type = other.as(DBSPTypeAny.class);
+        if (type == null) return false;
+        return this.code == type.code;
     }
 
     @Override

@@ -24,6 +24,7 @@
 package org.dbsp.sqlCompiler.ir.type.primitive;
 
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -53,6 +54,14 @@ public abstract class DBSPTypeBaseType extends DBSPType {
     public IIndentStream toString(IIndentStream builder) {
         return builder.append(this.shortName())
                 .append(this.mayBeNull ? "?" : "");
+    }
+
+    @Override
+    public boolean sameFields(IDBSPInnerNode other) {
+        if (!this.sameNullability(other)) return false;
+        DBSPTypeBaseType type = other.as(DBSPTypeBaseType.class);
+        if (type == null) return false;
+        return this.code == type.code;
     }
 
     @Override

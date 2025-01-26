@@ -270,4 +270,36 @@ public class OuterTests extends PostBaseTests {
                 +---+----+----+-----+
                 (4 rows)""");
     }
+
+    @Test
+    public void t() {
+        // Validated on SQLite
+        this.q("""
+                with t1(x, y) as (select * from (values (1, '10'), (2, '20'), (null, '30')) as t),
+                     t2(y, x) as (select * from (values ('100', 1), ('20', 2)) as t)
+                select * from t1 full join t2 on t1.x = t2.x and t1.y = t2.y;
+                +---+---+----+-----+
+                | X | Y |  Y |   X |
+                +---+---+----+-----+
+                | 1 | 10|NULL|     |
+                | 2 | 20| 20 |   2 |
+                |   | 30|NULL|     |
+                |   |NULL| 100|  1 |
+                +---+---+----+-----+
+                (4 rows)""");
+        this.q("""                
+                with t1(x, y) as (select * from (values (1, 10), (2, 20), (null, 30)) as t),
+                     t2(y, x) as (select * from (values (100,1), (20, 2)) as t)
+                select * from t1 full join t2 on t1.x = t2.x and t1.x = t2.y;
+                +---+----+----+-----+
+                | X | Y  |  Y |   X |
+                +---+----+----+-----+
+                | 1 | 10 |    |     |
+                | 2 | 20 |    |     |
+                |   | 30 |    |     |
+                |   |    | 100|   1 |
+                |   |    | 20 |   2 |
+                +---+----+----+-----+
+                (4 rows)""");
+    }
 }

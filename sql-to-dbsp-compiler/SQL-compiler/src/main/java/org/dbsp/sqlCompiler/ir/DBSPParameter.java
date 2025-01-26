@@ -70,7 +70,7 @@ public final class DBSPParameter extends DBSPNode implements
     }
 
     @Override
-    public boolean sameFields(IDBSPNode other) {
+    public boolean sameFields(IDBSPInnerNode other) {
         DBSPParameter o = other.as(DBSPParameter.class);
         if (o == null)
             return false;

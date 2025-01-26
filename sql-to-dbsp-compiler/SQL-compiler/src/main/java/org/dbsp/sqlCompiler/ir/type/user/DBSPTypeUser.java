@@ -27,6 +27,7 @@ import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPConstructorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPPathExpression;
@@ -34,6 +35,7 @@ import org.dbsp.sqlCompiler.ir.path.DBSPPath;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.util.IIndentStream;
+import org.dbsp.util.Linq;
 
 import java.util.Arrays;
 import java.util.Objects;
@@ -63,6 +65,15 @@ public class DBSPTypeUser extends DBSPType {
     @Override
     public DBSPExpression defaultValue() {
         throw new UnimplementedException();
+    }
+
+    @Override
+    public boolean sameFields(IDBSPInnerNode other) {
+        if (!this.sameNullability(other)) return false;
+        DBSPTypeUser type = other.as(DBSPTypeUser.class);
+        if (type == null) return false;
+        return this.name.equals(type.name) &&
+                Linq.same(this.typeArgs, type.typeArgs);
     }
 
     @Override
