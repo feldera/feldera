@@ -459,7 +459,7 @@ impl DataBlockBuilder {
             self.size_target = Some(
                 self.specs()
                     .len
-                    .next_power_of_two()
+                    .next_multiple_of(512)
                     .max(self.parameters.min_data_block),
             );
         }
@@ -620,12 +620,14 @@ struct IndexBlockBuilder {
     child_type: NodeType,
     size_target: Option<usize>,
     factories: AnyFactories,
+    max_child_size: usize,
 }
 
 struct IndexBuildSpecs {
     bound_map: VarintWriter,
     row_totals: VarintWriter,
-    child_pointers: VarintWriter,
+    child_offsets: VarintWriter,
+    child_sizes: VarintWriter,
     len: usize,
 }
 
@@ -698,6 +700,7 @@ impl IndexBlockBuilder {
             child_type,
             size_target: None,
             factories: factories.clone(),
+            max_child_size: 0,
         }
     }
     fn is_empty(&self) -> bool {
@@ -728,6 +731,9 @@ impl IndexBlockBuilder {
         }
         let saved_len = self.raw.len();
 
+        let saved_max_child_size = self.max_child_size;
+        self.max_child_size = self.max_child_size.max(child.size);
+
         let min_offset = rkyv_serialize(&mut self.raw, min_max.0.as_ref());
         let max_offset = rkyv_serialize(&mut self.raw, min_max.1.as_ref());
         self.entries.push(IndexEntry {
@@ -739,6 +745,7 @@ impl IndexBlockBuilder {
 
         if let Some(size_target) = self.size_target {
             if self.specs().len > size_target {
+                self.max_child_size = saved_max_child_size;
                 self.raw.resize(saved_len, 0);
                 self.entries.pop();
                 return false;
@@ -747,7 +754,7 @@ impl IndexBlockBuilder {
             self.size_target = Some(
                 self.specs()
                     .len
-                    .next_power_of_two()
+                    .next_multiple_of(512)
                     .max(self.parameters.min_index_block),
             );
         }
@@ -793,17 +800,25 @@ impl IndexBlockBuilder {
         };
         let len = row_totals.offset_after();
 
-        let child_pointers = VarintWriter::new(
+        let child_offsets = VarintWriter::new(
             Varint::from_max_value(self.entries.last().unwrap().child.offset),
             len,
             self.entries.len(),
         );
-        let len = child_pointers.offset_after();
+        let len = child_offsets.offset_after();
+
+        let child_sizes = VarintWriter::new(
+            Varint::from_max_value((self.max_child_size >> 9) as u64),
+            len,
+            self.entries.len(),
+        );
+        let len = child_sizes.offset_after();
 
         IndexBuildSpecs {
             bound_map,
             row_totals,
-            child_pointers,
+            child_offsets,
+            child_sizes,
             len,
         }
     }
@@ -830,21 +845,30 @@ impl IndexBlockBuilder {
             self.entries.iter().map(|entry| entry.row_total),
         );
 
-        specs.child_pointers.put(
+        specs.child_offsets.put(
             &mut self.raw,
-            self.entries.iter().map(|entry| entry.child.into()),
+            self.entries.iter().map(|entry| entry.child.offset >> 9),
+        );
+
+        specs.child_sizes.put(
+            &mut self.raw,
+            self.entries
+                .iter()
+                .map(|entry| (entry.child.size >> 9) as u64),
         );
 
         let header = IndexBlockHeader {
             header: BlockHeader::new(b"LFIB"),
             bound_map_offset: specs.bound_map.start as u32,
             row_totals_offset: specs.row_totals.start as u32,
-            child_pointers_offset: specs.child_pointers.start as u32,
+            child_offsets_offset: specs.child_offsets.start as u32,
+            child_sizes_offset: specs.child_sizes.start as u32,
             n_children: self.entries.len() as u16,
             child_type: self.child_type,
             bound_map_varint: specs.bound_map.varint,
             row_total_varint: specs.row_totals.varint,
-            child_pointer_varint: specs.child_pointers.varint,
+            child_offset_varint: specs.child_offsets.varint,
+            child_size_varint: specs.child_sizes.varint,
         };
         header.overwrite_head(&mut self.raw);
 
