@@ -223,35 +223,20 @@ struct InvalidBlockLocation {
 /// Used for error reporting.
 #[derive(Copy, Clone, Debug)]
 struct BlockLocation {
-    /// Byte offset, a multiple of 4096.
+    /// Byte offset, a multiple of 512.
     offset: u64,
 
-    /// Size in bytes, a power of 2 between 4096 and `2**31`.
+    /// Size in bytes, a multiple of 512, no more than `2**32`.
     size: usize,
 }
 
 impl BlockLocation {
     fn new(offset: u64, size: usize) -> Result<Self, InvalidBlockLocation> {
-        if (offset & 0xfff) != 0 || !(4096..=1 << 31).contains(&size) || !size.is_power_of_two() {
+        if (offset % 512) != 0 || !(512..=1 << 32).contains(&size) || (size % 512) != 0 {
             Err(InvalidBlockLocation { offset, size })
         } else {
             Ok(Self { offset, size })
         }
-    }
-}
-
-impl TryFrom<u64> for BlockLocation {
-    type Error = InvalidBlockLocation;
-
-    fn try_from(source: u64) -> Result<Self, Self::Error> {
-        Self::new((source & !0x1f) << 7, 1 << (source & 0x1f))
-    }
-}
-
-impl From<BlockLocation> for u64 {
-    fn from(source: BlockLocation) -> Self {
-        let shift = source.size.trailing_zeros() as u64;
-        (source.offset >> 7) | shift
     }
 }
 
