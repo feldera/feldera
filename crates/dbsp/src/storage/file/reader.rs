@@ -215,15 +215,15 @@ pub enum CorruptionError {
         u64,
     ),
 
-    /// Invalid child pointer in index block.  At least one of `child_offset` or
+    /// Invalid child in index block.  At least one of `child_offset` or
     /// `child_size` is invalid.
-    #[error("{index_size}-byte index block at offset {index_offset} has child pointer {index} with invalid offset {child_offset} or size {child_size}.")]
-    InvalidChildPointer {
+    #[error("{index_size}-byte index block at offset {index_offset} has child {index} with invalid offset {child_offset} or size {child_size}.")]
+    InvalidChild {
         /// Block offset in bytes.
         index_offset: u64,
         /// Block size in bytes.
         index_size: usize,
-        /// Index of child pointer within block.
+        /// Index of child within block.
         index: usize,
         /// Child offset.
         child_offset: u64,
@@ -679,7 +679,8 @@ pub struct InnerIndexBlock {
     child_type: NodeType,
     bounds: VarintReader,
     row_totals: VarintReader,
-    child_pointers: VarintReader,
+    child_offsets: VarintReader,
+    child_sizes: VarintReader,
 }
 
 impl InnerIndexBlock {
@@ -726,10 +727,16 @@ impl InnerIndexBlock {
                 header.n_children as usize * 2,
             )?,
             row_totals,
-            child_pointers: VarintReader::new(
+            child_offsets: VarintReader::new(
                 &raw,
-                header.child_pointer_varint,
-                header.child_pointers_offset as usize,
+                header.child_offset_varint,
+                header.child_offsets_offset as usize,
+                header.n_children as usize,
+            )?,
+            child_sizes: VarintReader::new(
+                &raw,
+                header.child_size_varint,
+                header.child_sizes_offset as usize,
                 header.n_children as usize,
             )?,
             raw,
@@ -819,19 +826,17 @@ where
     }
 
     fn get_child_location(&self, index: usize) -> Result<BlockLocation, Error> {
-        self.inner
-            .child_pointers
-            .get(&self.inner.raw, index)
-            .try_into()
-            .map_err(|error: InvalidBlockLocation| {
-                Error::Corruption(CorruptionError::InvalidChildPointer {
-                    index_offset: self.inner.location.offset,
-                    index_size: self.inner.location.size,
-                    index,
-                    child_offset: error.offset,
-                    child_size: error.size,
-                })
+        let offset = self.inner.child_offsets.get(&self.inner.raw, index) << 9;
+        let size = self.inner.child_sizes.get(&self.inner.raw, index) << 9;
+        BlockLocation::new(offset, size as usize).map_err(|error: InvalidBlockLocation| {
+            Error::Corruption(CorruptionError::InvalidChild {
+                index_offset: self.inner.location.offset,
+                index_size: self.inner.location.size,
+                index,
+                child_offset: error.offset,
+                child_size: error.size,
             })
+        })
     }
 
     fn get_child(&self, index: usize) -> Result<TreeNode, Error> {
@@ -946,7 +951,7 @@ where
     }
 
     fn n_children(&self) -> usize {
-        self.inner.child_pointers.count
+        self.inner.child_offsets.count
     }
 
     /// Returns the comparison of the largest bound key` using `compare`.
@@ -1154,14 +1159,14 @@ where
         file: Arc<ImmutableFileRef>,
     ) -> Result<Self, Error> {
         let file_size = file.file_handle.as_ref().unwrap().get_size()?;
-        if file_size < 4096 || (file_size % 4096) != 0 {
+        if file_size < 512 || (file_size % 512) != 0 {
             return Err(CorruptionError::InvalidFileSize(file_size).into());
         }
 
         let file_trailer = file.cache.read_file_trailer_block(
             file.file_handle.as_ref().unwrap().as_ref(),
-            file_size - 4096,
-            4096,
+            file_size - 512,
+            512,
         )?;
         if file_trailer.version != VERSION_NUMBER {
             return Err(CorruptionError::InvalidVersion {
