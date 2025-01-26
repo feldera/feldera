@@ -16,15 +16,11 @@ import java.io.PrintWriter;
 /** Dump a graph in the graphviz dot format */
 public class ToDot {
     public static void customDump(String fileName, @Nullable String outputFormat,
-                            DBSPCircuit circuit,
-                            ToDotEdgesVisitor.VisitorConstructor nodesVisitor,
-                            ToDotEdgesVisitor.VisitorConstructor edgesVisitor) {
+                                  DBSPCircuit circuit,
+                                  ToDotEdgesVisitor.VisitorConstructor nodesVisitor,
+                                  ToDotEdgesVisitor.VisitorConstructor edgesVisitor) {
         if (circuit.isEmpty())
             return;
-        Logger.INSTANCE.belowLevel("ToDotVisitor", 0)
-                .append("Writing circuit to ")
-                .append(fileName)
-                .newline();
         File tmp = null;
         try {
             tmp = File.createTempFile("tmp", ".dot");
@@ -45,6 +41,10 @@ public class ToDot {
             if (outputFormat != null)
                 Utilities.runProcess(".", "dot", "-T", outputFormat,
                         "-o", fileName, tmp.getAbsolutePath());
+            Logger.INSTANCE.belowLevel("ToDotVisitor", 0)
+                    .append("Wrote circuit to ")
+                    .append(fileName)
+                    .newline();
         } catch (Exception ex) {
             if (tmp != null) {
                 try {

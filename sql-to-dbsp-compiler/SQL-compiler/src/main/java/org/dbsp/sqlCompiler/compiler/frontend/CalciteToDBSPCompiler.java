@@ -221,9 +221,11 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.function.Consumer;
 
 import static org.dbsp.sqlCompiler.circuit.operator.DBSPIndexedTopKOperator.TopKNumbering.*;
@@ -1101,104 +1103,109 @@ public class CalciteToDBSPCompiler extends RelVisitor
         return filter;
     }
 
-    static int getTypeSize(DBSPExpression expr) {
-        return expr.getType().deref().to(DBSPTypeTupleBase.class).size();
-    }
-
-    /** Keeps track of the fields of a tuple that are used as key fields. */
+    /** Keeps track of the fields of a tuple that are used as key fields.
+     * Note that key fields may be duplicated.
+     * E.g., a key may contain fields 1, 3, and 1 of a tuple of size 5, in this order.
+     * [_, 0 and 2, _, 1, _]. */
     static class KeyFields {
-        /** Map each key field to a consecutive integer: 0, 1, 2, 3... */
-        private final Map<Integer, Integer> keyFields;
+        /** Indexes of fields that belong to the key, in the order they appear in the key: [1, 3, 1] */
+        private final List<Integer> keyFields;
+        private final Set<Integer> keyFieldSet;
 
         public KeyFields() {
-            this.keyFields = new HashMap<>();
+            this.keyFieldSet = new HashSet<>();
+            this.keyFields = new ArrayList<>();
         }
 
         public boolean isKeyField(int i) {
-            return this.keyFields.containsKey(i);
+            return this.keyFieldSet.contains(i);
         }
 
-        public int getCompactIndex(int index) {
-            return Utilities.getExists(this.keyFields, index);
-        }
-
+        /** Call this function to add key fields in the order they appear in the key */
         public void add(int index) {
-            Utilities.putNew(this.keyFields, index, this.keyFields.size());
+            this.keyFieldSet.add(index);
+            this.keyFields.add(index);
         }
 
-        /** Extract the non-key fields from a tuple.
+        /** Extract the non-key fields from a value into a tuple, in the order they appear in the tuple.
+         * For our example, the result will be [e.0, e.2, e.4]
          *
-         * @param var       Var that is a reference to a tuple.
-         * @return          A tuple containing just the non-key fields, in order.
+         * @param e Expression that is a reference to a tuple.
+         * @return  A tuple containing just the non-key fields, in order.
          */
-        DBSPTupleExpression nonKeyFields(DBSPVariablePath var) {
-            // Almost like the following invocation, except we don't insert casts
-            // return this.nonKeyFields(var, var.getType().deref().to(DBSPTypeTupleBase.class), 0);
+        DBSPTupleExpression nonKeyFields(DBSPExpression e) {
+            // Almost like nonKeyFields with 3 arguments, except we don't insert casts ever
+            // return this.nonKeyFields(var, e.getType().to(DBSPTypeTupleBase.class), 0);
             List<DBSPExpression> fields = new ArrayList<>();
-            DBSPTypeTupleBase tuple = var.getType().deref().to(DBSPTypeTupleBase.class);
+            DBSPTypeTupleBase tuple = e.getType().to(DBSPTypeTupleBase.class);
             for (int i = 0; i < tuple.size(); i++) {
                 if (this.isKeyField(i))
                     continue;
-                fields.add(var.deref().field(i).applyCloneIfNeeded());
+                fields.add(e.field(i).applyCloneIfNeeded());
             }
             return new DBSPTupleExpression(fields, false);
         }
 
-        /** Extract the non-key fields from a tuple.
+        /** Extract the non-key fields from a value into a tuple, and insert casts if needed.
+         * For our example, the result will be [(desiredType[0])e.0, (desiredType[1])e.2, (desiredType[2])e.4]
          *
-         * @param var       Var that is a reference to a tuple.
-         * @param desiredType Type to cast var to in the result.
-         * @param offset    Start at this offset in var.
+         * @param e        Expression that is a reference to a tuple.
+         * @param desiredType Type to cast resulting tuple to.
          * @return          A tuple containing just the non-key fields, in order.
          */
-        DBSPTupleExpression nonKeyFields(DBSPVariablePath var, DBSPTypeTupleBase desiredType, int offset) {
+        DBSPTupleExpression nonKeyFields(DBSPExpression e, DBSPTypeTupleBase desiredType) {
             List<DBSPExpression> fields = new ArrayList<>();
-            assert offset >= 0;
-            assert getTypeSize(var) >= desiredType.size() + offset;
-            for (int i = offset; i < offset + desiredType.size(); i++) {
+            assert e.getType().getToplevelFieldCount() >= desiredType.size();
+            for (int i = 0; i < desiredType.size(); i++) {
                 if (this.isKeyField(i))
                     continue;
-                fields.add(var.deref().field(i)
+                fields.add(e.field(i)
                         .applyCloneIfNeeded()
-                        .cast(desiredType.getFieldType(i - offset), false));
+                        .cast(desiredType.getFieldType(i), false));
             }
             return new DBSPTupleExpression(fields, false);
         }
 
-        /** Extract the key fields from a tuple.
+        /** Extract the key fields from a value (e), in the order they have to appear in the key.
+         * For our example the result will be [e.1, e.3, e.1]
          *
-         * @param var       Var that is a reference to a tuple.
-         * @param desiredType Type desired for result; may indicate a prefix of the fields of var.
-         * @param offset    Offset to start from in var.
+         * @param e         Expression that is a reference to a tuple.
+         * @param desiredType Type desired for result.
          * @return          A tuple containing just the key fields, in order.
          */
-        DBSPTupleExpression keyFields(DBSPVariablePath var, DBSPTypeTupleBase desiredType, int offset) {
+        DBSPTupleExpression keyFields(DBSPExpression e, DBSPTypeTupleBase desiredType) {
             List<DBSPExpression> fields = new ArrayList<>();
-            assert offset >= 0;
-            assert getTypeSize(var) >= desiredType.size() + offset;
-            for (int i = offset; i < offset + desiredType.size(); i++) {
-                if (this.isKeyField(i))
-                    fields.add(var.deref().field(i)
-                            .applyCloneIfNeeded()
-                            .cast(desiredType.getFieldType(i - offset), false));
+            for (int kf: this.keyFields) {
+                fields.add(e.field(kf)
+                        .applyCloneIfNeeded()
+                        .cast(desiredType.getFieldType(kf), false));
             }
             return new DBSPTupleExpression(fields, false);
         }
 
         /**
-         * Given a variable with the key fields and a variable with the data fields of a join,
-         * put the fields back together in a list.
-         * @param key       Expression corresponding to key, has a tuple type.
-         * @param data      Expression corresponding to data, has a tuple type.
-         * @param result    A list of the unshuffled fields.  The list consists of all fields in
-         *                  data, with fields of k in their right positions.
+         * Produce a list with original fields from two values: the key value, and the data value.
+         *
+         * @param key       Expression containing the key fields, in order.
+         * @param data      Expression containing the data fields, in order.
+         * @param result    A list of the unshuffled fields.  The result is
+         *                  [data.0, key.0, data.1, key.1, data.2]
+         *                  (In this case we expect key.0 == key.2 always)
          */
         void unshuffleKeyAndDataFields(DBSPExpression key, DBSPExpression data, List<DBSPExpression> result) {
-            int size = getTypeSize(key) + getTypeSize(data);
+            assert key.getType().getToplevelFieldCount() == this.size();
+            int size = this.keyFieldSet.size() + data.getType().getToplevelFieldCount();
             int skipped = 0;
             for (int i = 0; i < size; i++) {
                 if (this.isKeyField(i)) {
-                    result.add(key.deref().field(this.getCompactIndex(i)).applyCloneIfNeeded());
+                    int index = 0;
+                    for (int ki: this.keyFields) {
+                        // There could be multiple positions, stop at the first one
+                        if (ki == i)
+                            break;
+                        index++;
+                    }
+                    result.add(key.deref().field(index).applyCloneIfNeeded());
                     skipped++;
                 } else {
                     result.add(data.deref().field(i - skipped).applyCloneIfNeeded());
@@ -1206,18 +1213,35 @@ public class CalciteToDBSPCompiler extends RelVisitor
             }
         }
 
-        /** Change the offset of each field by the specified amount */
-        public KeyFields offset(int size) {
-            KeyFields fields = new KeyFields();
-            for (var e : this.keyFields.entrySet()) {
-                Utilities.putNew(fields.keyFields, e.getKey() + size, e.getValue());
-            }
-            return fields;
+        private int size() {
+            return this.keyFields.size();
         }
 
         @Override
         public String toString() {
             return "KeyFields: " + this.keyFields;
+        }
+
+        public DBSPExpression keyFieldsFromOffset(DBSPExpression e, DBSPTypeTuple desiredType, int offset) {
+            List<DBSPExpression> fields = new ArrayList<>();
+            for (int kf: this.keyFields) {
+                fields.add(e.field(kf + offset)
+                        .applyCloneIfNeeded()
+                        .cast(desiredType.getFieldType(kf), false));
+            }
+            return new DBSPTupleExpression(fields, false);
+        }
+
+        public DBSPExpression nonKeyFieldsFromOffset(DBSPExpression e, DBSPTypeTuple desiredType, int offset) {
+            List<DBSPExpression> fields = new ArrayList<>();
+            for (int i = 0; i < desiredType.size(); i++) {
+                if (this.isKeyField(i))
+                    continue;
+                fields.add(e.field(i + offset)
+                        .applyCloneIfNeeded()
+                        .cast(desiredType.getFieldType(i), false));
+            }
+            return new DBSPTupleExpression(fields, false);
         }
     }
 
@@ -1280,8 +1304,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
             DBSPExpression leftKey = new DBSPTupleExpression(node, leftKeyFields);
             keyType = leftKey.getType();
 
-            DBSPTupleExpression leftTuple = lkf.nonKeyFields(l);
-            DBSPTupleExpression rightTuple = rkf.nonKeyFields(r);
+            DBSPTupleExpression leftTuple = lkf.nonKeyFields(l.deref());
+            DBSPTupleExpression rightTuple = rkf.nonKeyFields(r.deref());
             leftTupleType = leftTuple.getType();
             rightTupleType = rightTuple.getType();
             DBSPClosureExpression toLeftKey = new DBSPRawTupleExpression(leftKey, leftTuple)
@@ -1330,7 +1354,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             }
 
             DBSPClosureExpression makeTuple = lr.closure(k, l0, r0);
-             joinResult = new DBSPStreamJoinOperator(node, this.makeZSet(lr.getType()),
+            joinResult = new DBSPStreamJoinOperator(node, this.makeZSet(lr.getType()),
                     makeTuple, left.isMultiset || right.isMultiset,
                      leftIndex.outputPort(), rightIndex.outputPort());
 
@@ -1376,8 +1400,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 // If there is no filter we can do a more efficient antijoin
 
                 // Project the join on the left columns and index with the key
-                DBSPExpression keyFields = lkf.keyFields(joinVar, leftResultType, 0);
-                DBSPExpression nonKeyFields = lkf.nonKeyFields(joinVar, leftResultType, 0);
+                DBSPExpression keyFields = lkf.keyFields(joinVar.deref(), leftResultType);
+                DBSPExpression nonKeyFields = lkf.nonKeyFields(joinVar.deref(), leftResultType);
                 DBSPClosureExpression toLeftColumns =
                         new DBSPRawTupleExpression(keyFields, nonKeyFields).closure(joinVar);
 
@@ -1390,8 +1414,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 // Index the left collection in the same way
                 DBSPVariablePath l1 = leftElementType.ref().var();
                 DBSPClosureExpression castLeft = new DBSPRawTupleExpression(
-                        lkf.keyFields(l1, leftResultType, 0),
-                        lkf.nonKeyFields(l1, leftResultType, 0)).closure(l1);
+                        lkf.keyFields(l1.deref(), leftResultType),
+                        lkf.nonKeyFields(l1.deref(), leftResultType)).closure(l1);
                 DBSPSimpleOperator fullLeftIndex = new DBSPMapIndexOperator(
                         node, castLeft, indexType, left.outputPort());
                 this.addOperator(fullLeftIndex);
@@ -1458,14 +1482,13 @@ public class CalciteToDBSPCompiler extends RelVisitor
 
             if (!hasFilter) {
                 int offset = leftResultType.size();
-                KeyFields shiftedRkf = rkf.offset(offset);
-                // Project the join on the left columns and index with the key
-                DBSPExpression keyFields = shiftedRkf.keyFields(joinVar, rightResultType, offset);
-                DBSPExpression nonKeyFields = shiftedRkf.nonKeyFields(joinVar, rightResultType, offset);
+
+                // Project the join on the right columns and index with the key
+                DBSPExpression keyFields = rkf.keyFieldsFromOffset(joinVar.deref(), rightResultType, offset);
+                DBSPExpression nonKeyFields = rkf.nonKeyFieldsFromOffset(joinVar.deref(), rightResultType, offset);
                 DBSPClosureExpression toRightColumns =
                         new DBSPRawTupleExpression(keyFields, nonKeyFields).closure(joinVar);
 
-                // project the join on the right columns
                 DBSPTypeIndexedZSet indexType = new DBSPTypeIndexedZSet(
                         node, keyFields.getType(), nonKeyFields.getType());
                 DBSPSimpleOperator joinRightColumns = new DBSPMapIndexOperator(
@@ -1475,8 +1498,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 // Index the right collection in the same way
                 DBSPVariablePath r1 = rightElementType.ref().var();
                 DBSPClosureExpression castRight = new DBSPRawTupleExpression(
-                        rkf.keyFields(r1, rightResultType, 0),
-                        rkf.nonKeyFields(r1, rightResultType, 0)).closure(r1);
+                        rkf.keyFields(r1.deref(), rightResultType),
+                        rkf.nonKeyFields(r1.deref(), rightResultType)).closure(r1);
                 DBSPSimpleOperator fullRightIndex = new DBSPMapIndexOperator(
                         node, castRight, indexType, right.outputPort());
                 this.addOperator(fullRightIndex);

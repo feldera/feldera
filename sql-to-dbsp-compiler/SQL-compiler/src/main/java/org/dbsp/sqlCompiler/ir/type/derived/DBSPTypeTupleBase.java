@@ -26,6 +26,7 @@ package org.dbsp.sqlCompiler.ir.type.derived;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.ExpressionCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
@@ -33,6 +34,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeUser;
 import org.dbsp.util.Linq;
 
 import java.util.ArrayList;
@@ -69,6 +71,14 @@ public abstract class DBSPTypeTupleBase extends DBSPType {
     /** The tuple obtained by projecting this tuple on the specified fields.
      * Note that the elements are produced in the order indicated. */
     public abstract DBSPTypeTupleBase project(List<Integer> fields);
+
+    @Override
+    public boolean sameFields(IDBSPInnerNode other) {
+        if (!this.sameNullability(other)) return false;
+        DBSPTypeTupleBase type = other.as(DBSPTypeTupleBase.class);
+        if (type == null) return false;
+        return Linq.same(this.tupFields, type.tupFields);
+    }
 
     public DBSPType getFieldType(int index) {
         if (index >= this.tupFields.length)

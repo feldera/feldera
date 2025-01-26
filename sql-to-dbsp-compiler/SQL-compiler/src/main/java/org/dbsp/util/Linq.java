@@ -149,7 +149,9 @@ public class Linq {
             return false;
         if (left.length != right.length)
             return false;
-        return Linq.all(Linq.zipSameLength(left, right, (l, r) -> l == r, Boolean.class));
+        for (int i = 0; i < left.length; i++)
+            if (left[i] != right[i]) return false;
+        return true;
     }
 
     public static List<Integer> range(int start, int exclusiveEnd) {
@@ -166,7 +168,15 @@ public class Linq {
             return false;
         if (left.size() != right.size())
             return false;
-        return Linq.all(Linq.zipSameLength(left, right, Object::equals));
+        Iterator<T> li = left.iterator();
+        Iterator<T> ri = right.iterator();
+        while (li.hasNext()) {
+            T l = li.next();
+            T r = ri.next();
+            if (l != r)
+                return false;
+        }
+        return true;
     }
 
     public static boolean sameStrings(List<String> left, List<String> right) {

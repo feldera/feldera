@@ -26,6 +26,7 @@ package org.dbsp.sqlCompiler.ir.type.user;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.IIndentStream;
@@ -56,6 +57,14 @@ public class DBSPTypeStream extends DBSPType {
     @Override
     public DBSPExpression defaultValue() {
         throw new UnimplementedException();
+    }
+
+    @Override
+    public boolean sameFields(IDBSPInnerNode other) {
+        if (!this.sameNullability(other)) return false;
+        DBSPTypeStream s = other.as(DBSPTypeStream.class);
+        if (s == null) return false;
+        return this.elementType == s.elementType;
     }
 
     @Override

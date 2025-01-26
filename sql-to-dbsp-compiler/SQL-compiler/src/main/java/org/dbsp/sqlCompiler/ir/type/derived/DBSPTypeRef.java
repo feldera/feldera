@@ -25,6 +25,7 @@ package org.dbsp.sqlCompiler.ir.type.derived;
 
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.IIndentStream;
@@ -54,6 +55,14 @@ public class DBSPTypeRef extends DBSPType {
         if (this.mayBeNull == mayBeNull)
             return this;
         return new DBSPTypeRef(this.type, this.mutable, mayBeNull);
+    }
+
+    @Override
+    public boolean sameFields(IDBSPInnerNode other) {
+        if (!this.sameNullability(other)) return false;
+        DBSPTypeRef ref = other.as(DBSPTypeRef.class);
+        if (ref == null) return false;
+        return this.type == ref.type && this.mutable == ref.mutable;
     }
 
     @Override

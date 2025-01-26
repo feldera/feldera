@@ -28,7 +28,6 @@ import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.ir.DBSPNode;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
-import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPPathExpression;
@@ -76,12 +75,20 @@ public abstract class DBSPType extends DBSPNode implements IDBSPInnerNode {
         return this.mayBeNull == other.mayBeNull;
     }
 
+    public boolean sameNullability(IDBSPInnerNode node) {
+        DBSPType type = node.as(DBSPType.class);
+        if (type == null) return false;
+        return this.sameNullability(type);
+    }
+
+    /*
     @Override
-    public boolean sameFields(IDBSPNode other) {
+    public boolean sameFields(IDBSPInnerNode other) {
         if (!other.is(DBSPType.class))
             return false;
         return this.sameType(other.to(DBSPType.class));
     }
+     */
 
     public static boolean sameTypes(DBSPType[] left, DBSPType[] right) {
         if (left.length != right.length)

@@ -30,7 +30,6 @@ import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.DBSPNode;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
-import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.IHasType;
@@ -99,7 +98,7 @@ public class DBSPTypeStruct extends DBSPType {
         }
 
         @Override
-        public boolean sameFields(IDBSPNode other) {
+        public boolean sameFields(IDBSPInnerNode other) {
             Field o = other.as(Field.class);
             if (o == null)
                 return false;
@@ -132,6 +131,25 @@ public class DBSPTypeStruct extends DBSPType {
                 this.error("Field name " + f + " is duplicated");
             this.fields.put(f.name, f);
         }
+    }
+
+    @Override
+    public boolean sameFields(IDBSPInnerNode other) {
+        if (!this.sameNullability(other)) return false;
+        DBSPTypeStruct type = other.as(DBSPTypeStruct.class);
+        if (type == null) return false;
+        if (this.fields.size() != type.fields.size())
+            return false;
+        for (ProgramIdentifier name: this.fields.keySet()) {
+            Field otherField = type.getField(name);
+            if (otherField == null)
+                return false;
+            Field field = Objects.requireNonNull(this.getField(name));
+            if (!field.equals(otherField))
+                return false;
+        }
+        return name == type.name &&
+                this.sanitizedName.equals(type.sanitizedName);
     }
 
     public DBSPTypeStruct rename(ProgramIdentifier newName) {

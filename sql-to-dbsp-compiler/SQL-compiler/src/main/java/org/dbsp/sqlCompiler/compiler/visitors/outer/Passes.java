@@ -69,7 +69,8 @@ public class Passes implements IWritesLogs, CircuitTransform, ICompilerComponent
             String name = String.format("%02d-", dumped++) + "before.png";
             ToDot.dump(this.compiler, name, details, "png", circuit);
         }
-        Logger.INSTANCE.belowLevel("Passes", 1)
+        long begin = System.currentTimeMillis();
+        Logger.INSTANCE.belowLevel("Passes", 2)
                 .append(this.toString())
                 .append(" starting ")
                 .append(this.passes.size())
@@ -94,8 +95,14 @@ public class Passes implements IWritesLogs, CircuitTransform, ICompilerComponent
                 ToDot.dump(this.compiler, name, details, "png", circuit);
             }
         }
+        long finish = System.currentTimeMillis();
         Logger.INSTANCE.belowLevel("Passes", 1)
-                .decrease();
+                .decrease()
+                .append(this.toString())
+                .append(" took ")
+                .append(finish - begin)
+                .append("ms")
+                .newline();
         return circuit;
     }
 

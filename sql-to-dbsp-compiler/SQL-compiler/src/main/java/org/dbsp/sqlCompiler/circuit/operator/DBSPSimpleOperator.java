@@ -100,8 +100,8 @@ public abstract class DBSPSimpleOperator extends DBSPOperator implements IHasTyp
             return;
         DBSPType type = function.getType().to(DBSPTypeFunction.class).resultType;
         if (!expected.sameType(type))
-            throw new InternalCompilerError(this + ": Expected function to return " + expected +
-                    " but it returns " + type, this);
+            throw new InternalCompilerError(this + ": Expected function to return\n" + expected +
+                    " but it returns\n" + type, this);
     }
 
     /** Return a version of this operator with the function replaced. */

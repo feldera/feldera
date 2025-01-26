@@ -97,7 +97,7 @@ public final class DBSPFunction extends DBSPNode implements IHasType, IDBSPDecla
     }
 
     @Override
-    public boolean sameFields(IDBSPNode other) {
+    public boolean sameFields(IDBSPInnerNode other) {
         DBSPFunction o = other.as(DBSPFunction.class);
         if (o == null)
             return false;
