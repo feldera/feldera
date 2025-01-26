@@ -21,7 +21,7 @@ use std::{
 };
 use tempfile::TempDir;
 use thiserror::Error;
-use tracing::{trace, warn};
+use tracing::{info, trace, warn};
 use uuid::Uuid;
 
 use crate::storage::buffer_cache::FBuf;
@@ -292,14 +292,18 @@ pub fn new_default_backend(tempdir: PathBuf, cache: StorageCacheConfig) -> Backe
     }
 
     #[cfg(target_os = "linux")]
-    match io_uring_impl::IoUringBackend::new(&tempdir, cache) {
-        Ok(backend) => return Box::new(backend),
-        Err(error) => {
-            static ONCE: std::sync::Once = std::sync::Once::new();
-            ONCE.call_once(|| {
-                warn!("could not initialize io_uring backend ({error}), falling back to POSIX I/O")
-            });
+    if std::env::var("FELDERA_USE_IO_URING").is_ok_and(|s| s != "0") {
+        match io_uring_impl::IoUringBackend::new(&tempdir, cache) {
+            Ok(backend) => return Box::new(backend),
+            Err(error) => {
+                static ONCE: std::sync::Once = std::sync::Once::new();
+                ONCE.call_once(|| {
+                    warn!("could not initialize io_uring backend ({error}), falling back to POSIX I/O")
+                });
+            }
         }
+    } else {
+        info!("io_uring backend disabled by default (set FELDERA_USE_IO_URING=1 to enable");
     }
 
     Box::new(posixio_impl::PosixBackend::new(tempdir, cache))
