@@ -16,7 +16,7 @@ use std::{
     path::{Path, PathBuf},
     sync::{
         atomic::{AtomicU64, Ordering},
-        Arc,
+        Arc, LazyLock,
     },
 };
 use tempfile::TempDir;
@@ -325,3 +325,21 @@ impl StorageCacheFlags for OpenOptions {
         self
     }
 }
+
+/// Maximum number of buffers that system calls accept in one operation.
+///
+/// We only use multibuffer system calls on Linux, so the value is arbitrary
+/// elsewhere.
+static IOV_MAX: LazyLock<usize> = LazyLock::new(|| {
+    #[cfg(target_os = "linux")]
+    match nix::unistd::sysconf(nix::unistd::SysconfVar::IOV_MAX) {
+        Ok(Some(iov_max)) if iov_max > 0 => iov_max as usize,
+        _ => {
+            // Typical Linux value.
+            1024
+        }
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    1024
+});
