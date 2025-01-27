@@ -139,7 +139,9 @@ pub(crate) async fn list_content(
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum CleanupDecision {
-    Keep,
+    Keep {
+        motivation: String, // The part of the name which was the motivation to keep
+    },
     Remove,
     Ignore,
 }
@@ -152,14 +154,16 @@ pub async fn cleanup_specific_files(
     dir: &Path,
     decide: Arc<dyn Fn(&str) -> CleanupDecision + Send + Sync>,
     warn_ignore: bool,
-) -> Result<(), CommonError> {
+) -> Result<Vec<String>, CommonError> {
     let content = list_content(dir).await?;
+    let mut keep_motivations = vec![];
     for (path, name) in content {
         if path.is_file() {
             if let Some(name) = name {
                 match decide(&name) {
-                    CleanupDecision::Keep => {
-                        // If it should be kept, nothing needs to happen
+                    CleanupDecision::Keep { motivation } => {
+                        // If it should be kept, nothing needs to happen to the file
+                        keep_motivations.push(motivation);
                     }
                     CleanupDecision::Remove => {
                         debug!("{cleanup_name} cleanup: removing file '{}'", path.display());
@@ -186,7 +190,7 @@ pub async fn cleanup_specific_files(
             warn!("{cleanup_name} cleanup: ignoring '{}' (unexpected directory entry which is not a file)", path.display());
         }
     }
-    Ok(())
+    Ok(keep_motivations)
 }
 
 /// Cleans up specific directories in a directory as determined by the `decide` function.
@@ -197,14 +201,16 @@ pub async fn cleanup_specific_directories(
     dir: &Path,
     decide: Arc<dyn Fn(&str) -> CleanupDecision + Send + Sync>,
     warn_ignore: bool,
-) -> Result<(), CommonError> {
+) -> Result<Vec<String>, CommonError> {
     let content = list_content(dir).await?;
+    let mut keep_motivations = vec![];
     for (path, name) in content {
         if path.is_dir() {
             if let Some(name) = name {
                 match decide(&name) {
-                    CleanupDecision::Keep => {
-                        // If it should be kept, nothing needs to happen
+                    CleanupDecision::Keep { motivation } => {
+                        // If it should be kept, nothing needs to happen to the directory
+                        keep_motivations.push(motivation);
                     }
                     CleanupDecision::Remove => {
                         debug!(
@@ -237,7 +243,7 @@ pub async fn cleanup_specific_directories(
             warn!("{cleanup_name} cleanup: ignoring '{}' (unexpected directory entry which is not a directory)", path.display());
         }
     }
-    Ok(())
+    Ok(keep_motivations)
 }
 
 /// Truncates a hex-encoded SHA256 checksum which is 64 characters long into 12 characters.
@@ -431,7 +437,9 @@ mod test {
                 if name.starts_with("file-") {
                     CleanupDecision::Remove
                 } else {
-                    CleanupDecision::Keep
+                    CleanupDecision::Keep {
+                        motivation: "file-".to_string(),
+                    }
                 }
             }),
             true,
@@ -475,7 +483,9 @@ mod test {
                 if name.starts_with("dir-") {
                     CleanupDecision::Remove
                 } else {
-                    CleanupDecision::Keep
+                    CleanupDecision::Keep {
+                        motivation: "dir-".to_string(),
+                    }
                 }
             }),
             true,

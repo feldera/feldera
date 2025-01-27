@@ -559,7 +559,9 @@ pub(crate) async fn cleanup_sql_compilation(
                 if spl.len() == 2 && spl[0] == "pipeline" {
                     if let Ok(uuid) = Uuid::parse_str(spl[1]) {
                         if existing_pipeline_ids.contains(&PipelineId(uuid)) {
-                            CleanupDecision::Keep
+                            CleanupDecision::Keep {
+                                motivation: spl[1].to_string(),
+                            }
                         } else {
                             CleanupDecision::Remove
                         }
