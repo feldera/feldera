@@ -14,9 +14,8 @@ use binrw::{
 use lazy_static::lazy_static;
 
 use crate::storage::{
-    backend::FileReader,
+    backend::{BlockLocation, FileReader},
     buffer_cache::{BufferCache, CacheEntry, FBuf},
-    file::BlockLocation,
 };
 
 use super::{
@@ -51,38 +50,33 @@ impl CacheEntry for FileCacheEntry {
             Self::Data(data_block) => data_block.cost(),
         }
     }
-    fn from_read(raw: Arc<FBuf>, offset: u64, size: usize) -> Result<Self, Error> {
+    fn from_read(raw: Arc<FBuf>, location: BlockLocation) -> Result<Self, Error> {
         let computed_checksum = crc32c(&raw[4..]);
         let checksum = u32::from_le_bytes(raw[..4].try_into().unwrap());
         if checksum != computed_checksum {
             return Err(CorruptionError::InvalidChecksum {
-                size,
-                offset,
+                location,
                 checksum,
                 computed_checksum,
             }
             .into());
         }
 
-        Self::from_write(raw, offset, size)
+        Self::from_write(raw, location)
     }
-    fn from_write(raw: Arc<FBuf>, offset: u64, size: usize) -> Result<Self, Error> {
+    fn from_write(raw: Arc<FBuf>, location: BlockLocation) -> Result<Self, Error> {
         let block_header = BlockHeader::read_le(&mut io::Cursor::new(raw.as_slice()))?;
         match block_header.magic {
             DATA_BLOCK_MAGIC => Ok(Self::Data(Arc::new(InnerDataBlock::from_raw(
-                raw,
-                BlockLocation { offset, size },
+                raw, location,
             )?))),
             INDEX_BLOCK_MAGIC => Ok(Self::Index(Arc::new(InnerIndexBlock::from_raw(
-                raw,
-                BlockLocation { offset, size },
+                raw, location,
             )?))),
             FILE_TRAILER_BLOCK_MAGIC => Ok(Self::FileTrailer(Arc::new(FileTrailer::read_le(
                 &mut io::Cursor::new(raw.as_slice()),
             )?))),
-            _ => Err(
-                Error::Corruption(CorruptionError::BadBlockType { offset, size }), /* XXX */
-            ),
+            _ => Err(Error::Corruption(CorruptionError::BadBlockType(location))),
         }
     }
 }
@@ -121,36 +115,32 @@ pub fn default_cache() -> Arc<FileCache> {
 }
 
 impl BufferCache<FileCacheEntry> {
-    /// Reads a `size`-byte block at `offset` in `fd` and returns it converted
-    /// to `InnerDataBlock`.
+    /// Reads `location` from `file` and returns it converted to
+    /// `InnerDataBlock`.
     pub(super) fn read_data_block(
         &self,
         file: &dyn FileReader,
-        offset: u64,
-        size: usize,
+        location: BlockLocation,
     ) -> Result<Arc<InnerDataBlock>, Error> {
-        self.read(file, offset, size, FileCacheEntry::as_data_block)
+        self.read(file, location, FileCacheEntry::as_data_block)
     }
 
-    /// Reads a `size`-byte block at `offset` in `fd` and returns it converted
-    /// to `InnerIndexBlock`.
+    /// Reads `location` from `file` and returns it converted to
+    /// `InnerIndexBlock`.
     pub(super) fn read_index_block(
         &self,
         file: &dyn FileReader,
-        offset: u64,
-        size: usize,
+        location: BlockLocation,
     ) -> Result<Arc<InnerIndexBlock>, Error> {
-        self.read(file, offset, size, FileCacheEntry::as_index_block)
+        self.read(file, location, FileCacheEntry::as_index_block)
     }
 
-    /// Reads a `size`-byte file trailer block at `offset` in `fd` and returns
-    /// it converted to `FileTrailer`.
+    /// Reads `location` from `file` and returns it converted to `FileTrailer`.
     pub(super) fn read_file_trailer_block(
         &self,
         file: &dyn FileReader,
-        offset: u64,
-        size: usize,
+        location: BlockLocation,
     ) -> Result<Arc<FileTrailer>, Error> {
-        self.read(file, offset, size, FileCacheEntry::as_file_trailer)
+        self.read(file, location, FileCacheEntry::as_file_trailer)
     }
 }

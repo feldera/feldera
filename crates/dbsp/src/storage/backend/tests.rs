@@ -8,7 +8,7 @@ use std::path::Path;
 
 use rand::{thread_rng, Fill, Rng};
 
-use crate::storage::{buffer_cache::FBuf, test::init_test_logger};
+use crate::storage::{backend::BlockLocation, buffer_cache::FBuf, test::init_test_logger};
 
 use super::{Backend, FileReader};
 
@@ -19,8 +19,11 @@ fn test_read_block(reader: &dyn FileReader, data: &[u8], offset: usize) -> usize
         length /= 2;
     }
     assert!(offset == data.len() || length > 0);
-    let block = reader.read_block(offset as u64, length).unwrap();
-    assert_eq!(block.as_slice(), &data[offset..offset + length]);
+    if length > 0 {
+        let location = BlockLocation::new(offset as u64, length).unwrap();
+        let block = reader.read_block(location).unwrap();
+        assert_eq!(block.as_slice(), &data[offset..offset + length]);
+    }
     length
 }
 
@@ -34,7 +37,9 @@ fn test_read(reader: &dyn FileReader, data: &[u8]) {
     for _ in 0..100 {
         test_read_block(reader, data, rng.gen_range(0..=data.len() / 512) * 512);
     }
-    reader.read_block(data.len() as u64, 512).unwrap_err();
+    reader
+        .read_block(BlockLocation::new(data.len() as u64, 512).unwrap())
+        .unwrap_err();
 }
 
 pub(super) fn test_backend(
