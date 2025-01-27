@@ -194,7 +194,7 @@ public class KeyPropagation extends CircuitVisitor {
     }
 
     void processMap(DBSPUnaryOperator node) {
-        StreamDescription inputKeys = this.keys.get(node.input());
+        StreamDescription inputKeys = this.keys.get(node.input().simpleNode());
         if (inputKeys == null) {
             super.postorder(node);
             return;
@@ -293,7 +293,7 @@ public class KeyPropagation extends CircuitVisitor {
                  boolean keyOnLeft) {
         JoinDescription desc = new JoinDescription(operator, table, keyOnLeft);
         Logger.INSTANCE.belowLevel(this, 1)
-                        .append(desc.toString())
+                        .appendSupplier(desc::toString)
                         .newline();
         Utilities.putNew(this.joins, operator, desc);
 
@@ -323,8 +323,8 @@ public class KeyPropagation extends CircuitVisitor {
     }
 
     void processJoin(DBSPJoinBaseOperator join) {
-        StreamDescription left = this.keys.get(join.left());
-        StreamDescription right = this.keys.get(join.right());
+        StreamDescription left = this.keys.get(join.left().simpleNode());
+        StreamDescription right = this.keys.get(join.right().simpleNode());
         if (left == null || right == null) {
             super.postorder(join);
             return;
@@ -422,16 +422,16 @@ public class KeyPropagation extends CircuitVisitor {
     void map(DBSPSimpleOperator operator, StreamDescription keys) {
         Utilities.putNew(this.keys, operator, keys);
         Logger.INSTANCE.belowLevel(this, 1)
-                .append(operator.getIdString())
+                .appendSupplier(operator::getIdString)
                 .append(" ")
-                .append(operator.operation)
+                .appendSupplier(() -> operator.operation)
                 .append(" ")
-                .append(keys.toString())
+                .appendSupplier(keys::toString)
                 .newline();
     }
 
     void copy(DBSPUnaryOperator unary) {
-        StreamDescription inputKeys = this.keys.get(unary.input());
+        StreamDescription inputKeys = this.keys.get(unary.input().simpleNode());
         if (inputKeys != null)
             this.map(unary, inputKeys);
         super.postorder(unary);

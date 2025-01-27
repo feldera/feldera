@@ -173,9 +173,9 @@ public class InsertLimiters extends CircuitCloneVisitor {
         assert this.circuit.contains(operator.node()) || this.expandedCircuit.contains(operator.node());
         Logger.INSTANCE.belowLevel(this, 1)
                 .append("Bound for ")
-                .append(operator.toString())
+                .appendSupplier(operator::toString)
                 .append(" computed by ")
-                .append(bound.toString())
+                .appendSupplier(bound::toString)
                 .newline();
         Utilities.putNew(this.bound, operator, bound);
     }
@@ -292,7 +292,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
     void nonMonotone(DBSPSimpleOperator operator) {
         Logger.INSTANCE.belowLevel(this, 1)
                 .append("Not monotone: ")
-                .append(operator.toString())
+                .appendSupplier(operator::toString)
                 .newline();
     }
 
@@ -619,7 +619,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
         OutputPort waterline = this.createApply(boundSource, null, function);
         Logger.INSTANCE.belowLevel(this, 2)
                 .append("WATERLINE FUNCTION: ")
-                .append(function)
+                .appendSupplier(function::toString)
                 .newline();
 
         // The bound for the output is different from the waterline
@@ -643,7 +643,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
         DBSPClosureExpression function0 = monotone0.getReducedExpression().to(DBSPClosureExpression.class);
         Logger.INSTANCE.belowLevel(this, 2)
                 .append("BOUND FUNCTION: ")
-                .append(function0)
+                .appendSupplier(function0::toString)
                 .newline();
 
         OutputPort bound = this.createApply(boundSource, operator, function0);

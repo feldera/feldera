@@ -74,9 +74,9 @@ public class CalciteOptimizer implements IWritesLogs {
             if (this.level > level) return;
             for (RelOptRule rule: rules) {
                 Logger.INSTANCE.belowLevel(CalciteOptimizer.this, 3)
-                        .append(this.getName())
+                        .appendSupplier(this::getName)
                         .append(" adding rule: ")
-                        .append(rule.toString())
+                        .appendSupplier(rule::toString)
                         .newline();
                 this.builder.addRuleInstance(rule);
             }
@@ -103,9 +103,9 @@ public class CalciteOptimizer implements IWritesLogs {
             if (rel != optimized) {
                 Logger.INSTANCE.belowLevel(CalciteOptimizer.this, 1)
                         .append("After ")
-                        .append(step.getName())
+                        .appendSupplier(step::getName)
                         .increase()
-                        .append(SqlToRelCompiler.getPlan(optimized, false))
+                        .appendSupplier(() -> SqlToRelCompiler.getPlan(optimized, false))
                         .decrease()
                         .newline();
             }

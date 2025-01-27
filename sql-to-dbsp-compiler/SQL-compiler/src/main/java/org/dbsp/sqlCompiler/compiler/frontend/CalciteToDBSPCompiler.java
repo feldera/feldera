@@ -325,7 +325,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         if (value != null) {
             Logger.INSTANCE.belowLevel(this, 4)
                     .append("Processing ")
-                    .append(node.toString())
+                    .appendSupplier(node::toString)
                     .newline();
             method.accept(value);
             return true;
@@ -2942,7 +2942,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             @Nullable RelNode parent) {
         Logger.INSTANCE.belowLevel(this, 3)
                 .append("Visiting ")
-                .append(node.toString())
+                .appendSupplier(node::toString)
                 .newline();
         if (this.nodeOperator.containsKey(node))
             // We have already done this one.  This can happen because the
@@ -3016,7 +3016,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         this.currentView = view;
         RelNode rel = view.getRelNode();
         Logger.INSTANCE.belowLevel(this, 2)
-                .append(SqlToRelCompiler.getPlan(rel, false))
+                .appendSupplier(() -> SqlToRelCompiler.getPlan(rel, false))
                 .newline();
         this.go(rel);
         DBSPSimpleOperator op = this.getOperator(rel);

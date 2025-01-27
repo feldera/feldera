@@ -342,7 +342,7 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
             MonotoneExpression result = new MonotoneExpression(expression, cloType, closure);
             this.set(expression, result);
             Logger.INSTANCE.belowLevel(this, 1)
-                    .append("MonotoneExpression for " + expression + " is " + result)
+                    .appendSupplier(() -> "MonotoneExpression for " + expression + " is " + result)
                     .newline();
         }
         return VisitDecision.STOP;

@@ -49,7 +49,7 @@ public class RemoveOperators extends CircuitCloneVisitor {
         } else {
             Logger.INSTANCE.belowLevel(this, 2)
                     .append("Removing ")
-                    .append(node.toString())
+                    .appendSupplier(node::toString)
                     .newline();
         }
         return VisitDecision.STOP;
@@ -62,7 +62,7 @@ public class RemoveOperators extends CircuitCloneVisitor {
         } else {
             Logger.INSTANCE.belowLevel(this, 2)
                     .append("Removing ")
-                    .append(node.toString())
+                    .appendSupplier(node::toString)
                     .newline();
         }
         return VisitDecision.STOP;
@@ -72,7 +72,7 @@ public class RemoveOperators extends CircuitCloneVisitor {
     public Token startVisit(IDBSPOuterNode node) {
         Logger.INSTANCE.belowLevel(this, 2)
                 .append("Keeping ")
-                .append(this.keep.toString())
+                .appendSupplier(this.keep::toString)
                 .newline();
         return super.startVisit(node);
     }

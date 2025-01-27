@@ -82,13 +82,13 @@ public class MergeGC extends Passes {
                     if (gc0.getFunction().equivalent(gc1.getFunction())) {
                         Logger.INSTANCE.belowLevel(this, 1)
                                 .append("MergeGC ")
-                                .append(compare.toString())
+                                .appendSupplier(compare::toString)
                                 .append(" -> ")
-                                .append(base.toString())
+                                .appendSupplier(base::toString)
                                 .newline()
-                                .append(gc1.toString())
+                                .appendSupplier(gc1::toString)
                                 .append(" -> ")
-                                .append(gc0.toString());
+                                .appendSupplier(gc0::toString);
                         this.canonical.put(compare, base);
                         this.canonical.put(gc1, gc0);
                     }

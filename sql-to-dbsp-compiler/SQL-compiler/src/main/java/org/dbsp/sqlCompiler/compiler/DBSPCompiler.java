@@ -724,7 +724,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
             System.out.println("Compilation took " + elapsedTimeInMs() + "ms");
         Logger.INSTANCE.belowLevel(this, 1)
                 .append("Compilation time ")
-                .append(elapsedTimeInMs() + "ms")
+                .appendSupplier(() -> elapsedTimeInMs() + "ms")
                 .newline();
         return circuit;
     }

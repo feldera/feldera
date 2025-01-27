@@ -46,6 +46,7 @@ public interface IIndentStream {
     <T> IIndentStream intercalate(String separator, T[] data, Function<T, String> generator);
     <T extends ToIndentableString> IIndentStream join(String separator, T[] data);
     IIndentStream join(String separator, Collection<String> data);
+    IIndentStream joinSupplier(String separator, Supplier<Collection<String>> data);
     IIndentStream intercalate(String separator, Collection<String> data);
     IIndentStream intercalate(String separator, String[] data);
     IIndentStream intercalateS(String separator, Collection<String> data);

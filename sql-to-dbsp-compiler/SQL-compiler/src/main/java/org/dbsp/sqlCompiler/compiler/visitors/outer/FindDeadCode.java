@@ -69,7 +69,7 @@ public class FindDeadCode extends CircuitVisitor implements IWritesLogs {
 
     public void keep(DBSPOperator operator) {
         Logger.INSTANCE.belowLevel(this, 1)
-                .append(operator.toString())
+                .appendSupplier(operator::toString)
                 .append(" reachable")
                 .newline();
         this.toKeep.add(operator);

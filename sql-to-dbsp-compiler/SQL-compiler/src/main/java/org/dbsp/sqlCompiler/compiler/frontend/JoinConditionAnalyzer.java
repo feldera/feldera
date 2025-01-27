@@ -206,7 +206,7 @@ public class JoinConditionAnalyzer implements IWritesLogs {
     JoinConditionAnalyzer.ConditionDecomposition analyze(RelNode context, RexNode expression) {
         Logger.INSTANCE.belowLevel(this, 1)
                 .append("Analyzing ")
-                .append(expression.toString())
+                .appendSupplier(expression::toString)
                 .newline();
         final ConditionDecomposition result = new ConditionDecomposition(context);
         if (! (expression instanceof RexCall call)) {

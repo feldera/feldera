@@ -113,6 +113,11 @@ public class NullIndentStream implements IIndentStream {
     }
 
     @Override
+    public IIndentStream joinSupplier(String separator, Supplier<Collection<String>> data) {
+        return this;
+    }
+
+    @Override
     public IIndentStream intercalate(String separator, Collection<String> data) {
         return this;
     }

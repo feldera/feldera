@@ -102,7 +102,7 @@ public class Graph extends CircuitVisitor {
         this.postCircuit(circuit);
         super.postorder(circuit);
         Logger.INSTANCE.belowLevel(this, 1)
-                .append(this.graphs)
+                .appendSupplier(this.graphs::toString)
                 .newline();
     }
 

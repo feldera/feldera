@@ -20,7 +20,7 @@ public class RemoveTable extends CircuitCloneVisitor {
             // Return without adding it to the circuit.
             Logger.INSTANCE.belowLevel(this, 1)
                     .append("Removing table ")
-                    .append(this.tableName.name())
+                    .appendSupplier(this.tableName::name)
                     .newline();
             this.compiler.compiler().removeTable(this.tableName);
             return;

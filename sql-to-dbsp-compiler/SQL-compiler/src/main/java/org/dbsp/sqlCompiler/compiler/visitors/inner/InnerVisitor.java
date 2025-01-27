@@ -231,7 +231,7 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
     public void startVisit(IDBSPInnerNode node) {
         Logger.INSTANCE.belowLevel(this, 4)
                 .append("Starting ")
-                .append(this.toString())
+                .appendSupplier(this::toString)
                 .append(" at ")
                 .append(node);
     }

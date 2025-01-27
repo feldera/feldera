@@ -54,9 +54,9 @@ public class AppendOnly extends CircuitVisitor {
 
     void setAppendOnly(DBSPSimpleOperator operator) {
         Logger.INSTANCE.belowLevel(this, 1)
-                .append(operator.getIdString())
+                .appendSupplier(operator::getIdString)
                 .append(" ")
-                .append(operator.operation)
+                .appendSupplier(() -> operator.operation)
                 .append(" is append-only")
                 .newline();
         this.appendOnly.add(operator.outputPort());

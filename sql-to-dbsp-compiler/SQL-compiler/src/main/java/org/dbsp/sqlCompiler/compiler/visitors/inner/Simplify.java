@@ -96,7 +96,7 @@ public class Simplify extends InnerRewriteVisitor {
         super.startVisit(node);
         Logger.INSTANCE.belowLevel(this, 1)
                 .append("Starting Simplify on ")
-                .append(node)
+                .appendSupplier(node::toString)
                 .newline();
     }
 

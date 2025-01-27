@@ -742,10 +742,11 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
             return new DBSPNullLiteral();
         assert !type.is(DBSPTypeStruct.class);
 
+        final RexCall finalCall = call;
         Logger.INSTANCE.belowLevel(this, 2)
-                .append(call.toString())
+                .appendSupplier(finalCall::toString)
                 .append(" ")
-                .append(call.getType().toString());
+                .appendSupplier(() -> finalCall.getType().toString());
         if (call.op.kind == SqlKind.SEARCH) {
             // TODO: Ideally the optimizer should do this before handing the expression to us.
             // Then the rexBuilder won't be needed.
@@ -1694,7 +1695,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
     public DBSPExpression compile(RexNode expression) {
         Logger.INSTANCE.belowLevel(this, 3)
                 .append("Compiling ")
-                .append(expression.toString())
+                .appendSupplier(expression::toString)
                 .newline();
         DBSPExpression result = expression.accept(this);
         if (result == null)
