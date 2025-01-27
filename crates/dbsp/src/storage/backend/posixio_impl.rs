@@ -18,7 +18,7 @@ use tracing::warn;
 
 use super::{
     append_to_path, tempdir_for_thread, FileId, FileReader, FileWriter, HasFileId, Storage,
-    StorageCacheFlags, StorageError, MUTABLE_EXTENSION,
+    StorageCacheFlags, StorageError, IOV_MAX, MUTABLE_EXTENSION,
 };
 use crate::circuit::metrics::{
     FILES_CREATED, FILES_DELETED, TOTAL_BYTES_WRITTEN, WRITES_SUCCESS, WRITE_LATENCY,
@@ -222,7 +222,9 @@ impl PosixWriter {
     }
 
     fn write_at(&mut self, buffer: &Arc<FBuf>, offset: u64) -> Result<(), StorageError> {
-        if self.len >= 1024 * 1024 || (!self.buffers.is_empty() && self.offset + self.len != offset)
+        if self.len >= 1024 * 1024
+            || (!self.buffers.is_empty() && self.offset + self.len != offset)
+            || self.buffers.len() >= *IOV_MAX
         {
             self.flush()?;
         }
