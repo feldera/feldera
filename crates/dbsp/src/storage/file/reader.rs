@@ -26,7 +26,7 @@ use binrw::{
 use thiserror::Error as ThisError;
 
 use crate::storage::{
-    backend::{Storage, StorageError},
+    backend::{BlockLocation, InvalidBlockLocation, Storage, StorageError},
     buffer_cache::{BufferCache, FBuf},
     file::format::{
         DataBlockHeader, FileTrailerColumn, IndexBlockHeader, NodeType, Varint, VERSION_NUMBER,
@@ -34,7 +34,7 @@ use crate::storage::{
     file::item::ArchivedItem,
 };
 
-use super::{cache::FileCacheEntry, AnyFactories, BlockLocation, Factories, InvalidBlockLocation};
+use super::{cache::FileCacheEntry, AnyFactories, Factories};
 
 /// Any kind of error encountered reading a layer file.
 #[derive(ThisError, Debug)]
@@ -70,20 +70,20 @@ impl From<BinError> for Error {
 /// Errors that indicate a problem with the layer file contents.
 #[derive(ThisError, Debug)]
 pub enum CorruptionError {
-    /// File size must be a positive multiple of 4096.
-    #[error("File size {0} must be a positive multiple of 4096")]
+    /// File size must be a positive multiple of 512.
+    #[error("File size {0} must be a positive multiple of 512")]
     InvalidFileSize(
         /// Actual file size.
         u64,
     ),
 
     /// Block has invalid checksum.
-    #[error("{size}-byte block at offset {offset} has invalid checksum {checksum:#x} (expected {computed_checksum:#})")]
+    #[error(
+        "Block ({location}) has invalid checksum {checksum:#x} (expected {computed_checksum:#})"
+    )]
     InvalidChecksum {
-        /// Block offset.
-        offset: u64,
-        /// Block size.
-        size: usize,
+        /// Block location
+        location: BlockLocation,
         /// Checksum in block.
         checksum: u32,
         /// Checksum that block should have.
@@ -147,21 +147,14 @@ pub enum CorruptionError {
     NoColumns,
 
     /// Index block has no children.
-    #[error("{size}-byte index block at offset {offset} is empty")]
-    EmptyIndex {
-        /// Block offset.
-        offset: u64,
-        /// Block size.
-        size: usize,
-    },
+    #[error("Index block ({0}) is empty")]
+    EmptyIndex(BlockLocation),
 
     /// Data block contains unexpected number of rows.
-    #[error("{size}-byte data block at offset {offset} contains {n_rows} rows but {expected_rows} were expected.")]
+    #[error("Data block ({location}) contains {n_rows} rows but {expected_rows} were expected.")]
     DataBlockWrongNumberOfRows {
-        /// Block offset in bytes.
-        offset: u64,
-        /// Block size in bytes.
-        size: usize,
+        /// Block location.
+        location: BlockLocation,
         /// Number of rows in block.
         n_rows: u64,
         /// Expected number of rows in block.
@@ -169,12 +162,10 @@ pub enum CorruptionError {
     },
 
     /// Index block requires unexpected number of rows.
-    #[error("{size}-byte index block at offset {offset} contains {n_rows} rows but {expected_rows} were expected.")]
+    #[error("Index block ({location}) contains {n_rows} rows but {expected_rows} were expected.")]
     IndexBlockWrongNumberOfRows {
-        /// Block offset in bytes.
-        offset: u64,
-        /// Block size in bytes.
-        size: usize,
+        /// Block location.
+        location: BlockLocation,
         /// Number of rows in block.
         n_rows: u64,
         /// Expected number of rows in block.
@@ -182,12 +173,10 @@ pub enum CorruptionError {
     },
 
     /// Index row totals aren't strictly increasing.
-    #[error("{size}-byte index block at offset {offset} has nonmonotonic row totals ({prev} then {next}).")]
+    #[error("Index block ({location}) has nonmonotonic row totals ({prev} then {next}).")]
     NonmonotonicIndex {
-        /// Block offset in bytes.
-        offset: u64,
-        /// Block size in bytes.
-        size: usize,
+        /// Block location.
+        location: BlockLocation,
         /// Previous row total.
         prev: u64,
         /// Next row total (which should be bigger than `prev`).
@@ -217,12 +206,10 @@ pub enum CorruptionError {
 
     /// Invalid child in index block.  At least one of `child_offset` or
     /// `child_size` is invalid.
-    #[error("{index_size}-byte index block at offset {index_offset} has child {index} with invalid offset {child_offset} or size {child_size}.")]
+    #[error("Index block ({location}) has child {index} with invalid offset {child_offset} or size {child_size}.")]
     InvalidChild {
-        /// Block offset in bytes.
-        index_offset: u64,
-        /// Block size in bytes.
-        index_size: usize,
+        /// Block location.
+        location: BlockLocation,
         /// Index of child within block.
         index: usize,
         /// Child offset.
@@ -241,12 +228,10 @@ pub enum CorruptionError {
     },
 
     /// Invalid row group in data block.
-    #[error("Row group {index} in {size}-byte data block at offset {offset} has invalid row range {start}..{end}.")]
+    #[error("Row group {index} in data block ({location}) has invalid row range {start}..{end}.")]
     InvalidRowGroup {
-        /// Block offset in bytes.
-        offset: u64,
-        /// Block size in bytes.
-        size: usize,
+        /// Block location.
+        location: BlockLocation,
         /// Row group index inside block.
         index: usize,
         /// Row number of start of range.
@@ -256,13 +241,8 @@ pub enum CorruptionError {
     },
 
     /// Bad block type.
-    #[error("{size}-byte block at offset {offset} is wrong type of block.")]
-    BadBlockType {
-        /// Block offset in bytes.
-        offset: u64,
-        /// Block size in bytes.
-        size: usize,
-    },
+    #[error("Block ({0}) is wrong type of block.")]
+    BadBlockType(BlockLocation),
 }
 
 #[derive(Clone)]
@@ -418,11 +398,8 @@ impl InnerDataBlock {
     }
 
     fn new(file: &ImmutableFileRef, node: &TreeNode) -> Result<Arc<Self>, Error> {
-        file.cache.read_data_block(
-            file.file_handle.as_ref().unwrap().as_ref(),
-            node.location.offset,
-            node.location.size,
-        )
+        file.cache
+            .read_data_block(file.file_handle.as_ref().unwrap().as_ref(), node.location)
     }
     fn n_values(&self) -> usize {
         self.value_map.len()
@@ -435,8 +412,7 @@ impl InnerDataBlock {
             Ok(start..end)
         } else {
             Err(CorruptionError::InvalidRowGroup {
-                offset: self.location.offset,
-                size: self.location.size,
+                location: self.location,
                 index,
                 start,
                 end,
@@ -486,10 +462,8 @@ where
 
         let expected_rows = node.rows.end - node.rows.start;
         if inner.n_values() as u64 != expected_rows {
-            let BlockLocation { size, offset } = node.location;
             return Err(CorruptionError::DataBlockWrongNumberOfRows {
-                offset,
-                size,
+                location: node.location,
                 n_rows: inner.n_values() as u64,
                 expected_rows,
             }
@@ -690,11 +664,7 @@ impl InnerIndexBlock {
     pub(super) fn from_raw(raw: Arc<FBuf>, location: BlockLocation) -> Result<Self, Error> {
         let header = IndexBlockHeader::read_le(&mut io::Cursor::new(raw.as_slice()))?;
         if header.n_children == 0 {
-            return Err(CorruptionError::EmptyIndex {
-                size: location.size,
-                offset: location.offset,
-            }
-            .into());
+            return Err(CorruptionError::EmptyIndex(location).into());
         }
 
         let row_totals = VarintReader::new(
@@ -708,8 +678,7 @@ impl InnerIndexBlock {
             let next = row_totals.get(&raw, i);
             if prev >= next {
                 return Err(CorruptionError::NonmonotonicIndex {
-                    size: location.size,
-                    offset: location.offset,
+                    location,
                     prev,
                     next,
                 }
@@ -744,11 +713,8 @@ impl InnerIndexBlock {
     }
 
     fn new(file: &ImmutableFileRef, node: &TreeNode) -> Result<Arc<Self>, Error> {
-        file.cache.read_index_block(
-            file.file_handle.as_ref().unwrap().as_ref(),
-            node.location.offset,
-            node.location.size,
-        )
+        file.cache
+            .read_index_block(file.file_handle.as_ref().unwrap().as_ref(), node.location)
     }
 }
 
@@ -807,8 +773,7 @@ where
         let n_rows = inner.row_totals.get(&inner.raw, inner.row_totals.count - 1);
         if n_rows != expected_rows {
             return Err(CorruptionError::IndexBlockWrongNumberOfRows {
-                offset: node.location.offset,
-                size: node.location.size,
+                location: node.location,
                 n_rows,
                 expected_rows,
             }
@@ -830,8 +795,7 @@ where
         let size = self.inner.child_sizes.get(&self.inner.raw, index) << 9;
         BlockLocation::new(offset, size as usize).map_err(|error: InvalidBlockLocation| {
             Error::Corruption(CorruptionError::InvalidChild {
-                index_offset: self.inner.location.offset,
-                index_size: self.inner.location.size,
+                location: self.inner.location,
                 index,
                 child_offset: error.offset,
                 child_size: error.size,
@@ -1165,8 +1129,7 @@ where
 
         let file_trailer = file.cache.read_file_trailer_block(
             file.file_handle.as_ref().unwrap().as_ref(),
-            file_size - 512,
-            512,
+            BlockLocation::new(file_size - 512, 512).unwrap(),
         )?;
         if file_trailer.version != VERSION_NUMBER {
             return Err(CorruptionError::InvalidVersion {

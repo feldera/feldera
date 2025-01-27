@@ -8,7 +8,7 @@ use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use std::{collections::BTreeMap, ops::Range};
 
-use crate::storage::backend::{Backend, FileId, FileReader, FileWriter, Storage};
+use crate::storage::backend::{Backend, BlockLocation, FileId, FileReader, FileWriter, Storage};
 use crate::storage::file::reader::{CorruptionError, Error};
 use crate::{storage::backend::StorageError, storage::buffer_cache::FBuf, Runtime};
 
@@ -61,8 +61,8 @@ where
     Self: Sized,
 {
     fn cost(&self) -> usize;
-    fn from_read(raw: Arc<FBuf>, offset: u64, size: usize) -> Result<Self, Error>;
-    fn from_write(raw: Arc<FBuf>, offset: u64, size: usize) -> Result<Self, Error>;
+    fn from_read(raw: Arc<FBuf>, location: BlockLocation) -> Result<Self, Error>;
+    fn from_write(raw: Arc<FBuf>, location: BlockLocation) -> Result<Self, Error>;
 }
 
 struct CacheInner<E>
@@ -238,23 +238,22 @@ where
     pub fn read<F, T>(
         &self,
         file: &dyn FileReader,
-        offset: u64,
-        size: usize,
+        location: BlockLocation,
         convert: F,
     ) -> Result<T, Error>
     where
         F: Fn(&E) -> Result<T, ()>,
     {
-        let key = CacheKey::new(file.file_id(), offset);
+        let key = CacheKey::new(file.file_id(), location.offset);
         if let Some(aux) = self.inner.lock().unwrap().get(key) {
             return convert(aux)
-                .map_err(|_| Error::Corruption(CorruptionError::BadBlockType { offset, size }));
+                .map_err(|_| Error::Corruption(CorruptionError::BadBlockType(location)));
         }
 
-        let block = file.read_block(offset, size)?;
-        let aux = E::from_read(block, offset, size)?;
-        let retval = convert(&aux)
-            .map_err(|_| Error::Corruption(CorruptionError::BadBlockType { offset, size }));
+        let block = file.read_block(location)?;
+        let aux = E::from_read(block, location)?;
+        let retval =
+            convert(&aux).map_err(|_| Error::Corruption(CorruptionError::BadBlockType(location)));
         self.inner.lock().unwrap().insert(key, aux.clone());
         retval
     }
@@ -266,8 +265,8 @@ where
         data: FBuf,
     ) -> Result<(), StorageError> {
         let data = file.write_block(offset, data)?;
-        let size = data.len();
-        let aux = E::from_write(data, offset, size).unwrap();
+        let location = BlockLocation::new(offset, data.len()).unwrap();
+        let aux = E::from_write(data, location).unwrap();
         self.inner
             .lock()
             .unwrap()
