@@ -339,7 +339,7 @@ public class BaseSQLTests {
     protected void runtimeFail(String query, String message, InputOutputChangeStream data) {
         query = "CREATE VIEW V AS " + query;
         DBSPCompiler compiler = this.testCompiler();
-        compiler.compileStatement(query);
+        compiler.submitStatementForCompilation(query);
         CompilerCircuitStream ccs = new CompilerCircuitStream(compiler, data);
         this.addFailingRustTestCase(query, message, ccs);
     }

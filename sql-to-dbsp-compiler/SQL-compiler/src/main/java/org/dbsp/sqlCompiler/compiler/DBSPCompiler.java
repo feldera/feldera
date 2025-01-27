@@ -667,7 +667,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         this.relToDBSPCompiler.getTableContents().removeTable(name);
     }
 
-    public void compileStatement(String statement) {
+    public void submitStatementForCompilation(String statement) {
         this.compileInternal(statement, false);
     }
 

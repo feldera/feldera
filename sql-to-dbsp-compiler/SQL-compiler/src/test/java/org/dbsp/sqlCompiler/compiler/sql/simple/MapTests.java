@@ -26,7 +26,7 @@ public class MapTests extends BaseSQLTests {
         DBSPCompiler compiler = this.testCompiler();
         compiler.options.languageOptions.optimizationLevel = 0;
         compiler.submitStatementsForCompilation(statements);
-        compiler.compileStatement(query);
+        compiler.submitStatementForCompilation(query);
         return compiler;
     }
 

@@ -58,7 +58,7 @@ public abstract class SqlIoTest extends BaseSQLTests {
     public DBSPCompiler compileQuery(String query, boolean optimize) {
         DBSPCompiler compiler = this.testCompiler(optimize);
         this.prepareInputs(compiler);
-        compiler.compileStatement(query);
+        compiler.submitStatementForCompilation(query);
         if (!compiler.options.languageOptions.throwOnError) {
             compiler.throwIfErrorsOccurred();
         }
@@ -80,7 +80,7 @@ public abstract class SqlIoTest extends BaseSQLTests {
                 String[] fields = row.split("\t");
                 String insert = "INSERT INTO " + table + " VALUES('" +
                         String.join("', '", fields) + "')";
-                compiler.compileStatement(insert);
+                compiler.submitStatementForCompilation(insert);
             }
         } catch (IOException e) {
             throw new RuntimeException(e);
@@ -131,7 +131,7 @@ public abstract class SqlIoTest extends BaseSQLTests {
     public void compare(String query, DBSPZSetExpression expected, boolean optimize) {
         DBSPCompiler compiler = this.testCompiler(optimize);
         this.prepareInputs(compiler);
-        compiler.compileStatement("CREATE VIEW VV AS " + query);
+        compiler.submitStatementForCompilation("CREATE VIEW VV AS " + query);
         CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
         ccs.showErrors();
         if (!compiler.options.languageOptions.throwOnError)
@@ -147,7 +147,7 @@ public abstract class SqlIoTest extends BaseSQLTests {
     public void compare(String query, String expected, boolean optimize, int rowCount) {
         DBSPCompiler compiler = this.testCompiler(optimize);
         this.prepareInputs(compiler);
-        compiler.compileStatement("CREATE VIEW VV AS " + query);
+        compiler.submitStatementForCompilation("CREATE VIEW VV AS " + query);
         CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
         ccs.showErrors();
         if (!compiler.options.languageOptions.throwOnError)
@@ -263,7 +263,7 @@ public abstract class SqlIoTest extends BaseSQLTests {
     public void qf(String query, String panicMessage, boolean optimize) {
         DBSPCompiler compiler = this.testCompiler(optimize);
         this.prepareInputs(compiler);
-        compiler.compileStatement("CREATE VIEW VV AS " + query);
+        compiler.submitStatementForCompilation("CREATE VIEW VV AS " + query);
         if (!compiler.options.languageOptions.throwOnError)
             compiler.throwIfErrorsOccurred();
         CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);

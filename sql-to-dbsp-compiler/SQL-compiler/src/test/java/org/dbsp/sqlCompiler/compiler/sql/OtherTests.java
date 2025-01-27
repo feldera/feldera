@@ -101,7 +101,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
 
     private DBSPCompiler compileDef() {
         DBSPCompiler compiler = this.testCompiler();
-        compiler.compileStatement(ddl);
+        compiler.submitStatementForCompilation(ddl);
         return compiler;
     }
 
@@ -117,7 +117,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
 
         String query = "CREATE VIEW V AS SELECT T.COL3 FROM T";
         DBSPCompiler compiler = this.compileDef();
-        compiler.compileStatement(query);
+        compiler.submitStatementForCompilation(query);
         DBSPCircuit circuit = compiler.getFinalCircuit(false);
         Assert.assertNotNull(circuit);
         String str = circuit.toString();
@@ -148,7 +148,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         DBSPCompiler compiler = this.testCompiler();
         compiler.options.ioOptions.quiet = false;
         String query = "CREATE VIEW V AS SELECT '1_000'::INT4";
-        compiler.compileStatement(query);
+        compiler.submitStatementForCompilation(query);
         getCircuit(compiler);  // invokes optimizer
         TestUtil.assertMessagesContain(compiler, "String '1_000' cannot be interpreted as a number");
     }
@@ -368,7 +368,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         compiler.options.languageOptions.ignoreOrderBy = true;
         compiler.options.ioOptions.quiet = false;
         String query = "CREATE VIEW V AS SELECT * FROM T ORDER BY T.COL2";
-        compiler.compileStatement(ddl);
+        compiler.submitStatementForCompilation(ddl);
         compiler.submitStatementsForCompilation(query);
         DBSPCircuit circuit = compiler.getFinalCircuit(false);
         Assert.assertNotNull(circuit);
@@ -388,7 +388,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         compiler.options.languageOptions.throwOnError = false;
         compiler.options.languageOptions.outputsAreSets = true;
         String query = "CREATE VIEW V AS SELECT T.COL1 FROM T";
-        compiler.compileStatement(ddl);
+        compiler.submitStatementForCompilation(ddl);
         compiler.submitStatementsForCompilation(query);
         DBSPCircuit circuit = compiler.getFinalCircuit(false);
         Assert.assertNotNull(circuit);
@@ -574,7 +574,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
     @Test
     public void testRemove() {
         DBSPCompiler compiler = this.testCompiler();
-        compiler.compileStatement("CREATE TABLE T(I INTEGER, S VARCHAR)");
+        compiler.submitStatementForCompilation("CREATE TABLE T(I INTEGER, S VARCHAR)");
         CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
         Change change = ccs.toChange("""
                 INSERT INTO T VALUES(1, 'x');

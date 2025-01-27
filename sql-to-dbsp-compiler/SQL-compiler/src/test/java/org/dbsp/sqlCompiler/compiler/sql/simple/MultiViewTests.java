@@ -48,9 +48,9 @@ public class MultiViewTests extends BaseSQLTests {
         String query2 = "CREATE VIEW V2 as SELECT T.COL2 FROM T";
 
         DBSPCompiler compiler = testCompiler();
-        compiler.compileStatement(EndToEndTests.E2E_TABLE);
-        compiler.compileStatement(query1);
-        compiler.compileStatement(query2);
+        compiler.submitStatementForCompilation(EndToEndTests.E2E_TABLE);
+        compiler.submitStatementForCompilation(query1);
+        compiler.submitStatementForCompilation(query2);
 
         CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
         Change inputChange = EndToEndTests.createInput();
@@ -74,9 +74,9 @@ public class MultiViewTests extends BaseSQLTests {
         String query2 = "CREATE VIEW V2 as SELECT * FROM V1";
 
         DBSPCompiler compiler = testCompiler();
-        compiler.compileStatement(EndToEndTests.E2E_TABLE);
-        compiler.compileStatement(query1);
-        compiler.compileStatement(query2);
+        compiler.submitStatementForCompilation(EndToEndTests.E2E_TABLE);
+        compiler.submitStatementForCompilation(query1);
+        compiler.submitStatementForCompilation(query2);
         CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
 
         InputOutputChange change = new InputOutputChange(
@@ -101,9 +101,9 @@ public class MultiViewTests extends BaseSQLTests {
         String query2 = "CREATE VIEW V2 as SELECT DISTINCT COL1 FROM (SELECT * FROM V1 JOIN T ON V1.COL3 = T.COL3)";
 
         DBSPCompiler compiler = testCompiler();
-        compiler.compileStatement(EndToEndTests.E2E_TABLE);
-        compiler.compileStatement(query1);
-        compiler.compileStatement(query2);
+        compiler.submitStatementForCompilation(EndToEndTests.E2E_TABLE);
+        compiler.submitStatementForCompilation(query1);
+        compiler.submitStatementForCompilation(query2);
 
         CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
         InputOutputChange change = new InputOutputChange(

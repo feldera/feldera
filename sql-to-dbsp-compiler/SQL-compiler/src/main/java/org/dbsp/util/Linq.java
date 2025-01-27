@@ -85,34 +85,16 @@ public class Linq {
         return result;
     }
 
-    public static <T, S> List<S> flatMap(List<T> data, Function<T, List<S>> function) {
-        List<S> result = new ArrayList<>();
-        for (T aData : data)
-            result.addAll(function.apply(aData));
-        return result;
-    }
-
-    public static <T, S> List<S> flatMap(T[] data, Function<T, List<S>> function) {
-        List<S> result = new ArrayList<>();
-        for (T aData : data)
-            result.addAll(function.apply(aData));
-        return result;
-    }
-
     public static <T> T[] concat(T[] array1, T[] array2) {
         T[] result = Arrays.copyOf(array1, array1.length + array2.length);
         System.arraycopy(array2, 0, result, array1.length, array2.length);
         return result;
     }
 
-    public static <T, S> List<S> as(List<T> data, Class<S> sc) {
-        return Linq.map(data, sc::cast);
-    }
-
     public static <T, S> S[] map(T[] data, Function<T, S> function, Class<S> sc) {
         @SuppressWarnings("unchecked")
         S[] result = (S[])Array.newInstance(sc, data.length);
-        for (int i=0; i < data.length; i++)
+        for (int i = 0; i < data.length; i++)
             result[i] = function.apply(data[i]);
         return result;
     }
@@ -186,19 +168,21 @@ public class Linq {
     }
 
     public static <T, S, R> List<R> zip(List<T> left, List<S> right, BiFunction<T, S, R> function) {
-        List<R> result = new ArrayList<>();
-        for (int i=0; i < Math.min(left.size(), right.size()); i++)
+        int size = Math.min(left.size(), right.size());
+        List<R> result = new ArrayList<>(size);
+        for (int i=0; i < size; i++)
             result.add(function.apply(left.get(i), right.get(i)));
         return result;
     }
 
     public static <T, S, R> List<R> zipSameLength(Collection<T> left, Collection<S> right, BiFunction<T, S, R> function) {
-        if (left.size() != right.size())
-            throw new RuntimeException("Zipped lists have different lengths " + left.size() + " and " + right.size());
-        List<R> result = new ArrayList<>();
+        int size = left.size();
+        if (size != right.size())
+            throw new RuntimeException("Zipped lists have different lengths " + size + " and " + right.size());
+        List<R> result = new ArrayList<>(size);
         Iterator<T> l = left.iterator();
         Iterator<S> r = right.iterator();
-        for (int i=0; i < left.size(); i++) {
+        for (int i=0; i < size; i++) {
             T t = l.next();
             S s = r.next();
             result.add(function.apply(t, s));

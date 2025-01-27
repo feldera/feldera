@@ -16,7 +16,7 @@ public class TinyintTests extends SqlIoTest {
                   (127),
                   (-127);""";
 
-        compiler.compileStatement(createTable);
+        compiler.submitStatementForCompilation(createTable);
         compiler.submitStatementsForCompilation(insert);
     }
 

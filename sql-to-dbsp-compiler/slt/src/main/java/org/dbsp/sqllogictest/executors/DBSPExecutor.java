@@ -130,7 +130,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
 
     public TableValue[] getInputSets(DBSPCompiler compiler) throws SQLException {
         for (SltSqlStatement statement : this.inputPreparation.statements)
-            compiler.compileStatement(statement.statement);
+            compiler.submitStatementForCompilation(statement.statement);
         TableContents tables = compiler.getTableContents();
         TableValue[] tableValues = new TableValue[tables.tablesCreated.size()];
         for (int i = 0; i < tableValues.length; i++) {
@@ -283,11 +283,11 @@ public class DBSPExecutor extends SqlSltTestExecutor {
         this.options.message("Query " + suffix + ":\n"
                         + dbspQuery + "\n", 2);
         for (SltSqlStatement view: viewPreparation.definitions()) {
-            compiler.compileStatement(view.statement
+            compiler.submitStatementForCompilation(view.statement
                     .replaceAll("(?i)create\\s+view", "create local view"));
             compiler.throwIfErrorsOccurred();
         }
-        compiler.compileStatement(dbspQuery);
+        compiler.submitStatementForCompilation(dbspQuery);
         compiler.throwIfErrorsOccurred();
         DBSPCircuit circuit = compiler.getFinalCircuit(false);
         circuit.setName("circuit" + suffix);
@@ -332,7 +332,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
     void createTables(DBSPCompiler compiler) {
         for (SltSqlStatement statement : this.tablePreparation.statements) {
             String stat = statement.statement;
-            compiler.compileStatement(stat);
+            compiler.submitStatementForCompilation(stat);
         }
     }
 

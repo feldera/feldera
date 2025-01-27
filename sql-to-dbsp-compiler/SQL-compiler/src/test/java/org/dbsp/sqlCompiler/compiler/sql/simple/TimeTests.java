@@ -49,8 +49,8 @@ public class TimeTests extends BaseSQLTests {
         String ddl = "CREATE TABLE T (\n" +
                 "COL1 TIMESTAMP NOT NULL" +
                 ")";
-        compiler.compileStatement(ddl);
-        compiler.compileStatement(query);
+        compiler.submitStatementForCompilation(ddl);
+        compiler.submitStatementForCompilation(query);
         return compiler;
     }
 
