@@ -39,6 +39,14 @@ where
         self
     }
 
+    /// Add an iterator of batches
+    pub fn with_batches(mut self, batches: impl IntoIterator<Item = Arc<B>>) -> Self {
+        for batch in batches {
+            self = self.with_batch(batch);
+        }
+        self
+    }
+
     /// Create merger
     ///
     /// # Panics

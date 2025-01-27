@@ -73,11 +73,11 @@ struct Slot<B>
 where
     B: Batch,
 {
-    /// Optionally, a pair of batches that are currently being merged.  These
+    /// Optionally, a list of batches that are currently being merged.  These
     /// batches are not in `loose_batches`.
     ///
     /// Invariant: the batches (if present) must be non-empty.
-    merging_batches: Option<[Arc<B>; 2]>,
+    merging_batches: Option<Vec<Arc<B>>>,
 
     /// Zero or more batches not currently being merged.
     ///
@@ -102,29 +102,26 @@ where
     B: Batch,
 {
     /// If this slot doesn't currently have an ongoing merge, and it does have
-    /// at least two loose batches, picks two of the loose batches and makes
+    /// at least two loose batches, picks an upper limit of the loose batches and makes
     /// them into merging batches, and returns those batches. Otherwise, returns
     /// `None` without changing anything.
     ///
-    /// We merge the least recently added batch (ensuring that batches
-    /// eventually get merged) with the one closest in size (ensuring that the
-    /// merge is as efficient as it can be).
-    fn try_start_merge(&mut self) -> Option<[Arc<B>; 2]> {
+    /// We merge the least recently added batches (ensuring that batches
+    /// eventually get merged).
+    fn try_start_merge(&mut self, level: usize) -> Option<Vec<Arc<B>>> {
+        // Lower level slots merge more batches at once. This is what other LSM implementations do
+        // although with slightly different numbers. The rationale is that the lower levels,
+        // which have more batches, should merge more batches at once. It's not clear why not every
+        // level should merge many batches.
+        const MAX_BATCHES_MERGED_AT_ONCE: [usize; MAX_LEVELS] = [12usize, 12, 12, 12, 12, 12, 12, 12, 12];
+
         if self.merging_batches.is_none() && self.loose_batches.len() >= 2 {
-            let a = self.loose_batches.pop_front().unwrap();
-            let a_len = a.len();
-            let mut best_idx = 0;
-            let mut best_distance = self.loose_batches[0].len().abs_diff(a_len);
-            for idx in 1..self.loose_batches.len() {
-                let distance = self.loose_batches[idx].len().abs_diff(a_len);
-                if distance < best_distance {
-                    best_idx = idx;
-                    best_distance = distance;
-                }
+            let mut batches = Vec::with_capacity(MAX_BATCHES_MERGED_AT_ONCE[level]);
+            for _i in 0..std::cmp::min(MAX_BATCHES_MERGED_AT_ONCE[level], self.loose_batches.len()) {
+                batches.push(self.loose_batches.pop_front().unwrap());
             }
-            let b = self.loose_batches.remove(best_idx).unwrap();
-            self.merging_batches = Some([Arc::clone(&a), Arc::clone(&b)]);
-            Some([a, b])
+            self.merging_batches = Some(batches.clone());
+            Some(batches)
         } else {
             None
         }
@@ -254,9 +251,9 @@ where
     /// Finishes up the ongoing merge at the given `level`, which has completed
     /// with `new_batch` as the result.
     fn merge_complete(&mut self, level: usize, new_batch: Arc<B>) {
-        let [a, b] = self.slots[level].merging_batches.take().unwrap();
+        let batches = self.slots[level].merging_batches.take().unwrap();
         self.merge_stats
-            .report_merge(a.len() + b.len(), new_batch.len());
+            .report_merge(batches.iter().map(|b| b.len()).sum(), new_batch.len());
         self.add_batches([new_batch]);
     }
 
@@ -529,13 +526,11 @@ where
             .slots
             .iter_mut()
             .enumerate()
-            .filter_map(|(level, slot)| slot.try_start_merge().map(|batches| (level, batches)))
+            .filter_map(|(level, slot)| slot.try_start_merge(level).map(|batches| (level, batches)))
             .collect::<Vec<_>>();
-        for (level, [a, b]) in start_merges {
-            //let merger = B::Merger::new_merger(&a, &b, None);
-            let merger = ListMergerBuilder::with_capacity(2)
-                .with_batch(a)
-                .with_batch(b)
+        for (level, batches) in start_merges {
+            let merger = ListMergerBuilder::with_capacity(batches.len())
+                .with_batches(batches)
                 .build();
             mergers[level] = Some(merger);
         }
