@@ -5,7 +5,7 @@ use crate::{
     },
     storage::file::{
         reader::{Cursor as FileCursor, Error as ReaderError, Reader},
-        writer::{Parameters, Writer2},
+        writer::Writer2,
         Factories as FileFactories,
     },
     time::{Antichain, AntichainRef},
@@ -540,7 +540,7 @@ where
                 &batch1.factories.factories0,
                 &batch1.factories.factories1,
                 &Runtime::storage(),
-                Parameters::default(),
+                Runtime::file_writer_parameters(),
             )
             .unwrap(),
             time_diffs: batch1.factories.timediff_factory.default_box(),
@@ -980,7 +980,7 @@ where
                 &factories.factories0,
                 &factories.factories1,
                 &Runtime::storage(),
-                Parameters::default(),
+                Runtime::file_writer_parameters(),
             )
             .unwrap(),
             key: factories.opt_key_factory.default_box(),

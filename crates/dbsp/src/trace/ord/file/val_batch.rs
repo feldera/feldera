@@ -7,7 +7,7 @@ use crate::{
     },
     storage::file::{
         reader::{ColumnSpec, Cursor as FileCursor, Error as ReaderError, Reader},
-        writer::{Parameters, Writer2},
+        writer::Writer2,
         Factories as FileFactories,
     },
     time::{Antichain, AntichainRef},
@@ -622,7 +622,7 @@ where
             &source1.factories.factories0,
             &source1.factories().factories1,
             &Runtime::storage(),
-            Parameters::default(),
+            Runtime::file_writer_parameters(),
         )
         .unwrap();
         let mut cursor1 = source1.file.rows().nth(0).unwrap();
@@ -1178,7 +1178,7 @@ where
                 &factories.factories0,
                 &factories.factories1,
                 &Runtime::storage(),
-                Parameters::default(),
+                Runtime::file_writer_parameters(),
             )
             .unwrap(),
             cur: None,
