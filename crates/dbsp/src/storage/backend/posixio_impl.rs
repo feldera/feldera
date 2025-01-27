@@ -17,8 +17,8 @@ use std::{
 use tracing::warn;
 
 use super::{
-    append_to_path, tempdir_for_thread, FileId, FileReader, FileWriter, HasFileId, Storage,
-    StorageCacheFlags, StorageError, IOV_MAX, MUTABLE_EXTENSION,
+    append_to_path, tempdir_for_thread, BlockLocation, FileId, FileReader, FileWriter, HasFileId,
+    Storage, StorageCacheFlags, StorageError, IOV_MAX, MUTABLE_EXTENSION,
 };
 use crate::circuit::metrics::{
     FILES_CREATED, FILES_DELETED, TOTAL_BYTES_WRITTEN, WRITES_SUCCESS, WRITE_LATENCY,
@@ -73,10 +73,10 @@ impl FileReader for PosixReader {
         self.drop.keep();
     }
 
-    fn read_block(&self, offset: u64, size: usize) -> Result<Arc<FBuf>, StorageError> {
-        let mut buffer = FBuf::with_capacity(size);
+    fn read_block(&self, location: BlockLocation) -> Result<Arc<FBuf>, StorageError> {
+        let mut buffer = FBuf::with_capacity(location.size);
 
-        match buffer.read_exact_at(&self.file, offset, size) {
+        match buffer.read_exact_at(&self.file, location.offset, location.size) {
             Ok(()) => Ok(Arc::new(buffer)),
             Err(e) => Err(e.into()),
         }
