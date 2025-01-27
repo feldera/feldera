@@ -514,8 +514,8 @@ public class PostgresNumericTests extends SqlIoTest {
     public void testTwoViews(String intermediate, String last) {
         DBSPCompiler compiler = new DBSPCompiler(this.getOptions(true));
         this.prepareInputs(compiler);
-        compiler.compileStatement(intermediate);
-        compiler.compileStatement(last);
+        compiler.submitStatementForCompilation(intermediate);
+        compiler.submitStatementForCompilation(last);
         CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
         InputOutputChange change = new InputOutputChange(
                 this.getPreparedInputs(compiler),

@@ -17,7 +17,7 @@ public class PostgresInt4Tests extends SqlIoTest {
                           ('-123456'),
                           ('2147483647'),
                           ('-2147483647');""";
-        compiler.compileStatement(createTable);
+        compiler.submitStatementForCompilation(createTable);
         compiler.submitStatementsForCompilation(insert);
     }
 

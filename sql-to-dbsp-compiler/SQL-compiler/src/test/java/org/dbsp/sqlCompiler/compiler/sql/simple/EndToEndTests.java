@@ -74,8 +74,8 @@ public class EndToEndTests extends BaseSQLTests {
 
     public DBSPCompiler compileQuery(String query) {
         DBSPCompiler compiler = this.testCompiler();
-        compiler.compileStatement(E2E_TABLE);
-        compiler.compileStatement(query);
+        compiler.submitStatementForCompilation(E2E_TABLE);
+        compiler.submitStatementForCompilation(query);
         return compiler;
     }
 

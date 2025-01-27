@@ -37,7 +37,7 @@ public class PostgresLimitTests extends SqlIoTest {
                      stringu2      varchar,
                      string4       varchar
                 )""";
-        compiler.compileStatement(setup);
+        compiler.submitStatementForCompilation(setup);
         this.insertFromResource("onek", compiler);
     }
 

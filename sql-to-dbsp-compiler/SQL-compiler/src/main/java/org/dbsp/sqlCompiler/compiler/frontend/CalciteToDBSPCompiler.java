@@ -1234,6 +1234,31 @@ public class CalciteToDBSPCompiler extends RelVisitor
         }
     }
 
+    /** True if the left type has the same structure up to nullability,
+     * and if no field nullable in the right is non-nullable in the left. */
+    static boolean strictlyMoreNullable(DBSPType left, DBSPType right) {
+        if (left.sameType(right)) return true;
+        if (left.is(DBSPTypeBaseType.class)) {
+            assert right.is(DBSPTypeBaseType.class);
+            if (left.mayBeNull)
+                return true;
+            return !right.mayBeNull;
+        } else if (left.is(DBSPTypeTupleBase.class)) {
+            assert right.is(DBSPTypeBaseType.class);
+            DBSPTypeTupleBase lTuple = left.to(DBSPTypeTupleBase.class);
+            DBSPTypeTupleBase rTuple = right.to(DBSPTypeTupleBase.class);
+            assert lTuple.isRaw() == rTuple.isRaw();
+            assert lTuple.size() == rTuple.size();
+            for (int i = 0; i < lTuple.size(); i++) {
+                if (!strictlyMoreNullable(lTuple.getFieldType(i), rTuple.getFieldType(i)))
+                    return false;
+            }
+            return true;
+        } else {
+            throw new InternalCompilerError("Unexpected type " + left);
+        }
+    }
+
     private void visitJoin(LogicalJoin join) {
         CalciteObject node = CalciteObject.create(join);
         JoinRelType joinType = join.getJoinType();
@@ -1382,19 +1407,20 @@ public class CalciteToDBSPCompiler extends RelVisitor
         // Handle outer joins
         DBSPSimpleOperator result = joinResult;
         DBSPVariablePath joinVar = lrType.ref().var();
-        DBSPType leftKeyType = lkf.keyType(leftElementType);
-        DBSPType rightKeyType = rkf.keyType(rightElementType);
-        DBSPTypeTuple antiJoinKeyType = TypeCompiler.reduceType(node, rightKeyType, leftKeyType, "")
-                .to(DBSPTypeTuple.class);
 
         if (joinType == JoinRelType.LEFT || joinType == JoinRelType.FULL) {
             this.addOperator(result);
             DBSPSimpleOperator expand;
             if (!hasFilter) {
                 // If there is no filter we can do a more efficient antijoin
+                DBSPSimpleOperator toSubtract = rightNonNullIndex;
+                DBSPTypeTuple toSubtractKeyType = toSubtract.getOutputIndexedZSetType().keyType.to(DBSPTypeTuple.class);
 
                 // Subtract (using an antijoin) the right from the left.
                 // But we have to bring them to a common key type...
+                DBSPType leftKeyType = lkf.keyType(leftElementType);
+                DBSPTypeTuple antiJoinKeyType = TypeCompiler.reduceType(node, toSubtractKeyType, leftKeyType, "")
+                        .to(DBSPTypeTuple.class);
 
                 // Index the left collection on the key, casting to the expected type
                 DBSPVariablePath l1 = leftElementType.ref().var();
@@ -1406,8 +1432,6 @@ public class CalciteToDBSPCompiler extends RelVisitor
                         node, castLeft, left.outputPort());
                 this.addOperator(fullLeftIndex);
 
-                DBSPSimpleOperator toSubtract = rightNonNullIndex;
-                DBSPType toSubtractKeyType = toSubtract.getOutputIndexedZSetType().keyType;
                 // If the type of the key does not match, have to reindex the right relation...
                 if (!toSubtractKeyType.sameType(antiJoinKeyType)) {
                     // Since we are reindexing, we are also dropping all values, antijoins don't need them
@@ -1487,6 +1511,15 @@ public class CalciteToDBSPCompiler extends RelVisitor
             if (!hasFilter) {
                 // Subtract (using an antijoin) the left from the right.
                 // But we have to bring them to a common key type...
+                // If there is no filter we can do a more efficient antijoin
+                DBSPSimpleOperator toSubtract = leftNonNullIndex;
+                DBSPTypeTuple toSubtractKeyType = toSubtract.getOutputIndexedZSetType().keyType.to(DBSPTypeTuple.class);
+
+                // Subtract (using an antijoin) the right from the left.
+                // But we have to bring them to a common key type...
+                DBSPType rightKeyType = rkf.keyType(rightElementType);
+                DBSPTypeTuple antiJoinKeyType = TypeCompiler.reduceType(node, rightKeyType, toSubtractKeyType, "")
+                        .to(DBSPTypeTuple.class);
 
                 // Index the right collection on the key, casting to the expected type
                 DBSPVariablePath r1 = rightElementType.ref().var();
@@ -1498,8 +1531,6 @@ public class CalciteToDBSPCompiler extends RelVisitor
                         node, castRight, right.outputPort());
                 this.addOperator(fullRightIndex);
 
-                DBSPSimpleOperator toSubtract = leftNonNullIndex;
-                DBSPType toSubtractKeyType = toSubtract.getOutputIndexedZSetType().keyType;
                 // If the type of the key does not match, have to reindex the left relation...
                 if (!toSubtractKeyType.sameType(antiJoinKeyType)) {
                     // Since we are reindexing, we are also dropping all values, antijoins don't need them

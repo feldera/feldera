@@ -456,7 +456,7 @@ public class MetadataTests extends BaseSQLTests {
         options.languageOptions.throwOnError = true;
         DBSPCompiler compiler = new DBSPCompiler(options);
         compiler.addSchemaSource("schema", hsql);
-        compiler.compileStatement("CREATE VIEW V AS SELECT * FROM mytable");
+        compiler.submitStatementForCompilation("CREATE VIEW V AS SELECT * FROM mytable");
         CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
         this.addRustTestCase(ccs);
         ObjectNode node = compiler.getIOMetadataAsJson();

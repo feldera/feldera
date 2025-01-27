@@ -51,7 +51,7 @@ public class ArrayTests extends BaseSQLTests {
     public DBSPCompiler compileQuery(String statements, String query) {
         DBSPCompiler compiler = this.testCompiler();
         compiler.submitStatementsForCompilation(statements);
-        compiler.compileStatement(query);
+        compiler.submitStatementForCompilation(query);
         return compiler;
     }
 

@@ -1,6 +1,9 @@
 package org.dbsp.sqlCompiler.compiler.sql.quidem;
 
+import org.dbsp.util.Utilities;
 import org.junit.Test;
+
+import java.io.IOException;
 
 /** Tests from Calcite outer.iq */
 public class OuterTests extends PostBaseTests {
@@ -272,7 +275,7 @@ public class OuterTests extends PostBaseTests {
     }
 
     @Test
-    public void t() {
+    public void testNullableOuter() {
         // Validated on SQLite
         this.q("""
                 with t1(x, y) as (select * from (values (1, '10'), (2, '20'), (null, '30')) as t),
@@ -301,5 +304,11 @@ public class OuterTests extends PostBaseTests {
                 |   |    | 20 |   2 |
                 +---+----+----+-----+
                 (4 rows)""");
+    }
+
+    @Test
+    public void t() throws IOException {
+        String sql = Utilities.readFile("/home/mbudiu/win/Downloads/procore_sql.txt");
+        this.compileRustTestCase(sql);
     }
 }

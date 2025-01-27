@@ -18,7 +18,7 @@ public class PostgresInt8Tests extends SqlIoTest {
                   ('+4567890123456789','4567890123456789'),
                   ('+4567890123456789','-4567890123456789');""";
 
-        compiler.compileStatement(createTable);
+        compiler.submitStatementForCompilation(createTable);
         compiler.submitStatementsForCompilation(insert);
     }
 
