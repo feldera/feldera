@@ -91,6 +91,7 @@ where
     /// * `extract_ts` - extracts a timestamp from a key-value pair.
     /// * `least_upper_bound` - computes the least upper bound of two
     ///   timestamps.
+    #[cfg(not(feature = "backend-mode"))]
     #[track_caller]
     pub fn waterline<TS, DynTS, WF, IF, LB>(
         &self,

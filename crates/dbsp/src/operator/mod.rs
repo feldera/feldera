@@ -36,10 +36,11 @@ mod consolidate;
 pub mod controlled_filter;
 mod distinct;
 pub mod dynamic;
+#[cfg(not(feature = "backend-mode"))]
 pub mod filter_map;
 pub mod group;
 pub mod input;
-mod join;
+pub mod join;
 mod join_range;
 pub mod neighborhood;
 mod recursive;
@@ -64,6 +65,7 @@ pub use inspect::Inspect;
 pub use dynamic::join_range::StreamJoinRange;
 // // //pub use neg::UnaryMinus;
 pub use dynamic::{neighborhood::NeighborhoodDescr, trace::TraceBound};
+#[cfg(not(feature = "backend-mode"))]
 pub use filter_map::FilterMap;
 pub use neighborhood::{NeighborhoodDescrBox, NeighborhoodDescrStream};
 pub use output::OutputHandle;

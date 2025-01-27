@@ -2055,6 +2055,8 @@ where
 /// bounds of a circuit using [`Stream::output`].
 pub type RootCircuit = ChildCircuit<()>;
 
+pub type NestedCircuit = ChildCircuit<RootCircuit>;
+
 impl<P> Clone for ChildCircuit<P>
 where
     P: WithClock,

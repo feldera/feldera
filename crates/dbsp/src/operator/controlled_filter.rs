@@ -55,6 +55,7 @@ where
 
     /// Like [`Self::controlled_key_filter`], but values in the `threshold` stream are strongly typed
     /// instead of having type `TypedBox`.
+    #[cfg(not(feature = "backend-mode"))]
     pub fn controlled_key_filter_typed<T, E, F, RF>(
         &self,
         threshold: &Stream<C, T>,

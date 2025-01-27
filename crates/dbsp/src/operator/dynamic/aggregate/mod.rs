@@ -17,8 +17,8 @@ use crate::{
         Circuit, Scope, Stream, WithClock,
     },
     dynamic::{
-        DataTrait, DynOpt, DynPair, DynPairs, DynSet, DynUnit, Erase, Factory, LeanVec, Weight,
-        WeightTrait, WithFactory,
+        DataTrait, DynData, DynOpt, DynPair, DynPairs, DynSet, DynUnit, DynWeight, Erase, Factory,
+        LeanVec, Weight, WeightTrait, WithFactory,
     },
     operator::dynamic::upsert::UpsertFactories,
     time::Timestamp,
@@ -26,7 +26,7 @@ use crate::{
         cursor::CursorGroup, Batch, BatchReader, BatchReaderFactories, Builder, Cursor, Filter,
         OrdWSet, OrdWSetFactories,
     },
-    DBData, DBWeight, RootCircuit, ZWeight,
+    DBData, DBWeight, DynZWeight, NestedCircuit, RootCircuit, ZWeight,
 };
 
 mod aggregator;
@@ -47,6 +47,8 @@ pub use average::{Avg, AvgFactories, DynAverage};
 pub use fold::Fold;
 pub use max::{Max, MaxSemigroup};
 pub use min::{Min, MinSemigroup};
+
+use super::MonoIndexedZSet;
 
 pub struct IncAggregateFactories<I: BatchReader, O: IndexedZSet, T: Timestamp> {
     pub input_factories: I::Factories,
@@ -270,6 +272,67 @@ where
                 }
             }
         })
+    }
+}
+
+impl Stream<RootCircuit, MonoIndexedZSet> {
+    #[allow(clippy::type_complexity)]
+    pub fn dyn_aggregate_mono(
+        &self,
+        factories: &IncAggregateFactories<MonoIndexedZSet, MonoIndexedZSet, ()>,
+        aggregator: &dyn DynAggregator<
+            DynData,
+            (),
+            DynZWeight,
+            Accumulator = DynData,
+            Output = DynData,
+        >,
+    ) -> Stream<RootCircuit, MonoIndexedZSet> {
+        self.dyn_aggregate(factories, aggregator)
+    }
+
+    pub fn dyn_aggregate_linear_mono(
+        &self,
+        factories: &IncAggregateLinearFactories<MonoIndexedZSet, DynWeight, MonoIndexedZSet, ()>,
+        agg_func: Box<dyn Fn(&DynData, &DynData, &DynZWeight, &mut DynWeight)>,
+        out_func: Box<dyn WeightedCountOutFunc<DynWeight, DynData>>,
+    ) -> Stream<RootCircuit, MonoIndexedZSet> {
+        self.dyn_aggregate_linear_generic(factories, agg_func, out_func)
+    }
+}
+
+impl Stream<NestedCircuit, MonoIndexedZSet> {
+    #[allow(clippy::type_complexity)]
+    pub fn dyn_aggregate_mono(
+        &self,
+        factories: &IncAggregateFactories<
+            MonoIndexedZSet,
+            MonoIndexedZSet,
+            <NestedCircuit as WithClock>::Time,
+        >,
+        aggregator: &dyn DynAggregator<
+            DynData,
+            <NestedCircuit as WithClock>::Time,
+            DynZWeight,
+            Accumulator = DynData,
+            Output = DynData,
+        >,
+    ) -> Stream<NestedCircuit, MonoIndexedZSet> {
+        self.dyn_aggregate(factories, aggregator)
+    }
+
+    pub fn dyn_aggregate_linear_mono(
+        &self,
+        factories: &IncAggregateLinearFactories<
+            MonoIndexedZSet,
+            DynWeight,
+            MonoIndexedZSet,
+            <NestedCircuit as WithClock>::Time,
+        >,
+        agg_func: Box<dyn Fn(&DynData, &DynData, &DynZWeight, &mut DynWeight)>,
+        out_func: Box<dyn WeightedCountOutFunc<DynWeight, DynData>>,
+    ) -> Stream<NestedCircuit, MonoIndexedZSet> {
+        self.dyn_aggregate_linear_generic(factories, agg_func, out_func)
     }
 }
 
@@ -523,6 +586,26 @@ where
 
         output.mark_sharded_if(self);
         output
+    }
+}
+
+impl Stream<RootCircuit, MonoIndexedZSet> {
+    pub fn dyn_aggregate_linear_retain_keys_mono(
+        &self,
+        factories: &IncAggregateLinearFactories<MonoIndexedZSet, DynWeight, MonoIndexedZSet, ()>,
+        waterline: &Stream<RootCircuit, Box<DynData>>,
+        retain_key_func: Box<dyn Fn(&DynData) -> Filter<DynData>>,
+        agg_func: Box<dyn Fn(&DynData, &DynData, &DynZWeight, &mut DynWeight)>,
+        out_func: Box<dyn WeightedCountOutFunc<DynWeight, DynData>>,
+    ) -> Stream<RootCircuit, MonoIndexedZSet>
+where {
+        self.dyn_aggregate_linear_retain_keys_generic(
+            factories,
+            waterline,
+            retain_key_func,
+            agg_func,
+            out_func,
+        )
     }
 }
 

@@ -1,3 +1,8 @@
+use crate::{
+    algebra::{OrdIndexedZSet, OrdIndexedZSetFactories, OrdZSet, OrdZSetFactories},
+    dynamic::DynData,
+};
+
 pub mod aggregate;
 pub mod asof_join;
 mod communication;
@@ -20,3 +25,14 @@ pub mod semijoin;
 pub mod time_series;
 pub mod trace;
 pub(crate) mod upsert;
+
+/// The "standard" indexed Z-set type used by monomorphic
+/// versions of operators.
+pub type MonoIndexedZSet = OrdIndexedZSet<DynData, DynData>;
+
+/// The "standard" Z-set type used by monomorphic
+/// versions of operators.
+pub type MonoZSet = OrdZSet<DynData>;
+
+pub type MonoIndexedZSetFactories = OrdIndexedZSetFactories<DynData, DynData>;
+pub type MonoZSetFactories = OrdZSetFactories<DynData>;

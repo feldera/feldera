@@ -4,8 +4,10 @@ use crate::operator::dynamic::filter_map::DynFilterMap;
 use crate::{
     algebra::{HasZero, IndexedZSet, OrdIndexedZSet, ZCursor},
     dynamic::{
-        ClonableTrait, DataTrait, DynPair, DynUnit, DynVec, Erase, Factory, LeanVec, WithFactory,
+        ClonableTrait, DataTrait, DynData, DynPair, DynUnit, DynVec, Erase, Factory, LeanVec,
+        WithFactory,
     },
+    operator::dynamic::MonoIndexedZSet,
     trace::{
         cursor::{CursorPair, ReverseKeyCursor},
         BatchReaderFactories,
@@ -108,6 +110,19 @@ where
                 },
             )),
         )
+    }
+}
+
+impl Stream<RootCircuit, MonoIndexedZSet> {
+    pub fn dyn_lag_custom_order_mono(
+        &self,
+        factories: &LagCustomOrdFactories<MonoIndexedZSet, DynData, DynData, DynData>,
+        offset: isize,
+        encode: Box<dyn Fn(&DynData, &mut DynData)>,
+        project: Box<dyn Fn(Option<&DynData>, &mut DynData)>,
+        decode: Box<dyn Fn(&DynData, &DynData, &mut DynData)>,
+    ) -> Stream<RootCircuit, MonoIndexedZSet> {
+        self.dyn_lag_custom_order(factories, offset, encode, project, decode)
     }
 }
 

@@ -98,7 +98,6 @@ public class RustFileWriter {
                     circuit::{checkpointer::Checkpoint, Circuit, CircuitConfig, Stream},
                     operator::{
                         Generator,
-                        FilterMap,
                         Fold,
                         group::WithCustomOrd,
                         time_series::{RelRange, RelOffset, OrdPartitionedIndexedZSet},

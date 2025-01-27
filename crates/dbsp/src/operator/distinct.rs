@@ -1,7 +1,4 @@
-use crate::{
-    operator::dynamic::distinct::DistinctFactories, trace::BatchReaderFactories,
-    typed_batch::IndexedZSet, Circuit, Stream, ZWeight,
-};
+use crate::{trace::BatchReaderFactories, typed_batch::IndexedZSet, Circuit, Stream, ZWeight};
 
 impl<C, Z> Stream<C, Z>
 where
@@ -42,8 +39,10 @@ where
     ///
     /// Intuitively, the operator converts the input multiset into a set
     /// by eliminating duplicates.
+    #[cfg(not(feature = "backend-mode"))]
     pub fn distinct(&self) -> Stream<C, Z> {
-        let factories = DistinctFactories::new::<Z::Key, Z::Val>();
+        let factories =
+            crate::operator::dynamic::distinct::DistinctFactories::new::<Z::Key, Z::Val>();
 
         self.inner().dyn_distinct(&factories).typed()
     }
