@@ -12,6 +12,7 @@ use io_uring::squeue::Entry;
 use io_uring::{opcode, types::Fd, IoUring};
 use libc::{c_void, iovec};
 
+use crate::storage::backend::IOV_MAX;
 use crate::storage::buffer_cache::FBuf;
 
 use super::super::{FileId, FileReader, FileWriter, HasFileId, StorageError};
@@ -204,7 +205,10 @@ impl VectoredWrite {
     /// This will fail if adding `block` would make the vectored write too big
     /// or non-sequential.
     fn append(&mut self, block: &Arc<FBuf>, offset: u64) -> Result<(), ()> {
-        if self.len >= 1024 * 1024 || (self.len > 0 && self.offset + self.len != offset) {
+        if self.len >= 1024 * 1024
+            || (self.len > 0 && self.offset + self.len != offset)
+            || self.buffers.len() >= *IOV_MAX
+        {
             Err(())
         } else {
             if self.buffers.is_empty() {
