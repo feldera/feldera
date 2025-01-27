@@ -39,6 +39,7 @@ where
     consolidate_weights: &'static dyn ConsolidatePairedSlices<DynDataTyped<T>, R>,
     weighted_item_factory: &'static dyn Factory<DynPair<DynPair<K, V>, R>>,
     weighted_items_factory: &'static dyn Factory<DynWeightedPairs<DynPair<K, V>, R>>,
+    time_diffs_factory: &'static dyn Factory<DynWeightedPairs<DynDataTyped<T>, R>>,
 }
 
 impl<K, V, T, R> Clone for VecValBatchFactories<K, V, T, R>
@@ -55,9 +56,7 @@ where
             consolidate_weights: self.consolidate_weights,
             weighted_item_factory: self.weighted_item_factory,
             weighted_items_factory: self.weighted_items_factory,
-            //item_factory: self.item_factory,
-            //weighted_item_factory: self.weighted_item_factory,
-            //batch_item_factory: self.batch_item_factory,
+            time_diffs_factory: self.time_diffs_factory,
         }
     }
 }
@@ -93,6 +92,7 @@ where
             weighted_item_factory: WithFactory::<Tup2<Tup2<KType, VType>, RType>>::FACTORY,
             weighted_items_factory:
                 WithFactory::<LeanVec<Tup2<Tup2<KType, VType>, RType>>>::FACTORY,
+            time_diffs_factory: WithFactory::<LeanVec<Tup2<T, RType>>>::FACTORY,
         }
     }
 
@@ -132,6 +132,12 @@ where
 
     fn weighted_items_factory(&self) -> &'static dyn Factory<DynWeightedPairs<DynPair<K, V>, R>> {
         self.weighted_items_factory
+    }
+
+    fn time_diffs_factory(
+        &self,
+    ) -> Option<&'static dyn Factory<DynWeightedPairs<DynDataTyped<T>, R>>> {
+        Some(self.time_diffs_factory)
     }
 
     // fn weighted_item_factory(&self) -> &'static WeightedVTable<Pair<K, V>, R> {

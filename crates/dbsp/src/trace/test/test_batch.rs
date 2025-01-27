@@ -5,8 +5,8 @@
 
 use crate::{
     dynamic::{
-        pair::DynPair, DataTrait, DowncastTrait, DynVec, DynWeightedPairs, Erase, Factory, Vector,
-        WeightTrait,
+        pair::DynPair, DataTrait, DowncastTrait, DynDataTyped, DynVec, DynWeightedPairs, Erase,
+        Factory, Vector, WeightTrait,
     },
     time::{Antichain, AntichainRef},
     trace::{
@@ -122,6 +122,11 @@ where
 
     fn weighted_items_factory(&self) -> &'static dyn Factory<DynWeightedPairs<DynPair<K, V>, R>> {
         todo!()
+    }
+    fn time_diffs_factory(
+        &self,
+    ) -> Option<&'static dyn Factory<DynWeightedPairs<DynDataTyped<T>, R>>> {
+        None
     }
 
     /*fn item_from(

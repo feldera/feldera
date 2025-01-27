@@ -1,7 +1,10 @@
 use crate::{
-    dynamic::{DataTrait, DynPair, DynUnit, DynVec, DynWeightedPairs, Erase, Factory, WeightTrait},
+    dynamic::{
+        DataTrait, DynDataTyped, DynPair, DynUnit, DynVec, DynWeightedPairs, Erase, Factory,
+        WeightTrait,
+    },
     storage::file::reader::Error as ReaderError,
-    time::AntichainRef,
+    time::{Antichain, AntichainRef},
     trace::{
         cursor::DelegatingCursor,
         ord::{
@@ -21,6 +24,7 @@ use size_of::SizeOf;
 use std::{
     fmt::{self, Debug},
     mem::replace,
+    ops::Deref,
     path::{Path, PathBuf},
 };
 
@@ -103,6 +107,12 @@ where
         &self,
     ) -> &'static dyn Factory<DynWeightedPairs<DynPair<K, DynUnit>, R>> {
         self.file.weighted_items_factory()
+    }
+
+    fn time_diffs_factory(
+        &self,
+    ) -> Option<&'static dyn Factory<DynWeightedPairs<DynDataTyped<T>, R>>> {
+        self.file.time_diffs_factory()
     }
 }
 
@@ -375,7 +385,7 @@ where
         FallbackKeyMerger {
             factories: batch1.factories.clone(),
             inner: match (
-                pick_merge_destination(batch1, batch2, dst_hint),
+                pick_merge_destination([batch1, batch2], dst_hint),
                 &batch1.inner,
                 &batch2.inner,
             ) {
@@ -635,6 +645,78 @@ where
                 BuilderInner::File(file) => Inner::File(file.done()),
                 BuilderInner::Vec(vec) | BuilderInner::Threshold { vec, .. } => {
                     Inner::Vec(vec.done())
+                }
+            },
+        }
+    }
+}
+
+impl<K, T, R> TimedBuilder<FallbackKeyBatch<K, T, R>> for FallbackKeyBuilder<K, T, R>
+where
+    Self: SizeOf,
+    K: DataTrait + ?Sized,
+    T: Timestamp,
+    R: WeightTrait + ?Sized,
+{
+    fn timed_for_merge<B, AR>(
+        factories: &<FallbackKeyBatch<K, T, R> as BatchReader>::Factories,
+        batches: &[AR],
+    ) -> Self
+    where
+        Self: Sized,
+        B: BatchReader,
+        AR: Deref<Target = B>,
+    {
+        let cap = batches.iter().map(|b| b.deref().len()).sum();
+        Self {
+            factories: factories.clone(),
+            inner: match pick_merge_destination(batches.iter().map(Deref::deref), None) {
+                BatchLocation::Memory => BuilderInner::Vec(VecKeyBuilder::with_capacity(
+                    &factories.vec,
+                    T::default(),
+                    cap,
+                )),
+                BatchLocation::Storage => BuilderInner::File(FileKeyBuilder::with_capacity(
+                    &factories.file,
+                    T::default(),
+                    cap,
+                )),
+            },
+        }
+    }
+
+    fn push_time(&mut self, key: &K, val: &DynUnit, time: &T, weight: &R) {
+        match &mut self.inner {
+            BuilderInner::File(file) => file.push_time(key, val, time, weight),
+            BuilderInner::Vec(vec) => vec.push_time(key, val, time, weight),
+            BuilderInner::Threshold { vec, remaining } => {
+                let size = (key, val, weight).size_of().total_bytes();
+                vec.push_time(key, val, time, weight);
+                if size > *remaining {
+                    let vec = replace(
+                        vec,
+                        VecKeyBuilder::timed_with_capacity(&self.factories.vec, 0),
+                    )
+                    .done();
+                    self.spill(vec);
+                } else {
+                    *remaining -= size;
+                }
+            }
+        }
+    }
+
+    fn done_with_bounds(
+        self,
+        lower: Antichain<T>,
+        upper: Antichain<T>,
+    ) -> FallbackKeyBatch<K, T, R> {
+        FallbackKeyBatch {
+            factories: self.factories,
+            inner: match self.inner {
+                BuilderInner::File(file) => Inner::File(file.done_with_bounds(lower, upper)),
+                BuilderInner::Vec(vec) | BuilderInner::Threshold { vec, .. } => {
+                    Inner::Vec(vec.done_with_bounds(lower, upper))
                 }
             },
         }

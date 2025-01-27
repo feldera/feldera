@@ -35,6 +35,7 @@ where
     item_factory: &'static dyn Factory<DynPair<K, DynUnit>>,
     weighted_item_factory: &'static dyn Factory<WeightedItem<K, DynUnit, R>>,
     weighted_items_factory: &'static dyn Factory<DynWeightedPairs<DynPair<K, DynUnit>, R>>,
+    time_diffs_factory: &'static dyn Factory<DynWeightedPairs<DynDataTyped<T>, R>>,
 }
 
 unsafe impl<K, T, R> Send for VecKeyBatchFactories<K, T, R>
@@ -58,6 +59,7 @@ where
             item_factory: self.item_factory,
             weighted_item_factory: self.weighted_item_factory,
             weighted_items_factory: self.weighted_items_factory,
+            time_diffs_factory: self.time_diffs_factory,
         }
     }
 }
@@ -82,6 +84,7 @@ where
             item_factory: WithFactory::<Tup2<KType, ()>>::FACTORY,
             weighted_item_factory: WithFactory::<Tup2<Tup2<KType, ()>, RType>>::FACTORY,
             weighted_items_factory: WithFactory::<LeanVec<Tup2<Tup2<KType, ()>, RType>>>::FACTORY,
+            time_diffs_factory: WithFactory::<LeanVec<Tup2<T, RType>>>::FACTORY,
         }
     }
 
@@ -122,6 +125,12 @@ where
         &self,
     ) -> &'static dyn Factory<DynWeightedPairs<DynPair<K, DynUnit>, R>> {
         self.weighted_items_factory
+    }
+
+    fn time_diffs_factory(
+        &self,
+    ) -> Option<&'static dyn Factory<DynWeightedPairs<DynDataTyped<T>, R>>> {
+        Some(self.time_diffs_factory)
     }
 }
 

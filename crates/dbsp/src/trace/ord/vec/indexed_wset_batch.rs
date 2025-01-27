@@ -110,6 +110,12 @@ where
         self.weighted_item_factory
     }
 
+    fn time_diffs_factory(
+        &self,
+    ) -> Option<&'static dyn Factory<DynWeightedPairs<crate::dynamic::DynDataTyped<()>, R>>> {
+        None
+    }
+
     // fn weighted_item_factory(&self) -> &'static <Pair<K, V>, R> {
     //     self.weighted_item_factory
     // }
@@ -860,11 +866,12 @@ where
     }
 }
 
-impl<K, V, R> TimedBuilder<VecIndexedWSet<K, V, R>> for VecIndexedWSetBuilder<K, V, R>
+impl<K, V, R, O> TimedBuilder<VecIndexedWSet<K, V, R, O>> for VecIndexedWSetBuilder<K, V, R, O>
 where
     K: DataTrait + ?Sized,
     V: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
+    O: OrdOffset,
 {
     fn push_time(&mut self, key: &K, val: &V, _time: &(), weight: &R) {
         self.push_refs(key, val, weight);
@@ -874,7 +881,7 @@ where
         self,
         _lower: Antichain<()>,
         _upper: Antichain<()>,
-    ) -> VecIndexedWSet<K, V, R> {
+    ) -> VecIndexedWSet<K, V, R, O> {
         self.done()
     }
 }

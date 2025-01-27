@@ -21,7 +21,6 @@ use crate::storage::file::to_bytes;
 use crate::storage::{checkpoint_path, write_commit_metadata};
 pub use crate::trace::spine_async::snapshot::SpineSnapshot;
 use crate::trace::CommittedSpine;
-use crate::trace::Merger;
 use ouroboros::self_referencing;
 use rand::Rng;
 use rkyv::{
@@ -44,12 +43,13 @@ use std::{
 use textwrap::indent;
 use uuid::Uuid;
 
+mod list_merger;
 mod snapshot;
-use self::thread::{BackgroundThread, WorkerStatus};
-
-use super::BatchLocation;
-
 mod thread;
+
+use self::thread::{BackgroundThread, WorkerStatus};
+use super::BatchLocation;
+use list_merger::{ListMerger, ListMergerBuilder};
 
 /// Maximum amount of levels in the spine.
 pub(crate) const MAX_LEVELS: usize = 9;
@@ -495,7 +495,7 @@ where
     }
 
     fn run(
-        mergers: &mut [Option<(B::Merger, [Arc<B>; 2])>; MAX_LEVELS],
+        mergers: &mut [Option<ListMerger<B>>; MAX_LEVELS],
         state: &Arc<Mutex<SharedState<B>>>,
         idle: &Arc<Condvar>,
         no_backpressure: &Arc<Condvar>,
@@ -507,11 +507,11 @@ where
         };
 
         for (level, m) in mergers.iter_mut().enumerate() {
-            if let Some((merger, [a, b])) = m.as_mut() {
+            if let Some(merger) = m.as_mut() {
                 let mut fuel = 10_000;
-                merger.work(a, b, &key_filter, &value_filter, &frontier, &mut fuel);
+                merger.work(&key_filter, &value_filter, &frontier, &mut fuel);
                 if fuel > 0 {
-                    let (merger, _batches) = m.take().unwrap();
+                    let merger = m.take().unwrap();
                     let new_batch = Arc::new(merger.done());
                     state.lock().unwrap().merge_complete(level, new_batch);
                 }
@@ -532,8 +532,12 @@ where
             .filter_map(|(level, slot)| slot.try_start_merge().map(|batches| (level, batches)))
             .collect::<Vec<_>>();
         for (level, [a, b]) in start_merges {
-            let merger = B::Merger::new_merger(&a, &b, None);
-            mergers[level] = Some((merger, [a, b]));
+            //let merger = B::Merger::new_merger(&a, &b, None);
+            let merger = ListMergerBuilder::with_capacity(2)
+                .with_batch(a)
+                .with_batch(b)
+                .build();
+            mergers[level] = Some(merger);
         }
 
         let state = state.lock().unwrap();

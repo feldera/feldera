@@ -34,7 +34,7 @@
 
 use crate::circuit::metadata::{MetaItem, OperatorMeta};
 use crate::circuit::GlobalNodeId;
-use crate::dynamic::{ClonableTrait, DynUnit, Weight};
+use crate::dynamic::{ClonableTrait, DynDataTyped, DynUnit, Weight};
 pub use crate::storage::file::{Deserializable, Deserializer, Rkyv, Serializer};
 use crate::time::Antichain;
 use crate::{dynamic::ArchivedDBData, storage::buffer_cache::FBuf};
@@ -43,6 +43,7 @@ use dyn_clone::DynClone;
 use rand::Rng;
 use rkyv::ser::Serializer as _;
 use size_of::SizeOf;
+use std::ops::Deref;
 use std::path::Path;
 use std::{fmt::Debug, hash::Hash, path::PathBuf};
 
@@ -216,6 +217,11 @@ pub trait BatchFactories<K: DataTrait + ?Sized, V: DataTrait + ?Sized, T, R: Wei
 
     fn weighted_items_factory(&self) -> &'static dyn Factory<DynWeightedPairs<DynPair<K, V>, R>>;
     fn weighted_item_factory(&self) -> &'static dyn Factory<WeightedItem<K, V, R>>;
+
+    /// Factory for a vector of (T, R) or `None` if `T` is `()`.
+    fn time_diffs_factory(
+        &self,
+    ) -> Option<&'static dyn Factory<DynWeightedPairs<DynDataTyped<T>, R>>>;
 }
 
 /// A set of `(key, val, time, diff)` tuples that can be read and extended.
@@ -464,7 +470,7 @@ where
     type Batcher: Batcher<Self>;
 
     /// A type used to assemble batches from ordered update sequences.
-    type Builder: Builder<Self>;
+    type Builder: TimedBuilder<Self>;
 
     /// A type used to progressively merge batches.
     type Merger: Merger<Self::Key, Self::Val, Self::Time, Self::R, Self>;
@@ -707,6 +713,17 @@ where
     where
         Self: Sized,
     {
+        <Self as Builder<Output>>::with_capacity(factories, Output::Time::default(), cap)
+    }
+
+    /// Allocates an empty builder to hold the result of merging `batches`.
+    fn timed_for_merge<B, AR>(factories: &Output::Factories, batches: &[AR]) -> Self
+    where
+        Self: Sized,
+        B: BatchReader,
+        AR: Deref<Target = B>,
+    {
+        let cap = batches.iter().map(|b| b.len()).sum();
         <Self as Builder<Output>>::with_capacity(factories, Output::Time::default(), cap)
     }
 
