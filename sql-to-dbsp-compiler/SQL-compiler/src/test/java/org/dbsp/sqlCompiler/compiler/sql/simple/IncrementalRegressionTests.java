@@ -24,13 +24,6 @@ import java.nio.file.Paths;
 
 /** Regression tests that failed in incremental mode using the Catalog API */
 public class IncrementalRegressionTests extends SqlIoTest {
-    @Test @Ignore
-    public void t() throws IOException {
-        this.showFinalVerbose(2);
-        String sql = Utilities.readFile(Paths.get("/home/mbudiu/win/Downloads/procore_sql.txt"));
-        this.compileRustTestCase(sql);
-    }
-
     @Override
     public DBSPCompiler testCompiler() {
         CompilerOptions options = this.testOptions(true, true);

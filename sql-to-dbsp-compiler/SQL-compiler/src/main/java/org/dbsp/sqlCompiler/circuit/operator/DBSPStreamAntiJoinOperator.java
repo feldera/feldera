@@ -15,6 +15,12 @@ import java.util.Objects;
 public final class DBSPStreamAntiJoinOperator extends DBSPBinaryOperator {
     public DBSPStreamAntiJoinOperator(CalciteObject node, OutputPort left, OutputPort right) {
         super(node, "stream_antijoin", null, left.outputType(), left.isMultiset(), left, right);
+        left.getOutputIndexedZSetType();
+        right.getOutputIndexedZSetType();
+        assert left.getOutputIndexedZSetType().keyType.sameType(right.getOutputIndexedZSetType().keyType) :
+            "Anti join key types to not match\n" +
+                left.getOutputIndexedZSetType().keyType + " and\n" +
+                right.getOutputIndexedZSetType().keyType;
     }
 
     @Override
