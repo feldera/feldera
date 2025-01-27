@@ -42,7 +42,6 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
-import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Maybe;
@@ -136,10 +135,11 @@ public class OptimizeMaps extends CircuitCloneWithGraphsVisitor {
                 DBSPSimpleOperator leftIndex = new DBSPMapIndexOperator(operator.getNode(),
                         split.left, left).addAnnotation(new IsProjection(size));
                 this.addOperator(leftIndex);
-                DBSPSimpleOperator rightIndex = new DBSPMapIndexOperator(operator.getNode(),
-                        split.left, right).addAnnotation(new IsProjection(size));
-                this.addOperator(rightIndex);
-                DBSPSimpleOperator newJoin = join.withInputs(Linq.list(leftIndex.outputPort(), rightIndex.outputPort()), false);
+
+                // TODO: We could declare all value fields unused on the right.
+                // But we currently because the optimizer may reuse indexes for the join and antijoin
+
+                DBSPSimpleOperator newJoin = join.withInputs(Linq.list(leftIndex.outputPort(), right), false);
                 this.addOperator(newJoin);
 
                 // Now project the keys after the join

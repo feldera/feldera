@@ -171,7 +171,7 @@ public class JoinConditionAnalyzer implements IWritesLogs {
                     mayBeNull = true;
                 }
             }
-            DBSPType commonType = ExpressionCompiler.reduceType(
+            DBSPType commonType = TypeCompiler.reduceType(
                     CalciteObject.create(this.join, call),
                     leftType, rightType, "Consider using an INNER JOIN with an explicit ON condition.\n" +
                             "In NATURAL or USING JOIN: ").withMayBeNull(mayBeNull);

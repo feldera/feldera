@@ -28,6 +28,7 @@ import org.apache.calcite.rel.type.RelDataTypeField;
 import org.apache.calcite.sql.type.SqlTypeName;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.ICompilerComponent;
+import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
@@ -35,8 +36,11 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.RelColumnMetadata;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.RelStruct;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.IsNumericType;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeFP;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeUuid;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVariant;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
@@ -87,6 +91,102 @@ public class TypeCompiler implements ICompilerComponent {
     public static DBSPTypeIndexedZSet makeIndexedZSet(DBSPTypeRawTuple kvtype) {
         assert kvtype.size() == 2;
         return new DBSPTypeIndexedZSet(kvtype.getNode(), kvtype.tupFields[0], kvtype.tupFields[1]);
+    }
+
+    /**
+     * Given operands for an operation that requires identical types on left and right,
+     * compute the type that both operands must be cast to.
+     * @param node       Compilation context.
+     * @param left       Left operand type.
+     * @param right      Right operand type.
+     * @param error      Extra message to show in case of error.
+     * @return           Common type operands must be cast to.
+     */
+    public static DBSPType reduceType(CalciteObject node, DBSPType left, DBSPType right,
+                                      String error) {
+        if (left.is(DBSPTypeNull.class))
+            return right.withMayBeNull(true);
+        if (right.is(DBSPTypeNull.class))
+            return left.withMayBeNull(true);
+        boolean anyNull = left.mayBeNull || right.mayBeNull;
+        if (left.sameTypeIgnoringNullability(right))
+            return left.withMayBeNull(anyNull);
+
+        if (left.is(DBSPTypeTupleBase.class)) {
+            if (!right.is(DBSPTypeTupleBase.class))
+                throw new CompilationError(error + "Implicit conversion between " +
+                        left.asSqlString() + " and " + right.asSqlString() + " not supported", node);
+            DBSPTypeTupleBase lTuple = left.to(DBSPTypeTupleBase.class);
+            DBSPTypeTupleBase rTuple = right.to(DBSPTypeTupleBase.class);
+            if (lTuple.size() != rTuple.size() || lTuple.isRaw() != rTuple.isRaw())
+                throw new CompilationError(error + "Implicit conversion between " +
+                        left.asSqlString() + " and " + right.asSqlString() + " not supported", node);
+            List<DBSPType> fields = new ArrayList<>(lTuple.size());
+            for (int i = 0; i < lTuple.size(); i++)
+                fields.add(reduceType(node, lTuple.getFieldType(i), rTuple.getFieldType(i), error));
+            return lTuple.makeRelatedTupleType(fields);
+        }
+
+        IsNumericType ln = left.as(IsNumericType.class);
+        IsNumericType rn = right.as(IsNumericType.class);
+
+        DBSPTypeInteger li = left.as(DBSPTypeInteger.class);
+        DBSPTypeInteger ri = right.as(DBSPTypeInteger.class);
+        DBSPTypeDecimal ld = left.as(DBSPTypeDecimal.class);
+        DBSPTypeDecimal rd = right.as(DBSPTypeDecimal.class);
+        DBSPTypeFP lf = left.as(DBSPTypeFP.class);
+        DBSPTypeFP rf = right.as(DBSPTypeFP.class);
+        if (ln == null || rn == null) {
+            throw new CompilationError(error + "Implicit conversion between " +
+                    left.asSqlString() + " and " + right.asSqlString() + " not supported", node);
+        }
+        if (li != null) {
+            if (ri != null) {
+                // INT op INT, choose the wider int type
+                int width = Math.max(li.getWidth(), ri.getWidth());
+                return new DBSPTypeInteger(left.getNode(), width, true, anyNull);
+            }
+            if (rf != null) {
+                // Calcite uses the float always
+                return rf.withMayBeNull(anyNull);
+            }
+            if (rd != null) {
+                // INT op DECIMAL
+                // widen the DECIMAL type enough to hold the left type
+                return new DBSPTypeDecimal(rd.getNode(),
+                        Math.max(ln.getPrecision(), rn.getPrecision()), rd.scale, anyNull);
+            }
+        }
+        if (lf != null) {
+            if (ri != null) {
+                // FLOAT op INT, Calcite uses the float always
+                return lf.withMayBeNull(anyNull);
+            }
+            if (rf != null) {
+                // FLOAT op FLOAT, choose widest
+                if (ln.getPrecision() < rn.getPrecision())
+                    return right.withMayBeNull(anyNull);
+                else
+                    return left.withMayBeNull(anyNull);
+            }
+            if (rd != null) {
+                // FLOAT op DECIMAL, convert to DOUBLE
+                return new DBSPTypeDouble(left.getNode(), anyNull);
+            }
+        }
+        if (ld != null) {
+            if (ri != null) {
+                // DECIMAL op INTEGER, make a decimal wide enough to hold result
+                return new DBSPTypeDecimal(right.getNode(),
+                        Math.max(ln.getPrecision(), rn.getPrecision()), ld.scale, anyNull);
+            }
+            if (rf != null) {
+                // DECIMAL op FLOAT, convert to DOUBLE
+                return new DBSPTypeDouble(right.getNode(), anyNull);
+            }
+            // DECIMAL op DECIMAL does not convert to a common type.
+        }
+        throw new UnimplementedException("Cast from " + right + " to " + left, left.getNode());
     }
 
     public DBSPType convertType(

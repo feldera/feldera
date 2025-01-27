@@ -107,7 +107,6 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDate;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDouble;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeFP;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeGeoPoint;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeKeyword;
@@ -277,87 +276,6 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 "Support for literals of type " + literal.getType() + " not yet implemented", node);
     }
 
-    /**
-     * Given operands for an operation that requires identical types on left and right,
-     * compute the type that both operands must be cast to.
-     * @param node       Compilation context.
-     * @param left       Left operand type.
-     * @param right      Right operand type.
-     * @param error      Extra message to show in case of error.
-     * @return           Common type operands must be cast to.
-     */
-    public static DBSPType reduceType(CalciteObject node, DBSPType left, DBSPType right,
-                                      String error) {
-        if (left.is(DBSPTypeNull.class))
-            return right.withMayBeNull(true);
-        if (right.is(DBSPTypeNull.class))
-            return left.withMayBeNull(true);
-        boolean anyNull = left.mayBeNull || right.mayBeNull;
-        if (left.sameTypeIgnoringNullability(right))
-            return left.withMayBeNull(anyNull);
-
-        IsNumericType ln = left.as(IsNumericType.class);
-        IsNumericType rn = right.as(IsNumericType.class);
-
-        DBSPTypeInteger li = left.as(DBSPTypeInteger.class);
-        DBSPTypeInteger ri = right.as(DBSPTypeInteger.class);
-        DBSPTypeDecimal ld = left.as(DBSPTypeDecimal.class);
-        DBSPTypeDecimal rd = right.as(DBSPTypeDecimal.class);
-        DBSPTypeFP lf = left.as(DBSPTypeFP.class);
-        DBSPTypeFP rf = right.as(DBSPTypeFP.class);
-        if (ln == null || rn == null) {
-            throw new CompilationError(error + "Implicit conversion between " +
-                    left.asSqlString() + " and " + right.asSqlString() + " not supported", node);
-        }
-        if (li != null) {
-            if (ri != null) {
-                // INT op INT, choose the wider int type
-                int width = Math.max(li.getWidth(), ri.getWidth());
-                return new DBSPTypeInteger(left.getNode(), width, true, anyNull);
-            }
-            if (rf != null) {
-                // Calcite uses the float always
-                return rf.withMayBeNull(anyNull);
-            }
-            if (rd != null) {
-                // INT op DECIMAL
-                // widen the DECIMAL type enough to hold the left type
-                return new DBSPTypeDecimal(rd.getNode(),
-                        Math.max(ln.getPrecision(), rn.getPrecision()), rd.scale, anyNull);
-            }
-        }
-        if (lf != null) {
-            if (ri != null) {
-                // FLOAT op INT, Calcite uses the float always
-                return lf.withMayBeNull(anyNull);
-            }
-            if (rf != null) {
-                // FLOAT op FLOAT, choose widest
-                if (ln.getPrecision() < rn.getPrecision())
-                    return right.withMayBeNull(anyNull);
-                else
-                    return left.withMayBeNull(anyNull);
-            }
-            if (rd != null) {
-                // FLOAT op DECIMAL, convert to DOUBLE
-                return new DBSPTypeDouble(left.getNode(), anyNull);
-            }
-        }
-        if (ld != null) {
-            if (ri != null) {
-                // DECIMAL op INTEGER, make a decimal wide enough to hold result
-                return new DBSPTypeDecimal(right.getNode(),
-                        Math.max(ln.getPrecision(), rn.getPrecision()), ld.scale, anyNull);
-            }
-            if (rf != null) {
-                // DECIMAL op FLOAT, convert to DOUBLE
-                return new DBSPTypeDouble(right.getNode(), anyNull);
-            }
-            // DECIMAL op DECIMAL does not convert to a common type.
-        }
-        throw new UnimplementedException("Cast from " + right + " to " + left, left.getNode());
-    }
-
     // Like makeBinaryExpression, but accepts multiple operands.
     private static DBSPExpression makeBinaryExpressions(
             CalciteObject node, DBSPType type, DBSPOpcode opcode, List<DBSPExpression> operands) {
@@ -447,7 +365,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
         DBSPType expressionResultType;
         if (needCommonType(opcode, type, leftType, rightType)) {
             // Need to cast both operands to a common type.  Find out what it is.
-            DBSPType commonBase = reduceType(node, leftType, rightType, "");
+            DBSPType commonBase = TypeCompiler.reduceType(node, leftType, rightType, "");
             expressionResultType = commonBase.withMayBeNull(anyNull);
             if (commonBase.is(DBSPTypeDecimal.class))
                 expressionResultType = DBSPTypeDecimal.getDefault().withMayBeNull(anyNull);  // no limits
