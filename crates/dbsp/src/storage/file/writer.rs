@@ -21,14 +21,11 @@ use crc32c::crc32c;
 use dyn_clone::clone_box;
 
 use crate::storage::{
-    backend::{FileReader, FileWriter, StorageBackend, StorageError},
+    backend::{BlockLocation, FileReader, FileWriter, StorageBackend, StorageError},
     buffer_cache::{FBuf, FBufSerializer},
-    file::{
-        format::{
-            BlockHeader, DataBlockHeader, FileTrailer, FileTrailerColumn, FixedLen,
-            IndexBlockHeader, NodeType, Varint, VERSION_NUMBER,
-        },
-        BlockLocation,
+    file::format::{
+        BlockHeader, DataBlockHeader, FileTrailer, FileTrailerColumn, FixedLen, IndexBlockHeader,
+        NodeType, Varint, VERSION_NUMBER,
     },
 };
 

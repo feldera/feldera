@@ -12,7 +12,7 @@ use futures::stream::FuturesUnordered;
 use futures::{future, pin_mut, StreamExt};
 use tokio::sync::{oneshot, watch};
 
-use crate::storage::backend::{FileId, FileReader, FileWriter};
+use crate::storage::backend::{BlockLocation, FileId, FileReader, FileWriter};
 use crate::storage::file::reader::{CorruptionError, Error};
 use crate::{storage::backend::StorageError, storage::buffer_cache::FBuf};
 
@@ -65,8 +65,8 @@ where
     Self: Sized,
 {
     fn cost(&self) -> usize;
-    fn from_read(raw: Arc<FBuf>, offset: u64, size: usize) -> Result<Self, Error>;
-    fn from_write(raw: Arc<FBuf>, offset: u64, size: usize) -> Result<Self, Error>;
+    fn from_read(raw: Arc<FBuf>, location: BlockLocation) -> Result<Self, Error>;
+    fn from_write(raw: Arc<FBuf>, location: BlockLocation) -> Result<Self, Error>;
 }
 
 struct CacheInner<E>
@@ -236,23 +236,22 @@ where
     pub fn read<F, T>(
         &self,
         file: &dyn FileReader,
-        offset: u64,
-        size: usize,
+        location: BlockLocation,
         convert: F,
     ) -> Result<T, Error>
     where
         F: Fn(&E) -> Result<T, ()>,
     {
-        let key = CacheKey::new(file.file_id(), offset);
+        let key = CacheKey::new(file.file_id(), location.offset);
         if let Some(aux) = self.inner.lock().unwrap().get(key) {
             return convert(aux)
-                .map_err(|_| Error::Corruption(CorruptionError::BadBlockType { offset, size }));
+                .map_err(|_| Error::Corruption(CorruptionError::BadBlockType(location)));
         }
 
-        let block = file.read_block(offset, size)?;
-        let aux = E::from_read(block, offset, size)?;
+        let block = file.read_block(location)?;
+        let aux = E::from_read(block, location)?;
         self.inner.lock().unwrap().insert(key, aux.clone());
-        convert(&aux).map_err(|_| Error::Corruption(CorruptionError::BadBlockType { offset, size }))
+        convert(&aux).map_err(|_| Error::Corruption(CorruptionError::BadBlockType(location)))
     }
 
     pub fn write(
@@ -262,8 +261,8 @@ where
         data: FBuf,
     ) -> Result<(), StorageError> {
         let data = file.write_block(offset, data)?;
-        let size = data.len();
-        let aux = E::from_write(data, offset, size).unwrap();
+        let location = BlockLocation::new(offset, data.len()).unwrap();
+        let aux = E::from_write(data, location).unwrap();
         self.inner
             .lock()
             .unwrap()
@@ -313,33 +312,35 @@ where
         }
     }
 
-    /// Reads `size` bytes from the file at `offset`.  If the read can be
+    /// Reads the bytes at `location` from the file.  If the read can be
     /// satisfied from cache, this completes quickly. Otherwise, it blocks until
     /// [Self::execute_tasks] runs I/O for all of the blocking tasks in a batch.
-    pub async fn read<F, T>(&self, offset: u64, size: usize, convert: F) -> Result<T, Error>
+    pub async fn read<F, T>(&self, location: BlockLocation, convert: F) -> Result<T, Error>
     where
         F: Fn(&E) -> Result<T, ()>,
     {
-        let key = CacheKey::new(self.file_id, offset);
+        let key = CacheKey::new(self.file_id, location.offset);
         if let Some(aux) = self.cache.inner.lock().unwrap().get(key) {
             return convert(aux)
-                .map_err(|_| Error::Corruption(CorruptionError::BadBlockType { offset, size }));
+                .map_err(|_| Error::Corruption(CorruptionError::BadBlockType(location)));
         }
 
         let (sender, receiver) = oneshot::channel();
 
         {
             let mut requests = self.requests.lock().unwrap();
-            let (size2, senders) = requests.entry(offset).or_insert((size, Vec::new()));
-            debug_assert_eq!(size, *size2);
+            let (size2, senders) = requests
+                .entry(location.offset)
+                .or_insert((location.size, Vec::new()));
+            debug_assert_eq!(location.size, *size2);
             senders.push(sender);
         }
 
         self.n_requests.send_modify(|n| *n += 1);
         let block = receiver.await.unwrap()?; // XXX unwrap
-        let aux = E::from_read(block, offset, size)?;
+        let aux = E::from_read(block, location)?;
         self.cache.inner.lock().unwrap().insert(key, aux.clone());
-        convert(&aux).map_err(|_| Error::Corruption(CorruptionError::BadBlockType { offset, size }))
+        convert(&aux).map_err(|_| Error::Corruption(CorruptionError::BadBlockType(location)))
     }
 
     /// Waits until `goal` threads have blocked on I/O in [Self::read].

@@ -58,8 +58,8 @@
 //!
 //! * An array of "child sizes", one for each of
 //!   [`IndexBlockHeader::n_children`].  Each one of these is the size of the
-//!   corresponding child block, expressed in 512-byte units. The maximum size
-//!   of a block is 4 GiB.
+//!   corresponding child block, expressed in 512-byte units.  Each block must
+//!   be less than 2 GiB.
 use crate::storage::buffer_cache::FBuf;
 
 use binrw::{binrw, BinRead, BinResult, BinWrite, Error as BinError};

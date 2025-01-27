@@ -10,7 +10,9 @@ use std::{
     sync::{Arc, LazyLock, RwLock},
 };
 
-use super::{FileId, FileReader, FileWriter, HasFileId, StorageBackend, StorageError};
+use super::{
+    BlockLocation, FileId, FileReader, FileWriter, HasFileId, StorageBackend, StorageError,
+};
 use crate::circuit::metrics::{
     FILES_CREATED, READS_FAILED, READS_SUCCESS, TOTAL_BYTES_READ, TOTAL_BYTES_WRITTEN,
     WRITES_SUCCESS,
@@ -78,10 +80,10 @@ impl FileWriter for MemoryFile {
 impl FileReader for MemoryFile {
     fn mark_for_checkpoint(&self) {}
 
-    fn read_block(&self, offset: u64, size: usize) -> Result<Arc<FBuf>, StorageError> {
-        let block = self.blocks.get(&offset);
+    fn read_block(&self, location: BlockLocation) -> Result<Arc<FBuf>, StorageError> {
+        let block = self.blocks.get(&location.offset);
         if let Some(block) = block {
-            if size == block.len() {
+            if location.size == block.len() {
                 counter!(TOTAL_BYTES_READ).increment(block.len() as u64);
                 counter!(READS_SUCCESS).increment(1);
                 return Ok(block.clone());
