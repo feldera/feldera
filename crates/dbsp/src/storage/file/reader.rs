@@ -1347,6 +1347,9 @@ where
         file: Arc<ImmutableFileRef>,
     ) -> Result<Self, Error> {
         let file_size = file.file_handle.as_ref().unwrap().get_size()?;
+        if file_size < 4096 || (file_size % 4096) != 0 {
+            return Err(CorruptionError::InvalidFileSize(file_size).into());
+        }
 
         let file_trailer = file.cache.read_file_trailer_block(
             file.file_handle.as_ref().unwrap().as_ref(),
