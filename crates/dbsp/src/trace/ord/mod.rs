@@ -32,7 +32,7 @@ pub use vec::{
 
 use super::Filter;
 
-fn filter<T>(f: &Option<Filter<T>>, t: &T) -> bool
+pub(crate) fn filter<T>(f: &Option<Filter<T>>, t: &T) -> bool
 where
     T: ?Sized,
 {

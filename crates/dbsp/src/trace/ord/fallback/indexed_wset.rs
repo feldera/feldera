@@ -1,10 +1,11 @@
 use crate::{
     algebra::{AddAssignByRef, AddByRef, NegByRef, ZRingValue},
     dynamic::{
-        DataTrait, DynPair, DynVec, DynWeightedPairs, Erase, Factory, WeightTrait, WeightTraitTyped,
+        DataTrait, DynDataTyped, DynPair, DynVec, DynWeightedPairs, Erase, Factory, WeightTrait,
+        WeightTraitTyped,
     },
     storage::file::reader::Error as ReaderError,
-    time::AntichainRef,
+    time::{Antichain, AntichainRef},
     trace::{
         cursor::DelegatingCursor,
         ord::{
@@ -16,7 +17,7 @@ use crate::{
             },
         },
         Batch, BatchFactories, BatchLocation, BatchReader, BatchReaderFactories, Builder,
-        FileIndexedWSet, FileIndexedWSetFactories, Filter, Merger, WeightedItem,
+        FileIndexedWSet, FileIndexedWSetFactories, Filter, Merger, TimedBuilder, WeightedItem,
     },
     DBData, DBWeight, NumEntries,
 };
@@ -24,7 +25,7 @@ use rand::Rng;
 use rkyv::{ser::Serializer, Archive, Archived, Deserialize, Fallible, Serialize};
 use size_of::SizeOf;
 use std::fmt::{self, Debug};
-use std::{mem::replace, path::Path};
+use std::{mem::replace, ops::Deref, path::Path};
 use std::{ops::Neg, path::PathBuf};
 
 use super::utils::{copy_to_builder, pick_merge_destination, BuildTo, GenericMerger};
@@ -104,6 +105,12 @@ where
 
     fn weighted_items_factory(&self) -> &'static dyn Factory<DynWeightedPairs<DynPair<K, V>, R>> {
         self.file.weighted_items_factory()
+    }
+
+    fn time_diffs_factory(
+        &self,
+    ) -> Option<&'static dyn Factory<DynWeightedPairs<DynDataTyped<()>, R>>> {
+        None
     }
 }
 
@@ -453,7 +460,7 @@ where
         Self {
             factories: batch1.factories.clone(),
             inner: match (
-                pick_merge_destination(batch1, batch2, dst_hint),
+                pick_merge_destination([batch1, batch2], dst_hint),
                 &batch1.inner,
                 &batch2.inner,
             ) {
@@ -715,6 +722,50 @@ where
                 }
             },
         }
+    }
+}
+
+impl<K, V, R> TimedBuilder<FallbackIndexedWSet<K, V, R>> for FallbackIndexedWSetBuilder<K, V, R>
+where
+    Self: SizeOf,
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+{
+    fn timed_for_merge<B, AR>(
+        factories: &<FallbackIndexedWSet<K, V, R> as BatchReader>::Factories,
+        batches: &[AR],
+    ) -> Self
+    where
+        Self: Sized,
+        B: BatchReader,
+        AR: Deref<Target = B>,
+    {
+        let cap = batches.iter().map(|b| b.deref().len()).sum();
+        Self {
+            factories: factories.clone(),
+            inner: match pick_merge_destination(batches.iter().map(Deref::deref), None) {
+                BatchLocation::Memory => BuilderInner::Vec(VecIndexedWSetBuilder::with_capacity(
+                    &factories.vec,
+                    (),
+                    cap,
+                )),
+                BatchLocation::Storage => BuilderInner::File(
+                    FileIndexedWSetBuilder::with_capacity(&factories.file, (), cap),
+                ),
+            },
+        }
+    }
+    fn push_time(&mut self, key: &K, val: &V, _time: &(), weight: &R) {
+        self.push_refs(key, val, weight)
+    }
+
+    fn done_with_bounds(
+        self,
+        _lower: Antichain<()>,
+        _upper: Antichain<()>,
+    ) -> FallbackIndexedWSet<K, V, R> {
+        self.done()
     }
 }
 

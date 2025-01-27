@@ -502,13 +502,13 @@ where
     }
 }
 
-pub(super) fn pick_merge_destination<B>(
-    batch1: &B,
-    batch2: &B,
+pub(super) fn pick_merge_destination<'a, B, I>(
+    batches: I,
     dst_hint: Option<BatchLocation>,
 ) -> BatchLocation
 where
     B: BatchReader,
+    I: IntoIterator<Item = &'a B>,
 {
     if let Some(location) = dst_hint {
         return location;
@@ -517,22 +517,20 @@ where
     // This is equivalent to `batch1.byte_size() + batch2.byte_size() >=
     // Runtime::min_storage_bytes()` but it avoids calling `byte_size()` any
     // more than necessary since it can be expensive.
-    let spill = match Runtime::min_storage_bytes() {
-        0 => true,
-        usize::MAX => false,
+    match Runtime::min_storage_bytes() {
+        0 => BatchLocation::Storage,
+        usize::MAX => BatchLocation::Memory,
         min_storage_bytes => {
-            let size1 = batch1.approximate_byte_size();
-            size1 >= min_storage_bytes || {
-                let size2 = batch2.approximate_byte_size();
-                size1 + size2 >= min_storage_bytes
+            let mut size = 0;
+            for b in batches {
+                size += b.approximate_byte_size();
+                if size >= min_storage_bytes {
+                    return BatchLocation::Storage;
+                }
             }
-        }
-    };
 
-    if spill {
-        BatchLocation::Storage
-    } else {
-        BatchLocation::Memory
+            BatchLocation::Memory
+        }
     }
 }
 

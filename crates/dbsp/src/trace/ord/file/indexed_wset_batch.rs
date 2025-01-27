@@ -1,8 +1,8 @@
 use crate::{
     algebra::{AddAssignByRef, AddByRef, NegByRef},
     dynamic::{
-        DataTrait, DynOpt, DynPair, DynUnit, DynVec, DynWeightedPairs, Erase, Factory, LeanVec,
-        WeightTrait, WeightTraitTyped, WithFactory,
+        DataTrait, DynDataTyped, DynOpt, DynPair, DynUnit, DynVec, DynWeightedPairs, Erase,
+        Factory, LeanVec, WeightTrait, WeightTraitTyped, WithFactory,
     },
     storage::file::{
         reader::{Cursor as FileCursor, Error as ReaderError, Reader},
@@ -130,6 +130,12 @@ where
 
     fn weighted_items_factory(&self) -> &'static dyn Factory<DynWeightedPairs<DynPair<K, V>, R>> {
         self.weighted_items_factory
+    }
+
+    fn time_diffs_factory(
+        &self,
+    ) -> Option<&'static dyn Factory<DynWeightedPairs<DynDataTyped<()>, R>>> {
+        None
     }
 }
 

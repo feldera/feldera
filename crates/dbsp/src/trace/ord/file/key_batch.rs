@@ -133,6 +133,12 @@ where
     ) -> &'static dyn Factory<DynWeightedPairs<DynPair<K, DynUnit>, R>> {
         self.weighted_items_factory
     }
+
+    fn time_diffs_factory(
+        &self,
+    ) -> Option<&'static dyn Factory<DynWeightedPairs<DynDataTyped<T>, R>>> {
+        Some(self.timediff_factory)
+    }
 }
 
 /// A batch of keys with weights and times.

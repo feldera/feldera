@@ -2,8 +2,8 @@ use crate::{
     algebra::{AddAssignByRef, AddByRef, NegByRef, ZRingValue},
     circuit::checkpointer::Checkpoint,
     dynamic::{
-        DataTrait, DynPair, DynUnit, DynVec, DynWeightedPairs, Erase, Factory, LeanVec,
-        WeightTrait, WeightTraitTyped, WithFactory,
+        DataTrait, DynDataTyped, DynPair, DynUnit, DynVec, DynWeightedPairs, Erase, Factory,
+        LeanVec, WeightTrait, WeightTraitTyped, WithFactory,
     },
     time::{Antichain, AntichainRef},
     trace::{
@@ -99,6 +99,12 @@ impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> BatchFactories<K, DynUnit, 
         &self,
     ) -> &'static dyn Factory<DynWeightedPairs<DynPair<K, DynUnit>, R>> {
         self.weighted_items_factory
+    }
+
+    fn time_diffs_factory(
+        &self,
+    ) -> Option<&'static dyn Factory<DynWeightedPairs<DynDataTyped<()>, R>>> {
+        None
     }
 }
 
