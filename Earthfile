@@ -242,6 +242,8 @@ test-manager:
     END
     # We keep the test binary around so we can run integration tests later. This incantation is used to find the
     # test binary path, adapted from: https://github.com/rust-lang/cargo/issues/3670
+    # This runs the same `cargo test` twice.  The first one does the actual build and finds any errors, the second one reports the binary name.  There is very little redundant work because of `--no-run`.
+    RUN cargo test --features integration-test --no-run --package pipeline-manager
     RUN --mount=$EARTHLY_RUST_CARGO_HOME_CACHE --mount=$EARTHLY_RUST_TARGET_CACHE cp `cargo test --features integration-test --no-run --package pipeline-manager --message-format=json | jq -r 'select(.target.kind[0] == "lib") | .executable' | grep -v null` test_binary
     SAVE ARTIFACT test_binary
 
