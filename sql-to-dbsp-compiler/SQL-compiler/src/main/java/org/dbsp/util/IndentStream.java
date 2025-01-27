@@ -203,6 +203,11 @@ public class IndentStream implements IIndentStream {
     }
 
     @Override
+    public IIndentStream joinSupplier(String separator, Supplier<Collection<String>> data) {
+        return this.join(separator, data.get());
+    }
+
+    @Override
     public IIndentStream intercalate(String separator, Collection<String> data) {
         for (String d: data) {
             this.append(d);

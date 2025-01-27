@@ -587,10 +587,11 @@ public class SqlToRelCompiler implements IWritesLogs {
             // Less verbose for LogicalValues
             level = 4;
 
+        final RelNode finalRel = rel;
         Logger.INSTANCE.belowLevel(this, level)
                 .append("Before optimizer")
                 .increase()
-                .append(getPlan(rel, false))
+                .appendSupplier(() -> getPlan(finalRel, false))
                 .decrease()
                 .newline();
 
@@ -599,10 +600,11 @@ public class SqlToRelCompiler implements IWritesLogs {
         CalciteOptimizer optimizer = new CalciteOptimizer(
                 this.options.languageOptions.optimizationLevel, relBuilder);
         rel = optimizer.apply(rel);
+        RelNode finalRel1 = rel;
         Logger.INSTANCE.belowLevel(this, level)
                 .append("After optimizer ")
                 .increase()
-                .append(getPlan(rel, false))
+                .appendSupplier(() -> getPlan(finalRel1, false))
                 .decrease()
                 .newline();
         return rel;

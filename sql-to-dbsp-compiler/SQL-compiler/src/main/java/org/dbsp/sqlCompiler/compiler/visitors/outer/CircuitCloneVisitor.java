@@ -129,7 +129,7 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs, 
      * @param operator  Operator to add. */
     protected void addOperator(DBSPOperator operator) {
         Logger.INSTANCE.belowLevel(this, 2)
-                .append(this.toString())
+                .appendSupplier(this::toString)
                 .append(" adding ")
                 .appendSupplier(operator::toString)
                 .newline();
@@ -157,15 +157,15 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs, 
         List<OutputPort> sources = Linq.map(operator.inputs, this::mapped);
         if (!Linq.same(sources, operator.inputs)) {
             Logger.INSTANCE.belowLevel(this, 2)
-                    .append(this.toString())
+                    .appendSupplier(this::toString)
                     .append(" replacing inputs of ")
                     .increase()
-                    .append(operator.toString())
+                    .appendSupplier(() -> operator.toString())
                     .append(":")
-                    .join(", ", Linq.map(operator.inputs, OutputPort::toString))
+                    .joinSupplier(", ", () -> Linq.map(operator.inputs, OutputPort::toString))
                     .newline()
                     .append("with:")
-                    .join(", ", Linq.map(sources, OutputPort::toString))
+                    .joinSupplier(", ", () -> Linq.map(sources, OutputPort::toString))
                     .newline()
                     .decrease();
         }
@@ -191,10 +191,10 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs, 
                     .increase()
                     .append(operator.toString())
                     .append(":")
-                    .join(", ", Linq.map(operator.inputs, OutputPort::toString))
+                    .joinSupplier(", ", () -> Linq.map(operator.inputs, OutputPort::toString))
                     .newline()
                     .append("with:")
-                    .join(", ", Linq.map(sources, OutputPort::toString))
+                    .joinSupplier(", ", () -> Linq.map(sources, OutputPort::toString))
                     .newline()
                     .decrease();
         }

@@ -95,9 +95,9 @@ public class CSE extends Repeat {
         void setCanonical(DBSPOperator operator, DBSPOperator canonical) {
             Logger.INSTANCE.belowLevel(this, 1)
                     .append("CSE ")
-                    .append(operator.toString())
+                    .appendSupplier(operator::toString)
                     .append(" -> ")
-                    .append(canonical.toString())
+                    .appendSupplier(canonical::toString)
                     .newline();
             this.canonical.put(operator, canonical);
         }

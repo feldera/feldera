@@ -28,12 +28,12 @@ public class InnerPasses implements IWritesLogs, IRTransform {
         for (IRTransform pass: this.passes) {
             Logger.INSTANCE.belowLevel(this, 1)
                     .append("Executing ")
-                    .append(pass.toString())
+                    .appendSupplier(pass::toString)
                     .newline();
             node = pass.apply(node);
             Logger.INSTANCE.belowLevel(this, 3)
                     .append("After ")
-                    .append(pass.toString())
+                    .appendSupplier(pass::toString)
                     .newline()
                     .appendSupplier(node::toString)
                     .newline();

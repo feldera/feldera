@@ -163,7 +163,7 @@ public abstract class InnerRewriteVisitor
         }
 
         Logger.INSTANCE.belowLevel(this, 1)
-                .append(this.toString())
+                .appendSupplier(this::toString)
                 .append(":")
                 .appendSupplier(old::toString)
                 .append(" -> ")

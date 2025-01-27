@@ -166,9 +166,9 @@ public class Monotonicity extends CircuitVisitor {
         Logger.INSTANCE.belowLevel(this, 2)
                 .append(operator.operation)
                 .append(" ")
-                .append(operator.getIdString())
+                .appendSupplier(operator::getIdString)
                 .append(" => ")
-                .append(value.toString())
+                .appendSupplier(value::toString)
                 .newline();
         this.info.put(operator.outputPort(), value);
     }
@@ -733,9 +733,9 @@ public class Monotonicity extends CircuitVisitor {
         ComparisonsAnalyzer comparisons = new ComparisonsAnalyzer(node.getFunction());
         if (!comparisons.isEmpty()) {
             Logger.INSTANCE.belowLevel(this, 2)
-                    .append(node.toString())
+                    .appendSupplier(node::toString)
                     .append(" comparisons: ")
-                    .append(comparisons.toString())
+                    .appendSupplier(comparisons::toString)
                     .newline();
         }
 

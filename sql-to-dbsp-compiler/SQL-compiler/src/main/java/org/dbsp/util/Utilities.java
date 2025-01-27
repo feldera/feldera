@@ -41,6 +41,7 @@ import java.io.IOException;
 import java.io.PrintStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
@@ -158,6 +159,10 @@ public class Utilities {
             }
             out.println();
         }
+    }
+
+    public static String readFile(String filename) throws IOException {
+        return readFile(Paths.get(filename));
     }
 
     public static String readFile(Path filename) throws IOException {
