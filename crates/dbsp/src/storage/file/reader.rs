@@ -402,7 +402,7 @@ impl InnerDataBlock {
 
     fn new_blocking(file: &ImmutableFileRef, node: &TreeNode) -> Result<Arc<Self>, Error> {
         file.cache
-            .read_data_block(file.file_handle.as_ref().unwrap().as_ref(), node.location)
+            .read_data_block(&*file.file_handle, node.location)
     }
     async fn new_async(
         context: &AsyncCacheContext<FileCacheEntry>,
@@ -764,7 +764,7 @@ impl InnerIndexBlock {
 
     fn new_blocking(file: &ImmutableFileRef, node: &TreeNode) -> Result<Arc<Self>, Error> {
         file.cache
-            .read_index_block(file.file_handle.as_ref().unwrap().as_ref(), node.location)
+            .read_index_block(&*file.file_handle, node.location)
     }
 
     async fn new_async(
@@ -1192,7 +1192,7 @@ impl Column {
 pub(crate) struct ImmutableFileRef {
     path: PathBuf,
     cache: Arc<BufferCache<FileCacheEntry>>,
-    file_handle: Option<Arc<dyn FileReader>>,
+    file_handle: Arc<dyn FileReader>,
 }
 
 impl Debug for ImmutableFileRef {
@@ -1204,9 +1204,8 @@ impl Debug for ImmutableFileRef {
 }
 impl Drop for ImmutableFileRef {
     fn drop(&mut self) {
-        let ifh = self.file_handle.take().unwrap();
-        if Arc::strong_count(&ifh) == 1 {
-            self.cache.evict(ifh.as_ref());
+        if Arc::strong_count(&self.file_handle) == 1 {
+            self.evict();
         }
     }
 }
@@ -1220,7 +1219,7 @@ impl ImmutableFileRef {
         Self {
             cache: Arc::clone(cache),
             path,
-            file_handle: Some(file_handle),
+            file_handle: file_handle,
         }
     }
 
@@ -1233,12 +1232,8 @@ impl ImmutableFileRef {
         Ok(Self::new(cache, file_handle, path.to_path_buf()))
     }
 
-    pub fn mark_for_checkpoint(&self) {
-        if let Some(file_handle) = self.file_handle.as_ref() {
-            file_handle.mark_for_checkpoint();
-        } else {
-            tracing::error!("file_handle was None?")
-        }
+    pub fn evict(&self) {
+        self.cache.evict(&*self.file_handle);
     }
 }
 
@@ -1307,13 +1302,13 @@ where
         factories: &[&AnyFactories],
         file: Arc<ImmutableFileRef>,
     ) -> Result<Self, Error> {
-        let file_size = file.file_handle.as_ref().unwrap().get_size()?;
+        let file_size = file.file_handle.get_size()?;
         if file_size < 512 || (file_size % 512) != 0 {
             return Err(CorruptionError::InvalidFileSize(file_size).into());
         }
 
         let file_trailer = file.cache.read_file_trailer_block(
-            file.file_handle.as_ref().unwrap().as_ref(),
+            &*file.file_handle,
             BlockLocation::new(file_size - 512, 512).unwrap(),
         )?;
         if file_trailer.version != VERSION_NUMBER {
@@ -1379,7 +1374,7 @@ where
 
     /// Marks the file of the reader as being part of a checkpoint.
     pub fn mark_for_checkpoint(&self) {
-        self.0.file.mark_for_checkpoint();
+        self.0.file.file_handle.mark_for_checkpoint();
     }
 
     /// Instantiates a reader given an existing path.
@@ -1418,21 +1413,18 @@ where
 
     /// Returns the size of the underlying file in bytes.
     pub fn byte_size(&self) -> Result<u64, Error> {
-        Ok(self.0.file.file_handle.as_ref().unwrap().get_size()?)
+        Ok(self.0.file.file_handle.get_size()?)
     }
 
     /// Returns the `FileReader` embedded in this `Reader`.
     pub fn file_handle(&self) -> &dyn FileReader {
-        self.0.file.file_handle.as_deref().unwrap()
+        &*self.0.file.file_handle
     }
 
     /// Returns a context that can be used for performing overlapped I/O
     /// operations on this reader.
     pub fn new_async_context(&self) -> AsyncCacheContext<FileCacheEntry> {
-        AsyncCacheContext::new(
-            self.0.file.cache.clone(),
-            self.0.file.file_handle.as_deref().unwrap(),
-        )
+        AsyncCacheContext::new(self.0.file.cache.clone(), &*self.0.file.file_handle)
     }
 }
 
