@@ -8,9 +8,8 @@ use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use std::{collections::BTreeMap, ops::Range};
 
-use crate::storage::backend::{Backend, BlockLocation, FileId, FileReader, FileWriter, Storage};
-use crate::storage::file::reader::{CorruptionError, Error};
-use crate::{storage::backend::StorageError, storage::buffer_cache::FBuf, Runtime};
+use crate::storage::backend::{Backend, FileId, FileReader, FileWriter, Storage};
+use crate::{storage::backend::StorageError, Runtime};
 
 /// A key for the block cache.
 ///
@@ -56,13 +55,8 @@ where
     serial: u64,
 }
 
-pub trait CacheEntry: Clone + Send
-where
-    Self: Sized,
-{
+pub trait CacheEntry: Clone + Send {
     fn cost(&self) -> usize;
-    fn from_read(raw: Arc<FBuf>, location: BlockLocation) -> Result<Self, Error>;
-    fn from_write(raw: Arc<FBuf>, location: BlockLocation) -> Result<Self, Error>;
 }
 
 struct CacheInner<E>
@@ -235,43 +229,19 @@ where
         DEFAULT_BACKEND.with(|rc| rc.clone())
     }
 
-    pub fn read<F, T>(
-        &self,
-        file: &dyn FileReader,
-        location: BlockLocation,
-        convert: F,
-    ) -> Result<T, Error>
-    where
-        F: Fn(&E) -> Result<T, ()>,
-    {
-        let key = CacheKey::new(file.file_id(), location.offset);
-        if let Some(aux) = self.inner.lock().unwrap().get(key) {
-            return convert(aux)
-                .map_err(|_| Error::Corruption(CorruptionError::BadBlockType(location)));
-        }
-
-        let block = file.read_block(location)?;
-        let aux = E::from_read(block, location)?;
-        let retval =
-            convert(&aux).map_err(|_| Error::Corruption(CorruptionError::BadBlockType(location)));
-        self.inner.lock().unwrap().insert(key, aux.clone());
-        retval
-    }
-
-    pub fn write(
-        &self,
-        file: &mut dyn FileWriter,
-        offset: u64,
-        data: FBuf,
-    ) -> Result<(), StorageError> {
-        let data = file.write_block(offset, data)?;
-        let location = BlockLocation::new(offset, data.len()).unwrap();
-        let aux = E::from_write(data, location).unwrap();
+    pub fn get(&self, file: &dyn FileReader, offset: u64) -> Option<E> {
         self.inner
             .lock()
             .unwrap()
-            .insert(CacheKey::new(file.file_id(), offset), aux);
-        Ok(())
+            .get(CacheKey::new(file.file_id(), offset))
+            .cloned()
+    }
+
+    pub fn insert(&self, file_id: FileId, offset: u64, aux: E) {
+        self.inner
+            .lock()
+            .unwrap()
+            .insert(CacheKey::new(file_id, offset), aux);
     }
 
     pub fn evict(&self, file: &dyn FileReader) {

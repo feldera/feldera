@@ -4,6 +4,8 @@
 use crate::circuit::checkpointer::Checkpointer;
 use crate::circuit::metrics::describe_metrics;
 use crate::error::Error as DbspError;
+use crate::storage::file::format::Compression;
+use crate::storage::file::writer::Parameters;
 use crate::{
     storage::{
         backend::{new_default_backend, tempdir_for_thread, Backend, StorageError},
@@ -17,7 +19,7 @@ use feldera_types::config::StorageCacheConfig;
 use lazy_static::lazy_static;
 use once_cell::sync::Lazy;
 use serde::Serialize;
-use std::sync::Mutex;
+use std::sync::{LazyLock, Mutex};
 use std::thread::Thread;
 use std::time::Duration;
 use std::{
@@ -476,6 +478,23 @@ impl Runtime {
                 .as_ref()
                 .map_or(usize::MAX, |runtime| runtime.0.min_storage_bytes)
         })
+    }
+
+    pub fn file_writer_parameters() -> Parameters {
+        static DEFAULT_COMPRESSION: LazyLock<Option<Compression>> = LazyLock::new(|| {
+            let var = std::env::var("FELDERA_COMPRESSION").unwrap_or_default();
+            let compression = match var.as_str() {
+                "none" => None,
+                "" | "snappy" => Some(Compression::Snappy),
+                _ => {
+                    tracing::warn!("unknown compression algorithm {var:?}");
+                    Some(Compression::Snappy)
+                }
+            };
+            tracing::info!("storage using compression={compression:?}");
+            compression
+        });
+        Parameters::default().with_compression(*DEFAULT_COMPRESSION)
     }
 
     fn inner(&self) -> &RuntimeInner {

@@ -17,7 +17,19 @@ use std::{
 
 use crate::{
     dynamic::{DataTrait, DeserializeDyn, Factory},
-    storage::backend::FileReader,
+    storage::{
+        backend::{BlockLocation, FileReader, InvalidBlockLocation, Storage, StorageError},
+        buffer_cache::{BufferCache, FBuf},
+        file::{
+            cache::FileCacheEntry,
+            format::{
+                DataBlockHeader, FileTrailerColumn, IndexBlockHeader, NodeType, Varint,
+                VERSION_NUMBER,
+            },
+            item::ArchivedItem,
+            AnyFactories, Factories,
+        },
+    },
 };
 use binrw::{
     io::{self},
@@ -25,16 +37,7 @@ use binrw::{
 };
 use thiserror::Error as ThisError;
 
-use crate::storage::{
-    backend::{BlockLocation, InvalidBlockLocation, Storage, StorageError},
-    buffer_cache::{BufferCache, FBuf},
-    file::format::{
-        DataBlockHeader, FileTrailerColumn, IndexBlockHeader, NodeType, Varint, VERSION_NUMBER,
-    },
-    file::item::ArchivedItem,
-};
-
-use super::{cache::FileCacheEntry, AnyFactories, Factories};
+use super::format::Compression;
 
 /// Any kind of error encountered reading a layer file.
 #[derive(ThisError, Debug)]
@@ -79,11 +82,13 @@ pub enum CorruptionError {
 
     /// Block has invalid checksum.
     #[error(
-        "Block ({location}) has invalid checksum {checksum:#x} (expected {computed_checksum:#})"
+        "Block ({location}) with magic {magic:?} has invalid checksum {checksum:#x} (expected {computed_checksum:#x})"
     )]
     InvalidChecksum {
         /// Block location
         location: BlockLocation,
+        /// Block magic,
+        magic: [u8; 4],
         /// Checksum in block.
         checksum: u32,
         /// Checksum that block should have.
@@ -243,6 +248,37 @@ pub enum CorruptionError {
     /// Bad block type.
     #[error("Block ({0}) is wrong type of block.")]
     BadBlockType(BlockLocation),
+
+    /// Bad compressed length.
+    #[error("Compressed block ({location}) claims compressed length {compressed_len} but at most {max_compressed_len} would fit.")]
+    BadCompressedLen {
+        /// Block location.
+        location: BlockLocation,
+        /// Compressed length.
+        compressed_len: usize,
+        /// Maximum compressed length.
+        max_compressed_len: usize,
+    },
+
+    /// Unexpected decompressed length.
+    #[error("Compressed block ({location}) decompressed to {length} bytes instead of the expected {expected_length} bytes")]
+    UnexpectedDecompressionLength {
+        /// Block location.
+        location: BlockLocation,
+        /// Actual length.
+        length: usize,
+        /// Expected length.
+        expected_length: usize,
+    },
+
+    /// Snappy decompression failed.
+    #[error("Compressed block ({location}) failed Snappy decompression: {error}.")]
+    Snappy {
+        /// Block location.
+        location: BlockLocation,
+        /// Snappy error.
+        error: snap::Error,
+    },
 }
 
 #[derive(Clone)]
@@ -397,9 +433,13 @@ impl InnerDataBlock {
         })
     }
 
-    fn new(file: &ImmutableFileRef, node: &TreeNode) -> Result<Arc<Self>, Error> {
+    fn new(
+        file: &ImmutableFileRef,
+        node: &TreeNode,
+        compression: Option<Compression>,
+    ) -> Result<Arc<Self>, Error> {
         file.cache
-            .read_data_block(&*file.file_handle, node.location)
+            .read_data_block(&*file.file_handle, node.location, compression)
     }
     fn n_values(&self) -> usize {
         self.value_map.len()
@@ -457,8 +497,9 @@ where
         factories: &Factories<K, A>,
         file: &ImmutableFileRef,
         node: &TreeNode,
+        compression: Option<Compression>,
     ) -> Result<Self, Error> {
-        let inner = InnerDataBlock::new(file, node)?;
+        let inner = InnerDataBlock::new(file, node, compression)?;
 
         let expected_rows = node.rows.end - node.rows.start;
         if inner.n_values() as u64 != expected_rows {
@@ -599,7 +640,11 @@ struct TreeNode {
 }
 
 impl TreeNode {
-    fn read<K, A>(self, file: &ImmutableFileRef) -> Result<TreeBlock<K, A>, Error>
+    fn read<K, A>(
+        self,
+        file: &ImmutableFileRef,
+        compression: Option<Compression>,
+    ) -> Result<TreeBlock<K, A>, Error>
     where
         K: DataTrait + ?Sized,
         A: DataTrait + ?Sized,
@@ -609,11 +654,13 @@ impl TreeNode {
                 &self.factories.factories(),
                 file,
                 &self,
+                compression,
             )?)),
             NodeType::Index => Ok(TreeBlock::Index(IndexBlock::new(
                 &self.factories,
                 file,
                 &self,
+                compression,
             )?)),
         }
     }
@@ -712,9 +759,13 @@ impl InnerIndexBlock {
         })
     }
 
-    fn new(file: &ImmutableFileRef, node: &TreeNode) -> Result<Arc<Self>, Error> {
+    fn new(
+        file: &ImmutableFileRef,
+        node: &TreeNode,
+        compression: Option<Compression>,
+    ) -> Result<Arc<Self>, Error> {
         file.cache
-            .read_index_block(&*file.file_handle, node.location)
+            .read_index_block(&*file.file_handle, node.location, compression)
     }
 }
 
@@ -754,6 +805,7 @@ where
         factories: &AnyFactories,
         file: &ImmutableFileRef,
         node: &TreeNode,
+        compression: Option<Compression>,
     ) -> Result<Self, Error> {
         const MAX_DEPTH: usize = 64;
         if node.depth > MAX_DEPTH {
@@ -767,7 +819,7 @@ where
             .into());
         }
 
-        let inner = InnerIndexBlock::new(file, node)?;
+        let inner = InnerIndexBlock::new(file, node, compression)?;
 
         let expected_rows = node.rows.end - node.rows.start;
         let n_rows = inner.row_totals.get(&inner.raw, inner.row_totals.count - 1);
@@ -1038,7 +1090,7 @@ impl ImmutableFileRef {
         Self {
             cache: Arc::clone(cache),
             path,
-            file_handle: file_handle,
+            file_handle,
         }
     }
 
@@ -1058,7 +1110,7 @@ impl ImmutableFileRef {
 #[derive(Debug)]
 struct ReaderInner<T> {
     file: Arc<ImmutableFileRef>,
-    /// Location of the file on disk.
+    compression: Option<Compression>,
     columns: Vec<Column>,
 
     /// `fn() -> T` is `Send` and `Sync` regardless of `T`.  See
@@ -1167,6 +1219,7 @@ where
         Ok(Self(Arc::new(ReaderInner {
             file,
             columns,
+            compression: file_trailer.compression,
             _phantom: PhantomData,
         })))
     }
@@ -1181,6 +1234,7 @@ where
         Ok(Self(Arc::new(ReaderInner {
             file: Arc::new(ImmutableFileRef::new(cache, file_handle, path)),
             columns: (0..T::n_columns()).map(|_| Column::empty()).collect(),
+            compression: None,
             _phantom: PhantomData,
         })))
     }
@@ -1226,6 +1280,12 @@ where
     /// Returns the size of the underlying file in bytes.
     pub fn byte_size(&self) -> Result<u64, Error> {
         Ok(self.0.file.file_handle.get_size()?)
+    }
+
+    /// Evict this file from the cache.
+    #[cfg(test)]
+    pub fn evict(&self) {
+        self.0.file.evict();
     }
 }
 
@@ -1833,7 +1893,7 @@ where
         row: u64,
     ) -> Result<Self, Error> {
         loop {
-            let block = node.read(&reader.0.file)?;
+            let block = node.read(&reader.0.file, reader.0.compression)?;
             let next = block.lookup_row(row)?;
             match block {
                 TreeBlock::Data(data) => {
@@ -1907,7 +1967,7 @@ where
             return Ok(None);
         };
         loop {
-            match node.read(&row_group.reader.0.file)? {
+            match node.read(&row_group.reader.0.file, row_group.reader.0.compression)? {
                 TreeBlock::Index(index_block) => {
                     let Some(child_idx) =
                         index_block.find_best_match(&row_group.rows, compare, bias)
@@ -2009,7 +2069,7 @@ where
             self.indexes.push(index_block);
 
             loop {
-                match node.read::<K, A>(&row_group.reader.0.file)? {
+                match node.read::<K, A>(&row_group.reader.0.file, row_group.reader.0.compression)? {
                     TreeBlock::Index(index_block) => {
                         let Some(child_idx) =
                             index_block.find_best_match(&row_group.rows, compare, Less)

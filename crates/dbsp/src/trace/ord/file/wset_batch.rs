@@ -6,7 +6,7 @@ use crate::{
     },
     storage::file::{
         reader::{Cursor as FileCursor, Error as ReaderError, Reader},
-        writer::{Parameters, Writer1},
+        writer::Writer1,
         Factories as FileFactories,
     },
     time::{Antichain, AntichainRef},
@@ -244,7 +244,7 @@ where
         let mut writer = Writer1::new(
             &self.factories.file_factories,
             &Runtime::storage(),
-            Parameters::default(),
+            Runtime::file_writer_parameters(),
         )
         .unwrap();
 
@@ -467,7 +467,7 @@ where
             writer: Writer1::new(
                 &batch1.factories.file_factories,
                 &Runtime::storage(),
-                Parameters::default(),
+                Runtime::file_writer_parameters(),
             )
             .unwrap(),
         }
@@ -777,7 +777,7 @@ where
             writer: Writer1::new(
                 &factories.file_factories,
                 &Runtime::storage(),
-                Parameters::default(),
+                Runtime::file_writer_parameters(),
             )
             .unwrap(),
         }

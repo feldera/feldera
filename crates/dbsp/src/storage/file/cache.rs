@@ -12,10 +12,12 @@ use binrw::{
     BinRead,
 };
 use lazy_static::lazy_static;
+use snap::raw::{decompress_len, Decoder};
 
 use crate::storage::{
     backend::{BlockLocation, FileReader},
     buffer_cache::{BufferCache, CacheEntry, FBuf},
+    file::format::Compression,
 };
 
 use super::{
@@ -50,12 +52,56 @@ impl CacheEntry for FileCacheEntry {
             Self::Data(data_block) => data_block.cost(),
         }
     }
-    fn from_read(raw: Arc<FBuf>, location: BlockLocation) -> Result<Self, Error> {
+}
+impl FileCacheEntry {
+    pub(super) fn from_read(
+        raw: Arc<FBuf>,
+        location: BlockLocation,
+        compression: Option<Compression>,
+    ) -> Result<Self, Error> {
+        let raw = if let Some(compression) = compression {
+            let compressed_len = u32::from_le_bytes(raw[..4].try_into().unwrap()) as usize;
+            let Some(compressed) = raw[4..].get(..compressed_len) else {
+                return Err(CorruptionError::BadCompressedLen {
+                    location,
+                    compressed_len,
+                    max_compressed_len: raw.len() - 4,
+                }
+                .into());
+            };
+            match compression {
+                Compression::Snappy => {
+                    let decompressed_len = decompress_len(compressed).map_err(|error| {
+                        Error::Corruption(CorruptionError::Snappy { location, error })
+                    })?;
+                    let mut decompressed = FBuf::with_capacity(decompressed_len);
+                    decompressed.resize(decompressed_len, 0);
+                    match Decoder::new().decompress(compressed, decompressed.as_mut_slice()) {
+                        Ok(n) if n == decompressed_len => {}
+                        Ok(n) => {
+                            return Err(CorruptionError::UnexpectedDecompressionLength {
+                                location,
+                                length: n,
+                                expected_length: decompressed_len,
+                            }
+                            .into())
+                        }
+                        Err(error) => {
+                            return Err(CorruptionError::Snappy { location, error }.into())
+                        }
+                    }
+                    Arc::new(decompressed)
+                }
+            }
+        } else {
+            raw
+        };
         let computed_checksum = crc32c(&raw[4..]);
         let checksum = u32::from_le_bytes(raw[..4].try_into().unwrap());
         if checksum != computed_checksum {
             return Err(CorruptionError::InvalidChecksum {
                 location,
+                magic: raw[4..8].try_into().unwrap(),
                 checksum,
                 computed_checksum,
             }
@@ -64,7 +110,8 @@ impl CacheEntry for FileCacheEntry {
 
         Self::from_write(raw, location)
     }
-    fn from_write(raw: Arc<FBuf>, location: BlockLocation) -> Result<Self, Error> {
+
+    pub(super) fn from_write(raw: Arc<FBuf>, location: BlockLocation) -> Result<Self, Error> {
         let block_header = BlockHeader::read_le(&mut io::Cursor::new(raw.as_slice()))?;
         match block_header.magic {
             DATA_BLOCK_MAGIC => Ok(Self::Data(Arc::new(InnerDataBlock::from_raw(
@@ -81,29 +128,6 @@ impl CacheEntry for FileCacheEntry {
     }
 }
 
-impl FileCacheEntry {
-    fn as_file_trailer(&self) -> Result<Arc<FileTrailer>, ()> {
-        match self {
-            Self::FileTrailer(inner) => Ok(inner.clone()),
-            _ => Err(()),
-        }
-    }
-
-    fn as_data_block(&self) -> Result<Arc<InnerDataBlock>, ()> {
-        match self {
-            Self::Data(inner) => Ok(inner.clone()),
-            _ => Err(()),
-        }
-    }
-
-    fn as_index_block(&self) -> Result<Arc<InnerIndexBlock>, ()> {
-        match self {
-            Self::Index(inner) => Ok(inner.clone()),
-            _ => Err(()),
-        }
-    }
-}
-
 lazy_static! {
     static ref DEFAULT_CACHE: Arc<FileCache> = Arc::new(FileCache::new());
 }
@@ -115,14 +139,35 @@ pub fn default_cache() -> Arc<FileCache> {
 }
 
 impl BufferCache<FileCacheEntry> {
+    fn get_entry(
+        &self,
+        file: &dyn FileReader,
+        location: BlockLocation,
+        compression: Option<Compression>,
+    ) -> Result<FileCacheEntry, Error> {
+        match self.get(file, location.offset) {
+            Some(entry) => Ok(entry),
+            None => {
+                let block = file.read_block(location)?;
+                let entry = FileCacheEntry::from_read(block, location, compression)?;
+                self.insert(file.file_id(), location.offset, entry.clone());
+                Ok(entry)
+            }
+        }
+    }
+
     /// Reads `location` from `file` and returns it converted to
     /// `InnerDataBlock`.
     pub(super) fn read_data_block(
         &self,
         file: &dyn FileReader,
         location: BlockLocation,
+        compression: Option<Compression>,
     ) -> Result<Arc<InnerDataBlock>, Error> {
-        self.read(file, location, FileCacheEntry::as_data_block)
+        match self.get_entry(file, location, compression)? {
+            FileCacheEntry::Data(inner) => Ok(inner),
+            _ => Err(Error::Corruption(CorruptionError::BadBlockType(location))),
+        }
     }
 
     /// Reads `location` from `file` and returns it converted to
@@ -131,8 +176,12 @@ impl BufferCache<FileCacheEntry> {
         &self,
         file: &dyn FileReader,
         location: BlockLocation,
+        compression: Option<Compression>,
     ) -> Result<Arc<InnerIndexBlock>, Error> {
-        self.read(file, location, FileCacheEntry::as_index_block)
+        match self.get_entry(file, location, compression)? {
+            FileCacheEntry::Index(inner) => Ok(inner),
+            _ => Err(Error::Corruption(CorruptionError::BadBlockType(location))),
+        }
     }
 
     /// Reads `location` from `file` and returns it converted to `FileTrailer`.
@@ -141,6 +190,9 @@ impl BufferCache<FileCacheEntry> {
         file: &dyn FileReader,
         location: BlockLocation,
     ) -> Result<Arc<FileTrailer>, Error> {
-        self.read(file, location, FileCacheEntry::as_file_trailer)
+        match self.get_entry(file, location, None)? {
+            FileCacheEntry::FileTrailer(inner) => Ok(inner),
+            _ => Err(Error::Corruption(CorruptionError::BadBlockType(location))),
+        }
     }
 }
