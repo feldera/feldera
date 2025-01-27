@@ -14,6 +14,7 @@ use feldera_types::config::{
 };
 use serde::{ser::SerializeStruct, Serialize, Serializer};
 use std::{
+    fmt::Display,
     fs::OpenOptions,
     io::ErrorKind,
     ops::Range,
@@ -132,8 +133,8 @@ pub trait HasFileId {
 /// deleted if it is dropped.
 pub trait FileWriter: HasFileId {
     /// Writes `data` at the given byte `offset`.  `offset` must be a multiple
-    /// of 512 and `size` must be a power of 2 and at least 512.  Returns the
-    /// data that was written encapsulated in an `Arc`.
+    /// of 512 and `data.len()` must be a multiple of 512.  Returns the data
+    /// that was written encapsulated in an `Arc`.
     fn write_block(&mut self, offset: u64, data: FBuf) -> Result<Arc<FBuf>, StorageError>;
 
     /// Completes writing of a file and returns a reader for the file and the
@@ -153,13 +154,10 @@ pub trait FileReader: Send + Sync + HasFileId {
     /// deleted on drop.
     fn mark_for_checkpoint(&self);
 
-    /// Reads a `size`-byte block of data from a file starting at the given byte
-    /// `offset`.  `offset` must be a multiple of 512 and `size` must be a power
-    /// of 2 and at least 512.
-    ///
-    /// If successful, the result will be exactly `size` bytes long; that is,
-    /// this API treats read past EOF as an error.
-    fn read_block(&self, offset: u64, size: usize) -> Result<Arc<FBuf>, StorageError>;
+    /// Reads data at `location` from the file.  If successful, the result will
+    /// be exactly the requested length; that is, this API treats read past EOF
+    /// as an error.
+    fn read_block(&self, location: BlockLocation) -> Result<Arc<FBuf>, StorageError>;
 
     /// Initiates an asynchronous read.  When the read completes, `callback`
     /// will be called.
@@ -174,7 +172,10 @@ pub trait FileReader: Send + Sync + HasFileId {
             blocks
                 .into_iter()
                 .map(|range| {
-                    self.read_block(range.start, (range.end - range.start).try_into().unwrap())
+                    self.read_block(BlockLocation {
+                        offset: range.start,
+                        size: (range.end - range.start).try_into().unwrap(),
+                    })
                 })
                 .collect(),
         )
@@ -295,3 +296,49 @@ static IOV_MAX: LazyLock<usize> = LazyLock::new(|| {
     #[cfg(not(target_os = "linux"))]
     1024
 });
+
+/// A range of bytes in a file that doesn't satisfy the constraints for
+/// [BlockLocation].
+#[derive(Copy, Clone, Debug)]
+pub struct InvalidBlockLocation {
+    /// Byte offset.
+    pub offset: u64,
+
+    /// Number of bytes.
+    pub size: usize,
+}
+
+/// A block that can be read or written in a [FileReader] or [FileWriter].
+#[derive(Copy, Clone, Debug)]
+pub struct BlockLocation {
+    /// Byte offset, a multiple of 512.
+    pub offset: u64,
+
+    /// Size in bytes, a multiple of 512, less than `2**31`.
+    ///
+    /// (The upper limit is because some kernel APIs return the number of bytes
+    /// read as an `i32`.)
+    pub size: usize,
+}
+
+impl BlockLocation {
+    /// Constructs a new [BlockLocation], validating `offset` and `size`.
+    pub fn new(offset: u64, size: usize) -> Result<Self, InvalidBlockLocation> {
+        if (offset % 512) != 0 || !(512..1 << 31).contains(&size) || (size % 512) != 0 {
+            Err(InvalidBlockLocation { offset, size })
+        } else {
+            Ok(Self { offset, size })
+        }
+    }
+
+    /// File offset just after this block.
+    pub fn after(&self) -> u64 {
+        self.offset + self.size as u64
+    }
+}
+
+impl Display for BlockLocation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} bytes at offset {}", self.size, self.offset)
+    }
+}

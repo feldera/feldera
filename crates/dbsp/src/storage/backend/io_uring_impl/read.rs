@@ -29,7 +29,8 @@ use tracing::error;
 
 use crate::storage::{
     backend::{
-        posixio_impl::DeleteOnDrop, FileId, FileReader, HasFileId, StorageCacheFlags, StorageError,
+        posixio_impl::DeleteOnDrop, BlockLocation, FileId, FileReader, HasFileId,
+        StorageCacheFlags, StorageError,
     },
     buffer_cache::FBuf,
 };
@@ -434,10 +435,10 @@ impl FileReader for IoUringReader {
         self.drop.keep();
     }
 
-    fn read_block(&self, offset: u64, size: usize) -> Result<Arc<FBuf>, StorageError> {
-        let mut buffer = FBuf::with_capacity(size);
+    fn read_block(&self, location: BlockLocation) -> Result<Arc<FBuf>, StorageError> {
+        let mut buffer = FBuf::with_capacity(location.size);
 
-        match buffer.read_exact_at(&self.file, offset, size) {
+        match buffer.read_exact_at(&self.file, location.offset, location.size) {
             Ok(()) => Ok(Arc::new(buffer)),
             Err(e) => Err(e.into()),
         }

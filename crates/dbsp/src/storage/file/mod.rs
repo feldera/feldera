@@ -212,34 +212,6 @@ impl AnyFactories {
     }
 }
 
-#[derive(Copy, Clone, Debug)]
-struct InvalidBlockLocation {
-    offset: u64,
-    size: usize,
-}
-
-/// A block in a layer file.
-///
-/// Used for error reporting.
-#[derive(Copy, Clone, Debug)]
-struct BlockLocation {
-    /// Byte offset, a multiple of 512.
-    offset: u64,
-
-    /// Size in bytes, a multiple of 512, no more than `2**32`.
-    size: usize,
-}
-
-impl BlockLocation {
-    fn new(offset: u64, size: usize) -> Result<Self, InvalidBlockLocation> {
-        if (offset % 512) != 0 || !(512..=1 << 32).contains(&size) || (size % 512) != 0 {
-            Err(InvalidBlockLocation { offset, size })
-        } else {
-            Ok(Self { offset, size })
-        }
-    }
-}
-
 /// Trait for data that can be serialized and deserialized with [`rkyv`].
 pub trait Rkyv: Archive + Serialize<Serializer> + Deserializable {}
 impl<T> Rkyv for T where T: Archive + Serialize<Serializer> + Deserializable {}

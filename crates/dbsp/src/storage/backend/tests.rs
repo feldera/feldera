@@ -9,7 +9,7 @@ use std::{ops::Range, path::Path, rc::Rc};
 use rand::{thread_rng, Fill, Rng};
 use tokio::sync::oneshot;
 
-use crate::storage::{buffer_cache::FBuf, test::init_test_logger};
+use crate::storage::{backend::BlockLocation, buffer_cache::FBuf, test::init_test_logger};
 
 use super::{FileReader, StorageBackend};
 
@@ -38,8 +38,12 @@ fn random_block(size: usize) -> Range<u64> {
 
 fn test_read_block(reader: &dyn FileReader, data: &[u8], offset: usize) -> usize {
     let length = random_block_length(data.len(), offset);
-    let block = reader.read_block(offset as u64, length).unwrap();
-    assert_eq!(block.as_slice(), &data[offset..offset + length]);
+    assert!(offset == data.len() || length > 0);
+    if length > 0 {
+        let location = BlockLocation::new(offset as u64, length).unwrap();
+        let block = reader.read_block(location).unwrap();
+        assert_eq!(block.as_slice(), &data[offset..offset + length]);
+    }
     length
 }
 
@@ -75,7 +79,9 @@ fn test_read(reader: &dyn FileReader, data: &[u8]) {
     for _ in 0..100 {
         test_read_async(reader, data);
     }
-    reader.read_block(data.len() as u64, 512).unwrap_err();
+    reader
+        .read_block(BlockLocation::new(data.len() as u64, 512).unwrap())
+        .unwrap_err();
 }
 
 pub(super) fn test_backend(
