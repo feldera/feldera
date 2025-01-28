@@ -566,15 +566,21 @@ where
                 move || {
                     self.circuit().region("antijoin", || {
                         let stream1 = self.dyn_shard(&factories.join_factories.left_factories);
-                        let stream2 = other
-                            .dyn_map(
-                                &factories.join_factories.right_factories,
-                                Box::new(|item: <I2 as DynFilterMap>::DynItemRef<'_>, output| {
-                                    <I2 as DynFilterMap>::item_ref_keyval(item)
-                                        .0
-                                        .clone_to(output.fst_mut())
-                                }),
-                            )
+
+                        // Project away values, leave keys only.
+                        let other_keys = other.try_sharded_version().dyn_map(
+                            &factories.join_factories.right_factories,
+                            Box::new(|item: <I2 as DynFilterMap>::DynItemRef<'_>, output| {
+                                <I2 as DynFilterMap>::item_ref_keyval(item)
+                                    .0
+                                    .clone_to(output.fst_mut())
+                            }),
+                        );
+
+                        // `dyn_map` above preserves keys.
+                        other_keys.mark_sharded_if(other);
+
+                        let stream2 = other_keys
                             .dyn_distinct(&factories.distinct_factories)
                             .dyn_shard(&factories.join_factories.right_factories);
 
