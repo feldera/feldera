@@ -18,6 +18,29 @@ import org.junit.Ignore;
 import org.junit.Test;
 
 public class RegressionTests extends SqlIoTest {
+    @Test
+    public void internalIssue174() {
+        this.compileRustTestCase("""
+                CREATE FUNCTION a2m(input VARIANT ARRAY) RETURNS VARIANT NOT NULL AS VariantNull();
+                
+                CREATE TYPE iff AS (x BIGINT);
+                CREATE TYPE fr AS (
+                    fields iff ARRAY,
+                    sf VARIANT ARRAY
+                );
+                CREATE TYPE fs AS (records fr ARRAY);
+                
+                CREATE TABLE flows (sets fs array);
+                
+                CREATE VIEW fp AS
+                SELECT data
+                FROM flows, UNNEST(flows.sets) as t (data);
+                
+                CREATE VIEW V AS
+                SELECT a2m(r.fields) as fields
+                FROM fp, UNNEST(fp.data) as r;""");
+    }
+
     @Test @Ignore("")
     public void issue3364() {
         this.getCCS("""

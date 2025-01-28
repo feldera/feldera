@@ -3002,6 +3002,16 @@ where
 }
 
 #[doc(hidden)]
+pub fn cast_to_VN_map<K, V>(map: BTreeMap<K, V>) -> SqlResult<Option<Variant>>
+where
+    Variant: From<K> + From<V>,
+    K: Clone + Ord,
+    V: Clone,
+{
+    r2o(cast_to_V_map(map))
+}
+
+#[doc(hidden)]
 pub fn cast_to_V_mapN<K, V>(map: Option<BTreeMap<K, V>>) -> SqlResult<Variant>
 where
     Variant: From<K> + From<V>,
@@ -3012,6 +3022,16 @@ where
         None => Ok(Variant::SqlNull),
         Some(map) => Ok(map.into()),
     }
+}
+
+#[doc(hidden)]
+pub fn cast_to_VN_mapN<K, V>(map: Option<BTreeMap<K, V>>) -> SqlResult<Option<Variant>>
+where
+    Variant: From<K> + From<V>,
+    K: Clone + Ord,
+    V: Clone,
+{
+    r2o(cast_to_V_mapN(map))
 }
 
 #[doc(hidden)]
