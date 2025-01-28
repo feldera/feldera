@@ -16,6 +16,7 @@
   import BookADemo from '$lib/components/other/BookADemo.svelte'
   import { useLayoutSettings } from '$lib/compositions/layout/useLayoutSettings.svelte'
   import { useIsTablet } from '$lib/compositions/layout/useIsMobile.svelte'
+  import { useLatestVersion } from '$lib/compositions/latestVersion.svelte'
 
   const dialog = useGlobalDialog()
 
@@ -26,6 +27,11 @@
   const isTablet = useIsTablet()
   const { showPipelinesPanel: leftDrawer } = useLayoutSettings()
   const pipelineList = usePipelineList(data.preloaded)
+
+  const { fetchLatestVersion } = useLatestVersion(fetch)
+  $effect(() => {
+    fetchLatestVersion()
+  })
 </script>
 
 <SvelteKitTopLoader height={2} color={'rgb(var(--color-primary-500))'} showSpinner={false}
