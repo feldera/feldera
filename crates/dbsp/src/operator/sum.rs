@@ -28,8 +28,20 @@ where
     where
         I: IntoIterator<Item = &'a Self>,
     {
-        self.circuit()
-            .add_nary_operator(Sum::new(), once(self).chain(streams))
+        let streams = streams.into_iter().collect::<Vec<_>>();
+
+        if self.has_sharded_version() && streams.iter().all(|s| s.has_sharded_version()) {
+            let sharded_streams = once(self.try_sharded_version())
+                .chain(streams.iter().map(|s| s.try_sharded_version()))
+                .collect::<Vec<_>>();
+
+            self.circuit()
+                .add_nary_operator(Sum::new(), &sharded_streams)
+                .mark_sharded()
+        } else {
+            self.circuit()
+                .add_nary_operator(Sum::new(), once(self).chain(streams))
+        }
     }
 }
 
