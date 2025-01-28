@@ -3693,6 +3693,7 @@ dependencies = [
  "rlimit",
  "serde",
  "serde_json",
+ "snap",
  "static_assertions",
  "tar",
  "tarpc",

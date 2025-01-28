@@ -3,6 +3,8 @@
 
 use crate::circuit::metrics::describe_metrics;
 use crate::error::Error as DbspError;
+use crate::storage::file::format::Compression;
+use crate::storage::file::writer::Parameters;
 use crate::{
     storage::{
         backend::{StorageBackend, StorageError},
@@ -12,6 +14,7 @@ use crate::{
     },
     DetailedError,
 };
+use feldera_types::config::StorageCompression;
 use once_cell::sync::Lazy;
 use serde::Serialize;
 use std::path::Path;
@@ -443,6 +446,22 @@ impl Runtime {
                     .min_storage_bytes,
             )
         })
+    }
+
+    pub fn file_writer_parameters() -> Parameters {
+        let compression = Runtime::runtime()
+            .unwrap()
+            .inner()
+            .storage
+            .as_ref()
+            .and_then(|storage| storage.options.compression);
+
+        let p = Parameters::default();
+        match compression {
+            Some(StorageCompression::None) => p.with_compression(None),
+            Some(StorageCompression::Snappy) => p.with_compression(Some(Compression::Snappy)),
+            None => p,
+        }
     }
 
     fn inner(&self) -> &RuntimeInner {

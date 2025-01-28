@@ -60,6 +60,22 @@
 //!   [`IndexBlockHeader::n_children`].  Each one of these is the size of the
 //!   corresponding child block, expressed in 512-byte units.  Each block must
 //!   be less than 2 GiB.
+//!
+//! # Compression
+//!
+//! If [`FileTrailer::compression`] is not `None`, then each block in the file
+//! other than the trailer block itself is compressed using the indicated
+//! algorithm. A compressed block consists of:
+//!
+//! * `compressed_len`, a 4-byte little-endian integer that indicates the number
+//!   of bytes of compressed data to follow.
+//!
+//! * `compressed_len` bytes of compressed data.
+//!
+//! * Padding with 0-bytes to a 512-byte alignment.
+//!
+//! Decompressing a compressed block yields the regular index or data block
+//! format starting with a [`BlockHeader`].
 use crate::storage::buffer_cache::FBuf;
 
 use binrw::{binrw, BinRead, BinResult, BinWrite, Error as BinError};
@@ -119,6 +135,11 @@ pub struct FileTrailer {
     /// Currently, must be [`VERSION_NUMBER`].  In the future, this allows for
     /// detecting version changes and supporting backward compatibility.
     pub version: u32,
+
+    /// Type of compression.
+    #[bw(write_with = Compression::write_opt)]
+    #[br(parse_with = Compression::parse_opt)]
+    pub compression: Option<Compression>,
 
     /// Number of columns.
     #[bw(calc(columns.len() as u32))]
@@ -390,23 +411,33 @@ fn next_multiple_of_pow2(offset: usize, alignment: usize) -> usize {
     (offset + mask) & !mask
 }
 
-/*
-/// Key and auxiliary data.
-///
-/// This type is serialized with `rkyv` for each value in a data block.
-///
-/// The definition of this struct makes it appear that the key precedes the
-/// auxiliary data, but the Rust compiler can reorder struct members (in both
-/// `Item` and [`ArchivedItem`]), so the serialize form might be in the reverse
-/// order.
-///
-/// `rkyv` can serialize arrays, slices, and vectors perfectly well on its own.
-/// This crate serializes each value in a data block separately because there is
-/// no way to accurately predict how big a serialized vector will be without
-/// doing it.
-#[derive(Archive, Serialize)]
-pub struct Item<'a, K, A>(#[with(Inline)] pub &'a K, #[with(Inline)] pub &'a A)
-where
-    K: Rkyv,
-    A: Rkyv;
-*/
+/// Type of compression.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, FromPrimitive)]
+#[binrw]
+#[brw(repr(u8))]
+pub enum Compression {
+    /// [Snappy](https://en.wikipedia.org/wiki/Snappy_(compression)).
+    Snappy = 1,
+}
+
+impl Compression {
+    #[binrw::parser(reader, endian)]
+    pub(crate) fn parse_opt() -> BinResult<Option<Self>> {
+        let byte: u8 = <_>::read_options(reader, endian, ())?;
+        match byte {
+            0 => Ok(None),
+            _ => match FromPrimitive::from_u8(byte) {
+                Some(value) => Ok(Some(value)),
+                None => Err(BinError::NoVariantMatch {
+                    pos: reader.stream_position()? - 1,
+                }),
+            },
+        }
+    }
+    #[binrw::writer(writer, endian)]
+    pub(crate) fn write_opt(value: &Option<Self>) -> BinResult<()> {
+        value
+            .map_or(0, |value| value as u8)
+            .write_options(writer, endian, ())
+    }
+}

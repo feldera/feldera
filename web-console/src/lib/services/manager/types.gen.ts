@@ -1954,6 +1954,11 @@ export type name = 'config'
 export type StorageCacheConfig = 'page_cache' | 'feldera_cache'
 
 /**
+ * Storage compression algorithm.
+ */
+export type StorageCompression = 'none' | 'snappy'
+
+/**
  * Configuration for persistent storage in a [`PipelineConfig`].
  */
 export type StorageConfig = {
@@ -1976,6 +1981,7 @@ export type StorageConfig = {
  */
 export type StorageOptions = {
   backend?: StorageBackendConfig
+  compression?: StorageCompression | null
   /**
    * The minimum estimated number of bytes in a batch of data to write it to
    * storage.  This is provided for debugging and fine-tuning and should

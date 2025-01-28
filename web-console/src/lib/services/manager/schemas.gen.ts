@@ -3023,6 +3023,12 @@ export const $StorageCacheConfig = {
   enum: ['page_cache', 'feldera_cache']
 } as const
 
+export const $StorageCompression = {
+  type: 'string',
+  description: 'Storage compression algorithm.',
+  enum: ['none', 'snappy']
+} as const
+
 export const $StorageConfig = {
   type: 'object',
   description: 'Configuration for persistent storage in a [`PipelineConfig`].',
@@ -3058,6 +3064,15 @@ export const $StorageOptions = {
       default: {
         name: 'default'
       }
+    },
+    compression: {
+      allOf: [
+        {
+          $ref: '#/components/schemas/StorageCompression'
+        }
+      ],
+      default: null,
+      nullable: true
     },
     min_storage_bytes: {
       type: 'integer',

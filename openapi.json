@@ -412,7 +412,8 @@
                         "backend": {
                           "name": "default"
                         },
-                        "min_storage_bytes": null
+                        "min_storage_bytes": null,
+                        "compression": null
                       },
                       "fault_tolerance": null,
                       "cpu_profiler": false,
@@ -4488,6 +4489,14 @@
           "feldera_cache"
         ]
       },
+      "StorageCompression": {
+        "type": "string",
+        "description": "Storage compression algorithm.",
+        "enum": [
+          "none",
+          "snappy"
+        ]
+      },
       "StorageConfig": {
         "type": "object",
         "description": "Configuration for persistent storage in a [`PipelineConfig`].",
@@ -4517,6 +4526,15 @@
             "default": {
               "name": "default"
             }
+          },
+          "compression": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StorageCompression"
+              }
+            ],
+            "default": null,
+            "nullable": true
           },
           "min_storage_bytes": {
             "type": "integer",

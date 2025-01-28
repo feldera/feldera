@@ -260,6 +260,7 @@ mod test {
 
     use super::{
         cache::default_cache,
+        format::Compression,
         reader::{AsyncRowGroup, ColumnSpec, RowGroup},
         writer::{Parameters, Writer1, Writer2},
         Factories,
@@ -272,6 +273,16 @@ mod test {
     use feldera_types::config::StorageConfig;
     use rand::{seq::SliceRandom, thread_rng, Rng};
     use tempfile::tempdir;
+
+    fn for_each_compression_type<F>(parameters: Parameters, f: F)
+    where
+        F: Fn(Parameters),
+    {
+        for compression in [None, Some(Compression::Snappy)] {
+            print!("\n# testing with compression={compression:?}\n\n");
+            f(parameters.clone().with_compression(compression));
+        }
+    }
 
     trait TwoColumns {
         type K0: DBData;
@@ -749,6 +760,7 @@ mod test {
         }
 
         let reader = layer_file.into_reader().unwrap();
+        reader.evict();
         let rows0 = reader.rows();
         let expected0 = |row0| {
             let key0 = T::key0(row0);
@@ -837,7 +849,9 @@ mod test {
             }
         }
 
-        test_two_columns::<TwoInts>(parameters);
+        for_each_compression_type(parameters, |parameters| {
+            test_two_columns::<TwoInts>(parameters)
+        });
     }
 
     #[test]
@@ -849,7 +863,7 @@ mod test {
     #[test]
     fn test_2_columns_max_branch_2() {
         init_test_logger();
-        test_2_columns_helper(Parameters::with_max_branch(2));
+        test_2_columns_helper(Parameters::default().with_max_branch(2));
     }
 
     fn test_one_column<K, A>(
@@ -860,38 +874,42 @@ mod test {
         K: DBData,
         A: DBData,
     {
-        let factories = Factories::<DynData, DynData>::new::<K, A>();
-        let cache = default_cache();
-        let tempdir = tempdir().unwrap();
-        let storage_backend = <dyn StorageBackend>::new_default(&StorageConfig {
-            path: tempdir.path().to_string_lossy().to_string(),
-            cache: Default::default(),
-        });
-        let mut writer = Writer1::new(&factories, &cache, &*storage_backend, parameters).unwrap();
-        for row in 0..n {
-            let (_before, key, _after, aux) = expected(row);
-            writer.write0((&key, &aux)).unwrap();
-        }
+        for_each_compression_type(parameters, |parameters| {
+            let factories = Factories::<DynData, DynData>::new::<K, A>();
+            let cache = default_cache();
+            let tempdir = tempdir().unwrap();
+            let storage_backend = <dyn StorageBackend>::new_default(&StorageConfig {
+                path: tempdir.path().to_string_lossy().to_string(),
+                cache: Default::default(),
+            });
+            let mut writer =
+                Writer1::new(&factories, &cache, &*storage_backend, parameters).unwrap();
+            for row in 0..n {
+                let (_before, key, _after, aux) = expected(row);
+                writer.write0((&key, &aux)).unwrap();
+            }
 
-        let reader = writer.into_reader().unwrap();
-        assert_eq!(reader.rows().len(), n as u64);
-        test_cursor(&reader.rows(), n, &expected);
+            let reader = writer.into_reader().unwrap();
+            reader.evict();
+            assert_eq!(reader.rows().len(), n as u64);
+            test_cursor(&reader.rows(), n, &expected);
 
-        TOKIO.block_on(async {
-            // Force some blocking due to I/O, to test those cases in
-            // [AsyncCacheContext].
-            cache.evict(reader.file_handle());
+            TOKIO.block_on(async {
+                // Force some blocking due to I/O, to test those cases in
+                // [AsyncCacheContext].
+                cache.evict(reader.file_handle());
 
-            let context = reader.new_async_context();
-            context
-                .execute_tasks(
-                    reader.file_handle(),
-                    [async {
-                        let row_group = reader.rows_async(&context);
-                        test_cursor_async(&row_group, n, expected).await;
-                    }],
-                )
-                .await;
+                let context = reader.new_async_context();
+                context
+                    .execute_tasks(
+                        reader.file_handle(),
+                        [async {
+                            let row_group = reader.rows_async(&context);
+                            test_cursor_async(&row_group, n, &expected).await;
+                        }],
+                    )
+                    .await;
+            });
         });
     }
 
@@ -911,17 +929,17 @@ mod test {
 
     #[test]
     fn test_i64_max_branch_32() {
-        test_i64_helper(Parameters::with_max_branch(32));
+        test_i64_helper(Parameters::default().with_max_branch(32));
     }
 
     #[test]
     fn test_i64_max_branch_3() {
-        test_i64_helper(Parameters::with_max_branch(3));
+        test_i64_helper(Parameters::default().with_max_branch(3));
     }
 
     #[test]
     fn test_i64_max_branch_2() {
-        test_i64_helper(Parameters::with_max_branch(2));
+        test_i64_helper(Parameters::default().with_max_branch(2));
     }
 
     #[test]

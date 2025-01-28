@@ -139,6 +139,15 @@ pub struct StorageOptions {
     /// values provide a threshold.  `usize::MAX` would effectively disable
     /// storage.
     pub min_storage_bytes: Option<usize>,
+
+    /// The form of compression to use in data batches.
+    ///
+    /// Compression has a CPU cost but it can take better advantage of limited
+    /// NVMe and network bandwidth, which means that it can increase overall
+    /// performance.
+    ///
+    /// If this is left unset, then Feldera will use a default.
+    pub compression: Option<StorageCompression>,
 }
 
 /// Storage configuration for users.
@@ -150,6 +159,17 @@ pub enum StorageBackendConfig {
     /// Currently this is the pipeline's local filesystem.
     #[default]
     Default,
+}
+
+/// Storage compression algorithm.
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum StorageCompression {
+    /// Do not compress.
+    None,
+
+    /// Use [Snappy](https://en.wikipedia.org/wiki/Snappy_(compression)) compression.
+    Snappy,
 }
 
 /// Global pipeline configuration settings. This is the publicly

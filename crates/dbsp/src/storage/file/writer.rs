@@ -19,6 +19,7 @@ use binrw::{
 use crc32c::crc32c;
 #[cfg(debug_assertions)]
 use dyn_clone::clone_box;
+use snap::raw::{max_compress_len, Encoder};
 
 use crate::storage::{
     backend::{BlockLocation, FileReader, FileWriter, StorageBackend, StorageError},
@@ -35,7 +36,8 @@ use crate::{
     Runtime,
 };
 
-use super::cache::FileCache;
+use super::cache::{FileCache, FileCacheEntry};
+use super::format::Compression;
 use super::{
     reader::{ImmutableFileRef, Reader},
     AnyFactories, Factories, Serializer,
@@ -81,6 +83,7 @@ impl VarintWriter {
 /// Configuration parameters for writing a layer file.
 ///
 /// The default parameters should usually be good enough.
+#[derive(Clone, Debug)]
 pub struct Parameters {
     /// Minimum size of a data block, in bytes.  Must be a power of 2 and at
     /// least 4096.
@@ -127,6 +130,9 @@ pub struct Parameters {
 
     #[cfg(test)]
     pub max_branch: usize,
+
+    /// How to compress input and data blocks in the output file.
+    pub compression: Option<Compression>,
 }
 
 impl Parameters {
@@ -145,10 +151,15 @@ impl Parameters {
     }
 
     #[cfg(test)]
-    pub fn with_max_branch(max_branch: usize) -> Self {
+    pub fn with_max_branch(self, max_branch: usize) -> Self {
+        Self { max_branch, ..self }
+    }
+
+    /// Returns these parameters with `compression` updated.
+    pub fn with_compression(self, compression: Option<Compression>) -> Self {
         Self {
-            max_branch,
-            ..Self::default()
+            compression,
+            ..self
         }
     }
 }
@@ -161,6 +172,7 @@ impl Default for Parameters {
             min_branch: 32,
             #[cfg(test)]
             max_branch: usize::MAX,
+            compression: Some(Compression::Snappy),
         }
     }
 }
@@ -283,7 +295,7 @@ impl ColumnWriter {
     where
         K: DataTrait + ?Sized,
     {
-        let location = block_writer.write_block(data_block.raw)?;
+        let location = block_writer.write_block(data_block.raw, self.parameters.compression)?;
 
         if let Some(index_block) = self.get_index_block(0).add_entry(
             location,
@@ -305,7 +317,8 @@ impl ColumnWriter {
         K: DataTrait + ?Sized,
     {
         loop {
-            let location = block_writer.write_block(index_block.raw)?;
+            let location =
+                block_writer.write_block(index_block.raw, self.parameters.compression)?;
 
             level += 1;
             let opt_index_block = self.get_index_block(level).add_entry(
@@ -888,6 +901,8 @@ impl IndexBlockBuilder {
 struct BlockWriter {
     cache: Arc<FileCache>,
     file_handle: Option<Box<dyn FileWriter>>,
+    encoder: Encoder,
+    bounce: Vec<u8>,
     offset: u64,
 }
 
@@ -896,6 +911,8 @@ impl BlockWriter {
         Self {
             cache: cache.clone(),
             file_handle: Some(file_handle),
+            encoder: Encoder::new(),
+            bounce: Vec::new(),
             offset: 0,
         }
     }
@@ -904,18 +921,76 @@ impl BlockWriter {
         self.file_handle.take().unwrap().complete()
     }
 
-    fn write_block(&mut self, mut block: FBuf) -> Result<BlockLocation, StorageError> {
-        block.resize(block.len().max(4096).next_power_of_two(), 0);
-        let checksum = crc32c(&block[4..]).to_le_bytes();
-        block[..4].copy_from_slice(checksum.as_slice());
+    fn write_block(
+        &mut self,
+        mut block: FBuf,
+        compression: Option<Compression>,
+    ) -> Result<BlockLocation, StorageError> {
+        // `block` is the uncompressed version.
+        // We need to write the compressed version.
+        let (uncompressed, location) = if let Some(compression) = compression {
+            // Checksum the uncompressed data.
+            let checksum = crc32c(&block[4..]).to_le_bytes();
+            block[..4].copy_from_slice(checksum.as_slice());
 
-        let location = BlockLocation::new(self.offset, block.len()).unwrap();
-        self.offset += block.len() as u64;
-        self.cache.write(
-            self.file_handle.as_mut().unwrap().as_mut(),
-            location.offset,
-            block,
-        )?;
+            // Compress the data into a bounce buffer.
+            let compressed_len = match compression {
+                Compression::Snappy => {
+                    let max_len = max_compress_len(block.len());
+                    if max_len > self.bounce.len() {
+                        self.bounce.resize(max_len, 0);
+                    }
+                    self.encoder
+                        .compress(block.as_slice(), self.bounce.as_mut_slice())
+                        .unwrap()
+                }
+            };
+
+            // Construct compressed buffer as:
+            //
+            // - `compressed_len` as a 32-bit little-endian integer
+            // - compressed data (`compressed_len` bytes)
+            // - padding to `padded_len`, which is a multiple of 512 bytes
+            let padded_len = (compressed_len + 4).next_multiple_of(512);
+            let mut compressed = FBuf::with_capacity(padded_len);
+            compressed.extend_from_slice((compressed_len as u32).to_le_bytes().as_slice());
+            compressed.extend_from_slice(&self.bounce[..compressed_len]);
+            compressed.resize(padded_len, 0);
+
+            // Write the compressed data (and discard it).
+            let location = BlockLocation::new(self.offset, padded_len).unwrap();
+            self.file_handle
+                .as_mut()
+                .unwrap()
+                .as_mut()
+                .write_block(self.offset, compressed)?;
+
+            (Arc::new(block), location)
+        } else {
+            // Pad and checksum the block.
+            block.resize(block.len().next_multiple_of(512), 0);
+            let checksum = crc32c(&block[4..]).to_le_bytes();
+            block[..4].copy_from_slice(checksum.as_slice());
+
+            // Write the block.
+            let location = BlockLocation::new(self.offset, block.len()).unwrap();
+            let block = self
+                .file_handle
+                .as_mut()
+                .unwrap()
+                .as_mut()
+                .write_block(self.offset, block)?;
+            (block, location)
+        };
+
+        // Construct a cache entry from the uncompressed data.
+        let file_id = self.file_handle.as_ref().unwrap().file_id();
+        self.cache.insert(
+            file_id,
+            self.offset,
+            FileCacheEntry::from_write(uncompressed, location).unwrap(),
+        );
+        self.offset = location.after();
         Ok(location)
     }
 }
@@ -999,8 +1074,9 @@ impl Writer {
             header: BlockHeader::new(b"LFFT"),
             version: VERSION_NUMBER,
             columns: take(&mut self.finished_columns),
+            compression: self.cws[0].parameters.compression,
         };
-        self.writer.write_block(file_trailer.into_block())?;
+        self.writer.write_block(file_trailer.into_block(), None)?;
 
         self.writer.complete()
     }
