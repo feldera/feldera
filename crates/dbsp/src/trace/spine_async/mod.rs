@@ -109,17 +109,15 @@ where
     /// We merge the least recently added batches (ensuring that batches
     /// eventually get merged).
     fn try_start_merge(&mut self, level: usize) -> Option<Vec<Arc<B>>> {
-        // Lower level slots merge more batches at once. This is what other LSM implementations do
-        // although with slightly different numbers. The rationale is that the lower levels,
-        // which have more batches, should merge more batches at once. It's not clear why not every
-        // level should merge many batches.
-        const MAX_BATCHES_MERGED_AT_ONCE: [usize; MAX_LEVELS] = [12usize, 12, 12, 12, 12, 12, 12, 12, 12];
+        // Some LSM implementations do use slightly different numbers per-level.
+        // We didn't see clear benefits with more/slightly less than 12 batches merged at
+        // once or different numbers per level so everything is set to 12 for now.
+        const MAX_BATCHES_MERGED_AT_ONCE: [usize; MAX_LEVELS] =
+            [12usize, 12, 12, 12, 12, 12, 12, 12, 12];
 
         if self.merging_batches.is_none() && self.loose_batches.len() >= 2 {
-            let mut batches = Vec::with_capacity(MAX_BATCHES_MERGED_AT_ONCE[level]);
-            for _i in 0..std::cmp::min(MAX_BATCHES_MERGED_AT_ONCE[level], self.loose_batches.len()) {
-                batches.push(self.loose_batches.pop_front().unwrap());
-            }
+            let n = std::cmp::min(MAX_BATCHES_MERGED_AT_ONCE[level], self.loose_batches.len());
+            let batches = self.loose_batches.drain(..n).collect::<Vec<_>>();
             self.merging_batches = Some(batches.clone());
             Some(batches)
         } else {
@@ -208,7 +206,7 @@ where
     }
 
     fn should_relieve_backpressure(&self) -> bool {
-        const LOWER_THRESHOLD: usize = 64;
+        const LOWER_THRESHOLD: usize = 127;
         self.slots
             .iter()
             .map(|s| s.loose_batches.len())
