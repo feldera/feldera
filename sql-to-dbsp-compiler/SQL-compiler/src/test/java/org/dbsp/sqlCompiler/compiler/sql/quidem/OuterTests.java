@@ -305,10 +305,4 @@ public class OuterTests extends PostBaseTests {
                 +---+----+----+-----+
                 (4 rows)""");
     }
-
-    @Test
-    public void t() throws IOException {
-        String sql = Utilities.readFile("/home/mbudiu/win/Downloads/procore_sql.txt");
-        this.compileRustTestCase(sql);
-    }
 }

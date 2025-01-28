@@ -73,35 +73,29 @@ public class OuterJoinTests extends SqlIoTest {
         CompilerCircuitStream ccs;
         CheckCommonIndex cci;
 
-        ccs = this.getCCS("""
+        String common = """
                 CREATE TABLE T(X INT, Y INT NOT NULL);
-                CREATE TABLE S(X INT, Y INT NOT NULL);
-                CREATE VIEW YX AS SELECT * FROM T LEFT JOIN S ON T.Y = S.X;""");
+                CREATE TABLE S(X INT, Y INT NOT NULL);""";
+
+        ccs = this.getCCS(common +
+                "CREATE VIEW YX AS SELECT * FROM T LEFT JOIN S ON T.Y = S.X;");
         cci = new CheckCommonIndex(ccs.compiler, true);
         cci.apply(ccs.circuit);
 
-        ccs = this.getCCS("""
-                CREATE TABLE T(X INT, Y INT NOT NULL);
-                CREATE TABLE S(X INT, Y INT NOT NULL);
-                CREATE VIEW YY AS SELECT * FROM T LEFT JOIN S ON T.Y = S.Y;""");
+        ccs = this.getCCS(common +
+                "CREATE VIEW YY AS SELECT * FROM T LEFT JOIN S ON T.Y = S.Y;");
         cci = new CheckCommonIndex(ccs.compiler, true);
         cci.apply(ccs.circuit);
 
-        /*
-        ccs = this.getCCS("""
-                CREATE TABLE T(X INT, Y INT NOT NULL);
-                CREATE TABLE S(X INT, Y INT NOT NULL);
-                CREATE VIEW XX AS SELECT * FROM T LEFT JOIN S ON T.X = S.X;""");
-        cci = new CheckCommonIndex(ccs.compiler, false);
+        ccs = this.getCCS(common +
+                "CREATE VIEW XX AS SELECT * FROM T LEFT JOIN S ON T.X = S.X;");
+        cci = new CheckCommonIndex(ccs.compiler, true);
         cci.apply(ccs.circuit);
 
-        ccs = this.getCCS("""
-                CREATE TABLE T(X INT, Y INT NOT NULL);
-                CREATE TABLE S(X INT, Y INT NOT NULL);
-                CREATE VIEW XY AS SELECT * FROM T LEFT JOIN S ON T.X = S.Y;""");
-        cci = new CheckCommonIndex(ccs.compiler, false);
+        ccs = this.getCCS(common +
+                "CREATE VIEW XY AS SELECT * FROM T LEFT JOIN S ON T.X = S.Y;");
+        cci = new CheckCommonIndex(ccs.compiler, true);
         cci.apply(ccs.circuit);
-         */
     }
 
     @Test

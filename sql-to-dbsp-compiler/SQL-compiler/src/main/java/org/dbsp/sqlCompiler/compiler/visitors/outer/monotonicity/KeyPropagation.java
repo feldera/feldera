@@ -24,7 +24,6 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ForeignKey;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Projection;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
-import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Logger;
 import org.dbsp.util.Utilities;
@@ -194,6 +193,10 @@ public class KeyPropagation extends CircuitVisitor {
     }
 
     void processMap(DBSPUnaryOperator node) {
+        if (!node.input().isSimpleNode()) {
+            super.postorder(node);
+            return;
+        }
         StreamDescription inputKeys = this.keys.get(node.input().simpleNode());
         if (inputKeys == null) {
             super.postorder(node);
@@ -323,6 +326,10 @@ public class KeyPropagation extends CircuitVisitor {
     }
 
     void processJoin(DBSPJoinBaseOperator join) {
+        if (!join.left().isSimpleNode() || !join.right().isSimpleNode()) {
+            super.postorder(join);
+            return;
+        }
         StreamDescription left = this.keys.get(join.left().simpleNode());
         StreamDescription right = this.keys.get(join.right().simpleNode());
         if (left == null || right == null) {
@@ -331,7 +338,7 @@ public class KeyPropagation extends CircuitVisitor {
         }
 
         int indexFields = join.left()
-                .getOutputIndexedZSetType().keyType.to(DBSPTypeTuple.class)
+                .getOutputIndexedZSetType().getKeyTypeTuple()
                 .tupFields.length;
         StreamDescription leftIndex = left.prefix(indexFields);
         StreamDescription rightIndex = right.prefix(indexFields);
@@ -431,6 +438,10 @@ public class KeyPropagation extends CircuitVisitor {
     }
 
     void copy(DBSPUnaryOperator unary) {
+        if (!unary.input().isSimpleNode()) {
+            super.postorder(unary);
+            return;
+        }
         StreamDescription inputKeys = this.keys.get(unary.input().simpleNode());
         if (inputKeys != null)
             this.map(unary, inputKeys);
