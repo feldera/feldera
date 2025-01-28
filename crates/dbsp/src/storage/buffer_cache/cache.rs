@@ -12,8 +12,8 @@ use futures::stream::FuturesUnordered;
 use futures::{future, pin_mut, StreamExt};
 use tokio::sync::{oneshot, watch};
 
-use crate::storage::backend::{BlockLocation, FileId, FileReader, FileWriter};
-use crate::storage::file::reader::{CorruptionError, Error};
+use crate::storage::backend::{BlockLocation, FileId, FileReader};
+use crate::storage::file::reader::Error;
 use crate::{storage::backend::StorageError, storage::buffer_cache::FBuf};
 
 /// A key for the block cache.
@@ -60,13 +60,8 @@ where
     serial: u64,
 }
 
-pub trait CacheEntry: Clone + Send
-where
-    Self: Sized,
-{
+pub trait CacheEntry: Clone + Send {
     fn cost(&self) -> usize;
-    fn from_read(raw: Arc<FBuf>, location: BlockLocation) -> Result<Self, Error>;
-    fn from_write(raw: Arc<FBuf>, location: BlockLocation) -> Result<Self, Error>;
 }
 
 struct CacheInner<E>
@@ -231,43 +226,19 @@ where
         }
     }
 
-    /// Reads `size` bytes at the given `offset` from `file` from the cache, or
-    /// from the underlying storage if it is not cached.
-    pub fn read<F, T>(
-        &self,
-        file: &dyn FileReader,
-        location: BlockLocation,
-        convert: F,
-    ) -> Result<T, Error>
-    where
-        F: Fn(&E) -> Result<T, ()>,
-    {
-        let key = CacheKey::new(file.file_id(), location.offset);
-        if let Some(aux) = self.inner.lock().unwrap().get(key) {
-            return convert(aux)
-                .map_err(|_| Error::Corruption(CorruptionError::BadBlockType(location)));
-        }
-
-        let block = file.read_block(location)?;
-        let aux = E::from_read(block, location)?;
-        self.inner.lock().unwrap().insert(key, aux.clone());
-        convert(&aux).map_err(|_| Error::Corruption(CorruptionError::BadBlockType(location)))
-    }
-
-    pub fn write(
-        &self,
-        file: &mut dyn FileWriter,
-        offset: u64,
-        data: FBuf,
-    ) -> Result<(), StorageError> {
-        let data = file.write_block(offset, data)?;
-        let location = BlockLocation::new(offset, data.len()).unwrap();
-        let aux = E::from_write(data, location).unwrap();
+    pub fn get(&self, file: &dyn FileReader, offset: u64) -> Option<E> {
         self.inner
             .lock()
             .unwrap()
-            .insert(CacheKey::new(file.file_id(), offset), aux);
-        Ok(())
+            .get(CacheKey::new(file.file_id(), offset))
+            .cloned()
+    }
+
+    pub fn insert(&self, file_id: FileId, offset: u64, aux: E) {
+        self.inner
+            .lock()
+            .unwrap()
+            .insert(CacheKey::new(file_id, offset), aux);
     }
 
     pub fn evict(&self, file: &dyn FileReader) {
@@ -315,14 +286,13 @@ where
     /// Reads the bytes at `location` from the file.  If the read can be
     /// satisfied from cache, this completes quickly. Otherwise, it blocks until
     /// [Self::execute_tasks] runs I/O for all of the blocking tasks in a batch.
-    pub async fn read<F, T>(&self, location: BlockLocation, convert: F) -> Result<T, Error>
+    pub async fn read<F>(&self, location: BlockLocation, parse: F) -> Result<E, Error>
     where
-        F: Fn(&E) -> Result<T, ()>,
+        F: FnOnce(Arc<FBuf>, BlockLocation) -> Result<E, Error>,
     {
         let key = CacheKey::new(self.file_id, location.offset);
         if let Some(aux) = self.cache.inner.lock().unwrap().get(key) {
-            return convert(aux)
-                .map_err(|_| Error::Corruption(CorruptionError::BadBlockType(location)));
+            return Ok(aux.clone());
         }
 
         let (sender, receiver) = oneshot::channel();
@@ -338,9 +308,9 @@ where
 
         self.n_requests.send_modify(|n| *n += 1);
         let block = receiver.await.unwrap()?; // XXX unwrap
-        let aux = E::from_read(block, location)?;
+        let aux = parse(block, location)?;
         self.cache.inner.lock().unwrap().insert(key, aux.clone());
-        convert(&aux).map_err(|_| Error::Corruption(CorruptionError::BadBlockType(location)))
+        Ok(aux)
     }
 
     /// Waits until `goal` threads have blocked on I/O in [Self::read].

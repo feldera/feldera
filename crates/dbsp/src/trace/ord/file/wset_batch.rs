@@ -6,7 +6,7 @@ use crate::{
     },
     storage::file::{
         reader::{Cursor as FileCursor, Error as ReaderError, Reader},
-        writer::{Parameters, Writer1},
+        writer::Writer1,
         Factories as FileFactories,
     },
     time::{Antichain, AntichainRef},
@@ -245,7 +245,7 @@ where
             &self.factories.file_factories,
             &Runtime::buffer_cache(),
             &*Runtime::storage_backend().unwrap(),
-            Parameters::default(),
+            Runtime::file_writer_parameters(),
         )
         .unwrap();
 
@@ -474,7 +474,7 @@ where
                 &batch1.factories.file_factories,
                 &Runtime::buffer_cache(),
                 &*Runtime::storage_backend().unwrap(),
-                Parameters::default(),
+                Runtime::file_writer_parameters(),
             )
             .unwrap(),
         }
@@ -785,7 +785,7 @@ where
                 &factories.file_factories,
                 &Runtime::buffer_cache(),
                 &*Runtime::storage_backend().unwrap(),
-                Parameters::default(),
+                Runtime::file_writer_parameters(),
             )
             .unwrap(),
         }

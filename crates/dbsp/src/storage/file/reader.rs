@@ -37,7 +37,11 @@ use crate::storage::{
     file::item::ArchivedItem,
 };
 
-use super::{cache::FileCacheEntry, AnyFactories, Factories};
+use super::{
+    cache::FileCacheEntry,
+    format::{Compression, FileTrailer},
+    AnyFactories, Factories,
+};
 
 /// Any kind of error encountered reading a layer file.
 #[derive(ThisError, Debug)]
@@ -82,11 +86,13 @@ pub enum CorruptionError {
 
     /// Block has invalid checksum.
     #[error(
-        "Block ({location}) has invalid checksum {checksum:#x} (expected {computed_checksum:#})"
+        "Block ({location}) with magic {magic:?} has invalid checksum {checksum:#x} (expected {computed_checksum:#x})"
     )]
     InvalidChecksum {
         /// Block location
         location: BlockLocation,
+        /// Block magic,
+        magic: [u8; 4],
         /// Checksum in block.
         checksum: u32,
         /// Checksum that block should have.
@@ -246,6 +252,37 @@ pub enum CorruptionError {
     /// Bad block type.
     #[error("Block ({0}) is wrong type of block.")]
     BadBlockType(BlockLocation),
+
+    /// Bad compressed length.
+    #[error("Compressed block ({location}) claims compressed length {compressed_len} but at most {max_compressed_len} would fit.")]
+    BadCompressedLen {
+        /// Block location.
+        location: BlockLocation,
+        /// Compressed length.
+        compressed_len: usize,
+        /// Maximum compressed length.
+        max_compressed_len: usize,
+    },
+
+    /// Unexpected decompressed length.
+    #[error("Compressed block ({location}) decompressed to {length} bytes instead of the expected {expected_length} bytes")]
+    UnexpectedDecompressionLength {
+        /// Block location.
+        location: BlockLocation,
+        /// Actual length.
+        length: usize,
+        /// Expected length.
+        expected_length: usize,
+    },
+
+    /// Snappy decompression failed.
+    #[error("Compressed block ({location}) failed Snappy decompression: {error}.")]
+    Snappy {
+        /// Block location.
+        location: BlockLocation,
+        /// Snappy error.
+        error: snap::Error,
+    },
 }
 
 #[derive(Clone)]
@@ -370,7 +407,7 @@ impl ValueMapReader {
 
 /// Cached data block details.
 pub struct InnerDataBlock {
-    location: BlockLocation,
+    pub(super) location: BlockLocation,
     raw: Arc<FBuf>,
     value_map: ValueMapReader,
     row_groups: Option<VarintReader>,
@@ -400,17 +437,26 @@ impl InnerDataBlock {
         })
     }
 
-    fn new_blocking(file: &ImmutableFileRef, node: &TreeNode) -> Result<Arc<Self>, Error> {
+    fn new_blocking(
+        file: &ImmutableFileRef,
+        node: &TreeNode,
+        compression: Option<Compression>,
+    ) -> Result<Arc<Self>, Error> {
         file.cache
-            .read_data_block(&*file.file_handle, node.location)
+            .read_blocking(&*file.file_handle, node.location, compression)?
+            .into_data_block()
     }
     async fn new_async(
         context: &AsyncCacheContext<FileCacheEntry>,
         node: &TreeNode,
+        compression: Option<Compression>,
     ) -> Result<Arc<Self>, Error> {
         context
-            .read(node.location, FileCacheEntry::as_data_block)
-            .await
+            .read(node.location, |block, location| {
+                FileCacheEntry::from_read(block, location, compression)
+            })
+            .await?
+            .into_data_block()
     }
     fn n_values(&self) -> usize {
         self.value_map.len()
@@ -622,27 +668,10 @@ struct TreeNode {
 }
 
 impl TreeNode {
-    fn read_blocking<K, A>(self, file: &ImmutableFileRef) -> Result<TreeBlock<K, A>, Error>
-    where
-        K: DataTrait + ?Sized,
-        A: DataTrait + ?Sized,
-    {
-        match self.node_type {
-            NodeType::Data => Ok(TreeBlock::Data(DataBlock::new(
-                &self.factories.factories(),
-                InnerDataBlock::new_blocking(file, &self)?,
-                &self,
-            )?)),
-            NodeType::Index => Ok(TreeBlock::Index(IndexBlock::new(
-                &self.factories,
-                InnerIndexBlock::new_blocking(file, &self)?,
-                &self,
-            )?)),
-        }
-    }
-    async fn read_async<K, A>(
+    fn read_blocking<K, A>(
         self,
-        context: &AsyncCacheContext<FileCacheEntry>,
+        file: &ImmutableFileRef,
+        compression: Option<Compression>,
     ) -> Result<TreeBlock<K, A>, Error>
     where
         K: DataTrait + ?Sized,
@@ -651,12 +680,34 @@ impl TreeNode {
         match self.node_type {
             NodeType::Data => Ok(TreeBlock::Data(DataBlock::new(
                 &self.factories.factories(),
-                InnerDataBlock::new_async(context, &self).await?,
+                InnerDataBlock::new_blocking(file, &self, compression)?,
                 &self,
             )?)),
             NodeType::Index => Ok(TreeBlock::Index(IndexBlock::new(
                 &self.factories,
-                InnerIndexBlock::new_async(context, &self).await?,
+                InnerIndexBlock::new_blocking(file, &self, compression)?,
+                &self,
+            )?)),
+        }
+    }
+    async fn read_async<K, A>(
+        self,
+        context: &AsyncCacheContext<FileCacheEntry>,
+        compression: Option<Compression>,
+    ) -> Result<TreeBlock<K, A>, Error>
+    where
+        K: DataTrait + ?Sized,
+        A: DataTrait + ?Sized,
+    {
+        match self.node_type {
+            NodeType::Data => Ok(TreeBlock::Data(DataBlock::new(
+                &self.factories.factories(),
+                InnerDataBlock::new_async(context, &self, compression).await?,
+                &self,
+            )?)),
+            NodeType::Index => Ok(TreeBlock::Index(IndexBlock::new(
+                &self.factories,
+                InnerIndexBlock::new_async(context, &self, compression).await?,
                 &self,
             )?)),
         }
@@ -690,6 +741,21 @@ where
     }
 }
 
+/// Cached file trailer block details.
+pub struct InnerFileTrailer {
+    pub(super) location: BlockLocation,
+    pub(super) file_trailer: FileTrailer,
+}
+
+impl InnerFileTrailer {
+    pub(super) fn from_raw(raw: Arc<FBuf>, location: BlockLocation) -> Result<Self, Error> {
+        Ok(Self {
+            file_trailer: FileTrailer::read_le(&mut io::Cursor::new(raw.as_slice()))?,
+            location,
+        })
+    }
+}
+
 /// Cached index block details.
 ///
 /// # Naming convention
@@ -698,7 +764,7 @@ where
 /// `_blocking`. Thus, an `async` function should not call a `_blocking`
 /// function.
 pub struct InnerIndexBlock {
-    location: BlockLocation,
+    pub(super) location: BlockLocation,
     raw: Arc<FBuf>,
     child_type: NodeType,
     bounds: VarintReader,
@@ -762,18 +828,27 @@ impl InnerIndexBlock {
         })
     }
 
-    fn new_blocking(file: &ImmutableFileRef, node: &TreeNode) -> Result<Arc<Self>, Error> {
+    fn new_blocking(
+        file: &ImmutableFileRef,
+        node: &TreeNode,
+        compression: Option<Compression>,
+    ) -> Result<Arc<Self>, Error> {
         file.cache
-            .read_index_block(&*file.file_handle, node.location)
+            .read_blocking(&*file.file_handle, node.location, compression)?
+            .into_index_block()
     }
 
     async fn new_async(
         context: &AsyncCacheContext<FileCacheEntry>,
         node: &TreeNode,
+        compression: Option<Compression>,
     ) -> Result<Arc<Self>, Error> {
         context
-            .read(node.location, FileCacheEntry::as_index_block)
-            .await
+            .read(node.location, |block, location| {
+                FileCacheEntry::from_read(block, location, compression)
+            })
+            .await?
+            .into_index_block()
     }
 }
 
@@ -1219,7 +1294,7 @@ impl ImmutableFileRef {
         Self {
             cache: Arc::clone(cache),
             path,
-            file_handle: file_handle,
+            file_handle,
         }
     }
 
@@ -1240,7 +1315,7 @@ impl ImmutableFileRef {
 #[derive(Debug)]
 struct ReaderInner<T> {
     file: Arc<ImmutableFileRef>,
-    /// Location of the file on disk.
+    compression: Option<Compression>,
     columns: Vec<Column>,
 
     /// `fn() -> T` is `Send` and `Sync` regardless of `T`.  See
@@ -1307,10 +1382,15 @@ where
             return Err(CorruptionError::InvalidFileSize(file_size).into());
         }
 
-        let file_trailer = file.cache.read_file_trailer_block(
-            &*file.file_handle,
-            BlockLocation::new(file_size - 512, 512).unwrap(),
-        )?;
+        let file_trailer_block = file
+            .cache
+            .read_blocking(
+                &*file.file_handle,
+                BlockLocation::new(file_size - 512, 512).unwrap(),
+                None,
+            )?
+            .into_file_trailer_block()?;
+        let file_trailer = &file_trailer_block.file_trailer;
         if file_trailer.version != VERSION_NUMBER {
             return Err(CorruptionError::InvalidVersion {
                 version: file_trailer.version,
@@ -1352,6 +1432,7 @@ where
         Ok(Self(Arc::new(ReaderInner {
             file,
             columns,
+            compression: file_trailer.compression,
             _phantom: PhantomData,
         })))
     }
@@ -1368,6 +1449,7 @@ where
         Ok(Self(Arc::new(ReaderInner {
             file: Arc::new(ImmutableFileRef::new(cache, file_handle, path)),
             columns: (0..T::n_columns()).map(|_| Column::empty()).collect(),
+            compression: None,
             _phantom: PhantomData,
         })))
     }
@@ -1425,6 +1507,12 @@ where
     /// operations on this reader.
     pub fn new_async_context(&self) -> AsyncCacheContext<FileCacheEntry> {
         AsyncCacheContext::new(self.0.file.cache.clone(), &*self.0.file.file_handle)
+    }
+
+    /// Evict this file from the cache.
+    #[cfg(test)]
+    pub fn evict(&self) {
+        self.0.file.evict();
     }
 }
 
@@ -2066,7 +2154,7 @@ where
         row: u64,
     ) -> Result<Self, Error> {
         loop {
-            let block = node.read_blocking(&reader.0.file)?;
+            let block = node.read_blocking(&reader.0.file, reader.0.compression)?;
             let next = block.lookup_row(row)?;
             match block {
                 TreeBlock::Data(data) => {
@@ -2085,12 +2173,13 @@ where
     }
     async fn for_row_from_ancestor_async(
         context: &AsyncCacheContext<FileCacheEntry>,
+        compression: Option<Compression>,
         mut indexes: Vec<IndexBlock<K>>,
         mut node: TreeNode,
         row: u64,
     ) -> Result<Self, Error> {
         loop {
-            let block = node.read_async(context).await?;
+            let block = node.read_async(context, compression).await?;
             let next = block.lookup_row(row)?;
             match block {
                 TreeBlock::Data(data) => {
@@ -2143,13 +2232,15 @@ where
     async fn move_to_row_async(
         &mut self,
         context: &AsyncCacheContext<FileCacheEntry>,
+        compression: Option<Compression>,
         row: u64,
     ) -> Result<(), Error> {
         if self.data.rows().contains(&row) {
             self.row = row;
         } else {
             let (ancestor, indexes) = self.find_ancestor(row)?;
-            *self = Self::for_row_from_ancestor_async(context, indexes, ancestor, row).await?;
+            *self = Self::for_row_from_ancestor_async(context, compression, indexes, ancestor, row)
+                .await?;
         }
         Ok(())
     }
@@ -2167,7 +2258,7 @@ where
             return Ok(None);
         };
         loop {
-            match node.read_blocking(&row_group.reader.0.file)? {
+            match node.read_blocking(&row_group.reader.0.file, row_group.reader.0.compression)? {
                 TreeBlock::Index(index_block) => {
                     let Some(child_idx) =
                         index_block.find_best_match(&row_group.rows, compare, bias)
@@ -2204,7 +2295,7 @@ where
             return Ok(None);
         };
         loop {
-            match node.read_blocking(&row_group.reader.0.file)? {
+            match node.read_blocking(&row_group.reader.0.file, row_group.reader.0.compression)? {
                 TreeBlock::Index(index_block) => {
                     let Some(child_idx) = index_block.find_exact(&row_group.rows, compare) else {
                         return Ok(None);
@@ -2241,7 +2332,10 @@ where
             return Ok(None);
         };
         loop {
-            match node.read_async(context).await? {
+            match node
+                .read_async(context, row_group.reader.0.compression)
+                .await?
+            {
                 TreeBlock::Index(index_block) => {
                     let Some(child_idx) = index_block.find_exact(&row_group.rows, compare) else {
                         return Ok(None);
@@ -2338,7 +2432,10 @@ where
             self.indexes.push(index_block);
 
             loop {
-                match node.read_blocking::<K, A>(&row_group.reader.0.file)? {
+                match node.read_blocking::<K, A>(
+                    &row_group.reader.0.file,
+                    row_group.reader.0.compression,
+                )? {
                     TreeBlock::Index(index_block) => {
                         let Some(child_idx) =
                             index_block.find_best_match(&row_group.rows, compare, Less)
@@ -2500,6 +2597,7 @@ where
         Ok(Self::Row(
             Path::for_row_from_ancestor_async(
                 row_group.context,
+                row_group.row_group.reader.0.compression,
                 Vec::new(),
                 row_group.row_group.root_node().unwrap(),
                 row,
@@ -2549,6 +2647,7 @@ where
                     *self = Self::Row(
                         Path::for_row_from_ancestor_async(
                             row_group.context,
+                            row_group.row_group.reader.0.compression,
                             Vec::new(),
                             row_group.row_group.root_node().unwrap(),
                             row,
@@ -2556,7 +2655,14 @@ where
                         .await?,
                     )
                 }
-                Position::Row(path) => path.move_to_row_async(row_group.context, row).await?,
+                Position::Row(path) => {
+                    path.move_to_row_async(
+                        row_group.context,
+                        row_group.row_group.reader.0.compression,
+                        row,
+                    )
+                    .await?
+                }
             },
         }
         Ok(())
