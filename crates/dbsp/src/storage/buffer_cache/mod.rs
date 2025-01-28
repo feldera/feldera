@@ -5,5 +5,5 @@ mod cache;
 /// A file-backed buffer.
 mod fbuf;
 
-pub use cache::{BufferCache, CacheEntry};
+pub use cache::{AsyncCacheContext, BufferCache, CacheEntry};
 pub use fbuf::{FBuf, FBufSerializer};

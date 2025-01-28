@@ -11,14 +11,18 @@ use crate::{
         ClonableTrait, DataTrait, WeightTrait,
     },
     operator::dynamic::trace::TraceBound,
-    storage::{checkpoint_path, file::to_bytes, write_commit_metadata},
+    storage::{file::to_bytes, write_commit_metadata},
     trace::{BatchFactories, BatchReaderFactories, Cursor, Serializer, SpineSnapshot},
     Error,
 };
 use minitrace::trace;
 use rkyv::Deserialize;
-use std::{borrow::Cow, fs, marker::PhantomData, path::PathBuf};
-use uuid::Uuid;
+use std::{
+    borrow::Cow,
+    fs,
+    marker::PhantomData,
+    path::{Path, PathBuf},
+};
 
 impl<C, B> Stream<C, B>
 where
@@ -105,15 +109,8 @@ where
     }
 
     /// Return the absolute path of the file for a checkpointed Window.
-    ///
-    /// # Arguments
-    /// - `cid`: The checkpoint id.
-    /// - `persistent_id`: The persistent id that identifies the spine within
-    ///   the circuit for a given checkpoint.
-    fn checkpoint_file<P: AsRef<str>>(cid: Uuid, persistent_id: P) -> PathBuf {
-        let mut path = checkpoint_path(cid);
-        path.push(format!("window-{}.dat", persistent_id.as_ref()));
-        path
+    fn checkpoint_file(base: &Path, persistent_id: &str) -> PathBuf {
+        base.join(format!("window-{}.dat", persistent_id))
     }
 }
 
@@ -136,18 +133,18 @@ where
         panic!("'Window' operator used in fixedpoint iteration")
     }
 
-    fn commit<P: AsRef<str>>(&mut self, cid: Uuid, persistent_id: P) -> Result<(), Error> {
+    fn commit(&mut self, base: &Path, persistent_id: &str) -> Result<(), Error> {
         let committed: CommittedWindow = (self as &Self).into();
         let as_bytes = to_bytes(&committed).expect("Serializing CommittedSpine should work.");
         write_commit_metadata(
-            Self::checkpoint_file(cid, &persistent_id),
+            Self::checkpoint_file(base, persistent_id),
             as_bytes.as_slice(),
         )?;
         Ok(())
     }
 
-    fn restore<P: AsRef<str>>(&mut self, cid: Uuid, persistent_id: P) -> Result<(), Error> {
-        let window_path = Self::checkpoint_file(cid, persistent_id);
+    fn restore(&mut self, base: &Path, persistent_id: &str) -> Result<(), Error> {
+        let window_path = Self::checkpoint_file(base, persistent_id);
         let content = fs::read(window_path)?;
         let archived = unsafe { rkyv::archived_root::<CommittedWindow>(&content) };
         let committed: CommittedWindow = archived.deserialize(&mut rkyv::Infallible).unwrap();

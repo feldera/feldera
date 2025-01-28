@@ -6,7 +6,7 @@ use crate::{
     },
     storage::file::{
         reader::{Cursor as FileCursor, Error as ReaderError, Reader},
-        writer::{Parameters, Writer1},
+        writer::Writer1,
         Factories as FileFactories,
     },
     time::{Antichain, AntichainRef},
@@ -237,8 +237,9 @@ where
     fn neg_by_ref(&self) -> Self {
         let mut writer = Writer1::new(
             &self.factories.file_factories,
-            &Runtime::storage(),
-            Parameters::default(),
+            &Runtime::buffer_cache(),
+            &*Runtime::storage_backend().unwrap(),
+            Runtime::file_writer_parameters(),
         )
         .unwrap();
 
@@ -414,7 +415,12 @@ where
 
     fn from_path(factories: &Self::Factories, path: &Path) -> Result<Self, ReaderError> {
         let any_factory0 = factories.file_factories.any_factories();
-        let file = Reader::open(&[&any_factory0], &Runtime::storage(), path)?;
+        let file = Reader::open(
+            &[&any_factory0],
+            &Runtime::buffer_cache(),
+            &*Runtime::storage_backend().unwrap(),
+            path,
+        )?;
 
         Ok(Self {
             factories: factories.clone(),
@@ -460,8 +466,9 @@ where
             lower2: 0,
             writer: Writer1::new(
                 &batch1.factories.file_factories,
-                &Runtime::storage(),
-                Parameters::default(),
+                &Runtime::buffer_cache(),
+                &*Runtime::storage_backend().unwrap(),
+                Runtime::file_writer_parameters(),
             )
             .unwrap(),
         }
@@ -770,8 +777,9 @@ where
             factories: factories.clone(),
             writer: Writer1::new(
                 &factories.file_factories,
-                &Runtime::storage(),
-                Parameters::default(),
+                &Runtime::buffer_cache(),
+                &*Runtime::storage_backend().unwrap(),
+                Runtime::file_writer_parameters(),
             )
             .unwrap(),
         }

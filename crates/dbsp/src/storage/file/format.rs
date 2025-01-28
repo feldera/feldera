@@ -1,9 +1,9 @@
 //! # Layer file format
 //!
-//! A layer file is a sequence of variable-sized binary blocks, each a
-//! power-of-2 multiple of 4 kB in length.  The order of the blocks in a file is
-//! unspecified, except that the last block in a file is a [`FileTrailer`] block
-//! that is exactly 4 kB.
+//! A layer file is a sequence of variable-sized binary blocks, each a multiple
+//! of 512 bytes in length.  The order of the blocks in a file is unspecified,
+//! except that the last block in a file is a [`FileTrailer`] block that is
+//! exactly 512 bytes.
 //!
 //! The layer file implementation uses [`mod@binrw`] for serializing and
 //! deserializing fixed-length data, and [`rkyv`] for serializing and
@@ -52,12 +52,30 @@
 //!   of rows in the first child tree, the second row total is that plus the
 //!   total number of rows in the second child tree, and so on.
 //!
-//! * An array of "child pointers", one for each of
-//!   [`IndexBlockHeader::n_children`].  Each one of these points to a child
-//!   block.  For `size` and `offset` both in bytes, each pointer is encoded as
-//!   `(offset >> 7) | size.trailing_zeros()`, which allows `size` to range up
-//!   to `2**31` bytes.
-
+//! * An array of "child offsets", one for each of
+//!   [`IndexBlockHeader::n_children`].  Each one of these is the offset from
+//!   the beginning of the file to the child block, expressed in 512-byte units.
+//!
+//! * An array of "child sizes", one for each of
+//!   [`IndexBlockHeader::n_children`].  Each one of these is the size of the
+//!   corresponding child block, expressed in 512-byte units.  Each block must
+//!   be less than 2 GiB.
+//!
+//! # Compression
+//!
+//! If [`FileTrailer::compression`] is not `None`, then each block in the file
+//! other than the trailer block itself is compressed using the indicated
+//! algorithm. A compressed block consists of:
+//!
+//! * `compressed_len`, a 4-byte little-endian integer that indicates the number
+//!   of bytes of compressed data to follow.
+//!
+//! * `compressed_len` bytes of compressed data.
+//!
+//! * Padding with 0-bytes to a 512-byte alignment.
+//!
+//! Decompressing a compressed block yields the regular index or data block
+//! format starting with a [`BlockHeader`].
 use crate::storage::buffer_cache::FBuf;
 
 use binrw::{binrw, BinRead, BinResult, BinWrite, Error as BinError};
@@ -67,7 +85,7 @@ use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
 
 /// Increment this on each incompatible change.
-pub const VERSION_NUMBER: u32 = 1;
+pub const VERSION_NUMBER: u32 = 2;
 
 /// Magic number for data blocks.
 pub const DATA_BLOCK_MAGIC: [u8; 4] = *b"LFDB";
@@ -117,6 +135,11 @@ pub struct FileTrailer {
     /// Currently, must be [`VERSION_NUMBER`].  In the future, this allows for
     /// detecting version changes and supporting backward compatibility.
     pub version: u32,
+
+    /// Type of compression.
+    #[bw(write_with = Compression::write_opt)]
+    #[br(parse_with = Compression::parse_opt)]
+    pub compression: Option<Compression>,
 
     /// Number of columns.
     #[bw(calc(columns.len() as u32))]
@@ -190,10 +213,15 @@ pub struct IndexBlockHeader {
     /// There are [`n_children`](Self::n_children) row totals.
     pub row_totals_offset: u32,
 
-    /// Offset, in bytes from the beginning of the block, to the child pointers.
+    /// Offset, in bytes from the beginning of the block, to the child offsets.
     ///
-    /// There are [`n_children`](Self::n_children) child pointers.
-    pub child_pointers_offset: u32,
+    /// There are [`n_children`](Self::n_children) child offsets.
+    pub child_offsets_offset: u32,
+
+    /// Offset, in bytes from the beginning of the block, to the child sizes.
+    ///
+    /// There are [`n_children`](Self::n_children) child sizes.
+    pub child_sizes_offset: u32,
 
     /// Number of child nodes.
     pub n_children: u16,
@@ -207,9 +235,12 @@ pub struct IndexBlockHeader {
     /// The representation of the row totals.
     pub row_total_varint: Varint,
 
+    /// The representation of the child offsets.
+    pub child_offset_varint: Varint,
+
+    /// The representation of the child sizes.
     #[brw(align_after = 16)]
-    /// The representation of the child pointers.
-    pub child_pointer_varint: Varint,
+    pub child_size_varint: Varint,
 }
 
 impl FixedLen for IndexBlockHeader {
@@ -380,23 +411,33 @@ fn next_multiple_of_pow2(offset: usize, alignment: usize) -> usize {
     (offset + mask) & !mask
 }
 
-/*
-/// Key and auxiliary data.
-///
-/// This type is serialized with `rkyv` for each value in a data block.
-///
-/// The definition of this struct makes it appear that the key precedes the
-/// auxiliary data, but the Rust compiler can reorder struct members (in both
-/// `Item` and [`ArchivedItem`]), so the serialize form might be in the reverse
-/// order.
-///
-/// `rkyv` can serialize arrays, slices, and vectors perfectly well on its own.
-/// This crate serializes each value in a data block separately because there is
-/// no way to accurately predict how big a serialized vector will be without
-/// doing it.
-#[derive(Archive, Serialize)]
-pub struct Item<'a, K, A>(#[with(Inline)] pub &'a K, #[with(Inline)] pub &'a A)
-where
-    K: Rkyv,
-    A: Rkyv;
-*/
+/// Type of compression.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, FromPrimitive)]
+#[binrw]
+#[brw(repr(u8))]
+pub enum Compression {
+    /// [Snappy](https://en.wikipedia.org/wiki/Snappy_(compression)).
+    Snappy = 1,
+}
+
+impl Compression {
+    #[binrw::parser(reader, endian)]
+    pub(crate) fn parse_opt() -> BinResult<Option<Self>> {
+        let byte: u8 = <_>::read_options(reader, endian, ())?;
+        match byte {
+            0 => Ok(None),
+            _ => match FromPrimitive::from_u8(byte) {
+                Some(value) => Ok(Some(value)),
+                None => Err(BinError::NoVariantMatch {
+                    pos: reader.stream_position()? - 1,
+                }),
+            },
+        }
+    }
+    #[binrw::writer(writer, endian)]
+    pub(crate) fn write_opt(value: &Option<Self>) -> BinResult<()> {
+        value
+            .map_or(0, |value| value as u8)
+            .write_options(writer, endian, ())
+    }
+}

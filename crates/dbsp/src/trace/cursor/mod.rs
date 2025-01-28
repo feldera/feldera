@@ -18,6 +18,8 @@ use size_of::SizeOf;
 
 use crate::dynamic::Factory;
 
+use super::BatchReader;
+
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
 enum Direction {
     Forward,
@@ -310,6 +312,52 @@ pub trait Cursor<K: ?Sized, V: ?Sized, T, R: ?Sized> {
     }
 }
 
+/// An object that can produce a cursor bounded by its lifetime.
+///
+/// [BatchReader::cursor] produces a cursor bounded by the [BatchReader]'s
+/// lifetime.  Suppose [BatchReader::cursor] could use an existing [Cursor]
+/// implementation, such as [CursorList], but it needs to create some data for
+/// the cursor to own.  Then it's rather inconvenient because it's necessary to
+/// create a new type to own the data and implement the whole broad [Cursor]
+/// trait to forward every call to [CursorList]. Plus, you end up with a
+/// self-referencing type, so you need to use [ouroboros].  See `SpineCursor` in
+/// the async spine for a good example.
+///
+/// Suppose we're building a new interface where we want to return a `dyn
+/// Cursor`, and some of the implementations would suffer from the problem
+/// above.  We can instead return a [CursorFactory].  An implementation of this
+/// trait can own the data that it needs to, and then implement
+/// [CursorFactory::get_cursor] to create and return a cursor whose lifetime is
+/// bounded by the [CursorFactory].  This reduces the boilerplate a great deal
+/// (and we don't need [ouroboros], either).
+///
+/// [BatchReader::cursor] could be retrofitted to this interface, but it's not
+/// clear that it's worth it, especially since it forces using `dyn Cursor`.
+pub trait CursorFactory<K: ?Sized, V: ?Sized, T, R: ?Sized> {
+    fn get_cursor<'a>(&'a self) -> Box<dyn Cursor<K, V, T, R> + 'a>;
+}
+
+impl<K: ?Sized, V: ?Sized, T, R: ?Sized, B> CursorFactory<K, V, T, R> for &B
+where
+    B: BatchReader<Key = K, Val = V, Time = T, R = R>,
+{
+    fn get_cursor<'a>(&'a self) -> Box<dyn Cursor<K, V, T, R> + 'a> {
+        Box::new(self.cursor())
+    }
+}
+
+/// A wrapper for [BatchReader] that implements [CursorFactory].
+pub struct CursorFactoryWrapper<B>(pub B);
+
+impl<K: ?Sized, V: ?Sized, T, R: ?Sized, B> CursorFactory<K, V, T, R> for CursorFactoryWrapper<B>
+where
+    B: BatchReader<Key = K, Val = V, Time = T, R = R>,
+{
+    fn get_cursor<'a>(&'a self) -> Box<dyn Cursor<K, V, T, R> + 'a> {
+        Box::new(self.0.cursor())
+    }
+}
+
 /// A cursor that can be cloned as a `dyn Cursor` when it is inside a [`Box`].
 ///
 /// Rust doesn't have a built-in way to clone boxed trait objects.  This
@@ -332,6 +380,158 @@ where
 {
     fn clone_boxed(&self) -> Box<dyn ClonableCursor<'s, K, V, T, R> + Send + 's> {
         Box::new(self.clone())
+    }
+}
+
+impl<K, V, T, R, C> Cursor<K, V, T, R> for Box<C>
+where
+    K: ?Sized,
+    V: ?Sized,
+    R: ?Sized,
+    C: Cursor<K, V, T, R> + ?Sized,
+{
+    fn weight_factory(&self) -> &'static dyn Factory<R> {
+        (**self).weight_factory()
+    }
+
+    fn key_valid(&self) -> bool {
+        (**self).key_valid()
+    }
+
+    fn val_valid(&self) -> bool {
+        (**self).val_valid()
+    }
+
+    fn key(&self) -> &K {
+        (**self).key()
+    }
+
+    fn val(&self) -> &V {
+        (**self).val()
+    }
+
+    fn map_times(&mut self, logic: &mut dyn FnMut(&T, &R)) {
+        (**self).map_times(logic)
+    }
+
+    fn map_times_through(&mut self, upper: &T, logic: &mut dyn FnMut(&T, &R)) {
+        (**self).map_times_through(upper, logic)
+    }
+
+    fn weight(&mut self) -> &R
+    where
+        T: PartialEq<()>,
+    {
+        (**self).weight()
+    }
+
+    fn map_values(&mut self, logic: &mut dyn FnMut(&V, &R))
+    where
+        T: PartialEq<()>,
+    {
+        (**self).map_values(logic)
+    }
+
+    fn step_key(&mut self) {
+        (**self).step_key()
+    }
+
+    fn step_key_reverse(&mut self) {
+        (**self).step_key_reverse()
+    }
+
+    fn seek_key(&mut self, key: &K) {
+        (**self).seek_key(key)
+    }
+
+    fn seek_key_with(&mut self, predicate: &dyn Fn(&K) -> bool) {
+        (**self).seek_key_with(predicate)
+    }
+
+    fn seek_key_with_reverse(&mut self, predicate: &dyn Fn(&K) -> bool) {
+        (**self).seek_key_with_reverse(predicate)
+    }
+
+    fn seek_key_reverse(&mut self, key: &K) {
+        (**self).seek_key_reverse(key)
+    }
+
+    fn step_val(&mut self) {
+        (**self).step_val()
+    }
+
+    fn step_val_reverse(&mut self) {
+        (**self).step_val_reverse()
+    }
+
+    fn seek_val(&mut self, val: &V) {
+        (**self).seek_val(val)
+    }
+
+    fn seek_val_reverse(&mut self, val: &V) {
+        (**self).seek_val_reverse(val)
+    }
+
+    fn seek_val_with(&mut self, predicate: &dyn Fn(&V) -> bool) {
+        (**self).seek_val_with(predicate)
+    }
+
+    fn seek_val_with_reverse(&mut self, predicate: &dyn Fn(&V) -> bool) {
+        (**self).seek_val_with_reverse(predicate)
+    }
+
+    fn rewind_keys(&mut self) {
+        (**self).rewind_keys()
+    }
+
+    fn fast_forward_keys(&mut self) {
+        (**self).fast_forward_keys()
+    }
+
+    fn rewind_vals(&mut self) {
+        (**self).rewind_vals()
+    }
+
+    fn fast_forward_vals(&mut self) {
+        (**self).fast_forward_vals()
+    }
+
+    fn get_key(&self) -> Option<&K> {
+        (**self).get_key()
+    }
+
+    fn get_val(&self) -> Option<&V> {
+        (**self).get_val()
+    }
+
+    fn keyval_valid(&self) -> bool {
+        (**self).keyval_valid()
+    }
+
+    fn keyval(&self) -> (&K, &V) {
+        (**self).keyval()
+    }
+
+    fn step_keyval(&mut self) {
+        (**self).step_keyval()
+    }
+
+    fn step_keyval_reverse(&mut self) {
+        (**self).step_keyval_reverse()
+    }
+
+    fn seek_keyval(&mut self, key: &K, val: &V)
+    where
+        K: PartialEq,
+    {
+        (**self).seek_keyval(key, val)
+    }
+
+    fn seek_keyval_reverse(&mut self, key: &K, val: &V)
+    where
+        K: PartialEq,
+    {
+        (**self).seek_keyval_reverse(key, val)
     }
 }
 

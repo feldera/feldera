@@ -212,8 +212,7 @@ struct RuntimeConfigPropVal {
     val10: Option<u64>,
     val11: Option<u64>,
     val12: Option<String>,
-    val13: Option<usize>,
-    val14: Option<u64>,
+    val13: Option<u64>,
 }
 type ProgramConfigPropVal = (u8, bool, bool, bool);
 type ProgramInfoPropVal = (u8, u8, u8);
@@ -238,7 +237,7 @@ fn map_val_to_limited_runtime_config(val: RuntimeConfigPropVal) -> serde_json::V
             cpu_profiler: val.val1,
             min_batch_size_records: val.val2,
             max_buffering_delay_usecs: val.val3,
-            storage: val.val4,
+            storage: val.val4.then(Default::default),
             fault_tolerance: None,
             tracing: val.val5,
             tracing_endpoint_jaeger: val.val6,
@@ -250,8 +249,7 @@ fn map_val_to_limited_runtime_config(val: RuntimeConfigPropVal) -> serde_json::V
                 storage_mb_max: val.val11,
                 storage_class: val.val12,
             },
-            min_storage_bytes: val.val13,
-            clock_resolution_usecs: val.val14,
+            clock_resolution_usecs: val.val13,
         })
         .unwrap()
     }
@@ -948,7 +946,7 @@ async fn pipeline_versioning() {
     // Edit runtime configuration -> increment version
     let new_runtime_config = serde_json::to_value(RuntimeConfig {
         workers: 100,
-        storage: false,
+        storage: None,
         fault_tolerance: None,
         cpu_profiler: false,
         tracing: false,
@@ -963,7 +961,6 @@ async fn pipeline_versioning() {
             storage_mb_max: None,
             storage_class: None,
         },
-        min_storage_bytes: None,
         clock_resolution_usecs: None,
     })
     .unwrap();
@@ -1382,7 +1379,7 @@ async fn pipeline_provision_version_guard() {
             &Some(
                 serde_json::to_value(RuntimeConfig {
                     workers: 10,
-                    storage: false,
+                    storage: None,
                     fault_tolerance: None,
                     cpu_profiler: false,
                     tracing: false,
@@ -1390,7 +1387,6 @@ async fn pipeline_provision_version_guard() {
                     min_batch_size_records: 0,
                     max_buffering_delay_usecs: 0,
                     resources: Default::default(),
-                    min_storage_bytes: None,
                     clock_resolution_usecs: None,
                 })
                 .unwrap(),

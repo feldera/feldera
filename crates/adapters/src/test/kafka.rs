@@ -9,7 +9,6 @@ use csv::WriterBuilder as CsvWriterBuilder;
 use feldera_types::program_schema::Relation;
 use feldera_types::transport::kafka::default_redpanda_server;
 use futures::executor::block_on;
-use lazy_static::lazy_static;
 use rdkafka::message::BorrowedMessage;
 use rdkafka::{
     admin::{AdminClient, AdminOptions, NewPartitions, NewTopic, TopicReplication},
@@ -21,6 +20,7 @@ use rdkafka::{
     ClientConfig, ClientContext, Message,
 };
 use std::collections::BTreeMap;
+use std::sync::LazyLock;
 use std::{
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -99,9 +99,7 @@ impl KafkaResources {
         // Kafka does not handle topic deletion and creation consistently when
         // multiple operations are performed in parallel, so serialize calls to
         // this function.
-        lazy_static! {
-            static ref LOCK: Mutex<()> = Mutex::new(());
-        }
+        static LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
         let _guard = LOCK.lock().unwrap();
 
         let mut admin_config = ClientConfig::new();

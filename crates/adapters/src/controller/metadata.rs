@@ -18,8 +18,7 @@ pub use feldera_adapterlib::errors::metadata::StepError;
 /// Checkpoint for a pipeline.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Checkpoint {
-    #[serde(flatten)]
-    pub circuit: CheckpointMetadata,
+    pub circuit: Option<CheckpointMetadata>,
     pub step: Step,
     pub config: PipelineConfig,
     pub processed_records: u64,

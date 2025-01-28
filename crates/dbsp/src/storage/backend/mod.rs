@@ -1,7 +1,7 @@
 //! Storage backend APIs for Feldera.
 //!
-//! This module provides the [`Storage`] trait that need to be implemented by a
-//! storage backend.
+//! This module provides the [`StorageBackend`] trait that need to be
+//! implemented by a storage backend.
 //!
 //! A file transitions from being created to being written to, to being read
 //! to (eventually) deleted.
@@ -9,14 +9,20 @@
 //! The API also prevents reading from a file that is not completed.
 #![warn(missing_docs)]
 
-use feldera_types::config::StorageCacheConfig;
+use feldera_types::config::{
+    StorageBackendConfig, StorageCacheConfig, StorageConfig, StorageOptions,
+};
 use serde::{ser::SerializeStruct, Serialize, Serializer};
 use std::{
+    fmt::Display,
     fs::OpenOptions,
+    io::ErrorKind,
+    ops::Range,
     path::{Path, PathBuf},
+    rc::Rc,
     sync::{
         atomic::{AtomicU64, Ordering},
-        Arc,
+        Arc, LazyLock,
     },
 };
 use tempfile::TempDir;
@@ -51,23 +57,11 @@ fn append_to_path(p: PathBuf, s: &str) -> PathBuf {
 }
 
 /// An error that can occur when using the storage backend.
-#[derive(Error, Debug)]
+#[derive(Clone, Error, Debug)]
 pub enum StorageError {
     /// I/O error.
     #[error("{0}")]
-    StdIo(#[from] std::io::Error),
-
-    /// Range to be written overlaps with previous write.
-    #[error("The range to be written overlaps with a previous write")]
-    OverlappingWrites,
-
-    /// Read ended before the full request length.
-    #[error("The read would have returned less data than requested.")]
-    ShortRead,
-
-    /// Storage location not found.
-    #[error("The requested (base) directory for storage ({0:?}) does not exist.")]
-    StorageLocationNotFound(PathBuf),
+    StdIo(ErrorKind),
 
     /// A process already locked the provided storage directory.
     ///
@@ -76,27 +70,19 @@ pub enum StorageError {
     #[error("A process with PID {0} is already using the storage directory {1:?}.")]
     StorageLocked(u32, PathBuf),
 
-    /// Unable to lock the PID file for the storage directory.
-    ///
-    /// This means another pipeline started and tried to lock it at the same time.
-    #[error("Unable to lock the PID file ({1:?}) for the storage directory.")]
-    UnableToLockPidFile(i32, PathBuf),
-
     /// Unknown checkpoint specified in configuration.
     #[error("Couldn't find the specified checkpoint ({0:?}).")]
     CheckpointNotFound(Uuid),
 
-    /// Unable to receive a message from the thread that does storage compaction.
-    #[error("Unable to receive a message from the merge-thread.")]
-    TryRx(#[from] std::sync::mpsc::TryRecvError),
+    /// Cannot perform operation because storage is not enabled.
+    #[error("Cannot perform operation because storage is not enabled.")]
+    StorageDisabled,
+}
 
-    /// Error when sending a message to the thread that merges batches.
-    #[error("Unable to receive a message from the compactor-thread.")]
-    Rx(#[from] std::sync::mpsc::RecvError),
-
-    /// The thread that merges batches exited unexpectedly.
-    #[error("Compactor Thread exited unexpectedly.")]
-    MergerThreadExited,
+impl From<std::io::Error> for StorageError {
+    fn from(value: std::io::Error) -> Self {
+        Self::StdIo(value.kind())
+    }
 }
 
 impl Serialize for StorageError {
@@ -107,43 +93,13 @@ impl Serialize for StorageError {
         match self {
             Self::StdIo(error) => {
                 let mut ser = serializer.serialize_struct("IOError", 2)?;
-                ser.serialize_field("kind", &error.kind().to_string())?;
-                ser.serialize_field("os_error", &error.raw_os_error())?;
+                ser.serialize_field("kind", &error.to_string())?;
                 ser.end()
             }
             error => error.serialize(serializer),
         }
     }
 }
-
-/// Implementation of PartialEq for StorageError.
-///
-/// This is for testing only and therefore intentionally not a complete
-/// implementation.
-#[cfg(test)]
-impl PartialEq for StorageError {
-    fn eq(&self, other: &Self) -> bool {
-        fn is_unexpected_eof(error: &StorageError) -> bool {
-            use std::io::ErrorKind;
-            matches!(error, StorageError::StdIo(error) if error.kind() == ErrorKind::UnexpectedEof)
-        }
-        #[allow(clippy::match_like_matches_macro)]
-        match (self, other) {
-            (Self::OverlappingWrites, Self::OverlappingWrites) => true,
-            (Self::ShortRead, Self::ShortRead) => true,
-            (Self::StorageLocationNotFound(path), Self::StorageLocationNotFound(other_path)) => {
-                path == other_path
-            }
-            (Self::StorageLocked(pid, path), Self::StorageLocked(other_pid, other_path)) => {
-                pid == other_pid && path == other_path
-            }
-            _ => is_unexpected_eof(self) && is_unexpected_eof(other),
-        }
-    }
-}
-
-#[cfg(test)]
-impl Eq for StorageError {}
 
 /// A unique identifier for a [FileReader] or [FileWriter].
 ///
@@ -177,8 +133,8 @@ pub trait HasFileId {
 /// deleted if it is dropped.
 pub trait FileWriter: HasFileId {
     /// Writes `data` at the given byte `offset`.  `offset` must be a multiple
-    /// of 512 and `size` must be a power of 2 and at least 512.  Returns the
-    /// data that was written encapsulated in an `Arc`.
+    /// of 512 and `data.len()` must be a multiple of 512.  Returns the data
+    /// that was written encapsulated in an `Arc`.
     fn write_block(&mut self, offset: u64, data: FBuf) -> Result<Arc<FBuf>, StorageError>;
 
     /// Completes writing of a file and returns a reader for the file and the
@@ -194,24 +150,43 @@ pub trait FileReader: Send + Sync + HasFileId {
     ///
     /// This is used to prevent the file from being deleted when it is dropped.
     /// This is only useful for files obtained via [FileWriter::complete],
-    /// because files that were opened with [Storage::open] are never deleted on
-    /// drop.
+    /// because files that were opened with [StorageBackend::open] are never
+    /// deleted on drop.
     fn mark_for_checkpoint(&self);
 
-    /// Reads a `size`-byte block of data from a file starting at the given byte
-    /// `offset`.  `offset` must be a multiple of 512 and `size` must be a power
-    /// of 2 and at least 512.
+    /// Reads data at `location` from the file.  If successful, the result will
+    /// be exactly the requested length; that is, this API treats read past EOF
+    /// as an error.
+    fn read_block(&self, location: BlockLocation) -> Result<Arc<FBuf>, StorageError>;
+
+    /// Initiates an asynchronous read.  When the read completes, `callback`
+    /// will be called.
     ///
-    /// If successful, the result will be exactly `size` bytes long; that is,
-    /// this API treats read past EOF as an error.
-    fn read_block(&self, offset: u64, size: usize) -> Result<Arc<FBuf>, StorageError>;
+    /// The default implementation is not actually asynchronous.
+    fn read_async(
+        &self,
+        blocks: Vec<Range<u64>>,
+        callback: Box<dyn FnOnce(Vec<Result<Arc<FBuf>, StorageError>>) + Send>,
+    ) {
+        callback(
+            blocks
+                .into_iter()
+                .map(|range| {
+                    self.read_block(BlockLocation {
+                        offset: range.start,
+                        size: (range.end - range.start).try_into().unwrap(),
+                    })
+                })
+                .collect(),
+        )
+    }
 
     /// Returns the file's size in bytes.
     fn get_size(&self) -> Result<u64, StorageError>;
 }
 
 /// A storage backend.
-pub trait Storage {
+pub trait StorageBackend {
     /// Create a new file with the given `name`, which is relative to the
     /// backend's base directory.
     fn create_named(&self, name: &Path) -> Result<Box<dyn FileWriter>, StorageError>;
@@ -234,36 +209,7 @@ pub trait Storage {
     /// Opens a file for reading.  The file `name` is relative to the base of
     /// the storage backend.
     fn open(&self, name: &Path) -> Result<Arc<dyn FileReader>, StorageError>;
-
-    /// Returns the root of the storage backend.
-    fn base(&self) -> PathBuf;
-
-    /// Allocates a buffer suitable for writing to a file using Direct I/O over
-    /// `io_uring`.
-    fn allocate_buffer(&self, sz: usize) -> FBuf {
-        FBuf::with_capacity(sz)
-    }
 }
-
-impl<S> Storage for Box<S>
-where
-    S: Storage + ?Sized,
-{
-    fn create_named(&self, name: &Path) -> Result<Box<dyn FileWriter>, StorageError> {
-        (**self).create_named(name)
-    }
-
-    fn open(&self, name: &Path) -> Result<Arc<dyn FileReader>, StorageError> {
-        (**self).open(name)
-    }
-
-    fn base(&self) -> PathBuf {
-        (**self).base()
-    }
-}
-
-/// A dynamically chosen storage engine.
-pub type Backend = Box<dyn Storage>;
 
 /// Returns a per-thread temporary directory.
 pub fn tempdir_for_thread() -> PathBuf {
@@ -273,40 +219,49 @@ pub fn tempdir_for_thread() -> PathBuf {
     TEMPDIR.with(|dir| dir.path().to_path_buf())
 }
 
-/// Create and returns a backend of the default kind.
-pub fn new_default_backend(tempdir: PathBuf, cache: StorageCacheConfig) -> Backend {
-    trace!("new_default_backend: dir={:?}", tempdir);
-
-    #[cfg(target_os = "linux")]
-    {
-        use nix::sys::statfs::{statfs, TMPFS_MAGIC};
-        if let Ok(s) = statfs(&tempdir) {
-            if s.filesystem_type() == TMPFS_MAGIC {
-                static ONCE: std::sync::Once = std::sync::Once::new();
-                ONCE.call_once(|| {
-                    warn!("initializing storage on in-memory tmpfs filesystem at {}; consider configuring physical storage",
-                          tempdir.to_string_lossy())
-                });
-            }
+impl dyn StorageBackend {
+    /// Creates and returns a new backend configured according to `config` and `options`.
+    pub fn new(config: &StorageConfig, options: &StorageOptions) -> Result<Rc<Self>, StorageError> {
+        match &options.backend {
+            StorageBackendConfig::Default => Ok(Self::new_default(config)),
         }
     }
 
-    #[cfg(target_os = "linux")]
-    if std::env::var("FELDERA_USE_IO_URING").is_ok_and(|s| s != "0") {
-        match io_uring_impl::IoUringBackend::new(&tempdir, cache) {
-            Ok(backend) => return Box::new(backend),
-            Err(error) => {
-                static ONCE: std::sync::Once = std::sync::Once::new();
-                ONCE.call_once(|| {
-                    warn!("could not initialize io_uring backend ({error}), falling back to POSIX I/O")
-                });
+    /// Creates and returns a backend of the default kind.
+    pub fn new_default(config: &StorageConfig) -> Rc<Self> {
+        let path = config.path();
+        trace!("new_default_backend: dir={}", path.display());
+
+        #[cfg(target_os = "linux")]
+        {
+            use nix::sys::statfs::{statfs, TMPFS_MAGIC};
+            if let Ok(s) = statfs(path) {
+                if s.filesystem_type() == TMPFS_MAGIC {
+                    static ONCE: std::sync::Once = std::sync::Once::new();
+                    ONCE.call_once(|| {
+                        warn!("initializing storage on in-memory tmpfs filesystem at {}; consider configuring physical storage", path.display())
+                    });
+                }
             }
         }
-    } else {
-        info!("io_uring backend disabled by default (set FELDERA_USE_IO_URING=1 to enable");
-    }
 
-    Box::new(posixio_impl::PosixBackend::new(tempdir, cache))
+        #[cfg(target_os = "linux")]
+        if std::env::var("FELDERA_USE_IO_URING").is_ok_and(|s| s != "0") {
+            match io_uring_impl::IoUringBackend::new(path, config.cache) {
+                Ok(backend) => return Rc::new(backend),
+                Err(error) => {
+                    static ONCE: std::sync::Once = std::sync::Once::new();
+                    ONCE.call_once(|| {
+                        warn!("could not initialize io_uring backend ({error}), falling back to POSIX I/O")
+                    });
+                }
+            }
+        } else {
+            info!("io_uring backend disabled by default (set FELDERA_USE_IO_URING=1 to enable");
+        }
+
+        Rc::new(posixio_impl::PosixBackend::new(path, config.cache))
+    }
 }
 
 trait StorageCacheFlags {
@@ -321,5 +276,69 @@ impl StorageCacheFlags for OpenOptions {
             self.custom_flags(cache.to_custom_open_flags());
         }
         self
+    }
+}
+
+/// Maximum number of buffers that system calls accept in one operation.
+///
+/// We only use multibuffer system calls on Linux, so the value is arbitrary
+/// elsewhere.
+static IOV_MAX: LazyLock<usize> = LazyLock::new(|| {
+    #[cfg(target_os = "linux")]
+    match nix::unistd::sysconf(nix::unistd::SysconfVar::IOV_MAX) {
+        Ok(Some(iov_max)) if iov_max > 0 => iov_max as usize,
+        _ => {
+            // Typical Linux value.
+            1024
+        }
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    1024
+});
+
+/// A range of bytes in a file that doesn't satisfy the constraints for
+/// [BlockLocation].
+#[derive(Copy, Clone, Debug)]
+pub struct InvalidBlockLocation {
+    /// Byte offset.
+    pub offset: u64,
+
+    /// Number of bytes.
+    pub size: usize,
+}
+
+/// A block that can be read or written in a [FileReader] or [FileWriter].
+#[derive(Copy, Clone, Debug)]
+pub struct BlockLocation {
+    /// Byte offset, a multiple of 512.
+    pub offset: u64,
+
+    /// Size in bytes, a multiple of 512, less than `2**31`.
+    ///
+    /// (The upper limit is because some kernel APIs return the number of bytes
+    /// read as an `i32`.)
+    pub size: usize,
+}
+
+impl BlockLocation {
+    /// Constructs a new [BlockLocation], validating `offset` and `size`.
+    pub fn new(offset: u64, size: usize) -> Result<Self, InvalidBlockLocation> {
+        if (offset % 512) != 0 || !(512..1 << 31).contains(&size) || (size % 512) != 0 {
+            Err(InvalidBlockLocation { offset, size })
+        } else {
+            Ok(Self { offset, size })
+        }
+    }
+
+    /// File offset just after this block.
+    pub fn after(&self) -> u64 {
+        self.offset + self.size as u64
+    }
+}
+
+impl Display for BlockLocation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} bytes at offset {}", self.size, self.offset)
     }
 }

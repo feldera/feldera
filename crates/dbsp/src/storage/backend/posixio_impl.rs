@@ -1,10 +1,11 @@
-//! Implementation of the storage backend ([`Storage`] APIs using POSIX I/O.
+//! [StorageBackend] implementation using POSIX I/O.
 
 use feldera_types::config::StorageCacheConfig;
 use metrics::{counter, histogram};
 use std::{
     fs::{self, remove_file, File, OpenOptions},
     io::Error as IoError,
+    ops::Range,
     os::unix::fs::MetadataExt,
     path::{Path, PathBuf},
     rc::Rc,
@@ -17,11 +18,12 @@ use std::{
 use tracing::warn;
 
 use super::{
-    append_to_path, tempdir_for_thread, FileId, FileReader, FileWriter, HasFileId, Storage,
-    StorageCacheFlags, StorageError, MUTABLE_EXTENSION,
+    append_to_path, tempdir_for_thread, BlockLocation, FileId, FileReader, FileWriter, HasFileId,
+    StorageBackend, StorageCacheFlags, StorageError, IOV_MAX, MUTABLE_EXTENSION,
 };
-use crate::circuit::metrics::{
-    FILES_CREATED, FILES_DELETED, TOTAL_BYTES_WRITTEN, WRITES_SUCCESS, WRITE_LATENCY,
+use crate::circuit::{
+    metrics::{FILES_CREATED, FILES_DELETED, TOTAL_BYTES_WRITTEN, WRITES_SUCCESS, WRITE_LATENCY},
+    tokio::TOKIO,
 };
 use crate::storage::{buffer_cache::FBuf, init};
 
@@ -73,13 +75,36 @@ impl FileReader for PosixReader {
         self.drop.keep();
     }
 
-    fn read_block(&self, offset: u64, size: usize) -> Result<Arc<FBuf>, StorageError> {
-        let mut buffer = FBuf::with_capacity(size);
+    fn read_block(&self, location: BlockLocation) -> Result<Arc<FBuf>, StorageError> {
+        let mut buffer = FBuf::with_capacity(location.size);
 
-        match buffer.read_exact_at(&self.file, offset, size) {
+        match buffer.read_exact_at(&self.file, location.offset, location.size) {
             Ok(()) => Ok(Arc::new(buffer)),
             Err(e) => Err(e.into()),
         }
+    }
+
+    fn read_async(
+        &self,
+        blocks: Vec<std::ops::Range<u64>>,
+        callback: Box<dyn FnOnce(Vec<Result<Arc<FBuf>, StorageError>>) + Send>,
+    ) {
+        let file = self.file.clone();
+        TOKIO.spawn_blocking(move || {
+            callback(
+                blocks
+                    .into_iter()
+                    .map(|Range { start, end }| {
+                        let length = (end - start) as usize;
+                        let mut buffer = FBuf::with_capacity(length);
+                        match buffer.read_exact_at(&file, start, length) {
+                            Ok(()) => Ok(Arc::new(buffer)),
+                            Err(e) => Err(e.into()),
+                        }
+                    })
+                    .collect(),
+            );
+        });
     }
 
     fn get_size(&self) -> Result<u64, StorageError> {
@@ -94,7 +119,8 @@ impl FileReader for PosixReader {
     }
 }
 
-struct DeleteOnDrop {
+/// Deletes a file when dropped (unless [Self::keep] is called first).
+pub struct DeleteOnDrop {
     path: PathBuf,
     keep: AtomicBool,
 }
@@ -112,13 +138,17 @@ impl Drop for DeleteOnDrop {
 }
 
 impl DeleteOnDrop {
-    fn new(path: PathBuf, keep: bool) -> Self {
+    /// Returns an object that will delete `path` when dropped (unless `keep` is
+    /// true or [Self::keep] is called before this dropping).
+    pub fn new(path: PathBuf, keep: bool) -> Self {
         Self {
             path,
             keep: AtomicBool::new(keep),
         }
     }
-    fn keep(&self) {
+
+    /// Disables deleting the file when dropped.
+    pub fn keep(&self) {
         self.keep.store(true, Ordering::Relaxed);
     }
 }
@@ -222,7 +252,9 @@ impl PosixWriter {
     }
 
     fn write_at(&mut self, buffer: &Arc<FBuf>, offset: u64) -> Result<(), StorageError> {
-        if self.len >= 1024 * 1024 || (!self.buffers.is_empty() && self.offset + self.len != offset)
+        if self.len >= 1024 * 1024
+            || (!self.buffers.is_empty() && self.offset + self.len != offset)
+            || self.buffers.len() >= *IOV_MAX
         {
             self.flush()?;
         }
@@ -280,7 +312,7 @@ impl PosixBackend {
     }
 }
 
-impl Storage for PosixBackend {
+impl StorageBackend for PosixBackend {
     fn create_named(&self, name: &Path) -> Result<Box<dyn FileWriter>, StorageError> {
         let path = append_to_path(self.base.join(name), MUTABLE_EXTENSION);
         let file = OpenOptions::new()
@@ -296,27 +328,23 @@ impl Storage for PosixBackend {
     fn open(&self, name: &Path) -> Result<Arc<dyn FileReader>, StorageError> {
         PosixReader::open(self.base.join(name), self.cache)
     }
-
-    fn base(&self) -> PathBuf {
-        self.base.clone()
-    }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
+    use std::{path::Path, rc::Rc};
 
     use feldera_types::config::StorageCacheConfig;
 
     use crate::storage::backend::{
         tests::{random_sizes, test_backend},
-        Backend,
+        StorageBackend,
     };
 
     use super::PosixBackend;
 
-    fn create_posix_backend(path: &Path) -> Backend {
-        Box::new(PosixBackend::new(path, StorageCacheConfig::default()))
+    fn create_posix_backend(path: &Path) -> Rc<dyn StorageBackend> {
+        Rc::new(PosixBackend::new(path, StorageCacheConfig::default()))
     }
 
     /// Write 10 MiB total in 1 KiB chunks.  `VectoredWrite` flushes its buffer when it

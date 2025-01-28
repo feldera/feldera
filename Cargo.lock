@@ -3666,12 +3666,11 @@ dependencies = [
  "indicatif",
  "io-uring",
  "itertools 0.10.5",
- "lazy_static",
  "libc",
  "metrics",
  "mimalloc-rust-sys",
  "minitrace",
- "nix 0.27.1",
+ "nix 0.29.0",
  "num",
  "num-derive",
  "num-traits",
@@ -3694,6 +3693,7 @@ dependencies = [
  "rlimit",
  "serde",
  "serde_json",
+ "snap",
  "static_assertions",
  "tar",
  "tarpc",
@@ -3763,7 +3763,6 @@ dependencies = [
  "home",
  "indexmap 2.6.0",
  "jemalloc_pprof",
- "lazy_static",
  "metrics",
  "metrics-exporter-prometheus",
  "metrics-util",
@@ -4730,7 +4729,6 @@ dependencies = [
  "geo",
  "hex",
  "itertools 0.13.0",
- "lazy_static",
  "like",
  "metrics",
  "num",
@@ -4753,7 +4751,6 @@ dependencies = [
  "csv",
  "enum-map",
  "feldera_rust_decimal",
- "lazy_static",
  "libc",
  "log",
  "proptest",
@@ -6639,17 +6636,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "598beaf3cc6fdd9a5dfb1630c2800c7acd31df7aaf0f565796fba2b53ca1af1b"
 dependencies = [
  "bitflags 1.3.2",
- "cfg-if",
- "libc",
-]
-
-[[package]]
-name = "nix"
-version = "0.27.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2eb04e9c688eff1c89d72b407f168cf79bb9e867a9d3323ed6c01519eb9cc053"
-dependencies = [
- "bitflags 2.6.0",
  "cfg-if",
  "libc",
 ]

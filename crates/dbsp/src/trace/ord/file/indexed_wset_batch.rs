@@ -1,22 +1,21 @@
 use crate::{
     algebra::{AddAssignByRef, AddByRef, NegByRef},
     dynamic::{
-        DataTrait, DynOpt, DynPair, DynUnit, DynVec, DynWeightedPairs, Erase, Factory, LeanVec,
-        WeightTrait, WeightTraitTyped, WithFactory,
+        DataTrait, DynOpt, DynPair, DynUnit, DynVec, DynWeightedPairs, Erase, Factory, WeightTrait,
+        WeightTraitTyped, WithFactory,
     },
     storage::file::{
         reader::{Cursor as FileCursor, Error as ReaderError, Reader},
-        writer::{Parameters, Writer2},
+        writer::Writer2,
         Factories as FileFactories,
     },
     time::{Antichain, AntichainRef},
     trace::{
-        cursor::{HasTimeDiffCursor, SingletonTimeDiffCursor},
-        ord::{filter, merge_batcher::MergeBatcher},
+        cursor::{CursorFactory, CursorFactoryWrapper, HasTimeDiffCursor, SingletonTimeDiffCursor},
+        ord::{filter, merge_batcher::MergeBatcher, vec::VecIndexedWSet},
         Batch, BatchFactories, BatchLocation, BatchReader, BatchReaderFactories, Builder, Cursor,
-        Filter, Merger, TimedBuilder, WeightedItem,
+        Filter, Merger, TimedBuilder, VecIndexedWSetFactories, WeightedItem,
     },
-    utils::Tup2,
     DBData, DBWeight, NumEntries, Runtime,
 };
 use dyn_clone::clone_box;
@@ -36,16 +35,10 @@ where
     V: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
-    key_factory: &'static dyn Factory<K>,
-    val_factory: &'static dyn Factory<V>,
-    weight_factory: &'static dyn Factory<R>,
-    keys_factory: &'static dyn Factory<DynVec<K>>,
-    item_factory: &'static dyn Factory<DynPair<K, V>>,
     factories0: FileFactories<K, DynUnit>,
     factories1: FileFactories<V, R>,
     opt_key_factory: &'static dyn Factory<DynOpt<K>>,
-    weighted_item_factory: &'static dyn Factory<WeightedItem<K, V, R>>,
-    weighted_items_factory: &'static dyn Factory<DynWeightedPairs<DynPair<K, V>, R>>,
+    pub vec_indexed_wset_factory: VecIndexedWSetFactories<K, V, R>,
 }
 
 impl<K, V, R> Clone for FileIndexedWSetFactories<K, V, R>
@@ -56,16 +49,10 @@ where
 {
     fn clone(&self) -> Self {
         Self {
-            key_factory: self.key_factory,
-            val_factory: self.val_factory,
-            weight_factory: self.weight_factory,
-            keys_factory: self.keys_factory,
-            item_factory: self.item_factory,
             factories0: self.factories0.clone(),
             factories1: self.factories1.clone(),
             opt_key_factory: self.opt_key_factory,
-            weighted_item_factory: self.weighted_item_factory,
-            weighted_items_factory: self.weighted_items_factory,
+            vec_indexed_wset_factory: self.vec_indexed_wset_factory.clone(),
         }
     }
 }
@@ -83,34 +70,27 @@ where
         RType: DBWeight + Erase<R>,
     {
         Self {
-            key_factory: WithFactory::<KType>::FACTORY,
-            val_factory: WithFactory::<VType>::FACTORY,
-            weight_factory: WithFactory::<RType>::FACTORY,
-            keys_factory: WithFactory::<LeanVec<KType>>::FACTORY,
-            item_factory: WithFactory::<Tup2<KType, VType>>::FACTORY,
             factories0: FileFactories::new::<KType, ()>(),
             factories1: FileFactories::new::<VType, RType>(),
             opt_key_factory: WithFactory::<Option<KType>>::FACTORY,
-            weighted_item_factory: WithFactory::<Tup2<Tup2<KType, VType>, RType>>::FACTORY,
-            weighted_items_factory:
-                WithFactory::<LeanVec<Tup2<Tup2<KType, VType>, RType>>>::FACTORY,
+            vec_indexed_wset_factory: VecIndexedWSetFactories::new::<KType, VType, RType>(),
         }
     }
 
     fn key_factory(&self) -> &'static dyn Factory<K> {
-        self.key_factory
+        self.vec_indexed_wset_factory.key_factory()
     }
 
     fn keys_factory(&self) -> &'static dyn Factory<DynVec<K>> {
-        self.keys_factory
+        self.vec_indexed_wset_factory.keys_factory()
     }
 
     fn val_factory(&self) -> &'static dyn Factory<V> {
-        self.val_factory
+        self.vec_indexed_wset_factory.val_factory()
     }
 
     fn weight_factory(&self) -> &'static dyn Factory<R> {
-        self.weight_factory
+        self.vec_indexed_wset_factory.weight_factory()
     }
 }
 
@@ -121,15 +101,15 @@ where
     R: WeightTrait + ?Sized,
 {
     fn item_factory(&self) -> &'static dyn Factory<DynPair<K, V>> {
-        self.item_factory
+        self.vec_indexed_wset_factory.item_factory()
     }
 
     fn weighted_item_factory(&self) -> &'static dyn Factory<WeightedItem<K, V, R>> {
-        self.weighted_item_factory
+        self.vec_indexed_wset_factory.weighted_item_factory()
     }
 
     fn weighted_items_factory(&self) -> &'static dyn Factory<DynWeightedPairs<DynPair<K, V>, R>> {
-        self.weighted_items_factory
+        self.vec_indexed_wset_factory.weighted_items_factory()
     }
 }
 
@@ -254,8 +234,9 @@ where
         let mut writer = Writer2::new(
             &self.factories.factories0,
             &self.factories.factories1,
-            &Runtime::storage(),
-            Parameters::default(),
+            &Runtime::buffer_cache(),
+            &*Runtime::storage_backend().unwrap(),
+            Runtime::file_writer_parameters(),
         )
         .unwrap();
 
@@ -395,6 +376,59 @@ where
             }
         }
     }
+
+    async fn fetch<B>(
+        &self,
+        keys: &B,
+    ) -> Option<Box<dyn CursorFactory<Self::Key, Self::Val, Self::Time, Self::R>>>
+    where
+        B: Batch<Key = Self::Key>,
+    {
+        let context = self.file.new_async_context();
+        let mut tasks = Vec::new();
+        let mut keys = keys.cursor();
+        while let Some(key) = keys.get_key() {
+            let key = clone_box(key);
+            tasks.push(async {
+                let key = key; // Force moving `key`.
+                let mut output = self.factories.weighted_items_factory().default_box();
+
+                let key_rows = self.file.rows_async(&context);
+                if let Some(key_cursor) = unsafe { key_rows.find_exact(&key) }.await.unwrap() {
+                    let value_rows = key_cursor.next_column().await.unwrap();
+                    output.reserve(value_rows.len() as usize);
+                    let mut value_cursor = value_rows.first().await.unwrap();
+                    let mut item = self.factories.weighted_item_factory().default_box();
+                    while value_cursor.has_value() {
+                        let (kv, weight) = item.split_mut();
+                        let (k, v) = kv.split_mut();
+                        key.clone_to(k);
+                        unsafe { value_cursor.key(v) };
+                        unsafe { value_cursor.aux(weight) };
+                        output.push_val(&mut *item);
+                        value_cursor.move_next().await.unwrap();
+                    }
+                }
+                output
+            });
+            keys.step_key();
+        }
+
+        let outputs = context.execute_tasks(self.file.file_handle(), tasks).await;
+
+        let mut builder =
+            <VecIndexedWSet<Self::Key, Self::Val, Self::R> as Batch>::Builder::with_capacity(
+                &self.factories.vec_indexed_wset_factory,
+                (),
+                outputs.len(),
+            );
+        for mut output in outputs {
+            for update in output.dyn_iter_mut() {
+                builder.push(update);
+            }
+        }
+        Some(Box::new(CursorFactoryWrapper(builder.done())))
+    }
 }
 
 impl<K, V, R> Batch for FileIndexedWSet<K, V, R>
@@ -419,7 +453,12 @@ where
     fn from_path(factories: &Self::Factories, path: &Path) -> Result<Self, ReaderError> {
         let any_factory0 = factories.factories0.any_factories();
         let any_factory1 = factories.factories1.any_factories();
-        let file = Reader::open(&[&any_factory0, &any_factory1], &Runtime::storage(), path)?;
+        let file = Reader::open(
+            &[&any_factory0, &any_factory1],
+            &Runtime::buffer_cache(),
+            &*Runtime::storage_backend().unwrap(),
+            path,
+        )?;
         Ok(Self {
             factories: factories.clone(),
             file,
@@ -508,7 +547,7 @@ where
         value_filter: &Option<Filter<V>>,
     ) -> bool {
         let mut n = 0;
-        let mut sum = self.factories.weight_factory.default_box();
+        let mut sum = self.factories.weight_factory().default_box();
 
         while cursor1.val_valid() && cursor2.val_valid() {
             let value1 = cursor1.val();
@@ -566,8 +605,9 @@ where
             writer: Writer2::new(
                 &batch1.factories.factories0,
                 &batch1.factories.factories1,
-                &Runtime::storage(),
-                Parameters::default(),
+                &Runtime::buffer_cache(),
+                &*Runtime::storage_backend().unwrap(),
+                Runtime::file_writer_parameters(),
             )
             .unwrap(),
         }
@@ -689,12 +729,12 @@ where
             .subset(lower_bound as u64..)
             .first()
             .unwrap();
-        let mut key = wset.factories.key_factory.default_box();
+        let mut key = wset.factories.key_factory().default_box();
         unsafe { key_cursor.key(&mut key) };
 
         let val_cursor = key_cursor.next_column().unwrap().first().unwrap();
-        let mut val = wset.factories.val_factory.default_box();
-        let mut diff = wset.factories.weight_factory.default_box();
+        let mut val = wset.factories.val_factory().default_box();
+        let mut diff = wset.factories.weight_factory().default_box();
         unsafe { val_cursor.item((&mut val, &mut diff)) };
         Self {
             wset,
@@ -736,7 +776,7 @@ where
     R: WeightTrait + ?Sized,
 {
     fn weight_factory(&self) -> &'static dyn Factory<R> {
-        self.wset.factories.weight_factory
+        self.wset.factories.weight_factory()
     }
 
     fn key(&self) -> &K {
@@ -889,8 +929,9 @@ where
             writer: Writer2::new(
                 &factories.factories0,
                 &factories.factories1,
-                &Runtime::storage(),
-                Parameters::default(),
+                &Runtime::buffer_cache(),
+                &*Runtime::storage_backend().unwrap(),
+                Runtime::file_writer_parameters(),
             )
             .unwrap(),
             key: factories.opt_key_factory.default_box(),

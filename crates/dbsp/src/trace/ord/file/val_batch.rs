@@ -7,7 +7,7 @@ use crate::{
     },
     storage::file::{
         reader::{ColumnSpec, Cursor as FileCursor, Error as ReaderError, Reader},
-        writer::{Parameters, Writer2},
+        writer::Writer2,
         Factories as FileFactories,
     },
     time::{Antichain, AntichainRef},
@@ -346,7 +346,12 @@ where
     fn from_path(factories: &Self::Factories, path: &Path) -> Result<Self, ReaderError> {
         let any_factory0 = factories.factories0.any_factories();
         let any_factory1 = factories.factories1.any_factories();
-        let file = Reader::open(&[&any_factory0, &any_factory1], &Runtime::storage(), path)?;
+        let file = Reader::open(
+            &[&any_factory0, &any_factory1],
+            &Runtime::buffer_cache(),
+            &*Runtime::storage_backend().unwrap(),
+            path,
+        )?;
         Ok(Self {
             factories: factories.clone(),
             file,
@@ -615,8 +620,9 @@ where
         let mut output = Writer2::new(
             &source1.factories.factories0,
             &source1.factories().factories1,
-            &Runtime::storage(),
-            Parameters::default(),
+            &Runtime::buffer_cache(),
+            &*Runtime::storage_backend().unwrap(),
+            Runtime::file_writer_parameters(),
         )
         .unwrap();
         let mut cursor1 = source1.file.rows().nth(0).unwrap();
@@ -714,10 +720,13 @@ where
     fn done(mut self) -> FileValBatch<K, V, T, R> {
         FileValBatch {
             factories: self.factories,
-            file: self
-                .result
-                .take()
-                .unwrap_or(Reader::empty(&Runtime::storage()).unwrap()),
+            file: self.result.take().unwrap_or(
+                Reader::empty(
+                    &Runtime::buffer_cache(),
+                    &*Runtime::storage_backend().unwrap(),
+                )
+                .unwrap(),
+            ),
             lower: self.lower,
             upper: self.upper,
         }
@@ -1171,8 +1180,9 @@ where
             writer: Writer2::new(
                 &factories.factories0,
                 &factories.factories1,
-                &Runtime::storage(),
-                Parameters::default(),
+                &Runtime::buffer_cache(),
+                &*Runtime::storage_backend().unwrap(),
+                Runtime::file_writer_parameters(),
             )
             .unwrap(),
             cur: None,
