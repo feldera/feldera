@@ -29,6 +29,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 
 public class DBSPTypeIndexedZSet extends DBSPTypeUser {
     public final DBSPType keyType;
@@ -51,6 +52,14 @@ public class DBSPTypeIndexedZSet extends DBSPTypeUser {
     /** Build an IndexedZSet type from a tuple with 2 elements: key type, value type */
     public DBSPTypeIndexedZSet(DBSPTypeRawTuple tuple) {
         this(tuple.getNode(), tuple.getFieldType(0), tuple.getFieldType(1));
+    }
+
+    public DBSPTypeTuple getKeyTypeTuple() {
+        return this.keyType.to(DBSPTypeTuple.class);
+    }
+
+    public DBSPTypeTuple getElementTypeTuple() {
+        return this.elementType.to(DBSPTypeTuple.class);
     }
 
     public DBSPTypeRawTuple getKVRefType() {

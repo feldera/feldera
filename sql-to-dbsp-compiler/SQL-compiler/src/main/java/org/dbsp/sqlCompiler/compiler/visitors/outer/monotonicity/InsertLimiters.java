@@ -995,8 +995,8 @@ public class InsertLimiters extends CircuitCloneVisitor {
         // [2, 0]
         // [2, 1]
         // input# is 0 = key, 1 = left, 2 = right
-        int leftValueSize = join.left().getOutputIndexedZSetType().elementType.to(DBSPTypeTuple.class).size();
-        int rightValueSize = join.right().getOutputIndexedZSetType().elementType.to(DBSPTypeTuple.class).size();
+        int leftValueSize = join.left().getOutputIndexedZSetType().getElementTypeTuple().size();
+        int rightValueSize = join.right().getOutputIndexedZSetType().getElementTypeTuple().size();
 
         DBSPTypeTuple keyType = join.getKeyType().to(DBSPTypeTuple.class);
         PartiallyMonotoneTuple keyPart = PartiallyMonotoneTuple.noMonotoneFields(keyType);
