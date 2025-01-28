@@ -237,7 +237,7 @@ fn map_val_to_limited_runtime_config(val: RuntimeConfigPropVal) -> serde_json::V
             cpu_profiler: val.val1,
             min_batch_size_records: val.val2,
             max_buffering_delay_usecs: val.val3,
-            storage: val.val4.then(|| Default::default()),
+            storage: val.val4.then(Default::default),
             fault_tolerance: None,
             tracing: val.val5,
             tracing_endpoint_jaeger: val.val6,
