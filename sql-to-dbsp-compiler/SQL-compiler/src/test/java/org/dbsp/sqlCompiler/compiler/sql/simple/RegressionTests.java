@@ -18,14 +18,14 @@ import org.junit.Ignore;
 import org.junit.Test;
 
 public class RegressionTests extends SqlIoTest {
-    @Test @Ignore("")
+    @Test
     public void issue3364() {
-        this.getCCS("""
+        this.statementsFailingInCompilation("""
                 create type typ1 as (f int);
                 create table t1 (x1 typ1);
                 create table t2 (x1 typ1);
                 create view v1 as select t1.* from t1 join t2
-                on t1.x1 = t2.x1;""");
+                on t1.x1 = t2.x1;""", "Not yet implemented: Join on struct types");
     }
 
     @Test

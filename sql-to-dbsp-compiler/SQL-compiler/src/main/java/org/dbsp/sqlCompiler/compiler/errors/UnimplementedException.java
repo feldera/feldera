@@ -57,7 +57,7 @@ public class UnimplementedException
     public UnimplementedException(String message, int issue, CalciteObject object) {
         this(makeMessage(message + System.lineSeparator() +
                 "This is tracked by issue https://github.com/feldera/feldera/issues/" +
-                issue + System.lineSeparator()), object);
+                issue + " "), object);
     }
 
     public UnimplementedException() {
