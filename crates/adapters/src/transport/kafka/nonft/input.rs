@@ -104,7 +104,7 @@ impl ClientContext for KafkaInputContext {
 }
 
 impl ConsumerContext for KafkaInputContext {
-    fn post_rebalance(&self, rebalance: &Rebalance<'_>) {
+    fn post_rebalance(&self, _base_consumer: &BaseConsumer<Self>, rebalance: &Rebalance<'_>) {
         if matches!(rebalance, Rebalance::Assign(_)) {
             if let Some(endpoint) = self.endpoint.lock().unwrap().upgrade() {
                 endpoint.rebalanced.store(true, Ordering::Release);
@@ -234,10 +234,13 @@ impl KafkaInputReaderInner {
             }
 
             while let Some((error, reason)) = self.pop_error() {
-                let (fatal, _e) = self.refine_error(error);
+                let (fatal, error) = self.refine_error(error);
                 // `reason` contains a human-readable description of the
                 // error.
-                consumer.error(fatal, anyhow!(reason));
+                consumer.error(
+                    fatal,
+                    anyhow!(format!("Kafka consumer error: {error}; Reason: {reason}")),
+                );
                 if fatal {
                     return Ok(());
                 }
