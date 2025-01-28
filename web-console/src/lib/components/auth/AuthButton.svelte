@@ -2,6 +2,7 @@
   import { page } from '$app/state'
   import { fade } from 'svelte/transition'
   import Popup from '$lib/components/common/Popup.svelte'
+  import VersionDisplay from '$lib/components/version/VersionDisplay.svelte'
   import AuthPopupMenu from './AuthPopupMenu.svelte'
   import type { AuthDetails } from '$lib/types/auth'
   import DarkModeSwitch from '$lib/components/layout/userPopup/DarkModeSwitch.svelte'
@@ -52,10 +53,10 @@
         transition:fade={{ duration: 100 }}
         class="bg-white-dark absolute right-0 z-30 flex max-h-[400px] w-[calc(100vw-16px)] max-w-[360px] flex-col justify-end gap-4 overflow-y-auto rounded-container p-4 shadow-md scrollbar sm:max-w-[400px]"
       >
-        <div class="px-3 text-surface-700-300">Authentication is disabled</div>
+        <div class="text-surface-700-300">Authentication is disabled</div>
         <div class="hr"></div>
         <DarkModeSwitch></DarkModeSwitch>
-        <div class="hr pt-4 text-surface-500">Feldera version {page.data.felderaVersion}</div>
+        <VersionDisplay></VersionDisplay>
       </div>
     {/snippet}
   </Popup>

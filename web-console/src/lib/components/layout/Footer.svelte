@@ -24,9 +24,9 @@
     <a
       target="_blank"
       rel="noreferrer"
-      href="https://github.com/feldera/feldera/releases/tag/v{page.data.felderaVersion}"
+      href={page.data.feldera.changelog}
       class="btn justify-start px-4 hover:bg-surface-50-950"
-      >v{page.data.felderaVersion} Changelog</a
+      >{page.data.feldera.version} Changelog</a
     >
     <div class="btn justify-start px-4">© Feldera {new Date().getUTCFullYear()}</div>
   </div>
