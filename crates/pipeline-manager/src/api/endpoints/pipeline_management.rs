@@ -79,6 +79,7 @@ pub struct PipelineInfo {
     pub deployment_status_since: DateTime<Utc>,
     pub deployment_desired_status: PipelineDesiredStatus,
     pub deployment_error: Option<ErrorResponse>,
+    pub refresh_version: Version,
 }
 
 /// Pipeline information (internal).
@@ -111,6 +112,7 @@ pub struct PipelineInfoInternal {
     pub deployment_status_since: DateTime<Utc>,
     pub deployment_desired_status: PipelineDesiredStatus,
     pub deployment_error: Option<ErrorResponse>,
+    pub refresh_version: Version,
 }
 
 impl PipelineInfoInternal {
@@ -135,6 +137,7 @@ impl PipelineInfoInternal {
             deployment_status_since: extended_pipeline.deployment_status_since,
             deployment_desired_status: extended_pipeline.deployment_desired_status,
             deployment_error: extended_pipeline.deployment_error,
+            refresh_version: extended_pipeline.refresh_version,
         }
     }
 }
@@ -169,6 +172,7 @@ pub struct PipelineSelectedInfo {
     pub deployment_status_since: DateTime<Utc>,
     pub deployment_desired_status: PipelineDesiredStatus,
     pub deployment_error: Option<ErrorResponse>,
+    pub refresh_version: Version,
 }
 
 /// Pipeline information which has a selected subset of optional fields (internal).
@@ -205,6 +209,7 @@ pub struct PipelineSelectedInfoInternal {
     pub deployment_status_since: DateTime<Utc>,
     pub deployment_desired_status: PipelineDesiredStatus,
     pub deployment_error: Option<ErrorResponse>,
+    pub refresh_version: Version,
 }
 
 impl PipelineSelectedInfoInternal {
@@ -231,6 +236,7 @@ impl PipelineSelectedInfoInternal {
             deployment_status_since: extended_pipeline.deployment_status_since,
             deployment_desired_status: extended_pipeline.deployment_desired_status,
             deployment_error: extended_pipeline.deployment_error,
+            refresh_version: extended_pipeline.refresh_version,
         }
     }
 
@@ -255,6 +261,7 @@ impl PipelineSelectedInfoInternal {
             deployment_status_since: extended_pipeline.deployment_status_since,
             deployment_desired_status: extended_pipeline.deployment_desired_status,
             deployment_error: extended_pipeline.deployment_error,
+            refresh_version: extended_pipeline.refresh_version,
         }
     }
 }
@@ -284,6 +291,7 @@ pub enum PipelineFieldSelector {
     /// - `deployment_status_since`
     /// - `deployment_desired_status`
     /// - `deployment_error`
+    /// - `refresh_version`
     All,
     /// Select only the fields required to know the status of a pipeline.
     ///
@@ -301,6 +309,7 @@ pub enum PipelineFieldSelector {
     /// - `deployment_status_since`
     /// - `deployment_desired_status`
     /// - `deployment_error`
+    /// - `refresh_version`
     Status,
 }
 

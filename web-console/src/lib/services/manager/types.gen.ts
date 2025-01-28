@@ -1345,6 +1345,7 @@ export type PipelineInfo = {
   program_status: ProgramStatus
   program_status_since: string
   program_version: Version
+  refresh_version: Version
   runtime_config: RuntimeConfig
   udf_rust: string
   udf_toml: string
@@ -1372,6 +1373,7 @@ export type PipelineSelectedInfo = {
   program_status: ProgramStatus
   program_status_since: string
   program_version: Version
+  refresh_version: Version
   runtime_config?: RuntimeConfig | null
   udf_rust?: string | null
   udf_toml?: string | null

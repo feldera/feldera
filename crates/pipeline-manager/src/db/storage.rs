@@ -38,6 +38,7 @@ impl ExtendedPipelineDescrRunner {
                 deployment_desired_status: pipeline.deployment_desired_status,
                 deployment_error: pipeline.deployment_error.clone(),
                 deployment_location: pipeline.deployment_location.clone(),
+                refresh_version: pipeline.refresh_version,
             },
         }
     }

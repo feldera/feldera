@@ -2340,10 +2340,12 @@ impl ModelHelpers for Mutex<DbModel> {
         // Version changed: increment it
         if version_increment {
             pipeline.version = Version(pipeline.version.0 + 1);
+            pipeline.refresh_version = Version(pipeline.refresh_version.0 + 1);
         }
 
         // Program changed
         if program_version_increment {
+            assert!(version_increment); // Whenever program_version is incremented, version should also have been
             pipeline.program_version = Version(pipeline.program_version.0 + 1);
             pipeline.program_status = ProgramStatus::Pending;
             pipeline.program_status_since = Utc::now();
@@ -2470,6 +2472,7 @@ fn convert_descriptor_to_monitoring(
         deployment_desired_status: pipeline.deployment_desired_status,
         deployment_error: pipeline.deployment_error.clone(),
         deployment_location: pipeline.deployment_location.clone(),
+        refresh_version: pipeline.refresh_version,
     }
 }
 
@@ -2755,6 +2758,7 @@ impl Storage for Mutex<DbModel> {
             deployment_error: None,
             deployment_config: None,
             deployment_location: None,
+            refresh_version: Version(1),
         };
 
         // Insert into state
@@ -2873,6 +2877,7 @@ impl Storage for Mutex<DbModel> {
         pipeline.program_status_since = Utc::now();
         pipeline.program_info = None;
         pipeline.program_binary_url = None;
+        pipeline.refresh_version = Version(pipeline.refresh_version.0 + 1);
         self.lock()
             .await
             .pipelines
@@ -2917,6 +2922,7 @@ impl Storage for Mutex<DbModel> {
         pipeline.program_status = new_status;
         pipeline.program_status_since = Utc::now();
         pipeline.program_info = Some(program_info.clone());
+        pipeline.refresh_version = Version(pipeline.refresh_version.0 + 1);
         self.lock()
             .await
             .pipelines

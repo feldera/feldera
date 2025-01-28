@@ -404,7 +404,7 @@ pub struct ExtendedPipelineDescr {
     pub created_at: DateTime<Utc>,
 
     /// Pipeline version, incremented every time name, description, runtime_config, program_code,
-    /// program_config or platform_version is/are modified.
+    /// udf_rust, udf_toml, program_config or platform_version is/are modified.
     pub version: Version,
 
     /// Pipeline platform version.
@@ -426,7 +426,7 @@ pub struct ExtendedPipelineDescr {
     pub program_config: serde_json::Value,
 
     /// Program version, incremented every time program_code, udf_rust,
-    /// udf_toml, program_config or platform_version is modified.
+    /// udf_toml, program_config or platform_version is/are modified.
     pub program_version: Version,
 
     /// Program compilation status.
@@ -473,6 +473,12 @@ pub struct ExtendedPipelineDescr {
     /// Location where the pipeline can be reached at runtime
     /// (e.g., a TCP port number or a URI).
     pub deployment_location: Option<String>,
+
+    /// Refresh version, incremented for the same fields as `version` but also including
+    /// `program_info` as it contains information of interest to the user regarding the pipeline.
+    /// It is a notification mechanism for users. If a user detects it changed while monitoring
+    /// only the status fields, it should refresh fully (retrieve all fields).
+    pub refresh_version: Version,
 }
 
 /// Pipeline descriptor which includes the fields relevant to system monitoring.
@@ -497,4 +503,5 @@ pub struct ExtendedPipelineDescrMonitoring {
     pub deployment_desired_status: PipelineDesiredStatus,
     pub deployment_error: Option<ErrorResponse>,
     pub deployment_location: Option<String>,
+    pub refresh_version: Version,
 }

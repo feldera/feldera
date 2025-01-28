@@ -985,7 +985,7 @@ async fn pipeline_get() {
 }
 
 /// Fields included in the `all` selector.
-const PIPELINE_FIELD_SELECTOR_ALL_FIELDS: [&str; 19] = [
+const PIPELINE_FIELD_SELECTOR_ALL_FIELDS: [&str; 20] = [
     "id",
     "name",
     "description",
@@ -1005,10 +1005,11 @@ const PIPELINE_FIELD_SELECTOR_ALL_FIELDS: [&str; 19] = [
     "deployment_status_since",
     "deployment_desired_status",
     "deployment_error",
+    "refresh_version",
 ];
 
 /// Fields included in the `status` selector.
-const PIPELINE_FIELD_SELECTOR_STATUS_FIELDS: [&str; 13] = [
+const PIPELINE_FIELD_SELECTOR_STATUS_FIELDS: [&str; 14] = [
     "id",
     "name",
     "description",
@@ -1022,6 +1023,7 @@ const PIPELINE_FIELD_SELECTOR_STATUS_FIELDS: [&str; 13] = [
     "deployment_status_since",
     "deployment_desired_status",
     "deployment_error",
+    "refresh_version",
 ];
 
 /// Tests the retrieval of a pipeline and list of pipelines with a field selector.
@@ -3223,4 +3225,66 @@ async fn checkpoint() {
     {
         assert_ne!(response.status(), StatusCode::NOT_IMPLEMENTED);
     }
+}
+
+/// Incrementing of `refresh_version`.
+#[actix_web::test]
+#[serial]
+async fn refresh_version() {
+    let config = setup().await;
+
+    // Initial refresh version should be 1
+    let request_body = json!({
+        "name": "test",
+        "program_code": "",
+    });
+    let mut response = config.post("/v0/pipelines", &request_body).await;
+    assert_eq!(response.status(), StatusCode::CREATED);
+    let value: Value = response.json().await.unwrap();
+    assert_eq!(value["refresh_version"], json!(1));
+
+    // After compilation, refresh version should be 2
+    config
+        .wait_for_compilation("test", 1, config.compilation_timeout)
+        .await;
+    let mut response = config.get("/v0/pipelines/test").await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let value: Value = response.json().await.unwrap();
+    assert_eq!(value["refresh_version"], json!(2));
+
+    // Starting and shutting down should have no effect on the refresh version
+    let response = config.post_no_body("/v0/pipelines/test/pause").await;
+    assert_eq!(response.status(), StatusCode::ACCEPTED);
+    config
+        .wait_for_deployment_status("test", PipelineStatus::Paused, config.start_timeout)
+        .await;
+    let response = config.post_no_body("/v0/pipelines/test/shutdown").await;
+    assert_eq!(response.status(), StatusCode::ACCEPTED);
+    config
+        .wait_for_deployment_status("test", PipelineStatus::Shutdown, config.start_timeout)
+        .await;
+    let mut response = config.get("/v0/pipelines/test").await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let value: Value = response.json().await.unwrap();
+    assert_eq!(value["refresh_version"], json!(2));
+
+    // Edits should have an impact, incrementing refresh version to 3
+    let mut response = config
+        .patch(
+            "/v0/pipelines/test",
+            &json!({ "program_code": "CREATE TABLE t1 ( v1 INT );" }),
+        )
+        .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let value: Value = response.json().await.unwrap();
+    assert_eq!(value["refresh_version"], json!(3));
+
+    // After compilation, refresh version should be 4
+    config
+        .wait_for_compilation("test", 2, config.compilation_timeout)
+        .await;
+    let mut response = config.get("/v0/pipelines/test").await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let value: Value = response.json().await.unwrap();
+    assert_eq!(value["refresh_version"], json!(4));
 }
