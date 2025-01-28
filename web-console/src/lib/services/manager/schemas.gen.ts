@@ -1808,7 +1808,8 @@ It both includes fields which are user-provided and system-generated.`,
     'program_status_since',
     'deployment_status',
     'deployment_status_since',
-    'deployment_desired_status'
+    'deployment_desired_status',
+    'refresh_version'
   ],
   properties: {
     created_at: {
@@ -1869,6 +1870,9 @@ It both includes fields which are user-provided and system-generated.`,
     program_version: {
       $ref: '#/components/schemas/Version'
     },
+    refresh_version: {
+      $ref: '#/components/schemas/Version'
+    },
     runtime_config: {
       $ref: '#/components/schemas/RuntimeConfig'
     },
@@ -1901,7 +1905,8 @@ If an optional field is not selected (i.e., is \`None\`), it will not be seriali
     'program_status_since',
     'deployment_status',
     'deployment_status_since',
-    'deployment_desired_status'
+    'deployment_desired_status',
+    'refresh_version'
   ],
   properties: {
     created_at: {
@@ -1966,6 +1971,9 @@ If an optional field is not selected (i.e., is \`None\`), it will not be seriali
       format: 'date-time'
     },
     program_version: {
+      $ref: '#/components/schemas/Version'
+    },
+    refresh_version: {
       $ref: '#/components/schemas/Version'
     },
     runtime_config: {
