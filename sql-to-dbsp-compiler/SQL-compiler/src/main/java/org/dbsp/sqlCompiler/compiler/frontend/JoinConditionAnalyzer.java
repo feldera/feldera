@@ -26,9 +26,14 @@ package org.dbsp.sqlCompiler.compiler.frontend;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rex.*;
 import org.apache.calcite.sql.SqlKind;
+import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
+import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.util.IWritesLogs;
 import org.dbsp.util.Logger;
 
@@ -74,7 +79,7 @@ public class JoinConditionAnalyzer implements IWritesLogs {
         final RelNode join;
         public final List<EqualityTest> comparisons;
         @Nullable
-        RexNode            leftOver;
+        RexNode leftOver;
 
         ConditionDecomposition(RelNode join) {
             this.join = join;
@@ -171,6 +176,9 @@ public class JoinConditionAnalyzer implements IWritesLogs {
                     mayBeNull = true;
                 }
             }
+            if (leftType.is(DBSPTypeTupleBase.class) || leftType.is(DBSPTypeStruct.class))
+                throw new UnimplementedException("Join on struct types",
+                        3398, CalciteObject.create(this.join, call));
             DBSPType commonType = TypeCompiler.reduceType(
                     CalciteObject.create(this.join, call),
                     leftType, rightType, "Consider using an INNER JOIN with an explicit ON condition.\n" +
