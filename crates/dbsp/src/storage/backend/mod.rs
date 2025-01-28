@@ -21,7 +21,7 @@ use std::{
 };
 use tempfile::TempDir;
 use thiserror::Error;
-use tracing::{info, trace, warn};
+use tracing::{trace, warn};
 use uuid::Uuid;
 
 use crate::storage::buffer_cache::FBuf;
@@ -303,7 +303,9 @@ pub fn new_default_backend(tempdir: PathBuf, cache: StorageCacheConfig) -> Backe
             }
         }
     } else {
-        info!("io_uring backend disabled by default (set FELDERA_USE_IO_URING=1 to enable");
+        tracing::info!(
+            "io_uring backend disabled by default (set FELDERA_USE_IO_URING=1 to enable"
+        );
     }
 
     Box::new(posixio_impl::PosixBackend::new(tempdir, cache))
