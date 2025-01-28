@@ -3,7 +3,7 @@
   import ApiKeyMenu from '$lib/components/other/ApiKeyMenu.svelte'
   import type { UserProfile } from '$lib/types/auth'
   import DarkModeSwitch from '$lib/components/layout/userPopup/DarkModeSwitch.svelte'
-  import { page } from '$app/state'
+  import VersionDisplay from '../version/VersionDisplay.svelte'
 
   const globalDialog = useGlobalDialog()
   let {
@@ -46,7 +46,7 @@
       >
     </div>
   </div>
-  <div class="hr pt-4 text-surface-500">Feldera version {page.data.felderaVersion}</div>
+  <VersionDisplay></VersionDisplay>
 </div>
 
 {#snippet apiKeyDialog()}
