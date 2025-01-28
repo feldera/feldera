@@ -398,7 +398,8 @@
                     "deployment_status": "Shutdown",
                     "deployment_status_since": "1970-01-01T00:00:00Z",
                     "deployment_desired_status": "Shutdown",
-                    "deployment_error": null
+                    "deployment_error": null,
+                    "refresh_version": 4
                   },
                   {
                     "id": "67e55044-10b1-426f-9247-bb680e5fe0c9",
@@ -441,7 +442,8 @@
                     "deployment_status": "Shutdown",
                     "deployment_status_since": "1970-01-01T00:00:00Z",
                     "deployment_desired_status": "Shutdown",
-                    "deployment_error": null
+                    "deployment_error": null,
+                    "refresh_version": 1
                   }
                 ]
               }
@@ -560,7 +562,8 @@
                   "deployment_status": "Shutdown",
                   "deployment_status_since": "1970-01-01T00:00:00Z",
                   "deployment_desired_status": "Shutdown",
-                  "deployment_error": null
+                  "deployment_error": null,
+                  "refresh_version": 4
                 }
               }
             }
@@ -682,7 +685,8 @@
                   "deployment_status": "Shutdown",
                   "deployment_status_since": "1970-01-01T00:00:00Z",
                   "deployment_desired_status": "Shutdown",
-                  "deployment_error": null
+                  "deployment_error": null,
+                  "refresh_version": 4
                 }
               }
             }
@@ -818,7 +822,8 @@
                   "deployment_status": "Shutdown",
                   "deployment_status_since": "1970-01-01T00:00:00Z",
                   "deployment_desired_status": "Shutdown",
-                  "deployment_error": null
+                  "deployment_error": null,
+                  "refresh_version": 4
                 }
               }
             }
@@ -871,7 +876,8 @@
                   "deployment_status": "Shutdown",
                   "deployment_status_since": "1970-01-01T00:00:00Z",
                   "deployment_desired_status": "Shutdown",
-                  "deployment_error": null
+                  "deployment_error": null,
+                  "refresh_version": 4
                 }
               }
             }
@@ -1058,7 +1064,8 @@
                   "deployment_status": "Shutdown",
                   "deployment_status_since": "1970-01-01T00:00:00Z",
                   "deployment_desired_status": "Shutdown",
-                  "deployment_error": null
+                  "deployment_error": null,
+                  "refresh_version": 4
                 }
               }
             }
@@ -3383,7 +3390,8 @@
           "program_status_since",
           "deployment_status",
           "deployment_status_since",
-          "deployment_desired_status"
+          "deployment_desired_status",
+          "refresh_version"
         ],
         "properties": {
           "created_at": {
@@ -3444,6 +3452,9 @@
           "program_version": {
             "$ref": "#/components/schemas/Version"
           },
+          "refresh_version": {
+            "$ref": "#/components/schemas/Version"
+          },
           "runtime_config": {
             "$ref": "#/components/schemas/RuntimeConfig"
           },
@@ -3473,7 +3484,8 @@
           "program_status_since",
           "deployment_status",
           "deployment_status_since",
-          "deployment_desired_status"
+          "deployment_desired_status",
+          "refresh_version"
         ],
         "properties": {
           "created_at": {
@@ -3538,6 +3550,9 @@
             "format": "date-time"
           },
           "program_version": {
+            "$ref": "#/components/schemas/Version"
+          },
+          "refresh_version": {
             "$ref": "#/components/schemas/Version"
           },
           "runtime_config": {
