@@ -20,9 +20,9 @@ jobs:
           - runner: [self-hosted, skylake40]
             os: linux
             arch: amd64
-          - runner: blacksmith-8vcpu-ubuntu-2204-arm
-            os: linux
-            arch: arm64
+          #- runner: blacksmith-8vcpu-ubuntu-2204-arm
+          #  os: linux
+          #  arch: arm64
     permissions:
       contents: read
       packages: write
