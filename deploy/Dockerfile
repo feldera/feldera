@@ -44,7 +44,7 @@ FROM base AS web-ui-builder
 
 ## Install Bun.js
 RUN apt install unzip -y
-RUN curl -fsSL https://bun.sh/install | bash
+RUN curl -fsSL https://bun.sh/install | bash -s "bun-v1.2.0"
 ENV PATH="$HOME/.bun/bin:$PATH"
 RUN ln -s $HOME/.bun/bin/bun /usr/bin/bun
 
