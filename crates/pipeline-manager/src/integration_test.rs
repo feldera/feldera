@@ -230,10 +230,7 @@ impl TestConfig {
     ///
     /// This is necessary before we e.g., send ad-hoc queries to ensure the
     /// query will compute on the latest state.
-    async fn wait_for_processing(
-        &self,
-        pipeline_name: &str,
-    ) -> bool {
+    async fn wait_for_processing(&self, pipeline_name: &str) -> bool {
         let start = Instant::now();
         loop {
             let stats = self.stats_json(pipeline_name).await;
@@ -1633,10 +1630,7 @@ async fn json_ingress() {
 
     assert_eq!(
         config
-            .adhoc_query_json(
-                "test",
-                "select * from t1 order by c1, c2, c3;"
-            )
+            .adhoc_query_json("test", "select * from t1 order by c1, c2, c3;")
             .await,
         json!([{"c1": 10, "c2": true, "c3": null}, {"c1": 20, "c2": null, "c3": "foo"}])
     );
@@ -1654,10 +1648,7 @@ async fn json_ingress() {
 
     assert_eq!(
         config
-            .adhoc_query_json(
-                "test",
-                "select * from t1 order by c1, c2, c3;"
-            )
+            .adhoc_query_json("test", "select * from t1 order by c1, c2, c3;")
             .await,
         json!([{"c1": 20, "c2": null, "c3": "foo"}, {"c1": 30, "c2": null, "c3": "bar"}])
     );
@@ -1682,10 +1673,7 @@ async fn json_ingress() {
 
     assert_eq!(
         config
-            .adhoc_query_json(
-                "test",
-                "select * from T1 order by c1, c2, c3;"
-            )
+            .adhoc_query_json("test", "select * from T1 order by c1, c2, c3;")
             .await,
         json!([{"c1": 20, "c2": null, "c3": "foo"}, {"c1": 30, "c2": null, "c3": "bar"}, {"c1": 50, "c2": true, "c3": ""}])
     );
@@ -1706,10 +1694,7 @@ async fn json_ingress() {
     // using array format.
     assert_eq!(
         config
-            .adhoc_query_json(
-                "test",
-                "select * from t1 order by c1, c2, c3;"
-            )
+            .adhoc_query_json("test", "select * from t1 order by c1, c2, c3;")
             .await,
         json!([{"c1": 20, "c2": null, "c3": "foo"}, {"c1": 30, "c2": null, "c3": "bar"}, {"c1": 50, "c2": true, "c3": ""}])
     );
@@ -1729,10 +1714,7 @@ async fn json_ingress() {
     // using array format.
     assert_eq!(
         config
-            .adhoc_query_json(
-                "test",
-                "select * from t1 order by c1, c2, c3;"
-            )
+            .adhoc_query_json("test", "select * from t1 order by c1, c2, c3;")
             .await,
         json!([{"c1": 20, "c2": null, "c3": "foo"}, {"c1": 25, "c2": true, "c3": ""}, {"c1": 30, "c2": null, "c3": "bar"}, {"c1": 50, "c2": true, "c3": ""}])
     );
@@ -1749,10 +1731,7 @@ async fn json_ingress() {
 
     assert_eq!(
         config
-            .adhoc_query_json(
-                "test",
-                "select * from t1 order by c1, c2, c3;"
-            )
+            .adhoc_query_json("test", "select * from t1 order by c1, c2, c3;")
             .await,
         json!([{"c1": 20, "c2": null, "c3": "foo"}, {"c1": 25, "c2": true, "c3": ""}, {"c1": 30, "c2": null, "c3": "bar"}, {"c1": 60, "c2": true, "c3": "hello"}])
     );
@@ -1775,10 +1754,7 @@ not_a_number,true,ΑαΒβΓγΔδ
 
     assert_eq!(
         config
-            .adhoc_query_json(
-                "test",
-                "select * from t1 order by c1, c2, c3;"
-            )
+            .adhoc_query_json("test", "select * from t1 order by c1, c2, c3;")
             .await,
         json!([{"c1": 15, "c2": true, "c3": "foo"}, {"c1": 16, "c2": false, "c3": "unicode🚲"}, {"c1": 20, "c2": null, "c3": "foo"}, {"c1": 25, "c2": true, "c3": ""}, {"c1": 30, "c2": null, "c3": "bar"}, {"c1": 60, "c2": true, "c3": "hello"}])
     );
@@ -1878,10 +1854,7 @@ async fn parse_datetime() {
 
     assert_eq!(
         config
-            .adhoc_query_json(
-                "test",
-                "select * from t1 order by t, ts, d;"
-            )
+            .adhoc_query_json("test", "select * from t1 order by t, ts, d;")
             .await,
         json!([{"d": "2024-02-25", "t": "11:12:33.483221092", "ts": "2024-02-25T12:12:33"}, {"d": "2021-05-20", "t": "13:22:00", "ts": "2021-05-20T12:12:33"}])
     );
@@ -1928,10 +1901,7 @@ async fn quoted_columns() {
 
     assert_eq!(
         config
-            .adhoc_query_json(
-                "test",
-                "select * from t1 order by \"c1\";"
-            )
+            .adhoc_query_json("test", "select * from t1 order by \"c1\";")
             .await,
         json!([{"C2": true, "c1": 10, "αβγ": true, "δθ": false, "😁❤": "foo"}])
     );
@@ -2101,9 +2071,7 @@ create materialized view "v1" as select * from table1;"#,
     );
 
     assert_eq!(
-        config
-            .adhoc_query_json("test", "select * from v1;")
-            .await,
+        config.adhoc_query_json("test", "select * from v1;").await,
         json!([{ "id": 2 }])
     );
 
@@ -2419,11 +2387,7 @@ CREATE MATERIALIZED VIEW view_of_not_materialized AS ( SELECT * FROM not_materia
 
     for format in &["text", "json"] {
         let mut r0 = config
-            .adhoc_query(
-                "test",
-                "SELECT * FROM \"TaBle1\"",
-                format,
-            )
+            .adhoc_query("test", "SELECT * FROM \"TaBle1\"", format)
             .await;
         assert_eq!(r0.status(), StatusCode::OK);
         let r0_body = r0.body().await.unwrap();
@@ -2436,18 +2400,14 @@ CREATE MATERIALIZED VIEW view_of_not_materialized AS ( SELECT * FROM not_materia
             assert_eq!(r0_sorted.len(), 1);
         }
 
-        let mut r1 = config
-            .adhoc_query("test", ADHOC_SQL_A, format)
-            .await;
+        let mut r1 = config.adhoc_query("test", ADHOC_SQL_A, format).await;
         assert_eq!(r1.status(), StatusCode::OK);
         let b1_body = r1.body().await.unwrap();
         let b1 = std::str::from_utf8(b1_body.as_ref()).unwrap();
         let mut b1_sorted: Vec<String> = b1.split('\n').map(|s| s.to_string()).collect();
         b1_sorted.sort();
 
-        let mut r2 = config
-            .adhoc_query("test", ADHOC_SQL_B, format)
-            .await;
+        let mut r2 = config.adhoc_query("test", ADHOC_SQL_B, format).await;
         assert_eq!(r2.status(), StatusCode::OK);
         let b2_body = r2.body().await.unwrap();
         let b2 = std::str::from_utf8(b2_body.as_ref()).unwrap();
@@ -2458,16 +2418,12 @@ CREATE MATERIALIZED VIEW view_of_not_materialized AS ( SELECT * FROM not_materia
 
     // Test parquet format, here we can't just sort it, so we ensure that view and adhoc join have the same order
     let q1 = format!("{} ORDER BY c1, c2, c3", ADHOC_SQL_A);
-    let mut r1 = config
-        .adhoc_query("test", q1.as_str(), "parquet")
-        .await;
+    let mut r1 = config.adhoc_query("test", q1.as_str(), "parquet").await;
     assert_eq!(r1.status(), StatusCode::OK);
     let b1_body = r1.body().await.unwrap();
 
     let q2 = format!("{} ORDER BY c1, c2, c3", ADHOC_SQL_B);
-    let mut r2 = config
-        .adhoc_query("test", q2.as_str(), "parquet")
-        .await;
+    let mut r2 = config.adhoc_query("test", q2.as_str(), "parquet").await;
     assert_eq!(r2.status(), StatusCode::OK);
     let b2_body = r2.body().await.unwrap();
     assert!(!b1_body.is_empty());
@@ -2475,11 +2431,7 @@ CREATE MATERIALIZED VIEW view_of_not_materialized AS ( SELECT * FROM not_materia
 
     // Handle table casing
     let mut r = config
-        .adhoc_query(
-            "test",
-            "SELECT * FROM \"TaBle1\"",
-            "text",
-        )
+        .adhoc_query("test", "SELECT * FROM \"TaBle1\"", "text")
         .await;
     assert_eq!(r.status(), StatusCode::OK);
     let b = r.body().await.unwrap();
@@ -2487,16 +2439,10 @@ CREATE MATERIALIZED VIEW view_of_not_materialized AS ( SELECT * FROM not_materia
 
     // Invalid SQL returns 400
     let r = config
-        .adhoc_query(
-            "test",
-            "SELECT * FROM invalid_table",
-            "text",
-        )
+        .adhoc_query("test", "SELECT * FROM invalid_table", "text")
         .await;
     assert_eq!(r.status(), StatusCode::BAD_REQUEST);
-    let mut r = config
-        .adhoc_query("test", "SELECT 1/0", "text")
-        .await;
+    let mut r = config.adhoc_query("test", "SELECT 1/0", "text").await;
     assert_eq!(r.status(), StatusCode::OK);
     assert!(String::from_utf8_lossy(r.body().await.unwrap().as_ref()).contains("ERROR"));
     let r = config
@@ -2508,27 +2454,21 @@ CREATE MATERIALIZED VIEW view_of_not_materialized AS ( SELECT * FROM not_materia
     const ADHOC_SQL_COUNT: &str = "SELECT COUNT(*) from t1";
     const ADHOC_SQL_INSERT: &str = "INSERT INTO t1 VALUES (99, '2020-01-01', 'c32d330f-5757-4ada-bcf6-1fac2d54e37f'), (100, '2020-01-01', '00000000-0000-0000-0000-000000000000')";
 
-    let mut r = config
-        .adhoc_query("test", ADHOC_SQL_COUNT, "json")
-        .await;
+    let mut r = config.adhoc_query("test", ADHOC_SQL_COUNT, "json").await;
     assert_eq!(r.status(), StatusCode::OK);
     let cnt_body = r.body().await.unwrap();
     let cnt_ret = std::str::from_utf8(cnt_body.as_ref()).unwrap();
     let cnt_ret_json = serde_json::from_str::<Value>(cnt_ret).unwrap();
     assert_eq!(cnt_ret_json, json!({"count(*)": 5}));
 
-    let mut r = config
-        .adhoc_query("test", ADHOC_SQL_INSERT, "json")
-        .await;
+    let mut r = config.adhoc_query("test", ADHOC_SQL_INSERT, "json").await;
     assert_eq!(r.status(), StatusCode::OK);
     let ins_body = r.body().await.unwrap();
     let ins_ret = std::str::from_utf8(ins_body.as_ref()).unwrap();
     let ins_ret_json = serde_json::from_str::<Value>(ins_ret).unwrap();
     assert_eq!(ins_ret_json, json!({"count": 2}));
 
-    let mut r = config
-        .adhoc_query("test", ADHOC_SQL_COUNT, "json")
-        .await;
+    let mut r = config.adhoc_query("test", ADHOC_SQL_COUNT, "json").await;
     assert_eq!(r.status(), StatusCode::OK);
     let cnt_body = r.body().await.unwrap();
     let cnt_ret = std::str::from_utf8(cnt_body.as_ref()).unwrap();
@@ -2594,9 +2534,7 @@ CREATE TABLE "TaBle1"(id bigint not null) with ('materialized' = 'true');
     assert_eq!(resp.status(), StatusCode::ACCEPTED);
 
     const ADHOC_SQL_EMPTY: &str = "SELECT COUNT(*) from \"TaBle1\"";
-    let mut r = config
-        .adhoc_query("test", ADHOC_SQL_EMPTY, "json")
-        .await;
+    let mut r = config.adhoc_query("test", ADHOC_SQL_EMPTY, "json").await;
     assert_eq!(r.status(), StatusCode::OK);
     let cnt_body = r.body().await.unwrap();
     let cnt_ret = std::str::from_utf8(cnt_body.as_ref()).unwrap();
