@@ -1,4 +1,4 @@
-use crate::dynamic::arrow::ArrowFormat;
+use crate::dynamic::arrow::ArrowSupportDyn;
 use crate::dynamic::BSet;
 use crate::{
     algebra::{Lattice, PartialOrder},
@@ -39,11 +39,7 @@ pub struct Product<TOuter, TInner> {
     pub inner: TInner,
 }
 
-impl<TOuter: ArrowFormat, TInner: ArrowFormat> ArrowFormat for Product<TOuter, TInner> {
-    fn new_builder(&self) -> Box<dyn ArrayBuilder> {
-        unimplemented!()
-    }
-
+impl<TOuter: ArrowSupportDyn, TInner: ArrowSupportDyn> ArrowSupportDyn for Product<TOuter, TInner> {
     fn serialize_into_arrow_builder(&self, builder: &mut dyn ArrayBuilder) {
         unimplemented!()
     }

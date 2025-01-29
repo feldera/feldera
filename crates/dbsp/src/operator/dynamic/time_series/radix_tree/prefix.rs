@@ -9,7 +9,7 @@ use std::{
 };
 
 use super::{RADIX, RADIX_BITS};
-use crate::dynamic::arrow::ArrowFormat;
+use crate::dynamic::arrow::ArrowSupportDyn;
 use crate::{dynamic::DynDataTyped, operator::dynamic::time_series::Range, DBData};
 
 /// Describes a range of timestamps that share a common prefix.
@@ -36,11 +36,7 @@ pub struct Prefix<TS: DBData> {
     pub prefix_len: u32,
 }
 
-impl<TS: DBData> ArrowFormat for Prefix<TS> {
-    fn new_builder(&self) -> Box<dyn ArrayBuilder> {
-        unimplemented!()
-    }
-
+impl<TS: DBData> ArrowSupportDyn for Prefix<TS> {
     fn serialize_into_arrow_builder(&self, builder: &mut dyn ArrayBuilder) {
         unimplemented!()
     }

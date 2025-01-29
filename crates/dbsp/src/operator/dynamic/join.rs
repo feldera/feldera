@@ -1289,7 +1289,7 @@ where
 
 #[cfg(test)]
 mod test {
-    use crate::dynamic::arrow::ArrowFormat;
+    use crate::dynamic::arrow::ArrowSupportDyn;
     use crate::{
         circuit::WithClock,
         indexed_zset,
@@ -1607,11 +1607,7 @@ mod test {
         }
     }
 
-    impl ArrowFormat for Label {
-        fn new_builder(&self) -> Box<dyn ArrayBuilder> {
-            todo!()
-        }
-
+    impl ArrowSupportDyn for Label {
         fn serialize_into_arrow_builder(&self, builder: &mut dyn ArrayBuilder) {
             todo!()
         }
@@ -1639,11 +1635,7 @@ mod test {
     #[archive(compare(PartialEq, PartialOrd))]
     struct Edge(pub u64, pub u64);
 
-    impl ArrowFormat for Edge {
-        fn new_builder(&self) -> Box<dyn ArrayBuilder> {
-            todo!()
-        }
-
+    impl ArrowSupportDyn for Edge {
         fn serialize_into_arrow_builder(&self, builder: &mut dyn ArrayBuilder) {
             todo!()
         }

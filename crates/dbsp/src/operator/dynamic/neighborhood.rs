@@ -1,3 +1,4 @@
+use crate::dynamic::arrow::ArrowSupportDyn;
 use crate::{
     algebra::{IndexedZSet, IndexedZSetReader, OrdIndexedZSet, OrdIndexedZSetFactories, OrdZSet},
     circuit::{
@@ -13,13 +14,12 @@ use crate::{
     utils::Tup2,
     Circuit, DBData, DynZWeight, NumEntries, RootCircuit, Stream, ZWeight,
 };
+use arrow::array::{ArrayBuilder, ArrayRef};
 use minitrace::trace;
 use rkyv::Archive;
 use serde::{Deserialize, Serialize};
 use size_of::SizeOf;
 use std::{borrow::Cow, marker::PhantomData};
-use arrow::array::{ArrayBuilder, ArrayRef};
-use crate::dynamic::arrow::ArrowFormat;
 
 /// A contiguous range of rows preceding and following a fixed "anchor"
 /// point.
@@ -119,11 +119,7 @@ impl<K: DBData, V: DBData> NeighborhoodDescr<K, V> {
     }
 }
 
-impl<K: DBData, V: DBData> ArrowFormat for NeighborhoodDescr<K, V> {
-    fn new_builder(&self) -> Box<dyn ArrayBuilder> {
-        todo!()
-    }
-
+impl<K: DBData, V: DBData> ArrowSupportDyn for NeighborhoodDescr<K, V> {
     fn serialize_into_arrow_builder(&self, builder: &mut dyn ArrayBuilder) {
         todo!()
     }

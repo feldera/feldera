@@ -1,5 +1,5 @@
 use super::{AggOutputFunc, IncAggregateLinearFactories};
-use crate::dynamic::arrow::ArrowFormat;
+use crate::dynamic::arrow::ArrowSupportDyn;
 use crate::{
     algebra::{
         AddAssignByRef, AddByRef, HasZero, IndexedZSet, IndexedZSetReader, MulByRef, NegByRef,
@@ -125,11 +125,7 @@ impl<T, R> Avg<T, R> {
     }
 }
 
-impl<T: ArrowFormat, R: ArrowFormat> ArrowFormat for Avg<T, R> {
-    fn new_builder(&self) -> Box<dyn ArrayBuilder> {
-        unimplemented!()
-    }
-
+impl<T: ArrowSupportDyn, R: ArrowSupportDyn> ArrowSupportDyn for Avg<T, R> {
     fn serialize_into_arrow_builder(&self, builder: &mut dyn ArrayBuilder) {
         unimplemented!()
     }

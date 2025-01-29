@@ -1,5 +1,5 @@
 use super::trace::BoundsId;
-use crate::dynamic::arrow::ArrowFormat;
+use crate::dynamic::arrow::ArrowSupportDyn;
 use crate::{
     algebra::{AddAssignByRef, HasOne, HasZero, IndexedZSet, PartialOrder, ZTrace},
     circuit::{
@@ -45,11 +45,7 @@ pub enum Update<V: DBData, U: DBData> {
     Update(U),
 }
 
-impl<V: DBData, U: DBData> ArrowFormat for Update<V, U> {
-    fn new_builder(&self) -> Box<dyn ArrayBuilder> {
-        unimplemented!()
-    }
-
+impl<V: DBData, U: DBData> ArrowSupportDyn for Update<V, U> {
     fn serialize_into_arrow_builder(&self, builder: &mut dyn ArrayBuilder) {
         unimplemented!()
     }

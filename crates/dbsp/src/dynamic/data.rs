@@ -1,7 +1,7 @@
 use size_of::SizeOf;
 use std::{fmt::Debug, ops::DerefMut};
 
-use crate::dynamic::arrow::ArrowFormat;
+use crate::dynamic::arrow::{ArrowSupportDyn, HasArrowBuilder};
 use crate::{
     declare_trait_object, declare_typed_trait_object,
     dynamic::{
@@ -21,7 +21,7 @@ pub trait Data:
     + Clonable
     + SerializeDyn
     + DeserializableDyn
-    + ArrowFormat
+    + ArrowSupportDyn
     + Send
     + Sync
     + Debug

@@ -1,26 +1,63 @@
 use crate::dynamic::LeanVec;
 use crate::operator::group::WithCustomOrd;
 use crate::utils::{Tup1, Tup2, Tup3, Tup4};
-use arrow::array::{ArrayBuilder, ArrayRef, Int32Array, Int32Builder};
+use crate::DBData;
+use arrow::array::{ArrayBuilder, ArrayRef, Int64Array, Int64Builder};
 
-pub trait ArrowFormat {
-    fn new_builder(&self) -> Box<dyn ArrayBuilder>;
+pub trait HasArrowBuilder {
+    type ArrayBuilderType: ArrayBuilder + ?Sized;
+}
+
+impl<T: DBData> HasArrowBuilder for T {
+    type ArrayBuilderType = Int64Builder;
+}
+
+pub trait ArrowSupportDyn {
     fn serialize_into_arrow_builder(&self, builder: &mut dyn ArrayBuilder);
     fn deserialize_from_arrow(&mut self, array: &ArrayRef, index: usize);
+}
+
+impl ArrowSupportDyn for i64 {
+    fn serialize_into_arrow_builder(&self, builder: &mut dyn ArrayBuilder) {
+        let builder_i64 = builder.as_any_mut().downcast_mut::<Int64Builder>().unwrap();
+        builder_i64.append_value(*self);
+        eprintln!("builder_i64.len() = {}", builder_i64.len());
+    }
+
+    fn deserialize_from_arrow(&mut self, array: &ArrayRef, index: usize) {
+        /*let accessor = array
+            .as_ref()
+            .as_any()
+            .downcast_ref::<Int32Array>()
+            .unwrap_or_else(|| panic!("Builder has wrong type {:?}", array));
+        *self = accessor.value(index);*/
+        unimplemented!()
+    }
+}
+
+impl ArrowSupportDyn for u64 {
+    fn serialize_into_arrow_builder(&self, builder: &mut dyn ArrayBuilder) {
+        let builder_i64 = builder.as_any_mut().downcast_mut::<Int64Builder>().unwrap();
+        builder_i64.append_value(*self as i64);
+        eprintln!("builder_i64.len() = {}", builder_i64.len());
+    }
+
+    fn deserialize_from_arrow(&mut self, array: &ArrayRef, index: usize) {
+        /*let accessor = array
+            .as_ref()
+            .as_any()
+            .downcast_ref::<Int32Array>()
+            .unwrap_or_else(|| panic!("Builder has wrong type {:?}", array));
+        *self = accessor.value(index);*/
+        unimplemented!()
+    }
 }
 
 macro_rules! impl_arrow_format {
     ($($t:ty),*) => {
         $(
-            impl ArrowFormat for $t {
-                fn new_builder(&self) -> Box<dyn ArrayBuilder> {
-                    //Box::new(Int32Builder::new())
-                    unimplemented!()
-                }
-
+            impl ArrowSupportDyn for $t {
                 fn serialize_into_arrow_builder(&self, builder: &mut dyn ArrayBuilder) {
-                    //let builder_i32 = builder.as_any_mut().downcast_mut::<Int32Builder>().unwrap();
-                    //builder_i32.append_value(*self);
                     unimplemented!()
                 }
 
@@ -38,28 +75,9 @@ macro_rules! impl_arrow_format {
     };
 }
 
-impl_arrow_format!(
-    u8,
-    u16,
-    u32,
-    u64,
-    i8,
-    i16,
-    i32,
-    i64,
-    f32,
-    f64,
-    bool,
-    (),
-    String,
-    char
-);
+impl_arrow_format!(u8, u16, u32, i8, i16, i32, f32, f64, bool, (), String, char);
 
-impl<T1: ArrowFormat> ArrowFormat for Tup1<T1> {
-    fn new_builder(&self) -> Box<dyn ArrayBuilder> {
-        unimplemented!()
-    }
-
+impl<T1: ArrowSupportDyn> ArrowSupportDyn for Tup1<T1> {
     fn serialize_into_arrow_builder(&self, builder: &mut dyn ArrayBuilder) {
         unimplemented!()
     }
@@ -69,11 +87,7 @@ impl<T1: ArrowFormat> ArrowFormat for Tup1<T1> {
     }
 }
 
-impl<T1: ArrowFormat, T2: ArrowFormat> ArrowFormat for Tup2<T1, T2> {
-    fn new_builder(&self) -> Box<dyn ArrayBuilder> {
-        unimplemented!()
-    }
-
+impl<T1: ArrowSupportDyn, T2: ArrowSupportDyn> ArrowSupportDyn for Tup2<T1, T2> {
     fn serialize_into_arrow_builder(&self, builder: &mut dyn ArrayBuilder) {
         unimplemented!()
     }
@@ -83,27 +97,9 @@ impl<T1: ArrowFormat, T2: ArrowFormat> ArrowFormat for Tup2<T1, T2> {
     }
 }
 
-impl<T1: ArrowFormat, T2: ArrowFormat, T3: ArrowFormat> ArrowFormat for Tup3<T1, T2, T3> {
-    fn new_builder(&self) -> Box<dyn ArrayBuilder> {
-        unimplemented!()
-    }
-
-    fn serialize_into_arrow_builder(&self, builder: &mut dyn ArrayBuilder) {
-        unimplemented!()
-    }
-
-    fn deserialize_from_arrow(&mut self, array: &ArrayRef, index: usize) {
-        unimplemented!()
-    }
-}
-
-impl<T1: ArrowFormat, T2: ArrowFormat, T3: ArrowFormat, T4: ArrowFormat> ArrowFormat
-    for Tup4<T1, T2, T3, T4>
+impl<T1: ArrowSupportDyn, T2: ArrowSupportDyn, T3: ArrowSupportDyn> ArrowSupportDyn
+    for Tup3<T1, T2, T3>
 {
-    fn new_builder(&self) -> Box<dyn ArrayBuilder> {
-        unimplemented!()
-    }
-
     fn serialize_into_arrow_builder(&self, builder: &mut dyn ArrayBuilder) {
         unimplemented!()
     }
@@ -113,24 +109,9 @@ impl<T1: ArrowFormat, T2: ArrowFormat, T3: ArrowFormat, T4: ArrowFormat> ArrowFo
     }
 }
 
-impl<T1: ArrowFormat, T2: ArrowFormat> ArrowFormat for (T1, T2) {
-    fn new_builder(&self) -> Box<dyn ArrayBuilder> {
-        unimplemented!()
-    }
-
-    fn serialize_into_arrow_builder(&self, builder: &mut dyn ArrayBuilder) {
-        unimplemented!()
-    }
-
-    fn deserialize_from_arrow(&mut self, array: &ArrayRef, index: usize) {
-        unimplemented!()
-    }
-}
-impl<T1: ArrowFormat, T2: ArrowFormat, T3: ArrowFormat> ArrowFormat for (T1, T2, T3) {
-    fn new_builder(&self) -> Box<dyn ArrayBuilder> {
-        unimplemented!()
-    }
-
+impl<T1: ArrowSupportDyn, T2: ArrowSupportDyn, T3: ArrowSupportDyn, T4: ArrowSupportDyn>
+    ArrowSupportDyn for Tup4<T1, T2, T3, T4>
+{
     fn serialize_into_arrow_builder(&self, builder: &mut dyn ArrayBuilder) {
         unimplemented!()
     }
@@ -140,11 +121,18 @@ impl<T1: ArrowFormat, T2: ArrowFormat, T3: ArrowFormat> ArrowFormat for (T1, T2,
     }
 }
 
-impl<T: ArrowFormat> ArrowFormat for Vec<T> {
-    fn new_builder(&self) -> Box<dyn ArrayBuilder> {
+impl<T1: ArrowSupportDyn, T2: ArrowSupportDyn> ArrowSupportDyn for (T1, T2) {
+    fn serialize_into_arrow_builder(&self, builder: &mut dyn ArrayBuilder) {
         unimplemented!()
     }
 
+    fn deserialize_from_arrow(&mut self, array: &ArrayRef, index: usize) {
+        unimplemented!()
+    }
+}
+impl<T1: ArrowSupportDyn, T2: ArrowSupportDyn, T3: ArrowSupportDyn> ArrowSupportDyn
+    for (T1, T2, T3)
+{
     fn serialize_into_arrow_builder(&self, builder: &mut dyn ArrayBuilder) {
         unimplemented!()
     }
@@ -154,11 +142,7 @@ impl<T: ArrowFormat> ArrowFormat for Vec<T> {
     }
 }
 
-impl<T: ArrowFormat> ArrowFormat for LeanVec<T> {
-    fn new_builder(&self) -> Box<dyn ArrayBuilder> {
-        unimplemented!()
-    }
-
+impl<T: ArrowSupportDyn> ArrowSupportDyn for Vec<T> {
     fn serialize_into_arrow_builder(&self, builder: &mut dyn ArrayBuilder) {
         unimplemented!()
     }
@@ -168,14 +152,20 @@ impl<T: ArrowFormat> ArrowFormat for LeanVec<T> {
     }
 }
 
-impl<T> ArrowFormat for Option<T>
+impl<T: ArrowSupportDyn> ArrowSupportDyn for LeanVec<T> {
+    fn serialize_into_arrow_builder(&self, builder: &mut dyn ArrayBuilder) {
+        unimplemented!()
+    }
+
+    fn deserialize_from_arrow(&mut self, array: &ArrayRef, index: usize) {
+        unimplemented!()
+    }
+}
+
+impl<T> ArrowSupportDyn for Option<T>
 where
-    T: ArrowFormat,
+    T: ArrowSupportDyn,
 {
-    fn new_builder(&self) -> Box<dyn ArrayBuilder> {
-        unimplemented!()
-    }
-
     fn serialize_into_arrow_builder(&self, builder: &mut dyn ArrayBuilder) {
         unimplemented!()
     }
@@ -185,14 +175,10 @@ where
     }
 }
 
-impl<T> ArrowFormat for Box<T>
+impl<T> ArrowSupportDyn for Box<T>
 where
-    T: ArrowFormat,
+    T: ArrowSupportDyn,
 {
-    fn new_builder(&self) -> Box<dyn ArrayBuilder> {
-        unimplemented!()
-    }
-
     fn serialize_into_arrow_builder(&self, builder: &mut dyn ArrayBuilder) {
         unimplemented!()
     }
@@ -202,11 +188,7 @@ where
     }
 }
 
-impl<T: ArrowFormat, F> ArrowFormat for WithCustomOrd<T, F> {
-    fn new_builder(&self) -> Box<dyn ArrayBuilder> {
-        unimplemented!()
-    }
-
+impl<T: ArrowSupportDyn, F> ArrowSupportDyn for WithCustomOrd<T, F> {
     fn serialize_into_arrow_builder(&self, builder: &mut dyn ArrayBuilder) {
         unimplemented!()
     }

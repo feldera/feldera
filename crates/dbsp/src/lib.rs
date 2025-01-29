@@ -59,7 +59,7 @@
 //!
 //! * [`operator`] - Statically typed wrappers around the dynamic API in [`operator::dynamic`].
 
-#![allow(clippy::type_complexity)]
+#![allow(clippy::type_complexity, unused_variables, unused_imports)]
 
 pub mod dynamic;
 mod error;

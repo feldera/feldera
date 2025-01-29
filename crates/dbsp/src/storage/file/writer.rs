@@ -12,13 +12,6 @@ use std::{
     path::PathBuf,
 };
 
-use binrw::{
-    io::{Cursor, NoSeek},
-    BinWrite,
-};
-#[cfg(debug_assertions)]
-use dyn_clone::clone_box;
-
 use crate::storage::{
     backend::{FileReader, FileWriter, Storage, StorageError},
     buffer_cache::{FBuf, FBufSerializer},
@@ -30,6 +23,13 @@ use crate::storage::{
         BlockLocation,
     },
 };
+use binrw::{
+    io::{Cursor, NoSeek},
+    BinWrite,
+};
+#[cfg(debug_assertions)]
+use dyn_clone::clone_box;
+use rkyv::Deserialize;
 
 use crate::{
     dynamic::{DataTrait, DeserializeDyn, SerializeDyn},
@@ -474,6 +474,16 @@ impl DataBlockBuilder {
         K: DataTrait + ?Sized,
         A: DataTrait + ?Sized,
     {
+        {
+            eprintln!("add_item: key_factory");
+            let key_factory = self.factories.key_factory::<K>();
+            eprintln!("add_item: key_factory.arrow_builder");
+            let mut arrow_builder = key_factory.arrow_builder();
+            eprintln!("add_item: serialize_into_arrow_builder");
+            item.0.serialize_into_arrow_builder(arrow_builder.as_mut());
+            eprintln!("add_item: end");
+        }
+
         if self.try_add_item(item, row_group) {
             None
         } else {

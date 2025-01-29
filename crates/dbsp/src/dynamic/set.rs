@@ -1,5 +1,5 @@
 use super::{Data, DataTrait, Erase};
-use crate::dynamic::arrow::ArrowFormat;
+use crate::dynamic::arrow::ArrowSupportDyn;
 use crate::utils::Tup2;
 use crate::{declare_trait_object, trace::Deserializable, DBData};
 use arrow::array::{ArrayBuilder, ArrayRef};
@@ -74,11 +74,7 @@ where
 )]
 pub struct BSet<T>(BTreeSet<T>);
 
-impl<T: ArrowFormat> ArrowFormat for BSet<T> {
-    fn new_builder(&self) -> Box<dyn ArrayBuilder> {
-        unimplemented!()
-    }
-
+impl<T: ArrowSupportDyn> ArrowSupportDyn for BSet<T> {
     fn serialize_into_arrow_builder(&self, builder: &mut dyn ArrayBuilder) {
         unimplemented!()
     }

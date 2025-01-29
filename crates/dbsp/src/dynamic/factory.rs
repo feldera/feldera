@@ -1,7 +1,9 @@
+use crate::dynamic::arrow::HasArrowBuilder;
 use crate::{
     dynamic::{erase::Erase, ArchiveTrait},
     DBData,
 };
+use arrow::array::ArrayBuilder;
 use rkyv::archived_value;
 use std::{marker::PhantomData, mem};
 
@@ -21,6 +23,8 @@ pub trait Factory<Trait: ArchiveTrait + ?Sized>: Send + Sync {
     /// Creates an instance of the underlying concrete type with the default value on the stack
     /// and passes it as an argument to the provided closure.
     fn with(&self, f: &mut dyn FnMut(&mut Trait));
+
+    fn arrow_builder(&self) -> Box<dyn ArrayBuilder>;
 
     /// Casts an archived value from the given byte slice at the given position.
     ///
@@ -57,6 +61,10 @@ where
 
     fn with(&self, f: &mut dyn FnMut(&mut Trait)) {
         f(T::default().erase_mut())
+    }
+
+    fn arrow_builder(&self) -> Box<dyn ArrayBuilder> {
+        Box::new(<T as HasArrowBuilder>::ArrayBuilderType::default())
     }
 
     unsafe fn archived_value<'a>(&self, bytes: &'a [u8], pos: usize) -> &'a Trait::Archived {

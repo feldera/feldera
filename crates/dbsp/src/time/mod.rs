@@ -60,7 +60,7 @@ use rkyv::{Archive, Deserialize, Serialize};
 use size_of::SizeOf;
 use std::{fmt::Debug, hash::Hash};
 //pub use nested_ts32::NestedTimestamp32;
-use crate::dynamic::arrow::ArrowFormat;
+use crate::dynamic::arrow::ArrowSupportDyn;
 pub use product::Product;
 
 /// Logical timestamp.
@@ -174,11 +174,7 @@ pub trait Timestamp: DBData + PartialOrder + Lattice {
 #[archive_attr(doc(hidden))]
 pub struct UnitTimestamp;
 
-impl ArrowFormat for UnitTimestamp {
-    fn new_builder(&self) -> Box<dyn ArrayBuilder> {
-        unimplemented!()
-    }
-
+impl ArrowSupportDyn for UnitTimestamp {
     fn serialize_into_arrow_builder(&self, builder: &mut dyn ArrayBuilder) {
         unimplemented!()
     }

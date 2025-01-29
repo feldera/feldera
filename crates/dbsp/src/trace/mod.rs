@@ -70,10 +70,11 @@ pub use ord::{
 use rkyv::{archived_root, de::deserializers::SharedDeserializeMap, Deserialize};
 use uuid::Uuid;
 
+use crate::dynamic::arrow::HasArrowBuilder;
 use crate::{
     algebra::MonoidValue,
     dynamic::{
-        arrow::ArrowFormat, DataTrait, DynPair, DynVec, DynWeightedPairs, Erase, Factory,
+        arrow::ArrowSupportDyn, DataTrait, DynPair, DynVec, DynWeightedPairs, Erase, Factory,
         WeightTrait,
     },
     storage::file::reader::Error as ReaderError,
@@ -101,7 +102,7 @@ pub trait DBData:
     + Sync
     + Debug
     + ArchivedDBData
-    + ArrowFormat
+    + ArrowSupportDyn
     + 'static
 {
 }
@@ -118,7 +119,7 @@ impl<T> DBData for T where
         + Sync
         + Debug
         + ArchivedDBData
-        + ArrowFormat
+        + ArrowSupportDyn
         + 'static /* as ArchivedDBData>::Repr: Ord + PartialOrd<T>, */
 {
 }

@@ -117,7 +117,7 @@ mod test {
     use rkyv::{Archive, Deserialize, Serialize};
     use size_of::SizeOf;
 
-    use crate::dynamic::arrow::ArrowFormat;
+    use crate::dynamic::arrow::ArrowSupportDyn;
     use crate::{
         declare_trait_object,
         dynamic::{Data, DataTrait, DataTraitTyped, Erase, WeightTrait, WeightTraitTyped},
@@ -145,11 +145,7 @@ mod test {
         y: T2,
     }
 
-    impl<T1: DBData, T2: DBData> ArrowFormat for Foo<T1, T2> {
-        fn new_builder(&self) -> Box<dyn ArrayBuilder> {
-            unimplemented!()
-        }
-
+    impl<T1: DBData, T2: DBData> ArrowSupportDyn for Foo<T1, T2> {
         fn serialize_into_arrow_builder(&self, builder: &mut dyn ArrayBuilder) {
             unimplemented!()
         }
