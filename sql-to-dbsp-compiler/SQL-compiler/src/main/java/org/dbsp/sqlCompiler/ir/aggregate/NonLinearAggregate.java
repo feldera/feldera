@@ -124,7 +124,7 @@ public class NonLinearAggregate extends AggregateBase {
         if (this.postProcess != null)
             return this.postProcess;
         // If it is not set return the identity function
-        DBSPVariablePath var = new DBSPVariablePath(Objects.requireNonNull(this.increment.getResultType()));
+        DBSPVariablePath var = this.increment.getResultType().var();
         return var.closure(var);
     }
 

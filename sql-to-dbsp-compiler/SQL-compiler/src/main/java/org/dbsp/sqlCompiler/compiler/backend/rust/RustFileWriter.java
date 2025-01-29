@@ -134,6 +134,7 @@ public class RustFileWriter {
                     fmt::{Debug, Formatter, Result as FmtResult},
                     path::Path,
                     marker::PhantomData,
+                    sync::Arc,
                 };
                 use core::cmp::Ordering;
                 use rust_decimal::Decimal;

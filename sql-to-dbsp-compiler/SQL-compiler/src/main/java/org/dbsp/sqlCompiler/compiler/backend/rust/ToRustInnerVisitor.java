@@ -461,9 +461,10 @@ public class ToRustInnerVisitor extends InnerVisitor {
             return this.doNullExpression(expression);
         if (expression.getType().mayBeNull)
             this.builder.append("Some(");
-        this.builder.append("BTreeMap::from([")
-                .increase();
+        this.builder.append("Arc::new(BTreeMap::from([");
         assert expression.values != null;
+        if (expression.values.size() > 1)
+            this.builder.increase();
         for (int i = 0; i < Objects.requireNonNull(expression.keys).size(); i++) {
             this.builder.append("(");
             expression.keys.get(i).accept(this);
@@ -471,7 +472,9 @@ public class ToRustInnerVisitor extends InnerVisitor {
             expression.values.get(i).accept(this);
             this.builder.append("), ");
         }
-        this.builder.decrease().append("])");
+        if (expression.values.size() > 1)
+            this.builder.decrease();
+        this.builder.append("]))");
         if (expression.getType().mayBeNull)
             this.builder.append(")");
         return VisitDecision.STOP;

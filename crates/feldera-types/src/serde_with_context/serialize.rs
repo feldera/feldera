@@ -34,6 +34,7 @@ use serde::{
 use std::{
     collections::{BTreeMap, HashSet},
     marker::PhantomData,
+    sync::Arc,
 };
 
 /// Similar to [`Serialize`], but takes an extra `context` argument and
@@ -204,6 +205,18 @@ where
             )?;
         }
         map.end()
+    }
+}
+
+impl<C, T> SerializeWithContext<C> for Arc<T>
+where
+    T: SerializeWithContext<C>,
+{
+    fn serialize_with_context<S>(&self, serializer: S, context: &C) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        T::serialize_with_context(&**self, serializer, context)
     }
 }
 

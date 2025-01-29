@@ -81,15 +81,6 @@ public abstract class DBSPType extends DBSPNode implements IDBSPInnerNode {
         return this.sameNullability(type);
     }
 
-    /*
-    @Override
-    public boolean sameFields(IDBSPInnerNode other) {
-        if (!other.is(DBSPType.class))
-            return false;
-        return this.sameType(other.to(DBSPType.class));
-    }
-     */
-
     public static boolean sameTypes(DBSPType[] left, DBSPType[] right) {
         if (left.length != right.length)
             return false;

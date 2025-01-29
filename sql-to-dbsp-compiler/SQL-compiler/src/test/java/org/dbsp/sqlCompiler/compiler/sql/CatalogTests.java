@@ -33,7 +33,16 @@ public class CatalogTests extends BaseSQLTests {
         this.addRustTestCase(ccs);
     }
 
-    @Test 
+    @Test
+    public void testArray() {
+        var ccs = this.getCCS("""
+                  CREATE TYPE X AS (x INT);
+                  CREATE TABLE T(p int array, m MAP<INT, X ARRAY>);
+                  CREATE VIEW V AS SELECT p[0], m[2][3] FROM T;""");
+        this.addRustTestCase(ccs);
+    }
+
+    @Test
     public void nullableRow() {
         var ccs = this.getCCS("""
                   CREATE TABLE T(p ROW(k VARCHAR, v VARCHAR));

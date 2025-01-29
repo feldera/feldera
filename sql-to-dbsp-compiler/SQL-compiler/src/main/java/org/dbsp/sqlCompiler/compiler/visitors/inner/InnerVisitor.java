@@ -162,6 +162,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVariant;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVoid;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeMap;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeOption;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeResult;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeSemigroup;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeStream;
@@ -466,6 +467,10 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
     }
 
     public VisitDecision preorder(DBSPTypeVec node) {
+        return this.preorder((DBSPTypeUser) node);
+    }
+
+    public VisitDecision preorder(DBSPTypeOption node) {
         return this.preorder((DBSPTypeUser) node);
     }
 
@@ -1032,6 +1037,10 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
     }
 
     public void postorder(DBSPTypeZSet node) {
+        this.postorder((DBSPTypeUser) node);
+    }
+
+    public void postorder(DBSPTypeOption node) {
         this.postorder((DBSPTypeUser) node);
     }
 

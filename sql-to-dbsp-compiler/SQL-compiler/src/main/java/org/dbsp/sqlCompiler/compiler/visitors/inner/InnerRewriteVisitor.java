@@ -101,6 +101,7 @@ import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRef;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeMap;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeOption;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeStream;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
@@ -296,6 +297,17 @@ public abstract class InnerRewriteVisitor
         DBSPType[] args = this.transform(type.typeArgs);
         this.pop(type);
         DBSPType result = new DBSPTypeUser(type.getNode(), type.code, type.name, type.mayBeNull, args);
+        this.map(type, result);
+        return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPTypeOption type) {
+        this.push(type);
+        assert type.typeArgs.length == 1;
+        DBSPType arg = this.transform(type.typeArgs[0]);
+        this.pop(type);
+        DBSPType result = new DBSPTypeOption(arg);
         this.map(type, result);
         return VisitDecision.STOP;
     }
