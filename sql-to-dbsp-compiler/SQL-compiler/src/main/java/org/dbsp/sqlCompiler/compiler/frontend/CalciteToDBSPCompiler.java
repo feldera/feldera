@@ -2790,8 +2790,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
         List<GroupAndAggregates> result = new ArrayList<>();
         for (Window.Group group: window.groups) {
             if (group.isRows)
-                throw new UnimplementedException("WINDOW aggregate with ROWS not yet implemented", 457,
-                        CalciteObject.create(window));
+                throw new UnimplementedException("WINDOW aggregate with ROWS/ROW_NUMBER not yet implemented",
+                        457, CalciteObject.create(window));
             List<AggregateCall> calls = group.getAggregateCalls(window);
             GroupAndAggregates previous = null;
             // Must keep call in the same order as in the original list,
