@@ -782,7 +782,9 @@ public class ImplementNow extends Passes {
                 // Implement leftover as a join
                 DBSPSimpleOperator join = this.createJoin(result, operator);
                 RewriteNowClosure rn = new RewriteNowClosure(this.compiler());
-                function = leftOver.to(NonTemporalFilter.class).expression.closure(closure.parameters);
+                DBSPExpression filterBody = ExpressionCompiler.wrapBoolIfNeeded(
+                        leftOver.to(NonTemporalFilter.class).expression);
+                function = filterBody.closure(closure.parameters);
                 function = rn.apply(function).to(DBSPExpression.class);
                 DBSPSimpleOperator filter = new DBSPFilterOperator(operator.getNode(), function, join.outputPort());
                 this.addOperator(filter);
