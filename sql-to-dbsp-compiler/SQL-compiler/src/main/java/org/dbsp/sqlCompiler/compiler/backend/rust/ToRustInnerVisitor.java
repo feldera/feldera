@@ -127,6 +127,7 @@ import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRef;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBaseType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBinary;
@@ -1385,6 +1386,13 @@ public class ToRustInnerVisitor extends InnerVisitor {
     @Override
     public VisitDecision preorder(DBSPFieldExpression expression) {
         DBSPType baseType = expression.expression.getType();
+        boolean fieldTypeIsNullable = false;
+        if (baseType.is(DBSPTypeTupleBase.class)) {
+            // This should always be true when we compile SQL programs, but
+            // it may be false when we generate some testing code
+            DBSPType fieldType = baseType.to(DBSPTypeTupleBase.class).getFieldType(expression.fieldNo);
+            fieldTypeIsNullable = fieldType.mayBeNull;
+        }
         if (baseType.mayBeNull) {
             // Accessing a nullable struct is allowed
             if (!expression.getType().mayBeNull) {
@@ -1399,10 +1407,14 @@ public class ToRustInnerVisitor extends InnerVisitor {
                 expression.expression.accept(this);
                 this.builder.increase().append(".as_ref()").newline().append(".and_then(|x: ");
                 baseType.withMayBeNull(false).ref().accept(this);
-                this.builder.append("| x.")
+                this.builder.append("| ");
+                // Indexing a nullable expression with a non-nullable field
+                if (!fieldTypeIsNullable) this.builder.append("Some(");
+                this.builder.append("x.")
                         .append(expression.fieldNo);
                 if (!baseType.hasCopy())
                     this.builder.append(".clone()");
+                if (!fieldTypeIsNullable) this.builder.append(")");
                 this.builder.append(")").decrease();
             }
         } else {

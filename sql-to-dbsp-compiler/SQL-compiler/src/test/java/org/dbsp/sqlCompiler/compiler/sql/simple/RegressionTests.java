@@ -132,6 +132,13 @@ public class RegressionTests extends SqlIoTest {
     }
 
     @Test
+    public void issue3418() {
+        this.compileRustTestCase("""
+                create table t (r ROW(j VARCHAR));
+                create materialized view v as select parse_json(t.r.j) from t;""");
+    }
+
+    @Test
     public void issue3257() {
         this.compileRustTestCase(
                 "CREATE VIEW v7 AS " +
