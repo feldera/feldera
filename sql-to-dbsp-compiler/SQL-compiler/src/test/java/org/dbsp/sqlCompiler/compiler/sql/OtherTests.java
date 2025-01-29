@@ -220,11 +220,11 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
                         new DBSPStrLiteral(file.getAbsolutePath())));
         list.add(src);
         list.add(new DBSPApplyExpression(
-                "assert_eq!", new DBSPTypeVoid(), src.getVarReference(),
+                "assert_eq!", DBSPTypeVoid.INSTANCE, src.getVarReference(),
                 data).toStatement());
         DBSPExpression body = new DBSPBlockExpression(list, null);
         DBSPFunction tester = new DBSPFunction("test", new ArrayList<>(),
-                new DBSPTypeVoid(), body, Linq.list("#[test]"));
+                DBSPTypeVoid.INSTANCE, body, Linq.list("#[test]"));
 
         RustFileWriter writer = new RustFileWriter(BaseSQLTests.testFilePath);
         writer.add(tester);
@@ -250,11 +250,11 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
                         new DBSPStrLiteral(file.getAbsolutePath())));
         list.add(src);
         list.add(new DBSPApplyExpression(
-                "assert_eq!", new DBSPTypeVoid(), src.getVarReference(),
+                "assert_eq!", DBSPTypeVoid.INSTANCE, src.getVarReference(),
                 data).toStatement());
         DBSPExpression body = new DBSPBlockExpression(list, null);
         DBSPFunction tester = new DBSPFunction("test", new ArrayList<>(),
-                new DBSPTypeVoid(), body, Linq.list("#[test]"));
+                DBSPTypeVoid.INSTANCE, body, Linq.list("#[test]"));
 
         PrintStream outputStream = new PrintStream(BaseSQLTests.testFilePath, StandardCharsets.UTF_8);
         RustFileWriter writer = new RustFileWriter(outputStream);

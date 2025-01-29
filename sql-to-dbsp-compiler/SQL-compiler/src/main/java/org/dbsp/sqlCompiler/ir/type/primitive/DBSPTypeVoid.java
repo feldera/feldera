@@ -10,9 +10,11 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.VOID;
 
 public class DBSPTypeVoid extends DBSPTypeBaseType {
-    public DBSPTypeVoid() {
+    DBSPTypeVoid() {
         super(CalciteObject.EMPTY, VOID, false);
     }
+
+    public static DBSPTypeVoid INSTANCE = new DBSPTypeVoid();
 
     @Override
     public void accept(InnerVisitor visitor) {

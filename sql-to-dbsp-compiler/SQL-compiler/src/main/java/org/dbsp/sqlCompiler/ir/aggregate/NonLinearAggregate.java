@@ -9,19 +9,24 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPAssignmentExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.path.DBSPPath;
 import org.dbsp.sqlCompiler.ir.path.DBSPSimplePathSegment;
+import org.dbsp.sqlCompiler.ir.statement.DBSPExpressionStatement;
+import org.dbsp.sqlCompiler.ir.statement.DBSPStatement;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVoid;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeSemigroup;
 import org.dbsp.util.IIndentStream;
 
 import javax.annotation.Nullable;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
@@ -36,7 +41,8 @@ import java.util.Objects;
 public class NonLinearAggregate extends AggregateBase {
     /** Zero of the fold function. */
     public final DBSPExpression zero;
-    /** A closure with signature |accumulator, value, weight| -> accumulator */
+    /** A closure with signature |&mut accumulator, value, weight|.
+     * The closure may return a result, or may just mutate the accumulator. */
     public final DBSPClosureExpression increment;
     /** Function that may post-process the accumulator to produce the final result. */
     @Nullable
@@ -57,6 +63,7 @@ public class NonLinearAggregate extends AggregateBase {
         super(origin, emptySetResult.getType());
         this.zero = zero;
         this.increment = increment;
+        assert increment.parameters.length == 3;
         this.postProcess = postProcess;
         this.emptySetResult = emptySetResult;
         this.semigroup = semigroup;
@@ -74,6 +81,10 @@ public class NonLinearAggregate extends AggregateBase {
     /** Result produced for an empty set. */
     public DBSPExpression getEmptySetResult() {
         return this.emptySetResult;
+    }
+
+    public DBSPType getIncrementType() {
+        return this.increment.parameters[0].getType();
     }
 
     @Override
@@ -97,7 +108,7 @@ public class NonLinearAggregate extends AggregateBase {
                 throw new InternalCompilerError("Post-process result type " + postProcessType +
                         " different from empty set type " + emptyResultType, this);
         } else {
-            DBSPType incrementResultType = this.increment.getResultType();
+            DBSPType incrementResultType = this.getIncrementType();
             if (!emptyResultType.sameType(incrementResultType)) {
                 throw new InternalCompilerError("Increment result type " + incrementResultType +
                         " different from empty set type " + emptyResultType, this);
@@ -124,7 +135,7 @@ public class NonLinearAggregate extends AggregateBase {
         if (this.postProcess != null)
             return this.postProcess;
         // If it is not set return the identity function
-        DBSPVariablePath var = this.increment.getResultType().var();
+        DBSPVariablePath var = this.getIncrementType().var();
         return var.closure(var);
     }
 
@@ -190,7 +201,7 @@ public class NonLinearAggregate extends AggregateBase {
             DBSPVariablePath rowVar, List<NonLinearAggregate> components) {
         int parts = components.size();
         DBSPExpression[] zeros = new DBSPExpression[parts];
-        DBSPExpression[] increments = new DBSPExpression[parts];
+        DBSPClosureExpression[] increments = new DBSPClosureExpression[parts];
         DBSPExpression[] posts = new DBSPExpression[parts];
         DBSPExpression[] emptySetResults = new DBSPExpression[parts];
 
@@ -199,7 +210,7 @@ public class NonLinearAggregate extends AggregateBase {
         DBSPType weightType = null;
         for (int i = 0; i < parts; i++) {
             NonLinearAggregate implementation = components.get(i);
-            DBSPType incType = implementation.increment.getResultType();
+            DBSPType incType = implementation.getIncrementType();
             zeros[i] = implementation.zero;
             increments[i] = implementation.increment;
             if (implementation.increment.parameters.length != 3)
@@ -224,19 +235,25 @@ public class NonLinearAggregate extends AggregateBase {
         DBSPVariablePath accumulator = accumulatorType.ref(true).var();
         DBSPVariablePath postAccumulator = accumulatorType.var();
 
+        List<DBSPStatement> block = new ArrayList<>();
         DBSPVariablePath weightVar = new DBSPVariablePath(Objects.requireNonNull(weightType));
         for (int i = 0; i < parts; i++) {
             DBSPExpression accumulatorField = accumulator.deref().field(i);
-            DBSPExpression expr = increments[i].call(
-                    accumulatorField, rowVar, weightVar);
+            DBSPExpression expr = increments[i].call(accumulatorField, rowVar, weightVar);
             BetaReduction reducer = new BetaReduction(compiler);
-            increments[i] = reducer.reduce(expr);
+            expr = reducer.reduce(expr);
+            // Generate either increment(&a.i...); or *a.i = increment(&a.i...)
+            // depending on the type of the result returned by the increment function
+            if (increments[i].getResultType().is(DBSPTypeVoid.class))
+                block.add(new DBSPExpressionStatement(expr));
+            else
+                block.add(new DBSPExpressionStatement(
+                        new DBSPAssignmentExpression(accumulatorField, expr)));
             DBSPExpression postAccumulatorField = postAccumulator.field(i);
             expr = posts[i].call(postAccumulatorField);
             posts[i] = reducer.reduce(expr);
         }
-        DBSPAssignmentExpression accumulatorBody = new DBSPAssignmentExpression(
-                accumulator.deref(), new DBSPTupleExpression(increments));
+        DBSPExpression accumulatorBody = new DBSPBlockExpression(block, null);
         DBSPClosureExpression accumFunction = accumulatorBody.closure(
                 accumulator, rowVar,
                 weightVar);

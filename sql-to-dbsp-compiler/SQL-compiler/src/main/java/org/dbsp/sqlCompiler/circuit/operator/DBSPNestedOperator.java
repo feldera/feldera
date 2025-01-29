@@ -175,7 +175,7 @@ public class DBSPNestedOperator extends DBSPOperator implements ICircuit {
     public DBSPType streamType(int outputNumber) {
         OutputPort port = this.internalOutputs.get(outputNumber);
         if (port == null)
-            return new DBSPTypeVoid();
+            return DBSPTypeVoid.INSTANCE;
         return port.node().streamType(port.outputNumber);
     }
 }

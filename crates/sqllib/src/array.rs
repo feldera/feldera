@@ -482,13 +482,7 @@ where
 }
 
 #[doc(hidden)]
-pub fn array_agg<T>(
-    accumulator: &mut Vec<T>,
-    value: T,
-    weight: Weight,
-    distinct: bool,
-    keep: bool,
-) -> Vec<T>
+pub fn array_agg<T>(accumulator: &mut Vec<T>, value: T, weight: Weight, distinct: bool, keep: bool)
 where
     T: Clone,
 {
@@ -502,7 +496,6 @@ where
             accumulator.push(value.clone())
         }
     }
-    accumulator.to_vec()
 }
 
 #[doc(hidden)]
@@ -512,13 +505,12 @@ pub fn array_aggN<T>(
     weight: Weight,
     distinct: bool,
     keep: bool,
-) -> Option<Vec<T>>
-where
+) where
     T: Clone,
 {
-    accumulator
-        .as_mut()
-        .map(|accumulator| array_agg(accumulator, value, weight, distinct, keep))
+    if let Some(accumulator) = accumulator.as_mut() {
+        array_agg(accumulator, value, weight, distinct, keep)
+    }
 }
 
 #[doc(hidden)]
@@ -529,14 +521,11 @@ pub fn array_agg_opt<T>(
     distinct: bool,
     keep: bool,
     ignore_nulls: bool,
-) -> Vec<Option<T>>
-where
+) where
     T: Clone,
 {
-    if ignore_nulls && value.is_none() {
-        accumulator.to_vec()
-    } else {
-        array_agg(accumulator, value, weight, distinct, keep)
+    if !ignore_nulls || value.is_some() {
+        array_agg(accumulator, value, weight, distinct, keep);
     }
 }
 
@@ -548,13 +537,12 @@ pub fn array_agg_optN<T>(
     distinct: bool,
     keep: bool,
     ignore_nulls: bool,
-) -> Option<Vec<Option<T>>>
-where
+) where
     T: Clone,
 {
-    accumulator
-        .as_mut()
-        .map(|accumulator| array_agg_opt(accumulator, value, weight, distinct, keep, ignore_nulls))
+    if let Some(accumulator) = accumulator.as_mut() {
+        array_agg_opt(accumulator, value, weight, distinct, keep, ignore_nulls);
+    }
 }
 
 /////////////// Variant index

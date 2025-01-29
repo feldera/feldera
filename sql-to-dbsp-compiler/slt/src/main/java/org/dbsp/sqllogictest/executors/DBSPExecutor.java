@@ -486,7 +486,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
                         new DBSPTypeUSize(CalciteObject.EMPTY, false),
                         outputStatement.getVarReference());
             }
-            list.add(new DBSPApplyExpression("assert_eq!", new DBSPTypeVoid(),
+            list.add(new DBSPApplyExpression("assert_eq!", DBSPTypeVoid.INSTANCE,
                             new DBSPAsExpression(count,
                                     new DBSPTypeInteger(CalciteObject.EMPTY, 32, true, false)),
                                     new DBSPI32Literal(description.getExpectedOutputSize())).toStatement());
@@ -509,13 +509,13 @@ public class DBSPExecutor extends SqlSltTestExecutor {
                         new DBSPVariablePath(functionProducingStrings, DBSPTypeAny.getDefault()),
                         elementType
                 );
-                list.add(new DBSPApplyExpression("assert_eq!", new DBSPTypeVoid(),
+                list.add(new DBSPApplyExpression("assert_eq!", DBSPTypeVoid.INSTANCE,
                                 new DBSPApplyExpression(functionProducingStrings, DBSPTypeAny.getDefault(),
                                         outputStatement.getVarReference().borrow(), columnTypes, sort),
                                  zset_to_strings.call(output.borrow(), columnTypes, sort)).toStatement());
             } else {
                 list.add(new DBSPApplyExpression(
-                        "assert_eq!", new DBSPTypeVoid(), outputStatement.getVarReference().borrow(), output)
+                        "assert_eq!", DBSPTypeVoid.INSTANCE, outputStatement.getVarReference().borrow(), output)
                         .toStatement());
             }
         } else {
@@ -531,11 +531,11 @@ public class DBSPExecutor extends SqlSltTestExecutor {
                             outputStatement.getVarReference().borrow(),
                             columnTypes,
                             sort)));
-            list.add(new DBSPApplyExpression("assert_eq!", new DBSPTypeVoid(),
+            list.add(new DBSPApplyExpression("assert_eq!", DBSPTypeVoid.INSTANCE,
                     var, new DBSPStringLiteral(description.hash)).toStatement());
         }
         DBSPExpression body = new DBSPBlockExpression(list, null);
-        DBSPFunction function = new DBSPFunction(name, new ArrayList<>(), new DBSPTypeVoid(), body, Linq.list("#[test]"));
+        DBSPFunction function = new DBSPFunction(name, new ArrayList<>(), DBSPTypeVoid.INSTANCE, body, Linq.list("#[test]"));
         return new ProgramAndTester(circuit, function);
     }
 

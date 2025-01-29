@@ -82,11 +82,7 @@ where
 }
 
 #[doc(hidden)]
-pub fn map_agg<K, V>(
-    accumulator: &mut BTreeMap<K, V>,
-    value: Tup2<K, V>,
-    weight: Weight,
-) -> BTreeMap<K, V>
+pub fn map_agg<K, V>(accumulator: &mut BTreeMap<K, V>, value: Tup2<K, V>, weight: Weight)
 where
     K: Clone + Ord,
     V: Clone + Ord,
@@ -97,22 +93,17 @@ where
     let k = value.0;
     let v = value.1;
     insert_or_keep_largest(accumulator, &k, &v);
-    accumulator.clone()
 }
 
 #[doc(hidden)]
-pub fn map_aggN<K, V>(
-    accumulator: &mut Option<BTreeMap<K, V>>,
-    value: Tup2<K, V>,
-    weight: Weight,
-) -> Option<BTreeMap<K, V>>
+pub fn map_aggN<K, V>(accumulator: &mut Option<BTreeMap<K, V>>, value: Tup2<K, V>, weight: Weight)
 where
     K: Clone + Ord,
     V: Clone + Ord,
 {
-    accumulator
-        .as_mut()
-        .map(|accumulator| map_agg(accumulator, value, weight))
+    if let Some(accumulator) = accumulator.as_mut() {
+        map_agg(accumulator, value, weight)
+    }
 }
 
 /////////////////////////////////////////
