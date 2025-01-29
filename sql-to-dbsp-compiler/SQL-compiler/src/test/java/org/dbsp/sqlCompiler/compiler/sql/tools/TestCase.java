@@ -188,7 +188,7 @@ public class TestCase {
                     actual = new DBSPApplyExpression("zset_map", convertedValue.getType(), actual.borrow(), converterVar);
                 }
                 DBSPStatement compare =
-                        new DBSPApplyExpression("assert!", new DBSPTypeVoid(),
+                        new DBSPApplyExpression("assert!", DBSPTypeVoid.INSTANCE,
                                 new DBSPApplyExpression("must_equal",
                                         new DBSPTypeBool(CalciteObject.EMPTY, false),
                                         actual.borrow(), expected.borrow()),
@@ -203,6 +203,6 @@ public class TestCase {
         if (this.message != null)
             annotations.add("#[should_panic(expected = " + Utilities.doubleQuote(this.message) + ")]");
         return new DBSPFunction("test" + testNumber, new ArrayList<>(),
-                new DBSPTypeVoid(), body, annotations);
+                DBSPTypeVoid.INSTANCE, body, annotations);
     }
 }

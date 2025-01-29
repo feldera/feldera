@@ -69,6 +69,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDouble;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeNull;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVoid;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeUser;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeVec;
 import org.dbsp.util.ICastable;
@@ -316,7 +317,7 @@ public class AggregateCompiler implements ICompilerComponent {
         if (arguments.length == 6) {
             arguments[5] = new DBSPBoolLiteral(ignoreNulls);
         }
-        DBSPExpression increment = new DBSPApplyExpression(node, functionName, this.resultType, arguments);
+        DBSPExpression increment = new DBSPApplyExpression(node, functionName, DBSPTypeVoid.INSTANCE, arguments);
         DBSPType semigroup = new DBSPTypeUser(node, SEMIGROUP, "ConcatSemigroup", false, accumulator.getType());
         this.setResult(new NonLinearAggregate(
                 node, zero, this.makeRowClosure(increment, accumulator), zero, semigroup));

@@ -1879,7 +1879,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 arguments[2] = this.compiler.weightVar;
                 arguments[3] = new DBSPBoolLiteral(false);
                 arguments[4] = new DBSPBoolLiteral(true);
-                DBSPExpression increment = new DBSPApplyExpression(node, functionName, vecType, arguments);
+                DBSPExpression increment = new DBSPApplyExpression(node, functionName, DBSPTypeVoid.INSTANCE, arguments);
                 DBSPType semigroup = new DBSPTypeUser(node, SEMIGROUP, "ConcatSemigroup", false, accumulator.getType());
                 agg = new NonLinearAggregate(
                         node, zero, increment.closure(accumulator, row, this.compiler.weightVar),
@@ -1902,7 +1902,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 DBSPVariablePath accumulator = accumulatorType.var();
                 String functionName;
                 functionName = "map_agg" + mapType.nullableSuffix();
-                DBSPExpression increment = new DBSPApplyExpression(node, functionName, accumulatorType,
+                DBSPExpression increment = new DBSPApplyExpression(node, functionName, DBSPTypeVoid.INSTANCE,
                         accumulator.borrow(true),
                         row.deref().applyCloneIfNeeded(),
                         this.compiler.weightVar);
@@ -2957,7 +2957,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPVariablePath row = inputRowType.ref().var();
         // An element with weight 'w' is pushed 'w' times into the vector
         DBSPExpression wPush = new DBSPApplyExpression(node,
-                "weighted_push", new DBSPTypeVoid(), accum, row, this.compiler.weightVar);
+                "weighted_push", DBSPTypeVoid.INSTANCE, accum, row, this.compiler.weightVar);
         DBSPExpression push = wPush.closure(accum, row, this.compiler.weightVar);
         DBSPExpression constructor =
                 new DBSPPath(new DBSPSimplePathSegment("Fold", DBSPTypeAny.getDefault(),

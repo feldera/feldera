@@ -71,12 +71,12 @@ public class ExpandWriteLog extends InnerRewriteVisitor {
                         } else {
                             String printFunction = type.mayBeNull ? "print_opt" : "print";
                             DBSPExpression print = new DBSPApplyExpression(
-                                    expression.getNode(), printFunction, new DBSPTypeVoid(), castToStr.applyCloneIfNeeded());
+                                    expression.getNode(), printFunction, DBSPTypeVoid.INSTANCE, castToStr.applyCloneIfNeeded());
                             statements.add(print.toStatement());
                         }
                         if (!part.isEmpty()) {
                             DBSPExpression print = new DBSPApplyExpression(
-                                    expression.getNode(), "print", new DBSPTypeVoid(), new DBSPStringLiteral(part));
+                                    expression.getNode(), "print", DBSPTypeVoid.INSTANCE, new DBSPStringLiteral(part));
                             statements.add(print.toStatement());
                         }
                     }
