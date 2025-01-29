@@ -162,6 +162,16 @@ public class RegressionTests extends SqlIoTest {
     }
 
     @Test
+    public void internalTest177() {
+        this.getCCS("""
+                CREATE TABLE T(x BIGINT);
+                CREATE FUNCTION F(seconds BIGINT)
+                RETURNS TIMESTAMP AS
+                TIMESTAMPADD(SECOND, SECONDS, DATE '1970-01-01');
+                CREATE VIEW V AS SELECT x FROM T WHERE x > 1 OR F(x) > NOW();""");
+    }
+
+    @Test
     public void issue3164() {
         this.compileRustTestCase("""
                 CREATE TABLE T(x integer LATENESS 1);
