@@ -36,6 +36,14 @@ public class IncrementalRegressionTests extends SqlIoTest {
     }
 
     @Test
+    public void internalIssue143() {
+        this.compileRustTestCase("""
+                CREATE TABLE T(x INT);
+                CREATE VIEW V as SELECT x as "timestamp" FROM T;
+                LATENESS trades."timestamp" INTERVAL 1 HOUR;""");
+    }
+
+    @Test
     public void issue3164() {
         this.getCCS("""
              CREATE TABLE T(x INTEGER LATENESS 10);

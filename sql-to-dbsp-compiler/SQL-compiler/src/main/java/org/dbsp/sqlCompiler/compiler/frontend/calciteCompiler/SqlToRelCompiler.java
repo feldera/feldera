@@ -789,12 +789,12 @@ public class SqlToRelCompiler implements IWritesLogs {
               CREATE TABLE T(... column WATERMARK expression ...);
               SELECT column - value FROM tmp;
               and validate it. */
-            String sql = "CREATE TABLE TMP(" +
-                    columnName + " " +
+            String sql = "CREATE TABLE TMP(\"" +
+                    columnName + "\" " +
                     columnType + ");\n" +
-                    "CREATE VIEW V AS SELECT " +
+                    "CREATE VIEW V AS SELECT \"" +
                     columnName +
-                    " - " + value +
+                    "\" - " + value +
                     " FROM TMP;\n";
             Logger.INSTANCE.belowLevel(this, 4)
                     .newline()
