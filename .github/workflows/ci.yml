@@ -15,7 +15,6 @@ on:
       - 'CODE_OF_CONDUCT.md'
       - 'CONTRIBUTING.md'
       - './vscode/**'
-  merge_group:
 
 env:
   CARGO_TERM_COLOR: always
