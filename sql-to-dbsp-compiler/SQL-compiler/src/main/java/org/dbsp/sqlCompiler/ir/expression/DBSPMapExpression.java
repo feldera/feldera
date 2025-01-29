@@ -170,7 +170,7 @@ public final class DBSPMapExpression extends DBSPExpression implements ISameValu
                     .append(this.type)
                     .append(")")
                     .append("null");
-        builder.append("BTreeMap::from([")
+        builder.append("Map::from([")
                 .increase();
         assert this.values != null;
         for (int i = 0; i < keys.size(); i++) {

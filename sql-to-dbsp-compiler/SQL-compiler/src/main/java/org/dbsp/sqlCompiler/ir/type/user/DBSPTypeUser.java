@@ -51,6 +51,11 @@ public class DBSPTypeUser extends DBSPType {
         this.typeArgs = typeArgs;
     }
 
+    @Override
+    public boolean hasCopy() {
+        return false;
+    }
+
     public DBSPType getTypeArg(int index) {
         return this.typeArgs[index];
     }

@@ -18,11 +18,6 @@ public class DBSPTypeWithCustomOrd extends DBSPTypeUser {
         assert dataType.is(DBSPTypeTupleBase.class);
     }
 
-    @Override
-    public boolean hasCopy() {
-        return false;
-    }
-
     /** The type of the data that is wrapped.  Always a tuple type */
     public DBSPTypeTupleBase getDataType() {
         return this.typeArgs[0].to(DBSPTypeTupleBase.class);

@@ -42,11 +42,6 @@ public class DBSPTypeTypedBox extends DBSPTypeUser implements IsBoundedType {
     }
 
     @Override
-    public boolean hasCopy() {
-        return false;
-    }
-
-    @Override
     public DBSPExpression getMaxValue() {
         DBSPExpression max = this.typeArgs[0].to(IsBoundedType.class).getMaxValue();
         return new DBSPUnaryExpression(this.getNode(), this, DBSPOpcode.TYPEDBOX, max);

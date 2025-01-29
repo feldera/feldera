@@ -30,10 +30,5 @@ public class DBSPTypeResult extends DBSPTypeUser {
         visitor.postorder(this);
     }
 
-    @Override
-    public boolean hasCopy() {
-        return false;
-    }
-
     // sameType and hashCode inherited from TypeUser.
 }

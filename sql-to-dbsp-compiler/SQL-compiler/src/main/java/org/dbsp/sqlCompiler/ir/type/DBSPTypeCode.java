@@ -49,7 +49,7 @@ public enum DBSPTypeCode {
     STREAM(null, "", ""),
     USER(null, "", ""),
     VEC("ARRAY", "", ""),
-    MAP("MAP", "", "BTreeMap"),
+    MAP("MAP", "", "Map"),
     VARIANT("VARIANT", "V", "Variant"),
     ZSET("MULTISET", "", ""),
     // Abstract type, used in some dataflow analysis.

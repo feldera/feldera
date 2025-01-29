@@ -7,11 +7,13 @@ use crate::{
     error::{r2o, SqlResult, SqlRuntimeError},
     geopoint::*,
     interval::*,
+    map::Map,
     timestamp::*,
     uuid::*,
     variant::*,
     Weight,
 };
+
 use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 use dbsp::algebra::{HasOne, HasZero, F32, F64};
 use lazy_static::lazy_static;
@@ -19,7 +21,9 @@ use num::{FromPrimitive, One, ToPrimitive, Zero};
 use num_traits::cast::NumCast;
 use regex::{Captures, Regex};
 use rust_decimal::{Decimal, RoundingStrategy};
-use std::{cmp::Ordering, collections::BTreeMap, error::Error, string::String};
+use std::cmp::Ordering;
+use std::error::Error;
+use std::string::String;
 
 /// Maps a short type name to a SQL type name.
 /// Maybe we should not have short type names at all...
@@ -2992,7 +2996,7 @@ pub fn cast_to_V_VN(value: Option<Variant>) -> SqlResult<Variant> {
 /////// cast variant to map
 
 #[doc(hidden)]
-pub fn cast_to_V_map<K, V>(map: BTreeMap<K, V>) -> SqlResult<Variant>
+pub fn cast_to_V_map<K, V>(map: Map<K, V>) -> SqlResult<Variant>
 where
     Variant: From<K> + From<V>,
     K: Clone + Ord,
@@ -3002,7 +3006,7 @@ where
 }
 
 #[doc(hidden)]
-pub fn cast_to_VN_map<K, V>(map: BTreeMap<K, V>) -> SqlResult<Option<Variant>>
+pub fn cast_to_VN_map<K, V>(map: Map<K, V>) -> SqlResult<Option<Variant>>
 where
     Variant: From<K> + From<V>,
     K: Clone + Ord,
@@ -3011,8 +3015,7 @@ where
     r2o(cast_to_V_map(map))
 }
 
-#[doc(hidden)]
-pub fn cast_to_V_mapN<K, V>(map: Option<BTreeMap<K, V>>) -> SqlResult<Variant>
+pub fn cast_to_V_mapN<K, V>(map: Option<Map<K, V>>) -> SqlResult<Variant>
 where
     Variant: From<K> + From<V>,
     K: Clone + Ord,
@@ -3025,7 +3028,7 @@ where
 }
 
 #[doc(hidden)]
-pub fn cast_to_VN_mapN<K, V>(map: Option<BTreeMap<K, V>>) -> SqlResult<Option<Variant>>
+pub fn cast_to_VN_mapN<K, V>(map: Option<Map<K, V>>) -> SqlResult<Option<Variant>>
 where
     Variant: From<K> + From<V>,
     K: Clone + Ord,
@@ -3034,10 +3037,9 @@ where
     r2o(cast_to_V_mapN(map))
 }
 
-#[doc(hidden)]
-pub fn cast_to_map_V<K, V>(value: Variant) -> SqlResult<BTreeMap<K, V>>
+pub fn cast_to_map_V<K, V>(value: Variant) -> SqlResult<Map<K, V>>
 where
-    BTreeMap<K, V>: TryFrom<Variant, Error = Box<dyn Error>>,
+    Map<K, V>: TryFrom<Variant, Error = Box<dyn Error>>,
 {
     match value.try_into() {
         Ok(value) => Ok(value),
@@ -3046,9 +3048,9 @@ where
 }
 
 #[doc(hidden)]
-pub fn cast_to_map_VN<K, V>(value: Option<Variant>) -> SqlResult<Option<BTreeMap<K, V>>>
+pub fn cast_to_map_VN<K, V>(value: Option<Variant>) -> SqlResult<Option<Map<K, V>>>
 where
-    BTreeMap<K, V>: TryFrom<Variant, Error = Box<dyn Error>>,
+    Map<K, V>: TryFrom<Variant, Error = Box<dyn Error>>,
 {
     match value {
         None => Ok(None),
@@ -3057,9 +3059,9 @@ where
 }
 
 #[doc(hidden)]
-pub fn cast_to_mapN_V<K, V>(value: Variant) -> SqlResult<Option<BTreeMap<K, V>>>
+pub fn cast_to_mapN_V<K, V>(value: Variant) -> SqlResult<Option<Map<K, V>>>
 where
-    BTreeMap<K, V>: TryFrom<Variant, Error = Box<dyn Error>>,
+    Map<K, V>: TryFrom<Variant, Error = Box<dyn Error>>,
 {
     match value.try_into() {
         Ok(value) => Ok(Some(value)),
@@ -3068,9 +3070,9 @@ where
 }
 
 #[doc(hidden)]
-pub fn cast_to_mapN_VN<K, V>(value: Option<Variant>) -> SqlResult<Option<BTreeMap<K, V>>>
+pub fn cast_to_mapN_VN<K, V>(value: Option<Variant>) -> SqlResult<Option<Map<K, V>>>
 where
-    BTreeMap<K, V>: TryFrom<Variant, Error = Box<dyn Error>>,
+    Map<K, V>: TryFrom<Variant, Error = Box<dyn Error>>,
 {
     match value {
         None => Ok(None),

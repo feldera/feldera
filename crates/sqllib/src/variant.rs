@@ -2,8 +2,8 @@
 //! the values in a SQL program.
 
 use crate::{
-    binary::ByteArray, casts::*, error::SqlRuntimeError, tn, ttn, Date, GeoPoint, LongInterval,
-    ShortInterval, Time, Timestamp, Uuid,
+    binary::ByteArray, casts::*, error::SqlRuntimeError, map::Map, tn, ttn, Date, GeoPoint,
+    LongInterval, ShortInterval, Time, Timestamp, Uuid,
 };
 use dbsp::algebra::{F32, F64};
 use feldera_types::serde_with_context::serde_config::VariantFormat;
@@ -498,14 +498,14 @@ where
 }
 
 #[doc(hidden)]
-impl<K, V> From<BTreeMap<K, V>> for Variant
+impl<K, V> From<Map<K, V>> for Variant
 where
     Variant: From<K> + From<V>,
     K: Clone + Ord,
     V: Clone,
 {
     #[doc(hidden)]
-    fn from(map: BTreeMap<K, V>) -> Self {
+    fn from(map: Map<K, V>) -> Self {
         let mut result = BTreeMap::<Variant, Variant>::new();
         for (key, value) in map.iter() {
             result.insert(key.clone().into(), value.clone().into());
@@ -515,14 +515,14 @@ where
 }
 
 #[doc(hidden)]
-impl<K, V> From<Option<BTreeMap<K, V>>> for Variant
+impl<K, V> From<Option<Map<K, V>>> for Variant
 where
     Variant: From<K> + From<V>,
     K: Clone + Ord,
     V: Clone,
 {
     #[doc(hidden)]
-    fn from(map: Option<BTreeMap<K, V>>) -> Self {
+    fn from(map: Option<Map<K, V>>) -> Self {
         match map {
             None => Variant::SqlNull,
             Some(map) => Variant::from(map),
@@ -737,7 +737,7 @@ where
 }
 
 #[doc(hidden)]
-impl<K, V> TryFrom<Variant> for BTreeMap<K, V>
+impl<K, V> TryFrom<Variant> for Map<K, V>
 where
     K: TryFrom<Variant> + Ord,
     K::Error: Display,
@@ -764,7 +764,7 @@ where
                     };
                     result.insert(k, v);
                 }
-                Ok(result)
+                Ok(result.into())
             }
             _ => Err(Box::new(SqlRuntimeError::CustomError(
                 "not a map".to_string(),
@@ -774,7 +774,7 @@ where
 }
 
 #[doc(hidden)]
-impl<K, V> TryFrom<Variant> for Option<BTreeMap<K, V>>
+impl<K, V> TryFrom<Variant> for Option<Map<K, V>>
 where
     K: TryFrom<Variant> + Ord,
     K::Error: Display,
@@ -788,7 +788,7 @@ where
         match value {
             Variant::VariantNull => Ok(None),
             Variant::SqlNull => Ok(None),
-            _ => match BTreeMap::<K, V>::try_from(value) {
+            _ => match Map::<K, V>::try_from(value) {
                 Ok(result) => Ok(Some(result)),
                 Err(e) => Err(SqlRuntimeError::from_string(e.to_string())),
             },

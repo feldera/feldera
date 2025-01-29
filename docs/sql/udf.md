@@ -250,8 +250,6 @@ curl -i -X PUT http://localhost:8080/v0/pipelines/udf_api_test \
 
 :::caution Experimental feature
 
-The type representing SQL data structures may change in the future.
-
 :::
 
 The following table shows the Rust representation of standard SQL data
@@ -280,7 +278,7 @@ crate, which is part of the Feldera SQL runtime.
 | `TIMESTAMP`              | `feldera_sqllib::Timestamp`             |
 | `DATE`                   | `feldera_sqllib::Date`                  |
 | `T ARRAY`                | `Vec<T>`                                |
-| `MAP<K, V>`              | `BTreeMap<K, V>`                        |
+| `MAP<K, V>`              | `feldera_sqllib::Map<K, V>`             |
 | `UUID`                   | `feldera_sqllib::Uuid`                  |
 | `VARIANT`                | `feldera_sqllib::Variant`               |
 
@@ -293,6 +291,9 @@ types: `ShortInterval` (representing intervals from days to seconds),
 and `LongInterval` (representing intervals from years to months).
 (Our dialect of SQL does not allow mixing the two kinds of intervals
 in a single expression.)
+
+Currently `feldera_sqlllib::Map` is defined as `type Map =
+Arc<BTreeMap>;`
 
 ### Return types
 

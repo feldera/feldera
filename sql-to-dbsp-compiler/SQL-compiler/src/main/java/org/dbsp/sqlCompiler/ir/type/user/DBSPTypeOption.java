@@ -1,5 +1,7 @@
 package org.dbsp.sqlCompiler.ir.type.user;
 
+import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.NonCoreIR;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 
@@ -13,8 +15,14 @@ public class DBSPTypeOption extends DBSPTypeUser {
     }
 
     @Override
-    public boolean hasCopy() {
-        return false;
+    public void accept(InnerVisitor visitor) {
+        VisitDecision decision = visitor.preorder(this);
+        if (decision.stop()) return;
+        visitor.push(this);
+        for (DBSPType type: this.typeArgs)
+            type.accept(visitor);
+        visitor.pop(this);
+        visitor.postorder(this);
     }
 
     // sameType, visit, and hashCode inherited from TypeUser.

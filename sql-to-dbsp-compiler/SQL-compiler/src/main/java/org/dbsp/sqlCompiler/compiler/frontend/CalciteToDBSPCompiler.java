@@ -172,7 +172,6 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntervalMillisLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
-import org.dbsp.sqlCompiler.ir.expression.DBSPMapExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVecExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.path.DBSPPath;
@@ -1895,22 +1894,24 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 assert inputRowType.size() == 2;
                 assert keyType.sameType(inputRowType.getFieldType(0));
                 assert valueType.sameType(inputRowType.getFieldType(1));
+                DBSPTypeUser accumulatorType = mapType.innerType();
 
                 row = inputRowType.ref().var();
-                DBSPExpression zero = new DBSPMapExpression(mapType, Linq.list());
-                DBSPVariablePath accumulator = mapType.var();
+                DBSPExpression zero = accumulatorType.constructor("new");
+                // Accumulator does not have type Map, which is Arc<BTreeMap>, but just BTreeMap
+                DBSPVariablePath accumulator = accumulatorType.var();
                 String functionName;
-                DBSPExpression[] arguments;
                 functionName = "map_agg" + mapType.nullableSuffix();
-                arguments = new DBSPExpression[3];
-                arguments[0] = accumulator.borrow(true);
-                arguments[1] = row.deref().applyCloneIfNeeded();
-                arguments[2] = this.compiler.weightVar;
-                DBSPExpression increment = new DBSPApplyExpression(node, functionName, mapType, arguments);
-                DBSPType semigroup = new DBSPTypeUser(node, SEMIGROUP, "ConcatSemigroup", false, accumulator.getType());
+                DBSPExpression increment = new DBSPApplyExpression(node, functionName, accumulatorType,
+                        accumulator.borrow(true),
+                        row.deref().applyCloneIfNeeded(),
+                        this.compiler.weightVar);
+                DBSPType semigroup = new DBSPTypeUser(node, SEMIGROUP, "ConcatSemigroup", false, accumulatorType);
+                DBSPVariablePath p = accumulatorType.var();
+                DBSPClosureExpression post = new DBSPApplyMethodExpression("into", mapType, p).closure(p);
                 agg = new NonLinearAggregate(
-                        node, zero, increment.closure(accumulator, row, this.compiler.weightVar),
-                        zero, semigroup);
+                        node, zero, increment.closure(accumulator, row, this.compiler.weightVar), post,
+                        new DBSPApplyMethodExpression("into", mapType, zero), semigroup);
                 break;
             }
             default:

@@ -61,11 +61,6 @@ public class DBSPTypeVec extends DBSPTypeUser implements ICollectionType {
     }
 
     @Override
-    public boolean hasCopy() {
-        return false;
-    }
-
-    @Override
     public DBSPType withMayBeNull(boolean mayBeNull) {
         if (mayBeNull == this.mayBeNull)
             return this;

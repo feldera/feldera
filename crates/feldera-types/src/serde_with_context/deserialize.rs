@@ -44,7 +44,7 @@ use serde::{
     de::{DeserializeSeed, MapAccess, SeqAccess, Visitor},
     Deserialize, Deserializer, Serialize,
 };
-use std::{collections::BTreeMap, fmt, marker::PhantomData};
+use std::{collections::BTreeMap, fmt, marker::PhantomData, sync::Arc};
 
 /// Similar to [`Deserialize`], but takes an extra `context` argument and
 /// threads it through all nested structures.
@@ -242,6 +242,19 @@ where
         }
 
         deserializer.deserialize_map(MapVisitor::new(context))
+    }
+}
+
+impl<'de, C, T> DeserializeWithContext<'de, C> for Arc<T>
+where
+    T: DeserializeWithContext<'de, C>,
+{
+    fn deserialize_with_context<D>(deserializer: D, context: &'de C) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let val = T::deserialize_with_context(deserializer, context)?;
+        Ok(Arc::new(val))
     }
 }
 

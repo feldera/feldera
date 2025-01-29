@@ -167,29 +167,48 @@ public class ToRustVisitor extends CircuitVisitor {
         return new ToRustInnerVisitor(this.compiler(), builder, false);
     }
 
-    void generateInto(DBSPType type) {
-        if (type.is(DBSPTypeOption.class)) {
-            DBSPTypeOption option = type.to(DBSPTypeOption.class);
-            this.builder.append(".map(|x| x");
-            this.generateInto(option.typeArgs[0]);
+    void generateInto(String field, DBSPType sourceType, DBSPType targetType) {
+        if (sourceType.is(DBSPTypeOption.class)) {
+            DBSPType fieldType;
+            if (targetType.is(DBSPTypeOption.class)) {
+                fieldType = targetType.to(DBSPTypeOption.class).typeArgs[0];
+            } else {
+                assert targetType.mayBeNull;
+                fieldType = targetType.withMayBeNull(false);
+            }
+            this.builder.append(field);
+            DBSPTypeOption option = sourceType.to(DBSPTypeOption.class);
+            this.builder.append(".map(|x| ");
+            this.generateInto("x", option.typeArgs[0], fieldType);
             this.builder.append(")");
-        } else if (type.mayBeNull && !type.is(DBSPTypeNull.class)) {
-            this.builder.append(".map(|x| x");
-            this.generateInto(type.withMayBeNull(false));
-            this.builder.append(")");
-        } else if (type.is(DBSPTypeVec.class)) {
-            DBSPTypeVec vec = type.to(DBSPTypeVec.class);
-            this.builder.append(".into_iter().map(|y| y");
-            this.generateInto(vec.getElementType());
-            this.builder.append(").collect()");
-        } else if (type.is(DBSPTypeMap.class)) {
-            DBSPTypeMap map = type.to(DBSPTypeMap.class);
-            this.builder.append(".into_iter().map(|(k,v)| (k");
-            this.generateInto(map.getKeyType());
-            this.builder.append(", v");
-            this.generateInto(map.getValueType());
-            this.builder.append(")).collect()");
+        } else if (sourceType.mayBeNull && !sourceType.is(DBSPTypeNull.class)) {
+            this.builder.append(field);
+            this.builder.append(".map(|x|").increase();
+            this.generateInto("x", sourceType.withMayBeNull(false), targetType.withMayBeNull(false));
+            this.builder.decrease().append(")");
+        } else if (sourceType.is(DBSPTypeVec.class)) {
+            this.builder.append(field);
+            DBSPTypeVec vec = sourceType.to(DBSPTypeVec.class);
+            this.builder.append(".into_iter().map(|y|").increase();
+            this.generateInto("y", vec.getElementType(), targetType.to(DBSPTypeVec.class).getElementType());
+            this.builder.decrease().append(").collect::<");
+            targetType.accept(this.innerVisitor);
+            this.builder.append(">()");
+        } else if (sourceType.is(DBSPTypeMap.class)) {
+            this.builder.append("Arc::new(Arc::unwrap_or_clone(");
+            this.builder.append(field);
+            DBSPTypeMap map = sourceType.to(DBSPTypeMap.class);
+            DBSPTypeMap tMap = targetType.to(DBSPTypeMap.class);
+            this.builder.append(").into_iter().map(|(k,v)|").increase()
+                    .append("(");
+            this.generateInto("k", map.getKeyType(), tMap.getKeyType());
+            this.builder.append(", ");
+            this.generateInto("v", map.getValueType(), tMap.getValueType());
+            this.builder.decrease().append(")).collect::<");
+            tMap.innerType().accept(this.innerVisitor);
+            this.builder.append(">())");
         } else {
+            this.builder.append(field);
             this.builder.append(".into()");
         }
     }
@@ -203,18 +222,18 @@ public class ToRustVisitor extends CircuitVisitor {
         tuple.accept(this.innerVisitor);
         this.builder.append(" {")
                 .increase()
-                .append("fn from(table: ")
+                .append("fn from(t: ")
                 .append(type.sanitizedName)
                 .append(") -> Self");
         this.builder.append(" {")
                 .increase()
                 .append(tuple.getName())
                 .append("::new(");
+        int index = 0;
         for (DBSPTypeStruct.Field field: type.fields.values()) {
-            this.builder.append("table.")
-                    .append(field.getSanitizedName());
-            this.generateInto(field.type);
+            this.generateInto("t." + field.getSanitizedName(), field.type, tuple.tupFields[index]);
             this.builder.append(", ");
+            index++;
         }
         this.builder.append(")").newline();
         this.builder.decrease()
@@ -230,22 +249,22 @@ public class ToRustVisitor extends CircuitVisitor {
                 .append(type.sanitizedName);
         this.builder.append(" {")
                 .increase()
-                .append("fn from(tuple: ");
+                .append("fn from(t: ");
         tuple.accept(this.innerVisitor);
         this.builder.append(") -> Self");
         this.builder.append(" {")
                 .increase()
                 .append("Self {")
                 .increase();
-        int index = 0;
+        index = 0;
         for (DBSPTypeStruct.Field field: type.fields.values()) {
             this.builder
                     .append(field.getSanitizedName())
-                    .append(": tuple.")
-                    .append(index++);
-            this.generateInto(field.type);
+                    .append(": ");
+            this.generateInto("t." + index, field.type, field.type);
             this.builder.append(", ")
                 .newline();
+            index++;
         }
         this.builder.decrease().append("}").newline();
         this.builder.decrease()
