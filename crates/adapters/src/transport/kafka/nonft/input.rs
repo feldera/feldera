@@ -130,7 +130,7 @@ impl KafkaInputReaderInner {
         mut parser: Box<dyn Parser>,
         mut command_receiver: UnboundedReceiver<NonFtInputReaderCommand>,
         queue: InputQueue,
-    ) -> Result<(), KafkaError> {
+    ) -> AnyResult<()> {
         // Figure out the number of threads based on configuration, defaults,
         // and system resources.
         let max_threads = available_parallelism().map_or(16, NonZeroUsize::get);
@@ -184,10 +184,12 @@ impl KafkaInputReaderInner {
             }
 
             if !running && !kafka_paused && when_paused.elapsed() >= PAUSE_TIMEOUT {
-                self.pause_partitions()?;
+                self.pause_partitions()
+                    .map_err(|e| anyhow!("error pausing Kafka consumer: {e}"))?;
                 kafka_paused = true;
             } else if running && kafka_paused {
-                self.resume_partitions()?;
+                self.resume_partitions()
+                    .map_err(|e| anyhow!("error resuming Kafka consumer: {e}"))?;
                 helper_state.store(PipelineState::Running, Ordering::Release);
                 for thread in threads.iter() {
                     thread.unpark();
@@ -197,9 +199,13 @@ impl KafkaInputReaderInner {
 
             if self.rebalanced.swap(false, Ordering::Acquire) {
                 if kafka_paused {
-                    self.pause_partitions()?;
+                    self.pause_partitions().map_err(|e| {
+                        anyhow!("error pausing Kafka consumer after partition rebalancing: {e}")
+                    })?;
                 } else {
-                    self.resume_partitions()?;
+                    self.resume_partitions().map_err(|e| {
+                        anyhow!("error resuming Kafka consumer after partition rebalancing: {e}")
+                    })?;
                 }
             }
 
@@ -267,7 +273,7 @@ impl KafkaInputReaderInner {
             Some(Err(e)) => {
                 // println!("poll returned error");
                 let (fatal, e) = self.refine_error(e);
-                consumer.error(fatal, e);
+                consumer.error(fatal, anyhow!("error polling Kafka consumer: {e}"));
                 if fatal {
                     feedback.send(HelperFeedback::FatalError).unwrap();
                 }
@@ -358,7 +364,8 @@ impl KafkaInputReader {
         debug!("Creating Kafka consumer");
         let inner = Arc::new(KafkaInputReaderInner {
             config: config.clone(),
-            kafka_consumer: BaseConsumer::from_config_and_context(&client_config, context)?,
+            kafka_consumer: BaseConsumer::from_config_and_context(&client_config, context)
+                .map_err(|e| anyhow!("error creating Kafka consumer: {e}"))?,
             errors: ArrayQueue::new(ERROR_BUFFER_SIZE),
             rebalanced: AtomicBool::new(false),
         });
@@ -368,7 +375,10 @@ impl KafkaInputReader {
         let topics = config.topics.iter().map(String::as_str).collect::<Vec<_>>();
 
         // Subscribe consumer to `topics`.
-        inner.kafka_consumer.subscribe(&topics)?;
+        inner
+            .kafka_consumer
+            .subscribe(&topics)
+            .map_err(|e| anyhow!("error subscribing to Kafka topic(s): {e}"))?;
 
         let start = Instant::now();
 
@@ -432,8 +442,7 @@ impl KafkaInputReader {
             move || {
                 let _guard = span(&endpoint.config);
                 if let Err(e) = endpoint.poller_thread(&consumer, parser, command_receiver, queue) {
-                    let (_fatal, e) = endpoint.refine_error(e);
-                    consumer.error(true, e);
+                    consumer.error(true, anyhow!("Kafka consumer polling thread terminated with the following error: {e}"));
                 }
             }
         });
