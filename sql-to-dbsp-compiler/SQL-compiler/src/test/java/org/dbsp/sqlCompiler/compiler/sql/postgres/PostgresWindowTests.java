@@ -379,7 +379,7 @@ public class PostgresWindowTests extends SqlIoTest {
                           rank() OVER (ORDER BY salary DESC) r
                    FROM empsalary) emp
                 WHERE r <= 3;
-                 empno | salary | r\s
+                 empno | salary | r
                 -------+--------+---
                      8 |   6000 | 1
                     10 |   5200 | 2
@@ -416,7 +416,7 @@ public class PostgresWindowTests extends SqlIoTest {
                           count(empno) OVER (ORDER BY salary DESC) c
                    FROM empsalary) emp
                 WHERE c <= 3;
-                 empno | salary | c\s
+                 empno | salary | c
                 -------+--------+---
                      8 |   6000 | 1
                     10 |   5200 | 3
@@ -465,7 +465,7 @@ public class PostgresWindowTests extends SqlIoTest {
         this.qs("""
                 select x, lag(x, 1) over (order by x), lead(x, 3) over (order by x)
                 from series;
-                 x  | lag | lead\s
+                 x  | lag | lead
                 ----+-----+------
                   1 |     |    4
                   2 |   1 |    5
