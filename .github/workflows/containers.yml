@@ -74,6 +74,8 @@ jobs:
           tags: ${{ steps.meta_pipeline_manager.outputs.tags }}
           labels: ${{ steps.meta_pipeline_manager.outputs.labels }}
           annotations: ${{ steps.meta_pipeline_manager.outputs.annotations }}
+          build-args: |
+            FELDERA_PLATFORM_VERSION_SUFFIX=${{ github.sha }}
 
       - name: Export multiarch image digest
         id: export_image_digest

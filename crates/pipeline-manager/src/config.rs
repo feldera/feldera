@@ -10,10 +10,18 @@ use std::{
     path::{Path, PathBuf},
 };
 
-/// The default `platform_version`, which is retrieved from the
-/// environment variable `CARGO_PKG_VERSION` set by Cargo.
+/// The default `platform_version` is formed using two compilation environment variables:
+/// - `CARGO_PKG_VERSION` set by Cargo
+/// - `FELDERA_PLATFORM_VERSION_SUFFIX` set by the custom `build.rs` script,
+///   which is determined using the similarly named environment variable
 fn default_platform_version() -> String {
-    env!("CARGO_PKG_VERSION").to_string()
+    let package_version = env!("CARGO_PKG_VERSION").to_string();
+    let suffix = env!("FELDERA_PLATFORM_VERSION_SUFFIX").to_string();
+    if suffix.is_empty() {
+        package_version
+    } else {
+        format!("{package_version}+{suffix}")
+    }
 }
 
 /// Default working directory: ~/.feldera
@@ -132,7 +140,7 @@ fn help_canonicalize_dir(dir: &str) -> AnyResult<String> {
 #[command(author, version, about, long_about = None)]
 pub struct CommonConfig {
     /// Platform version which is used to determine if an upgrade occurred.
-    /// Default is the package version.
+    /// Default is determined at compile time.
     #[serde(default = "default_platform_version")]
     #[arg(long, default_value_t = default_platform_version())]
     pub platform_version: String,
