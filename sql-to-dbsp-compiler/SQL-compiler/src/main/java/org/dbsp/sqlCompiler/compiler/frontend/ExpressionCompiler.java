@@ -53,6 +53,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPCloneExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPConstructorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFieldExpression;
@@ -1373,6 +1374,8 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 if (call.operands.size() != 2)
                     throw operandCountError(node, operationName, call.operandCount());
                 DBSPExpression op0 = ops.get(0);
+                if (op0.is(DBSPCloneExpression.class))
+                    op0 = op0.to(DBSPCloneExpression.class).expression;
                 DBSPType collectionType = op0.getType();
                 DBSPExpression index = ops.get(1);
                 DBSPOpcode opcode = DBSPOpcode.SQL_INDEX;
