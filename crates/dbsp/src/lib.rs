@@ -81,6 +81,9 @@ pub mod time;
 pub mod trace;
 pub mod utils;
 
+#[cfg(feature = "backend-mode")]
+pub mod mono;
+
 pub use crate::{
     error::{DetailedError, Error},
     hash::default_hash,
@@ -92,12 +95,14 @@ pub use crate::time::Timestamp;
 pub use algebra::{DynZWeight, ZWeight};
 
 pub use circuit::{
-    ChildCircuit, Circuit, CircuitHandle, DBSPHandle, RootCircuit, Runtime, RuntimeError,
-    SchedulerError, Stream,
+    ChildCircuit, Circuit, CircuitHandle, DBSPHandle, NestedCircuit, RootCircuit, Runtime,
+    RuntimeError, SchedulerError, Stream,
 };
+#[cfg(not(feature = "backend-mode"))]
+pub use operator::FilterMap;
 pub use operator::{
     input::{IndexedZSetHandle, InputHandle, MapHandle, SetHandle, ZSetHandle},
-    CmpFunc, FilterMap, OrdPartitionedIndexedZSet, OutputHandle,
+    CmpFunc, OrdPartitionedIndexedZSet, OutputHandle,
 };
 pub use trace::{DBData, DBWeight};
 pub use typed_batch::{
@@ -106,7 +111,7 @@ pub use typed_batch::{
     OrdIndexedWSet, OrdIndexedZSet, OrdWSet, OrdZSet, Trace, TypedBox, ZSet,
 };
 
-#[cfg(doc)]
+#[cfg(all(doc, not(feature = "backend-mode")))]
 pub mod tutorial;
 
 // TODO: import from `circuit`.

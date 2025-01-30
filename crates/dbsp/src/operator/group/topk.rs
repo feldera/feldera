@@ -61,7 +61,7 @@ where
         >();
 
         self.inner()
-            .dyn_topk_custom_order(
+            .dyn_topk_custom_order_mono(
                 &factories,
                 k,
                 Box::new(
@@ -122,7 +122,7 @@ where
         >();
 
         self.inner()
-            .dyn_topk_rank_custom_order(
+            .dyn_topk_rank_custom_order_mono(
                 &factories,
                 k,
                 Box::new(
@@ -169,7 +169,7 @@ where
         >();
 
         self.inner()
-            .dyn_topk_dense_rank_custom_order(
+            .dyn_topk_dense_rank_custom_order_mono(
                 &factories,
                 k,
                 Box::new(
@@ -226,7 +226,7 @@ where
         >();
 
         self.inner()
-            .dyn_topk_row_number_custom_order(
+            .dyn_topk_row_number_custom_order_mono(
                 &factories,
                 k,
                 Box::new(

@@ -7,8 +7,8 @@ use crate::{
         operator_traits::{Operator, QuaternaryOperator},
     },
     dynamic::{
-        ClonableTrait, DataTrait, DowncastTrait, DynPair, DynUnit, DynVec, DynWeightedPairs, Erase,
-        Factory, LeanVec, WeightTrait, WithFactory,
+        ClonableTrait, DataTrait, DowncastTrait, DynData, DynPair, DynUnit, DynVec,
+        DynWeightedPairs, Erase, Factory, LeanVec, WeightTrait, WithFactory,
     },
     trace::{
         cursor::{CursorEmpty, CursorPair},
@@ -16,6 +16,8 @@ use crate::{
     },
     Circuit, DBData, DynZWeight, RootCircuit, Scope, Stream, ZWeight,
 };
+
+use super::{MonoIndexedZSet, MonoZSet};
 
 pub struct AsofJoinFactories<TS, I1, I2, O>
 where
@@ -72,6 +74,28 @@ where
             right_factories: self.right_factories.clone(),
             output_factories: self.output_factories.clone(),
         }
+    }
+}
+
+impl Stream<RootCircuit, MonoIndexedZSet> {
+    #[track_caller]
+    pub fn dyn_asof_join_mono(
+        &self,
+        factories: &AsofJoinFactories<DynData, MonoIndexedZSet, MonoIndexedZSet, MonoZSet>,
+        other: &Stream<RootCircuit, MonoIndexedZSet>,
+        ts_func1: Box<dyn Fn(&DynData, &mut DynData)>,
+        tscmp_func: Box<dyn Fn(&DynData, &DynData) -> Ordering>,
+        valts_cmp_func: Box<dyn Fn(&DynData, &DynData) -> Ordering>,
+        join_func: Box<AsofJoinFunc<DynData, DynData, DynData, DynData, DynUnit>>,
+    ) -> Stream<RootCircuit, MonoZSet> {
+        self.dyn_asof_join(
+            factories,
+            other,
+            ts_func1,
+            tscmp_func,
+            valts_cmp_func,
+            join_func,
+        )
     }
 }
 

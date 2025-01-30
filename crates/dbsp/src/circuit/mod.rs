@@ -32,7 +32,7 @@ pub mod trace;
 
 pub use circuit_builder::{
     ChildCircuit, Circuit, CircuitHandle, ExportId, ExportStream, FeedbackConnector, GlobalNodeId,
-    NodeId, OwnershipPreference, RootCircuit, Scope, Stream, WithClock,
+    NestedCircuit, NodeId, OwnershipPreference, RootCircuit, Scope, Stream, WithClock,
 };
 pub use dbsp_handle::{CircuitConfig, DBSPHandle, Host, Layout, StorageCacheConfig, StorageConfig};
 pub use runtime::{Error as RuntimeError, LocalStore, LocalStoreMarker, Runtime, RuntimeHandle};

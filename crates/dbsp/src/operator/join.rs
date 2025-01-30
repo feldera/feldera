@@ -4,16 +4,13 @@ use crate::{
     dynamic::{DowncastTrait, DynData, DynUnit, Erase},
     operator::dynamic::{
         filter_map::DynFilterMap,
-        join::{
-            AntijoinFactories, JoinFactories, OuterJoinFactories, StreamJoinFactories,
-            TraceJoinFuncs,
-        },
+        join::{JoinFactories, OuterJoinFactories, StreamJoinFactories, TraceJoinFuncs},
     },
     typed_batch::{IndexedZSet, OrdIndexedZSet, OrdZSet, ZSet},
     Circuit, DBData, Stream,
 };
 
-fn mk_trace_join_funcs<I1, I2, Z, F>(
+pub(crate) fn mk_trace_join_funcs<I1, I2, Z, F>(
     join: F,
 ) -> TraceJoinFuncs<I1::DynK, I1::DynV, I2::DynV, Z::DynK, DynUnit>
 where
@@ -26,7 +23,7 @@ where
     mk_trace_join_flatmap_funcs::<I1, I2, Z, _, _>(move |k, v1, v2| once(join(k, v1, v2)))
 }
 
-fn mk_trace_join_flatmap_funcs<I1, I2, Z, F, It>(
+pub(crate) fn mk_trace_join_flatmap_funcs<I1, I2, Z, F, It>(
     join: F,
 ) -> TraceJoinFuncs<I1::DynK, I1::DynV, I2::DynV, Z::DynK, DynUnit>
 where
@@ -61,7 +58,7 @@ where
     }
 }
 
-fn mk_trace_join_generic_funcs<I1, I2, Z, F, It>(
+pub(crate) fn mk_trace_join_generic_funcs<I1, I2, Z, F, It>(
     join: F,
 ) -> TraceJoinFuncs<I1::DynK, I1::DynV, I2::DynV, Z::DynK, Z::DynV>
 where
@@ -118,6 +115,7 @@ where
     /// * `F` - join function type: maps key and a pair of values from input
     ///   batches to an output value.
     /// * `V` - output value type.
+    #[cfg(not(feature = "backend-mode"))]
     pub fn join<F, V2, V>(
         &self,
         other: &Stream<C, OrdIndexedZSet<K1, V2>>,
@@ -144,6 +142,7 @@ where
     ///
     /// Behaves like `join` followed by `flat_map`, but does not materialize
     /// intermediate values.
+    #[cfg(not(feature = "backend-mode"))]
     pub fn join_flatmap<F, V2, V, It>(
         &self,
         other: &Stream<C, OrdIndexedZSet<K1, V2>>,
@@ -176,6 +175,7 @@ where
     /// This method generalizes [`Self::join`].  It takes a join function that
     /// returns an iterable collection of `(key, value)` pairs, used to
     /// construct an indexed output Z-set.
+    #[cfg(not(feature = "backend-mode"))]
     pub fn join_index<F, V2, K, V, It>(
         &self,
         other: &Stream<C, OrdIndexedZSet<K1, V2>>,
@@ -340,6 +340,7 @@ where
     ///
     /// Returns indexed Z-set consisting of the contents of `self`,
     /// excluding keys that are present in `other`.
+    #[cfg(not(feature = "backend-mode"))]
     pub fn antijoin<I2>(&self, other: &Stream<C, I2>) -> Stream<C, I1>
     where
         I2: IndexedZSet<Key = I1::Key, DynK = I1::DynK>,
@@ -347,7 +348,8 @@ where
         Box<I1::DynK>: Clone,
         Box<I1::DynV>: Clone,
     {
-        let factories = AntijoinFactories::new::<I1::Key, I1::Val>();
+        let factories =
+            crate::operator::dynamic::join::AntijoinFactories::new::<I1::Key, I1::Val>();
 
         self.inner()
             .dyn_antijoin(&factories, &other.inner())

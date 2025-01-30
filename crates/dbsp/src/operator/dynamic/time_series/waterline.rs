@@ -2,6 +2,8 @@ use dyn_clone::clone_box;
 use size_of::SizeOf;
 
 use crate::circuit::checkpointer::Checkpoint;
+use crate::dynamic::{DynData, DynUnit};
+use crate::operator::dynamic::{MonoIndexedZSet, MonoZSet};
 use crate::{
     dynamic::DataTrait,
     operator::communication::new_exchange_operators,
@@ -24,6 +26,30 @@ where
 }
 
 pub type LeastUpperBoundFunc<TS> = Box<dyn LeastUpperBoundFn<TS>>;
+
+impl Stream<RootCircuit, MonoIndexedZSet> {
+    #[track_caller]
+    pub fn dyn_waterline_mono(
+        &self,
+        init: Box<dyn Fn() -> Box<DynData>>,
+        extract_ts: Box<dyn Fn(&DynData, &DynData, &mut DynData)>,
+        least_upper_bound: LeastUpperBoundFunc<DynData>,
+    ) -> Stream<RootCircuit, Box<DynData>> {
+        self.dyn_waterline(init, extract_ts, least_upper_bound)
+    }
+}
+
+impl Stream<RootCircuit, MonoZSet> {
+    #[track_caller]
+    pub fn dyn_waterline_mono(
+        &self,
+        init: Box<dyn Fn() -> Box<DynData>>,
+        extract_ts: Box<dyn Fn(&DynData, &DynUnit, &mut DynData)>,
+        least_upper_bound: LeastUpperBoundFunc<DynData>,
+    ) -> Stream<RootCircuit, Box<DynData>> {
+        self.dyn_waterline(init, extract_ts, least_upper_bound)
+    }
+}
 
 impl<B> Stream<RootCircuit, B>
 where

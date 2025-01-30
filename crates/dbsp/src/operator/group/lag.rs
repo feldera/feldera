@@ -1,5 +1,3 @@
-use crate::dynamic::Erase;
-use crate::operator::dynamic::filter_map::DynFilterMap;
 use crate::operator::dynamic::group::LagCustomOrdFactories;
 use crate::operator::group::custom_ord::WithCustomOrd;
 use crate::{
@@ -67,12 +65,10 @@ where
     }
 }
 
-impl<B, K, V> Stream<RootCircuit, B>
+impl<K, V> Stream<RootCircuit, OrdIndexedZSet<K, V>>
 where
-    B: IndexedZSet<Key = K, Val = V, DynK = DynData, DynV = DynData>,
-    B::InnerBatch: Send + for<'a> DynFilterMap<DynItemRef<'a> = (&'a B::DynK, &'a B::DynV)>,
-    K: DBData + Erase<B::DynK>,
-    V: DBData + Erase<B::DynV>,
+    K: DBData,
+    V: DBData,
 {
     /// Like [`Stream::lag`], but uses a custom ordering of values within the group
     /// defined by the comparison function `CF`.
@@ -98,16 +94,15 @@ where
         PF: Fn(Option<&V>) -> VL + 'static,
         OF: Fn(&V, &VL) -> OV + 'static,
     {
-        let factories = LagCustomOrdFactories::<B::Inner, DynData, DynData, DynData>::new::<
-            K,
-            V,
-            WithCustomOrd<V, CF>,
-            VL,
-            OV,
-        >();
+        let factories = LagCustomOrdFactories::<
+            DynOrdIndexedZSet<DynData, DynData>,
+            DynData,
+            DynData,
+            DynData,
+        >::new::<K, V, WithCustomOrd<V, CF>, VL, OV>();
 
         self.inner()
-            .dyn_lag_custom_order(
+            .dyn_lag_custom_order_mono(
                 &factories,
                 offset,
                 Box::new(move |v1, v2: &mut DynData| unsafe {
