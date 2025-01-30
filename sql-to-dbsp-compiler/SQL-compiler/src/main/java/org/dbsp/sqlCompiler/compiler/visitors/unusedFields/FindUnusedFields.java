@@ -88,9 +88,10 @@ public class FindUnusedFields extends SymbolicInterpreter<FieldUseMap> {
         this.parameterFieldMap.changeMap(param, map);
     }
 
-    /** True if the closure analyzed can be simplified */
-    public boolean foundUnusedFields() {
-        return this.parameterFieldMap.hasUnusedFields();
+    /** True if the closure analyzed can be simplified.
+     * @param depth  Depth at which we are looking for unused fields. */
+    public boolean foundUnusedFields(int depth) {
+        return this.parameterFieldMap.hasUnusedFields(depth);
     }
 
     @Override

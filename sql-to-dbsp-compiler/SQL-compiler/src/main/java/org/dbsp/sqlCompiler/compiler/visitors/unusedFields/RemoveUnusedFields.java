@@ -74,7 +74,7 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
         RewriteFields rw = this.find.getFieldRewriter(1);
         FieldUseMap leftRemap = rw.getUseMap(left);
         FieldUseMap rightRemap = rw.getUseMap(right);
-        if (!leftRemap.hasUnusedFields() && !rightRemap.hasUnusedFields())
+        if (!leftRemap.hasUnusedFields(1) && !rightRemap.hasUnusedFields(1))
             return false;
 
         DBSPSimpleOperator leftMap = getProjection(join.getNode(), leftRemap, join.left());
@@ -129,7 +129,7 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
         DBSPClosureExpression closure = operator.getClosureFunction();
         assert closure.parameters.length == 1;
         closure = this.find.findUnusedFields(closure);
-        if (!this.find.foundUnusedFields()) {
+        if (!this.find.foundUnusedFields(1)) {
             super.postorder(operator);
             return;
         }
@@ -189,7 +189,7 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
         DBSPClosureExpression closure = operator.getClosureFunction();
         assert closure.parameters.length == 1;
         closure = this.find.findUnusedFields(closure);
-        if (!this.find.foundUnusedFields()) {
+        if (!this.find.foundUnusedFields(1)) {
             super.postorder(operator);
             return;
         }

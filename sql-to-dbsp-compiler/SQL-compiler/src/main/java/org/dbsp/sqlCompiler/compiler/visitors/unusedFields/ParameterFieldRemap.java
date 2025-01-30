@@ -51,9 +51,9 @@ public class ParameterFieldRemap {
         return this.remap.toString();
     }
 
-    public boolean hasUnusedFields() {
+    public boolean hasUnusedFields(int depth) {
         for (FieldUseMap map: this.remap.values())
-            if (map.hasUnusedFields())
+            if (map.hasUnusedFields(depth))
                 return true;
         return false;
     }
