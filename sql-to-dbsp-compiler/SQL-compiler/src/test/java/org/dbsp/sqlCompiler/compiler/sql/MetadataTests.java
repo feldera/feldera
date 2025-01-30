@@ -379,6 +379,21 @@ public class MetadataTests extends BaseSQLTests {
     }
 
     @Test
+    public void issue3427() {
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.options.languageOptions.throwOnError = false;
+        compiler.options.ioOptions.trimInputs = true;
+        compiler.options.ioOptions.quiet = false;
+        compiler.submitStatementsForCompilation("""
+                CREATE TABLE t1(c1 INTEGER);
+                CREATE VIEW v1 AS SELECT ELEMENT(ARRAY [2, 3]) FROM t1;""");
+        DBSPCircuit circuit = compiler.getFinalCircuit(false);
+        Assert.assertNotNull(circuit);
+        TestUtil.assertMessagesContain(compiler.messages,
+                "Unused column: Column 'c1' of table 't1' is unused");
+    }
+
+    @Test
     public void nullKey() {
         String ddl = """
                CREATE TABLE T (
