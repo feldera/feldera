@@ -956,7 +956,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
                 this.builder.append("indexV")
                         .append(expression.left.getType().nullableUnderlineSuffix())
                         .append(indexType.nullableUnderlineSuffix())
-                        .append("(");
+                        .append("(&");
                 expression.left.accept(this);
                 this.builder.append(", ");
                 expression.right.accept(this);

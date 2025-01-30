@@ -1,6 +1,6 @@
 // Array operations
 
-use crate::{some_function2, some_generic_function2, Variant, Weight};
+use crate::{some_function2, some_generic_function2, Weight};
 use std::collections::HashSet;
 use std::fmt::Debug;
 use std::hash::Hash;
@@ -543,45 +543,6 @@ pub fn array_agg_optN<T>(
     if let Some(accumulator) = accumulator.as_mut() {
         array_agg_opt(accumulator, value, weight, distinct, keep, ignore_nulls);
     }
-}
-
-/////////////// Variant index
-
-// Return type is always Option<Variant>, but result is never None, always a Variant
-#[doc(hidden)]
-pub fn indexV__<T>(value: Variant, index: T) -> Option<Variant>
-where
-    T: Into<Variant>,
-{
-    value.index(index.into())
-}
-
-#[doc(hidden)]
-pub fn indexV_N<T>(value: Variant, index: Option<T>) -> Option<Variant>
-where
-    T: Into<Variant>,
-{
-    let index = index?;
-    indexV__(value, index)
-}
-
-#[doc(hidden)]
-pub fn indexVN_<T>(value: Option<Variant>, index: T) -> Option<Variant>
-where
-    T: Into<Variant>,
-{
-    let value = value?;
-    indexV__(value, index)
-}
-
-#[doc(hidden)]
-pub fn indexVNN<T>(value: Option<Variant>, index: Option<T>) -> Option<Variant>
-where
-    T: Into<Variant>,
-{
-    let value = value?;
-    let index = index?;
-    indexV__(value, index)
 }
 
 #[doc(hidden)]
