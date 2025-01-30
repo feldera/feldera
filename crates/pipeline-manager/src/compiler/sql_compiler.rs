@@ -371,6 +371,7 @@ pub(crate) async fn perform_sql_compilation(
         .arg("-je")
         .arg("--alltables")
         .arg("--ignoreOrder")
+        .arg("--trimInputs")
         .arg("--unquotedCasing")
         .arg("lower")
         .stdin(Stdio::null())
