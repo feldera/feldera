@@ -31,16 +31,16 @@ use binrw::{
 use dyn_clone::clone_box;
 use rkyv::Deserialize;
 
-use crate::{
-    dynamic::{DataTrait, DeserializeDyn, SerializeDyn},
-    storage::file::ItemFactory,
-    Runtime,
-};
-
 use super::cache::FileCache;
 use super::{
     reader::{ImmutableFileRef, Reader},
     AnyFactories, Factories, Serializer,
+};
+use crate::dynamic::arrow::ArrowSupportDyn;
+use crate::{
+    dynamic::{DataTrait, DeserializeDyn, SerializeDyn},
+    storage::file::ItemFactory,
+    Runtime,
 };
 
 struct VarintWriter {

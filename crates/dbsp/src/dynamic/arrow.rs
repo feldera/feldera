@@ -2,14 +2,19 @@ use crate::dynamic::LeanVec;
 use crate::operator::group::WithCustomOrd;
 use crate::utils::{Tup1, Tup2, Tup3, Tup4};
 use crate::DBData;
-use arrow::array::{ArrayBuilder, ArrayRef, Int64Array, Int64Builder};
+use arrow::array::{ArrayBuilder, ArrayRef, Int64Array, Int64Builder, UInt64Array, UInt64Builder};
+use arrow::datatypes::DataType;
 
-pub trait HasArrowBuilder {
+pub trait ArrowSupport {
     type ArrayBuilderType: ArrayBuilder + ?Sized;
+    fn arrow_data_type(&self) -> DataType;
 }
 
-impl<T: DBData> HasArrowBuilder for T {
-    type ArrayBuilderType = Int64Builder;
+impl<T: DBData> ArrowSupport for T {
+    type ArrayBuilderType = UInt64Builder;
+    fn arrow_data_type(&self) -> DataType {
+        DataType::UInt64
+    }
 }
 
 pub trait ArrowSupportDyn {
@@ -25,31 +30,32 @@ impl ArrowSupportDyn for i64 {
     }
 
     fn deserialize_from_arrow(&mut self, array: &ArrayRef, index: usize) {
-        /*let accessor = array
+        let accessor = array
             .as_ref()
             .as_any()
-            .downcast_ref::<Int32Array>()
+            .downcast_ref::<Int64Array>()
             .unwrap_or_else(|| panic!("Builder has wrong type {:?}", array));
-        *self = accessor.value(index);*/
-        unimplemented!()
+        *self = accessor.value(index);
     }
 }
 
 impl ArrowSupportDyn for u64 {
     fn serialize_into_arrow_builder(&self, builder: &mut dyn ArrayBuilder) {
-        let builder_i64 = builder.as_any_mut().downcast_mut::<Int64Builder>().unwrap();
-        builder_i64.append_value(*self as i64);
+        let builder_i64 = builder
+            .as_any_mut()
+            .downcast_mut::<UInt64Builder>()
+            .unwrap();
+        builder_i64.append_value(*self);
         eprintln!("builder_i64.len() = {}", builder_i64.len());
     }
 
     fn deserialize_from_arrow(&mut self, array: &ArrayRef, index: usize) {
-        /*let accessor = array
+        let accessor = array
             .as_ref()
             .as_any()
-            .downcast_ref::<Int32Array>()
-            .unwrap_or_else(|| panic!("Builder has wrong type {:?}", array));
-        *self = accessor.value(index);*/
-        unimplemented!()
+            .downcast_ref::<UInt64Array>()
+            .unwrap_or_else(|| panic!("Array has wrong type {:?}", array));
+        *self = accessor.value(index);
     }
 }
 

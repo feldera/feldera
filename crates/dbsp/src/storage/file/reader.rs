@@ -2,6 +2,15 @@
 //!
 //! [`Reader`] is the top-level interface for reading layer files.
 
+use crate::{
+    dynamic::{DataTrait, DeserializeDyn, Factory},
+    storage::backend::FileReader,
+};
+use arrow::array::{Int64Builder, UInt64Builder};
+use binrw::{
+    io::{self},
+    BinRead, Error as BinError,
+};
 use std::{
     cmp::{
         max, min,
@@ -13,15 +22,6 @@ use std::{
     ops::{Bound, Range, RangeBounds},
     path::{Path as IoPath, PathBuf},
     sync::Arc,
-};
-
-use crate::{
-    dynamic::{DataTrait, DeserializeDyn, Factory},
-    storage::backend::FileReader,
-};
-use binrw::{
-    io::{self},
-    BinRead, Error as BinError,
 };
 use thiserror::Error as ThisError;
 
@@ -525,6 +525,23 @@ where
     }
 
     unsafe fn item(&self, index: usize, item: (&mut K, &mut A)) {
+        {
+            eprintln!("reader item: key_factory");
+            let key_factory = self.factories.any_factories().key_factory::<K>();
+            eprintln!("reader item: key_factory.arrow_builder");
+            let mut arrow_builder = key_factory.arrow_builder();
+            let builder_u64 = arrow_builder
+                .as_any_mut()
+                .downcast_mut::<UInt64Builder>()
+                .unwrap();
+            builder_u64.append_value(0u64);
+            let arrow_arr = arrow_builder.finish();
+
+            eprintln!("reader item: serialize_into_arrow_builder");
+            item.0.deserialize_from_arrow(&arrow_arr, 0);
+            eprintln!("add_item: end item.0 is {:?}", item.0);
+        }
+
         let archived_item = self.archived_item(index);
         DeserializeDyn::deserialize(archived_item.fst(), item.0);
         DeserializeDyn::deserialize(archived_item.snd(), item.1);

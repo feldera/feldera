@@ -1,4 +1,4 @@
-use crate::dynamic::arrow::HasArrowBuilder;
+use crate::dynamic::arrow::ArrowSupport;
 use crate::{
     dynamic::{erase::Erase, ArchiveTrait},
     DBData,
@@ -64,7 +64,7 @@ where
     }
 
     fn arrow_builder(&self) -> Box<dyn ArrayBuilder> {
-        Box::new(<T as HasArrowBuilder>::ArrayBuilderType::default())
+        Box::new(<T as ArrowSupport>::ArrayBuilderType::default())
     }
 
     unsafe fn archived_value<'a>(&self, bytes: &'a [u8], pos: usize) -> &'a Trait::Archived {

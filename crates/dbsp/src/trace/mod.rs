@@ -70,7 +70,7 @@ pub use ord::{
 use rkyv::{archived_root, de::deserializers::SharedDeserializeMap, Deserialize};
 use uuid::Uuid;
 
-use crate::dynamic::arrow::HasArrowBuilder;
+use crate::dynamic::arrow::ArrowSupport;
 use crate::{
     algebra::MonoidValue,
     dynamic::{
