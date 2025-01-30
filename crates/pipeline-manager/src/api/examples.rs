@@ -43,10 +43,7 @@ pub(crate) fn error_unknown_api_key() -> ErrorResponse {
 }
 
 pub(crate) fn error_stream_terminated() -> ErrorResponse {
-    ErrorResponse::from_error_nolog(&RunnerError::PipelineEndpointSendError {
-        pipeline_id: PipelineId(uuid!("67e55044-10b1-426f-9247-bb680e5fe0c8")),
-        pipeline_name: Some("example".to_string()),
-        url: "https://localhost:1234/query".to_string(),
+    ErrorResponse::from_error_nolog(&RunnerError::PipelineInteractionUnreachable {
         error: "Failed to connect to host: Internal error: connector has been disconnected"
             .to_string(),
     })
@@ -296,9 +293,8 @@ pub(crate) fn error_cannot_delete_non_shutdown_pipeline() -> ErrorResponse {
 }
 
 pub(crate) fn error_pipeline_not_running_or_paused() -> ErrorResponse {
-    ErrorResponse::from_error_nolog(&RunnerError::PipelineNotRunningOrPaused {
-        pipeline_id: PipelineId(uuid!("2e79afe1-ff4d-44d3-af5f-9397de7746c0")),
-        pipeline_name: "example".to_string(),
+    ErrorResponse::from_error_nolog(&RunnerError::PipelineInteractionUnreachable {
+        error: "deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again".to_string(),
     })
 }
 

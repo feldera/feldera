@@ -2643,12 +2643,8 @@ async fn pipeline_logs() {
     assert_eq!(response.status(), StatusCode::CREATED);
 
     // Retrieve logs (shutdown)
-    let mut response_logs = config.get("/v0/pipelines/test/logs").await;
-    assert_eq!(response_logs.status(), StatusCode::OK);
-    assert_eq!(
-        "LOG STREAM UNAVAILABLE: the pipeline has likely not yet started\n",
-        String::from_utf8(response_logs.body().await.unwrap().to_vec()).unwrap()
-    );
+    let response_logs = config.get("/v0/pipelines/test/logs").await;
+    assert_eq!(response_logs.status(), StatusCode::SERVICE_UNAVAILABLE);
 
     // Wait for its program compilation completion
     config
@@ -2707,12 +2703,8 @@ async fn pipeline_logs() {
     );
 
     // Retrieve logs (shutdown)
-    let mut response_logs = config.get("/v0/pipelines/test/logs").await;
-    assert_eq!(response_logs.status(), StatusCode::OK);
-    assert_eq!(
-        "LOG STREAM UNAVAILABLE: the pipeline has likely not yet started\n",
-        String::from_utf8(response_logs.body().await.unwrap().to_vec()).unwrap()
-    );
+    let response_logs = config.get("/v0/pipelines/test/logs").await;
+    assert_eq!(response_logs.status(), StatusCode::SERVICE_UNAVAILABLE);
 }
 
 /// The compiler needs to handle and continue to function when the pipeline is deleted
