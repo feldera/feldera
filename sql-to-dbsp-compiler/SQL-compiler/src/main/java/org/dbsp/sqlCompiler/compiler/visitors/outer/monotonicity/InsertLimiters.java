@@ -77,6 +77,7 @@ import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.circuit.annotation.AlwaysMonotone;
 import org.dbsp.sqlCompiler.circuit.annotation.NoIntegrator;
 import org.dbsp.sqlCompiler.circuit.annotation.Waterline;
+import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPIfExpression;
@@ -85,6 +86,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStrLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -94,7 +96,7 @@ import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.type.IsBoundedType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBaseType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVariant;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeTypedBox;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeWeight;
@@ -1404,7 +1406,11 @@ public class InsertLimiters extends CircuitCloneVisitor {
         DBSPClosureExpression error = new DBSPTupleExpression(
                 new DBSPStringLiteral(tableOrViewName.toString()),
                 new DBSPStringLiteral(DBSPControlledKeyFilterOperator.LATE_ERROR),
-                dataArg.cast(new DBSPTypeVariant(false), false)).closure(
+                // dataArg.cast(new DBSPTypeVariant(false), false)).closure(
+                new DBSPApplyExpression("format!",
+                        DBSPTypeString.varchar(false),
+                        new DBSPStrLiteral("{:?}"),
+                        dataArg)).closure(
                         controlArg.asParameter(), dataParam, valArg.asParameter(), weightArg.asParameter());
         DBSPControlledKeyFilterOperator result = new DBSPControlledKeyFilterOperator(node, closure, error, data, control);
 

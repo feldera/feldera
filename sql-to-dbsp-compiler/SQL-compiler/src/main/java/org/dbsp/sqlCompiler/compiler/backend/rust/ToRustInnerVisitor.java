@@ -163,9 +163,11 @@ public class ToRustInnerVisitor extends InnerVisitor {
 
     @SuppressWarnings("SameReturnValue")
     VisitDecision doNullExpression(DBSPExpression expression) {
+        this.push(expression);
         this.builder.append("None::<");
         expression.getType().withMayBeNull(false).accept(this);
         this.builder.append(">");
+        this.pop(expression);
         return VisitDecision.STOP;
     }
 
@@ -194,6 +196,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
             v
         }
          */
+        this.push(expression);
         this.builder.append("move |(k, v): (&(), &Vec<");
         expression.elementType.accept(this);
         this.builder.append(">)| -> Vec<");
@@ -223,13 +226,16 @@ public class ToRustInnerVisitor extends InnerVisitor {
         this.builder.newline()
                 .decrease()
                 .append("}");
+        this.pop(expression);
         return VisitDecision.STOP;
     }
 
     @Override
     public VisitDecision preorder(DBSPSomeExpression expression) {
         this.builder.append("Some(");
+        this.push(expression);
         expression.expression.accept(this);
+        this.pop(expression);
         this.builder.append(")");
         return VisitDecision.STOP;
     }
@@ -249,6 +255,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
 
     @Override
     public VisitDecision preorder(DBSPUnsignedWrapExpression expression) {
+        this.push(expression);
         this.builder.append("UnsignedWrapper")
                 .append("::")
                 .append(expression.getMethod())
@@ -261,11 +268,13 @@ public class ToRustInnerVisitor extends InnerVisitor {
                 .append(", ")
                 .append(Boolean.toString(expression.nullsLast))
                 .append(")");
+        this.pop(expression);
         return VisitDecision.STOP;
     }
 
     @Override
     public VisitDecision preorder(DBSPUnsignedUnwrapExpression expression) {
+        this.push(expression);
         this.builder.append("UnsignedWrapper")
                 .append("::")
                 .append(expression.getMethod())
@@ -278,11 +287,13 @@ public class ToRustInnerVisitor extends InnerVisitor {
                 .append(", ")
                 .append(Boolean.toString(expression.nullsLast))
                 .append(")");
+        this.pop(expression);
         return VisitDecision.STOP;
     }
 
     @Override
     public VisitDecision preorder(DBSPFieldComparatorExpression expression) {
+        this.push(expression);
         expression.source.accept(this);
         boolean hasSource = expression.source.is(DBSPFieldComparatorExpression.class);
         if (hasSource)
@@ -298,6 +309,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
             this.builder.append(".rev()");
         if (hasSource)
             this.builder.append(")");
+        this.pop(expression);
         return VisitDecision.STOP;
     }
 
@@ -305,6 +317,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
     public VisitDecision preorder(DBSPTimestampLiteral literal) {
         if (literal.isNull())
             return this.doNull(literal);
+        this.push(literal);
         if (literal.mayBeNull())
             this.builder.append("Some(");
         this.builder.append("Timestamp::new(")
@@ -315,6 +328,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
                 .append(")");
         if (literal.mayBeNull())
             this.builder.append(")");
+        this.pop(literal);
         return VisitDecision.STOP;
     }
 
@@ -322,6 +336,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
     public VisitDecision preorder(DBSPUuidLiteral literal) {
         if (literal.isNull())
             return this.doNull(literal);
+        this.push(literal);
         if (literal.mayBeNull())
             this.builder.append("Some(");
         this.builder.append("Uuid::from_bytes([");
@@ -341,6 +356,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
                 .append(")");
         if (literal.mayBeNull())
             this.builder.append(")");
+        this.pop(literal);
         return VisitDecision.STOP;
     }
 
@@ -348,6 +364,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
     public VisitDecision preorder(DBSPDateLiteral literal) {
         if (literal.isNull())
             return this.doNull(literal);
+        this.push(literal);
         if (literal.mayBeNull())
             this.builder.append("Some(");
         this.builder.append("Date::new(")
@@ -358,6 +375,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
                 .append(")");
         if (literal.mayBeNull())
             this.builder.append(")");
+        this.pop(literal);
         return VisitDecision.STOP;
     }
 
@@ -365,6 +383,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
     public VisitDecision preorder(DBSPTimeLiteral literal) {
         if (literal.isNull())
             return this.doNull(literal);
+        this.push(literal);
         if (literal.mayBeNull())
             this.builder.append("Some(");
         TimeString ts = Objects.requireNonNull(literal.value);
@@ -376,6 +395,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
                 .append(")");
         if (literal.mayBeNull())
             this.builder.append(")");
+        this.pop(literal);
         return VisitDecision.STOP;
     }
 
@@ -383,6 +403,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
     public VisitDecision preorder(DBSPIntervalMonthsLiteral literal) {
         if (literal.isNull())
             return this.doNull(literal);
+        this.push(literal);
         if (literal.mayBeNull())
             this.builder.append("Some(");
         this.builder.append("LongInterval::new(")
@@ -390,6 +411,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
                 .append(")");
         if (literal.mayBeNull())
             this.builder.append(")");
+        this.pop(literal);
         return VisitDecision.STOP;
     }
 
@@ -397,6 +419,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
     public VisitDecision preorder(DBSPIntervalMillisLiteral literal) {
         if (literal.isNull())
             return this.doNull(literal);
+        this.push(literal);
         if (literal.mayBeNull())
             this.builder.append("Some(");
         this.builder.append("ShortInterval::new(")
@@ -404,11 +427,13 @@ public class ToRustInnerVisitor extends InnerVisitor {
                 .append(")");
         if (literal.mayBeNull())
             this.builder.append(")");
+        this.pop(literal);
         return VisitDecision.STOP;
     }
 
     @Override
     public VisitDecision preorder(DBSPGeoPointConstructor constructor) {
+        this.push(constructor);
         if (constructor.isNull()) {
             this.builder.append("None::<");
             constructor.getType().withMayBeNull(false).accept(this);
@@ -423,6 +448,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
         this.builder.append(")");
         if (constructor.getType().mayBeNull)
             this.builder.append(")");
+        this.pop(constructor);
         return VisitDecision.STOP;
     }
 
@@ -438,6 +464,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
     public VisitDecision preorder(DBSPVecExpression expression) {
         if (expression.data == null)
             return this.doNullExpression(expression);
+        this.push(expression);
         if (expression.getType().mayBeNull)
             this.builder.append("Some(");
         this.builder.append("vec!(");
@@ -452,6 +479,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
         this.builder.append(")");
         if (expression.getType().mayBeNull)
             this.builder.append(")");
+        this.pop(expression);
         return VisitDecision.STOP;
     }
 
@@ -459,6 +487,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
     public VisitDecision preorder(DBSPMapExpression expression) {
         if (expression.isNull())
             return this.doNullExpression(expression);
+        this.push(expression);
         if (expression.getType().mayBeNull)
             this.builder.append("Some(");
         this.builder.append("Arc::new(BTreeMap::from([");
@@ -477,6 +506,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
         this.builder.append("]))");
         if (expression.getType().mayBeNull)
             this.builder.append(")");
+        this.pop(expression);
         return VisitDecision.STOP;
     }
 
@@ -484,6 +514,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
     public VisitDecision preorder(DBSPBinaryLiteral literal) {
         if (literal.isNull())
             return this.doNull(literal);
+        this.push(literal);
         if (literal.mayBeNull())
             this.builder.append("Some(");
         this.builder.append("ByteArray::new(&vec!(")
@@ -495,11 +526,13 @@ public class ToRustInnerVisitor extends InnerVisitor {
         this.builder.decrease().append("))");
         if (literal.mayBeNull())
             this.builder.append(")");
+        this.pop(literal);
         return VisitDecision.STOP;
     }
 
     @Override
     public VisitDecision preorder(DBSPZSetExpression expression) {
+        this.push(expression);
         this.builder.append("zset!(");
         boolean large = expression.data.entrySet().size() > 1;
         if (large)
@@ -514,6 +547,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
         if (large)
             this.builder.decrease();
         this.builder.append(")");
+        this.pop(expression);
         return VisitDecision.STOP;
     }
 
@@ -528,6 +562,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
     public VisitDecision preorder(DBSPRealLiteral literal) {
         if (literal.isNull())
             return this.doNull(literal);
+        this.push(literal);
         float value = Objects.requireNonNull(literal.value);
         String val = Float.toString(value);
         if (Float.isNaN(value))
@@ -547,6 +582,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
         this.builder.append("/*")
                 .append(val)
                 .append("*/");
+        this.pop(literal);
         return VisitDecision.STOP;
     }
 
@@ -569,6 +605,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
     public VisitDecision preorder(DBSPDoubleLiteral literal) {
         if (literal.isNull())
             return this.doNull(literal);
+        this.push(literal);
         double value = Objects.requireNonNull(literal.value);
         String val = Double.toString(value);
         if (Double.isNaN(value))
@@ -587,6 +624,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
         this.builder.append("/*")
                 .append(val)
                 .append("*/");
+        this.pop(literal);
         return VisitDecision.STOP;
     }
 
@@ -601,6 +639,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
     public VisitDecision preorder(DBSPVariantExpression expression) {
         if (expression.value == null)
             return this.doNullExpression(expression);
+        this.push(expression);
         if (expression.getType().mayBeNull)
             this.builder.append("Some(");
         if (expression.isSqlNull) {
@@ -612,6 +651,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
         }
         if (expression.getType().mayBeNull)
             this.builder.append(")");
+        this.pop(expression);
         return VisitDecision.STOP;
     }
 
@@ -619,9 +659,11 @@ public class ToRustInnerVisitor extends InnerVisitor {
     public VisitDecision preorder(DBSPVariantNullLiteral literal) {
         if (literal.mayBeNull())
             this.builder.append("Some(");
+        this.push(literal);
         this.builder.append("Variant::VariantNull");
         if (literal.mayBeNull())
             this.builder.append(")");
+        this.pop(literal);
         return VisitDecision.STOP;
     }
 
@@ -636,8 +678,10 @@ public class ToRustInnerVisitor extends InnerVisitor {
     public VisitDecision preorder(DBSPI8Literal literal) {
         if (literal.isNull())
             return this.doNull(literal);
+        this.push(literal);
         String val = Byte.toString(Objects.requireNonNull(literal.value));
         this.builder.append(literal.wrapSome(val + literal.getIntegerType().getRustString()));
+        this.pop(literal);
         return VisitDecision.STOP;
     }
 
@@ -646,8 +690,10 @@ public class ToRustInnerVisitor extends InnerVisitor {
     public VisitDecision preorder(DBSPI16Literal literal) {
         if (literal.isNull())
             return this.doNull(literal);
+        this.push(literal);
         String val = Short.toString(Objects.requireNonNull(literal.value));
         this.builder.append(literal.wrapSome(val + literal.getIntegerType().getRustString()));
+        this.pop(literal);
         return VisitDecision.STOP;
     }
 
@@ -655,22 +701,28 @@ public class ToRustInnerVisitor extends InnerVisitor {
     public VisitDecision preorder(DBSPI32Literal literal) {
         if (literal.isNull())
             return this.doNull(literal);
+        this.push(literal);
         String val = Integer.toString(Objects.requireNonNull(literal.value));
         this.builder.append(literal.wrapSome(val + literal.getIntegerType().getRustString()));
+        this.pop(literal);
         return VisitDecision.STOP;
     }
 
     @Override
     public VisitDecision preorder(DBSPU16Literal literal) {
         String val = Integer.toString(Objects.requireNonNull(literal.value));
+        this.push(literal);
         this.builder.append(literal.wrapSome(val + literal.getIntegerType().getRustString()));
+        this.pop(literal);
         return VisitDecision.STOP;
     }
 
     @Override
     public VisitDecision preorder(DBSPU32Literal literal) {
         String val = Long.toString(Objects.requireNonNull(literal.value));
+        this.push(literal);
         this.builder.append(literal.wrapSome(val + literal.getIntegerType().getRustString()));
+        this.pop(literal);
         return VisitDecision.STOP;
     }
 
@@ -678,8 +730,10 @@ public class ToRustInnerVisitor extends InnerVisitor {
     public VisitDecision preorder(DBSPI64Literal literal) {
         if (literal.isNull())
             return this.doNull(literal);
+        this.push(literal);
         String val = Long.toString(Objects.requireNonNull(literal.value));
         this.builder.append(literal.wrapSome(val + literal.getIntegerType().getRustString()));
+        this.pop(literal);
         return VisitDecision.STOP;
     }
 
@@ -687,22 +741,28 @@ public class ToRustInnerVisitor extends InnerVisitor {
     public VisitDecision preorder(DBSPI128Literal literal) {
         if (literal.isNull())
             return this.doNull(literal);
+        this.push(literal);
         String val = Objects.requireNonNull(literal.value).toString();
         this.builder.append(literal.wrapSome(val + literal.getIntegerType().getRustString()));
+        this.pop(literal);
         return VisitDecision.STOP;
     }
 
     @Override
     public VisitDecision preorder(DBSPU64Literal literal) {
         String val = Objects.requireNonNull(literal.value).toString();
+        this.push(literal);
         this.builder.append(literal.wrapSome(val + literal.getIntegerType().getRustString()));
+        this.pop(literal);
         return VisitDecision.STOP;
     }
 
     @Override
     public VisitDecision preorder(DBSPU128Literal literal) {
         String val = Objects.requireNonNull(literal.value).toString();
+        this.push(literal);
         this.builder.append(literal.wrapSome(val + literal.getIntegerType().getRustString()));
+        this.pop(literal);
         return VisitDecision.STOP;
     }
 
@@ -710,11 +770,13 @@ public class ToRustInnerVisitor extends InnerVisitor {
     public VisitDecision preorder(DBSPStringLiteral literal) {
         if (literal.isNull())
             return this.doNull(literal);
+        this.push(literal);
         Objects.requireNonNull(literal.value);
         byte[] bytes = literal.value.getBytes(literal.charset);
         String decoded = new String(bytes, literal.charset);
         decoded = Utilities.doubleQuote(decoded);
         this.builder.append(literal.wrapSome("String::from(" + decoded + ")"));
+        this.pop(literal);
         return VisitDecision.STOP;
     }
 
@@ -724,6 +786,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
             this.builder.append("None");
             return VisitDecision.STOP;
         }
+        this.push(literal);
         Objects.requireNonNull(literal.value);
         if (literal.raw) {
             String contents = "r#\"" + literal.value + "\"#";
@@ -731,6 +794,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
         } else {
             this.builder.append(literal.wrapSome(Utilities.doubleQuote(literal.value)));
         }
+        this.pop(literal);
         return VisitDecision.STOP;
     }
 
@@ -738,6 +802,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
     public VisitDecision preorder(DBSPDecimalLiteral literal) {
         if (literal.isNull())
             return this.doNull(literal);
+        this.push(literal);
         DBSPTypeDecimal type = literal.getType().to(DBSPTypeDecimal.class);
         if (type.mayBeNull)
             this.builder.append("Some(");
@@ -751,6 +816,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
                 .append(").unwrap()");
         if (type.mayBeNull)
             this.builder.append(")");
+        this.pop(literal);
         return VisitDecision.STOP;
     }
 
@@ -767,6 +833,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
         /* Default implementation of cast of a source expression to the 'this' type.
          * For example, to cast source which is an Option<i16> to a bool
          * the function called will be cast_to_b_i16N. */
+        this.push(expression);
         DBSPType destType = expression.getType();
         DBSPType sourceType = expression.source.getType();
         DBSPTypeVec sourceVecType = sourceType.as(DBSPTypeVec.class);
@@ -784,6 +851,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
                 this.builder.append(functionName).append("(").increase();
                 expression.source.accept(this);
                 this.builder.decrease().append("))");
+                this.pop(expression);
                 return VisitDecision.STOP;
             }
         }
@@ -800,6 +868,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
                         .increase();
                 expression.source.accept(this);
                 this.builder.decrease().append("))");
+                this.pop(expression);
                 return VisitDecision.STOP;
             }
 
@@ -809,6 +878,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
                 // should have been eliminated
                 this.unimplementedCast(expression);
             }
+            this.pop(expression);
             return VisitDecision.STOP;
         }
 
@@ -821,9 +891,12 @@ public class ToRustInnerVisitor extends InnerVisitor {
                 this.builder.append(functionName).append("(").increase();
                 expression.source.accept(this);
                 this.builder.decrease().append("))");
+                this.pop(expression);
                 return VisitDecision.STOP;
+            } else {
+                this.unimplementedCast(expression);
+                this.pop(expression);
             }
-            this.unimplementedCast(expression);
         }
         if (sourceMap != null) {
             if (destType.is(DBSPTypeVariant.class)) {
@@ -831,9 +904,12 @@ public class ToRustInnerVisitor extends InnerVisitor {
                 this.builder.append(functionName).append("(").increase();
                 expression.source.accept(this);
                 this.builder.decrease().append("))");
+                this.pop(expression);
                 return VisitDecision.STOP;
+            } else {
+                this.unimplementedCast(expression);
+                this.pop(expression);
             }
-            this.unimplementedCast(expression);
         }
 
         if (sourceType.is(DBSPTypeTuple.class)) {
@@ -845,6 +921,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
             expression.type.accept(this);
             this.builder.append("))");
             expression.source.accept(this);
+            this.pop(expression);
             return VisitDecision.STOP;
         }
         if (destType.is(DBSPTypeTuple.class)) {
@@ -856,6 +933,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
             expression.type.accept(this);
             this.builder.append("))");
             expression.source.accept(this);
+            this.pop(expression);
             return VisitDecision.STOP;
         }
         functionName = "cast_to_" + destType.baseTypeWithSuffix() +
@@ -892,11 +970,13 @@ public class ToRustInnerVisitor extends InnerVisitor {
                     .append(binary.precision);
         }
         this.builder.append("))");
+        this.pop(expression);
         return VisitDecision.STOP;
     }
 
     @Override
     public VisitDecision preorder(DBSPConditionalAggregateExpression expression) {
+        this.push(expression);
         String function = RustSqlRuntimeLibrary.INSTANCE.getFunctionName(
                 expression.getNode(),
                 expression.opcode, expression.getType(), expression.left.getType(), expression.right.getType());
@@ -912,11 +992,13 @@ public class ToRustInnerVisitor extends InnerVisitor {
             expression.condition.accept(this);
         }
         this.builder.append(")");
+        this.pop(expression);
         return VisitDecision.STOP;
     }
 
     @Override
     public VisitDecision preorder(DBSPBinaryExpression expression) {
+        this.push(expression);
         switch (expression.opcode) {
             case MUL_WEIGHT: {
                 expression.left.accept(this);
@@ -1033,11 +1115,13 @@ public class ToRustInnerVisitor extends InnerVisitor {
                 break;
             }
         }
+        this.pop(expression);
         return VisitDecision.STOP;
     }
 
     @Override
     public VisitDecision preorder(DBSPLetExpression expression) {
+        this.push(expression);
         this.builder.append("{")
                 .increase()
                 .append("let ")
@@ -1047,35 +1131,43 @@ public class ToRustInnerVisitor extends InnerVisitor {
         this.builder.append(";").newline();
         expression.consumer.accept(this);
         this.builder.decrease().append("}");
+        this.pop(expression);
         return VisitDecision.STOP;
     }
 
     @Override
     public VisitDecision preorder(DBSPIsNullExpression expression) {
+        this.push(expression);
         if (!expression.expression.getType().mayBeNull) {
             this.builder.append("false");
         } else {
             expression.expression.accept(this);
             this.builder.append(".is_none()");
         }
+        this.pop(expression);
         return VisitDecision.STOP;
     }
 
     @Override
     public VisitDecision preorder(DBSPCloneExpression expression) {
+        this.push(expression);
         expression.expression.accept(this);
         this.builder.append(".clone()");
+        this.pop(expression);
         return VisitDecision.STOP;
     }
 
     @Override
     public VisitDecision preorder(DBSPStaticExpression expression) {
+        this.push(expression);
         this.builder.append(expression.getName());
+        this.pop(expression);
         return VisitDecision.STOP;
     }
 
     @Override
     public VisitDecision preorder(DBSPUnaryExpression expression) {
+        this.push(expression);
         if (expression.operation == DBSPOpcode.WRAP_BOOL ||
             expression.operation == DBSPOpcode.INDICATOR) {
             this.builder.append(expression.operation.toString());
@@ -1087,6 +1179,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
             this.builder.append("(");
             expression.source.accept(this);
             this.builder.append(")");
+            this.pop(expression);
             return VisitDecision.STOP;
         } else if (expression.operation.toString().startsWith("is_")) {
             this.builder.append(expression.operation.toString())
@@ -1095,11 +1188,13 @@ public class ToRustInnerVisitor extends InnerVisitor {
                     .append("_(");
             expression.source.accept(this);
             this.builder.append(")");
+            this.pop(expression);
             return VisitDecision.STOP;
         } else if (expression.operation == DBSPOpcode.TYPEDBOX) {
             this.builder.append("TypedBox::new(");
             expression.source.accept(this);
             this.builder.append(")");
+            this.pop(expression);
             return VisitDecision.STOP;
         }
         if (expression.source.getType().mayBeNull) {
@@ -1120,17 +1215,21 @@ public class ToRustInnerVisitor extends InnerVisitor {
             expression.source.accept(this);
             this.builder.append(")");
         }
+        this.pop(expression);
         return VisitDecision.STOP;
     }
 
     @Override
     public VisitDecision preorder(DBSPVariablePath expression) {
+        this.push(expression);
         this.builder.append(expression.variable);
+        this.pop(expression);
         return VisitDecision.STOP;
     }
 
     @Override
     public VisitDecision preorder(DBSPConstItem item) {
+        this.push(item);
         this.builder.append("const ")
                 .append(item.name).append(": ");
         item.type.accept(this);
@@ -1139,18 +1238,22 @@ public class ToRustInnerVisitor extends InnerVisitor {
             item.expression.accept(this);
         }
         this.builder.append(";");
+        this.pop(item);
         return VisitDecision.STOP;
     }
 
     @Override
     public VisitDecision preorder(DBSPExpressionStatement statement) {
+        this.push(statement);
         statement.expression.accept(this);
         this.builder.append(";");
+        this.pop(statement);
         return VisitDecision.STOP;
     }
 
     @Override
     public VisitDecision preorder(DBSPLetStatement statement) {
+        this.push(statement);
         this.builder.append("let ")
                 .append(statement.mutable ? "mut " : "")
                 .append(statement.variable);
@@ -1163,11 +1266,13 @@ public class ToRustInnerVisitor extends InnerVisitor {
             statement.initializer.accept(this);
         }
         this.builder.append(";");
+        this.pop(statement);
         return VisitDecision.STOP;
     }
 
     @Override
     public VisitDecision preorder(DBSPFunction function) {
+        this.push(function);
         this.builder.intercalateS("\n", function.annotations)
                 .append("pub fn ")
                 .append(function.name)
@@ -1198,11 +1303,13 @@ public class ToRustInnerVisitor extends InnerVisitor {
         } else {
             this.builder.append(";");
         }
+        this.pop(function);
         return VisitDecision.STOP;
     }
 
     @Override
     public VisitDecision preorder(DBSPApplyExpression expression) {
+        this.push(expression);
         expression.function.accept(this);
         this.builder.append("(");
         if (expression.arguments.length > 1)
@@ -1217,11 +1324,13 @@ public class ToRustInnerVisitor extends InnerVisitor {
         if (expression.arguments.length > 1)
             this.builder.decrease();
         this.builder.append(")");
+        this.pop(expression);
         return VisitDecision.STOP;
     }
 
     @Override
     public VisitDecision preorder(DBSPApplyMethodExpression expression) {
+        this.push(expression);
         expression.self.accept(this);
         this.builder.append(".");
         expression.function.accept(this);
@@ -1238,27 +1347,33 @@ public class ToRustInnerVisitor extends InnerVisitor {
         if (expression.arguments.length > 1)
             this.builder.decrease();
         this.builder.append(")");
+        this.pop(expression);
         return VisitDecision.STOP;
     }
 
     @Override
     public VisitDecision preorder(DBSPQuestionExpression expression) {
+        this.push(expression);
         this.builder.append("(");
         expression.source.accept(this);
         this.builder.append("?)");
+        this.pop(expression);
         return VisitDecision.STOP;
     }
 
     @Override
     public VisitDecision preorder(DBSPAssignmentExpression expression) {
+        this.push(expression);
         expression.left.accept(this);
         this.builder.append(" = ");
         expression.right.accept(this);
+        this.pop(expression);
         return VisitDecision.STOP;
     }
 
     @Override
     public VisitDecision preorder(DBSPBlockExpression expression) {
+        this.push(expression);
         this.builder.append("{").increase();
         for (DBSPStatement stat: expression.contents) {
             stat.accept(this);
@@ -1269,30 +1384,36 @@ public class ToRustInnerVisitor extends InnerVisitor {
             this.builder.append("\n");
         }
         this.builder.decrease().append("}");
+        this.pop(expression);
         return VisitDecision.STOP;
     }
 
     @Override
     public VisitDecision preorder(DBSPBorrowExpression expression) {
+        this.push(expression);
         this.builder.append("&");
         if (expression.mut)
             this.builder.append("mut ");
         expression.expression.accept(this);
+        this.pop(expression);
         return VisitDecision.STOP;
     }
 
     @Override
     public VisitDecision preorder(DBSPParameter parameter) {
+        this.push(parameter);
         this.builder.append(parameter.name);
         if (!this.compact) {
             this.builder.append(": ");
             parameter.type.accept(this);
         }
+        this.pop(parameter);
         return VisitDecision.STOP;
     }
 
     @Override
     public VisitDecision preorder(DBSPClosureExpression expression) {
+        this.push(expression);
         this.builder.append("move |");
         for (DBSPParameter param: expression.parameters) {
             param.accept(this);
@@ -1316,34 +1437,42 @@ public class ToRustInnerVisitor extends InnerVisitor {
             this.builder.decrease()
                     .append("\n}");
         }
+        this.pop(expression);
         return VisitDecision.STOP;
     }
 
     @Override
     public VisitDecision preorder(DBSPDerefExpression expression) {
+        this.push(expression);
         this.builder.append("(*");
         expression.expression.accept(this);
         this.builder.append(")");
+        this.pop(expression);
         return VisitDecision.STOP;
     }
 
     @Override
     public VisitDecision preorder(DBSPUnwrapExpression expression) {
+        this.push(expression);
         this.builder.append("(");
         expression.expression.accept(this);
         this.builder.append(".unwrap()");
         this.builder.append(")");
+        this.pop(expression);
         return VisitDecision.STOP;
     }
 
     public VisitDecision preorder(DBSPEnumValue expression) {
+        this.push(expression);
         this.builder.append(expression.enumName)
                 .append("::")
                 .append(expression.constructor);
+        this.pop(expression);
         return VisitDecision.STOP;
     }
 
     public VisitDecision preorder(DBSPCustomOrdExpression expression) {
+        this.push(expression);
         this.builder.append("WithCustomOrd::<");
         expression.source.getType().accept(this);
         this.builder.append(", ")
@@ -1351,18 +1480,22 @@ public class ToRustInnerVisitor extends InnerVisitor {
                 .append(">::new(");
         expression.source.accept(this);
         this.builder.append(")");
+        this.pop(expression);
         return VisitDecision.STOP;
     }
 
     public VisitDecision preorder(DBSPUnwrapCustomOrdExpression expression) {
+        this.push(expression);
         this.builder.append("(");
         expression.expression.accept(this);
         this.builder.append(".get())");
+        this.pop(expression);
         return VisitDecision.STOP;
     }
 
     @Override
     public VisitDecision preorder(DBSPCustomOrdField expression) {
+        this.push(expression);
         DBSPType fieldType = expression.getFieldType();
         this.builder.append("match ");
         expression.expression.accept(this);
@@ -1379,13 +1512,26 @@ public class ToRustInnerVisitor extends InnerVisitor {
         if (expression.needsSome())
             this.builder.append(")");
         this.builder.decrease().append("}").newline();
+        this.pop(expression);
         return VisitDecision.STOP;
     }
 
     @Override
     public VisitDecision preorder(DBSPFieldExpression expression) {
+        this.push(expression);
         IDBSPInnerNode parent = this.getParent();
-        boolean fieldOfField = parent != null && parent.is(DBSPFieldExpression.class);
+        boolean avoidClone = false;
+        if (parent != null) {
+            if (parent.is(DBSPFieldExpression.class))
+                avoidClone = true;
+            if (parent.is(DBSPBinaryExpression.class)) {
+                DBSPBinaryExpression bin = parent.to(DBSPBinaryExpression.class);
+                if (bin.opcode == DBSPOpcode.SQL_INDEX || bin.opcode == DBSPOpcode.MAP_INDEX)
+                    avoidClone = true;
+            }
+            if (parent.is(DBSPIsNullExpression.class))
+                avoidClone = true;
+        }
 
         DBSPType baseType = expression.expression.getType();
         if (baseType.mayBeNull) {
@@ -1395,23 +1541,22 @@ public class ToRustInnerVisitor extends InnerVisitor {
                 expression.expression.accept(this);
                 if (!baseType.hasCopy() &&
                         !expression.expression.is(DBSPCloneExpression.class) &&
-                        !fieldOfField)
+                        !avoidClone)
                     this.builder.append(".clone()");
-                this.builder.append(".unwrap().")
+                this.builder.append(".as_ref().unwrap().")
                         .append(expression.fieldNo);
             } else {
                 expression.expression.accept(this);
-                this.builder.increase().append(".as_ref()").newline().append(".and_then(|x ");
+                this.builder.increase().append(".as_ref()").newline().append(".and_then(|x");
                 if (this.options.ioOptions.verbosity > 0) {
                     this.builder.append(": ");
                     baseType.withMayBeNull(false).ref().accept(this);
                 }
                 this.builder.append("| ");
-                if (fieldOfField)
-                    this.builder.append("&");
+                // if (avoidClone) this.builder.append("&");
                 this.builder.append("x.")
                         .append(expression.fieldNo);
-                if (!baseType.hasCopy() && !fieldOfField)
+                if (!baseType.hasCopy() && !avoidClone)
                     this.builder.append(".clone()");
                 this.builder.append(")").decrease();
             }
@@ -1420,11 +1565,13 @@ public class ToRustInnerVisitor extends InnerVisitor {
             this.builder.append(".")
                     .append(expression.fieldNo);
         }
+        this.pop(expression);
         return VisitDecision.STOP;
     }
 
     @Override
     public VisitDecision preorder(DBSPIfExpression expression) {
+        this.push(expression);
         builder.append("(if ");
         expression.condition.accept(this);
         this.builder.append(" ");
@@ -1444,28 +1591,34 @@ public class ToRustInnerVisitor extends InnerVisitor {
             this.builder.decrease()
                     .append("\n}");
         this.builder.append(")");
+        this.pop(expression);
         return VisitDecision.STOP;
     }
 
     @Override
     public VisitDecision preorder(DBSPPathExpression expression) {
+        this.push(expression);
         expression.path.accept(this);
+        this.pop(expression);
         return VisitDecision.STOP;
     }
 
     @Override
-    public VisitDecision preorder(DBSPForExpression node) {
+    public VisitDecision preorder(DBSPForExpression expression) {
+        this.push(expression);
         this.builder.append("for ")
-                .append(node.variable)
+                .append(expression.variable)
                 .append(" in ");
-        node.iterated.accept(this);
+        expression.iterated.accept(this);
         this.builder.append(" ");
-        node.block.accept(this);
+        expression.block.accept(this);
+        this.pop(expression);
         return VisitDecision.STOP;
     }
 
     @Override
     public VisitDecision preorder(DBSPQualifyTypeExpression expression) {
+        this.push(expression);
         expression.expression.accept(this);
         this.builder.append("::<");
         for (DBSPType type: expression.types) {
@@ -1473,11 +1626,13 @@ public class ToRustInnerVisitor extends InnerVisitor {
             this.builder.append(", ");
         }
         this.builder.append(">");
+        this.pop(expression);
         return VisitDecision.STOP;
     }
 
     @Override
     public VisitDecision preorder(DBSPRawTupleExpression expression) {
+        this.push(expression);
         if (expression.getType().mayBeNull)
             this.builder.append("Some");
         this.builder.append("(");
@@ -1495,6 +1650,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
         if (newlines)
             this.builder.decrease();
         this.builder.append(")");
+        this.pop(expression);
         return VisitDecision.STOP;
     }
 
@@ -1502,6 +1658,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
     public VisitDecision preorder(DBSPTupleExpression expression) {
         if (expression.fields == null)
             return this.doNullExpression(expression);
+        this.push(expression);
         if (expression.getType().mayBeNull)
             this.builder.append("Some(");
         boolean newlines = expression.fields.length > 2;
@@ -1525,11 +1682,13 @@ public class ToRustInnerVisitor extends InnerVisitor {
         this.builder.append(")");
         if (expression.getType().mayBeNull)
             this.builder.append(")");
+        this.pop(expression);
         return VisitDecision.STOP;
     }
 
     @Override
     public VisitDecision preorder(DBSPConstructorExpression expression) {
+        this.push(expression);
         expression.function.accept(this);
         this.builder.append("(");
         if (expression.arguments.length > 0) {
@@ -1542,6 +1701,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
             }
         }
         this.builder.append(")");
+        this.pop(expression);
         return VisitDecision.STOP;
     }
 
@@ -1595,6 +1755,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
 
     @Override
     public VisitDecision preorder(DBSPTypeBaseType type) {
+        this.push(type);
         if (this.compact) {
             this.builder.append(type.getRustString());
             if (type.mayBeNull)
@@ -1602,6 +1763,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
         } else {
             type.wrapOption(this.builder, type.getRustString());
         }
+        this.pop(type);
         return VisitDecision.STOP;
     }
 
@@ -1621,6 +1783,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
 
     @Override
     public VisitDecision preorder(DBSPTypeRawTuple type) {
+        this.push(type);
         this.optionPrefix(type);
         this.builder.append("(");
         for (DBSPType fType: type.tupFields) {
@@ -1629,38 +1792,46 @@ public class ToRustInnerVisitor extends InnerVisitor {
         }
         this.builder.append(")");
         this.optionSuffix(type);
+        this.pop(type);
         return VisitDecision.STOP;
     }
 
     @Override
     public VisitDecision preorder(DBSPTypeRef type) {
+        this.push(type);
         this.optionPrefix(type);
         this.builder.append("&")
                 .append(type.mutable ? "mut " : "");
         type.type.accept(this);
         this.optionSuffix(type);
+        this.pop(type);
         return VisitDecision.STOP;
     }
 
     @Override
     public VisitDecision preorder(DBSPTypeStream type) {
+        this.push(type);
         this.builder.append("Stream<")
                 .append("_, "); // Circuit type
         type.elementType.accept(this);
         this.builder.append(">");
+        this.pop(type);
         return VisitDecision.STOP;
     }
 
     @Override
     public VisitDecision preorder(DBSPTypeStruct.Field field) {
+        this.push(field);
         this.builder.append(field.getSanitizedName())
                 .append(": ");
         field.type.accept(this);
+        this.pop(field);
         return VisitDecision.STOP;
     }
 
     @Override
     public VisitDecision preorder(DBSPStructItem item) {
+        this.push(item);
         this.builder.append("#[derive(Clone, Debug, Eq, PartialEq, Default)]")
                 .newline();
         builder.append("struct ")
@@ -1675,20 +1846,24 @@ public class ToRustInnerVisitor extends InnerVisitor {
         this.builder.decrease()
                 .append("}")
                 .newline();
+        this.pop(item);
         return VisitDecision.STOP;
     }
 
     @Override
     public VisitDecision preorder(DBSPTypeStruct type) {
         // A *reference* to a struct type is just the type name.
+        this.push(type);
         this.optionPrefix(type);
         this.builder.append(type.sanitizedName);
         this.optionSuffix(type);
+        this.pop(type);
         return VisitDecision.STOP;
     }
 
     @Override
     public VisitDecision preorder(DBSPTypeTuple type) {
+        this.push(type);
         this.optionPrefix(type);
         this.builder.append(type.getName());
         if (type.size() > 0) {
@@ -1705,11 +1880,13 @@ public class ToRustInnerVisitor extends InnerVisitor {
             this.builder.append(">");
         }
         this.optionSuffix(type);
+        this.pop(type);
         return VisitDecision.STOP;
     }
 
     @Override
     public VisitDecision preorder(DBSPTypeUser type) {
+        this.push(type);
         this.optionPrefix(type);
         this.builder.append(type.name);
         if (type.typeArgs.length > 0) {
@@ -1724,6 +1901,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
             this.builder.append(">");
         }
         this.optionSuffix(type);
+        this.pop(type);
         return VisitDecision.STOP;
     }
 

@@ -5,6 +5,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyMethodExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPPathExpression;
 
 /** Visitor which detects whether an expression contains "expensive" subexpressions.
  * Today any external function call is deemed expensive. */
@@ -27,7 +28,10 @@ public class Expensive extends InnerVisitor {
     }
 
     @Override
-    public VisitDecision preorder(DBSPApplyExpression unused) {
+    public VisitDecision preorder(DBSPApplyExpression expression) {
+        String functionName = expression.getFunctionName();
+        if (functionName != null && functionName.startsWith("tumble_"))
+            return VisitDecision.STOP;
         this.expensive = true;
         return VisitDecision.STOP;
     }
