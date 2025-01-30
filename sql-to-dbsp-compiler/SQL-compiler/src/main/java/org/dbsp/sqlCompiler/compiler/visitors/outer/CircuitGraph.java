@@ -3,6 +3,7 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer;
 import org.dbsp.sqlCompiler.circuit.ICircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
+import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.util.IHasId;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.ToIndentableString;
@@ -50,12 +51,12 @@ public class CircuitGraph implements DiGraph<DBSPOperator>, IHasId, ToIndentable
 
     public void addEdge(DBSPOperator source, DBSPOperator dest, int input) {
         if (!this.nodeSet.contains(source)) {
-            throw new RuntimeException(
+            throw new InternalCompilerError(
                     "Adding edge from node " + source + " to " + dest +
                     " when source is not in the graph.");
         }
         if (!this.nodeSet.contains(dest)) {
-            throw new RuntimeException(
+            throw new InternalCompilerError(
                     "Adding edge from node " + source + " to " + dest +
                             " when destination is not in the graph.");
         }
