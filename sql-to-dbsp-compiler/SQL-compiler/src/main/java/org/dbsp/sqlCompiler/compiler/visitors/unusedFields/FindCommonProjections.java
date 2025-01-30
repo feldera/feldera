@@ -60,7 +60,7 @@ public class FindCommonProjections extends CircuitWithGraphsVisitor {
                     FindUnusedFields finder = new FindUnusedFields(compiler);
                     finder.findUnusedFields(closure);
                     finders.add(finder);
-                    failed = !finder.foundUnusedFields();
+                    failed = !finder.foundUnusedFields(2);
                     if (!failed)
                         usage.add(finder.get(closure.parameters[0]));
                 }
@@ -72,7 +72,7 @@ public class FindCommonProjections extends CircuitWithGraphsVisitor {
         }
 
         FieldUseMap reduced = FieldUseMap.reduce(usage);
-        if (!reduced.hasUnusedFields()) {
+        if (!reduced.hasUnusedFields(2)) {
             super.postorder(operator);
             return;
         }

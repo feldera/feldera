@@ -70,13 +70,13 @@ public class UnusedFieldsTest {
 
         FindUnusedFields fu = new FindUnusedFields(compiler);
         fu.findUnusedFields(closure0);
-        Assert.assertTrue(fu.foundUnusedFields());
+        Assert.assertTrue(fu.foundUnusedFields(2));
         DBSPParameter param0 = fu.parameterFieldMap.getParameters().iterator().next();
         FieldUseMap fieldMap0 = fu.parameterFieldMap.get(param0);
         Assert.assertEquals("Ref([_, X, _, [X, _]])", fieldMap0.toString());
 
         fu.findUnusedFields(closure1);
-        Assert.assertTrue(fu.foundUnusedFields());
+        Assert.assertTrue(fu.foundUnusedFields(2));
         DBSPParameter param1 = fu.parameterFieldMap.getParameters().iterator().next();
         FieldUseMap fieldMap1 = fu.parameterFieldMap.get(param1);
         Assert.assertEquals("Ref([X, _, _, [_, _]])", fieldMap1.toString());
@@ -106,7 +106,7 @@ public class UnusedFieldsTest {
 
         FindUnusedFields fu = new FindUnusedFields(compiler);
         fu.findUnusedFields(closure);
-        Assert.assertTrue(fu.foundUnusedFields());
+        Assert.assertTrue(fu.foundUnusedFields(2));
 
         RewriteFields rw = fu.getFieldRewriter(1);
         DBSPClosureExpression rewritten = rw.rewriteClosure(closure);

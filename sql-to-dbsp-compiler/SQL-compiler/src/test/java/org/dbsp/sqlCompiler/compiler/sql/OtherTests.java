@@ -605,6 +605,25 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         FunctionDocumentation.generateIndex(file);
     }
 
+    @Test @Ignore
+    public void extraTests() throws IOException {
+        String dir = "../extra";
+        File file = new File(dir);
+        if (file.exists()) {
+            File[] toCompile = file.listFiles();
+            if (toCompile == null)
+                return;
+            for (File c: toCompile) {
+                // if (!c.getName().contains("variant")) continue;
+                if (c.getName().contains("sql")) {
+                    System.out.println("Compiling " + c);
+                    String sql = Utilities.readFile(c.getPath());
+                    this.compileRustTestCase(sql);
+                }
+            }
+        }
+    }
+
     @Test
     public void rustFmt() throws IOException, InterruptedException {
         // Check that the rust library is properly formatted

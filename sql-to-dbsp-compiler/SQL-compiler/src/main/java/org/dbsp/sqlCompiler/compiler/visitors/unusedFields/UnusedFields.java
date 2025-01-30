@@ -82,12 +82,12 @@ public class UnusedFields extends Passes {
                 assert function.parameters.length == 1;
                 unused.apply(function.ensureTree(this.compiler));
 
-                if (unused.foundUnusedFields() && !src.metadata.materialized) {
+                if (unused.foundUnusedFields(1) && !src.metadata.materialized) {
                     FieldUseMap map = unused.parameterFieldMap.get(function.parameters[0]).deref();
                     Utilities.putNew(this.finders, src, unused);
                     Utilities.putNew(this.fieldsUsed, src, map);
 
-                    if (map.hasUnusedFields()) {
+                    if (map.hasUnusedFields(1)) {
                         for (int i = 0; i < map.size(); i++) {
                             if (!map.isUsed(i)) {
                                 InputColumnMetadata meta = src.metadata.getColumnMetadata(i);
@@ -125,7 +125,7 @@ public class UnusedFields extends Passes {
                 super.postorder(source);
                 return;
             }
-            assert used.hasUnusedFields();
+            assert used.hasUnusedFields(1);
 
             List<InputColumnMetadata> remainingColumns = new ArrayList<>();
             List<DBSPTypeStruct.Field> fields = new ArrayList<>();
