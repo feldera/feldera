@@ -84,7 +84,7 @@ pub fn cardinalityVecN<T>(value: &Option<Vec<T>>) -> Option<i32> {
 // nullability of index
 
 #[doc(hidden)]
-pub fn index___<T>(value: Vec<T>, index: isize) -> Option<T>
+pub fn index___<T>(value: &Vec<T>, index: isize) -> Option<T>
 where
     T: Clone,
 {
@@ -100,7 +100,7 @@ where
 }
 
 #[doc(hidden)]
-pub fn index__N<T>(value: Vec<T>, index: Option<isize>) -> Option<T>
+pub fn index__N<T>(value: &Vec<T>, index: Option<isize>) -> Option<T>
 where
     T: Clone,
 {
@@ -109,7 +109,7 @@ where
 }
 
 #[doc(hidden)]
-pub fn index_N_<T>(value: Vec<Option<T>>, index: isize) -> Option<T>
+pub fn index_N_<T>(value: &Vec<Option<T>>, index: isize) -> Option<T>
 where
     T: Clone,
 {
@@ -125,7 +125,7 @@ where
 }
 
 #[doc(hidden)]
-pub fn index_NN<T>(value: Vec<Option<T>>, index: Option<isize>) -> Option<T>
+pub fn index_NN<T>(value: &Vec<Option<T>>, index: Option<isize>) -> Option<T>
 where
     T: Clone,
 {
@@ -142,7 +142,7 @@ where
 }
 
 #[doc(hidden)]
-pub fn indexN__<T>(value: Option<Vec<T>>, index: isize) -> Option<T>
+pub fn indexN__<T>(value: &Option<Vec<T>>, index: isize) -> Option<T>
 where
     T: Clone,
 {
@@ -153,7 +153,7 @@ where
 }
 
 #[doc(hidden)]
-pub fn indexN_N<T>(value: Option<Vec<T>>, index: Option<isize>) -> Option<T>
+pub fn indexN_N<T>(value: &Option<Vec<T>>, index: Option<isize>) -> Option<T>
 where
     T: Clone,
 {
@@ -165,7 +165,7 @@ where
 }
 
 #[doc(hidden)]
-pub fn indexNN_<T>(value: Option<Vec<Option<T>>>, index: isize) -> Option<T>
+pub fn indexNN_<T>(value: &Option<Vec<Option<T>>>, index: isize) -> Option<T>
 where
     T: Clone,
 {
@@ -176,7 +176,7 @@ where
 }
 
 #[doc(hidden)]
-pub fn indexNNN<T>(value: Option<Vec<Option<T>>>, index: Option<isize>) -> Option<T>
+pub fn indexNNN<T>(value: &Option<Vec<Option<T>>>, index: Option<isize>) -> Option<T>
 where
     T: Clone,
 {

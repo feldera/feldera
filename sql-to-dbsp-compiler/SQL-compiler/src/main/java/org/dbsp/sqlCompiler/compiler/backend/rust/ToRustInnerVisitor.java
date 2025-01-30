@@ -940,7 +940,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
                         .append(expression.left.getType().nullableUnderlineSuffix())
                         .append(vec.getElementType().nullableUnderlineSuffix())
                         .append(indexType.nullableUnderlineSuffix())
-                        .append("(");
+                        .append("(&");
                 expression.left.accept(this);
                 this.builder.append(", ");
                 DBSPExpression sub1 = ExpressionCompiler.makeBinaryExpression(
