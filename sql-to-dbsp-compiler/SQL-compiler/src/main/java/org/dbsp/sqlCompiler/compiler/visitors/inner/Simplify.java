@@ -550,7 +550,25 @@ public class Simplify extends InnerRewriteVisitor {
                         }
                     }
                 }
-            } else if (opcode == DBSPOpcode.MUL || opcode == DBSPOpcode.INTERVAL_MUL) {
+            } else if (opcode == DBSPOpcode.SUB || opcode == DBSPOpcode.TS_SUB) {
+                if (left.is(DBSPLiteral.class)) {
+                    DBSPLiteral leftLit = left.to(DBSPLiteral.class);
+                    if (leftLit.isNull()) {
+                        // null - anything is null
+                        result = left;
+                    }
+                } else if (right.is(DBSPLiteral.class)) {
+                    DBSPLiteral rightLit = right.to(DBSPLiteral.class);
+                    IHasZero iRightType = rightType.as(IHasZero.class);
+                    if (iRightType != null) {
+                        if (iRightType.isZero(rightLit)) {
+                            result = left;
+                        } else if (rightLit.isNull()) {
+                            result = right;
+                        }
+                    }
+                }
+            }  else if (opcode == DBSPOpcode.MUL || opcode == DBSPOpcode.INTERVAL_MUL) {
                 if (left.is(DBSPLiteral.class) && leftType.is(IsNumericType.class)) {
                     DBSPLiteral leftLit = left.to(DBSPLiteral.class);
                     IsNumericType iLeftType = leftType.to(IsNumericType.class);

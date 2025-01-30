@@ -948,7 +948,8 @@ public class MetadataTests extends BaseSQLTests {
                       "case_sensitive" : false,
                       "columntype" : {
                         "nullable" : false,
-                        "type" : "VARIANT"
+                        "precision" : -1,
+                        "type" : "VARCHAR"
                       }
                     } ],
                     "materialized" : false

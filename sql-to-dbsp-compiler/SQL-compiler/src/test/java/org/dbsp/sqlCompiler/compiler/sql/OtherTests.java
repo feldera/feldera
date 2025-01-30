@@ -124,7 +124,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         String expected = """
                 Circuit circuit {
                     // DBSPConstantOperator s0
-                    let s0: stream<WSet<Tup3<s, s, VARIANT>>> = (zset!());
+                    let s0: stream<WSet<Tup3<s, s, s>>> = (zset!());
                     // DBSPSourceMultisetOperator s1
                     // CREATE TABLE `t` (`col1` INTEGER NOT NULL, `col2` DOUBLE NOT NULL, `col3` BOOLEAN NOT NULL, `col4` VARCHAR NOT NULL, `col5` INTEGER, `col6` DOUBLE)
                     let s1 = t();
@@ -137,7 +137,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
                     // CREATE VIEW `error_view` AS
                     // SELECT `error_table`.`table_or_view_name`, `error_table`.`message`, `error_table`.`metadata`
                     // FROM `schema`.`error_table` AS `error_table`
-                    let s4: stream<WSet<Tup3<s, s, VARIANT>>> = s0;
+                    let s4: stream<WSet<Tup3<s, s, s>>> = s0;
                 }
                 """;
         Assert.assertEquals(expected, str);
@@ -603,25 +603,6 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         // in the specified file.
         String file = "../../docs/sql/function-index.md";
         FunctionDocumentation.generateIndex(file);
-    }
-
-    @Test @Ignore
-    public void extraTests() throws IOException {
-        String dir = "../extra";
-        File file = new File(dir);
-        if (file.exists()) {
-            File[] toCompile = file.listFiles();
-            if (toCompile == null)
-                return;
-            for (File c: toCompile) {
-                // if (!c.getName().contains("variant")) continue;
-                if (c.getName().contains("sql")) {
-                    System.out.println("Compiling " + c);
-                    String sql = Utilities.readFile(c.getPath());
-                    this.compileRustTestCase(sql);
-                }
-            }
-        }
     }
 
     @Test
