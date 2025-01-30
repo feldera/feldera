@@ -14,12 +14,36 @@ export const useUpdatePipelineList = () => {
   }
 }
 
+/**
+ * Start calling an action in a loop with an interval while waiting for the previous invocation to resolve
+ * Does not perform the action on the initial call
+ * @returns A function to cancel the action loop
+ */
+const closedIntervalAction = (action: () => Promise<void>, periodMs: number) => {
+  let timeout: NodeJS.Timeout | undefined
+  let onReject: () => void
+  let t1 = Date.now()
+  setTimeout(async () => {
+    do {
+      await new Promise((resolve, reject) => {
+        const t2 = Date.now()
+        timeout = setTimeout(resolve, Math.max(Math.min(periodMs - t2 + t1, periodMs), 0))
+        onReject = reject
+      })
+      t1 = Date.now()
+      await action()
+    } while (timeout)
+  })
+  return () => {
+    clearTimeout(timeout)
+    timeout = undefined
+    onReject()
+  }
+}
+
 export const useRefreshPipelineList = () => {
   onMount(() => {
-    let interval = setInterval(() => reload(), 2000)
-    return () => {
-      clearInterval(interval)
-    }
+    return closedIntervalAction(reload, 2000)
   })
 }
 
