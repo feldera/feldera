@@ -1384,6 +1384,9 @@ public class ToRustInnerVisitor extends InnerVisitor {
 
     @Override
     public VisitDecision preorder(DBSPFieldExpression expression) {
+        IDBSPInnerNode parent = this.getParent();
+        boolean fieldOfField = parent != null && parent.is(DBSPFieldExpression.class);
+
         DBSPType baseType = expression.expression.getType();
         if (baseType.mayBeNull) {
             // Accessing a nullable struct is allowed
@@ -1391,17 +1394,24 @@ public class ToRustInnerVisitor extends InnerVisitor {
                 // If the result is not null, we need to unwrap()
                 expression.expression.accept(this);
                 if (!baseType.hasCopy() &&
-                        !expression.expression.is(DBSPCloneExpression.class))
+                        !expression.expression.is(DBSPCloneExpression.class) &&
+                        !fieldOfField)
                     this.builder.append(".clone()");
                 this.builder.append(".unwrap().")
                         .append(expression.fieldNo);
             } else {
                 expression.expression.accept(this);
-                this.builder.increase().append(".as_ref()").newline().append(".and_then(|x: ");
-                baseType.withMayBeNull(false).ref().accept(this);
-                this.builder.append("| x.")
+                this.builder.increase().append(".as_ref()").newline().append(".and_then(|x ");
+                if (this.options.ioOptions.verbosity > 0) {
+                    this.builder.append(": ");
+                    baseType.withMayBeNull(false).ref().accept(this);
+                }
+                this.builder.append("| ");
+                if (fieldOfField)
+                    this.builder.append("&");
+                this.builder.append("x.")
                         .append(expression.fieldNo);
-                if (!baseType.hasCopy())
+                if (!baseType.hasCopy() && !fieldOfField)
                     this.builder.append(".clone()");
                 this.builder.append(")").decrease();
             }

@@ -78,6 +78,14 @@ public class VariantTests extends BaseSQLTests {
     }
 
     @Test
+    public void testUDT() {
+        this.compileRustTestCase("""
+                CREATE TYPE x AS (v INTEGER, w INTEGER);
+                CREATE TABLE T(xf X ARRAY);
+                CREATE VIEW V AS SELECT CAST(xf AS VARIANT) FROM T;""");
+    }
+
+    @Test
     public void testVariant() {
         // adapted from Calcite variant.iq
         this.testQuery("SELECT CAST(1 AS VARIANT)",
