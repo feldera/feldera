@@ -65,4 +65,10 @@ fn main() {
         let _ = resource_dir.with_generated_filename(out_dir.join("generated.rs"));
         resource_dir.build().expect("SvelteKit app failed to build")
     };
+
+    // Determine whether the platform version includes a suffix
+    let platform_version_suffix =
+        env::var("FELDERA_PLATFORM_VERSION_SUFFIX").unwrap_or("".to_string());
+    println!("cargo:rerun-if-env-changed=FELDERA_PLATFORM_VERSION_SUFFIX");
+    println!("cargo:rustc-env=FELDERA_PLATFORM_VERSION_SUFFIX={platform_version_suffix}");
 }

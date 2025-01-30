@@ -89,6 +89,7 @@ RUN mkdir sql-to-dbsp-compiler || true
 COPY sql-to-dbsp-compiler/lib sql-to-dbsp-compiler/lib
 COPY --from=web-ui-builder /web-console/build web-console-build
 ENV WEBCONSOLE_BUILD_DIR=/app/web-console-build
+ARG FELDERA_PLATFORM_VERSION_SUFFIX=""
 RUN /root/.cargo/bin/cargo build --release --bin=pipeline-manager --features=pg-embed
 
 # Java build can be performed in parallel. Outputs should be architecture independent
