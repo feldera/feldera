@@ -404,7 +404,7 @@ impl DeltaTableInputEndpointInner {
             let mut version = table.version();
             loop {
                 wait_running(&mut receiver).await;
-                match table.peek_next_commit(version).await {
+                match table.log_store().peek_next_commit(version).await {
                     Ok(PeekCommit::UpToDate) => sleep(POLL_INTERVAL).await,
                     Ok(PeekCommit::New(new_version, actions)) => {
                         version = new_version;
@@ -503,7 +503,7 @@ impl DeltaTableInputEndpointInner {
         let url: &Url = object_store_url.as_ref();
         self.datafusion
             .runtime_env()
-            .register_object_store(url, delta_table.log_store().object_store());
+            .register_object_store(url, delta_table.log_store().object_store(None));
 
         info!(
             "delta_table {}: opened delta table '{}' (current table version {})",

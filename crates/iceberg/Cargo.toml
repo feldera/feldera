@@ -9,12 +9,12 @@ feldera-adapterlib = { path = "../adapterlib" }
 dbsp = { path = "../dbsp" }
 anyhow = { version = "1.0.57", features = ["backtrace"] }
 tokio = { version = "1.25.0", features = ["sync", "rt"] }
-datafusion = { version = "43" }
+datafusion = { version = "44" }
 log = "0.4.20"
-iceberg = { git = "https://github.com/apache/iceberg-rust.git", rev = "2e0b646" }
-iceberg-datafusion = { git = "https://github.com/apache/iceberg-rust.git", rev = "2e0b646" }
-iceberg-catalog-glue = { git = "https://github.com/apache/iceberg-rust.git", rev = "2e0b646" }
-iceberg-catalog-rest = { git = "https://github.com/apache/iceberg-rust.git", rev = "2e0b646" }
+iceberg = { git = "https://github.com/apache/iceberg-rust.git", rev = "c5cc9e4" }
+iceberg-datafusion = { git = "https://github.com/apache/iceberg-rust.git", rev = "c5cc9e4" }
+iceberg-catalog-glue = { git = "https://github.com/apache/iceberg-rust.git", rev = "c5cc9e4" }
+iceberg-catalog-rest = { git = "https://github.com/apache/iceberg-rust.git", rev = "c5cc9e4" }
 chrono = { version = "0.4.38" }
 serde_json = { version = "1.0.127" }
 futures-util = "0.3.30"

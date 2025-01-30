@@ -19,13 +19,14 @@ use datafusion::execution::{SendableRecordBatchStream, TaskContext};
 use datafusion::logical_expr::dml::InsertOp;
 use datafusion::logical_expr::Expr;
 use datafusion::physical_expr::EquivalenceProperties;
+use datafusion::physical_plan::execution_plan::{Boundedness, EmissionType};
 use datafusion::physical_plan::insert::{DataSink, DataSinkExec};
 use datafusion::physical_plan::metrics::MetricsSet;
 use datafusion::physical_plan::stream::{
     RecordBatchReceiverStreamBuilder, RecordBatchStreamAdapter,
 };
 use datafusion::physical_plan::{
-    DisplayAs, DisplayFormatType, ExecutionMode, ExecutionPlan, Partitioning, PlanProperties,
+    DisplayAs, DisplayFormatType, ExecutionPlan, Partitioning, PlanProperties,
 };
 use feldera_types::config::{
     default_max_batch_size, default_max_queued_records, ConnectorConfig, FormatConfig,
@@ -342,7 +343,12 @@ impl AdHocQueryExecution {
         let num_partitions = readers.as_ref().map(|r| r.len()).unwrap_or(1);
         let eq_props = EquivalenceProperties::new(projected_schema.clone());
         let partitioning = Partitioning::UnknownPartitioning(num_partitions);
-        let plan_properties = PlanProperties::new(eq_props, partitioning, ExecutionMode::Bounded);
+        let plan_properties = PlanProperties::new(
+            eq_props,
+            partitioning,
+            EmissionType::Both,
+            Boundedness::Bounded,
+        );
 
         Self {
             name,
