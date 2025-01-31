@@ -3,7 +3,18 @@
 name: Build & Tests
 
 on:
-  merge_group:
+  push:
+    paths-ignore:
+      - 'README.md'
+      - 'CODE_OF_CONDUCT.md'
+      - 'CONTRIBUTING.md'
+      - './vscode/**'
+  pull_request:
+    paths-ignore:
+      - 'README.md'
+      - 'CODE_OF_CONDUCT.md'
+      - 'CONTRIBUTING.md'
+      - './vscode/**'
 
 env:
   CARGO_TERM_COLOR: always
