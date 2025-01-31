@@ -1209,7 +1209,7 @@ where
         let (file_handle, path) = self.close()?;
         Reader::new(
             &[&any_factories],
-            Arc::new(ImmutableFileRef::new(&storage, file_handle, path)),
+            ImmutableFileRef::new(&storage, file_handle, path),
         )
     }
 }
@@ -1382,7 +1382,7 @@ where
         let (file_handle, path) = self.close()?;
         Reader::new(
             &[&any_factories0, &any_factories1],
-            Arc::new(ImmutableFileRef::new(&storage, file_handle, path)),
+            ImmutableFileRef::new(&storage, file_handle, path),
         )
     }
 }

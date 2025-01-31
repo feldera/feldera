@@ -1108,7 +1108,7 @@ impl ImmutableFileRef {
 
 #[derive(Debug)]
 struct ReaderInner<T> {
-    file: Arc<ImmutableFileRef>,
+    file: ImmutableFileRef,
     compression: Option<Compression>,
     columns: Vec<Column>,
 
@@ -1164,10 +1164,7 @@ where
     T: ColumnSpec,
 {
     /// Creates and returns a new `Reader` for `file`.
-    pub(crate) fn new(
-        factories: &[&AnyFactories],
-        file: Arc<ImmutableFileRef>,
-    ) -> Result<Self, Error> {
+    pub(crate) fn new(factories: &[&AnyFactories], file: ImmutableFileRef) -> Result<Self, Error> {
         let file_size = file.file_handle.get_size()?;
         if file_size < 512 || (file_size % 512) != 0 {
             return Err(CorruptionError::InvalidFileSize(file_size).into());
@@ -1233,7 +1230,7 @@ where
     ) -> Result<Self, Error> {
         let (file_handle, path) = storage_backend.create()?.complete()?;
         Ok(Self(Arc::new(ReaderInner {
-            file: Arc::new(ImmutableFileRef::new(cache, file_handle, path)),
+            file: ImmutableFileRef::new(cache, file_handle, path),
             columns: (0..T::n_columns()).map(|_| Column::empty()).collect(),
             compression: None,
             _phantom: PhantomData,
@@ -1253,7 +1250,7 @@ where
         path: &IoPath,
     ) -> Result<Self, Error> {
         let file = ImmutableFileRef::open(cache, storage_backend, path)?;
-        Self::new(factories, Arc::new(file))
+        Self::new(factories, file)
     }
 
     /// The number of columns in the layer file.
@@ -1276,7 +1273,7 @@ where
     /// Returns the path on persistent storage for the file of the underlying
     /// reader.
     pub fn path(&self) -> PathBuf {
-        self.0.file.as_ref().path.clone()
+        self.0.file.path.clone()
     }
 
     /// Returns the size of the underlying file in bytes.
