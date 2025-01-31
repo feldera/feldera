@@ -3,7 +3,7 @@ use crate::{
         DataTrait, DynDataTyped, DynPair, DynUnit, DynVec, DynWeightedPairs, Erase, Factory,
         WeightTrait,
     },
-    storage::file::reader::Error as ReaderError,
+    storage::{buffer_cache::CacheStats, file::reader::Error as ReaderError},
     time::{Antichain, AntichainRef},
     trace::{
         cursor::DelegatingCursor,
@@ -270,6 +270,13 @@ where
         match &self.inner {
             Inner::Vec(vec) => vec.location(),
             Inner::File(file) => file.location(),
+        }
+    }
+
+    fn cache_stats(&self) -> CacheStats {
+        match &self.inner {
+            Inner::Vec(vec) => vec.cache_stats(),
+            Inner::File(file) => file.cache_stats(),
         }
     }
 

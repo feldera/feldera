@@ -34,6 +34,7 @@
 
 use crate::circuit::metadata::{MetaItem, OperatorMeta};
 use crate::dynamic::{ClonableTrait, DynDataTyped, DynUnit, Weight};
+use crate::storage::buffer_cache::CacheStats;
 pub use crate::storage::file::{Deserializable, Deserializer, Rkyv, Serializer};
 use crate::time::Antichain;
 use crate::{dynamic::ArchivedDBData, storage::buffer_cache::FBuf};
@@ -406,6 +407,13 @@ where
     /// Where the batch's data is stored.
     fn location(&self) -> BatchLocation {
         BatchLocation::Memory
+    }
+
+    /// Storage cache access statistics for this batch only.
+    ///
+    /// Most batches are in-memory, so they don't have any statistics.
+    fn cache_stats(&self) -> CacheStats {
+        CacheStats::default()
     }
 
     /// True if the batch is empty.
