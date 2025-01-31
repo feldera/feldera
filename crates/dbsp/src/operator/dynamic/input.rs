@@ -20,6 +20,7 @@ use crate::{
 };
 use std::{
     mem::{replace, swap},
+    panic::Location,
     sync::{
         atomic::{AtomicUsize, Ordering},
         Arc,
@@ -216,6 +217,7 @@ impl RootCircuit {
     /// reads all buffered values and assembles them into an `OrdZSet`.
     ///
     /// See [`CollectionHandle`] for more details.
+    #[track_caller]
     pub fn dyn_add_input_zset<K>(
         &self,
         factories: &AddInputZSetFactories<K>,
@@ -232,6 +234,7 @@ impl RootCircuit {
         let zset_factories = factories.zset_factories.clone();
 
         let (input, input_handle) = Input::new(
+            Location::caller(),
             move |mut tuples: Box<DynPairs<_, _>>| {
                 let mut pairs = weighted_pairs_factory.default_box();
                 pairs.from_pairs(tuples.as_mut());
@@ -266,6 +269,7 @@ impl RootCircuit {
     ///
     /// See [`CollectionHandle`] for more details.
     #[allow(clippy::type_complexity)]
+    #[track_caller]
     pub fn dyn_add_input_indexed_zset<K, V>(
         &self,
         factories: &AddInputIndexedZSetFactories<K, V>,
@@ -280,6 +284,7 @@ impl RootCircuit {
         let factories_clone = factories.clone();
 
         let (input, input_handle) = Input::new(
+            Location::caller(),
             move |mut tuples: Box<DynPairs<K, DynPair<V, DynZWeight>>>| {
                 let mut indexed_tuples = factories_clone
                     .indexed_zset_factories
@@ -318,6 +323,7 @@ impl RootCircuit {
         (stream, zset_handle)
     }
 
+    #[track_caller]
     fn add_set_update<K, B>(
         &self,
         factories: &AddInputSetFactories<B>,
@@ -356,6 +362,7 @@ impl RootCircuit {
         sorted.update_set::<B>(&factories.update_set_factories)
     }
 
+    #[track_caller]
     fn add_upsert_indexed<K, V, U, B>(
         &self,
         factories: &AddInputMapFactories<B, U>,
@@ -428,6 +435,7 @@ impl RootCircuit {
     /// Specifically, retention conditions configured at logical time `t`
     /// are applied starting from logical time `t+1`.
     // TODO: Add a version that takes a custom hash function.
+    #[track_caller]
     pub fn dyn_add_input_set<K>(
         &self,
         factories: &AddInputSetFactories<OrdZSet<K>>,
@@ -437,6 +445,7 @@ impl RootCircuit {
     {
         self.region("input_set", || {
             let (input, input_handle) = Input::new(
+                Location::caller(),
                 |tuples: Box<DynPairs<K, DynBool>>| tuples,
                 Arc::new(|| factories.input_pairs_factory.default_box()),
             );
@@ -515,6 +524,7 @@ impl RootCircuit {
     ///
     /// FIXME: see <https://github.com/feldera/feldera/issues/2669>
     // TODO: Add a version that takes a custom hash function.
+    #[track_caller]
     pub fn dyn_add_input_map<K, V, U>(
         &self,
         factories: &AddInputMapFactories<OrdIndexedZSet<K, V>, U>,
@@ -527,6 +537,7 @@ impl RootCircuit {
     {
         self.region("input_map", || {
             let (input, input_handle) = Input::new(
+                Location::caller(),
                 |tuples: Box<DynPairs<K, DynUpdate<V, U>>>| tuples,
                 Arc::new(|| factories.input_pairs_factory.default_box()),
             );
