@@ -270,7 +270,7 @@ public class BaseSQLTests {
             }
             assert firstCompiler != null;
             writer.writeAndClose(firstCompiler);
-            Utilities.compileAndCheckRust(rustDirectory);
+            Utilities.compileAndCheckRust(rustDirectory, true);
         }
         testsToRun.clear();
     }

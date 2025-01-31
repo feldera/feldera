@@ -10,9 +10,14 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
+import org.dbsp.util.Utilities;
 import org.junit.Assert;
 import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
+import org.junit.Ignore;
 import org.junit.Test;
+
+import java.io.File;
+import java.io.IOException;
 
 /** Regression tests that failed in incremental mode using the Catalog API */
 public class IncrementalRegressionTests extends SqlIoTest {
@@ -23,6 +28,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
         // options.ioOptions.emitHandles = false;
         // Without the following ORDER BY causes failures
         options.languageOptions.ignoreOrderBy = true;
+        options.ioOptions.verbosity = 0;
         return new DBSPCompiler(options);
     }
 
@@ -624,5 +630,25 @@ public class IncrementalRegressionTests extends SqlIoTest {
                 WHERE c.c_id = a.cust_array[(ARRAY_LENGTH(a.cust_array) / 2) + 1];
                 """;
         this.compileRustTestCase(sql);
+    }
+
+    // Tests that are not in the repository
+    @Test @Ignore
+    public void extraTests() throws IOException {
+        String dir = "../extra";
+        File file = new File(dir);
+        if (file.exists()) {
+            File[] toCompile = file.listFiles();
+            if (toCompile == null)
+                return;
+            for (File c: toCompile) {
+                if (!c.getName().contains("variant")) continue;
+                if (c.getName().contains("sql")) {
+                    System.out.println("Compiling " + c);
+                    String sql = Utilities.readFile(c.getPath());
+                    this.compileRustTestCase(sql);
+                }
+            }
+        }
     }
 }

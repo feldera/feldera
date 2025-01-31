@@ -54,6 +54,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI16Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI64Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI8Literal;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPISizeLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
@@ -68,6 +69,7 @@ import org.dbsp.sqlCompiler.ir.type.IsNumericType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDate;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeISize;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeNull;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
@@ -117,6 +119,8 @@ public class Simplify extends InnerRewriteVisitor {
         DBSPExpression result = source.is_null();
         if (!source.getType().mayBeNull)
             result = new DBSPBoolLiteral(false);
+        else if (source.is(DBSPCloneExpression.class))
+            result = source.to(DBSPCloneExpression.class).expression.is_null();
         this.map(expression, result);
         return VisitDecision.STOP;
     }
@@ -315,6 +319,10 @@ public class Simplify extends InnerRewriteVisitor {
                                 break;
                         }
                     }
+                } else if (type.is(DBSPTypeISize.class)) {
+                    if (!i.isNull()) {
+                        result = new DBSPISizeLiteral(source.getNode(), type, i.value.longValue());
+                    }
                 }
             } else if (lit.is(DBSPDecimalLiteral.class)) {
                 DBSPDecimalLiteral dec = lit.to(DBSPDecimalLiteral.class);
@@ -355,6 +363,10 @@ public class Simplify extends InnerRewriteVisitor {
             DBSPIfExpression conditional = source.to(DBSPIfExpression.class);
             result = new DBSPIfExpression(source.getNode(), conditional.condition,
                     conditional.positive.field(expression.fieldNo), conditional.negative.field(expression.fieldNo));
+        } else if (source.is(DBSPCloneExpression.class)) {
+            result = new DBSPFieldExpression(expression.getNode(),
+                    source.to(DBSPCloneExpression.class).expression,
+                    expression.fieldNo);
         }
         this.map(expression, result);
         return VisitDecision.STOP;
@@ -472,8 +484,18 @@ public class Simplify extends InnerRewriteVisitor {
         boolean rightMayBeNull = rightType.mayBeNull;
         DBSPExpression result = new DBSPBinaryExpression(
                 expression.getNode(), type, expression.opcode, left, right);
+        DBSPOpcode opcode = expression.opcode;
+
+        if (opcode == DBSPOpcode.MAP_INDEX ||
+                opcode == DBSPOpcode.SQL_INDEX ||
+                opcode == DBSPOpcode.RUST_INDEX) {
+            if (expression.left.is(DBSPCloneExpression.class)) {
+                result = new DBSPBinaryExpression(expression.getNode(), type, expression.opcode,
+                        left.to(DBSPCloneExpression.class).expression, right);
+            }
+        }
         try {
-            if (expression.opcode.equals(DBSPOpcode.AND)) {
+            if (opcode == DBSPOpcode.AND) {
                 if (left.is(DBSPBoolLiteral.class)) {
                     DBSPBoolLiteral bLeft = left.to(DBSPBoolLiteral.class);
                     if (!bLeft.isNull()) {
@@ -493,7 +515,7 @@ public class Simplify extends InnerRewriteVisitor {
                         }
                     }
                 }
-            } else if (expression.opcode.equals(DBSPOpcode.OR)) {
+            } else if (opcode == DBSPOpcode.OR) {
                 if (left.is(DBSPBoolLiteral.class)) {
                     DBSPBoolLiteral bLeft = left.to(DBSPBoolLiteral.class);
                     if (!bLeft.isNull()) {
@@ -513,7 +535,7 @@ public class Simplify extends InnerRewriteVisitor {
                         }
                     }
                 }
-            } else if (expression.opcode == DBSPOpcode.ADD || expression.opcode == DBSPOpcode.TS_ADD) {
+            } else if (opcode == DBSPOpcode.ADD || opcode == DBSPOpcode.TS_ADD) {
                 if (left.is(DBSPLiteral.class)) {
                     DBSPLiteral leftLit = left.to(DBSPLiteral.class);
                     IHasZero iLeftType = leftType.as(IHasZero.class);
@@ -536,7 +558,29 @@ public class Simplify extends InnerRewriteVisitor {
                         }
                     }
                 }
-            } else if (expression.opcode == DBSPOpcode.MUL || expression.opcode == DBSPOpcode.INTERVAL_MUL) {
+            } else if (opcode == DBSPOpcode.SUB || opcode == DBSPOpcode.TS_SUB) {
+                if (left.is(DBSPLiteral.class)) {
+                    DBSPLiteral leftLit = left.to(DBSPLiteral.class);
+                    if (leftLit.isNull()) {
+                        // null - anything is null
+                        result = left;
+                    }
+                    if (left.getType().is(IsNumericType.class) &&
+                            right.is(DBSPLiteral.class)) {
+                        result = left.getType().to(IsNumericType.class).fold(expression);
+                    }
+                } else if (right.is(DBSPLiteral.class)) {
+                    DBSPLiteral rightLit = right.to(DBSPLiteral.class);
+                    IHasZero iRightType = rightType.as(IHasZero.class);
+                    if (iRightType != null) {
+                        if (iRightType.isZero(rightLit)) {
+                            result = left;
+                        } else if (rightLit.isNull()) {
+                            result = right;
+                        }
+                    }
+                }
+            }  else if (opcode == DBSPOpcode.MUL || opcode == DBSPOpcode.INTERVAL_MUL) {
                 if (left.is(DBSPLiteral.class) && leftType.is(IsNumericType.class)) {
                     DBSPLiteral leftLit = left.to(DBSPLiteral.class);
                     IsNumericType iLeftType = leftType.to(IsNumericType.class);
@@ -569,7 +613,7 @@ public class Simplify extends InnerRewriteVisitor {
                                 .to(DBSPExpression.class);
                     }
                 }
-            } else if (expression.opcode == DBSPOpcode.DIV || expression.opcode == DBSPOpcode.INTERVAL_DIV) {
+            } else if (opcode == DBSPOpcode.DIV || opcode == DBSPOpcode.INTERVAL_DIV) {
                 if (right.is(DBSPLiteral.class)) {
                     DBSPLiteral rightLit = right.to(DBSPLiteral.class);
                     IsNumericType iRightType = rightType.to(IsNumericType.class);
@@ -580,7 +624,7 @@ public class Simplify extends InnerRewriteVisitor {
                                 " Division by constant zero value.");
                     }
                 }
-            } else if (expression.opcode == DBSPOpcode.MOD) {
+            } else if (opcode == DBSPOpcode.MOD) {
                 if (right.is(DBSPLiteral.class)) {
                     DBSPLiteral rightLit = right.to(DBSPLiteral.class);
                     IsNumericType iRightType = rightType.to(IsNumericType.class);

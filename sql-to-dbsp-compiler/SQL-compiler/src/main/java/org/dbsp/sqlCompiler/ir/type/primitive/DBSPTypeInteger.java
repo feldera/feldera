@@ -29,6 +29,7 @@ import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI128Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI16Literal;
@@ -217,6 +218,48 @@ public class DBSPTypeInteger extends DBSPTypeBaseType
             case 128 -> 38;
             default -> throw new UnsupportedException(this.getNode());
         };
+    }
+
+    @Override
+    public DBSPExpression fold(DBSPBinaryExpression expression) {
+        DBSPLiteral ll = expression.left.as(DBSPLiteral.class);
+        DBSPLiteral rl = expression.left.as(DBSPLiteral.class);
+        if (ll == null || rl == null)
+            return expression;
+        if ((ll.isNull()) && expression.opcode.isStrict())
+            return ll;
+        if ((rl.isNull()) && expression.opcode.isStrict())
+            return ll;
+        switch (this.width) {
+            case 8: {
+                DBSPI8Literal left = expression.left.as(DBSPI8Literal.class);
+                DBSPI8Literal right = expression.right.as(DBSPI8Literal.class);
+                if (left == null || right == null)
+                    return expression;
+                assert left.value != null && right.value != null;
+                return switch (expression.opcode) {
+                    case SUB -> new DBSPI8Literal(left.getNode(), this, (byte)(left.value - right.value));
+                    case ADD -> new DBSPI8Literal(left.getNode(), this, (byte)(left.value + right.value));
+                    case MUL -> new DBSPI8Literal(left.getNode(), this, (byte)(left.value * right.value));
+                    default -> expression;
+                };
+            }
+            case 32: {
+                DBSPI32Literal left = expression.left.as(DBSPI32Literal.class);
+                DBSPI32Literal right = expression.right.as(DBSPI32Literal.class);
+                if (left == null || right == null)
+                    return expression;
+                assert left.value != null && right.value != null;
+                return switch (expression.opcode) {
+                    case SUB -> new DBSPI32Literal(left.getNode(), this, (left.value - right.value));
+                    case ADD -> new DBSPI32Literal(left.getNode(), this, (left.value + right.value));
+                    case MUL -> new DBSPI32Literal(left.getNode(), this, (left.value * right.value));
+                    default -> expression;
+                };
+            }
+            default:
+                return expression;
+        }
     }
 
     public static DBSPTypeInteger getType(CalciteObject node, DBSPTypeCode code, boolean mayBenull) {

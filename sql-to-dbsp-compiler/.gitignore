@@ -23,6 +23,7 @@
 hs_err_pid*
 
 SQL-compiler/target/
+extra/
 # Compiler-generated test files
 temp/
 !temp/Cargo.toml

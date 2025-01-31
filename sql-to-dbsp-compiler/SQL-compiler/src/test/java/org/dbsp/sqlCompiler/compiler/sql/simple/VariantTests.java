@@ -78,6 +78,14 @@ public class VariantTests extends BaseSQLTests {
     }
 
     @Test
+    public void testUDT() {
+        this.compileRustTestCase("""
+                CREATE TYPE x AS (v INTEGER, w INTEGER);
+                CREATE TABLE T(xf X ARRAY);
+                CREATE VIEW V AS SELECT CAST(xf AS VARIANT) FROM T;""");
+    }
+
+    @Test
     public void testVariant() {
         // adapted from Calcite variant.iq
         this.testQuery("SELECT CAST(1 AS VARIANT)",
@@ -388,6 +396,8 @@ public class VariantTests extends BaseSQLTests {
 
     @Test
     public void structTests() {
+        this.testQuery("SELECT TO_JSON(CAST(t(ARRAY[s(2, 'a', ARRAY[1, NULL, 3]), s(3, 'b', array())]) AS VARIANT))",
+                new DBSPStringLiteral("{\"sa\":[{\"a\":[1,null,3],\"i\":2,\"s\":\"a\"},{\"a\":[],\"i\":3,\"s\":\"b\"}]}", true));
         this.testQuery("SELECT CAST(s(2, 'a', ARRAY[1, 2, 3]) AS VARIANT)",
                 new DBSPVariantExpression(
                         new DBSPMapExpression(
@@ -415,8 +425,6 @@ public class VariantTests extends BaseSQLTests {
                                 new DBSPI32Literal(1, true),
                                 new DBSPI32Literal(2, true),
                                 new DBSPI32Literal(3, true))));
-        this.testQuery("SELECT TO_JSON(CAST(t(ARRAY[s(2, 'a', ARRAY[1, NULL, 3]), s(3, 'b', array())]) AS VARIANT))",
-                new DBSPStringLiteral("{\"sa\":[{\"a\":[1,null,3],\"i\":2,\"s\":\"a\"},{\"a\":[],\"i\":3,\"s\":\"b\"}]}", true));
         this.testQuery("SELECT CAST(PARSE_JSON('{\"sa\": [{\"i\": 2, \"s\": \"a\", \"a\": [1, 2, 3]}]}') AS T)",
                 new DBSPTupleExpression(true,
                         new DBSPVecExpression(true,

@@ -113,7 +113,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
                     fields.add(e0plus1);
                 DBSPExpression argument = new DBSPTupleExpression(
                         fields, flatmap.getCollectionElementType().mayBeNull);
-                resultColumns.add(clo.call(argument.borrow()));
+                resultColumns.add(clo.call(argument.borrow()).applyCloneIfNeeded());
             }
         } else {
             if (flatmap.ordinalityIndexType != null) {
@@ -123,14 +123,14 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
                 if (eField1.getType().is(DBSPTypeTuple.class)) {
                     resultColumns.addAll(DBSPTypeTuple.flatten(eField1));
                 } else {
-                    resultColumns.add(eField1);
+                    resultColumns.add(eField1.applyCloneIfNeeded());
                 }
             } else if (e.getType().is(DBSPTypeTupleBase.class)) {
                 // Calcite's UNNEST has a strange semantics:
                 // If e is a tuple type, unpack its fields here
                 DBSPTypeTupleBase tuple = e.getType().to(DBSPTypeTupleBase.class);
                 for (int ei = 0; ei < tuple.size(); ei++)
-                    resultColumns.add(e.field(ei));
+                    resultColumns.add(e.field(ei).applyCloneIfNeeded());
             } else {
                 // e
                 resultColumns.add(e);

@@ -73,6 +73,48 @@ pub enum Variant {
     Map(#[omit_bounds] BTreeMap<Variant, Variant>),
 }
 
+/////////////// Variant index
+
+// Return type is always Option<Variant>, but result is never None, always a Variant
+#[doc(hidden)]
+pub fn indexV__<T>(value: &Variant, index: T) -> Option<Variant>
+where
+    T: Into<Variant>,
+{
+    value.index(index.into())
+}
+
+#[doc(hidden)]
+pub fn indexV_N<T>(value: &Variant, index: Option<T>) -> Option<Variant>
+where
+    T: Into<Variant>,
+{
+    let index = index?;
+    indexV__(value, index)
+}
+
+#[doc(hidden)]
+pub fn indexVN_<T>(value: &Option<Variant>, index: T) -> Option<Variant>
+where
+    T: Into<Variant>,
+{
+    match value {
+        None => None,
+        Some(value) => indexV__(value, index),
+    }
+}
+
+#[doc(hidden)]
+pub fn indexVNN<T>(value: &Option<Variant>, index: Option<T>) -> Option<Variant>
+where
+    T: Into<Variant>,
+{
+    match value {
+        None => None,
+        Some(value) => indexV_N(value, index),
+    }
+}
+
 impl<'de> Deserialize<'de> for Variant {
     fn deserialize<D>(deserializer: D) -> Result<Variant, D::Error>
     where

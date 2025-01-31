@@ -967,11 +967,11 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 throw new UnsupportedException("Optimizer should have removed OVER expressions",
                         CalciteObject.create(project, column));
             } else {
-                DBSPExpression exp = expressionCompiler.compile(column);
+                DBSPExpression exp = expressionCompiler.compile(column).applyCloneIfNeeded();
                 DBSPType expectedType = tuple.getFieldType(index);
                 if (!exp.getType().sameType(expectedType)) {
                     // Calcite's optimizations do not preserve types!
-                    exp = exp.applyCloneIfNeeded().cast(expectedType, false);
+                    exp = exp.cast(expectedType, false);
                 }
                 resultColumns[index] = exp;
                 index++;

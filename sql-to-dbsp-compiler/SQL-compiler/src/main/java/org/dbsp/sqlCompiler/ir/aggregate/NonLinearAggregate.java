@@ -249,7 +249,7 @@ public class NonLinearAggregate extends AggregateBase {
             else
                 block.add(new DBSPExpressionStatement(
                         new DBSPAssignmentExpression(accumulatorField, expr)));
-            DBSPExpression postAccumulatorField = postAccumulator.field(i);
+            DBSPExpression postAccumulatorField = postAccumulator.field(i).applyCloneIfNeeded();
             expr = posts[i].call(postAccumulatorField);
             posts[i] = reducer.reduce(expr);
         }

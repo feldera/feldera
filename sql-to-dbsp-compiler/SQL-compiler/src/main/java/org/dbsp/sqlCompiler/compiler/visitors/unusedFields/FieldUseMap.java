@@ -66,7 +66,7 @@ public class FieldUseMap {
 
         public abstract FieldInfo reduce(FieldInfo fieldInfo);
 
-        public abstract double percentageUnused();
+        public abstract FieldInfo project(int depth);
     }
 
     /** A reference to a FieldInfo */
@@ -123,8 +123,8 @@ public class FieldUseMap {
         }
 
         @Override
-        public double percentageUnused() {
-            return this.field.percentageUnused();
+        public FieldInfo project(int depth) {
+            return new Ref(this.type, this.field.project(depth));
         }
 
         @Override
@@ -176,6 +176,11 @@ public class FieldUseMap {
             throw new RuntimeException("Compressed index of scalar type");
         }
 
+        @Override
+        public FieldInfo project(int depth) {
+            return this;
+        }
+
         @Nullable @Override
         public DBSPType compressedType(int depth) {
             if (!this.used)
@@ -195,11 +200,6 @@ public class FieldUseMap {
             assert this.type.sameType(other.type);
             Atomic oa = other.to(Atomic.class);
             return new Atomic(this.type, this.used || oa.used);
-        }
-
-        @Override
-        public double percentageUnused() {
-            return this.used ? 1 : 0;
         }
     }
 
@@ -336,8 +336,19 @@ public class FieldUseMap {
         }
 
         @Override
-        public double percentageUnused() {
-            return 1 - (double)this.getCompressedSize() / this.size();
+        public FieldInfo project(int depth) {
+            List<FieldInfo> fields = new ArrayList<>(this.size());
+            for (int i = 0; i < this.size(); i++) {
+                FieldInfo info = this.fields.get(i);
+                if (depth > 0)
+                    info = info.project(depth-1);
+                else {
+                    if (info.anyUsed())
+                        info = FieldInfo.create(info.type, true);
+                }
+                fields.add(info);
+            }
+            return new BitList(this.getTupleType(), fields);
         }
     }
 
@@ -356,12 +367,8 @@ public class FieldUseMap {
     }
 
     @SuppressWarnings("BooleanMethodIsAlwaysInverted")
-    public boolean hasUnusedFields() {
-        return this.fieldInfo.anyUnused();
-    }
-
-    public double percentageUnused() {
-        return this.fieldInfo.percentageUnused();
+    public boolean hasUnusedFields(int depth) {
+        return this.fieldInfo.project(depth).anyUnused();
     }
 
     public boolean isEmpty() {

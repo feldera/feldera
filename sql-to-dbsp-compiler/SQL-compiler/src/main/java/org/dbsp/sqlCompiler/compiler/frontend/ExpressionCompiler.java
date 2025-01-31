@@ -53,6 +53,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPCloneExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPConstructorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFieldExpression;
@@ -707,7 +708,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
         CalciteObject node = CalciteObject.create(this.context, field);
         DBSPExpression source = field.getReferenceExpr().accept(this);
         RelDataTypeField dataField = field.getField();
-        return new DBSPFieldExpression(node, source, dataField.getIndex());
+        return new DBSPFieldExpression(node, source, dataField.getIndex()).applyCloneIfNeeded();
     }
 
     static CompilationError operandCountError(CalciteObject node, String name, int operandCount) {
@@ -1373,6 +1374,8 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 if (call.operands.size() != 2)
                     throw operandCountError(node, operationName, call.operandCount());
                 DBSPExpression op0 = ops.get(0);
+                if (op0.is(DBSPCloneExpression.class))
+                    op0 = op0.to(DBSPCloneExpression.class).expression;
                 DBSPType collectionType = op0.getType();
                 DBSPExpression index = ops.get(1);
                 DBSPOpcode opcode = DBSPOpcode.SQL_INDEX;
@@ -1381,7 +1384,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                     DBSPTypeMap map = collectionType.to(DBSPTypeMap.class);
                     index = index.applyCloneIfNeeded().cast(map.getKeyType(), false);
                     opcode = DBSPOpcode.MAP_INDEX;
-                    op0 = this.makeStaticConstantIfPossible(op0).borrow();
+                    op0 = this.makeStaticConstantIfPossible(op0);
                 } else if (collectionType.is(DBSPTypeVariant.class)) {
                     opcode = DBSPOpcode.VARIANT_INDEX;
                 } else if (collectionType.is(DBSPTypeTuple.class)) {
@@ -1395,7 +1398,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                             new ProgramIdentifier(fieldName, false));
                     assert field != null;
                     int fieldIndex = field.index;
-                    return op0.field(fieldIndex);
+                    return op0.field(fieldIndex).applyCloneIfNeeded();
                 } else {
                     assert collectionType.is(DBSPTypeVec.class);
                 }

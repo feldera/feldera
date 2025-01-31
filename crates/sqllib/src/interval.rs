@@ -282,6 +282,14 @@ impl<'de> DeserializeWithContext<'de, SqlSerdeConfig> for ShortInterval {
     }
 }
 
+/*
+some_operator!(lt, ShortInterval, &ShortInterval, bool);
+some_operator!(gt, ShortInterval, &ShortInterval, bool);
+some_operator!(eq, ShortInterval, &ShortInterval, bool);
+some_operator!(neq, ShortInterval, &ShortInterval, bool);
+some_operator!(gte, ShortInterval, &ShortInterval, bool);
+some_operator!(lte, ShortInterval, &ShortInterval, bool);
+*/
 some_operator!(lt, ShortInterval, ShortInterval, bool);
 some_operator!(gt, ShortInterval, ShortInterval, bool);
 some_operator!(eq, ShortInterval, ShortInterval, bool);
@@ -595,6 +603,14 @@ impl Neg for LongInterval {
     }
 }
 
+/*
+some_operator!(lt, LongInterval, &LongInterval, bool);
+some_operator!(gt, LongInterval, &LongInterval, bool);
+some_operator!(eq, LongInterval, &LongInterval, bool);
+some_operator!(neq, LongInterval, &LongInterval, bool);
+some_operator!(gte, LongInterval, &LongInterval, bool);
+some_operator!(lte, LongInterval, &LongInterval, bool);
+*/
 some_operator!(lt, LongInterval, LongInterval, bool);
 some_operator!(gt, LongInterval, LongInterval, bool);
 some_operator!(eq, LongInterval, LongInterval, bool);

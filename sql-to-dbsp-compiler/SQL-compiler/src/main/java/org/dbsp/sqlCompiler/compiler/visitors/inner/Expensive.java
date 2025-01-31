@@ -27,7 +27,10 @@ public class Expensive extends InnerVisitor {
     }
 
     @Override
-    public VisitDecision preorder(DBSPApplyExpression unused) {
+    public VisitDecision preorder(DBSPApplyExpression expression) {
+        String functionName = expression.getFunctionName();
+        if (functionName != null && functionName.startsWith("tumble_"))
+            return VisitDecision.STOP;
         this.expensive = true;
         return VisitDecision.STOP;
     }
