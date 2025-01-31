@@ -183,7 +183,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         File file = createInputScript(sql);
         CompilerMain.execute("-TSqlToRelCompiler=2", "-TPasses=2",
                 "-o", BaseSQLTests.testFilePath, file.getPath());
-        Utilities.compileAndCheckRust(BaseSQLTests.rustDirectory);
+        Utilities.compileAndCheckRust(BaseSQLTests.rustDirectory, true);
         Logger.INSTANCE.setDebugStream(save);
         String messages = builder.toString();
         Assert.assertTrue(messages.contains("After optimizer"));
@@ -289,7 +289,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         CompilerMessages messages = CompilerMain.execute("-o", BaseSQLTests.testFilePath, file.getPath());
         if (messages.errorCount() > 0)
             throw new RuntimeException(messages.toString());
-        Utilities.compileAndCheckRust(BaseSQLTests.rustDirectory);
+        Utilities.compileAndCheckRust(BaseSQLTests.rustDirectory, true);
     }
 
     @Test
@@ -320,7 +320,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         messages.print();
         Assert.assertEquals(0, messages.errorCount());
         if (run)
-            Utilities.compileAndCheckRust(BaseSQLTests.rustDirectory);
+            Utilities.compileAndCheckRust(BaseSQLTests.rustDirectory, true);
         // cleanup after ourselves
         createEmptyStubs();
     }
@@ -425,7 +425,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         CompilerMessages messages = CompilerMain.execute("-q", "-o", BaseSQLTests.testFilePath, file.getPath());
         messages.print();
         Assert.assertEquals(0, messages.exitCode);
-        Utilities.compileAndCheckRust(BaseSQLTests.rustDirectory);
+        Utilities.compileAndCheckRust(BaseSQLTests.rustDirectory, true);
     }
 
     @Test
@@ -508,7 +508,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         try (FileWriter fr = new FileWriter(rust, true)) { // append
             fr.write(rustHandlesTest);
         }
-        Utilities.compileAndCheckRust(BaseSQLTests.rustDirectory);
+        Utilities.compileAndCheckRust(BaseSQLTests.rustDirectory, true);
 
         // Second test
         message = CompilerMain.execute(
@@ -520,7 +520,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         try (FileWriter fr = new FileWriter(rust, true)) { // append
             fr.write(rustCatalogTest);
         }
-        Utilities.compileAndCheckRust(BaseSQLTests.rustDirectory);
+        Utilities.compileAndCheckRust(BaseSQLTests.rustDirectory, true);
     }
 
     @Test

@@ -23,6 +23,8 @@
 
 package org.dbsp.sqlCompiler.ir.type;
 
+import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 
 /** Interface implemented by numeric types. */
@@ -33,4 +35,9 @@ public interface IsNumericType extends IHasZero, IsBoundedType {
     }
     /** Expressed in decimal digits */
     int getPrecision();
+    /** Optimize the expression if it has a constant value.
+        Returns a new expression or the original one unmodified. */
+    default DBSPExpression fold(DBSPBinaryExpression expression) {
+        return expression;
+    }
 }

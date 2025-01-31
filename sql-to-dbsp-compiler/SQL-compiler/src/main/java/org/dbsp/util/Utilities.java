@@ -308,11 +308,13 @@ public class Utilities {
     }
 
     /** Compile the rust code generated and check it using 'cargo check' */
-    public static void compileAndCheckRust(String directory)
+    public static void compileAndCheckRust(String directory, boolean quiet)
             throws IOException, InterruptedException {
         List<String> args = new ArrayList<>();
         args.add("cargo");
         args.add("check");
+        if (quiet)
+            args.add("--quiet");
         runProcess(directory, args.toArray(new String[0]));
     }
 

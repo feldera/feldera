@@ -1,5 +1,7 @@
 package org.dbsp.sqlCompiler.ir.expression;
 
+import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
+
 /** This enum encodes the various opcodes for unary and
  * binary operations used in the IR of the SQL compiler. */
 public enum DBSPOpcode {
@@ -100,5 +102,65 @@ public enum DBSPOpcode {
         // their return type follows different rules
         return this.equals(LT) || this.equals(GT) || this.equals(LTE)
                 || this.equals(GTE) || this.equals(EQ) || this.equals(NEQ);
+    }
+
+    /** True when applied to any null value the operator produces null.
+     * A conservative approximation: always safe to say "false" */
+    public boolean isStrict() {
+        return switch (this) {
+            case WRAP_BOOL -> false;
+            case NEG -> true;
+            case UNARY_PLUS -> true;
+            case NOT -> true;
+            case INDICATOR -> false;
+            case IS_FALSE -> true;
+            case IS_TRUE -> true;
+            case IS_NOT_TRUE -> false;
+            case IS_NOT_FALSE -> false;
+            case TYPEDBOX -> true;
+            case ADD -> true;
+            case SUB -> true;
+            case MUL -> true;
+            case DIV -> true;
+            case DIV_NULL -> true;
+            case MOD -> true;
+            case EQ -> true;
+            case NEQ -> true;
+            case LT -> true;
+            case GT -> true;
+            case LTE -> true;
+            case GTE -> true;
+            case AND -> false;
+            case BW_AND -> true;
+            case MUL_WEIGHT -> true;
+            case OR -> false;
+            case BW_OR -> true;
+            case XOR -> true;
+            case MAX -> false;
+            case MIN -> false;
+            case CONCAT -> false;
+            case IS_DISTINCT -> false;
+            case SQL_INDEX -> true;
+            case MAP_INDEX -> true;
+            case VARIANT_INDEX -> true;
+            case RUST_INDEX -> true;
+            case SHIFT_LEFT -> true;
+            case TS_ADD -> true;
+            case TS_SUB -> true;
+            case INTERVAL_MUL -> true;
+            case INTERVAL_DIV -> true;
+            case AGG_AND -> false;
+            case AGG_OR -> false;
+            case AGG_XOR -> false;
+            case AGG_MAX -> false;
+            case AGG_MIN -> false;
+            case AGG_ADD -> false;
+            case AGG_GTE -> false;
+            case AGG_LTE -> false;
+            case CONTROLLED_FILTER_GTE -> false;
+            case ARRAY_CONVERT -> false;
+            case MAP_CONVERT -> false;
+            default -> throw new UnimplementedException();
+        };
     }
 }

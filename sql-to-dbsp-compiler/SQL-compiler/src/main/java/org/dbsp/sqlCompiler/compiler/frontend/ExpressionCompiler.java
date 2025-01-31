@@ -708,7 +708,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
         CalciteObject node = CalciteObject.create(this.context, field);
         DBSPExpression source = field.getReferenceExpr().accept(this);
         RelDataTypeField dataField = field.getField();
-        return new DBSPFieldExpression(node, source, dataField.getIndex());
+        return new DBSPFieldExpression(node, source, dataField.getIndex()).applyCloneIfNeeded();
     }
 
     static CompilationError operandCountError(CalciteObject node, String name, int operandCount) {
@@ -1384,7 +1384,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                     DBSPTypeMap map = collectionType.to(DBSPTypeMap.class);
                     index = index.applyCloneIfNeeded().cast(map.getKeyType(), false);
                     opcode = DBSPOpcode.MAP_INDEX;
-                    op0 = this.makeStaticConstantIfPossible(op0).borrow();
+                    op0 = this.makeStaticConstantIfPossible(op0);
                 } else if (collectionType.is(DBSPTypeVariant.class)) {
                     opcode = DBSPOpcode.VARIANT_INDEX;
                 } else if (collectionType.is(DBSPTypeTuple.class)) {
@@ -1398,7 +1398,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                             new ProgramIdentifier(fieldName, false));
                     assert field != null;
                     int fieldIndex = field.index;
-                    return op0.field(fieldIndex);
+                    return op0.field(fieldIndex).applyCloneIfNeeded();
                 } else {
                     assert collectionType.is(DBSPTypeVec.class);
                 }
