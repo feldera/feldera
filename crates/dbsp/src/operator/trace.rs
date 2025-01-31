@@ -25,6 +25,7 @@ where
     ///
     /// This operator labels each untimed batch in the stream with the current
     /// timestamp and adds it to a trace.
+    #[track_caller]
     pub fn trace(&self) -> Stream<C, TypedBatch<K, V, R, FileValSpine<B, C>>> {
         let factories = BatchReaderFactories::new::<K, V, R>();
         self.inner().dyn_trace(&factories).typed()
@@ -43,6 +44,7 @@ where
     ///            └─────────┤Z1Trace│◄──┘
     ///                      └───────┘
     /// ```
+    #[track_caller]
     pub fn trace_with_bound<T>(
         &self,
         lower_key_bound: TraceBound<B::Key>,

@@ -34,6 +34,7 @@ where
     /// })
     /// .unwrap();
     /// ```
+    #[track_caller]
     pub fn inspect<F>(&self, callback: F) -> Self
     where
         F: FnMut(&D) + 'static,

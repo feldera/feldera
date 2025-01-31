@@ -28,6 +28,7 @@ where
     /// available to the outside world.  At each clock cycle, the contents
     /// of the stream is buffered inside the handle and can be read using
     /// the [`OutputHandle`] API.
+    #[track_caller]
     pub fn output(&self) -> OutputHandle<T> {
         let (output, output_handle) = Output::new();
         self.circuit().add_sink(output, self);
@@ -43,6 +44,7 @@ where
     /// the end of the clock cycle, and [`OutputHandle::take_from_worker`] will
     /// return `None`.  This operator can be used to output a large collection,
     /// such as an integral of a stream, on demand.
+    #[track_caller]
     pub fn output_guarded(&self, guard: &Stream<RootCircuit, bool>) -> OutputHandle<T> {
         let (output, output_handle) = OutputGuarded::new();
         self.circuit().add_binary_sink(output, self, guard);

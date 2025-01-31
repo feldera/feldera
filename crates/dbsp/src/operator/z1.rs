@@ -142,6 +142,7 @@ where
     C: Circuit,
 {
     /// Applies [`Z1`] operator to `self`.
+    #[track_caller]
     pub fn delay(&self) -> Stream<C, D>
     where
         D: Checkpoint + Eq + SizeOf + NumEntries + Clone + HasZero + 'static,
@@ -153,6 +154,7 @@ where
             .clone()
     }
 
+    #[track_caller]
     pub fn delay_with_initial_value(&self, initial: D) -> Stream<C, D>
     where
         D: Checkpoint + Eq + SizeOf + NumEntries + Clone + 'static,
@@ -166,6 +168,7 @@ where
     }
 
     /// Applies [`Z1Nested`] operator to `self`.
+    #[track_caller]
     pub fn delay_nested(&self) -> Stream<C, D>
     where
         D: Eq + Clone + HasZero + SizeOf + NumEntries + 'static,

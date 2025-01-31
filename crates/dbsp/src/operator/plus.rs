@@ -52,6 +52,7 @@ where
     /// #     circuit.step().unwrap();
     /// # }
     /// ```
+    #[track_caller]
     pub fn plus(&self, other: &Stream<C, D>) -> Stream<C, D> {
         // If both inputs are properly sharded then the sum of those inputs will be
         // sharded
@@ -77,6 +78,7 @@ where
     /// Apply the [`Minus`] operator to `self` and `other`.
     /// Subtracting two indexed Z-sets subtracts the weights of matching
     /// key-value pairs.
+    #[track_caller]
     pub fn minus(&self, other: &Stream<C, D>) -> Stream<C, D> {
         // If both inputs are properly sharded then the difference of those inputs will
         // be sharded

@@ -24,6 +24,7 @@ where
     /// * `Pairs` - batch type in the first input stream.
     /// * `Keys` - batch type in the second input stream.
     /// * `Out` - output Z-set type.
+    #[track_caller]
     pub fn semijoin_stream<Keys, Out>(&self, keys: &Stream<C, Keys>) -> Stream<C, Out>
     where
         Keys: ZSet<Key = Pairs::Key, DynK = Pairs::DynK>,

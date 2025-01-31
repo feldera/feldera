@@ -78,6 +78,7 @@ where
     /// input:  1, 1, 1, 1, 1, ...
     /// output: 1, 2, 3, 4, 5, ...
     /// ```
+    #[track_caller]
     pub fn integrate(&self) -> Stream<C, D> {
         self.circuit()
             .cache_get_or_insert_with(IntegralId::new(self.stream_id()), || {
@@ -150,6 +151,7 @@ where
     /// 2 3 4 5 1
     /// 4 5 6 5 1
     /// ```
+    #[track_caller]
     pub fn integrate_nested(&self) -> Stream<C, D> {
         self.circuit()
             .cache_get_or_insert_with(NestedIntegralId::new(self.stream_id()), || {

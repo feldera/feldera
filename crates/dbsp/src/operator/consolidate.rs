@@ -22,6 +22,7 @@ where
     /// computed as the sum of deltas across all iterations of the circuit.
     /// Once the iteration has converged (e.g., reaching a fixed point) is a
     /// good time to consolidate the output.
+    #[track_caller]
     pub fn consolidate(
         &self,
     ) -> Stream<C, TypedBatch<T::Key, T::Val, T::R, <T::InnerTrace as DynTrace>::Batch>> {

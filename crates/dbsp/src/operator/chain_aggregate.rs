@@ -24,6 +24,7 @@ where
     /// * `finit` - returns the initial value of the aggregate.
     /// * `fupdate` - updates the aggregate given its previous value and a
     ///   new element of the group.
+    #[track_caller]
     pub fn chain_aggregate<A, FInit, FUpdate>(
         &self,
         finit: FInit,

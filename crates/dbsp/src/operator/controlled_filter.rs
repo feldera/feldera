@@ -24,6 +24,7 @@ where
     /// to the second output stream. More precisely `report_func` is invoked for each (key, value, weight)
     /// tuple whose key does not pass the filter and returns a value of type `E`, which is sent
     /// with weight 1 to the error stream.
+    #[track_caller]
     pub fn controlled_key_filter<T, E, F, RF>(
         &self,
         threshold: &Stream<C, TypedBox<T, DynData>>,
@@ -55,6 +56,7 @@ where
 
     /// Like [`Self::controlled_key_filter`], but values in the `threshold` stream are strongly typed
     /// instead of having type `TypedBox`.
+    #[track_caller]
     pub fn controlled_key_filter_typed<T, E, F, RF>(
         &self,
         threshold: &Stream<C, T>,
@@ -85,6 +87,7 @@ where
     /// to the second output stream. More precisely `report_func` is invoked for each (key, value, weight)
     /// tuple whose key and value do not pass the filter and returns a value of type `E`, which is sent
     /// with weight 1 to the error stream.
+    #[track_caller]
     pub fn controlled_value_filter<T, E, F, RF>(
         &self,
         threshold: &Stream<C, TypedBox<T, DynData>>,
@@ -116,6 +119,7 @@ where
 
     /// Like [`Self::controlled_value_filter`], but values in the `threshold` stream are strongly typed
     /// instead of having type `TypedBox`.
+    #[track_caller]
     pub fn controlled_value_filter_typed<T, E, F, RF>(
         &self,
         threshold: &Stream<C, T>,
