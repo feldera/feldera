@@ -431,13 +431,9 @@ impl InnerDataBlock {
         })
     }
 
-    fn new(
-        file: &ImmutableFileRef,
-        node: &TreeNode,
-        compression: Option<Compression>,
-    ) -> Result<Arc<Self>, Error> {
+    fn new(file: &ImmutableFileRef, node: &TreeNode) -> Result<Arc<Self>, Error> {
         file.cache
-            .read_data_block(&*file.file_handle, node.location, compression)
+            .read_data_block(&*file.file_handle, node.location, file.compression)
     }
     fn n_values(&self) -> usize {
         self.value_map.len()
@@ -495,9 +491,8 @@ where
         factories: &Factories<K, A>,
         file: &ImmutableFileRef,
         node: &TreeNode,
-        compression: Option<Compression>,
     ) -> Result<Self, Error> {
-        let inner = InnerDataBlock::new(file, node, compression)?;
+        let inner = InnerDataBlock::new(file, node)?;
 
         let expected_rows = node.rows.end - node.rows.start;
         if inner.n_values() as u64 != expected_rows {
@@ -638,11 +633,7 @@ struct TreeNode {
 }
 
 impl TreeNode {
-    fn read<K, A>(
-        self,
-        file: &ImmutableFileRef,
-        compression: Option<Compression>,
-    ) -> Result<TreeBlock<K, A>, Error>
+    fn read<K, A>(self, file: &ImmutableFileRef) -> Result<TreeBlock<K, A>, Error>
     where
         K: DataTrait + ?Sized,
         A: DataTrait + ?Sized,
@@ -652,13 +643,11 @@ impl TreeNode {
                 &self.factories.factories(),
                 file,
                 &self,
-                compression,
             )?)),
             NodeType::Index => Ok(TreeBlock::Index(IndexBlock::new(
                 &self.factories,
                 file,
                 &self,
-                compression,
             )?)),
         }
     }
@@ -757,13 +746,9 @@ impl InnerIndexBlock {
         })
     }
 
-    fn new(
-        file: &ImmutableFileRef,
-        node: &TreeNode,
-        compression: Option<Compression>,
-    ) -> Result<Arc<Self>, Error> {
+    fn new(file: &ImmutableFileRef, node: &TreeNode) -> Result<Arc<Self>, Error> {
         file.cache
-            .read_index_block(&*file.file_handle, node.location, compression)
+            .read_index_block(&*file.file_handle, node.location, file.compression)
     }
 }
 
@@ -803,7 +788,6 @@ where
         factories: &AnyFactories,
         file: &ImmutableFileRef,
         node: &TreeNode,
-        compression: Option<Compression>,
     ) -> Result<Self, Error> {
         const MAX_DEPTH: usize = 64;
         if node.depth > MAX_DEPTH {
@@ -817,7 +801,7 @@ where
             .into());
         }
 
-        let inner = InnerIndexBlock::new(file, node, compression)?;
+        let inner = InnerIndexBlock::new(file, node)?;
 
         let expected_rows = node.rows.end - node.rows.start;
         let n_rows = inner.row_totals.get(&inner.raw, inner.row_totals.count - 1);
@@ -1058,10 +1042,11 @@ impl Column {
 }
 
 /// Encapsulates storage and a file handle.
-pub(crate) struct ImmutableFileRef {
+struct ImmutableFileRef {
     path: PathBuf,
     cache: Arc<BufferCache<FileCacheEntry>>,
     file_handle: Arc<dyn FileReader>,
+    compression: Option<Compression>,
 }
 
 impl Debug for ImmutableFileRef {
@@ -1080,25 +1065,18 @@ impl Drop for ImmutableFileRef {
 }
 
 impl ImmutableFileRef {
-    pub(crate) fn new(
-        cache: &Arc<BufferCache<FileCacheEntry>>,
+    fn new(
+        cache: Arc<BufferCache<FileCacheEntry>>,
         file_handle: Arc<dyn FileReader>,
         path: PathBuf,
+        compression: Option<Compression>,
     ) -> Self {
         Self {
-            cache: Arc::clone(cache),
+            cache,
             path,
             file_handle,
+            compression,
         }
-    }
-
-    pub(crate) fn open(
-        cache: &Arc<BufferCache<FileCacheEntry>>,
-        storage_backend: &dyn StorageBackend,
-        path: &IoPath,
-    ) -> Result<Self, Error> {
-        let file_handle = storage_backend.open(path)?;
-        Ok(Self::new(cache, file_handle, path.to_path_buf()))
     }
 
     pub fn evict(&self) {
@@ -1109,7 +1087,6 @@ impl ImmutableFileRef {
 #[derive(Debug)]
 struct ReaderInner<T> {
     file: ImmutableFileRef,
-    compression: Option<Compression>,
     columns: Vec<Column>,
 
     /// `fn() -> T` is `Send` and `Sync` regardless of `T`.  See
@@ -1164,14 +1141,19 @@ where
     T: ColumnSpec,
 {
     /// Creates and returns a new `Reader` for `file`.
-    pub(crate) fn new(factories: &[&AnyFactories], file: ImmutableFileRef) -> Result<Self, Error> {
-        let file_size = file.file_handle.get_size()?;
+    pub(crate) fn new(
+        factories: &[&AnyFactories],
+        path: PathBuf,
+        cache: Arc<BufferCache<FileCacheEntry>>,
+        file_handle: Arc<dyn FileReader>,
+    ) -> Result<Self, Error> {
+        let file_size = file_handle.get_size()?;
         if file_size < 512 || (file_size % 512) != 0 {
             return Err(CorruptionError::InvalidFileSize(file_size).into());
         }
 
-        let file_trailer = file.cache.read_file_trailer_block(
-            &*file.file_handle,
+        let file_trailer = cache.read_file_trailer_block(
+            &*file_handle,
             BlockLocation::new(file_size - 512, 512).unwrap(),
         )?;
         if file_trailer.version != VERSION_NUMBER {
@@ -1213,9 +1195,8 @@ where
         }
 
         Ok(Self(Arc::new(ReaderInner {
-            file,
+            file: ImmutableFileRef::new(cache, file_handle, path, file_trailer.compression),
             columns,
-            compression: file_trailer.compression,
             _phantom: PhantomData,
         })))
     }
@@ -1230,9 +1211,8 @@ where
     ) -> Result<Self, Error> {
         let (file_handle, path) = storage_backend.create()?.complete()?;
         Ok(Self(Arc::new(ReaderInner {
-            file: ImmutableFileRef::new(cache, file_handle, path),
+            file: ImmutableFileRef::new(cache.clone(), file_handle, path, None),
             columns: (0..T::n_columns()).map(|_| Column::empty()).collect(),
-            compression: None,
             _phantom: PhantomData,
         })))
     }
@@ -1245,12 +1225,16 @@ where
     /// Instantiates a reader given an existing path.
     pub fn open(
         factories: &[&AnyFactories],
-        cache: &Arc<BufferCache<FileCacheEntry>>,
+        cache: Arc<BufferCache<FileCacheEntry>>,
         storage_backend: &dyn StorageBackend,
         path: &IoPath,
     ) -> Result<Self, Error> {
-        let file = ImmutableFileRef::open(cache, storage_backend, path)?;
-        Self::new(factories, file)
+        Self::new(
+            factories,
+            path.to_path_buf(),
+            cache,
+            storage_backend.open(path)?,
+        )
     }
 
     /// The number of columns in the layer file.
@@ -1879,7 +1863,7 @@ where
         row: u64,
     ) -> Result<Self, Error> {
         loop {
-            let block = node.read(&reader.0.file, reader.0.compression)?;
+            let block = node.read(&reader.0.file)?;
             let next = block.lookup_row(row)?;
             match block {
                 TreeBlock::Data(data) => {
@@ -1953,7 +1937,7 @@ where
             return Ok(None);
         };
         loop {
-            match node.read(&row_group.reader.0.file, row_group.reader.0.compression)? {
+            match node.read(&row_group.reader.0.file)? {
                 TreeBlock::Index(index_block) => {
                     let Some(child_idx) =
                         index_block.find_best_match(&row_group.rows, compare, bias)
@@ -2052,7 +2036,7 @@ where
             self.indexes.push(index_block);
 
             loop {
-                match node.read::<K, A>(&row_group.reader.0.file, row_group.reader.0.compression)? {
+                match node.read::<K, A>(&row_group.reader.0.file)? {
                     TreeBlock::Index(index_block) => {
                         let Some(child_idx) =
                             index_block.find_best_match(&row_group.rows, compare, Less)
