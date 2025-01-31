@@ -93,6 +93,7 @@ where
     /// preceding the specified anchor.  The last index may be smaller than
     /// `descr.after - 1` if the input stream doesn't contain `descr.after`
     /// rows following the anchor point.
+    #[track_caller]
     pub fn neighborhood(
         &self,
         neighborhood_descr: &NeighborhoodDescrStream<B::Key, B::Val>,

@@ -220,6 +220,7 @@ where
     ///     root.step().unwrap();
     /// }
     /// ```
+    #[track_caller]
     pub fn recursive<F, S>(&self, f: F) -> Result<S::Output, SchedulerError>
     where
         S: RecursiveStreams<ChildCircuit<Self>>,

@@ -19,6 +19,7 @@ where
     /// * `fold_func` - closure that computes the new value of the accumulator
     ///   as a function of the previous value and the new input at each clock
     ///   cycle.
+    #[track_caller]
     pub fn stream_fold<A, F>(&self, init: A, fold_func: F) -> Stream<RootCircuit, A>
     where
         F: Fn(A, &T) -> A + 'static,

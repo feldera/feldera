@@ -20,6 +20,7 @@ where
     /// that maps from the original keys to the weights.  Both the input and
     /// output are streams of updates.
     #[allow(clippy::type_complexity)]
+    #[track_caller]
     pub fn weighted_count(&self) -> Stream<C, OrdIndexedZSet<Z::Key, ZWeight>> {
         let factories: IncAggregateLinearFactories<
             Z::Inner,
@@ -37,6 +38,7 @@ where
     }
 
     /// Like [`Self::dyn_weighted_count`], but can return any batch type.
+    #[track_caller]
     pub fn weighted_count_generic<O>(&self) -> Stream<C, O>
     where
         O: IndexedZSet<Key = Z::Key, DynK = Z::DynK, DynV = DynData>,
@@ -57,6 +59,7 @@ where
     /// that maps from the original keys to the unique value counts.  Both
     /// the input and output are streams of updates.
     #[allow(clippy::type_complexity)]
+    #[track_caller]
     pub fn distinct_count(&self) -> Stream<C, OrdIndexedZSet<Z::Key, ZWeight>> {
         let factories: DistinctCountFactories<
             Z::Inner,
@@ -73,6 +76,7 @@ where
     }
 
     /// Like [`Self::dyn_distinct_count`], but can return any batch type.
+    #[track_caller]
     pub fn distinct_count_generic<O>(&self) -> Stream<C, O>
     where
         O: IndexedZSet<Key = Z::Key, DynK = DynData>,
@@ -92,6 +96,7 @@ where
     /// Z-set that maps from the original keys to the weights.  Both the
     /// input and output are streams of data (not updates).
     #[allow(clippy::type_complexity)]
+    #[track_caller]
     pub fn stream_weighted_count(&self) -> Stream<C, OrdIndexedZSet<Z::Key, ZWeight>> {
         let factories: StreamLinearAggregateFactories<
             Z::Inner,
@@ -108,6 +113,7 @@ where
     }
 
     /// Like [`Self::dyn_stream_weighted_count`], but can return any batch type.
+    #[track_caller]
     pub fn stream_weighted_count_generic<O>(&self) -> Stream<C, O>
     where
         O: IndexedZSet<Key = Z::Key, DynK = Z::DynK, Val = ZWeight, DynV = DynData>,
@@ -128,6 +134,7 @@ where
     /// that maps from the original keys to the unique value counts.  Both
     /// the input and output are streams of data (not updates).
     #[allow(clippy::type_complexity)]
+    #[track_caller]
     pub fn stream_distinct_count(&self) -> Stream<C, OrdIndexedZSet<Z::Key, ZWeight>> {
         let factories: StreamDistinctCountFactories<Z::Inner, DynOrdIndexedZSet<DynData, DynData>> =
             StreamDistinctCountFactories::new::<Z::Key, Z::Val, ZWeight>();
@@ -141,6 +148,7 @@ where
     }
 
     /// Like [`Self::dyn_distinct_count`], but can return any batch type.
+    #[track_caller]
     pub fn stream_distinct_count_generic<O>(&self) -> Stream<C, O>
     where
         O: IndexedZSet<Key = Z::Key, DynK = Z::DynK, Val = ZWeight, DynV = DynData>,

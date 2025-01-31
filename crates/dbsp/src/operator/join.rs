@@ -118,6 +118,7 @@ where
     /// * `F` - join function type: maps key and a pair of values from input
     ///   batches to an output value.
     /// * `V` - output value type.
+    #[track_caller]
     pub fn join<F, V2, V>(
         &self,
         other: &Stream<C, OrdIndexedZSet<K1, V2>>,
@@ -144,6 +145,7 @@ where
     ///
     /// Behaves like `join` followed by `flat_map`, but does not materialize
     /// intermediate values.
+    #[track_caller]
     pub fn join_flatmap<F, V2, V, It>(
         &self,
         other: &Stream<C, OrdIndexedZSet<K1, V2>>,
@@ -176,6 +178,7 @@ where
     /// This method generalizes [`Self::join`].  It takes a join function that
     /// returns an iterable collection of `(key, value)` pairs, used to
     /// construct an indexed output Z-set.
+    #[track_caller]
     pub fn join_index<F, V2, K, V, It>(
         &self,
         other: &Stream<C, OrdIndexedZSet<K1, V2>>,
@@ -205,6 +208,7 @@ where
 
     /// Like [`Stream::outer_join`], but uses default value for the missing side of the
     /// join.
+    #[track_caller]
     pub fn outer_join_default<F, V2, O>(
         &self,
         other: &Stream<C, OrdIndexedZSet<K1, V2>>,
@@ -250,6 +254,7 @@ where
     /// * `I1` - batch type in the first input stream.
     /// * `I2` - batch type in the second input stream.
     /// * `V` - output value type.
+    #[track_caller]
     pub fn stream_join<F, I2, V>(&self, other: &Stream<C, I2>, join: F) -> Stream<C, OrdZSet<V>>
     where
         I2: IndexedZSet<Key = I1::Key, DynK = I1::DynK>,
@@ -271,6 +276,7 @@ where
     }
 
     /// Like [`Self::stream_join`], but can return any batch type.
+    #[track_caller]
     pub fn stream_join_generic<F, I2, Z>(&self, other: &Stream<C, I2>, join: F) -> Stream<C, Z>
     where
         I2: IndexedZSet<Key = I1::Key, DynK = I1::DynK>,
@@ -297,6 +303,7 @@ where
     ///
     /// One such monotonic function is a join function that returns `(k, v1,
     /// v2)` itself.
+    #[track_caller]
     pub fn monotonic_stream_join<F, I2, Z>(&self, other: &Stream<C, I2>, join: F) -> Stream<C, Z>
     where
         I1: IndexedZSet,
@@ -318,6 +325,7 @@ where
             .typed()
     }
 
+    #[track_caller]
     pub fn join_generic<I2, F, Z, It>(&self, other: &Stream<C, I2>, join: F) -> Stream<C, Z>
     where
         I2: IndexedZSet<Key = I1::Key, DynK = I1::DynK>,
@@ -340,6 +348,7 @@ where
     ///
     /// Returns indexed Z-set consisting of the contents of `self`,
     /// excluding keys that are present in `other`.
+    #[track_caller]
     pub fn antijoin<I2>(&self, other: &Stream<C, I2>) -> Stream<C, I1>
     where
         I2: IndexedZSet<Key = I1::Key, DynK = I1::DynK>,
@@ -360,6 +369,7 @@ where
     ///   not `other`.
     /// - returns the output of `right_func` for keys only found in `other`, but
     ///   not `self`.
+    #[track_caller]
     pub fn outer_join<I2, F, FL, FR, O>(
         &self,
         other: &Stream<C, I2>,

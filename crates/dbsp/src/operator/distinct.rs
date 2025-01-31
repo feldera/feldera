@@ -19,6 +19,7 @@ where
     ///
     /// Intuitively, the operator converts the input multiset into a set
     /// by eliminating duplicates.
+    #[track_caller]
     pub fn stream_distinct(&self) -> Stream<C, Z> {
         let factories = BatchReaderFactories::new::<Z::Key, Z::Val, ZWeight>();
 
@@ -42,6 +43,7 @@ where
     ///
     /// Intuitively, the operator converts the input multiset into a set
     /// by eliminating duplicates.
+    #[track_caller]
     pub fn distinct(&self) -> Stream<C, Z> {
         let factories = DistinctFactories::new::<Z::Key, Z::Val>();
 
