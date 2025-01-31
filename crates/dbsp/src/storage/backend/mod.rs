@@ -207,11 +207,11 @@ impl dyn StorageBackend {
         }
     }
 
-    fn is_tmpfs(path: &Path) -> bool {
+    fn is_tmpfs(_path: &Path) -> bool {
         #[cfg(target_os = "linux")]
         {
             use nix::sys::statfs;
-            statfs::statfs(path).is_ok_and(|s| s.filesystem_type() == statfs::TMPFS_MAGIC)
+            statfs::statfs(_path).is_ok_and(|s| s.filesystem_type() == statfs::TMPFS_MAGIC)
         }
 
         #[cfg(not(target_os = "linux"))]
