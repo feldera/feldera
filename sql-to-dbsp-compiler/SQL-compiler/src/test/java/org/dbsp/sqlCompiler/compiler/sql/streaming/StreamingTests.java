@@ -22,18 +22,14 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDateLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDoubleLiteral;
-import org.dbsp.sqlCompiler.ir.expression.DBSPMapExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimestampLiteral;
-import org.dbsp.sqlCompiler.ir.expression.DBSPVariantExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDate;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDouble;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVariant;
-import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeMap;
 import org.dbsp.util.Linq;
 import org.junit.Assert;
 import org.junit.Test;
@@ -1810,14 +1806,15 @@ public class StreamingTests extends StreamingTestBase {
         DBSPType out = new DBSPTypeTuple(
                 new DBSPTypeDouble(CalciteObject.EMPTY, true),
                 new DBSPTypeDate(CalciteObject.EMPTY, false));
-        DBSPType error = new DBSPTypeTuple(
-                DBSPTypeString.varchar(false),
-                DBSPTypeString.varchar(false),
-                new DBSPTypeVariant(false));
+        DBSPType string = DBSPTypeString.varchar(false);
+        DBSPType error = new DBSPTypeTuple(string, string,
+                // new DBSPTypeVariant(false)
+                string);
+        /*
         DBSPTypeMap map = new DBSPTypeMap(
                 new DBSPTypeVariant(false),
                 new DBSPTypeVariant(false), false);
-
+         */
         String sql = """
                 CREATE TABLE series (
                         distance DOUBLE,
@@ -1851,6 +1848,7 @@ public class StreamingTests extends StreamingTestBase {
                                 new DBSPTupleExpression(
                                         new DBSPStringLiteral("series"),
                                         new DBSPStringLiteral("Late value"),
+                                        /*
                                         new DBSPVariantExpression(
                                                 new DBSPMapExpression(map,
                                                         Linq.list(
@@ -1865,7 +1863,10 @@ public class StreamingTests extends StreamingTestBase {
                                                                 ),
                                                                 new DBSPVariantExpression(
                                                                         new DBSPTimestampLiteral("2023-12-29 10:00:00", false)
-                                                                )))))))));
+                                                                )))))
+                                        */
+                                        new DBSPStringLiteral("(Some(10.0), 2023-12-29 10:00:00)")
+                        )))));
         // Insert tuple after waterline, should change average.
         // Waterline is advanced
         ccs.addChange(new InputOutputChange(
@@ -1899,6 +1900,7 @@ public class StreamingTests extends StreamingTestBase {
                                 new DBSPTupleExpression(
                                         new DBSPStringLiteral("series"),
                                         new DBSPStringLiteral("Late value"),
+                                        /*
                                         new DBSPVariantExpression(
                                                 new DBSPMapExpression(map,
                                                         Linq.list(
@@ -1913,7 +1915,10 @@ public class StreamingTests extends StreamingTestBase {
                                                                 ),
                                                                 new DBSPVariantExpression(
                                                                         new DBSPTimestampLiteral("2023-12-29 09:10:00", false)
-                                                                )))))))));
+                                                                ))))
+                                         */
+                                        new DBSPStringLiteral("(Some(10.0), 2023-12-29 09:10:00)")
+                                )))));
         // Insert tuple in the past, but before the last waterline
         ccs.addChange(new InputOutputChange(
                 new Change(

@@ -33,6 +33,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.ExpressionCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.Simplify;
 import org.dbsp.sqlCompiler.ir.DBSPFunction;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
@@ -153,12 +154,15 @@ public class ToRustInnerVisitor extends InnerVisitor {
     /** If set use a more compact display, which is not necessarily compilable. */
     protected final boolean compact;
     protected final CompilerOptions options;
+    /** Set by binary expressions */
+    int visitingChild;
 
     public ToRustInnerVisitor(DBSPCompiler compiler, IndentStream builder, boolean compact) {
         super(compiler);
         this.builder = builder;
         this.compact = compact;
         this.options = compiler.options;
+        this.visitingChild = 0;
     }
 
     @SuppressWarnings("SameReturnValue")
@@ -1001,15 +1005,19 @@ public class ToRustInnerVisitor extends InnerVisitor {
         this.push(expression);
         switch (expression.opcode) {
             case MUL_WEIGHT: {
+                this.visitingChild = 0;
                 expression.left.accept(this);
                 this.builder.append(".mul_by_ref(&");
+                this.visitingChild = 1;
                 expression.right.accept(this);
                 this.builder.append(")");
                 break;
             }
             case RUST_INDEX: {
+                this.visitingChild = 0;
                 expression.left.accept(this);
                 this.builder.append("[");
+                this.visitingChild = 1;
                 expression.right.accept(this);
                 this.builder.append("]");
                 break;
@@ -1022,13 +1030,35 @@ public class ToRustInnerVisitor extends InnerVisitor {
                         .append(expression.left.getType().nullableUnderlineSuffix())
                         .append(vec.getElementType().nullableUnderlineSuffix())
                         .append(indexType.nullableUnderlineSuffix())
-                        .append("(&");
-                expression.left.accept(this);
+                        .append("(");
+                // Special case for Tuple<Option<Vec<>>>
+                boolean leftDone = false;
+                if (expression.left.is(DBSPFieldExpression.class) && collectionType.mayBeNull) {
+                    DBSPFieldExpression field = expression.left.to(DBSPFieldExpression.class);
+                    if (field.expression.is(DBSPFieldExpression.class)) {
+                        this.builder.append("match &");
+                        field.expression.accept(this);
+                        leftDone = true;
+                        this.builder.append(" {").increase()
+                                .append("None => &None,").newline()
+                                .append("Some(x) => &x.")
+                                .append(field.fieldNo).newline()
+                                .decrease().append("}");
+                    }
+                }
+                if (!leftDone) {
+                    this.builder.append("&");
+                    this.visitingChild = 0;
+                    expression.left.accept(this);
+                }
+                this.visitingChild = 1;
                 this.builder.append(", ");
                 DBSPExpression sub1 = ExpressionCompiler.makeBinaryExpression(
                         expression.getNode(), indexType, DBSPOpcode.SUB,
                         expression.right, indexType.to(IsNumericType.class).getOne());
                 sub1 = sub1.cast(new DBSPTypeISize(CalciteObject.EMPTY, indexType.mayBeNull), false);
+                Simplify simplify = new Simplify(this.compiler);
+                sub1 = simplify.apply(sub1).to(DBSPExpression.class);
                 sub1.accept(this);
                 this.builder.append(")");
                 break;
@@ -1038,23 +1068,28 @@ public class ToRustInnerVisitor extends InnerVisitor {
                 this.builder.append("indexV")
                         .append(expression.left.getType().nullableUnderlineSuffix())
                         .append(indexType.nullableUnderlineSuffix())
-                        .append("(&");
+                        .append("(");
+                this.builder.append("&");
+                this.visitingChild = 0;
                 expression.left.accept(this);
                 this.builder.append(", ");
+                this.visitingChild = 1;
                 expression.right.accept(this);
                 this.builder.append(")");
                 break;
             }
             case MAP_INDEX: {
-                DBSPType collectionType = expression.left.getType().deref();
+                DBSPType collectionType = expression.left.getType();
                 DBSPTypeMap map = collectionType.to(DBSPTypeMap.class);
                 this.builder.append("map_index")
                         .append(collectionType.nullableUnderlineSuffix())
                         .append(map.getValueType().nullableUnderlineSuffix())
                         .append(expression.right.getType().nullableUnderlineSuffix())
-                        .append("(");
+                        .append("(&");
+                this.visitingChild = 0;
                 expression.left.accept(this);
                 this.builder.append(", ");
+                this.visitingChild = 1;
                 expression.right.accept(this);
                 this.builder.append(")");
                 break;
@@ -1066,8 +1101,10 @@ public class ToRustInnerVisitor extends InnerVisitor {
                         .append(expression.left.getType().deref().nullableUnderlineSuffix())
                         .append(expression.right.getType().nullableUnderlineSuffix())
                         .append("(");
+                this.visitingChild = 0;
                 expression.left.accept(this);
                 this.builder.append(", ");
+                this.visitingChild = 1;
                 expression.right.accept(this);
                 this.builder.append(")");
                 break;
@@ -1078,8 +1115,10 @@ public class ToRustInnerVisitor extends InnerVisitor {
                         .append(expression.left.getType().nullableUnderlineSuffix())
                         .append(expression.right.getType().nullableUnderlineSuffix())
                         .append("(");
+                this.visitingChild = 0;
                 expression.left.accept(this);
                 this.builder.append(", ");
+                this.visitingChild = 1;
                 expression.right.accept(this);
                 this.builder.append(")");
                 break;
@@ -1093,9 +1132,11 @@ public class ToRustInnerVisitor extends InnerVisitor {
                         expression.left.getType(),
                         expression.right.getType());
                 this.builder.append(function).append("(");
+                this.visitingChild = 0;
                 expression.left.accept(this);
                 // lazy in the right argument, make it a closure
                 this.builder.append(", || (");
+                this.visitingChild = 1;
                 expression.right.accept(this);
                 this.builder.append("))");
                 break;
@@ -1108,8 +1149,10 @@ public class ToRustInnerVisitor extends InnerVisitor {
                         expression.left.getType(),
                         expression.right.getType());
                 this.builder.append(function).append("(");
+                this.visitingChild = 0;
                 expression.left.accept(this);
                 this.builder.append(", ");
+                this.visitingChild = 1;
                 expression.right.accept(this);
                 this.builder.append(")");
                 break;
@@ -1152,7 +1195,11 @@ public class ToRustInnerVisitor extends InnerVisitor {
     public VisitDecision preorder(DBSPCloneExpression expression) {
         this.push(expression);
         expression.expression.accept(this);
-        this.builder.append(".clone()");
+        if (expression.expression.is(DBSPFieldExpression.class) &&
+                expression.expression.getType().mayBeNull)
+            this.builder.append(".cloned()");
+        else
+            this.builder.append(".clone()");
         this.pop(expression);
         return VisitDecision.STOP;
     }
@@ -1361,10 +1408,15 @@ public class ToRustInnerVisitor extends InnerVisitor {
         return VisitDecision.STOP;
     }
 
+    boolean compilingAssignmentLHS = false;
+
     @Override
     public VisitDecision preorder(DBSPAssignmentExpression expression) {
         this.push(expression);
+        assert !this.compilingAssignmentLHS;
+        this.compilingAssignmentLHS = true;
         expression.left.accept(this);
+        this.compilingAssignmentLHS = false;
         this.builder.append(" = ");
         expression.right.accept(this);
         this.pop(expression);
@@ -1518,52 +1570,63 @@ public class ToRustInnerVisitor extends InnerVisitor {
 
     @Override
     public VisitDecision preorder(DBSPFieldExpression expression) {
-        this.push(expression);
         IDBSPInnerNode parent = this.getParent();
-        boolean avoidClone = false;
+        this.push(expression);
+        boolean avoidRef = false;
         if (parent != null) {
-            if (parent.is(DBSPFieldExpression.class))
-                avoidClone = true;
             if (parent.is(DBSPBinaryExpression.class)) {
                 DBSPBinaryExpression bin = parent.to(DBSPBinaryExpression.class);
-                if (bin.opcode == DBSPOpcode.SQL_INDEX || bin.opcode == DBSPOpcode.MAP_INDEX)
-                    avoidClone = true;
+                if (bin.opcode == DBSPOpcode.SQL_INDEX ||
+                        bin.opcode == DBSPOpcode.MAP_INDEX ||
+                        bin.opcode == DBSPOpcode.VARIANT_INDEX) {
+                    if (this.visitingChild == 0)
+                        // True because we take & explicitly
+                        avoidRef = true;
+                }
+            } else if (parent.is(DBSPBorrowExpression.class)) {
+                // Pattern appearing in aggregation
+                avoidRef = true;
             }
-            if (parent.is(DBSPIsNullExpression.class))
-                avoidClone = true;
         }
 
-        DBSPType baseType = expression.expression.getType();
-        if (baseType.mayBeNull) {
+        DBSPType sourceType = expression.expression.getType();
+        if (sourceType.mayBeNull) {
             // Accessing a nullable struct is allowed
             if (!expression.getType().mayBeNull) {
                 // If the result is not null, we need to unwrap()
                 expression.expression.accept(this);
-                if (!baseType.hasCopy() &&
-                        !expression.expression.is(DBSPCloneExpression.class) &&
-                        !avoidClone)
-                    this.builder.append(".clone()");
                 this.builder.append(".as_ref().unwrap().")
                         .append(expression.fieldNo);
             } else {
                 expression.expression.accept(this);
-                this.builder.increase().append(".as_ref()").newline().append(".and_then(|x");
+                if (!expression.expression.is(DBSPFieldExpression.class))
+                    this.builder.append(".as_ref()");
+                this.builder.increase().append(".and_then(|x");
+                /*
                 if (this.options.ioOptions.verbosity > 0) {
                     this.builder.append(": ");
-                    baseType.withMayBeNull(false).ref().accept(this);
+                    sourceType.withMayBeNull(false).ref().accept(this);
                 }
+                 */
                 this.builder.append("| ");
-                // if (avoidClone) this.builder.append("&");
                 this.builder.append("x.")
                         .append(expression.fieldNo);
-                if (!baseType.hasCopy() && !avoidClone)
-                    this.builder.append(".clone()");
+                if (expression.getType().mayBeNull && !expression.getType().hasCopy() && !avoidRef) {
+                    this.builder.append(".as_ref()");
+                }
                 this.builder.append(")").decrease();
             }
         } else {
             expression.expression.accept(this);
             this.builder.append(".")
                     .append(expression.fieldNo);
+            if (expression.getType().mayBeNull && !this.compilingAssignmentLHS && !avoidRef) {
+                // The value is in an option.
+                this.builder.append(".as_ref()");
+                if (expression.getType().hasCopy()) {
+                    this.builder.append(".cloned()");
+                }
+            }
         }
         this.pop(expression);
         return VisitDecision.STOP;

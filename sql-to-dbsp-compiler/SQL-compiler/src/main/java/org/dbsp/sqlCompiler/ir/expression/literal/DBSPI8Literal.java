@@ -27,7 +27,7 @@ public final class DBSPI8Literal extends DBSPIntLiteral implements IsNumericLite
         this(value, false);
     }
 
-    public DBSPI8Literal(CalciteObject node, DBSPType type , @Nullable Byte value) {
+    public DBSPI8Literal(CalciteObject node, DBSPType type, @Nullable Byte value) {
         super(node, type, value == null);
         this.value = value;
     }
