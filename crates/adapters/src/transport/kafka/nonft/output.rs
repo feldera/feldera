@@ -52,7 +52,10 @@ impl ClientContext for KafkaOutputContext {
         // eprintln!("Kafka error: {error}, fatal: {fatal}, reason: {reason}");
 
         if let Some(cb) = self.async_error_callback.read().unwrap().as_ref() {
-            cb(fatal, anyhow!(reason.to_string()));
+            cb(
+                fatal,
+                anyhow!("Kafka producer error: {error}; Reason: {reason}"),
+            );
         }
     }
 
@@ -124,7 +127,8 @@ impl KafkaOutputEndpoint {
         debug!("Configured max message size: {max_message_size} ('message.max.bytes={message_max_bytes}')");
 
         // Create Kafka producer.
-        let kafka_producer = ThreadedProducer::from_config_and_context(&client_config, context)?;
+        let kafka_producer = ThreadedProducer::from_config_and_context(&client_config, context)
+            .map_err(|e| anyhow!("error creating Kafka producer: {e}"))?;
 
         Ok(Self {
             kafka_producer,
@@ -151,6 +155,12 @@ impl OutputEndpoint for KafkaOutputEndpoint {
                 self.kafka_producer.client().fetch_metadata(
                     Some(&self.config.topic),
                     Duration::from_secs(self.config.initialization_timeout_secs as u64),
+                )
+            })
+            .map_err(|e| {
+                anyhow!(
+                    "error retrieving metadata for topic '{}': {e}",
+                    &self.config.topic
                 )
             })?;
         *self

@@ -277,7 +277,7 @@ where
                         polling_interval = min(polling_interval * 2, MAX_POLLING_INTERVAL);
                     }
                 }
-                _ => bail!(e),
+                _ => bail!("error sending Kafka message: {e}"),
             },
         }
     }
