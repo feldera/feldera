@@ -561,7 +561,7 @@ async fn stats(state: WebData<ServerState>) -> impl Responder {
     match &*state.controller.lock().unwrap() {
         Some(controller) => {
             let json_string = serde_json::to_string(controller.status()).unwrap();
-            println!("Status: {:?}", serde_json::from_str::<serde_json::Value>(&json_string).unwrap().as_object().unwrap()["global_metrics"]["state"]);
+            info!("Status: {:?}", serde_json::from_str::<serde_json::Value>(&json_string).unwrap().as_object().unwrap()["global_metrics"]["state"]);
             Ok(HttpResponse::Ok()
                 .content_type(mime::APPLICATION_JSON)
                 .body(json_string))
