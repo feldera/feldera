@@ -1,4 +1,4 @@
-use crate::db::types::pipeline::PipelineId;
+use crate::db::types::pipeline::{PipelineDesiredStatus, PipelineStatus};
 use crate::db::types::utils::ValidationError;
 use actix_web::{
     body::BoxBody, http::StatusCode, HttpResponse, HttpResponseBuilder, ResponseError,
@@ -13,162 +13,135 @@ use std::{borrow::Cow, error::Error as StdError, fmt, fmt::Display, time::Durati
 #[derive(Debug, Serialize)]
 #[serde(untagged)]
 pub enum RunnerError {
-    // The runner received information from the database about the pipeline which is erroneous.
-    PipelineMissingProgramInfo,
-    PipelineMissingProgramBinaryUrl,
-    PipelineMissingDeploymentConfig,
-    PipelineMissingDeploymentLocation,
-    PipelineInvalidRuntimeConfig {
+    // Automaton encountered an error during one of its own operations
+    AutomatonMissingProgramInfo,
+    AutomatonMissingProgramBinaryUrl,
+    AutomatonMissingDeploymentConfig,
+    AutomatonMissingDeploymentLocation,
+    AutomatonInvalidRuntimeConfig {
         value: serde_json::Value,
         error: ValidationError,
     },
-    PipelineInvalidProgramInfo {
+    AutomatonInvalidProgramInfo {
         value: serde_json::Value,
         error: ValidationError,
     },
-    PipelineInvalidDeploymentConfig {
+    AutomatonInvalidDeploymentConfig {
         value: serde_json::Value,
         error: ValidationError,
     },
-    FailedToSerializeDeploymentConfig {
+    AutomatonFailedToSerializeDeploymentConfig {
         error: String,
     },
-    CannotProvisionDifferentPlatformVersion {
+    AutomatonCannotProvisionDifferentPlatformVersion {
         pipeline_platform_version: String,
         runner_platform_version: String,
     },
-    // Runner web server interaction
-    RunnerEndpointSendError {
-        url: String,
-        error: String,
-    },
-    RunnerUnreachable {
-        original_error: String,
-    },
-    LogFollowRequestChannelFull,
-    LogFollowRequestChannelClosed,
-    // Pipeline web server interaction
-    PipelineNotRunningOrPaused {
-        pipeline_id: PipelineId,
-        pipeline_name: String,
-    },
-    PipelineEndpointSendError {
-        pipeline_id: PipelineId,
-        pipeline_name: Option<String>,
-        url: String,
-        error: String,
-    },
-    PipelineEndpointResponseBodyError {
-        pipeline_id: PipelineId,
-        pipeline_name: Option<String>,
-        url: String,
-        error: String,
-    },
-    PipelineEndpointResponseJsonParseError {
-        pipeline_id: PipelineId,
-        pipeline_name: Option<String>,
-        url: String,
-        error: String,
-    },
-    PipelineEndpointInvalidResponse {
-        pipeline_id: PipelineId,
-        error: String,
-    },
-    // Automaton
-    PipelineProvisioningTimeout {
-        pipeline_id: PipelineId,
+    AutomatonProvisioningTimeout {
         timeout: Duration,
     },
-    PipelineInitializingTimeout {
-        pipeline_id: PipelineId,
+    AutomatonInitializingTimeout {
         timeout: Duration,
     },
-    PipelineAfterInitializationBecameRunning {
-        pipeline_id: PipelineId,
-    },
-    PipelineShutdownTimeout {
-        pipeline_id: PipelineId,
-        timeout: Duration,
-    },
-    // Runner
-    PipelineStartupError {
-        pipeline_id: PipelineId,
-        // TODO: This should be IOError, so we can serialize the error code
-        // similar to `DbspError::IO`.
+    AutomatonAfterInitializationBecameRunning,
+
+    // The pipeline runner implementation encounters an error
+    RunnerDeploymentProvisionError {
         error: String,
     },
-    PipelineDeploymentError {
-        pipeline_id: PipelineId,
+    RunnerDeploymentCheckError {
         error: String,
     },
-    PipelineShutdownError {
-        pipeline_id: PipelineId,
-        // TODO: This should be IOError, so we can serialize the error code
-        // similar to `DbspError::IO`.
+    RunnerDeploymentShutdownError {
         error: String,
     },
-    PortFileParseError {
-        pipeline_id: PipelineId,
+
+    // Interaction with the pipeline runner
+    RunnerInteractionShutdown,
+    RunnerInteractionUnreachable {
         error: String,
     },
-    BinaryFetchError {
-        pipeline_id: PipelineId,
+    RunnerInteractionLogFollowRequestChannelFull,
+    RunnerInteractionLogFollowRequestChannelClosed,
+
+    // Interaction with the pipeline
+    PipelineInteractionNotDeployed {
+        status: PipelineStatus,
+        desired_status: PipelineDesiredStatus,
+    },
+    PipelineInteractionUnreachable {
         error: String,
     },
-    PipelineUnreachable {
-        original_error: String,
+    PipelineInteractionInvalidResponse {
+        error: String,
     },
 }
 
 impl DetailedError for RunnerError {
     fn error_code(&self) -> Cow<'static, str> {
         match self {
-            Self::PipelineMissingProgramInfo => Cow::from("PipelineMissingProgramInfo"),
-            Self::PipelineMissingProgramBinaryUrl => Cow::from("PipelineMissingProgramBinaryUrl"),
-            Self::PipelineMissingDeploymentConfig => Cow::from("PipelineMissingDeploymentConfig"),
-            Self::PipelineMissingDeploymentLocation => {
-                Cow::from("PipelineMissingDeploymentLocation")
+            RunnerError::AutomatonMissingProgramInfo => Cow::from("AutomatonMissingProgramInfo"),
+            RunnerError::AutomatonMissingProgramBinaryUrl => {
+                Cow::from("AutomatonMissingProgramBinaryUrl")
             }
-            Self::PipelineInvalidRuntimeConfig { .. } => Cow::from("PipelineInvalidRuntimeConfig"),
-            Self::PipelineInvalidProgramInfo { .. } => Cow::from("PipelineInvalidProgramInfo"),
-            Self::PipelineInvalidDeploymentConfig { .. } => {
-                Cow::from("PipelineInvalidDeploymentConfig")
+            RunnerError::AutomatonMissingDeploymentConfig => {
+                Cow::from("AutomatonMissingDeploymentConfig")
             }
-            Self::FailedToSerializeDeploymentConfig { .. } => {
-                Cow::from("FailedToSerializeDeploymentConfig")
+            RunnerError::AutomatonMissingDeploymentLocation => {
+                Cow::from("AutomatonMissingDeploymentLocation")
             }
-            Self::CannotProvisionDifferentPlatformVersion { .. } => {
-                Cow::from("CannotProvisionDifferentPlatformVersion")
+            RunnerError::AutomatonInvalidRuntimeConfig { .. } => {
+                Cow::from("AutomatonInvalidRuntimeConfig")
             }
-            Self::RunnerEndpointSendError { .. } => Cow::from("RunnerEndpointSendError"),
-            Self::RunnerUnreachable { .. } => Cow::from("RunnerUnreachable"),
-            Self::LogFollowRequestChannelFull { .. } => Cow::from("LogFollowRequestChannelFull"),
-            Self::LogFollowRequestChannelClosed { .. } => {
-                Cow::from("LogFollowRequestChannelClosed")
+            RunnerError::AutomatonInvalidProgramInfo { .. } => {
+                Cow::from("AutomatonInvalidProgramInfo")
             }
-            Self::PipelineNotRunningOrPaused { .. } => Cow::from("PipelineNotRunningOrPaused"),
-            Self::PipelineEndpointSendError { .. } => Cow::from("PipelineEndpointSendError"),
-            Self::PipelineEndpointResponseBodyError { .. } => {
-                Cow::from("PipelineEndpointResponseBodyError")
+            RunnerError::AutomatonInvalidDeploymentConfig { .. } => {
+                Cow::from("AutomatonInvalidDeploymentConfig")
             }
-            Self::PipelineEndpointResponseJsonParseError { .. } => {
-                Cow::from("PipelineEndpointResponseJsonParseError")
+            RunnerError::AutomatonFailedToSerializeDeploymentConfig { .. } => {
+                Cow::from("AutomatonFailedToSerializeDeploymentConfig")
             }
-            Self::PipelineEndpointInvalidResponse { .. } => {
-                Cow::from("PipelineEndpointInvalidResponse")
+            RunnerError::AutomatonCannotProvisionDifferentPlatformVersion { .. } => {
+                Cow::from("AutomatonCannotProvisionDifferentPlatformVersion")
             }
-            Self::PipelineProvisioningTimeout { .. } => Cow::from("PipelineProvisioningTimeout"),
-            Self::PipelineInitializingTimeout { .. } => Cow::from("PipelineInitializingTimeout"),
-            Self::PipelineAfterInitializationBecameRunning { .. } => {
-                Cow::from("PipelineAfterInitializationBecameRunning")
+            RunnerError::AutomatonProvisioningTimeout { .. } => {
+                Cow::from("AutomatonProvisioningTimeout")
             }
-            Self::PipelineShutdownTimeout { .. } => Cow::from("PipelineShutdownTimeout"),
-            Self::PipelineStartupError { .. } => Cow::from("PipelineStartupError"),
-            Self::PipelineShutdownError { .. } => Cow::from("PipelineShutdownError"),
-            Self::PipelineDeploymentError { .. } => Cow::from("PipelineDeploymentError"),
-            Self::PortFileParseError { .. } => Cow::from("PortFileParseError"),
-            Self::BinaryFetchError { .. } => Cow::from("BinaryFetchError"),
-            Self::PipelineUnreachable { .. } => Cow::from("PipelineUnreachable"),
+            RunnerError::AutomatonInitializingTimeout { .. } => {
+                Cow::from("AutomatonInitializingTimeout")
+            }
+            RunnerError::AutomatonAfterInitializationBecameRunning => {
+                Cow::from("AutomatonAfterInitializationBecameRunning")
+            }
+            RunnerError::RunnerDeploymentProvisionError { .. } => {
+                Cow::from("RunnerDeploymentProvisionError")
+            }
+            RunnerError::RunnerDeploymentCheckError { .. } => {
+                Cow::from("RunnerDeploymentCheckError")
+            }
+            RunnerError::RunnerDeploymentShutdownError { .. } => {
+                Cow::from("RunnerDeploymentShutdownError")
+            }
+            RunnerError::RunnerInteractionShutdown => Cow::from("RunnerInteractionShutdown"),
+            RunnerError::RunnerInteractionUnreachable { .. } => {
+                Cow::from("RunnerInteractionUnreachable")
+            }
+            RunnerError::RunnerInteractionLogFollowRequestChannelFull => {
+                Cow::from("RunnerInteractionLogFollowRequestChannelFull")
+            }
+            RunnerError::RunnerInteractionLogFollowRequestChannelClosed => {
+                Cow::from("RunnerInteractionLogFollowRequestChannelClosed")
+            }
+            RunnerError::PipelineInteractionNotDeployed { .. } => {
+                Cow::from("PipelineInteractionNotDeployed")
+            }
+            RunnerError::PipelineInteractionUnreachable { .. } => {
+                Cow::from("PipelineInteractionUnreachable")
+            }
+            RunnerError::PipelineInteractionInvalidResponse { .. } => {
+                Cow::from("PipelineInteractionInvalidResponse")
+            }
         }
     }
 }
@@ -176,34 +149,31 @@ impl DetailedError for RunnerError {
 impl Display for RunnerError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::PipelineMissingProgramInfo => {
+            Self::AutomatonMissingProgramInfo => {
                 write!(
                     f,
                     "Unable to provision pipeline because its program information is missing, which is necessary to construct the deployment configuration"
                 )
             }
-            Self::PipelineMissingProgramBinaryUrl => {
+            Self::AutomatonMissingProgramBinaryUrl => {
                 write!(
                     f,
                     "Unable to provision pipeline because its program binary URL is missing"
                 )
             }
-            Self::PipelineMissingDeploymentConfig => {
+            Self::AutomatonMissingDeploymentConfig => {
                 write!(
                     f,
                     "Unable to provision pipeline because its deployment configuration is missing"
                 )
             }
-            Self::PipelineMissingDeploymentLocation => {
+            Self::AutomatonMissingDeploymentLocation => {
                 write!(
                     f,
-                    "Unable to reach out to the pipeline because its deployment location is missing"
+                    "Unable to status check the pipeline because its deployment location is missing"
                 )
             }
-            Self::PipelineInvalidRuntimeConfig {
-                value,
-                error,
-            } => {
+            Self::AutomatonInvalidRuntimeConfig { value, error } => {
                 write!(
                     f,
                     "The runtime configuration:\n{value:#}\n\n... is not valid due to: {error}.\n\n\
@@ -211,10 +181,7 @@ impl Display for RunnerError {
                     Shut down and update the 'runtime_config' field of the pipeline to resolve this."
                 )
             }
-            Self::PipelineInvalidProgramInfo {
-                value,
-                error,
-            } => {
+            Self::AutomatonInvalidProgramInfo { value, error } => {
                 write!(
                     f,
                     "The program information:\n{value:#}\n\n... is not valid due to: {error}.\n\n\
@@ -222,10 +189,7 @@ impl Display for RunnerError {
                     Shut down and recompile the pipeline to resolve this."
                 )
             }
-            Self::PipelineInvalidDeploymentConfig {
-                value,
-                error,
-            } => {
+            Self::AutomatonInvalidDeploymentConfig { value, error } => {
                 write!(
                     f,
                     "The deployment configuration:\n{value:#}\n\n... is not valid due to: {error}.\n\n\
@@ -233,168 +197,107 @@ impl Display for RunnerError {
                     Shut down and restart the pipeline to resolve this."
                 )
             }
-            Self::FailedToSerializeDeploymentConfig {
-                error,
-            } => {
+            Self::AutomatonFailedToSerializeDeploymentConfig { error } => {
                 write!(
                     f,
                     "Failed to serialize deployment configuration due to: {error}"
                 )
             }
-            Self::CannotProvisionDifferentPlatformVersion {
+            Self::AutomatonCannotProvisionDifferentPlatformVersion {
                 pipeline_platform_version,
                 runner_platform_version,
             } => {
                 write!(
                     f,
-                    "Unable to provision pipeline because the pipeline platform version ({pipeline_platform_version}) differs from the runner platform version ({runner_platform_version})"
+                    "Unable to provision pipeline because the pipeline platform version ({pipeline_platform_version}) \
+                    differs from the runner platform version ({runner_platform_version}) -- shut down and restart the pipeline to resolve this"
                 )
             }
-            Self::RunnerEndpointSendError {
-                url,
-                error,
-            } => {
+            Self::AutomatonProvisioningTimeout { timeout } => {
                 write!(
                     f,
-                    "Sending request to URL {url} of runner failed: {error}"
+                    "Waiting for provisioning timed out after {}s \
+                    -- this occurs when the required resources requested by the runner \
+                    for deployment took too long to be provisioned",
+                    timeout.as_secs()
                 )
             }
-            Self::RunnerUnreachable { original_error } => {
-                write!(f, "Runner is unreachable. This indicates that the runner either is still starting up or has crashed unexpectedly (original error: {original_error}).")
-            }
-            Self::LogFollowRequestChannelFull => {
-                write!(f, "Log follow request channel is full. This indicates that the runner logging is overwhelmed.")
-            }
-            Self::LogFollowRequestChannelClosed => {
-                write!(f, "Log follow request channel is closed. This indicates that the runner crashed unexpectedly.")
-            }
-            Self::PipelineNotRunningOrPaused {
-                pipeline_id,
-                pipeline_name,
-            } => {
+            Self::AutomatonInitializingTimeout { timeout } => {
                 write!(
                     f,
-                    "Pipeline {pipeline_name} ({pipeline_id}) is not currently running or paused."
+                    "Waiting for initialization timed out after {}s \
+                    -- additional information about the cause can likely be found in the pipeline logs",
+                    timeout.as_secs()
                 )
             }
-            Self::PipelineEndpointSendError {
-                pipeline_id,
-                pipeline_name,
-                url,
-                error,
-            } => {
-                match pipeline_name {
-                    None => write!(
-                        f,
-                        "Sending request to URL {url} of pipeline {pipeline_id} failed: {error}"
-                    ),
-                    Some(name) => write!(
-                        f,
-                        "Sending request to URL {url} of pipeline {name} ({pipeline_id}) failed: {error}"
-                    )
-                }
-            }
-            Self::PipelineEndpointResponseBodyError {
-                pipeline_id,
-                pipeline_name,
-                url,
-                error,
-            } => {
-                match pipeline_name {
-                    None => write!(
-                        f,
-                        "Response body from URL {url} of pipeline {pipeline_id} could not be read: {error}"
-                    ),
-                    Some(name) => write!(
-                        f,
-                        "Response body from URL {url} of pipeline {name} ({pipeline_id}) could not be read: {error}"
-                    )
-                }
-            }
-            Self::PipelineEndpointResponseJsonParseError {
-                pipeline_id,
-                pipeline_name,
-                url,
-                error,
-            } => {
-                match pipeline_name {
-                    None => write!(
-                        f,
-                        "Response body of request to URL {url} of pipeline {pipeline_id} could not be parsed as JSON: {error}"
-                    ),
-                    Some(name) => write!(
-                        f,
-                        "Response body of request to URL {url} of pipeline {name} ({pipeline_id}) could not be parsed as JSON: {error}"
-                    )
-                }
-            }
-            Self::PipelineEndpointInvalidResponse {
-                pipeline_id,
-                error,
-            } => {
+            Self::AutomatonAfterInitializationBecameRunning => {
                 write!(
                     f,
-                    "Pipeline {pipeline_id} received an invalid endpoint response: {error}"
+                    "Pipeline immediately became running rather than paused after initialization"
                 )
             }
-            Self::PipelineProvisioningTimeout {
-                pipeline_id,
-                timeout,
+            Self::RunnerDeploymentProvisionError { error } => {
+                write!(f, "Deployment provisioning failed: {error}")
+            }
+            Self::RunnerDeploymentCheckError { error } => {
+                write!(f, "Deployment check failed: {error}")
+            }
+            Self::RunnerDeploymentShutdownError { error } => {
+                write!(f, "Deployment shutdown failed (will retry): {error}")
+            }
+            Self::RunnerInteractionUnreachable { error } => {
+                write!(
+                    f,
+                    "Unable to reach pipeline runner to interact due to: {error}"
+                )
+            }
+            Self::RunnerInteractionShutdown => {
+                write!(
+                    f,
+                    "Unable to interact with pipeline runner because the deployment status is 'shutdown' \
+                    -- start the pipeline or wait if it has already been started"
+                )
+            }
+            Self::RunnerInteractionLogFollowRequestChannelFull => {
+                write!(f, "Log follow request channel is full -- this indicates that the runner logging is overwhelmed")
+            }
+            Self::RunnerInteractionLogFollowRequestChannelClosed => {
+                write!(f, "Log follow request channel is closed -- this indicates that the runner crashed unexpectedly")
+            }
+            Self::PipelineInteractionNotDeployed {
+                status,
+                desired_status,
             } => {
+                let resolution = match (status, desired_status) {
+                    (PipelineStatus::Shutdown, PipelineDesiredStatus::Shutdown) => {
+                        "start the pipeline"
+                    }
+                    (PipelineStatus::Failed, PipelineDesiredStatus::Running | PipelineDesiredStatus::Paused) => {
+                        "investigate the reason why the pipeline failed by looking at the error and logs, \
+                        shut down the pipeline to clear the 'failed' state, fix any issues, and start again afterwards"
+                    }
+                    (_, PipelineDesiredStatus::Running | PipelineDesiredStatus::Paused) => {
+                        "wait for the pipeline to become running or paused"
+                    }
+                    (_, PipelineDesiredStatus::Shutdown) => {
+                        "wait for the pipeline to become shutdown and start again afterwards"
+                    }
+                };
                 write!(
                     f,
-                    "Waiting for provisioning of pipeline {pipeline_id} timed out after {timeout:?}"
+                    "Unable to interact with pipeline because the deployment status ('{status}') \
+                    is not one of the deployed statuses ('running', 'paused' or 'unavailable') \
+                    -- to resolve this: {resolution}"
                 )
             }
-            Self::PipelineInitializingTimeout {
-                pipeline_id,
-                timeout,
-            } => {
+            Self::PipelineInteractionUnreachable { error } => {
+                write!(f, "Unable to reach pipeline to interact due to: {error}")
+            }
+            Self::PipelineInteractionInvalidResponse { error } => {
                 write!(
                     f,
-                    "Waiting for initialization of pipeline {pipeline_id} timed out after {timeout:?}"
+                    "During pipeline interaction an unexpected invalid response was encountered: {error}"
                 )
-            }
-            Self::PipelineAfterInitializationBecameRunning {
-                pipeline_id
-            } => {
-                write!(
-                    f,
-                    "Pipeline {pipeline_id} immediately became running rather than paused after initialization"
-                )
-            }
-            Self::PipelineShutdownTimeout {
-                pipeline_id,
-                timeout,
-            } => {
-                write!(
-                    f,
-                    "Waiting for shutdown of pipeline {pipeline_id} timed out after {timeout:?}"
-                )
-            }
-            Self::PipelineStartupError { pipeline_id, error } => {
-                write!(f, "Failed to start pipeline {pipeline_id}: {error}")
-            }
-            Self::PipelineShutdownError { pipeline_id, error } => {
-                write!(f, "Failed to shutdown pipeline {pipeline_id}: {error}")
-            }
-            Self::PipelineDeploymentError { pipeline_id, error } => {
-                write!(f, "Deployment of pipeline {pipeline_id} encountered a fatal error: {error}")
-            }
-            Self::PortFileParseError { pipeline_id, error } => {
-                write!(
-                    f,
-                    "Could not parse port for pipeline {pipeline_id} from port file: {error}"
-                )
-            }
-            Self::BinaryFetchError { pipeline_id, error } => {
-                write!(
-                    f,
-                    "Failed to fetch binary executable for running pipeline {pipeline_id}: {error}"
-                )
-            }
-            Self::PipelineUnreachable { original_error } => {
-                write!(f, "Pipeline is unreachable. This indicates that the pipeline ran out of memory or crashed unexpectedly (original error: {original_error}).")
             }
         }
     }
@@ -411,40 +314,36 @@ impl StdError for RunnerError {}
 impl ResponseError for RunnerError {
     fn status_code(&self) -> StatusCode {
         match self {
-            Self::PipelineMissingProgramInfo => StatusCode::INTERNAL_SERVER_ERROR,
-            Self::PipelineMissingProgramBinaryUrl => StatusCode::INTERNAL_SERVER_ERROR,
-            Self::PipelineMissingDeploymentConfig => StatusCode::INTERNAL_SERVER_ERROR,
-            Self::PipelineMissingDeploymentLocation => StatusCode::INTERNAL_SERVER_ERROR,
-            Self::PipelineInvalidRuntimeConfig { .. } => StatusCode::INTERNAL_SERVER_ERROR,
-            Self::PipelineInvalidProgramInfo { .. } => StatusCode::INTERNAL_SERVER_ERROR,
-            Self::PipelineInvalidDeploymentConfig { .. } => StatusCode::INTERNAL_SERVER_ERROR,
-            Self::FailedToSerializeDeploymentConfig { .. } => StatusCode::INTERNAL_SERVER_ERROR,
-            Self::CannotProvisionDifferentPlatformVersion { .. } => {
+            Self::AutomatonMissingProgramInfo => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::AutomatonMissingProgramBinaryUrl => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::AutomatonMissingDeploymentConfig => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::AutomatonMissingDeploymentLocation => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::AutomatonInvalidRuntimeConfig { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::AutomatonInvalidProgramInfo { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::AutomatonInvalidDeploymentConfig { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::AutomatonFailedToSerializeDeploymentConfig { .. } => {
                 StatusCode::INTERNAL_SERVER_ERROR
             }
-            Self::RunnerEndpointSendError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
-            Self::RunnerUnreachable { .. } => StatusCode::INTERNAL_SERVER_ERROR,
-            Self::LogFollowRequestChannelFull { .. } => StatusCode::INTERNAL_SERVER_ERROR,
-            Self::LogFollowRequestChannelClosed { .. } => StatusCode::INTERNAL_SERVER_ERROR,
-            Self::PipelineNotRunningOrPaused { .. } => StatusCode::BAD_REQUEST,
-            Self::PipelineEndpointSendError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
-            Self::PipelineEndpointResponseBodyError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
-            Self::PipelineEndpointResponseJsonParseError { .. } => {
+            Self::AutomatonCannotProvisionDifferentPlatformVersion { .. } => {
                 StatusCode::INTERNAL_SERVER_ERROR
             }
-            Self::PipelineEndpointInvalidResponse { .. } => StatusCode::INTERNAL_SERVER_ERROR,
-            Self::PipelineProvisioningTimeout { .. } => StatusCode::INTERNAL_SERVER_ERROR,
-            Self::PipelineInitializingTimeout { .. } => StatusCode::INTERNAL_SERVER_ERROR,
-            Self::PipelineAfterInitializationBecameRunning { .. } => {
+            Self::AutomatonProvisioningTimeout { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::AutomatonInitializingTimeout { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::AutomatonAfterInitializationBecameRunning => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::RunnerDeploymentProvisionError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::RunnerDeploymentCheckError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::RunnerDeploymentShutdownError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::RunnerInteractionShutdown { .. } => StatusCode::SERVICE_UNAVAILABLE,
+            Self::RunnerInteractionUnreachable { .. } => StatusCode::SERVICE_UNAVAILABLE,
+            Self::RunnerInteractionLogFollowRequestChannelFull { .. } => {
+                StatusCode::SERVICE_UNAVAILABLE
+            }
+            Self::RunnerInteractionLogFollowRequestChannelClosed { .. } => {
                 StatusCode::INTERNAL_SERVER_ERROR
             }
-            Self::PipelineStartupError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
-            Self::PipelineShutdownError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
-            Self::PipelineDeploymentError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
-            Self::PipelineShutdownTimeout { .. } => StatusCode::INTERNAL_SERVER_ERROR,
-            Self::PortFileParseError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
-            Self::BinaryFetchError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
-            Self::PipelineUnreachable { .. } => StatusCode::SERVICE_UNAVAILABLE,
+            Self::PipelineInteractionNotDeployed { .. } => StatusCode::SERVICE_UNAVAILABLE,
+            Self::PipelineInteractionUnreachable { .. } => StatusCode::SERVICE_UNAVAILABLE,
+            Self::PipelineInteractionInvalidResponse { .. } => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 

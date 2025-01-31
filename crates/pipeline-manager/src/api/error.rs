@@ -43,10 +43,10 @@ impl Display for ApiError {
                 write!(f, "Missing URL-encoded parameter '{param}'")
             }
             Self::InvalidUuidParam { value, error } => {
-                write!(f, "Invalid UUID string '{value}': '{error}'")
+                write!(f, "Invalid UUID string '{value}': {error}")
             }
             Self::InvalidNameParam { value, error } => {
-                write!(f, "Invalid name string '{value}': '{error}'")
+                write!(f, "Invalid name string '{value}': {error}")
             }
             Self::InvalidChecksumParam { value, error } => {
                 write!(f, "Invalid checksum string '{value}': {error}")

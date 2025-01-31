@@ -26,6 +26,7 @@ use tokio::{fs, fs::create_dir_all, select, spawn};
 /// Retrieve the binary executable using its URL.
 pub async fn fetch_binary_ref(
     config: &LocalRunnerConfig,
+    client: &reqwest::Client,
     binary_ref: &str,
     pipeline_id: PipelineId,
     program_version: Version,
@@ -39,15 +40,13 @@ pub async fn fetch_binary_ref(
             let exists = fs::try_exists(parsed.path()).await;
             match exists {
                 Ok(true) => Ok(parsed.path().to_string()),
-                Ok(false) => Err(RunnerError::BinaryFetchError {
-                    pipeline_id,
+                Ok(false) => Err(RunnerError::RunnerDeploymentProvisionError {
                     error: format!(
                         "Binary required by pipeline {pipeline_id} does not exist at URL {}",
                         parsed.path()
                     ),
                 }.into()),
-                Err(e) => Err(RunnerError::BinaryFetchError {
-                    pipeline_id,
+                Err(e) => Err(RunnerError::RunnerDeploymentProvisionError {
                     error: format!(
                         "Accessing URL {} for binary required by pipeline {pipeline_id} returned an error: {}",
                         parsed.path(),
@@ -59,12 +58,11 @@ pub async fn fetch_binary_ref(
         // Access a file over HTTP/HTTPS
         // TODO: implement retries
         "http" | "https" => {
-            let resp = reqwest::get(binary_ref).await;
+            let resp = client.get(binary_ref).send().await;
             match resp {
                 Ok(resp) => {
                     if resp.status() != StatusCode::OK {
-                        return Err(RunnerError::BinaryFetchError {
-                            pipeline_id,
+                        return Err(RunnerError::RunnerDeploymentProvisionError {
                             error: format!(
                                 "response status of retrieving {} is {} instead of expected {}",
                                 binary_ref, resp.status(), StatusCode::OK
@@ -103,8 +101,7 @@ pub async fn fetch_binary_ref(
                     Ok(path.into_os_string().into_string().expect("Path should be valid Unicode"))
                 }
                 Err(e) => {
-                    Err(RunnerError::BinaryFetchError {
-                        pipeline_id,
+                    Err(RunnerError::RunnerDeploymentProvisionError {
                         error: format!(
                             "Fetching URL {} for binary required by pipeline {pipeline_id} returned an error: {}",
                             parsed.path(), e
@@ -133,6 +130,7 @@ pub async fn fetch_binary_ref(
 pub struct LocalRunner {
     pipeline_id: PipelineId,
     config: LocalRunnerConfig,
+    client: reqwest::Client,
     process: Option<Child>,
     log_terminate_sender_and_join_handle: Option<(
         oneshot::Sender<()>,
@@ -301,6 +299,7 @@ impl PipelineExecutor for LocalRunner {
     fn new(
         pipeline_id: PipelineId,
         config: Self::Config,
+        client: reqwest::Client,
         log_follow_request_receiver: mpsc::Receiver<mpsc::Sender<LogMessage>>,
     ) -> Self {
         let (log_reject_terminate_sender, log_reject_join_handle) =
@@ -308,6 +307,7 @@ impl PipelineExecutor for LocalRunner {
         Self {
             pipeline_id,
             config,
+            client,
             process: None,
             log_terminate_sender_and_join_handle: Some((
                 log_reject_terminate_sender,
@@ -394,6 +394,7 @@ impl PipelineExecutor for LocalRunner {
         // Retrieve and store executable in pipeline working directory
         let fetched_executable = fetch_binary_ref(
             &self.config,
+            &self.client,
             program_binary_url,
             self.pipeline_id,
             program_version,
@@ -412,9 +413,8 @@ impl PipelineExecutor for LocalRunner {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
-            .map_err(|e| RunnerError::PipelineStartupError {
-                pipeline_id: self.pipeline_id,
-                error: e.to_string(),
+            .map_err(|e| RunnerError::RunnerDeploymentProvisionError {
+                error: format!("unable to spawn process due to: {e}"),
             })?;
 
         // Switch to operational logging
@@ -458,10 +458,11 @@ impl PipelineExecutor for LocalRunner {
                         let host = &self.config.pipeline_host;
                         Ok(Some(format!("{host}:{port}")))
                     }
-                    Err(e) => Err(ManagerError::from(RunnerError::PortFileParseError {
-                        pipeline_id: self.pipeline_id,
-                        error: e.to_string(),
-                    })),
+                    Err(e) => Err(ManagerError::from(
+                        RunnerError::RunnerDeploymentProvisionError {
+                            error: format!("unable to parse port file due to: {e}"),
+                        },
+                    )),
                 }
             }
             Err(_) => Ok(None),
@@ -475,8 +476,7 @@ impl PipelineExecutor for LocalRunner {
         // Pipeline working directory must exist
         let pipeline_dir = &self.config.pipeline_dir(self.pipeline_id);
         if !Path::new(pipeline_dir).is_dir() {
-            return Err(ManagerError::from(RunnerError::PipelineDeploymentError {
-                pipeline_id: self.pipeline_id,
+            return Err(ManagerError::from(RunnerError::RunnerDeploymentCheckError {
                 error: format!("Pipeline working directory {} no longer exists (it should only be deleted at shutdown)", pipeline_dir.to_string_lossy())
             }));
         }
@@ -487,27 +487,31 @@ impl PipelineExecutor for LocalRunner {
                 Ok(status) => {
                     if let Some(status) = status {
                         // If there is an exit status, the process has exited
-                        return Err(ManagerError::from(RunnerError::PipelineDeploymentError {
-                            pipeline_id: self.pipeline_id,
-                            error: format!("Pipeline process exited prematurely with {status}"),
-                        }));
+                        return Err(ManagerError::from(
+                            RunnerError::RunnerDeploymentCheckError {
+                                error: format!("Pipeline process exited prematurely with {status}"),
+                            },
+                        ));
                     }
                 }
                 Err(e) => {
                     // Unable to check if it has an exit status, which indicates something went wrong
-                    return Err(ManagerError::from(RunnerError::PipelineDeploymentError {
-                        pipeline_id: self.pipeline_id,
-                        error: format!("Pipeline process status could not be checked due to: {e}"),
-                    }));
+                    return Err(ManagerError::from(
+                        RunnerError::RunnerDeploymentCheckError {
+                            error: format!(
+                                "Pipeline process status could not be checked due to: {e}"
+                            ),
+                        },
+                    ));
                 }
             }
         } else {
             // No process handle
-            return Err(ManagerError::from(RunnerError::PipelineDeploymentError {
-                pipeline_id: self.pipeline_id,
-                error: "The pipeline-manager and this pipeline were previously terminated"
-                    .to_string(),
-            }));
+            return Err(ManagerError::from(
+                RunnerError::RunnerDeploymentCheckError {
+                    error: "the pipeline-manager and this pipeline were previously terminated -- shutdown and start the pipeline again".to_string(),
+                },
+            ));
         };
 
         Ok(())

@@ -1,14 +1,15 @@
 use crate::config::ApiServerConfig;
 use crate::db::storage::Storage;
 use crate::db::storage_postgres::StoragePostgres;
-use crate::db::types::pipeline::{ExtendedPipelineDescrMonitoring, PipelineId, PipelineStatus};
+use crate::db::types::pipeline::{ExtendedPipelineDescrMonitoring, PipelineStatus};
 use crate::db::types::tenant::TenantId;
 use crate::db_notifier::DbNotification;
 use crate::error::ManagerError;
 use crate::runner::error::RunnerError;
 use actix_web::{http::Method, web::Payload, HttpRequest, HttpResponse, HttpResponseBuilder};
+use awc::error::SendRequestError;
 use crossbeam::sync::ShardedLock;
-use reqwest::StatusCode;
+use std::fmt::Display;
 use std::{collections::HashMap, sync::Arc, time::Duration};
 use tokio::sync::Mutex;
 use tokio::time::Instant;
@@ -21,22 +22,27 @@ pub(crate) struct CachedPipelineDescr {
 impl CachedPipelineDescr {
     const CACHE_TTL: Duration = Duration::from_secs(5);
 
-    fn deployment_status(&self) -> Result<(ExtendedPipelineDescrMonitoring, String), ManagerError> {
+    /// Return the deployment location only if the pipeline is in the correct
+    /// status to be interacted with (i.e., running or paused).
+    fn deployment_location_based_on_status(&self) -> Result<String, ManagerError> {
         match self.pipeline.deployment_status {
             PipelineStatus::Running | PipelineStatus::Paused => {}
-            _ => Err(RunnerError::PipelineNotRunningOrPaused {
-                pipeline_id: self.pipeline.id,
-                pipeline_name: self.pipeline.name.clone(),
+            PipelineStatus::Unavailable => Err(RunnerError::PipelineInteractionUnreachable {
+                error: "deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again".to_string()
+            })?,
+            status => Err(RunnerError::PipelineInteractionNotDeployed {
+                status,
+                desired_status: self.pipeline.deployment_desired_status
             })?,
         };
 
-        Ok((
-            self.pipeline.clone(),
-            match &self.pipeline.deployment_location {
-                None => Err(RunnerError::PipelineMissingDeploymentLocation)?,
-                Some(location) => location.clone(),
-            },
-        ))
+        Ok(match &self.pipeline.deployment_location {
+            None => Err(RunnerError::PipelineInteractionUnreachable {
+                error: "deployment location is missing despite status being 'running' or 'paused'"
+                    .to_string(),
+            })?,
+            Some(location) => location.clone(),
+        })
     }
 }
 
@@ -49,7 +55,24 @@ impl From<ExtendedPipelineDescrMonitoring> for CachedPipelineDescr {
     }
 }
 
-/// Interface to interact through HTTP with the runner itself or the pipelines that it spawns.
+/// Formats the URL to reach the pipeline.
+pub fn format_pipeline_url(location: &str, endpoint: &str, query_string: &str) -> String {
+    format!("http://{location}/{endpoint}?{query_string}")
+}
+
+/// Formats the error message displayed when a request to a pipeline timed out.
+/// The message includes some additional hints to debug the cause.
+pub fn format_timeout_error_message<T: Display>(timeout: Duration, error: T) -> String {
+    format!(
+        "timeout ({}s) was reached: this means the pipeline took too long to respond -- \
+         this can simply be because the request was too difficult to process in time, \
+         or other reasons (e.g., panic, deadlock): the pipeline logs might contain \
+         additional information (original send request error: {error})",
+        timeout.as_secs()
+    )
+}
+
+/// Helper for the API server endpoints to interact through HTTP with a pipeline or a pipeline runner.
 pub struct RunnerInteraction {
     config: ApiServerConfig,
     db: Arc<Mutex<StoragePostgres>>,
@@ -57,12 +80,10 @@ pub struct RunnerInteraction {
 }
 
 impl RunnerInteraction {
-    /// Default timeout for an HTTP request to a pipeline. This is the maximum time to
-    /// wait for the issued request to attain an outcome (be it success or failure).
-    /// Upon timeout, the request is failed and immediately returns.
+    /// Default timeout for an HTTP request to a pipeline.
     const PIPELINE_HTTP_REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 
-    /// Default timeout for a HTTP request to the runner.
+    /// Default timeout for an HTTP request to a pipeline runner.
     const RUNNER_HTTP_REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 
     /// Creates the interaction interface.
@@ -96,15 +117,15 @@ impl RunnerInteraction {
         &self,
         tenant_id: TenantId,
         pipeline_name: &str,
-    ) -> Result<(ExtendedPipelineDescrMonitoring, String, bool), ManagerError> {
+    ) -> Result<(String, bool), ManagerError> {
         let cache = self.endpoint_cache.read().unwrap();
         let entry = cache
             .get(&(tenant_id, pipeline_name.to_string()))
             .filter(|entry| entry.instantiated.elapsed() <= CachedPipelineDescr::CACHE_TTL);
         match entry {
             Some(entry) => {
-                let (desc, location) = entry.deployment_status()?;
-                Ok((desc, location, true))
+                let location = entry.deployment_location_based_on_status()?;
+                Ok((location, true))
             }
             None => {
                 drop(cache);
@@ -115,90 +136,13 @@ impl RunnerInteraction {
                     .get_pipeline_for_monitoring(tenant_id, pipeline_name)
                     .await?;
                 let cached_descriptor: CachedPipelineDescr = pipeline.into();
-                let deployment_status = cached_descriptor.deployment_status();
+                let deployment_location = cached_descriptor.deployment_location_based_on_status();
                 let mut cache = self.endpoint_cache.write().unwrap();
                 cache.insert((tenant_id, pipeline_name.to_string()), cached_descriptor);
-                let (desc, location) = deployment_status?;
-                Ok((desc, location, false))
+                let location = deployment_location?;
+                Ok((location, false))
             }
         }
-    }
-
-    /// Formats the URL to reach the pipeline.
-    fn format_pipeline_url(location: &str, endpoint: &str, query_string: &str) -> String {
-        format!("http://{location}/{endpoint}?{query_string}")
-    }
-
-    /// Makes a new HTTP request without body to the pipeline.
-    /// The response is fully composed before returning.
-    ///
-    /// This method is static as it is directly provided the pipeline
-    /// identifier and location. It thus does not need to retrieve it
-    /// from the database.
-    ///
-    /// The response is 2-tuple of (requested URL, response).
-    pub async fn http_request_to_pipeline(
-        pipeline_id: PipelineId,
-        pipeline_name: Option<String>, // Name is only used for improved error reporting; provide `None` if not known
-        location: &str,
-        method: Method,
-        endpoint: &str,
-        query_string: &str,
-        timeout: Option<Duration>, // If timeout is not specified, a default timeout is used
-    ) -> Result<(String, reqwest::Response), ManagerError> {
-        let client = reqwest::Client::new();
-        let url = RunnerInteraction::format_pipeline_url(location, endpoint, query_string);
-        let response = client
-            .request(method, &url)
-            .timeout(timeout.unwrap_or(Self::PIPELINE_HTTP_REQUEST_TIMEOUT))
-            .send()
-            .await
-            .map_err(|e| RunnerError::PipelineEndpointSendError {
-                pipeline_id,
-                pipeline_name: pipeline_name.clone(),
-                url: url.to_string(),
-                error: e.to_string(),
-            })?;
-        Ok((url, response))
-    }
-
-    /// Makes a new HTTP request without body to the pipeline.
-    /// The response is fully composed before returning.
-    ///
-    /// This method is static as it is directly provided the pipeline
-    /// identifier and location. It thus does not need to retrieve it
-    /// from the database.
-    ///
-    /// The response is 2-tuple of (status code, JSON response body).
-    pub(crate) async fn http_request_to_pipeline_json(
-        pipeline_id: PipelineId,
-        pipeline_name: Option<String>, // Name is only used for improved error reporting; provide `None` if not known
-        location: &str,
-        method: Method,
-        endpoint: &str,
-        query_string: &str,
-        timeout: Option<Duration>, // If no timeout is specified, a default timeout is used
-    ) -> Result<(StatusCode, serde_json::Value), ManagerError> {
-        let (url, response) = RunnerInteraction::http_request_to_pipeline(
-            pipeline_id,
-            pipeline_name,
-            location,
-            method,
-            endpoint,
-            query_string,
-            timeout,
-        )
-        .await?;
-        let status = response.status();
-        let value = response.json::<serde_json::Value>().await.map_err(|e| {
-            RunnerError::PipelineEndpointResponseJsonParseError {
-                pipeline_id,
-                pipeline_name: None,
-                url,
-                error: e.to_string(),
-            }
-        })?;
-        Ok((status, value))
     }
 
     /// Makes a new HTTP request without body to the pipeline.
@@ -207,28 +151,30 @@ impl RunnerInteraction {
     /// This method is static as it is directly provided the pipeline
     /// identifier and location. It thus does not need to retrieve it
     /// from the database.
-    ///
-    /// The response is 2-tuple of (requested URL, response).
     pub async fn forward_http_request_to_pipeline(
-        pipeline_id: PipelineId,
-        pipeline_name: Option<String>, // Name is only used for improved error reporting; provide `None` if not known
+        client: &awc::Client,
         location: &str,
         method: Method,
         endpoint: &str,
         query_string: &str,
-        timeout: Option<Duration>, // If timeout is not specified, a default timeout is used
-    ) -> Result<(String, HttpResponse), ManagerError> {
+        timeout: Option<Duration>,
+    ) -> Result<HttpResponse, ManagerError> {
         // Perform request to the pipeline
-        let (url, original_response) = Self::http_request_to_pipeline(
-            pipeline_id,
-            pipeline_name.clone(),
-            location,
-            method,
-            endpoint,
-            query_string,
-            timeout,
-        )
-        .await?;
+        let url = format_pipeline_url(location, endpoint, query_string);
+        let timeout = timeout.unwrap_or(Self::PIPELINE_HTTP_REQUEST_TIMEOUT);
+        let mut original_response = client
+            .request(method, &url)
+            .timeout(timeout)
+            .send()
+            .await
+            .map_err(|e| match e {
+                SendRequestError::Timeout => RunnerError::PipelineInteractionUnreachable {
+                    error: format_timeout_error_message(timeout, e),
+                },
+                _ => RunnerError::PipelineInteractionUnreachable {
+                    error: format!("unable to send request due to: {e}"),
+                },
+            })?;
         let status = original_response.status();
 
         // Build the HTTP response with the original status
@@ -246,51 +192,46 @@ impl RunnerInteraction {
         }
 
         // Copy over the original response body
-        let response_body = original_response.bytes().await.map_err(|e| {
-            RunnerError::PipelineEndpointResponseBodyError {
-                pipeline_id,
-                pipeline_name: pipeline_name.clone(),
-                url: url.to_string(),
-                error: e.to_string(),
+        let response_body = original_response.body().await.map_err(|e| {
+            RunnerError::PipelineInteractionInvalidResponse {
+                error: format!("unable to reconstruct response body due to: {e}"),
             }
         })?;
-        Ok((url.to_string(), response_builder.body(response_body)))
+        Ok(response_builder.body(response_body))
     }
 
-    /// Makes a new HTTP request without body to the pipeline,
-    /// which is found via the tenant identifier and pipeline name.
+    /// Makes a new HTTP request without body to the pipeline.
     /// The response is fully composed before returning including headers.
-    /// This function is intended to be called by the user endpoints, and
-    /// has a different more informative error response when the HTTP request fails.
+    ///
+    /// The pipeline location is retrieved from the database using the
+    /// provided tenant identifier and pipeline name.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) async fn forward_http_request_to_pipeline_by_name(
         &self,
+        client: &awc::Client,
         tenant_id: TenantId,
         pipeline_name: &str,
         method: Method,
         endpoint: &str,
         query_string: &str,
-        timeout: Option<Duration>, // If no timeout is specified, a default timeout is used
+        timeout: Option<Duration>,
     ) -> Result<HttpResponse, ManagerError> {
-        let (pipeline, location, cache_hit) = self.check_pipeline(tenant_id, pipeline_name).await?;
+        let (location, cache_hit) = self.check_pipeline(tenant_id, pipeline_name).await?;
         let r = RunnerInteraction::forward_http_request_to_pipeline(
-            pipeline.id,
-            Some(pipeline_name.to_string()),
+            client,
             &location,
             method.clone(),
             endpoint,
             query_string,
             timeout,
         )
-        .await
-        .map(|(_url, response)| response);
+        .await;
 
         match r {
             Ok(response) => Ok(response),
             Err(e) => {
                 if !cache_hit {
-                    Err(ManagerError::from(RunnerError::PipelineUnreachable {
-                        original_error: e.to_string(),
-                    }))
+                    Err(e)
                 } else {
                     // In case of a cache hit&error, we remove the cache entry and retry the request
                     // as the cache entry might be outdated. The only time this solves a problem is
@@ -303,6 +244,7 @@ impl RunnerInteraction {
                     cache.remove(&(tenant_id, pipeline_name.to_string()));
                     drop(cache);
                     Box::pin(self.forward_http_request_to_pipeline_by_name(
+                        client,
                         tenant_id,
                         pipeline_name,
                         method,
@@ -316,30 +258,31 @@ impl RunnerInteraction {
         }
     }
 
-    /// Forwards HTTP request to the pipeline, with both the request
-    /// and response body being streaming. The pipeline is found via
-    /// the tenant identifier and pipeline name. The response with
-    /// headers is returned.
+    /// Forwards the provided HTTP request to the pipeline, for which the
+    /// request body can be streaming, and the response body is streaming.
+    /// The response has all headers.
+    ///
+    /// The pipeline location is retrieved from the database using the
+    /// provided tenant identifier and pipeline name.
     #[allow(clippy::too_many_arguments)]
     pub(crate) async fn forward_streaming_http_request_to_pipeline_by_name(
         &self,
+        client: &awc::Client,
         tenant_id: TenantId,
         pipeline_name: &str,
         endpoint: &str,
         request: HttpRequest,
         body: Payload,
-        client: &awc::Client,
         timeout: Option<Duration>, // If no timeout is specified, a default timeout is used
     ) -> Result<HttpResponse, ManagerError> {
-        let (pipeline, location, _cache_hit) =
-            self.check_pipeline(tenant_id, pipeline_name).await?;
+        let (location, _cache_hit) = self.check_pipeline(tenant_id, pipeline_name).await?;
 
         // Build new request to pipeline
-        let url =
-            RunnerInteraction::format_pipeline_url(&location, endpoint, request.query_string());
+        let url = format_pipeline_url(&location, endpoint, request.query_string());
+        let timeout = timeout.unwrap_or(Self::PIPELINE_HTTP_REQUEST_TIMEOUT);
         let mut new_request = client
             .request(request.method().clone(), &url)
-            .timeout(timeout.unwrap_or(Self::PIPELINE_HTTP_REQUEST_TIMEOUT));
+            .timeout(timeout);
 
         // Add headers of the original request
         for header in request
@@ -351,13 +294,13 @@ impl RunnerInteraction {
         }
 
         // Perform request to the pipeline
-        let response = new_request.send_stream(body).await.map_err(|e| {
-            RunnerError::PipelineEndpointSendError {
-                pipeline_id: pipeline.id,
-                pipeline_name: Some(pipeline.name.clone()),
-                url: url.to_string(),
-                error: e.to_string(),
-            }
+        let response = new_request.send_stream(body).await.map_err(|e| match e {
+            SendRequestError::Timeout => RunnerError::PipelineInteractionUnreachable {
+                error: format_timeout_error_message(timeout, e),
+            },
+            _ => RunnerError::PipelineInteractionUnreachable {
+                error: format!("unable to send request due to: {e}"),
+            },
         })?;
 
         // Build the new HTTP response with the same status, headers and streaming body
@@ -369,6 +312,9 @@ impl RunnerInteraction {
     }
 
     /// Retrieves the streaming logs of the pipeline through the runner.
+    ///
+    /// The pipeline identifier is retrieved from the database using the
+    /// provided tenant identifier and pipeline name.
     pub(crate) async fn http_streaming_logs_from_pipeline_by_name(
         &self,
         client: &awc::Client,
@@ -383,27 +329,40 @@ impl RunnerInteraction {
             .get_pipeline_for_monitoring(tenant_id, pipeline_name)
             .await?;
 
+        // Only in Shutdown status do we not attempt to reach out to the pipeline runner
+        if pipeline.deployment_status == PipelineStatus::Shutdown {
+            return Err(ManagerError::from(RunnerError::RunnerInteractionShutdown));
+        }
+
         // Build request to the runner
         let url = format!(
             "http://{}/logs/{}",
             self.config.runner_hostname_port, pipeline.id
         );
-        let request = client
-            .request(Method::GET, &url)
-            .timeout(Self::RUNNER_HTTP_REQUEST_TIMEOUT);
 
         // Perform request to the runner
-        let response = request
+        let response = client
+            .request(Method::GET, &url)
+            .timeout(Self::RUNNER_HTTP_REQUEST_TIMEOUT)
             .send()
             .await
-            .map_err(|e| RunnerError::RunnerEndpointSendError {
-                url: url.to_string(),
-                error: e.to_string(),
-            })
             .map_err(|e| {
-                ManagerError::from(RunnerError::RunnerUnreachable {
-                    original_error: e.to_string(),
-                })
+                match e {
+                    SendRequestError::Timeout => {
+                        RunnerError::RunnerInteractionUnreachable {
+                            error: format!(
+                                "timeout ({}s) was reached: this means the runner took too long to respond -- \
+                                 the runner logs might contain additional information (original send request error: {e})",
+                                Self::RUNNER_HTTP_REQUEST_TIMEOUT.as_secs()
+                            )
+                        }
+                    }
+                    _ => {
+                        RunnerError::RunnerInteractionUnreachable {
+                            error: format!("unable to send request due to: {e}"),
+                        }
+                    }
+                }
             })?;
 
         // Build the HTTP response with the same status, headers and streaming body
