@@ -408,7 +408,7 @@ where
         let any_factory1 = factories.factories1.any_factories();
         let file = Reader::open(
             &[&any_factory0, &any_factory1],
-            &Runtime::buffer_cache(),
+            Runtime::buffer_cache(),
             &*Runtime::storage_backend().unwrap(),
             path,
         )?;

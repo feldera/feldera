@@ -38,10 +38,7 @@ use crate::{
 
 use super::cache::{FileCache, FileCacheEntry};
 use super::format::Compression;
-use super::{
-    reader::{ImmutableFileRef, Reader},
-    AnyFactories, Factories, Serializer,
-};
+use super::{reader::Reader, AnyFactories, Factories, Serializer};
 
 struct VarintWriter {
     varint: Varint,
@@ -1203,14 +1200,11 @@ where
     pub fn into_reader(
         self,
     ) -> Result<Reader<(&'static K0, &'static A0, ())>, super::reader::Error> {
-        let storage = self.storage().clone();
+        let cache = self.storage().clone();
         let any_factories = self.factories.any_factories();
 
         let (file_handle, path) = self.close()?;
-        Reader::new(
-            &[&any_factories],
-            ImmutableFileRef::new(&storage, file_handle, path),
-        )
+        Reader::new(&[&any_factories], path, cache, file_handle)
     }
 }
 
@@ -1376,13 +1370,15 @@ where
         Reader<(&'static K0, &'static A0, (&'static K1, &'static A1, ()))>,
         super::reader::Error,
     > {
-        let storage = self.storage().clone();
+        let cache = self.storage().clone();
         let any_factories0 = self.factories0.any_factories();
         let any_factories1 = self.factories1.any_factories();
         let (file_handle, path) = self.close()?;
         Reader::new(
             &[&any_factories0, &any_factories1],
-            ImmutableFileRef::new(&storage, file_handle, path),
+            path,
+            cache,
+            file_handle,
         )
     }
 }
