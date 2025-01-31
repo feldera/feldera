@@ -690,42 +690,6 @@ macro_rules! some_operator {
 
 pub(crate) use some_operator;
 
-macro_rules! for_all_compare {
-    ($func_name: ident, $ret_type: ty, $t:ty where $($bounds:tt)*) => {
-        ::paste::paste! {
-            #[doc(hidden)]
-            #[inline(always)]
-            pub fn [<$func_name __ >]<T: $($bounds)*>( arg0: T, arg1: T ) -> $ret_type {
-                $func_name(arg0, arg1)
-            }
-
-            #[doc(hidden)]
-            #[inline(always)]
-            pub fn [<$func_name _N_ >]<T: $($bounds)*>( arg0: Option<T>, arg1: T ) -> Option<$ret_type> {
-                let arg0 = arg0?;
-                Some([< $func_name __ >](arg0, arg1))
-            }
-
-            #[doc(hidden)]
-            #[inline(always)]
-            pub fn [<$func_name __N >]<T: $($bounds)*>( arg0: T, arg1: Option<T> ) -> Option<$ret_type> {
-                let arg1 = arg1?;
-                Some([< $func_name __ >](arg0, arg1))
-            }
-
-            #[doc(hidden)]
-            #[inline(always)]
-            pub fn [<$func_name _N_N >]<T: $($bounds)*>( arg0: Option<T>, arg1: Option<T> ) -> Option<$ret_type> {
-                let arg0 = arg0?;
-                let arg1 = arg1?;
-                Some([< $func_name __ >](arg0, arg1))
-            }
-        }
-    };
-
-}
-pub(crate) use for_all_compare;
-
 macro_rules! for_all_int_operator {
     ($func_name: ident) => {
         some_operator!($func_name, i8, i8, i8);
