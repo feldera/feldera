@@ -27,6 +27,12 @@ pub const SHARED_BYTES_LABEL: &str = "shared bytes";
 /// operator, e.g., the number of entries in a trace.
 pub const NUM_ENTRIES_LABEL: &str = "total size";
 
+/// The number of input tuples ingested by the operator.
+pub const NUM_INPUTS: &str = "inputs";
+
+/// The number of output tuples ingested by the operator.
+pub const NUM_OUTPUTS: &str = "outputs";
+
 /// An operator's location within the source program
 pub type OperatorLocation = Option<&'static Location<'static>>;
 
