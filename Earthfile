@@ -11,11 +11,12 @@ ENV CARGO_HOME=$HOME/.cargo
 ENV PATH=$HOME/.cargo/bin:$HOME/.local/bin:$PATH
 ENV RUST_VERSION=1.82.0
 ENV RUST_BUILD_MODE='' # set to --release for release builds
+ENV CARGO_QUIET="--quiet" # set to make cargo spew less garbage
 ENV CARGO_NET_GIT_FETCH_WITH_CLI=true
 ENV DEBIAN_FRONTEND=noninteractive
 
 install-deps:
-    RUN apt-get update && apt-get install --fix-missing --yes build-essential curl libssl-dev build-essential pkg-config \
+    RUN apt-get update && apt-get install -q --fix-missing --yes build-essential curl libssl-dev build-essential pkg-config \
                               cmake git gcc clang libclang-dev python3-pip python3-plumbum \
                               hub numactl openjdk-19-jre-headless maven netcat jq \
                               docker.io libenchant-2-2 graphviz locales protobuf-compiler csvkit \
@@ -53,10 +54,10 @@ install-rust:
         --component clippy \
         --component rustfmt \
         --component llvm-tools-preview
-    RUN cargo install --locked --force --version 0.5.0 cargo-machete
-    RUN cargo install --locked --force --version 0.36.11 cargo-make
-    RUN cargo install --locked --force --version 0.5.22 cargo-llvm-cov
-    RUN cargo install --locked --force --version 0.1.61 cargo-chef
+    RUN cargo $CARGO_QUIET install --locked --force --version 0.5.0 cargo-machete
+    RUN cargo $CARGO_QUIET install --locked --force --version 0.36.11 cargo-make
+    RUN cargo $CARGO_QUIET install --locked --force --version 0.5.22 cargo-llvm-cov
+    RUN cargo $CARGO_QUIET install --locked --force --version 0.1.61 cargo-chef
     RUN rustup --version
     RUN cargo --version
     RUN rustc --version
@@ -79,11 +80,11 @@ rust-sources:
 
 formatting-check:
     FROM +rust-sources
-    DO rust+CARGO --args="fmt --all -- --check"
+    DO rust+CARGO --args="$CARGO_QUIET fmt --all -- --check"
 
 machete:
     FROM +rust-sources
-    DO rust+CARGO --args="machete crates/"
+    DO rust+CARGO --args="$CARGO_QUIET machete crates/"
 
 clippy:
     FROM +rust-sources
@@ -145,10 +146,10 @@ build-webui:
 
 build-dbsp:
     FROM +rust-sources
-    DO rust+CARGO --args="build --package dbsp --benches"
-    DO rust+CARGO --args="build --package feldera-types"
-    DO rust+CARGO --args="build --package dbsp_nexmark --benches"
-    DO rust+CARGO --args="build --package fda"
+    DO rust+CARGO --args="$CARGO_QUIET build --package dbsp --benches"
+    DO rust+CARGO --args="$CARGO_QUIET build --package feldera-types"
+    DO rust+CARGO --args="$CARGO_QUIET build --package dbsp_nexmark --benches"
+    DO rust+CARGO --args="$CARGO_QUIET build --package fda"
 
 build-sql:
     FROM +build-dbsp
@@ -164,13 +165,13 @@ build-sql:
 build-adapters:
     # Adapter integration tests use the SQL compiler.
     FROM +build-sql
-    DO rust+CARGO --args="build --package dbsp_adapters"
+    DO rust+CARGO --args="$CARGO_QUIET build --package dbsp_adapters"
 
 build-manager:
     FROM +build-adapters
     ENV WEBCONSOLE_BUILD_DIR=/dbsp/web-console/build
     COPY ( +build-webui/build ) ./web-console/build
-    DO rust+CARGO --args="build --package pipeline-manager --features pg-embed" --output="debug/pipeline-manager"
+    DO rust+CARGO --args="$CARGO_QUIET build --package pipeline-manager --features pg-embed" --output="debug/pipeline-manager"
 
     IF [ -f ./target/debug/pipeline-manager ]
         SAVE ARTIFACT --keep-ts ./target/debug/pipeline-manager pipeline-manager
@@ -181,9 +182,12 @@ build-manager:
 
 test-sql:
     # SQL-generated code imports adapters crate.
+    FROM +build-sql
+    COPY +build-sql/sql-to-dbsp-compiler sql-to-dbsp-compiler
+    COPY +build-sql/sql2dbsp-jar-with-dependencies.jar database-stream-processor/sql-to-dbsp-compiler/SQL-compiler/target/
     FROM +build-adapters
     COPY --dir demo/packaged demo/packaged
-    RUN cd "sql-to-dbsp-compiler" && ./build.sh && mvn test --no-transfer-progress -q -B -pl SQL-compiler -Dsurefire.failIfNoSpecifiedTests=false
+    RUN cd "sql-to-dbsp-compiler" && mvn test --no-transfer-progress -q -B -pl SQL-compiler -Dsurefire.failIfNoSpecifiedTests=false
 
 test-slt:
     # Run SQL logic test tests
@@ -192,20 +196,20 @@ test-slt:
 
 build-nexmark:
     FROM +build-dbsp
-    DO rust+CARGO --args="build --package dbsp_nexmark"
+    DO rust+CARGO --args="$CARGO_QUIET build --package dbsp_nexmark"
 
 test-dbsp:
     FROM +build-dbsp
     ENV RUST_BACKTRACE 1
-    DO rust+CARGO --args="test --package dbsp"
+    DO rust+CARGO --args="$CARGO_QUIET test --package dbsp"
 
 test-nexmark:
     FROM +build-nexmark
     ENV RUST_BACKTRACE 1
-    DO rust+CARGO --args="test  --package dbsp_nexmark"
+    DO rust+CARGO --args="$CARGO_QUIET test  --package dbsp_nexmark"
     # Perform a smoke test for nexmark with and without storage
-    DO rust+CARGO --args="bench --bench nexmark -- --max-events=1000000 --cpu-cores 8 --num-event-generators 8"
-    DO rust+CARGO --args="bench --bench nexmark -- --max-events=1000000 --cpu-cores 8 --num-event-generators 8 --storage 10000"
+    DO rust+CARGO --args="$CARGO_QUIET bench --bench nexmark -- --max-events=1000000 --cpu-cores 8 --num-event-generators 8"
+    DO rust+CARGO --args="$CARGO_QUIET bench --bench nexmark -- --max-events=1000000 --cpu-cores 8 --num-event-generators 8 --storage 10000"
 
 test-adapters:
     FROM +build-adapters
@@ -221,7 +225,7 @@ test-adapters:
             redpanda start --smp 2  && \
             (google-cloud-sdk/bin/gcloud beta emulators pubsub start --project=feldera-test --host-port=127.0.0.1:8685 &) && \
             sleep 5 && \
-            RUST_BACKTRACE=1 cargo test --package dbsp_adapters --features "pubsub-emulator-test,iceberg-tests-fs,iceberg-tests-glue" --package feldera-sqllib
+            RUST_BACKTRACE=1 cargo $CARGO_QUIET test --package dbsp_adapters --features "pubsub-emulator-test,iceberg-tests-fs,iceberg-tests-glue" --package feldera-sqllib
     END
 
 test-manager:
@@ -238,13 +242,13 @@ test-manager:
             # Sleep until postgres is up (otherwise we get connection reset if we connect too early)
             # (See: https://github.com/docker-library/docs/blob/master/postgres/README.md#caveats)
             sleep 3 && \
-            RUST_BACKTRACE=1 cargo test --package pipeline-manager
+            RUST_BACKTRACE=1 cargo $CARGO_QUIET test --package pipeline-manager
     END
     # We keep the test binary around so we can run integration tests later. This incantation is used to find the
     # test binary path, adapted from: https://github.com/rust-lang/cargo/issues/3670
     # This runs the same `cargo test` twice.  The first one does the actual build and finds any errors, the second one reports the binary name.  There is very little redundant work because of `--no-run`.
-    RUN cargo test --features integration-test --no-run --package pipeline-manager
-    RUN --mount=$EARTHLY_RUST_CARGO_HOME_CACHE --mount=$EARTHLY_RUST_TARGET_CACHE cp `cargo test --features integration-test --no-run --package pipeline-manager --message-format=json | jq -r 'select(.target.kind[0] == "lib") | .executable' | grep -v null` test_binary
+    RUN cargo $CARGO_QUIET test --features integration-test --no-run --package pipeline-manager
+    RUN --mount=$EARTHLY_RUST_CARGO_HOME_CACHE --mount=$EARTHLY_RUST_TARGET_CACHE cp `cargo $CARGO_QUIET test --features integration-test --no-run --package pipeline-manager --message-format=json | jq -r 'select(.target.kind[0] == "lib") | .executable' | grep -v null` test_binary
     SAVE ARTIFACT test_binary
 
 openapi-checker:
@@ -357,7 +361,7 @@ build-demo-container:
     FROM +install-rust
     WORKDIR /
     # Install snowsql
-    RUN curl -O https://sfc-repo.snowflakecomputing.com/snowsql/bootstrap/1.2/linux_x86_64/snowsql-1.2.28-linux_x86_64.bash \
+    RUN curl -s -S -O https://sfc-repo.snowflakecomputing.com/snowsql/bootstrap/1.2/linux_x86_64/snowsql-1.2.28-linux_x86_64.bash \
         && SNOWSQL_DEST=/bin SNOWSQL_LOGIN_SHELL=~/.profile bash snowsql-1.2.28-linux_x86_64.bash \
         && snowsql -v
     COPY +install-python/python3.10 /root/.local/lib/python3.10
