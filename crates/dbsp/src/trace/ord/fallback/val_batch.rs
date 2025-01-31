@@ -3,6 +3,7 @@ use std::mem::replace;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 
+use crate::storage::buffer_cache::CacheStats;
 use crate::trace::cursor::DelegatingCursor;
 use crate::trace::ord::file::val_batch::FileValBuilder;
 use crate::trace::ord::vec::val_batch::VecValBuilder;
@@ -280,6 +281,13 @@ where
         match &self.inner {
             Inner::Vec(vec) => vec.location(),
             Inner::File(file) => file.location(),
+        }
+    }
+
+    fn cache_stats(&self) -> CacheStats {
+        match &self.inner {
+            Inner::Vec(vec) => vec.cache_stats(),
+            Inner::File(file) => file.cache_stats(),
         }
     }
 

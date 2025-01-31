@@ -17,7 +17,10 @@ use std::{
 
 use crate::{
     dynamic::{DataTrait, DeserializeDyn, Factory},
-    storage::backend::{BlockLocation, FileReader, InvalidBlockLocation, StorageBackend},
+    storage::{
+        backend::{BlockLocation, FileReader, InvalidBlockLocation, StorageBackend},
+        buffer_cache::{AtomicCacheStats, CacheStats},
+    },
 };
 use binrw::{
     io::{self},
@@ -432,8 +435,12 @@ impl InnerDataBlock {
     }
 
     fn new(file: &ImmutableFileRef, node: &TreeNode) -> Result<Arc<Self>, Error> {
-        file.cache
-            .read_data_block(&*file.file_handle, node.location, file.compression)
+        file.cache.read_data_block(
+            &*file.file_handle,
+            node.location,
+            file.compression,
+            &file.stats,
+        )
     }
     fn n_values(&self) -> usize {
         self.value_map.len()
@@ -747,8 +754,12 @@ impl InnerIndexBlock {
     }
 
     fn new(file: &ImmutableFileRef, node: &TreeNode) -> Result<Arc<Self>, Error> {
-        file.cache
-            .read_index_block(&*file.file_handle, node.location, file.compression)
+        file.cache.read_index_block(
+            &*file.file_handle,
+            node.location,
+            file.compression,
+            &file.stats,
+        )
     }
 }
 
@@ -1047,6 +1058,7 @@ struct ImmutableFileRef {
     cache: Arc<BufferCache<FileCacheEntry>>,
     file_handle: Arc<dyn FileReader>,
     compression: Option<Compression>,
+    stats: AtomicCacheStats,
 }
 
 impl Debug for ImmutableFileRef {
@@ -1070,12 +1082,14 @@ impl ImmutableFileRef {
         file_handle: Arc<dyn FileReader>,
         path: PathBuf,
         compression: Option<Compression>,
+        stats: AtomicCacheStats,
     ) -> Self {
         Self {
             cache,
             path,
             file_handle,
             compression,
+            stats,
         }
     }
 
@@ -1152,9 +1166,11 @@ where
             return Err(CorruptionError::InvalidFileSize(file_size).into());
         }
 
+        let stats = AtomicCacheStats::default();
         let file_trailer = cache.read_file_trailer_block(
             &*file_handle,
             BlockLocation::new(file_size - 512, 512).unwrap(),
+            &stats,
         )?;
         if file_trailer.version != VERSION_NUMBER {
             return Err(CorruptionError::InvalidVersion {
@@ -1195,7 +1211,7 @@ where
         }
 
         Ok(Self(Arc::new(ReaderInner {
-            file: ImmutableFileRef::new(cache, file_handle, path, file_trailer.compression),
+            file: ImmutableFileRef::new(cache, file_handle, path, file_trailer.compression, stats),
             columns,
             _phantom: PhantomData,
         })))
@@ -1211,7 +1227,13 @@ where
     ) -> Result<Self, Error> {
         let (file_handle, path) = storage_backend.create()?.complete()?;
         Ok(Self(Arc::new(ReaderInner {
-            file: ImmutableFileRef::new(cache.clone(), file_handle, path, None),
+            file: ImmutableFileRef::new(
+                cache.clone(),
+                file_handle,
+                path,
+                None,
+                AtomicCacheStats::default(),
+            ),
             columns: (0..T::n_columns()).map(|_| Column::empty()).collect(),
             _phantom: PhantomData,
         })))
@@ -1269,6 +1291,12 @@ where
     #[cfg(test)]
     pub fn evict(&self) {
         self.0.file.evict();
+    }
+
+    /// Returns the cache statistics for this file.  The statistics are specific
+    /// to this file's cache behavior for reads.
+    pub fn cache_stats(&self) -> CacheStats {
+        self.0.file.stats.read()
     }
 }
 

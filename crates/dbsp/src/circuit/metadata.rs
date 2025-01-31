@@ -153,6 +153,11 @@ pub enum MetaItem {
         denominator: u64,
     },
 
+    /// A count paired with bytes.
+    ///
+    /// This is useful for storage reads/writes, network packets, ...
+    CountAndBytes(u64, HumanBytes),
+
     String(String),
     Array(Vec<Self>),
     Map(OperatorMeta),
@@ -163,6 +168,10 @@ pub enum MetaItem {
 impl MetaItem {
     pub fn bytes(bytes: usize) -> Self {
         Self::Bytes(HumanBytes::from(bytes))
+    }
+
+    pub fn count_and_bytes(count: u64, bytes: u64) -> Self {
+        Self::CountAndBytes(count, HumanBytes::from(bytes))
     }
 
     pub fn format(&self, output: &mut dyn Write) -> fmt::Result {
@@ -178,6 +187,9 @@ impl MetaItem {
                 } else {
                     write!(output, "(undefined)")
                 }
+            }
+            Self::CountAndBytes(count, bytes) => {
+                write!(output, "{count} ({bytes})")
             }
             Self::String(string) => output.write_str(string),
             Self::Bytes(bytes) => write!(output, "{bytes}"),
@@ -215,6 +227,7 @@ impl MetaItem {
             self,
             MetaItem::Count(_)
                 | MetaItem::Bytes(_)
+                | MetaItem::CountAndBytes(..)
                 | MetaItem::Duration(_)
                 | MetaItem::Percent { .. }
         )
@@ -239,6 +252,9 @@ impl MetaItem {
             (Self::Bytes(a), Self::Bytes(b)) => Some(Self::Bytes(HumanBytes {
                 bytes: a.bytes + b.bytes,
             })),
+            (Self::CountAndBytes(count1, bytes1), Self::CountAndBytes(count2, bytes2)) => Some(
+                Self::count_and_bytes(count1 + count2, bytes1.bytes + bytes2.bytes),
+            ),
             (Self::Duration(a), Self::Duration(b)) => Some(Self::Duration(a.saturating_add(*b))),
             _ => None,
         }

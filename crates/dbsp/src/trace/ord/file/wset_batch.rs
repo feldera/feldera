@@ -4,10 +4,13 @@ use crate::{
         DataTrait, DynDataTyped, DynPair, DynUnit, DynVec, DynWeightedPairs, Erase, Factory,
         LeanVec, WeightTrait, WeightTraitTyped, WithFactory,
     },
-    storage::file::{
-        reader::{Cursor as FileCursor, Error as ReaderError, Reader},
-        writer::Writer1,
-        Factories as FileFactories,
+    storage::{
+        buffer_cache::CacheStats,
+        file::{
+            reader::{Cursor as FileCursor, Error as ReaderError, Reader},
+            writer::Writer1,
+            Factories as FileFactories,
+        },
     },
     time::{Antichain, AntichainRef},
     trace::{
@@ -363,6 +366,10 @@ where
     #[inline]
     fn location(&self) -> BatchLocation {
         BatchLocation::Storage
+    }
+
+    fn cache_stats(&self) -> CacheStats {
+        self.file.cache_stats()
     }
 
     #[inline]

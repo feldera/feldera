@@ -3706,6 +3706,7 @@ dependencies = [
  "csv",
  "derive_more 1.0.0",
  "dyn-clone",
+ "enum-map",
  "env_logger 0.11.6",
  "fdlimit",
  "feldera-ijson",

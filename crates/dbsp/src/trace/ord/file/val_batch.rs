@@ -1,3 +1,4 @@
+use crate::storage::buffer_cache::CacheStats;
 use crate::trace::cursor::{HasTimeDiffCursor, TimeDiffCursor};
 use crate::trace::{BatchLocation, TimedBuilder};
 use crate::{
@@ -292,6 +293,10 @@ where
     #[inline]
     fn location(&self) -> BatchLocation {
         BatchLocation::Storage
+    }
+
+    fn cache_stats(&self) -> CacheStats {
+        self.file.cache_stats()
     }
 
     fn lower(&self) -> AntichainRef<'_, T> {
