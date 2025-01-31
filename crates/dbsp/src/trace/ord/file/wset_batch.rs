@@ -4,10 +4,13 @@ use crate::{
         DataTrait, DynDataTyped, DynPair, DynUnit, DynVec, DynWeightedPairs, Erase, Factory,
         LeanVec, WeightTrait, WeightTraitTyped, WithFactory,
     },
-    storage::file::{
-        reader::{Cursor as FileCursor, Error as ReaderError, Reader},
-        writer::Writer1,
-        Factories as FileFactories,
+    storage::{
+        buffer_cache::CacheStats,
+        file::{
+            reader::{Cursor as FileCursor, Error as ReaderError, Reader},
+            writer::Writer1,
+            Factories as FileFactories,
+        },
     },
     time::{Antichain, AntichainRef},
     trace::{
@@ -365,6 +368,10 @@ where
         BatchLocation::Storage
     }
 
+    fn cache_stats(&self) -> CacheStats {
+        self.file.cache_stats()
+    }
+
     #[inline]
     fn lower(&self) -> AntichainRef<'_, ()> {
         AntichainRef::new(&[()])
@@ -423,7 +430,7 @@ where
         let any_factory0 = factories.file_factories.any_factories();
         let file = Reader::open(
             &[&any_factory0],
-            &Runtime::buffer_cache(),
+            Runtime::buffer_cache(),
             &*Runtime::storage_backend().unwrap(),
             path,
         )?;

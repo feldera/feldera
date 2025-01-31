@@ -1,3 +1,4 @@
+use crate::storage::buffer_cache::CacheStats;
 use crate::trace::cursor::{HasTimeDiffCursor, TimeDiffCursor};
 use crate::trace::{BatchLocation, TimedBuilder};
 use crate::{
@@ -294,6 +295,10 @@ where
         BatchLocation::Storage
     }
 
+    fn cache_stats(&self) -> CacheStats {
+        self.file.cache_stats()
+    }
+
     fn lower(&self) -> AntichainRef<'_, T> {
         self.lower.as_ref()
     }
@@ -354,7 +359,7 @@ where
         let any_factory1 = factories.factories1.any_factories();
         let file = Reader::open(
             &[&any_factory0, &any_factory1],
-            &Runtime::buffer_cache(),
+            Runtime::buffer_cache(),
             &*Runtime::storage_backend().unwrap(),
             path,
         )?;

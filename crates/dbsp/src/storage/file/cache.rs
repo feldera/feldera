@@ -13,6 +13,7 @@ use binrw::{
 };
 use snap::raw::{decompress_len, Decoder};
 
+use crate::storage::buffer_cache::AtomicCacheStats;
 use crate::storage::{
     backend::{BlockLocation, FileReader},
     buffer_cache::{BufferCache, CacheEntry, FBuf},
@@ -140,8 +141,9 @@ impl BufferCache<FileCacheEntry> {
         file: &dyn FileReader,
         location: BlockLocation,
         compression: Option<Compression>,
+        stats: &AtomicCacheStats,
     ) -> Result<FileCacheEntry, Error> {
-        match self.get(file, location.offset) {
+        match self.get(file, location, stats) {
             Some(entry) => Ok(entry),
             None => {
                 let block = file.read_block(location)?;
@@ -159,8 +161,9 @@ impl BufferCache<FileCacheEntry> {
         file: &dyn FileReader,
         location: BlockLocation,
         compression: Option<Compression>,
+        stats: &AtomicCacheStats,
     ) -> Result<Arc<InnerDataBlock>, Error> {
-        match self.get_entry(file, location, compression)? {
+        match self.get_entry(file, location, compression, stats)? {
             FileCacheEntry::Data(inner) => Ok(inner),
             _ => Err(Error::Corruption(CorruptionError::BadBlockType(location))),
         }
@@ -173,8 +176,9 @@ impl BufferCache<FileCacheEntry> {
         file: &dyn FileReader,
         location: BlockLocation,
         compression: Option<Compression>,
+        stats: &AtomicCacheStats,
     ) -> Result<Arc<InnerIndexBlock>, Error> {
-        match self.get_entry(file, location, compression)? {
+        match self.get_entry(file, location, compression, stats)? {
             FileCacheEntry::Index(inner) => Ok(inner),
             _ => Err(Error::Corruption(CorruptionError::BadBlockType(location))),
         }
@@ -185,8 +189,9 @@ impl BufferCache<FileCacheEntry> {
         &self,
         file: &dyn FileReader,
         location: BlockLocation,
+        stats: &AtomicCacheStats,
     ) -> Result<Arc<FileTrailer>, Error> {
-        match self.get_entry(file, location, None)? {
+        match self.get_entry(file, location, None, stats)? {
             FileCacheEntry::FileTrailer(inner) => Ok(inner),
             _ => Err(Error::Corruption(CorruptionError::BadBlockType(location))),
         }

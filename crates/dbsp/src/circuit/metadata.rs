@@ -27,6 +27,12 @@ pub const SHARED_BYTES_LABEL: &str = "shared bytes";
 /// operator, e.g., the number of entries in a trace.
 pub const NUM_ENTRIES_LABEL: &str = "total size";
 
+/// The number of input tuples ingested by the operator.
+pub const NUM_INPUTS: &str = "inputs";
+
+/// The number of output tuples ingested by the operator.
+pub const NUM_OUTPUTS: &str = "outputs";
+
 /// An operator's location within the source program
 pub type OperatorLocation = Option<&'static Location<'static>>;
 
@@ -147,6 +153,11 @@ pub enum MetaItem {
         denominator: u64,
     },
 
+    /// A count paired with bytes.
+    ///
+    /// This is useful for storage reads/writes, network packets, ...
+    CountAndBytes(u64, HumanBytes),
+
     String(String),
     Array(Vec<Self>),
     Map(OperatorMeta),
@@ -157,6 +168,10 @@ pub enum MetaItem {
 impl MetaItem {
     pub fn bytes(bytes: usize) -> Self {
         Self::Bytes(HumanBytes::from(bytes))
+    }
+
+    pub fn count_and_bytes(count: u64, bytes: u64) -> Self {
+        Self::CountAndBytes(count, HumanBytes::from(bytes))
     }
 
     pub fn format(&self, output: &mut dyn Write) -> fmt::Result {
@@ -172,6 +187,9 @@ impl MetaItem {
                 } else {
                     write!(output, "(undefined)")
                 }
+            }
+            Self::CountAndBytes(count, bytes) => {
+                write!(output, "{count} ({bytes})")
             }
             Self::String(string) => output.write_str(string),
             Self::Bytes(bytes) => write!(output, "{bytes}"),
@@ -209,6 +227,7 @@ impl MetaItem {
             self,
             MetaItem::Count(_)
                 | MetaItem::Bytes(_)
+                | MetaItem::CountAndBytes(..)
                 | MetaItem::Duration(_)
                 | MetaItem::Percent { .. }
         )
@@ -233,6 +252,9 @@ impl MetaItem {
             (Self::Bytes(a), Self::Bytes(b)) => Some(Self::Bytes(HumanBytes {
                 bytes: a.bytes + b.bytes,
             })),
+            (Self::CountAndBytes(count1, bytes1), Self::CountAndBytes(count2, bytes2)) => Some(
+                Self::count_and_bytes(count1 + count2, bytes1.bytes + bytes2.bytes),
+            ),
             (Self::Duration(a), Self::Duration(b)) => Some(Self::Duration(a.saturating_add(*b))),
             _ => None,
         }

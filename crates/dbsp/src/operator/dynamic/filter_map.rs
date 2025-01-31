@@ -1,6 +1,8 @@
 //! Filter and transform data record-by-record.
 
-use crate::circuit::metadata::OperatorLocation;
+use crate::circuit::metadata::{MetaItem, OperatorLocation, OperatorMeta, NUM_INPUTS, NUM_OUTPUTS};
+use crate::circuit::metrics::Gauge;
+use crate::circuit::GlobalNodeId;
 use crate::trace::VecWSet;
 use crate::{
     circuit::{
@@ -375,6 +377,15 @@ where
 pub struct FilterZSet<B: Batch> {
     filter: Box<dyn Fn(&B::Key) -> bool>,
     location: &'static Location<'static>,
+
+    // Total number of input tuples processed by the operator.
+    num_inputs: usize,
+    num_inputs_metric: Option<Gauge>,
+
+    // Total number of output tuples processed by the operator.
+    num_outputs: usize,
+    num_outputs_metric: Option<Gauge>,
+
     _type: PhantomData<*const B>,
 }
 
@@ -383,6 +394,10 @@ impl<B: Batch> FilterZSet<B> {
         Self {
             filter,
             location,
+            num_inputs: 0,
+            num_inputs_metric: None,
+            num_outputs: 0,
+            num_outputs_metric: None,
             _type: PhantomData,
         }
     }
@@ -429,6 +444,42 @@ impl<B: Batch> Operator for FilterZSet<B> {
         Some(self.location)
     }
 
+    fn init(&mut self, global_id: &GlobalNodeId) {
+        self.num_inputs_metric = Some(Gauge::new(
+            NUM_INPUTS,
+            None,
+            Some("count"),
+            global_id,
+            vec![],
+        ));
+        self.num_outputs_metric = Some(Gauge::new(
+            NUM_OUTPUTS,
+            None,
+            Some("count"),
+            global_id,
+            vec![],
+        ));
+    }
+
+    fn metrics(&self) {
+        self.num_inputs_metric
+            .as_ref()
+            .unwrap()
+            .set(self.num_inputs as f64);
+
+        self.num_outputs_metric
+            .as_ref()
+            .unwrap()
+            .set(self.num_outputs as f64);
+    }
+
+    fn metadata(&self, meta: &mut OperatorMeta) {
+        meta.extend(metadata! {
+            NUM_INPUTS => MetaItem::Count(self.num_inputs),
+            NUM_OUTPUTS => MetaItem::Count(self.num_outputs),
+        });
+    }
+
     fn fixedpoint(&self, _scope: Scope) -> bool {
         true
     }
@@ -440,6 +491,8 @@ where
 {
     #[trace]
     async fn eval(&mut self, input: &B) -> B {
+        self.num_inputs += input.len();
+
         // We can use Builder because cursor yields ordered values.  This
         // is a nice property of the filter operation.
         //
@@ -463,7 +516,9 @@ where
             cursor.step_key();
         }
 
-        builder.done()
+        let result = builder.done();
+        self.num_outputs += result.len();
+        result
     }
 
     // Enable this optimization when we have `retain`.
@@ -513,6 +568,15 @@ where
 pub struct FilterIndexedZSet<B: Batch> {
     location: &'static Location<'static>,
     filter: Box<dyn for<'a> Fn((&'a B::Key, &'a B::Val)) -> bool>,
+
+    // Total number of input tuples processed by the operator.
+    num_inputs: usize,
+    num_inputs_metric: Option<Gauge>,
+
+    // Total number of output tuples processed by the operator.
+    num_outputs: usize,
+    num_outputs_metric: Option<Gauge>,
+
     _type: PhantomData<B>,
 }
 
@@ -524,6 +588,11 @@ impl<B: Batch> FilterIndexedZSet<B> {
         Self {
             location,
             filter,
+            num_inputs: 0,
+            num_inputs_metric: None,
+            num_outputs: 0,
+            num_outputs_metric: None,
+
             _type: PhantomData,
         }
     }
@@ -538,6 +607,42 @@ impl<B: Batch> Operator for FilterIndexedZSet<B> {
         Some(self.location)
     }
 
+    fn init(&mut self, global_id: &GlobalNodeId) {
+        self.num_inputs_metric = Some(Gauge::new(
+            NUM_INPUTS,
+            None,
+            Some("count"),
+            global_id,
+            vec![],
+        ));
+        self.num_outputs_metric = Some(Gauge::new(
+            NUM_OUTPUTS,
+            None,
+            Some("count"),
+            global_id,
+            vec![],
+        ));
+    }
+
+    fn metrics(&self) {
+        self.num_inputs_metric
+            .as_ref()
+            .unwrap()
+            .set(self.num_inputs as f64);
+
+        self.num_outputs_metric
+            .as_ref()
+            .unwrap()
+            .set(self.num_outputs as f64);
+    }
+
+    fn metadata(&self, meta: &mut OperatorMeta) {
+        meta.extend(metadata! {
+            NUM_INPUTS => MetaItem::Count(self.num_inputs),
+            NUM_OUTPUTS => MetaItem::Count(self.num_outputs),
+        });
+    }
+
     fn fixedpoint(&self, _scope: Scope) -> bool {
         true
     }
@@ -549,6 +654,8 @@ where
 {
     #[trace]
     async fn eval(&mut self, input: &B) -> B {
+        self.num_inputs += input.len();
+
         // We can use Builder because cursor yields ordered values.  This
         // is a nice property of the filter operation.
 
@@ -572,7 +679,9 @@ where
             cursor.step_key();
         }
 
-        builder.done()
+        let result = builder.done();
+        self.num_outputs += result.len();
+        result
     }
 
     /*#[trace] fn eval_owned(&mut self, input: CI) -> CO {
@@ -607,6 +716,15 @@ where
     output_factories: CO::Factories,
     location: &'static Location<'static>,
     map: Box<dyn for<'a> Fn(&'a CI::Key, &mut DynPair<CO::Key, CO::Val>)>,
+
+    // Total number of input tuples processed by the operator.
+    num_inputs: usize,
+    num_inputs_metric: Option<Gauge>,
+
+    // Total number of output tuples processed by the operator.
+    num_outputs: usize,
+    num_outputs_metric: Option<Gauge>,
+
     _type: PhantomData<(CI, CO)>,
 }
 
@@ -624,6 +742,11 @@ where
             output_factories: output_factories.clone(),
             location,
             map,
+            num_inputs: 0,
+            num_inputs_metric: None,
+            num_outputs: 0,
+            num_outputs_metric: None,
+
             _type: PhantomData,
         }
     }
@@ -642,6 +765,42 @@ where
         Some(self.location)
     }
 
+    fn init(&mut self, global_id: &GlobalNodeId) {
+        self.num_inputs_metric = Some(Gauge::new(
+            NUM_INPUTS,
+            None,
+            Some("count"),
+            global_id,
+            vec![],
+        ));
+        self.num_outputs_metric = Some(Gauge::new(
+            NUM_OUTPUTS,
+            None,
+            Some("count"),
+            global_id,
+            vec![],
+        ));
+    }
+
+    fn metrics(&self) {
+        self.num_inputs_metric
+            .as_ref()
+            .unwrap()
+            .set(self.num_inputs as f64);
+
+        self.num_outputs_metric
+            .as_ref()
+            .unwrap()
+            .set(self.num_outputs as f64);
+    }
+
+    fn metadata(&self, meta: &mut OperatorMeta) {
+        meta.extend(metadata! {
+            NUM_INPUTS => MetaItem::Count(self.num_inputs),
+            NUM_OUTPUTS => MetaItem::Count(self.num_outputs),
+        });
+    }
+
     fn fixedpoint(&self, _scope: Scope) -> bool {
         true
     }
@@ -654,6 +813,8 @@ where
 {
     #[trace]
     async fn eval(&mut self, i: &CI) -> CO {
+        self.num_inputs += i.len();
+
         let mut batch = self.output_factories.weighted_items_factory().default_box();
         batch.reserve(i.len());
         let mut item = self.output_factories.weighted_item_factory().default_box();
@@ -672,7 +833,10 @@ where
             cursor.step_key();
         }
 
-        CO::dyn_from_tuples(&self.output_factories, (), &mut batch)
+        let result = CO::dyn_from_tuples(&self.output_factories, (), &mut batch);
+        self.num_outputs += result.len();
+
+        result
     }
 }
 
@@ -684,6 +848,15 @@ where
     output_factories: CO::Factories,
     location: &'static Location<'static>,
     map: Box<dyn for<'a> Fn((&'a CI::Key, &'a CI::Val), &mut DynPair<CO::Key, CO::Val>)>,
+
+    // Total number of input tuples processed by the operator.
+    num_inputs: usize,
+    num_inputs_metric: Option<Gauge>,
+
+    // Total number of output tuples processed by the operator.
+    num_outputs: usize,
+    num_outputs_metric: Option<Gauge>,
+
     _type: PhantomData<(CI, CO)>,
 }
 
@@ -701,6 +874,10 @@ where
             output_factories: output_factories.clone(),
             location,
             map,
+            num_inputs: 0,
+            num_inputs_metric: None,
+            num_outputs: 0,
+            num_outputs_metric: None,
             _type: PhantomData,
         }
     }
@@ -712,11 +889,47 @@ where
     CO: Batch,
 {
     fn name(&self) -> Cow<'static, str> {
-        Cow::Borrowed("Map")
+        Cow::Borrowed("MapIndexedZSet")
     }
 
     fn location(&self) -> OperatorLocation {
         Some(self.location)
+    }
+
+    fn init(&mut self, global_id: &GlobalNodeId) {
+        self.num_inputs_metric = Some(Gauge::new(
+            NUM_INPUTS,
+            None,
+            Some("count"),
+            global_id,
+            vec![],
+        ));
+        self.num_outputs_metric = Some(Gauge::new(
+            NUM_OUTPUTS,
+            None,
+            Some("count"),
+            global_id,
+            vec![],
+        ));
+    }
+
+    fn metrics(&self) {
+        self.num_inputs_metric
+            .as_ref()
+            .unwrap()
+            .set(self.num_inputs as f64);
+
+        self.num_outputs_metric
+            .as_ref()
+            .unwrap()
+            .set(self.num_outputs as f64);
+    }
+
+    fn metadata(&self, meta: &mut OperatorMeta) {
+        meta.extend(metadata! {
+            NUM_INPUTS => MetaItem::Count(self.num_inputs),
+            NUM_OUTPUTS => MetaItem::Count(self.num_outputs),
+        });
     }
 
     fn fixedpoint(&self, _scope: Scope) -> bool {
@@ -731,6 +944,8 @@ where
 {
     #[trace]
     async fn eval(&mut self, i: &CI) -> CO {
+        self.num_inputs += i.len();
+
         let mut batch = self.output_factories.weighted_items_factory().default_box();
         batch.reserve(i.len());
         let mut item = self.output_factories.weighted_item_factory().default_box();
@@ -749,7 +964,9 @@ where
             cursor.step_key();
         }
 
-        CO::dyn_from_tuples(&self.output_factories, (), &mut batch)
+        let result = CO::dyn_from_tuples(&self.output_factories, (), &mut batch);
+        self.num_outputs += result.len();
+        result
     }
 }
 
@@ -757,6 +974,15 @@ pub struct FlatMapZSet<CI: BatchReader, CO: Batch> {
     output_factories: CO::Factories,
     location: &'static Location<'static>,
     func: Box<dyn for<'a> FnMut(&'a CI::Key, &mut dyn FnMut(&mut CO::Key, &mut CO::Val))>,
+
+    // Total number of input tuples processed by the operator.
+    num_inputs: usize,
+    num_inputs_metric: Option<Gauge>,
+
+    // Total number of output tuples processed by the operator.
+    num_outputs: usize,
+    num_outputs_metric: Option<Gauge>,
+
     _type: PhantomData<(CI, CO)>,
 }
 
@@ -770,6 +996,10 @@ impl<CI: BatchReader, CO: Batch> FlatMapZSet<CI, CO> {
             output_factories: output_factories.clone(),
             location,
             func,
+            num_inputs: 0,
+            num_inputs_metric: None,
+            num_outputs: 0,
+            num_outputs_metric: None,
             _type: PhantomData,
         }
     }
@@ -788,6 +1018,42 @@ where
         Some(self.location)
     }
 
+    fn init(&mut self, global_id: &GlobalNodeId) {
+        self.num_inputs_metric = Some(Gauge::new(
+            NUM_INPUTS,
+            None,
+            Some("count"),
+            global_id,
+            vec![],
+        ));
+        self.num_outputs_metric = Some(Gauge::new(
+            NUM_OUTPUTS,
+            None,
+            Some("count"),
+            global_id,
+            vec![],
+        ));
+    }
+
+    fn metrics(&self) {
+        self.num_inputs_metric
+            .as_ref()
+            .unwrap()
+            .set(self.num_inputs as f64);
+
+        self.num_outputs_metric
+            .as_ref()
+            .unwrap()
+            .set(self.num_outputs as f64);
+    }
+
+    fn metadata(&self, meta: &mut OperatorMeta) {
+        meta.extend(metadata! {
+            NUM_INPUTS => MetaItem::Count(self.num_inputs),
+            NUM_OUTPUTS => MetaItem::Count(self.num_outputs),
+        });
+    }
+
     fn fixedpoint(&self, _scope: Scope) -> bool {
         true
     }
@@ -800,6 +1066,8 @@ where
 {
     #[trace]
     async fn eval(&mut self, i: &CI) -> CO {
+        self.num_inputs += i.len();
+
         let mut batch = self.output_factories.weighted_items_factory().default_box();
         batch.reserve(i.len());
 
@@ -832,7 +1100,9 @@ where
             cursor.step_key();
         }
 
-        CO::dyn_from_tuples(&self.output_factories, (), &mut batch)
+        let result = CO::dyn_from_tuples(&self.output_factories, (), &mut batch);
+        self.num_outputs += result.len();
+        result
     }
 }
 
@@ -842,6 +1112,15 @@ pub struct FlatMapIndexedZSet<CI: BatchReader, CO: Batch> {
     func: Box<
         dyn for<'a> FnMut((&'a CI::Key, &'a CI::Val), &mut dyn FnMut(&mut CO::Key, &mut CO::Val)),
     >,
+
+    // Total number of input tuples processed by the operator.
+    num_inputs: usize,
+    num_inputs_metric: Option<Gauge>,
+
+    // Total number of output tuples processed by the operator.
+    num_outputs: usize,
+    num_outputs_metric: Option<Gauge>,
+
     _type: PhantomData<(CI, CO)>,
 }
 
@@ -860,6 +1139,10 @@ impl<CI: BatchReader, CO: Batch> FlatMapIndexedZSet<CI, CO> {
             output_factories: output_factories.clone(),
             location,
             func,
+            num_inputs: 0,
+            num_inputs_metric: None,
+            num_outputs: 0,
+            num_outputs_metric: None,
             _type: PhantomData,
         }
     }
@@ -878,6 +1161,42 @@ where
         Some(self.location)
     }
 
+    fn init(&mut self, global_id: &GlobalNodeId) {
+        self.num_inputs_metric = Some(Gauge::new(
+            NUM_INPUTS,
+            None,
+            Some("count"),
+            global_id,
+            vec![],
+        ));
+        self.num_outputs_metric = Some(Gauge::new(
+            NUM_OUTPUTS,
+            None,
+            Some("count"),
+            global_id,
+            vec![],
+        ));
+    }
+
+    fn metrics(&self) {
+        self.num_inputs_metric
+            .as_ref()
+            .unwrap()
+            .set(self.num_inputs as f64);
+
+        self.num_outputs_metric
+            .as_ref()
+            .unwrap()
+            .set(self.num_outputs as f64);
+    }
+
+    fn metadata(&self, meta: &mut OperatorMeta) {
+        meta.extend(metadata! {
+            NUM_INPUTS => MetaItem::Count(self.num_inputs),
+            NUM_OUTPUTS => MetaItem::Count(self.num_outputs),
+        });
+    }
+
     fn fixedpoint(&self, _scope: Scope) -> bool {
         true
     }
@@ -890,6 +1209,8 @@ where
 {
     #[trace]
     async fn eval(&mut self, i: &CI) -> CO {
+        self.num_inputs += i.len();
+
         let mut batch = self.output_factories.weighted_items_factory().default_box();
         batch.reserve(i.len());
 
@@ -922,7 +1243,9 @@ where
             cursor.step_key();
         }
 
-        CO::dyn_from_tuples(&self.output_factories, (), &mut batch)
+        let result = CO::dyn_from_tuples(&self.output_factories, (), &mut batch);
+        self.num_outputs += result.len();
+        result
     }
 }
 

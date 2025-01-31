@@ -1,5 +1,6 @@
 use crate::{
     circuit::{
+        metadata::OperatorLocation,
         operator_traits::{Operator, SourceOperator},
         LocalStoreMarker, Scope,
     },
@@ -22,6 +23,7 @@ use std::{
     marker::PhantomData,
     mem::{replace, take, transmute},
     ops::{Deref, Range},
+    panic::Location,
     sync::{Arc, Mutex},
 };
 use typedmap::TypedMapKey;
@@ -206,11 +208,13 @@ impl RootCircuit {
     /// value to all downstream operators connected to it.
     ///
     /// See [`InputHandle`] for more details.
+    #[track_caller]
     pub fn add_input_stream<T>(&self) -> (Stream<Self, T>, InputHandle<T>)
     where
         T: Default + Debug + Clone + Send + 'static,
     {
-        let (input, input_handle) = Input::new(|x| x, Arc::new(|| Default::default()));
+        let (input, input_handle) =
+            Input::new(Location::caller(), |x| x, Arc::new(|| Default::default()));
         let stream = self.add_source(input);
         (stream, input_handle)
     }
@@ -232,6 +236,7 @@ impl RootCircuit {
     /// reads all buffered values and assembles them into an `OrdZSet`.
     ///
     /// See [`CollectionHandle`] for more details.
+    #[track_caller]
     pub fn add_input_zset<K>(&self) -> (Stream<RootCircuit, OrdZSet<K>>, ZSetHandle<K>)
     where
         K: DBData,
@@ -260,6 +265,7 @@ impl RootCircuit {
     ///
     /// See [`CollectionHandle`] for more details.
     #[allow(clippy::type_complexity)]
+    #[track_caller]
     pub fn add_input_indexed_zset<K, V>(
         &self,
     ) -> (
@@ -347,6 +353,7 @@ impl RootCircuit {
     /// Specifically, retention conditions configured at logical time `t`
     /// are applied starting from logical time `t+1`.
     // TODO: Add a version that takes a custom hash function.
+    #[track_caller]
     pub fn add_input_set<K>(&self) -> (Stream<RootCircuit, OrdZSet<K>>, SetHandle<K>)
     where
         K: DBData,
@@ -441,6 +448,7 @@ impl RootCircuit {
     ///
     /// FIXME: see <https://github.com/feldera/feldera/issues/2669>
     // TODO: Add a version that takes a custom hash function.
+    #[track_caller]
     pub fn add_input_map<K, V, U, PF>(
         &self,
         patch_func: PF,
@@ -705,6 +713,7 @@ where
 ///                   └───────────────────┘
 /// ```
 pub struct Input<IT, OT, F> {
+    location: &'static Location<'static>,
     mailbox: Mailbox<IT>,
     input_func: F,
     phantom: PhantomData<OT>,
@@ -715,6 +724,7 @@ where
     IT: Clone + Send + 'static,
 {
     pub fn new(
+        location: &'static Location<'static>,
         input_func: F,
         default: Arc<dyn Fn() -> IT + Send + Sync>,
     ) -> (Self, InputHandle<IT>) {
@@ -722,6 +732,7 @@ where
         let mailbox = handle.mailbox(Runtime::worker_index()).clone();
 
         let input = Self {
+            location,
             mailbox,
             input_func,
             phantom: PhantomData,
@@ -739,6 +750,10 @@ where
 {
     fn name(&self) -> Cow<'static, str> {
         Cow::from("Input")
+    }
+
+    fn location(&self) -> OperatorLocation {
+        Some(self.location)
     }
 
     fn fixedpoint(&self, _scope: Scope) -> bool {

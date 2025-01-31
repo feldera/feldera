@@ -9,6 +9,7 @@
 use crate::{
     circuit::metadata::{MetaItem, OperatorMeta},
     dynamic::{DynVec, Factory, Weight},
+    storage::buffer_cache::CacheStats,
     time::{Antichain, AntichainRef, Timestamp},
     trace::{
         cursor::CursorList, merge_batches, Batch, BatchReader, BatchReaderFactories, Cursor,
@@ -249,8 +250,14 @@ where
     /// with `new_batch` as the result.
     fn merge_complete(&mut self, level: usize, new_batch: Arc<B>) {
         let batches = self.slots[level].merging_batches.take().unwrap();
-        self.merge_stats
-            .report_merge(batches.iter().map(|b| b.len()).sum(), new_batch.len());
+        let cache_stats = batches.iter().fold(CacheStats::default(), |stats, batch| {
+            stats + batch.cache_stats()
+        });
+        self.merge_stats.report_merge(
+            batches.iter().map(|b| b.len()).sum(),
+            new_batch.len(),
+            cache_stats,
+        );
         self.add_batches([new_batch]);
     }
 
@@ -437,9 +444,11 @@ where
 
         let n_batches = batches.len();
         let n_merging = batches.iter().filter(|(_batch, merging)| *merging).count();
+        let mut cache_stats = merge_stats.cache_stats;
         let mut storage_size = 0;
         let mut merging_size = 0;
         for (batch, merging) in batches {
+            cache_stats += batch.cache_stats();
             let on_storage = batch.location() == BatchLocation::Storage;
             if on_storage || merging {
                 let size = batch.approximate_byte_size();
@@ -471,8 +480,12 @@ where
             // For merges already completed, the percentage of the updates input
             // to merges that merging eliminated, whether by weights adding to
             // zero or through key or value filters.
-            "merge reduction" => merge_stats.merge_reduction()
+            "merge reduction" => merge_stats.merge_reduction(),
         });
+
+        if !cache_stats.is_empty() {
+            cache_stats.metadata(meta);
+        }
     }
 
     fn maybe_relieve_backpressure(
@@ -567,13 +580,17 @@ struct MergeStats {
     pre_len: u64,
     /// Number of updates after merging.
     post_len: u64,
+    /// Cache statistics, only for the batches that have already been merged and
+    /// discarded.
+    cache_stats: CacheStats,
 }
 
 impl MergeStats {
-    /// Adds `pre_len` and `post_len` to the statistics.
-    fn report_merge(&mut self, pre_len: usize, post_len: usize) {
+    /// Adds `pre_len`, `post_len`, and `cache_stats` to the statistics.
+    fn report_merge(&mut self, pre_len: usize, post_len: usize, cache_stats: CacheStats) {
         self.pre_len += pre_len as u64;
         self.post_len += post_len as u64;
+        self.cache_stats += cache_stats;
     }
 
     /// Reports the percentage (in range `0..=100`) of updates that merging

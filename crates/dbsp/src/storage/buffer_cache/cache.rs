@@ -2,11 +2,17 @@
 //!
 //! This is a layer over a storage backend that adds a cache of a
 //! client-provided function of the blocks.
+use std::borrow::Cow;
 use std::fmt::Debug;
+use std::ops::{Add, AddAssign};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::{collections::BTreeMap, ops::Range};
 
-use crate::storage::backend::{FileId, FileReader};
+use enum_map::{Enum, EnumMap};
+
+use crate::circuit::metadata::{MetaItem, OperatorMeta};
+use crate::storage::backend::{BlockLocation, FileId, FileReader};
 
 /// A key for the block cache.
 ///
@@ -218,12 +224,29 @@ where
         }
     }
 
-    pub fn get(&self, file: &dyn FileReader, offset: u64) -> Option<E> {
-        self.inner
+    pub fn get(
+        &self,
+        file: &dyn FileReader,
+        location: BlockLocation,
+        stats: &AtomicCacheStats,
+    ) -> Option<E> {
+        let result = self
+            .inner
             .lock()
             .unwrap()
-            .get(CacheKey::new(file.file_id(), offset))
-            .cloned()
+            .get(CacheKey::new(file.file_id(), location.offset))
+            .cloned();
+
+        stats.record(
+            if result.is_some() {
+                CacheAccess::Hit
+            } else {
+                CacheAccess::Miss
+            },
+            location,
+        );
+
+        result
     }
 
     pub fn insert(&self, file_id: FileId, offset: u64, aux: E) {
@@ -235,5 +258,135 @@ where
 
     pub fn evict(&self, file: &dyn FileReader) {
         self.inner.lock().unwrap().delete_file(file.file_id());
+    }
+}
+
+/// Cache statistics that can be accessed atomically for multithread updates.
+#[derive(Debug, Default)]
+pub struct AtomicCacheStats(EnumMap<CacheAccess, AtomicCacheCounts>);
+
+impl AtomicCacheStats {
+    /// Records that `location` was access in the cache with effect `access`.
+    fn record(&self, access: CacheAccess, location: BlockLocation) {
+        self.0[access].count.fetch_add(1, Ordering::Relaxed);
+        self.0[access]
+            .bytes
+            .fetch_add(location.size as u64, Ordering::Relaxed);
+    }
+
+    /// Reads out the statistics for processing.
+    pub fn read(&self) -> CacheStats {
+        CacheStats(EnumMap::from_fn(|access| self.0[access].read()))
+    }
+}
+
+/// Whether a cache access was a hit or a miss.
+#[derive(Copy, Clone, Debug, Enum)]
+pub enum CacheAccess {
+    /// Cache hit.
+    Hit,
+
+    /// Cache miss.
+    Miss,
+}
+
+impl CacheAccess {
+    fn name(&self) -> &'static str {
+        match self {
+            Self::Hit => "cache hits",
+            Self::Miss => "cache misses",
+        }
+    }
+}
+
+/// Cache counts that can be accessed atomically for multithread updates.
+#[derive(Debug, Default)]
+pub struct AtomicCacheCounts {
+    /// Number of accessed blocks.
+    count: AtomicU64,
+
+    /// Total bytes across all the accesses.
+    bytes: AtomicU64,
+}
+
+impl AtomicCacheCounts {
+    /// Reads out the counts for processing.
+    fn read(&self) -> CacheCounts {
+        CacheCounts {
+            count: self.count.load(Ordering::Relaxed),
+            bytes: self.bytes.load(Ordering::Relaxed),
+        }
+    }
+}
+
+/// Cache access statistics.
+#[derive(Copy, Clone, Debug, Default)]
+pub struct CacheStats(pub EnumMap<CacheAccess, CacheCounts>);
+
+impl CacheStats {
+    /// Are the statistics all zero?
+    pub fn is_empty(&self) -> bool {
+        self.0.values().all(CacheCounts::is_empty)
+    }
+
+    /// Adds metadata for these cache statistics to `meta`.
+    pub fn metadata(&self, meta: &mut OperatorMeta) {
+        meta.extend(
+            self.0
+                .iter()
+                .map(|(access, counts)| (Cow::from(access.name()), counts.meta_item())),
+        );
+
+        let hits = self.0[CacheAccess::Hit].count;
+        let misses = self.0[CacheAccess::Miss].count;
+        meta.extend(metadata! {
+            "hit rate" => MetaItem::Percent { numerator: hits, denominator: hits + misses }
+        });
+    }
+}
+
+impl Add for CacheStats {
+    type Output = Self;
+
+    fn add(mut self, rhs: Self) -> Self::Output {
+        self.add_assign(rhs);
+        self
+    }
+}
+
+impl AddAssign for CacheStats {
+    fn add_assign(&mut self, rhs: Self) {
+        for (access, counts) in &mut self.0 {
+            *counts += rhs.0[access];
+        }
+    }
+}
+
+/// Cache counts that can be accessed atomically for multithread updates.
+#[derive(Copy, Clone, Debug, Default)]
+pub struct CacheCounts {
+    /// Number of accessed blocks.
+    pub count: u64,
+
+    /// Total bytes across all the accesses.
+    pub bytes: u64,
+}
+
+impl CacheCounts {
+    /// Are the counts all zero?
+    pub fn is_empty(&self) -> bool {
+        self.count == 0 && self.bytes == 0
+    }
+
+    /// Returns a [MetaItem] for these cache counts.
+    pub fn meta_item(&self) -> MetaItem {
+        MetaItem::count_and_bytes(self.count, self.bytes)
+    }
+}
+
+impl AddAssign for CacheCounts {
+    fn add_assign(&mut self, rhs: Self) {
+        self.count += rhs.count;
+        self.bytes += rhs.bytes;
     }
 }
