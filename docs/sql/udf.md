@@ -271,13 +271,13 @@ crate, which is part of the Feldera SQL runtime.
 | `DOUBLE`                 | `feldera_sqllib::F64`                   |
 | `CHAR`, `CHAR(n)`        | `String`                                |
 | `VARCHAR`, `VARCHAR(n)`  | `String`                                |
-| `BINARY`, `BINARY(n)`, `VARBINARY`, `VARBINARY(n)` | `feldera_sqllib::ByteArray`             |
+| `BINARY`, `BINARY(n)`, `VARBINARY`, `VARBINARY(n)` | `feldera_sqllib::ByteArray`           |
 | `NULL`                   | `()`                                    |
 | `INTERVAL`               | `feldera_sqllib::ShortInterval`, `feldera_sqllib::LongInterval` |
 | `TIME`                   | `feldera_sqllib::Time`                  |
 | `TIMESTAMP`              | `feldera_sqllib::Timestamp`             |
 | `DATE`                   | `feldera_sqllib::Date`                  |
-| `T ARRAY`                | `Vec<T>`                                |
+| `T ARRAY`                | `feldera_sqllib::Array<T>`              |
 | `MAP<K, V>`              | `feldera_sqllib::Map<K, V>`             |
 | `UUID`                   | `feldera_sqllib::Uuid`                  |
 | `VARIANT`                | `feldera_sqllib::Variant`               |
@@ -293,7 +293,8 @@ and `LongInterval` (representing intervals from years to months).
 in a single expression.)
 
 Currently `feldera_sqlllib::Map` is defined as `type Map =
-Arc<BTreeMap>;`
+Arc<BTreeMap>`, and `feldera_sqlllib::Array` is defined as `type Array
+= Arc<Vec>`.
 
 ### Return types
 

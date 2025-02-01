@@ -37,7 +37,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPGeoPointConstructor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPMapExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariantExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPVecExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPArrayExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
@@ -85,7 +85,7 @@ public abstract class DBSPLiteral extends DBSPExpression
             case INTERVAL_LONG -> new DBSPIntervalMonthsLiteral(type.getNode(), type, null);
             case STRING -> new DBSPStringLiteral(CalciteObject.EMPTY, type, null, StandardCharsets.UTF_8);
             case TIME -> new DBSPTimeLiteral();
-            case VEC -> new DBSPVecExpression(type, true);
+            case ARRAY -> new DBSPArrayExpression(type, true);
             case MAP -> new DBSPMapExpression(type.to(DBSPTypeMap.class), null, null);
             case TUPLE -> DBSPTupleExpression.none(type.to(DBSPTypeTuple.class));
             case NULL -> new DBSPNullLiteral();

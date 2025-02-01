@@ -48,7 +48,7 @@ public enum DBSPTypeCode {
     SEMIGROUP(null, "", ""),
     STREAM(null, "", ""),
     USER(null, "", ""),
-    VEC("ARRAY", "", ""),
+    ARRAY("ARRAY", "", "Array"),
     MAP("MAP", "", "Map"),
     VARIANT("VARIANT", "V", "Variant"),
     ZSET("MULTISET", "", ""),

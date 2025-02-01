@@ -18,7 +18,7 @@ import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
-import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeVec;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeArray;
 import org.dbsp.util.Maybe;
 import org.junit.Assert;
 import org.junit.Test;
@@ -28,22 +28,22 @@ import java.util.Objects;
 public class UnusedFieldsTest {
     @Test
     public void testZSetString() {
-        DBSPExpression none = new DBSPTypeVec(DBSPTypeString.varchar(false), true).none();
-        Assert.assertEquals("(Vec<s>?)null", none.toString());
+        DBSPExpression none = new DBSPTypeArray(DBSPTypeString.varchar(false), true).none();
+        Assert.assertEquals("(Array<s>?)null", none.toString());
         DBSPCompiler compiler = new DBSPCompiler(new CompilerOptions());
-        Assert.assertEquals("None::<Vec<String>>",
+        Assert.assertEquals("None::<Array<String>>",
                 ToRustInnerVisitor.toRustString(compiler, none, false));
         DBSPZSetExpression zset = new DBSPZSetExpression(none);
-        Assert.assertEquals("zset!((Vec<s>?)null => 1,)", zset.toString());
-        Assert.assertEquals("zset!(None::<Vec<String>> => 1)",
+        Assert.assertEquals("zset!((Array<s>?)null => 1,)", zset.toString());
+        Assert.assertEquals("zset!(None::<Array<String>> => 1)",
                 ToRustInnerVisitor.toRustString(compiler, zset, false));
         DBSPTupleExpression tup = new DBSPTupleExpression(none);
-        Assert.assertEquals("Tup1::new((Vec<s>?)null, )", tup.toString());
-        Assert.assertEquals("Tup1::new(None::<Vec<String>>)",
+        Assert.assertEquals("Tup1::new((Array<s>?)null, )", tup.toString());
+        Assert.assertEquals("Tup1::new(None::<Array<String>>)",
                 ToRustInnerVisitor.toRustString(compiler, tup, false));
         DBSPZSetExpression zset1 = new DBSPZSetExpression(tup);
-        Assert.assertEquals("zset!(Tup1::new((Vec<s>?)null, ) => 1,)", zset1.toString());
-        Assert.assertEquals("zset!(Tup1::new(None::<Vec<String>>) => 1)",
+        Assert.assertEquals("zset!(Tup1::new((Array<s>?)null, ) => 1,)", zset1.toString());
+        Assert.assertEquals("zset!(Tup1::new(None::<Array<String>>) => 1)",
                 ToRustInnerVisitor.toRustString(compiler, zset1, false));
     }
 

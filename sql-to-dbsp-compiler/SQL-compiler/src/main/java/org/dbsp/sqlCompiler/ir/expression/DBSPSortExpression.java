@@ -31,7 +31,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeFunction;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
-import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeVec;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeArray;
 import org.dbsp.util.IIndentStream;
 
 import javax.annotation.Nullable;
@@ -55,11 +55,11 @@ public final class DBSPSortExpression extends DBSPExpression {
             DBSPComparatorExpression comparator, @Nullable DBSPExpression limit) {
         super(node, new DBSPTypeFunction(
                 // Return type
-                new DBSPTypeVec(elementType, false),
+                new DBSPTypeArray(elementType, false),
                 // Argument type
                 new DBSPTypeRawTuple(
                         new DBSPTypeRawTuple().ref(),
-                        new DBSPTypeVec(elementType, false).ref())));
+                        new DBSPTypeArray(elementType, false).ref())));
         this.comparator = comparator;
         this.elementType = elementType;
         this.limit = limit;

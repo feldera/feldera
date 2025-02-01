@@ -75,7 +75,7 @@ import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeMap;
-import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeVec;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeArray;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Logger;
@@ -767,7 +767,7 @@ public class Monotonicity extends CircuitVisitor {
      * expressions that we do not want to look at.
      * *DOES NOT WORK PROPERLY FOR EMPTY TUPLES. */
     static DBSPExpression makeNoExpression(DBSPType type) {
-        if (type.is(DBSPTypeBaseType.class) || type.is(DBSPTypeVec.class) || type.is(DBSPTypeMap.class)) {
+        if (type.is(DBSPTypeBaseType.class) || type.is(DBSPTypeArray.class) || type.is(DBSPTypeMap.class)) {
             return new NoExpression(type);
         } else if (type.is(DBSPTypeTupleBase.class)) {
             // Tricky if the tuple is empty, this *will* be monotone!

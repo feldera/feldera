@@ -80,7 +80,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU64Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPUSizeLiteral;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariantExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVariantNullLiteral;
-import org.dbsp.sqlCompiler.ir.expression.DBSPVecExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPArrayExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.statement.DBSPComment;
 import org.dbsp.sqlCompiler.ir.statement.DBSPConstItem;
@@ -97,6 +97,7 @@ import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeFunction;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMillisInterval;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMonthsInterval;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVariant;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeBTreeMap;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRef;
@@ -106,6 +107,7 @@ import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeStream;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeUser;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeArray;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeVec;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeWithCustomOrd;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
@@ -367,6 +369,16 @@ public abstract class InnerRewriteVisitor
     }
 
     @Override
+    public VisitDecision preorder(DBSPTypeArray type) {
+        this.push(type);
+        DBSPType elementType = this.transform(type.getElementType());
+        this.pop(type);
+        DBSPType result = new DBSPTypeArray(elementType, type.mayBeNull);
+        this.map(type, result);
+        return VisitDecision.STOP;
+    }
+
+    @Override
     public VisitDecision preorder(DBSPTypeVec type) {
         this.push(type);
         DBSPType elementType = this.transform(type.getElementType());
@@ -383,6 +395,17 @@ public abstract class InnerRewriteVisitor
         DBSPType valueType = this.transform(type.getValueType());
         this.pop(type);
         DBSPType result = new DBSPTypeMap(keyType, valueType, type.mayBeNull);
+        this.map(type, result);
+        return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPTypeBTreeMap type) {
+        this.push(type);
+        DBSPType keyType = this.transform(type.getKeyType());
+        DBSPType valueType = this.transform(type.getValueType());
+        this.pop(type);
+        DBSPType result = new DBSPTypeBTreeMap(keyType, valueType, type.mayBeNull);
         this.map(type, result);
         return VisitDecision.STOP;
     }
@@ -685,14 +708,14 @@ public abstract class InnerRewriteVisitor
     }
 
     @Override
-    public VisitDecision preorder(DBSPVecExpression expression) {
+    public VisitDecision preorder(DBSPArrayExpression expression) {
         this.push(expression);
         DBSPType type = this.transform(expression.getType());
         List<DBSPExpression> data = null;
         if (expression.data != null)
             data = Linq.map(expression.data, this::transform);
         this.pop(expression);
-        DBSPExpression result = new DBSPVecExpression(expression.getNode(), type, data);
+        DBSPExpression result = new DBSPArrayExpression(expression.getNode(), type, data);
         this.map(expression, result);
         return VisitDecision.STOP;
     }
