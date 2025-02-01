@@ -414,7 +414,8 @@
                           "name": "default"
                         },
                         "min_storage_bytes": null,
-                        "compression": "default"
+                        "compression": "default",
+                        "cache_mib": null
                       },
                       "fault_tolerance": null,
                       "cpu_profiler": false,
@@ -4564,6 +4565,13 @@
               "name": "default"
             }
           },
+          "cache_mib": {
+            "type": "integer",
+            "description": "The maximum size of the in-memory storage cache, in mebibytes.\n\nThe default is 256 MiB, times the number of workers.",
+            "default": null,
+            "nullable": true,
+            "minimum": 0
+          },
           "compression": {
             "allOf": [
               {
@@ -4574,7 +4582,7 @@
           },
           "min_storage_bytes": {
             "type": "integer",
-            "description": "The minimum estimated number of bytes in a batch of data to write it to\nstorage.  This is provided for debugging and fine-tuning and should\nordinarily be left unset.\n\nA value of 0 will write even empty batches to storage, and nonzero\nvalues provide a threshold.  `usize::MAX` would effectively disable\nstorage.",
+            "description": "The minimum estimated number of bytes in a batch of data to write it to\nstorage.  This is provided for debugging and fine-tuning and should\nordinarily be left unset.\n\nA value of 0 will write even empty batches to storage, and nonzero\nvalues provide a threshold.  `usize::MAX` would effectively disable\nstorage.\n\nThe default is 1,048,576 (1 MiB).",
             "default": null,
             "nullable": true,
             "minimum": 0

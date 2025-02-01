@@ -17,7 +17,7 @@ use feldera_types::config::StorageCompression;
 use once_cell::sync::Lazy;
 use serde::Serialize;
 use std::path::Path;
-use std::sync::{LazyLock, Mutex};
+use std::sync::Mutex;
 use std::thread::Thread;
 use std::time::Duration;
 use std::{
@@ -330,10 +330,18 @@ impl Runtime {
 
         let runtime = Self(Arc::new(RuntimeInner::new(config)?));
 
-        for idx in 0..nworkers {
-            runtime
-                .local_store()
-                .insert(BufferCacheId(idx), Arc::new(BufferCache::new()));
+        if let Some(storage) = &runtime.0.storage {
+            let cache_size_bytes = storage
+                .options
+                .cache_mib
+                .unwrap_or(nworkers * 256)
+                .saturating_mul(1024 * 1024);
+            for idx in 0..nworkers {
+                runtime.local_store().insert(
+                    BufferCacheId(idx),
+                    Arc::new(BufferCache::new(cache_size_bytes / nworkers)),
+                );
+            }
         }
 
         // Install custom panic hook.
@@ -404,24 +412,21 @@ impl Runtime {
         BACKEND.with(|rc| rc.clone())
     }
 
-    /// Returns this thread's buffer cache.
+    /// Returns this thread's buffer cache, if storage is configured.
     ///
     /// The buffer cache is shared between a worker and its background thread,
     /// because they access the same files. They are otherwise independent,
     /// because different workers access different files.
-    pub fn buffer_cache() -> Arc<BufferCache<FileCacheEntry>> {
-        if let Some(rt) = Runtime::runtime() {
-            let cache = rt
-                .local_store()
-                .get(&BufferCacheId(Runtime::worker_index()));
-            cache.unwrap().clone()
-        } else {
-            // No `Runtime` means there's only a single worker, so use a single
-            // global cache.
-            static NO_RUNTIME_CACHE: LazyLock<Arc<BufferCache<FileCacheEntry>>> =
-                LazyLock::new(|| Arc::new(BufferCache::new()));
-            NO_RUNTIME_CACHE.clone()
-        }
+    ///
+    /// # Panic
+    ///
+    /// Panics if this thread is not in a [Runtime].
+    pub fn buffer_cache() -> Option<Arc<BufferCache<FileCacheEntry>>> {
+        Runtime::runtime()
+            .unwrap()
+            .local_store()
+            .get(&BufferCacheId(Runtime::worker_index()))
+            .map(|cache| (*cache).clone())
     }
 
     /// Returns 0-based index of the current worker thread within its runtime.

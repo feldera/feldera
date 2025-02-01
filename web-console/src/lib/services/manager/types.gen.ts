@@ -1988,6 +1988,12 @@ export type StorageConfig = {
  */
 export type StorageOptions = {
   backend?: StorageBackendConfig
+  /**
+   * The maximum size of the in-memory storage cache, in mebibytes.
+   *
+   * The default is 256 MiB, times the number of workers.
+   */
+  cache_mib?: number | null
   compression?: StorageCompression
   /**
    * The minimum estimated number of bytes in a batch of data to write it to
@@ -1997,6 +2003,8 @@ export type StorageOptions = {
    * A value of 0 will write even empty batches to storage, and nonzero
    * values provide a threshold.  `usize::MAX` would effectively disable
    * storage.
+   *
+   * The default is 1,048,576 (1 MiB).
    */
   min_storage_bytes?: number | null
 }

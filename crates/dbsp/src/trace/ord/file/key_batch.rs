@@ -334,7 +334,7 @@ where
         let any_factory1 = factories.factories1.any_factories();
         let file = Reader::open(
             &[&any_factory0, &any_factory1],
-            Runtime::buffer_cache(),
+            Runtime::buffer_cache().unwrap(),
             &*Runtime::storage_backend().unwrap(),
             path,
         )?;
@@ -551,7 +551,7 @@ where
             writer: Writer2::new(
                 &batch1.factories.factories0,
                 &batch1.factories.factories1,
-                &Runtime::buffer_cache(),
+                Runtime::buffer_cache().unwrap(),
                 &*Runtime::storage_backend().unwrap(),
                 Runtime::file_writer_parameters(),
             )
@@ -992,7 +992,7 @@ where
             writer: Writer2::new(
                 &factories.factories0,
                 &factories.factories1,
-                &Runtime::buffer_cache(),
+                Runtime::buffer_cache().unwrap(),
                 &*Runtime::storage_backend().unwrap(),
                 Runtime::file_writer_parameters(),
             )

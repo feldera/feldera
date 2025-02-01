@@ -2,8 +2,8 @@
 //!
 //! This implements an approximately LRU cache for layer files.  The
 //! [`Reader`](super::reader::Reader) and [writer](super::writer) use it.
+use std::mem::size_of;
 use std::sync::Arc;
-use std::{mem::size_of, sync::LazyLock};
 
 use crc32c::crc32c;
 
@@ -45,6 +45,7 @@ pub enum FileCacheEntry {
 }
 
 impl CacheEntry for FileCacheEntry {
+    /// Returns the data size in bytes.
     fn cost(&self) -> usize {
         match self {
             Self::FileTrailer(_) => size_of::<FileTrailer>(),
@@ -126,13 +127,6 @@ impl FileCacheEntry {
             _ => Err(Error::Corruption(CorruptionError::BadBlockType(location))),
         }
     }
-}
-
-/// Returns a global `FileCache` suitable for examples, tests, and other
-/// programs that don't need a specific backend configuration.
-pub fn default_cache() -> Arc<FileCache> {
-    static DEFAULT_CACHE: LazyLock<Arc<FileCache>> = LazyLock::new(|| Arc::new(FileCache::new()));
-    DEFAULT_CACHE.clone()
 }
 
 impl BufferCache<FileCacheEntry> {

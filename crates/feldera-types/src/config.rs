@@ -138,6 +138,8 @@ pub struct StorageOptions {
     /// A value of 0 will write even empty batches to storage, and nonzero
     /// values provide a threshold.  `usize::MAX` would effectively disable
     /// storage.
+    ///
+    /// The default is 1,048,576 (1 MiB).
     pub min_storage_bytes: Option<usize>,
 
     /// The form of compression to use in data batches.
@@ -146,6 +148,11 @@ pub struct StorageOptions {
     /// NVMe and network bandwidth, which means that it can increase overall
     /// performance.
     pub compression: StorageCompression,
+
+    /// The maximum size of the in-memory storage cache, in mebibytes.
+    ///
+    /// The default is 256 MiB, times the number of workers.
+    pub cache_mib: Option<usize>,
 }
 
 /// Backend storage configuration.

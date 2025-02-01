@@ -83,26 +83,17 @@ where
     max_cost: usize,
 }
 
-impl<E> Default for BufferCache<E>
-where
-    E: CacheEntry,
-{
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl<E> CacheInner<E>
 where
     E: CacheEntry,
 {
-    fn new() -> Self {
+    fn new(max_cost: usize) -> Self {
         Self {
             cache: BTreeMap::new(),
             lru: BTreeMap::new(),
             next_serial: 0,
             cur_cost: 0,
-            max_cost: 1024 * 1024 * 256,
+            max_cost,
         }
     }
 
@@ -201,15 +192,6 @@ where
     }
 }
 
-impl<E> Default for CacheInner<E>
-where
-    E: CacheEntry,
-{
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl<E> BufferCache<E>
 where
     E: CacheEntry,
@@ -218,9 +200,12 @@ where
     ///
     /// It's best to use a single `StorageCache` for all uses of a given
     /// `backend`, because otherwise the cache will end up with duplicates.
-    pub fn new() -> Self {
+    ///
+    /// `max_cost` limits the size of the cache. It is denominated in terms of
+    /// [CacheEntry::cost] for `E`.
+    pub fn new(max_cost: usize) -> Self {
         Self {
-            inner: Mutex::new(CacheInner::new()),
+            inner: Mutex::new(CacheInner::new(max_cost)),
         }
     }
 
@@ -258,6 +243,14 @@ where
 
     pub fn evict(&self, file: &dyn FileReader) {
         self.inner.lock().unwrap().delete_file(file.file_id());
+    }
+
+    /// Returns `(cur_cost, max_cost)`, reporting the amount of the cache that
+    /// is currently used and the maximum value, both denominated in terms of
+    /// [CacheEntry::cost] for `E`.
+    pub fn occupancy(&self) -> (usize, usize) {
+        let inner = self.inner.lock().unwrap();
+        (inner.cur_cost, inner.max_cost)
     }
 }
 

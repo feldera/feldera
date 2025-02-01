@@ -7,7 +7,7 @@ use crate::{
         GlobalNodeId,
     },
     monitor::{visual_graph::Graph, TraceMonitor},
-    RootCircuit,
+    RootCircuit, Runtime,
 };
 use size_of::HumanBytes;
 use std::{
@@ -491,6 +491,21 @@ impl Profiler {
 
                 for item in default_meta {
                     meta.insert(0, item);
+                }
+
+                if let Some(cache) = Runtime::buffer_cache() {
+                    let (cur, max) = cache.occupancy();
+                    meta.insert(
+                        0,
+                        (
+                            Cow::Borrowed("cache occupancy"),
+                            MetaItem::String(format!(
+                                "{} used (max {})",
+                                HumanBytes::new(cur as u64),
+                                HumanBytes::new(max as u64)
+                            )),
+                        ),
+                    );
                 }
             }
         }

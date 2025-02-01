@@ -246,7 +246,7 @@ where
     fn neg_by_ref(&self) -> Self {
         let mut writer = Writer1::new(
             &self.factories.file_factories,
-            &Runtime::buffer_cache(),
+            Runtime::buffer_cache().unwrap(),
             &*Runtime::storage_backend().unwrap(),
             Runtime::file_writer_parameters(),
         )
@@ -430,7 +430,7 @@ where
         let any_factory0 = factories.file_factories.any_factories();
         let file = Reader::open(
             &[&any_factory0],
-            Runtime::buffer_cache(),
+            Runtime::buffer_cache().unwrap(),
             &*Runtime::storage_backend().unwrap(),
             path,
         )?;
@@ -479,7 +479,7 @@ where
             lower2: 0,
             writer: Writer1::new(
                 &batch1.factories.file_factories,
-                &Runtime::buffer_cache(),
+                Runtime::buffer_cache().unwrap(),
                 &*Runtime::storage_backend().unwrap(),
                 Runtime::file_writer_parameters(),
             )
@@ -790,7 +790,7 @@ where
             factories: factories.clone(),
             writer: Writer1::new(
                 &factories.file_factories,
-                &Runtime::buffer_cache(),
+                Runtime::buffer_cache().unwrap(),
                 &*Runtime::storage_backend().unwrap(),
                 Runtime::file_writer_parameters(),
             )
