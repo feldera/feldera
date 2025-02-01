@@ -707,7 +707,17 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
         CalciteObject node = CalciteObject.create(this.context, field);
         DBSPExpression source = field.getReferenceExpr().accept(this);
         RelDataTypeField dataField = field.getField();
-        return new DBSPFieldExpression(node, source, dataField.getIndex());
+        int index = dataField.getIndex();
+        DBSPType resultType = this.typeCompiler.convertType(field.getType(), false);
+        /*
+        TODO: save a clone.  Interferes badly with UsedFields analysis.
+        https://github.com/feldera/feldera/issues/3422
+        if (source.is(DBSPCloneExpression.class))
+            source = source.to(DBSPCloneExpression.class).expression;
+         */
+        DBSPExpression result = new DBSPFieldExpression(node, source, index);
+        assert result.getType().sameType(resultType);
+        return result;
     }
 
     static CompilationError operandCountError(CalciteObject node, String name, int operandCount) {
@@ -1165,22 +1175,32 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                     case "now":
                     case "variantnull":
                         return compileFunction(call, node, type, ops, 0);
-                    case "gunzip":
+                    case "gunzip": {
+                        validateArgCount(node, operationName, ops.size(), 1);
                         DBSPExpression arg = ops.get(0);
                         ops.set(0, arg.cast(new DBSPTypeBinary(arg.getNode(), arg.type.mayBeNull), false));
                         return compileFunction(call, node, type, ops, 1);
+                    }
                     case "to_int":
                     case "typeof":
                         return compileFunction(call, node, type, ops, 1);
-                    case "parse_json":
-                    case "to_json":
+                    case "to_json": {
+                        validateArgCount(node, operationName, ops.size(), 1);
+                        DBSPExpression arg = ops.get(0);
+                        ops.set(0, arg.cast(new DBSPTypeVariant(arg.getNode(), arg.type.mayBeNull), false));
                         return compilePolymorphicFunction(call, node, type, ops, 1);
+                    }
+                    case "parse_json": {
+                        validateArgCount(node, operationName, ops.size(), 1);
+                        this.ensureString(ops, 0);
+                        return compileFunction(call, node, type, ops, 1);
+                    }
                     case "sequence":
                         for (int i = 0; i < ops.size(); i++)
                             this.ensureInteger(ops, i, 32);
                         return compileFunction(call, node, type, ops, 2);
                     case "blackbox":
-                        assert ops.size() == 1 : "expected one argument for blackbox function";
+                        validateArgCount(node, operationName, ops.size(), 1);
                         return new DBSPApplyExpression(node, "blackbox", ops.get(0).type, ops.toArray(new DBSPExpression[0]));
                     case "regexp_replace": {
                         validateArgCount(node, operationName, ops.size(), 2, 3);

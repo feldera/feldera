@@ -2,8 +2,8 @@
 
 #![allow(non_snake_case)]
 use crate::{
-    some_function1, some_function2, some_function3, some_function4, some_polymorphic_function1,
-    some_polymorphic_function2, Variant,
+    some_function1, some_function2, some_function3, some_function4, some_polymorphic_function2,
+    Variant,
 };
 
 use like::{Escape, Like};
@@ -392,19 +392,14 @@ pub fn writelog<T: std::fmt::Display>(format: String, argument: T) -> T {
 }
 
 #[doc(hidden)]
-pub fn parse_json_s(value: String) -> Variant {
+pub fn parse_json_(value: String) -> Variant {
     match serde_json::from_str::<Variant>(&value) {
         Ok(v) => v,
         Err(_) => Variant::SqlNull,
     }
 }
 
-#[doc(hidden)]
-pub fn parse_json_nullN(_value: Option<()>) -> Option<Variant> {
-    None
-}
-
-some_polymorphic_function1!(parse_json, s, String, Variant);
+some_function1!(parse_json, String, Variant);
 
 #[doc(hidden)]
 pub fn to_json_V(value: Variant) -> Option<String> {
