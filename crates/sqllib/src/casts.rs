@@ -3,6 +3,7 @@
 #![allow(non_snake_case)]
 
 use crate::{
+    array::Array,
     binary::ByteArray,
     error::{r2o, SqlResult, SqlRuntimeError},
     geopoint::*,
@@ -2908,25 +2909,28 @@ cast_variant!(LongInterval_YEARS, LongInterval, LongInterval);
 cast_variant!(GeoPoint, GeoPoint, Geometry);
 
 #[doc(hidden)]
-pub fn cast_to_V_vec<T>(vec: Vec<T>) -> SqlResult<Variant>
+pub fn cast_to_V_vec<T>(vec: Array<T>) -> SqlResult<Variant>
 where
     Variant: From<T>,
+    T: Clone,
 {
     Ok(vec.into())
 }
 
 #[doc(hidden)]
-pub fn cast_to_VN_vec<T>(vec: Vec<T>) -> SqlResult<Option<Variant>>
+pub fn cast_to_VN_vec<T>(vec: Array<T>) -> SqlResult<Option<Variant>>
 where
     Variant: From<T>,
+    T: Clone,
 {
     Ok(Some(vec.into()))
 }
 
 #[doc(hidden)]
-pub fn cast_to_V_vecN<T>(vec: Option<Vec<T>>) -> SqlResult<Variant>
+pub fn cast_to_V_vecN<T>(vec: Option<Array<T>>) -> SqlResult<Variant>
 where
     Variant: From<T>,
+    T: Clone,
 {
     match vec {
         None => Ok(Variant::SqlNull),
@@ -2935,17 +2939,18 @@ where
 }
 
 #[doc(hidden)]
-pub fn cast_to_VN_vecN<T>(vec: Option<Vec<T>>) -> SqlResult<Option<Variant>>
+pub fn cast_to_VN_vecN<T>(vec: Option<Array<T>>) -> SqlResult<Option<Variant>>
 where
     Variant: From<T>,
+    T: Clone,
 {
     r2o(cast_to_V_vecN(vec))
 }
 
 #[doc(hidden)]
-pub fn cast_to_vec_V<T>(value: Variant) -> SqlResult<Vec<T>>
+pub fn cast_to_vec_V<T>(value: Variant) -> SqlResult<Array<T>>
 where
-    Vec<T>: TryFrom<Variant, Error = Box<dyn Error>>,
+    Array<T>: TryFrom<Variant, Error = Box<dyn Error>>,
 {
     match value.try_into() {
         Ok(value) => Ok(value),
@@ -2954,9 +2959,9 @@ where
 }
 
 #[doc(hidden)]
-pub fn cast_to_vec_VN<T>(value: Option<Variant>) -> SqlResult<Option<Vec<T>>>
+pub fn cast_to_vec_VN<T>(value: Option<Variant>) -> SqlResult<Option<Array<T>>>
 where
-    Vec<T>: TryFrom<Variant, Error = Box<dyn Error>>,
+    Array<T>: TryFrom<Variant, Error = Box<dyn Error>>,
 {
     match value {
         None => Ok(None),
@@ -2965,9 +2970,9 @@ where
 }
 
 #[doc(hidden)]
-pub fn cast_to_vecN_V<T>(value: Variant) -> SqlResult<Option<Vec<T>>>
+pub fn cast_to_vecN_V<T>(value: Variant) -> SqlResult<Option<Array<T>>>
 where
-    Vec<T>: TryFrom<Variant, Error = Box<dyn Error>>,
+    Array<T>: TryFrom<Variant, Error = Box<dyn Error>>,
 {
     match value.try_into() {
         Ok(value) => Ok(Some(value)),
@@ -2976,9 +2981,9 @@ where
 }
 
 #[doc(hidden)]
-pub fn cast_to_vecN_VN<T>(value: Option<Variant>) -> SqlResult<Option<Vec<T>>>
+pub fn cast_to_vecN_VN<T>(value: Option<Variant>) -> SqlResult<Option<Array<T>>>
 where
-    Vec<T>: TryFrom<Variant, Error = Box<dyn Error>>,
+    Array<T>: TryFrom<Variant, Error = Box<dyn Error>>,
 {
     match value {
         None => Ok(None),

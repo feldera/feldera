@@ -25,17 +25,18 @@ package org.dbsp.sqlCompiler.ir.type.user;
 
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPVecExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPArrayExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.ICollectionType;
 
-import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.VEC;
+import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.USER;
 
 /** Represents the type of a Rust Vec as a TypeUser. */
 public class DBSPTypeVec extends DBSPTypeUser implements ICollectionType {
     public DBSPTypeVec(DBSPType vectorElementType, boolean mayBeNull) {
-        super(vectorElementType.getNode(), VEC, "Vec", mayBeNull, vectorElementType);
+        super(vectorElementType.getNode(), USER, "Vec", mayBeNull, vectorElementType);
     }
 
     public DBSPType getElementType() {
@@ -46,7 +47,15 @@ public class DBSPTypeVec extends DBSPTypeUser implements ICollectionType {
     public DBSPExpression defaultValue() {
         if (this.mayBeNull)
             return this.none();
-        return new DBSPVecExpression(this, false);
+        return new DBSPArrayExpression(this, false);
+    }
+
+    /** vec!() or Some(vec!()), depending on nullability */
+    public DBSPExpression emptyVector() {
+        DBSPExpression vec = new DBSPApplyExpression("vec!", this.withMayBeNull(false));
+        if (!this.mayBeNull)
+            return vec;
+        return vec.some();
     }
 
     @Override

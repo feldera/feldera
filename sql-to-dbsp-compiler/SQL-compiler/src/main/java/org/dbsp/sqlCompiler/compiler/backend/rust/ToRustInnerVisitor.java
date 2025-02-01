@@ -107,7 +107,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPUSizeLiteral;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariantExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPUuidLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVariantNullLiteral;
-import org.dbsp.sqlCompiler.ir.expression.DBSPVecExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPArrayExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.path.DBSPPath;
 import org.dbsp.sqlCompiler.ir.path.DBSPPathSegment;
@@ -140,7 +140,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVoid;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeMap;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeStream;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeUser;
-import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeVec;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeArray;
 import org.dbsp.util.IndentStream;
 import org.dbsp.util.Utilities;
 
@@ -184,19 +184,19 @@ public class ToRustInnerVisitor extends InnerVisitor {
     @Override
     public VisitDecision preorder(DBSPSortExpression expression) {
         /*
-        move |(k, v): (&(), &Vec<Tup<...>>, ), | -> Vec<Tup<...>> {
+        move |(k, array): (&(), &Vec<Tup<...>>, ), | -> Array<Tup<...>> {
             let comp = ...;    // comparator
             let mut ec: _ = move |a: &Tup<...>, b: &Tup<...>, | -> _ {
                 comp.compare(a, b)
             };
-            let mut v = v.clone();
+            let mut v = (**array).clone();
             v.sort_by(ec);
-            v
+            v.into()
         }
          */
-        this.builder.append("move |(k, v): (&(), &Vec<");
+        this.builder.append("move |(k, array): (&(), &Array<");
         expression.elementType.accept(this);
-        this.builder.append(">)| -> Vec<");
+        this.builder.append(">)| -> Array<");
         expression.elementType.accept(this);
         this.builder.append("> {").increase();
         if (!expression.comparator.is(DBSPNoComparatorExpression.class)) {
@@ -208,18 +208,18 @@ public class ToRustInnerVisitor extends InnerVisitor {
             this.builder.append(", b: &");
             expression.elementType.accept(this);
             this.builder.append("| { ec.compare(a, b) };").newline();
-            this.builder.append("let mut v = v.clone();").newline()
+            this.builder.append("let mut v = (**array).clone();").newline()
                     // we don't use sort_unstable_by because it is
                     // non-deterministic
                     .append("v.sort_by(comp);").newline();
         } // otherwise the vector doesn't need to be sorted at all
         if (expression.limit != null) {
-            this.builder.append("let mut v = v.clone();").newline();
+            this.builder.append("let mut v = (**array).clone();").newline();
             this.builder.append("v.truncate(");
             expression.limit.accept(this);
             this.builder.append(");").newline();
         }
-        this.builder.append("v");
+        this.builder.append("v.into()");
         this.builder.newline()
                 .decrease()
                 .append("}");
@@ -435,12 +435,12 @@ public class ToRustInnerVisitor extends InnerVisitor {
     }
 
     @Override
-    public VisitDecision preorder(DBSPVecExpression expression) {
+    public VisitDecision preorder(DBSPArrayExpression expression) {
         if (expression.data == null)
             return this.doNullExpression(expression);
         if (expression.getType().mayBeNull)
             this.builder.append("Some(");
-        this.builder.append("vec!(");
+        this.builder.append("Arc::new(vec!(");
         if (expression.data.size() > 1)
             this.builder.increase();
         for (DBSPExpression exp: expression.data) {
@@ -449,7 +449,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
         }
         if (expression.data.size() > 1)
             this.builder.decrease();
-        this.builder.append(")");
+        this.builder.append("))");
         if (expression.getType().mayBeNull)
             this.builder.append(")");
         return VisitDecision.STOP;
@@ -769,8 +769,8 @@ public class ToRustInnerVisitor extends InnerVisitor {
          * the function called will be cast_to_b_i16N. */
         DBSPType destType = expression.getType();
         DBSPType sourceType = expression.source.getType();
-        DBSPTypeVec sourceVecType = sourceType.as(DBSPTypeVec.class);
-        DBSPTypeVec destVecType = destType.as(DBSPTypeVec.class);
+        DBSPTypeArray sourceVecType = sourceType.as(DBSPTypeArray.class);
+        DBSPTypeArray destVecType = destType.as(DBSPTypeArray.class);
         String functionName;
 
         if (expression.safe)
@@ -935,7 +935,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
             case SQL_INDEX: {
                 DBSPType collectionType = expression.left.getType();
                 DBSPType indexType = expression.right.getType();
-                DBSPTypeVec vec = collectionType.to(DBSPTypeVec.class);
+                DBSPTypeArray vec = collectionType.to(DBSPTypeArray.class);
                 this.builder.append("index")
                         .append(expression.left.getType().nullableUnderlineSuffix())
                         .append(vec.getElementType().nullableUnderlineSuffix())
@@ -964,7 +964,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
                 break;
             }
             case MAP_INDEX: {
-                DBSPType collectionType = expression.left.getType().deref();
+                DBSPType collectionType = expression.left.getType();
                 DBSPTypeMap map = collectionType.to(DBSPTypeMap.class);
                 this.builder.append("map_index")
                         .append(collectionType.nullableUnderlineSuffix())
@@ -977,21 +977,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
                 this.builder.append(")");
                 break;
             }
-            case ARRAY_CONVERT:
-            case MAP_CONVERT: {
-                // Pass first argument by reference
-                this.builder.append(expression.opcode.toString())
-                        .append(expression.left.getType().deref().nullableUnderlineSuffix())
-                        .append(expression.right.getType().nullableUnderlineSuffix())
-                        .append("(");
-                expression.left.accept(this);
-                this.builder.append(", ");
-                expression.right.accept(this);
-                this.builder.append(")");
-                break;
-            }
-            case DIV_NULL:
-            case SHIFT_LEFT: {
+            case ARRAY_CONVERT, MAP_CONVERT, DIV_NULL, SHIFT_LEFT: {
                 this.builder.append(expression.opcode.toString())
                         .append(expression.left.getType().nullableUnderlineSuffix())
                         .append(expression.right.getType().nullableUnderlineSuffix())

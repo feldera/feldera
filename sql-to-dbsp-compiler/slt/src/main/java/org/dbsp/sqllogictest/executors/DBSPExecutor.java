@@ -58,14 +58,14 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPRealLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPUSizeLiteral;
-import org.dbsp.sqlCompiler.ir.expression.DBSPVecExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPArrayExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStatement;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
-import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeVec;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeArray;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
@@ -221,9 +221,9 @@ public class DBSPExecutor extends SqlSltTestExecutor {
         DBSPZSetExpression result;
         IDBSPContainer container;
         DBSPType elementType = outputType.elementType;
-        if (elementType.is(DBSPTypeVec.class)) {
-            elementType = elementType.to(DBSPTypeVec.class).getElementType();
-            DBSPVecExpression vec = DBSPVecExpression.emptyWithElementType(elementType, false);
+        if (elementType.is(DBSPTypeArray.class)) {
+            elementType = elementType.to(DBSPTypeArray.class).getElementType();
+            DBSPArrayExpression vec = DBSPArrayExpression.emptyWithElementType(elementType, false);
             container = vec;
             result = new DBSPZSetExpression(vec);
         } else {
@@ -445,7 +445,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
         DBSPSinkOperator sink = sinks.get(outputNumber);
         DBSPType circuitOutputType = sink.outputType;
         // True if the output is a zset of vectors (generated for order by queries)
-        boolean isVector = circuitOutputType.to(DBSPTypeZSet.class).elementType.is(DBSPTypeVec.class);
+        boolean isVector = circuitOutputType.to(DBSPTypeZSet.class).elementType.is(DBSPTypeArray.class);
 
         DBSPLetStatement inputStream = new DBSPLetStatement("_in",
                 inputGeneratingFunction.call());
@@ -500,7 +500,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
                 DBSPType elementType;
                 if (isVector) {
                     functionProducingStrings = "zset_of_vectors_to_strings";
-                    elementType = oType.elementType.to(DBSPTypeVec.class).getElementType();
+                    elementType = oType.elementType.to(DBSPTypeArray.class).getElementType();
                 } else {
                     functionProducingStrings = "zset_to_strings";
                     elementType = oType.elementType;
