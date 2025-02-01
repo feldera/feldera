@@ -9,9 +9,11 @@ use crate::{ControllerError, Encoder, InputConsumer, OutputEndpoint, TransportIn
 use feldera_types::config::{InputEndpointConfig, OutputEndpointConfig, TransportConfig};
 use feldera_types::program_schema::Relation;
 use std::sync::Weak;
+use utoipa::openapi::PathItemType::Post;
 
 #[cfg(feature = "with-deltalake")]
 mod delta_table;
+mod postgres;
 
 #[cfg(feature = "with-deltalake")]
 pub use delta_table::{DeltaTableInputEndpoint, DeltaTableWriter};
@@ -19,8 +21,10 @@ pub use delta_table::{DeltaTableInputEndpoint, DeltaTableWriter};
 #[cfg(feature = "with-deltalake")]
 use feldera_types::config::TransportConfig::DeltaTableInput;
 
+use crate::integrated::postgres::PostgresInputEndpoint;
 #[cfg(feature = "with-iceberg")]
 use feldera_types::config::TransportConfig::IcebergInput;
+use feldera_types::config::TransportConfig::PostgresInput;
 
 /// An integrated output connector implements both transport endpoint
 /// (`OutputEndpoint`) and `Encoder` traits.  It is used to implement
@@ -100,6 +104,9 @@ pub fn create_integrated_input_endpoint(
             config,
             consumer,
         )),
+        PostgresInput(config) => {
+            Box::new(PostgresInputEndpoint::new(endpoint_name, config, consumer))
+        }
         transport => {
             return Err(ControllerError::unknown_input_transport(
                 endpoint_name,
