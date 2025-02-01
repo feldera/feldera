@@ -4771,6 +4771,24 @@
             ],
             "properties": {
               "config": {
+                "$ref": "#/components/schemas/PostgresReaderConfig"
+              },
+              "name": {
+                "type": "string",
+                "enum": [
+                  "postgres_input"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name",
+              "config"
+            ],
+            "properties": {
+              "config": {
                 "$ref": "#/components/schemas/DatagenInputConfig"
               },
               "name": {
