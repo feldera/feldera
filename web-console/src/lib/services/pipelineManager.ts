@@ -45,7 +45,6 @@ const { OidcClient } = AxaOidc
 import { client, createClient } from '@hey-api/client-fetch'
 import JSONbig from 'true-json-bigint'
 import { felderaEndpoint } from '$lib/functions/configs/felderaEndpoint'
-import type { SQLValueJS } from '$lib/functions/sqlValue'
 import invariant from 'tiny-invariant'
 import { tuple } from '$lib/functions/common/tuple'
 
@@ -74,7 +73,8 @@ const toPipelineThumb = (
     pipeline.deployment_desired_status,
     pipeline.deployment_error
   ),
-  programStatus: pipeline.program_status
+  programStatus: pipeline.program_status,
+  refreshVersion: pipeline.refresh_version
 })
 
 const toPipeline = <
@@ -116,6 +116,7 @@ const toExtendedPipeline = ({
   programVersion: pipeline.program_version,
   runtimeConfig: pipeline.runtime_config,
   version: pipeline.version,
+  refreshVersion: pipeline.refresh_version,
   status: consolidatePipelineStatus(
     program_status,
     deployment_status,
@@ -193,7 +194,8 @@ export const getPipelines = async (): Promise<PipelineThumb[]> => {
 
 export const getPipelineStatus = async (pipeline_name: string) => {
   const pipeline = await handled(_getPipeline)({
-    path: { pipeline_name: encodeURIComponent(pipeline_name) }
+    path: { pipeline_name: encodeURIComponent(pipeline_name) },
+    query: { selector: 'status' }
   })
   return {
     status: consolidatePipelineStatus(
@@ -387,19 +389,6 @@ export const adHocQuery = async (pipelineName: string, query: string) => {
   }
   invariant(result.body !== null)
   return result.body
-
-  // const text = await result.text()
-  // const entries = text
-  //   .split('\n')
-  //   .slice(0, -1)
-  //   .map((v) => JSONbig.parse(v) as Record<string, SQLValueJS>)
-  // const columns = entries.length
-  //   ? Object.keys(entries[0]).map(
-  //       (key) =>
-  //         ({ name: key, case_sensitive: false, columntype: { nullable: true } }) satisfies Field
-  //     )
-  //   : []
-  // return { rows: entries.map(Object.values), columns }
 }
 
 export type XgressEntry = { previewSlice: string } & (
