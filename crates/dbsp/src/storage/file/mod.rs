@@ -253,12 +253,14 @@ where
 
 #[cfg(test)]
 mod test {
+    use std::sync::Arc;
+
     use crate::storage::{
         backend::StorageBackend, file::format::Compression, test::init_test_logger,
     };
 
     use super::{
-        cache::default_cache,
+        cache::FileCache,
         reader::{ColumnSpec, RowGroup},
         writer::{Parameters, Writer1, Writer2},
         Factories,
@@ -520,7 +522,7 @@ mod test {
         let factories0 = Factories::<DynData, DynData>::new::<T::K0, T::A0>();
         let factories1 = Factories::<DynData, DynData>::new::<T::K1, T::A1>();
 
-        let cache = default_cache();
+        let cache = Arc::new(FileCache::new(1024 * 1024));
         let tempdir = tempdir().unwrap();
         let storage_backend = <dyn StorageBackend>::new(
             &StorageConfig {
@@ -533,7 +535,7 @@ mod test {
         let mut layer_file = Writer2::new(
             &factories0,
             &factories1,
-            &cache,
+            cache,
             &*storage_backend,
             parameters,
         )
@@ -634,7 +636,7 @@ mod test {
     {
         for_each_compression_type(parameters, |parameters| {
             let factories = Factories::<DynData, DynData>::new::<K, A>();
-            let cache = default_cache();
+            let cache = Arc::new(FileCache::new(1024 * 1024));
             let tempdir = tempdir().unwrap();
             let storage_backend = <dyn StorageBackend>::new(
                 &StorageConfig {
@@ -645,7 +647,7 @@ mod test {
             )
             .unwrap();
             let mut writer =
-                Writer1::new(&factories, &cache, &*storage_backend, parameters).unwrap();
+                Writer1::new(&factories, cache, &*storage_backend, parameters).unwrap();
             for row in 0..n {
                 let (_before, key, _after, aux) = expected(row);
                 writer.write0((&key, &aux)).unwrap();

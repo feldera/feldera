@@ -3087,6 +3087,15 @@ export const $StorageOptions = {
         name: 'default'
       }
     },
+    cache_mib: {
+      type: 'integer',
+      description: `The maximum size of the in-memory storage cache, in mebibytes.
+
+The default is 256 MiB, times the number of workers.`,
+      default: null,
+      nullable: true,
+      minimum: 0
+    },
     compression: {
       allOf: [
         {
@@ -3103,7 +3112,9 @@ ordinarily be left unset.
 
 A value of 0 will write even empty batches to storage, and nonzero
 values provide a threshold.  \`usize::MAX\` would effectively disable
-storage.`,
+storage.
+
+The default is 1,048,576 (1 MiB).`,
       default: null,
       nullable: true,
       minimum: 0

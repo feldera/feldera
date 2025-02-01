@@ -904,9 +904,9 @@ struct BlockWriter {
 }
 
 impl BlockWriter {
-    fn new(cache: &Arc<FileCache>, file_handle: Box<dyn FileWriter>) -> Self {
+    fn new(cache: Arc<FileCache>, file_handle: Box<dyn FileWriter>) -> Self {
         Self {
-            cache: cache.clone(),
+            cache,
             file_handle: Some(file_handle),
             encoder: Encoder::new(),
             bounce: Vec::new(),
@@ -1007,7 +1007,7 @@ struct Writer {
 impl Writer {
     pub fn new(
         factories: &[&AnyFactories],
-        buffer_cache: &Arc<FileCache>,
+        buffer_cache: Arc<FileCache>,
         storage_backend: &dyn StorageBackend,
         parameters: Parameters,
         n_columns: usize,
@@ -1105,9 +1105,10 @@ impl Writer {
 /// # use dbsp::dynamic::{DynData, Erase, DynUnit};
 /// # use dbsp::storage::file::{writer::{Parameters, Writer1}};
 /// use feldera_types::config::{StorageConfig, StorageOptions};
+/// # use std::sync::Arc;
 /// use dbsp::storage::{
 ///     backend::StorageBackend,
-///     file::{cache::default_cache, Factories},
+///     file::{cache::FileCache, Factories},
 /// };
 /// let factories = Factories::<DynData, DynUnit>::new::<u32, ()>();
 /// let tempdir = tempfile::tempdir().unwrap();
@@ -1115,9 +1116,10 @@ impl Writer {
 ///     path: tempdir.path().to_string_lossy().to_string(),
 ///    cache: Default::default(),
 /// }, &StorageOptions::default()).unwrap();
+/// let cache = Arc::new(FileCache::new(1024 * 1024));
 /// let parameters = Parameters::default();
 /// let mut file =
-///     Writer1::new(&factories, &default_cache(), &*storage_backend, parameters).unwrap();
+///     Writer1::new(&factories, cache, &*storage_backend, parameters).unwrap();
 /// for i in 0..1000_u32 {
 ///     file.write0((i.erase(), ().erase())).unwrap();
 /// }
@@ -1143,7 +1145,7 @@ where
     /// Creates a new writer with the given parameters.
     pub fn new(
         factories: &Factories<K0, A0>,
-        buffer_cache: &Arc<FileCache>,
+        buffer_cache: Arc<FileCache>,
         storage_backend: &dyn StorageBackend,
         parameters: Parameters,
     ) -> Result<Self, StorageError> {
@@ -1228,10 +1230,11 @@ where
 /// ```
 /// # use dbsp::dynamic::{DynData, DynUnit};
 /// # use dbsp::storage::file::{writer::{Parameters, Writer2}};
+/// # use std::sync::Arc;
 /// use feldera_types::config::{StorageConfig, StorageOptions};
 /// use dbsp::storage::{
 ///     backend::StorageBackend,
-///     file::{cache::default_cache, Factories},
+///     file::{cache::FileCache, Factories},
 /// };
 /// let factories = Factories::<DynData, DynUnit>::new::<u32, ()>();
 /// let tempdir = tempfile::tempdir().unwrap();
@@ -1239,9 +1242,10 @@ where
 ///     path: tempdir.path().to_string_lossy().to_string(),
 ///    cache: Default::default(),
 /// }, &StorageOptions::default()).unwrap();
+/// let cache = Arc::new(FileCache::new(1024 * 1024));
 /// let parameters = Parameters::default();
 /// let mut file =
-///     Writer2::new(&factories, &factories, &default_cache(), &*storage_backend, parameters).unwrap();
+///     Writer2::new(&factories, &factories, cache, &*storage_backend, parameters).unwrap();
 /// for i in 0..1000_u32 {
 ///     for j in 0..10_u32 {
 ///         file.write1((&j, &())).unwrap();
@@ -1278,7 +1282,7 @@ where
     pub fn new(
         factories0: &Factories<K0, A0>,
         factories1: &Factories<K1, A1>,
-        buffer_cache: &Arc<FileCache>,
+        buffer_cache: Arc<FileCache>,
         storage_backend: &dyn StorageBackend,
         parameters: Parameters,
     ) -> Result<Self, StorageError> {

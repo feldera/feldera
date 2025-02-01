@@ -1222,13 +1222,13 @@ where
     /// This internally creates an empty temporary file, which means that it can
     /// fail with an I/O error.
     pub fn empty(
-        cache: &Arc<BufferCache<FileCacheEntry>>,
+        cache: Arc<BufferCache<FileCacheEntry>>,
         storage_backend: &dyn StorageBackend,
     ) -> Result<Self, Error> {
         let (file_handle, path) = storage_backend.create()?.complete()?;
         Ok(Self(Arc::new(ReaderInner {
             file: ImmutableFileRef::new(
-                cache.clone(),
+                cache,
                 file_handle,
                 path,
                 None,
