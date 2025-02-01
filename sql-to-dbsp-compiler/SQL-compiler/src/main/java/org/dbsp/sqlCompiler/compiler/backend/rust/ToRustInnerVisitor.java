@@ -108,7 +108,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPUSizeLiteral;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariantExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPUuidLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVariantNullLiteral;
-import org.dbsp.sqlCompiler.ir.expression.DBSPVecExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPArrayExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.path.DBSPPath;
 import org.dbsp.sqlCompiler.ir.path.DBSPPathSegment;
@@ -141,7 +141,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVoid;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeMap;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeStream;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeUser;
-import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeVec;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeArray;
 import org.dbsp.util.IndentStream;
 import org.dbsp.util.Utilities;
 
@@ -190,20 +190,20 @@ public class ToRustInnerVisitor extends InnerVisitor {
     @Override
     public VisitDecision preorder(DBSPSortExpression expression) {
         /*
-        move |(k, v): (&(), &Vec<Tup<...>>, ), | -> Vec<Tup<...>> {
+        move |(k, array): (&(), &Vec<Tup<...>>, ), | -> Array<Tup<...>> {
             let comp = ...;    // comparator
             let mut ec: _ = move |a: &Tup<...>, b: &Tup<...>, | -> _ {
                 comp.compare(a, b)
             };
-            let mut v = v.clone();
+            let mut v = (**array).clone();
             v.sort_by(ec);
-            v
+            v.into()
         }
          */
         this.push(expression);
-        this.builder.append("move |(k, v): (&(), &Vec<");
+        this.builder.append("move |(k, array): (&(), &Array<");
         expression.elementType.accept(this);
-        this.builder.append(">)| -> Vec<");
+        this.builder.append(">)| -> Array<");
         expression.elementType.accept(this);
         this.builder.append("> {").increase();
         if (!expression.comparator.is(DBSPNoComparatorExpression.class)) {
@@ -215,18 +215,18 @@ public class ToRustInnerVisitor extends InnerVisitor {
             this.builder.append(", b: &");
             expression.elementType.accept(this);
             this.builder.append("| { ec.compare(a, b) };").newline();
-            this.builder.append("let mut v = v.clone();").newline()
+            this.builder.append("let mut v = (**array).clone();").newline()
                     // we don't use sort_unstable_by because it is
                     // non-deterministic
                     .append("v.sort_by(comp);").newline();
         } // otherwise the vector doesn't need to be sorted at all
         if (expression.limit != null) {
-            this.builder.append("let mut v = v.clone();").newline();
+            this.builder.append("let mut v = (**array).clone();").newline();
             this.builder.append("v.truncate(");
             expression.limit.accept(this);
             this.builder.append(");").newline();
         }
-        this.builder.append("v");
+        this.builder.append("v.into()");
         this.builder.newline()
                 .decrease()
                 .append("}");
@@ -465,13 +465,13 @@ public class ToRustInnerVisitor extends InnerVisitor {
     }
 
     @Override
-    public VisitDecision preorder(DBSPVecExpression expression) {
+    public VisitDecision preorder(DBSPArrayExpression expression) {
         if (expression.data == null)
             return this.doNullExpression(expression);
         this.push(expression);
         if (expression.getType().mayBeNull)
             this.builder.append("Some(");
-        this.builder.append("vec!(");
+        this.builder.append("Arc::new(vec!(");
         if (expression.data.size() > 1)
             this.builder.increase();
         for (DBSPExpression exp: expression.data) {
@@ -480,7 +480,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
         }
         if (expression.data.size() > 1)
             this.builder.decrease();
-        this.builder.append(")");
+        this.builder.append("))");
         if (expression.getType().mayBeNull)
             this.builder.append(")");
         this.pop(expression);
@@ -840,8 +840,8 @@ public class ToRustInnerVisitor extends InnerVisitor {
         this.push(expression);
         DBSPType destType = expression.getType();
         DBSPType sourceType = expression.source.getType();
-        DBSPTypeVec sourceVecType = sourceType.as(DBSPTypeVec.class);
-        DBSPTypeVec destVecType = destType.as(DBSPTypeVec.class);
+        DBSPTypeArray sourceVecType = sourceType.as(DBSPTypeArray.class);
+        DBSPTypeArray destVecType = destType.as(DBSPTypeArray.class);
         String functionName;
 
         if (expression.safe)
@@ -1025,7 +1025,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
             case SQL_INDEX: {
                 DBSPType collectionType = expression.left.getType();
                 DBSPType indexType = expression.right.getType();
-                DBSPTypeVec vec = collectionType.to(DBSPTypeVec.class);
+                DBSPTypeArray vec = collectionType.to(DBSPTypeArray.class);
                 this.builder.append("index")
                         .append(expression.left.getType().nullableUnderlineSuffix())
                         .append(vec.getElementType().nullableUnderlineSuffix())
@@ -1047,9 +1047,10 @@ public class ToRustInnerVisitor extends InnerVisitor {
                     }
                 }
                 if (!leftDone) {
-                    this.builder.append("&");
                     this.visitingChild = 0;
+                    this.builder.append("&(");
                     expression.left.accept(this);
+                    this.builder.append(")");
                 }
                 this.visitingChild = 1;
                 this.builder.append(", ");
@@ -1060,6 +1061,41 @@ public class ToRustInnerVisitor extends InnerVisitor {
                 Simplify simplify = new Simplify(this.compiler);
                 sub1 = simplify.apply(sub1).to(DBSPExpression.class);
                 sub1.accept(this);
+                this.builder.append(")");
+                break;
+            }
+            case MAP_INDEX: {
+                DBSPType collectionType = expression.left.getType();
+                DBSPTypeMap map = collectionType.to(DBSPTypeMap.class);
+                this.builder.append("map_index")
+                        .append(collectionType.nullableUnderlineSuffix())
+                        .append(map.getValueType().nullableUnderlineSuffix())
+                        .append(expression.right.getType().nullableUnderlineSuffix())
+                        .append("(");
+                // Special case for Tuple<Option<Map<>>>
+                boolean leftDone = false;
+                if (expression.left.is(DBSPFieldExpression.class) && collectionType.mayBeNull) {
+                    DBSPFieldExpression field = expression.left.to(DBSPFieldExpression.class);
+                    if (field.expression.is(DBSPFieldExpression.class)) {
+                        this.builder.append("match &");
+                        field.expression.accept(this);
+                        leftDone = true;
+                        this.builder.append(" {").increase()
+                                .append("None => &None,").newline()
+                                .append("Some(x) => &x.")
+                                .append(field.fieldNo).newline()
+                                .decrease().append("}");
+                    }
+                }
+                if (!leftDone) {
+                    this.visitingChild = 0;
+                    this.builder.append("&(");
+                    expression.left.accept(this);
+                    this.builder.append(")");
+                }
+                this.builder.append(", ");
+                this.visitingChild = 1;
+                expression.right.accept(this);
                 this.builder.append(")");
                 break;
             }
@@ -1078,39 +1114,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
                 this.builder.append(")");
                 break;
             }
-            case MAP_INDEX: {
-                DBSPType collectionType = expression.left.getType();
-                DBSPTypeMap map = collectionType.to(DBSPTypeMap.class);
-                this.builder.append("map_index")
-                        .append(collectionType.nullableUnderlineSuffix())
-                        .append(map.getValueType().nullableUnderlineSuffix())
-                        .append(expression.right.getType().nullableUnderlineSuffix())
-                        .append("(&");
-                this.visitingChild = 0;
-                expression.left.accept(this);
-                this.builder.append(", ");
-                this.visitingChild = 1;
-                expression.right.accept(this);
-                this.builder.append(")");
-                break;
-            }
-            case ARRAY_CONVERT:
-            case MAP_CONVERT: {
-                // Pass first argument by reference
-                this.builder.append(expression.opcode.toString())
-                        .append(expression.left.getType().deref().nullableUnderlineSuffix())
-                        .append(expression.right.getType().nullableUnderlineSuffix())
-                        .append("(");
-                this.visitingChild = 0;
-                expression.left.accept(this);
-                this.builder.append(", ");
-                this.visitingChild = 1;
-                expression.right.accept(this);
-                this.builder.append(")");
-                break;
-            }
-            case DIV_NULL:
-            case SHIFT_LEFT: {
+            case ARRAY_CONVERT, MAP_CONVERT, DIV_NULL, SHIFT_LEFT: {
                 this.builder.append(expression.opcode.toString())
                         .append(expression.left.getType().nullableUnderlineSuffix())
                         .append(expression.right.getType().nullableUnderlineSuffix())
@@ -1580,7 +1584,6 @@ public class ToRustInnerVisitor extends InnerVisitor {
                         bin.opcode == DBSPOpcode.MAP_INDEX ||
                         bin.opcode == DBSPOpcode.VARIANT_INDEX) {
                     if (this.visitingChild == 0)
-                        // True because we take & explicitly
                         avoidRef = true;
                 }
             } else if (parent.is(DBSPBorrowExpression.class)) {
@@ -1590,6 +1593,15 @@ public class ToRustInnerVisitor extends InnerVisitor {
         }
 
         DBSPType sourceType = expression.expression.getType();
+        /*
+        boolean fieldTypeIsNullable = false;
+        if (sourceType.is(DBSPTypeTupleBase.class)) {
+            // This should always be true when we compile SQL programs, but
+            // it may be false when we generate some testing code
+            DBSPType fieldType = sourceType.to(DBSPTypeTupleBase.class).getFieldType(expression.fieldNo);
+            fieldTypeIsNullable = fieldType.mayBeNull;
+        }
+         */
         if (sourceType.mayBeNull) {
             // Accessing a nullable struct is allowed
             if (!expression.getType().mayBeNull) {
@@ -1609,8 +1621,11 @@ public class ToRustInnerVisitor extends InnerVisitor {
                 }
                  */
                 this.builder.append("| ");
+                // Indexing a nullable expression with a non-nullable field
+                // if (!fieldTypeIsNullable) this.builder.append("Some(");
                 this.builder.append("x.")
                         .append(expression.fieldNo);
+                // if (!fieldTypeIsNullable) this.builder.append(")");
                 if (expression.getType().mayBeNull && !expression.getType().hasCopy() && !avoidRef) {
                     this.builder.append(".as_ref()");
                 }

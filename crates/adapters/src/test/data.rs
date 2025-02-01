@@ -888,7 +888,8 @@ impl Arbitrary for DeltaTestStruct {
                                 (Variant::String("foo".to_string())),
                                 Variant::String(variant.to_string()),
                             ))
-                            .collect(),
+                            .collect::<BTreeMap<Variant, Variant>>()
+                            .into(),
                         ),
                         uuid: Uuid::from_bytes(uuid),
                     }

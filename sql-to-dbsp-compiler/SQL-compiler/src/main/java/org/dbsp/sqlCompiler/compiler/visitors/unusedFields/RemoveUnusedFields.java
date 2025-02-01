@@ -3,6 +3,7 @@ package org.dbsp.sqlCompiler.compiler.visitors.unusedFields;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.circuit.annotation.IsProjection;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinBaseOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinFilterMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
@@ -112,6 +113,13 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
 
     @Override
     public void postorder(DBSPJoinOperator join) {
+        boolean done = this.processJoin(join);
+        if (!done)
+            super.postorder(join);
+    }
+
+    @Override
+    public void postorder(DBSPJoinFilterMapOperator join) {
         boolean done = this.processJoin(join);
         if (!done)
             super.postorder(join);

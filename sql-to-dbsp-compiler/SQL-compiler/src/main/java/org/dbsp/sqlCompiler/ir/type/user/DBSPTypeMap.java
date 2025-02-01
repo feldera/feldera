@@ -24,6 +24,11 @@ public class DBSPTypeMap extends DBSPTypeUser {
     }
 
     @Override
+    public DBSPType deref() {
+        return this.innerType();
+    }
+
+    @Override
     public void accept(InnerVisitor visitor) {
         VisitDecision decision = visitor.preorder(this);
         if (decision.stop()) return;

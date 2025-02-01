@@ -2,8 +2,8 @@
 //! the values in a SQL program.
 
 use crate::{
-    binary::ByteArray, casts::*, error::SqlRuntimeError, map::Map, tn, ttn, Date, GeoPoint,
-    LongInterval, ShortInterval, Time, Timestamp, Uuid,
+    array::Array, binary::ByteArray, casts::*, error::SqlRuntimeError, map::Map, tn, ttn, Date,
+    GeoPoint, LongInterval, ShortInterval, Time, Timestamp, Uuid,
 };
 use dbsp::algebra::{F32, F64};
 use feldera_types::serde_with_context::serde_config::VariantFormat;
@@ -18,11 +18,13 @@ use serde::{Deserialize, Serialize};
 use size_of::SizeOf;
 use std::borrow::Cow;
 use std::cmp::Ord;
+use std::collections::BTreeMap;
 use std::error::Error;
 use std::fmt;
 use std::fmt::Display;
 use std::str::FromStr;
-use std::{collections::BTreeMap, fmt::Debug, hash::Hash};
+use std::sync::Arc;
+use std::{fmt::Debug, hash::Hash};
 
 /// Represents a Sql value with a VARIANT type.
 #[derive(
@@ -68,9 +70,9 @@ pub enum Variant {
     Geometry(GeoPoint),
     Uuid(Uuid),
     #[size_of(skip, skip_bounds)]
-    Array(#[omit_bounds] Vec<Variant>),
+    Array(#[omit_bounds] Array<Variant>),
     #[size_of(skip, skip_bounds)]
-    Map(#[omit_bounds] BTreeMap<Variant, Variant>),
+    Map(#[omit_bounds] Map<Variant, Variant>),
 }
 
 /////////////// Variant index
@@ -191,7 +193,7 @@ impl<'de> Deserialize<'de> for Variant {
                     vec.push(elem);
                 }
 
-                Ok(Variant::Array(vec))
+                Ok(Variant::Array(vec.into()))
             }
 
             #[inline]
@@ -212,9 +214,9 @@ impl<'de> Deserialize<'de> for Variant {
                             values.insert(Variant::String(key), value);
                         }
 
-                        Ok(Variant::Map(values))
+                        Ok(Variant::Map(values.into()))
                     }
-                    None => Ok(Variant::Map(BTreeMap::new())),
+                    None => Ok(Variant::Map(BTreeMap::new().into())),
                 }
             }
         }
@@ -515,26 +517,39 @@ impl From<Option<Variant>> for Variant {
 }
 
 #[doc(hidden)]
-impl<T> From<Vec<T>> for Variant
+impl<T> From<Array<T>> for Variant
 where
     Variant: From<T>,
+    T: Clone,
 {
     #[doc(hidden)]
-    fn from(vec: Vec<T>) -> Self {
-        Variant::Array(vec.into_iter().map(Variant::from).collect())
+    fn from(vec: Array<T>) -> Self {
+        Variant::Array(
+            (*vec)
+                .iter()
+                .map(|val| Variant::from(val.clone()))
+                .collect::<Vec<Variant>>()
+                .into(),
+        )
     }
 }
 
 #[doc(hidden)]
-impl<T> From<Option<Vec<T>>> for Variant
+impl<T> From<Option<Array<T>>> for Variant
 where
     Variant: From<T>,
+    T: Clone,
 {
     #[doc(hidden)]
-    fn from(vec: Option<Vec<T>>) -> Self {
+    fn from(vec: Option<Array<T>>) -> Self {
         match vec {
             None => Variant::SqlNull,
-            Some(vec) => Variant::Array(vec.into_iter().map(Variant::from).collect()),
+            Some(vec) => Variant::Array(Arc::new(
+                (*vec)
+                    .iter()
+                    .map(|val| Variant::from(val.clone()))
+                    .collect::<Vec<Variant>>(),
+            )),
         }
     }
 }
@@ -552,7 +567,7 @@ where
         for (key, value) in map.iter() {
             result.insert(key.clone().into(), value.clone().into());
         }
-        Variant::Map(result)
+        Variant::Map(result.into())
     }
 }
 
@@ -729,7 +744,7 @@ impl TryFrom<Variant> for Option<Decimal> {
 }
 
 #[doc(hidden)]
-impl<T> TryFrom<Variant> for Vec<T>
+impl<T> TryFrom<Variant> for Array<T>
 where
     T: TryFrom<Variant>,
     T::Error: Display,
@@ -741,14 +756,14 @@ where
         match value {
             Variant::Array(a) => {
                 let mut result = Vec::with_capacity(a.len());
-                for e in a {
-                    let converted = T::try_from(e);
+                for e in &*a {
+                    let converted = T::try_from(e.clone());
                     match converted {
                         Ok(value) => result.push(value),
                         Err(e) => return Err(SqlRuntimeError::from_string(e.to_string())),
                     }
                 }
-                Ok(result)
+                Ok(result.into())
             }
             _ => Err(Box::new(SqlRuntimeError::CustomError(
                 "not an array".to_string(),
@@ -758,7 +773,7 @@ where
 }
 
 #[doc(hidden)]
-impl<T> TryFrom<Variant> for Option<Vec<T>>
+impl<T> TryFrom<Variant> for Option<Array<T>>
 where
     T: TryFrom<Variant>,
     T::Error: Display,
@@ -770,7 +785,7 @@ where
         match value {
             Variant::VariantNull => Ok(None),
             Variant::SqlNull => Ok(None),
-            _ => match Vec::<T>::try_from(value) {
+            _ => match Array::<T>::try_from(value) {
                 Ok(result) => Ok(Some(result)),
                 Err(e) => Err(SqlRuntimeError::from_string(e.to_string())),
             },
@@ -793,9 +808,9 @@ where
         match value {
             Variant::Map(map) => {
                 let mut result = BTreeMap::<K, V>::new();
-                for (key, value) in map.into_iter() {
-                    let convertedKey = K::try_from(key);
-                    let convertedValue = V::try_from(value);
+                for (key, value) in (*map).iter() {
+                    let convertedKey = K::try_from(key.clone());
+                    let convertedValue = V::try_from(value.clone());
                     let k = match convertedKey {
                         Ok(result) => result,
                         Err(e) => return Err(SqlRuntimeError::from_string(e.to_string())),
@@ -881,6 +896,7 @@ mod test {
     };
     use num::FromPrimitive;
     use rust_decimal::Decimal;
+    use std::collections::BTreeMap;
 
     #[test]
     fn circuit_accepts_variant() {
@@ -1000,19 +1016,21 @@ mod test {
                     Variant::Map(
                         [(
                             Variant::String("arr".to_string()),
-                            Variant::Array(vec![
+                            Variant::Array(Arc::new(vec![
                                 Variant::Decimal(Decimal::from(1)),
                                 Variant::String("foo".to_string()),
                                 Variant::VariantNull,
-                            ]),
+                            ])),
                         )]
                         .into_iter()
-                        .collect(),
+                        .collect::<BTreeMap<Variant, Variant>>()
+                        .into(),
                     ),
                 ),
             ]
             .into_iter()
-            .collect(),
+            .collect::<BTreeMap<Variant, Variant>>()
+            .into(),
         );
         assert_eq!(v, expected);
     }
@@ -1081,11 +1099,14 @@ mod test {
                         [
                             (
                                 Variant::String("arr".to_string()),
-                                Variant::Array(vec![
-                                    Variant::Decimal(Decimal::from(1)),
-                                    Variant::String("foo".to_string()),
-                                    Variant::VariantNull,
-                                ]),
+                                Variant::Array(
+                                    vec![
+                                        Variant::Decimal(Decimal::from(1)),
+                                        Variant::String("foo".to_string()),
+                                        Variant::VariantNull,
+                                    ]
+                                    .into(),
+                                ),
                             ),
                             (
                                 Variant::String("ts".to_string()),
@@ -1109,12 +1130,14 @@ mod test {
                             ),
                         ]
                         .into_iter()
-                        .collect(),
+                        .collect::<BTreeMap<Variant, Variant>>()
+                        .into(),
                     ),
                 ),
             ]
             .into_iter()
-            .collect(),
+            .collect::<BTreeMap<Variant, Variant>>()
+            .into(),
         );
 
         let s = serde_json::to_string(&v).unwrap();

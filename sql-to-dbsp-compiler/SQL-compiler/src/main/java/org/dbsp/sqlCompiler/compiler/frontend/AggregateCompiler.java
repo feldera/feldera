@@ -59,7 +59,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI64Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
-import org.dbsp.sqlCompiler.ir.expression.DBSPVecExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPArrayExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.IsNumericType;
@@ -71,6 +71,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeNull;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVoid;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeUser;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeArray;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeVec;
 import org.dbsp.util.ICastable;
 import org.dbsp.util.Linq;
@@ -296,10 +297,14 @@ public class AggregateCompiler implements ICompilerComponent {
 
         boolean ignoreNulls = this.call.ignoreNulls();
         boolean distinct = this.call.isDistinct();
-        DBSPType elementType = this.resultType.to(DBSPTypeVec.class).getElementType();
-        DBSPExpression zero = DBSPVecExpression.emptyWithElementType(elementType, this.resultType.mayBeNull);
+        DBSPTypeArray arrayType = this.resultType.to(DBSPTypeArray.class).to(DBSPTypeArray.class);
+        DBSPType elementType = arrayType.getElementType();
+        DBSPTypeVec accumulatorType = arrayType.innerType();
+
+        DBSPExpression empty = DBSPArrayExpression.emptyWithElementType(elementType, this.resultType.mayBeNull);
+        DBSPExpression zero = accumulatorType.emptyVector();
         DBSPExpression aggregatedValue = this.getAggregatedValue();
-        DBSPVariablePath accumulator = this.resultType.var();
+        DBSPVariablePath accumulator = accumulatorType.var();
         String functionName;
         DBSPExpression[] arguments;
         if (ignoreNulls && elementType.mayBeNull) {
@@ -317,10 +322,17 @@ public class AggregateCompiler implements ICompilerComponent {
         if (arguments.length == 6) {
             arguments[5] = new DBSPBoolLiteral(ignoreNulls);
         }
-        DBSPExpression increment = new DBSPApplyExpression(node, functionName, DBSPTypeVoid.INSTANCE, arguments);
-        DBSPType semigroup = new DBSPTypeUser(node, SEMIGROUP, "ConcatSemigroup", false, accumulator.getType());
+        DBSPExpression increment = new DBSPApplyExpression(
+                node, functionName, DBSPTypeVoid.INSTANCE, arguments);
+        DBSPType semigroup = new DBSPTypeUser(
+                node, SEMIGROUP, "ConcatSemigroup", false, accumulatorType);
+        DBSPVariablePath p = accumulatorType.var();
+        String convertName = "to_array";
+        if (arrayType.mayBeNull)
+            convertName += "N";
+        DBSPClosureExpression post = new DBSPApplyExpression(convertName, arrayType, p).closure(p);
         this.setResult(new NonLinearAggregate(
-                node, zero, this.makeRowClosure(increment, accumulator), zero, semigroup));
+                node, zero, this.makeRowClosure(increment, accumulator), post, empty, semigroup));
     }
 
     void processBasic(SqlBasicAggFunction function) {

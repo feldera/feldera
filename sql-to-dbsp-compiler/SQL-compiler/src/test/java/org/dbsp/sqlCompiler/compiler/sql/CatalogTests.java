@@ -9,7 +9,7 @@ import org.dbsp.sqlCompiler.compiler.sql.tools.CompilerCircuitStream;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
-import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeVec;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeArray;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 import org.junit.Assert;
 import org.junit.Test;
@@ -38,7 +38,7 @@ public class CatalogTests extends BaseSQLTests {
         var ccs = this.getCCS("""
                   CREATE TYPE X AS (x INT);
                   CREATE TABLE T(p int array, m MAP<INT, X ARRAY>);
-                  CREATE VIEW V AS SELECT p[0], m[2][3] FROM T;""");
+                  CREATE VIEW V AS SELECT p[1], m[2][3] FROM T;""");
         this.addRustTestCase(ccs);
     }
 
@@ -225,14 +225,14 @@ public class CatalogTests extends BaseSQLTests {
         Assert.assertTrue(sN.mayBeNull);
         Assert.assertTrue(sN.getFieldType(0).sameType(i32N));
         Assert.assertTrue(sN.getFieldType(1).sameType(i32));
-        Assert.assertTrue(sN.getFieldType(2).sameType(new DBSPTypeVec(i32N, true)));
-        Assert.assertTrue(sN.getFieldType(3).sameType(new DBSPTypeVec(i32N, false)));
+        Assert.assertTrue(sN.getFieldType(2).sameType(new DBSPTypeArray(i32N, true)));
+        Assert.assertTrue(sN.getFieldType(3).sameType(new DBSPTypeArray(i32N, false)));
 
         DBSPType t1 = t.getFieldType(1);
         Assert.assertTrue(t1.is(DBSPTypeTuple.class));
         DBSPTypeTuple nN = t1.to(DBSPTypeTuple.class);
         Assert.assertEquals(3, nN.size());
-        DBSPType vecS = new DBSPTypeVec(sN.withMayBeNull(true), true);
+        DBSPType vecS = new DBSPTypeArray(sN.withMayBeNull(true), true);
         Assert.assertTrue(nN.mayBeNull);
         Assert.assertTrue(nN.getFieldType(0).sameType(sN));
         Assert.assertTrue(nN.getFieldType(1).sameType(sN.withMayBeNull(false)));

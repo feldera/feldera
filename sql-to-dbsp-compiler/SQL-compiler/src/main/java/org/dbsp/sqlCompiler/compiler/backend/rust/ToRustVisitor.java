@@ -115,7 +115,7 @@ import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeStream;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeUser;
-import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeVec;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeArray;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeUSize;
@@ -186,14 +186,18 @@ public class ToRustVisitor extends CircuitVisitor {
             this.builder.append(".map(|x|").increase();
             this.generateInto("x", sourceType.withMayBeNull(false), targetType.withMayBeNull(false));
             this.builder.decrease().append(")");
-        } else if (sourceType.is(DBSPTypeVec.class)) {
+        } else if (sourceType.is(DBSPTypeArray.class)) {
+            this.builder.append("Arc::new(Arc::unwrap_or_clone(");
             this.builder.append(field);
-            DBSPTypeVec vec = sourceType.to(DBSPTypeVec.class);
-            this.builder.append(".into_iter().map(|y|").increase();
-            this.generateInto("y", vec.getElementType(), targetType.to(DBSPTypeVec.class).getElementType());
-            this.builder.decrease().append(").collect::<");
-            targetType.accept(this.innerVisitor);
-            this.builder.append(">()");
+            DBSPTypeArray vec = sourceType.to(DBSPTypeArray.class);
+            DBSPTypeArray targetArray = targetType.to(DBSPTypeArray.class);
+            this.builder.append(").into_iter().map(|y|").increase();
+            this.generateInto("y", vec.getElementType(), targetArray.getElementType());
+            this.builder.decrease().append(")")
+                    .newline()
+                    .append(".collect::<");
+            targetArray.innerType().accept(this.innerVisitor);
+            this.builder.append(">())");
         } else if (sourceType.is(DBSPTypeMap.class)) {
             this.builder.append("Arc::new(Arc::unwrap_or_clone(");
             this.builder.append(field);
@@ -204,7 +208,9 @@ public class ToRustVisitor extends CircuitVisitor {
             this.generateInto("k", map.getKeyType(), tMap.getKeyType());
             this.builder.append(", ");
             this.generateInto("v", map.getValueType(), tMap.getValueType());
-            this.builder.decrease().append(")).collect::<");
+            this.builder.decrease().append("))")
+                    .newline()
+                    .append(".collect::<");
             tMap.innerType().accept(this.innerVisitor);
             this.builder.append(">())");
         } else {

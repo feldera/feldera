@@ -2,12 +2,13 @@
 
 #![allow(non_snake_case)]
 use crate::{
-    some_function1, some_function2, some_function3, some_function4, some_polymorphic_function1,
-    some_polymorphic_function2, Variant,
+    array::Array, some_function1, some_function2, some_function3, some_function4,
+    some_polymorphic_function1, some_polymorphic_function2, Variant,
 };
 
 use like::{Escape, Like};
 use regex::Regex;
+use std::sync::Arc;
 
 #[doc(hidden)]
 pub fn concat_s_s(mut left: String, right: String) -> String {
@@ -268,28 +269,32 @@ pub fn left__(source: String, size: i32) -> String {
 some_function2!(left, String, i32, String);
 
 #[doc(hidden)]
-pub fn split2__(source: String, separators: String) -> Vec<String> {
+pub fn split2__(source: String, separators: String) -> Array<String> {
     if separators.is_empty() {
-        return vec![source];
+        return Arc::new(vec![source]);
     }
     if source.is_empty() {
-        return vec![];
+        return Arc::new(vec![]);
     }
-    source.split(&separators).map(String::from).collect()
+    source
+        .split(&separators)
+        .map(String::from)
+        .collect::<Vec<String>>()
+        .into()
 }
 
-some_function2!(split2, String, String, Vec<String>);
+some_function2!(split2, String, String, Array<String>);
 
 #[doc(hidden)]
-pub fn split1_(source: String) -> Vec<String> {
+pub fn split1_(source: String) -> Array<String> {
     split2__(source, ",".to_string())
 }
 
-some_function1!(split1, String, Vec<String>);
+some_function1!(split1, String, Array<String>);
 
 #[doc(hidden)]
 pub fn split_part___(s: String, delimiter: String, n: i32) -> String {
-    let parts: Vec<String> = split2__(s, delimiter);
+    let parts: Array<String> = split2__(s, delimiter);
     let part_count = parts.len() as i32;
 
     // Handle negative indices
@@ -305,21 +310,21 @@ pub fn split_part___(s: String, delimiter: String, n: i32) -> String {
 some_function3!(split_part, String, String, i32, String);
 
 #[doc(hidden)]
-pub fn array_to_string2_vec__(value: Vec<String>, separator: String) -> String {
-    value.join(&separator)
+pub fn array_to_string2_vec__(value: Array<String>, separator: String) -> String {
+    (*value).join(&separator)
 }
 
-some_function2!(array_to_string2_vec, Vec<String>, String, String);
+some_function2!(array_to_string2_vec, Array<String>, String, String);
 
 #[doc(hidden)]
-pub fn array_to_string2Nvec__(value: Vec<Option<String>>, separator: String) -> String {
-    let capacity = value
+pub fn array_to_string2Nvec__(value: Array<Option<String>>, separator: String) -> String {
+    let capacity = (*value)
         .iter()
         .map(|s| s.as_ref().map_or(0, |s| s.len()))
         .sum();
     let mut result = String::with_capacity(capacity);
     let mut first = true;
-    for word in value {
+    for word in &*value {
         let append = match word.as_ref() {
             None => {
                 continue;
@@ -335,22 +340,22 @@ pub fn array_to_string2Nvec__(value: Vec<Option<String>>, separator: String) -> 
     result
 }
 
-some_function2!(array_to_string2Nvec, Vec<Option<String>>, String, String);
+some_function2!(array_to_string2Nvec, Array<Option<String>>, String, String);
 
 #[doc(hidden)]
 pub fn array_to_string3_vec___(
-    value: Vec<String>,
+    value: Array<String>,
     separator: String,
     _null_value: String,
 ) -> String {
     array_to_string2_vec__(value, separator)
 }
 
-some_function3!(array_to_string3_vec, Vec<String>, String, String, String);
+some_function3!(array_to_string3_vec, Array<String>, String, String, String);
 
 #[doc(hidden)]
 pub fn array_to_string3Nvec___(
-    value: Vec<Option<String>>,
+    value: Array<Option<String>>,
     separator: String,
     null_value: String,
 ) -> String {
@@ -361,7 +366,7 @@ pub fn array_to_string3Nvec___(
         .sum();
     let mut result = String::with_capacity(capacity);
     let mut first = true;
-    for word in value {
+    for word in &*value {
         let append = match word.as_ref() {
             None => null_value.as_str(),
             Some(r) => r,
@@ -377,7 +382,7 @@ pub fn array_to_string3Nvec___(
 
 some_function3!(
     array_to_string3Nvec,
-    Vec<Option<String>>,
+    Array<Option<String>>,
     String,
     String,
     String
