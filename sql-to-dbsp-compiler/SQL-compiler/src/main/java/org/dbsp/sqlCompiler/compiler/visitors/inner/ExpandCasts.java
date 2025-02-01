@@ -13,7 +13,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.DBSPMapExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
-import org.dbsp.sqlCompiler.ir.expression.DBSPVecExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPArrayExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.IsDateType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
@@ -26,7 +26,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeNull;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVariant;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeMap;
-import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeVec;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeArray;
 import org.dbsp.util.Linq;
 
 import javax.annotation.Nullable;
@@ -75,9 +75,9 @@ public class ExpandCasts extends InnerRewriteVisitor {
                 values.add(rec);
             }
             expression = new DBSPMapExpression(type, keys, values);
-        } else if (source.type.is(DBSPTypeVec.class)) {
+        } else if (source.type.is(DBSPTypeArray.class)) {
             // Convert a vector by converting all elements to Variant
-            DBSPTypeVec vecType = source.type.to(DBSPTypeVec.class);
+            DBSPTypeArray vecType = source.type.to(DBSPTypeArray.class);
             DBSPType elementType = vecType.getElementType();
             if (elementType.is(DBSPTypeVariant.class)) {
                 // nothing to do
@@ -89,8 +89,8 @@ public class ExpandCasts extends InnerRewriteVisitor {
                     .applyCloneIfNeeded().cast(new DBSPTypeVariant(false), false)
                     .closure(var);
             expression = new DBSPBinaryExpression(source.getNode(),
-                    new DBSPTypeVec(new DBSPTypeVariant(false), vecType.mayBeNull),
-                    DBSPOpcode.ARRAY_CONVERT, source.borrow(), converter);
+                    new DBSPTypeArray(new DBSPTypeVariant(false), vecType.mayBeNull),
+                    DBSPOpcode.ARRAY_CONVERT, source, converter);
         } else {
             return null;
         }
@@ -126,7 +126,7 @@ public class ExpandCasts extends InnerRewriteVisitor {
         return new DBSPTupleExpression(source.getNode(), type, fields);
     }
 
-    @Nullable DBSPExpression convertToVector(DBSPExpression source, DBSPTypeVec type, boolean safe) {
+    @Nullable DBSPExpression convertToVector(DBSPExpression source, DBSPTypeArray type, boolean safe) {
         DBSPType sourceType = source.getType();
         if (sourceType.is(DBSPTypeVariant.class)) {
             if (type.getElementType().is(DBSPTypeBaseType.class)) {
@@ -134,23 +134,23 @@ public class ExpandCasts extends InnerRewriteVisitor {
                 return null;
             } else {
                 // Convert to a Vector of VARIANT, and then...
-                DBSPTypeVec vecVType = new DBSPTypeVec(new DBSPTypeVariant(false), sourceType.mayBeNull);
+                DBSPTypeArray vecVType = new DBSPTypeArray(new DBSPTypeVariant(false), sourceType.mayBeNull);
                 DBSPExpression vecV = source.cast(vecVType, safe);
                 // ...convert each element recursively to the target element type
                 DBSPVariablePath var = vecVType.getElementType().ref().var();
                 DBSPExpression convert = var.deref().cast(type.getElementType(), safe).closure(var);
                 source = new DBSPBinaryExpression(source.getNode(),
-                        new DBSPTypeVec(type.getElementType(), sourceType.mayBeNull),
-                        DBSPOpcode.ARRAY_CONVERT, vecV.borrow(), convert);
+                        new DBSPTypeArray(type.getElementType(), sourceType.mayBeNull),
+                        DBSPOpcode.ARRAY_CONVERT, vecV, convert);
             }
             return source.cast(type, safe);
-        } else if (sourceType.is(DBSPTypeVec.class)) {
-            DBSPTypeVec sourceVecType = sourceType.to(DBSPTypeVec.class);
+        } else if (sourceType.is(DBSPTypeArray.class)) {
+            DBSPTypeArray sourceVecType = sourceType.to(DBSPTypeArray.class);
             // If the element type does not match, need to convert all elements
             if (!type.getElementType().equals(sourceVecType.getElementType())) {
                 if (sourceVecType.getElementType().is(DBSPTypeAny.class)) {
                     // This can only happen if the source is an empty vector
-                    return new DBSPVecExpression(type, false);
+                    return new DBSPArrayExpression(type, false);
                 }
                 DBSPVariablePath var = sourceVecType.getElementType().ref().var();
                 DBSPExpression convert = var.deref();
@@ -158,14 +158,14 @@ public class ExpandCasts extends InnerRewriteVisitor {
                     convert = convert.applyCloneIfNeeded();
                 convert = convert.cast(type.getElementType(), safe).closure(var);
                 source = new DBSPBinaryExpression(source.getNode(),
-                        new DBSPTypeVec(type.getElementType(), sourceType.mayBeNull),
-                        DBSPOpcode.ARRAY_CONVERT, source.borrow(), convert);
+                        new DBSPTypeArray(type.getElementType(), sourceType.mayBeNull),
+                        DBSPOpcode.ARRAY_CONVERT, source, convert);
             } else {
                 this.unsupported(source, type);
             }
             return source.cast(type, safe);
         } else if (sourceType.is(DBSPTypeNull.class)) {
-            return new DBSPVecExpression(type, true);
+            return new DBSPArrayExpression(type, true);
         } else {
             this.unsupported(source, type);
             // unreachable
@@ -218,8 +218,8 @@ public class ExpandCasts extends InnerRewriteVisitor {
             }
         } else if (type.is(DBSPTypeVariant.class)) {
             result = this.convertToVariant(source, type.mayBeNull);
-        } else if (type.is(DBSPTypeVec.class)) {
-            result = this.convertToVector(source, type.to(DBSPTypeVec.class), expression.safe);
+        } else if (type.is(DBSPTypeArray.class)) {
+            result = this.convertToVector(source, type.to(DBSPTypeArray.class), expression.safe);
         } else if (type.is(DBSPTypeTuple.class)) {
             result = this.convertToStruct(source, type.to(DBSPTypeTuple.class));
         } else if (type.is(DBSPTypeMap.class)) {

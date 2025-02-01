@@ -51,6 +51,11 @@ public class DBSPTypeRef extends DBSPType {
     }
 
     @Override
+    public DBSPType deref() {
+        return this.type;
+    }
+
+    @Override
     public DBSPType withMayBeNull(boolean mayBeNull) {
         if (this.mayBeNull == mayBeNull)
             return this;

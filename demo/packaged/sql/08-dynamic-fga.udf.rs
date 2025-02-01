@@ -1,5 +1,6 @@
 use feldera_sqllib::Variant;
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 pub fn check_condition(
     condition: Option<String>,
@@ -28,10 +29,10 @@ pub fn do_check_condition(
     let expr = jmespath::compile(&condition)
         .map_err(|e| println!("invalid jmes expression: {e}"))
         .ok()?;
-    let all_properties = Variant::Map(BTreeMap::from([
+    let all_properties = Variant::Map(Arc::new(BTreeMap::from([
         (Variant::String("subject".to_string()), subject_properties),
         (Variant::String("resource".to_string()), resource_properties),
-    ]));
+    ])));
 
     let result = expr
         .search(all_properties)

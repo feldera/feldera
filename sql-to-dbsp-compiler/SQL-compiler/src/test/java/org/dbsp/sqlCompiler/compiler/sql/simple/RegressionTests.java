@@ -18,6 +18,13 @@ import org.junit.Ignore;
 import org.junit.Test;
 
 public class RegressionTests extends SqlIoTest {
+    @Test @Ignore
+    public void issue3418() {
+        this.compileRustTestCase("""
+                create table t (r ROW(j VARCHAR));
+                create materialized view v as select parse_json(t.r.j) from t;""");
+    }
+
     @Test
     public void internalIssue174() {
         this.compileRustTestCase("""

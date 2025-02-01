@@ -1,6 +1,7 @@
 //! Support for SQL Timestamp and Date data types.
 
 use crate::{
+    array::Array,
     casts::*,
     interval::{LongInterval, ShortInterval},
     FromInteger, ToInteger,
@@ -805,7 +806,7 @@ pub fn hop_Timestamp_ShortInterval_ShortInterval_ShortInterval(
     period: ShortInterval,
     size: ShortInterval,
     start: ShortInterval,
-) -> Vec<Timestamp> {
+) -> Array<Timestamp> {
     let mut result = Vec::<Timestamp>::new();
     let round = hop_start(ts, period, size, start);
     let mut add = 0;
@@ -813,7 +814,7 @@ pub fn hop_Timestamp_ShortInterval_ShortInterval_ShortInterval(
         result.push(Timestamp::new(round + add));
         add += period.milliseconds();
     }
-    result
+    result.into()
 }
 
 #[doc(hidden)]
@@ -822,9 +823,9 @@ pub fn hop_TimestampN_ShortInterval_ShortInterval_ShortInterval(
     period: ShortInterval,
     size: ShortInterval,
     start: ShortInterval,
-) -> Vec<Timestamp> {
+) -> Array<Timestamp> {
     match ts {
-        None => Vec::new(),
+        None => Vec::new().into(),
         Some(ts) => {
             hop_Timestamp_ShortInterval_ShortInterval_ShortInterval(ts, period, size, start)
         }

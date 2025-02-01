@@ -40,7 +40,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPUnsignedWrapExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnwrapExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariantExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPVecExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPArrayExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPWindowBoundExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
@@ -297,7 +297,7 @@ public class FindUnusedFields extends SymbolicInterpreter<FieldUseMap> {
     }
 
     @Override
-    public void postorder(DBSPVecExpression expression) {
+    public void postorder(DBSPArrayExpression expression) {
         if (expression.data != null) {
             for (DBSPExpression e: expression.data)
                 this.used(e);

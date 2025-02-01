@@ -172,7 +172,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntervalMillisLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
-import org.dbsp.sqlCompiler.ir.expression.DBSPVecExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPArrayExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.path.DBSPPath;
 import org.dbsp.sqlCompiler.ir.path.DBSPSimplePathSegment;
@@ -205,6 +205,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVoid;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeMap;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeUser;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeArray;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeVec;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeWithCustomOrd;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
@@ -440,7 +441,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         ExpressionCompiler eComp = new ExpressionCompiler(correlate, dataVar, this.compiler);
         DBSPClosureExpression arrayExpression = eComp.compile(projection).closure(dataVar);
         DBSPTypeTuple uncollectElementType = this.convertType(uncollect.getRowType(), false).to(DBSPTypeTuple.class);
-        DBSPType arrayElementType = arrayExpression.getResultType().to(DBSPTypeVec.class).getElementType();
+        DBSPType arrayElementType = arrayExpression.getResultType().to(DBSPTypeArray.class).getElementType();
         if (arrayElementType.mayBeNull)
             // This seems to be a bug in Calcite, we should not need to do this adjustment
             uncollectElementType = uncollectElementType.withMayBeNull(true).to(DBSPTypeTuple.class);
@@ -1862,28 +1863,36 @@ public class CalciteToDBSPCompiler extends RelVisitor
             case ARRAY: {
                 // specialized version of ARRAY_AGG
                 boolean flatten = inputRowType.size() == 1;
-                assert type.getFieldType(0).is(DBSPTypeVec.class);
-                DBSPTypeVec vecType = type.getFieldType(0).to(DBSPTypeVec.class);
-                DBSPType elementType = vecType.getElementType();
+                assert type.getFieldType(0).is(DBSPTypeArray.class);
+                DBSPTypeArray arrayType = type.getFieldType(0).to(DBSPTypeArray.class);
+                DBSPType elementType = arrayType.getElementType();
                 assert elementType.sameType(flatten ? inputRowType.getFieldType(0) : inputRowType);
+                DBSPType accumulatorType = arrayType.innerType();
 
                 row = inputRowType.ref().var();
-                DBSPExpression zero = DBSPVecExpression.emptyWithElementType(elementType, type.mayBeNull);
-                DBSPVariablePath accumulator = vecType.var();
+                DBSPExpression empty = DBSPArrayExpression.emptyWithElementType(elementType, type.mayBeNull);
+                DBSPExpression zero = new DBSPApplyExpression("vec!", accumulatorType);
+                DBSPVariablePath accumulator = accumulatorType.var();
                 String functionName;
-                DBSPExpression[] arguments;
-                functionName = "array_agg" + vecType.nullableSuffix();
-                arguments = new DBSPExpression[5];
-                arguments[0] = accumulator.borrow(true);
-                arguments[1] = flatten ? row.deref().field(0) : row.deref().applyCloneIfNeeded();
-                arguments[2] = this.compiler.weightVar;
-                arguments[3] = new DBSPBoolLiteral(false);
-                arguments[4] = new DBSPBoolLiteral(true);
-                DBSPExpression increment = new DBSPApplyExpression(node, functionName, DBSPTypeVoid.INSTANCE, arguments);
-                DBSPType semigroup = new DBSPTypeUser(node, SEMIGROUP, "ConcatSemigroup", false, accumulator.getType());
+
+                functionName = "array_agg" + arrayType.nullableSuffix();
+                DBSPExpression increment = new DBSPApplyExpression(
+                        node, functionName, DBSPTypeVoid.INSTANCE,
+                        accumulator.borrow(true),
+                        flatten ? row.deref().field(0) : row.deref().applyCloneIfNeeded(),
+                        this.compiler.weightVar,
+                        new DBSPBoolLiteral(false),
+                        new DBSPBoolLiteral(true));
+                DBSPType semigroup = new DBSPTypeUser(
+                        node, SEMIGROUP, "ConcatSemigroup", false, accumulatorType);
+                DBSPVariablePath p = accumulatorType.var();
+                String convertName = "to_array";
+                if (arrayType.mayBeNull)
+                    convertName += "N";
+                DBSPClosureExpression post = new DBSPApplyExpression(convertName, arrayType, p).closure(p);
                 agg = new NonLinearAggregate(
-                        node, zero, increment.closure(accumulator, row, this.compiler.weightVar),
-                        zero, semigroup);
+                        node, zero, increment.closure(accumulator, row, this.compiler.weightVar), post,
+                        empty, semigroup);
                 break;
             }
             case MAP: {
@@ -1906,12 +1915,16 @@ public class CalciteToDBSPCompiler extends RelVisitor
                         accumulator.borrow(true),
                         row.deref().applyCloneIfNeeded(),
                         this.compiler.weightVar);
-                DBSPType semigroup = new DBSPTypeUser(node, SEMIGROUP, "ConcatSemigroup", false, accumulatorType);
+                DBSPType semigroup = new DBSPTypeUser(
+                        node, SEMIGROUP, "ConcatSemigroup", false, accumulatorType);
                 DBSPVariablePath p = accumulatorType.var();
-                DBSPClosureExpression post = new DBSPApplyMethodExpression("into", mapType, p).closure(p);
+                String convertName = "to_map";
+                if (mapType.mayBeNull)
+                    convertName += "N";
+                DBSPClosureExpression post = new DBSPApplyExpression(convertName, mapType, p).closure(p);
                 agg = new NonLinearAggregate(
                         node, zero, increment.closure(accumulator, row, this.compiler.weightVar), post,
-                        new DBSPApplyMethodExpression("into", mapType, zero), semigroup);
+                        new DBSPApplyMethodExpression(convertName, mapType, zero), semigroup);
                 break;
             }
             default:
@@ -2951,25 +2964,30 @@ public class CalciteToDBSPCompiler extends RelVisitor
         }
         // Global sort.  Implemented by aggregate in a single Vec<> which is then sorted.
         // Apply an aggregation function that just creates a vector.
-        DBSPTypeVec vecType = new DBSPTypeVec(inputRowType, false);
-        DBSPExpression zero = new DBSPPath(vecType.name, "new").toExpression().call();
+        DBSPTypeArray arrayType = new DBSPTypeArray(inputRowType, false);
+        DBSPTypeVec vecType = arrayType.innerType();
+        DBSPExpression zero = vecType.emptyVector();
         DBSPVariablePath accum = vecType.ref(true).var();
         DBSPVariablePath row = inputRowType.ref().var();
         // An element with weight 'w' is pushed 'w' times into the vector
         DBSPExpression wPush = new DBSPApplyExpression(node,
                 "weighted_push", DBSPTypeVoid.INSTANCE, accum, row, this.compiler.weightVar);
         DBSPExpression push = wPush.closure(accum, row, this.compiler.weightVar);
+        DBSPType semigroup = new DBSPTypeUser(node, USER, "UnimplementedSemigroup",
+                false, DBSPTypeAny.getDefault());
+        DBSPVariablePath var = vecType.var();
+        DBSPExpression post = new DBSPApplyMethodExpression("into", arrayType, var).closure(var);
         DBSPExpression constructor =
                 new DBSPPath(new DBSPSimplePathSegment("Fold", DBSPTypeAny.getDefault(),
                         DBSPTypeAny.getDefault(),
-                        new DBSPTypeUser(node, USER, "UnimplementedSemigroup",                                false, DBSPTypeAny.getDefault()),
+                        semigroup,
                         DBSPTypeAny.getDefault(),
                         DBSPTypeAny.getDefault()),
-                        new DBSPSimplePathSegment("new")).toExpression();
+                        new DBSPSimplePathSegment("with_output")).toExpression();
 
-        DBSPExpression folder = constructor.call(zero, push);
+        DBSPExpression folder = constructor.call(zero, push, post);
         DBSPStreamAggregateOperator agg = new DBSPStreamAggregateOperator(node,
-                makeIndexedZSet(new DBSPTypeRawTuple(), new DBSPTypeVec(inputRowType, false)),
+                makeIndexedZSet(new DBSPTypeRawTuple(), arrayType),
                 folder, null, index.outputPort());
         this.addOperator(agg);
 
@@ -2977,7 +2995,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             limit = limit.cast(new DBSPTypeUSize(node, false), false);
         DBSPSortExpression sorter = new DBSPSortExpression(node, inputRowType, comparator, limit);
         DBSPSimpleOperator result = new DBSPMapOperator(
-                node, sorter, this.makeZSet(vecType), agg.outputPort());
+                node, sorter, this.makeZSet(arrayType), agg.outputPort());
         this.assignOperator(sort, result);
     }
 
@@ -3080,9 +3098,9 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPType elemType = producedType.getElementType();
         DBSPTypeTupleBase tuple;
         boolean isVector = false;
-        if (elemType.is(DBSPTypeVec.class)) {
+        if (elemType.is(DBSPTypeArray.class)) {
             isVector = true;
-            tuple = elemType.to(DBSPTypeVec.class).getElementType().to(DBSPTypeTupleBase.class);
+            tuple = elemType.to(DBSPTypeArray.class).getElementType().to(DBSPTypeTupleBase.class);
         } else {
             tuple = elemType.to(DBSPTypeTupleBase.class);
         }
@@ -3096,7 +3114,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             DBSPClosureExpression closure = all.closure(t);
             DBSPType outputElementType = all.getType();
             if (isVector) {
-                outputElementType = new DBSPTypeVec(outputElementType, false);
+                outputElementType = new DBSPTypeArray(outputElementType, false);
                 DBSPVariablePath v = elemType.var();
                 closure = new DBSPApplyExpression("map", outputElementType, v, closure)
                         .closure(v);

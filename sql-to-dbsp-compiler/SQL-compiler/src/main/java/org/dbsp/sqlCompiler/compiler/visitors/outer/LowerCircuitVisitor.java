@@ -28,7 +28,6 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStrLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPUSizeLiteral;
-import org.dbsp.sqlCompiler.ir.expression.DBSPVecExpression;
 import org.dbsp.sqlCompiler.ir.statement.DBSPExpressionStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStatement;
@@ -38,6 +37,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeUSize;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeVec;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 import org.dbsp.util.Linq;
 
@@ -54,8 +54,8 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
     /** Rewrite a flatmap operation into a Rust method call.
      * @param flatmap  Flatmap operation to rewrite. */
     public static DBSPExpression rewriteFlatmap(DBSPFlatmap flatmap) {
-        //   move |x: &Tuple2<Vec<i32>, Option<i32>>, | -> _ {
-        //     let x0: Vec<i32> = x.0.clone();
+        //   move |x: &Tuple2<Array<i32>, Option<i32>>, | -> _ {
+        //     let x0: Vec<i32> = (*x.0).clone();
         //     let x1: x.1.clone();
         //     let array = (*x).0.clone();
         //     array.clone().into_iter().map({
@@ -148,16 +148,16 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
         // };
         // or
         // let array = (*x).0.clone();
-        DBSPExpression extractArray = flatmap.collectionExpression.call(rowVar);
-        DBSPLetStatement statement = new DBSPLetStatement("array", extractArray.borrow());
+        DBSPExpression extractArray = flatmap.collectionExpression.call(rowVar).applyClone();
+        DBSPLetStatement statement = new DBSPLetStatement("array", extractArray);
         statements.add(statement);
         DBSPType arrayType = extractArray.getType();
 
         DBSPExpression arrayExpression;
         if (arrayType.mayBeNull) {
-            DBSPExpression condition = statement.getVarReference().deref().is_null();
-            DBSPExpression empty = new DBSPVecExpression(flatmap.getNode(), arrayType.withMayBeNull(false), Linq.list());
-            DBSPExpression contents = statement.getVarReference().deref().applyClone().unwrap();
+            DBSPExpression condition = statement.getVarReference().is_null();
+            DBSPExpression empty = new DBSPTypeVec(collectionElementType, false).emptyVector();
+            DBSPExpression contents = statement.getVarReference().unwrap().deref().applyClone();
             arrayExpression = new DBSPIfExpression(flatmap.getNode(), condition, empty, contents);
         } else {
             arrayExpression = statement.getVarReference().deref().applyClone();

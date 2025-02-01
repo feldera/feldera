@@ -53,7 +53,13 @@ public final class DBSPFieldExpression extends DBSPExpression {
         if (type.is(DBSPTypeAny.class))
             return type;
         DBSPTypeTupleBase tuple = type.to(DBSPTypeTupleBase.class);
-        return tuple.getFieldType(fieldNo);
+        DBSPType fieldType = tuple.getFieldType(fieldNo);
+        /*
+        TODO: https://github.com/feldera/feldera/issues/3418
+        if (type.mayBeNull)
+            fieldType = fieldType.withMayBeNull(true);
+         */
+        return fieldType;
     }
 
     public DBSPFieldExpression(CalciteObject node, DBSPExpression expression, int fieldNo) {

@@ -1,29 +1,73 @@
 // Array operations
 
-use crate::{some_function2, some_generic_function2, Weight};
-use std::collections::HashSet;
-use std::fmt::Debug;
-use std::hash::Hash;
-use std::ops::Index;
+use crate::{some_function2, some_generic_function2, ConcatSemigroup, Semigroup, Weight};
+use itertools::Itertools;
+use std::{collections::HashSet, fmt::Debug, hash::Hash, ops::Index, sync::Arc};
 
-#[doc(hidden)]
-pub fn array_map__<T, S, F>(vec: &[T], f: F) -> Vec<S>
-where
-    F: Fn(&T) -> S,
-{
-    vec.iter().map(f).collect()
+pub type Array<T> = Arc<Vec<T>>;
+
+/// Convert a Rust Vec to a SQL Array
+pub fn to_array<T>(data: Vec<T>) -> Array<T> {
+    Arc::new(data)
 }
 
 #[doc(hidden)]
-pub fn array_mapN_<T, S, F>(vec: &Option<Vec<T>>, f: F) -> Option<Vec<S>>
+pub fn to_arrayN<T>(data: Option<Vec<T>>) -> Option<Array<T>> {
+    data.map(|data| to_array(data))
+}
+
+/// Convert a SQL array to a Rust Vec
+pub fn to_vec<T>(data: Array<T>) -> Vec<T>
 where
-    F: Fn(&T) -> S,
+    T: Clone,
 {
-    vec.as_ref().map(|vec| array_map__(vec, f))
+    (*data).clone()
 }
 
 #[doc(hidden)]
-pub fn element__<T>(array: Vec<T>) -> Option<T>
+impl<V> Semigroup<Vec<V>> for ConcatSemigroup<Vec<V>>
+where
+    V: Clone + Ord,
+{
+    #[doc(hidden)]
+    fn combine(left: &Vec<V>, right: &Vec<V>) -> Vec<V> {
+        left.iter().merge(right).cloned().collect()
+    }
+}
+
+#[doc(hidden)]
+impl<V> Semigroup<Option<Vec<V>>> for ConcatSemigroup<Option<Vec<V>>>
+where
+    V: Clone + Ord,
+{
+    #[doc(hidden)]
+    fn combine(left: &Option<Vec<V>>, right: &Option<Vec<V>>) -> Option<Vec<V>> {
+        match (left, right) {
+            (None, _) => right.clone(),
+            (_, None) => left.clone(),
+            (Some(left), Some(right)) => Some(left.iter().merge(right).cloned().collect()),
+        }
+    }
+}
+
+#[doc(hidden)]
+pub fn array_map__<T, S, F>(vec: Array<T>, f: F) -> Array<S>
+where
+    F: Fn(&T) -> S,
+{
+    (*vec).iter().map(f).collect::<Vec<S>>().into()
+}
+
+#[doc(hidden)]
+pub fn array_mapN_<T, S, F>(vec: Option<Array<T>>, f: F) -> Option<Array<S>>
+where
+    F: Fn(&T) -> S,
+{
+    vec.as_ref().map(|vec| array_map__(vec.clone(), f))
+}
+
+#[doc(hidden)]
+pub fn element__<T>(array: Array<T>) -> Option<T>
 where
     T: Clone,
 {
@@ -37,7 +81,7 @@ where
 }
 
 #[doc(hidden)]
-pub fn elementN_<T>(array: Option<Vec<T>>) -> Option<T>
+pub fn elementN_<T>(array: Option<Array<T>>) -> Option<T>
 where
     T: Clone,
 {
@@ -46,7 +90,7 @@ where
 }
 
 #[doc(hidden)]
-pub fn element_N<T>(array: Vec<Option<T>>) -> Option<T>
+pub fn element_N<T>(array: Array<Option<T>>) -> Option<T>
 where
     T: Clone,
 {
@@ -60,7 +104,7 @@ where
 }
 
 #[doc(hidden)]
-pub fn elementNN<T>(array: Option<Vec<Option<T>>>) -> Option<T>
+pub fn elementNN<T>(array: Option<Array<Option<T>>>) -> Option<T>
 where
     T: Clone,
 {
@@ -69,12 +113,12 @@ where
 }
 
 #[doc(hidden)]
-pub fn cardinalityVec<T>(value: &[T]) -> i32 {
+pub fn cardinalityVec<T>(value: Array<T>) -> i32 {
     value.len() as i32
 }
 
 #[doc(hidden)]
-pub fn cardinalityVecN<T>(value: &Option<Vec<T>>) -> Option<i32> {
+pub fn cardinalityVecN<T>(value: Option<Array<T>>) -> Option<i32> {
     value.as_ref().map(|value| value.len() as i32)
 }
 
@@ -84,7 +128,7 @@ pub fn cardinalityVecN<T>(value: &Option<Vec<T>>) -> Option<i32> {
 // nullability of index
 
 #[doc(hidden)]
-pub fn index___<T>(value: &Vec<T>, index: isize) -> Option<T>
+pub fn index___<T>(value: &Array<T>, index: isize) -> Option<T>
 where
     T: Clone,
 {
@@ -100,7 +144,7 @@ where
 }
 
 #[doc(hidden)]
-pub fn index__N<T>(value: &Vec<T>, index: Option<isize>) -> Option<T>
+pub fn index__N<T>(value: &Array<T>, index: Option<isize>) -> Option<T>
 where
     T: Clone,
 {
@@ -109,7 +153,7 @@ where
 }
 
 #[doc(hidden)]
-pub fn index_N_<T>(value: &Vec<Option<T>>, index: isize) -> Option<T>
+pub fn index_N_<T>(value: &Array<Option<T>>, index: isize) -> Option<T>
 where
     T: Clone,
 {
@@ -125,7 +169,7 @@ where
 }
 
 #[doc(hidden)]
-pub fn index_NN<T>(value: &Vec<Option<T>>, index: Option<isize>) -> Option<T>
+pub fn index_NN<T>(value: &Array<Option<T>>, index: Option<isize>) -> Option<T>
 where
     T: Clone,
 {
@@ -142,7 +186,7 @@ where
 }
 
 #[doc(hidden)]
-pub fn indexN__<T>(value: &Option<Vec<T>>, index: isize) -> Option<T>
+pub fn indexN__<T>(value: &Option<Array<T>>, index: isize) -> Option<T>
 where
     T: Clone,
 {
@@ -153,7 +197,7 @@ where
 }
 
 #[doc(hidden)]
-pub fn indexN_N<T>(value: &Option<Vec<T>>, index: Option<isize>) -> Option<T>
+pub fn indexN_N<T>(value: &Option<Array<T>>, index: Option<isize>) -> Option<T>
 where
     T: Clone,
 {
@@ -165,7 +209,7 @@ where
 }
 
 #[doc(hidden)]
-pub fn indexNN_<T>(value: &Option<Vec<Option<T>>>, index: isize) -> Option<T>
+pub fn indexNN_<T>(value: &Option<Array<Option<T>>>, index: isize) -> Option<T>
 where
     T: Clone,
 {
@@ -176,7 +220,7 @@ where
 }
 
 #[doc(hidden)]
-pub fn indexNNN<T>(value: &Option<Vec<Option<T>>>, index: Option<isize>) -> Option<T>
+pub fn indexNNN<T>(value: &Option<Array<Option<T>>>, index: Option<isize>) -> Option<T>
 where
     T: Clone,
 {
@@ -188,49 +232,58 @@ where
 }
 
 #[doc(hidden)]
-pub fn array<T>() -> Vec<T> {
-    vec![]
+pub fn array<T>() -> Array<T> {
+    vec![].into()
 }
 
 #[doc(hidden)]
-pub fn limit<T>(vector: &[T], limit: usize) -> Vec<T>
+pub fn limit<T>(vector: Array<T>, limit: usize) -> Array<T>
 where
     T: Clone,
 {
-    vector[0..limit].to_vec()
+    let limit = std::cmp::min(limit, (*vector).len());
+    (**vector)[0..limit].to_vec().into()
 }
 
 #[doc(hidden)]
-pub fn map<T, S, F>(vector: &[T], func: F) -> Vec<S>
+pub fn map<T, S, F>(vector: Array<T>, func: F) -> Array<S>
 where
     F: FnMut(&T) -> S,
 {
-    vector.iter().map(func).collect()
+    (*vector).iter().map(func).collect::<Vec<S>>().into()
 }
 
 #[doc(hidden)]
-pub fn array_append<T>(mut vector: Vec<T>, value: T) -> Vec<T> {
-    vector.push(value);
-    vector
+pub fn array_append<T>(vector: Array<T>, value: T) -> Array<T>
+where
+    T: Clone,
+{
+    let mut result = Arc::unwrap_or_clone(vector);
+    result.push(value);
+    result.into()
 }
 
 #[doc(hidden)]
-pub fn array_appendN<T>(vector: Option<Vec<T>>, value: T) -> Option<Vec<T>> {
+pub fn array_appendN<T>(vector: Option<Array<T>>, value: T) -> Option<Array<T>>
+where
+    T: Clone,
+{
     Some(array_append(vector?, value))
 }
 
 #[doc(hidden)]
-pub fn array_repeat__<T>(element: T, count: i32) -> Vec<T>
+pub fn array_repeat__<T>(element: T, count: i32) -> Array<T>
 where
     T: Clone,
 {
     std::iter::repeat(element)
         .take(usize::try_from(count).unwrap_or(0))
-        .collect()
+        .collect::<Vec<T>>()
+        .into()
 }
 
 #[doc(hidden)]
-pub fn array_repeatN_<T>(element: Option<T>, count: i32) -> Option<Vec<Option<T>>>
+pub fn array_repeatN_<T>(element: Option<T>, count: i32) -> Option<Array<Option<T>>>
 where
     T: Clone,
 {
@@ -238,7 +291,7 @@ where
 }
 
 #[doc(hidden)]
-pub fn array_repeat_N<T>(element: T, count: Option<i32>) -> Option<Vec<T>>
+pub fn array_repeat_N<T>(element: T, count: Option<i32>) -> Option<Array<T>>
 where
     T: Clone,
 {
@@ -246,7 +299,7 @@ where
 }
 
 #[doc(hidden)]
-pub fn array_repeatNN<T>(element: Option<T>, count: Option<i32>) -> Option<Vec<Option<T>>>
+pub fn array_repeatNN<T>(element: Option<T>, count: Option<i32>) -> Option<Array<Option<T>>>
 where
     T: Clone,
 {
@@ -254,169 +307,198 @@ where
 }
 
 #[doc(hidden)]
-pub fn array_remove__<T>(mut vector: Vec<T>, element: T) -> Vec<T>
+pub fn array_remove__<T>(vector: Array<T>, element: T) -> Array<T>
 where
-    T: Eq,
+    T: Eq + Clone,
 {
-    vector.retain(|v| v != &element);
-    vector
+    let mut vec = Arc::unwrap_or_clone(vector);
+    vec.retain(|v| v != &element);
+    vec.into()
 }
 
-some_generic_function2!(array_remove, T, Vec<T>, T, Eq, Vec<T>);
+some_generic_function2!(array_remove, T, Array<T>, T, Eq + Clone, Array<T>);
 
 #[doc(hidden)]
-pub fn array_position__<T>(vector: Vec<T>, element: T) -> i64
+pub fn array_position__<T>(vector: Array<T>, element: T) -> i64
 where
     T: Eq,
 {
-    vector
-        .into_iter()
-        .position(|x| x == element)
+    (*vector)
+        .iter()
+        .position(|x| *x == element)
         .map(|v| v + 1)
         .unwrap_or(0) as i64
 }
 
-some_generic_function2!(array_position, T, Vec<T>, T, Eq, i64);
+some_generic_function2!(array_position, T, Array<T>, T, Eq, i64);
 
 #[doc(hidden)]
-pub fn array_reverse_<T>(vector: Vec<T>) -> Vec<T> {
-    vector.into_iter().rev().collect()
+pub fn array_reverse_<T>(vector: Array<T>) -> Array<T>
+where
+    T: Clone,
+{
+    (**vector).iter().rev().cloned().collect::<Vec<T>>().into()
 }
 
 #[doc(hidden)]
-pub fn array_reverseN<T>(vector: Option<Vec<T>>) -> Option<Vec<T>> {
+pub fn array_reverseN<T>(vector: Option<Array<T>>) -> Option<Array<T>>
+where
+    T: Clone,
+{
     Some(array_reverse_(vector?))
 }
 
 #[doc(hidden)]
-pub fn sort_array<T>(mut vector: Vec<T>, ascending: bool) -> Vec<T>
+pub fn sort_array<T>(vector: Array<T>, ascending: bool) -> Array<T>
 where
-    T: Ord,
+    T: Ord + Clone,
 {
+    let mut data = (*vector).clone();
     if ascending {
-        vector.sort()
+        data.sort()
     } else {
-        vector.sort_by(|a, b| b.cmp(a))
+        data.sort_by(|a, b| b.cmp(a))
     };
-
-    vector
+    data.into()
 }
 
 #[doc(hidden)]
-pub fn sort_arrayN<T>(vector: Option<Vec<T>>, ascending: bool) -> Option<Vec<T>>
+pub fn sort_arrayN<T>(vector: Option<Array<T>>, ascending: bool) -> Option<Array<T>>
 where
-    T: Ord,
+    T: Ord + Clone,
 {
     Some(sort_array(vector?, ascending))
 }
 
 #[doc(hidden)]
-pub fn array_max__<T>(vector: Vec<T>) -> Option<T>
+pub fn array_max__<T>(vector: Array<T>) -> Option<T>
 where
-    T: Ord,
+    T: Ord + Clone,
 {
-    vector.into_iter().max()
+    (*vector).iter().cloned().max()
 }
 
 #[doc(hidden)]
-pub fn array_maxN_<T>(vector: Option<Vec<T>>) -> Option<T>
+pub fn array_maxN_<T>(vector: Option<Array<T>>) -> Option<T>
 where
-    T: Ord,
+    T: Ord + Clone,
 {
     array_max__(vector?)
 }
 
 #[doc(hidden)]
-pub fn array_max_N<T>(vector: Vec<Option<T>>) -> Option<T>
+pub fn array_max_N<T>(vector: Array<Option<T>>) -> Option<T>
 where
-    T: Ord,
+    T: Ord + Clone,
 {
-    vector.into_iter().flatten().max()
+    (*vector).iter().flatten().cloned().max()
 }
 
 #[doc(hidden)]
-pub fn array_maxNN<T>(vector: Option<Vec<Option<T>>>) -> Option<T>
+pub fn array_maxNN<T>(vector: Option<Array<Option<T>>>) -> Option<T>
 where
-    T: Ord,
+    T: Ord + Clone,
 {
     array_max_N(vector?)
 }
 
 #[doc(hidden)]
-pub fn array_min__<T>(vector: Vec<T>) -> Option<T>
+pub fn array_min__<T>(vector: Array<T>) -> Option<T>
 where
-    T: Ord,
+    T: Ord + Clone,
 {
-    vector.into_iter().min()
+    (*vector).iter().cloned().min()
 }
 
 #[doc(hidden)]
-pub fn array_minN_<T>(vector: Option<Vec<T>>) -> Option<T>
+pub fn array_minN_<T>(vector: Option<Array<T>>) -> Option<T>
 where
-    T: Ord,
+    T: Ord + Clone,
 {
     array_min__(vector?)
 }
 
 #[doc(hidden)]
-pub fn array_min_N<T>(vector: Vec<Option<T>>) -> Option<T>
+pub fn array_min_N<T>(vector: Array<Option<T>>) -> Option<T>
 where
-    T: Ord,
+    T: Ord + Clone,
 {
-    vector.into_iter().flatten().min()
+    (*vector).iter().flatten().cloned().min()
 }
 
 #[doc(hidden)]
-pub fn array_minNN<T>(vector: Option<Vec<Option<T>>>) -> Option<T>
+pub fn array_minNN<T>(vector: Option<Array<Option<T>>>) -> Option<T>
 where
-    T: Ord,
+    T: Ord + Clone,
 {
     array_min_N(vector?)
 }
 
 #[doc(hidden)]
-pub fn array_compact_<T>(vector: Vec<Option<T>>) -> Vec<T> {
-    vector.into_iter().flatten().collect()
+pub fn array_compact_<T>(vector: Array<Option<T>>) -> Array<T>
+where
+    T: Clone,
+{
+    (*vector)
+        .iter()
+        .flatten()
+        .cloned()
+        .collect::<Vec<T>>()
+        .into()
 }
 
 #[doc(hidden)]
-pub fn array_compact_N<T>(vector: Option<Vec<Option<T>>>) -> Option<Vec<T>> {
+pub fn array_compact_N<T>(vector: Option<Array<Option<T>>>) -> Option<Array<T>>
+where
+    T: Clone,
+{
     Some(array_compact_(vector?))
 }
 
 #[doc(hidden)]
-pub fn array_prepend<T>(mut vector: Vec<T>, value: T) -> Vec<T> {
-    vector.insert(0, value);
-    vector
+pub fn array_prepend<T>(vector: Array<T>, value: T) -> Array<T>
+where
+    T: Clone,
+{
+    let mut data = (*vector).clone();
+    data.insert(0, value);
+    data.into()
 }
 
 #[doc(hidden)]
-pub fn array_prependN<T>(vector: Option<Vec<T>>, value: T) -> Option<Vec<T>> {
+pub fn array_prependN<T>(vector: Option<Array<T>>, value: T) -> Option<Array<T>>
+where
+    T: Clone,
+{
     Some(array_prepend(vector?, value))
 }
 
 #[doc(hidden)]
-pub fn array_contains__<T>(vector: Vec<T>, element: T) -> bool
+pub fn array_contains__<T>(vector: Array<T>, element: T) -> bool
 where
     T: Eq,
 {
     vector.contains(&element)
 }
 
-some_generic_function2!(array_contains, T, Vec<T>, T, Eq, bool);
+some_generic_function2!(array_contains, T, Array<T>, T, Eq, bool);
 
 #[doc(hidden)]
-pub fn array_distinct<T>(mut vector: Vec<T>) -> Vec<T>
+pub fn array_distinct<T>(vector: Array<T>) -> Array<T>
 where
     T: Eq + Hash + Clone,
 {
     let mut hset: HashSet<T> = HashSet::new();
-    vector.retain(|v| hset.insert(v.clone()));
-    vector
+    let data = (*vector)
+        .iter()
+        .filter(|v| hset.insert((*v).clone()))
+        .cloned()
+        .collect::<Vec<T>>();
+    data.into()
 }
 
 #[doc(hidden)]
-pub fn array_distinctN<T>(vector: Option<Vec<T>>) -> Option<Vec<T>>
+pub fn array_distinctN<T>(vector: Option<Array<T>>) -> Option<Array<T>>
 where
     T: Eq + Hash + Clone,
 {
@@ -424,14 +506,14 @@ where
 }
 
 #[doc(hidden)]
-pub fn sequence__(start: i32, end: i32) -> Vec<i32> {
-    (start..=end).collect()
+pub fn sequence__(start: i32, end: i32) -> Array<i32> {
+    (start..=end).collect::<Vec<i32>>().into()
 }
 
-some_function2!(sequence, i32, i32, Vec<i32>);
+some_function2!(sequence, i32, i32, Array<i32>);
 
 #[doc(hidden)]
-pub fn arrays_overlap__<T>(first: Vec<T>, second: Vec<T>) -> bool
+pub fn arrays_overlap__<T>(first: Array<T>, second: Array<T>) -> bool
 where
     T: Eq + Hash,
 {
@@ -442,9 +524,9 @@ where
     let (smaller, bigger) = (first, second);
 
     if !smaller.is_empty() && !bigger.is_empty() {
-        let shset: HashSet<T> = HashSet::from_iter(smaller);
+        let shset: HashSet<&T> = HashSet::from_iter((*smaller).iter());
 
-        for element in bigger {
+        for element in (*bigger).iter() {
             if shset.contains(&element) {
                 return true;
             }
@@ -454,7 +536,7 @@ where
 }
 
 #[doc(hidden)]
-pub fn arrays_overlapN_<T>(first: Option<Vec<T>>, second: Vec<T>) -> Option<bool>
+pub fn arrays_overlapN_<T>(first: Option<Array<T>>, second: Array<T>) -> Option<bool>
 where
     T: Eq + Hash,
 {
@@ -463,7 +545,7 @@ where
 }
 
 #[doc(hidden)]
-pub fn arrays_overlap_N<T>(first: Vec<T>, second: Option<Vec<T>>) -> Option<bool>
+pub fn arrays_overlap_N<T>(first: Array<T>, second: Option<Array<T>>) -> Option<bool>
 where
     T: Eq + Hash,
 {
@@ -472,7 +554,7 @@ where
 }
 
 #[doc(hidden)]
-pub fn arrays_overlapNN<T>(first: Option<Vec<T>>, second: Option<Vec<T>>) -> Option<bool>
+pub fn arrays_overlapNN<T>(first: Option<Array<T>>, second: Option<Array<T>>) -> Option<bool>
 where
     T: Eq + Hash,
 {
@@ -546,25 +628,39 @@ pub fn array_agg_optN<T>(
 }
 
 #[doc(hidden)]
-pub fn array_concat__<T>(mut left: Vec<T>, right: Vec<T>) -> Vec<T> {
-    left.extend(right);
-    left
+pub fn array_concat__<T>(left: Array<T>, right: Array<T>) -> Array<T>
+where
+    T: Clone,
+{
+    let mut result = Vec::with_capacity(left.len() + right.len());
+    result.extend((*left).clone());
+    result.extend((*right).clone());
+    result.into()
 }
 
 #[doc(hidden)]
-pub fn array_concatN_<T>(left: Option<Vec<T>>, right: Vec<T>) -> Option<Vec<T>> {
+pub fn array_concatN_<T>(left: Option<Array<T>>, right: Array<T>) -> Option<Array<T>>
+where
+    T: Clone,
+{
     let left = left?;
     Some(array_concat__(left, right))
 }
 
 #[doc(hidden)]
-pub fn array_concat_N<T>(left: Vec<T>, right: Option<Vec<T>>) -> Option<Vec<T>> {
+pub fn array_concat_N<T>(left: Array<T>, right: Option<Array<T>>) -> Option<Array<T>>
+where
+    T: Clone,
+{
     let right = right?;
     Some(array_concat__(left, right))
 }
 
 #[doc(hidden)]
-pub fn array_concatNN<T>(left: Option<Vec<T>>, right: Option<Vec<T>>) -> Option<Vec<T>> {
+pub fn array_concatNN<T>(left: Option<Array<T>>, right: Option<Array<T>>) -> Option<Array<T>>
+where
+    T: Clone,
+{
     let left = left?;
     let right = right?;
     Some(array_concat__(left, right))
@@ -578,7 +674,7 @@ where
 }
 
 #[doc(hidden)]
-pub fn array_except__<T>(left: Vec<T>, right: Vec<T>) -> Vec<T>
+pub fn array_except__<T>(left: Array<T>, right: Array<T>) -> Array<T>
 where
     T: Eq + Clone + Hash + Ord,
 {
@@ -587,11 +683,11 @@ where
     let result = left.difference(&right);
     let mut result = result.cloned().collect::<Vec<T>>();
     result.sort();
-    result
+    result.into()
 }
 
 #[doc(hidden)]
-pub fn array_exceptN_<T>(left: Option<Vec<T>>, right: Vec<T>) -> Option<Vec<T>>
+pub fn array_exceptN_<T>(left: Option<Array<T>>, right: Array<T>) -> Option<Array<T>>
 where
     T: Eq + Clone + Hash + Ord,
 {
@@ -600,7 +696,7 @@ where
 }
 
 #[doc(hidden)]
-pub fn array_except_N<T>(left: Vec<T>, right: Option<Vec<T>>) -> Option<Vec<T>>
+pub fn array_except_N<T>(left: Array<T>, right: Option<Array<T>>) -> Option<Array<T>>
 where
     T: Eq + Clone + Hash + Ord,
 {
@@ -609,7 +705,7 @@ where
 }
 
 #[doc(hidden)]
-pub fn array_exceptNN<T>(left: Option<Vec<T>>, right: Option<Vec<T>>) -> Option<Vec<T>>
+pub fn array_exceptNN<T>(left: Option<Array<T>>, right: Option<Array<T>>) -> Option<Array<T>>
 where
     T: Eq + Clone + Hash + Ord,
 {
@@ -619,7 +715,7 @@ where
 }
 
 #[doc(hidden)]
-pub fn array_union__<T>(left: Vec<T>, right: Vec<T>) -> Vec<T>
+pub fn array_union__<T>(left: Array<T>, right: Array<T>) -> Array<T>
 where
     T: Eq + Clone + Hash + Ord,
 {
@@ -628,11 +724,11 @@ where
     let result = left.union(&right);
     let mut result = result.cloned().collect::<Vec<T>>();
     result.sort();
-    result
+    result.into()
 }
 
 #[doc(hidden)]
-pub fn array_unionN_<T>(left: Option<Vec<T>>, right: Vec<T>) -> Option<Vec<T>>
+pub fn array_unionN_<T>(left: Option<Array<T>>, right: Array<T>) -> Option<Array<T>>
 where
     T: Eq + Clone + Hash + Ord,
 {
@@ -641,7 +737,7 @@ where
 }
 
 #[doc(hidden)]
-pub fn array_union_N<T>(left: Vec<T>, right: Option<Vec<T>>) -> Option<Vec<T>>
+pub fn array_union_N<T>(left: Array<T>, right: Option<Array<T>>) -> Option<Array<T>>
 where
     T: Eq + Clone + Hash + Ord,
 {
@@ -650,7 +746,7 @@ where
 }
 
 #[doc(hidden)]
-pub fn array_unionNN<T>(left: Option<Vec<T>>, right: Option<Vec<T>>) -> Option<Vec<T>>
+pub fn array_unionNN<T>(left: Option<Array<T>>, right: Option<Array<T>>) -> Option<Array<T>>
 where
     T: Eq + Clone + Hash + Ord,
 {
@@ -660,7 +756,7 @@ where
 }
 
 #[doc(hidden)]
-pub fn array_intersect__<T>(left: Vec<T>, right: Vec<T>) -> Vec<T>
+pub fn array_intersect__<T>(left: Array<T>, right: Array<T>) -> Array<T>
 where
     T: Eq + Clone + Hash + Ord,
 {
@@ -669,11 +765,11 @@ where
     let result = left.intersection(&right);
     let mut result = result.cloned().collect::<Vec<T>>();
     result.sort();
-    result
+    result.into()
 }
 
 #[doc(hidden)]
-pub fn array_intersectN_<T>(left: Option<Vec<T>>, right: Vec<T>) -> Option<Vec<T>>
+pub fn array_intersectN_<T>(left: Option<Array<T>>, right: Array<T>) -> Option<Array<T>>
 where
     T: Eq + Clone + Hash + Ord,
 {
@@ -682,7 +778,7 @@ where
 }
 
 #[doc(hidden)]
-pub fn array_intersect_N<T>(left: Vec<T>, right: Option<Vec<T>>) -> Option<Vec<T>>
+pub fn array_intersect_N<T>(left: Array<T>, right: Option<Array<T>>) -> Option<Array<T>>
 where
     T: Eq + Clone + Hash + Ord,
 {
@@ -691,7 +787,7 @@ where
 }
 
 #[doc(hidden)]
-pub fn array_intersectNN<T>(left: Option<Vec<T>>, right: Option<Vec<T>>) -> Option<Vec<T>>
+pub fn array_intersectNN<T>(left: Option<Array<T>>, right: Option<Array<T>>) -> Option<Array<T>>
 where
     T: Eq + Clone + Hash + Ord,
 {
@@ -704,7 +800,7 @@ where
 // compiler enforces the element type is always nullable.
 // The standard macros we have don't work for this function.
 
-// The result type must always be Vec<Option<T>>
+// The result type must always be Array<Option<T>>
 // The suffix has 4 symbols
 // N_N_
 // ^array
@@ -713,20 +809,24 @@ where
 //    ^array element type
 
 #[doc(hidden)]
-pub fn array_insert__N_<T>(array: Vec<T>, pos: i32, value: Option<T>) -> Vec<Option<T>>
+pub fn array_insert__N_<T>(array: Array<T>, pos: i32, value: Option<T>) -> Array<Option<T>>
 where
     T: Clone + Debug,
 {
-    let array: Vec<Option<T>> = array.into_iter().map(|x| Some(x)).collect();
+    let array: Array<Option<T>> = array
+        .iter()
+        .map(|x| Some(x.clone()))
+        .collect::<Vec<Option<T>>>()
+        .into();
     array_insert__NN(array, pos, value)
 }
 
 #[doc(hidden)]
 pub fn array_insert_NN_<T>(
-    array: Vec<T>,
+    array: Array<T>,
     pos: Option<i32>,
     value: Option<T>,
-) -> Option<Vec<Option<T>>>
+) -> Option<Array<Option<T>>>
 where
     T: Clone + Debug,
 {
@@ -736,7 +836,7 @@ where
 
 #[doc(hidden)]
 #[allow(clippy::needless_range_loop)]
-pub fn array_insert__NN<T>(array: Vec<Option<T>>, pos: i32, value: Option<T>) -> Vec<Option<T>>
+pub fn array_insert__NN<T>(array: Array<Option<T>>, pos: i32, value: Option<T>) -> Array<Option<T>>
 where
     T: Clone + Debug,
 {
@@ -763,7 +863,7 @@ where
                 result.push(None);
             }
             result.extend(array.iter().cloned());
-            return result;
+            return result.into();
         }
     } else if abs > len {
         // extend the array and insert at end
@@ -773,22 +873,22 @@ where
             result.push(None);
         }
         result.push(value);
-        return result;
+        return result.into();
     }
 
     let mut result = Vec::<Option<T>>::with_capacity(len + 1);
     result.extend_from_slice(&array[..(abs - 1)]);
     result.push(value);
     result.extend_from_slice(&array[(abs - 1)..len]);
-    result
+    result.into()
 }
 
 #[doc(hidden)]
 pub fn array_insert_NNN<T>(
-    array: Vec<Option<T>>,
+    array: Array<Option<T>>,
     pos: Option<i32>,
     value: Option<T>,
-) -> Option<Vec<Option<T>>>
+) -> Option<Array<Option<T>>>
 where
     T: Clone + Debug,
 {
@@ -798,10 +898,10 @@ where
 
 #[doc(hidden)]
 pub fn array_insertN_N_<T>(
-    array: Option<Vec<T>>,
+    array: Option<Array<T>>,
     pos: i32,
     value: Option<T>,
-) -> Option<Vec<Option<T>>>
+) -> Option<Array<Option<T>>>
 where
     T: Clone + Debug,
 {
@@ -811,10 +911,10 @@ where
 
 #[doc(hidden)]
 pub fn array_insertNNN_<T>(
-    array: Option<Vec<T>>,
+    array: Option<Array<T>>,
     pos: Option<i32>,
     value: Option<T>,
-) -> Option<Vec<Option<T>>>
+) -> Option<Array<Option<T>>>
 where
     T: Clone + Debug,
 {
@@ -825,10 +925,10 @@ where
 
 #[doc(hidden)]
 pub fn array_insertN_NN<T>(
-    array: Option<Vec<Option<T>>>,
+    array: Option<Array<Option<T>>>,
     pos: i32,
     value: Option<T>,
-) -> Option<Vec<Option<T>>>
+) -> Option<Array<Option<T>>>
 where
     T: Clone + Debug,
 {
@@ -838,10 +938,10 @@ where
 
 #[doc(hidden)]
 pub fn array_insertNNNN<T>(
-    array: Option<Vec<Option<T>>>,
+    array: Option<Array<Option<T>>>,
     pos: Option<i32>,
     value: Option<T>,
-) -> Option<Vec<Option<T>>>
+) -> Option<Array<Option<T>>>
 where
     T: Clone + Debug,
 {

@@ -60,7 +60,6 @@ use dbsp::{
     utils::*,
     DBData, OrdIndexedZSet, OrdZSet, OutputHandle, SetHandle, ZSetHandle, ZWeight,
 };
-use itertools::Itertools;
 use metrics::{counter, Counter};
 use num::{PrimInt, ToPrimitive};
 use num_traits::{Pow, Zero};
@@ -228,12 +227,12 @@ pub(crate) use some_function2;
 // The generic type may be a part of the type of both parameters, just one of
 // them or even the return type
 macro_rules! some_generic_function2 {
-    ($func_name:ident, $generic_type: ty, $arg_type0: ty, $arg_type1: ty, $trait_bound:ident, $ret_type: ty) => {
+    ($func_name:ident, $generic_type: ty, $arg_type0: ty, $arg_type1: ty, $bound: tt $(+ $bounds: tt)*, $ret_type: ty) => {
         ::paste::paste! {
             #[doc(hidden)]
             pub fn [<$func_name NN>]<$generic_type>( arg0: Option<$arg_type0>, arg1: Option<$arg_type1> ) -> Option<$ret_type>
             where
-                $generic_type: $trait_bound,
+                $generic_type: $bound $(+ $bounds)*,
             {
                 let arg0 = arg0?;
                 let arg1 = arg1?;
@@ -243,7 +242,7 @@ macro_rules! some_generic_function2 {
             #[doc(hidden)]
             pub fn [<$func_name _N>]<$generic_type>( arg0: $arg_type0, arg1: Option<$arg_type1> ) -> Option<$ret_type>
             where
-                $generic_type: $trait_bound,
+                $generic_type: $bound $(+ $bounds)*,
             {
                 let arg1 = arg1?;
                 Some([<$func_name __>](arg0, arg1))
@@ -252,7 +251,7 @@ macro_rules! some_generic_function2 {
             #[doc(hidden)]
             pub fn [<$func_name N_>]<$generic_type>( arg0: Option<$arg_type0>, arg1: $arg_type1 ) -> Option<$ret_type>
             where
-                $generic_type: $trait_bound,
+                $generic_type: $bound $(+ $bounds)*,
             {
                 let arg0 = arg0?;
                 Some([<$func_name __>](arg0, arg1))
@@ -758,32 +757,6 @@ where
 #[doc(hidden)]
 #[derive(Clone)]
 pub struct ConcatSemigroup<V>(PhantomData<V>);
-
-#[doc(hidden)]
-impl<V> Semigroup<Vec<V>> for ConcatSemigroup<Vec<V>>
-where
-    V: Clone + Ord,
-{
-    #[doc(hidden)]
-    fn combine(left: &Vec<V>, right: &Vec<V>) -> Vec<V> {
-        left.iter().merge(right).cloned().collect()
-    }
-}
-
-#[doc(hidden)]
-impl<V> Semigroup<Option<Vec<V>>> for ConcatSemigroup<Option<Vec<V>>>
-where
-    V: Clone + Ord,
-{
-    #[doc(hidden)]
-    fn combine(left: &Option<Vec<V>>, right: &Option<Vec<V>>) -> Option<Vec<V>> {
-        match (left, right) {
-            (None, _) => right.clone(),
-            (_, None) => left.clone(),
-            (Some(left), Some(right)) => Some(left.iter().merge(right).cloned().collect()),
-        }
-    }
-}
 
 #[doc(hidden)]
 #[inline(always)]

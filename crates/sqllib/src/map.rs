@@ -7,6 +7,25 @@ use std::sync::Arc;
 
 pub type Map<K, V> = Arc<BTreeMap<K, V>>;
 
+/// Convert a Rust BTreeMap to a SQL Map
+pub fn to_map<K, V>(data: BTreeMap<K, V>) -> Map<K, V> {
+    Arc::new(data)
+}
+
+#[doc(hidden)]
+pub fn to_mapN<K, V>(data: Option<BTreeMap<K, V>>) -> Option<Map<K, V>> {
+    data.map(|data| to_map(data))
+}
+
+/// Convert a SQL Map to a Rust BTreeMap
+pub fn to_btree<K, V>(data: Map<K, V>) -> BTreeMap<K, V>
+where
+    K: Clone,
+    V: Clone,
+{
+    (*data).clone()
+}
+
 #[doc(hidden)]
 fn insert_or_keep_largest<K, V>(map: &mut BTreeMap<K, V>, key: &K, value: &V)
 where
@@ -65,7 +84,7 @@ where
     K: Ord + Clone,
     F: Fn(&V0) -> V1,
 {
-    let result: BTreeMap<K, V1> = (**map)
+    let result: BTreeMap<K, V1> = (*map)
         .iter()
         .map(move |(key, value)| (key.clone(), f(value)))
         .collect();
@@ -205,17 +224,17 @@ where
 }
 
 #[doc(hidden)]
-pub fn cardinalityMap<I, T>(value: &Map<I, T>) -> i32 {
+pub fn cardinalityMap<I, T>(value: Map<I, T>) -> i32 {
     value.len() as i32
 }
 
 #[doc(hidden)]
-pub fn cardinalityMapN<I, T>(value: &Option<Map<I, T>>) -> Option<i32> {
-    value.as_ref().map(|map| cardinalityMap(map))
+pub fn cardinalityMapN<I, T>(value: Option<Map<I, T>>) -> Option<i32> {
+    value.as_ref().map(|map| cardinalityMap(map.clone()))
 }
 
 #[doc(hidden)]
-pub fn map_contains_key__<I, T>(value: &Map<I, T>, key: I) -> bool
+pub fn map_contains_key__<I, T>(value: Map<I, T>, key: I) -> bool
 where
     I: Ord,
     T: Clone,
@@ -224,16 +243,18 @@ where
 }
 
 #[doc(hidden)]
-pub fn map_contains_keyN_<I, T>(value: &Option<Map<I, T>>, key: I) -> Option<bool>
+pub fn map_contains_keyN_<I, T>(value: Option<Map<I, T>>, key: I) -> Option<bool>
 where
     I: Ord,
     T: Clone,
 {
-    value.as_ref().map(|map| map_contains_key__(map, key))
+    value
+        .as_ref()
+        .map(|map| map_contains_key__(map.clone(), key))
 }
 
 #[doc(hidden)]
-pub fn map_contains_keyNN<I, T>(value: &Option<Map<I, T>>, key: Option<I>) -> Option<bool>
+pub fn map_contains_keyNN<I, T>(value: Option<Map<I, T>>, key: Option<I>) -> Option<bool>
 where
     I: Ord,
     T: Clone,
@@ -243,7 +264,7 @@ where
 }
 
 #[doc(hidden)]
-pub fn map_contains_key_N<I, T>(value: &Map<I, T>, key: Option<I>) -> Option<bool>
+pub fn map_contains_key_N<I, T>(value: Map<I, T>, key: Option<I>) -> Option<bool>
 where
     I: Ord,
     T: Clone,
