@@ -25,6 +25,7 @@ use rand::{seq::index::sample, Rng};
 use rkyv::{ser::Serializer, Archive, Archived, Deserialize, Fallible, Serialize};
 use size_of::SizeOf;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::{
     cmp::Ordering,
     fmt,
@@ -141,15 +142,17 @@ where
     }
 }
 
-type RawValBatch<K, V, T, R> = Reader<(
-    &'static K,
-    &'static DynUnit,
-    (
-        &'static V,
-        &'static DynWeightedPairs<DynDataTyped<T>, R>,
-        (),
-    ),
-)>;
+type RawValBatch<K, V, T, R> = Arc<
+    Reader<(
+        &'static K,
+        &'static DynUnit,
+        (
+            &'static V,
+            &'static DynWeightedPairs<DynDataTyped<T>, R>,
+            (),
+        ),
+    )>,
+>;
 
 type RawKeyCursor<'s, K, V, T, R> = FileCursor<
     's,
@@ -357,12 +360,12 @@ where
     fn from_path(factories: &Self::Factories, path: &Path) -> Result<Self, ReaderError> {
         let any_factory0 = factories.factories0.any_factories();
         let any_factory1 = factories.factories1.any_factories();
-        let file = Reader::open(
+        let file = Arc::new(Reader::open(
             &[&any_factory0, &any_factory1],
             Runtime::buffer_cache,
             &*Runtime::storage_backend().unwrap(),
             path,
-        )?;
+        )?);
         Ok(Self {
             factories: factories.clone(),
             file,
@@ -704,7 +707,7 @@ where
                     }
                 })
         });
-        output.into_reader().unwrap()
+        Arc::new(output.into_reader().unwrap())
     }
 }
 
@@ -732,10 +735,10 @@ where
     fn done(mut self) -> FileValBatch<K, V, T, R> {
         FileValBatch {
             factories: self.factories,
-            file: self.result.take().unwrap_or(
+            file: self.result.take().unwrap_or(Arc::new(
                 Reader::empty(Runtime::buffer_cache, &*Runtime::storage_backend().unwrap())
                     .unwrap(),
-            ),
+            )),
             lower: self.lower,
             upper: self.upper,
         }
@@ -1172,7 +1175,7 @@ where
         }
         FileValBatch {
             factories: self.factories,
-            file: self.writer.into_reader().unwrap(),
+            file: Arc::new(self.writer.into_reader().unwrap()),
             lower,
             upper,
         }
@@ -1242,7 +1245,7 @@ where
         };
         FileValBatch {
             factories: self.factories,
-            file: self.writer.into_reader().unwrap(),
+            file: Arc::new(self.writer.into_reader().unwrap()),
             lower: Antichain::from_elem(self.time),
             upper,
         }

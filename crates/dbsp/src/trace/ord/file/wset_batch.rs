@@ -31,6 +31,7 @@ use std::{
     fmt::{self, Debug},
     ops::Neg,
     path::{Path, PathBuf},
+    sync::Arc,
 };
 
 pub struct FileWSetFactories<K, R>
@@ -145,7 +146,7 @@ where
     #[size_of(skip)]
     factories: FileWSetFactories<K, R>,
     #[size_of(skip)]
-    file: Reader<(&'static K, &'static R, ())>,
+    file: Arc<Reader<(&'static K, &'static R, ())>>,
 }
 
 impl<K, R> Debug for FileWSet<K, R>
@@ -261,7 +262,7 @@ where
         }
         Self {
             factories: self.factories.clone(),
-            file: writer.into_reader().unwrap(),
+            file: Arc::new(writer.into_reader().unwrap()),
         }
     }
 }
@@ -433,12 +434,12 @@ where
 
     fn from_path(factories: &Self::Factories, path: &Path) -> Result<Self, ReaderError> {
         let any_factory0 = factories.file_factories.any_factories();
-        let file = Reader::open(
+        let file = Arc::new(Reader::open(
             &[&any_factory0],
             Runtime::buffer_cache,
             &*Runtime::storage_backend().unwrap(),
             path,
-        )?;
+        )?);
 
         Ok(Self {
             factories: factories.clone(),
@@ -496,7 +497,7 @@ where
     fn done(self) -> FileWSet<K, R> {
         FileWSet {
             factories: self.factories.clone(),
-            file: self.writer.into_reader().unwrap(),
+            file: Arc::new(self.writer.into_reader().unwrap()),
         }
     }
 
@@ -837,7 +838,7 @@ where
     fn done(self) -> FileWSet<K, R> {
         FileWSet {
             factories: self.factories,
-            file: self.writer.into_reader().unwrap(),
+            file: Arc::new(self.writer.into_reader().unwrap()),
         }
     }
 

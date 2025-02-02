@@ -1108,17 +1108,6 @@ impl ImmutableFileRef {
     }
 }
 
-#[derive(Debug)]
-struct ReaderInner<T> {
-    file: ImmutableFileRef,
-    bloom_filter: BloomFilter,
-    columns: Vec<Column>,
-
-    /// `fn() -> T` is `Send` and `Sync` regardless of `T`.  See
-    /// <https://doc.rust-lang.org/nomicon/phantom-data.html>.
-    _phantom: PhantomData<fn() -> T>,
-}
-
 /// Layer file column specification.
 ///
 /// A column specification must take the form `K0, A0, N0`, where `(K0, A0)` is
@@ -1159,7 +1148,15 @@ where
 /// `T` in `Reader<T>` must be a [`ColumnSpec`] that specifies the key and
 /// auxiliary data types for all of the columns in the file to be read.
 #[derive(Debug)]
-pub struct Reader<T>(Arc<ReaderInner<T>>);
+pub struct Reader<T> {
+    file: ImmutableFileRef,
+    bloom_filter: BloomFilter,
+    columns: Vec<Column>,
+
+    /// `fn() -> T` is `Send` and `Sync` regardless of `T`.  See
+    /// <https://doc.rust-lang.org/nomicon/phantom-data.html>.
+    _phantom: PhantomData<fn() -> T>,
+}
 
 impl<T> Reader<T>
 where
@@ -1222,12 +1219,12 @@ where
             }
         }
 
-        Ok(Self(Arc::new(ReaderInner {
+        Ok(Self {
             file: ImmutableFileRef::new(cache, file_handle, path, file_trailer.compression, stats),
             columns,
             bloom_filter,
             _phantom: PhantomData,
-        })))
+        })
     }
 
     /// Create and returns a new `Reader` that has no rows.
@@ -1239,7 +1236,7 @@ where
         storage_backend: &dyn StorageBackend,
     ) -> Result<Self, Error> {
         let (file_handle, path) = storage_backend.create()?.complete()?;
-        Ok(Self(Arc::new(ReaderInner {
+        Ok(Self {
             file: ImmutableFileRef::new(
                 cache,
                 file_handle,
@@ -1251,12 +1248,12 @@ where
                 .expected_items(0),
             columns: (0..T::n_columns()).map(|_| Column::empty()).collect(),
             _phantom: PhantomData,
-        })))
+        })
     }
 
     /// Marks the file of the reader as being part of a checkpoint.
     pub fn mark_for_checkpoint(&self) {
-        self.0.file.file_handle.mark_for_checkpoint();
+        self.file.file_handle.mark_for_checkpoint();
     }
 
     /// Instantiates a reader given an existing path.
@@ -1306,36 +1303,30 @@ where
     /// may be visited in total by calling `next_column()` on each of the rows
     /// in the previous column.
     pub fn n_rows(&self, column: usize) -> u64 {
-        self.0.columns[column].n_rows
+        self.columns[column].n_rows
     }
 
     /// Returns the path on persistent storage for the file of the underlying
     /// reader.
     pub fn path(&self) -> PathBuf {
-        self.0.file.path.clone()
+        self.file.path.clone()
     }
 
     /// Returns the size of the underlying file in bytes.
     pub fn byte_size(&self) -> Result<u64, Error> {
-        Ok(self.0.file.file_handle.get_size()?)
+        Ok(self.file.file_handle.get_size()?)
     }
 
     /// Evict this file from the cache.
     #[cfg(test)]
     pub fn evict(&self) {
-        self.0.file.evict();
+        self.file.evict();
     }
 
     /// Returns the cache statistics for this file.  The statistics are specific
     /// to this file's cache behavior for reads.
     pub fn cache_stats(&self) -> CacheStats {
-        self.0.file.stats.read()
-    }
-}
-
-impl<T> Clone for Reader<T> {
-    fn clone(&self) -> Self {
-        Self(self.0.clone())
+        self.file.stats.read()
     }
 }
 
@@ -1347,14 +1338,13 @@ where
 {
     /// Asks the bloom filter of the reader if we have the key.
     pub fn maybe_contains_key(&self, key: &K) -> bool {
-        self.0
-            .bloom_filter
+        self.bloom_filter
             .contains(&key.default_hash().to_le_bytes())
     }
 
     /// Returns a [`RowGroup`] for all of the rows in column 0.
     pub fn rows(&self) -> RowGroup<K, A, N, (&'static K, &'static A, N)> {
-        RowGroup::new(self, 0, 0..self.0.columns[0].n_rows)
+        RowGroup::new(self, 0, 0..self.columns[0].n_rows)
     }
 }
 
@@ -1934,7 +1924,7 @@ where
         Self::for_row_from_ancestor(
             row_group.reader,
             Vec::new(),
-            row_group.reader.0.columns[row_group.column]
+            row_group.reader.columns[row_group.column]
                 .root
                 .clone()
                 .unwrap(),
@@ -1948,7 +1938,7 @@ where
         row: u64,
     ) -> Result<Self, Error> {
         loop {
-            let block = node.read(&reader.0.file)?;
+            let block = node.read(&reader.file)?;
             let next = block.lookup_row(row)?;
             match block {
                 TreeBlock::Data(data) => {
@@ -2035,11 +2025,11 @@ where
         C: Fn(&K) -> Ordering,
     {
         let mut indexes = Vec::new();
-        let Some(mut node) = row_group.reader.0.columns[row_group.column].root.clone() else {
+        let Some(mut node) = row_group.reader.columns[row_group.column].root.clone() else {
             return Ok(None);
         };
         loop {
-            match node.read(&row_group.reader.0.file)? {
+            match node.read(&row_group.reader.file)? {
                 TreeBlock::Index(index_block) => {
                     let Some(child_idx) =
                         index_block.find_best_match(&row_group.rows, compare, bias)
@@ -2138,7 +2128,7 @@ where
             self.indexes.push(index_block);
 
             loop {
-                match node.read::<K, A>(&row_group.reader.0.file)? {
+                match node.read::<K, A>(&row_group.reader.file)? {
                     TreeBlock::Index(index_block) => {
                         let Some(child_idx) =
                             index_block.find_best_match(&row_group.rows, compare, Less)
