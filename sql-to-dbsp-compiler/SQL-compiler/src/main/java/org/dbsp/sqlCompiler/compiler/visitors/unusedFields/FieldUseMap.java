@@ -350,6 +350,13 @@ public class FieldUseMap {
             }
             return new BitList(this.getTupleType(), fields);
         }
+
+        public FieldInfo slice(int start, int endExclusive) {
+            assert (endExclusive >= start);
+            DBSPTypeTupleBase type = this.getTupleType().slice(start, endExclusive);
+            List<FieldInfo> fields = this.fields.subList(start, endExclusive);
+            return new BitList(type, fields);
+        }
     }
 
     private final FieldInfo fieldInfo;
@@ -450,5 +457,9 @@ public class FieldUseMap {
             current = current.reduce(maps.get(i));
         }
         return current;
+    }
+
+    public FieldUseMap slice(int start, int endExclusive) {
+        return new FieldUseMap(this.fieldInfo.to(BitList.class).slice(start, endExclusive));
     }
 }

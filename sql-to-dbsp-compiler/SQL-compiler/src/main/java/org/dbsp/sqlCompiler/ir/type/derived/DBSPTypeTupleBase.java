@@ -129,4 +129,8 @@ public abstract class DBSPTypeTupleBase extends DBSPType {
         DBSPExpression result = new DBSPTupleExpression(maxes, false);
         return result.closure(left, right);
     }
+
+    public DBSPTypeTupleBase slice(int start, int endExclusive) {
+        return this.makeRelatedTupleType(Linq.list(this.tupFields).subList(start, endExclusive));
+    }
 }
