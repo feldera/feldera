@@ -112,6 +112,20 @@ const sidebars = {
                         'use_cases/fine_grained_authorization/dynamic'
                     ]
                 },
+                {
+                    type: 'category',
+                    label: 'OpenTelemetry Analysis',
+                    link: {
+                        type: 'doc',
+                        id: 'use_cases/otel/intro'
+                    },
+                    items: [
+                        'use_cases/otel/representing_otel_data',
+                        'use_cases/otel/preprocessing',
+                        'use_cases/otel/insights',
+                        'use_cases/otel/grafana'
+                    ]
+                },
                 'tutorials/rest_api/index',
                 'tutorials/monitoring/index'
             ]
