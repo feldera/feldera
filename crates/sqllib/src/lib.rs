@@ -27,6 +27,7 @@ pub mod timestamp;
 pub mod uuid;
 pub mod variant;
 
+pub use array::Array;
 pub use binary::ByteArray;
 #[doc(hidden)]
 pub use geopoint::GeoPoint;
