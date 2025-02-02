@@ -287,6 +287,10 @@ where
         self.upper.as_ref()
     }
 
+    fn maybe_contains_key(&self, key: &K) -> bool {
+        self.file.maybe_contains_key(key)
+    }
+
     fn sample_keys<RG>(&self, rng: &mut RG, sample_size: usize, output: &mut DynVec<Self::Key>)
     where
         RG: Rng,
@@ -739,6 +743,10 @@ where
         F: Fn(&mut RawKeyCursor<'s, K, T, R>) -> Result<(), ReaderError>,
     {
         op(&mut self.cursor).unwrap();
+        self.moved_key();
+    }
+
+    fn moved_key(&mut self) {
         let key_valid = unsafe { self.cursor.key(&mut self.key) }.is_some();
         self.val_valid = key_valid;
     }
@@ -820,8 +828,12 @@ where
     }
 
     fn seek_key_exact(&mut self, key: &K) -> bool {
-        self.seek_key(key);
-        self.key_valid() && self.key().eq(key)
+        let found =
+            self.batch.maybe_contains_key(key) && unsafe { self.cursor.seek_exact(key) }.unwrap();
+        if found {
+            self.moved_key();
+        }
+        found
     }
 
     fn seek_key_with(&mut self, predicate: &dyn Fn(&K) -> bool) {
@@ -841,6 +853,11 @@ where
     }
 
     fn seek_val(&mut self, _val: &DynUnit) {}
+
+    fn seek_val_exact(&mut self, _val: &DynUnit) -> bool {
+        self.val_valid = true;
+        true
+    }
 
     fn seek_val_with(&mut self, predicate: &dyn Fn(&DynUnit) -> bool) {
         if !predicate(&()) {

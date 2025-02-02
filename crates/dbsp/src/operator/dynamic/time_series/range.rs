@@ -356,10 +356,6 @@ where
         unimplemented!()
     }
 
-    fn seek_key_exact(&mut self, _key: &DynDataTyped<TS>) -> bool {
-        unimplemented!()
-    }
-
     fn seek_key_with(&mut self, _predicate: &dyn Fn(&DynDataTyped<TS>) -> bool) {
         unimplemented!()
     }

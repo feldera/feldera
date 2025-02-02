@@ -39,15 +39,25 @@ enum Direction {
 ///
 /// # Visiting keys
 ///
-/// A cursor visits keys in forward or reverse order, which is set as a mode.
-/// Initially, a cursor is in the forward mode, positioned on the first key (if
-/// the collection is non-empty).  A cursor in the forward mode can move and
-/// seek forward with, e.g., [`step_key`] and [`seek_key`], but not backward.
-/// The direction can be reversed using [`fast_forward_keys`], after which the
-/// cursor can move and seek backward only, e.g. with [`step_key_reverse`] and
-/// [`seek_key_reverse`].  The client may call [`rewind_keys`] and
-/// [`fast_forward_keys`] as many times as necessary to reposition the cursor to
-/// the first or last key in the forward or reverse mode, respectively.
+/// A cursor visits keys in one of three key direction modes:
+///
+/// * Forward key mode. A new cursor is initially in forward mode and positioned
+///   on the first key (if the collection is non-empty).  A cursor in the
+///   forward mode can move and seek forward with, e.g., [`step_key`] and
+///   [`seek_key`], but not backward.
+///
+/// * Backward key mode.  The direction can be reversed using
+///   [`fast_forward_keys`], after which the cursor can move and seek backward
+///   only, e.g. with [`step_key_reverse`] and [`seek_key_reverse`].
+///
+/// * Exact key mode. A cursor can be positioned on a particular key exactly
+///   with [`seek_key_exact`]. A cursor in exact mode may not move or seek in
+///   any direction.
+///
+/// The client may call [`rewind_keys`], [`fast_forward_keys`], and
+/// [`seek_key_exact`] as many times as necessary to reposition the cursor to
+/// the first or last key in the forward or reverse mode, or to one particular
+/// key, respectively.
 ///
 /// A cursor can have a valid position on a key or an invalid position after the
 /// last key (in the forward mode) or before the first key (in the reverse
@@ -56,17 +66,27 @@ enum Direction {
 ///
 /// # Visiting values within a key
 ///
-/// A cursor also visits values in a forward or reverse order.  Whenever a
-/// cursor moves to a new key, its value mode is reset to forward order and its
-/// value position is set to the first value in the key.  This is true even if
-/// the cursor is visiting keys in reverse order.  In forward order mode, the
-/// cursor can move and seek forward within the values, e.g. with [`step_val`]
-/// and [`seek_val`], but not backward.  The value direction may be reversed
-/// with [`fast_forward_vals`], after which the cursor may move and seek only
-/// backward within the values, e.g. with [`step_val_reverse`] and
-/// [`seek_val_reverse`].  The client may call [`rewind_vals`] and
-/// [`fast_forward_vals`] as many times as necessary to reposition the cursor to
-/// the first or last value in the forward or reverse mode, respectively.
+/// A cursor also has a value direction mode:
+///
+/// * Forward value order mode.  Whenever a cursor moves to a new key, its value
+///   mode is reset to forward order and its value position is set to the first
+///   value in the key.  This is true even if the cursor is visiting keys in
+///   reverse order. The cursor can move and seek forward within the values,
+///   e.g. with [`step_val`] and [`seek_val`], but not backward.
+///
+/// * Backward value order mode. The value direction may be reversed with
+///   [`fast_forward_vals`], after which the cursor may move and seek only
+///   backward within the values, e.g. with [`step_val_reverse`] and
+///   [`seek_val_reverse`].
+///
+/// * Exact value mode. A cursor can be positioned on a particular value exactly
+///   with [`seek_val_exact`]. A cursor in exact value mode may not move or seek
+///   the value in any direction.
+///
+/// The client may call [`rewind_vals`], [`fast_forward_vals`], and
+/// [`seek_val_exact`] as many times as necessary to reposition the cursor to
+/// the first or last value in the forward or reverse mode, or on one particular
+/// value, respectively.
 ///
 /// A cursor with a valid key position can have a valid value position on a
 /// value or an invalid value position after the last value (in forward mode) or
@@ -100,12 +120,14 @@ enum Direction {
 ///
 /// [`step_key`]: `Self::step_key`
 /// [`seek_key`]: `Self::seek_key`
+/// [`seek_key_exact`]: `Self::seek_key_exact`
 /// [`step_key_reverse`]: `Self::step_key_reverse`
 /// [`seek_key_reverse`]: `Self::seek_key_reverse`
 /// [`rewind_keys`]: `Self::rewind_keys`
 /// [`fast_forward_keys`]: `Self::fast_forward_keys`
 /// [`step_val`]: `Self::step_val`
 /// [`seek_val`]: `Self::seek_val`
+/// [`seek_val_exact`]: `Self::seek_val_exact`
 /// [`step_val_reverse`]: `Self::step_val_reverse`
 /// [`seek_val_reverse`]: `Self::seek_val_reverse`
 /// [`rewind_vals`]: `Self::rewind_vals`
@@ -191,7 +213,20 @@ pub trait Cursor<K: ?Sized, V: ?Sized, T, R: ?Sized> {
     /// might be desirable to call [`rewind_keys`](Self::rewind_keys) first.
     fn seek_key(&mut self, key: &K);
 
-    fn seek_key_exact(&mut self, key: &K) -> bool;
+    /// Moves the cursor to `key` and returns true, if `key` is present in the
+    /// batch.  Otherwise, returns false and the cursor's new position is
+    /// unspecified.
+    ///
+    /// The cursor's previous position is not significant. The cursor is changed
+    /// into exact key mode.
+    fn seek_key_exact(&mut self, key: &K) -> bool
+    where
+        K: PartialEq,
+    {
+        self.rewind_keys();
+        self.seek_key(key);
+        self.get_key() == Some(key)
+    }
 
     /// Advances the cursor to the first key that satisfies `predicate`.
     /// Assumes that `predicate` remains true once it turns true.
@@ -211,6 +246,22 @@ pub trait Cursor<K: ?Sized, V: ?Sized, T, R: ?Sized> {
 
     /// Moves the cursor to the previous value.
     fn step_val_reverse(&mut self);
+
+    /// Moves the value cursor to `val` and returns true, if `val` is present in
+    /// the current key.  Otherwise, returns false and the cursor's new value
+    /// position is unspecified. The current key is unchanged regardless of
+    /// success.
+    ///
+    /// The cursor's previous value position is not significant. The cursor is
+    /// changed into exact value mode.
+    fn seek_val_exact(&mut self, val: &V) -> bool
+    where
+        V: PartialEq,
+    {
+        self.rewind_vals();
+        self.seek_val(val);
+        self.get_val() == Some(val)
+    }
 
     /// Advances the cursor to the specified value.
     fn seek_val(&mut self, val: &V);
@@ -418,7 +469,10 @@ where
         self.0.seek_key(key)
     }
 
-    fn seek_key_exact(&mut self, key: &K) -> bool {
+    fn seek_key_exact(&mut self, key: &K) -> bool
+    where
+        K: PartialEq,
+    {
         self.0.seek_key_exact(key)
     }
 
@@ -440,6 +494,13 @@ where
 
     fn seek_val(&mut self, val: &V) {
         self.0.seek_val(val)
+    }
+
+    fn seek_val_exact(&mut self, val: &V) -> bool
+    where
+        V: PartialEq,
+    {
+        self.0.seek_val_exact(val)
     }
 
     fn seek_val_with(&mut self, predicate: &dyn Fn(&V) -> bool) {

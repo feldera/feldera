@@ -641,6 +641,9 @@ where
         F: Fn(&mut RawCursor<'s, K, R>) -> Result<(), ReaderError>,
     {
         op(&mut self.cursor).unwrap();
+        self.moved_key();
+    }
+    fn moved_key(&mut self) {
         self.valid = unsafe { self.cursor.item((&mut self.key, &mut self.diff)) }.is_some();
     }
 }
@@ -695,11 +698,12 @@ where
     }
 
     fn seek_key_exact(&mut self, key: &K) -> bool {
-        if !self.wset.maybe_contains_key(key) {
-            return false;
+        let found =
+            self.wset.maybe_contains_key(key) && unsafe { self.cursor.seek_exact(key) }.unwrap();
+        if found {
+            self.moved_key();
         }
-        self.seek_key(key);
-        self.key_valid() && self.key().eq(key)
+        found
     }
 
     fn seek_key_with(&mut self, predicate: &dyn Fn(&K) -> bool) {
@@ -719,6 +723,11 @@ where
     }
 
     fn seek_val(&mut self, _val: &DynUnit) {}
+
+    fn seek_val_exact(&mut self, _val: &DynUnit) -> bool {
+        self.valid = true;
+        true
+    }
 
     fn seek_val_with(&mut self, predicate: &dyn Fn(&DynUnit) -> bool) {
         if !predicate(&()) {

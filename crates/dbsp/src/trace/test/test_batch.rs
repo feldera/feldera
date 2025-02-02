@@ -1063,11 +1063,6 @@ where
         }
     }
 
-    fn seek_key_exact(&mut self, key: &K) -> bool {
-        self.seek_key(key);
-        self.key_valid() && self.key().eq(key)
-    }
-
     fn seek_key_with(&mut self, _predicate: &dyn Fn(&K) -> bool) {
         todo!()
     }

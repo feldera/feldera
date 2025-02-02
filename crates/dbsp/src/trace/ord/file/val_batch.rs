@@ -310,6 +310,10 @@ where
         self.upper.as_ref()
     }
 
+    fn maybe_contains_key(&self, key: &K) -> bool {
+        self.file.maybe_contains_key(key)
+    }
+
     fn sample_keys<RG>(&self, rng: &mut RG, sample_size: usize, output: &mut DynVec<Self::Key>)
     where
         RG: Rng,
@@ -768,6 +772,7 @@ where
     T: Timestamp,
     R: WeightTrait + ?Sized,
 {
+    batch: &'s FileValBatch<K, V, T, R>,
     timediff_factory: &'static dyn Factory<DynWeightedPairs<DynDataTyped<T>, R>>,
     weight_factory: &'static dyn Factory<R>,
     key_cursor: RawKeyCursor<'s, K, V, T, R>,
@@ -808,6 +813,7 @@ where
 {
     fn clone(&self) -> Self {
         Self {
+            batch: self.batch,
             timediff_factory: self.timediff_factory,
             weight_factory: self.weight_factory,
             key_cursor: self.key_cursor.clone(),
@@ -837,6 +843,7 @@ where
         let key_valid = unsafe { key_cursor.key(&mut key) }.is_some();
         let val_valid = unsafe { val_cursor.key(&mut val) }.is_some();
         Self {
+            batch,
             timediff_factory: batch.factories.timediff_factory,
             weight_factory: batch.factories.weight_factory,
             key_cursor,
@@ -853,15 +860,22 @@ where
         F: Fn(&mut RawKeyCursor<'s, K, V, T, R>),
     {
         op(&mut self.key_cursor);
+        self.moved_key();
+    }
+    fn moved_key(&mut self) {
         self.val_cursor = self.key_cursor.next_column().unwrap().first().unwrap();
         self.key_valid = unsafe { self.key_cursor.key(&mut self.key) }.is_some();
-        self.val_valid = unsafe { self.val_cursor.key(&mut self.val) }.is_some();
+        self.val_cursor = self.key_cursor.next_column().unwrap().first().unwrap();
+        self.moved_val();
     }
     fn move_val<F>(&mut self, op: F)
     where
         F: Fn(&mut RawValCursor<'s, K, V, T, R>),
     {
         op(&mut self.val_cursor);
+        self.moved_val();
+    }
+    fn moved_val(&mut self) {
         self.val_valid = unsafe { self.val_cursor.key(&mut self.val) }.is_some();
     }
     fn times<'a>(
@@ -961,8 +975,12 @@ where
     }
 
     fn seek_key_exact(&mut self, key: &K) -> bool {
-        self.seek_key(key);
-        self.key_valid() && self.key().eq(key)
+        let found = self.batch.maybe_contains_key(key)
+            && unsafe { self.key_cursor.seek_exact(key) }.unwrap();
+        if found {
+            self.moved_key();
+        }
+        found
     }
 
     fn seek_key_with(&mut self, predicate: &dyn Fn(&K) -> bool) {
@@ -981,6 +999,16 @@ where
     }
     fn seek_val(&mut self, val: &V) {
         self.move_val(|val_cursor| unsafe { val_cursor.advance_to_value_or_larger(val) }.unwrap());
+    }
+    fn seek_val_exact(&mut self, val: &V) -> bool
+    where
+        V: PartialEq,
+    {
+        let found = unsafe { self.val_cursor.seek_exact(val) }.unwrap();
+        if found {
+            self.moved_val();
+        }
+        found
     }
     fn seek_val_with(&mut self, predicate: &dyn Fn(&V) -> bool) {
         self.move_val(|val_cursor| unsafe { val_cursor.seek_forward_until(&predicate) }.unwrap());

@@ -24,7 +24,9 @@ where
     current_key: Vec<usize>,
     current_val: Vec<usize>,
     #[cfg(debug_assertions)]
-    val_direction: Direction,
+    key_direction: Option<Direction>,
+    #[cfg(debug_assertions)]
+    val_direction: Option<Direction>,
     weight: Box<R>,
     weight_factory: &'static dyn Factory<R>,
     __type: PhantomData<fn(&K, &V, &T, &R)>,
@@ -43,12 +45,56 @@ where
             current_key: self.current_key.clone(),
             current_val: self.current_val.clone(),
             #[cfg(debug_assertions)]
+            key_direction: self.key_direction,
+            #[cfg(debug_assertions)]
             val_direction: self.val_direction,
             weight: clone_box(&self.weight),
             weight_factory: self.weight_factory,
             __type: PhantomData,
         }
     }
+}
+
+#[cfg(debug_assertions)]
+impl<K, V, T, R, C> CursorList<K, V, T, R, C>
+where
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+    C: Cursor<K, V, T, R>,
+{
+    fn set_key_direction(&mut self, direction: Option<Direction>) {
+        self.key_direction = direction;
+    }
+
+    fn assert_key_direction(&self, direction: Option<Direction>) {
+        debug_assert_eq!(self.key_direction, direction);
+    }
+
+    fn set_val_direction(&mut self, direction: Option<Direction>) {
+        self.val_direction = direction;
+    }
+
+    fn assert_val_direction(&self, direction: Option<Direction>) {
+        debug_assert_eq!(self.val_direction, direction);
+    }
+}
+
+#[cfg(not(debug_assertions))]
+impl<K, V, T, R, C> CursorList<K, V, T, R, C>
+where
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+    C: Cursor<K, V, T, R>,
+{
+    fn set_key_direction(&mut self, _direction: Option<Direction>) {}
+
+    fn assert_key_direction(&self, _direction: Option<Direction>) {}
+
+    fn set_val_direction(&mut self, _direction: Option<Direction>) {}
+
+    fn assert_val_direction(&self, _direction: Option<Direction>) {}
 }
 
 impl<K, V, T, R, C> CursorList<K, V, T, R, C>
@@ -65,7 +111,9 @@ where
             current_key: Vec::new(),
             current_val: Vec::new(),
             #[cfg(debug_assertions)]
-            val_direction: Direction::Forward,
+            key_direction: Some(Direction::Forward),
+            #[cfg(debug_assertions)]
+            val_direction: Some(Direction::Forward),
             weight: weight_factory.default_box(),
             weight_factory,
             __type: PhantomData,
@@ -74,22 +122,6 @@ where
         result.minimize_keys();
         result
     }
-
-    #[cfg(debug_assertions)]
-    fn set_val_direction(&mut self, direction: Direction) {
-        self.val_direction = direction;
-    }
-
-    #[cfg(not(debug_assertions))]
-    fn set_val_direction(&mut self, _direction: Direction) {}
-
-    #[cfg(debug_assertions)]
-    fn assert_val_direction(&self, direction: Direction) {
-        debug_assert_eq!(self.val_direction, direction);
-    }
-
-    #[cfg(not(debug_assertions))]
-    fn assert_val_direction(&self, _direction: Direction) {}
 
     // Initialize current_key with the indices of cursors with the minimum key.
     //
@@ -101,7 +133,8 @@ where
     // Once finished, it invokes `minimize_vals()` to ensure the value cursor is
     // in a consistent state as well.
     fn minimize_keys(&mut self) {
-        self.assert_val_direction(Direction::Forward);
+        self.assert_key_direction(Some(Direction::Forward));
+        self.set_val_direction(Some(Direction::Forward));
 
         self.current_key.clear();
 
@@ -129,6 +162,8 @@ where
     }
 
     fn maximize_keys(&mut self) {
+        self.assert_key_direction(Some(Direction::Backward));
+        self.set_val_direction(Some(Direction::Forward));
         self.current_key.clear();
 
         // Determine the index of the cursor with minimum key.
@@ -166,7 +201,7 @@ where
     // far. As it goes, if it observes an improved value it clears the current
     // list, updates the minimum value, and continues.
     fn minimize_vals(&mut self) {
-        self.assert_val_direction(Direction::Forward);
+        self.assert_val_direction(Some(Direction::Forward));
 
         self.current_val.clear();
 
@@ -194,7 +229,7 @@ where
     }
 
     fn maximize_vals(&mut self) {
-        self.assert_val_direction(Direction::Backward);
+        self.assert_val_direction(Some(Direction::Backward));
 
         self.current_val.clear();
 
@@ -300,7 +335,6 @@ where
             self.cursors[index].step_key();
         }
 
-        self.set_val_direction(Direction::Forward);
         self.minimize_keys();
     }
 
@@ -309,7 +343,6 @@ where
             self.cursors[index].step_key_reverse();
         }
 
-        self.set_val_direction(Direction::Forward);
         self.maximize_keys();
     }
 
@@ -318,7 +351,6 @@ where
             cursor.seek_key(key);
         }
 
-        self.set_val_direction(Direction::Forward);
         self.minimize_keys();
     }
 
@@ -334,7 +366,8 @@ where
             }
         }
 
-        self.set_val_direction(Direction::Forward);
+        self.set_key_direction(None);
+        self.set_val_direction(Some(Direction::Forward));
         self.minimize_vals();
 
         result
@@ -345,7 +378,6 @@ where
             cursor.seek_key_with(&predicate);
         }
 
-        self.set_val_direction(Direction::Forward);
         self.minimize_keys();
     }
 
@@ -354,7 +386,6 @@ where
             cursor.seek_key_with_reverse(&predicate);
         }
 
-        self.set_val_direction(Direction::Forward);
         self.maximize_keys();
     }
 
@@ -363,13 +394,10 @@ where
             cursor.seek_key_reverse(key);
         }
 
-        self.set_val_direction(Direction::Forward);
         self.maximize_keys();
     }
 
     fn step_val(&mut self) {
-        self.assert_val_direction(Direction::Forward);
-
         for &index in self.current_val.iter() {
             self.cursors[index].step_val();
         }
@@ -377,17 +405,28 @@ where
     }
 
     fn seek_val(&mut self, val: &V) {
-        self.assert_val_direction(Direction::Forward);
-
         for &index in self.current_key.iter() {
             self.cursors[index].seek_val(val);
         }
         self.minimize_vals();
     }
 
-    fn seek_val_with(&mut self, predicate: &dyn Fn(&V) -> bool) {
-        self.assert_val_direction(Direction::Forward);
+    fn seek_val_exact(&mut self, val: &V) -> bool
+    where
+        V: PartialEq,
+    {
+        self.set_val_direction(None);
 
+        self.current_val.clear();
+        for &index in self.current_key.iter() {
+            if self.cursors[index].seek_val_exact(val) {
+                self.current_val.push(index);
+            }
+        }
+        !self.current_val.is_empty()
+    }
+
+    fn seek_val_with(&mut self, predicate: &dyn Fn(&V) -> bool) {
         for &index in self.current_key.iter() {
             self.cursors[index].seek_val_with(predicate);
         }
@@ -399,7 +438,7 @@ where
             cursor.rewind_keys();
         }
 
-        self.set_val_direction(Direction::Forward);
+        self.set_key_direction(Some(Direction::Forward));
         self.minimize_keys();
     }
 
@@ -408,7 +447,7 @@ where
             cursor.fast_forward_keys();
         }
 
-        self.set_val_direction(Direction::Forward);
+        self.set_key_direction(Some(Direction::Backward));
         self.maximize_keys();
     }
 
@@ -417,13 +456,11 @@ where
             self.cursors[index].rewind_vals();
         }
 
-        self.set_val_direction(Direction::Forward);
+        self.set_val_direction(Some(Direction::Forward));
         self.minimize_vals();
     }
 
     fn step_val_reverse(&mut self) {
-        self.assert_val_direction(Direction::Backward);
-
         for &index in self.current_val.iter() {
             self.cursors[index].step_val_reverse();
         }
@@ -431,8 +468,6 @@ where
     }
 
     fn seek_val_reverse(&mut self, val: &V) {
-        self.assert_val_direction(Direction::Backward);
-
         for &index in self.current_key.iter() {
             self.cursors[index].seek_val_reverse(val);
         }
@@ -440,8 +475,6 @@ where
     }
 
     fn seek_val_with_reverse(&mut self, predicate: &dyn Fn(&V) -> bool) {
-        self.assert_val_direction(Direction::Backward);
-
         for &index in self.current_key.iter() {
             self.cursors[index].seek_val_with_reverse(predicate);
         }
@@ -453,7 +486,7 @@ where
             self.cursors[index].fast_forward_vals();
         }
 
-        self.set_val_direction(Direction::Backward);
+        self.set_val_direction(Some(Direction::Backward));
         self.maximize_vals();
     }
 }

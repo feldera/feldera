@@ -304,9 +304,16 @@ where
         let result2 = self.cursor2.seek_key_exact(key);
 
         self.val_direction = Direction::Forward;
-        self.update_key_order_forward();
-
-        result1 || result2
+        self.key_order = match (result1, result2) {
+            (false, false) => return false,
+            (true, false) => Ordering::Less,
+            (false, true) => Ordering::Greater,
+            (true, true) => {
+                self.update_val_order_forward();
+                Ordering::Equal
+            }
+        };
+        true
     }
 
     fn seek_key_with(&mut self, predicate: &dyn Fn(&K) -> bool) {
@@ -388,6 +395,13 @@ where
             self.cursor2.seek_val(val);
             self.update_val_order_forward();
         }
+    }
+
+    fn seek_val_exact(&mut self, _val: &V) -> bool
+    where
+        V: PartialEq,
+    {
+        todo!()
     }
 
     fn seek_val_reverse(&mut self, val: &V) {

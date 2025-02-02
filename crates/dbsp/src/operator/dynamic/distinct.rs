@@ -346,8 +346,7 @@ where
                     let w = **delta_cursor.weight();
                     let v = delta_cursor.val();
 
-                    integral_cursor.seek_val(v);
-                    let old_weight = if integral_cursor.val_valid() && integral_cursor.val() == v {
+                    let old_weight = if integral_cursor.seek_val_exact(v) {
                         **integral_cursor.weight()
                     } else {
                         HasZero::zero()
@@ -573,65 +572,58 @@ where
         output: &mut Z::Builder,
         item: &mut DynPair<DynPair<Z::Key, Z::Val>, Z::R>,
     ) {
-        if trace_cursor.key_valid() && trace_cursor.key() == key {
-            trace_cursor.seek_val(val);
+        if trace_cursor.key_valid() && trace_cursor.key() == key && trace_cursor.seek_val_exact(val)
+        {
+            // The nearest future timestamp when we need to update this
+            // key/value pair.
+            let mut time_of_interest = None;
 
-            if trace_cursor.val_valid() && trace_cursor.val() == val {
-                // The nearest future timestamp when we need to update this
-                // key/value pair.
-                let mut time_of_interest = None;
+            // Reset all counters to 0.
+            self.clear_distinct_vals();
 
-                // Reset all counters to 0.
-                self.clear_distinct_vals();
-
-                trace_cursor.map_times(&mut |trace_ts, weight| {
-                    // Update weights in `distinct_vals`.
-                    for (ts, total_weight) in self.distinct_vals.iter_mut() {
-                        if let Some(ts) = ts {
-                            if trace_ts.less_equal(ts) {
-                                *total_weight += **weight;
-                            }
+            trace_cursor.map_times(&mut |trace_ts, weight| {
+                // Update weights in `distinct_vals`.
+                for (ts, total_weight) in self.distinct_vals.iter_mut() {
+                    if let Some(ts) = ts {
+                        if trace_ts.less_equal(ts) {
+                            *total_weight += **weight;
                         }
                     }
-                    // Timestamp in the future - update `time_of_interest`.
-                    if !trace_ts.less_equal(time) {
-                        time_of_interest = match time_of_interest.take() {
-                            None => Some(time.join(trace_ts)),
-                            Some(time_of_interest) => {
-                                Some(min(time_of_interest, time.join(trace_ts)))
-                            }
-                        }
-                    }
-                });
-
-                // Compute `dist` for each entry in `distinct_vals`.
-                for (_time, weight) in self.distinct_vals.iter_mut() {
-                    if weight.le0() {
-                        *weight = HasZero::zero();
-                    } else {
-                        *weight = HasOne::one();
+                }
+                // Timestamp in the future - update `time_of_interest`.
+                if !trace_ts.less_equal(time) {
+                    time_of_interest = match time_of_interest.take() {
+                        None => Some(time.join(trace_ts)),
+                        Some(time_of_interest) => Some(min(time_of_interest, time.join(trace_ts))),
                     }
                 }
+            });
 
-                // We have computed `f` at all the relevant points in times; we can now
-                // compute the partial derivative.
-                let output_weight = Self::partial_derivative(&self.distinct_vals);
-                if !output_weight.is_zero() {
-                    output.push_refs(key, val, output_weight.erase());
+            // Compute `dist` for each entry in `distinct_vals`.
+            for (_time, weight) in self.distinct_vals.iter_mut() {
+                if weight.le0() {
+                    *weight = HasZero::zero();
+                } else {
+                    *weight = HasOne::one();
                 }
+            }
 
-                let (kv, weight) = item.split_mut();
-                **weight = HasOne::one();
-                kv.from_refs(key, val);
+            // We have computed `f` at all the relevant points in times; we can now
+            // compute the partial derivative.
+            let output_weight = Self::partial_derivative(&self.distinct_vals);
+            if !output_weight.is_zero() {
+                output.push_refs(key, val, output_weight.erase());
+            }
 
-                if let Some(t) = time_of_interest {
-                    self.keys_of_interest
-                        .entry(t)
-                        .or_insert_with(|| {
-                            self.aux_factories.weighted_items_factory().default_box()
-                        })
-                        .push_val(&mut *item);
-                }
+            let (kv, weight) = item.split_mut();
+            **weight = HasOne::one();
+            kv.from_refs(key, val);
+
+            if let Some(t) = time_of_interest {
+                self.keys_of_interest
+                    .entry(t)
+                    .or_insert_with(|| self.aux_factories.weighted_items_factory().default_box())
+                    .push_val(&mut *item);
             }
         }
     }
