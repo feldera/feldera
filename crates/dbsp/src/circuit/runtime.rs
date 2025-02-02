@@ -95,6 +95,16 @@ thread_local! {
     // Returns `0` if the current thread in not running in a multithreaded
     // runtime.
     pub(crate) static WORKER_INDEX: Cell<usize> = const { Cell::new(0) };
+
+    // Returns `true` if the current thread is a background thread, false
+    // otherwise.
+    pub(crate) static IS_BACKGROUND: Cell<bool> = const { Cell::new(false) };
+
+    /// Buffer cache for the thread. This is a thread-local variable
+    /// to speed-up finding the cache on a given thread.
+    ///
+    /// It is initialized by the first call to `Runtime::buffer_cache()`.
+    static BUFFER_CACHE: RefCell<Option<Arc<BufferCache<FileCacheEntry>>>> = RefCell::new(None);
 }
 
 pub struct LocalStoreMarker;
@@ -330,7 +340,7 @@ impl Runtime {
 
         let runtime = Self(Arc::new(RuntimeInner::new(config)?));
 
-        for idx in 0..nworkers {
+        for idx in 0..nworkers*2 {
             runtime
                 .local_store()
                 .insert(BufferCacheId(idx), Arc::new(BufferCache::new()));
@@ -352,6 +362,7 @@ impl Runtime {
                         // Set the worker's runtime handle and index
                         RUNTIME.with(|rt| *rt.borrow_mut() = Some(runtime));
                         WORKER_INDEX.set(worker_index);
+                        IS_BACKGROUND.set(false);
 
                         // Build the worker's circuit
                         build_circuit();
@@ -410,11 +421,24 @@ impl Runtime {
     /// because they access the same files. They are otherwise independent,
     /// because different workers access different files.
     pub fn buffer_cache() -> Arc<BufferCache<FileCacheEntry>> {
+        if let Some(buffer_cache) = BUFFER_CACHE.with(|bc| bc.borrow().clone()) {
+            return buffer_cache;
+        }
+
         if let Some(rt) = Runtime::runtime() {
+            let cache_id = if Runtime::is_background() {
+                //tracing::error!("getting buffer for background: {:?}", Runtime::worker_index() + rt.num_workers());
+                BufferCacheId(Runtime::worker_index() + rt.num_workers())
+            } else {
+                //tracing::error!("getting buffer for worker: {:?}", Runtime::worker_index());
+                BufferCacheId(Runtime::worker_index())
+            };
             let cache = rt
                 .local_store()
-                .get(&BufferCacheId(Runtime::worker_index()));
-            cache.unwrap().clone()
+                .get(&cache_id)
+                .unwrap();
+            BUFFER_CACHE.set(Some(cache.clone()));
+            cache.clone()
         } else {
             // No `Runtime` means there's only a single worker, so use a single
             // global cache.
@@ -429,6 +453,11 @@ impl Runtime {
     /// multihost runtime, this is a global index across all hosts.
     pub fn worker_index() -> usize {
         WORKER_INDEX.get()
+    }
+
+    /// Indicates whether the current thread is a background thread.
+    pub fn is_background() -> bool {
+        IS_BACKGROUND.get()
     }
 
     /// Returns the minimum number of bytes in a batch to spill it to storage,
@@ -568,6 +597,7 @@ impl Runtime {
             .spawn(move || {
                 RUNTIME.with(|rt| *rt.borrow_mut() = runtime);
                 WORKER_INDEX.set(worker_index);
+                IS_BACKGROUND.set(true);
                 f()
             })
             .unwrap_or_else(|error| {

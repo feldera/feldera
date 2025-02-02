@@ -430,7 +430,7 @@ where
         let any_factory0 = factories.file_factories.any_factories();
         let file = Reader::open(
             &[&any_factory0],
-            Runtime::buffer_cache(),
+            Runtime::buffer_cache,
             &*Runtime::storage_backend().unwrap(),
             path,
         )?;
