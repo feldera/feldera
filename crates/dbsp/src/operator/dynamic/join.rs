@@ -1217,46 +1217,40 @@ where
 
         let mut timed_item = self.timed_item_factory.default_box();
 
-        while index_cursor.key_valid() && trace_cursor.key_valid() {
-            match index_cursor.key().cmp(trace_cursor.key()) {
-                Ordering::Less => index_cursor.seek_key(trace_cursor.key()),
-                Ordering::Greater => trace_cursor.seek_key(index_cursor.key()),
-                Ordering::Equal => {
-                    //println!("key: {}", index_cursor.key(index));
+        while index_cursor.key_valid() {
+            if trace_cursor.seek_key_exact(index_cursor.key()) {
+                //println!("key: {}", index_cursor.key(index));
 
-                    while index_cursor.val_valid() {
-                        let w1 = **index_cursor.weight();
-                        let v1 = index_cursor.val();
-                        //println!("v1: {}, w1: {}", v1, w1);
+                while index_cursor.val_valid() {
+                    let w1 = **index_cursor.weight();
+                    let v1 = index_cursor.val();
+                    //println!("v1: {}, w1: {}", v1, w1);
 
-                        while trace_cursor.val_valid() {
-                            // FIXME: this clone is only needed to avoid borrow checker error due to
-                            // borrowing `trace_cursor` below.
-                            trace_cursor.val().clone_to(val.as_mut());
+                    while trace_cursor.val_valid() {
+                        // FIXME: this clone is only needed to avoid borrow checker error due to
+                        // borrowing `trace_cursor` below.
+                        trace_cursor.val().clone_to(val.as_mut());
 
-                            (self.join_func)(index_cursor.key(), v1, &val, &mut |k, v| {
-                                trace_cursor.map_times(&mut |ts: &T::Time, w2: &T::R| {
-                                    let (time_ref, item) = timed_item.split_mut();
-                                    let (kv, w) = item.split_mut();
-                                    let (key, val) = kv.split_mut();
+                        (self.join_func)(index_cursor.key(), v1, &val, &mut |k, v| {
+                            trace_cursor.map_times(&mut |ts: &T::Time, w2: &T::R| {
+                                let (time_ref, item) = timed_item.split_mut();
+                                let (kv, w) = item.split_mut();
+                                let (key, val) = kv.split_mut();
 
-                                    **w = w1.mul_by_ref(&**w2);
-                                    k.clone_to(key);
-                                    v.clone_to(val);
-                                    **time_ref = ts.join(&time);
-                                    output_tuples.push_val(timed_item.as_mut());
-                                });
+                                **w = w1.mul_by_ref(&**w2);
+                                k.clone_to(key);
+                                v.clone_to(val);
+                                **time_ref = ts.join(&time);
+                                output_tuples.push_val(timed_item.as_mut());
                             });
-                            trace_cursor.step_val();
-                        }
-                        trace_cursor.rewind_vals();
-                        index_cursor.step_val();
+                        });
+                        trace_cursor.step_val();
                     }
-
-                    index_cursor.step_key();
-                    trace_cursor.step_key();
+                    trace_cursor.rewind_vals();
+                    index_cursor.step_val();
                 }
             }
+            index_cursor.step_key();
         }
 
         self.stats.output_tuples += output_tuples.len();

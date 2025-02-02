@@ -191,6 +191,8 @@ pub trait Cursor<K: ?Sized, V: ?Sized, T, R: ?Sized> {
     /// might be desirable to call [`rewind_keys`](Self::rewind_keys) first.
     fn seek_key(&mut self, key: &K);
 
+    fn seek_key_exact(&mut self, key: &K) -> bool;
+
     /// Advances the cursor to the first key that satisfies `predicate`.
     /// Assumes that `predicate` remains true once it turns true.
     fn seek_key_with(&mut self, predicate: &dyn Fn(&K) -> bool);
@@ -414,6 +416,10 @@ where
 
     fn seek_key(&mut self, key: &K) {
         self.0.seek_key(key)
+    }
+
+    fn seek_key_exact(&mut self, key: &K) -> bool {
+        self.0.seek_key_exact(key)
     }
 
     fn seek_key_with(&mut self, predicate: &dyn Fn(&K) -> bool) {
