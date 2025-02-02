@@ -732,11 +732,8 @@ where
         FileValBatch {
             factories: self.factories,
             file: self.result.take().unwrap_or(
-                Reader::empty(
-                    Runtime::buffer_cache,
-                    &*Runtime::storage_backend().unwrap(),
-                )
-                .unwrap(),
+                Reader::empty(Runtime::buffer_cache, &*Runtime::storage_backend().unwrap())
+                    .unwrap(),
             ),
             lower: self.lower,
             upper: self.upper,

@@ -365,6 +365,10 @@ where
         AntichainRef::empty()
     }
 
+    fn maybe_contains_key(&self, key: &K) -> bool {
+        self.file.maybe_contains_key(key)
+    }
+
     fn sample_keys<RG>(&self, rng: &mut RG, sample_size: usize, output: &mut DynVec<Self::Key>)
     where
         RG: Rng,
@@ -792,6 +796,9 @@ where
     }
 
     fn seek_key_exact(&mut self, key: &K) -> bool {
+        if !self.wset.maybe_contains_key(key) {
+            return false;
+        }
         self.seek_key(key);
         self.key_valid() && self.key().eq(key)
     }
