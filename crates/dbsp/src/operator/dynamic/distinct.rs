@@ -341,9 +341,7 @@ where
         let mut integral_cursor = delayed_integral.cursor();
 
         while delta_cursor.key_valid() {
-            integral_cursor.seek_key(delta_cursor.key());
-
-            if integral_cursor.key_valid() && integral_cursor.key() == delta_cursor.key() {
+            if integral_cursor.seek_key_exact(delta_cursor.key()) {
                 while delta_cursor.val_valid() {
                     let w = **delta_cursor.weight();
                     let v = delta_cursor.val();

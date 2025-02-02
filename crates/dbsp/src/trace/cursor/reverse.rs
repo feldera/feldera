@@ -90,6 +90,10 @@ where
         self.cursor.seek_key_reverse(key)
     }
 
+    fn seek_key_exact(&mut self, _key: &K) -> bool {
+        todo!()
+    }
+
     fn seek_key_with(&mut self, predicate: &dyn Fn(&K) -> bool) {
         self.cursor.seek_key_with_reverse(predicate)
     }

@@ -105,6 +105,11 @@ where
         self.base.seek_val(val)
     }
 
+    fn seek_key_exact(&mut self, val: &V) -> bool {
+        self.seek_key(val);
+        self.key_valid() && self.key().eq(val)
+    }
+
     fn seek_key_with(&mut self, predicate: &dyn Fn(&V) -> bool) {
         self.base.seek_val_with(predicate)
     }

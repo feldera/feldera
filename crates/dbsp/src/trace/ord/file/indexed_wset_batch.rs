@@ -791,6 +791,11 @@ where
         self.move_key(|key_cursor| unsafe { key_cursor.advance_to_value_or_larger(key) });
     }
 
+    fn seek_key_exact(&mut self, key: &K) -> bool {
+        self.seek_key(key);
+        self.key_valid() && self.key().eq(key)
+    }
+
     fn seek_key_with(&mut self, predicate: &dyn Fn(&K) -> bool) {
         self.move_key(|key_cursor| unsafe { key_cursor.seek_forward_until(predicate) });
     }
