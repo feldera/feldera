@@ -29,6 +29,7 @@ use std::{
     cmp::Ordering,
     fmt::{self, Debug},
     path::{Path, PathBuf},
+    sync::Arc,
 };
 
 pub struct FileKeyBatchFactories<K, T, R>
@@ -159,11 +160,13 @@ where
     factories: FileKeyBatchFactories<K, T, R>,
     #[allow(clippy::type_complexity)]
     #[size_of(skip)]
-    file: Reader<(
-        &'static K,
-        &'static DynUnit,
-        (&'static DynDataTyped<T>, &'static R, ()),
-    )>,
+    file: Arc<
+        Reader<(
+            &'static K,
+            &'static DynUnit,
+            (&'static DynDataTyped<T>, &'static R, ()),
+        )>,
+    >,
     pub lower: Antichain<T>,
     pub upper: Antichain<T>,
 }
@@ -332,12 +335,12 @@ where
     fn from_path(factories: &Self::Factories, path: &Path) -> Result<Self, ReaderError> {
         let any_factory0 = factories.factories0.any_factories();
         let any_factory1 = factories.factories1.any_factories();
-        let file = Reader::open(
+        let file = Arc::new(Reader::open(
             &[&any_factory0, &any_factory1],
             Runtime::buffer_cache,
             &*Runtime::storage_backend().unwrap(),
             path,
-        )?;
+        )?);
 
         Ok(Self {
             factories: factories.clone(),
@@ -564,7 +567,7 @@ where
     fn done(self) -> FileKeyBatch<K, T, R> {
         FileKeyBatch {
             factories: self.factories.clone(),
-            file: self.writer.into_reader().unwrap(),
+            file: Arc::new(self.writer.into_reader().unwrap()),
             lower: self.lower,
             upper: self.upper,
         }
@@ -976,7 +979,7 @@ where
         }
         FileKeyBatch {
             factories: self.factories,
-            file: self.writer.into_reader().unwrap(),
+            file: Arc::new(self.writer.into_reader().unwrap()),
             lower,
             upper,
         }

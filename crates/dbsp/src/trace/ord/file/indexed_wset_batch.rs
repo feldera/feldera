@@ -30,6 +30,7 @@ use std::{
     fmt::{self, Debug},
     ops::Neg,
     path::{Path, PathBuf},
+    sync::Arc,
 };
 
 pub struct FileIndexedWSetFactories<K, V, R>
@@ -137,7 +138,7 @@ where
     factories: FileIndexedWSetFactories<K, V, R>,
     #[allow(clippy::type_complexity)]
     #[size_of(skip)]
-    file: Reader<(&'static K, &'static DynUnit, (&'static V, &'static R, ()))>,
+    file: Arc<Reader<(&'static K, &'static DynUnit, (&'static V, &'static R, ()))>>,
 }
 
 impl<K, V, R> Debug for FileIndexedWSet<K, V, R>
@@ -262,7 +263,7 @@ where
         }
         Self {
             factories: self.factories.clone(),
-            file: writer.into_reader().unwrap(),
+            file: Arc::new(writer.into_reader().unwrap()),
         }
     }
 }
@@ -418,12 +419,12 @@ where
     fn from_path(factories: &Self::Factories, path: &Path) -> Result<Self, ReaderError> {
         let any_factory0 = factories.factories0.any_factories();
         let any_factory1 = factories.factories1.any_factories();
-        let file = Reader::open(
+        let file = Arc::new(Reader::open(
             &[&any_factory0, &any_factory1],
             Runtime::buffer_cache,
             &*Runtime::storage_backend().unwrap(),
             path,
-        )?;
+        )?);
         Ok(Self {
             factories: factories.clone(),
             file,
@@ -580,7 +581,7 @@ where
     }
 
     fn done(self) -> FileIndexedWSet<K, V, R> {
-        let file = self.writer.into_reader().unwrap();
+        let file = Arc::new(self.writer.into_reader().unwrap());
         FileIndexedWSet {
             factories: self.factories.clone(),
             file,
@@ -963,7 +964,7 @@ where
         }
         FileIndexedWSet {
             factories: self.factories,
-            file: self.writer.into_reader().unwrap(),
+            file: Arc::new(self.writer.into_reader().unwrap()),
         }
     }
 }
