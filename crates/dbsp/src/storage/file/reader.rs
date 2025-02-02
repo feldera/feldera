@@ -617,11 +617,16 @@ where
         best
     }
 
-    unsafe fn find_exact<C>(&self, target_rows: &Range<u64>, compare: &C) -> Option<usize>
+    unsafe fn find_exact<C>(
+        &self,
+        factories: &Factories<K, A>,
+        target_rows: &Range<u64>,
+        compare: &C,
+    ) -> Option<usize>
     where
         C: Fn(&K) -> Ordering,
     {
-        self.find_best_match(target_rows, compare, Equal)
+        self.find_best_match(factories, target_rows, compare, Equal)
     }
 
     /// Returns the comparison of the key in `row` using `compare`.
@@ -904,20 +909,25 @@ where
 
     fn get_row_range(&self, child_idx: usize) -> Range<u64> {
         let start = if child_idx > 0 {
-            self.inner.row_totals.get(&self.inner.raw, child_idx - 1)
+            self.row_totals.get(&self.raw, child_idx - 1)
         } else {
             0
         } + self.first_row;
-        let end = self.inner.row_totals.get(&self.inner.raw, child_idx) + self.first_row;
+        let end = self.row_totals.get(&self.raw, child_idx) + self.first_row;
         start..end
     }
 
-    unsafe fn find_exact<C>(&self, target_rows: &Range<u64>, compare: &C) -> Option<usize>
+    unsafe fn find_exact<C>(
+        &self,
+        factory: &dyn Factory<K>,
+        target_rows: &Range<u64>,
+        compare: &C,
+    ) -> Option<usize>
     where
         C: Fn(&K) -> Ordering,
     {
         let mut result = None;
-        self.key_factory.with(&mut |bound| {
+        factory.with(&mut |bound| {
             let mut start = 0;
             let mut end = self.n_children();
             result = loop {
@@ -1828,11 +1838,6 @@ where
         self.position = Position::Before;
     }
 
-    /// Moves just after the row group.
-    pub fn move_after(&mut self) {
-        self.position = Position::After;
-    }
-
     /// Moves to the last row in the row group.  If the row group is empty,
     /// this has no effect.
     pub fn move_last(&mut self) -> Result<(), Error> {
@@ -2296,21 +2301,23 @@ where
         loop {
             match node.read(&row_group.reader.file)? {
                 TreeBlock::Index(index_block) => {
-                    let Some(child_idx) = index_block.find_exact(&row_group.rows, compare) else {
+                    let Some(child_idx) = index_block.find_exact(
+                        row_group.factories.key_factory,
+                        &row_group.rows,
+                        compare,
+                    ) else {
                         return Ok(None);
                     };
                     node = index_block.get_child(child_idx)?;
                     indexes.push(index_block);
                 }
                 TreeBlock::Data(data_block) => {
-                    let factories = data_block.factories.clone();
                     return Ok(data_block
-                        .find_exact(&row_group.rows, compare)
+                        .find_exact(&row_group.factories, &row_group.rows, compare)
                         .map(|child_idx| Self {
                             row: data_block.first_row + child_idx as u64,
                             indexes,
                             data: data_block,
-                            factories,
                         }));
                 }
             }

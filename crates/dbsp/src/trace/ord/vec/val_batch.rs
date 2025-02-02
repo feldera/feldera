@@ -676,11 +676,6 @@ where
         self.cursor.seek(key);
     }
 
-    fn seek_key_exact(&mut self, key: &K) -> bool {
-        self.seek_key(key);
-        self.key_valid() && self.key().eq(key)
-    }
-
     fn seek_key_with(&mut self, predicate: &dyn Fn(&K) -> bool) {
         self.cursor.seek_with(predicate);
     }

@@ -725,6 +725,10 @@ where
         F: Fn(&mut KeyCursor<'s, K, V, R>) -> Result<(), ReaderError>,
     {
         op(&mut self.key_cursor).unwrap();
+        self.moved_key();
+    }
+
+    fn moved_key(&mut self) {
         unsafe { self.key_cursor.key(&mut self.key) };
         self.val_cursor = self
             .key_cursor
@@ -732,7 +736,7 @@ where
             .unwrap()
             .first_with_hint(&self.val_cursor)
             .unwrap();
-        unsafe { self.val_cursor.item((&mut self.val, &mut self.diff)) };
+        self.moved_val();
     }
 
     fn move_val<F>(&mut self, op: F)
@@ -740,6 +744,10 @@ where
         F: Fn(&mut ValCursor<'s, K, V, R>) -> Result<(), ReaderError>,
     {
         op(&mut self.val_cursor).unwrap();
+        self.moved_val();
+    }
+
+    fn moved_val(&mut self) {
         unsafe { self.val_cursor.item((&mut self.val, &mut self.diff)) };
     }
 }
@@ -807,11 +815,12 @@ where
     }
 
     fn seek_key_exact(&mut self, key: &K) -> bool {
-        if !self.wset.maybe_contains_key(key) {
-            return false;
+        let found = self.wset.maybe_contains_key(key)
+            && unsafe { self.key_cursor.seek_exact(key) }.unwrap();
+        if found {
+            self.moved_key();
         }
-        self.seek_key(key);
-        self.key_valid() && self.key().eq(key)
+        found
     }
 
     fn seek_key_with(&mut self, predicate: &dyn Fn(&K) -> bool) {
@@ -832,6 +841,17 @@ where
 
     fn seek_val(&mut self, val: &V) {
         self.move_val(|val_cursor| unsafe { val_cursor.advance_to_value_or_larger(val) });
+    }
+
+    fn seek_val_exact(&mut self, val: &V) -> bool
+    where
+        V: PartialEq,
+    {
+        let found = unsafe { self.val_cursor.seek_exact(val) }.unwrap();
+        if found {
+            self.moved_val();
+        }
+        found
     }
 
     fn seek_val_with(&mut self, predicate: &dyn Fn(&V) -> bool) {

@@ -105,9 +105,11 @@ where
         self.base.seek_val(val)
     }
 
-    fn seek_key_exact(&mut self, val: &V) -> bool {
-        self.seek_key(val);
-        self.key_valid() && self.key().eq(val)
+    fn seek_key_exact(&mut self, val: &V) -> bool
+    where
+        V: PartialEq,
+    {
+        self.base.seek_val_exact(val)
     }
 
     fn seek_key_with(&mut self, predicate: &dyn Fn(&V) -> bool) {
@@ -127,6 +129,13 @@ where
     }
 
     fn seek_val(&mut self, _val: &DynUnit) {}
+
+    fn seek_val_exact(&mut self, _val: &DynUnit) -> bool
+    where
+        DynUnit: PartialEq, {
+        self.val_valid = true;
+        true
+    }
 
     fn seek_val_with(&mut self, predicate: &dyn Fn(&DynUnit) -> bool) {
         if !predicate(().erase()) {

@@ -387,8 +387,7 @@ where
                     let w = **delta_cursor.weight();
                     let v = delta_cursor.val();
 
-                    integral_cursor.seek_val(v);
-                    let old_weight = if integral_cursor.val_valid() && integral_cursor.val() == v {
+                    let old_weight = if integral_cursor.seek_val_exact(v) {
                         **integral_cursor.weight()
                     } else {
                         HasZero::zero()
@@ -617,9 +616,7 @@ where
         item: &mut DynPair<DynPair<Z::Key, Z::Val>, Z::R>,
     ) {
         if trace_cursor.key_valid() && trace_cursor.key() == key {
-            trace_cursor.seek_val(val);
-
-            if trace_cursor.val_valid() && trace_cursor.val() == val {
+            if trace_cursor.seek_val_exact(val) {
                 // The nearest future timestamp when we need to update this
                 // key/value pair.
                 let mut time_of_interest = None;
