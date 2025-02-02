@@ -95,6 +95,16 @@ thread_local! {
     // Returns `0` if the current thread in not running in a multithreaded
     // runtime.
     pub(crate) static WORKER_INDEX: Cell<usize> = const { Cell::new(0) };
+
+    /// Returns `true` if the current thread is a background thread, false
+    /// otherwise.
+    pub(crate) static IS_BACKGROUND: Cell<bool> = const { Cell::new(false) };
+
+    /// Buffer cache for the thread. This is a thread-local variable
+    /// to speed-up finding the cache on a given thread.
+    ///
+    /// It is initialized by the first call to `Runtime::buffer_cache()`.
+    static BUFFER_CACHE: RefCell<Option<Arc<BufferCache<FileCacheEntry>>>> = RefCell::new(None);
 }
 
 pub struct LocalStoreMarker;
@@ -336,7 +346,7 @@ impl Runtime {
                 .cache_mib
                 .unwrap_or(nworkers * 256)
                 .saturating_mul(1024 * 1024);
-            for idx in 0..nworkers {
+            for idx in 0..nworkers*2 {
                 runtime.local_store().insert(
                     BufferCacheId(idx),
                     Arc::new(BufferCache::new(cache_size_bytes / nworkers)),
@@ -360,6 +370,7 @@ impl Runtime {
                         // Set the worker's runtime handle and index
                         RUNTIME.with(|rt| *rt.borrow_mut() = Some(runtime));
                         WORKER_INDEX.set(worker_index);
+                        IS_BACKGROUND.set(false);
 
                         // Build the worker's circuit
                         build_circuit();
@@ -413,20 +424,25 @@ impl Runtime {
     }
 
     /// Returns this thread's buffer cache, if storage is configured.
-    ///
-    /// The buffer cache is shared between a worker and its background thread,
-    /// because they access the same files. They are otherwise independent,
-    /// because different workers access different files.
-    ///
-    /// # Panic
-    ///
-    /// Panics if this thread is not in a [Runtime].
-    pub fn buffer_cache() -> Option<Arc<BufferCache<FileCacheEntry>>> {
-        Runtime::runtime()
-            .unwrap()
+    pub fn buffer_cache() -> Arc<BufferCache<FileCacheEntry>> {
+        // Fast path, look up from TLS
+        if let Some(buffer_cache) = BUFFER_CACHE.with(|bc| bc.borrow().clone()) {
+            return buffer_cache;
+        }
+
+        // Slow path, initialize the TLS BUFFER_CACHE variable.
+        let rt = Runtime::runtime().unwrap();
+        let cache_id = if !Runtime::is_background() {
+            BufferCacheId(Runtime::worker_index())
+        } else {
+            BufferCacheId(Runtime::worker_index() + rt.num_workers())
+        };
+        let cache = rt
             .local_store()
-            .get(&BufferCacheId(Runtime::worker_index()))
-            .map(|cache| (*cache).clone())
+            .get(&cache_id)
+            .unwrap();
+        BUFFER_CACHE.set(Some(cache.clone()));
+        cache.clone()
     }
 
     /// Returns 0-based index of the current worker thread within its runtime.
@@ -434,6 +450,11 @@ impl Runtime {
     /// multihost runtime, this is a global index across all hosts.
     pub fn worker_index() -> usize {
         WORKER_INDEX.get()
+    }
+
+    /// Indicates whether the current thread is a background thread.
+    pub fn is_background() -> bool {
+        IS_BACKGROUND.get()
     }
 
     /// Returns the minimum number of bytes in a batch to spill it to storage,
@@ -573,6 +594,7 @@ impl Runtime {
             .spawn(move || {
                 RUNTIME.with(|rt| *rt.borrow_mut() = runtime);
                 WORKER_INDEX.set(worker_index);
+                IS_BACKGROUND.set(true);
                 f()
             })
             .unwrap_or_else(|error| {

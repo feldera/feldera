@@ -435,7 +435,7 @@ impl InnerDataBlock {
     }
 
     fn new(file: &ImmutableFileRef, node: &TreeNode) -> Result<Arc<Self>, Error> {
-        file.cache.read_data_block(
+        (file.cache)().read_data_block(
             &*file.file_handle,
             node.location,
             file.compression,
@@ -754,7 +754,7 @@ impl InnerIndexBlock {
     }
 
     fn new(file: &ImmutableFileRef, node: &TreeNode) -> Result<Arc<Self>, Error> {
-        file.cache.read_index_block(
+        (file.cache)().read_index_block(
             &*file.file_handle,
             node.location,
             file.compression,
@@ -1055,7 +1055,7 @@ impl Column {
 /// Encapsulates storage and a file handle.
 struct ImmutableFileRef {
     path: PathBuf,
-    cache: Arc<BufferCache<FileCacheEntry>>,
+    cache: fn() -> Arc<BufferCache<FileCacheEntry>>,
     file_handle: Arc<dyn FileReader>,
     compression: Option<Compression>,
     stats: AtomicCacheStats,
@@ -1078,7 +1078,7 @@ impl Drop for ImmutableFileRef {
 
 impl ImmutableFileRef {
     fn new(
-        cache: Arc<BufferCache<FileCacheEntry>>,
+        cache: fn() -> Arc<BufferCache<FileCacheEntry>>,
         file_handle: Arc<dyn FileReader>,
         path: PathBuf,
         compression: Option<Compression>,
@@ -1094,7 +1094,7 @@ impl ImmutableFileRef {
     }
 
     pub fn evict(&self) {
-        self.cache.evict(&*self.file_handle);
+        (self.cache)().evict(&*self.file_handle);
     }
 }
 
@@ -1158,7 +1158,7 @@ where
     pub(crate) fn new(
         factories: &[&AnyFactories],
         path: PathBuf,
-        cache: Arc<BufferCache<FileCacheEntry>>,
+        cache: fn() -> Arc<BufferCache<FileCacheEntry>>,
         file_handle: Arc<dyn FileReader>,
     ) -> Result<Self, Error> {
         let file_size = file_handle.get_size()?;
@@ -1167,7 +1167,7 @@ where
         }
 
         let stats = AtomicCacheStats::default();
-        let file_trailer = cache.read_file_trailer_block(
+        let file_trailer = cache().read_file_trailer_block(
             &*file_handle,
             BlockLocation::new(file_size - 512, 512).unwrap(),
             &stats,
@@ -1222,7 +1222,7 @@ where
     /// This internally creates an empty temporary file, which means that it can
     /// fail with an I/O error.
     pub fn empty(
-        cache: Arc<BufferCache<FileCacheEntry>>,
+        cache: fn() -> Arc<BufferCache<FileCacheEntry>>,
         storage_backend: &dyn StorageBackend,
     ) -> Result<Self, Error> {
         let (file_handle, path) = storage_backend.create()?.complete()?;
@@ -1247,7 +1247,7 @@ where
     /// Instantiates a reader given an existing path.
     pub fn open(
         factories: &[&AnyFactories],
-        cache: Arc<BufferCache<FileCacheEntry>>,
+        cache: fn() -> Arc<BufferCache<FileCacheEntry>>,
         storage_backend: &dyn StorageBackend,
         path: &IoPath,
     ) -> Result<Self, Error> {
