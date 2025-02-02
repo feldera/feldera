@@ -8,9 +8,11 @@ import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.sql.tools.CompilerCircuitStream;
 import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitWithGraphsVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.Graph;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.Passes;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.util.graph.Port;
 import org.junit.Assert;
 import org.junit.Test;
@@ -213,6 +215,127 @@ public class OuterJoinTests extends SqlIoTest {
              lx | ly | rx | ry
             -------------------
               0 |  0 |  0 |  0
+              0 |    |    |
+                |  0 |    |
+                |    |    |
+            (4 rows)""");
+    }
+
+    @Test
+    public void testNonEqui() {
+        // validated on postgres
+        this.qs("""
+            SELECT * FROM A AS L LEFT JOIN A AS R ON L.X < R.X and L.Y = R.Y;
+             lx | ly | lx | ly
+            -------------------
+              0 |  0 |    |
+            (1 row)
+            
+            SELECT * FROM A AS L LEFT JOIN B AS R ON L.X < R.X and L.Y = R.Y;
+             lx | ly | rx | ry
+            -------------------
+              0 |  0 |    |
+            (1 row)
+            
+            SELECT * FROM A AS L LEFT JOIN C AS R ON L.X < R.X and L.Y = R.Y;
+             lx | ly | rx | ry
+            -------------------
+              0 |  0 |    |
+            (1 row)
+            
+            SELECT * FROM A AS L LEFT JOIN D AS R ON L.X < R.X and L.Y = R.Y;
+             lx | ly | rx | ry
+            -------------------
+              0 |  0 |    |
+            (1 row)
+            
+            SELECT * FROM C AS L LEFT JOIN A AS R ON L.X < R.X and L.Y = R.Y;
+             lx | ly | rx | ry
+            -------------------
+              0 |  0 |    |
+              0 |    |    |
+            (2 rows)
+            
+            SELECT * FROM C AS L LEFT JOIN B AS R ON L.X < R.X and L.Y = R.Y;
+             lx | ly | rx | ry
+            -------------------
+              0 |  0 |    |
+              0 |    |    |
+            (2 rows)
+            
+            SELECT * FROM C AS L LEFT JOIN C AS R ON L.X < R.X and L.Y = R.Y;
+             lx | ly | rx | ry
+            -------------------
+              0 |  0 |    |
+              0 |    |    |
+            (2 rows)
+            
+            SELECT * FROM C AS L LEFT JOIN D AS R ON L.X < R.X and L.Y = R.Y;
+             lx | ly | rx | ry
+            -------------------
+              0 |  0 |    |
+              0 |    |    |
+            (2 rows)
+            
+            SELECT * FROM B AS L LEFT JOIN A AS R ON L.X < R.X and L.Y = R.Y;
+             lx | ly | rx | ry
+            -------------------
+              0 |  0 |    |
+                |  0 |    |
+            (2 rows)
+            
+            SELECT * FROM B AS L LEFT JOIN B AS R ON L.X < R.X and L.Y = R.Y;
+             lx | ly | rx | ry
+            -------------------
+              0 |  0 |    |
+                |  0 |    |
+            (2 rows)
+            
+            SELECT * FROM B AS L LEFT JOIN C AS R ON L.X < R.X and L.Y = R.Y;
+             lx | ly | rx | ry
+            -------------------
+              0 |  0 |    |
+                |  0 |    |
+            (2 rows)
+            
+            SELECT * FROM B AS L LEFT JOIN D AS R ON L.X < R.X and L.Y = R.Y;
+             lx | ly | rx | ry
+            -------------------
+              0 |  0 |    |
+                |  0 |    |
+            (2 rows)
+            
+            SELECT * FROM D AS L LEFT JOIN A AS R ON L.X < R.X and L.Y = R.Y;
+             lx | ly | rx | ry
+            -------------------
+              0 |  0 |    |
+              0 |    |    |
+                |  0 |    |
+                |    |    |
+            (4 rows)
+            
+            SELECT * FROM D AS L LEFT JOIN B AS R ON L.X < R.X and L.Y = R.Y;
+             lx | ly | rx | ry
+            -------------------
+              0 |  0 |    |
+              0 |    |    |
+                |  0 |    |
+                |    |    |
+            (4 rows)
+            
+            SELECT * FROM D AS L LEFT JOIN C AS R ON L.X < R.X and L.Y = R.Y;
+             lx | ly | rx | ry
+            -------------------
+              0 |  0 |    |
+              0 |    |    |
+                |  0 |    |
+                |    |    |
+            (4 rows)
+            
+            SELECT * FROM D AS L LEFT JOIN D AS R ON L.X < R.X and L.Y = R.Y;
+             lx | ly | rx | ry
+            -------------------
+              0 |  0 |    |
               0 |    |    |
                 |  0 |    |
                 |    |    |
@@ -459,5 +582,21 @@ public class OuterJoinTests extends SqlIoTest {
                 |  0 |    |
                 |    |    |
             (4 rows)""");
+    }
+
+    @Test
+    public void issue3448() {
+        var ccs = this.getCCS("""
+                CREATE TABLE T1(a INT, b INT, c INT, d INT, e INT);
+                CREATE TABLE T2(l INT, m INT, n INT, o INT, p INT);
+                CREATE VIEW V AS
+                select a, l from t1 left join t2 on t1.a = t2.l and t1.b < t2.m;""");
+        InnerVisitor visitor = new InnerVisitor(ccs.compiler) {
+            @Override
+            public void postorder(DBSPTypeTuple type) {
+                Assert.assertTrue(type.size() < 7);
+            }
+        };
+        visitor.getCircuitVisitor(false).apply(ccs.circuit);
     }
 }

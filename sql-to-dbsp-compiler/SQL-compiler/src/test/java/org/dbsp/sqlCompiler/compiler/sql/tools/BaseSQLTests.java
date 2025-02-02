@@ -238,7 +238,7 @@ public class BaseSQLTests {
                 ProgramAndTester pt = new ProgramAndTester(test.ccs.circuit, test.createTesterCode(testNumber, rustDirectory));
                 BaseSQLTests.testsExecuted++;
                 // Filter here tests
-                // if (pt.program() != null && !pt.program().toString().contains("join")) continue;
+                // if (pt.program() != null && !pt.program().toString().contains("antijoin")) continue;
                 writer.add(pt);
                 testNumber++;
             }

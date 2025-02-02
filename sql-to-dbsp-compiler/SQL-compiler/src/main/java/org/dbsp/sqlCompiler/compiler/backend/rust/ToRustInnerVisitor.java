@@ -844,18 +844,22 @@ public class ToRustInnerVisitor extends InnerVisitor {
         DBSPTypeArray destVecType = destType.as(DBSPTypeArray.class);
         String functionName;
 
-        if (expression.safe)
-            this.builder.append("unwrap_safe_cast(");
-        else
-            this.builder.append("unwrap_cast(");
+        if (!this.compact) {
+            if (expression.safe)
+                this.builder.append("unwrap_safe_cast(");
+            else
+                this.builder.append("unwrap_cast(");
+        }
         if (destVecType != null) {
             if (sourceType.is(DBSPTypeVariant.class)) {
                 // Cast variant to vec
                 functionName = "cast_to_vec" + destType.nullableSuffix() + "_" + sourceType.baseTypeWithSuffix();
                 this.builder.append(functionName).append("(").increase();
                 expression.source.accept(this);
-                this.builder.decrease().append("))");
+                this.builder.decrease().append(")");
                 this.pop(expression);
+                if (!this.compact)
+                    this.builder.append(")");
                 return VisitDecision.STOP;
             }
         }
@@ -871,7 +875,9 @@ public class ToRustInnerVisitor extends InnerVisitor {
                         .append("(")
                         .increase();
                 expression.source.accept(this);
-                this.builder.decrease().append("))");
+                this.builder.decrease().append(")");
+                if (!this.compact)
+                    this.builder.append(")");
                 this.pop(expression);
                 return VisitDecision.STOP;
             }
@@ -894,7 +900,9 @@ public class ToRustInnerVisitor extends InnerVisitor {
                 functionName = "cast_to_map" + destType.nullableSuffix() + "_" + sourceType.baseTypeWithSuffix();
                 this.builder.append(functionName).append("(").increase();
                 expression.source.accept(this);
-                this.builder.decrease().append("))");
+                this.builder.decrease().append(")");
+                if (!this.compact)
+                    this.builder.append(")");
                 this.pop(expression);
                 return VisitDecision.STOP;
             } else {
@@ -907,7 +915,9 @@ public class ToRustInnerVisitor extends InnerVisitor {
                 functionName = "cast_to_" + destType.baseTypeWithSuffix() + "_map" + sourceType.nullableSuffix();
                 this.builder.append(functionName).append("(").increase();
                 expression.source.accept(this);
-                this.builder.decrease().append("))");
+                this.builder.decrease().append(")");
+                if (!this.compact)
+                    this.builder.append(")");
                 this.pop(expression);
                 return VisitDecision.STOP;
             } else {
@@ -923,7 +933,9 @@ public class ToRustInnerVisitor extends InnerVisitor {
             // we are dumping DOT
             this.builder.append("(");
             expression.type.accept(this);
-            this.builder.append("))");
+            this.builder.append(")");
+            if (!this.compact)
+                this.builder.append(")");
             expression.source.accept(this);
             this.pop(expression);
             return VisitDecision.STOP;
@@ -935,7 +947,9 @@ public class ToRustInnerVisitor extends InnerVisitor {
             // we are dumping DOT
             this.builder.append("(");
             expression.type.accept(this);
-            this.builder.append("))");
+            this.builder.append(")");
+            if (!this.compact)
+                this.builder.append(")");
             expression.source.accept(this);
             this.pop(expression);
             return VisitDecision.STOP;
@@ -964,7 +978,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
             // pass precision and fixedness as arguments to cast method too
             this.builder.append(",")
                     .append(str.precision)
-                    .append(", ")
+                    .append(",")
                     .append(Boolean.toString(str.fixed));
         }
         DBSPTypeBinary binary = destType.as(DBSPTypeBinary.class);
@@ -973,7 +987,9 @@ public class ToRustInnerVisitor extends InnerVisitor {
             this.builder.append(",")
                     .append(binary.precision);
         }
-        this.builder.append("))");
+        this.builder.append(")");
+        if (!this.compact)
+            this.builder.append(")");
         this.pop(expression);
         return VisitDecision.STOP;
     }
