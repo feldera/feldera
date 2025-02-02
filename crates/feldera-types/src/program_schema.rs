@@ -542,6 +542,14 @@ impl SqlType {
     pub fn is_string(&self) -> bool {
         matches!(self, Self::Char | Self::Varchar)
     }
+
+    pub fn is_varchar(&self) -> bool {
+        matches!(self, Self::Varchar)
+    }
+
+    pub fn is_varbinary(&self) -> bool {
+        matches!(self, Self::Varbinary)
+    }
 }
 
 /// It so happens that when the type field is missing in the Calcite schema, it's a struct,

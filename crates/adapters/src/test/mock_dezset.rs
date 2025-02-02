@@ -1,8 +1,9 @@
 use crate::{
     catalog::{ArrowStream, AvroStream, DeCollectionStream, RecordFormat},
-    format::{avro::from_avro_value, InputBuffer},
+    format::{avro::from_avro_value, raw::raw_serde_config, InputBuffer},
     static_compile::deinput::{
         CsvDeserializerFromBytes, DeserializerFromBytes, JsonDeserializerFromBytes,
+        RawDeserializerFromBytes,
     },
     ControllerError, DeCollectionHandle,
 };
@@ -150,6 +151,14 @@ where
             RecordFormat::Avro => {
                 todo!()
             }
+            RecordFormat::Raw => Ok(Box::new(MockDeZSetStream::<
+                RawDeserializerFromBytes,
+                T,
+                U,
+                _,
+            >::new(
+                self.clone(), raw_serde_config()
+            ))),
         }
     }
 

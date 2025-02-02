@@ -301,6 +301,7 @@ const sidebars = {
                         'formats/avro',
                         'formats/parquet',
                         'formats/csv',
+                        'formats/raw'
                     ],
                 },
                 "fault-tolerance"

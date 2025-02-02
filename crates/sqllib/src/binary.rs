@@ -8,7 +8,10 @@ use feldera_types::serde_with_context::{
 };
 use flate2::read::GzDecoder;
 use hex::ToHex;
-use serde::{de::Error as _, Deserialize, Deserializer, Serialize, Serializer};
+use serde::{
+    de::{Error as _, Visitor},
+    Deserialize, Deserializer, Serialize, Serializer,
+};
 use size_of::SizeOf;
 use std::{
     borrow::Cow,
@@ -53,7 +56,25 @@ impl SerializeWithContext<SqlSerdeConfig> for ByteArray {
         match context.binary_format {
             BinaryFormat::Array => self.data.serialize(serializer),
             BinaryFormat::Base64 => serializer.serialize_str(&BASE64_STANDARD.encode(&self.data)),
+            BinaryFormat::Bytes => serializer.serialize_bytes(&self.data),
         }
+    }
+}
+
+struct ByteVisitor;
+
+impl Visitor<'_> for ByteVisitor {
+    type Value = ByteArray;
+
+    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        formatter.write_str("byte array")
+    }
+
+    fn visit_bytes<E>(self, v: &[u8]) -> Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        Ok(ByteArray::new(v))
     }
 }
 
@@ -77,6 +98,7 @@ impl<'de> DeserializeWithContext<'de, SqlSerdeConfig> for ByteArray {
                     .map_err(|e| D::Error::custom(format!("invalid base64 string: {e}")))?;
                 Ok(Self { data })
             }
+            BinaryFormat::Bytes => deserializer.deserialize_bytes(ByteVisitor),
         }
     }
 }
@@ -95,6 +117,12 @@ impl NumEntries for &ByteArray {
     #[inline]
     fn num_entries_deep(&self) -> usize {
         self.length()
+    }
+}
+
+impl From<&[u8]> for ByteArray {
+    fn from(value: &[u8]) -> Self {
+        Self::new(value)
     }
 }
 
