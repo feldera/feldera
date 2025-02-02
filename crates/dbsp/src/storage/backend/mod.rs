@@ -9,6 +9,8 @@
 //! The API also prevents reading from a file that is not completed.
 #![warn(missing_docs)]
 
+use crate::storage::buffer_cache::FBuf;
+use crate::Runtime;
 use feldera_types::config::{
     StorageBackendConfig, StorageCacheConfig, StorageConfig, StorageOptions,
 };
@@ -28,8 +30,6 @@ use tempfile::TempDir;
 use thiserror::Error;
 use tracing::warn;
 use uuid::Uuid;
-
-use crate::storage::buffer_cache::FBuf;
 
 #[cfg(target_os = "linux")]
 pub mod io_uring_impl;
@@ -76,6 +76,9 @@ pub enum StorageError {
     /// Cannot perform operation because storage is not enabled.
     #[error("Cannot perform operation because storage is not enabled.")]
     StorageDisabled,
+    /// Error while creating a bloom filter.
+    #[error("Failed to serialize/deserialize bloom filter.")]
+    BloomFilter,
 }
 
 impl From<std::io::Error> for StorageError {

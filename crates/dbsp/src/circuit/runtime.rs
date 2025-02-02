@@ -437,10 +437,7 @@ impl Runtime {
         } else {
             BufferCacheId(Runtime::worker_index() + rt.num_workers())
         };
-        let cache = rt
-            .local_store()
-            .get(&cache_id)
-            .unwrap();
+        let cache = rt.local_store().get(&cache_id).unwrap();
         BUFFER_CACHE.set(Some(cache.clone()));
         cache.clone()
     }

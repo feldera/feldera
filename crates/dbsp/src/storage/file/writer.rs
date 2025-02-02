@@ -4,23 +4,6 @@
 //! 2-column layer file.  To write more columns, either add another `Writer<N>`
 //! struct, which is easily done, or mark the currently private `Writer` as
 //! `pub`.
-use std::sync::Arc;
-use std::{
-    marker::PhantomData,
-    mem::{replace, take},
-    ops::Range,
-    path::PathBuf,
-};
-
-use binrw::{
-    io::{Cursor, NoSeek},
-    BinWrite,
-};
-use crc32c::crc32c;
-#[cfg(debug_assertions)]
-use dyn_clone::clone_box;
-use snap::raw::{max_compress_len, Encoder};
-
 use crate::storage::{
     backend::{BlockLocation, FileReader, FileWriter, StorageBackend, StorageError},
     buffer_cache::{FBuf, FBufSerializer},
@@ -28,6 +11,23 @@ use crate::storage::{
         BlockHeader, DataBlockHeader, FileTrailer, FileTrailerColumn, FixedLen, IndexBlockHeader,
         NodeType, Varint, VERSION_NUMBER,
     },
+};
+use binrw::{
+    io::{Cursor, NoSeek},
+    BinWrite,
+};
+use crc32c::crc32c;
+#[cfg(debug_assertions)]
+use dyn_clone::clone_box;
+use fastbloom::BloomFilter;
+use snap::raw::{max_compress_len, Encoder};
+use std::fs::File;
+use std::sync::Arc;
+use std::{
+    marker::PhantomData,
+    mem::{replace, take},
+    ops::Range,
+    path::PathBuf,
 };
 
 use crate::{
@@ -38,7 +38,10 @@ use crate::{
 
 use super::cache::{FileCache, FileCacheEntry};
 use super::format::Compression;
-use super::{reader::Reader, AnyFactories, Factories, Serializer};
+use super::{
+    reader::Reader, AnyFactories, BloomFilterState, Factories, Serializer,
+    BLOOM_FILTER_FALSE_POSITIVE_RATE,
+};
 
 struct VarintWriter {
     varint: Varint,
@@ -1000,6 +1003,7 @@ impl BlockWriter {
 /// 1-column and 2-column layer files, respectively, with added type safety.
 struct Writer {
     writer: BlockWriter,
+    bloom_filter: BloomFilter,
     cws: Vec<ColumnWriter>,
     finished_columns: Vec<FileTrailerColumn>,
 }
@@ -1024,6 +1028,10 @@ impl Writer {
         let worker = format!("w{}-", Runtime::worker_index());
         let writer = Self {
             writer: BlockWriter::new(buffer_cache, storage_backend.create_with_prefix(&worker)?),
+            // It would be good to know the expected number of items in the bloom filter
+            // but don't have that information here.
+            bloom_filter: BloomFilter::with_false_pos(BLOOM_FILTER_FALSE_POSITIVE_RATE)
+                .expected_items(1_000_000),
             cws,
             finished_columns,
         };
@@ -1043,6 +1051,8 @@ impl Writer {
             None
         };
 
+        // Add `key` to bloom filter.
+        self.bloom_filter.insert(&item.0.default_hash());
         // Add `value` to row group for column.
         self.cws[column].rows.end += 1;
         self.cws[column].add_item(&mut self.writer, item, &row_group)
@@ -1063,7 +1073,7 @@ impl Writer {
         Ok(())
     }
 
-    pub fn close(mut self) -> Result<(Arc<dyn FileReader>, PathBuf), StorageError> {
+    pub fn close(mut self) -> Result<(Arc<dyn FileReader>, PathBuf, BloomFilter), StorageError> {
         debug_assert_eq!(self.cws.len(), self.finished_columns.len());
 
         // Write the file trailer block.
@@ -1075,7 +1085,19 @@ impl Writer {
         };
         self.writer.write_block(file_trailer.into_block(), None)?;
 
-        self.writer.complete()
+        let (reader, pbuf) = self.writer.complete()?;
+
+        // Write out the bloom filter to a separate file (for now)
+        let mut bloom_path = pbuf.clone();
+        bloom_path.set_extension("bloom");
+        let mut bf = File::create(bloom_path.as_path())?;
+        let bf_file_state = BloomFilterState::from(&self.bloom_filter);
+        bf_file_state.write(&mut bf).map_err(|e| match e {
+            binrw::Error::Io(e) => StorageError::StdIo(e.kind()),
+            _ => StorageError::BloomFilter,
+        })?;
+
+        Ok((reader, pbuf, self.bloom_filter))
     }
 
     pub fn n_columns(&self) -> usize {
@@ -1177,7 +1199,6 @@ where
             }
             self.prev0 = Some(clone_box(key0));
         }
-
         self.inner.write(0, item)
     }
 
@@ -1188,7 +1209,7 @@ where
 
     /// Finishes writing the layer file and returns the writer passed to
     /// [`new`](Self::new).
-    pub fn close(mut self) -> Result<(Arc<dyn FileReader>, PathBuf), StorageError> {
+    pub fn close(mut self) -> Result<(Arc<dyn FileReader>, PathBuf, BloomFilter), StorageError> {
         self.inner.finish_column::<K0, A0>(0)?;
         self.inner.close()
     }
@@ -1204,8 +1225,15 @@ where
     ) -> Result<Reader<(&'static K0, &'static A0, ())>, super::reader::Error> {
         let any_factories = self.factories.any_factories();
 
-        let (file_handle, path) = self.close()?;
-        Reader::new(&[&any_factories], path, Runtime::buffer_cache, file_handle)
+        let (file_handle, path, bloom_filter) = self.close()?;
+
+        Reader::new(
+            &[&any_factories],
+            path,
+            Runtime::buffer_cache,
+            file_handle,
+            bloom_filter,
+        )
     }
 }
 
@@ -1354,7 +1382,7 @@ where
     ///
     /// This function will panic if [`write1`](Self::write1) has been called
     /// without a subsequent call to [`write0`](Self::write0).
-    pub fn close(mut self) -> Result<(Arc<dyn FileReader>, PathBuf), StorageError> {
+    pub fn close(mut self) -> Result<(Arc<dyn FileReader>, PathBuf, BloomFilter), StorageError> {
         self.inner.finish_column::<K0, A0>(0)?;
         self.inner.finish_column::<K1, A1>(1)?;
         self.inner.close()
@@ -1375,12 +1403,13 @@ where
     > {
         let any_factories0 = self.factories0.any_factories();
         let any_factories1 = self.factories1.any_factories();
-        let (file_handle, path) = self.close()?;
+        let (file_handle, path, bloom_filter) = self.close()?;
         Reader::new(
             &[&any_factories0, &any_factories1],
             path,
             Runtime::buffer_cache,
             file_handle,
+            bloom_filter,
         )
     }
 }

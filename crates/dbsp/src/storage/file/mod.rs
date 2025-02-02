@@ -71,8 +71,12 @@
 #![cfg_attr(not(test), warn(missing_docs))]
 
 use crate::storage::buffer_cache::{FBuf, FBufSerializer};
+use binrw::binrw;
+use bytemuck::cast_slice;
 #[cfg(doc)]
 use crc32c::crc32c;
+use crc32c::{crc32c, crc32c_append};
+use fastbloom::BloomFilter;
 use rkyv::de::deserializers::SharedDeserializeMap;
 use rkyv::{
     ser::{
@@ -98,6 +102,62 @@ use crate::{
     DBData,
 };
 pub use item::{ArchivedItem, Item, ItemFactory, WithItemFactory};
+
+const BLOOM_FILTER_SEED: u128 = 42;
+const BLOOM_FILTER_FALSE_POSITIVE_RATE: f64 = 0.001;
+
+/// Format to store a bloom filter in a file.
+#[binrw]
+#[brw(little)]
+struct BloomFilterState {
+    crc: u32,
+    num_hashes: u32,
+    #[bw(try_calc(u64::try_from(data.len())))]
+    len: u64,
+    #[br(count = len)]
+    data: Vec<u64>,
+}
+
+impl From<&BloomFilter> for BloomFilterState {
+    fn from(bloom_filter: &BloomFilter) -> Self {
+        let bytes: &[u8] = cast_slice(bloom_filter.as_slice());
+        let crc = crc32c(&bytes);
+        let crc = crc32c_append(
+            crc,
+            &cast_slice(&[bloom_filter.num_hashes() as u64, bytes.len() as u64]),
+        );
+
+        Self {
+            crc,
+            num_hashes: bloom_filter.num_hashes(),
+            data: Vec::from(bloom_filter.as_slice()),
+        }
+    }
+}
+
+impl TryInto<BloomFilter> for BloomFilterState {
+    type Error = std::io::Error;
+
+    fn try_into(self) -> Result<BloomFilter, Self::Error> {
+        let bytes: &[u8] = cast_slice(self.data.as_slice());
+        let crc = crc32c(&bytes);
+        let crc = crc32c_append(
+            crc,
+            &cast_slice(&[self.num_hashes as u64, bytes.len() as u64]),
+        );
+
+        if self.crc != crc {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "Bloom filter data is corrupted",
+            ));
+        }
+
+        Ok(BloomFilter::from_vec(self.data)
+            .seed(&BLOOM_FILTER_SEED)
+            .hashes(self.num_hashes))
+    }
+}
 
 /// Factory objects used by file reader and writer.
 pub struct Factories<K, A>
