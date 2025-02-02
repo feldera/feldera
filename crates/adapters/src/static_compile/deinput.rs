@@ -2,6 +2,7 @@
 use crate::catalog::AvroStream;
 #[cfg(feature = "with-avro")]
 use crate::format::avro::from_avro_value;
+use crate::format::raw::{raw_serde_config, RawDeserializer};
 use crate::{catalog::ArrowStream, format::InputBuffer};
 use crate::{
     catalog::{DeCollectionStream, RecordFormat},
@@ -91,6 +92,27 @@ impl DeserializerFromBytes<SqlSerdeConfig> for JsonDeserializerFromBytes {
         let mut deserializer = serde_json::Deserializer::from_slice(data);
         let deserializer =
             &mut <dyn ErasedDeserializer>::erase(&mut deserializer) as &mut dyn ErasedDeserializer;
+
+        T::deserialize_with_context(deserializer, &self.config).map_err(|e| anyhow!(e.to_string()))
+    }
+}
+
+// Deserializer for JSON-encoded data.
+pub struct RawDeserializerFromBytes {
+    config: SqlSerdeConfig,
+}
+
+impl DeserializerFromBytes<SqlSerdeConfig> for RawDeserializerFromBytes {
+    fn create(config: SqlSerdeConfig) -> Self {
+        RawDeserializerFromBytes { config }
+    }
+    fn deserialize<T>(&mut self, data: &[u8]) -> AnyResult<T>
+    where
+        T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>,
+    {
+        let deserializer = RawDeserializer::new(data);
+        let deserializer =
+            &mut <dyn ErasedDeserializer>::erase(deserializer) as &mut dyn ErasedDeserializer;
 
         T::deserialize_with_context(deserializer, &self.config).map_err(|e| anyhow!(e.to_string()))
     }
@@ -190,6 +212,20 @@ where
                 let config = SqlSerdeConfig::from(flavor);
                 Ok(Box::new(DeScalarStreamImpl::<
                     JsonDeserializerFromBytes,
+                    T,
+                    D,
+                    _,
+                    _,
+                >::new(
+                    self.handle.clone(),
+                    self.map_func.clone(),
+                    config,
+                )))
+            }
+            RecordFormat::Raw => {
+                let config = raw_serde_config();
+                Ok(Box::new(DeScalarStreamImpl::<
+                    RawDeserializerFromBytes,
                     T,
                     D,
                     _,
@@ -324,6 +360,15 @@ where
             #[cfg(feature = "with-avro")]
             RecordFormat::Avro => {
                 todo!()
+            }
+            RecordFormat::Raw => {
+                let config = raw_serde_config();
+                Ok(Box::new(
+                    DeZSetStream::<RawDeserializerFromBytes, K, D, _>::new(
+                        self.handle.clone(),
+                        config,
+                    ),
+                ))
             }
         }
     }
@@ -696,6 +741,12 @@ where
             RecordFormat::Avro => {
                 todo!()
             }
+            RecordFormat::Raw => Ok(Box::new(
+                DeSetStream::<RawDeserializerFromBytes, K, D, _>::new(
+                    self.handle.clone(),
+                    raw_serde_config(),
+                ),
+            )),
         }
     }
 
@@ -1112,6 +1163,23 @@ where
             RecordFormat::Avro => {
                 todo!()
             }
+            RecordFormat::Raw => Ok(Box::new(DeMapStream::<
+                RawDeserializerFromBytes,
+                K,
+                KD,
+                V,
+                VD,
+                U,
+                UD,
+                VF,
+                UF,
+                _,
+            >::new(
+                self.handle.clone(),
+                self.value_key_func.clone(),
+                self.update_key_func.clone(),
+                raw_serde_config(),
+            ))),
         }
     }
 

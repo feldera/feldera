@@ -431,6 +431,7 @@ where
                     ),
                 )
             }
+            RecordFormat::Raw => todo!(),
         })
     }
 }
