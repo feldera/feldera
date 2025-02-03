@@ -22,7 +22,7 @@ public enum DBSPTypeCode {
     KEYWORD(null, "", ""),
     NULL("NULL", "null", "()"),
     STR(null, "str", "str"),
-    STRING("VARCHAR", "s", "String"),
+    STRING("VARCHAR", "s", "SqlString"),
     TIME("TIME", "Time", "Time"),
     TIMESTAMP("TIMESTAMP", "Timestamp", "Timestamp"),
     TIMESTAMP_TZ("TIMESTAMP WITH TIME ZONE", "", ""),

@@ -6,7 +6,7 @@ use dbsp::{
 };
 
 use dbsp::dynamic::{DowncastTrait, Erase};
-use feldera_sqllib::{WSet, Weight};
+use feldera_sqllib::{SqlString, WSet, Weight};
 use sltsqlvalue::*;
 use std::ops::{Add, Neg};
 
@@ -62,20 +62,20 @@ where
 }
 
 struct DataRows<'a> {
-    rows: Vec<Vec<String>>,
+    rows: Vec<Vec<SqlString>>,
     order: &'a SortOrder,
-    format: &'a String,
+    format: &'a SqlString,
 }
 
 impl<'a> DataRows<'a> {
-    pub fn new(format: &'a String, order: &'a SortOrder) -> Self {
+    pub fn new(format: &'a SqlString, order: &'a SortOrder) -> Self {
         Self {
             rows: Vec::new(),
             order,
             format,
         }
     }
-    pub fn with_capacity(format: &'a String, order: &'a SortOrder, capacity: usize) -> Self {
+    pub fn with_capacity(format: &'a SqlString, order: &'a SortOrder, capacity: usize) -> Self {
         Self {
             rows: Vec::with_capacity(capacity),
             order,
@@ -83,7 +83,7 @@ impl<'a> DataRows<'a> {
         }
     }
     pub fn push(&mut self, sql_row: SqlRow) {
-        let row_vec = sql_row.to_slt_strings(self.format);
+        let row_vec = sql_row.to_slt_strings(&self.format.str());
         if *self.order == SortOrder::ROW || *self.order == SortOrder::NONE {
             self.rows.push(row_vec);
         } else if *self.order == SortOrder::VALUE {
@@ -93,7 +93,7 @@ impl<'a> DataRows<'a> {
         }
     }
 
-    pub fn get(mut self) -> Vec<Vec<String>> {
+    pub fn get(mut self) -> Vec<Vec<SqlString>> {
         if *self.order != SortOrder::NONE {
             self.rows.sort_unstable_by(&compare);
         }
@@ -102,7 +102,7 @@ impl<'a> DataRows<'a> {
 }
 
 /// The format is from the SqlLogicTest query output string format
-pub fn zset_to_strings<K>(set: &WSet<K>, format: String, order: SortOrder) -> Vec<Vec<String>>
+pub fn zset_to_strings<K>(set: &WSet<K>, format: SqlString, order: SortOrder) -> Vec<Vec<SqlString>>
 where
     K: DBData + ToSqlRow,
 {
@@ -118,9 +118,9 @@ where
 /// to contain a single vector with all the data.
 pub fn zset_of_vectors_to_strings<K>(
     set: &WSet<Vec<K>>,
-    format: String,
+    format: SqlString,
     order: SortOrder,
-) -> Vec<Vec<String>>
+) -> Vec<Vec<SqlString>>
 where
     K: DBData + ToSqlRow,
 {
@@ -143,7 +143,7 @@ where
 
 /// This function mimics the md5 checksum computation from SqlLogicTest
 /// The format is from the SqlLogicTest query output string format
-pub fn hash<K>(set: &WSet<K>, format: String, order: SortOrder) -> String
+pub fn hash<K>(set: &WSet<K>, format: SqlString, order: SortOrder) -> SqlString
 where
     K: DBData + ToSqlRow,
 {
@@ -151,17 +151,17 @@ where
     let mut builder = String::default();
     for row in vec {
         for col in row {
-            builder = builder + &col + "\n"
+            builder = builder + &col.str() + "\n"
         }
     }
     // println!("{}", builder);
     let digest = md5::compute(builder);
-    format!("{:x}", digest)
+    SqlString::from(format!("{:x}", digest))
 }
 
 /// Version of hash that takes the result of orderby: a zset that is expected
 /// to contain a single vector with all the data.
-pub fn hash_vectors<K>(set: &WSet<Vec<K>>, format: String, order: SortOrder) -> String
+pub fn hash_vectors<K>(set: &WSet<Vec<K>>, format: SqlString, order: SortOrder) -> String
 where
     K: DBData + ToSqlRow,
 {
@@ -181,7 +181,7 @@ where
         }
         for row in data_rows.get() {
             for col in row {
-                builder = builder + &col + "\n"
+                builder = builder + &col.str() + "\n"
             }
         }
         cursor.step_key();
