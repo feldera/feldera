@@ -30,6 +30,16 @@ export default defineConfig(async () => {
     ],
     build: {
       minify: 'esbuild'
+    },
+    css: {
+      preprocessorOptions: {
+        scss: {
+          api: 'modern-compiler'
+        },
+        sass: {
+          api: 'modern-compiler'
+        }
+      }
     }
   } satisfies UserConfig
 })
