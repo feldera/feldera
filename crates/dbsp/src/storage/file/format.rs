@@ -76,7 +76,9 @@
 //!
 //! Decompressing a compressed block yields the regular index or data block
 //! format starting with a [`BlockHeader`].
-use crate::storage::buffer_cache::FBuf;
+use std::{any::Any, sync::Arc};
+
+use crate::storage::buffer_cache::{CacheEntry, FBuf};
 
 use binrw::{binrw, BinRead, BinResult, BinWrite, Error as BinError};
 #[cfg(doc)]
@@ -148,6 +150,16 @@ pub struct FileTrailer {
     /// The columns.
     #[br(count = n_columns)]
     pub columns: Vec<FileTrailerColumn>,
+}
+
+impl CacheEntry for FileTrailer {
+    fn cost(&self) -> usize {
+        size_of::<FileTrailer>()
+    }
+
+    fn as_any(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {
+        self
+    }
 }
 
 /// Information about a column.

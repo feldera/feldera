@@ -21,7 +21,6 @@ use crate::{
     },
     DBData, DBWeight, NumEntries, Runtime,
 };
-use dyn_clone::clone_box;
 use rand::{seq::index::sample, Rng};
 use rkyv::{ser::Serializer, Archive, Archived, Deserialize, Fallible, Serialize};
 use size_of::SizeOf;
@@ -240,29 +239,7 @@ where
 {
     #[inline]
     fn neg_by_ref(&self) -> Self {
-        let mut writer = Writer2::new(
-            &self.factories.factories0,
-            &self.factories.factories1,
-            Runtime::buffer_cache(),
-            &*Runtime::storage_backend().unwrap(),
-            Runtime::file_writer_parameters(),
-        )
-        .unwrap();
-
-        let mut cursor = self.cursor();
-        while cursor.key_valid() {
-            while cursor.val_valid() {
-                let diff = cursor.diff.neg_by_ref();
-                writer.write1((cursor.val.as_ref(), diff.erase())).unwrap();
-                cursor.step_val();
-            }
-            writer.write0((cursor.key.as_ref(), &())).unwrap();
-            cursor.step_key();
-        }
-        Self {
-            factories: self.factories.clone(),
-            file: writer.into_reader().unwrap(),
-        }
+        todo!()
     }
 }
 
@@ -464,22 +441,18 @@ where
         value_filter: &Option<Filter<V>>,
         fuel: &mut isize,
     ) {
-        if filter(key_filter, cursor.key.as_ref()) {
+        if filter(key_filter, cursor.key()) {
             *fuel -= cursor.val_cursor.len() as isize;
             let mut n = 0;
             while cursor.val_valid() {
-                let val = cursor.val();
-                if filter(value_filter, val) {
-                    let diff = cursor.diff.as_ref();
-                    self.writer.write1((val, diff)).unwrap();
+                if filter(value_filter, cursor.val()) {
+                    self.writer.write1((cursor.val(), cursor.diff())).unwrap();
                     n += 1;
                 }
                 cursor.step_val();
             }
             if n > 0 {
-                self.writer
-                    .write0((cursor.key.as_ref(), ().erase()))
-                    .unwrap();
+                self.writer.write0((cursor.key(), ().erase())).unwrap();
             }
         } else {
             *fuel -= 1;
@@ -492,10 +465,8 @@ where
         cursor: &mut FileIndexedWSetCursor<K, V, R>,
         value_filter: &Option<Filter<V>>,
     ) -> u64 {
-        let retval = if filter(value_filter, cursor.val.as_ref()) {
-            self.writer
-                .write1((cursor.val.as_ref(), cursor.diff.as_ref()))
-                .unwrap();
+        let retval = if filter(value_filter, cursor.val()) {
+            self.writer.write1((cursor.val(), cursor.diff())).unwrap();
             1
         } else {
             0
@@ -523,7 +494,7 @@ where
                 }
                 Ordering::Equal => {
                     if filter(value_filter, value1) {
-                        cursor1.diff.as_ref().add(cursor2.diff.as_ref(), &mut sum);
+                        cursor1.diff().add(cursor2.diff(), &mut sum);
                         if !sum.is_zero() {
                             self.writer.write1((value1, &sum)).unwrap();
                             n += 1;
@@ -597,17 +568,15 @@ where
         let mut cursor1 = FileIndexedWSetCursor::new_from(source1, self.lower1);
         let mut cursor2 = FileIndexedWSetCursor::new_from(source2, self.lower2);
         while cursor1.key_valid() && cursor2.key_valid() && *fuel > 0 {
-            match cursor1.key.as_ref().cmp(cursor2.key.as_ref()) {
+            match cursor1.key().cmp(cursor2.key()) {
                 Ordering::Less => {
                     self.copy_values_if(&mut cursor1, key_filter, value_filter, fuel);
                 }
                 Ordering::Equal => {
-                    if filter(key_filter, cursor1.key.as_ref()) {
+                    if filter(key_filter, cursor1.key()) {
                         *fuel -= (cursor1.val_cursor.len() + cursor2.val_cursor.len()) as isize;
                         if self.merge_values(&mut cursor1, &mut cursor2, value_filter) {
-                            self.writer
-                                .write0((cursor1.key.as_ref(), ().erase()))
-                                .unwrap();
+                            self.writer.write0((cursor1.key(), ().erase())).unwrap();
                         }
                     } else {
                         *fuel -= 1;
@@ -653,13 +622,8 @@ where
     R: WeightTrait + ?Sized,
 {
     wset: &'s FileIndexedWSet<K, V, R>,
-
     key_cursor: KeyCursor<'s, K, V, R>,
-    key: Box<K>,
-
     val_cursor: ValCursor<'s, K, V, R>,
-    val: Box<V>,
-    pub(crate) diff: Box<R>,
 }
 
 impl<K, V, R> Clone for FileIndexedWSetCursor<'_, K, V, R>
@@ -672,10 +636,7 @@ where
         Self {
             wset: self.wset,
             key_cursor: self.key_cursor.clone(),
-            key: clone_box(&self.key),
             val_cursor: self.val_cursor.clone(),
-            val: clone_box(&self.val),
-            diff: clone_box(&self.diff),
         }
     }
 }
@@ -693,21 +654,17 @@ where
             .subset(lower_bound as u64..)
             .first()
             .unwrap();
-        let mut key = wset.factories.key_factory().default_box();
-        unsafe { key_cursor.key(&mut key) };
 
         let val_cursor = key_cursor.next_column().unwrap().first().unwrap();
-        let mut val = wset.factories.val_factory().default_box();
-        let mut diff = wset.factories.weight_factory().default_box();
-        unsafe { val_cursor.item((&mut val, &mut diff)) };
         Self {
             wset,
             key_cursor,
-            key,
             val_cursor,
-            val,
-            diff,
         }
+    }
+
+    pub fn diff(&self) -> &R {
+        self.val_cursor.aux().unwrap()
     }
 
     pub fn new(wset: &'s FileIndexedWSet<K, V, R>) -> Self {
@@ -719,9 +676,7 @@ where
         F: Fn(&mut KeyCursor<'s, K, V, R>) -> Result<(), ReaderError>,
     {
         op(&mut self.key_cursor).unwrap();
-        unsafe { self.key_cursor.key(&mut self.key) };
         self.val_cursor = self.key_cursor.next_column().unwrap().first().unwrap();
-        unsafe { self.val_cursor.item((&mut self.val, &mut self.diff)) };
     }
 
     fn move_val<F>(&mut self, op: F)
@@ -729,7 +684,6 @@ where
         F: Fn(&mut ValCursor<'s, K, V, R>) -> Result<(), ReaderError>,
     {
         op(&mut self.val_cursor).unwrap();
-        unsafe { self.val_cursor.item((&mut self.val, &mut self.diff)) };
     }
 }
 
@@ -744,18 +698,16 @@ where
     }
 
     fn key(&self) -> &K {
-        debug_assert!(self.key_valid());
-        self.key.as_ref()
+        self.key_cursor.key().unwrap()
     }
 
     fn val(&self) -> &V {
-        debug_assert!(self.val_valid());
-        self.val.as_ref()
+        self.val_cursor.key().unwrap()
     }
 
     fn map_times(&mut self, logic: &mut dyn FnMut(&(), &R)) {
         if self.val_valid() {
-            logic(&(), self.diff.as_ref())
+            logic(&(), self.diff())
         }
     }
 
@@ -765,14 +717,14 @@ where
 
     fn map_values(&mut self, logic: &mut dyn FnMut(&V, &R)) {
         while self.val_valid() {
-            logic(self.val(), self.diff.as_ref());
+            logic(self.val(), self.diff());
             self.step_val();
         }
     }
 
     fn weight(&mut self) -> &R {
         debug_assert!(self.val_valid());
-        self.diff.as_ref()
+        self.diff()
     }
 
     fn key_valid(&self) -> bool {
@@ -868,7 +820,7 @@ where
         Self: 'a;
 
     fn time_diff_cursor(&self) -> Self::TimeDiffCursor<'_> {
-        SingletonTimeDiffCursor::new(self.val_valid().then(|| self.diff.as_ref()))
+        SingletonTimeDiffCursor::new(self.val_valid().then(|| self.diff()))
     }
 }
 

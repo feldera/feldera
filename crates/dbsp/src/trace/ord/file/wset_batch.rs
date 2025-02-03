@@ -22,7 +22,6 @@ use crate::{
     utils::Tup2,
     DBData, DBWeight, NumEntries, Runtime,
 };
-use dyn_clone::clone_box;
 use rand::{seq::index::sample, Rng};
 use rkyv::{Archive, Deserialize, Serialize};
 use size_of::SizeOf;
@@ -254,8 +253,8 @@ where
 
         let mut cursor = self.cursor();
         while cursor.key_valid() {
-            let diff = cursor.diff.neg_by_ref();
-            writer.write0((cursor.key.as_ref(), diff.erase())).unwrap();
+            let diff = cursor.weight().neg_by_ref();
+            writer.write0((cursor.key(), diff.erase())).unwrap();
             cursor.step_key();
         }
         Self {
@@ -515,21 +514,21 @@ where
         let mut cursor2 = FileWSetCursor::new_from(source2, self.lower2);
         let mut sum = self.factories.weight_factory.default_box();
         while cursor1.key_valid() && cursor2.key_valid() && *fuel > 0 {
-            match cursor1.key.as_ref().cmp(cursor2.key.as_ref()) {
+            match cursor1.key().cmp(cursor2.key()) {
                 Ordering::Less => {
-                    if filter(key_filter, cursor1.key.as_ref()) {
+                    if filter(key_filter, cursor1.key()) {
                         self.writer
-                            .write0((cursor1.key.as_ref(), cursor1.diff.as_ref()))
+                            .write0((cursor1.key(), cursor1.diff()))
                             .unwrap();
                     }
                     *fuel -= 1;
                     cursor1.step_key();
                 }
                 Ordering::Equal => {
-                    if filter(key_filter, cursor1.key.as_ref()) {
-                        cursor1.diff.as_ref().add(cursor2.diff.as_ref(), &mut sum);
+                    if filter(key_filter, cursor1.key()) {
+                        cursor1.diff().add(cursor2.diff(), &mut sum);
                         if !sum.is_zero() {
-                            self.writer.write0((cursor1.key.as_ref(), &sum)).unwrap();
+                            self.writer.write0((cursor1.key(), &sum)).unwrap();
                         }
                     }
                     *fuel -= 2;
@@ -538,9 +537,9 @@ where
                 }
 
                 Ordering::Greater => {
-                    if filter(key_filter, cursor2.key.as_ref()) {
+                    if filter(key_filter, cursor2.key()) {
                         self.writer
-                            .write0((cursor2.key.as_ref(), cursor2.diff.as_ref()))
+                            .write0((cursor2.key(), cursor2.diff()))
                             .unwrap();
                     }
                     *fuel -= 1;
@@ -550,18 +549,18 @@ where
         }
 
         while cursor1.key_valid() && *fuel > 0 {
-            if filter(key_filter, cursor1.key.as_ref()) {
+            if filter(key_filter, cursor1.key()) {
                 self.writer
-                    .write0((cursor1.key.as_ref(), cursor1.diff.as_ref()))
+                    .write0((cursor1.key(), cursor1.diff()))
                     .unwrap();
             }
             *fuel -= 1;
             cursor1.step_key();
         }
         while cursor2.key_valid() && *fuel > 0 {
-            if filter(key_filter, cursor2.key.as_ref()) {
+            if filter(key_filter, cursor2.key()) {
                 self.writer
-                    .write0((cursor2.key.as_ref(), cursor2.diff.as_ref()))
+                    .write0((cursor2.key(), cursor2.diff()))
                     .unwrap();
             }
             *fuel -= 1;
@@ -583,9 +582,7 @@ where
 {
     wset: &'s FileWSet<K, R>,
     cursor: RawCursor<'s, K, R>,
-    key: Box<K>,
-    pub(crate) diff: Box<R>,
-    valid: bool,
+    val_valid: bool,
 }
 
 impl<K, R> Clone for FileWSetCursor<'_, K, R>
@@ -597,9 +594,7 @@ where
         Self {
             wset: self.wset,
             cursor: self.cursor.clone(),
-            key: clone_box(&self.key),
-            diff: clone_box(&self.diff),
-            valid: self.valid,
+            val_valid: self.val_valid,
         }
     }
 }
@@ -616,16 +611,13 @@ where
             .subset(lower_bound as u64..)
             .first()
             .unwrap();
-        let mut key = wset.factories.key_factory.default_box();
-        let mut diff = wset.factories.weight_factory.default_box();
-        let valid = unsafe { cursor.item((&mut key, &mut diff)) }.is_some();
+
+        let val_valid = cursor.has_value();
 
         Self {
             wset,
             cursor,
-            key,
-            diff,
-            valid,
+            val_valid,
         }
     }
 
@@ -638,7 +630,15 @@ where
         F: Fn(&mut RawCursor<'s, K, R>) -> Result<(), ReaderError>,
     {
         op(&mut self.cursor).unwrap();
-        self.valid = unsafe { self.cursor.item((&mut self.key, &mut self.diff)) }.is_some();
+        self.moved_key();
+    }
+
+    fn moved_key(&mut self) {
+        self.val_valid = self.cursor.has_value();
+    }
+
+    fn diff(&self) -> &R {
+        self.cursor.aux().unwrap()
     }
 }
 
@@ -648,8 +648,7 @@ where
     R: WeightTrait + ?Sized,
 {
     fn key(&self) -> &K {
-        debug_assert!(self.valid);
-        self.key.as_ref()
+        self.cursor.key().unwrap()
     }
 
     fn val(&self) -> &DynUnit {
@@ -657,8 +656,8 @@ where
     }
 
     fn map_times(&mut self, logic: &mut dyn FnMut(&(), &R)) {
-        if self.valid {
-            logic(&(), self.diff.as_ref());
+        if self.val_valid {
+            logic(&(), self.diff());
         }
     }
 
@@ -667,16 +666,15 @@ where
     }
 
     fn weight(&mut self) -> &R {
-        debug_assert!(self.valid);
-        self.diff.as_ref()
+        self.diff()
     }
 
     fn key_valid(&self) -> bool {
-        self.valid
+        self.cursor.has_value()
     }
 
     fn val_valid(&self) -> bool {
-        self.valid
+        self.val_valid
     }
 
     fn step_key(&mut self) {
@@ -712,14 +710,14 @@ where
     }
 
     fn step_val(&mut self) {
-        self.valid = false;
+        self.val_valid = false;
     }
 
     fn seek_val(&mut self, _val: &DynUnit) {}
 
     fn seek_val_with(&mut self, predicate: &dyn Fn(&DynUnit) -> bool) {
         if !predicate(&()) {
-            self.valid = false;
+            self.val_valid = false;
         }
     }
 
@@ -732,23 +730,23 @@ where
     }
 
     fn rewind_vals(&mut self) {
-        self.valid = true;
+        self.val_valid = true;
     }
 
     fn step_val_reverse(&mut self) {
-        self.valid = false;
+        self.val_valid = false;
     }
 
     fn seek_val_reverse(&mut self, _val: &DynUnit) {}
 
     fn seek_val_with_reverse(&mut self, predicate: &dyn Fn(&DynUnit) -> bool) {
         if !predicate(&()) {
-            self.valid = false;
+            self.val_valid = false;
         }
     }
 
     fn fast_forward_vals(&mut self) {
-        self.valid = true;
+        self.val_valid = true;
     }
 
     fn weight_factory(&self) -> &'static dyn Factory<R> {
@@ -756,8 +754,8 @@ where
     }
 
     fn map_values(&mut self, logic: &mut dyn FnMut(&DynUnit, &R)) {
-        if self.valid {
-            logic(&(), self.diff.as_ref())
+        if self.val_valid {
+            logic(&(), self.diff())
         }
     }
 }
@@ -773,7 +771,7 @@ where
         Self: 'a;
 
     fn time_diff_cursor(&self) -> Self::TimeDiffCursor<'_> {
-        SingletonTimeDiffCursor::new(self.val_valid().then(|| self.diff.as_ref()))
+        SingletonTimeDiffCursor::new(self.val_valid().then(|| self.diff()))
     }
 }
 

@@ -4,12 +4,12 @@
 use crate::circuit::metrics::describe_metrics;
 use crate::error::Error as DbspError;
 use crate::storage::backend::StorageBackend;
+use crate::storage::buffer_cache::CacheEntry;
 use crate::storage::file::format::Compression;
 use crate::storage::file::writer::Parameters;
 use crate::{
     storage::{
         backend::StorageError, buffer_cache::BufferCache, dirlock::LockedDirectory,
-        file::cache::FileCacheEntry,
     },
     DetailedError,
 };
@@ -104,7 +104,7 @@ thread_local! {
     /// to speed-up finding the cache on a given thread.
     ///
     /// It is initialized by the first call to `Runtime::buffer_cache()`.
-    static BUFFER_CACHE: RefCell<Option<Arc<BufferCache<FileCacheEntry>>>> = const { RefCell::new(None) };
+    static BUFFER_CACHE: RefCell<Option<Arc<BufferCache<dyn CacheEntry>>>> = const { RefCell::new(None) };
 }
 
 pub struct LocalStoreMarker;
@@ -432,7 +432,7 @@ impl Runtime {
     }
 
     /// Returns this thread's buffer cache, if storage is configured.
-    pub fn buffer_cache() -> Arc<BufferCache<FileCacheEntry>> {
+    pub fn buffer_cache() -> Arc<BufferCache<dyn CacheEntry>> {
         if let Some(rt) = Runtime::runtime() {
             // Fast path, look up from TLS
             if let Some(buffer_cache) = BUFFER_CACHE.with(|bc| bc.borrow().clone()) {
@@ -451,7 +451,7 @@ impl Runtime {
         } else {
             // No `Runtime` means there's only a single worker, so use a single
             // global cache.
-            static NO_RUNTIME_CACHE: LazyLock<Arc<BufferCache<FileCacheEntry>>> =
+            static NO_RUNTIME_CACHE: LazyLock<Arc<BufferCache<dyn CacheEntry>>> =
                 LazyLock::new(|| Arc::new(BufferCache::new(1024 * 1024 * 256)));
             NO_RUNTIME_CACHE.clone()
         }
@@ -746,7 +746,7 @@ impl TypedMapKey<LocalStoreMarker> for WorkerId {
 struct BufferCacheId(usize);
 
 impl TypedMapKey<LocalStoreMarker> for BufferCacheId {
-    type Value = Arc<BufferCache<FileCacheEntry>>;
+    type Value = Arc<BufferCache<dyn CacheEntry>>;
 }
 
 #[cfg(test)]

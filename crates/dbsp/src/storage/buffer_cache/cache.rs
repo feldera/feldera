@@ -2,11 +2,12 @@
 //!
 //! This is a layer over a storage backend that adds a cache of a
 //! client-provided function of the blocks.
+use std::any::Any;
 use std::borrow::Cow;
 use std::fmt::Debug;
 use std::ops::{Add, AddAssign};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::{collections::BTreeMap, ops::Range};
 
 use enum_map::{Enum, EnumMap};
@@ -48,23 +49,24 @@ impl CacheKey {
 /// A value in the block cache.
 struct CacheValue<E>
 where
-    E: CacheEntry,
+    E: CacheEntry + ?Sized,
 {
     /// Cached interpretation of `block`.
-    aux: E,
+    aux: Arc<E>,
 
     /// Serial number for LRU purposes.  Blocks with higher serial numbers have
     /// been used more recently.
     serial: u64,
 }
 
-pub trait CacheEntry: Clone + Send {
+pub trait CacheEntry: Send + Sync {
     fn cost(&self) -> usize;
+    fn as_any(self: Arc<Self>) -> Arc<dyn Any + Send + Sync>;
 }
 
 struct CacheInner<E>
 where
-    E: CacheEntry,
+    E: CacheEntry + ?Sized,
 {
     /// Cache contents.
     cache: BTreeMap<CacheKey, CacheValue<E>>,
@@ -85,7 +87,7 @@ where
 
 impl<E> CacheInner<E>
 where
-    E: CacheEntry,
+    E: CacheEntry + ?Sized,
 {
     fn new(max_cost: usize) -> Self {
         Self {
@@ -134,13 +136,13 @@ where
         self.debug_check_invariants();
     }
 
-    fn get(&mut self, key: CacheKey) -> Option<&E> {
+    fn get(&mut self, key: CacheKey) -> Option<Arc<E>> {
         if let Some(value) = self.cache.get_mut(&key) {
             self.lru.remove(&value.serial);
             value.serial = self.next_serial;
             self.lru.insert(value.serial, key);
             self.next_serial += 1;
-            Some(&value.aux)
+            Some(value.aux.clone())
         } else {
             None
         }
@@ -155,7 +157,7 @@ where
         self.debug_check_invariants();
     }
 
-    fn insert(&mut self, key: CacheKey, aux: E) {
+    fn insert(&mut self, key: CacheKey, aux: Arc<E>) {
         let cost = aux.cost();
         self.evict_to(self.max_cost.saturating_sub(cost));
         if let Some(old_value) = self.cache.insert(
@@ -178,7 +180,7 @@ where
 /// A cache on top of a storage [backend](crate::storage::backend).
 pub struct BufferCache<E>
 where
-    E: CacheEntry,
+    E: CacheEntry + ?Sized,
 {
     inner: Mutex<CacheInner<E>>,
 }
@@ -194,7 +196,7 @@ where
 
 impl<E> BufferCache<E>
 where
-    E: CacheEntry,
+    E: CacheEntry + ?Sized,
 {
     /// Creates a new cache on top of `backend`.
     ///
@@ -214,13 +216,13 @@ where
         file: &dyn FileReader,
         location: BlockLocation,
         stats: &AtomicCacheStats,
-    ) -> Option<E> {
+    ) -> Option<Arc<E>> {
         let result = self
             .inner
             .lock()
             .unwrap()
             .get(CacheKey::new(file.file_id(), location.offset))
-            .cloned();
+            .clone();
 
         stats.record(
             if result.is_some() {
@@ -234,7 +236,7 @@ where
         result
     }
 
-    pub fn insert(&self, file_id: FileId, offset: u64, aux: E) {
+    pub fn insert(&self, file_id: FileId, offset: u64, aux: Arc<E>) {
         self.inner
             .lock()
             .unwrap()

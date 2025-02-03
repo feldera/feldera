@@ -35,7 +35,7 @@ use crate::{
     Runtime,
 };
 
-use super::cache::{FileCache, FileCacheEntry};
+use super::cache::{FileCache};
 use super::format::Compression;
 use super::{
     reader::Reader, AnyFactories, Factories, Serializer, BLOOM_FILTER_FALSE_POSITIVE_RATE,
@@ -983,11 +983,12 @@ impl BlockWriter {
 
         // Construct a cache entry from the uncompressed data.
         let file_id = self.file_handle.as_ref().unwrap().file_id();
+/*
         self.cache.insert(
             file_id,
             self.offset,
-            FileCacheEntry::from_write(uncompressed, location).unwrap(),
-        );
+            from_write(uncompressed, location).unwrap(),
+        );*/
         self.offset = location.after();
         Ok(location)
     }

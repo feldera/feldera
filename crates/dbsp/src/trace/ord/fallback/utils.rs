@@ -139,63 +139,42 @@ where
 
         let mut cursor1 = self.pos1.to_cursor(source1);
         let mut cursor2 = self.pos2.to_cursor(source2);
-        source1.factories().weight_factory().with(&mut |diff1| {
-            source1.factories().weight_factory().with(&mut |diff2| {
-                source1.factories().weight_factory().with(&mut |sum| {
-                    while cursor1.key_valid() && cursor2.key_valid() && *fuel > 0 {
-                        match cursor1.key().cmp(cursor2.key()) {
-                            Ordering::Less => self.copy_values_if(
-                                diff1,
-                                &mut cursor1,
-                                key_filter,
-                                value_filter,
-                                time_map_func,
-                                fuel,
-                            ),
-                            Ordering::Equal => self.merge_values_if(
-                                &mut cursor1,
-                                &mut cursor2,
-                                diff1,
-                                diff2,
-                                sum,
-                                key_filter,
-                                value_filter,
-                                time_map_func,
-                                fuel,
-                            ),
-                            Ordering::Greater => self.copy_values_if(
-                                diff1,
-                                &mut cursor2,
-                                key_filter,
-                                value_filter,
-                                time_map_func,
-                                fuel,
-                            ),
-                        }
-                    }
 
-                    while cursor1.key_valid() && *fuel > 0 {
-                        self.copy_values_if(
-                            diff1,
-                            &mut cursor1,
-                            key_filter,
-                            value_filter,
-                            time_map_func,
-                            fuel,
-                        );
-                    }
-                    while cursor2.key_valid() && *fuel > 0 {
-                        self.copy_values_if(
-                            diff1,
-                            &mut cursor2,
-                            key_filter,
-                            value_filter,
-                            time_map_func,
-                            fuel,
-                        );
-                    }
-                })
-            })
+        source1.factories().weight_factory().with(&mut |sum| {
+            while cursor1.key_valid() && cursor2.key_valid() && *fuel > 0 {
+                match cursor1.key().cmp(cursor2.key()) {
+                    Ordering::Less => self.copy_values_if(
+                        &mut cursor1,
+                        key_filter,
+                        value_filter,
+                        time_map_func,
+                        fuel,
+                    ),
+                    Ordering::Equal => self.merge_values_if(
+                        &mut cursor1,
+                        &mut cursor2,
+                        sum,
+                        key_filter,
+                        value_filter,
+                        time_map_func,
+                        fuel,
+                    ),
+                    Ordering::Greater => self.copy_values_if(
+                        &mut cursor2,
+                        key_filter,
+                        value_filter,
+                        time_map_func,
+                        fuel,
+                    ),
+                }
+            }
+
+            while cursor1.key_valid() && *fuel > 0 {
+                self.copy_values_if(&mut cursor1, key_filter, value_filter, time_map_func, fuel);
+            }
+            while cursor2.key_valid() && *fuel > 0 {
+                self.copy_values_if(&mut cursor2, key_filter, value_filter, time_map_func, fuel);
+            }
         });
         self.pos1 = Position::from_cursor(&cursor1);
         self.pos2 = Position::from_cursor(&cursor2);
@@ -207,7 +186,6 @@ where
 
     fn copy_values_if<C>(
         &mut self,
-        tmp: &mut R,
         cursor: &mut C,
         key_filter: &Option<Filter<K>>,
         value_filter: &Option<Filter<V>>,
@@ -218,7 +196,7 @@ where
     {
         if filter(key_filter, cursor.key()) {
             while cursor.val_valid() {
-                self.copy_time_diffs_if(cursor, tmp, value_filter, map_func, fuel);
+                self.copy_time_diffs_if(cursor, value_filter, map_func, fuel);
             }
         }
         *fuel -= 1;
@@ -228,7 +206,6 @@ where
     fn copy_time_diffs_if<C>(
         &mut self,
         cursor: &mut C,
-        tmp: &mut R,
         value_filter: &Option<Filter<V>>,
         map_func: Option<&dyn Fn(&mut DynDataTyped<T>)>,
         fuel: &mut isize,
@@ -246,7 +223,7 @@ where
                 time_diffs.clear();
 
                 loop {
-                    let Some((time, diff)) = tdc.current(tmp) else {
+                    let Some((time, diff)) = tdc.current() else {
                         break;
                     };
                     *fuel -= 1;
@@ -268,7 +245,7 @@ where
                 }
             } else {
                 let mut tdc = cursor.time_diff_cursor();
-                while let Some((time, diff)) = tdc.current(tmp) {
+                while let Some((time, diff)) = tdc.current() {
                     self.builder
                         .push_time(cursor.key(), cursor.val(), time, diff);
                     tdc.step();
@@ -285,8 +262,6 @@ where
         &mut self,
         cursor1: &mut C1,
         cursor2: &mut C2,
-        tmp1: &mut R,
-        tmp2: &mut R,
         sum: &mut R,
         key_filter: &Option<Filter<K>>,
         value_filter: &Option<Filter<V>>,
@@ -300,40 +275,31 @@ where
             while cursor1.val_valid() && cursor2.val_valid() {
                 match cursor1.val().cmp(cursor2.val()) {
                     Ordering::Less => {
-                        self.copy_time_diffs_if(cursor1, tmp1, value_filter, map_func, fuel)
+                        self.copy_time_diffs_if(cursor1, value_filter, map_func, fuel)
                     }
                     Ordering::Equal => {
                         if let Some(map_func) = map_func {
                             self.map_time_and_merge_diffs_if(
                                 cursor1,
                                 cursor2,
-                                tmp1,
                                 value_filter,
                                 map_func,
                                 fuel,
                             )
                         } else {
-                            self.merge_time_diffs_if(
-                                cursor1,
-                                cursor2,
-                                tmp1,
-                                tmp2,
-                                sum,
-                                value_filter,
-                                fuel,
-                            )
+                            self.merge_time_diffs_if(cursor1, cursor2, sum, value_filter, fuel)
                         }
                     }
                     Ordering::Greater => {
-                        self.copy_time_diffs_if(cursor2, tmp1, value_filter, map_func, fuel)
+                        self.copy_time_diffs_if(cursor2, value_filter, map_func, fuel)
                     }
                 }
             }
             while cursor1.val_valid() {
-                self.copy_time_diffs_if(cursor1, tmp1, value_filter, map_func, fuel);
+                self.copy_time_diffs_if(cursor1, value_filter, map_func, fuel);
             }
             while cursor2.val_valid() {
-                self.copy_time_diffs_if(cursor2, tmp2, value_filter, map_func, fuel);
+                self.copy_time_diffs_if(cursor2, value_filter, map_func, fuel);
             }
         }
         *fuel -= 1;
@@ -346,8 +312,6 @@ where
         &mut self,
         cursor1: &mut C1,
         cursor2: &mut C2,
-        tmp1: &mut R,
-        tmp2: &mut R,
         sum: &mut R,
         value_filter: &Option<Filter<V>>,
         fuel: &mut isize,
@@ -360,10 +324,10 @@ where
             let mut tdc2 = cursor2.time_diff_cursor();
 
             loop {
-                let Some((time1, diff1)) = tdc1.current(tmp1) else {
+                let Some((time1, diff1)) = tdc1.current() else {
                     break;
                 };
-                let Some((time2, diff2)) = tdc2.current(tmp2) else {
+                let Some((time2, diff2)) = tdc2.current() else {
                     break;
                 };
 
@@ -390,13 +354,13 @@ where
                 }
                 *fuel -= 1;
             }
-            while let Some((time1, diff1)) = tdc1.current(tmp1) {
+            while let Some((time1, diff1)) = tdc1.current() {
                 self.builder
                     .push_time(cursor1.key(), cursor1.val(), time1, diff1);
                 tdc1.step();
                 *fuel -= 1;
             }
-            while let Some((time2, diff2)) = tdc2.current(tmp2) {
+            while let Some((time2, diff2)) = tdc2.current() {
                 self.builder
                     .push_time(cursor2.key(), cursor2.val(), time2, diff2);
                 tdc2.step();
@@ -415,7 +379,6 @@ where
         &mut self,
         cursor1: &mut C1,
         cursor2: &mut C2,
-        tmp: &mut R,
         value_filter: &Option<Filter<V>>,
         map_func: &dyn Fn(&mut DynDataTyped<T>),
         fuel: &mut isize,
@@ -434,7 +397,7 @@ where
             let mut tdc2 = cursor2.time_diff_cursor();
 
             loop {
-                let Some((time, diff)) = tdc1.current(tmp) else {
+                let Some((time, diff)) = tdc1.current() else {
                     break;
                 };
 
@@ -446,7 +409,7 @@ where
             }
 
             loop {
-                let Some((time, diff)) = tdc2.current(tmp) else {
+                let Some((time, diff)) = tdc2.current() else {
                     break;
                 };
 
@@ -487,11 +450,10 @@ where
     V: ?Sized,
     R: WeightTrait + ?Sized,
 {
-    let mut tmp = cursor.weight_factory().default_box();
     while cursor.key_valid() {
         while cursor.val_valid() {
             let mut td_cursor = cursor.time_diff_cursor();
-            while let Some((time, diff)) = td_cursor.current(&mut tmp) {
+            while let Some((time, diff)) = td_cursor.current() {
                 builder.push_time(cursor.key(), cursor.val(), time, diff);
                 td_cursor.step();
             }
