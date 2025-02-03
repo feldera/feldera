@@ -234,12 +234,12 @@ public class ExternalFunction extends SqlFunction {
             DBSPParameter param = new DBSPParameter("s", parameterType);
             List<DBSPStatement> statements = new ArrayList<>();
             if (parameterType.mayBeNull)
-                statements.add(new DBSPLetStatement("s",
-                        new DBSPApplyMethodExpression("str",
-                                DBSPTypeAny.getDefault(), param.asVariable().question())));
+                statements.add(new DBSPLetStatement("s", param.asVariable().question()));
             DBSPExpression toStruct = new DBSPApplyExpression("from_json_string",
-                    structType.withMayBeNull(true), param.asVariable().borrow());
-            DBSPLetStatement strct = new DBSPLetStatement("strct",toStruct);
+                    structType.withMayBeNull(true),
+                    new DBSPApplyMethodExpression("str",
+                            DBSPTypeAny.getDefault(), param.asVariable()));
+            DBSPLetStatement strct = new DBSPLetStatement("strct", toStruct);
             statements.add(strct);
             DBSPVariablePath var = DBSPTypeAny.getDefault().var();
             DBSPExpression into = new DBSPApplyMethodExpression("into", DBSPTypeAny.getDefault(), var).closure(var);

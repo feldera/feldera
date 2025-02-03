@@ -1,5 +1,80 @@
 # Dynamically-Typed Values and JSON Support
 
+## Direct conversion of JSON strings to User-Defined data types
+
+Consider the following example:
+
+```sql
+CREATE TYPE address AS (
+   city VARCHAR,
+   street VARCHAR,
+   number INT
+);
+
+CREATE TABLE data(addr VARCHAR);
+```
+
+Let us assume that the table `data` contains JSON strings that encode
+addresses, e.g.,
+
+```
+{ "city": "Boston", "street": "Main", "number": 10 }
+```
+
+One way to convert JSON strings to values of a user-defined data type
+is to perform the conversion in two steps:
+
+- parse the JSON string using the `PARSE_JSON` function, described
+  below.  This function returns a value of type `VARIANT`.
+- cast the `VARIANT` value to a value of a user-defined data type.
+
+This can be achieved with the following code:
+
+```sql
+CREATE VIEW decoded AS
+SELECT CAST(PARSE_JSON(data.addr) AS address) FROM data;
+```
+
+The conversion to `VARIANT` is wasteful, since often the JSON string
+can be directly parsed into a user-defined data type.  Since SQL
+provides no convenient syntax for writing generic functions, the
+Feldera compiler following mechanism:
+
+- The user can declare a function with a name of the form
+`jsonstring_as_<udt>`, where `<udt>` is the name of a user-defined
+data type.  The function's argument is a nullable string type, while
+the function's result type is a nullable value of the user-defined
+type.
+
+- The compiler will automatically synthesize the body of this function.
+
+- The user can directly invoke the function in expressions.
+
+With these changes, the previous program can be rewritten as:
+
+```sql
+CREATE FUNCTION jsonstring_as_address(addr VARCHAR) RETURNS address;
+CREATE VIEW decoded AS
+SELECT jsonstring_as_address(data.addr) FROM data;
+```
+
+This program is more efficient than the previous one, but achieves the
+almost the same effect.
+
+There is a subtle difference between the two programs: the former
+program, using `VARIANT` requires the case fields in the JSON to match
+the case of the *normalized* fields in the user-defined type, whereas
+the automatic function using `jsonstring` is case-insensitive.  With
+the default settings, the following record:
+
+```
+{ "city": "Boston", "street": "Main", "NUMBER": 10 }
+```
+
+returns a structure with a `NULL` value for the `NUMBER` field using
+the first method.  Using the second method all three fields are
+deserialized.
+
 ## The `VARIANT` type
 
 Values of `VARIANT` type are dynamically-typed.

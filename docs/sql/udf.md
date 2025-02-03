@@ -270,7 +270,7 @@ crate, which is part of the Feldera SQL runtime.
 | `REAL`                   | `feldera_sqllib::F32`                   |
 | `DOUBLE`                 | `feldera_sqllib::F64`                   |
 | `CHAR`, `CHAR(n)`        | `feldera_sqllib::SqlString`             |
-| `VARCHAR`, `VARCHAR(n)`  | `feldera_sqllib::SQlString`             |
+| `VARCHAR`, `VARCHAR(n)`  | `feldera_sqllib::SqlString`             |
 | `BINARY`, `BINARY(n)`, `VARBINARY`, `VARBINARY(n)` | `feldera_sqllib::ByteArray`           |
 | `NULL`                   | `()`                                    |
 | `INTERVAL`               | `feldera_sqllib::ShortInterval`, `feldera_sqllib::LongInterval` |

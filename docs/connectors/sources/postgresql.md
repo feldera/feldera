@@ -90,14 +90,14 @@ create table people (
     extra bigint not null
 ) WITH (
     'materialized' = 'true',
-    'connectors' = '[{  
-    "transport": { 
-      "name": "postgres_input", 
+    'connectors' = '[{
+    "transport": {
+      "name": "postgres_input",
       "config": {
         "uri": "postgresql://postgres:1234@localhost:7373/postgres",
         "query": "select id, name, age as the_age, 1 as extra from people;"
       }
-    } 
+    }
   }]'
 );
 ```
@@ -291,9 +291,9 @@ CREATE TABLE all_types_example (
     my_decimal_array     DECIMAL(28, 2) ARRAY
 ) WITH (
   'materialized' = 'true',
-  'connectors' = '[{  
+  'connectors' = '[{
     "transport": {
-      "name": "postgres_input", 
+      "name": "postgres_input",
       "config": {
         "uri": "postgresql://postgres:1234@localhost:7373/postgres",
         "query": "select * from all_types_example;"

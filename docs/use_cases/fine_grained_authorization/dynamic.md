@@ -128,7 +128,7 @@ pub fn do_check_condition(
     let subject_properties = subject_properties?;
     let resource_properties = resource_properties?;
 
-    let expr = jmespath::compile(&condition.str()).map_err(|e| println!("invalid jmes expression: {e}")).ok()?;
+    let expr = jmespath::compile(condition.str()).map_err(|e| println!("invalid jmes expression: {e}")).ok()?;
     let all_properties = Variant::Map(BTreeMap::from(
         [(Variant::String(SqlString::from_ref("subject")), subject_properties),
          (Variant::String(SqlString::from_ref("resource")), resource_properties)]));

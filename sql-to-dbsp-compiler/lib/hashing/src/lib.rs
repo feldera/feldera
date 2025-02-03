@@ -83,7 +83,7 @@ impl<'a> DataRows<'a> {
         }
     }
     pub fn push(&mut self, sql_row: SqlRow) {
-        let row_vec = sql_row.to_slt_strings(&self.format.str());
+        let row_vec = sql_row.to_slt_strings(self.format.str());
         if *self.order == SortOrder::ROW || *self.order == SortOrder::NONE {
             self.rows.push(row_vec);
         } else if *self.order == SortOrder::VALUE {

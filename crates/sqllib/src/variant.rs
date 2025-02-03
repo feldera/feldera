@@ -382,7 +382,7 @@ impl SerializeWithContext<SqlSerdeConfig> for Variant {
                 Variant::Real(v) => v.serialize_with_context(serializer, context),
                 Variant::Double(v) => v.serialize_with_context(serializer, context),
                 Variant::Decimal(v) => v.serialize_with_context(serializer, context),
-                Variant::String(v) => v.str().serialize_with_context(serializer, context),
+                Variant::String(v) => v.serialize_with_context(serializer, context),
                 Variant::Date(v) => v.serialize_with_context(serializer, context),
                 Variant::Time(v) => v.serialize_with_context(serializer, context),
                 Variant::Timestamp(v) => v.serialize_with_context(serializer, context),

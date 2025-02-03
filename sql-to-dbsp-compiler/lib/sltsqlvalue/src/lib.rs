@@ -239,9 +239,9 @@ impl SqlLogicTestFormat for SltSqlValue {
             (SltSqlValue::Dbl(x), _) => format!("{:.3}", x),
             (SltSqlValue::OptDbl(Some(x)), _) => format!("{:.3}", x),
 
-            (SltSqlValue::Str(x), 'T') => slt_translate_string(&x.str()),
+            (SltSqlValue::Str(x), 'T') => slt_translate_string(x.str()),
             (SltSqlValue::OptStr(None), 'T') => String::from("NULL"),
-            (SltSqlValue::OptStr(Some(x)), 'T') => slt_translate_string(&x.str()),
+            (SltSqlValue::OptStr(Some(x)), 'T') => slt_translate_string(x.str()),
             (SltSqlValue::OptStr(None), 'I') => String::from("NULL"),
             (SltSqlValue::OptStr(Some(x)), 'I') => {
                 format!("{}", unwrap_cast(cast_to_i32_s(x.clone())))

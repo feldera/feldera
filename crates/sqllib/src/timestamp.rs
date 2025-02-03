@@ -834,7 +834,7 @@ pub fn hop_TimestampN_ShortInterval_ShortInterval_ShortInterval(
 
 #[doc(hidden)]
 pub fn parse_timestamp__(format: SqlString, st: SqlString) -> Option<Timestamp> {
-    let nt = NaiveDateTime::parse_from_str(&st.str(), &format.str());
+    let nt = NaiveDateTime::parse_from_str(st.str(), format.str());
     match nt {
         Ok(nt) => Some(Timestamp::from_naiveDateTime(nt)),
         Err(e) => match e.kind() {
@@ -1244,14 +1244,14 @@ some_polymorphic_function2!(datediff_day, Date, Date, Date, Date, i32);
 
 #[doc(hidden)]
 pub fn format_date__(format: SqlString, date: Date) -> SqlString {
-    return SqlString::from(date.to_dateTime().format(&format.str()).to_string());
+    return SqlString::from(date.to_dateTime().format(format.str()).to_string());
 }
 
 some_function2!(format_date, SqlString, Date, SqlString);
 
 #[doc(hidden)]
 pub fn parse_date__(format: SqlString, st: SqlString) -> Option<Date> {
-    let nd = NaiveDate::parse_from_str(&st.str(), &format.str());
+    let nd = NaiveDate::parse_from_str(st.str(), format.str());
     match nd {
         Ok(nd) => Some(Date::from_date(nd)),
         Err(e) => match e.kind() {
@@ -1724,7 +1724,7 @@ pub fn extract_hour_Time(value: Time) -> i64 {
 
 #[doc(hidden)]
 pub fn parse_time__(format: SqlString, st: SqlString) -> Option<Time> {
-    let nt = NaiveTime::parse_from_str(&st.str(), &format.str());
+    let nt = NaiveTime::parse_from_str(st.str(), format.str());
     match nt {
         Ok(nt) => Some(Time::from_time(nt)),
         Err(e) => match e.kind() {

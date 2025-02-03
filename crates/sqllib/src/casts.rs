@@ -21,7 +21,7 @@ use num::{FromPrimitive, One, ToPrimitive, Zero};
 use num_traits::cast::NumCast;
 use regex::{Captures, Regex};
 use rust_decimal::{Decimal, RoundingStrategy};
-use std::cmp::Ordering;
+use std::cmp::{min, Ordering};
 use std::error::Error;
 use std::string::String;
 use std::sync::LazyLock;
@@ -305,7 +305,7 @@ pub fn cast_to_bN_bN(value: Option<bool>) -> SqlResult<Option<bool>> {
 #[doc(hidden)]
 #[inline]
 pub fn cast_to_Date_s(value: SqlString) -> SqlResult<Date> {
-    match NaiveDate::parse_from_str(&value.str(), "%Y-%m-%d") {
+    match NaiveDate::parse_from_str(value.str(), "%Y-%m-%d") {
         Ok(value) => Ok(Date::new(
             (value.and_hms_opt(0, 0, 0).unwrap().and_utc().timestamp() / 86400) as i32,
         )),
@@ -341,7 +341,7 @@ cast_function!(Date, Date, Date, Date);
 #[doc(hidden)]
 #[inline]
 pub fn cast_to_Time_s(value: SqlString) -> SqlResult<Time> {
-    match NaiveTime::parse_from_str(&value.str(), "%H:%M:%S%.f") {
+    match NaiveTime::parse_from_str(value.str(), "%H:%M:%S%.f") {
         Err(e) => Err(SqlRuntimeError::from_string(e.to_string())),
         Ok(value) => Ok(Time::from_time(value)),
     }
@@ -886,23 +886,22 @@ fn is_unlimited_size(size: i32) -> bool {
 
 #[inline(always)]
 #[doc(hidden)]
-fn truncate(value: String, size: usize) -> String {
-    let mut result = value;
-    result.truncate(size);
-    result
+fn truncate(value: &str, size: usize) -> String {
+    let size = min(size, value.len());
+    value[0..size].to_string()
 }
 
 /// Make sure the specified string has exactly the
 /// specified size.
 #[inline(always)]
 #[doc(hidden)]
-fn size_string(value: String, size: i32) -> String {
+fn size_string(value: &str, size: i32) -> String {
     if is_unlimited_size(size) {
         value.trim_end().to_string()
     } else {
         let sz = size as usize;
         match value.len().cmp(&sz) {
-            Ordering::Equal => value,
+            Ordering::Equal => value.to_string(),
             Ordering::Greater => truncate(value, sz),
             Ordering::Less => format!("{value:<sz$}"),
         }
@@ -913,13 +912,13 @@ fn size_string(value: String, size: i32) -> String {
 /// the specified size.
 #[inline(always)]
 #[doc(hidden)]
-fn limit_string(value: String, size: i32) -> String {
+fn limit_string(value: &str, size: i32) -> String {
     if is_unlimited_size(size) {
         value.trim_end().to_string()
     } else {
         let sz = size as usize;
         if value.len() < sz {
-            value
+            value.to_string()
         } else {
             // TODO: this is legal only if all excess characters are spaces
             truncate(value, sz)
@@ -929,7 +928,7 @@ fn limit_string(value: String, size: i32) -> String {
 
 #[inline(always)]
 #[doc(hidden)]
-pub fn limit_or_size_string(value: String, size: i32, fixed: bool) -> SqlResult<SqlString> {
+pub fn limit_or_size_string(value: &str, size: i32, fixed: bool) -> SqlResult<SqlString> {
     if fixed {
         Ok(SqlString::from(size_string(value, size)))
     } else {
@@ -972,14 +971,14 @@ macro_rules! cast_to_string {
 pub fn cast_to_s_b(value: bool, size: i32, fixed: bool) -> SqlResult<SqlString> {
     // Calcite generates uppercase for boolean casts to string
     let result = value.to_string().to_uppercase();
-    limit_or_size_string(result, size, fixed)
+    limit_or_size_string(&result, size, fixed)
 }
 
 #[doc(hidden)]
 #[inline]
 pub fn cast_to_s_decimal(value: Decimal, size: i32, fixed: bool) -> SqlResult<SqlString> {
     let result = value.to_string();
-    limit_or_size_string(result, size, fixed)
+    limit_or_size_string(&result, size, fixed)
 }
 
 #[doc(hidden)]
@@ -1008,7 +1007,7 @@ where
         let result = result.trim_end_matches('0').to_string();
         result.trim_end_matches('.').to_string()
     };
-    limit_or_size_string(result, size, fixed)
+    limit_or_size_string(&result, size, fixed)
 }
 
 #[doc(hidden)]
@@ -1037,7 +1036,7 @@ pub fn cast_to_s_Timestamp(value: Timestamp, size: i32, fixed: bool) -> SqlResul
         "{}-{:02}-{:02} {:02}:{:02}:{:02}",
         year, month, day, hr, min, sec
     );
-    limit_or_size_string(result, size, fixed)
+    limit_or_size_string(&result, size, fixed)
 }
 
 #[doc(hidden)]
@@ -1047,7 +1046,7 @@ pub fn cast_to_s_Date(value: Date, size: i32, fixed: bool) -> SqlResult<SqlStrin
     let day = dt.day();
     let year = dt.year();
     let result = format!("{}-{:02}-{:02}", year, month, day);
-    limit_or_size_string(result, size, fixed)
+    limit_or_size_string(&result, size, fixed)
 }
 
 #[doc(hidden)]
@@ -1057,49 +1056,49 @@ pub fn cast_to_s_Time(value: Time, size: i32, fixed: bool) -> SqlResult<SqlStrin
     let min = dt.minute();
     let sec = dt.second();
     let result = format!("{:02}:{:02}:{:02}", hr, min, sec);
-    limit_or_size_string(result, size, fixed)
+    limit_or_size_string(&result, size, fixed)
 }
 
 #[doc(hidden)]
 #[inline]
 pub fn cast_to_s_i(value: isize, size: i32, fixed: bool) -> SqlResult<SqlString> {
     let result = value.to_string();
-    limit_or_size_string(result, size, fixed)
+    limit_or_size_string(&result, size, fixed)
 }
 
 #[doc(hidden)]
 #[inline]
 pub fn cast_to_s_i8(value: i8, size: i32, fixed: bool) -> SqlResult<SqlString> {
     let result = value.to_string();
-    limit_or_size_string(result, size, fixed)
+    limit_or_size_string(&result, size, fixed)
 }
 
 #[doc(hidden)]
 #[inline]
 pub fn cast_to_s_i16(value: i16, size: i32, fixed: bool) -> SqlResult<SqlString> {
     let result = value.to_string();
-    limit_or_size_string(result, size, fixed)
+    limit_or_size_string(&result, size, fixed)
 }
 
 #[doc(hidden)]
 #[inline]
 pub fn cast_to_s_i32(value: i32, size: i32, fixed: bool) -> SqlResult<SqlString> {
     let result = value.to_string();
-    limit_or_size_string(result, size, fixed)
+    limit_or_size_string(&result, size, fixed)
 }
 
 #[doc(hidden)]
 #[inline]
 pub fn cast_to_s_i64(value: i64, size: i32, fixed: bool) -> SqlResult<SqlString> {
     let result = value.to_string();
-    limit_or_size_string(result, size, fixed)
+    limit_or_size_string(&result, size, fixed)
 }
 
 #[doc(hidden)]
 #[inline]
 pub fn cast_to_s_u(value: usize, size: i32, fixed: bool) -> SqlResult<SqlString> {
     let result = value.to_string();
-    limit_or_size_string(result, size, fixed)
+    limit_or_size_string(&result, size, fixed)
 }
 
 #[doc(hidden)]
@@ -1189,7 +1188,7 @@ pub fn cast_to_s_LongInterval_YEARS(
     let years = interval.years();
     let negative = years < 0;
     let result = sign(negative) + &num::abs(years).to_string();
-    limit_or_size_string(result, size, fixed)
+    limit_or_size_string(&result, size, fixed)
 }
 
 #[doc(hidden)]
@@ -1211,7 +1210,7 @@ pub fn cast_to_s_LongInterval_MONTHS(
         (months, false)
     };
     let result: String = sign(negate) + &months.to_string();
-    limit_or_size_string(result, size, fixed)
+    limit_or_size_string(&result, size, fixed)
 }
 
 #[doc(hidden)]
@@ -1230,7 +1229,7 @@ pub fn cast_to_s_LongInterval_YEARS_TO_MONTHS(
     let years = months / 12;
     let months = months % 12;
     let result: String = sign(negate) + &years.to_string() + "-" + &months.to_string();
-    limit_or_size_string(result, size, fixed)
+    limit_or_size_string(&result, size, fixed)
 }
 
 #[doc(hidden)]
@@ -1248,7 +1247,7 @@ pub fn cast_to_s_ShortInterval_DAYS(
     };
     let days = extract_day_ShortInterval(interval);
     let result = format!("{}{}", sign(negative), days);
-    limit_or_size_string(result, size, fixed)
+    limit_or_size_string(&result, size, fixed)
 }
 
 #[doc(hidden)]
@@ -1267,7 +1266,7 @@ pub fn cast_to_s_ShortInterval_HOURS(
     let days = extract_day_ShortInterval(interval);
     let hours = extract_hour_ShortInterval(interval);
     let result = format!("{}{}", sign(negative), 24 * days + hours);
-    limit_or_size_string(result, size, fixed)
+    limit_or_size_string(&result, size, fixed)
 }
 
 #[doc(hidden)]
@@ -1286,7 +1285,7 @@ pub fn cast_to_s_ShortInterval_DAYS_TO_HOURS(
     let days = extract_day_ShortInterval(interval);
     let hours = extract_hour_ShortInterval(interval);
     let result = format!("{}{} {:02}", sign(negative), days, hours);
-    limit_or_size_string(result, size, fixed)
+    limit_or_size_string(&result, size, fixed)
 }
 
 #[doc(hidden)]
@@ -1306,7 +1305,7 @@ pub fn cast_to_s_ShortInterval_MINUTES(
     let hours = extract_hour_ShortInterval(interval);
     let minutes = extract_minute_ShortInterval(interval);
     let result = format!("{}{}", sign(negative), (days * 24 + hours) * 60 + minutes);
-    limit_or_size_string(result, size, fixed)
+    limit_or_size_string(&result, size, fixed)
 }
 
 #[doc(hidden)]
@@ -1326,7 +1325,7 @@ pub fn cast_to_s_ShortInterval_DAYS_TO_MINUTES(
     let hours = extract_hour_ShortInterval(interval);
     let minutes = extract_minute_ShortInterval(interval);
     let result = format!("{}{} {:02}:{:02}", sign(negative), days, hours, minutes);
-    limit_or_size_string(result, size, fixed)
+    limit_or_size_string(&result, size, fixed)
 }
 
 #[doc(hidden)]
@@ -1346,7 +1345,7 @@ pub fn cast_to_s_ShortInterval_HOURS_TO_MINUTES(
     let hours = extract_hour_ShortInterval(interval);
     let minutes = extract_minute_ShortInterval(interval);
     let result = format!("{}{}:{:02}", sign(negative), days * 24 + hours, minutes);
-    limit_or_size_string(result, size, fixed)
+    limit_or_size_string(&result, size, fixed)
 }
 
 #[doc(hidden)]
@@ -1372,7 +1371,7 @@ pub fn cast_to_s_ShortInterval_SECONDS(
         ((days * 24 + hours) * 60 + minutes) * 60 + seconds,
         0
     );
-    limit_or_size_string(result, size, fixed)
+    limit_or_size_string(&result, size, fixed)
 }
 
 #[doc(hidden)]
@@ -1401,7 +1400,7 @@ pub fn cast_to_s_ShortInterval_DAYS_TO_SECONDS(
         seconds,
         0
     );
-    limit_or_size_string(result, size, fixed)
+    limit_or_size_string(&result, size, fixed)
 }
 
 #[doc(hidden)]
@@ -1429,7 +1428,7 @@ pub fn cast_to_s_ShortInterval_HOURS_TO_SECONDS(
         seconds,
         0
     );
-    limit_or_size_string(result, size, fixed)
+    limit_or_size_string(&result, size, fixed)
 }
 
 #[doc(hidden)]
@@ -1456,13 +1455,13 @@ pub fn cast_to_s_ShortInterval_MINUTES_TO_SECONDS(
         seconds,
         0
     );
-    limit_or_size_string(result, size, fixed)
+    limit_or_size_string(&result, size, fixed)
 }
 
 #[doc(hidden)]
 pub fn cast_to_s_Uuid(value: Uuid, size: i32, fixed: bool) -> SqlResult<SqlString> {
     let result: String = value.to_string();
-    limit_or_size_string(result, size, fixed)
+    limit_or_size_string(&result, size, fixed)
 }
 
 cast_to_string!(b, bool);
@@ -1977,7 +1976,7 @@ static YEARS_TO_MONTHS: LazyLock<Regex> =
 #[doc(hidden)]
 #[inline]
 pub fn cast_to_LongInterval_YEARS_TO_MONTHS_s(value: SqlString) -> SqlResult<LongInterval> {
-    if let Some(captures) = YEARS_TO_MONTHS.captures(&value.str()) {
+    if let Some(captures) = YEARS_TO_MONTHS.captures(value.str()) {
         let yearcap = captures.get(1).unwrap().as_str();
         let mut years = match yearcap.parse::<i32>() {
             Err(e) => return Err(SqlRuntimeError::from_string(e.to_string())),
@@ -2098,7 +2097,7 @@ pub fn negative(captures: &Captures) -> bool {
 #[doc(hidden)]
 #[inline]
 pub fn cast_to_ShortInterval_DAYS_TO_HOURS_s(value: SqlString) -> SqlResult<ShortInterval> {
-    if let Some(captures) = DAYS_TO_HOURS.captures(&value.str()) {
+    if let Some(captures) = DAYS_TO_HOURS.captures(value.str()) {
         let negative = negative(&captures);
         let daycap = captures.get(2).unwrap().as_str();
         let days = match daycap.parse::<i64>() {
@@ -2134,7 +2133,7 @@ pub fn cast_to_ShortInterval_MINUTES_s(value: SqlString) -> SqlResult<ShortInter
 #[doc(hidden)]
 #[inline]
 pub fn cast_to_ShortInterval_DAYS_TO_MINUTES_s(value: SqlString) -> SqlResult<ShortInterval> {
-    if let Some(captures) = DAYS_TO_MINUTES.captures(&value.str()) {
+    if let Some(captures) = DAYS_TO_MINUTES.captures(value.str()) {
         let negative = negative(&captures);
         let daycap = captures.get(2).unwrap().as_str();
         let days = match daycap.parse::<i64>() {
@@ -2184,7 +2183,7 @@ pub fn cast_to_ShortInterval_DAYS_TO_MINUTES_s(value: SqlString) -> SqlResult<Sh
 #[doc(hidden)]
 #[inline]
 pub fn cast_to_ShortInterval_HOURS_TO_MINUTES_s(value: SqlString) -> SqlResult<ShortInterval> {
-    if let Some(captures) = HOURS_TO_MINUTES.captures(&value.str()) {
+    if let Some(captures) = HOURS_TO_MINUTES.captures(value.str()) {
         let negative = negative(&captures);
         let hourcap = captures.get(2).unwrap().as_str();
         let hours = match hourcap.parse::<i64>() {
@@ -2223,7 +2222,7 @@ pub fn cast_to_ShortInterval_HOURS_TO_MINUTES_s(value: SqlString) -> SqlResult<S
 #[doc(hidden)]
 #[inline]
 pub fn cast_to_ShortInterval_SECONDS_s(value: SqlString) -> SqlResult<ShortInterval> {
-    if let Some(captures) = SECONDS.captures(&value.str()) {
+    if let Some(captures) = SECONDS.captures(value.str()) {
         let negative = negative(&captures);
         let seccap = captures.get(2).unwrap().as_str().trim();
         let seconds = match seccap.parse::<i64>() {
@@ -2268,7 +2267,7 @@ pub fn cast_to_ShortInterval_SECONDS_s(value: SqlString) -> SqlResult<ShortInter
 #[doc(hidden)]
 #[inline]
 pub fn cast_to_ShortInterval_DAYS_TO_SECONDS_s(value: SqlString) -> SqlResult<ShortInterval> {
-    if let Some(captures) = DAYS_TO_SECONDS.captures(&value.str()) {
+    if let Some(captures) = DAYS_TO_SECONDS.captures(value.str()) {
         let negative = negative(&captures);
         let daycap = captures.get(2).unwrap().as_str();
         let days = match daycap.parse::<i64>() {
@@ -2346,7 +2345,7 @@ pub fn cast_to_ShortInterval_DAYS_TO_SECONDS_s(value: SqlString) -> SqlResult<Sh
 #[doc(hidden)]
 #[inline]
 pub fn cast_to_ShortInterval_HOURS_TO_SECONDS_s(value: SqlString) -> SqlResult<ShortInterval> {
-    if let Some(captures) = HOURS_TO_SECONDS.captures(&value.str()) {
+    if let Some(captures) = HOURS_TO_SECONDS.captures(value.str()) {
         let negative = negative(&captures);
         let hourcap = captures.get(2).unwrap().as_str().trim();
         let hours = match hourcap.parse::<i64>() {
@@ -2413,7 +2412,7 @@ pub fn cast_to_ShortInterval_HOURS_TO_SECONDS_s(value: SqlString) -> SqlResult<S
 #[doc(hidden)]
 #[inline]
 pub fn cast_to_ShortInterval_MINUTES_TO_SECONDS_s(value: SqlString) -> SqlResult<ShortInterval> {
-    if let Some(captures) = MINUTES_TO_SECONDS.captures(&value.str()) {
+    if let Some(captures) = MINUTES_TO_SECONDS.captures(value.str()) {
         let negative = negative(&captures);
         let mincap = captures.get(2).unwrap().as_str().trim();
         let minutes = match mincap.parse::<i64>() {
@@ -2487,7 +2486,7 @@ cast_function!(
 #[doc(hidden)]
 #[inline]
 pub fn cast_to_Timestamp_s(value: SqlString) -> SqlResult<Timestamp> {
-    if let Ok(v) = NaiveDateTime::parse_from_str(&value.str(), "%Y-%m-%d %H:%M:%S%.f") {
+    if let Ok(v) = NaiveDateTime::parse_from_str(value.str(), "%Y-%m-%d %H:%M:%S%.f") {
         // round the number of microseconds
         let nanos = v.and_utc().timestamp_subsec_nanos();
         let nanos = (nanos + 500000) / 1000000;
@@ -2499,7 +2498,7 @@ pub fn cast_to_Timestamp_s(value: SqlString) -> SqlResult<Timestamp> {
 
     // Try just a date.
     // parse_from_str fails to parse a datetime if there is no time in the format!
-    if let Ok(v) = NaiveDate::parse_from_str(&value.str(), "%Y-%m-%d") {
+    if let Ok(v) = NaiveDate::parse_from_str(value.str(), "%Y-%m-%d") {
         let dt = v.and_hms_opt(0, 0, 0).unwrap();
         let result = Timestamp::new(dt.and_utc().timestamp_millis());
         //println!("Parsed successfully {} using {} into {:?} ({})",
@@ -3097,7 +3096,7 @@ where
 
 #[doc(hidden)]
 pub fn cast_to_Uuid_s(value: SqlString) -> SqlResult<Uuid> {
-    Ok(Uuid::from_string(&value.str()))
+    Ok(Uuid::from_ref(value.str()))
 }
 
 cast_function!(Uuid, Uuid, s, SqlString);

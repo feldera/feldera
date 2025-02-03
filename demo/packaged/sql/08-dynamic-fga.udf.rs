@@ -26,7 +26,7 @@ pub fn do_check_condition(
     // NOTE: compiling the JMESPath expression on each invocation is highly inefficient.
     // A better solution is to maintain a cache of pre-compiled expressions and only invoke
     // compilation in case of a cache miss.
-    let expr = jmespath::compile(&condition.str())
+    let expr = jmespath::compile(condition.str())
         .map_err(|e| println!("invalid jmes expression: {e}"))
         .ok()?;
     let all_properties = Variant::Map(Arc::new(BTreeMap::from([

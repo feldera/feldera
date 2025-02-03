@@ -886,7 +886,7 @@ impl Arbitrary for DeltaTestStruct {
                         variant: Variant::Map(
                             std::iter::once((
                                 (Variant::String(SqlString::from_ref("foo"))),
-                                Variant::String(SqlString::from_ref(&variant.to_string())),
+                                Variant::String(SqlString::from(variant.to_string())),
                             ))
                             .collect::<BTreeMap<Variant, Variant>>()
                             .into(),
