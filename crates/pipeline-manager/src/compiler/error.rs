@@ -24,7 +24,7 @@ impl Display for CompilerError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::PrecompilationError { error } => {
-                write!(f, "Pre-compilation failed due to error: {error}")
+                write!(f, "Pre-compilation failed due to: {error}")
             }
         }
     }

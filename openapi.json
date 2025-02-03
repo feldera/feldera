@@ -1153,11 +1153,10 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "example": {
-                  "message": "Pipeline example (2e79afe1-ff4d-44d3-af5f-9397de7746c0) is not currently running or paused.",
-                  "error_code": "PipelineNotRunningOrPaused",
+                  "message": "Unable to reach pipeline to interact due to: deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again",
+                  "error_code": "PipelineInteractionUnreachable",
                   "details": {
-                    "pipeline_id": "2e79afe1-ff4d-44d3-af5f-9397de7746c0",
-                    "pipeline_name": "example"
+                    "error": "deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again"
                   }
                 }
               }
@@ -1225,11 +1224,10 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "example": {
-                  "message": "Pipeline example (2e79afe1-ff4d-44d3-af5f-9397de7746c0) is not currently running or paused.",
-                  "error_code": "PipelineNotRunningOrPaused",
+                  "message": "Unable to reach pipeline to interact due to: deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again",
+                  "error_code": "PipelineInteractionUnreachable",
                   "details": {
-                    "pipeline_id": "2e79afe1-ff4d-44d3-af5f-9397de7746c0",
-                    "pipeline_name": "example"
+                    "error": "deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again"
                   }
                 }
               }
@@ -1356,11 +1354,10 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "example": {
-                  "message": "Pipeline example (2e79afe1-ff4d-44d3-af5f-9397de7746c0) is not currently running or paused.",
-                  "error_code": "PipelineNotRunningOrPaused",
+                  "message": "Unable to reach pipeline to interact due to: deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again",
+                  "error_code": "PipelineInteractionUnreachable",
                   "details": {
-                    "pipeline_id": "2e79afe1-ff4d-44d3-af5f-9397de7746c0",
-                    "pipeline_name": "example"
+                    "error": "deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again"
                   }
                 }
               }
@@ -1422,11 +1419,10 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "example": {
-                  "message": "Pipeline example (2e79afe1-ff4d-44d3-af5f-9397de7746c0) is not currently running or paused.",
-                  "error_code": "PipelineNotRunningOrPaused",
+                  "message": "Unable to reach pipeline to interact due to: deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again",
+                  "error_code": "PipelineInteractionUnreachable",
                   "details": {
-                    "pipeline_id": "2e79afe1-ff4d-44d3-af5f-9397de7746c0",
-                    "pipeline_name": "example"
+                    "error": "deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again"
                   }
                 }
               }
@@ -1560,11 +1556,10 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "example": {
-                  "message": "Pipeline example (2e79afe1-ff4d-44d3-af5f-9397de7746c0) is not currently running or paused.",
-                  "error_code": "PipelineNotRunningOrPaused",
+                  "message": "Unable to reach pipeline to interact due to: deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again",
+                  "error_code": "PipelineInteractionUnreachable",
                   "details": {
-                    "pipeline_id": "2e79afe1-ff4d-44d3-af5f-9397de7746c0",
-                    "pipeline_name": "example"
+                    "error": "deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again"
                   }
                 }
               }
@@ -1700,11 +1695,10 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "example": {
-                  "message": "Pipeline example (2e79afe1-ff4d-44d3-af5f-9397de7746c0) is not currently running or paused.",
-                  "error_code": "PipelineNotRunningOrPaused",
+                  "message": "Unable to reach pipeline to interact due to: deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again",
+                  "error_code": "PipelineInteractionUnreachable",
                   "details": {
-                    "pipeline_id": "2e79afe1-ff4d-44d3-af5f-9397de7746c0",
-                    "pipeline_name": "example"
+                    "error": "deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again"
                   }
                 }
               }
@@ -1735,12 +1729,9 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "example": {
-                  "message": "Sending request to URL https://localhost:1234/query of pipeline example (67e55044-10b1-426f-9247-bb680e5fe0c8) failed: Failed to connect to host: Internal error: connector has been disconnected",
-                  "error_code": "PipelineEndpointSendError",
+                  "message": "Unable to reach pipeline to interact due to: Failed to connect to host: Internal error: connector has been disconnected",
+                  "error_code": "PipelineInteractionUnreachable",
                   "details": {
-                    "pipeline_id": "67e55044-10b1-426f-9247-bb680e5fe0c8",
-                    "pipeline_name": "example",
-                    "url": "https://localhost:1234/query",
                     "error": "Failed to connect to host: Internal error: connector has been disconnected"
                   }
                 }
@@ -1792,11 +1783,10 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "example": {
-                  "message": "Pipeline example (2e79afe1-ff4d-44d3-af5f-9397de7746c0) is not currently running or paused.",
-                  "error_code": "PipelineNotRunningOrPaused",
+                  "message": "Unable to reach pipeline to interact due to: deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again",
+                  "error_code": "PipelineInteractionUnreachable",
                   "details": {
-                    "pipeline_id": "2e79afe1-ff4d-44d3-af5f-9397de7746c0",
-                    "pipeline_name": "example"
+                    "error": "deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again"
                   }
                 }
               }

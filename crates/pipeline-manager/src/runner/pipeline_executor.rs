@@ -39,6 +39,7 @@ pub trait PipelineExecutor: Sync + Send {
     fn new(
         pipeline_id: PipelineId,
         config: Self::Config,
+        client: reqwest::Client,
         follow_request_receiver: mpsc::Receiver<mpsc::Sender<LogMessage>>,
     ) -> Self;
 
