@@ -1,5 +1,3 @@
-import JSONbig from 'true-json-bigint'
-
 export const handled =
   <Args extends any[], Data, Error>(
     x: (...a: Args) => Promise<
@@ -11,7 +9,8 @@ export const handled =
           data: undefined
           error: Error
         }
-    >
+    >,
+    errorMsg?: string
   ) =>
   (...a: Args) =>
     x(...a).then(
@@ -21,13 +20,9 @@ export const handled =
           : (() => {
               throw res.error
             })(),
-      (e) => {
-        // if (e instanceof TypeError && e.message === 'Failed to fetch') {
-        //   return {
-        //     pipelineName: pipeline_name,
-        //     status: 'not running' as const
-        //   }
-        // }
-        throw e
-      }
+      errorMsg
+        ? () => {
+            throw new Error(errorMsg)
+          }
+        : undefined
     )
