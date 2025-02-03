@@ -73,8 +73,6 @@
 use crate::storage::buffer_cache::{FBuf, FBufSerializer};
 use binrw::binrw;
 use bytemuck::cast_slice;
-#[cfg(doc)]
-use crc32c::crc32c;
 use crc32c::{crc32c, crc32c_append};
 use fastbloom::BloomFilter;
 use rkyv::de::deserializers::SharedDeserializeMap;
@@ -121,10 +119,10 @@ struct BloomFilterState {
 impl From<&BloomFilter> for BloomFilterState {
     fn from(bloom_filter: &BloomFilter) -> Self {
         let bytes: &[u8] = cast_slice(bloom_filter.as_slice());
-        let crc = crc32c(&bytes);
+        let crc = crc32c(bytes);
         let crc = crc32c_append(
             crc,
-            &cast_slice(&[bloom_filter.num_hashes() as u64, bytes.len() as u64]),
+            cast_slice(&[bloom_filter.num_hashes() as u64, bytes.len() as u64]),
         );
 
         Self {
@@ -140,10 +138,10 @@ impl TryInto<BloomFilter> for BloomFilterState {
 
     fn try_into(self) -> Result<BloomFilter, Self::Error> {
         let bytes: &[u8] = cast_slice(self.data.as_slice());
-        let crc = crc32c(&bytes);
+        let crc = crc32c(bytes);
         let crc = crc32c_append(
             crc,
-            &cast_slice(&[self.num_hashes as u64, bytes.len() as u64]),
+            cast_slice(&[self.num_hashes as u64, bytes.len() as u64]),
         );
 
         if self.crc != crc {

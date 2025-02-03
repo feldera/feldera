@@ -28,6 +28,7 @@ use binrw::{
 };
 use fastbloom::BloomFilter;
 use std::fs::File;
+use std::io::ErrorKind;
 use std::{
     cmp::{
         max, min,
@@ -1266,9 +1267,20 @@ where
     ) -> Result<Self, Error> {
         // Recover the bloom filter from the bloom filter file.
         let bloom_path = path.with_extension("bloom");
-        let mut bf_file = File::open(bloom_path.as_path())?;
-        let bloom_storage: BloomFilterState = BloomFilterState::read(&mut bf_file)?;
-        let bloom_filter: BloomFilter = bloom_storage.try_into()?;
+        let bf_file = File::open(bloom_path.as_path());
+        let bloom_filter = match bf_file {
+            Ok(mut bf_file) => {
+                let bloom_storage: BloomFilterState = BloomFilterState::read(&mut bf_file)?;
+                let bloom_filter: BloomFilter = bloom_storage.try_into()?;
+                bloom_filter
+            }
+            Err(e) if e.kind() == ErrorKind::NotFound => {
+                // If the bloom filter file does not exist because we're not writing them atm,
+                // we create an empty bloom filter.
+                BloomFilter::with_false_pos(BLOOM_FILTER_FALSE_POSITIVE_RATE).expected_items(0)
+            }
+            Err(e) => return Err(e.into()),
+        };
 
         Self::new(
             factories,
