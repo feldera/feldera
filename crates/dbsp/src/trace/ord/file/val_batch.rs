@@ -359,7 +359,7 @@ where
         let any_factory1 = factories.factories1.any_factories();
         let file = Reader::open(
             &[&any_factory0, &any_factory1],
-            Runtime::buffer_cache().unwrap(),
+            Runtime::buffer_cache,
             &*Runtime::storage_backend().unwrap(),
             path,
         )?;
@@ -631,7 +631,7 @@ where
         let mut output = Writer2::new(
             &source1.factories.factories0,
             &source1.factories().factories1,
-            Runtime::buffer_cache().unwrap(),
+            Runtime::buffer_cache(),
             &*Runtime::storage_backend().unwrap(),
             Runtime::file_writer_parameters(),
         )
@@ -732,11 +732,8 @@ where
         FileValBatch {
             factories: self.factories,
             file: self.result.take().unwrap_or(
-                Reader::empty(
-                    Runtime::buffer_cache().unwrap(),
-                    &*Runtime::storage_backend().unwrap(),
-                )
-                .unwrap(),
+                Reader::empty(Runtime::buffer_cache, &*Runtime::storage_backend().unwrap())
+                    .unwrap(),
             ),
             lower: self.lower,
             upper: self.upper,
@@ -957,6 +954,11 @@ where
 
     fn seek_key(&mut self, key: &K) {
         self.move_key(|key_cursor| unsafe { key_cursor.advance_to_value_or_larger(key) }.unwrap());
+    }
+
+    fn seek_key_exact(&mut self, key: &K) -> bool {
+        self.seek_key(key);
+        self.key_valid() && self.key().eq(key)
     }
 
     fn seek_key_with(&mut self, predicate: &dyn Fn(&K) -> bool) {
@@ -1191,7 +1193,7 @@ where
             writer: Writer2::new(
                 &factories.factories0,
                 &factories.factories1,
-                Runtime::buffer_cache().unwrap(),
+                Runtime::buffer_cache(),
                 &*Runtime::storage_backend().unwrap(),
                 Runtime::file_writer_parameters(),
             )

@@ -246,7 +246,7 @@ where
     fn neg_by_ref(&self) -> Self {
         let mut writer = Writer1::new(
             &self.factories.file_factories,
-            Runtime::buffer_cache().unwrap(),
+            Runtime::buffer_cache(),
             &*Runtime::storage_backend().unwrap(),
             Runtime::file_writer_parameters(),
         )
@@ -382,6 +382,10 @@ where
         AntichainRef::empty()
     }
 
+    fn maybe_contains_key(&self, key: &K) -> bool {
+        self.file.maybe_contains_key(key)
+    }
+
     fn sample_keys<RG>(&self, rng: &mut RG, sample_size: usize, output: &mut DynVec<Self::Key>)
     where
         RG: Rng,
@@ -430,7 +434,7 @@ where
         let any_factory0 = factories.file_factories.any_factories();
         let file = Reader::open(
             &[&any_factory0],
-            Runtime::buffer_cache().unwrap(),
+            Runtime::buffer_cache,
             &*Runtime::storage_backend().unwrap(),
             path,
         )?;
@@ -479,7 +483,7 @@ where
             lower2: 0,
             writer: Writer1::new(
                 &batch1.factories.file_factories,
-                Runtime::buffer_cache().unwrap(),
+                Runtime::buffer_cache(),
                 &*Runtime::storage_backend().unwrap(),
                 Runtime::file_writer_parameters(),
             )
@@ -687,6 +691,14 @@ where
         self.move_key(|key_cursor| unsafe { key_cursor.advance_to_value_or_larger(key) });
     }
 
+    fn seek_key_exact(&mut self, key: &K) -> bool {
+        if !self.wset.maybe_contains_key(key) {
+            return false;
+        }
+        self.seek_key(key);
+        self.key_valid() && self.key().eq(key)
+    }
+
     fn seek_key_with(&mut self, predicate: &dyn Fn(&K) -> bool) {
         self.move_key(|key_cursor| unsafe { key_cursor.seek_forward_until(predicate) });
     }
@@ -790,7 +802,7 @@ where
             factories: factories.clone(),
             writer: Writer1::new(
                 &factories.file_factories,
-                Runtime::buffer_cache().unwrap(),
+                Runtime::buffer_cache(),
                 &*Runtime::storage_backend().unwrap(),
                 Runtime::file_writer_parameters(),
             )

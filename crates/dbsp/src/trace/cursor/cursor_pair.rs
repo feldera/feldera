@@ -297,6 +297,18 @@ where
         self.update_key_order_forward();
     }
 
+    fn seek_key_exact(&mut self, key: &K) -> bool {
+        debug_assert_eq!(self.key_direction, Direction::Forward);
+
+        let result1 = self.cursor1.seek_key_exact(key);
+        let result2 = self.cursor2.seek_key_exact(key);
+
+        self.val_direction = Direction::Forward;
+        self.update_key_order_forward();
+
+        result1 || result2
+    }
+
     fn seek_key_with(&mut self, predicate: &dyn Fn(&K) -> bool) {
         debug_assert_eq!(self.key_direction, Direction::Forward);
 

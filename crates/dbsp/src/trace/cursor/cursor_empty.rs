@@ -73,6 +73,10 @@ where
 
     fn seek_key(&mut self, _key: &K) {}
 
+    fn seek_key_exact(&mut self, _key: &K) -> bool {
+        false
+    }
+
     fn seek_key_with(&mut self, _predicate: &dyn Fn(&K) -> bool) {}
 
     fn seek_key_with_reverse(&mut self, _predicate: &dyn Fn(&K) -> bool) {}

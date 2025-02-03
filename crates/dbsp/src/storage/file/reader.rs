@@ -2,6 +2,33 @@
 //!
 //! [`Reader`] is the top-level interface for reading layer files.
 
+use super::format::Compression;
+use super::{
+    cache::FileCacheEntry, AnyFactories, BloomFilterState, Factories,
+    BLOOM_FILTER_FALSE_POSITIVE_RATE,
+};
+use crate::storage::{
+    backend::StorageError,
+    buffer_cache::{BufferCache, FBuf},
+    file::format::{
+        DataBlockHeader, FileTrailerColumn, IndexBlockHeader, NodeType, Varint, VERSION_NUMBER,
+    },
+    file::item::ArchivedItem,
+};
+use crate::{
+    dynamic::{DataTrait, DeserializeDyn, Factory},
+    storage::{
+        backend::{BlockLocation, FileReader, InvalidBlockLocation, StorageBackend},
+        buffer_cache::{AtomicCacheStats, CacheStats},
+    },
+};
+use binrw::{
+    io::{self},
+    BinRead, Error as BinError,
+};
+use fastbloom::BloomFilter;
+use std::fs::File;
+use std::io::ErrorKind;
 use std::{
     cmp::{
         max, min,
@@ -14,31 +41,7 @@ use std::{
     path::{Path as IoPath, PathBuf},
     sync::Arc,
 };
-
-use crate::{
-    dynamic::{DataTrait, DeserializeDyn, Factory},
-    storage::{
-        backend::{BlockLocation, FileReader, InvalidBlockLocation, StorageBackend},
-        buffer_cache::{AtomicCacheStats, CacheStats},
-    },
-};
-use binrw::{
-    io::{self},
-    BinRead, Error as BinError,
-};
 use thiserror::Error as ThisError;
-
-use super::format::Compression;
-use crate::storage::{
-    backend::StorageError,
-    buffer_cache::{BufferCache, FBuf},
-    file::format::{
-        DataBlockHeader, FileTrailerColumn, IndexBlockHeader, NodeType, Varint, VERSION_NUMBER,
-    },
-    file::item::ArchivedItem,
-};
-
-use super::{cache::FileCacheEntry, AnyFactories, Factories};
 
 /// Any kind of error encountered reading a layer file.
 #[derive(ThisError, Debug)]
@@ -68,6 +71,12 @@ pub enum Error {
 impl From<BinError> for Error {
     fn from(source: BinError) -> Self {
         Error::Corruption(source.into())
+    }
+}
+
+impl From<io::Error> for Error {
+    fn from(source: io::Error) -> Self {
+        Error::Storage(StorageError::StdIo(source.kind()))
     }
 }
 
@@ -435,7 +444,7 @@ impl InnerDataBlock {
     }
 
     fn new(file: &ImmutableFileRef, node: &TreeNode) -> Result<Arc<Self>, Error> {
-        file.cache.read_data_block(
+        (file.cache)().read_data_block(
             &*file.file_handle,
             node.location,
             file.compression,
@@ -754,7 +763,7 @@ impl InnerIndexBlock {
     }
 
     fn new(file: &ImmutableFileRef, node: &TreeNode) -> Result<Arc<Self>, Error> {
-        file.cache.read_index_block(
+        (file.cache)().read_index_block(
             &*file.file_handle,
             node.location,
             file.compression,
@@ -1055,7 +1064,7 @@ impl Column {
 /// Encapsulates storage and a file handle.
 struct ImmutableFileRef {
     path: PathBuf,
-    cache: Arc<BufferCache<FileCacheEntry>>,
+    cache: fn() -> Arc<BufferCache<FileCacheEntry>>,
     file_handle: Arc<dyn FileReader>,
     compression: Option<Compression>,
     stats: AtomicCacheStats,
@@ -1078,7 +1087,7 @@ impl Drop for ImmutableFileRef {
 
 impl ImmutableFileRef {
     fn new(
-        cache: Arc<BufferCache<FileCacheEntry>>,
+        cache: fn() -> Arc<BufferCache<FileCacheEntry>>,
         file_handle: Arc<dyn FileReader>,
         path: PathBuf,
         compression: Option<Compression>,
@@ -1094,13 +1103,14 @@ impl ImmutableFileRef {
     }
 
     pub fn evict(&self) {
-        self.cache.evict(&*self.file_handle);
+        (self.cache)().evict(&*self.file_handle);
     }
 }
 
 #[derive(Debug)]
 struct ReaderInner<T> {
     file: ImmutableFileRef,
+    bloom_filter: BloomFilter,
     columns: Vec<Column>,
 
     /// `fn() -> T` is `Send` and `Sync` regardless of `T`.  See
@@ -1158,8 +1168,9 @@ where
     pub(crate) fn new(
         factories: &[&AnyFactories],
         path: PathBuf,
-        cache: Arc<BufferCache<FileCacheEntry>>,
+        cache: fn() -> Arc<BufferCache<FileCacheEntry>>,
         file_handle: Arc<dyn FileReader>,
+        bloom_filter: BloomFilter,
     ) -> Result<Self, Error> {
         let file_size = file_handle.get_size()?;
         if file_size < 512 || (file_size % 512) != 0 {
@@ -1167,7 +1178,7 @@ where
         }
 
         let stats = AtomicCacheStats::default();
-        let file_trailer = cache.read_file_trailer_block(
+        let file_trailer = cache().read_file_trailer_block(
             &*file_handle,
             BlockLocation::new(file_size - 512, 512).unwrap(),
             &stats,
@@ -1213,6 +1224,7 @@ where
         Ok(Self(Arc::new(ReaderInner {
             file: ImmutableFileRef::new(cache, file_handle, path, file_trailer.compression, stats),
             columns,
+            bloom_filter,
             _phantom: PhantomData,
         })))
     }
@@ -1222,7 +1234,7 @@ where
     /// This internally creates an empty temporary file, which means that it can
     /// fail with an I/O error.
     pub fn empty(
-        cache: Arc<BufferCache<FileCacheEntry>>,
+        cache: fn() -> Arc<BufferCache<FileCacheEntry>>,
         storage_backend: &dyn StorageBackend,
     ) -> Result<Self, Error> {
         let (file_handle, path) = storage_backend.create()?.complete()?;
@@ -1234,6 +1246,8 @@ where
                 None,
                 AtomicCacheStats::default(),
             ),
+            bloom_filter: BloomFilter::with_false_pos(BLOOM_FILTER_FALSE_POSITIVE_RATE)
+                .expected_items(0),
             columns: (0..T::n_columns()).map(|_| Column::empty()).collect(),
             _phantom: PhantomData,
         })))
@@ -1247,15 +1261,33 @@ where
     /// Instantiates a reader given an existing path.
     pub fn open(
         factories: &[&AnyFactories],
-        cache: Arc<BufferCache<FileCacheEntry>>,
+        cache: fn() -> Arc<BufferCache<FileCacheEntry>>,
         storage_backend: &dyn StorageBackend,
         path: &IoPath,
     ) -> Result<Self, Error> {
+        // Recover the bloom filter from the bloom filter file.
+        let bloom_path = path.with_extension("bloom");
+        let bf_file = File::open(bloom_path.as_path());
+        let bloom_filter = match bf_file {
+            Ok(mut bf_file) => {
+                let bloom_storage: BloomFilterState = BloomFilterState::read(&mut bf_file)?;
+                let bloom_filter: BloomFilter = bloom_storage.try_into()?;
+                bloom_filter
+            }
+            Err(e) if e.kind() == ErrorKind::NotFound => {
+                // If the bloom filter file does not exist because we're not writing them atm,
+                // we create an empty bloom filter.
+                BloomFilter::with_false_pos(BLOOM_FILTER_FALSE_POSITIVE_RATE).expected_items(0)
+            }
+            Err(e) => return Err(e.into()),
+        };
+
         Self::new(
             factories,
             path.to_path_buf(),
             cache,
             storage_backend.open(path)?,
+            bloom_filter,
         )
     }
 
@@ -1312,6 +1344,13 @@ where
     A: DataTrait + ?Sized,
     (&'static K, &'static A, N): ColumnSpec,
 {
+    /// Asks the bloom filter of the reader if we have the key.
+    pub fn maybe_contains_key(&self, key: &K) -> bool {
+        self.0
+            .bloom_filter
+            .contains(&key.default_hash().to_le_bytes())
+    }
+
     /// Returns a [`RowGroup`] for all of the rows in column 0.
     pub fn rows(&self) -> RowGroup<K, A, N, (&'static K, &'static A, N)> {
         RowGroup::new(self, 0, 0..self.0.columns[0].n_rows)

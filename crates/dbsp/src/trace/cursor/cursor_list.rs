@@ -322,6 +322,24 @@ where
         self.minimize_keys();
     }
 
+    fn seek_key_exact(&mut self, key: &K) -> bool {
+        self.current_key.clear();
+
+        let mut result = false;
+
+        for (index, cursor) in self.cursors.iter_mut().enumerate() {
+            if cursor.seek_key_exact(key) {
+                self.current_key.push(index);
+                result = true;
+            }
+        }
+
+        self.set_val_direction(Direction::Forward);
+        self.minimize_vals();
+
+        result
+    }
+
     fn seek_key_with(&mut self, predicate: &dyn Fn(&K) -> bool) {
         for cursor in self.cursors.iter_mut() {
             cursor.seek_key_with(&predicate);

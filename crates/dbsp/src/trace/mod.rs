@@ -428,6 +428,12 @@ where
     /// `upper`.
     fn upper(&self) -> AntichainRef<'_, Self::Time>;
 
+    /// A method that returns either true (possibly in the batch) or false
+    /// (definitely not in the batch).
+    fn maybe_contains_key(&self, _key: &Self::Key) -> bool {
+        true
+    }
+
     /// Returns a uniform random sample of distincts keys from the batch.
     ///
     /// Does not take into account the number values associated with each

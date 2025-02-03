@@ -334,7 +334,7 @@ where
         let any_factory1 = factories.factories1.any_factories();
         let file = Reader::open(
             &[&any_factory0, &any_factory1],
-            Runtime::buffer_cache().unwrap(),
+            Runtime::buffer_cache,
             &*Runtime::storage_backend().unwrap(),
             path,
         )?;
@@ -551,7 +551,7 @@ where
             writer: Writer2::new(
                 &batch1.factories.factories0,
                 &batch1.factories.factories1,
-                Runtime::buffer_cache().unwrap(),
+                Runtime::buffer_cache(),
                 &*Runtime::storage_backend().unwrap(),
                 Runtime::file_writer_parameters(),
             )
@@ -815,6 +815,11 @@ where
         self.move_key(|key_cursor| unsafe { key_cursor.advance_to_value_or_larger(key) });
     }
 
+    fn seek_key_exact(&mut self, key: &K) -> bool {
+        self.seek_key(key);
+        self.key_valid() && self.key().eq(key)
+    }
+
     fn seek_key_with(&mut self, predicate: &dyn Fn(&K) -> bool) {
         self.move_key(|key_cursor| unsafe { key_cursor.seek_forward_until(predicate) });
     }
@@ -992,7 +997,7 @@ where
             writer: Writer2::new(
                 &factories.factories0,
                 &factories.factories1,
-                Runtime::buffer_cache().unwrap(),
+                Runtime::buffer_cache(),
                 &*Runtime::storage_backend().unwrap(),
                 Runtime::file_writer_parameters(),
             )
