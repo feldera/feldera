@@ -738,7 +738,7 @@ mod test {
                     let (_file_handle, path, _bloom_filter) = writer.close().unwrap();
                     Reader::open(
                         &[&factories.any_factories()],
-                        Runtime::buffer_cache,
+                        Runtime::buffer_cache(),
                         &*storage_backend,
                         &path,
                     )

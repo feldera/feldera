@@ -155,9 +155,9 @@ pub struct StorageOptions {
 
     /// The maximum size of the in-memory storage cache, in MiB.
     ///
-    /// If set, the specified cache size is spread across all the foreground and
-    /// background threads. If unset, each foreground or background thread cache
-    /// is limited to 256 MiB.
+    /// If set, the specified cache size is spread across all the worker
+    /// threads. If unset, each worker thread foreground/background pair is
+    /// limited to 512 MiB.
     pub cache_mib: Option<usize>,
 }
 

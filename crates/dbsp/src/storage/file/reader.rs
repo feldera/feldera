@@ -481,9 +481,8 @@ where
 
     fn new(file: &ImmutableFileRef, node: &TreeNode) -> Result<Arc<Self>, Error> {
         let start = Instant::now();
-        let cache = (file.cache)();
         #[allow(clippy::borrow_deref_ref)]
-        let (access, entry) = match cache.get(&*file.file_handle, node.location) {
+        let (access, entry) = match file.cache.get(&*file.file_handle, node.location) {
             Some(entry) => {
                 let entry = Arc::downcast::<Self>(entry.as_any())
                     .map_err(|_| Error::Corruption(CorruptionError::BadBlockType(node.location)))?;
@@ -492,7 +491,7 @@ where
             None => {
                 let block = file.read_block(node.location)?;
                 let entry = Arc::new(Self::from_raw(block, node.location, node.rows.start)?);
-                cache.insert(
+                file.cache.insert(
                     file.file_handle.file_id(),
                     node.location.offset,
                     entry.clone(),
@@ -784,10 +783,9 @@ where
 
     fn new(file: &ImmutableFileRef, node: &TreeNode) -> Result<Arc<Self>, Error> {
         let start = Instant::now();
-        let cache = (file.cache)();
         let first_row = node.rows.start;
         #[allow(clippy::borrow_deref_ref)]
-        let (access, entry) = match cache.get(&*file.file_handle, node.location) {
+        let (access, entry) = match file.cache.get(&*file.file_handle, node.location) {
             Some(entry) => {
                 let entry = Arc::downcast::<Self>(entry.as_any())
                     .map_err(|_| Error::Corruption(CorruptionError::BadBlockType(node.location)))?;
@@ -801,7 +799,7 @@ where
             None => {
                 let block = file.read_block(node.location)?;
                 let entry = Arc::new(Self::from_raw(block, node.location, first_row)?);
-                cache.insert(
+                file.cache.insert(
                     file.file_handle.file_id(),
                     node.location.offset,
                     entry.clone(),
@@ -1001,13 +999,12 @@ impl FileTrailer {
         Ok(Self::read_le(&mut io::Cursor::new(raw.as_slice()))?)
     }
     fn new(
-        cache: fn() -> Arc<BufferCache>,
+        cache: &BufferCache,
         file_handle: &dyn FileReader,
         location: BlockLocation,
         stats: &AtomicCacheStats,
     ) -> Result<Arc<FileTrailer>, Error> {
         let start = Instant::now();
-        let cache = cache();
         #[allow(clippy::borrow_deref_ref)]
         let (access, entry) = match cache.get(&*file_handle, location) {
             Some(entry) => {
@@ -1078,7 +1075,7 @@ impl Column {
 /// Encapsulates storage and a file handle.
 struct ImmutableFileRef {
     path: PathBuf,
-    cache: fn() -> Arc<BufferCache>,
+    cache: Arc<BufferCache>,
     file_handle: Arc<dyn FileReader>,
     compression: Option<Compression>,
     stats: AtomicCacheStats,
@@ -1101,7 +1098,7 @@ impl Drop for ImmutableFileRef {
 
 impl ImmutableFileRef {
     fn new(
-        cache: fn() -> Arc<BufferCache>,
+        cache: Arc<BufferCache>,
         file_handle: Arc<dyn FileReader>,
         path: PathBuf,
         compression: Option<Compression>,
@@ -1117,7 +1114,7 @@ impl ImmutableFileRef {
     }
 
     pub fn evict(&self) {
-        (self.cache)().evict(&*self.file_handle);
+        self.cache.evict(&*self.file_handle);
     }
 
     pub fn read_block(&self, location: BlockLocation) -> Result<Arc<FBuf>, Error> {
@@ -1232,7 +1229,7 @@ where
     pub(crate) fn new(
         factories: &[&AnyFactories],
         path: PathBuf,
-        cache: fn() -> Arc<BufferCache>,
+        cache: Arc<BufferCache>,
         file_handle: Arc<dyn FileReader>,
         bloom_filter: Option<BloomFilter>,
     ) -> Result<Self, Error> {
@@ -1243,7 +1240,7 @@ where
 
         let stats = AtomicCacheStats::default();
         let file_trailer = FileTrailer::new(
-            cache,
+            &cache,
             &*file_handle,
             BlockLocation::new(file_size - 512, 512).unwrap(),
             &stats,
@@ -1317,7 +1314,7 @@ where
     /// Instantiates a reader given an existing path.
     pub fn open(
         factories: &[&AnyFactories],
-        cache: fn() -> Arc<BufferCache>,
+        cache: Arc<BufferCache>,
         storage_backend: &dyn StorageBackend,
         path: &IoPath,
     ) -> Result<Self, Error> {

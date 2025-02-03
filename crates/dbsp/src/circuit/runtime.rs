@@ -230,7 +230,7 @@ struct RuntimeInner {
     store: LocalStore,
     kill_signal: AtomicBool,
     background_threads: Mutex<Vec<JoinHandle<()>>>,
-    buffer_caches: Vec<EnumMap<ThreadType, Arc<BufferCache>>>,
+    buffer_caches: Vec<Arc<BufferCache>>,
     pin_cpus: Vec<EnumMap<ThreadType, CoreId>>,
     worker_sequence_numbers: Vec<AtomicUsize>,
     // Panic info collected from failed worker threads.
@@ -319,7 +319,7 @@ impl RuntimeInner {
             storage
                 .options
                 .cache_mib
-                .map_or(256 * 1024 * 1024, |cache_mib| {
+                .map_or(512 * 1024 * 1024, |cache_mib| {
                     cache_mib.saturating_mul(1024 * 1024) / nworkers / ThreadType::LENGTH
                 })
         } else {
@@ -334,7 +334,7 @@ impl RuntimeInner {
             kill_signal: AtomicBool::new(false),
             background_threads: Mutex::new(Vec::new()),
             buffer_caches: (0..nworkers)
-                .map(|_| EnumMap::from_fn(|_| Arc::new(BufferCache::new(cache_size_bytes))))
+                .map(|_| Arc::new(BufferCache::new(cache_size_bytes)))
                 .collect(),
             pin_cpus: map_pin_cpus(nworkers, &config.pin_cpus),
             worker_sequence_numbers: (0..nworkers).map(|_| AtomicUsize::new(0)).collect(),
@@ -549,7 +549,7 @@ impl Runtime {
 
         // Slow path for initializing the thread-local.
         let buffer_cache = if let Some(rt) = Runtime::runtime() {
-            rt.get_buffer_cache(Runtime::worker_index(), ThreadType::current())
+            rt.get_buffer_cache(Runtime::worker_index())
         } else {
             // No `Runtime` means there's only a single worker, so use a single
             // global cache.
@@ -561,16 +561,11 @@ impl Runtime {
         buffer_cache
     }
 
-    /// Returns this runtime's buffer cache for thread type `thread_type` in
-    /// worker `worker_index`.
+    /// Returns this runtime's buffer cache for  worker `worker_index`.
     ///
     /// Usually it's easier and faster to call [Runtime::buffer_cache] instead.
-    pub fn get_buffer_cache(
-        &self,
-        worker_index: usize,
-        thread_type: ThreadType,
-    ) -> Arc<BufferCache> {
-        self.0.buffer_caches[worker_index][thread_type].clone()
+    pub fn get_buffer_cache(&self, worker_index: usize) -> Arc<BufferCache> {
+        self.0.buffer_caches[worker_index].clone()
     }
 
     /// Returns 0-based index of the current worker thread within its runtime.
