@@ -13,37 +13,15 @@ use crate::db::types::utils::{
 use crate::db::types::version::Version;
 use crate::error::ManagerError;
 use crate::runner::error::RunnerError;
-use crate::runner::interaction::RunnerInteraction;
+use crate::runner::interaction::{format_pipeline_url, format_timeout_error_message};
 use crate::runner::pipeline_executor::PipelineExecutor;
-use actix_web::http::{Method, StatusCode};
 use chrono::{DateTime, Utc};
 use feldera_types::error::ErrorResponse;
 use log::{debug, error, info, warn};
+use reqwest::{Method, StatusCode};
 use std::sync::Arc;
 use tokio::{sync::Mutex, time::Duration};
 use tokio::{sync::Notify, time::timeout};
-
-/// Timeout for an HTTP request of the automata to a pipeline.
-const PIPELINE_AUTOMATA_HTTP_REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
-
-/// Sends HTTP request from the automata to pipeline and parses response as a JSON object.
-async fn automaton_http_request_to_pipeline_json(
-    pipeline_id: PipelineId,
-    method: Method,
-    endpoint: &str,
-    location: &str,
-) -> Result<(StatusCode, serde_json::Value), ManagerError> {
-    RunnerInteraction::http_request_to_pipeline_json(
-        pipeline_id,
-        None,
-        location,
-        method,
-        endpoint,
-        "",
-        Some(PIPELINE_AUTOMATA_HTTP_REQUEST_TIMEOUT),
-    )
-    .await
-}
 
 /// Utility type for the pipeline automaton to describe state changes.
 #[derive(Debug, PartialEq)]
@@ -103,6 +81,9 @@ where
     db: Arc<Mutex<StoragePostgres>>,
     notifier: Arc<Notify>,
 
+    /// HTTP client which is reused.
+    client: reqwest::Client,
+
     /// Whether the first run cycle still has to be done.
     /// In the first run cycle, the pipeline handle's initialization is called.
     first_run_cycle: bool,
@@ -132,6 +113,9 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
     /// How often to poll the pipeline during initialization.
     const INITIALIZATION_POLL_PERIOD: Duration = Duration::from_millis(250);
 
+    /// Timeout for an HTTP request of the automaton to a pipeline.
+    const HTTP_REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
+
     /// Creates a new automaton for a given pipeline.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -140,6 +124,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         tenant_id: TenantId,
         db: Arc<Mutex<StoragePostgres>>,
         notifier: Arc<Notify>,
+        client: reqwest::Client,
         pipeline_handle: T,
         provisioning_timeout: Duration,
         provisioning_poll_period: Duration,
@@ -152,6 +137,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             pipeline_handle,
             db,
             notifier,
+            client,
             first_run_cycle: true,
             provision_called: false,
             provisioning_timeout,
@@ -550,6 +536,42 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         Utc::now().timestamp_millis() - since.timestamp_millis() > timeout.as_millis() as i64
     }
 
+    /// Sends HTTP request from the automaton to the pipeline and parses response as a JSON object.
+    /// The automaton uses a `reqwest::Client` rather than an `awc::Client` because the latter does
+    /// not support being sent across async worker threads.
+    async fn http_request_pipeline_json(
+        &self,
+        method: Method,
+        location: &str,
+        endpoint: &str,
+    ) -> Result<(StatusCode, serde_json::Value), ManagerError> {
+        let url = format_pipeline_url(location, endpoint, "");
+        let response = self
+            .client
+            .request(method, &url)
+            .timeout(Self::HTTP_REQUEST_TIMEOUT)
+            .send()
+            .await
+            .map_err(|e| {
+                if e.is_timeout() {
+                    RunnerError::PipelineInteractionUnreachable {
+                        error: format_timeout_error_message(Self::HTTP_REQUEST_TIMEOUT, e),
+                    }
+                } else {
+                    RunnerError::PipelineInteractionUnreachable {
+                        error: format!("unable to send request due to: {e}"),
+                    }
+                }
+            })?;
+        let status = response.status();
+        let value = response.json::<serde_json::Value>().await.map_err(|e| {
+            RunnerError::PipelineInteractionInvalidResponse {
+                error: format!("unable to deserialize as JSON due to: {e}"),
+            }
+        })?;
+        Ok((status, value))
+    }
+
     /// Parses `ErrorResponse` from JSON.
     /// Upon error, builds an `ErrorResponse` with the original JSON content.
     fn error_response_from_json(
@@ -558,8 +580,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         json: &serde_json::Value,
     ) -> ErrorResponse {
         serde_json::from_value(json.clone()).unwrap_or_else(|_| {
-            ErrorResponse::from(&RunnerError::PipelineEndpointInvalidResponse {
-                pipeline_id,
+            ErrorResponse::from(&RunnerError::PipelineInteractionInvalidResponse {
                 error: format!("Pipeline {pipeline_id} returned HTTP response which cannot be deserialized. Status code: {status}; body: {json:#}"),
             })
         })
@@ -572,7 +593,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         pipeline: &ExtendedPipelineDescrMonitoring,
     ) -> Result<String, RunnerError> {
         match pipeline.deployment_location.clone() {
-            None => Err(RunnerError::PipelineMissingDeploymentLocation),
+            None => Err(RunnerError::AutomatonMissingDeploymentLocation),
             Some(location) => Ok(location),
         }
     }
@@ -581,16 +602,13 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
     /// An error result is only returned if the response could not be parsed or
     /// contained an error.
     async fn check_pipeline_status(
+        &self,
         pipeline_id: PipelineId,
         deployment_location: String,
     ) -> StatusCheckResult {
-        match automaton_http_request_to_pipeline_json(
-            pipeline_id,
-            Method::GET,
-            "stats",
-            &deployment_location,
-        )
-        .await
+        match self
+            .http_request_pipeline_json(Method::GET, &deployment_location, "stats")
+            .await
         {
             Ok((status, body)) => {
                 // Able to reach the pipeline web server and get a response
@@ -598,8 +616,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                     // Only fatal errors are if the state cannot be retrieved or is not Paused/Running
                     let Some(global_metrics) = body.get("global_metrics") else {
                         return StatusCheckResult::Error(ErrorResponse::from_error_nolog(
-                            &RunnerError::PipelineEndpointInvalidResponse {
-                                pipeline_id,
+                            &RunnerError::PipelineInteractionInvalidResponse {
                                 error: format!(
                                     "Missing 'global_metrics' field in /stats response: {body}"
                                 ),
@@ -607,8 +624,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                         ));
                     };
                     let Some(serde_json::Value::String(state)) = global_metrics.get("state") else {
-                        return StatusCheckResult::Error(ErrorResponse::from_error_nolog(&RunnerError::PipelineEndpointInvalidResponse {
-                            pipeline_id,
+                        return StatusCheckResult::Error(ErrorResponse::from_error_nolog(&RunnerError::PipelineInteractionInvalidResponse {
                             error: format!("Missing or non-string type of 'global_metrics.state' field in /stats response: {body}")
                         }));
                     };
@@ -618,8 +634,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                         StatusCheckResult::Running
                     } else {
                         // Notably: "Terminated"
-                        return StatusCheckResult::Error(ErrorResponse::from_error_nolog(&RunnerError::PipelineEndpointInvalidResponse {
-                            pipeline_id,
+                        return StatusCheckResult::Error(ErrorResponse::from_error_nolog(&RunnerError::PipelineInteractionInvalidResponse {
                             error: format!("Pipeline is not in Running or Paused state, but in {state} state")
                         }));
                     }
@@ -745,7 +760,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                 return Ok(State::TransitionToFailed {
                     version_guard: pipeline.version,
                     error: ErrorResponse::from_error_nolog(
-                        &RunnerError::PipelineInvalidRuntimeConfig {
+                        &RunnerError::AutomatonInvalidRuntimeConfig {
                             value: pipeline.runtime_config.clone(),
                             error: e,
                         },
@@ -760,7 +775,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                 return Ok(State::TransitionToFailed {
                     version_guard: pipeline.version,
                     error: ErrorResponse::from_error_nolog(
-                        &RunnerError::PipelineMissingProgramInfo,
+                        &RunnerError::AutomatonMissingProgramInfo,
                     ),
                 });
             }
@@ -771,7 +786,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                         return Ok(State::TransitionToFailed {
                             version_guard: pipeline.version,
                             error: ErrorResponse::from_error_nolog(
-                                &RunnerError::PipelineInvalidProgramInfo {
+                                &RunnerError::AutomatonInvalidProgramInfo {
                                     value: program_info.clone(),
                                     error: e,
                                 },
@@ -800,7 +815,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                 return Ok(State::TransitionToFailed {
                     version_guard: pipeline.version,
                     error: ErrorResponse::from_error_nolog(
-                        &RunnerError::FailedToSerializeDeploymentConfig {
+                        &RunnerError::AutomatonFailedToSerializeDeploymentConfig {
                             error: error.to_string(),
                         },
                     ),
@@ -832,7 +847,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             return State::TransitionToFailed {
                 version_guard: pipeline.version,
                 error: ErrorResponse::from_error_nolog(
-                    &RunnerError::CannotProvisionDifferentPlatformVersion {
+                    &RunnerError::AutomatonCannotProvisionDifferentPlatformVersion {
                         pipeline_platform_version: pipeline.platform_version.clone(),
                         runner_platform_version: self.platform_version.clone(),
                     },
@@ -846,7 +861,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                 return State::TransitionToFailed {
                     version_guard: pipeline.version,
                     error: ErrorResponse::from_error_nolog(
-                        &RunnerError::PipelineMissingDeploymentConfig,
+                        &RunnerError::AutomatonMissingDeploymentConfig,
                     ),
                 }
             }
@@ -856,7 +871,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                     return State::TransitionToFailed {
                         version_guard: pipeline.version,
                         error: ErrorResponse::from_error_nolog(
-                            &RunnerError::PipelineInvalidDeploymentConfig {
+                            &RunnerError::AutomatonInvalidDeploymentConfig {
                                 value: deployment_config.clone(),
                                 error: e,
                             },
@@ -870,7 +885,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                 return State::TransitionToFailed {
                     version_guard: pipeline.version,
                     error: ErrorResponse::from_error_nolog(
-                        &RunnerError::PipelineMissingProgramBinaryUrl,
+                        &RunnerError::AutomatonMissingProgramBinaryUrl,
                     ),
                 }
             }
@@ -928,8 +943,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                     );
                     State::TransitionToFailed {
                         version_guard: pipeline.version,
-                        error: RunnerError::PipelineProvisioningTimeout {
-                            pipeline_id: self.pipeline_id,
+                        error: RunnerError::AutomatonProvisioningTimeout {
                             timeout: self.provisioning_timeout,
                         }
                         .into(),
@@ -976,7 +990,10 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                 };
             }
         };
-        match Self::check_pipeline_status(pipeline.id, deployment_location).await {
+        match self
+            .check_pipeline_status(pipeline.id, deployment_location)
+            .await
+        {
             StatusCheckResult::Paused => State::TransitionToPaused {
                 version_guard: pipeline.version,
             },
@@ -984,10 +1001,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                 // After initialization, it should not become running automatically
                 State::TransitionToFailed {
                     version_guard: pipeline.version,
-                    error: RunnerError::PipelineAfterInitializationBecameRunning {
-                        pipeline_id: self.pipeline_id,
-                    }
-                    .into(),
+                    error: RunnerError::AutomatonAfterInitializationBecameRunning.into(),
                 }
             }
             StatusCheckResult::Unavailable => {
@@ -1005,8 +1019,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                     );
                     State::TransitionToFailed {
                         version_guard: pipeline.version,
-                        error: RunnerError::PipelineInitializingTimeout {
-                            pipeline_id: self.pipeline_id,
+                        error: RunnerError::AutomatonInitializingTimeout {
                             timeout: Self::INITIALIZATION_TIMEOUT,
                         }
                         .into(),
@@ -1050,13 +1063,9 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
 
         // Issue request to the /start or /pause endpoint
         let action = if is_start { "start" } else { "pause" };
-        match automaton_http_request_to_pipeline_json(
-            self.pipeline_id,
-            Method::GET,
-            action,
-            &deployment_location,
-        )
-        .await
+        match self
+            .http_request_pipeline_json(Method::GET, &deployment_location, action)
+            .await
         {
             Ok((status, body)) => {
                 if status == StatusCode::OK {
@@ -1119,7 +1128,10 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                 };
             }
         };
-        match Self::check_pipeline_status(pipeline.id, deployment_location).await {
+        match self
+            .check_pipeline_status(pipeline.id, deployment_location)
+            .await
+        {
             StatusCheckResult::Paused => {
                 if pipeline.deployment_status == PipelineStatus::Paused {
                     State::Unchanged
@@ -1219,6 +1231,7 @@ mod test {
         fn new(
             _pipeline_id: PipelineId,
             _config: Self::Config,
+            _client: reqwest::Client,
             _follow_request_receiver: Receiver<Sender<LogMessage>>,
         ) -> Self {
             todo!()
@@ -1395,12 +1408,14 @@ mod test {
 
         // Construct the automaton
         let notifier = Arc::new(Notify::new());
+        let client = reqwest::Client::new();
         let automaton = PipelineAutomaton::new(
             "v0",
             pipeline_id,
             tenant_id,
             db.clone(),
             notifier.clone(),
+            client,
             MockPipeline { uri },
             Duration::from_secs(10),
             Duration::from_millis(300),

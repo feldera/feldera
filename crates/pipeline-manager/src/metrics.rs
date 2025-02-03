@@ -5,11 +5,13 @@ use crate::error::ManagerError;
 use crate::runner::error::RunnerError;
 use crate::runner::interaction::RunnerInteraction;
 use ::metrics::{describe_histogram, Unit};
+use actix_http::body::MessageBody;
 use actix_web::{
     get,
     http::{header::ContentType, Method},
     web, HttpResponse, HttpServer, Responder,
 };
+use log::warn;
 use metrics_exporter_prometheus::{PrometheusBuilder, PrometheusHandle};
 use std::sync::{Arc, OnceLock};
 use tokio::sync::Mutex;
@@ -52,8 +54,10 @@ pub async fn create_endpoint(manager_metrics: PrometheusHandle, db: Arc<Mutex<St
 
     let _http = tokio::spawn(
         HttpServer::new(move || {
+            let client = web::Data::new(awc::Client::new());
             actix_web::App::new()
                 .app_data(db.clone())
+                .app_data(client)
                 .app_data(manager_metrics.clone())
                 .service(metrics)
         })
@@ -67,6 +71,7 @@ pub async fn create_endpoint(manager_metrics: PrometheusHandle, db: Arc<Mutex<St
 #[get("/metrics")]
 async fn metrics(
     db: web::Data<Arc<Mutex<StoragePostgres>>>,
+    client: web::Data<awc::Client>,
     manager_metrics: web::Data<PrometheusHandle>,
 ) -> Result<impl Responder, ManagerError> {
     let mut buffer = String::new();
@@ -78,12 +83,13 @@ async fn metrics(
         // Get the metrics for all running pipelines,
         // don't write anything if the request fails.
         if pipeline.deployment_status == PipelineStatus::Running {
-            let location = pipeline
-                .deployment_location
-                .ok_or(RunnerError::PipelineMissingDeploymentLocation)?;
-            if let Ok((_url, response)) = RunnerInteraction::http_request_to_pipeline(
-                pipeline.id,
-                Some(pipeline.name.clone()),
+            let location = pipeline.deployment_location.ok_or(
+                RunnerError::PipelineInteractionUnreachable {
+                    error: "missing deployment location".to_string(),
+                },
+            )?;
+            if let Ok(response) = RunnerInteraction::forward_http_request_to_pipeline(
+                client.as_ref(),
                 &location,
                 Method::GET,
                 "metrics",
@@ -92,10 +98,22 @@ async fn metrics(
             )
             .await
             {
+                let (response, body) = response.into_parts();
                 if response.status().is_success() {
-                    if let Ok(response_text) = response.text().await {
-                        buffer += &response_text;
+                    if let Ok(bytes) = body.try_into_bytes() {
+                        if let Ok(s) = String::from_utf8(bytes.to_vec()) {
+                            buffer += &s;
+                        } else {
+                            warn!("Metrics request response body has bytes which are not UTF-8");
+                        }
+                    } else {
+                        warn!("Metrics request response body has no bytes");
                     }
+                } else {
+                    warn!(
+                        "Metrics request response is not success: {}",
+                        response.status()
+                    );
                 }
             }
         }

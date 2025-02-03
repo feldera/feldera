@@ -216,7 +216,7 @@ export const getPipelineStats = async (pipeline_name: string) => {
       status: status as ControllerStatus | null
     }),
     (e) => {
-      if (e.error_code === 'PipelineNotRunningOrPaused') {
+      if (e.error_code === 'PipelineInteractionNotDeployed') {
         return {
           pipelineName: pipeline_name,
           status: 'not running' as const

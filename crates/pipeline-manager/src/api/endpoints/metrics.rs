@@ -32,6 +32,7 @@ use crate::error::ManagerError;
 #[get("/metrics")]
 pub(crate) async fn get_metrics(
     state: WebData<ServerState>,
+    client: WebData<awc::Client>,
     tenant_id: ReqData<TenantId>,
 ) -> Result<HttpResponse, ManagerError> {
     let pipelines = state
@@ -51,6 +52,7 @@ pub(crate) async fn get_metrics(
             if let Ok(res) = state
                 .runner
                 .forward_http_request_to_pipeline_by_name(
+                    client.as_ref(),
                     *tenant_id,
                     &pipeline.name,
                     Method::GET,
