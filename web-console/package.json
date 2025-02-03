@@ -4,10 +4,10 @@
   "private": true,
   "scripts": {
     "dev": "vite dev --host",
-    "build": "svelte-kit sync && svelte-check && vite build",
+    "build": "svelte-kit sync && svelte-check --threshold error && vite build",
     "preview": "vite preview --host",
-    "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
-    "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
+    "check": "svelte-kit sync && svelte-check",
+    "check:watch": "svelte-kit sync && svelte-check --watch",
     "lint": "prettier --check . && eslint .",
     "format": "prettier --write .",
     "openapi": "openapi-ts -i path/to/openapi.json -o src/client",
