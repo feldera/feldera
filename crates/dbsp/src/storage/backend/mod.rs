@@ -10,7 +10,6 @@
 #![warn(missing_docs)]
 
 use crate::storage::buffer_cache::FBuf;
-use crate::Runtime;
 use feldera_types::config::{
     StorageBackendConfig, StorageCacheConfig, StorageConfig, StorageOptions,
 };

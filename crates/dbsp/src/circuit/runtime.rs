@@ -17,7 +17,7 @@ use feldera_types::config::StorageCompression;
 use once_cell::sync::Lazy;
 use serde::Serialize;
 use std::path::Path;
-use std::sync::Mutex;
+use std::sync::{LazyLock, Mutex};
 use std::thread::Thread;
 use std::time::Duration;
 use std::{
@@ -104,7 +104,7 @@ thread_local! {
     /// to speed-up finding the cache on a given thread.
     ///
     /// It is initialized by the first call to `Runtime::buffer_cache()`.
-    static BUFFER_CACHE: RefCell<Option<Arc<BufferCache<FileCacheEntry>>>> = RefCell::new(None);
+    static BUFFER_CACHE: RefCell<Option<Arc<BufferCache<FileCacheEntry>>>> = const { RefCell::new(None) };
 }
 
 pub struct LocalStoreMarker;
@@ -346,11 +346,19 @@ impl Runtime {
                 .cache_mib
                 .unwrap_or(nworkers * 256)
                 .saturating_mul(1024 * 1024);
-            for idx in 0..nworkers*2 {
+            // Create buffer caches for each thread.
+            for idx in 0..nworkers * 2 {
                 runtime.local_store().insert(
                     BufferCacheId(idx),
                     Arc::new(BufferCache::new(cache_size_bytes / nworkers)),
                 );
+            }
+        } else {
+            // Create a dummy buffer cache for each thread.
+            for idx in 0..nworkers * 2 {
+                runtime
+                    .local_store()
+                    .insert(BufferCacheId(idx), Arc::new(BufferCache::new(1)));
             }
         }
 
@@ -425,21 +433,28 @@ impl Runtime {
 
     /// Returns this thread's buffer cache, if storage is configured.
     pub fn buffer_cache() -> Arc<BufferCache<FileCacheEntry>> {
-        // Fast path, look up from TLS
-        if let Some(buffer_cache) = BUFFER_CACHE.with(|bc| bc.borrow().clone()) {
-            return buffer_cache;
-        }
+        if let Some(rt) = Runtime::runtime() {
+            // Fast path, look up from TLS
+            if let Some(buffer_cache) = BUFFER_CACHE.with(|bc| bc.borrow().clone()) {
+                return buffer_cache;
+            }
 
-        // Slow path, initialize the TLS BUFFER_CACHE variable.
-        let rt = Runtime::runtime().unwrap();
-        let cache_id = if !Runtime::is_background() {
-            BufferCacheId(Runtime::worker_index())
+            // Slow path, initialize the TLS BUFFER_CACHE variable.
+            let cache_id = if !Runtime::is_background() {
+                BufferCacheId(Runtime::worker_index())
+            } else {
+                BufferCacheId(Runtime::worker_index() + rt.num_workers())
+            };
+            let cache = rt.local_store().get(&cache_id).unwrap();
+            BUFFER_CACHE.set(Some(cache.clone()));
+            cache.clone()
         } else {
-            BufferCacheId(Runtime::worker_index() + rt.num_workers())
-        };
-        let cache = rt.local_store().get(&cache_id).unwrap();
-        BUFFER_CACHE.set(Some(cache.clone()));
-        cache.clone()
+            // No `Runtime` means there's only a single worker, so use a single
+            // global cache.
+            static NO_RUNTIME_CACHE: LazyLock<Arc<BufferCache<FileCacheEntry>>> =
+                LazyLock::new(|| Arc::new(BufferCache::new(1024 * 1024 * 256)));
+            NO_RUNTIME_CACHE.clone()
+        }
     }
 
     /// Returns 0-based index of the current worker thread within its runtime.

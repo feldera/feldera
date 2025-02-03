@@ -21,7 +21,6 @@ use crc32c::crc32c;
 use dyn_clone::clone_box;
 use fastbloom::BloomFilter;
 use snap::raw::{max_compress_len, Encoder};
-use std::fs::File;
 use std::sync::Arc;
 use std::{
     marker::PhantomData,
@@ -39,8 +38,7 @@ use crate::{
 use super::cache::{FileCache, FileCacheEntry};
 use super::format::Compression;
 use super::{
-    reader::Reader, AnyFactories, BloomFilterState, Factories, Serializer,
-    BLOOM_FILTER_FALSE_POSITIVE_RATE,
+    reader::Reader, AnyFactories, Factories, Serializer, BLOOM_FILTER_FALSE_POSITIVE_RATE,
 };
 
 struct VarintWriter {
@@ -1088,6 +1086,7 @@ impl Writer {
         let (reader, pbuf) = self.writer.complete()?;
 
         // Write out the bloom filter to a separate file (for now)
+        /*
         let mut bloom_path = pbuf.clone();
         bloom_path.set_extension("bloom");
         let mut bf = File::create(bloom_path.as_path())?;
@@ -1096,6 +1095,7 @@ impl Writer {
             binrw::Error::Io(e) => StorageError::StdIo(e.kind()),
             _ => StorageError::BloomFilter,
         })?;
+         */
 
         Ok((reader, pbuf, self.bloom_filter))
     }

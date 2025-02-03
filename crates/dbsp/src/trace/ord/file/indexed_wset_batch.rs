@@ -243,7 +243,7 @@ where
         let mut writer = Writer2::new(
             &self.factories.factories0,
             &self.factories.factories1,
-            Runtime::buffer_cache().unwrap(),
+            Runtime::buffer_cache(),
             &*Runtime::storage_backend().unwrap(),
             Runtime::file_writer_parameters(),
         )
@@ -569,7 +569,7 @@ where
             writer: Writer2::new(
                 &batch1.factories.factories0,
                 &batch1.factories.factories1,
-                Runtime::buffer_cache().unwrap(),
+                Runtime::buffer_cache(),
                 &*Runtime::storage_backend().unwrap(),
                 Runtime::file_writer_parameters(),
             )
@@ -901,7 +901,7 @@ where
             writer: Writer2::new(
                 &factories.factories0,
                 &factories.factories1,
-                Runtime::buffer_cache().unwrap(),
+                Runtime::buffer_cache(),
                 &*Runtime::storage_backend().unwrap(),
                 Runtime::file_writer_parameters(),
             )
