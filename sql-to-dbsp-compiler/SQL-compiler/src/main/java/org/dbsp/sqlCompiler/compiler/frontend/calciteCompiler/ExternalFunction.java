@@ -216,8 +216,8 @@ public class ExternalFunction extends SqlFunction {
         if (this.getName().toLowerCase().startsWith("jsonstring_as_")) {
             /*
             TYPE ~ struct
-            pub fn JSONSTRING_AS_<TYPE>(_pos: &SourcePositionRange, s: Option<String>) -> Option<Tup1<TYPE>> {
-                let s: String = (s?);
+            pub fn JSONSTRING_AS_<TYPE>(_pos: &SourcePositionRange, s: Option<SqlString>) -> Option<Tup1<TYPE>> {
+                let s = s?.str();
                 let strct: Option<struct_0> = from_json_string(s);
                 strct.map(move |x: _, | -> _ { x.into() })
             }
@@ -234,7 +234,9 @@ public class ExternalFunction extends SqlFunction {
             DBSPParameter param = new DBSPParameter("s", parameterType);
             List<DBSPStatement> statements = new ArrayList<>();
             if (parameterType.mayBeNull)
-                statements.add(new DBSPLetStatement("s", param.asVariable().question()));
+                statements.add(new DBSPLetStatement("s",
+                        new DBSPApplyMethodExpression("str",
+                                DBSPTypeAny.getDefault(), param.asVariable().question())));
             DBSPExpression toStruct = new DBSPApplyExpression("from_json_string",
                     structType.withMayBeNull(true), param.asVariable().borrow());
             DBSPLetStatement strct = new DBSPLetStatement("strct",toStruct);

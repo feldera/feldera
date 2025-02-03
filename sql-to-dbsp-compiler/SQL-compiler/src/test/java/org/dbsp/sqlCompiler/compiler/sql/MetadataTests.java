@@ -529,14 +529,14 @@ public class MetadataTests extends BaseSQLTests {
         PrintWriter script = new PrintWriter(udf, StandardCharsets.UTF_8);
         script.println("""
                 use feldera_sqllib::*;
-                pub fn contains_number(str: String, value: Option<i32>) -> Result<bool, Box<dyn std::error::Error>> {
+                pub fn contains_number(str: SqlString, value: Option<i32>) -> Result<bool, Box<dyn std::error::Error>> {
                    match value {
                        None => Err("null value".into()),
-                       Some(value) => Ok(str.contains(&format!("{}", value).to_string())),
+                       Some(value) => Ok(str.str().contains(&format!("{}", value).to_string())),
                    }
                 }
-                pub fn EMPTY() -> Result<Option<String>, Box<dyn std::error::Error>> {
-                   Ok(Some("".to_string()))
+                pub fn EMPTY() -> Result<Option<SqlString>, Box<dyn std::error::Error>> {
+                   Ok(Some(SqlString::new()))
                 }""");
         script.close();
         CompilerMessages messages = CompilerMain.execute("-o", BaseSQLTests.testFilePath, file.getPath());
@@ -559,12 +559,12 @@ public class MetadataTests extends BaseSQLTests {
                 use feldera_sqllib::*;
                 use crate::*;
 
-                pub fn contains_number(str: String, value: Option<i32>) -> Result<bool, Box<dyn std::error::Error>> {
+                pub fn contains_number(str: SqlString, value: Option<i32>) -> Result<bool, Box<dyn std::error::Error>> {
                     udf::contains_number(
                         str,
                         value)
                 }
-                pub fn EMPTY() -> Result<Option<String>, Box<dyn std::error::Error>> {
+                pub fn EMPTY() -> Result<Option<SqlString>, Box<dyn std::error::Error>> {
                     udf::EMPTY()
                 }""", String.join(System.lineSeparator(), str));
         boolean success = protos.toFile().delete();

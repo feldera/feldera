@@ -3,7 +3,7 @@
 
 use crate::{
     array::Array, binary::ByteArray, casts::*, error::SqlRuntimeError, map::Map, tn, ttn, Date,
-    GeoPoint, LongInterval, ShortInterval, Time, Timestamp, Uuid,
+    GeoPoint, LongInterval, ShortInterval, SqlString, Time, Timestamp, Uuid,
 };
 use dbsp::algebra::{F32, F64};
 use feldera_types::serde_with_context::serde_config::VariantFormat;
@@ -60,7 +60,7 @@ pub enum Variant {
     Real(F32),
     Double(F64),
     Decimal(Decimal),
-    String(String),
+    String(SqlString),
     Date(Date),
     Time(Time),
     Timestamp(Timestamp),
@@ -161,7 +161,7 @@ impl<'de> Deserialize<'de> for Variant {
 
             #[inline]
             fn visit_string<E>(self, value: String) -> Result<Variant, E> {
-                Ok(Variant::String(value))
+                Ok(Variant::String(SqlString::from(value)))
             }
 
             #[inline]
@@ -209,9 +209,12 @@ impl<'de> Deserialize<'de> for Variant {
                     Some(KeyClass::Map(first_key)) => {
                         let mut values = BTreeMap::new();
 
-                        values.insert(Variant::String(first_key), visitor.next_value()?);
+                        values.insert(
+                            Variant::String(SqlString::from(first_key)),
+                            visitor.next_value()?,
+                        );
                         while let Some((key, value)) = visitor.next_entry::<String, Variant>()? {
-                            values.insert(Variant::String(key), value);
+                            values.insert(Variant::String(SqlString::from(key)), value);
                         }
 
                         Ok(Variant::Map(values.into()))
@@ -379,7 +382,7 @@ impl SerializeWithContext<SqlSerdeConfig> for Variant {
                 Variant::Real(v) => v.serialize_with_context(serializer, context),
                 Variant::Double(v) => v.serialize_with_context(serializer, context),
                 Variant::Decimal(v) => v.serialize_with_context(serializer, context),
-                Variant::String(v) => v.serialize_with_context(serializer, context),
+                Variant::String(v) => v.str().serialize_with_context(serializer, context),
                 Variant::Date(v) => v.serialize_with_context(serializer, context),
                 Variant::Time(v) => v.serialize_with_context(serializer, context),
                 Variant::Timestamp(v) => v.serialize_with_context(serializer, context),
@@ -426,7 +429,9 @@ impl Variant {
     #[doc(hidden)]
     pub fn index_string<I: AsRef<str>>(&self, index: I) -> Variant {
         match self {
-            Variant::Map(value) => match value.get(&Variant::String(index.as_ref().to_string())) {
+            Variant::Map(value) => match value.get(&Variant::String(SqlString::from(
+                index.as_ref().to_string(),
+            ))) {
                 None => Variant::SqlNull,
                 Some(result) => result.clone(),
             },
@@ -495,7 +500,7 @@ from!(BigInt, i64);
 from!(Real, F32);
 from!(Double, F64);
 from!(Decimal, Decimal);
-from!(String, String);
+from!(String, SqlString);
 from!(Date, Date);
 from!(Time, Time);
 from!(Timestamp, Timestamp);
@@ -628,7 +633,7 @@ macro_rules! into {
 }
 
 into!(Boolean, bool);
-into!(String, String);
+into!(String, SqlString);
 into!(Date, Date);
 into!(Time, Time);
 into!(Timestamp, Timestamp);
@@ -854,15 +859,15 @@ where
 }
 
 #[doc(hidden)]
-pub fn typeof_(value: Variant) -> String {
-    value.get_type_string().to_string()
+pub fn typeof_(value: Variant) -> SqlString {
+    SqlString::from_ref(value.get_type_string())
 }
 
 #[doc(hidden)]
-pub fn typeofN(value: Option<Variant>) -> String {
+pub fn typeofN(value: Option<Variant>) -> SqlString {
     match value {
-        None => "NULL".to_string(),
-        Some(value) => value.get_type_string().to_string(),
+        None => SqlString::from_ref("NULL"),
+        Some(value) => SqlString::from_ref(value.get_type_string()),
     }
 }
 
@@ -884,7 +889,7 @@ where
 
 #[cfg(test)]
 mod test {
-    use crate::{binary::ByteArray, Date, Time, Timestamp};
+    use crate::{binary::ByteArray, Date, SqlString, Time, Timestamp};
     use std::str::FromStr;
     use std::sync::Arc;
 
@@ -993,32 +998,38 @@ mod test {
 
         let expected = Variant::Map(
             [
-                (Variant::String("b".to_string()), Variant::Boolean(true)),
                 (
-                    Variant::String("i".to_string()),
+                    Variant::String(SqlString::from_ref("b")),
+                    Variant::Boolean(true),
+                ),
+                (
+                    Variant::String(SqlString::from_ref("i")),
                     Variant::Decimal(Decimal::from(12345)),
                 ),
                 (
-                    Variant::String("f".to_string()),
+                    Variant::String(SqlString::from_ref("f")),
                     Variant::Decimal(Decimal::from_str("0.00123").unwrap()),
                 ),
                 (
-                    Variant::String("d".to_string()),
+                    Variant::String(SqlString::from_ref("d")),
                     Variant::Decimal(Decimal::from_str("123.45").unwrap()),
                 ),
                 (
-                    Variant::String("s".to_string()),
-                    Variant::String("foo\nbar".to_string()),
+                    Variant::String(SqlString::from_ref("s")),
+                    Variant::String(SqlString::from_ref("foo\nbar")),
                 ),
-                (Variant::String("n".to_string()), Variant::VariantNull),
                 (
-                    Variant::String("nested".to_string()),
+                    Variant::String(SqlString::from_ref("n")),
+                    Variant::VariantNull,
+                ),
+                (
+                    Variant::String(SqlString::from_ref("nested")),
                     Variant::Map(
                         [(
-                            Variant::String("arr".to_string()),
+                            Variant::String(SqlString::from_ref("arr")),
                             Variant::Array(Arc::new(vec![
                                 Variant::Decimal(Decimal::from(1)),
-                                Variant::String("foo".to_string()),
+                                Variant::String(SqlString::from_ref("foo")),
                                 Variant::VariantNull,
                             ])),
                         )]
@@ -1071,45 +1082,51 @@ mod test {
     fn serialize_map() {
         let v = Variant::Map(
             [
-                (Variant::String("b".to_string()), Variant::Boolean(true)),
                 (
-                    Variant::String("i".to_string()),
+                    Variant::String(SqlString::from_ref("b")),
+                    Variant::Boolean(true),
+                ),
+                (
+                    Variant::String(SqlString::from_ref("i")),
                     Variant::Decimal(Decimal::from(12345)),
                 ),
                 (
-                    Variant::String("f".to_string()),
+                    Variant::String(SqlString::from_ref("f")),
                     Variant::Double(F64::new(0.00123)),
                 ),
                 (
-                    Variant::String("d".to_string()),
+                    Variant::String(SqlString::from_ref("d")),
                     Variant::Decimal(Decimal::from_str("123.45").unwrap()),
                 ),
                 (
-                    Variant::String("s".to_string()),
-                    Variant::String("foo\nbar".to_string()),
+                    Variant::String(SqlString::from_ref("s")),
+                    Variant::String(SqlString::from_ref("foo\nbar")),
                 ),
                 (
-                    Variant::String("bytes".to_string()),
+                    Variant::String(SqlString::from_ref("bytes")),
                     Variant::Binary(ByteArray::new(b"hello")),
                 ),
-                (Variant::String("n".to_string()), Variant::VariantNull),
                 (
-                    Variant::String("nested".to_string()),
+                    Variant::String(SqlString::from_ref("n")),
+                    Variant::VariantNull,
+                ),
+                (
+                    Variant::String(SqlString::from_ref("nested")),
                     Variant::Map(
                         [
                             (
-                                Variant::String("arr".to_string()),
+                                Variant::String(SqlString::from_ref("arr")),
                                 Variant::Array(
                                     vec![
                                         Variant::Decimal(Decimal::from(1)),
-                                        Variant::String("foo".to_string()),
+                                        Variant::String(SqlString::from_ref("foo")),
                                         Variant::VariantNull,
                                     ]
                                     .into(),
                                 ),
                             ),
                             (
-                                Variant::String("ts".to_string()),
+                                Variant::String(SqlString::from_ref("ts")),
                                 Variant::Timestamp(Timestamp::from_dateTime(
                                     DateTime::parse_from_rfc3339("2024-12-19T16:39:57Z")
                                         .unwrap()
@@ -1117,13 +1134,13 @@ mod test {
                                 )),
                             ),
                             (
-                                Variant::String("d".to_string()),
+                                Variant::String(SqlString::from_ref("d")),
                                 Variant::Date(Date::from_date(
                                     NaiveDate::from_ymd_opt(2024, 1, 1).unwrap(),
                                 )),
                             ),
                             (
-                                Variant::String("t".to_string()),
+                                Variant::String(SqlString::from_ref("t")),
                                 Variant::Time(Time::from_time(
                                     NaiveTime::from_hms_opt(17, 30, 40).unwrap(),
                                 )),

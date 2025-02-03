@@ -7,14 +7,14 @@
 #![allow(non_snake_case)]
 
 use dbsp::algebra::{F32, F64};
-use feldera_sqllib::casts::*;
+use feldera_sqllib::{casts::*, SqlString};
 use rust_decimal::Decimal;
 
 #[derive(Debug)]
 pub enum SltSqlValue {
     Int(i32),
     Long(i64),
-    Str(String),
+    Str(SqlString),
     Flt(f32),
     Dbl(f64),
     Bool(bool),
@@ -22,7 +22,7 @@ pub enum SltSqlValue {
 
     OptInt(Option<i32>),
     OptLong(Option<i64>),
-    OptStr(Option<String>),
+    OptStr(Option<SqlString>),
     OptFlt(Option<f32>),
     OptDbl(Option<f64>),
     OptBool(Option<bool>),
@@ -71,8 +71,8 @@ impl From<F64> for SltSqlValue {
     }
 }
 
-impl From<String> for SltSqlValue {
-    fn from(value: String) -> Self {
+impl From<SqlString> for SltSqlValue {
+    fn from(value: SqlString) -> Self {
         SltSqlValue::Str(value)
     }
 }
@@ -131,8 +131,8 @@ impl From<Option<F64>> for SltSqlValue {
     }
 }
 
-impl From<Option<String>> for SltSqlValue {
-    fn from(value: Option<String>) -> Self {
+impl From<Option<SqlString>> for SltSqlValue {
+    fn from(value: Option<SqlString>) -> Self {
         SltSqlValue::OptStr(value)
     }
 }
@@ -167,7 +167,7 @@ impl SqlRow {
     /// # Panics
     ///
     /// if format.let() != self.values.len()
-    pub fn to_slt_strings(self, format: &str) -> Vec<String> {
+    pub fn to_slt_strings(self, format: &str) -> Vec<SqlString> {
         if self.values.len() != format.len() {
             panic!(
                 "Mismatched format {} vs len {}",
@@ -175,9 +175,9 @@ impl SqlRow {
                 self.values.len()
             )
         }
-        let mut result = Vec::<String>::with_capacity(format.len());
+        let mut result = Vec::<SqlString>::with_capacity(format.len());
         for elem in self.values.iter().zip(format.chars()) {
-            result.push(elem.0.format_slt(&elem.1));
+            result.push(SqlString::from(elem.0.format_slt(&elem.1)));
         }
         result
     }
@@ -239,9 +239,9 @@ impl SqlLogicTestFormat for SltSqlValue {
             (SltSqlValue::Dbl(x), _) => format!("{:.3}", x),
             (SltSqlValue::OptDbl(Some(x)), _) => format!("{:.3}", x),
 
-            (SltSqlValue::Str(x), 'T') => slt_translate_string(x),
+            (SltSqlValue::Str(x), 'T') => slt_translate_string(&x.str()),
             (SltSqlValue::OptStr(None), 'T') => String::from("NULL"),
-            (SltSqlValue::OptStr(Some(x)), 'T') => slt_translate_string(x),
+            (SltSqlValue::OptStr(Some(x)), 'T') => slt_translate_string(&x.str()),
             (SltSqlValue::OptStr(None), 'I') => String::from("NULL"),
             (SltSqlValue::OptStr(Some(x)), 'I') => {
                 format!("{}", unwrap_cast(cast_to_i32_s(x.clone())))

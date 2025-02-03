@@ -7,6 +7,7 @@ import org.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
 import org.junit.Assert;
+import org.junit.Ignore;
 import org.junit.Test;
 
 import java.io.File;
@@ -73,6 +74,7 @@ public class ProfilingTests extends StreamingTestBase {
                     append_to_collection_handle,
                     read_output_handle,
                     casts::{cast_to_Timestamp_s,unwrap_cast},
+                    string::SqlString,
                 };
 
                 use std::{
@@ -90,8 +92,6 @@ public class ProfilingTests extends StreamingTestBase {
                 };
 
                 use temp::circuit;
-                use dbsp::circuit::Layout;
-                use uuid::Uuid;
 
                 type MetricsSnapshot = HashMap<CompositeKey, (Option<Unit>, Option<SharedString>, DebugValue)>;
 
@@ -172,7 +172,7 @@ public class ProfilingTests extends StreamingTestBase {
         // Rust program which profiles the circuit.
         String main = this.createMain("""
                     // Initial data value for timestamp
-                    let mut timestamp = unwrap_cast(cast_to_Timestamp_s("2024-01-10 10:10:10".to_string()));
+                    let mut timestamp = unwrap_cast(cast_to_Timestamp_s(SqlString::from_ref("2024-01-10 10:10:10")));
                     for i in 0..1000000 {
                         let value = Some(F64::new(i.into()));
                         timestamp = timestamp.add(20000);
@@ -231,7 +231,7 @@ public class ProfilingTests extends StreamingTestBase {
         // Rust program which profiles the circuit.
         String main = this.createMain("""
                     // Initial data value for timestamp
-                    let mut timestamp = unwrap_cast(cast_to_Timestamp_s("2024-01-10 10:10:10".to_string()));
+                    let mut timestamp = unwrap_cast(cast_to_Timestamp_s(SqlString::from_ref("2024-01-10 10:10:10")));
                     for i in 0..1000000 {
                         let expire = timestamp.add(1000000);
                         timestamp = timestamp.add(20000);
@@ -278,5 +278,30 @@ public class ProfilingTests extends StreamingTestBase {
                 let _ = circuit.step().expect("could not run circuit");
                 """);
         this.measure(sql, main);
+    }
+
+    @Test @Ignore
+    public void testInterning() throws SQLException, IOException, InterruptedException {
+        String sql = """
+                CREATE TABLE s(i INTEGER NOT NULL, s VARCHAR NOT NULL);
+                CREATE VIEW V AS
+                SELECT i, ARRAY_REPEAT(s, 1000)
+                FROM s
+                GROUP BY i, s;
+                """;
+        // Rust program which profiles the circuit.
+        String main = this.createMain("""
+                    for i in 0..1000000 {
+                        let data = zset!(Tup2::new(i, SqlString::from(format!("{i}-{i}-{i}"))) => 1);
+                        append_to_collection_handle(&data, &streams.0);
+                        if i % 10000 == 0 {
+                            let _ = circuit.step().expect("could not run circuit");
+                            let _ = &read_output_handle(&streams.1);
+                        }
+                    }""");
+        Long[] p = this.measure(sql, main);
+        System.out.println("Memory used simple=" + p[1]);
+        p = this.measure(sql, main/*"--features", "interned"*/);
+        System.out.println("Memory used interned=" + p[1]);
     }
 }

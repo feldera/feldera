@@ -5,6 +5,8 @@ edition = "2021"
 publish = false
 
 [features]
+default = []
+arcstring = ["feldera-sqllib/arcstring"]
 
 [dependencies]
 paste = { version = "1.0.12" }
