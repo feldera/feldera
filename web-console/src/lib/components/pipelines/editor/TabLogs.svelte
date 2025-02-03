@@ -19,6 +19,7 @@
 
 <script lang="ts">
   import LogsStreamList from '$lib/components/pipelines/editor/LogsStreamList.svelte'
+  import prettyAnsi from 'pretty-ansi'
 
   import {
     parseCancellable,
@@ -71,7 +72,7 @@
           pushChanges: pushAsCircularBuffer(
             () => streams[pipelineName].rows,
             bufferSize,
-            (v) => v
+            (v) => prettyAnsi(v as string)
           ),
           onParseEnded: (reason) => {
             streams[pipelineName].stream = { closed: {} }
