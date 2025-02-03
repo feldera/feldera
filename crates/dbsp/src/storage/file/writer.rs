@@ -1308,7 +1308,7 @@ where
         Reader::new(
             &[&any_factories],
             path,
-            Runtime::buffer_cache,
+            Runtime::buffer_cache(),
             file_handle,
             bloom_filter,
         )
@@ -1482,13 +1482,14 @@ where
         Reader<(&'static K0, &'static A0, (&'static K1, &'static A1, ()))>,
         super::reader::Error,
     > {
+        let cache = self.storage().clone();
         let any_factories0 = self.factories0.any_factories();
         let any_factories1 = self.factories1.any_factories();
         let (file_handle, path, bloom_filter) = self.close()?;
         Reader::new(
             &[&any_factories0, &any_factories1],
             path,
-            Runtime::buffer_cache,
+            cache,
             file_handle,
             bloom_filter,
         )

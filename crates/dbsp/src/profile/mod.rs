@@ -4,7 +4,6 @@ use crate::{
     circuit::{
         circuit_builder::Node,
         metadata::{MetaItem, OperatorMeta},
-        runtime::ThreadType,
         GlobalNodeId,
     },
     monitor::{visual_graph::Graph, TraceMonitor},
@@ -494,22 +493,19 @@ impl Profiler {
                     meta.insert(0, item);
                 }
 
-                let runtime = Runtime::runtime().unwrap();
-                for thread_type in [ThreadType::Foreground, ThreadType::Background] {
-                    let cache = runtime.get_buffer_cache(Runtime::worker_index(), thread_type);
-                    let (cur, max) = cache.occupancy();
-                    meta.insert(
-                        0,
-                        (
-                            Cow::from(format!("{thread_type} cache occupancy")),
-                            MetaItem::String(format!(
-                                "{} used (max {})",
-                                HumanBytes::new(cur as u64),
-                                HumanBytes::new(max as u64)
-                            )),
-                        ),
-                    );
-                }
+                let cache = Runtime::buffer_cache();
+                let (cur, max) = cache.occupancy();
+                meta.insert(
+                    0,
+                    (
+                        Cow::from("cache occupancy"),
+                        MetaItem::String(format!(
+                            "{} used (max {})",
+                            HumanBytes::new(cur as u64),
+                            HumanBytes::new(max as u64)
+                        )),
+                    ),
+                );
             }
         }
 
