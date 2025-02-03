@@ -37,6 +37,7 @@ pub use num_traits::Float;
 pub use regex::Regex;
 #[doc(hidden)]
 pub use source::{SourcePosition, SourcePositionRange};
+pub use string::SqlString;
 pub use timestamp::{Date, Time, Timestamp};
 pub use uuid::Uuid;
 pub use variant::Variant;
@@ -1623,25 +1624,26 @@ some_polymorphic_function1!(is_nan, f, F32, bool);
 
 ////////////////////////////////////////////////
 
+// Functions called by 'writelog'
 #[doc(hidden)]
-pub fn dump<T>(prefix: String, data: &T) -> T
+pub fn dump<T>(prefix: SqlString, data: &T) -> T
 where
     T: Debug + Clone,
 {
-    println!("{}: {:?}", prefix, data);
+    println!("{}: {:?}", prefix.str(), data);
     data.clone()
 }
 
 #[doc(hidden)]
-pub fn print(str: String) {
-    print!("{}", str)
+pub fn print(str: SqlString) {
+    print!("{}", str.str())
 }
 
 #[doc(hidden)]
-pub fn print_opt(str: Option<String>) {
+pub fn print_opt(str: Option<SqlString>) {
     match str {
         None => print!("NULL"),
-        Some(x) => print!("{}", x),
+        Some(x) => print!("{}", x.str()),
     }
 }
 

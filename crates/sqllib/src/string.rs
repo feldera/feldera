@@ -6,142 +6,293 @@ use crate::{
     some_polymorphic_function1, some_polymorphic_function2, Variant,
 };
 
+use core::fmt::Error;
+use feldera_types::{deserialize_without_context, serialize_without_context};
+#[cfg(not(feature = "arcstring"))]
+use internment::ArcIntern;
 use like::{Escape, Like};
 use regex::Regex;
-use std::sync::Arc;
+use rkyv::Fallible;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use size_of::{Context, SizeOf};
+use std::{
+    borrow::Cow,
+    fmt::{Display, Formatter},
+    sync::Arc,
+};
 
-#[doc(hidden)]
-pub fn concat_s_s(mut left: String, right: String) -> String {
-    left.reserve(right.len());
-    left.push_str(&right);
-    left
-}
+#[cfg(not(feature = "arcstring"))]
+type Interned = ArcIntern<String>;
 
-some_polymorphic_function2!(concat, s, String, s, String, String);
+#[cfg(feature = "arcstring")]
+type Interned = Arc<String>;
 
-#[doc(hidden)]
-pub fn substring3___(value: String, left: i32, count: i32) -> String {
-    if count < 0 {
-        String::new()
-    } else {
-        // character indexes in SQL start at 1
-        let start = if left < 1 { 0 } else { left - 1 };
-        value
-            .chars()
-            .skip(start as usize)
-            .take(count as usize)
-            .collect()
+#[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct SqlString(Interned);
+
+/// String representation used by the Feldera SQL runtime
+impl SqlString {
+    #[cfg(feature = "arcstring")]
+    pub fn new() -> Self {
+        SqlString(Interned::new("".to_string()))
+    }
+
+    #[cfg(feature = "arcstring")]
+    pub fn from_ref(value: &str) -> Self {
+        SqlString(Interned::new(String::from(value)))
+    }
+
+    #[cfg(not(feature = "arcstring"))]
+    pub fn new() -> Self {
+        SqlString(Interned::new("".to_string()))
+    }
+
+    #[cfg(not(feature = "arcstring"))]
+    pub fn from_ref(value: &str) -> Self {
+        SqlString(Interned::new(value.to_string()))
+    }
+
+    pub fn str(&self) -> String {
+        self.0.clone().to_string()
+    }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
     }
 }
 
-some_function3!(substring3, String, i32, i32, String);
+impl Serialize for SqlString {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        self.str().serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for SqlString {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let str: Cow<'de, str> = Deserialize::deserialize(deserializer)?;
+        Ok(Self::from_ref(&str))
+    }
+}
+
+serialize_without_context!(SqlString);
+deserialize_without_context!(SqlString);
+
+impl Display for SqlString {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
+        self.str().fmt(f)
+    }
+}
+
+impl From<String> for SqlString {
+    fn from(value: String) -> Self {
+        SqlString(Interned::from(value))
+    }
+}
+
+impl From<char> for SqlString {
+    fn from(value: char) -> Self {
+        SqlString(Interned::from(String::from(value)))
+    }
+}
+
+impl From<&str> for SqlString {
+    fn from(value: &str) -> Self {
+        SqlString::from(value.to_string())
+    }
+}
+
+impl SizeOf for SqlString {
+    fn size_of_children(&self, context: &mut Context) {
+        self.str().size_of_children(context)
+    }
+}
+
+impl rkyv::Archive for SqlString {
+    type Archived = ();
+    type Resolver = ();
+    unsafe fn resolve(&self, _pos: usize, _resolver: Self::Resolver, _out: *mut Self::Archived) {
+        todo!()
+    }
+}
+
+impl<D> rkyv::Deserialize<SqlString, D> for ()
+where
+    D: Fallible + ?Sized,
+{
+    fn deserialize(&self, _deserializer: &mut D) -> Result<SqlString, D::Error> {
+        todo!()
+    }
+}
+
+impl<D> rkyv::Deserialize<SqlString, D> for SqlString
+where
+    D: Fallible + ?Sized,
+{
+    fn deserialize(&self, _deserializer: &mut D) -> Result<SqlString, D::Error> {
+        todo!()
+    }
+}
+
+impl<S> rkyv::Serialize<S> for SqlString
+where
+    S: Fallible + ?Sized,
+{
+    fn serialize(&self, _serializer: &mut S) -> Result<Self::Resolver, S::Error> {
+        todo!()
+    }
+}
+
+///////////////////////////////
 
 #[doc(hidden)]
-pub fn substring2__(value: String, left: i32) -> String {
+pub fn concat_s_s(left: SqlString, right: SqlString) -> SqlString {
+    let mut str = left.str();
+    str.reserve(right.str().len());
+    str.push_str(&right.str());
+    SqlString::from(str)
+}
+
+some_polymorphic_function2!(concat, s, SqlString, s, SqlString, SqlString);
+
+#[doc(hidden)]
+pub fn substring3___(value: SqlString, left: i32, count: i32) -> SqlString {
+    if count < 0 {
+        SqlString::new()
+    } else {
+        // character indexes in SQL start at 1
+        let start = if left < 1 { 0 } else { left - 1 };
+        let s: String = value
+            .str()
+            .chars()
+            .skip(start as usize)
+            .take(count as usize)
+            .collect();
+        SqlString::from(s)
+    }
+}
+
+some_function3!(substring3, SqlString, i32, i32, SqlString);
+
+#[doc(hidden)]
+pub fn substring2__(value: SqlString, left: i32) -> SqlString {
     // character indexes in SQL start at 1
     let start = if left < 1 { 0 } else { left - 1 };
-    value.chars().skip(start as usize).collect()
+    SqlString::from(value.str().chars().skip(start as usize).collect::<String>())
 }
 
-some_function2!(substring2, String, i32, String);
+some_function2!(substring2, SqlString, i32, SqlString);
 
 #[doc(hidden)]
-pub fn trim_both_s_s(remove: String, value: String) -> String {
+pub fn trim_both_s_s(remove: SqlString, value: SqlString) -> SqlString {
     // 'remove' always has exactly 1 character
-    let chr = remove.chars().next().unwrap();
-    value.trim_matches(chr).to_string()
+    let chr = remove.str().chars().next().unwrap();
+    SqlString::from(value.str().trim_matches(chr).to_string())
 }
 
-some_polymorphic_function2!(trim_both, s, String, s, String, String);
+some_polymorphic_function2!(trim_both, s, SqlString, s, SqlString, SqlString);
 
 #[doc(hidden)]
-pub fn trim_leading_s_s(remove: String, value: String) -> String {
+pub fn trim_leading_s_s(remove: SqlString, value: SqlString) -> SqlString {
     // 'remove' always has exactly 1 character
-    let chr = remove.chars().next().unwrap();
-    value.trim_start_matches(chr).to_string()
+    let chr = remove.str().chars().next().unwrap();
+    SqlString::from(value.str().trim_start_matches(chr).to_string())
 }
 
-some_polymorphic_function2!(trim_leading, s, String, s, String, String);
+some_polymorphic_function2!(trim_leading, s, SqlString, s, SqlString, SqlString);
 
 #[doc(hidden)]
-pub fn trim_trailing_s_s(remove: String, value: String) -> String {
+pub fn trim_trailing_s_s(remove: SqlString, value: SqlString) -> SqlString {
     // 'remove' always has exactly 1 character
-    let chr = remove.chars().next().unwrap();
-    value.trim_end_matches(chr).to_string()
+    let chr = remove.str().chars().next().unwrap();
+    SqlString::from(value.str().trim_end_matches(chr).to_string())
 }
 
-some_polymorphic_function2!(trim_trailing, s, String, s, String, String);
+some_polymorphic_function2!(trim_trailing, s, SqlString, s, SqlString, SqlString);
 
 #[doc(hidden)]
-pub fn like2__(value: String, pattern: String) -> bool {
-    Like::<false>::like(value.as_str(), pattern.as_str()).unwrap()
+pub fn like2__(value: SqlString, pattern: SqlString) -> bool {
+    Like::<false>::like(value.str().as_str(), pattern.str().as_str()).unwrap()
 }
 
-some_function2!(like2, String, String, bool);
-
-#[doc(hidden)]
-pub fn rlike__(value: String, pattern: String) -> bool {
-    let re = Regex::new(&pattern).ok();
-    rlikeC__(value, &re)
-}
+some_function2!(like2, SqlString, SqlString, bool);
 
 // rlike with a Constant regular expression.
 // re is None when the regular expression expression is malformed,
 // In this case the result is false and not None.
 // The regular expression cannot be null - the compiler would detect that.
 #[doc(hidden)]
-pub fn rlikeC__(value: String, re: &Option<Regex>) -> bool {
+pub fn rlikeC__(value: SqlString, re: &Option<Regex>) -> bool {
     match re {
         None => false,
-        Some(re) => re.is_match(&value),
+        Some(re) => re.is_match(&value.str()),
     }
 }
 
 #[doc(hidden)]
-pub fn rlikeCN_(value: Option<String>, re: &Option<Regex>) -> Option<bool> {
+pub fn rlikeCN_(value: Option<SqlString>, re: &Option<Regex>) -> Option<bool> {
     let value = value?;
     Some(rlikeC__(value, re))
 }
 
-some_function2!(rlike, String, String, bool);
-
 #[doc(hidden)]
-pub fn like3___(value: String, pattern: String, escape: String) -> bool {
-    let escaped = pattern.as_str().escape(escape.as_str()).unwrap();
-    Like::<true>::like(value.as_str(), escaped.as_str()).unwrap()
+pub fn rlike__(value: SqlString, pattern: SqlString) -> bool {
+    let re = Regex::new(&pattern.str());
+    re.map_or_else(|_| false, |re| re.is_match(&value.str()))
 }
 
-some_function3!(like3, String, String, String, bool);
+some_function2!(rlike, SqlString, SqlString, bool);
 
 #[doc(hidden)]
-pub fn ilike2__(value: String, pattern: String) -> bool {
+pub fn like3___(value: SqlString, pattern: SqlString, escape: SqlString) -> bool {
+    let escaped = pattern
+        .str()
+        .as_str()
+        .escape(escape.str().as_str())
+        .unwrap();
+    Like::<true>::like(value.str().as_str(), escaped.as_str()).unwrap()
+}
+
+some_function3!(like3, SqlString, SqlString, SqlString, bool);
+
+#[doc(hidden)]
+pub fn ilike2__(value: SqlString, pattern: SqlString) -> bool {
     // Convert both the value and the pattern to lowercase for case-insensitive comparison
     Like::<false>::like(
-        value.to_lowercase().as_str(),
-        pattern.to_lowercase().as_str(),
+        value.str().to_lowercase().as_str(),
+        pattern.str().to_lowercase().as_str(),
     )
     .unwrap()
 }
 
-some_function2!(ilike2, String, String, bool);
+some_function2!(ilike2, SqlString, SqlString, bool);
 
 #[doc(hidden)]
-pub fn position__(needle: String, haystack: String) -> i32 {
-    let pos = haystack.find(needle.as_str());
+pub fn position__(needle: SqlString, haystack: SqlString) -> i32 {
+    let pos = haystack.str().find(needle.str().as_str());
     match pos {
         None => 0,
         Some(i) => (i + 1) as i32,
     }
 }
 
-some_function2!(position, String, String, i32);
+some_function2!(position, SqlString, SqlString, i32);
 
 #[doc(hidden)]
-pub fn char_length_(value: String) -> i32 {
-    value.chars().count() as i32
+pub fn char_length_(value: SqlString) -> i32 {
+    value.str().chars().count() as i32
 }
 
-some_function1!(char_length, String, i32);
+some_function1!(char_length, SqlString, i32);
 
 #[doc(hidden)]
 pub fn char_length_ref(value: &str) -> i32 {
@@ -149,89 +300,94 @@ pub fn char_length_ref(value: &str) -> i32 {
 }
 
 #[doc(hidden)]
-pub fn ascii_(value: String) -> i32 {
-    if value.is_empty() {
+pub fn ascii_(value: SqlString) -> i32 {
+    if value.str().is_empty() {
         0
     } else {
-        value.chars().next().unwrap() as u32 as i32
+        value.str().chars().next().unwrap() as u32 as i32
     }
 }
 
-some_function1!(ascii, String, i32);
+some_function1!(ascii, SqlString, i32);
 
 #[doc(hidden)]
-pub fn chr_(code: i32) -> String {
+pub fn chr_(code: i32) -> SqlString {
     if code < 0 {
-        String::default()
+        SqlString::default()
     } else {
         let c = char::from_u32(code as u32);
         match c {
-            None => String::default(),
-            Some(v) => String::from(v),
+            None => SqlString::default(),
+            Some(v) => SqlString::from(v),
         }
     }
 }
 
-some_function1!(chr, i32, String);
+some_function1!(chr, i32, SqlString);
 
 #[doc(hidden)]
-pub fn repeat__(value: String, count: i32) -> String {
+pub fn repeat__(value: SqlString, count: i32) -> SqlString {
     if count <= 0 {
-        String::default()
+        SqlString::default()
     } else {
-        value.repeat(count as usize)
+        SqlString::from(value.str().repeat(count as usize))
     }
 }
 
-some_function2!(repeat, String, i32, String);
+some_function2!(repeat, SqlString, i32, SqlString);
 
 #[doc(hidden)]
-pub fn overlay3___(source: String, replacement: String, position: i32) -> String {
-    let len = char_length_ref(&replacement);
+pub fn overlay3___(source: SqlString, replacement: SqlString, position: i32) -> SqlString {
+    let len = char_length_ref(&replacement.str());
     overlay4____(source, replacement, position, len)
 }
 
-some_function3!(overlay3, String, String, i32, String);
+some_function3!(overlay3, SqlString, SqlString, i32, SqlString);
 
 #[doc(hidden)]
-pub fn overlay4____(source: String, replacement: String, position: i32, remove: i32) -> String {
+pub fn overlay4____(
+    source: SqlString,
+    replacement: SqlString,
+    position: i32,
+    remove: i32,
+) -> SqlString {
     let mut remove = remove;
     if remove < 0 {
         remove = 0;
     }
     if position <= 0 {
         source
-    } else if position > char_length_ref(&source) {
+    } else if position > char_length_ref(&source.str()) {
         concat_s_s(source, replacement)
     } else {
-        let mut result = substring3___(source.clone(), 0, position - 1);
-        result += &replacement;
-        result += &substring2__(source, position + remove);
-        result
+        let mut result = substring3___(source.clone(), 0, position - 1).str();
+        result += &*(replacement.str());
+        result += &substring2__(source, position + remove).str();
+        SqlString::from(result)
     }
 }
 
-some_function4!(overlay4, String, String, i32, i32, String);
+some_function4!(overlay4, SqlString, SqlString, i32, i32, SqlString);
 
 #[doc(hidden)]
-pub fn lower_(source: String) -> String {
-    source.to_lowercase()
+pub fn lower_(source: SqlString) -> SqlString {
+    SqlString::from(source.str().to_lowercase())
 }
 
-some_function1!(lower, String, String);
+some_function1!(lower, SqlString, SqlString);
 
 #[doc(hidden)]
-pub fn upper_(source: String) -> String {
-    source.to_uppercase()
+pub fn upper_(source: SqlString) -> SqlString {
+    SqlString::from(source.str().to_uppercase())
 }
 
-some_function1!(upper, String, String);
+some_function1!(upper, SqlString, SqlString);
 
 #[doc(hidden)]
-pub fn initcap_(source: String) -> String {
-    let mut result = String::with_capacity(source.len());
+pub fn initcap_(source: SqlString) -> SqlString {
+    let mut result = String::with_capacity(source.str().len());
     let mut capitalize_next = true;
-    for c in source.chars() {
+    for c in source.str().chars() {
         if c.is_alphanumeric() {
             if capitalize_next {
                 for r in c.to_uppercase() {
@@ -249,78 +405,84 @@ pub fn initcap_(source: String) -> String {
             result.push(c);
         }
     }
-    result
+    SqlString::from(result)
 }
 
-some_function1!(initcap, String, String);
+some_function1!(initcap, SqlString, SqlString);
 
 #[doc(hidden)]
-pub fn replace___(haystack: String, needle: String, replacement: String) -> String {
-    haystack.replace(&needle, &replacement)
+pub fn replace___(haystack: SqlString, needle: SqlString, replacement: SqlString) -> SqlString {
+    SqlString::from(haystack.str().replace(&*needle.str(), &replacement.str()))
 }
 
-some_function3!(replace, String, String, String, String);
+some_function3!(replace, SqlString, SqlString, SqlString, SqlString);
 
 #[doc(hidden)]
-pub fn left__(source: String, size: i32) -> String {
+pub fn left__(source: SqlString, size: i32) -> SqlString {
     substring3___(source, 1, size)
 }
 
-some_function2!(left, String, i32, String);
+some_function2!(left, SqlString, i32, SqlString);
 
 #[doc(hidden)]
-pub fn split2__(source: String, separators: String) -> Array<String> {
-    if separators.is_empty() {
+pub fn split2__(source: SqlString, separators: SqlString) -> Array<SqlString> {
+    if separators.str().is_empty() {
         return Arc::new(vec![source]);
     }
-    if source.is_empty() {
+    if source.str().is_empty() {
         return Arc::new(vec![]);
     }
     source
-        .split(&separators)
-        .map(String::from)
-        .collect::<Vec<String>>()
+        .str()
+        .split(&*separators.str())
+        .map(SqlString::from)
+        .collect::<Vec<SqlString>>()
         .into()
 }
 
-some_function2!(split2, String, String, Array<String>);
+some_function2!(split2, SqlString, SqlString, Array<SqlString>);
 
 #[doc(hidden)]
-pub fn split1_(source: String) -> Array<String> {
-    split2__(source, ",".to_string())
+pub fn split1_(source: SqlString) -> Array<SqlString> {
+    split2__(source, SqlString::from_ref(","))
 }
 
-some_function1!(split1, String, Array<String>);
+some_function1!(split1, SqlString, Array<SqlString>);
 
 #[doc(hidden)]
-pub fn split_part___(s: String, delimiter: String, n: i32) -> String {
-    let parts: Array<String> = split2__(s, delimiter);
+pub fn split_part___(s: SqlString, delimiter: SqlString, n: i32) -> SqlString {
+    let parts: Array<SqlString> = split2__(s, delimiter);
     let part_count = parts.len() as i32;
 
     // Handle negative indices
     let n = if n < 0 { part_count + n + 1 } else { n };
 
     if n <= 0 || n > part_count {
-        return String::new();
+        return SqlString::new();
     }
 
-    parts[(n - 1) as usize].to_string()
+    parts[(n - 1) as usize].clone()
 }
 
-some_function3!(split_part, String, String, i32, String);
+some_function3!(split_part, SqlString, SqlString, i32, SqlString);
 
 #[doc(hidden)]
-pub fn array_to_string2_vec__(value: Array<String>, separator: String) -> String {
-    (*value).join(&separator)
-}
-
-some_function2!(array_to_string2_vec, Array<String>, String, String);
-
-#[doc(hidden)]
-pub fn array_to_string2Nvec__(value: Array<Option<String>>, separator: String) -> String {
-    let capacity = (*value)
+pub fn array_to_string2_vec__(value: Array<SqlString>, separator: SqlString) -> SqlString {
+    (*value)
         .iter()
-        .map(|s| s.as_ref().map_or(0, |s| s.len()))
+        .map(|x| x.str())
+        .collect::<Vec<String>>()
+        .join(&*separator.str())
+        .into()
+}
+
+some_function2!(array_to_string2_vec, Array<SqlString>, SqlString, SqlString);
+
+#[doc(hidden)]
+pub fn array_to_string2Nvec__(value: Array<Option<SqlString>>, separator: SqlString) -> SqlString {
+    let capacity = value
+        .iter()
+        .map(|s| s.as_ref().map_or(0, |s| s.str().len()))
         .sum();
     let mut result = String::with_capacity(capacity);
     let mut first = true;
@@ -329,76 +491,87 @@ pub fn array_to_string2Nvec__(value: Array<Option<String>>, separator: String) -
             None => {
                 continue;
             }
-            Some(r) => r,
+            Some(r) => r.str(),
         };
         if !first {
-            result.push_str(&separator)
+            result.push_str(&separator.str())
         }
         first = false;
         result.push_str(append.as_str());
     }
-    result
+    SqlString::from(result)
 }
 
-some_function2!(array_to_string2Nvec, Array<Option<String>>, String, String);
+some_function2!(
+    array_to_string2Nvec,
+    Array<Option<SqlString>>,
+    SqlString,
+    SqlString
+);
 
 #[doc(hidden)]
 pub fn array_to_string3_vec___(
-    value: Array<String>,
-    separator: String,
-    _null_value: String,
-) -> String {
+    value: Array<SqlString>,
+    separator: SqlString,
+    _null_value: SqlString,
+) -> SqlString {
     array_to_string2_vec__(value, separator)
 }
 
-some_function3!(array_to_string3_vec, Array<String>, String, String, String);
+some_function3!(
+    array_to_string3_vec,
+    Array<SqlString>,
+    SqlString,
+    SqlString,
+    SqlString
+);
 
 #[doc(hidden)]
 pub fn array_to_string3Nvec___(
-    value: Array<Option<String>>,
-    separator: String,
-    null_value: String,
-) -> String {
-    let null_size = null_value.len();
+    value: Array<Option<SqlString>>,
+    separator: SqlString,
+    null_value: SqlString,
+) -> SqlString {
+    let null_size = null_value.str().len();
     let capacity = value
         .iter()
-        .map(|s| s.as_ref().map_or(null_size, |s| s.len()))
+        .map(|s| s.as_ref().map_or(null_size, |s| s.str().len()))
         .sum();
     let mut result = String::with_capacity(capacity);
     let mut first = true;
     for word in &*value {
         let append = match word.as_ref() {
-            None => null_value.as_str(),
-            Some(r) => r,
+            None => null_value.str(),
+            Some(r) => r.str(),
         };
         if !first {
-            result.push_str(&separator)
+            result.push_str(&separator.str())
         }
         first = false;
-        result.push_str(append);
+        result.push_str(&append);
     }
-    result
+    SqlString::from(result)
 }
 
 some_function3!(
     array_to_string3Nvec,
-    Array<Option<String>>,
-    String,
-    String,
-    String
+    Array<Option<SqlString>>,
+    SqlString,
+    SqlString,
+    SqlString
 );
 
 #[doc(hidden)]
-pub fn writelog<T: std::fmt::Display>(format: String, argument: T) -> T {
+pub fn writelog<T: std::fmt::Display>(format: SqlString, argument: T) -> T {
     let format_arg = format!("{}", argument);
-    let formatted = format.replace("%%", &format_arg);
+    let formatted = format.str().replace("%%", &format_arg);
     print!("{}", formatted);
     argument
 }
 
 #[doc(hidden)]
-pub fn parse_json_s(value: String) -> Variant {
-    match serde_json::from_str::<Variant>(&value) {
+pub fn parse_json_s(value: SqlString) -> Variant {
+    match serde_json::from_str::<Variant>(&value.str()) {
         Ok(v) => v,
         Err(_) => Variant::SqlNull,
     }
@@ -409,108 +582,113 @@ pub fn parse_json_nullN(_value: Option<()>) -> Option<Variant> {
     None
 }
 
-some_polymorphic_function1!(parse_json, s, String, Variant);
+some_polymorphic_function1!(parse_json, s, SqlString, Variant);
 
 #[doc(hidden)]
-pub fn to_json_V(value: Variant) -> Option<String> {
+pub fn to_json_V(value: Variant) -> Option<SqlString> {
     match value.to_json_string() {
-        Ok(s) => Some(s),
+        Ok(s) => Some(SqlString::from(s)),
         _ => None,
     }
 }
 
 #[doc(hidden)]
-pub fn to_json_VN(value: Option<Variant>) -> Option<String> {
+pub fn to_json_VN(value: Option<Variant>) -> Option<SqlString> {
     let value = value?;
     to_json_V(value)
 }
 
 #[doc(hidden)]
-pub fn to_json_nullN(_value: Option<()>) -> Option<String> {
+pub fn to_json_nullN(_value: Option<()>) -> Option<SqlString> {
     None
 }
 
 #[doc(hidden)]
-pub fn regexp_replace3___(str: String, re: String, repl: String) -> String {
-    let re = Regex::new(&re).ok();
+pub fn regexp_replace3___(str: SqlString, re: SqlString, repl: SqlString) -> SqlString {
+    let re = Regex::new(&re.str()).ok();
     regexp_replaceC3___(str, &re, repl)
 }
 
-some_function3!(regexp_replace3, String, String, String, String);
+some_function3!(regexp_replace3, SqlString, SqlString, SqlString, SqlString);
 
 #[doc(hidden)]
-pub fn regexp_replace2__(str: String, re: String) -> String {
-    regexp_replace3___(str, re, "".to_string())
+pub fn regexp_replace2__(str: SqlString, re: SqlString) -> SqlString {
+    regexp_replace3___(str, re, SqlString::new())
 }
 
-some_function2!(regexp_replace2, String, String, String);
+some_function2!(regexp_replace2, SqlString, SqlString, SqlString);
 
 #[doc(hidden)]
-pub fn regexp_replaceC3___(str: String, re: &Option<Regex>, repl: String) -> String {
+pub fn regexp_replaceC3___(str: SqlString, re: &Option<Regex>, repl: SqlString) -> SqlString {
     match re {
         None => str,
-        Some(re) => re.replace_all(&str, repl).to_string(),
+        Some(re) => SqlString::from_ref(&re.replace_all(&str.str(), &repl.str())),
     }
 }
 
 #[doc(hidden)]
 pub fn regexp_replaceC3N__(
-    str: Option<String>,
+    str: Option<SqlString>,
     re: &Option<Regex>,
-    repl: String,
-) -> Option<String> {
+    repl: SqlString,
+) -> Option<SqlString> {
     let str = str?;
     Some(regexp_replaceC3___(str, re, repl))
 }
 
 #[doc(hidden)]
 pub fn regexp_replaceC3__N(
-    str: String,
+    str: SqlString,
     re: &Option<Regex>,
-    repl: Option<String>,
-) -> Option<String> {
+    repl: Option<SqlString>,
+) -> Option<SqlString> {
     let repl = repl?;
     Some(regexp_replaceC3___(str, re, repl))
 }
 
 #[doc(hidden)]
 pub fn regexp_replaceC3N_N(
-    str: Option<String>,
+    str: Option<SqlString>,
     re: &Option<Regex>,
-    repl: Option<String>,
-) -> Option<String> {
+    repl: Option<SqlString>,
+) -> Option<SqlString> {
     let str = str?;
     let repl = repl?;
     Some(regexp_replaceC3___(str, re, repl))
 }
 
 #[doc(hidden)]
-pub fn regexp_replaceC2__(str: String, re: &Option<Regex>) -> String {
-    regexp_replaceC3___(str, re, "".to_string())
+pub fn regexp_replaceC2__(str: SqlString, re: &Option<Regex>) -> SqlString {
+    regexp_replaceC3___(str, re, SqlString::new())
 }
 
 #[doc(hidden)]
-pub fn regexp_replaceC2N_(str: Option<String>, re: &Option<Regex>) -> Option<String> {
+pub fn regexp_replaceC2N_(str: Option<SqlString>, re: &Option<Regex>) -> Option<SqlString> {
     let str = str?;
-    Some(regexp_replaceC3___(str, re, "".to_string()))
+    Some(regexp_replaceC3___(str, re, SqlString::new()))
 }
 
 #[doc(hidden)]
-pub fn concat_ws___(sep: String, mut left: String, right: String) -> String {
-    left.reserve(right.len() + sep.len());
-    left.push_str(&sep);
-    left.push_str(&right);
-    left
+pub fn concat_ws___(sep: SqlString, left: SqlString, right: SqlString) -> SqlString {
+    let mut result = String::with_capacity(left.len() + right.len() + sep.len());
+    result.push_str(&left.str());
+    result.push_str(&sep.str());
+    result.push_str(&right.str());
+    SqlString::from_ref(&result)
 }
 
 #[doc(hidden)]
-pub fn concat_wsN__(sep: Option<String>, left: String, right: String) -> Option<String> {
+pub fn concat_wsN__(
+    sep: Option<SqlString>,
+    left: SqlString,
+    right: SqlString,
+) -> Option<SqlString> {
     let sep = sep?;
     Some(concat_ws___(sep, left, right))
 }
 
 #[doc(hidden)]
-pub fn concat_ws_N_(sep: String, left: Option<String>, right: String) -> String {
+pub fn concat_ws_N_(sep: SqlString, left: Option<SqlString>, right: SqlString) -> SqlString {
     match left {
         None => right,
         Some(left) => concat_ws___(sep, left, right),
@@ -518,9 +696,13 @@ pub fn concat_ws_N_(sep: String, left: Option<String>, right: String) -> String 
 }
 
 #[doc(hidden)]
-pub fn concat_ws_NN(sep: String, left: Option<String>, right: Option<String>) -> String {
+pub fn concat_ws_NN(
+    sep: SqlString,
+    left: Option<SqlString>,
+    right: Option<SqlString>,
+) -> SqlString {
     match (left, right) {
-        (None, None) => "".to_string(),
+        (None, None) => SqlString::new(),
         (None, Some(right)) => right,
         (Some(left), None) => left,
         (Some(left), Some(right)) => concat_ws___(sep, left, right),
@@ -528,13 +710,17 @@ pub fn concat_ws_NN(sep: String, left: Option<String>, right: Option<String>) ->
 }
 
 #[doc(hidden)]
-pub fn concat_wsNN_(sep: Option<String>, left: Option<String>, right: String) -> Option<String> {
+pub fn concat_wsNN_(
+    sep: Option<SqlString>,
+    left: Option<SqlString>,
+    right: SqlString,
+) -> Option<SqlString> {
     let sep = sep?;
     Some(concat_ws_N_(sep, left, right))
 }
 
 #[doc(hidden)]
-pub fn concat_ws__N(sep: String, left: String, right: Option<String>) -> String {
+pub fn concat_ws__N(sep: SqlString, left: SqlString, right: Option<SqlString>) -> SqlString {
     match right {
         None => left,
         Some(right) => concat_ws___(sep, left, right),
@@ -542,17 +728,21 @@ pub fn concat_ws__N(sep: String, left: String, right: Option<String>) -> String 
 }
 
 #[doc(hidden)]
-pub fn concat_wsN_N(sep: Option<String>, left: String, right: Option<String>) -> Option<String> {
+pub fn concat_wsN_N(
+    sep: Option<SqlString>,
+    left: SqlString,
+    right: Option<SqlString>,
+) -> Option<SqlString> {
     let sep = sep?;
     Some(concat_ws__N(sep, left, right))
 }
 
 #[doc(hidden)]
 pub fn concat_wsNNN(
-    sep: Option<String>,
-    left: Option<String>,
-    right: Option<String>,
-) -> Option<String> {
+    sep: Option<SqlString>,
+    left: Option<SqlString>,
+    right: Option<SqlString>,
+) -> Option<SqlString> {
     let sep = sep?;
     Some(concat_ws_NN(sep, left, right))
 }

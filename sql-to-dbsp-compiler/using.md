@@ -320,9 +320,9 @@ pub fn test() {
     let (mut circuit, (person, adult) ) = circuit(2).unwrap();
     // Feed two input records to the circuit.
     // First input has a count of "1"
-    person.push( ("Bob".to_string(), Some(12), Some(true)).into(), 1 );
+    person.push( (SqlString::from_ref("Bob"), Some(12), Some(true)).into(), 1 );
     // Second input has a count of "2"
-    person.push( ("Tom".to_string(), Some(20), Some(false)).into(), 2 );
+    person.push( (SqlString::from_ref("Tom"), Some(20), Some(false)).into(), 2 );
     // Execute the circuit on these inputs
     circuit.step().unwrap();
     // Read the produced output
