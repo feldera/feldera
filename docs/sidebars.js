@@ -235,6 +235,11 @@ const sidebars = {
                                     id: 'connectors/sources/debezium',
                                     label: 'Debezium'
                                 },
+				{
+				    type: 'doc',
+				    id: 'connectors/sources/postgresql',
+				    label: 'PostgreSQL'
+				},
                                 {
                                     type: 'doc',
                                     id: 'connectors/sources/s3',
