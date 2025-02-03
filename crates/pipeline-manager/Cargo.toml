@@ -47,7 +47,7 @@ cached = { version="0.43.0", features = ["async"]}
 # Waiting for https://github.com/faokunega/pg-embed/pull/26
 pg-embed = { git = "https://github.com/gz/pg-embed.git", rev = "8906af8", optional = true, default-features = false, features = ["rt_tokio"] }
 rand = "0.8.5"
-openssl = "0.10.66"
+openssl = "0.10.70"
 static_assertions = "1.1.0"
 uuid = { version = "1.11.0", features = ["v7", "std", "serde"] }
 refinery = {version = "0.8.10", features = ["tokio-postgres"]}
