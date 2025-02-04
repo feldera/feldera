@@ -128,6 +128,7 @@ import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRef;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBaseType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBinary;
@@ -1601,6 +1602,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
                         bin.opcode == DBSPOpcode.MAP_INDEX ||
                         bin.opcode == DBSPOpcode.VARIANT_INDEX) {
                     if (this.visitingChild == 0)
+                        // We are explicitly taking a reference for these cases
                         avoidRef = true;
                 }
             } else if (parent.is(DBSPBorrowExpression.class)) {
@@ -1609,8 +1611,15 @@ public class ToRustInnerVisitor extends InnerVisitor {
             }
         }
 
+        // Expression of the form x.0
+        // We have four cases, depending on the nullability of x, and of the 0-th field
+        // in the type of x.  Invariant:
+        // we generate code such that
+        // - if the field is further indexed, we return a reference to the field (as_ref())
+        // - if the field is a structure, we return a reference (as_ref()).  We expect
+        //   that the consumer will clone this if necessary.
+        // - if the field is a scalar, we return the field's value (cloned())
         DBSPType sourceType = expression.expression.getType();
-        /*
         boolean fieldTypeIsNullable = false;
         if (sourceType.is(DBSPTypeTupleBase.class)) {
             // This should always be true when we compile SQL programs, but
@@ -1618,37 +1627,8 @@ public class ToRustInnerVisitor extends InnerVisitor {
             DBSPType fieldType = sourceType.to(DBSPTypeTupleBase.class).getFieldType(expression.fieldNo);
             fieldTypeIsNullable = fieldType.mayBeNull;
         }
-         */
-        if (sourceType.mayBeNull) {
-            // Accessing a nullable struct is allowed
-            if (!expression.getType().mayBeNull) {
-                // If the result is not null, we need to unwrap()
-                expression.expression.accept(this);
-                this.builder.append(".as_ref().unwrap().")
-                        .append(expression.fieldNo);
-            } else {
-                expression.expression.accept(this);
-                if (!expression.expression.is(DBSPFieldExpression.class))
-                    this.builder.append(".as_ref()");
-                this.builder.increase().append(".and_then(|x");
-                /*
-                if (this.options.ioOptions.verbosity > 0) {
-                    this.builder.append(": ");
-                    sourceType.withMayBeNull(false).ref().accept(this);
-                }
-                 */
-                this.builder.append("| ");
-                // Indexing a nullable expression with a non-nullable field
-                // if (!fieldTypeIsNullable) this.builder.append("Some(");
-                this.builder.append("x.")
-                        .append(expression.fieldNo);
-                // if (!fieldTypeIsNullable) this.builder.append(")");
-                if (expression.getType().mayBeNull && !expression.getType().hasCopy() && !avoidRef) {
-                    this.builder.append(".as_ref()");
-                }
-                this.builder.append(")").decrease();
-            }
-        } else {
+        if (!sourceType.mayBeNull) {
+            // x is not nullable
             expression.expression.accept(this);
             this.builder.append(".")
                     .append(expression.fieldNo);
@@ -1656,8 +1636,51 @@ public class ToRustInnerVisitor extends InnerVisitor {
                 // The value is in an option.
                 this.builder.append(".as_ref()");
                 if (expression.getType().hasCopy()) {
+                    // This cloned() is used to convert Option<&T> into a T value.
+                    // It is done only for scalar Ts, because all other expressions
+                    // are followed by a real clone() call, which will be also compiled into a cloned().
                     this.builder.append(".cloned()");
                 }
+            }
+        } else {
+            // Accessing a field within a nullable struct is allowed
+            if (!expression.getType().mayBeNull) {
+                // If the result is not null, we need to unwrap().
+                // This should really not happen.
+                assert false;
+
+                this.compiler.reportWarning(expression.getSourcePosition(), "Potential crash",
+                        "Expecting a non-null field from a possibly nullable struct");
+                expression.expression.accept(this);
+                this.builder.append(".unwrap().")
+                        .append(expression.fieldNo);
+            } else {
+                expression.expression.accept(this);
+                if (!expression.expression.is(DBSPFieldExpression.class))
+                    this.builder.append(".as_ref()");
+                this.builder.increase();
+                if (fieldTypeIsNullable) {
+                    this.builder.append(".and_then(|x| x.");
+                } else {
+                    this.builder.append(".map(|x| ");
+                    if (!expression.getType().hasCopy())
+                        this.builder.append("&");
+                    this.builder.append("x.");
+                }
+                /*
+                if (this.options.ioOptions.verbosity > 0) {
+                    this.builder.append(": ");
+                    sourceType.withMayBeNull(false).ref().accept(this);
+                }
+                 */
+                this.builder.append(expression.fieldNo);
+                if (fieldTypeIsNullable &&
+                        expression.getType().mayBeNull &&
+                        !expression.getType().hasCopy() &&
+                        !avoidRef) {
+                    this.builder.append(".as_ref()");
+                }
+                this.builder.append(")").decrease();
             }
         }
         this.pop(expression);
