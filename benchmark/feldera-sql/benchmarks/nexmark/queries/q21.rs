@@ -1,26 +1,27 @@
 use dashmap::DashMap;
 use regex::Regex;
 use std::sync::LazyLock;
+use feldera_sqllib::*;
 
-static REGEXS: LazyLock<DashMap<String, Regex>> = LazyLock::new(|| DashMap::new());
+static REGEXS: LazyLock<DashMap<SqlString, Regex>> = LazyLock::new(|| DashMap::new());
 
 pub fn re_extract(
-    s: Option<String>,
-    p: Option<String>,
+    s: Option<SqlString>,
+    p: Option<SqlString>,
     group: Option<i32>,
-) -> Result<Option<String>, Box<dyn std::error::Error>> {
+) -> Result<Option<SqlString>, Box<dyn std::error::Error>> {
     Ok(do_re_extract(s, p, group))
 }
 
-fn do_re_extract(s: Option<String>, p: Option<String>, group: Option<i32>) -> Option<String> {
+fn do_re_extract(s: Option<SqlString>, p: Option<SqlString>, group: Option<i32>) -> Option<SqlString> {
     let s = s?;
     let p = p?;
     let group = group?;
 
     let re = REGEXS
         .entry(p.clone())
-        .or_try_insert_with(|| Regex::new(&p))
+        .or_try_insert_with(|| Regex::new(p.str()))
         .ok()?;
 
-    Some(re.captures(&s)?.get(group as usize)?.as_str().to_string())
+    Some(SqlString::from_ref(re.captures(s.str())?.get(group as usize)?.as_str()))
 }

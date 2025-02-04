@@ -1244,7 +1244,7 @@ some_polymorphic_function2!(datediff_day, Date, Date, Date, Date, i32);
 
 #[doc(hidden)]
 pub fn format_date__(format: SqlString, date: Date) -> SqlString {
-    return SqlString::from(date.to_dateTime().format(format.str()).to_string());
+    SqlString::from(date.to_dateTime().format(format.str()).to_string())
 }
 
 some_function2!(format_date, SqlString, Date, SqlString);
