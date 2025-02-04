@@ -55,10 +55,10 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
      * @param flatmap  Flatmap operation to rewrite. */
     public static DBSPExpression rewriteFlatmap(DBSPFlatmap flatmap) {
         //   move |x: &Tuple2<Array<i32>, Option<i32>>, | -> _ {
-        //     let x0: Vec<i32> = (*x.0).clone();
+        //     let x0: Array<i32> = (*x.0).clone();
         //     let x1: x.1.clone();
-        //     let array = (*x).0.clone();
-        //     array.clone().into_iter().map({
+        //     let array_clone = (*x).0.clone();
+        //     array_clone.into_iter().map({
         //        move |e: i32, | -> Tuple3<Vec<i32>, Option<i32>, i32> {
         //            Tuple3::new(x0.clone(), x1.clone(), e)
         //        }

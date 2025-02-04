@@ -43,6 +43,7 @@ public final class DBSPFieldExpression extends DBSPExpression {
         this.expression = expression;
         this.fieldNo = fieldNo;
         assert fieldNo >= 0: "Negative field index " + fieldNo;
+        assert !expression.getType().mayBeNull || type.mayBeNull;
     }
 
     DBSPFieldExpression(DBSPExpression expression, int fieldNo, DBSPType type) {
@@ -54,11 +55,9 @@ public final class DBSPFieldExpression extends DBSPExpression {
             return type;
         DBSPTypeTupleBase tuple = type.to(DBSPTypeTupleBase.class);
         DBSPType fieldType = tuple.getFieldType(fieldNo);
-        /*
-        TODO: https://github.com/feldera/feldera/issues/3418
+        // A Field access in a nullable struct is nullable
         if (type.mayBeNull)
             fieldType = fieldType.withMayBeNull(true);
-         */
         return fieldType;
     }
 

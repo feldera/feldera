@@ -274,6 +274,31 @@ public class RegressionTests extends SqlIoTest {
     }
 
     @Test
+    public void issue3814b() {
+        var ccs = this.getCCS("""
+                CREATE TYPE person AS (
+                    id INTEGER,
+                    name TEXT);
+                
+                CREATE TABLE example_table(data person ARRAY);
+                
+                CREATE VIEW V AS SELECT element.id
+                FROM example_table,
+                UNNEST(data) AS element;""");
+        ccs.step("""
+                INSERT INTO example_table (data) VALUES
+                (ARRAY[ROW(1, 'Alice')::person, ROW(2, 'Bob')::person, NULL, ROW(NULL, 'Charlie')::person]),
+                (ARRAY[ROW(3, 'David')::person, ROW(NULL, NULL)::person]);""", """
+                 id | weight
+                -------------
+                 1  | 1
+                 2  | 1
+                    | 3
+                 3  | 1""");
+        this.addRustTestCase(ccs);
+    }
+
+    @Test
     public void issue3095() {
         var ccs = this.getCCS("""
                 CREATE FUNCTION udf(input INT) RETURNS INT;
