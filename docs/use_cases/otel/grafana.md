@@ -2,15 +2,17 @@
 
 Next step is to integrate with Grafana so that we can query Feldera for these insights.
 
-We plan to create a Grafana dashboard like the one shown below:
+We plan to create a Grafana dashboard[^1] like the one shown below:
 
 ![Grafana Dashboard](grafana-dashboard.png)
 
-This dashboard takes inspiration from the workshop: [Analyzing and Visualizing OpenTelemetry Traces with SQL - John Pruitt, Timescale](https://www.youtube.com/watch?v=rjJgZ_MNmPQ)
+[^1]: This dashboard takes inspiration from the workshop: [Analyzing and Visualizing OpenTelemetry Traces with SQL - John Pruitt, Timescale](https://www.youtube.com/watch?v=rjJgZ_MNmPQ)
 
 #### Step 1: Install the Feldera Grafana Plugin
 
-Since the Feldera datasource plugin is not yet available in the Grafana marketplace, it must be **manually installed** from [GitHub](https://github.com/feldera/grafana-datasource). You can download the latest release and unzip in in the plugins directory of your Grafana server.
+Since the Feldera data source plugin is not yet available in the Grafana marketplace, it must be **manually installed** from [GitHub](https://github.com/feldera/grafana-datasource). You can download the latest release and unzip in in the plugins directory of your Grafana server.
+
+This plugin allows Grafana to seamlessly execute ad-hoc queries on Feldera pipelines, to treat Feldera just like any other compatible data source.
 
 #### Step 2: Add Feldera as a Data Source in Grafana
 
@@ -37,7 +39,9 @@ Click **"Save & Test"** to verify the connection.
 
 Once Feldera is set up as a data source, you can build a **custom Grafana dashboard** to visualize OpenTelemetry data.
 
-For all the visualizations we create here, use the **feldera** data source.
+- For all the visualizations we create here, use the **feldera** data source.
+- For all **time series visualizations**, it is important to define a **data type transformation** to specify the `TIME` field of the data.
+- All of the queries defined below are run by Grafana using the **feldera** data source plugin to query our OTel pipeline.
 
 #### Requests Count
 
@@ -61,7 +65,7 @@ WHERE
 
 #### Slowest Traces
 
-Identifies the six slowest traces in the given timeframe.
+Identifies the six slowest traces in the given time frame.
 Visualization Type: **Table**
 
 ```sql
@@ -145,4 +149,22 @@ FROM
 GROUP BY
 	name
 ```
+
+## Takeaways
+
+In this example, we used Feldera to analyze OpenTelemetry data and visualize it in Grafana.
+We demonstrated how OTel data can be easily modeled in Feldera using `VARIANT` and custom types,
+and how aggregations and window functions can be used for powerful analysis.
+
+Additionally, we show how seamlessly, using the Feldera data source plugin, Grafana can query Feldera using
+ad-hoc SQL queries to create insightful dashboards.
+
+Feldera also enables users to join traces, metrics, and logs, providing a more comprehensive view of the
+system being observed.
+
+Moreover, further optimizations can be applied to this example using constructs like
+[LATENESS](https://docs.feldera.com/sql/streaming#lateness-expressions)
+and [Storage](https://www.feldera.com/blog/storage-shipped)
+to efficiently garbage collect old state, and manage resource usage.
+
 

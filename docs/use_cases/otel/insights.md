@@ -1,22 +1,26 @@
-# Insights
+# Extracting High-Level Metrics
 
-In the previous step, we preprocessed the data to enhance its usability. Next, we want to generate valuable insights from it.
+In the previous step, we pre-processed the data to enhance its usability. Next, we want to generate valuable insights from it.
 
 ### P95 Latency
 
-P95 latency is a common statistical measure used for network performance analysis. It means that 95% of requests were served faster than this value, while 5% took longer than this.
+P95 latency is a common statistical measure used for network performance analysis.
+It means that 95% of requests were served faster than this value, while 5% took longer than this.
 
 #### Step 1: Define a Tumbling Window
 
-To compute P95 latency over time, we first define a **10-second tumbling window** on the `spans` view.
+To compute P95 latency over time, we first define a **10-second tumbling window** on the `spans` view
+we defined previously.
 
 ```sql
+-- continuation of the SQL program from the previous page
+
 CREATE LOCAL VIEW spans_tumble_10s AS
 SELECT * FROM TABLE(
 	TUMBLE(
-	TABLE spans,
-	DESCRIPTOR(eventTime),
-	INTERVAL '10' SECOND
+		TABLE spans,
+		DESCRIPTOR(eventTime),
+		INTERVAL '10' SECOND
 	)
 );
 ```
@@ -25,7 +29,9 @@ This groups spans into non-overlapping 10-second time windows.
 
 #### Step 2: Define a Rust UDF for P95 Calculation
 
-Here we leverage Feldera's support for Rust [UDFs](https://docs.feldera.com/sql/udf) to implement a function that given an array of integers, returns the 95th percentile value from it.
+Typically, the SQL function `PERCENTILE` can be used to calculate the P95 latency. However, Feldera SQL
+doesn't support it yet. This presents us an opportunity to use a Rust [UDFs](https://docs.feldera.com/sql/udf).
+This UDF will be a function that given an array of integers, returns the 95th percentile value from it.
 
 ##### SQL Definition for P95 Rust UDF
 
@@ -37,6 +43,8 @@ CREATE FUNCTION p95(x BIGINT ARRAY NOT NULL) RETURNS BIGINT;
 ##### Rust Implementation of P95
 
 ```rust
+// udf.rs
+
 pub fn p95(x: Vec<Option<i64>>) -> Result<Option<i64>, Box<dyn std::error::Error>> {
 	let mut x: Vec<i64> = x.into_iter().filter_map(|x| x).collect();
 
@@ -83,7 +91,8 @@ This filters only the top level traces and aggregates `elapsedTimeMillis` values
 
 ### Throughput
 
-Throughput measures the number of top-level requests processed per second. In this demo however, we calculate throughput on 10 second time buckets instead of per second.
+Throughput measures the number of top-level requests processed per second.
+In this demo however, we calculate throughput on 10 second time buckets instead of per second.
 
 ```sql
 CREATE MATERIALIZED VIEW throughput AS
@@ -121,7 +130,7 @@ FROM spans s
 GROUP BY s.name;
 ```
 
-##### Explanation:
+Explanation:
 4. `s.elapsedTimeMillis`: Total execution time of the operation.
 5. Subtracts time spent in child spans to compute actual execution time.
 6. Groups results by operation name `s.name`.

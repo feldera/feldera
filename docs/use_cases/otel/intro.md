@@ -1,12 +1,13 @@
 # Use Case: OpenTelemetry
 
-In this article, we demonstrate how easy it is to use Feldera to build a simple, SQL-based observability solution for OpenTelemetry (OTel) data. While this approach is focused on OTel data, it is not limited to it, and the same principles can be applied to other types of data. OpenTelemetry data can be massive and is of [append-only](https://docs.feldera.com/sql/streaming/#append_only-tables) nature, and Feldera's incremental computation capabilities shine through here.
+In this article, we demonstrate how easy it is to use Feldera to build a simple, SQL-based observability solution for OpenTelemetry (OTel) data. While this approach is focused on OTel data, it is not limited to it, and the same principles can be applied to other types of data. OpenTelemetry data can be massive and is of [append-only](https://docs.feldera.com/sql/streaming/#append_only-tables) nature, and Feldera's incremental computation engine works very well here.
 
-We will go through the following steps:
+We build the solution step by step:
 - Push data to Feldera from OTel Collector
 - Write SQL queries to represent and analyze this data
 - Make ad-hoc queries from Grafana and create insightful visualizations
 
+The following picture shows a diagram of the data flow:
 
 ![Feldera OTel Architecture](feldera-otel-architecture.png)
 
@@ -18,7 +19,19 @@ An implementation of this use case can be found in: [Feldera OTel Demo](https://
 This guide is designed for the following audiences:
 
 - **Site Reliability Engineers (SREs)**: Those seeking an efficient and cost-effective observability solution.
-- **Developers & DevOps Engineers**: Individuals looking for an easy way to analyze and visualize telemetry data using SQL.
+- **Developers & DevOps Engineers**: Individuals looking for an easy way to analyze and visualize telemetry data.
 - **Data Engineers**: Those in need of a scalable solution for real-time telemetry data analysis.
 
-Feldera isn't a direct replacement for traditional observability tools; rather, it serves as a complementary addition to enhance their capabilities.
+## Contrast to Existing Observability Tools
+
+Feldera provides **greater flexibility and control** over observability data compared to traditional tools.
+Feldera supports **arbitrary SQL queries** instead of just a subset of SQL like most tools,
+giving users full control over data processing and analysis.
+You can define views tailored to your needs and extend functionality with **user-defined functions (UDFs)** for more advanced computations.
+
+Additionally, Feldera makes it seamless to stream processed results to external systems like **Kafka or S3 (Delta Table)**,
+enabling easy access, backfilling, and long-term storage.
+
+Most importantly, **Feldera's incremental nature ensures stable resource utilization as data volume grows**,
+making it an efficient and scalable solution for handling large-scale telemetry data.
+

@@ -1,6 +1,14 @@
 # Representing OTel Data
 
-OpenTelemetry data is typically structured as nested JSON, which we can model into custom types in Feldera based on the [OTel Protobuf definitions](https://github.com/open-telemetry/opentelemetry-proto/tree/main/opentelemetry/proto). While it is possible to represent the entire OTel JSON data as a `VARIANT` type ([VARIANT docs](https://docs.feldera.com/sql/json#the-variant-type)), it is often more manageable to use custom types for easier querying.
+![Definition Custom Types to Model OTel data in Feldera](feldera-type-definitions.png)
+
+OpenTelemetry data is typically structured as nested JSON, which we can model into custom types in Feldera
+based on the [OTel Protobuf definitions](https://github.com/open-telemetry/opentelemetry-proto/tree/main/opentelemetry/proto).
+While it is possible to represent the entire OTel JSON data as a `VARIANT` type ([VARIANT docs](https://docs.feldera.com/sql/json#the-variant-type)),
+it is often more manageable to use custom types for easier querying.
+Custom types are also more compact, and offer better typechecking.
+
+Feldera SQL allows us to define these custom types as follows:
 
 ```sql
 CREATE TYPE KeyValue AS (
@@ -9,7 +17,7 @@ CREATE TYPE KeyValue AS (
 );
 
 CREATE TYPE Event AS (
-    timeUnixNano VARCHAR,
+    timeUnixNano CHAR(20),
     name VARCHAR,
     attributes KeyValue ARRAY
 );
@@ -22,8 +30,8 @@ CREATE TYPE Span AS (
     flags BIGINT,
     name VARCHAR,
     kind INT,
-    startTimeUnixNano VARCHAR,
-    endTimeUnixNano VARCHAR,
+    startTimeUnixNano CHAR(20),
+    endTimeUnixNano CHAR(20),
     attributes KeyValue ARRAY,
     events Event ARRAY
 );
@@ -32,14 +40,18 @@ CREATE TYPE Metric AS (
     name VARCHAR,
     description VARCHAR,
     unit VARCHAR,
-    data VARIANT,
+    sum VARIANT,
+    gauge VARIANT,
+    summary VARIANT,
+    histogram VARIANT,
+    exponentialHistogram VARIANT,
     metadata KeyValue ARRAY
 );
 
 CREATE TYPE LogRecords AS (
     attributes KeyValue ARRAY,
-    timeUnixNano VARCHAR,
-    observedTimeUnixNano VARCHAR,
+    timeUnixNano CHAR(20),
+    observedTimeUnixNano CHAR(20),
     severityNumber INT,
     severityText VARCHAR,
     flags INT4,
@@ -92,11 +104,15 @@ CREATE TYPE ResourceLogs AS (
 
 The following graph illustrates the type hierarchy of the custom types defined above:
 
-![OTel Type Heirarchy](otel-type-heirarchy.png)
+![OTel Type Hierarchy](otel-type-hierarchy.png)
 
 Now that we have the type definitions to represent the OTel data, we create tables.
 
+Tables in Feldera correspond to input streams and aren't **real tables** like in other databases.
+
 ```sql
+-- concat with the type declarations above
+
 -- Input table that ingests resource spans from the collector.
 CREATE TABLE otel_traces (
     resourceSpans ResourceSpans ARRAY
@@ -113,5 +129,7 @@ CREATE TABLE otel_metrics (
 ) WITH ('append_only' = 'true');
 ```
 
-Feldera operates on changes, so any input may be an insertion or deletion (Internally, Feldera represents these changes as [Z-sets](https://www.feldera.com/blog/database-computations-on-z-sets)). Setting `'append_only' = 'true'`, ensures only insertions are supported for this table.
 
+Feldera operates on changes, so any input may be an insertion or deletion.
+Setting `'append_only' = 'true'`, allows Feldera to potentially optimize the programs better
+and ensures only insertions are supported for this table.
