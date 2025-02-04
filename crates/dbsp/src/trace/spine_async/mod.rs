@@ -22,6 +22,7 @@ use crate::storage::file::to_bytes;
 use crate::storage::write_commit_metadata;
 pub use crate::trace::spine_async::snapshot::SpineSnapshot;
 use crate::trace::CommittedSpine;
+use metrics::counter;
 use ouroboros::self_referencing;
 use rand::Rng;
 use rkyv::{
@@ -31,8 +32,7 @@ use rkyv::{
 use size_of::{Context, SizeOf};
 use std::sync::Mutex;
 use std::sync::{Arc, MutexGuard};
-use std::time::Duration;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use std::{
     collections::VecDeque,
     path::{Path, PathBuf},
@@ -51,6 +51,7 @@ mod thread;
 
 use self::thread::{BackgroundThread, WorkerStatus};
 use super::BatchLocation;
+use crate::circuit::metrics::COMPACTION_STALL_TIME;
 use list_merger::{ListMerger, ListMergerBuilder};
 
 /// Maximum amount of levels in the spine.
@@ -395,6 +396,7 @@ where
             let start = Instant::now();
             let mut state = self.no_backpressure.wait(state).unwrap();
             state.merge_stats.backpressure_wait += start.elapsed();
+            counter!(COMPACTION_STALL_TIME).increment(start.elapsed().as_secs());
         }
     }
 
