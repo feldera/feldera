@@ -485,14 +485,16 @@ where
         file: &ImmutableFileRef,
         node: &TreeNode,
     ) -> Result<Arc<Self>, Error> {
-        let cache = (file.cache)();
-        let entry = match cache.get(&*file.file_handle, node.location, &file.stats) {
+        let entry = match file
+            .cache
+            .get(&*file.file_handle, node.location, &file.stats)
+        {
             Some(entry) => entry,
             None => {
                 let block = file.file_handle.read_block(node.location)?;
                 let block = decompress(block, node.location, file.compression)?;
                 let entry = Arc::new(Self::from_raw(factories, block, node.location)?);
-                cache.insert(
+                file.cache.insert(
                     file.file_handle.file_id(),
                     node.location.offset,
                     entry.clone(),
@@ -841,14 +843,16 @@ where
     where
         A: DataTrait + ?Sized,
     {
-        let cache = (file.cache)();
-        let entry = match cache.get(&*file.file_handle, node.location, &file.stats) {
+        let entry = match file
+            .cache
+            .get(&*file.file_handle, node.location, &file.stats)
+        {
             Some(entry) => entry,
             None => {
                 let block = file.file_handle.read_block(node.location)?;
                 let block = decompress(block, node.location, file.compression)?;
                 let entry = Arc::new(Self::from_raw(factories, block, node.location)?);
-                cache.insert(
+                file.cache.insert(
                     file.file_handle.file_id(),
                     node.location.offset,
                     entry.clone(),
@@ -1114,7 +1118,7 @@ impl Column {
 /// Encapsulates storage and a file handle.
 struct ImmutableFileRef {
     path: PathBuf,
-    cache: fn() -> Arc<BufferCache<dyn CacheEntry>>,
+    cache: Arc<BufferCache<dyn CacheEntry>>,
     file_handle: Arc<dyn FileReader>,
     compression: Option<Compression>,
     stats: AtomicCacheStats,
@@ -1144,7 +1148,7 @@ impl ImmutableFileRef {
         stats: AtomicCacheStats,
     ) -> Self {
         Self {
-            cache,
+            cache: cache(),
             path,
             file_handle,
             compression,
@@ -1153,7 +1157,7 @@ impl ImmutableFileRef {
     }
 
     pub fn evict(&self) {
-        (self.cache)().evict(&*self.file_handle);
+        self.cache.evict(&*self.file_handle);
     }
 }
 
