@@ -87,7 +87,7 @@ struct StreamValue<D> {
     /// The last consumer to read from the stream (`tokens` drops to 0) obtains
     /// an owned value rather than a borrow.  See description of
     /// [ownership-aware scheduling](`OwnershipPreference`) for details.
-    tokens: usize,
+    tokens: RefCell<usize>,
 }
 
 impl<D> StreamValue<D> {
@@ -95,7 +95,7 @@ impl<D> StreamValue<D> {
         Self {
             val: None,
             consumers: 0,
-            tokens: 0,
+            tokens: RefCell::new(0),
         }
     }
 
@@ -108,7 +108,7 @@ impl<D> StreamValue<D> {
         // If the stream is not connected to any consumers, drop the output
         // on the floor.
         if self.consumers > 0 {
-            self.tokens = self.consumers;
+            self.tokens = RefCell::new(self.consumers);
             self.val = Some(val);
         }
     }
@@ -118,7 +118,7 @@ impl<D> StreamValue<D> {
     where
         R: Deref<Target = Self>,
     {
-        debug_assert_ne!(this.tokens, 0);
+        debug_assert_ne!(*this.tokens.borrow(), 0);
 
         this.val.as_ref().unwrap()
     }
@@ -129,7 +129,7 @@ impl<D> StreamValue<D> {
     where
         D: Clone,
     {
-        let tokens = this.borrow().tokens;
+        let tokens = *this.borrow().tokens.borrow();
         debug_assert_ne!(tokens, 0);
 
         if tokens == 1 {
@@ -144,11 +144,14 @@ impl<D> StreamValue<D> {
     /// is not allowed to access the value after calling this function. This guarantees that,
     /// once the number of tokens drops to 1, only one active consumer remains and that
     /// consumer can retrieve the value using `Self::take`.
-    fn consume_token(&mut self) {
-        debug_assert_ne!(self.tokens, 0);
-        self.tokens -= 1;
-        if self.tokens == 0 {
-            self.val.take();
+    fn consume_token(this: &RefCell<Self>) {
+        let this_ref = this.borrow();
+        debug_assert_ne!(*this_ref.tokens.borrow(), 0);
+        *this_ref.tokens.borrow_mut() -= 1;
+        if *this_ref.tokens.borrow() == 0 {
+            // We're the last consumer. It's now safe to take a mutable reference to `this`.
+            drop(this_ref);
+            this.borrow_mut().val.take();
         }
     }
 }
@@ -797,10 +800,6 @@ where
 {
     fn get(&self) -> Ref<StreamValue<D>> {
         self.val.get()
-    }
-
-    fn get_mut(&self) -> RefMut<StreamValue<D>> {
-        self.val.get_mut()
     }
 
     fn val(&self) -> &RefCell<StreamValue<D>> {
@@ -3393,7 +3392,7 @@ where
                 Some(val) => self.operator.import_owned(val),
             }
 
-            self.parent_stream.get_mut().consume_token();
+            StreamValue::consume_token(self.parent_stream.val());
         }
     }
 
@@ -3594,7 +3593,7 @@ where
                             .await
                     }
                 });
-            self.input_stream.get_mut().consume_token();
+            StreamValue::consume_token(self.input_stream.val());
             Ok(())
         })
     }
@@ -3696,7 +3695,8 @@ where
                         .await
                 }
             };
-            self.input_stream.get_mut().consume_token();
+            StreamValue::consume_token(self.input_stream.val());
+
             Ok(())
         })
     }
@@ -3817,8 +3817,8 @@ where
                         .await;
                 }
 
-                self.input_stream1.get_mut().consume_token();
-                self.input_stream2.get_mut().consume_token();
+                StreamValue::consume_token(self.input_stream1.val());
+                StreamValue::consume_token(self.input_stream2.val());
             } else {
                 let val1 = StreamValue::take(self.input_stream1.val());
                 let val2 = StreamValue::take(self.input_stream2.val());
@@ -3853,8 +3853,8 @@ where
                     }
                 }
 
-                self.input_stream1.get_mut().consume_token();
-                self.input_stream2.get_mut().consume_token();
+                StreamValue::consume_token(self.input_stream1.val());
+                StreamValue::consume_token(self.input_stream2.val());
             };
 
             Ok(())
@@ -3987,8 +3987,8 @@ where
                 }
                 // It is now safe to call `take`, and we must do so to decrement
                 // the ref counter.
-                self.input_stream1.get_mut().consume_token();
-                self.input_stream2.get_mut().consume_token();
+                StreamValue::consume_token(self.input_stream1.val());
+                StreamValue::consume_token(self.input_stream2.val());
             } else {
                 let val1 = StreamValue::take(self.input_stream1.val());
                 let val2 = StreamValue::take(self.input_stream2.val());
@@ -4014,8 +4014,8 @@ where
                             .await
                     }
                 });
-                self.input_stream1.get_mut().consume_token();
-                self.input_stream2.get_mut().consume_token();
+                StreamValue::consume_token(self.input_stream1.val());
+                StreamValue::consume_token(self.input_stream2.val());
             }
             Ok(())
         })
@@ -4147,9 +4147,9 @@ where
                 );
             }
 
-            self.input_stream1.get_mut().consume_token();
-            self.input_stream2.get_mut().consume_token();
-            self.input_stream3.get_mut().consume_token();
+            StreamValue::consume_token(self.input_stream1.val());
+            StreamValue::consume_token(self.input_stream2.val());
+            StreamValue::consume_token(self.input_stream3.val());
 
             Ok(())
         })
@@ -4301,10 +4301,10 @@ where
                 );
             }
 
-            self.input_stream1.get_mut().consume_token();
-            self.input_stream2.get_mut().consume_token();
-            self.input_stream3.get_mut().consume_token();
-            self.input_stream4.get_mut().consume_token();
+            StreamValue::consume_token(self.input_stream1.val());
+            StreamValue::consume_token(self.input_stream2.val());
+            StreamValue::consume_token(self.input_stream3.val());
+            StreamValue::consume_token(self.input_stream4.val());
 
             Ok(())
         })
@@ -4444,7 +4444,7 @@ where
             std::mem::drop(refs);
 
             for i in self.input_streams.iter() {
-                i.get_mut().consume_token();
+                StreamValue::consume_token(i.val());
             }
             Ok(())
         })
@@ -4680,7 +4680,8 @@ where
                 }
             };
 
-            self.input_stream.get_mut().consume_token();
+            StreamValue::consume_token(self.input_stream.val());
+
             Ok(())
         })
     }
