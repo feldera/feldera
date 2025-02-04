@@ -457,6 +457,17 @@ impl Runtime {
         }
     }
 
+    /// Returns the buffer caches for this thread and its background thread, if
+    /// storage is configured.
+    pub fn bg_buffer_cache() -> Option<Arc<BufferCache<FileCacheEntry>>> {
+        Self::runtime().map(|rt| {
+            rt.local_store()
+                .get(&BufferCacheId(Self::worker_index() + rt.num_workers()))
+                .unwrap()
+                .clone()
+        })
+    }
+
     /// Returns 0-based index of the current worker thread within its runtime.
     /// For threads that run without a runtime, this method returns `0`.  In a
     /// multihost runtime, this is a global index across all hosts.
