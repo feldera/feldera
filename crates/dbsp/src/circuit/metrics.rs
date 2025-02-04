@@ -66,6 +66,12 @@ pub const TOTAL_LATE_RECORDS: &str = "records.late";
 /// Runtime in microseconds of an Operator evaluation
 pub const OPERATOR_EVAL_DURATION: &str = "operator.runtime_micros";
 
+/// Number of loose batches in spines at each level.
+pub const BATCHES_PER_LEVEL: &str = "spine.batches_per_level";
+
+/// Number of pending merges in spines at each level.
+pub const ONGOING_MERGES_PER_LEVEL: &str = "spine.ongoing_merges";
+
 /// Creates the appropriate metric name for this metric.
 /// As these metrics are DBSP related, they are prefixed with `dbsp_`.
 fn metric_name(name: &str) -> String {

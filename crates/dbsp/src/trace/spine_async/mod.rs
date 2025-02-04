@@ -15,14 +15,14 @@ use crate::{
         cursor::CursorList, merge_batches, Batch, BatchReader, BatchReaderFactories, Cursor,
         Filter, Trace,
     },
-    Error, NumEntries,
+    Error, NumEntries, Runtime,
 };
 
 use crate::storage::file::to_bytes;
 use crate::storage::write_commit_metadata;
 pub use crate::trace::spine_async::snapshot::SpineSnapshot;
 use crate::trace::CommittedSpine;
-use metrics::counter;
+use metrics::{counter, gauge};
 use ouroboros::self_referencing;
 use rand::Rng;
 use rkyv::{
@@ -44,6 +44,7 @@ use std::{
     sync::Condvar,
 };
 use textwrap::indent;
+use uuid::Uuid;
 
 mod list_merger;
 mod snapshot;
@@ -51,7 +52,7 @@ mod thread;
 
 use self::thread::{BackgroundThread, WorkerStatus};
 use super::BatchLocation;
-use crate::circuit::metrics::COMPACTION_STALL_TIME;
+use crate::circuit::metrics::{BATCHES_PER_LEVEL, COMPACTION_STALL_TIME, ONGOING_MERGES_PER_LEVEL};
 use list_merger::{ListMerger, ListMergerBuilder};
 
 /// Maximum amount of levels in the spine.
@@ -162,13 +163,15 @@ where
     request_exit: bool,
     #[size_of(skip)]
     merge_stats: MergeStats,
+    #[size_of(skip)]
+    uuid: Uuid,
 }
 
 impl<B> SharedState<B>
 where
     B: Batch,
 {
-    pub fn new() -> Self {
+    pub fn new(uuid: Uuid) -> Self {
         Self {
             key_filter: None,
             value_filter: None,
@@ -176,6 +179,7 @@ where
             slots: std::array::from_fn(|_| Slot::default()),
             request_exit: false,
             merge_stats: MergeStats::default(),
+            uuid,
         }
     }
 
@@ -184,9 +188,7 @@ where
     fn add_batches(&mut self, batches: impl IntoIterator<Item = Arc<B>>) {
         for batch in batches {
             if !batch.is_empty() {
-                self.slots[Spine::<B>::size_to_level(batch.len())]
-                    .loose_batches
-                    .push_back(batch);
+                self.add_batch(batch);
             }
         }
     }
@@ -197,6 +199,10 @@ where
         debug_assert!(!batch.is_empty());
         let level = Spine::<B>::size_to_level(batch.len());
         self.slots[level].loose_batches.push_back(batch);
+
+        let worker = Runtime::worker_index();
+        gauge!(BATCHES_PER_LEVEL, "worker" => worker.to_string(), "level" => level.to_string(), "id" => self.uuid.to_string())
+            .set(self.slots[level].loose_batches.len() as f64);
     }
 
     fn should_apply_backpressure(&self) -> bool {
@@ -357,9 +363,10 @@ where
     B: Batch,
 {
     fn new() -> Self {
+        let uuid = Uuid::now_v7();
         let idle = Arc::new(Condvar::new());
         let no_backpressure = Arc::new(Condvar::new());
-        let state = Arc::new(Mutex::new(SharedState::new()));
+        let state = Arc::new(Mutex::new(SharedState::new(uuid)));
         BackgroundThread::add_worker({
             let state = Arc::clone(&state);
             let idle = Arc::clone(&idle);
@@ -512,6 +519,7 @@ where
         idle: &Arc<Condvar>,
         no_backpressure: &Arc<Condvar>,
     ) -> WorkerStatus {
+        let uuid = state.lock().unwrap().uuid;
         // Run in-progress merges.
         let ((key_filter, value_filter), frontier) = {
             let shared = state.lock().unwrap();
@@ -544,6 +552,10 @@ where
             .filter_map(|(level, slot)| slot.try_start_merge(level).map(|batches| (level, batches)))
             .collect::<Vec<_>>();
         for (level, batches) in start_merges {
+            let worker = Runtime::worker_index();
+            gauge!(ONGOING_MERGES_PER_LEVEL, "worker" => worker.to_string(), "level" => level.to_string(), "id" => uuid.to_string())
+                .set(batches.len() as f64);
+
             let merger = ListMergerBuilder::with_capacity(batches.len())
                 .with_batches(batches)
                 .build();
