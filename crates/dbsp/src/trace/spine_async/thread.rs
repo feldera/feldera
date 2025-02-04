@@ -50,6 +50,7 @@ pub struct BackgroundThread(Mutex<Inner>);
 // one exists), so instead we tie it to the current thread.
 thread_local! {
     static THREAD: RefCell<Weak<BackgroundThread>> = const { RefCell::new(Weak::new()) };
+    static THREADB: RefCell<Weak<BackgroundThread>> = const { RefCell::new(Weak::new()) };
 }
 
 /// A function that returns a [WorkerFn].
@@ -68,7 +69,7 @@ type WorkerConstructorFn = Box<dyn FnOnce() -> WorkerFn + Send>;
 type WorkerFn = Box<dyn FnMut() -> WorkerStatus>;
 
 impl BackgroundThread {
-    pub fn add_worker(worker: WorkerConstructorFn) {
+    pub fn add_worker_a(worker: WorkerConstructorFn) {
         THREAD.with_borrow_mut(|thread| {
             if let Some(thread) = thread.upgrade() {
                 let mut inner = thread.0.lock().unwrap();
@@ -80,6 +81,20 @@ impl BackgroundThread {
             let _ = replace(thread, Self::new(worker));
         });
     }
+
+    pub fn add_worker_b(worker: WorkerConstructorFn) {
+        THREADB.with_borrow_mut(|thread| {
+            if let Some(thread) = thread.upgrade() {
+                let mut inner = thread.0.lock().unwrap();
+                if !inner.exiting {
+                    inner.new_workers.push(worker);
+                    return;
+                }
+            }
+            let _ = replace(thread, Self::new(worker));
+        });
+    }
+
 
     fn new(worker: WorkerConstructorFn) -> Weak<Self> {
         let bg = Arc::new(Self(Mutex::new(Inner {
@@ -102,6 +117,14 @@ impl BackgroundThread {
 
     pub fn wake() {
         THREAD.with_borrow(|thread| {
+            if let Some(thread) = thread.upgrade() {
+                let inner = thread.0.lock().unwrap();
+                if let Some(thread) = inner.thread.as_ref() {
+                    thread.unpark();
+                }
+            }
+        });
+        THREADB.with_borrow(|thread| {
             if let Some(thread) = thread.upgrade() {
                 let inner = thread.0.lock().unwrap();
                 if let Some(thread) = inner.thread.as_ref() {

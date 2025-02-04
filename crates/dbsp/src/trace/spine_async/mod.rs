@@ -367,15 +367,27 @@ where
         let idle = Arc::new(Condvar::new());
         let no_backpressure = Arc::new(Condvar::new());
         let state = Arc::new(Mutex::new(SharedState::new(uuid)));
-        BackgroundThread::add_worker({
+
+        BackgroundThread::add_worker_a({
             let state = Arc::clone(&state);
             let idle = Arc::clone(&idle);
             let no_backpressure = Arc::clone(&no_backpressure);
             Box::new(|| {
-                let mut mergers = std::array::from_fn(|_| None);
+                let mut mergers = [(0, None), (2, None), (4, None), (6, None), (8, None)];
                 Box::new(move || Self::run(&mut mergers, &state, &idle, &no_backpressure))
             })
         });
+
+        BackgroundThread::add_worker_b({
+            let state = Arc::clone(&state);
+            let idle = Arc::clone(&idle);
+            let no_backpressure = Arc::clone(&no_backpressure);
+            Box::new(|| {
+                let mut mergers = [(1, None), (3, None), (5, None), (7, None)];
+                Box::new(move || Self::run(&mut mergers, &state, &idle, &no_backpressure))
+            })
+        });
+
         Self {
             state,
             idle,
@@ -514,7 +526,7 @@ where
     }
 
     fn run(
-        mergers: &mut [Option<ListMerger<B>>; MAX_LEVELS],
+        mergers: &mut [(usize, Option<ListMerger<B>>)],
         state: &Arc<Mutex<SharedState<B>>>,
         idle: &Arc<Condvar>,
         no_backpressure: &Arc<Condvar>,
@@ -526,14 +538,14 @@ where
             (shared.get_filters(), shared.frontier.clone())
         };
 
-        for (level, m) in mergers.iter_mut().enumerate() {
+        for (level, m) in mergers.iter_mut() {
             if let Some(merger) = m.as_mut() {
                 let mut fuel = 10_000;
                 merger.work(&key_filter, &value_filter, &frontier, &mut fuel);
                 if fuel > 0 {
                     let merger = m.take().unwrap();
                     let new_batch = Arc::new(merger.done());
-                    state.lock().unwrap().merge_complete(level, new_batch);
+                    state.lock().unwrap().merge_complete(*level, new_batch);
                 }
             }
         }
@@ -543,12 +555,14 @@ where
         // Figuring out what merges to start requires the lock. Then we drop
         // the lock to actually start them, in case that's expensive (it
         // might require creating a file, for example).
+        let levels = mergers.iter().map(|(level, _)| *level).collect::<Vec<_>>();
         let start_merges = state
             .lock()
             .unwrap()
             .slots
             .iter_mut()
             .enumerate()
+            .filter(|(level, _)| levels.contains(level))
             .filter_map(|(level, slot)| slot.try_start_merge(level).map(|batches| (level, batches)))
             .collect::<Vec<_>>();
         for (level, batches) in start_merges {
@@ -559,14 +573,14 @@ where
             let merger = ListMergerBuilder::with_capacity(batches.len())
                 .with_batches(batches)
                 .build();
-            mergers[level] = Some(merger);
+            mergers[level] = (level, Some(merger));
         }
 
         let state = state.lock().unwrap();
         if state.request_exit {
             Self::relieve_backpressure(no_backpressure);
             WorkerStatus::Done
-        } else if mergers.iter().all(|m| m.is_none()) {
+        } else if mergers.iter().all(|m| m.1.is_none()) {
             Self::relieve_backpressure(no_backpressure);
             idle.notify_all(); // XXX is there a race here?
             WorkerStatus::Idle
