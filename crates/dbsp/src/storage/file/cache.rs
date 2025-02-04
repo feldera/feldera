@@ -2,8 +2,8 @@
 //!
 //! This implements an approximately LRU cache for layer files.  The
 //! [`Reader`](super::reader::Reader) and [writer](super::writer) use it.
-use std::mem::size_of;
 use std::sync::Arc;
+use std::{mem::size_of, time::Instant};
 
 use crc32c::crc32c;
 
@@ -13,7 +13,7 @@ use binrw::{
 };
 use snap::raw::{decompress_len, Decoder};
 
-use crate::storage::buffer_cache::AtomicCacheStats;
+use crate::storage::buffer_cache::{AtomicCacheStats, CacheAccess};
 use crate::storage::{
     backend::{BlockLocation, FileReader},
     buffer_cache::{BufferCache, CacheEntry, FBuf},
@@ -137,15 +137,18 @@ impl BufferCache<FileCacheEntry> {
         compression: Option<Compression>,
         stats: &AtomicCacheStats,
     ) -> Result<FileCacheEntry, Error> {
-        match self.get(file, location, stats) {
-            Some(entry) => Ok(entry),
+        let start = Instant::now();
+        let (access, entry) = match self.get(file, location) {
+            Some(entry) => (CacheAccess::Hit, entry),
             None => {
                 let block = file.read_block(location)?;
                 let entry = FileCacheEntry::from_read(block, location, compression)?;
                 self.insert(file.file_id(), location.offset, entry.clone());
-                Ok(entry)
+                (CacheAccess::Miss, entry)
             }
-        }
+        };
+        stats.record(access, start.elapsed(), location);
+        Ok(entry)
     }
 
     /// Reads `location` from `file` and returns it converted to

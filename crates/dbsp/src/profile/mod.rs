@@ -493,19 +493,27 @@ impl Profiler {
                     meta.insert(0, item);
                 }
 
-                let cache = Runtime::buffer_cache();
-                let (cur, max) = cache.occupancy();
-                meta.insert(
-                    0,
-                    (
-                        Cow::Borrowed("cache occupancy"),
-                        MetaItem::String(format!(
-                            "{} used (max {})",
-                            HumanBytes::new(cur as u64),
-                            HumanBytes::new(max as u64)
-                        )),
-                    ),
-                );
+                for (name, cache) in [
+                    ("cache occupancy (circuit)", Some(Runtime::buffer_cache())),
+                    ("cache occupancy (merger)", Runtime::bg_buffer_cache()),
+                ]
+                .into_iter()
+                {
+                    if let Some(cache) = cache {
+                        let (cur, max) = cache.occupancy();
+                        meta.insert(
+                            0,
+                            (
+                                Cow::Borrowed(name),
+                                MetaItem::String(format!(
+                                    "{} used (max {})",
+                                    HumanBytes::new(cur as u64),
+                                    HumanBytes::new(max as u64)
+                                )),
+                            ),
+                        );
+                    }
+                }
             }
         }
 

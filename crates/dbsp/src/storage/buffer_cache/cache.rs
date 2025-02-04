@@ -7,6 +7,7 @@ use std::fmt::Debug;
 use std::ops::{Add, AddAssign};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
+use std::time::Duration;
 use std::{collections::BTreeMap, ops::Range};
 
 use enum_map::{Enum, EnumMap};
@@ -209,29 +210,12 @@ where
         }
     }
 
-    pub fn get(
-        &self,
-        file: &dyn FileReader,
-        location: BlockLocation,
-        stats: &AtomicCacheStats,
-    ) -> Option<E> {
-        let result = self
-            .inner
+    pub fn get(&self, file: &dyn FileReader, location: BlockLocation) -> Option<E> {
+        self.inner
             .lock()
             .unwrap()
             .get(CacheKey::new(file.file_id(), location.offset))
-            .cloned();
-
-        stats.record(
-            if result.is_some() {
-                CacheAccess::Hit
-            } else {
-                CacheAccess::Miss
-            },
-            location,
-        );
-
-        result
+            .cloned()
     }
 
     pub fn insert(&self, file_id: FileId, offset: u64, aux: E) {
@@ -260,11 +244,14 @@ pub struct AtomicCacheStats(EnumMap<CacheAccess, AtomicCacheCounts>);
 
 impl AtomicCacheStats {
     /// Records that `location` was access in the cache with effect `access`.
-    fn record(&self, access: CacheAccess, location: BlockLocation) {
+    pub fn record(&self, access: CacheAccess, duration: Duration, location: BlockLocation) {
         self.0[access].count.fetch_add(1, Ordering::Relaxed);
         self.0[access]
             .bytes
             .fetch_add(location.size as u64, Ordering::Relaxed);
+        self.0[access]
+            .elapsed_ns
+            .fetch_add(duration.as_nanos() as u64, Ordering::Relaxed);
     }
 
     /// Reads out the statistics for processing.
@@ -300,6 +287,9 @@ pub struct AtomicCacheCounts {
 
     /// Total bytes across all the accesses.
     bytes: AtomicU64,
+
+    /// Elapsed time, in nanoseconds.
+    elapsed_ns: AtomicU64,
 }
 
 impl AtomicCacheCounts {
@@ -308,6 +298,7 @@ impl AtomicCacheCounts {
         CacheCounts {
             count: self.count.load(Ordering::Relaxed),
             bytes: self.bytes.load(Ordering::Relaxed),
+            elapsed: Duration::from_nanos(self.elapsed_ns.load(Ordering::Relaxed)),
         }
     }
 }
@@ -333,7 +324,7 @@ impl CacheStats {
         let hits = self.0[CacheAccess::Hit].count;
         let misses = self.0[CacheAccess::Miss].count;
         meta.extend(metadata! {
-            "hit rate" => MetaItem::Percent { numerator: hits, denominator: hits + misses }
+            "cache hit rate" => MetaItem::Percent { numerator: hits, denominator: hits + misses }
         });
     }
 }
@@ -355,14 +346,17 @@ impl AddAssign for CacheStats {
     }
 }
 
-/// Cache counts that can be accessed atomically for multithread updates.
-#[derive(Copy, Clone, Debug, Default)]
+/// Cache counts.
+#[derive(Copy, Clone, Debug, Default, PartialEq)]
 pub struct CacheCounts {
     /// Number of accessed blocks.
     pub count: u64,
 
     /// Total bytes across all the accesses.
     pub bytes: u64,
+
+    /// Elapsed time.
+    pub elapsed: Duration,
 }
 
 impl CacheCounts {
@@ -373,7 +367,16 @@ impl CacheCounts {
 
     /// Returns a [MetaItem] for these cache counts.
     pub fn meta_item(&self) -> MetaItem {
-        MetaItem::count_and_bytes(self.count, self.bytes)
+        MetaItem::CacheCounts(*self)
+    }
+}
+
+impl Add for CacheCounts {
+    type Output = Self;
+
+    fn add(mut self, rhs: Self) -> Self::Output {
+        self.add_assign(rhs);
+        self
     }
 }
 
@@ -381,5 +384,6 @@ impl AddAssign for CacheCounts {
     fn add_assign(&mut self, rhs: Self) {
         self.count += rhs.count;
         self.bytes += rhs.bytes;
+        self.elapsed += rhs.elapsed;
     }
 }

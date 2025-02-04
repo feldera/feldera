@@ -31,6 +31,8 @@ use rkyv::{
 use size_of::{Context, SizeOf};
 use std::sync::Mutex;
 use std::sync::{Arc, MutexGuard};
+use std::time::Duration;
+use std::time::Instant;
 use std::{
     collections::VecDeque,
     path::{Path, PathBuf},
@@ -390,7 +392,9 @@ where
         state.add_batch(batch);
         BackgroundThread::wake();
         if state.should_apply_backpressure() {
-            let _r = self.no_backpressure.wait(state).unwrap();
+            let start = Instant::now();
+            let mut state = self.no_backpressure.wait(state).unwrap();
+            state.merge_stats.backpressure_wait += start.elapsed();
         }
     }
 
@@ -481,6 +485,9 @@ where
             // to merges that merging eliminated, whether by weights adding to
             // zero or through key or value filters.
             "merge reduction" => merge_stats.merge_reduction(),
+
+            // The amount of time waiting for backpressure.
+            "merge backpressure wait" => MetaItem::Duration(merge_stats.backpressure_wait),
         });
 
         if !cache_stats.is_empty() {
@@ -583,6 +590,8 @@ struct MergeStats {
     /// Cache statistics, only for the batches that have already been merged and
     /// discarded.
     cache_stats: CacheStats,
+    /// Time spent waiting for backpressure.
+    backpressure_wait: Duration,
 }
 
 impl MergeStats {

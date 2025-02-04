@@ -7,6 +7,8 @@ use std::{
     time::Duration,
 };
 
+use crate::storage::buffer_cache::CacheCounts;
+
 /// Attribute that represents the total number of bytes used by a stateful
 /// operator. This includes bytes used to store the actual state, but not the
 /// excess pre-allocated capacity available inside operator's internal data
@@ -153,10 +155,7 @@ pub enum MetaItem {
         denominator: u64,
     },
 
-    /// A count paired with bytes.
-    ///
-    /// This is useful for storage reads/writes, network packets, ...
-    CountAndBytes(u64, HumanBytes),
+    CacheCounts(CacheCounts),
 
     String(String),
     Array(Vec<Self>),
@@ -168,10 +167,6 @@ pub enum MetaItem {
 impl MetaItem {
     pub fn bytes(bytes: usize) -> Self {
         Self::Bytes(HumanBytes::from(bytes))
-    }
-
-    pub fn count_and_bytes(count: u64, bytes: u64) -> Self {
-        Self::CountAndBytes(count, HumanBytes::from(bytes))
     }
 
     pub fn format(&self, output: &mut dyn Write) -> fmt::Result {
@@ -188,8 +183,22 @@ impl MetaItem {
                     write!(output, "(undefined)")
                 }
             }
-            Self::CountAndBytes(count, bytes) => {
-                write!(output, "{count} ({bytes})")
+            Self::CacheCounts(CacheCounts {
+                count,
+                bytes,
+                elapsed,
+            }) => {
+                if *count > 0 {
+                    write!(
+                        output,
+                        "{count} ({}) over {:.1} s ({} ns/op)",
+                        HumanBytes::new(*bytes),
+                        elapsed.as_secs_f64(),
+                        elapsed.as_nanos() / *count as u128
+                    )
+                } else {
+                    write!(output, "none")
+                }
             }
             Self::String(string) => output.write_str(string),
             Self::Bytes(bytes) => write!(output, "{bytes}"),
@@ -227,7 +236,7 @@ impl MetaItem {
             self,
             MetaItem::Count(_)
                 | MetaItem::Bytes(_)
-                | MetaItem::CountAndBytes(..)
+                | MetaItem::CacheCounts(..)
                 | MetaItem::Duration(_)
                 | MetaItem::Percent { .. }
         )
@@ -252,9 +261,7 @@ impl MetaItem {
             (Self::Bytes(a), Self::Bytes(b)) => Some(Self::Bytes(HumanBytes {
                 bytes: a.bytes + b.bytes,
             })),
-            (Self::CountAndBytes(count1, bytes1), Self::CountAndBytes(count2, bytes2)) => Some(
-                Self::count_and_bytes(count1 + count2, bytes1.bytes + bytes2.bytes),
-            ),
+            (Self::CacheCounts(a), Self::CacheCounts(b)) => Some(Self::CacheCounts(*a + *b)),
             (Self::Duration(a), Self::Duration(b)) => Some(Self::Duration(a.saturating_add(*b))),
             _ => None,
         }
