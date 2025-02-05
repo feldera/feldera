@@ -18,6 +18,7 @@ use feldera_types::{deserialize_without_context, serialize_without_context};
 use internment::ArcIntern;
 use like::{Escape, Like};
 use regex::Regex;
+use rkyv::Fallible;
 use serde::{Deserialize, Serialize};
 use size_of::{Context, SizeOf};
 use std::{
@@ -26,11 +27,14 @@ use std::{
     sync::Arc,
 };
 
+#[cfg(not(feature = "interned_string"))]
+use arcstr::ArcStr;
+
 #[cfg(feature = "interned_string")]
 type StringRef = ArcIntern<String>;
 
 #[cfg(not(feature = "interned_string"))]
-type StringRef = Arc<String>;
+type StringRef = ArcStr;
 
 /// An immutable reference counted string.
 #[derive(
@@ -44,11 +48,11 @@ type StringRef = Arc<String>;
     PartialOrd,
     Serialize,
     Deserialize,
-    rkyv::Archive,
-    rkyv::Serialize,
-    rkyv::Deserialize,
+    // rkyv::Archive,
+    // rkyv::Serialize,
+    // rkyv::Deserialize,
 )]
-#[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
+//#[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 #[serde(transparent)]
 pub struct SqlString(StringRef);
 
@@ -117,6 +121,41 @@ impl From<&str> for SqlString {
 impl SizeOf for SqlString {
     fn size_of_children(&self, context: &mut Context) {
         self.str().size_of_children(context)
+    }
+}
+
+impl rkyv::Archive for SqlString {
+    type Archived = ();
+    type Resolver = ();
+    unsafe fn resolve(&self, _pos: usize, _resolver: Self::Resolver, _out: *mut Self::Archived) {
+        todo!()
+    }
+}
+
+impl<D> rkyv::Deserialize<SqlString, D> for ()
+where
+    D: Fallible + ?Sized,
+{
+    fn deserialize(&self, _deserializer: &mut D) -> Result<SqlString, D::Error> {
+        todo!()
+    }
+}
+
+impl<D> rkyv::Deserialize<SqlString, D> for SqlString
+where
+    D: Fallible + ?Sized,
+{
+    fn deserialize(&self, _deserializer: &mut D) -> Result<SqlString, D::Error> {
+        todo!()
+    }
+}
+
+impl<S> rkyv::Serialize<S> for SqlString
+where
+    S: Fallible + ?Sized,
+{
+    fn serialize(&self, _serializer: &mut S) -> Result<Self::Resolver, S::Error> {
+        todo!()
     }
 }
 
