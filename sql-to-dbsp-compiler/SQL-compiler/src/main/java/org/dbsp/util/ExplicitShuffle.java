@@ -35,6 +35,11 @@ public class ExplicitShuffle implements Shuffle {
         return new ExplicitShuffle(shuffle.inputLength(), results);
     }
 
+    @Override
+    public boolean emitsIndex(int index) {
+        return this.indexes.contains(index);
+    }
+
     public static <T> Shuffle computePermutation(List<T> input, List<T> output) {
         List<Integer> shuffle = new ArrayList<>();
         for (T in : input) {

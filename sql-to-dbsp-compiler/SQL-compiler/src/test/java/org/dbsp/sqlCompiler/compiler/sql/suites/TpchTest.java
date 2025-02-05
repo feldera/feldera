@@ -38,11 +38,6 @@ public class TpchTest extends BaseSQLTests {
         cc.showErrors();
         InnerVisitor visitor = new InnerVisitor(cc.compiler) {
             @Override
-            public DBSPCompiler compiler() {
-                return super.compiler();
-            }
-
-            @Override
             public void postorder(DBSPTypeTuple type) {
                 assert type.size() < 17;
             }

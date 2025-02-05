@@ -38,6 +38,7 @@ import javax.annotation.Nullable;
 import java.math.BigDecimal;
 import java.util.Objects;
 
+/** Corresponds to the static DECIMAL(p, s) type in Rust. */
 public class DBSPTypeDecimal extends DBSPTypeBaseType
         implements IsNumericType {
     public static final int MAX_PRECISION = 28;   // Total digits. This limit comes from the Rust decimal library

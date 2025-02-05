@@ -41,7 +41,7 @@ public class DBSPTypeAny extends DBSPType {
         super(CalciteObject.EMPTY, DBSPTypeCode.ANY, false);
     }
 
-    public static DBSPTypeAny INSTANCE = new DBSPTypeAny();
+    public static final DBSPTypeAny INSTANCE = new DBSPTypeAny();
 
     public static DBSPTypeAny getDefault() {
         return DBSPTypeAny.INSTANCE;

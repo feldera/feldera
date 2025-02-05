@@ -500,7 +500,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         File file = createInputScript(sql);
         CompilerMessages message = CompilerMain.execute(
                 "--handles", "-o", BaseSQLTests.testFilePath, file.getPath());
-        Assert.assertEquals(message.exitCode, 0);
+        Assert.assertEquals(0, message.exitCode);
         Assert.assertTrue(file.exists());
 
         File rust = new File(BaseSQLTests.testFilePath);
@@ -512,7 +512,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         // Second test
         message = CompilerMain.execute(
                 "-i", "-o", BaseSQLTests.testFilePath, file.getPath());
-        Assert.assertEquals(message.exitCode, 0);
+        Assert.assertEquals(0, message.exitCode);
         Assert.assertTrue(file.exists());
 
         rust = new File(BaseSQLTests.testFilePath);
@@ -533,7 +533,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         File png = File.createTempFile("out", ".png", new File("."));
         png.deleteOnExit();
         CompilerMessages message = CompilerMain.execute("-png", "-o", png.getPath(), file.getPath());
-        Assert.assertEquals(message.exitCode, 0);
+        Assert.assertEquals(0, message.exitCode);
         Assert.assertTrue(file.exists());
         ImageIO.read(new File(png.getPath()));
     }

@@ -16,7 +16,6 @@ import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.DeclareViewStatement;
 import org.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests;
-import org.dbsp.sqlCompiler.compiler.sql.tools.CompilerCircuitStream;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.util.HSQDBManager;
@@ -843,7 +842,7 @@ public class MetadataTests extends BaseSQLTests {
         boolean success = tmp.delete();
         if (message.exitCode != 0)
             System.err.println(message);
-        Assert.assertEquals(message.exitCode, 0);
+        Assert.assertEquals(0, message.exitCode);
         TestUtil.assertMessagesContain(message,
                 "Table 's', referred in FOREIGN KEY constraint of table 't', does not exist");
         ObjectMapper mapper = Utilities.deterministicObjectMapper();
@@ -984,8 +983,8 @@ public class MetadataTests extends BaseSQLTests {
     public void jsonErrorTest() throws IOException, SQLException {
         File file = createInputScript("CREATE VIEW V AS SELECT * FROM T;");
         CompilerMessages messages = CompilerMain.execute("-je", file.getPath());
-        Assert.assertEquals(messages.exitCode, 1);
-        Assert.assertEquals(messages.errorCount(), 1);
+        Assert.assertEquals(1, messages.exitCode);
+        Assert.assertEquals(1, messages.errorCount());
         String json = messages.toString();
         ObjectMapper mapper = new ObjectMapper();
         JsonNode jsonNode = mapper.readTree(json);

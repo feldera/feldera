@@ -77,7 +77,7 @@ public abstract class DBSPLiteral extends DBSPExpression
             case INT128 -> new DBSPI128Literal();
             case BOOL -> new DBSPBoolLiteral();
             case DATE -> new DBSPDateLiteral();
-            case DECIMAL -> new DBSPDecimalLiteral(type.getNode(), type, null);
+            case DECIMAL_RUNTIME, DECIMAL -> new DBSPDecimalLiteral(type.getNode(), type, null);
             case DOUBLE -> new DBSPDoubleLiteral();
             case REAL -> new DBSPRealLiteral();
             case GEOPOINT -> new DBSPGeoPointConstructor();

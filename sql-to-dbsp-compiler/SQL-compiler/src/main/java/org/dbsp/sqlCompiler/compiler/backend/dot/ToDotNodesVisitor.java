@@ -20,7 +20,6 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.LowerCircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFlatmap;
 import org.dbsp.util.IndentStream;
-import org.dbsp.util.Utilities;
 
 /** Visitor which emits the circuit nodes in a graphviz file */
 public class ToDotNodesVisitor extends CircuitVisitor {

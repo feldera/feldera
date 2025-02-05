@@ -4,6 +4,7 @@
 #![allow(clippy::unnecessary_cast)]
 
 use crate::binary::ByteArray;
+use crate::decimal::Dec;
 use crate::{FromInteger, ToInteger, Weight};
 use dbsp::algebra::{FirstLargeValue, HasOne, HasZero, SignedPrimInt, UnsignedPrimInt, F32, F64};
 use num::PrimInt;
@@ -394,9 +395,15 @@ pub fn agg_plus_decimal(left: Decimal, right: Decimal) -> Decimal {
     left + right
 }
 
+#[doc(hidden)]
+pub fn agg_plus_dec(left: Dec, right: Dec) -> Dec {
+    left + right
+}
+
 some_aggregate!(agg_plus_f32, agg_plus, f, F32);
 some_aggregate!(agg_plus_f64, agg_plus, d, F64);
 some_aggregate!(agg_plus_decimal, agg_plus, decimal, Decimal);
+some_aggregate!(agg_plus_dec, agg_plus, dec, Dec);
 
 for_all_int_aggregate!(agg_plus, agg_plus);
 

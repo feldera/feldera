@@ -78,7 +78,7 @@ public class CircuitRewriter extends CircuitCloneVisitor {
     public final IRTransform transform;
     /** Only optimize functions for nodes where this predicate returns 'true'.
      * By default, optimize all nodes. */
-    Predicate<DBSPOperator> toOptimize;
+    final Predicate<DBSPOperator> toOptimize;
     final boolean processDeclarations;
 
     public CircuitRewriter(DBSPCompiler compiler, IRTransform transform, boolean processDeclarations) {

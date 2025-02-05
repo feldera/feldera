@@ -88,9 +88,9 @@ public class TypeCompiler implements ICompilerComponent {
         return new DBSPTypeIndexedZSet(elementType.getNode(), keyType, elementType);
     }
 
-    public static DBSPTypeIndexedZSet makeIndexedZSet(DBSPTypeRawTuple kvtype) {
-        assert kvtype.size() == 2;
-        return new DBSPTypeIndexedZSet(kvtype.getNode(), kvtype.tupFields[0], kvtype.tupFields[1]);
+    public static DBSPTypeIndexedZSet makeIndexedZSet(DBSPTypeRawTuple kvType) {
+        assert kvType.size() == 2;
+        return new DBSPTypeIndexedZSet(kvType.getNode(), kvType.tupFields[0], kvType.tupFields[1]);
     }
 
     /**

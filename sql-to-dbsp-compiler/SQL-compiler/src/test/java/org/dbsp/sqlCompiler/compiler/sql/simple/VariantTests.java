@@ -80,8 +80,8 @@ public class VariantTests extends BaseSQLTests {
     public void testUDT() {
         this.compileRustTestCase("""
                 CREATE TYPE x AS (v INTEGER, w INTEGER);
-                CREATE TABLE T(xf X ARRAY);
-                CREATE VIEW V AS SELECT CAST(xf AS VARIANT) FROM T;""");
+                CREATE TABLE TT(xf X ARRAY);
+                CREATE VIEW V AS SELECT CAST(xf AS VARIANT) FROM TT;""");
     }
 
     @Test
