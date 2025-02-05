@@ -17,44 +17,43 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use size_of::{Context, SizeOf};
 use std::{
     borrow::Cow,
-    cmp::{max, min},
     fmt::{Display, Formatter},
     sync::Arc,
 };
 
 #[cfg(not(feature = "arcstring"))]
-type StringRef = ArcIntern<String>;
+type Interned = ArcIntern<String>;
 
 #[cfg(feature = "arcstring")]
-type StringRef = Arc<String>;
+type Interned = Arc<String>;
 
 #[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct SqlString(StringRef);
+pub struct SqlString(Interned);
 
 /// String representation used by the Feldera SQL runtime
 impl SqlString {
     #[cfg(feature = "arcstring")]
     pub fn new() -> Self {
-        SqlString(StringRef::new("".to_string()))
+        SqlString(Interned::new("".to_string()))
     }
 
     #[cfg(feature = "arcstring")]
     pub fn from_ref(value: &str) -> Self {
-        SqlString(StringRef::new(value))
+        SqlString(Interned::new(String::from(value)))
     }
 
     #[cfg(not(feature = "arcstring"))]
     pub fn new() -> Self {
-        SqlString(StringRef::new("".to_string()))
+        SqlString(Interned::new("".to_string()))
     }
 
     #[cfg(not(feature = "arcstring"))]
     pub fn from_ref(value: &str) -> Self {
-        SqlString(StringRef::from_ref(value))
+        SqlString(Interned::new(value.to_string()))
     }
 
-    pub fn str(&self) -> &str {
-        &self.0
+    pub fn str(&self) -> String {
+        self.0.clone().to_string()
     }
 
     pub fn len(&self) -> usize {
@@ -96,19 +95,19 @@ impl Display for SqlString {
 
 impl From<String> for SqlString {
     fn from(value: String) -> Self {
-        SqlString(StringRef::from(value))
+        SqlString(Interned::from(value))
     }
 }
 
 impl From<char> for SqlString {
     fn from(value: char) -> Self {
-        SqlString(StringRef::from(String::from(value)))
+        SqlString(Interned::from(String::from(value)))
     }
 }
 
 impl From<&str> for SqlString {
     fn from(value: &str) -> Self {
-        SqlString::from_ref(value)
+        SqlString::from(value.to_string())
     }
 }
 
@@ -157,10 +156,10 @@ where
 
 #[doc(hidden)]
 pub fn concat_s_s(left: SqlString, right: SqlString) -> SqlString {
-    let mut result = String::with_capacity(left.len() + right.len());
-    result.push_str(left.str());
-    result.push_str(right.str());
-    SqlString::from(result)
+    let mut str = left.str();
+    str.reserve(right.str().len());
+    str.push_str(&right.str());
+    SqlString::from(str)
 }
 
 some_polymorphic_function2!(concat, s, SqlString, s, SqlString, SqlString);
@@ -171,11 +170,14 @@ pub fn substring3___(value: SqlString, left: i32, count: i32) -> SqlString {
         SqlString::new()
     } else {
         // character indexes in SQL start at 1
-        let start = if left < 1 { 0 } else { left - 1 } as usize;
-        let count = max(0, count) as usize;
-        let start = min(value.len(), start);
-        let end = min(value.len(), start + count);
-        SqlString::from_ref(&value.str()[start..end])
+        let start = if left < 1 { 0 } else { left - 1 };
+        let s: String = value
+            .str()
+            .chars()
+            .skip(start as usize)
+            .take(count as usize)
+            .collect();
+        SqlString::from(s)
     }
 }
 
@@ -184,9 +186,8 @@ some_function3!(substring3, SqlString, i32, i32, SqlString);
 #[doc(hidden)]
 pub fn substring2__(value: SqlString, left: i32) -> SqlString {
     // character indexes in SQL start at 1
-    let start = if left < 1 { 0 } else { left - 1 } as usize;
-    let start = min(start, value.len());
-    SqlString::from_ref(&value.str()[start..])
+    let start = if left < 1 { 0 } else { left - 1 };
+    SqlString::from(value.str().chars().skip(start as usize).collect::<String>())
 }
 
 some_function2!(substring2, SqlString, i32, SqlString);
@@ -195,7 +196,7 @@ some_function2!(substring2, SqlString, i32, SqlString);
 pub fn trim_both_s_s(remove: SqlString, value: SqlString) -> SqlString {
     // 'remove' always has exactly 1 character
     let chr = remove.str().chars().next().unwrap();
-    SqlString::from(value.str().trim_matches(chr))
+    SqlString::from(value.str().trim_matches(chr).to_string())
 }
 
 some_polymorphic_function2!(trim_both, s, SqlString, s, SqlString, SqlString);
@@ -204,7 +205,7 @@ some_polymorphic_function2!(trim_both, s, SqlString, s, SqlString, SqlString);
 pub fn trim_leading_s_s(remove: SqlString, value: SqlString) -> SqlString {
     // 'remove' always has exactly 1 character
     let chr = remove.str().chars().next().unwrap();
-    SqlString::from(value.str().trim_start_matches(chr))
+    SqlString::from(value.str().trim_start_matches(chr).to_string())
 }
 
 some_polymorphic_function2!(trim_leading, s, SqlString, s, SqlString, SqlString);
@@ -213,14 +214,14 @@ some_polymorphic_function2!(trim_leading, s, SqlString, s, SqlString, SqlString)
 pub fn trim_trailing_s_s(remove: SqlString, value: SqlString) -> SqlString {
     // 'remove' always has exactly 1 character
     let chr = remove.str().chars().next().unwrap();
-    SqlString::from(value.str().trim_end_matches(chr))
+    SqlString::from(value.str().trim_end_matches(chr).to_string())
 }
 
 some_polymorphic_function2!(trim_trailing, s, SqlString, s, SqlString, SqlString);
 
 #[doc(hidden)]
 pub fn like2__(value: SqlString, pattern: SqlString) -> bool {
-    Like::<false>::like(value.str(), pattern.str()).unwrap()
+    Like::<false>::like(value.str().as_str(), pattern.str().as_str()).unwrap()
 }
 
 some_function2!(like2, SqlString, SqlString, bool);
@@ -233,7 +234,7 @@ some_function2!(like2, SqlString, SqlString, bool);
 pub fn rlikeC__(value: SqlString, re: &Option<Regex>) -> bool {
     match re {
         None => false,
-        Some(re) => re.is_match(value.str()),
+        Some(re) => re.is_match(&value.str()),
     }
 }
 
@@ -245,16 +246,20 @@ pub fn rlikeCN_(value: Option<SqlString>, re: &Option<Regex>) -> Option<bool> {
 
 #[doc(hidden)]
 pub fn rlike__(value: SqlString, pattern: SqlString) -> bool {
-    let re = Regex::new(pattern.str());
-    re.map_or_else(|_| false, |re| re.is_match(value.str()))
+    let re = Regex::new(&pattern.str());
+    re.map_or_else(|_| false, |re| re.is_match(&value.str()))
 }
 
 some_function2!(rlike, SqlString, SqlString, bool);
 
 #[doc(hidden)]
 pub fn like3___(value: SqlString, pattern: SqlString, escape: SqlString) -> bool {
-    let escaped = pattern.str().escape(escape.str()).unwrap();
-    Like::<true>::like(value.str(), &escaped).unwrap()
+    let escaped = pattern
+        .str()
+        .as_str()
+        .escape(escape.str().as_str())
+        .unwrap();
+    Like::<true>::like(value.str().as_str(), escaped.as_str()).unwrap()
 }
 
 some_function3!(like3, SqlString, SqlString, SqlString, bool);
@@ -273,7 +278,7 @@ some_function2!(ilike2, SqlString, SqlString, bool);
 
 #[doc(hidden)]
 pub fn position__(needle: SqlString, haystack: SqlString) -> i32 {
-    let pos = haystack.str().find(needle.str());
+    let pos = haystack.str().find(needle.str().as_str());
     match pos {
         None => 0,
         Some(i) => (i + 1) as i32,
@@ -333,7 +338,7 @@ some_function2!(repeat, SqlString, i32, SqlString);
 
 #[doc(hidden)]
 pub fn overlay3___(source: SqlString, replacement: SqlString, position: i32) -> SqlString {
-    let len = char_length_ref(replacement.str());
+    let len = char_length_ref(&replacement.str());
     overlay4____(source, replacement, position, len)
 }
 
@@ -352,12 +357,12 @@ pub fn overlay4____(
     }
     if position <= 0 {
         source
-    } else if position > char_length_ref(source.str()) {
+    } else if position > char_length_ref(&source.str()) {
         concat_s_s(source, replacement)
     } else {
-        let mut result = substring3___(source.clone(), 0, position - 1).to_string();
-        result += replacement.str();
-        result += substring2__(source, position + remove).str();
+        let mut result = substring3___(source.clone(), 0, position - 1).str();
+        result += &*(replacement.str());
+        result += &substring2__(source, position + remove).str();
         SqlString::from(result)
     }
 }
@@ -407,7 +412,7 @@ some_function1!(initcap, SqlString, SqlString);
 
 #[doc(hidden)]
 pub fn replace___(haystack: SqlString, needle: SqlString, replacement: SqlString) -> SqlString {
-    SqlString::from(haystack.str().replace(needle.str(), replacement.str()))
+    SqlString::from(haystack.str().replace(&*needle.str(), &replacement.str()))
 }
 
 some_function3!(replace, SqlString, SqlString, SqlString, SqlString);
@@ -429,7 +434,7 @@ pub fn split2__(source: SqlString, separators: SqlString) -> Array<SqlString> {
     }
     source
         .str()
-        .split(separators.str())
+        .split(&*separators.str())
         .map(SqlString::from)
         .collect::<Vec<SqlString>>()
         .into()
@@ -466,8 +471,8 @@ pub fn array_to_string2_vec__(value: Array<SqlString>, separator: SqlString) -> 
     (*value)
         .iter()
         .map(|x| x.str())
-        .collect::<Vec<&str>>()
-        .join(separator.str())
+        .collect::<Vec<String>>()
+        .join(&*separator.str())
         .into()
 }
 
@@ -489,10 +494,10 @@ pub fn array_to_string2Nvec__(value: Array<Option<SqlString>>, separator: SqlStr
             Some(r) => r.str(),
         };
         if !first {
-            result.push_str(separator.str())
+            result.push_str(&separator.str())
         }
         first = false;
-        result.push_str(append);
+        result.push_str(append.as_str());
     }
     SqlString::from(result)
 }
@@ -540,10 +545,10 @@ pub fn array_to_string3Nvec___(
             Some(r) => r.str(),
         };
         if !first {
-            result.push_str(separator.str())
+            result.push_str(&separator.str())
         }
         first = false;
-        result.push_str(append);
+        result.push_str(&append);
     }
     SqlString::from(result)
 }
@@ -566,7 +571,7 @@ pub fn writelog<T: std::fmt::Display>(format: SqlString, argument: T) -> T {
 
 #[doc(hidden)]
 pub fn parse_json_s(value: SqlString) -> Variant {
-    match serde_json::from_str::<Variant>(value.str()) {
+    match serde_json::from_str::<Variant>(&value.str()) {
         Ok(v) => v,
         Err(_) => Variant::SqlNull,
     }
@@ -600,7 +605,7 @@ pub fn to_json_nullN(_value: Option<()>) -> Option<SqlString> {
 
 #[doc(hidden)]
 pub fn regexp_replace3___(str: SqlString, re: SqlString, repl: SqlString) -> SqlString {
-    let re = Regex::new(re.str()).ok();
+    let re = Regex::new(&re.str()).ok();
     regexp_replaceC3___(str, &re, repl)
 }
 
@@ -617,7 +622,7 @@ some_function2!(regexp_replace2, SqlString, SqlString, SqlString);
 pub fn regexp_replaceC3___(str: SqlString, re: &Option<Regex>, repl: SqlString) -> SqlString {
     match re {
         None => str,
-        Some(re) => SqlString::from_ref(re.replace_all(str.str(), repl.str()).as_ref()),
+        Some(re) => SqlString::from_ref(&re.replace_all(&str.str(), &repl.str())),
     }
 }
 
@@ -666,10 +671,10 @@ pub fn regexp_replaceC2N_(str: Option<SqlString>, re: &Option<Regex>) -> Option<
 #[doc(hidden)]
 pub fn concat_ws___(sep: SqlString, left: SqlString, right: SqlString) -> SqlString {
     let mut result = String::with_capacity(left.len() + right.len() + sep.len());
-    result.push_str(left.str());
-    result.push_str(sep.str());
-    result.push_str(right.str());
-    SqlString::from(result)
+    result.push_str(&left.str());
+    result.push_str(&sep.str());
+    result.push_str(&right.str());
+    SqlString::from_ref(&result)
 }
 
 #[doc(hidden)]
