@@ -74,7 +74,6 @@ public class VariantTests extends BaseSQLTests {
         DBSPZSetExpression expectedOutput = new DBSPZSetExpression(new DBSPTupleExpression(fields));
         InputOutputChange change = new InputOutputChange(new Change(), new Change(expectedOutput));
         ccs.addChange(change);
-        this.addRustTestCase(ccs);
     }
 
     @Test

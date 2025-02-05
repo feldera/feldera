@@ -37,7 +37,6 @@ public class StructTests extends SqlIoTest {
                          result | weight
                         -----------------
                          2| 1""");
-        this.addRustTestCase(ccs);
     }
 
     @Test
@@ -62,7 +61,6 @@ public class StructTests extends SqlIoTest {
                 -----------------------------
                  0        | 3 | 1
                  4        | 7 | 1""");
-        this.addRustTestCase(ccs);
     }
 
     @Test
@@ -97,7 +95,6 @@ public class StructTests extends SqlIoTest {
         DBSPZSetExpression input = new DBSPZSetExpression(pair);
         DBSPZSetExpression output = new DBSPZSetExpression(new DBSPTupleExpression(address0));
         ccs.addPair(new Change(input), new Change(output));
-        this.addRustTestCase(ccs);
     }
 
     @Test
@@ -137,7 +134,6 @@ public class StructTests extends SqlIoTest {
                         new DBSPStringLiteral("CA", true),
                         new DBSPStringLiteral("90000", true))));
         ccs.addPair(new Change(input), new Change(output));
-        this.addRustTestCase(ccs);
     }
 
     @Test
@@ -150,7 +146,7 @@ public class StructTests extends SqlIoTest {
             """;
         DBSPCompiler compiler = this.testCompiler();
         compiler.submitStatementsForCompilation(ddl);
-        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
+        CompilerCircuitStream ccs = this.getCCS(compiler);
         DBSPExpression pers = new DBSPTupleExpression(true,
                 new DBSPArrayExpression(true,
                     new DBSPStringLiteral("Broadway", true),
@@ -160,7 +156,6 @@ public class StructTests extends SqlIoTest {
         DBSPZSetExpression output = new DBSPZSetExpression(new DBSPTupleExpression(
                         new DBSPStringLiteral("Broadway", true)));
         ccs.addPair(new Change(input), new Change(output));
-        this.addRustTestCase(ccs);
     }
 
     @Test
@@ -185,7 +180,6 @@ public class StructTests extends SqlIoTest {
                 new DBSPTupleExpression(
                         new DBSPStringLiteral("1st Street", true)));
         ccs.addPair(new Change(input), new Change(output));
-        this.addRustTestCase(ccs);
     }
 
     @Test
@@ -224,7 +218,6 @@ public class StructTests extends SqlIoTest {
                 new DBSPTupleExpression(new DBSPI32Literal(4, true), t),
                 new DBSPTupleExpression(new DBSPI32Literal(5, true), t));
         ccs.addPair(new Change(input), new Change(output));
-        this.addRustTestCase(ccs);
     }
 
     @Test
@@ -236,7 +229,7 @@ public class StructTests extends SqlIoTest {
             CREATE VIEW V AS SELECT A.s + 1 FROM (T CROSS JOIN UNNEST(T.col.fields) A)""";
         DBSPCompiler compiler = this.testCompiler();
         compiler.submitStatementsForCompilation(ddl);
-        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
+        CompilerCircuitStream ccs = this.getCCS(compiler);
         DBSPBoolLiteral t = new DBSPBoolLiteral(true, true);
         DBSPExpression t0 = new DBSPTupleExpression(true,
                 new DBSPArrayExpression(true,
@@ -259,7 +252,6 @@ public class StructTests extends SqlIoTest {
                 new DBSPTupleExpression(new DBSPI32Literal(5, true)),
                 new DBSPTupleExpression(new DBSPI32Literal(6, true)));
         ccs.addPair(new Change(input), new Change(output));
-        this.addRustTestCase(ccs);
     }
 
     @Test
@@ -271,7 +263,7 @@ public class StructTests extends SqlIoTest {
             CREATE VIEW V AS SELECT A.s + 1 FROM (T CROSS JOIN UNNEST(T.col.fields) WITH ORDINALITY A)""";
         DBSPCompiler compiler = this.testCompiler();
         compiler.submitStatementsForCompilation(ddl);
-        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
+        CompilerCircuitStream ccs = this.getCCS(compiler);
         DBSPBoolLiteral t = new DBSPBoolLiteral(true, true);
         DBSPExpression t0 = new DBSPTupleExpression(true,
                 new DBSPArrayExpression(true,
@@ -294,7 +286,6 @@ public class StructTests extends SqlIoTest {
                 new DBSPTupleExpression(new DBSPI32Literal(5, true)),
                 new DBSPTupleExpression(new DBSPI32Literal(6, true)));
         ccs.addPair(new Change(input), new Change(output));
-        this.addRustTestCase(ccs);
     }
 
     @Test
@@ -314,7 +305,7 @@ public class StructTests extends SqlIoTest {
             """;
         DBSPCompiler compiler = this.testCompiler();
         compiler.submitStatementsForCompilation(ddl);
-        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
+        CompilerCircuitStream ccs = this.getCCS(compiler);
         DBSPExpression address0 = new DBSPTupleExpression(true,
                 new DBSPStringLiteral("Broadway", true),
                 new DBSPStringLiteral("New York", true),
@@ -330,7 +321,6 @@ public class StructTests extends SqlIoTest {
         DBSPZSetExpression input = new DBSPZSetExpression(data);
         DBSPZSetExpression output = new DBSPZSetExpression(new DBSPTupleExpression(address0));
         ccs.addPair(new Change(input), new Change(output));
-        this.addRustTestCase(ccs);
     }
 
     @Test
@@ -344,7 +334,7 @@ public class StructTests extends SqlIoTest {
             """;
         DBSPCompiler compiler = this.testCompiler();
         compiler.submitStatementsForCompilation(ddl);
-        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
+        CompilerCircuitStream ccs = this.getCCS(compiler);
         DBSPType tuple = new DBSPTypeTuple(
                 new DBSPTypeInteger(CalciteObject.EMPTY, 32, true, true),
                 DBSPTypeString.varchar(true)
@@ -352,6 +342,5 @@ public class StructTests extends SqlIoTest {
         DBSPExpression address0 = tuple.none();
         DBSPZSetExpression input = new DBSPZSetExpression(new DBSPTupleExpression(address0));
         ccs.addPair(new Change(input), new Change());
-        this.addRustTestCase(ccs);
     }
 }

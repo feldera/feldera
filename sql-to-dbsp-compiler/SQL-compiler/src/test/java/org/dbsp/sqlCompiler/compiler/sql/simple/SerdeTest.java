@@ -31,7 +31,7 @@ public class SerdeTest extends SqlIoTest {
         // This test behaves very differently if we don't use this option.
         compiler.options.languageOptions.unquotedCasing = "lower";
         compiler.submitStatementsForCompilation(ddl);
-        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
+        CompilerCircuitStream ccs = this.getCCS(compiler);
         // This will be converted properly to a struct
         DBSPExpression address0 = new DBSPTupleExpression(
                 new DBSPStringLiteral("{ \"NUMBER\": 2 }", true)
@@ -54,7 +54,6 @@ public class SerdeTest extends SqlIoTest {
         DBSPZSetExpression input = new DBSPZSetExpression(address0, address1, invalid, invalidJson);
         DBSPZSetExpression output = new DBSPZSetExpression(person0, person0);
         ccs.addPair(new Change(input), new Change(output));
-        this.addRustTestCase(ccs);
     }
 
     @Test
@@ -79,7 +78,7 @@ public class SerdeTest extends SqlIoTest {
         // This test behaves very differently if we don't use this option.
         compiler.options.languageOptions.unquotedCasing = "lower";
         compiler.submitStatementsForCompilation(ddl);
-        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
+        CompilerCircuitStream ccs = this.getCCS(compiler);
         DBSPExpression addressIn0 = new DBSPTupleExpression(
                 new DBSPStringLiteral("{ \"city\": \"Boston\", \"street\": \"Main\", \"number\": 10 }", true)
         );
@@ -103,6 +102,5 @@ public class SerdeTest extends SqlIoTest {
                         new DBSPStringLiteral("Boston", true),
                         new DBSPStringLiteral("Main", true),
                         new DBSPTypeInteger(CalciteObject.EMPTY, 32, true, true).none()))), output1));
-        this.addRustTestCase(ccs);
     }
 }

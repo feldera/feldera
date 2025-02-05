@@ -84,7 +84,6 @@ public class RegressionTests extends SqlIoTest {
                   c | weight
                  ------------
                   0 | 1""");
-        this.addRustTestCase(ccs);
     }
 
     @Test
@@ -217,7 +216,7 @@ public class RegressionTests extends SqlIoTest {
 
     @Test
     public void issue3109() {
-        var ccs = this.getCCS("""
+        var cc = this.getCC("""
                 CREATE TYPE other_type AS (s string);
                 
                 CREATE TYPE my_type AS (
@@ -231,13 +230,13 @@ public class RegressionTests extends SqlIoTest {
                     select content_flat.*
                     from t, unnest(t.content) as content_flat
                 );""");
-        CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
+        CircuitVisitor visitor = new CircuitVisitor(cc.compiler) {
             @Override
             public void postorder(DBSPMapOperator operator) {
                 throw new RuntimeException("Map operator should have been eliminated");
             }
         };
-        visitor.apply(ccs.circuit);
+        cc.visit(visitor);
     }
 
     @Test
@@ -270,7 +269,6 @@ public class RegressionTests extends SqlIoTest {
                 ------------------
                  true | 1
                  true | 1""");
-        this.addRustTestCase(ccs);
     }
 
     @Test
@@ -300,7 +298,7 @@ public class RegressionTests extends SqlIoTest {
 
     @Test
     public void issue3095() {
-        var ccs = this.getCCS("""
+        var cc = this.getCC("""
                 CREATE FUNCTION udf(input INT) RETURNS INT;
                 CREATE TABLE T (p int);
                 
@@ -310,13 +308,13 @@ public class RegressionTests extends SqlIoTest {
                 CREATE VIEW V1 AS
                 SELECT f+1, f+2 FROM V0;""");
         int[] functionCalls = new int[] { 0 };
-        InnerVisitor visitor = new InnerVisitor(ccs.compiler) {
+        InnerVisitor visitor = new InnerVisitor(cc.compiler) {
             @Override
             public void postorder(DBSPApplyExpression node) {
                 ++functionCalls[0];
             }
         };
-        visitor.getCircuitVisitor(false).apply(ccs.circuit);
+        cc.visit(visitor.getCircuitVisitor(false));
         assert functionCalls[0] == 1;
     }
 
@@ -599,7 +597,6 @@ public class RegressionTests extends SqlIoTest {
                 CREATE TABLE t2(z int, w int);
                 CREATE VIEW W AS SELECT * FROM t1 LEFT JOIN t2 on x = z;""";
         var ccs = this.getCCS(sql);
-        this.addRustTestCase(ccs);
         ccs.step("""
                 INSERT INTO t1 VALUES(1, 0), (1, 0), (2, 0), (3, 0);
                 INSERT INTO t2 VALUES(1, 1), (2, 2);
@@ -640,8 +637,7 @@ public class RegressionTests extends SqlIoTest {
                 CREATE VIEW v as
                 SELECT city, country
                 FROM data, UNNEST(cities) WITH ORDINALITY AS city;""";
-        var ccs = this.getCCS(sql);
-        this.addRustTestCase(ccs);
+        this.getCCS(sql);
     }
 
     @Test
@@ -676,8 +672,7 @@ public class RegressionTests extends SqlIoTest {
                     select (CAST(output AS VARIANT))['output_type'] from tx, UNNEST(outputs) AS t (output)
                 );
                 """;
-        var ccs = this.getCCS(sql);
-        this.addRustTestCase(ccs);
+        this.getCCS(sql);
     }
 
     @Test
@@ -709,9 +704,9 @@ public class RegressionTests extends SqlIoTest {
                     nmap2nmap(m)
                 FROM t;""";
         // This is not executed, since the udfs have no definitions
-        var ccs = this.getCCS(sql);
+        var cc = this.getCC(sql);
         // Test that code generation does not crash
-        ToRustVisitor.toRustString(ccs.compiler, ccs.circuit);
+        ToRustVisitor.toRustString(cc.compiler, cc.getCircuit());
     }
 
     @Test
@@ -747,7 +742,6 @@ public class RegressionTests extends SqlIoTest {
                          result | weight
                         ------------------
                          {2,5} | 1""");
-        this.addRustTestCase(ccs);
     }
 
     @Test
@@ -764,7 +758,6 @@ public class RegressionTests extends SqlIoTest {
                  f_c1 | f_c2 | weight
                 ----------------------
                     5 |    5 |     1""");
-        this.addRustTestCase(ccs);
     }
 
     @Test
@@ -787,11 +780,12 @@ public class RegressionTests extends SqlIoTest {
                 CREATE TABLE sum(c1 TINYINT);
                 CREATE VIEW sum_view AS SELECT SUM(c1) AS c1 FROM sum;
                 """;
-        CompilerCircuitStream ccs = this.getCCS(sql);
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.submitStatementsForCompilation(sql);
+        CompilerCircuitStream ccs = this.getCCSFailing(compiler, "overflow");
         ccs.step("INSERT INTO sum VALUES (127), (1);",
                 " result" +
                         "---------");
-        this.addFailingRustTestCase("issue2316", "overflow", ccs);
     }
 
     @Test
@@ -895,7 +889,6 @@ public class RegressionTests extends SqlIoTest {
                          result | weight
                         -------------------
                          1970-04-26 17:46:40 | 1""");
-        this.addRustTestCase(ccs);
     }
 
     @Test
@@ -950,7 +943,6 @@ public class RegressionTests extends SqlIoTest {
                          value  | weight
                         ----------------
                           10020 | 1""");
-        this.addRustTestCase(ccs);
     }
 
     @Test
@@ -974,7 +966,6 @@ public class RegressionTests extends SqlIoTest {
                  c1       | c2      | weight
                 -----------------------------
                  38083.53 | 53752.5 | 1""");
-        this.addRustTestCase(ccs);
     }
 
     @Test
@@ -991,7 +982,6 @@ public class RegressionTests extends SqlIoTest {
                  value | weight
                 ----------------
                   2    | 1""");
-        this.addRustTestCase(ccs);
     }
 
     @Test
@@ -1036,7 +1026,6 @@ public class RegressionTests extends SqlIoTest {
                  2  | 10   | 10   |        | 1
                  30 | 12   | 10   | 10     | 1
                  50 | 13   | 12   | 10     | 1""");
-        this.addRustTestCase(ccs);
     }
 
     @Test
@@ -1066,7 +1055,6 @@ public class RegressionTests extends SqlIoTest {
                        -----------------
                          0 |    | 1
                          1 |    | 1""");
-        this.addRustTestCase(ccs);
     }
 
     @Test
@@ -1463,7 +1451,6 @@ public class RegressionTests extends SqlIoTest {
                         0  | 7   | 26 | 26 | 26 | 26 | 1
                         1  | 2   | 2  | 2  | 2  | 2  | 1"""
         );
-        this.addRustTestCase(ccs);
     }
 
     @Test
@@ -1744,7 +1731,6 @@ public class RegressionTests extends SqlIoTest {
                 ---------------------
                  0  |     2 | 1
                  1  |     2 | 1""");
-        this.addRustTestCase(ccs);
     }
 
     @Test
@@ -1850,7 +1836,6 @@ public class RegressionTests extends SqlIoTest {
                 """
                   id | mentioned_id
                  -------------------""");
-        this.addRustTestCase(ccs);
     }
 
     @Test

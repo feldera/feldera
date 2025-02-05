@@ -1231,8 +1231,7 @@ public class PostgresStringTests extends SqlIoTest {
                 CREATE VIEW example_count AS
                 SELECT COUNT(*) FROM example WHERE name LIKE 'abc%' OR name LIKE name;
                 """;
-        CompilerCircuitStream ccs = this.getCCS(sql);
-        this.addRustTestCase(ccs);
+        this.getCCS(sql);
     }
 
     // TODO: bytea computations

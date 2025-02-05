@@ -4,6 +4,7 @@ import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.TestUtil;
 import org.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests;
+import org.dbsp.sqlCompiler.compiler.sql.tools.CompilerCircuit;
 import org.dbsp.sqlCompiler.compiler.sql.tools.CompilerCircuitStream;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
@@ -19,9 +20,8 @@ public class TpchTest extends BaseSQLTests {
         DBSPCompiler compiler = new DBSPCompiler(options);
         options.languageOptions.ignoreOrderBy = true;
         compiler.submitStatementsForCompilation(tpch);
-        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
+        CompilerCircuitStream ccs = this.getCCS(compiler);
         ccs.showErrors();
-        this.addRustTestCase(ccs);
     }
 
     @Test
@@ -34,9 +34,9 @@ public class TpchTest extends BaseSQLTests {
         DBSPCompiler compiler = new DBSPCompiler(options);
         options.languageOptions.ignoreOrderBy = true;
         compiler.submitStatementsForCompilation(tpch);
-        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
-        ccs.showErrors();
-        InnerVisitor visitor = new InnerVisitor(ccs.compiler) {
+        CompilerCircuit cc = new CompilerCircuit(compiler);
+        cc.showErrors();
+        InnerVisitor visitor = new InnerVisitor(cc.compiler) {
             @Override
             public DBSPCompiler compiler() {
                 return super.compiler();
@@ -47,7 +47,6 @@ public class TpchTest extends BaseSQLTests {
                 assert type.size() < 17;
             }
         };
-        visitor.getCircuitVisitor(false).apply(ccs.circuit);
-        this.addRustTestCase(ccs);
+        cc.visit(visitor.getCircuitVisitor(false));
     }
 }

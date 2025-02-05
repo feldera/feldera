@@ -26,7 +26,6 @@ public class IncrementalRecursiveTests extends BaseSQLTests {
                  v | weight
                 ------------
                  1 | 1""");
-        this.addRustTestCase(ccs);
         CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
             int recursive = 0;
             @Override
@@ -38,7 +37,7 @@ public class IncrementalRecursiveTests extends BaseSQLTests {
                 Assert.assertEquals(1, this.recursive);
             }
         };
-        visitor.apply(ccs.circuit);
+        ccs.visit(visitor);
     }
 
     @Test
@@ -59,7 +58,6 @@ public class IncrementalRecursiveTests extends BaseSQLTests {
                  v | weight
                 ------------
                  2 | 1""");
-        this.addRustTestCase(ccs);
     }
 
     @Test
@@ -84,7 +82,6 @@ public class IncrementalRecursiveTests extends BaseSQLTests {
                  v | weight
                 ------------
                  2 | 1""");
-        this.addRustTestCase(ccs);
     }
 
     @Test
@@ -294,7 +291,6 @@ public class IncrementalRecursiveTests extends BaseSQLTests {
                 ---------------
                 0 | 1 | -1
                 0 | 2 | -1""");
-        this.addRustTestCase(ccs);
     }
 
     @Test
@@ -314,7 +310,6 @@ public class IncrementalRecursiveTests extends BaseSQLTests {
                  3 |        10 | 1
                  4 |        30 | 1
                  5 |       120 | 1""");
-        this.addRustTestCase(ccs);
     }
 
     @Test
@@ -339,7 +334,6 @@ public class IncrementalRecursiveTests extends BaseSQLTests {
                   8 | 1
                   9 | 1
                  10 | 1""");
-        this.addRustTestCase(ccs);
     }
 
     @Test
@@ -388,6 +382,5 @@ public class IncrementalRecursiveTests extends BaseSQLTests {
                       9 |          3 | Paul|          2 | 1
                      10 |          4 | Kunal|         2 | 1
                      11 |          5 | Pranav|        2 | 1""");
-        this.addRustTestCase(ccs);
     }
 }
