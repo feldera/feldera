@@ -1971,7 +1971,7 @@ pub fn cast_to_LongInterval_YEARS_s(value: SqlString) -> SqlResult<LongInterval>
 }
 
 static YEARS_TO_MONTHS: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^(-?\d+)(-(\d+))?$").unwrap());
+    LazyLock::new(|| Regex::new(r"^([-+]?\d+)(-(\d+))?$").unwrap());
 
 #[doc(hidden)]
 #[inline]
@@ -2038,20 +2038,20 @@ cast_function!(LongInterval, LongInterval, LongInterval, LongInterval);
 cast_function!(ShortInterval, ShortInterval, ShortInterval, ShortInterval);
 
 static DAYS_TO_HOURS: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^(-)?(\d+)\s+(\d{1,2})$").unwrap());
+    LazyLock::new(|| Regex::new(r"^([+-])?(\d+)\s+(\d{1,2})$").unwrap());
 static DAYS_TO_MINUTES: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^(-)?(\d+)\s+(\d{1,2}):(\d{1,2})$").unwrap());
+    LazyLock::new(|| Regex::new(r"^([+-])?(\d+)\s+(\d{1,2}):(\d{1,2})$").unwrap());
 static DAYS_TO_SECONDS: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"^(-)?(\d+)\s+(\d{1,2}):(\d{1,2}):(\d{1,2})([.](\d{1,6}))?$").unwrap()
 });
 static HOURS_TO_MINUTES: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^(-)?(\d+):(\d{1,2})$").unwrap());
+    LazyLock::new(|| Regex::new(r"^([+-])?(\d+):(\d{1,2})$").unwrap());
 static HOURS_TO_SECONDS: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^(-)?(\d+):(\d{1,2}):(\d{1,2})([.](\d{1,6}))?$").unwrap());
+    LazyLock::new(|| Regex::new(r"^([+-])?(\d+):(\d{1,2}):(\d{1,2})([.](\d{1,6}))?$").unwrap());
 static MINUTES_TO_SECONDS: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^(-)?(\d+):(\d{1,2})([.](\d{1,6}))?$").unwrap());
+    LazyLock::new(|| Regex::new(r"^([+-])?(\d+):(\d{1,2})([.](\d{1,6}))?$").unwrap());
 static SECONDS: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^(-)?(\d+)([.](\d{1,6}))?$").unwrap());
+    LazyLock::new(|| Regex::new(r"^([+-])?(\d+)([.](\d{1,6}))?$").unwrap());
 
 fn validate_unit(value: i64, name: &str, max: i64) {
     if num::abs(value) >= max {
@@ -2091,7 +2091,7 @@ pub fn cast_to_ShortInterval_HOURS_s(value: SqlString) -> SqlResult<ShortInterva
 
 #[doc(hidden)]
 pub fn negative(captures: &Captures) -> bool {
-    captures.get(1).is_some()
+    captures.get(1).is_some() && captures.get(1).unwrap().as_str() == "-"
 }
 
 #[doc(hidden)]
