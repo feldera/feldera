@@ -27,27 +27,24 @@ public class CatalogTests extends BaseSQLTests {
 
     @Test
     public void issue3262() {
-        var ccs = this.getCCS("""
+        this.getCCS("""
                   CREATE TABLE T(p MAP<VARCHAR, ROW(k VARCHAR, v VARCHAR)>);
                   CREATE VIEW V AS SELECT p['a'].k FROM T;""");
-        this.addRustTestCase(ccs);
     }
 
     @Test
     public void testArray() {
-        var ccs = this.getCCS("""
+        this.getCCS("""
                   CREATE TYPE X AS (x INT);
                   CREATE TABLE T(p int array, m MAP<INT, X ARRAY>);
                   CREATE VIEW V AS SELECT p[1], m[2][3] FROM T;""");
-        this.addRustTestCase(ccs);
     }
 
     @Test
     public void nullableRow() {
-        var ccs = this.getCCS("""
+        this.getCCS("""
                   CREATE TABLE T(p ROW(k VARCHAR, v VARCHAR));
                   CREATE VIEW V AS SELECT t.p.k FROM T;""");
-        this.addRustTestCase(ccs);
     }
 
     @Test
@@ -319,8 +316,7 @@ public class CatalogTests extends BaseSQLTests {
                 "αβγ" boolean not null,
                 ΔΘ boolean not null);
                 create view v1 as select * from t1;""";
-        CompilerCircuitStream ccs = this.getCCS(sql);
-        this.addRustTestCase(ccs);
+        this.getCCS(sql);
     }
 
     @Test
@@ -470,8 +466,7 @@ public class CatalogTests extends BaseSQLTests {
                 -- Number of vulnerabilities.
                 -- Most severe vulnerability.
                 -- create view k8scluster_vulnerability_stats ();""";
-        CompilerCircuitStream ccs = this.getCCS(statements);
-        this.addRustTestCase(ccs);
+        this.getCCS(statements);
     }
 
     // Test for https://github.com/feldera/feldera/issues/1151
@@ -480,8 +475,7 @@ public class CatalogTests extends BaseSQLTests {
         // This is identical to ComplexQueriesTest.primaryKeyTest, but here
         // we generate code in a different way.
         String sql = "CREATE TABLE event_t ( id BIGINT NOT NULL PRIMARY KEY, local_event_dt DATE )";
-        CompilerCircuitStream ccs = this.getCCS(sql);
-        this.addRustTestCase(ccs);
+        this.getCCS(sql);
     }
 
     @Test
@@ -496,8 +490,7 @@ public class CatalogTests extends BaseSQLTests {
                    int2 bigint,
                    primary key(id1, id2)
                 )""";
-        CompilerCircuitStream ccs = this.getCCS(sql);
-        this.addRustTestCase(ccs);
+        this.getCCS(sql);
     }
 
     @Test
@@ -509,7 +502,6 @@ public class CatalogTests extends BaseSQLTests {
                    'materialized' = 'true'
                 );
                 create materialized view V as SELECT * FROM T;""";
-        CompilerCircuitStream ccs = this.getCCS(sql);
-        this.addRustTestCase(ccs);
+        this.getCCS(sql);
     }
 }

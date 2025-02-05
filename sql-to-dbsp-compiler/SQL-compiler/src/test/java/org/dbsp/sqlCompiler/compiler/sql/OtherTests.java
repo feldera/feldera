@@ -309,8 +309,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
             compiler.options.ioOptions.emitHandles = false;
             compiler.options.languageOptions.incrementalize = true;
             compiler.submitStatementsForCompilation(script);
-            CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
-            this.addRustTestCase(ccs);
+            this.getCCS(compiler);
         }
     }
 
@@ -575,7 +574,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
     public void testRemove() {
         DBSPCompiler compiler = this.testCompiler();
         compiler.submitStatementForCompilation("CREATE TABLE T(I INTEGER, S VARCHAR)");
-        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
+        CompilerCircuitStream ccs = this.getCCS(compiler);
         Change change = ccs.toChange("""
                 INSERT INTO T VALUES(1, 'x');
                 REMOVE FROM T VALUES(2, 'Y');

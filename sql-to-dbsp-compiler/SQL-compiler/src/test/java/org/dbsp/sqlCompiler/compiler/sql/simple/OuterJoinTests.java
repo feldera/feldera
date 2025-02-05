@@ -5,6 +5,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.sql.tools.CompilerCircuit;
 import org.dbsp.sqlCompiler.compiler.sql.tools.CompilerCircuitStream;
 import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -72,32 +73,32 @@ public class OuterJoinTests extends SqlIoTest {
 
     @Test
     public void testCommonIndex() {
-        CompilerCircuitStream ccs;
+        CompilerCircuit cc;
         CheckCommonIndex cci;
 
         String common = """
                 CREATE TABLE T(X INT, Y INT NOT NULL);
                 CREATE TABLE S(X INT, Y INT NOT NULL);""";
 
-        ccs = this.getCCS(common +
+        cc = this.getCC(common +
                 "CREATE VIEW YX AS SELECT * FROM T LEFT JOIN S ON T.Y = S.X;");
-        cci = new CheckCommonIndex(ccs.compiler, true);
-        cci.apply(ccs.circuit);
+        cci = new CheckCommonIndex(cc.compiler, true);
+        cc.visit(cci);
 
-        ccs = this.getCCS(common +
+        cc = this.getCCS(common +
                 "CREATE VIEW YY AS SELECT * FROM T LEFT JOIN S ON T.Y = S.Y;");
-        cci = new CheckCommonIndex(ccs.compiler, true);
-        cci.apply(ccs.circuit);
+        cci = new CheckCommonIndex(cc.compiler, true);
+        cc.visit(cci);
 
-        ccs = this.getCCS(common +
+        cc = this.getCCS(common +
                 "CREATE VIEW XX AS SELECT * FROM T LEFT JOIN S ON T.X = S.X;");
-        cci = new CheckCommonIndex(ccs.compiler, true);
-        cci.apply(ccs.circuit);
+        cci = new CheckCommonIndex(cc.compiler, true);
+        cc.visit(cci);
 
-        ccs = this.getCCS(common +
+        cc = this.getCCS(common +
                 "CREATE VIEW XY AS SELECT * FROM T LEFT JOIN S ON T.X = S.Y;");
-        cci = new CheckCommonIndex(ccs.compiler, true);
-        cci.apply(ccs.circuit);
+        cci = new CheckCommonIndex(cc.compiler, true);
+        cc.visit(cci);
     }
 
     @Test
@@ -586,17 +587,17 @@ public class OuterJoinTests extends SqlIoTest {
 
     @Test
     public void issue3448() {
-        var ccs = this.getCCS("""
+        var cc = this.getCC("""
                 CREATE TABLE T1(a INT, b INT, c INT, d INT, e INT);
                 CREATE TABLE T2(l INT, m INT, n INT, o INT, p INT);
                 CREATE VIEW V AS
                 select a, l from t1 left join t2 on t1.a = t2.l and t1.b < t2.m;""");
-        InnerVisitor visitor = new InnerVisitor(ccs.compiler) {
+        InnerVisitor visitor = new InnerVisitor(cc.compiler) {
             @Override
             public void postorder(DBSPTypeTuple type) {
                 Assert.assertTrue(type.size() < 7);
             }
         };
-        visitor.getCircuitVisitor(false).apply(ccs.circuit);
+        cc.visit(visitor.getCircuitVisitor(false));
     }
 }
