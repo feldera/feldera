@@ -11,8 +11,7 @@ categories = ["database", "api-bindings", "network-programming"]
 publish = true
 
 [features]
-default = []
-interned_string = ["internment"]
+arcstring = []
 
 [dependencies]
 thiserror = "1.0"
@@ -38,7 +37,7 @@ flate2 = "1.0.28"
 metrics = { version = "0.23.0" }
 base64 = "0.22.1"
 uuid = { version = "1.11.0", features = ["v4", "std"] }
-internment = { version = "0.8.5", features = ["arc"], optional = true }
+internment = { version = "0.8.5", features = ["arc"] }
 
 [dev-dependencies]
 serde_json = "1.0.107"

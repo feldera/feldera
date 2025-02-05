@@ -1,10 +1,4 @@
-//! SQL String operations.
-//!
-
-// This module contains two implementations of an immutable reference-counted
-// string type: a version wrapped in `Arc` and an interned string.  The former
-// is enabled by default.  The latter misses rkyv trait implementations and
-// has poor performance in preliminary benchmarks.
+//! SQL String operations
 
 #![allow(non_snake_case)]
 use crate::{
@@ -14,62 +8,47 @@ use crate::{
 
 use core::fmt::Error;
 use feldera_types::{deserialize_without_context, serialize_without_context};
-#[cfg(feature = "interned_string")]
+#[cfg(not(feature = "arcstring"))]
 use internment::ArcIntern;
 use like::{Escape, Like};
 use regex::Regex;
-use serde::{Deserialize, Serialize};
+use rkyv::Fallible;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use size_of::{Context, SizeOf};
 use std::{
+    borrow::Cow,
     cmp::{max, min},
     fmt::{Display, Formatter},
     sync::Arc,
 };
 
-#[cfg(feature = "interned_string")]
+#[cfg(not(feature = "arcstring"))]
 type StringRef = ArcIntern<String>;
 
-#[cfg(not(feature = "interned_string"))]
+#[cfg(feature = "arcstring")]
 type StringRef = Arc<String>;
 
-/// An immutable reference counted string.
-#[derive(
-    Clone,
-    Default,
-    Debug,
-    Eq,
-    Hash,
-    Ord,
-    PartialEq,
-    PartialOrd,
-    Serialize,
-    Deserialize,
-    rkyv::Archive,
-    rkyv::Serialize,
-    rkyv::Deserialize,
-)]
-#[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
-#[serde(transparent)]
+#[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct SqlString(StringRef);
 
 /// String representation used by the Feldera SQL runtime
 impl SqlString {
-    #[cfg(not(feature = "interned_string"))]
+    #[cfg(feature = "arcstring")]
     pub fn new() -> Self {
-        Self::default()
+        SqlString(StringRef::new("".to_string()))
     }
 
-    #[cfg(not(feature = "interned_string"))]
+    #[cfg(feature = "arcstring")]
     pub fn from_ref(value: &str) -> Self {
-        SqlString(StringRef::from(value.to_string()))
+        SqlString(StringRef::new(value))
     }
 
-    #[cfg(feature = "interned_string")]
+    #[cfg(not(feature = "arcstring"))]
     pub fn new() -> Self {
-        Self::default()
+        SqlString(StringRef::new("".to_string()))
     }
 
-    #[cfg(feature = "interned_string")]
+    #[cfg(not(feature = "arcstring"))]
     pub fn from_ref(value: &str) -> Self {
         SqlString(StringRef::from_ref(value))
     }
@@ -84,6 +63,25 @@ impl SqlString {
 
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
+    }
+}
+
+impl Serialize for SqlString {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        self.str().serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for SqlString {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let str: Cow<'de, str> = Deserialize::deserialize(deserializer)?;
+        Ok(Self::from_ref(&str))
     }
 }
 
@@ -117,6 +115,41 @@ impl From<&str> for SqlString {
 impl SizeOf for SqlString {
     fn size_of_children(&self, context: &mut Context) {
         self.str().size_of_children(context)
+    }
+}
+
+impl rkyv::Archive for SqlString {
+    type Archived = ();
+    type Resolver = ();
+    unsafe fn resolve(&self, _pos: usize, _resolver: Self::Resolver, _out: *mut Self::Archived) {
+        todo!()
+    }
+}
+
+impl<D> rkyv::Deserialize<SqlString, D> for ()
+where
+    D: Fallible + ?Sized,
+{
+    fn deserialize(&self, _deserializer: &mut D) -> Result<SqlString, D::Error> {
+        todo!()
+    }
+}
+
+impl<D> rkyv::Deserialize<SqlString, D> for SqlString
+where
+    D: Fallible + ?Sized,
+{
+    fn deserialize(&self, _deserializer: &mut D) -> Result<SqlString, D::Error> {
+        todo!()
+    }
+}
+
+impl<S> rkyv::Serialize<S> for SqlString
+where
+    S: Fallible + ?Sized,
+{
+    fn serialize(&self, _serializer: &mut S) -> Result<Self::Resolver, S::Error> {
+        todo!()
     }
 }
 

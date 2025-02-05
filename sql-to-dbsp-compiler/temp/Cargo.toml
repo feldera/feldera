@@ -6,7 +6,7 @@ publish = false
 
 [features]
 default = []
-interned_string = ["feldera-sqllib/interned_string"]
+arcstring = ["feldera-sqllib/arcstring"]
 
 [dependencies]
 paste = { version = "1.0.12" }
