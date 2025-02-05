@@ -414,9 +414,8 @@ public class AggregateCompiler implements ICompilerComponent {
             }
         }
 
-        DBSPExpression binOp = new DBSPConditionalAggregateExpression(
+        return new DBSPConditionalAggregateExpression(
                 node, op, resultType, left.applyCloneIfNeeded(), right.applyCloneIfNeeded(), filter);
-        return binOp.cast(type, false);
     }
 
     void processMinMax(SqlMinMaxAggFunction function) {
@@ -543,7 +542,7 @@ public class AggregateCompiler implements ICompilerComponent {
                     node, aggregatedValue.getType(),
                     DBSPOpcode.MUL_WEIGHT, aggregatedValue, this.compiler.weightVar);
             increment = this.aggregateOperation(
-                    node, DBSPOpcode.AGG_ADD, this.resultType,
+                    node, DBSPOpcode.AGG_ADD_NON_NULL, this.resultType,
                     accumulator, weighted, this.filterArgument());
             String semigroupName = "DefaultSemigroup";
             if (accumulator.getType().mayBeNull)

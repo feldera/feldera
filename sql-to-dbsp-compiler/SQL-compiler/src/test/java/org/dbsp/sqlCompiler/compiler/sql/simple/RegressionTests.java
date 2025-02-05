@@ -432,6 +432,26 @@ public class RegressionTests extends SqlIoTest {
     }
 
     @Test
+    public void issue3361() {
+        var ccs = this.getCCS("""
+                CREATE TABLE dt(id INT, c1 DECIMAL(6,2), c2 DECIMAL(6,2) NOT NULL);
+                
+                CREATE VIEW V AS SELECT
+                STDDEV_SAMP(c1) AS c1,
+                STDDEV_SAMP(c2) AS c2
+                FROM dt;""");
+        ccs.step("""
+                INSERT INTO dt VALUES
+                   (0, 1111.52, 2231.90),
+                   (0, NULL, 3802.71),
+                   (1, 5681.08, 7689.88),
+                   (1, 5681.08, 7335.88);""", """
+                                c1 |                c2 | weight
+                ------------------------------------------------
+                 2638.236696078146 | 2677.472353338437 | 1""");
+    }
+
+    @Test
     public void issue3030() {
         this.compileRustTestCase("""
                 CREATE TABLE timestamp_tbl(c1 TIMESTAMP, c2 TIMESTAMP);

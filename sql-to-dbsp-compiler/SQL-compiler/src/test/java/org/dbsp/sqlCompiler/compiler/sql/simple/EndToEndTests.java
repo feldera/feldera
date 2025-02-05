@@ -234,6 +234,15 @@ public class EndToEndTests extends BaseSQLTests {
         this.testQuery(query, new DBSPZSetExpression(t, t));
     }
 
+
+    @Test
+    public void overAvgTest() {
+        String query = "SELECT T.COL1, AVG(T.COL6) OVER (ORDER BY T.COL1 RANGE UNBOUNDED PRECEDING) FROM T";
+        DBSPExpression t = new DBSPTupleExpression(
+                new DBSPI32Literal(10), new DBSPDecimalLiteral(0, true));
+        this.testQuery(query, new DBSPZSetExpression(t, t));
+    }
+
     @Test
     public void lagTest() {
         String query = "SELECT T.COL1, LAG(T.COL1) OVER (ORDER BY T.COL1) FROM T";
