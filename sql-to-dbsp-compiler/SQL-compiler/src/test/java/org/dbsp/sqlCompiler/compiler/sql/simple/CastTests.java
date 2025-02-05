@@ -187,6 +187,12 @@ public class CastTests extends SqlIoTest {
                  13 months
                 (1 row)
                 
+                SELECT CAST('+1-1' AS INTERVAL YEAR TO MONTH);
+                 i
+                ---
+                 13 months
+                (1 row)
+                
                 SELECT CAST('-1-1' AS INTERVAL YEAR TO MONTH);
                  i
                 ---
@@ -289,7 +295,7 @@ public class CastTests extends SqlIoTest {
                  61.1 secs ago
                 (1 row)
                 
-                SELECT CAST('1:1.111111' AS INTERVAL MINUTES TO SECONDS);
+                SELECT CAST('+1:1.111111' AS INTERVAL MINUTES TO SECONDS);
                  i
                 ---
                  61.111 secs
