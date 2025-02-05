@@ -38,7 +38,6 @@ import java.util.Objects;
 
 import static java.util.Objects.requireNonNull;
 import static org.apache.calcite.sql.type.OperandTypes.family;
-import static org.apache.calcite.sql.type.OperandTypes.sequence;
 import static org.apache.calcite.sql.type.ReturnTypes.ARG1;
 import static org.apache.calcite.util.Static.RESOURCE;
 

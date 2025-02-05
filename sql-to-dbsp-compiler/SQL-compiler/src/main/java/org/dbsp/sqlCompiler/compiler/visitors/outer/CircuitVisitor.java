@@ -51,7 +51,7 @@ public abstract class CircuitVisitor
     /** Used to force startVisit to call the base class,
      * since only the base class can access this object. */
     public static class Token {
-        private Token() {};
+        private Token() {}
     }
     static final Token TOKEN_INSTANCE = new Token();
 

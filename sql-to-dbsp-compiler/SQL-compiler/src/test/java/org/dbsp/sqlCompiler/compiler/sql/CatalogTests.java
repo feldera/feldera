@@ -5,7 +5,6 @@ import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests;
-import org.dbsp.sqlCompiler.compiler.sql.tools.CompilerCircuitStream;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
@@ -149,9 +148,9 @@ public class CatalogTests extends BaseSQLTests {
         String sql = """
                 CREATE TABLE t4(c0 BOOLEAN, c1 DOUBLE, c2 VARCHAR);
                 CREATE MATERIALIZED VIEW v1(c0, c1, c2) AS (SELECT t4.c2, t4.c0, t4.c0 FROM t4 WHERE t4.c0);""";
-        var ccs = this.getCCS(sql);
+        var cc = this.getCC(sql);
         // TestUtil.assertMessagesContain does not work for warnings is 'quiet' = true.
-        assert ccs.compiler.messages.messages.toString()
+        assert cc.compiler.messages.messages.toString()
                 .contains("Column 'c1' of table 't4' is unused");
     }
 

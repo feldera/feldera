@@ -35,7 +35,7 @@ public abstract class SqlIoTest extends BaseSQLTests {
         Optimized,
         Unoptimized,
         Both
-    };
+    }
 
     public CompilerOptions getOptions(boolean optimize) {
         CompilerOptions options = new CompilerOptions();

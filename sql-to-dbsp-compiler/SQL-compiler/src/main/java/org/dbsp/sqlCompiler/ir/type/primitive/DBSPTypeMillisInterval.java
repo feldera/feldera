@@ -54,7 +54,7 @@ public class DBSPTypeMillisInterval
         DAYS_TO_SECONDS,
         HOURS_TO_SECONDS,
         MINUTES_TO_SECONDS,
-    };
+    }
 
     public final Units units;
 

@@ -18,7 +18,7 @@ import org.junit.Ignore;
 import org.junit.Test;
 
 public class RegressionTests extends SqlIoTest {
-    @Test @Ignore
+    @Test
     public void issue3418() {
         this.compileRustTestCase("""
                 create table t (r ROW(j VARCHAR));
@@ -293,7 +293,6 @@ public class RegressionTests extends SqlIoTest {
                  2  | 1
                     | 3
                  3  | 1""");
-        this.addRustTestCase(ccs);
     }
 
     @Test
@@ -431,6 +430,7 @@ public class RegressionTests extends SqlIoTest {
 
     @Test
     public void issue3361() {
+        // Validated on Postgres, which however produces higher precision results.
         var ccs = this.getCCS("""
                 CREATE TABLE dt(id INT, c1 DECIMAL(6,2), c2 DECIMAL(6,2) NOT NULL);
                 
@@ -444,9 +444,9 @@ public class RegressionTests extends SqlIoTest {
                    (0, NULL, 3802.71),
                    (1, 5681.08, 7689.88),
                    (1, 5681.08, 7335.88);""", """
-                                c1 |                c2 | weight
-                ------------------------------------------------
-                 2638.236696078146 | 2677.472353338437 | 1""");
+                      c1 |      c2 | weight
+                ----------------------------
+                 2638.23 | 2677.47 | 1""");
     }
 
     @Test
@@ -1783,13 +1783,13 @@ public class RegressionTests extends SqlIoTest {
                 CAST((c2) AS VARCHAR) AS c2
                 FROM double_tbl;""");
         ccs.step("""
-                INSERT INTO double_tbl values(
+                INSERT INTO double_tbl values
                    (-34567891.312, 98765432.12),
-                   (8765432.147, -2344579.923));""", """
+                   (8765432.147, -2344579.923);""", """
                  c1            |            c2 | weight
                 ----------------------------------------
                  -34567891.312 | 98765432.12   | 1
-                 8765432.147   | -2344579.923) | 1""");
+                 8765432.147   | -2344579.923  | 1""");
     }
 
     @Test

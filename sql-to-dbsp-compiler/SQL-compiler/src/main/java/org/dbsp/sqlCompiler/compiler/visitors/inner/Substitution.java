@@ -46,7 +46,6 @@ public class Substitution<K, V> extends HashMap<K, V> {
         Utilities.putNew(this, key, value);
     }
 
-    @SuppressWarnings("MethodDoesntCallSuperMethod")
     public Substitution<K, V> clone() {
         return new Substitution<>(this);
     }

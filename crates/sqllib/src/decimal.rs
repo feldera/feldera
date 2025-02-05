@@ -8,6 +8,9 @@ use num_traits::Signed;
 use rust_decimal::{Decimal, MathematicalOps};
 use std::str::FromStr;
 
+// Runtime decimal type
+pub type Dec = Decimal;
+
 /***** decimals ***** */
 
 #[doc(hidden)]

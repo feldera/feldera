@@ -14,7 +14,7 @@ public class DBSPTypeVoid extends DBSPTypeBaseType {
         super(CalciteObject.EMPTY, VOID, false);
     }
 
-    public static DBSPTypeVoid INSTANCE = new DBSPTypeVoid();
+    public static final DBSPTypeVoid INSTANCE = new DBSPTypeVoid();
 
     @Override
     public void accept(InnerVisitor visitor) {

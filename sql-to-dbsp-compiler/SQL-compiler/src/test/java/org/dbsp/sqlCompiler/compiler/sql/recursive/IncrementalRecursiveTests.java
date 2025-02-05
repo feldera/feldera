@@ -86,7 +86,7 @@ public class IncrementalRecursiveTests extends BaseSQLTests {
 
     @Test
     public void issue3317() {
-        this.getCCS("""
+        this.getCC("""
                 -- Given a cell value as a formula (e.g., =A0+B0), and a context with cell values
                 -- referenced in the formula, returns the computed value of the cell
                 create function cell_value(cell varchar(64), mentions_ids bigint array, mentions_values varchar(64) array) returns varchar(64);

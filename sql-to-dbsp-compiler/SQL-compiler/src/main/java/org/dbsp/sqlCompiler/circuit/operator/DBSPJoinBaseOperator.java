@@ -27,10 +27,10 @@ public abstract class DBSPJoinBaseOperator extends DBSPBinaryOperator {
                         " does not match right input element type " + rightType.elementType;
         assert closure.parameters[0].getType().deref().sameType(leftType.keyType)  :
                 "Type of parameter 0 of join function " + closure.parameters[0].getType() +
-                        " does not match left input key type " + leftType.keyType;;
+                        " does not match left input key type " + leftType.keyType;
         assert closure.parameters[0].getType().deref().sameType(rightType.keyType) :
                 "Type of parameter 0 of join function " + closure.parameters[0].getType() +
-                        " does not match right input element type " + rightType.keyType;;
+                        " does not match right input element type " + rightType.keyType;
     }
 
     /** Replace inputs and function, preserve output type */

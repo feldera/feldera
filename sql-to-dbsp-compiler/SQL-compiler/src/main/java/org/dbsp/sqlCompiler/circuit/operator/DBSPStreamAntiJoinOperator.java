@@ -9,7 +9,6 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 
 import javax.annotation.Nullable;
 import java.util.List;
-import java.util.Objects;
 
 /** Currently there is no corespondent operator in DBSP. */
 public final class DBSPStreamAntiJoinOperator extends DBSPBinaryOperator {

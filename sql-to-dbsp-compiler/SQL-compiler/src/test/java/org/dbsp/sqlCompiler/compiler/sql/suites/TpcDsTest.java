@@ -5,7 +5,6 @@ import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.TestUtil;
 import org.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests;
 import org.dbsp.sqlCompiler.compiler.sql.tools.CompilerCircuit;
-import org.dbsp.sqlCompiler.compiler.sql.tools.CompilerCircuitStream;
 import org.junit.Test;
 
 import java.io.IOException;

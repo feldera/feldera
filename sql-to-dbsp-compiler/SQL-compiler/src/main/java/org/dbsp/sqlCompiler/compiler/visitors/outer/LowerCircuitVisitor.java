@@ -74,8 +74,10 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
             // let x1: x.1.clone();
             DBSPExpression field = rowVar.deref().field(index).applyCloneIfNeeded();
             DBSPVariablePath fieldClone = field.getType().var();
-            DBSPLetStatement stat = new DBSPLetStatement(fieldClone.variable, field);
-            statements.add(stat);
+            if (flatmap.shuffle.emitsIndex(i)) {
+                DBSPLetStatement stat = new DBSPLetStatement(fieldClone.variable, field);
+                statements.add(stat);
+            }
             resultColumns.add(fieldClone.applyCloneIfNeeded());
         }
 
@@ -84,7 +86,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
             // e.0 is usize, from the Rust library, so we do arithmetic using usize
             // and convert at the end.
         }
-        DBSPVariablePath e = new DBSPVariablePath(eType);
+        DBSPVariablePath e = eType.var();
 
         // e.0 + 1
         DBSPExpression e0plus1 = null;
