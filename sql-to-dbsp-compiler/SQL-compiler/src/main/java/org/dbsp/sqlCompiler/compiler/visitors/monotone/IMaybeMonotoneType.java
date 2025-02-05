@@ -24,7 +24,7 @@ public interface IMaybeMonotoneType extends ICastable, IHasId {
     }
     DBSPExpression projectExpression(DBSPExpression source);
 
-    IMaybeMonotoneType setMaybeNull(boolean maybeNull);
+    IMaybeMonotoneType withMaybeNull(boolean maybeNull);
 
     /** Given two monotone types, create a type that is the "union",
      * i.e., a field is monotone if it is monotone in *either* type. */

@@ -117,6 +117,7 @@ import org.dbsp.sqlCompiler.compiler.ViewMetadata;
 import org.dbsp.sqlCompiler.compiler.backend.rust.RustSqlRuntimeLibrary;
 import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
+import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.SqlToRelCompiler;
@@ -549,6 +550,12 @@ public class CalciteToDBSPCompiler extends RelVisitor
         int nextIndex = inputRowType.size();
 
         DBSPExpression[] args = new DBSPExpression[2 + ((start != null) ? 1 : 0)];
+        if (row.deref().getType().to(DBSPTypeTupleBase.class).getFieldType(timestampIndex).mayBeNull) {
+            this.compiler.reportWarning(new SourcePositionRange(call.getParserPosition()),
+                    "TUMBLE applied to nullable value",
+                    "TIMESTAMP used for TUMBLE function is nullable; this can cause runtime crashes.\n" +
+                            "We recommend filtering out null values before applying the TUMBLE function");
+        }
         args[0] = row.deref().field(timestampIndex).unwrapIfNullable();
         args[1] = interval;
         if (start != null)

@@ -57,7 +57,7 @@ public class MonotoneClosureType
     }
 
     @Override
-    public IMaybeMonotoneType setMaybeNull(boolean maybeNull) {
+    public IMaybeMonotoneType withMaybeNull(boolean maybeNull) {
         throw new UnsupportedException(this.getType().getNode());
     }
 

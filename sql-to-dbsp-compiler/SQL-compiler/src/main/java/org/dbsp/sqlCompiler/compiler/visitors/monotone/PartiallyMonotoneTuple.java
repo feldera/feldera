@@ -91,7 +91,7 @@ public class PartiallyMonotoneTuple
     }
 
     @Override
-    public IMaybeMonotoneType setMaybeNull(boolean maybeNull) {
+    public IMaybeMonotoneType withMaybeNull(boolean maybeNull) {
         return new PartiallyMonotoneTuple(this.fields, this.raw, maybeNull);
     }
 
