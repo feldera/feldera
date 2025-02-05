@@ -94,7 +94,6 @@ import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.type.IsBoundedType;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBaseType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
@@ -1409,10 +1408,10 @@ public class InsertLimiters extends CircuitCloneVisitor {
                 new DBSPStringLiteral(DBSPControlledKeyFilterOperator.LATE_ERROR),
                 // dataArg.cast(new DBSPTypeVariant(false), false)).closure(
                 new DBSPApplyExpression("format!",
-                        DBSPTypeAny.INSTANCE,
+                        DBSPTypeString.varchar(false),
                         new DBSPStrLiteral("{:?}"),
-                        dataArg).applyMethod("into", DBSPTypeString.varchar(false)))
-                .closure(controlArg.asParameter(), dataParam, valArg.asParameter(), weightArg.asParameter());
+                        dataArg)).closure(
+                        controlArg.asParameter(), dataParam, valArg.asParameter(), weightArg.asParameter());
         DBSPControlledKeyFilterOperator result = new DBSPControlledKeyFilterOperator(node, closure, error, data, control);
 
         OutputPort errorPort = result.getOutput(1);
