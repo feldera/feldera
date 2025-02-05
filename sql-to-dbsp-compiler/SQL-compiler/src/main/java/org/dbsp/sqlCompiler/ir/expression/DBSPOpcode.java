@@ -69,6 +69,8 @@ public enum DBSPOpcode {
     AGG_MIN("agg_min", true),
     // Operation which combines an accumulator and a *weighted* value
     AGG_ADD("agg_plus", true),
+    // Operation which combines an accumulator and a *weighted* value; accumulator and result are never nullable
+    AGG_ADD_NON_NULL("agg_plus_non_null", true),
     // > used in aggregation, for computing ARG_MAX.
     // NULL compares in a special way, since it means "uninitialized"
     AGG_GTE("agg_gte", true),

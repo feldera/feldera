@@ -197,12 +197,67 @@ macro_rules! some_aggregate {
 }
 pub(crate) use some_aggregate;
 
+// Macro to create variants of an aggregation function
+// There must exist a function f(left: T, right: T) -> T ($base_name is f)
+// This creates 2 more functions ($func_name = f)
+// f_t_t(left: T, right: T) -> T
+// f_tN_t(left: Option<T>, right: T) -> T
+// And 2 more functions:
+// f_t_t_conditional(left: T, right: T, predicate: bool) -> T
+// Only the right value can be null
+macro_rules! some_aggregate_non_null {
+    ($base_name: ident, $func_name:ident, $short_name: ident, $arg_type: ty) => {
+        ::paste::paste! {
+            #[doc(hidden)]
+            pub fn [<$func_name _ $short_name _ $short_name>]( left: $arg_type, right: $arg_type ) -> $arg_type {
+                $base_name(left, right)
+            }
+
+            #[doc(hidden)]
+            pub fn [<$func_name _ $short_name _ $short_name N>]( left: $arg_type, right: Option<$arg_type> ) -> $arg_type {
+                match right {
+                    None => left.clone(),
+                    Some(right) => $base_name(left, right),
+                }
+            }
+
+            #[doc(hidden)]
+            pub fn [<$func_name _ $short_name _ $short_name _conditional>]( left: $arg_type, right: $arg_type, predicate: bool ) -> $arg_type {
+                if predicate {
+                    $base_name(left, right)
+                } else {
+                    left.clone()
+                }
+            }
+
+            #[doc(hidden)]
+            pub fn [<$func_name _ $short_name _ $short_name N _conditional>]( left: $arg_type, right: Option<$arg_type>, predicate: bool ) -> $arg_type {
+                match (left.clone(), right.clone(), predicate) {
+                    (_, _, false) => left.clone(),
+                    (_, None, _) => left.clone(),
+                    (_, Some(y), _) => $base_name(left, y),
+                }
+            }
+        }
+    };
+}
+pub(crate) use some_aggregate_non_null;
+
 macro_rules! for_all_int_aggregate {
     ($base_name: ident, $func_name: ident) => {
         some_aggregate!($base_name, $func_name, i8, i8);
         some_aggregate!($base_name, $func_name, i16, i16);
         some_aggregate!($base_name, $func_name, i32, i32);
         some_aggregate!($base_name, $func_name, i64, i64);
+    };
+}
+
+macro_rules! for_all_int_aggregate_non_null {
+    ($base_name: ident, $func_name: ident) => {
+        some_aggregate_non_null!($base_name, $func_name, i8, i8);
+        some_aggregate_non_null!($base_name, $func_name, i16, i16);
+        some_aggregate_non_null!($base_name, $func_name, i32, i32);
+        some_aggregate_non_null!($base_name, $func_name, i64, i64);
     };
 }
 
@@ -344,6 +399,42 @@ some_aggregate!(agg_plus_f64, agg_plus, d, F64);
 some_aggregate!(agg_plus_decimal, agg_plus, decimal, Decimal);
 
 for_all_int_aggregate!(agg_plus, agg_plus);
+
+///
+
+#[doc(hidden)]
+pub fn agg_plus_non_null<T>(left: T, right: T) -> T
+where
+    T: CheckedAdd + Copy,
+{
+    left.checked_add(&right).expect("Addition overflow")
+}
+
+#[doc(hidden)]
+pub fn agg_plus_f32_non_null(left: F32, right: F32) -> F32 {
+    left + right
+}
+
+#[doc(hidden)]
+pub fn agg_plus_f64_non_null(left: F64, right: F64) -> F64 {
+    left + right
+}
+
+#[doc(hidden)]
+pub fn agg_plus_decimal_non_null(left: Decimal, right: Decimal) -> Decimal {
+    left + right
+}
+
+some_aggregate_non_null!(agg_plus_f32_non_null, agg_plus_non_null, f, F32);
+some_aggregate_non_null!(agg_plus_f64, agg_plus_non_null, d, F64);
+some_aggregate_non_null!(
+    agg_plus_decimal_non_null,
+    agg_plus_non_null,
+    decimal,
+    Decimal
+);
+
+for_all_int_aggregate_non_null!(agg_plus_non_null, agg_plus_non_null);
 
 #[doc(hidden)]
 #[inline(always)]
