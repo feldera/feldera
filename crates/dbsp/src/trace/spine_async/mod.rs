@@ -29,8 +29,8 @@ use rkyv::{
     Fallible, Serialize,
 };
 use size_of::{Context, SizeOf};
-use std::sync::Mutex;
-use std::sync::{Arc, MutexGuard};
+use std::sync::Arc;
+use std::sync::{atomic::AtomicUsize, atomic::Ordering, Mutex};
 use std::{
     collections::VecDeque,
     path::{Path, PathBuf},
@@ -42,6 +42,7 @@ use std::{
     sync::Condvar,
 };
 use textwrap::indent;
+use thread::Worker;
 
 mod list_merger;
 mod snapshot;
@@ -159,6 +160,11 @@ where
     request_exit: bool,
     #[size_of(skip)]
     merge_stats: MergeStats,
+
+    /// Tracks the total number of batches in `slots`, including both loose
+    /// batches and those in the process of being merged.
+    #[size_of(skip)]
+    priority: Arc<AtomicUsize>,
 }
 
 impl<B> SharedState<B>
@@ -173,6 +179,7 @@ where
             slots: std::array::from_fn(|_| Slot::default()),
             request_exit: false,
             merge_stats: MergeStats::default(),
+            priority: Arc::new(AtomicUsize::new(0)),
         }
     }
 
@@ -184,6 +191,7 @@ where
                 self.slots[Spine::<B>::size_to_level(batch.len())]
                     .loose_batches
                     .push_back(batch);
+                self.priority.fetch_add(1, Ordering::Relaxed);
             }
         }
     }
@@ -194,6 +202,7 @@ where
         debug_assert!(!batch.is_empty());
         let level = Spine::<B>::size_to_level(batch.len());
         self.slots[level].loose_batches.push_back(batch);
+        self.priority.fetch_add(1, Ordering::Relaxed);
     }
 
     fn should_apply_backpressure(&self) -> bool {
@@ -235,6 +244,8 @@ where
         for slot in &mut self.slots {
             loose_batches.extend(slot.loose_batches.drain(..));
         }
+        self.priority
+            .fetch_sub(loose_batches.len(), Ordering::Relaxed);
         loose_batches
     }
 
@@ -250,6 +261,7 @@ where
     /// with `new_batch` as the result.
     fn merge_complete(&mut self, level: usize, new_batch: Arc<B>) {
         let batches = self.slots[level].merging_batches.take().unwrap();
+        self.priority.fetch_sub(batches.len(), Ordering::Relaxed);
         let cache_stats = batches.iter().fold(CacheStats::default(), |stats, batch| {
             stats + batch.cache_stats()
         });
@@ -361,10 +373,7 @@ where
             let state = Arc::clone(&state);
             let idle = Arc::clone(&idle);
             let no_backpressure = Arc::clone(&no_backpressure);
-            Box::new(|| {
-                let mut mergers = std::array::from_fn(|_| None);
-                Box::new(move || Self::run(&mut mergers, &state, &idle, &no_backpressure))
-            })
+            Box::new(|| Box::new(MergeWorker::new(state, idle, no_backpressure)))
         });
         Self {
             state,
@@ -487,40 +496,69 @@ where
             cache_stats.metadata(meta);
         }
     }
+}
 
-    fn maybe_relieve_backpressure(
-        no_backpressure: &Arc<Condvar>,
-        state: &MutexGuard<SharedState<B>>,
-    ) {
-        if state.should_relieve_backpressure() {
-            Self::relieve_backpressure(no_backpressure);
+impl<B> Drop for AsyncMerger<B>
+where
+    B: Batch,
+{
+    fn drop(&mut self) {
+        self.state.lock().unwrap().request_exit = true;
+        BackgroundThread::wake();
+    }
+}
+
+/// The worker passed to the merge thread.
+struct MergeWorker<B>
+where
+    B: Batch,
+{
+    mergers: [Option<ListMerger<B>>; MAX_LEVELS],
+    state: Arc<Mutex<SharedState<B>>>,
+    idle: Arc<Condvar>,
+    no_backpressure: Arc<Condvar>,
+    priority: Arc<AtomicUsize>,
+}
+
+impl<B> MergeWorker<B>
+where
+    B: Batch,
+{
+    fn new(
+        state: Arc<Mutex<SharedState<B>>>,
+        idle: Arc<Condvar>,
+        no_backpressure: Arc<Condvar>,
+    ) -> Self {
+        let priority = state.lock().unwrap().priority.clone();
+        Self {
+            mergers: std::array::from_fn(|_| None),
+            state,
+            idle,
+            no_backpressure,
+            priority,
         }
     }
+}
 
-    fn relieve_backpressure(no_backpressure: &Arc<Condvar>) {
-        no_backpressure.notify_all();
-    }
-
-    fn run(
-        mergers: &mut [Option<ListMerger<B>>; MAX_LEVELS],
-        state: &Arc<Mutex<SharedState<B>>>,
-        idle: &Arc<Condvar>,
-        no_backpressure: &Arc<Condvar>,
-    ) -> WorkerStatus {
+impl<B> Worker for MergeWorker<B>
+where
+    B: Batch,
+{
+    fn run(&mut self) -> WorkerStatus {
         // Run in-progress merges.
         let ((key_filter, value_filter), frontier) = {
-            let shared = state.lock().unwrap();
+            let shared = self.state.lock().unwrap();
             (shared.get_filters(), shared.frontier.clone())
         };
 
-        for (level, m) in mergers.iter_mut().enumerate() {
+        for (level, m) in self.mergers.iter_mut().enumerate() {
             if let Some(merger) = m.as_mut() {
                 let mut fuel = 10_000;
                 merger.work(&key_filter, &value_filter, &frontier, &mut fuel);
                 if fuel > 0 {
                     let merger = m.take().unwrap();
                     let new_batch = Arc::new(merger.done());
-                    state.lock().unwrap().merge_complete(level, new_batch);
+                    self.state.lock().unwrap().merge_complete(level, new_batch);
                 }
             }
         }
@@ -530,7 +568,8 @@ where
         // Figuring out what merges to start requires the lock. Then we drop
         // the lock to actually start them, in case that's expensive (it
         // might require creating a file, for example).
-        let start_merges = state
+        let start_merges = self
+            .state
             .lock()
             .unwrap()
             .slots
@@ -542,31 +581,27 @@ where
             let merger = ListMergerBuilder::with_capacity(batches.len())
                 .with_batches(batches)
                 .build();
-            mergers[level] = Some(merger);
+            self.mergers[level] = Some(merger);
         }
 
-        let state = state.lock().unwrap();
+        let state = self.state.lock().unwrap();
         if state.request_exit {
-            Self::relieve_backpressure(no_backpressure);
+            self.no_backpressure.notify_all();
             WorkerStatus::Done
-        } else if mergers.iter().all(|m| m.is_none()) {
-            Self::relieve_backpressure(no_backpressure);
-            idle.notify_all(); // XXX is there a race here?
+        } else if self.mergers.iter().all(|m| m.is_none()) {
+            self.no_backpressure.notify_all();
+            self.idle.notify_all(); // XXX is there a race here?
             WorkerStatus::Idle
         } else {
-            Self::maybe_relieve_backpressure(no_backpressure, &state);
+            if state.should_relieve_backpressure() {
+                self.no_backpressure.notify_all();
+            }
             WorkerStatus::Busy
         }
     }
-}
 
-impl<B> Drop for AsyncMerger<B>
-where
-    B: Batch,
-{
-    fn drop(&mut self) {
-        self.state.lock().unwrap().request_exit = true;
-        BackgroundThread::wake();
+    fn priority(&self) -> usize {
+        self.priority.load(Ordering::Relaxed)
     }
 }
 
@@ -608,11 +643,7 @@ impl MergeStats {
 ///
 /// This spine works asynchronously.  The batches exposed to cursors are
 /// maintained separately from the batches currently being merged by an
-/// asynchronous thread. When one or more merges complete, the spine fetches the
-/// new (smaller) collection of batches from the thread in the next step. (It
-/// could fetch them earlier, but it might be unfriendly to expose potentially
-/// one form of data to a given cursor and then a different form to the next one
-/// within a single step.)
+/// asynchronous thread.
 pub struct Spine<B>
 where
     B: Batch,
