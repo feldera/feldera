@@ -720,7 +720,12 @@ where
     {
         op(&mut self.key_cursor).unwrap();
         unsafe { self.key_cursor.key(&mut self.key) };
-        self.val_cursor = self.key_cursor.next_column().unwrap().first().unwrap();
+        self.val_cursor = self
+            .key_cursor
+            .next_column()
+            .unwrap()
+            .first_with_hint(&self.val_cursor)
+            .unwrap();
         unsafe { self.val_cursor.item((&mut self.val, &mut self.diff)) };
     }
 

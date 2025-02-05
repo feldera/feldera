@@ -29,6 +29,7 @@ use binrw::{
 use fastbloom::BloomFilter;
 use std::fs::File;
 use std::io::ErrorKind;
+use std::mem::replace;
 use std::{
     cmp::{
         max, min,
@@ -1434,16 +1435,33 @@ where
 
     /// Return a cursor for just after the row group.
     pub fn after(&self) -> Cursor<'a, K, A, N, T> {
-        self.cursor(Position::After)
+        self.cursor(Position::After { hint: None })
     }
 
     /// Return a cursor for the first row in the row group, or just after the
     /// row group if it is empty.
     pub fn first(&self) -> Result<Cursor<'a, K, A, N, T>, Error> {
         let position = if self.is_empty() {
-            Position::After
+            Position::After { hint: None }
         } else {
             Position::for_row(self, self.rows.start)?
+        };
+        Ok(self.cursor(position))
+    }
+
+    /// Return a cursor for the first row in the row group, or just after the
+    /// row group if it is empty, using `hint` as an internal starting point for
+    /// searching the B-tree. For best performance, use a `hint` near the first
+    /// row in the row group (but the result will be correct regardless of
+    /// `hint`).
+    pub fn first_with_hint(
+        &self,
+        hint: &Cursor<'a, K, A, N, T>,
+    ) -> Result<Cursor<'a, K, A, N, T>, Error> {
+        let position = if self.is_empty() {
+            Position::After { hint: None }
+        } else {
+            Position::for_row_from_hint(self, &hint.position, self.rows.start)?
         };
         Ok(self.cursor(position))
     }
@@ -1452,7 +1470,7 @@ where
     /// row group if it is empty.
     pub fn last(&self) -> Result<Cursor<'a, K, A, N, T>, Error> {
         let position = if self.is_empty() {
-            Position::After
+            Position::After { hint: None }
         } else {
             Position::for_row(self, self.rows.end - 1)?
         };
@@ -1466,7 +1484,7 @@ where
         let position = if row < self.len() {
             Position::for_row(self, self.rows.start + row)?
         } else {
-            Position::After
+            Position::After { hint: None }
         };
         Ok(self.cursor(position))
     }
@@ -1642,7 +1660,7 @@ where
             self.position
                 .move_to_row(&self.row_group, self.row_group.rows.end - 1)
         } else {
-            self.position = Position::After;
+            self.position = Position::After { hint: None };
             Ok(())
         }
     }
@@ -1653,7 +1671,7 @@ where
             self.position
                 .move_to_row(&self.row_group, self.row_group.rows.start + row)
         } else {
-            self.position = Position::After;
+            self.position.move_after();
             Ok(())
         }
     }
@@ -1947,7 +1965,17 @@ where
             node = next.unwrap();
         }
     }
-    fn for_row_from_hint<T>(reader: &Reader<T>, hint: &Self, row: u64) -> Result<Self, Error> {
+    fn for_row_from_hint<N, T>(
+        row_group: &RowGroup<'_, K, A, N, T>,
+        hint: Option<&Self>,
+        row: u64,
+    ) -> Result<Self, Error>
+    where
+        T: ColumnSpec,
+    {
+        let Some(hint) = hint else {
+            return Self::for_row(row_group, row);
+        };
         if hint.data.rows().contains(&row) {
             return Ok(Self {
                 row,
@@ -1957,7 +1985,7 @@ where
         for (idx, index_block) in hint.indexes.iter().enumerate().rev() {
             if let Some(node) = index_block.get_child_by_row(row)? {
                 return Self::for_row_from_ancestor(
-                    reader,
+                    row_group.reader,
                     hint.indexes[0..=idx].to_vec(),
                     node,
                     row,
@@ -1982,11 +2010,18 @@ where
     fn row_group(&self) -> Result<Range<u64>, Error> {
         self.data.row_group(self.row)
     }
-    fn move_to_row<T>(&mut self, reader: &Reader<T>, row: u64) -> Result<(), Error> {
+    fn move_to_row<N, T>(
+        &mut self,
+        row_group: &RowGroup<'_, K, A, N, T>,
+        row: u64,
+    ) -> Result<(), Error>
+    where
+        T: ColumnSpec,
+    {
         if self.data.rows().contains(&row) {
             self.row = row;
         } else {
-            *self = Self::for_row_from_hint(reader, self, row)?;
+            *self = Self::for_row_from_hint(row_group, Some(self), row)?;
         }
         Ok(())
     }
@@ -2177,9 +2212,25 @@ where
     K: DataTrait + ?Sized,
     A: DataTrait + ?Sized,
 {
+    /// Before a row group.
     Before,
+
+    /// Within a row group.
     Row(Path<K, A>),
-    After,
+
+    /// After a row group.
+    ///
+    /// `hint` is optionally some position in this column. It is useful for
+    /// optimizing finding another (presumably nearby) position in the same
+    /// column. This optimizes the common case of iterating through one column
+    /// (e.g. a key in an indexed wset) and visiting all of the corresponding
+    /// values in the next column (e.g. the key's values in the indexed wset),
+    /// using [RowGroup::first_with_hint] to visit the first value of each key
+    /// after the first.
+    ///
+    /// We could add a hint to [Position::Before] but reverse iteration is
+    /// uncommon so it probably wouldn't help with much.
+    After { hint: Option<Path<K, A>> },
 }
 
 impl<K, A> Clone for Position<K, A>
@@ -2191,7 +2242,7 @@ where
         match self {
             Position::Before => Position::Before,
             Position::Row(path) => Position::Row(path.clone()),
-            Position::After => Position::After,
+            Position::After { hint } => Position::After { hint: hint.clone() },
         }
     }
 }
@@ -2207,6 +2258,20 @@ where
     {
         Ok(Self::Row(Path::for_row(row_group, row)?))
     }
+    fn for_row_from_hint<N, T>(
+        row_group: &RowGroup<'_, K, A, N, T>,
+        hint: &Self,
+        row: u64,
+    ) -> Result<Self, Error>
+    where
+        T: ColumnSpec,
+    {
+        Ok(Self::Row(Path::for_row_from_hint(
+            row_group,
+            hint.hint(),
+            row,
+        )?))
+    }
     fn next<N, T>(&mut self, row_group: &RowGroup<'_, K, A, N, T>) -> Result<(), Error>
     where
         T: ColumnSpec,
@@ -2214,12 +2279,12 @@ where
         let row = match self {
             Self::Before => row_group.rows.start,
             Self::Row(path) => path.row + 1,
-            Self::After => return Ok(()),
+            Self::After { .. } => return Ok(()),
         };
         if row < row_group.rows.end {
             self.move_to_row(row_group, row)
         } else {
-            *self = Self::After;
+            self.move_after();
             Ok(())
         }
     }
@@ -2231,14 +2296,18 @@ where
             Self::Before => (),
             Self::Row(path) => {
                 if path.row > row_group.rows.start {
-                    path.move_to_row(row_group.reader, path.row - 1)?;
+                    path.move_to_row(row_group, path.row - 1)?;
                 } else {
                     *self = Self::Before;
                 }
             }
-            Self::After => {
+            Self::After { hint } => {
                 *self = if !row_group.is_empty() {
-                    Self::Row(Path::for_row(row_group, row_group.rows.end - 1)?)
+                    Self::Row(Path::for_row_from_hint(
+                        row_group,
+                        hint.as_ref(),
+                        row_group.rows.end - 1,
+                    )?)
                 } else {
                     Self::Before
                 }
@@ -2256,19 +2325,42 @@ where
     {
         if !row_group.rows.is_empty() {
             match self {
-                Position::Before | Position::After => {
-                    *self = Self::Row(Path::for_row(row_group, row)?)
+                Position::Before => *self = Self::Row(Path::for_row(row_group, row)?),
+                Position::After { hint } => {
+                    *self = Self::Row(Path::for_row_from_hint(row_group, hint.as_ref(), row)?)
                 }
-                Position::Row(path) => path.move_to_row(row_group.reader, row)?,
+                Position::Row(path) => path.move_to_row(row_group, row)?,
             }
         }
         Ok(())
+    }
+    fn move_after(&mut self) {
+        *self = Position::After {
+            hint: self.take_hint(),
+        };
+    }
+    /// Replaces `self` by an arbitrary value and returns its prevous [Path]
+    /// (whether the current row or a hint).
+    fn take_hint(&mut self) -> Option<Path<K, A>> {
+        match replace(self, Position::Before) {
+            Position::Before => None,
+            Position::Row(hint) => Some(hint),
+            Position::After { hint } => hint,
+        }
+    }
+    /// Returns the current row or a hint for one.
+    fn hint(&self) -> Option<&Path<K, A>> {
+        match self {
+            Position::Before => None,
+            Position::Row(path) => Some(path),
+            Position::After { hint } => hint.as_ref(),
+        }
     }
     fn path(&self) -> Option<&Path<K, A>> {
         match self {
             Position::Before => None,
             Position::Row(path) => Some(path),
-            Position::After => None,
+            Position::After { .. } => None,
         }
     }
     pub unsafe fn key<'k>(&self, key: &'k mut K) -> Option<&'k mut K> {
@@ -2314,7 +2406,7 @@ where
         match Path::best_match(row_group, compare, bias)? {
             Some(path) => Ok(Position::Row(path)),
             None => Ok(if bias == Less {
-                Position::After
+                Position::After { hint: None }
             } else {
                 Position::Before
             }),
@@ -2327,7 +2419,7 @@ where
         match self {
             Position::Before => row_group.rows.start,
             Position::Row(path) => path.row,
-            Position::After => row_group.rows.end,
+            Position::After { .. } => row_group.rows.end,
         }
     }
     fn remaining_rows<N, T>(&self, row_group: &RowGroup<K, A, N, T>) -> u64
@@ -2337,7 +2429,7 @@ where
         match self {
             Position::Before => row_group.len(),
             Position::Row(path) => row_group.rows.end - path.row,
-            Position::After => 0,
+            Position::After { .. } => 0,
         }
     }
 
@@ -2356,16 +2448,15 @@ where
             Position::Before => {
                 *self = Self::best_match::<N, T, _>(row_group, compare, Less)?;
             }
-            Position::After => (),
+            Position::After { .. } => (),
             Position::Row(path) => {
                 match path.advance_to_first_ge(row_group, compare) {
-                    Ok(false) => {
-                        *self = Position::After;
-                    }
+                    Ok(false) => self.move_after(),
                     Ok(true) => (),
                     Err(error) => {
-                        // Discard `path`, which might now be invalid.
-                        *self = Position::After;
+                        // Discard `path`, which might now violate its internal
+                        // invariants (so don't even try to use it as a hint).
+                        *self = Position::After { hint: None };
                         return Err(error);
                     }
                 }
