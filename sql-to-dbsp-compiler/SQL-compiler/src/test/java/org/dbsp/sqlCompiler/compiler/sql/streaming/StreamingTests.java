@@ -1,7 +1,9 @@
 package org.dbsp.sqlCompiler.compiler.sql.streaming;
 
+import com.beust.jcommander.Parameter;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessRetainKeysOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPChainAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPControlledKeyFilterOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesOperator;
@@ -96,6 +98,41 @@ public class StreamingTests extends StreamingTestBase {
             }
         };
         ccs.visit(visitor);
+    }
+
+    @Test
+    public void issue3465() {
+        String sql = """
+                CREATE TABLE T(TS INT LATENESS 100, X INT) WITH ('append_only' = 'true');
+                CREATE VIEW V AS
+                SELECT MAX(TS * 2), MIN(TS - 2)  FROM T;""";
+        var ccs = this.getCCS(sql);
+        ccs.step("INSERT INTO T VALUES(NULL, 0);",
+                """
+                         max | min | weight
+                        --------------------
+                             |     | 1""");
+        ccs.step("INSERT INTO T VALUES(10, -10);",
+                """
+                         max | min | weight
+                        --------------------
+                             |     | -1
+                         20  |   8 | 1""");
+        ccs.step("INSERT INTO T VALUES(5, 20);",
+                """
+                         sum | max | weight
+                        --------------------
+                         20  |   8 | -1
+                         20  |   3 | 1""");
+        int[] chains = new int[1];
+        CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
+            @Override
+            public void postorder(DBSPChainAggregateOperator operator) {
+                chains[0]++;
+            }
+        };
+        ccs.visit(visitor);
+        Assert.assertEquals(1, chains[0]);
     }
 
     @Test
