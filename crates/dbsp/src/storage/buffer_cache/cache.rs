@@ -7,7 +7,7 @@ use std::borrow::Cow;
 use std::fmt::{Debug, Display};
 use std::ops::{Add, AddAssign};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, RwLock};
 use std::time::Duration;
 use std::{collections::BTreeMap, ops::Range};
 
@@ -52,10 +52,6 @@ impl CacheKey {
 struct CacheValue {
     /// Cached interpretation of `block`.
     aux: Arc<dyn CacheEntry>,
-
-    /// Serial number for LRU purposes.  Blocks with higher serial numbers have
-    /// been used more recently.
-    serial: u64,
 }
 
 pub trait CacheEntry: Send + Sync {
@@ -66,13 +62,6 @@ pub trait CacheEntry: Send + Sync {
 struct CacheInner {
     /// Cache contents.
     cache: BTreeMap<CacheKey, CacheValue>,
-
-    /// Map from LRU serial number to cache key.  The element with the smallest
-    /// serial number was least recently used.
-    lru: BTreeMap<u64, CacheKey>,
-
-    /// Serial number to use the next time we touch a block.
-    next_serial: u64,
 
     /// Sum over `cache[*].block.cost()`.
     cur_cost: usize,
@@ -85,40 +74,18 @@ impl CacheInner {
     fn new(max_cost: usize) -> Self {
         Self {
             cache: BTreeMap::new(),
-            lru: BTreeMap::new(),
-            next_serial: 0,
             cur_cost: 0,
             max_cost,
         }
     }
 
-    #[allow(dead_code)]
-    fn check_invariants(&self) {
-        assert_eq!(self.cache.len(), self.lru.len());
-        let mut cost = 0;
-        for (key, value) in self.cache.iter() {
-            assert_eq!(self.lru.get(&value.serial), Some(key));
-            cost += value.aux.cost();
-        }
-        for (serial, key) in self.lru.iter() {
-            assert_eq!(self.cache.get(key).unwrap().serial, *serial);
-        }
-        assert_eq!(cost, self.cur_cost);
-    }
-
-    fn debug_check_invariants(&self) {
-        #[cfg(debug_assertions)]
-        self.check_invariants()
-    }
-
     fn delete_file(&mut self, file_id: FileId) {
-        let offsets: Vec<_> = self
+        let offsets = self
             .cache
             .range(CacheKey::file_range(file_id))
-            .map(|(k, v)| (k.offset, v.serial))
-            .collect();
-        for (offset, serial) in offsets {
-            self.lru.remove(&serial).unwrap();
+            .map(|(k, _v)| k.offset)
+            .collect::<Vec<_>>();
+        for offset in offsets {
             self.cur_cost -= self
                 .cache
                 .remove(&CacheKey::new(file_id, offset))
@@ -126,53 +93,25 @@ impl CacheInner {
                 .aux
                 .cost();
         }
-        self.debug_check_invariants();
     }
 
-    fn get(&mut self, key: CacheKey) -> Option<Arc<dyn CacheEntry>> {
-        if let Some(value) = self.cache.get_mut(&key) {
-            self.lru.remove(&value.serial);
-            value.serial = self.next_serial;
-            self.lru.insert(value.serial, key);
-            self.next_serial += 1;
-            Some(value.aux.clone())
-        } else {
-            None
-        }
-    }
-
-    fn evict_to(&mut self, max_size: usize) {
-        while self.cur_cost > max_size {
-            let (_serial, key) = self.lru.pop_first().unwrap();
-            let value = self.cache.remove(&key).unwrap();
-            self.cur_cost -= value.aux.cost();
-        }
-        self.debug_check_invariants();
+    fn get(&self, key: CacheKey) -> Option<Arc<dyn CacheEntry>> {
+        self.cache.get(&key).map(|value| value.aux.clone())
     }
 
     fn insert(&mut self, key: CacheKey, aux: Arc<dyn CacheEntry>) {
         let cost = aux.cost();
-        self.evict_to(self.max_cost.saturating_sub(cost));
-        if let Some(old_value) = self.cache.insert(
-            key,
-            CacheValue {
-                aux,
-                serial: self.next_serial,
-            },
-        ) {
-            self.lru.remove(&old_value.serial);
+        if let Some(old_value) = self.cache.insert(key, CacheValue { aux }) {
             self.cur_cost -= old_value.aux.cost();
         }
-        self.lru.insert(self.next_serial, key);
         self.cur_cost += cost;
-        self.next_serial += 1;
-        self.debug_check_invariants();
     }
 }
 
 /// A cache on top of a storage [backend](crate::storage::backend).
-pub struct BufferCache {
-    inner: Mutex<CacheInner>,
+pub struct BufferCache
+{
+    inner: RwLock<CacheInner>,
 }
 
 impl Debug for BufferCache {
@@ -191,7 +130,7 @@ impl BufferCache {
     /// [CacheEntry::cost].
     pub fn new(max_cost: usize) -> Self {
         Self {
-            inner: Mutex::new(CacheInner::new(max_cost)),
+            inner: RwLock::new(CacheInner::new(max_cost)),
         }
     }
 
@@ -201,7 +140,7 @@ impl BufferCache {
         location: BlockLocation,
     ) -> Option<Arc<dyn CacheEntry>> {
         self.inner
-            .lock()
+            .read()
             .unwrap()
             .get(CacheKey::new(file.file_id(), location.offset))
             .clone()
@@ -209,20 +148,20 @@ impl BufferCache {
 
     pub fn insert(&self, file_id: FileId, offset: u64, aux: Arc<dyn CacheEntry>) {
         self.inner
-            .lock()
+            .write()
             .unwrap()
             .insert(CacheKey::new(file_id, offset), aux);
     }
 
     pub fn evict(&self, file: &dyn FileReader) {
-        self.inner.lock().unwrap().delete_file(file.file_id());
+        self.inner.write().unwrap().delete_file(file.file_id());
     }
 
     /// Returns `(cur_cost, max_cost)`, reporting the amount of the cache that
     /// is currently used and the maximum value, both denominated in terms of
     /// [CacheEntry::cost] for `CacheEntry`.
     pub fn occupancy(&self) -> (usize, usize) {
-        let inner = self.inner.lock().unwrap();
+        let inner = self.inner.read().unwrap();
         (inner.cur_cost, inner.max_cost)
     }
 }
