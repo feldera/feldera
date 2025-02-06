@@ -7,7 +7,7 @@ use crate::db_notifier::DbNotification;
 use crate::error::ManagerError;
 use crate::runner::error::RunnerError;
 use actix_web::{http::Method, web::Payload, HttpRequest, HttpResponse, HttpResponseBuilder};
-use awc::error::SendRequestError;
+use awc::error::{ConnectError, SendRequestError};
 use crossbeam::sync::ShardedLock;
 use std::fmt::Display;
 use std::{collections::HashMap, sync::Arc, time::Duration};
@@ -61,15 +61,31 @@ pub fn format_pipeline_url(location: &str, endpoint: &str, query_string: &str) -
 }
 
 /// Formats the error message displayed when a request to a pipeline timed out.
-/// The message includes some additional hints to debug the cause.
 pub fn format_timeout_error_message<T: Display>(timeout: Duration, error: T) -> String {
     format!(
         "timeout ({}s) was reached: this means the pipeline took too long to respond -- \
          this can simply be because the request was too difficult to process in time, \
-         or other reasons (e.g., panic, deadlock): the pipeline logs might contain \
+         or other reasons (e.g., deadlock): the pipeline logs might contain \
          additional information (original send request error: {error})",
         timeout.as_secs()
     )
+}
+
+/// Formats the error message displayed when a request to a pipeline experiences
+/// a disconnection at the HTTP connector level.
+///
+/// The original error message is:
+///   "Failed to connect to host: Internal error: connector has been disconnected"
+///
+/// ... which is replaced because it does not explain well the cause and the term
+/// "connector" refers to the `awc` HTTP connector, not a Feldera connector, which
+/// is confusing.
+pub fn format_disconnected_error_message<T: Display>(_error: T) -> String {
+    "the pipeline disconnected while it was processing this HTTP request. This could be because \
+    the pipeline either (a) encountered a fatal error or panic, (b) was shutdown, or (c) \
+    experienced network issues -- retrying might help in the last case. Alternatively, \
+    check the pipeline logs."
+        .to_string()
 }
 
 /// Helper for the API server endpoints to interact through HTTP with a pipeline or a pipeline runner.
@@ -171,6 +187,11 @@ impl RunnerInteraction {
                 SendRequestError::Timeout => RunnerError::PipelineInteractionUnreachable {
                     error: format_timeout_error_message(timeout, e),
                 },
+                SendRequestError::Connect(ConnectError::Disconnected) => {
+                    RunnerError::PipelineInteractionUnreachable {
+                        error: format_disconnected_error_message(e),
+                    }
+                }
                 _ => RunnerError::PipelineInteractionUnreachable {
                     error: format!("unable to send request due to: {e}"),
                 },
@@ -298,6 +319,11 @@ impl RunnerInteraction {
             SendRequestError::Timeout => RunnerError::PipelineInteractionUnreachable {
                 error: format_timeout_error_message(timeout, e),
             },
+            SendRequestError::Connect(ConnectError::Disconnected) => {
+                RunnerError::PipelineInteractionUnreachable {
+                    error: format_disconnected_error_message(e),
+                }
+            }
             _ => RunnerError::PipelineInteractionUnreachable {
                 error: format!("unable to send request due to: {e}"),
             },
