@@ -100,7 +100,7 @@ impl KafkaResources {
         // multiple operations are performed in parallel, so serialize calls to
         // this function.
         static LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
-        let _guard = LOCK.lock().unwrap();
+        let _guard = LOCK.lock().expect("panicking because a previous attempt to create a Kafka topic panicked already (probably the Kafka broker is down)");
 
         let mut admin_config = ClientConfig::new();
         admin_config
