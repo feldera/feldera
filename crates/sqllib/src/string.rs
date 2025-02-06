@@ -18,7 +18,10 @@ use feldera_types::{deserialize_without_context, serialize_without_context};
 use internment::ArcIntern;
 use like::{Escape, Like};
 use regex::Regex;
-use rkyv::Fallible;
+use rkyv::{
+    string::{ArchivedString, StringResolver},
+    DeserializeUnsized, Fallible, SerializeUnsized,
+};
 use serde::{Deserialize, Serialize};
 use size_of::{Context, SizeOf};
 use std::{
@@ -37,21 +40,7 @@ type StringRef = ArcIntern<String>;
 type StringRef = ArcStr;
 
 /// An immutable reference counted string.
-#[derive(
-    Clone,
-    Default,
-    Debug,
-    Eq,
-    Hash,
-    Ord,
-    PartialEq,
-    PartialOrd,
-    Serialize,
-    Deserialize,
-    // rkyv::Archive,
-    // rkyv::Serialize,
-    // rkyv::Deserialize,
-)]
+#[derive(Clone, Default, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 //#[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 #[serde(transparent)]
 pub struct SqlString(StringRef);
@@ -125,41 +114,34 @@ impl SizeOf for SqlString {
 }
 
 impl rkyv::Archive for SqlString {
-    type Archived = ();
-    type Resolver = ();
-    unsafe fn resolve(&self, _pos: usize, _resolver: Self::Resolver, _out: *mut Self::Archived) {
-        todo!()
+    type Archived = ArchivedString;
+    type Resolver = StringResolver;
+
+    #[inline]
+    unsafe fn resolve(&self, pos: usize, resolver: Self::Resolver, out: *mut Self::Archived) {
+        ArchivedString::resolve_from_str(self.str(), pos, resolver, out);
     }
 }
 
-impl<D> rkyv::Deserialize<SqlString, D> for ()
+impl<S: Fallible + ?Sized> rkyv::Serialize<S> for SqlString
 where
-    D: Fallible + ?Sized,
+    str: SerializeUnsized<S>,
 {
-    fn deserialize(&self, _deserializer: &mut D) -> Result<SqlString, D::Error> {
-        todo!()
+    #[inline]
+    fn serialize(&self, serializer: &mut S) -> Result<Self::Resolver, S::Error> {
+        ArchivedString::serialize_from_str(self.str(), serializer)
     }
 }
 
-impl<D> rkyv::Deserialize<SqlString, D> for SqlString
+impl<D: Fallible + ?Sized> rkyv::Deserialize<SqlString, D> for ArchivedString
 where
-    D: Fallible + ?Sized,
+    str: DeserializeUnsized<str, D>,
 {
-    fn deserialize(&self, _deserializer: &mut D) -> Result<SqlString, D::Error> {
-        todo!()
+    #[inline]
+    fn deserialize(&self, _: &mut D) -> Result<SqlString, D::Error> {
+        Ok(SqlString::from_ref(self.as_str()))
     }
 }
-
-impl<S> rkyv::Serialize<S> for SqlString
-where
-    S: Fallible + ?Sized,
-{
-    fn serialize(&self, _serializer: &mut S) -> Result<Self::Resolver, S::Error> {
-        todo!()
-    }
-}
-
-///////////////////////////////
 
 #[doc(hidden)]
 pub fn concat_s_s(left: SqlString, right: SqlString) -> SqlString {
@@ -746,4 +728,20 @@ pub fn concat_wsNNN(
 ) -> Option<SqlString> {
     let sep = sep?;
     Some(concat_ws_NN(sep, left, right))
+}
+
+#[doc(hidden)]
+#[cfg(test)]
+mod tests {
+    use crate::SqlString;
+    use dbsp::storage::file::to_bytes;
+    use rkyv::from_bytes;
+
+    #[test]
+    fn rkyv_serialize_deserialize_sqlstring() {
+        let s = SqlString::from_ref("abc1✅");
+        let archived = to_bytes(&s).unwrap();
+        let deserialized: SqlString = from_bytes(&archived).unwrap();
+        assert_eq!(s.str(), deserialized.str());
+    }
 }
