@@ -249,6 +249,7 @@ where
             Runtime::buffer_cache(),
             &*Runtime::storage_backend().unwrap(),
             Runtime::file_writer_parameters(),
+            self.key_count(),
         )
         .unwrap();
 
@@ -474,7 +475,7 @@ where
 {
     fn new_merger(
         batch1: &FileWSet<K, R>,
-        _batch2: &FileWSet<K, R>,
+        batch2: &FileWSet<K, R>,
         _dst_hint: Option<BatchLocation>,
     ) -> Self {
         Self {
@@ -486,6 +487,7 @@ where
                 Runtime::buffer_cache(),
                 &*Runtime::storage_backend().unwrap(),
                 Runtime::file_writer_parameters(),
+                batch1.key_count() + batch2.key_count(),
             )
             .unwrap(),
         }
@@ -797,7 +799,16 @@ where
     R: WeightTrait + ?Sized,
 {
     #[inline]
-    fn new_builder(factories: &<FileWSet<K, R> as BatchReader>::Factories, _time: ()) -> Self {
+    fn new_builder(factories: &<FileWSet<K, R> as BatchReader>::Factories, time: ()) -> Self {
+        Self::with_capacity(factories, time, 1_000_000)
+    }
+
+    #[inline]
+    fn with_capacity(
+        factories: &<FileWSet<K, R> as BatchReader>::Factories,
+        _time: (),
+        capacity: usize,
+    ) -> Self {
         Self {
             factories: factories.clone(),
             writer: Writer1::new(
@@ -805,18 +816,10 @@ where
                 Runtime::buffer_cache(),
                 &*Runtime::storage_backend().unwrap(),
                 Runtime::file_writer_parameters(),
+                capacity,
             )
             .unwrap(),
         }
-    }
-
-    #[inline]
-    fn with_capacity(
-        factories: &<FileWSet<K, R> as BatchReader>::Factories,
-        time: (),
-        _capacity: usize,
-    ) -> Self {
-        Self::new_builder(factories, time)
     }
 
     #[inline]

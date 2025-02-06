@@ -596,6 +596,7 @@ mod test {
             cache,
             &*storage_backend,
             parameters,
+            T::n0(),
         )
         .unwrap();
         let n0 = T::n0();
@@ -705,7 +706,7 @@ mod test {
             )
             .unwrap();
             let mut writer =
-                Writer1::new(&factories, cache, &*storage_backend, parameters).unwrap();
+                Writer1::new(&factories, cache, &*storage_backend, parameters, n).unwrap();
             for row in 0..n {
                 let (_before, key, _after, aux) = expected(row);
                 writer.write0((&key, &aux)).unwrap();
