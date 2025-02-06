@@ -94,17 +94,11 @@ thread_local! {
     // 0-based index of the current worker thread within its runtime.
     // Returns `0` if the current thread in not running in a multithreaded
     // runtime.
-    pub(crate) static WORKER_INDEX: Cell<usize> = const { Cell::new(0) };
+    static WORKER_INDEX: Cell<usize> = const { Cell::new(0) };
 
     /// Returns `true` if the current thread is a background thread, false
     /// otherwise.
-    pub(crate) static IS_BACKGROUND: Cell<bool> = const { Cell::new(false) };
-
-    /// Buffer cache for the thread. This is a thread-local variable
-    /// to speed-up finding the cache on a given thread.
-    ///
-    /// It is initialized by the first call to `Runtime::buffer_cache()`.
-    static BUFFER_CACHE: RefCell<Option<Arc<BufferCache<FileCacheEntry>>>> = const { RefCell::new(None) };
+    static IS_BACKGROUND: Cell<bool> = const { Cell::new(false) };
 }
 
 pub struct LocalStoreMarker;
@@ -340,26 +334,22 @@ impl Runtime {
 
         let runtime = Self(Arc::new(RuntimeInner::new(config)?));
 
-        if let Some(storage) = &runtime.0.storage {
-            let cache_size_bytes = storage
+        let cache_size_bytes = if let Some(storage) = &runtime.0.storage {
+            storage
                 .options
                 .cache_mib
                 .unwrap_or(nworkers * 256)
-                .saturating_mul(1024 * 1024);
-            // Create buffer caches for each thread.
-            for idx in 0..nworkers * 2 {
-                runtime.local_store().insert(
-                    BufferCacheId(idx),
-                    Arc::new(BufferCache::new(cache_size_bytes / nworkers)),
-                );
-            }
+                .saturating_mul(1024 * 1024)
+                / nworkers
         } else {
-            // Create a dummy buffer cache for each thread.
-            for idx in 0..nworkers * 2 {
-                runtime
-                    .local_store()
-                    .insert(BufferCacheId(idx), Arc::new(BufferCache::new(1)));
-            }
+            // Dummy buffer cache.
+            1
+        };
+        for idx in 0..nworkers * 2 {
+            runtime.local_store().insert(
+                BufferCacheId(idx),
+                Arc::new(BufferCache::new(cache_size_bytes)),
+            );
         }
 
         // Install custom panic hook.
@@ -433,28 +423,31 @@ impl Runtime {
 
     /// Returns this thread's buffer cache, if storage is configured.
     pub fn buffer_cache() -> Arc<BufferCache<FileCacheEntry>> {
-        if let Some(rt) = Runtime::runtime() {
-            // Fast path, look up from TLS
-            if let Some(buffer_cache) = BUFFER_CACHE.with(|bc| bc.borrow().clone()) {
-                return buffer_cache;
-            }
+        // Fast path, look up from TLS
+        thread_local! {
+            static BUFFER_CACHE: RefCell<Option<Arc<BufferCache<FileCacheEntry>>>> = const { RefCell::new(None) };
+        }
+        if let Some(buffer_cache) = BUFFER_CACHE.with(|bc| bc.borrow().clone()) {
+            return buffer_cache;
+        }
 
-            // Slow path, initialize the TLS BUFFER_CACHE variable.
+        // Slow path for initializing the thread-local.
+        let buffer_cache = if let Some(rt) = Runtime::runtime() {
             let cache_id = if !Runtime::is_background() {
                 BufferCacheId(Runtime::worker_index())
             } else {
                 BufferCacheId(Runtime::worker_index() + rt.num_workers())
             };
-            let cache = rt.local_store().get(&cache_id).unwrap();
-            BUFFER_CACHE.set(Some(cache.clone()));
-            cache.clone()
+            rt.local_store().get(&cache_id).unwrap().clone()
         } else {
             // No `Runtime` means there's only a single worker, so use a single
             // global cache.
             static NO_RUNTIME_CACHE: LazyLock<Arc<BufferCache<FileCacheEntry>>> =
                 LazyLock::new(|| Arc::new(BufferCache::new(1024 * 1024 * 256)));
             NO_RUNTIME_CACHE.clone()
-        }
+        };
+        BUFFER_CACHE.set(Some(buffer_cache.clone()));
+        buffer_cache
     }
 
     /// Returns the buffer caches for this thread and its background thread, if
