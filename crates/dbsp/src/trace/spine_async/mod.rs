@@ -490,9 +490,7 @@ where
             "merge backpressure wait" => MetaItem::Duration(merge_stats.backpressure_wait),
         });
 
-        if !cache_stats.is_empty() {
-            cache_stats.metadata(meta);
-        }
+        cache_stats.metadata(meta);
     }
 
     fn maybe_relieve_backpressure(
