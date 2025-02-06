@@ -24,6 +24,6 @@ public class MinMaxAggregate extends NonLinearAggregate {
 
     @Override
     public boolean compatible(AggregateBase other) {
-        return false;
+        return other.is(MinMaxAggregate.class);
     }
 }
