@@ -294,7 +294,8 @@ in a single expression.)
 
 Currently `feldera_sqlllib::Map` is defined as `type Map =
 Arc<BTreeMap>`, and `feldera_sqlllib::Array` is defined as `type Array
-= Arc<Vec>`.
+= Arc<Vec>`.  Currently `feldera_sqlllib::SqlString` is a thin wrapper
+type around the `ArcStr` type from the `arcstr` crate.
 
 ### Return types
 
