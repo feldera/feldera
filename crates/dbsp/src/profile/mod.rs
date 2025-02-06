@@ -4,6 +4,7 @@ use crate::{
     circuit::{
         circuit_builder::Node,
         metadata::{MetaItem, OperatorMeta},
+        runtime::ThreadType,
         GlobalNodeId,
     },
     monitor::{visual_graph::Graph, TraceMonitor},
@@ -493,26 +494,21 @@ impl Profiler {
                     meta.insert(0, item);
                 }
 
-                for (name, cache) in [
-                    ("cache occupancy (circuit)", Some(Runtime::buffer_cache())),
-                    ("cache occupancy (merger)", Runtime::bg_buffer_cache()),
-                ]
-                .into_iter()
-                {
-                    if let Some(cache) = cache {
-                        let (cur, max) = cache.occupancy();
-                        meta.insert(
-                            0,
-                            (
-                                Cow::Borrowed(name),
-                                MetaItem::String(format!(
-                                    "{} used (max {})",
-                                    HumanBytes::new(cur as u64),
-                                    HumanBytes::new(max as u64)
-                                )),
-                            ),
-                        );
-                    }
+                let runtime = Runtime::runtime().unwrap();
+                for thread_type in [ThreadType::Foreground, ThreadType::Background] {
+                    let cache = runtime.get_buffer_cache(Runtime::worker_index(), thread_type);
+                    let (cur, max) = cache.occupancy();
+                    meta.insert(
+                        0,
+                        (
+                            Cow::from(format!("{thread_type} cache occupancy")),
+                            MetaItem::String(format!(
+                                "{} used (max {})",
+                                HumanBytes::new(cur as u64),
+                                HumanBytes::new(max as u64)
+                            )),
+                        ),
+                    );
                 }
             }
         }
