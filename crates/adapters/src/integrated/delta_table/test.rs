@@ -9,7 +9,8 @@ use crate::test::{
 };
 use crate::{Controller, ControllerError, InputFormat};
 use anyhow::anyhow;
-use arrow::datatypes::Schema as ArrowSchema;
+use arrow::array::{BooleanArray, RecordBatch};
+use arrow::datatypes::{DataType as ArrowDataType, Field as ArrowField, Schema as ArrowSchema};
 use chrono::{DateTime, NaiveDate};
 #[cfg(feature = "delta-s3-test")]
 use dbsp::typed_batch::DynBatchReader;
@@ -24,9 +25,11 @@ use deltalake::kernel::{DataType, StructField};
 use deltalake::operations::create::CreateBuilder;
 use deltalake::protocol::SaveMode;
 use deltalake::{DeltaOps, DeltaTable, DeltaTableBuilder};
+use feldera_adapterlib::catalog::{OutputCollectionHandles, RecordFormat};
+use feldera_adapterlib::utils::datafusion::execute_singleton_query;
 use feldera_types::config::PipelineConfig;
 use feldera_types::format::json::JsonFlavor;
-use feldera_types::program_schema::{Field, Relation};
+use feldera_types::program_schema::{ColumnType, Field, Relation, SqlIdentifier};
 use feldera_types::serde_with_context::serde_config::DecimalFormat;
 use feldera_types::serde_with_context::serialize::SerializeWithContextWrapper;
 use feldera_types::serde_with_context::{
@@ -34,6 +37,7 @@ use feldera_types::serde_with_context::{
     TimestampFormat,
 };
 use feldera_types::transport::delta_table::DeltaTableIngestMode;
+use futures::io::repeat;
 use parquet::file::reader::Length;
 use proptest::collection::vec;
 use proptest::prelude::{Arbitrary, ProptestConfig, Strategy};
@@ -141,6 +145,35 @@ async fn wait_for_count_records(
     }
 }
 
+/// Wait until materialized table contains exactly `expected_count` records.
+async fn wait_for_count_records_materialized(
+    pipeline: &Controller,
+    table: &SqlIdentifier,
+    expected_count: usize,
+) {
+    let start = Instant::now();
+    loop {
+        let count = execute_singleton_query(
+            &pipeline.session_context().unwrap(),
+            &format!("select cast(count(*) as varchar) from {table}"),
+        )
+        .await
+        .unwrap();
+
+        info!("expected output table size: {expected_count}, current size: {count}");
+
+        if count == format!("{expected_count}") {
+            break;
+        }
+
+        if start.elapsed() > Duration::from_millis(20_000) {
+            panic!("timeout");
+        }
+
+        sleep(Duration::from_millis(1_000)).await;
+    }
+}
+
 /// Write `data` to `table`.
 async fn write_data_to_table<T>(
     table: DeltaTable,
@@ -156,6 +189,44 @@ where
         &SerializeWithContextWrapper::new(&data.to_vec(), &delta_output_serde_config()),
     )
     .unwrap();
+
+    // Write it to the input table.
+    DeltaOps(table)
+        .write(vec![batch])
+        .with_save_mode(SaveMode::Append)
+        .await
+        .unwrap()
+}
+
+/// Write `data` to `table` adding an extra boolean column with the specified contents.
+async fn write_data_to_table_with_extra_boolean_column<T>(
+    table: DeltaTable,
+    arrow_schema: &ArrowSchema,
+    data: &[T],
+    extra_column_name: &str,
+    extra_column: &[bool],
+) -> DeltaTable
+where
+    T: DBData + SerializeWithContext<SqlSerdeConfig> + Sync,
+{
+    // Convert data to RecordBatch
+    let batch = serde_arrow::to_record_batch(
+        arrow_schema.fields(),
+        &SerializeWithContextWrapper::new(&data.to_vec(), &delta_output_serde_config()),
+    )
+    .unwrap();
+
+    let mut columns = batch.columns().to_vec();
+    columns.push(Arc::new(BooleanArray::from(extra_column.to_vec())));
+
+    let mut fields = arrow_schema.fields().to_vec();
+    fields.push(Arc::new(ArrowField::new(
+        extra_column_name,
+        ArrowDataType::Boolean,
+        false,
+    )));
+
+    let batch = RecordBatch::try_new(Arc::new(ArrowSchema::new(fields)), columns).unwrap();
 
     // Write it to the input table.
     DeltaOps(table)
@@ -304,6 +375,50 @@ outputs:
         |workers| Ok(test_circuit::<T>(workers, &DeltaTestStruct::schema())),
         &config,
         Box::new(move |e| panic!("delta_to_delta pipeline: error: {e}")),
+    )
+    .unwrap()
+}
+
+/// Build a pipeline that reads from a delta table.
+fn delta_read_pipeline<T>(
+    input_table_uri: &str,
+    input_config: &HashMap<String, String>,
+) -> Controller
+where
+    T: DBData
+        + SerializeWithContext<SqlSerdeConfig>
+        + for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+        + Sync,
+{
+    info!("creating a pipeline to read delta table '{input_table_uri}'");
+
+    let mut input_storage_options = String::new();
+    for (key, val) in input_config.iter() {
+        input_storage_options += &format!("                {key}: \"{val}\"\n");
+    }
+
+    // Create controller.
+    let config_str = format!(
+        r#"
+name: test
+workers: 4
+inputs:
+    test_input1:
+        stream: test_input1
+        transport:
+            name: "delta_table_input"
+            config:
+                uri: "{input_table_uri}"
+{}"#,
+        input_storage_options,
+    );
+
+    let config: PipelineConfig = serde_yaml::from_str(&config_str).unwrap();
+
+    Controller::with_config(
+        |workers| Ok(test_circuit::<T>(workers, &DeltaTestStruct::schema())),
+        &config,
+        Box::new(move |e| panic!("delta_read pipeline: error: {e}")),
     )
     .unwrap()
 }
@@ -592,6 +707,108 @@ async fn test_follow(
     pipeline.stop().unwrap();
 }
 
+/// Read delta table in cdc mode.
+///
+/// ```text
+/// data --> input table in S3 ---> [pipeline]
+/// ```
+#[allow(clippy::too_many_arguments)]
+async fn test_cdc(
+    schema: &[Field],
+    input_table_uri: &str,
+    storage_options: &HashMap<String, String>,
+    data: Vec<DeltaTestStruct>,
+) {
+    init_logging();
+
+    let datafusion = SessionContext::new();
+
+    // Create arrow schema
+    let arrow_fields = relation_to_arrow_fields(schema, true);
+
+    info!("arrow_fields: {arrow_fields:?}");
+
+    let arrow_schema = Arc::new(ArrowSchema::new(arrow_fields));
+    info!("arrow_schema: {arrow_schema:?}");
+
+    let mut struct_fields: Vec<_> = vec![];
+
+    for f in arrow_schema.fields.iter() {
+        let data_type = DataType::try_from(f.data_type()).unwrap();
+        struct_fields.push(StructField::new(f.name(), data_type, f.is_nullable()));
+    }
+
+    // Delta table has the same schema as the SQL table plus __delete column.
+    struct_fields.push(StructField::new("__delete", DataType::BOOLEAN, false));
+
+    // Create delta table at `input_table_uri`.
+    let mut input_table = create_table(input_table_uri, storage_options, &struct_fields).await;
+
+    // Start pipeline.
+    let mut input_config = storage_options.clone();
+
+    input_config.insert("mode".to_string(), "cdc".to_string());
+    input_config.insert(
+        "cdc_delete_filter".to_string(),
+        "__delete = true".to_string(),
+    );
+    input_config.insert("cdc_order_by".to_string(), "bigint".to_string());
+
+    let input_table_uri_clone = input_table_uri.to_string();
+
+    let pipeline = tokio::task::spawn_blocking(move || {
+        delta_read_pipeline::<DeltaTestStruct>(&input_table_uri_clone, &input_config)
+    })
+    .await
+    .unwrap();
+
+    pipeline.start();
+
+    let mut total_count = 0;
+
+    // Write data in 10 chunks, wait for it to show up in the output view.
+    for chunk in data.chunks(std::cmp::max(data.len() / 10, 1)) {
+        input_table = write_data_to_table_with_extra_boolean_column(
+            input_table,
+            &arrow_schema,
+            chunk,
+            "__delete",
+            &vec![false; chunk.len()],
+        )
+        .await;
+        total_count += chunk.len();
+
+        wait_for_count_records_materialized(
+            &pipeline,
+            &SqlIdentifier::from("test_output1"),
+            total_count,
+        )
+        .await;
+    }
+
+    // Delete data chunk by chunk.
+    for chunk in data.chunks(std::cmp::max(data.len() / 10, 1)) {
+        input_table = write_data_to_table_with_extra_boolean_column(
+            input_table,
+            &arrow_schema,
+            chunk,
+            "__delete",
+            &vec![true; chunk.len()],
+        )
+        .await;
+        total_count -= chunk.len();
+
+        wait_for_count_records_materialized(
+            &pipeline,
+            &SqlIdentifier::from("test_output1"),
+            total_count,
+        )
+        .await;
+    }
+
+    pipeline.stop().unwrap();
+}
+
 /// Generate up to `max_records` _unique_ records.
 fn delta_data(max_records: usize) -> impl Strategy<Value = Vec<DeltaTestStruct>> {
     vec(DeltaTestStruct::arbitrary(), 0..max_records).prop_map(|vec| {
@@ -629,6 +846,67 @@ async fn delta_table_follow_file_test_common(snapshot: bool) {
         snapshot,
         1000,
         100,
+    )
+    .await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn delta_table_cdc_file_test() {
+    // We cannot use proptest macros in `async` context, so generate
+    // some random data manually.
+    let mut runner = TestRunner::default();
+    let data = delta_data(20_000).new_tree(&mut runner).unwrap().current();
+
+    let relation_schema = DeltaTestStruct::schema();
+
+    let input_table_dir = TempDir::new().unwrap();
+    let input_table_uri = input_table_dir.path().display().to_string();
+
+    let output_table_dir: TempDir = TempDir::new().unwrap();
+    let output_table_uri = output_table_dir.path().display().to_string();
+
+    test_cdc(&relation_schema, &input_table_uri, &HashMap::new(), data).await;
+}
+
+#[cfg(feature = "delta-s3-test")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn delta_table_cdc_s3_test() {
+    register_storage_handlers();
+
+    // We cannot use proptest macros in `async` context, so generate
+    // some random data manually.
+    let mut runner = TestRunner::default();
+    let data = delta_data(20_000).new_tree(&mut runner).unwrap().current();
+
+    let relation_schema = DeltaTestStruct::schema();
+
+    let input_uuid = uuid::Uuid::new_v4();
+    let output_uuid = uuid::Uuid::new_v4();
+
+    let object_store_config = [
+        (
+            "aws_access_key_id".to_string(),
+            std::env::var("DELTA_TABLE_TEST_AWS_ACCESS_KEY_ID").unwrap(),
+        ),
+        (
+            "aws_secret_access_key".to_string(),
+            std::env::var("DELTA_TABLE_TEST_AWS_SECRET_ACCESS_KEY").unwrap(),
+        ),
+        // AWS region must be specified (see https://github.com/delta-io/delta-rs/issues/1095).
+        ("aws_region".to_string(), "us-east-2".to_string()),
+        ("AWS_S3_ALLOW_UNSAFE_RENAME".to_string(), "true".to_string()),
+    ]
+    .into_iter()
+    .collect::<HashMap<_, _>>();
+
+    let input_table_uri = format!("s3://feldera-delta-table-test/{input_uuid}/");
+    let output_table_uri = format!("s3://feldera-delta-table-test/{output_uuid}/");
+
+    test_cdc(
+        &relation_schema,
+        &input_table_uri,
+        &object_store_config,
+        data,
     )
     .await;
 }

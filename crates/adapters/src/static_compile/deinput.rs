@@ -23,6 +23,7 @@ use feldera_types::format::csv::CsvParserConfig;
 use feldera_types::serde_with_context::{DeserializeWithContext, SqlSerdeConfig};
 use serde_arrow::Deserializer as ArrowDeserializer;
 use std::hash::Hasher;
+use std::iter::zip;
 use std::{collections::VecDeque, marker::PhantomData, mem::swap, ops::Neg};
 
 /// A deserializer that parses byte arrays into a strongly typed representation.
@@ -580,6 +581,27 @@ where
         Ok(())
     }
 
+    fn insert_with_polarities(&mut self, data: &RecordBatch, polarities: &[bool]) -> AnyResult<()> {
+        if polarities.len() != data.num_rows() {
+            // This should never happen. We could use an assertion here, but since the `polarities` array
+            // is computed by datafusion, we'll throw an error just to be safe.
+            bail!("insert_with_polarities: RecordBatch contains {} records, but 'polarities' array has length {}", data.num_rows(), polarities.len());
+        }
+
+        let deserializer = ArrowDeserializer::from_record_batch(data)?;
+        let deserializer =
+            &mut <dyn ErasedDeserializer>::erase(deserializer) as &mut dyn ErasedDeserializer;
+
+        let records = Vec::<D>::deserialize_with_context(deserializer, &self.config)?;
+
+        self.buffer.updates.extend(
+            zip(records, polarities)
+                .map(|(record, polarity)| Tup2(K::from(record), if *polarity { 1 } else { -1 })),
+        );
+
+        Ok(())
+    }
+
     fn fork(&self) -> Box<dyn ArrowStream> {
         Box::new(Self::new(self.buffer.handle.clone(), self.config.clone()))
     }
@@ -960,6 +982,25 @@ where
 
     fn fork(&self) -> Box<dyn ArrowStream> {
         Box::new(Self::new(self.buffer.handle.clone(), self.config.clone()))
+    }
+
+    fn insert_with_polarities(&mut self, data: &RecordBatch, polarities: &[bool]) -> AnyResult<()> {
+        if polarities.len() != data.num_rows() {
+            // This should never happen. We could use an assertion here, but since the `polarities` array
+            // is computed by datafusion, we'll throw an error just to be safe.
+            bail!("insert_with_polarities: RecordBatch contains {} records, but 'polarities' array has length {}", data.num_rows(), polarities.len());
+        }
+
+        let deserializer = ArrowDeserializer::from_record_batch(data)?;
+        let deserializer =
+            &mut <dyn ErasedDeserializer>::erase(deserializer) as &mut dyn ErasedDeserializer;
+
+        let records = Vec::<D>::deserialize_with_context(deserializer, &self.config)?;
+        self.buffer.updates.extend(
+            zip(records, polarities).map(|(record, polarity)| Tup2(K::from(record), *polarity)),
+        );
+
+        Ok(())
     }
 }
 
@@ -1478,6 +1519,35 @@ where
             self.value_key_func.clone(),
             self.config.clone(),
         ))
+    }
+
+    fn insert_with_polarities(&mut self, data: &RecordBatch, polarities: &[bool]) -> AnyResult<()> {
+        if polarities.len() != data.num_rows() {
+            // This should never happen. We could use an assertion here, but since the `polarities` array
+            // is computed by datafusion, we'll throw an error just to be safe.
+            bail!("insert_with_polarities: RecordBatch contains {} records, but 'polarities' array has length {}", data.num_rows(), polarities.len());
+        }
+
+        let deserializer = ArrowDeserializer::from_record_batch(data)?;
+        let deserializer =
+            &mut <dyn ErasedDeserializer>::erase(deserializer) as &mut dyn ErasedDeserializer;
+
+        let records = Vec::<VD>::deserialize_with_context(deserializer, &self.config)?;
+        self.buffer
+            .updates
+            .extend(zip(records, polarities).map(|(record, polarity)| {
+                let v = V::from(record);
+                Tup2(
+                    (self.value_key_func)(&v),
+                    if *polarity {
+                        Update::Insert(v)
+                    } else {
+                        Update::Delete
+                    },
+                )
+            }));
+
+        Ok(())
     }
 }
 
