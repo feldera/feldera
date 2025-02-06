@@ -3,7 +3,7 @@
 //! This is a layer over a storage backend that adds a cache of a
 //! client-provided function of the blocks.
 use std::borrow::Cow;
-use std::fmt::Debug;
+use std::fmt::{Debug, Display};
 use std::ops::{Add, AddAssign};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
@@ -13,6 +13,7 @@ use std::{collections::BTreeMap, ops::Range};
 use enum_map::{Enum, EnumMap};
 
 use crate::circuit::metadata::{MetaItem, OperatorMeta};
+use crate::circuit::runtime::ThreadType;
 use crate::storage::backend::{BlockLocation, FileId, FileReader};
 
 /// A key for the block cache.
@@ -240,23 +241,19 @@ where
 
 /// Cache statistics that can be accessed atomically for multithread updates.
 #[derive(Debug, Default)]
-pub struct AtomicCacheStats(EnumMap<CacheAccess, AtomicCacheCounts>);
+pub struct AtomicCacheStats(EnumMap<ThreadType, EnumMap<CacheAccess, AtomicCacheCounts>>);
 
 impl AtomicCacheStats {
     /// Records that `location` was access in the cache with effect `access`.
     pub fn record(&self, access: CacheAccess, duration: Duration, location: BlockLocation) {
-        self.0[access].count.fetch_add(1, Ordering::Relaxed);
-        self.0[access]
-            .bytes
-            .fetch_add(location.size as u64, Ordering::Relaxed);
-        self.0[access]
-            .elapsed_ns
-            .fetch_add(duration.as_nanos() as u64, Ordering::Relaxed);
+        self.0[ThreadType::current()][access].record(duration, location);
     }
 
     /// Reads out the statistics for processing.
     pub fn read(&self) -> CacheStats {
-        CacheStats(EnumMap::from_fn(|access| self.0[access].read()))
+        CacheStats(EnumMap::from_fn(|thread_type| {
+            EnumMap::from_fn(|access| self.0[thread_type][access].read())
+        }))
     }
 }
 
@@ -270,11 +267,11 @@ pub enum CacheAccess {
     Miss,
 }
 
-impl CacheAccess {
-    fn name(&self) -> &'static str {
+impl Display for CacheAccess {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Hit => "cache hits",
-            Self::Miss => "cache misses",
+            Self::Hit => write!(f, "cache hits"),
+            Self::Miss => write!(f, "cache misses"),
         }
     }
 }
@@ -293,6 +290,14 @@ pub struct AtomicCacheCounts {
 }
 
 impl AtomicCacheCounts {
+    pub fn record(&self, duration: Duration, location: BlockLocation) {
+        self.count.fetch_add(1, Ordering::Relaxed);
+        self.bytes
+            .fetch_add(location.size as u64, Ordering::Relaxed);
+        self.elapsed_ns
+            .fetch_add(duration.as_nanos() as u64, Ordering::Relaxed);
+    }
+
     /// Reads out the counts for processing.
     fn read(&self) -> CacheCounts {
         CacheCounts {
@@ -305,27 +310,31 @@ impl AtomicCacheCounts {
 
 /// Cache access statistics.
 #[derive(Copy, Clone, Debug, Default)]
-pub struct CacheStats(pub EnumMap<CacheAccess, CacheCounts>);
+pub struct CacheStats(pub EnumMap<ThreadType, EnumMap<CacheAccess, CacheCounts>>);
 
 impl CacheStats {
-    /// Are the statistics all zero?
-    pub fn is_empty(&self) -> bool {
-        self.0.values().all(CacheCounts::is_empty)
-    }
-
-    /// Adds metadata for these cache statistics to `meta`.
+    /// Adds metadata for these cache statistics to `meta`, if they are nonzero.
     pub fn metadata(&self, meta: &mut OperatorMeta) {
-        meta.extend(
-            self.0
-                .iter()
-                .map(|(access, counts)| (Cow::from(access.name()), counts.meta_item())),
-        );
+        for (thread_type, accesses) in &self.0 {
+            if !accesses.values().all(CacheCounts::is_empty) {
+                meta.extend(accesses.iter().map(|(access, counts)| {
+                    (
+                        Cow::from(format!("{thread_type} {access}")),
+                        counts.meta_item(),
+                    )
+                }));
 
-        let hits = self.0[CacheAccess::Hit].count;
-        let misses = self.0[CacheAccess::Miss].count;
-        meta.extend(metadata! {
-            "cache hit rate" => MetaItem::Percent { numerator: hits, denominator: hits + misses }
-        });
+                let hits = accesses[CacheAccess::Hit].count;
+                let misses = accesses[CacheAccess::Miss].count;
+                meta.extend([(
+                    Cow::from(format!("{thread_type} cache hit rate")),
+                    MetaItem::Percent {
+                        numerator: hits,
+                        denominator: hits + misses,
+                    },
+                )]);
+            }
+        }
     }
 }
 
@@ -340,8 +349,10 @@ impl Add for CacheStats {
 
 impl AddAssign for CacheStats {
     fn add_assign(&mut self, rhs: Self) {
-        for (access, counts) in &mut self.0 {
-            *counts += rhs.0[access];
+        for (thread_type, accesses) in &mut self.0 {
+            for (access, counts) in accesses {
+                *counts += rhs.0[thread_type][access];
+            }
         }
     }
 }
