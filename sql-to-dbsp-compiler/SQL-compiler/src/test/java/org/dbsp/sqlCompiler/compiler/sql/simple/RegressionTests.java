@@ -450,6 +450,34 @@ public class RegressionTests extends SqlIoTest {
     }
 
     @Test
+    public void issue3461() {
+        var ccs = this.getCCS("""
+                CREATE TABLE timestamp_tbl(
+                id INT,
+                c1 TIMESTAMP NOT NULL,
+                c2 TIMESTAMP);
+                
+                CREATE LOCAL VIEW ats_minus_ts AS
+                SELECT id, (c1-c2)DAY TO SECOND AS dts
+                FROM timestamp_tbl;
+                
+                CREATE LOCAL VIEW ts_minus_ts_res AS
+                SELECT id, CAST((dts) AS VARCHAR) AS dts_res
+                FROM ats_minus_ts;
+                
+                CREATE MATERIALIZED VIEW ts_minus_tssinterval AS
+                SELECT
+                c1 - CAST(v1.dts_res AS INTERVAL DAY TO SECOND)  AS dts
+                FROM ts_minus_ts_res v1
+                JOIN timestamp_tbl v2 ON v1.id = v2.id;""");
+        ccs.step("INSERT INTO timestamp_tbl VALUES(2, '1959-06-21 11:32:00', '1948-12-02 09:15:00');",
+                """
+                  dts | weight
+                 --------------
+                 1948-12-02 09:15:00 | 1""");
+    }
+
+    @Test
     public void issue3030() {
         this.compileRustTestCase("""
                 CREATE TABLE timestamp_tbl(c1 TIMESTAMP, c2 TIMESTAMP);

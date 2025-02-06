@@ -2051,7 +2051,7 @@ static DAYS_TO_HOURS: LazyLock<Regex> =
 static DAYS_TO_MINUTES: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^([+-])?(\d+)\s+(\d{1,2}):(\d{1,2})$").unwrap());
 static DAYS_TO_SECONDS: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"^(-)?(\d+)\s+(\d{1,2}):(\d{1,2}):(\d{1,2})([.](\d{1,6}))?$").unwrap()
+    Regex::new(r"^([+-])?(\d+)\s+(\d{1,2}):(\d{1,2}):(\d{1,2})([.](\d{1,6}))?$").unwrap()
 });
 static HOURS_TO_MINUTES: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^([+-])?(\d+):(\d{1,2})$").unwrap());
