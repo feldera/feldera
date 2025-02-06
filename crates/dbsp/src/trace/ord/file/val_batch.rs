@@ -634,6 +634,7 @@ where
             Runtime::buffer_cache(),
             &*Runtime::storage_backend().unwrap(),
             Runtime::file_writer_parameters(),
+            source1.key_count() + source2.key_count(),
         )
         .unwrap();
         let mut cursor1 = source1.file.rows().nth(0).unwrap();
@@ -1187,6 +1188,14 @@ where
     R: WeightTrait + ?Sized,
 {
     fn new_builder(factories: &FileValBatchFactories<K, V, T, R>, time: T) -> Self {
+        Self::with_capacity(factories, time, 1_000_000)
+    }
+
+    fn with_capacity(
+        factories: &FileValBatchFactories<K, V, T, R>,
+        time: T,
+        capacity: usize,
+    ) -> Self {
         Self {
             factories: factories.clone(),
             time,
@@ -1196,14 +1205,11 @@ where
                 Runtime::buffer_cache(),
                 &*Runtime::storage_backend().unwrap(),
                 Runtime::file_writer_parameters(),
+                capacity,
             )
             .unwrap(),
             cur: None,
         }
-    }
-
-    fn with_capacity(factories: &FileValBatchFactories<K, V, T, R>, time: T, _cap: usize) -> Self {
-        Self::new_builder(factories, time)
     }
 
     fn reserve(&mut self, _additional: usize) {}

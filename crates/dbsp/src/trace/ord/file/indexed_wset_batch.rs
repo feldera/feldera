@@ -246,6 +246,7 @@ where
             Runtime::buffer_cache(),
             &*Runtime::storage_backend().unwrap(),
             Runtime::file_writer_parameters(),
+            self.key_count(),
         )
         .unwrap();
 
@@ -559,7 +560,7 @@ where
     #[inline]
     fn new_merger(
         batch1: &FileIndexedWSet<K, V, R>,
-        _batch2: &FileIndexedWSet<K, V, R>,
+        batch2: &FileIndexedWSet<K, V, R>,
         _dst_hint: Option<BatchLocation>,
     ) -> Self {
         Self {
@@ -572,6 +573,7 @@ where
                 Runtime::buffer_cache(),
                 &*Runtime::storage_backend().unwrap(),
                 Runtime::file_writer_parameters(),
+                batch1.key_count() + batch2.key_count(),
             )
             .unwrap(),
         }
@@ -901,6 +903,15 @@ where
 {
     #[inline]
     fn new_builder(factories: &FileIndexedWSetFactories<K, V, R>, _time: ()) -> Self {
+        Self::with_capacity(factories, _time, 1_000_000)
+    }
+
+    #[inline]
+    fn with_capacity(
+        factories: &FileIndexedWSetFactories<K, V, R>,
+        _time: (),
+        capacity: usize,
+    ) -> Self {
         Self {
             factories: factories.clone(),
             writer: Writer2::new(
@@ -909,19 +920,11 @@ where
                 Runtime::buffer_cache(),
                 &*Runtime::storage_backend().unwrap(),
                 Runtime::file_writer_parameters(),
+                capacity,
             )
             .unwrap(),
             key: factories.opt_key_factory.default_box(),
         }
-    }
-
-    #[inline]
-    fn with_capacity(
-        factories: &FileIndexedWSetFactories<K, V, R>,
-        time: (),
-        _capacity: usize,
-    ) -> Self {
-        Self::new_builder(factories, time)
     }
 
     #[inline]

@@ -1013,6 +1013,7 @@ impl Writer {
         storage_backend: &dyn StorageBackend,
         parameters: Parameters,
         n_columns: usize,
+        estimated_keys: usize,
     ) -> Result<Self, StorageError> {
         assert_eq!(factories.len(), n_columns);
 
@@ -1029,7 +1030,7 @@ impl Writer {
             // It would be good to know the expected number of items in the bloom filter
             // but don't have that information here.
             bloom_filter: BloomFilter::with_false_pos(BLOOM_FILTER_FALSE_POSITIVE_RATE)
-                .expected_items(1_000_000),
+                .expected_items(estimated_keys),
             cws,
             finished_columns,
         };
@@ -1142,7 +1143,7 @@ impl Writer {
 /// let cache = Arc::new(FileCache::new(1024 * 1024));
 /// let parameters = Parameters::default();
 /// let mut file =
-///     Writer1::new(&factories, cache, &*storage_backend, parameters).unwrap();
+///     Writer1::new(&factories, cache, &*storage_backend, parameters, 1_000_000).unwrap();
 /// for i in 0..1000_u32 {
 ///     file.write0((i.erase(), ().erase())).unwrap();
 /// }
@@ -1171,6 +1172,7 @@ where
         buffer_cache: Arc<FileCache>,
         storage_backend: &dyn StorageBackend,
         parameters: Parameters,
+        estimated_keys: usize,
     ) -> Result<Self, StorageError> {
         Ok(Self {
             factories: factories.clone(),
@@ -1180,6 +1182,7 @@ where
                 storage_backend,
                 parameters,
                 1,
+                estimated_keys,
             )?,
             _phantom: PhantomData,
             #[cfg(debug_assertions)]
@@ -1273,7 +1276,7 @@ where
 /// let cache = Arc::new(FileCache::new(1024 * 1024));
 /// let parameters = Parameters::default();
 /// let mut file =
-///     Writer2::new(&factories, &factories, cache, &*storage_backend, parameters).unwrap();
+///     Writer2::new(&factories, &factories, cache, &*storage_backend, parameters, 1_000_000).unwrap();
 /// for i in 0..1000_u32 {
 ///     for j in 0..10_u32 {
 ///         file.write1((&j, &())).unwrap();
@@ -1313,6 +1316,7 @@ where
         buffer_cache: Arc<FileCache>,
         storage_backend: &dyn StorageBackend,
         parameters: Parameters,
+        estimated_keys: usize,
     ) -> Result<Self, StorageError> {
         Ok(Self {
             factories0: factories0.clone(),
@@ -1323,6 +1327,7 @@ where
                 storage_backend,
                 parameters,
                 2,
+                estimated_keys,
             )?,
             #[cfg(debug_assertions)]
             prev0: None,

@@ -554,6 +554,7 @@ where
                 Runtime::buffer_cache(),
                 &*Runtime::storage_backend().unwrap(),
                 Runtime::file_writer_parameters(),
+                batch1.key_count() + batch2.key_count(),
             )
             .unwrap(),
             time_diffs: batch1.factories.timediff_factory.default_box(),
@@ -991,6 +992,11 @@ where
 {
     #[inline]
     fn new_builder(factories: &FileKeyBatchFactories<K, T, R>, time: T) -> Self {
+        Self::with_capacity(factories, time, 1_000_000)
+    }
+
+    #[inline]
+    fn with_capacity(factories: &FileKeyBatchFactories<K, T, R>, time: T, capacity: usize) -> Self {
         Self {
             factories: factories.clone(),
             time,
@@ -1000,19 +1006,11 @@ where
                 Runtime::buffer_cache(),
                 &*Runtime::storage_backend().unwrap(),
                 Runtime::file_writer_parameters(),
+                capacity,
             )
             .unwrap(),
             key: factories.opt_key_factory.default_box(),
         }
-    }
-
-    #[inline]
-    fn with_capacity(
-        factories: &FileKeyBatchFactories<K, T, R>,
-        time: T,
-        _capacity: usize,
-    ) -> Self {
-        Self::new_builder(factories, time)
     }
 
     #[inline]
