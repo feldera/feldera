@@ -1,10 +1,13 @@
 <!-- Render text decorated by ANSI escape sequences -->
+<script lang="ts" module>
+  import { FancyAnsi } from 'fancy-ansi'
+  const fancyAnsi = new FancyAnsi()
+</script>
 
 <script lang="ts">
-  import prettyAnsi from 'pretty-ansi'
-  import '$lib/components/logs/styles.css'
-
   let { value }: { value: string } = $props()
 </script>
 
-{@html prettyAnsi(value)}
+{#if value}
+  {@html fancyAnsi.toHtml(value)}
+{/if}
