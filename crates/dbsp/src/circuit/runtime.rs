@@ -13,6 +13,7 @@ use crate::{
     },
     DetailedError,
 };
+use enum_map::EnumMap;
 use feldera_types::config::StorageCompression;
 use once_cell::sync::Lazy;
 use serde::Serialize;
@@ -95,11 +96,52 @@ thread_local! {
     // Returns `0` if the current thread in not running in a multithreaded
     // runtime.
     static WORKER_INDEX: Cell<usize> = const { Cell::new(0) };
-
-    /// Returns `true` if the current thread is a background thread, false
-    /// otherwise.
-    static IS_BACKGROUND: Cell<bool> = const { Cell::new(false) };
 }
+
+mod thread_type {
+    use std::{cell::Cell, fmt::Display};
+
+    #[cfg(doc)]
+    use super::Runtime;
+    use enum_map::Enum;
+
+    thread_local! {
+        static CURRENT: Cell<ThreadType> = const { Cell::new(ThreadType::Foreground) };
+    }
+
+    /// Type of a thread running in a [Runtime].
+    #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Enum)]
+    pub enum ThreadType {
+        /// Circuit thread.
+        Foreground,
+
+        /// Merger thread.
+        Background,
+    }
+
+    impl ThreadType {
+        /// Returns the kind of thread we're currently running in, if we're in a
+        /// [Runtime].  Outside of a [Runtime], this returns
+        /// [ThreadType::Foreground].
+        pub fn current() -> Self {
+            CURRENT.get()
+        }
+
+        pub(super) fn set_current(thread_type: Self) {
+            CURRENT.set(thread_type);
+        }
+    }
+
+    impl Display for ThreadType {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            match self {
+                ThreadType::Foreground => write!(f, "foreground"),
+                ThreadType::Background => write!(f, "background"),
+            }
+        }
+    }
+}
+pub use thread_type::ThreadType;
 
 pub struct LocalStoreMarker;
 
@@ -345,12 +387,12 @@ impl Runtime {
             // Dummy buffer cache.
             1
         };
-        for idx in 0..nworkers * 2 {
-            runtime.local_store().insert(
-                BufferCacheId(idx),
-                Arc::new(BufferCache::new(cache_size_bytes)),
-            );
-        }
+        runtime.local_store().insert(
+            BufferCacheId,
+            (0..nworkers)
+                .map(|_| EnumMap::from_fn(|_| Arc::new(BufferCache::new(cache_size_bytes))))
+                .collect::<Vec<_>>(),
+        );
 
         // Install custom panic hook.
         let default_hook = default_panic_hook();
@@ -368,7 +410,7 @@ impl Runtime {
                         // Set the worker's runtime handle and index
                         RUNTIME.with(|rt| *rt.borrow_mut() = Some(runtime));
                         WORKER_INDEX.set(worker_index);
-                        IS_BACKGROUND.set(false);
+                        ThreadType::set_current(ThreadType::Foreground);
 
                         // Build the worker's circuit
                         build_circuit();
@@ -433,12 +475,7 @@ impl Runtime {
 
         // Slow path for initializing the thread-local.
         let buffer_cache = if let Some(rt) = Runtime::runtime() {
-            let cache_id = if !Runtime::is_background() {
-                BufferCacheId(Runtime::worker_index())
-            } else {
-                BufferCacheId(Runtime::worker_index() + rt.num_workers())
-            };
-            rt.local_store().get(&cache_id).unwrap().clone()
+            rt.get_buffer_cache(Runtime::worker_index(), ThreadType::current())
         } else {
             // No `Runtime` means there's only a single worker, so use a single
             // global cache.
@@ -450,15 +487,16 @@ impl Runtime {
         buffer_cache
     }
 
-    /// Returns the buffer caches for this thread and its background thread, if
-    /// storage is configured.
-    pub fn bg_buffer_cache() -> Option<Arc<BufferCache<FileCacheEntry>>> {
-        Self::runtime().map(|rt| {
-            rt.local_store()
-                .get(&BufferCacheId(Self::worker_index() + rt.num_workers()))
-                .unwrap()
-                .clone()
-        })
+    /// Returns this runtime's buffer cache for thread type `thread_type` in
+    /// worker `worker_index`.
+    ///
+    /// Usually it's easier and faster to call [Runtime::buffer_cache] instead.
+    pub fn get_buffer_cache(
+        &self,
+        worker_index: usize,
+        thread_type: ThreadType,
+    ) -> Arc<BufferCache<FileCacheEntry>> {
+        self.local_store().get(&BufferCacheId).unwrap()[worker_index][thread_type].clone()
     }
 
     /// Returns 0-based index of the current worker thread within its runtime.
@@ -466,11 +504,6 @@ impl Runtime {
     /// multihost runtime, this is a global index across all hosts.
     pub fn worker_index() -> usize {
         WORKER_INDEX.get()
-    }
-
-    /// Indicates whether the current thread is a background thread.
-    pub fn is_background() -> bool {
-        IS_BACKGROUND.get()
     }
 
     /// Returns the minimum number of bytes in a batch to spill it to storage,
@@ -610,7 +643,7 @@ impl Runtime {
             .spawn(move || {
                 RUNTIME.with(|rt| *rt.borrow_mut() = runtime);
                 WORKER_INDEX.set(worker_index);
-                IS_BACKGROUND.set(true);
+                ThreadType::set_current(ThreadType::Background);
                 f()
             })
             .unwrap_or_else(|error| {
@@ -747,10 +780,10 @@ impl TypedMapKey<LocalStoreMarker> for WorkerId {
 }
 
 #[derive(Hash, PartialEq, Eq)]
-struct BufferCacheId(usize);
+struct BufferCacheId;
 
 impl TypedMapKey<LocalStoreMarker> for BufferCacheId {
-    type Value = Arc<BufferCache<FileCacheEntry>>;
+    type Value = Vec<EnumMap<ThreadType, Arc<BufferCache<FileCacheEntry>>>>;
 }
 
 #[cfg(test)]
