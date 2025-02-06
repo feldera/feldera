@@ -502,6 +502,26 @@ impl Runtime {
         WORKER_INDEX.get()
     }
 
+    /// Returns the worker index as a string.
+    ///
+    /// This is useful for metric labels.
+    pub fn worker_index_str() -> &'static str {
+        static WORKER_INDEX_STRS: Lazy<[&'static str; 256]> = Lazy::new(|| {
+            let mut data: [&'static str; 256] = [""; 256];
+            for (i, item) in data.iter_mut().enumerate() {
+                *item = Box::leak(i.to_string().into_boxed_str());
+            }
+            data
+        });
+
+        WORKER_INDEX_STRS
+            .get(WORKER_INDEX.get())
+            .copied()
+            .unwrap_or_else(|| {
+                panic!("Limit workers to less than 256 or increase the limit in the code.")
+            })
+    }
+
     /// Returns the minimum number of bytes in a batch to spill it to storage,
     /// or `None` if this thread doesn't have a [Runtime] or if it doesn't have
     /// storage configured.

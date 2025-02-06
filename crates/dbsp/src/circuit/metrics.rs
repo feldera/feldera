@@ -57,7 +57,7 @@ pub const COMPACTION_SIZE_SAVINGS: &str = "file.compaction_size";
 /// Compaction duration for a single batch.
 pub const COMPACTION_DURATION: &str = "file.compaction_duration";
 
-/// Time a worker was stalled waiting for more merges to complete.
+/// Time in nanoseconds a worker was stalled waiting for more merges to complete.
 pub const COMPACTION_STALL_TIME: &str = "file.compaction_stall_time";
 
 /// Number of records dropped due to LATENESS annotations
@@ -65,6 +65,12 @@ pub const TOTAL_LATE_RECORDS: &str = "records.late";
 
 /// Runtime in microseconds of an Operator evaluation
 pub const OPERATOR_EVAL_DURATION: &str = "operator.runtime_micros";
+
+/// Number of batches in the spines at each level.
+pub const BATCHES_PER_LEVEL: &str = "spine.batches_per_level";
+
+/// Number of pending merges in spines at each level.
+pub const ONGOING_MERGES_PER_LEVEL: &str = "spine.ongoing_merges";
 
 /// Creates the appropriate metric name for this metric.
 /// As these metrics are DBSP related, they are prefixed with `dbsp_`.
