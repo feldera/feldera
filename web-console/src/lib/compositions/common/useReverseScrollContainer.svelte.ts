@@ -15,9 +15,23 @@ export const useReverseScrollContainer = () => {
     })
   }
 
-  const mutationObserver = new MutationObserver(() => {
+  let lastHeight: number
+
+  const onResize = (change: 'expanded' | 'contracted') => {
     if (stickToBottom) {
       requestAnimationFrame(scrollToBottom)
+    }
+  }
+
+  const resizeObserver = new ResizeObserver((entries) => {
+    const entry = entries[0]
+    if (!entry) {
+      return
+    }
+    const newHeight = entry.contentRect.height
+    if (newHeight !== lastHeight) {
+      onResize(newHeight > lastHeight ? 'expanded' : 'contracted')
+      lastHeight = newHeight
     }
   })
 
@@ -29,22 +43,23 @@ export const useReverseScrollContainer = () => {
   }
 
   return {
-    action: ((node) => {
+    action: ((_node, props?: { observe?: (node: HTMLElement) => HTMLElement }) => {
+      const node = props?.observe?.(_node) ?? _node
+      lastHeight = node.offsetHeight
       if (!(node instanceof HTMLDivElement)) {
         return
       }
       ref = node
-      mutationObserver.observe(node, { childList: true })
+      resizeObserver.observe(node.firstElementChild!)
       node.addEventListener('scroll', onscroll)
       scrollToBottom()
       return {
-        // update: (updatedParameter) => {...},
         destroy: () => {
-          mutationObserver.disconnect()
+          resizeObserver.disconnect()
           node.removeEventListener('scroll', onscroll)
         }
       }
-    }) as Action,
+    }) satisfies Action,
     scrollToBottom,
     get stickToBottom() {
       return stickToBottom
