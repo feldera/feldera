@@ -3173,7 +3173,7 @@ where
                     // Create an `Exchange` object that will be used to exchange the fixed point
                     // status with peers.
                     let worker_index = Runtime::worker_index();
-                    let exchange_id = runtime.sequence_next(worker_index);
+                    let exchange_id = runtime.sequence_next();
                     let exchange = Exchange::with_runtime(&runtime, exchange_id);
 
                     let thread = std::thread::current();
