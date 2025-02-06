@@ -15,14 +15,14 @@ use crate::{
         cursor::CursorList, merge_batches, Batch, BatchReader, BatchReaderFactories, Cursor,
         Filter, Trace,
     },
-    Error, NumEntries,
+    Error, NumEntries, Runtime,
 };
 
 use crate::storage::file::to_bytes;
 use crate::storage::write_commit_metadata;
 pub use crate::trace::spine_async::snapshot::SpineSnapshot;
 use crate::trace::CommittedSpine;
-use metrics::counter;
+use metrics::{counter, gauge};
 use ouroboros::self_referencing;
 use rand::Rng;
 use rkyv::{
@@ -44,6 +44,7 @@ use std::{
     sync::Condvar,
 };
 use textwrap::indent;
+use uuid::Uuid;
 
 mod list_merger;
 mod snapshot;
@@ -51,11 +52,14 @@ mod thread;
 
 use self::thread::{BackgroundThread, WorkerStatus};
 use super::BatchLocation;
-use crate::circuit::metrics::COMPACTION_STALL_TIME;
+use crate::circuit::metrics::{BATCHES_PER_LEVEL, COMPACTION_STALL_TIME, ONGOING_MERGES_PER_LEVEL};
 use list_merger::{ListMerger, ListMergerBuilder};
 
 /// Maximum amount of levels in the spine.
 pub(crate) const MAX_LEVELS: usize = 9;
+
+/// Levels as &'static str for metrics
+pub(crate) const LEVELS_AS_STR: [&str; MAX_LEVELS] = ["0", "1", "2", "3", "4", "5", "6", "7", "8"];
 
 impl<B: Batch + Send + Sync> From<(Vec<String>, &Spine<B>)> for CommittedSpine<B> {
     fn from((batches, spine): (Vec<String>, &Spine<B>)) -> Self {
@@ -162,6 +166,9 @@ where
     request_exit: bool,
     #[size_of(skip)]
     merge_stats: MergeStats,
+    /// Unique identifier for the spine for metrics.
+    #[size_of(skip)]
+    ident: &'static str,
 }
 
 impl<B> SharedState<B>
@@ -176,6 +183,7 @@ where
             slots: std::array::from_fn(|_| Slot::default()),
             request_exit: false,
             merge_stats: MergeStats::default(),
+            ident: String::leak(Uuid::now_v7().to_string()),
         }
     }
 
@@ -184,9 +192,7 @@ where
     fn add_batches(&mut self, batches: impl IntoIterator<Item = Arc<B>>) {
         for batch in batches {
             if !batch.is_empty() {
-                self.slots[Spine::<B>::size_to_level(batch.len())]
-                    .loose_batches
-                    .push_back(batch);
+                self.add_batch(batch);
             }
         }
     }
@@ -197,6 +203,9 @@ where
         debug_assert!(!batch.is_empty());
         let level = Spine::<B>::size_to_level(batch.len());
         self.slots[level].loose_batches.push_back(batch);
+
+        gauge!(BATCHES_PER_LEVEL, "worker" => Runtime::worker_index_str(), "level" => LEVELS_AS_STR[level], "id" => self.ident)
+            .set(self.slots[level].n_batches() as f64);
     }
 
     fn should_apply_backpressure(&self) -> bool {
@@ -256,6 +265,8 @@ where
         let cache_stats = batches.iter().fold(CacheStats::default(), |stats, batch| {
             stats + batch.cache_stats()
         });
+        gauge!(ONGOING_MERGES_PER_LEVEL, "worker" => Runtime::worker_index_str(), "level" => LEVELS_AS_STR[level], "id" => self.ident)
+            .set(0);
         self.merge_stats.report_merge(
             batches.iter().map(|b| b.len()).sum(),
             new_batch.len(),
@@ -396,7 +407,7 @@ where
             let start = Instant::now();
             let mut state = self.no_backpressure.wait(state).unwrap();
             state.merge_stats.backpressure_wait += start.elapsed();
-            counter!(COMPACTION_STALL_TIME).increment(start.elapsed().as_secs());
+            counter!(COMPACTION_STALL_TIME).increment(start.elapsed().as_nanos() as u64);
         }
     }
 
@@ -514,6 +525,7 @@ where
         idle: &Arc<Condvar>,
         no_backpressure: &Arc<Condvar>,
     ) -> WorkerStatus {
+        let ident = state.lock().unwrap().ident;
         // Run in-progress merges.
         let ((key_filter, value_filter), frontier) = {
             let shared = state.lock().unwrap();
@@ -546,6 +558,9 @@ where
             .filter_map(|(level, slot)| slot.try_start_merge(level).map(|batches| (level, batches)))
             .collect::<Vec<_>>();
         for (level, batches) in start_merges {
+            gauge!(ONGOING_MERGES_PER_LEVEL, "worker" => Runtime::worker_index_str(), "level" => LEVELS_AS_STR[level], "id" => ident)
+                .set(batches.len() as f64);
+
             let merger = ListMergerBuilder::with_capacity(batches.len())
                 .with_batches(batches)
                 .build();
