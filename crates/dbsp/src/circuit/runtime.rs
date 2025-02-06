@@ -18,6 +18,7 @@ use feldera_types::config::StorageCompression;
 use once_cell::sync::Lazy;
 use serde::Serialize;
 use std::path::Path;
+use std::sync::atomic::AtomicUsize;
 use std::sync::{LazyLock, Mutex};
 use std::thread::Thread;
 use std::time::Duration;
@@ -36,7 +37,7 @@ use std::{
     },
     thread::{Builder, JoinHandle, Result as ThreadResult},
 };
-use typedmap::{TypedDashMap, TypedMapKey};
+use typedmap::TypedDashMap;
 
 use super::dbsp_handle::{CircuitStorageConfig, Layout};
 use super::CircuitConfig;
@@ -229,6 +230,8 @@ struct RuntimeInner {
     store: LocalStore,
     kill_signal: AtomicBool,
     background_threads: Mutex<Vec<JoinHandle<()>>>,
+    buffer_caches: Vec<EnumMap<ThreadType, Arc<BufferCache<FileCacheEntry>>>>,
+    worker_sequence_numbers: Vec<AtomicUsize>,
     // Panic info collected from failed worker threads.
     panic_info: Vec<RwLock<Option<WorkerPanicInfo>>>,
 }
@@ -244,11 +247,7 @@ impl Debug for RuntimeInner {
 
 impl RuntimeInner {
     fn new(config: CircuitConfig) -> Result<Self, DbspError> {
-        let local_workers = config.layout.local_workers().len();
-        let mut panic_info = Vec::with_capacity(local_workers);
-        for _ in 0..local_workers {
-            panic_info.push(RwLock::new(None));
-        }
+        let nworkers = config.layout.local_workers().len();
 
         if config.storage.as_ref().is_some_and(|storage| {
             storage.init_checkpoint.is_some_and(|init_checkpoint| {
@@ -264,13 +263,29 @@ impl RuntimeInner {
             )));
         }
 
+        let cache_size_bytes = if let Some(storage) = &config.storage {
+            storage
+                .options
+                .cache_mib
+                .unwrap_or(nworkers * 256)
+                .saturating_mul(1024 * 1024)
+                / nworkers
+        } else {
+            // Dummy buffer cache.
+            1
+        };
+
         Ok(Self {
             layout: config.layout,
             storage: config.storage,
             store: TypedDashMap::new(),
             kill_signal: AtomicBool::new(false),
             background_threads: Mutex::new(Vec::new()),
-            panic_info,
+            buffer_caches: (0..nworkers)
+                .map(|_| EnumMap::from_fn(|_| Arc::new(BufferCache::new(cache_size_bytes))))
+                .collect(),
+            worker_sequence_numbers: (0..nworkers).map(|_| AtomicUsize::new(0)).collect(),
+            panic_info: (0..nworkers).map(|_| RwLock::new(None)).collect(),
         })
     }
 }
@@ -363,7 +378,6 @@ impl Runtime {
         let config: CircuitConfig = config.into();
 
         let workers = config.layout.local_workers();
-        let nworkers = workers.len();
 
         let locked_directory = config
             .storage
@@ -375,24 +389,6 @@ impl Runtime {
         describe_metrics();
 
         let runtime = Self(Arc::new(RuntimeInner::new(config)?));
-
-        let cache_size_bytes = if let Some(storage) = &runtime.0.storage {
-            storage
-                .options
-                .cache_mib
-                .unwrap_or(nworkers * 256)
-                .saturating_mul(1024 * 1024)
-                / nworkers
-        } else {
-            // Dummy buffer cache.
-            1
-        };
-        runtime.local_store().insert(
-            BufferCacheId,
-            (0..nworkers)
-                .map(|_| EnumMap::from_fn(|_| Arc::new(BufferCache::new(cache_size_bytes))))
-                .collect::<Vec<_>>(),
-        );
 
         // Install custom panic hook.
         let default_hook = default_panic_hook();
@@ -496,7 +492,7 @@ impl Runtime {
         worker_index: usize,
         thread_type: ThreadType,
     ) -> Arc<BufferCache<FileCacheEntry>> {
-        self.local_store().get(&BufferCacheId).unwrap()[worker_index][thread_type].clone()
+        self.0.buffer_caches[worker_index][thread_type].clone()
     }
 
     /// Returns 0-based index of the current worker thread within its runtime.
@@ -585,16 +581,9 @@ impl Runtime {
     ///
     /// This method can be used to generate unique identifiers that will be the
     /// same across all worker threads.  Repeated calls to this function
-    /// with the same worker index generate numbers 0, 1, 2, ...
-    pub fn sequence_next(&self, worker_index: usize) -> usize {
-        debug_assert!(self.inner().layout.local_workers().contains(&worker_index));
-        let mut entry = self
-            .local_store()
-            .entry(WorkerId(worker_index))
-            .or_insert(0);
-        let result = *entry;
-        *entry += 1;
-        result
+    /// from the same worker generate numbers 0, 1, 2, ...
+    pub fn sequence_next(&self) -> usize {
+        self.inner().worker_sequence_numbers[Self::worker_index()].fetch_add(1, Ordering::Relaxed)
     }
 
     /// `true` if the current worker thread has received a kill signal
@@ -772,20 +761,6 @@ impl RuntimeHandle {
     }
 }
 
-#[derive(Hash, PartialEq, Eq)]
-struct WorkerId(usize);
-
-impl TypedMapKey<LocalStoreMarker> for WorkerId {
-    type Value = usize;
-}
-
-#[derive(Hash, PartialEq, Eq)]
-struct BufferCacheId;
-
-impl TypedMapKey<LocalStoreMarker> for BufferCacheId {
-    type Value = Vec<EnumMap<ThreadType, Arc<BufferCache<FileCacheEntry>>>>;
-}
-
 #[cfg(test)]
 mod tests {
     use super::Runtime;
@@ -845,9 +820,7 @@ mod tests {
                 let runtime = Runtime::runtime().unwrap();
                 // Generator that produces values using `sequence_next`.
                 circuit
-                    .add_source(Generator::new(move || {
-                        runtime.sequence_next(Runtime::worker_index())
-                    }))
+                    .add_source(Generator::new(move || runtime.sequence_next()))
                     .inspect(move |n: &usize| data_clone.borrow_mut().push(*n));
                 Ok(())
             })

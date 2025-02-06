@@ -163,7 +163,7 @@ where
         match Runtime::runtime() {
             None => Self(Arc::new(OutputHandleInternal::new(1))),
             Some(runtime) => {
-                let output_id = runtime.sequence_next(Runtime::worker_index());
+                let output_id = runtime.sequence_next();
 
                 runtime
                     .local_store()

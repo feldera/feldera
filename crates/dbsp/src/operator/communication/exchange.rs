@@ -1092,7 +1092,7 @@ where
     PL: FnMut(TI, &mut Vec<TE>) + 'static,
     CL: Fn(&mut TO, TE) + 'static,
 {
-    let exchange_id = runtime.sequence_next(worker_index);
+    let exchange_id = runtime.sequence_next();
     let sender = ExchangeSender::new(runtime, worker_index, location, exchange_id, partition);
     let receiver =
         ExchangeReceiver::new(runtime, worker_index, location, exchange_id, init, combine);

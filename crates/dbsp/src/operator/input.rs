@@ -647,7 +647,7 @@ where
         match Runtime::runtime() {
             None => Self(Arc::new(InputHandleInternal::new(0..1, empty_val))),
             Some(runtime) => {
-                let input_id = runtime.sequence_next(Runtime::worker_index());
+                let input_id = runtime.sequence_next();
 
                 runtime
                     .local_store()
