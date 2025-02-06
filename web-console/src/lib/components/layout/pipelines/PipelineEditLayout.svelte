@@ -324,7 +324,7 @@ example = "1.0"`
     {#if !isTablet.current}
       <PaneResizer
         class="pane-divider-vertical ml-1.5 mr-2"
-        onDraggingChange={(isDragging) => {
+        onDraggingChange={(isDragging: boolean) => {
           isDraggingPipelineListResizer = isDragging
         }}
       ></PaneResizer>
