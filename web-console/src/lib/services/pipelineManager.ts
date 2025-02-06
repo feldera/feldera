@@ -323,7 +323,7 @@ export const postPipelineAction = async (
         continue
       }
       throw new Error(
-        `Unexpected status ${status} while waiting for pipeline ${pipeline_name} to complete action ${action}`
+        `Unexpected status ${JSON.stringify(status)} while waiting for pipeline ${pipeline_name} to complete action ${action}`
       )
     }
     return
