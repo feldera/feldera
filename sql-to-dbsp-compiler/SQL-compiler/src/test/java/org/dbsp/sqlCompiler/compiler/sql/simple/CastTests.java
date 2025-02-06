@@ -74,7 +74,6 @@ public class CastTests extends SqlIoTest {
         CompilerCircuitStream ccs = this.getCCS(query);
         InputOutputChange change = new InputOutputChange(this.createInput(), new Change(expectedOutput));
         ccs.addChange(change);
-        this.addRustTestCase(ccs);
     }
 
     @Test

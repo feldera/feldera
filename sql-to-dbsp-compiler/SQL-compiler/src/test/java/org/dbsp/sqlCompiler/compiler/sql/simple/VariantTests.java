@@ -74,15 +74,14 @@ public class VariantTests extends BaseSQLTests {
         DBSPZSetExpression expectedOutput = new DBSPZSetExpression(new DBSPTupleExpression(fields));
         InputOutputChange change = new InputOutputChange(new Change(), new Change(expectedOutput));
         ccs.addChange(change);
-        this.addRustTestCase(ccs);
     }
 
     @Test
     public void testUDT() {
         this.compileRustTestCase("""
                 CREATE TYPE x AS (v INTEGER, w INTEGER);
-                CREATE TABLE T(xf X ARRAY);
-                CREATE VIEW V AS SELECT CAST(xf AS VARIANT) FROM T;""");
+                CREATE TABLE TT(xf X ARRAY);
+                CREATE VIEW V AS SELECT CAST(xf AS VARIANT) FROM TT;""");
     }
 
     @Test

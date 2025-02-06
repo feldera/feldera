@@ -168,7 +168,6 @@ public class IncrementalRegressionTests extends SqlIoTest {
                 FROM purchase
                 GROUP BY TIMESTAMP_TRUNC(ts, DAY);""";
         var ccs = this.getCCS(sql);
-        this.addRustTestCase(ccs);
         ccs.step("""
                 -- Waterline is now 2020-01-01\s
                 INSERT INTO purchase VALUES('2020-01-01 00:00:01', 10);
@@ -201,7 +200,6 @@ public class IncrementalRegressionTests extends SqlIoTest {
                 from t
                 where x = 5 and ts > now();""";
         var ccs = this.getCCS(sql);
-        this.addRustTestCase(ccs);
         CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
             int window = 0;
 
@@ -215,7 +213,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
                 Assert.assertEquals(1, this.window);
             }
         };
-        visitor.apply(ccs.circuit);
+        ccs.visit(visitor);
     }
 
     @Test
@@ -249,7 +247,6 @@ public class IncrementalRegressionTests extends SqlIoTest {
                     v
                 GROUP BY lts;""";
         var ccs = this.getCCS(sql);
-        this.addRustTestCase(ccs);
         CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
             int integrateTraceKeys = 0;
             int integrateTraceValues = 0;
@@ -270,7 +267,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
                 Assert.assertEquals(1, this.integrateTraceValues);
             }
         };
-        visitor.apply(ccs.circuit);
+        ccs.visit(visitor);
     }
 
     @Test
@@ -348,7 +345,6 @@ public class IncrementalRegressionTests extends SqlIoTest {
                   customer_id | red_amd | green_amt | total_amt | weight
                  --------------------------------------------------------
                             0 |       0 |         1 |         1 | 1""");
-        this.addRustTestCase(ccs);
     }
 
     @Test
@@ -393,7 +389,6 @@ public class IncrementalRegressionTests extends SqlIoTest {
                  ts | state | weight
                 ---------------------
                     | WA| 1""");
-        this.addRustTestCase(ccs);
     }
 
     @Test
@@ -435,7 +430,6 @@ public class IncrementalRegressionTests extends SqlIoTest {
                 create view V2 as
                 select SUM(5) from v group by ts;""";
         CompilerCircuitStream ccs = this.getCCS(sql);
-        this.addRustTestCase(ccs);
         CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
             int integrateTraceKeys = 0;
             int integrateTraceValues = 0;
@@ -472,8 +466,8 @@ public class IncrementalRegressionTests extends SqlIoTest {
                 Assert.assertEquals(0, this.unsafeBoolCasts);
             }
         };
-        visitor.apply(ccs.circuit);
-        findBoolCasts.getCircuitVisitor(false).apply(ccs.circuit);
+        ccs.visit(visitor);
+        ccs.visit(findBoolCasts.getCircuitVisitor(false));
     }
 
     @Test

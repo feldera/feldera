@@ -5,6 +5,7 @@
 use crate::{
     array::Array,
     binary::ByteArray,
+    decimal::Dec,
     error::{r2o, SqlResult, SqlRuntimeError},
     geopoint::*,
     interval::*,
@@ -419,6 +420,14 @@ pub fn cast_to_decimal_decimal(value: Decimal, precision: u32, scale: u32) -> Sq
         Ok(result)
     }
 }
+
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_dec_decimal(value: Decimal) -> SqlResult<Decimal> {
+    Ok(value)
+}
+
+cast_function!(dec, Dec, decimal, Decimal);
 
 #[doc(hidden)]
 #[inline]

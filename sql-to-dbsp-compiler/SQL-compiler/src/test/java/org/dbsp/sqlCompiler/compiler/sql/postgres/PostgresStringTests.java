@@ -1,7 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.sql.postgres;
 
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
-import org.dbsp.sqlCompiler.compiler.sql.tools.CompilerCircuitStream;
 import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
 import org.junit.Ignore;
 import org.junit.Test;
@@ -1231,8 +1230,7 @@ public class PostgresStringTests extends SqlIoTest {
                 CREATE VIEW example_count AS
                 SELECT COUNT(*) FROM example WHERE name LIKE 'abc%' OR name LIKE name;
                 """;
-        CompilerCircuitStream ccs = this.getCCS(sql);
-        this.addRustTestCase(ccs);
+        this.getCCS(sql);
     }
 
     // TODO: bytea computations

@@ -26,4 +26,9 @@ public class IdShuffle implements Shuffle {
     public Shuffle after(Shuffle shuffle) {
         return shuffle;
     }
+
+    @Override
+    public boolean emitsIndex(int index) {
+        return true;
+    }
 }

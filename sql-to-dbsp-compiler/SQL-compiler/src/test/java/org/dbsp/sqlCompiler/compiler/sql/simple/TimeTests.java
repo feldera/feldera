@@ -58,11 +58,10 @@ public class TimeTests extends BaseSQLTests {
         // T contains a date with timestamp '100'.
         query = "CREATE VIEW V AS " + query;
         DBSPCompiler compiler = this.compileQuery(query);
-        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
+        CompilerCircuitStream ccs = this.getCCS(compiler);
         DBSPZSetExpression expectedOutput = new DBSPZSetExpression(new DBSPTupleExpression(fields));
         InputOutputChange change = new InputOutputChange(this.createInput(), new Change(expectedOutput));
         ccs.addChange(change);
-        this.addRustTestCase(ccs);
     }
 
     public Change createInput() {

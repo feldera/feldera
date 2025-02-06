@@ -28,7 +28,6 @@ import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.sql.tools.Change;
 import org.dbsp.sqlCompiler.compiler.sql.tools.InputOutputChangeStream;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
-import org.junit.Ignore;
 import org.junit.Test;
 
 // Runs the EndToEnd tests but on an input stream with 3 elements each and

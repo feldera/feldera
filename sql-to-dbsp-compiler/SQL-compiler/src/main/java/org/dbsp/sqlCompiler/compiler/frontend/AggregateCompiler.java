@@ -66,9 +66,11 @@ import org.dbsp.sqlCompiler.ir.type.IsNumericType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBaseType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBinary;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDouble;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeNull;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeRuntimeDecimal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVoid;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeUser;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeArray;
@@ -414,9 +416,8 @@ public class AggregateCompiler implements ICompilerComponent {
             }
         }
 
-        DBSPExpression binOp = new DBSPConditionalAggregateExpression(
+        return new DBSPConditionalAggregateExpression(
                 node, op, resultType, left.applyCloneIfNeeded(), right.applyCloneIfNeeded(), filter);
-        return binOp.cast(type, false);
     }
 
     void processMinMax(SqlMinMaxAggFunction function) {
@@ -543,7 +544,7 @@ public class AggregateCompiler implements ICompilerComponent {
                     node, aggregatedValue.getType(),
                     DBSPOpcode.MUL_WEIGHT, aggregatedValue, this.compiler.weightVar);
             increment = this.aggregateOperation(
-                    node, DBSPOpcode.AGG_ADD, this.resultType,
+                    node, DBSPOpcode.AGG_ADD_NON_NULL, this.resultType,
                     accumulator, weighted, this.filterArgument());
             String semigroupName = "DefaultSemigroup";
             if (accumulator.getType().mayBeNull)
@@ -672,9 +673,14 @@ public class AggregateCompiler implements ICompilerComponent {
         boolean isSamp = function.getKind() == SqlKind.STDDEV_SAMP;
         CalciteObject node = CalciteObject.create(function);
         DBSPType aggregatedValueType = this.getAggregatedValueType();
-
         // TODO: linear implementation
         DBSPType intermediateResultType = aggregatedValueType.withMayBeNull(true);
+
+        if (intermediateResultType.is(DBSPTypeDecimal.class)) {
+            intermediateResultType = new DBSPTypeRuntimeDecimal(
+                    intermediateResultType.getNode(), intermediateResultType.mayBeNull);
+        }
+
         // Compute 3 sums: Sum(value^2), Sum(value), Count(value)
         DBSPExpression zero = new DBSPTupleExpression(
                 DBSPLiteral.none(intermediateResultType),
@@ -722,23 +728,23 @@ public class AggregateCompiler implements ICompilerComponent {
 
         DBSPVariablePath a = tripleType.var();
         DBSPExpression sumSquared = ExpressionCompiler.makeBinaryExpression(
-                node, this.nullableResultType, DBSPOpcode.MUL,
+                node, intermediateResultType, DBSPOpcode.MUL,
                 a.field(sumIndex), a.field(sumIndex));
         DBSPExpression normalized = ExpressionCompiler.makeBinaryExpression(
-                node, this.nullableResultType, DBSPOpcode.DIV,
+                node, intermediateResultType, DBSPOpcode.DIV,
                 sumSquared, a.field(countIndex));
         DBSPExpression sub = ExpressionCompiler.makeBinaryExpression(
-                node, this.nullableResultType, DBSPOpcode.SUB,
+                node, intermediateResultType, DBSPOpcode.SUB,
                 a.field(sumSquaresIndex), normalized);
 
         DBSPExpression denom = isSamp ? ExpressionCompiler.makeBinaryExpression(
-                node, this.nullableResultType, DBSPOpcode.SUB,
-                a.field(countIndex), this.resultType.to(IsNumericType.class).getOne()) :
+                node, intermediateResultType, DBSPOpcode.SUB,
+                a.field(countIndex), intermediateResultType.to(IsNumericType.class).getOne()) :
                 a.field(countIndex);
         // We need to call sqrt, which only works for doubles.
-        DBSPType sqrtType = new DBSPTypeDouble(node, this.nullableResultType.mayBeNull);
+        DBSPType sqrtType = new DBSPTypeDouble(node, intermediateResultType.mayBeNull);
         DBSPExpression div = ExpressionCompiler.makeBinaryExpression(
-                node, this.nullableResultType, DBSPOpcode.DIV_NULL,
+                node, intermediateResultType, DBSPOpcode.DIV_NULL,
                 sub, denom).cast(sqrtType, false);
         // Prevent sqrt from negative values if computations are unstable
         DBSPExpression max = ExpressionCompiler.makeBinaryExpression(

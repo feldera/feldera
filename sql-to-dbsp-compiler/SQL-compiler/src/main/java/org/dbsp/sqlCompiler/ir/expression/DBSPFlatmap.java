@@ -157,6 +157,7 @@ public final class DBSPFlatmap extends DBSPExpression {
                 this.hasSameType(o);
     }
 
+    /** The type of the values in the collection */
     public DBSPType getCollectionElementType() {
         DBSPType iterable = this.collectionExpression.getResultType();
         return iterable.to(ICollectionType.class).getElementType();

@@ -12,4 +12,7 @@ public interface Shuffle {
 
     /** Compose two shuffles, applying this one after 'shuffle' */
     Shuffle after(Shuffle shuffle);
+
+    /** True if the element with the specified index is emitted in the output */
+    boolean emitsIndex(int index);
 }

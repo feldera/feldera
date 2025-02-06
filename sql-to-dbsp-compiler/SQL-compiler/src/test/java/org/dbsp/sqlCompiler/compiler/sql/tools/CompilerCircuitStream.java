@@ -1,6 +1,5 @@
 package org.dbsp.sqlCompiler.compiler.sql.tools;
 
-import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.TableContents;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -11,29 +10,35 @@ import java.util.List;
  * Helper class for testing.  Holds together
  * - the compiler that is used to compile a program,
  * - the circuit, and
- * - the input/output data that is used to test the circuit. */
-public class CompilerCircuitStream {
-    public final DBSPCompiler compiler;
-    public final DBSPCircuit circuit;
+ * - the input/output data that is used to test the circuit.
+ * Submits the code for compilation by the Rust compiler. */
+public class CompilerCircuitStream extends CompilerCircuit {
     final InputOutputChangeStream stream;
 
-    public CompilerCircuitStream(DBSPCompiler compiler) {
-        this(compiler, new InputOutputChangeStream());
+    public CompilerCircuitStream(DBSPCompiler compiler, BaseSQLTests test) {
+        this(compiler, new InputOutputChangeStream(), test);
     }
 
-    public CompilerCircuitStream(DBSPCompiler compiler, List<String> inputs, List<String> outputs) {
-        this(compiler, new InputOutputChangeStream(inputs, outputs));
+    public CompilerCircuitStream(DBSPCompiler compiler, BaseSQLTests test, String failureMessage) {
+        this(compiler, new InputOutputChangeStream(), test, failureMessage);
     }
 
-    public CompilerCircuitStream(DBSPCompiler compiler, InputOutputChangeStream streams) {
-        this.compiler = compiler;
-        this.circuit = BaseSQLTests.getCircuit(compiler);
+    public CompilerCircuitStream(
+            DBSPCompiler compiler, List<String> inputs, List<String> outputs, BaseSQLTests test) {
+        this(compiler, new InputOutputChangeStream(inputs, outputs), test);
+    }
+
+    public CompilerCircuitStream(DBSPCompiler compiler, InputOutputChangeStream streams, BaseSQLTests test) {
+        super(compiler);
         this.stream = streams;
+        test.addRustTestCase(this);
     }
 
-    public void showErrors() {
-        this.compiler.messages.show(System.err);
-        this.compiler.messages.clear();
+    public CompilerCircuitStream(
+            DBSPCompiler compiler, InputOutputChangeStream streams, BaseSQLTests test, String failureMessage) {
+        super(compiler);
+        this.stream = streams;
+        test.addFailingRustTestCase(failureMessage, this);
     }
 
     /** Compiles a SQL script composed of INSERT statements.

@@ -4,7 +4,6 @@ import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests;
 import org.dbsp.sqlCompiler.compiler.sql.tools.Change;
-import org.dbsp.sqlCompiler.compiler.sql.tools.CompilerCircuitStream;
 import org.dbsp.sqlCompiler.compiler.sql.tools.InputOutputChange;
 import org.dbsp.sqlCompiler.compiler.sql.tools.InputOutputChangeStream;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
@@ -33,8 +32,7 @@ public class MapTests extends BaseSQLTests {
     void testQuery(String statements, String query, InputOutputChangeStream streams) {
         query = "CREATE VIEW V AS " + query;
         DBSPCompiler compiler = this.compileQuery(statements, query);
-        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler, streams);
-        this.addRustTestCase(ccs);
+        this.getCCS(compiler, streams);
     }
 
     private void testQuery(String query, DBSPZSetExpression literal) {

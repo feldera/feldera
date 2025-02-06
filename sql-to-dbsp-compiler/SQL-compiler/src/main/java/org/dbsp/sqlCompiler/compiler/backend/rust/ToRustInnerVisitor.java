@@ -136,6 +136,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeISize;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMillisInterval;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMonthsInterval;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeRuntimeDecimal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVariant;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVoid;
@@ -539,7 +540,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
     public VisitDecision preorder(DBSPZSetExpression expression) {
         this.push(expression);
         this.builder.append("zset!(");
-        boolean large = expression.data.entrySet().size() > 1;
+        boolean large = expression.data.size() > 1;
         if (large)
             this.builder.increase();
         for (Map.Entry<DBSPExpression, Long> e: expression.data.entrySet()) {
@@ -809,18 +810,24 @@ public class ToRustInnerVisitor extends InnerVisitor {
         if (literal.isNull())
             return this.doNull(literal);
         this.push(literal);
-        DBSPTypeDecimal type = literal.getType().to(DBSPTypeDecimal.class);
-        if (type.mayBeNull)
+        if (literal.getType().mayBeNull)
             this.builder.append("Some(");
         String value = Objects.requireNonNull(literal.value).toPlainString();
-        this.builder.append("new_decimal(\"")
-                .append(value)
-                .append("\", ")
-                .append(type.precision)
-                .append(", ")
-                .append(type.scale)
-                .append(").unwrap()");
-        if (type.mayBeNull)
+        if (literal.getType().is(DBSPTypeDecimal.class)) {
+            DBSPTypeDecimal type = literal.getType().to(DBSPTypeDecimal.class);
+            this.builder.append("new_decimal(\"")
+                    .append(value)
+                    .append("\", ")
+                    .append(type.precision)
+                    .append(", ")
+                    .append(type.scale)
+                    .append(").unwrap()");
+        } else if (literal.getType().is(DBSPTypeRuntimeDecimal.class)) {
+            this.builder.append("dec!(")
+                    .append(value)
+                    .append(")");
+        }
+        if (literal.getType().mayBeNull)
             this.builder.append(")");
         this.pop(literal);
         return VisitDecision.STOP;
@@ -964,6 +971,8 @@ public class ToRustInnerVisitor extends InnerVisitor {
             DBSPTypeBaseType t = destType.to(DBSPTypeBaseType.class);
             functionName = "cast_to_" + t.shortName() + destType.nullableSuffix() +
                     "_" + t.shortName() + sourceType.nullableSuffix();
+        } else if (destType.is(DBSPTypeRuntimeDecimal.class)) {
+            functionName = "cast_to_dec" + destType.nullableSuffix() + "_" + sourceType.baseTypeWithSuffix();
         }
         this.builder.append(functionName).append("(");
         expression.source.accept(this);

@@ -205,14 +205,14 @@ public class RecursiveTests extends BaseSQLTests {
                     (select filled_today from filled_today) as filled_today,
                     (select filled_this_week from filled_this_week) as filled_this_week,
                     (select currently_active_users from currently_active_users) as currently_active_users;""";
-        var ccs = this.getCCS(sql);
-        CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
+        var cc = this.getCC(sql);
+        CircuitVisitor visitor = new CircuitVisitor(cc.compiler) {
             @Override
             public void postorder(DBSPSinkOperator operator) {
                 assert !operator.viewName.name().endsWith(DeclareViewStatement.declSuffix);
             }
         };
-        visitor.apply(ccs.circuit);
+        cc.visit(visitor);
     }
 
     @Test
@@ -303,8 +303,7 @@ public class RecursiveTests extends BaseSQLTests {
                     raw_value AS computed_value
                 from
                     mentions_aggregated;""";
-        var ccs = this.getCCS(sql);
-        this.addRustTestCase(ccs);
+        this.getCCS(sql);
     }
 
     @Test
@@ -420,8 +419,7 @@ public class RecursiveTests extends BaseSQLTests {
                     cell_value(raw_value, mentions_ids, mentions_values) AS computed_value
                 from
                     mentions_aggregated;""";
-        var ccs = this.getCCS(sql);
-        this.addRustTestCase(ccs);
+        this.getCCS(sql);
     }
 
     @Test
@@ -434,7 +432,6 @@ public class RecursiveTests extends BaseSQLTests {
                  v | weight
                 ------------
                  1 | 1""");
-        this.addRustTestCase(ccs);
         CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
             int recursive = 0;
             @Override
@@ -446,7 +443,7 @@ public class RecursiveTests extends BaseSQLTests {
                 Assert.assertEquals(1, this.recursive);
             }
         };
-        visitor.apply(ccs.circuit);
+        ccs.visit(visitor);
     }
 
     @Test
@@ -468,7 +465,6 @@ public class RecursiveTests extends BaseSQLTests {
                  v | weight
                 ------------
                  2 | 1""");
-        this.addRustTestCase(ccs);
     }
 
     @Test
@@ -493,7 +489,6 @@ public class RecursiveTests extends BaseSQLTests {
                  v | weight
                 ------------
                  2 | 1""");
-        this.addRustTestCase(ccs);
     }
 
     @Test

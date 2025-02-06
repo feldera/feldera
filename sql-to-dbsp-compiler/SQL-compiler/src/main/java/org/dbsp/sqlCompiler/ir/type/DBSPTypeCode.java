@@ -8,6 +8,7 @@ public enum DBSPTypeCode {
     BYTES("BINARY", "bytes", "ByteArray"),
     DATE("DATE", "Date", "Date"),
     DECIMAL("DECIMAL", "decimal", "Decimal"),
+    DECIMAL_RUNTIME("DECIMAL", "decimal", "Decimal"),
     DOUBLE("DOUBLE", "d", "F64"),
     REAL("REAL", "f", "F32"),
     GEOPOINT("GEOPOINT", "geopoint", "GeoPoint"),

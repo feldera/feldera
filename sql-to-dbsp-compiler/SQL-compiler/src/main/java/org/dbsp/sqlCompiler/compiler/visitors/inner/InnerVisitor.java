@@ -152,6 +152,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMillisInterval;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMonthsInterval;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeNull;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeReal;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeRuntimeDecimal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeStr;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTime;
@@ -429,6 +430,10 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
     }
 
     public VisitDecision preorder(DBSPTypeDecimal node) {
+        return this.preorder((DBSPTypeBaseType) node);
+    }
+
+    public VisitDecision preorder(DBSPTypeRuntimeDecimal node) {
         return this.preorder((DBSPTypeBaseType) node);
     }
 
@@ -1011,6 +1016,10 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
     }
 
     public void postorder(DBSPTypeDecimal node) {
+        this.postorder((DBSPTypeBaseType) node);
+    }
+
+    public void postorder(DBSPTypeRuntimeDecimal node) {
         this.postorder((DBSPTypeBaseType) node);
     }
 
