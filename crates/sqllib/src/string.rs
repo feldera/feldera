@@ -1,10 +1,8 @@
 //! SQL String operations.
 //!
 
-// This module contains two implementations of an immutable reference-counted
-// string type: a version wrapped in `Arc` and an interned string.  The former
-// is enabled by default.  The latter misses rkyv trait implementations and
-// has poor performance in preliminary benchmarks.
+// SqlString is implemented based on the ArcStr crate.
+// The module contains various string operations.
 
 #![allow(non_snake_case)]
 use crate::{
@@ -14,8 +12,6 @@ use crate::{
 
 use core::fmt::Error;
 use feldera_types::{deserialize_without_context, serialize_without_context};
-#[cfg(feature = "interned_string")]
-use internment::ArcIntern;
 use like::{Escape, Like};
 use regex::Regex;
 use rkyv::{
@@ -30,41 +26,23 @@ use std::{
     sync::Arc,
 };
 
-#[cfg(not(feature = "interned_string"))]
 use arcstr::ArcStr;
 
-#[cfg(feature = "interned_string")]
-type StringRef = ArcIntern<String>;
-
-#[cfg(not(feature = "interned_string"))]
 type StringRef = ArcStr;
 
 /// An immutable reference counted string.
 #[derive(Clone, Default, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
-//#[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 #[serde(transparent)]
 pub struct SqlString(StringRef);
 
 /// String representation used by the Feldera SQL runtime
 impl SqlString {
-    #[cfg(not(feature = "interned_string"))]
     pub fn new() -> Self {
         Self::default()
     }
 
-    #[cfg(not(feature = "interned_string"))]
     pub fn from_ref(value: &str) -> Self {
         SqlString(StringRef::from(value.to_string()))
-    }
-
-    #[cfg(feature = "interned_string")]
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    #[cfg(feature = "interned_string")]
-    pub fn from_ref(value: &str) -> Self {
-        SqlString(StringRef::from_ref(value))
     }
 
     pub fn str(&self) -> &str {
