@@ -407,8 +407,6 @@ some_aggregate!(agg_plus_dec, agg_plus, dec, Dec);
 
 for_all_int_aggregate!(agg_plus, agg_plus);
 
-///
-
 #[doc(hidden)]
 pub fn agg_plus_non_null<T>(left: T, right: T) -> T
 where

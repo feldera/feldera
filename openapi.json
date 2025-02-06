@@ -2357,7 +2357,8 @@
         "enum": [
           "snapshot",
           "follow",
-          "snapshot_and_follow"
+          "snapshot_and_follow",
+          "cdc"
         ]
       },
       "DeltaTableReaderConfig": {
@@ -2368,6 +2369,16 @@
           "mode"
         ],
         "properties": {
+          "cdc_delete_filter": {
+            "type": "string",
+            "description": "A predicate that determines whether the record represents a deletion.\n\nThis setting is only valid in the 'cdc' mode. It specifies a predicate applied to\neach row in the Delta table to determine whether the row represents a deletion event.\nIts value must be a valid Boolean SQL expression that can be used in a query of the\nform `SELECT * from <table> WHERE <cdc_delete_filter>`.",
+            "nullable": true
+          },
+          "cdc_order_by": {
+            "type": "string",
+            "description": "An expression that determines the ordering of updates in the Delta table.\n\nThis setting is only valid in the 'cdc' mode. It specifies a predicate applied to\neach row in the Delta table to determine the order in which updates in the table should\nbe applied. Its value must be a valid SQL expression that can be used in a query of the\nform `SELECT * from <table> ORDER BY <cdc_order_by>`.",
+            "nullable": true
+          },
           "datetime": {
             "type": "string",
             "description": "Optional timestamp for the snapshot in the ISO-8601/RFC-3339 format, e.g.,\n\"2024-12-09T16:09:53+00:00\".\n\nWhen this option is set, the connector finds and opens the version of the table as of the\nspecified point in time (based on the server time recorded in the transaction log, not the\nevent time encoded in the data).  In `snapshot` and `snapshot_and_follow` modes, it\nretrieves the snapshot of this version of the table.  In `follow` and `snapshot_and_follow`\nmodes, it follows transaction log records **after** this version.\n\nNote: at most one of `version` and `datetime` options can be specified.\nWhen neither of the two options is specified, the latest committed version of the table\nis used.",

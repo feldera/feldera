@@ -68,6 +68,19 @@ pub enum DeltaTableIngestMode {
     /// Take a snapshot of the table before switching to the `follow` mode.
     #[serde(rename = "snapshot_and_follow")]
     SnapshotAndFollow,
+
+    /// Change-Data-Capture (CDC) mode.
+    ///
+    /// The table behaves as an append-only log where every row represents an insert
+    /// or delete action.  The order of actions is determined by the `cdc_order_by`
+    /// property, and the type of each action is determined by the `cdc_delete_filter`
+    /// property.
+    ///
+    /// In this mode, the connector does not read the initial snapshot of the table
+    /// and follows the transaction log starting from the version of the table
+    /// specified by the `version` or `datetime` property.
+    #[serde(rename = "cdc")]
+    Cdc,
 }
 
 /// Delta table input connector configuration.
@@ -145,6 +158,22 @@ pub struct DeltaTableReaderConfig {
     /// is used.
     pub datetime: Option<String>,
 
+    /// A predicate that determines whether the record represents a deletion.
+    ///
+    /// This setting is only valid in the 'cdc' mode. It specifies a predicate applied to
+    /// each row in the Delta table to determine whether the row represents a deletion event.
+    /// Its value must be a valid Boolean SQL expression that can be used in a query of the
+    /// form `SELECT * from <table> WHERE <cdc_delete_filter>`.
+    pub cdc_delete_filter: Option<String>,
+
+    /// An expression that determines the ordering of updates in the Delta table.
+    ///
+    /// This setting is only valid in the 'cdc' mode. It specifies a predicate applied to
+    /// each row in the Delta table to determine the order in which updates in the table should
+    /// be applied. Its value must be a valid SQL expression that can be used in a query of the
+    /// form `SELECT * from <table> ORDER BY <cdc_order_by>`.
+    pub cdc_order_by: Option<String>,
+
     /// Storage options for configuring backend object store.
     ///
     /// For specific options available for different storage backends, see:
@@ -190,11 +219,17 @@ impl DeltaTableReaderConfig {
     }
 
     /// `true` if the configuration requires following the transaction log of the table
-    /// (possibly after taking an initial snapshot).s
+    /// (possibly after taking an initial snapshot).
     pub fn follow(&self) -> bool {
         matches!(
             &self.mode,
-            DeltaTableIngestMode::SnapshotAndFollow | DeltaTableIngestMode::Follow
+            DeltaTableIngestMode::SnapshotAndFollow
+                | DeltaTableIngestMode::Follow
+                | DeltaTableIngestMode::Cdc
         )
+    }
+
+    pub fn is_cdc(&self) -> bool {
+        matches!(&self.mode, DeltaTableIngestMode::Cdc)
     }
 }

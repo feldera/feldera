@@ -113,6 +113,11 @@ pub trait ArrowStream: InputBuffer + Send {
 
     fn delete(&mut self, data: &RecordBatch) -> AnyResult<()>;
 
+    /// Insert records in `data` with polarities from the `polarities` array.
+    ///
+    /// `polarities` must be the same length as `data`.
+    fn insert_with_polarities(&mut self, data: &RecordBatch, polarities: &[bool]) -> AnyResult<()>;
+
     /// Create a new deserializer with the same configuration connected to
     /// the same input stream.
     fn fork(&self) -> Box<dyn ArrowStream>;
@@ -308,6 +313,17 @@ pub trait SerCursor: Send {
 
     /// Rewinds the cursor to the first value for current key.
     fn rewind_vals(&mut self);
+
+    fn count_keys(&mut self) -> usize {
+        let mut count = 0;
+
+        while self.key_valid() {
+            count += 1;
+            self.step_key()
+        }
+
+        count
+    }
 }
 
 /// A handle to an output stream of a circuit that yields type-erased
