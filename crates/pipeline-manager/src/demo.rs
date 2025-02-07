@@ -1,4 +1,4 @@
-use log::{debug, error};
+use log::{debug, error, warn};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -163,7 +163,7 @@ pub fn read_demos_from_directories(demos_dir: &Vec<String>) -> Vec<Demo> {
         let entries = match fs::read_dir(Path::new(dir)) {
             Ok(entries) => entries.collect::<Vec<_>>(),
             Err(e) => {
-                error!(
+                warn!(
                     "{}",
                     DemoError::UnableToReadDirectory {
                         path: dir.clone(),

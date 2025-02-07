@@ -993,7 +993,14 @@ async fn cleanup_rust_compilation(
                 BTreeMap::new()
             }),
             Err(e) => {
-                error!("Unable to read cleanup state file due to: {e}");
+                if !cleanup_state_file_path.exists() {
+                    debug!(
+                        "Cleanup state file does not yet exist -- \
+                        it will be created at the end of the first cleanup cycle"
+                    );
+                } else {
+                    error!("Unable to read cleanup state file due to: {e}");
+                }
                 BTreeMap::new()
             }
         };
