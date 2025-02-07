@@ -180,7 +180,7 @@ public final class DBSPArrayExpression extends DBSPExpression
     }
 
     public boolean isConstant() {
-        return this.data == null || Linq.all(this.data, DBSPExpression::isConstant);
+        return this.data == null || Linq.all(this.data, DBSPExpression::isCompileTimeConstant);
     }
 
     @Override

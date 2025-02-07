@@ -61,7 +61,7 @@ public abstract class DBSPExpression
         this.type = type;
     }
 
-    public boolean isConstant() {
+    public boolean isCompileTimeConstant() {
         return this.is(IConstructor.class) &&
                 this.to(IConstructor.class).isConstant();
     }

@@ -2317,4 +2317,14 @@ public class StreamingTests extends StreamingTestBase {
                 """;
         this.getCCS(sql);
     }
+
+    @Test
+    public void calciteMeetupTest() {
+        this.getCCS("""
+                CREATE TABLE data(ts TIMESTAMP LATENESS INTERVAL 10 MINUTES, price INT, item INT);
+                CREATE VIEW V AS
+                SELECT DATE_TRUNC(ts, MONTH), MIN(price), item
+                FROM data
+                GROUP BY DATE_TRUNC(ts, MONTH), item;""");
+    }
 }

@@ -83,8 +83,8 @@ public final class DBSPGeoPointConstructor
 
     @Override
     public boolean isConstant() {
-        return (this.left == null || this.left.isConstant())
-                && (this.right == null || this.right.isConstant());
+        return (this.left == null || this.left.isCompileTimeConstant())
+                && (this.right == null || this.right.isCompileTimeConstant());
     }
 
     @Override
