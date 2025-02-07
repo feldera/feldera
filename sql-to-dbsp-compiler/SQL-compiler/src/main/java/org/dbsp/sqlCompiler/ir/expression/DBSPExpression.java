@@ -198,6 +198,13 @@ public abstract class DBSPExpression
         return this.cast(to, force, safe);
     }
 
+    /** Insert a cast which may only change nullability */
+    public DBSPExpression nullabilityCast(DBSPType to, boolean safe) {
+        DBSPType sourceType = this.getType();
+        assert sourceType.sameTypeIgnoringNullability(to);
+        return this.cast(to, safe);
+    }
+
     public DBSPExpression applyCloneIfNeeded() {
         if (this.getType().hasCopy())
             return this;

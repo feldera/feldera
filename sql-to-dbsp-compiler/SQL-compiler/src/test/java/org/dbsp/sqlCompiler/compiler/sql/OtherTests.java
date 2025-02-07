@@ -315,7 +315,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
 
     void compileFile(String file, boolean run) throws SQLException, IOException, InterruptedException {
         CompilerMessages messages = CompilerMain.execute(
-                "-i", "--alltables", "--ignoreOrder", "-o", BaseSQLTests.testFilePath, file);
+                "-i", "--alltables", "-q", "--ignoreOrder", "-o", BaseSQLTests.testFilePath, file);
         messages.print();
         Assert.assertEquals(0, messages.errorCount());
         if (run)
