@@ -35,10 +35,7 @@ use crate::{
     Runtime,
 };
 
-use super::{
-    format::Compression,
-    reader::{InnerDataBlock, InnerIndexBlock},
-};
+use super::format::Compression;
 use super::{
     reader::Reader, AnyFactories, Factories, Serializer, BLOOM_FILTER_FALSE_POSITIVE_RATE,
 };
@@ -241,7 +238,7 @@ impl ColumnWriter {
         // Flush data.
         if !self.data_block.is_empty() {
             let data_block = self.data_block.take().build::<K, A>();
-            self.write_data_block(block_writer, data_block)?;
+            self.write_data_block::<K, A>(block_writer, data_block)?;
         }
 
         // Flush index.
@@ -288,19 +285,23 @@ impl ColumnWriter {
         &mut self.index_blocks[level]
     }
 
-    fn write_data_block<K>(
+    fn write_data_block<K, A>(
         &mut self,
         block_writer: &mut BlockWriter,
         data_block: DataBlock<K>,
     ) -> Result<(), StorageError>
     where
         K: DataTrait + ?Sized,
+        A: DataTrait + ?Sized,
     {
         let (block, location) =
             block_writer.write_block(data_block.raw, self.parameters.compression)?;
         block_writer.insert_cache_entry(
             location,
-            Arc::new(InnerDataBlock::from_raw(block, location, data_block.first_row).unwrap()),
+            Arc::new(
+                super::reader::DataBlock::<K, A>::from_raw(block, location, data_block.first_row)
+                    .unwrap(),
+            ),
         );
 
         if let Some(index_block) = self.get_index_block(0).add_entry(
@@ -329,7 +330,12 @@ impl ColumnWriter {
             block_writer.insert_cache_entry(
                 location,
                 Arc::new(
-                    InnerIndexBlock::from_raw(block, location, index_block.rows.start).unwrap(),
+                    super::reader::IndexBlock::<K>::from_raw(
+                        block,
+                        location,
+                        index_block.rows.start,
+                    )
+                    .unwrap(),
                 ),
             );
 
@@ -355,7 +361,7 @@ impl ColumnWriter {
         A: DataTrait + ?Sized,
     {
         if let Some(data_block) = self.data_block.add_item(item, row_group) {
-            self.write_data_block(block_writer, data_block)?;
+            self.write_data_block::<K, A>(block_writer, data_block)?;
         }
         Ok(())
     }
