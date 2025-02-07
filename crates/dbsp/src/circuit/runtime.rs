@@ -7,10 +7,7 @@ use crate::storage::backend::StorageBackend;
 use crate::storage::file::format::Compression;
 use crate::storage::file::writer::Parameters;
 use crate::{
-    storage::{
-        backend::StorageError, buffer_cache::BufferCache, dirlock::LockedDirectory,
-        file::cache::FileCacheEntry,
-    },
+    storage::{backend::StorageError, buffer_cache::BufferCache, dirlock::LockedDirectory},
     DetailedError,
 };
 use enum_map::EnumMap;
@@ -230,7 +227,7 @@ struct RuntimeInner {
     store: LocalStore,
     kill_signal: AtomicBool,
     background_threads: Mutex<Vec<JoinHandle<()>>>,
-    buffer_caches: Vec<EnumMap<ThreadType, Arc<BufferCache<FileCacheEntry>>>>,
+    buffer_caches: Vec<EnumMap<ThreadType, Arc<BufferCache>>>,
     worker_sequence_numbers: Vec<AtomicUsize>,
     // Panic info collected from failed worker threads.
     panic_info: Vec<RwLock<Option<WorkerPanicInfo>>>,
@@ -460,10 +457,10 @@ impl Runtime {
     }
 
     /// Returns this thread's buffer cache, if storage is configured.
-    pub fn buffer_cache() -> Arc<BufferCache<FileCacheEntry>> {
+    pub fn buffer_cache() -> Arc<BufferCache> {
         // Fast path, look up from TLS
         thread_local! {
-            static BUFFER_CACHE: RefCell<Option<Arc<BufferCache<FileCacheEntry>>>> = const { RefCell::new(None) };
+            static BUFFER_CACHE: RefCell<Option<Arc<BufferCache>>> = const { RefCell::new(None) };
         }
         if let Some(buffer_cache) = BUFFER_CACHE.with(|bc| bc.borrow().clone()) {
             return buffer_cache;
@@ -475,7 +472,7 @@ impl Runtime {
         } else {
             // No `Runtime` means there's only a single worker, so use a single
             // global cache.
-            static NO_RUNTIME_CACHE: LazyLock<Arc<BufferCache<FileCacheEntry>>> =
+            static NO_RUNTIME_CACHE: LazyLock<Arc<BufferCache>> =
                 LazyLock::new(|| Arc::new(BufferCache::new(1024 * 1024 * 256)));
             NO_RUNTIME_CACHE.clone()
         };
@@ -491,7 +488,7 @@ impl Runtime {
         &self,
         worker_index: usize,
         thread_type: ThreadType,
-    ) -> Arc<BufferCache<FileCacheEntry>> {
+    ) -> Arc<BufferCache> {
         self.0.buffer_caches[worker_index][thread_type].clone()
     }
 

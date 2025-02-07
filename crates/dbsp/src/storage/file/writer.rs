@@ -6,7 +6,7 @@
 //! `pub`.
 use crate::storage::{
     backend::{BlockLocation, FileReader, FileWriter, StorageBackend, StorageError},
-    buffer_cache::{FBuf, FBufSerializer},
+    buffer_cache::{BufferCache, CacheEntry, FBuf, FBufSerializer},
     file::format::{
         BlockHeader, DataBlockHeader, FileTrailer, FileTrailerColumn, FixedLen, IndexBlockHeader,
         NodeType, Varint, VERSION_NUMBER,
@@ -35,8 +35,10 @@ use crate::{
     Runtime,
 };
 
-use super::cache::{FileCache, FileCacheEntry};
-use super::format::Compression;
+use super::{
+    format::Compression,
+    reader::{InnerDataBlock, InnerIndexBlock},
+};
 use super::{
     reader::Reader, AnyFactories, Factories, Serializer, BLOOM_FILTER_FALSE_POSITIVE_RATE,
 };
@@ -293,7 +295,12 @@ impl ColumnWriter {
     where
         K: DataTrait + ?Sized,
     {
-        let location = block_writer.write_block(data_block.raw, self.parameters.compression)?;
+        let (block, location) =
+            block_writer.write_block(data_block.raw, self.parameters.compression)?;
+        block_writer.insert_cache_entry(
+            location,
+            Arc::new(InnerDataBlock::from_raw(block, location).unwrap()),
+        );
 
         if let Some(index_block) = self.get_index_block(0).add_entry(
             location,
@@ -315,8 +322,12 @@ impl ColumnWriter {
         K: DataTrait + ?Sized,
     {
         loop {
-            let location =
+            let (block, location) =
                 block_writer.write_block(index_block.raw, self.parameters.compression)?;
+            block_writer.insert_cache_entry(
+                location,
+                Arc::new(InnerIndexBlock::from_raw(block, location).unwrap()),
+            );
 
             level += 1;
             let opt_index_block = self.get_index_block(level).add_entry(
@@ -897,7 +908,7 @@ impl IndexBlockBuilder {
 }
 
 struct BlockWriter {
-    cache: Arc<FileCache>,
+    cache: Arc<BufferCache>,
     file_handle: Option<Box<dyn FileWriter>>,
     encoder: Encoder,
     bounce: Vec<u8>,
@@ -905,7 +916,7 @@ struct BlockWriter {
 }
 
 impl BlockWriter {
-    fn new(cache: Arc<FileCache>, file_handle: Box<dyn FileWriter>) -> Self {
+    fn new(cache: Arc<BufferCache>, file_handle: Box<dyn FileWriter>) -> Self {
         Self {
             cache,
             file_handle: Some(file_handle),
@@ -923,7 +934,7 @@ impl BlockWriter {
         &mut self,
         mut block: FBuf,
         compression: Option<Compression>,
-    ) -> Result<BlockLocation, StorageError> {
+    ) -> Result<(Arc<FBuf>, BlockLocation), StorageError> {
         // `block` is the uncompressed version.
         // We need to write the compressed version.
         let (uncompressed, location) = if let Some(compression) = compression {
@@ -982,14 +993,16 @@ impl BlockWriter {
         };
 
         // Construct a cache entry from the uncompressed data.
-        let file_id = self.file_handle.as_ref().unwrap().file_id();
-        self.cache.insert(
-            file_id,
-            self.offset,
-            FileCacheEntry::from_write(uncompressed, location).unwrap(),
-        );
         self.offset = location.after();
-        Ok(location)
+        Ok((uncompressed, location))
+    }
+
+    fn insert_cache_entry(&self, location: BlockLocation, entry: Arc<dyn CacheEntry>) {
+        self.cache.insert(
+            self.file_handle.as_ref().unwrap().file_id(),
+            location.offset,
+            entry,
+        );
     }
 }
 
@@ -1009,7 +1022,7 @@ struct Writer {
 impl Writer {
     pub fn new(
         factories: &[&AnyFactories],
-        buffer_cache: Arc<FileCache>,
+        buffer_cache: Arc<BufferCache>,
         storage_backend: &dyn StorageBackend,
         parameters: Parameters,
         n_columns: usize,
@@ -1083,7 +1096,11 @@ impl Writer {
             columns: take(&mut self.finished_columns),
             compression: self.cws[0].parameters.compression,
         };
-        self.writer.write_block(file_trailer.into_block(), None)?;
+        let (_block, location) = self
+            .writer
+            .write_block(file_trailer.clone().into_block(), None)?;
+        self.writer
+            .insert_cache_entry(location, Arc::new(file_trailer));
 
         let (reader, pbuf) = self.writer.complete()?;
 
@@ -1110,7 +1127,7 @@ impl Writer {
         self.cws[0].rows.end
     }
 
-    pub fn storage(&self) -> &Arc<FileCache> {
+    pub fn storage(&self) -> &Arc<BufferCache> {
         &self.writer.cache
     }
 }
@@ -1169,7 +1186,7 @@ where
     /// Creates a new writer with the given parameters.
     pub fn new(
         factories: &Factories<K0, A0>,
-        buffer_cache: Arc<FileCache>,
+        buffer_cache: Arc<BufferCache>,
         storage_backend: &dyn StorageBackend,
         parameters: Parameters,
         estimated_keys: usize,
@@ -1219,7 +1236,7 @@ where
     }
 
     /// Returns the storage used for this writer.
-    pub fn storage(&self) -> &Arc<FileCache> {
+    pub fn storage(&self) -> &Arc<BufferCache> {
         self.inner.storage()
     }
 
@@ -1313,7 +1330,7 @@ where
     pub fn new(
         factories0: &Factories<K0, A0>,
         factories1: &Factories<K1, A1>,
-        buffer_cache: Arc<FileCache>,
+        buffer_cache: Arc<BufferCache>,
         storage_backend: &dyn StorageBackend,
         parameters: Parameters,
         estimated_keys: usize,
@@ -1395,7 +1412,7 @@ where
     }
 
     /// Returns the storage used for this writer.
-    pub fn storage(&self) -> &Arc<FileCache> {
+    pub fn storage(&self) -> &Arc<BufferCache> {
         self.inner.storage()
     }
 

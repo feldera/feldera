@@ -88,7 +88,6 @@ use rkyv::{
 use std::fmt::Debug;
 use std::{any::Any, sync::Arc};
 
-pub mod cache;
 pub mod format;
 mod item;
 pub mod reader;
@@ -314,11 +313,11 @@ mod test {
     use std::sync::Arc;
 
     use crate::storage::{
-        backend::StorageBackend, file::format::Compression, test::init_test_logger,
+        backend::StorageBackend, buffer_cache::BufferCache, file::format::Compression,
+        test::init_test_logger,
     };
 
     use super::{
-        cache::FileCache,
         reader::{ColumnSpec, RowGroup},
         writer::{Parameters, Writer1, Writer2},
         Factories,
@@ -599,7 +598,7 @@ mod test {
         let factories0 = Factories::<DynData, DynData>::new::<T::K0, T::A0>();
         let factories1 = Factories::<DynData, DynData>::new::<T::K1, T::A1>();
 
-        let cache = Arc::new(FileCache::new(1024 * 1024));
+        let cache = Arc::new(BufferCache::new(1024 * 1024));
         let tempdir = tempdir().unwrap();
         let storage_backend = <dyn StorageBackend>::new(
             &StorageConfig {
@@ -714,7 +713,7 @@ mod test {
     {
         for_each_compression_type(parameters, |parameters| {
             let factories = Factories::<DynData, DynData>::new::<K, A>();
-            let cache = Arc::new(FileCache::new(1024 * 1024));
+            let cache = Arc::new(BufferCache::new(1024 * 1024));
             let tempdir = tempdir().unwrap();
             let storage_backend = <dyn StorageBackend>::new(
                 &StorageConfig {
