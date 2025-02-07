@@ -219,7 +219,7 @@ impl ColumnWriter {
             parameters: parameters.clone(),
             column_index,
             rows: 0..0,
-            data_block: DataBlockBuilder::new(factories, parameters),
+            data_block: DataBlockBuilder::new(factories, parameters, 0),
             index_blocks: Vec::new(),
             factories: factories.clone(),
         }
@@ -282,6 +282,7 @@ impl ColumnWriter {
                 } else {
                     NodeType::Index
                 },
+                0,
             ));
         }
         &mut self.index_blocks[level]
@@ -299,7 +300,7 @@ impl ColumnWriter {
             block_writer.write_block(data_block.raw, self.parameters.compression)?;
         block_writer.insert_cache_entry(
             location,
-            Arc::new(InnerDataBlock::from_raw(block, location).unwrap()),
+            Arc::new(InnerDataBlock::from_raw(block, location, data_block.first_row).unwrap()),
         );
 
         if let Some(index_block) = self.get_index_block(0).add_entry(
@@ -317,26 +318,27 @@ impl ColumnWriter {
         block_writer: &mut BlockWriter,
         mut index_block: IndexBlock<K>,
         mut level: usize,
-    ) -> Result<(BlockLocation, u64), StorageError>
+    ) -> Result<(), StorageError>
     where
         K: DataTrait + ?Sized,
     {
         loop {
+            let n_rows = index_block.n_rows();
             let (block, location) =
                 block_writer.write_block(index_block.raw, self.parameters.compression)?;
             block_writer.insert_cache_entry(
                 location,
-                Arc::new(InnerIndexBlock::from_raw(block, location).unwrap()),
+                Arc::new(
+                    InnerIndexBlock::from_raw(block, location, index_block.rows.start).unwrap(),
+                ),
             );
 
             level += 1;
-            let opt_index_block = self.get_index_block(level).add_entry(
-                location,
-                &index_block.min_max,
-                index_block.n_rows,
-            );
+            let opt_index_block =
+                self.get_index_block(level)
+                    .add_entry(location, &index_block.min_max, n_rows);
             index_block = match opt_index_block {
-                None => return Ok((location, index_block.n_rows)),
+                None => return Ok(()),
                 Some(index_block) => index_block,
             };
         }
@@ -405,6 +407,7 @@ struct DataBlockBuilder {
     row_groups: ContiguousRanges,
     size_target: Option<usize>,
     factories: AnyFactories,
+    first_row: u64,
 }
 
 struct DataBuildSpecs {
@@ -417,10 +420,11 @@ struct DataBlock<K: ?Sized> {
     raw: FBuf,
     min_max: (Box<K>, Box<K>),
     n_values: usize,
+    first_row: u64,
 }
 
 impl DataBlockBuilder {
-    fn new(factories: &AnyFactories, parameters: &Arc<Parameters>) -> Self {
+    fn new(factories: &AnyFactories, parameters: &Arc<Parameters>, first_row: u64) -> Self {
         let mut raw = FBuf::with_capacity(parameters.min_data_block);
         raw.resize(DataBlockHeader::LEN, 0);
         Self {
@@ -431,13 +435,21 @@ impl DataBlockBuilder {
             value_offset_stride: StrideBuilder::new(),
             size_target: None,
             factories: factories.clone(),
+            first_row,
         }
     }
     fn is_empty(&self) -> bool {
         self.value_offsets.is_empty()
     }
     fn take(&mut self) -> DataBlockBuilder {
-        replace(self, Self::new(&self.factories, &self.parameters))
+        replace(
+            self,
+            Self::new(
+                &self.factories,
+                &self.parameters,
+                self.first_row + self.value_offsets.len() as u64,
+            ),
+        )
     }
     fn try_add_item<K, A>(&mut self, item: (&K, &A), row_group: &Option<Range<u64>>) -> bool
     where
@@ -591,6 +603,7 @@ impl DataBlockBuilder {
             raw: self.raw,
             min_max: (min, max),
             n_values,
+            first_row: self.first_row,
         }
     }
 }
@@ -640,6 +653,7 @@ struct IndexBlockBuilder {
     size_target: Option<usize>,
     factories: AnyFactories,
     max_child_size: usize,
+    first_row: u64,
 }
 
 struct IndexBuildSpecs {
@@ -653,7 +667,13 @@ struct IndexBuildSpecs {
 struct IndexBlock<K: ?Sized> {
     raw: FBuf,
     min_max: (Box<K>, Box<K>),
-    n_rows: u64,
+    rows: Range<u64>,
+}
+
+impl<K: ?Sized> IndexBlock<K> {
+    fn n_rows(&self) -> u64 {
+        self.rows.end - self.rows.start
+    }
 }
 
 fn rkyv_deserialize<K>(src: &FBuf, offset: usize, key: &mut K)
@@ -707,6 +727,7 @@ impl IndexBlockBuilder {
         parameters: &Arc<Parameters>,
         column_index: usize,
         child_type: NodeType,
+        first_row: u64,
     ) -> Self {
         let mut raw = FBuf::with_capacity(parameters.min_index_block);
         raw.resize(IndexBlockHeader::LEN, 0);
@@ -720,6 +741,7 @@ impl IndexBlockBuilder {
             size_target: None,
             factories: factories.clone(),
             max_child_size: 0,
+            first_row,
         }
     }
     fn is_empty(&self) -> bool {
@@ -733,6 +755,7 @@ impl IndexBlockBuilder {
                 &self.parameters,
                 self.column_index,
                 self.child_type,
+                self.first_row + self.entries.last().map_or(0, |entry| entry.row_total),
             ),
         )
     }
@@ -902,7 +925,7 @@ impl IndexBlockBuilder {
         IndexBlock {
             raw: self.raw,
             min_max: (min, max),
-            n_rows: entry_n.row_total,
+            rows: self.first_row..self.first_row + entry_n.row_total,
         }
     }
 }
@@ -1149,7 +1172,8 @@ impl Writer {
 /// # use std::sync::Arc;
 /// use dbsp::storage::{
 ///     backend::StorageBackend,
-///     file::{cache::FileCache, Factories},
+///     file::Factories,
+///     buffer_cache::BufferCache,
 /// };
 /// let factories = Factories::<DynData, DynUnit>::new::<u32, ()>();
 /// let tempdir = tempfile::tempdir().unwrap();
@@ -1157,7 +1181,7 @@ impl Writer {
 ///     path: tempdir.path().to_string_lossy().to_string(),
 ///    cache: Default::default(),
 /// }, &StorageOptions::default()).unwrap();
-/// let cache = Arc::new(FileCache::new(1024 * 1024));
+/// let cache = Arc::new(BufferCache::new(1024 * 1024));
 /// let parameters = Parameters::default();
 /// let mut file =
 ///     Writer1::new(&factories, cache, &*storage_backend, parameters, 1_000_000).unwrap();
@@ -1282,7 +1306,8 @@ where
 /// use feldera_types::config::{StorageConfig, StorageOptions};
 /// use dbsp::storage::{
 ///     backend::StorageBackend,
-///     file::{cache::FileCache, Factories},
+///     file::Factories,
+///     buffer_cache::BufferCache,
 /// };
 /// let factories = Factories::<DynData, DynUnit>::new::<u32, ()>();
 /// let tempdir = tempfile::tempdir().unwrap();
@@ -1290,7 +1315,7 @@ where
 ///     path: tempdir.path().to_string_lossy().to_string(),
 ///    cache: Default::default(),
 /// }, &StorageOptions::default()).unwrap();
-/// let cache = Arc::new(FileCache::new(1024 * 1024));
+/// let cache = Arc::new(BufferCache::new(1024 * 1024));
 /// let parameters = Parameters::default();
 /// let mut file =
 ///     Writer2::new(&factories, &factories, cache, &*storage_backend, parameters, 1_000_000).unwrap();

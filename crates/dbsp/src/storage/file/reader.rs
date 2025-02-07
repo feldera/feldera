@@ -168,15 +168,15 @@ pub enum CorruptionError {
     #[error("Index block ({0}) is empty")]
     EmptyIndex(BlockLocation),
 
-    /// Data block contains unexpected number of rows.
-    #[error("Data block ({location}) contains {n_rows} rows but {expected_rows} were expected.")]
-    DataBlockWrongNumberOfRows {
+    /// Data block contains unexpected rows.
+    #[error("Data block ({location}) contains rows {rows:?} but {expected_rows:?} were expected.")]
+    DataBlockWrongRows {
         /// Block location.
         location: BlockLocation,
-        /// Number of rows in block.
-        n_rows: u64,
-        /// Expected number of rows in block.
-        expected_rows: u64,
+        /// Rows actually in block.
+        rows: Range<u64>,
+        /// Expected rows in block.
+        expected_rows: Range<u64>,
     },
 
     /// Index block requires unexpected number of rows.
@@ -292,6 +292,10 @@ pub enum CorruptionError {
         /// Snappy error.
         error: snap::Error,
     },
+
+    /// Multiple paths to block.
+    #[error("Multiple paths to block ({0}).")]
+    MultiplePaths(BlockLocation),
 }
 
 #[derive(Clone)]
@@ -420,6 +424,7 @@ pub struct InnerDataBlock {
     raw: Arc<FBuf>,
     value_map: ValueMapReader,
     row_groups: Option<VarintReader>,
+    first_row: u64,
 }
 
 impl CacheEntry for InnerDataBlock {
@@ -433,7 +438,11 @@ impl CacheEntry for InnerDataBlock {
 }
 
 impl InnerDataBlock {
-    pub(super) fn from_raw(raw: Arc<FBuf>, location: BlockLocation) -> Result<Self, Error> {
+    pub(super) fn from_raw(
+        raw: Arc<FBuf>,
+        location: BlockLocation,
+        first_row: u64,
+    ) -> Result<Self, Error> {
         let header = DataBlockHeader::read_le(&mut io::Cursor::new(raw.as_slice()))?;
         Ok(Self {
             location,
@@ -450,6 +459,7 @@ impl InnerDataBlock {
                 header.n_values as usize + 1,
             )?,
             raw,
+            first_row,
         })
     }
 
@@ -458,10 +468,14 @@ impl InnerDataBlock {
         let cache = (file.cache)();
         #[allow(clippy::borrow_deref_ref)]
         let (access, entry) = match cache.get(&*file.file_handle, node.location) {
-            Some(entry) => (CacheAccess::Hit, entry),
+            Some(entry) => {
+                let entry = Arc::downcast::<Self>(entry.as_any())
+                    .map_err(|_| Error::Corruption(CorruptionError::BadBlockType(node.location)))?;
+                (CacheAccess::Hit, entry)
+            }
             None => {
                 let block = file.read_block(node.location)?;
-                let entry = Arc::new(Self::from_raw(block, node.location)?) as Arc<dyn CacheEntry>;
+                let entry = Arc::new(Self::from_raw(block, node.location, node.rows.start)?);
                 cache.insert(
                     file.file_handle.file_id(),
                     node.location.offset,
@@ -471,11 +485,23 @@ impl InnerDataBlock {
             }
         };
         file.stats.record(access, start.elapsed(), node.location);
-        Arc::downcast(entry.as_any())
-            .map_err(|_| Error::Corruption(CorruptionError::BadBlockType(node.location)))
+
+        if entry.rows() != node.rows {
+            return Err(CorruptionError::DataBlockWrongRows {
+                location: node.location,
+                rows: entry.rows(),
+                expected_rows: node.rows.clone(),
+            }
+            .into());
+        }
+
+        Ok(entry)
     }
     fn n_values(&self) -> usize {
         self.value_map.len()
+    }
+    fn rows(&self) -> Range<u64> {
+        self.first_row..(self.first_row + self.n_values() as u64)
     }
     fn row_group(&self, index: usize) -> Result<Range<u64>, Error> {
         let row_groups = self.row_groups.as_ref().unwrap();
@@ -501,7 +527,6 @@ where
     A: DataTrait + ?Sized,
 {
     inner: Arc<InnerDataBlock>,
-    first_row: u64,
     factories: Factories<K, A>,
     _phantom: PhantomData<fn(&K, &A)>,
 }
@@ -514,7 +539,6 @@ where
     fn clone(&self) -> Self {
         Self {
             inner: self.inner.clone(),
-            first_row: self.first_row,
             factories: self.factories.clone(),
             _phantom: PhantomData,
         }
@@ -533,19 +557,8 @@ where
     ) -> Result<Self, Error> {
         let inner = InnerDataBlock::new(file, node)?;
 
-        let expected_rows = node.rows.end - node.rows.start;
-        if inner.n_values() as u64 != expected_rows {
-            return Err(CorruptionError::DataBlockWrongNumberOfRows {
-                location: node.location,
-                n_rows: inner.n_values() as u64,
-                expected_rows,
-            }
-            .into());
-        }
-
         Ok(Self {
             inner,
-            first_row: node.rows.start,
             factories: factories.clone(),
             _phantom: PhantomData,
         })
@@ -554,10 +567,10 @@ where
         self.inner.n_values()
     }
     fn rows(&self) -> Range<u64> {
-        self.first_row..(self.first_row + self.n_values() as u64)
+        self.inner.rows()
     }
     fn row_group(&self, row: u64) -> Result<Range<u64>, Error> {
-        self.inner.row_group((row - self.first_row) as usize)
+        self.inner.row_group((row - self.inner.first_row) as usize)
     }
     unsafe fn archived_item(&self, index: usize) -> &dyn ArchivedItem<K, A> {
         self.factories.item_factory.archived_value(
@@ -566,7 +579,7 @@ where
         )
     }
     unsafe fn archived_item_for_row(&self, row: u64) -> &dyn ArchivedItem<K, A> {
-        let index = (row - self.first_row) as usize;
+        let index = (row - self.inner.first_row) as usize;
 
         self.archived_item(index)
     }
@@ -577,7 +590,7 @@ where
         DeserializeDyn::deserialize(archived_item.snd(), item.1);
     }
     unsafe fn item_for_row(&self, row: u64, item: (&mut K, &mut A)) {
-        let index = (row - self.first_row) as usize;
+        let index = (row - self.inner.first_row) as usize;
         self.item(index, item)
     }
     unsafe fn key(&self, index: usize, key: &mut K) {
@@ -589,11 +602,11 @@ where
         DeserializeDyn::deserialize(item.snd(), aux)
     }
     unsafe fn key_for_row(&self, row: u64, key: &mut K) {
-        let index = (row - self.first_row) as usize;
+        let index = (row - self.inner.first_row) as usize;
         self.key(index, key)
     }
     unsafe fn aux_for_row(&self, row: u64, aux: &mut A) {
-        let index = (row - self.first_row) as usize;
+        let index = (row - self.inner.first_row) as usize;
         self.aux(index, aux)
     }
 
@@ -612,8 +625,9 @@ where
         }
         let mut best = None;
         self.factories.key_factory.with(&mut |key| {
-            let mut start = (max(block_rows.start, target_rows.start) - self.first_row) as usize;
-            let mut end = (min(block_rows.end, target_rows.end) - self.first_row) as usize;
+            let mut start =
+                (max(block_rows.start, target_rows.start) - self.inner.first_row) as usize;
+            let mut end = (min(block_rows.end, target_rows.end) - self.inner.first_row) as usize;
             while start < end {
                 let mid = (start + end) / 2;
                 self.key(mid, key);
@@ -673,7 +687,6 @@ where
 struct TreeNode {
     location: BlockLocation,
     node_type: NodeType,
-    depth: usize,
     rows: Range<u64>,
     factories: AnyFactories,
 }
@@ -735,6 +748,7 @@ pub struct InnerIndexBlock {
     row_totals: VarintReader,
     child_offsets: VarintReader,
     child_sizes: VarintReader,
+    first_row: u64,
 }
 
 impl CacheEntry for InnerIndexBlock {
@@ -747,7 +761,11 @@ impl CacheEntry for InnerIndexBlock {
 }
 
 impl InnerIndexBlock {
-    pub(super) fn from_raw(raw: Arc<FBuf>, location: BlockLocation) -> Result<Self, Error> {
+    pub(super) fn from_raw(
+        raw: Arc<FBuf>,
+        location: BlockLocation,
+        first_row: u64,
+    ) -> Result<Self, Error> {
         let header = IndexBlockHeader::read_le(&mut io::Cursor::new(raw.as_slice()))?;
         if header.n_children == 0 {
             return Err(CorruptionError::EmptyIndex(location).into());
@@ -795,18 +813,29 @@ impl InnerIndexBlock {
                 header.n_children as usize,
             )?,
             raw,
+            first_row,
         })
     }
 
     fn new(file: &ImmutableFileRef, node: &TreeNode) -> Result<Arc<Self>, Error> {
         let start = Instant::now();
         let cache = (file.cache)();
+        let first_row = node.rows.start;
         #[allow(clippy::borrow_deref_ref)]
         let (access, entry) = match cache.get(&*file.file_handle, node.location) {
-            Some(entry) => (CacheAccess::Hit, entry),
+            Some(entry) => {
+                let entry = Arc::downcast::<Self>(entry.as_any())
+                    .map_err(|_| Error::Corruption(CorruptionError::BadBlockType(node.location)))?;
+                if entry.first_row != first_row {
+                    return Err(Error::Corruption(CorruptionError::MultiplePaths(
+                        node.location,
+                    )));
+                }
+                (CacheAccess::Hit, entry)
+            }
             None => {
                 let block = file.read_block(node.location)?;
-                let entry = Arc::new(Self::from_raw(block, node.location)?) as Arc<dyn CacheEntry>;
+                let entry = Arc::new(Self::from_raw(block, node.location, first_row)?);
                 cache.insert(
                     file.file_handle.file_id(),
                     node.location.offset,
@@ -816,8 +845,11 @@ impl InnerIndexBlock {
             }
         };
         file.stats.record(access, start.elapsed(), node.location);
-        Arc::downcast(entry.as_any())
-            .map_err(|_| Error::Corruption(CorruptionError::BadBlockType(node.location)))
+        Ok(entry)
+    }
+
+    fn rows(&self) -> Range<u64> {
+        self.first_row..self.first_row + self.row_totals.get(&self.raw, self.row_totals.count - 1)
     }
 }
 
@@ -826,8 +858,6 @@ where
     K: DataTrait + ?Sized,
 {
     inner: Arc<InnerIndexBlock>,
-    first_row: u64,
-    depth: usize,
     key_factory: &'static dyn Factory<K>,
     factories: AnyFactories,
     _phantom: PhantomData<K>,
@@ -840,8 +870,6 @@ where
     fn clone(&self) -> Self {
         Self {
             inner: self.inner.clone(),
-            first_row: self.first_row,
-            depth: self.depth,
             key_factory: self.key_factory,
             factories: self.factories.clone(),
             _phantom: PhantomData,
@@ -858,18 +886,6 @@ where
         file: &ImmutableFileRef,
         node: &TreeNode,
     ) -> Result<Self, Error> {
-        const MAX_DEPTH: usize = 64;
-        if node.depth > MAX_DEPTH {
-            // A depth of 64 (very deep) with a branching factor of 2 (very
-            // small) would allow for over `2**64` items.  A deeper file is a
-            // bug or a memory exhaustion attack.
-            return Err(CorruptionError::TooDeep {
-                depth: node.depth,
-                max_depth: MAX_DEPTH,
-            }
-            .into());
-        }
-
         let inner = InnerIndexBlock::new(file, node)?;
 
         let expected_rows = node.rows.end - node.rows.start;
@@ -885,8 +901,6 @@ where
 
         Ok(Self {
             inner,
-            first_row: node.rows.start,
-            depth: node.depth,
             factories: factories.clone(),
             key_factory: factories.key_factory(),
             _phantom: PhantomData,
@@ -911,7 +925,6 @@ where
             factories: self.factories.clone(),
             location: self.get_child_location(index)?,
             node_type: self.inner.child_type,
-            depth: self.depth + 1,
             rows: self.get_rows(index),
         })
     }
@@ -924,12 +937,7 @@ where
 
     /// Returns the range of rows covered by this index block.
     fn rows(&self) -> Range<u64> {
-        self.first_row
-            ..self.first_row
-                + self
-                    .inner
-                    .row_totals
-                    .get(&self.inner.raw, self.inner.row_totals.count - 1)
+        self.inner.rows()
     }
 
     fn get_rows(&self, index: usize) -> Range<u64> {
@@ -939,7 +947,7 @@ where
             self.inner.row_totals.get(&self.inner.raw, index - 1)
         };
         let high = self.inner.row_totals.get(&self.inner.raw, index);
-        (self.first_row + low)..(self.first_row + high)
+        (self.inner.first_row + low)..(self.inner.first_row + high)
     }
 
     fn get_row_bound(&self, index: usize) -> u64 {
@@ -978,8 +986,8 @@ where
             self.inner.row_totals.get(&self.inner.raw, child_idx - 1)
         } else {
             0
-        } + self.first_row;
-        let end = self.inner.row_totals.get(&self.inner.raw, child_idx) + self.first_row;
+        } + self.inner.first_row;
+        let end = self.inner.row_totals.get(&self.inner.raw, child_idx) + self.inner.first_row;
         start..end
     }
 
@@ -1114,7 +1122,7 @@ where
             result = None;
             while start < end {
                 let mid = (start + end) / 2;
-                let row = self.get_row_bound(mid) + self.first_row;
+                let row = self.get_row_bound(mid) + self.inner.first_row;
                 let cmp = match range_compare(target_rows, row) {
                     Equal => {
                         self.get_bound(mid, bound);
@@ -1166,8 +1174,8 @@ where
     fn fmt(&self, f: &mut Formatter) -> FmtResult {
         write!(
             f,
-            "IndexBlock {{ depth: {}, first_row: {}, child_type: {:?}, children = {{",
-            self.depth, self.first_row, self.inner.child_type
+            "IndexBlock {{ first_row: {}, child_type: {:?}, children = {{",
+            self.inner.first_row, self.inner.child_type
         )?;
         for i in 0..self.n_children() {
             if i > 0 {
@@ -1211,19 +1219,22 @@ impl FileTrailer {
         stats: &AtomicCacheStats,
     ) -> Result<Arc<FileTrailer>, Error> {
         let start = Instant::now();
-        let cache = (cache)();
-        let (access, entry) = match cache.get(file_handle, location) {
-            Some(entry) => (CacheAccess::Hit, entry),
+        let cache = cache();
+        let (access, entry) = match cache.get(&*file_handle, location) {
+            Some(entry) => {
+                let entry = Arc::downcast::<Self>(entry.as_any())
+                    .map_err(|_| Error::Corruption(CorruptionError::BadBlockType(location)))?;
+                (CacheAccess::Hit, entry)
+            }
             None => {
                 let block = file_handle.read_block(location)?;
-                let entry = Arc::new(Self::from_raw(block)?) as Arc<dyn CacheEntry>;
+                let entry = Arc::new(Self::from_raw(block)?);
                 cache.insert(file_handle.file_id(), location.offset, entry.clone());
                 (CacheAccess::Miss, entry)
             }
         };
         stats.record(access, start.elapsed(), location);
-        Arc::downcast(entry.as_any())
-            .map_err(|_| Error::Corruption(CorruptionError::BadBlockType(location)))
+        Ok(entry)
     }
 }
 
@@ -1255,7 +1266,6 @@ impl Column {
                 factories: factories.clone(),
                 location,
                 node_type,
-                depth: 0,
                 rows: 0..n_rows,
             })
         } else {
@@ -2171,6 +2181,29 @@ impl<K: DataTrait + ?Sized, A: DataTrait + ?Sized> Clone for Path<K, A> {
     }
 }
 
+fn push_index_block<K>(
+    indexes: &mut Vec<IndexBlock<K>>,
+    index_block: IndexBlock<K>,
+) -> Result<(), Error>
+where
+    K: DataTrait + ?Sized,
+{
+    const MAX_DEPTH: usize = 64;
+    if indexes.len() > MAX_DEPTH {
+        // A depth of 64 (very deep) with a branching factor of 2 (very
+        // small) would allow for over `2**64` items.  A deeper file is a
+        // bug or a memory exhaustion attack.
+        return Err(CorruptionError::TooDeep {
+            depth: indexes.len(),
+            max_depth: MAX_DEPTH,
+        }
+        .into());
+    }
+
+    indexes.push(index_block);
+    Ok(())
+}
+
 impl<K, A> Path<K, A>
 where
     K: DataTrait + ?Sized,
@@ -2209,7 +2242,9 @@ where
                         factories,
                     });
                 }
-                TreeBlock::Index(index) => indexes.push(index),
+                TreeBlock::Index(index) => {
+                    push_index_block(&mut indexes, index)?;
+                }
             };
             node = next.unwrap();
         }
@@ -2296,14 +2331,14 @@ where
                         return Ok(None);
                     };
                     node = index_block.get_child(child_idx)?;
-                    indexes.push(index_block);
+                    push_index_block(&mut indexes, index_block)?;
                 }
                 TreeBlock::Data(data_block) => {
                     let factories = data_block.factories.clone();
                     return Ok(data_block
                         .find_best_match(&row_group.rows, compare, bias)
                         .map(|child_idx| Self {
-                            row: data_block.first_row + child_idx as u64,
+                            row: data_block.inner.first_row + child_idx as u64,
                             indexes,
                             data: data_block,
                             factories,
@@ -2332,14 +2367,14 @@ where
                         return Ok(None);
                     };
                     node = index_block.get_child(child_idx)?;
-                    indexes.push(index_block);
+                    push_index_block(&mut indexes, index_block)?;
                 }
                 TreeBlock::Data(data_block) => {
                     let factories = data_block.factories.clone();
                     return Ok(data_block
                         .find_exact(&row_group.rows, compare)
                         .map(|child_idx| Self {
-                            row: data_block.first_row + child_idx as u64,
+                            row: data_block.inner.first_row + child_idx as u64,
                             indexes,
                             data: data_block,
                             factories,
@@ -2400,7 +2435,7 @@ where
             != Greater
         {
             let child_idx = self.data.find_best_match(&rows, compare, Less).unwrap();
-            self.row = self.data.first_row + child_idx as u64;
+            self.row = self.data.inner.first_row + child_idx as u64;
             return Ok(true);
         }
 
@@ -2420,7 +2455,7 @@ where
                 return Ok(false);
             };
             let mut node = index_block.get_child(child_idx)?;
-            self.indexes.push(index_block);
+            push_index_block(&mut self.indexes, index_block)?;
 
             loop {
                 match node.read::<K, A>(&row_group.reader.file)? {
@@ -2431,7 +2466,7 @@ where
                             return Ok(false);
                         };
                         node = index_block.get_child(child_idx)?;
-                        self.indexes.push(index_block);
+                        push_index_block(&mut self.indexes, index_block)?;
                     }
                     TreeBlock::Data(data_block) => {
                         let Some(child_idx) =
@@ -2439,7 +2474,7 @@ where
                         else {
                             return Ok(false);
                         };
-                        self.row = child_idx as u64 + data_block.first_row;
+                        self.row = child_idx as u64 + data_block.inner.first_row;
                         self.data = data_block;
                         return Ok(true);
                     }
@@ -2485,7 +2520,7 @@ where
         write!(
             f,
             ", data: [row {} of {}] }}",
-            self.row - self.data.first_row,
+            self.row - self.data.inner.first_row,
             self.data.n_values()
         )
     }
