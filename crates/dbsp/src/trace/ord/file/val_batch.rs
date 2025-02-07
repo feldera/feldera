@@ -318,26 +318,24 @@ where
     where
         RG: Rng,
     {
-        self.factories.factories0.key_factory.with(&mut |key| {
-            let size = self.key_count();
-            let mut cursor = self.file.rows().first().unwrap();
-            if sample_size >= size {
-                output.reserve(size);
-                while let Some(key) = unsafe { cursor.key(key) } {
-                    output.push_ref(key);
-                    cursor.move_next().unwrap();
-                }
-            } else {
-                output.reserve(sample_size);
-
-                let mut indexes = sample(rng, size, sample_size).into_vec();
-                indexes.sort_unstable();
-                for index in indexes {
-                    cursor.move_to_row(index as u64).unwrap();
-                    output.push_ref(unsafe { cursor.key(key) }.unwrap());
-                }
+        let size = self.key_count();
+        let mut cursor = self.file.rows().first().unwrap();
+        if sample_size >= size {
+            output.reserve(size);
+            while let Some(key) = cursor.key() {
+                output.push_ref(key);
+                cursor.move_next().unwrap();
             }
-        })
+        } else {
+            output.reserve(sample_size);
+
+            let mut indexes = sample(rng, size, sample_size).into_vec();
+            indexes.sort_unstable();
+            for index in indexes {
+                cursor.move_to_row(index as u64).unwrap();
+                output.push_ref(cursor.key().unwrap());
+            }
+        }
     }
 }
 
@@ -403,24 +401,22 @@ fn include<K: ?Sized>(x: &K, filter: &Option<Filter<K>>) -> bool {
     }
 }
 
-fn read_filtered<'a, K, A, N, T>(
+fn read_filtered<K, A, N, T>(
     cursor: &mut FileCursor<K, A, N, T>,
     filter: &Option<Filter<K>>,
-    key: &'a mut K,
-) -> Option<&'a K>
+) -> bool
 where
     K: DataTrait + ?Sized,
     A: DataTrait + ?Sized,
     T: ColumnSpec,
 {
-    while cursor.has_value() {
-        unsafe { cursor.key(key) }.unwrap();
+    while let Some(key) = cursor.key() {
         if include(key, filter) {
-            return Some(key);
+            return true;
         }
         cursor.move_next().unwrap();
     }
-    None
+    false
 }
 
 fn merge_times<T, R>(
@@ -465,8 +461,8 @@ fn merge_times<T, R>(
 // Like `merge_times`, but additionally applied `map_func` to each timestamp.
 // Sorts and consolidates the resulting array of time/diff pairs.
 fn merge_map_times<T, R>(
-    a: &mut DynWeightedPairs<DynDataTyped<T>, R>,
-    b: &mut DynWeightedPairs<DynDataTyped<T>, R>,
+    a: &DynWeightedPairs<DynDataTyped<T>, R>,
+    b: &DynWeightedPairs<DynDataTyped<T>, R>,
     map_func: &dyn Fn(&mut DynDataTyped<T>),
     output: &mut DynWeightedPairs<DynDataTyped<T>, R>,
 ) where
@@ -474,11 +470,12 @@ fn merge_map_times<T, R>(
     R: WeightTrait + ?Sized,
 {
     output.clear();
-    output.append(a.as_vec_mut());
-    output.append(b.as_vec_mut());
+    output.reserve(a.len() + b.len());
+    output.extend(a.as_vec());
+    output.extend(b.as_vec());
 
-    for i in 0..output.len() {
-        map_func(unsafe { output.index_mut_unchecked(i) }.fst_mut());
+    for element in output.dyn_iter_mut() {
+        map_func(element.fst_mut());
     }
 
     output.consolidate();
@@ -494,54 +491,51 @@ where
     fn copy_values_if(
         &self,
         output: &mut Writer2<K, DynUnit, V, DynWeightedPairs<DynDataTyped<T>, R>>,
-        key: &K,
         key_cursor: &mut RawKeyCursor<'_, K, V, T, R>,
         value_filter: &Option<Filter<V>>,
         map_func: Option<&dyn Fn(&mut DynDataTyped<T>)>,
     ) {
-        self.factories.factories1.key_factory.with(&mut |value| {
-            let mut value_cursor = key_cursor.next_column().unwrap().first().unwrap();
-            let mut n = 0;
-            while value_cursor.has_value() {
-                let value = unsafe { value_cursor.key(value) }.unwrap();
-                if include(value, value_filter) {
-                    n += self.copy_value(output, &mut value_cursor, value, map_func);
-                }
-                value_cursor.move_next().unwrap();
+        let mut value_cursor = key_cursor.next_column().unwrap().first().unwrap();
+        let mut n = 0;
+        while value_cursor.has_value() {
+            let value = value_cursor.key().unwrap();
+            if include(value, value_filter) {
+                n += self.copy_value(output, &value_cursor, map_func);
             }
-            if n > 0 {
-                output.write0((key, ().erase())).unwrap();
-            }
-            key_cursor.move_next().unwrap();
-        })
+            value_cursor.move_next().unwrap();
+        }
+        if n > 0 {
+            output
+                .write0((key_cursor.key().unwrap(), ().erase()))
+                .unwrap();
+        }
+        key_cursor.move_next().unwrap();
     }
 
     fn copy_value(
         &self,
         output: &mut Writer2<K, DynUnit, V, DynWeightedPairs<DynDataTyped<T>, R>>,
-        cursor: &mut RawValCursor<'_, K, V, T, R>,
-        value: &V,
+        cursor: &RawValCursor<'_, K, V, T, R>,
         map_func: Option<&dyn Fn(&mut DynDataTyped<T>)>,
     ) -> usize {
-        let mut n = 0;
-
-        self.factories.timediff_factory.with(&mut |td| {
-            let td = unsafe { cursor.aux(td) }.unwrap();
-            if let Some(map_func) = map_func {
+        if let Some(map_func) = map_func {
+            let mut n = 0;
+            self.factories.timediff_factory.with(&mut |td| {
+                td.extend(cursor.aux().unwrap().as_vec());
                 for i in 0..td.len() {
                     map_func(td[i].fst_mut());
                 }
                 td.consolidate();
                 if !td.is_empty() {
-                    output.write1((value, td)).unwrap();
+                    output.write1((cursor.key().unwrap(), td)).unwrap();
                     n = 1;
                 }
-            } else {
-                output.write1((value, td)).unwrap();
-                n = 1;
-            }
-        });
-        n
+            });
+            n
+        } else {
+            output.write1(cursor.item().unwrap()).unwrap();
+            1
+        }
     }
 
     fn merge_values(
@@ -555,64 +549,51 @@ where
         let mut n = 0;
 
         self.factories.weight_factory.with(&mut |tmp_w| {
-            self.factories.factories1.key_factory.with(&mut |tmp_v1| {
-                self.factories.factories1.key_factory.with(&mut |tmp_v2| {
-                    self.factories.timediff_factory.with(&mut |td| {
-                        self.factories.timediff_factory.with(&mut |td1| {
-                            self.factories.timediff_factory.with(&mut |td2| loop {
-                                let Some(value1) = read_filtered(cursor1, value_filter, tmp_v1)
-                                else {
-                                    while let Some(value2) =
-                                        read_filtered(cursor2, value_filter, tmp_v2)
-                                    {
-                                        n += self.copy_value(output, cursor2, value2, map_func);
-                                        cursor2.move_next().unwrap();
-                                    }
-                                    return;
-                                };
-                                let Some(value2) = read_filtered(cursor2, value_filter, tmp_v2)
-                                else {
-                                    while let Some(value1) =
-                                        read_filtered(cursor1, value_filter, tmp_v1)
-                                    {
-                                        n += self.copy_value(output, cursor1, value1, map_func);
-                                        cursor1.move_next().unwrap();
-                                    }
-                                    return;
-                                };
-                                match value1.cmp(value2) {
-                                    Ordering::Less => {
-                                        n += self.copy_value(output, cursor1, value1, map_func);
-                                        cursor1.move_next().unwrap();
-                                    }
-                                    Ordering::Equal => {
-                                        let td1 = unsafe { cursor1.aux(td1) }.unwrap();
-                                        let td2 = unsafe { cursor2.aux(td2) }.unwrap();
-                                        if let Some(map_func) = &map_func {
-                                            merge_map_times(td1, td2, map_func, td);
-                                        } else {
-                                            //debug_assert!(td1.is_sorted());
-                                            //debug_assert!(td2.is_sorted());
+            self.factories.timediff_factory.with(&mut |td| loop {
+                if !read_filtered(cursor1, value_filter) {
+                    while read_filtered(cursor2, value_filter) {
+                        n += self.copy_value(output, cursor2, map_func);
+                        cursor2.move_next().unwrap();
+                    }
+                    return;
+                };
+                if !read_filtered(cursor2, value_filter) {
+                    while read_filtered(cursor1, value_filter) {
+                        n += self.copy_value(output, cursor1, map_func);
+                        cursor1.move_next().unwrap();
+                    }
+                    return;
+                };
+                let value1 = cursor1.key().unwrap();
+                let value2 = cursor2.key().unwrap();
+                match value1.cmp(value2) {
+                    Ordering::Less => {
+                        n += self.copy_value(output, cursor1, map_func);
+                        cursor1.move_next().unwrap();
+                    }
+                    Ordering::Equal => {
+                        let td1 = cursor1.aux().unwrap();
+                        let td2 = cursor2.aux().unwrap();
+                        if let Some(map_func) = &map_func {
+                            merge_map_times(td1, td2, map_func, td);
+                        } else {
+                            //debug_assert!(td1.is_sorted());
+                            //debug_assert!(td2.is_sorted());
 
-                                            merge_times(td1, td2, td, tmp_w);
-                                        }
-                                        cursor1.move_next().unwrap();
-                                        cursor2.move_next().unwrap();
-                                        if td.is_empty() {
-                                            continue;
-                                        }
-                                        output.write1((value1, td)).unwrap();
-                                        n += 1;
-                                    }
-                                    Ordering::Greater => {
-                                        n += self.copy_value(output, cursor2, value2, map_func);
-                                        cursor2.move_next().unwrap();
-                                    }
-                                }
-                            })
-                        })
-                    })
-                })
+                            merge_times(td1, td2, td, tmp_w);
+                        }
+                        if !td.is_empty() {
+                            output.write1((value1, td)).unwrap();
+                        }
+                        cursor1.move_next().unwrap();
+                        cursor2.move_next().unwrap();
+                        n += 1;
+                    }
+                    Ordering::Greater => {
+                        n += self.copy_value(output, cursor2, map_func);
+                        cursor2.move_next().unwrap();
+                    }
+                }
             })
         });
 
@@ -646,71 +627,44 @@ where
         .unwrap();
         let mut cursor1 = source1.file.rows().nth(0).unwrap();
         let mut cursor2 = source2.file.rows().nth(0).unwrap();
-        self.factories.factories0.key_factory.with(&mut |tmp_key1| {
-            self.factories
-                .factories0
-                .key_factory
-                .with(&mut |tmp_key2| loop {
-                    let Some(key1) = read_filtered(&mut cursor1, key_filter, tmp_key1) else {
-                        while let Some(key2) = read_filtered(&mut cursor2, key_filter, tmp_key2) {
-                            self.copy_values_if(
-                                &mut output,
-                                key2,
-                                &mut cursor2,
-                                value_filter,
-                                time_map_func,
-                            );
-                        }
-                        break;
-                    };
-                    let Some(key2) = read_filtered(&mut cursor2, key_filter, tmp_key2) else {
-                        while let Some(key1) = read_filtered(&mut cursor1, key_filter, tmp_key1) {
-                            self.copy_values_if(
-                                &mut output,
-                                key1,
-                                &mut cursor1,
-                                value_filter,
-                                time_map_func,
-                            );
-                        }
-                        break;
-                    };
-                    match key1.cmp(key2) {
-                        Ordering::Less => {
-                            self.copy_values_if(
-                                &mut output,
-                                key1,
-                                &mut cursor1,
-                                value_filter,
-                                time_map_func,
-                            );
-                        }
-                        Ordering::Equal => {
-                            if self.merge_values(
-                                &mut output,
-                                &mut cursor1.next_column().unwrap().first().unwrap(),
-                                &mut cursor2.next_column().unwrap().first().unwrap(),
-                                value_filter,
-                                time_map_func,
-                            ) {
-                                output.write0((key1, &())).unwrap();
-                            }
-                            cursor1.move_next().unwrap();
-                            cursor2.move_next().unwrap();
-                        }
-
-                        Ordering::Greater => {
-                            self.copy_values_if(
-                                &mut output,
-                                key2,
-                                &mut cursor2,
-                                value_filter,
-                                time_map_func,
-                            );
-                        }
+        loop {
+            if !read_filtered(&mut cursor1, key_filter) {
+                while read_filtered(&mut cursor2, key_filter) {
+                    self.copy_values_if(&mut output, &mut cursor2, value_filter, time_map_func);
+                }
+                break;
+            };
+            if !read_filtered(&mut cursor2, key_filter) {
+                while read_filtered(&mut cursor1, key_filter) {
+                    self.copy_values_if(&mut output, &mut cursor1, value_filter, time_map_func);
+                }
+                break;
+            };
+            let key1 = cursor1.key().unwrap();
+            let key2 = cursor2.key().unwrap();
+            match key1.cmp(key2) {
+                Ordering::Less => {
+                    self.copy_values_if(&mut output, &mut cursor1, value_filter, time_map_func);
+                }
+                Ordering::Equal => {
+                    if self.merge_values(
+                        &mut output,
+                        &mut cursor1.next_column().unwrap().first().unwrap(),
+                        &mut cursor2.next_column().unwrap().first().unwrap(),
+                        value_filter,
+                        time_map_func,
+                    ) {
+                        output.write0((key1, &())).unwrap();
                     }
-                })
-        });
+                    cursor1.move_next().unwrap();
+                    cursor2.move_next().unwrap();
+                }
+
+                Ordering::Greater => {
+                    self.copy_values_if(&mut output, &mut cursor2, value_filter, time_map_func);
+                }
+            }
+        }
         Arc::new(output.into_reader().unwrap())
     }
 }
@@ -778,10 +732,6 @@ where
     weight_factory: &'static dyn Factory<R>,
     key_cursor: RawKeyCursor<'s, K, V, T, R>,
     val_cursor: RawValCursor<'s, K, V, T, R>,
-    key: Box<K>,
-    key_valid: bool,
-    val: Box<V>,
-    val_valid: bool,
     weight: Box<R>,
 }
 
@@ -795,12 +745,7 @@ where
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("FileValCursor")
             .field("key_cursor", &self.key_cursor)
-            .field("val_cursor", &self.val)
-            .field("key", &self.key)
-            .field("key_valid", &self.key_valid)
-            .field("val", &self.val)
-            .field("val_valid", &self.val_valid)
-            .field("weight", &self.weight)
+            .field("val_cursor", &self.val_cursor)
             .finish()
     }
 }
@@ -819,11 +764,8 @@ where
             weight_factory: self.weight_factory,
             key_cursor: self.key_cursor.clone(),
             val_cursor: self.val_cursor.clone(),
-            key: clone_box(&self.key),
-            key_valid: self.key_valid,
-            val: clone_box(&self.val),
-            val_valid: self.val_valid,
-            weight: clone_box(&self.weight),
+            // Don't bother cloning, this is just for temporary storage.
+            weight: self.weight_factory.default_box(),
         }
     }
 }
@@ -838,21 +780,13 @@ where
     fn new(batch: &'s FileValBatch<K, V, T, R>) -> Self {
         let key_cursor = batch.file.rows().first().unwrap();
         let val_cursor = key_cursor.next_column().unwrap().first().unwrap();
-        let mut key = batch.factories.factories0.key_factory.default_box();
-        let mut val = batch.factories.factories1.key_factory.default_box();
 
-        let key_valid = unsafe { key_cursor.key(&mut key) }.is_some();
-        let val_valid = unsafe { val_cursor.key(&mut val) }.is_some();
         Self {
             batch,
             timediff_factory: batch.factories.timediff_factory,
             weight_factory: batch.factories.weight_factory,
             key_cursor,
             val_cursor,
-            key,
-            key_valid,
-            val,
-            val_valid,
             weight: batch.factories.weight_factory.default_box(),
         }
     }
@@ -865,25 +799,15 @@ where
     }
     fn moved_key(&mut self) {
         self.val_cursor = self.key_cursor.next_column().unwrap().first().unwrap();
-        self.key_valid = unsafe { self.key_cursor.key(&mut self.key) }.is_some();
-        self.val_cursor = self.key_cursor.next_column().unwrap().first().unwrap();
-        self.moved_val();
     }
     fn move_val<F>(&mut self, op: F)
     where
         F: Fn(&mut RawValCursor<'s, K, V, T, R>),
     {
         op(&mut self.val_cursor);
-        self.moved_val();
     }
-    fn moved_val(&mut self) {
-        self.val_valid = unsafe { self.val_cursor.key(&mut self.val) }.is_some();
-    }
-    fn times<'a>(
-        &self,
-        times: &'a mut DynWeightedPairs<DynDataTyped<T>, R>,
-    ) -> &'a mut DynWeightedPairs<DynDataTyped<T>, R> {
-        unsafe { self.val_cursor.aux(times) }.unwrap()
+    fn times(&self) -> &DynWeightedPairs<DynDataTyped<T>, R> {
+        self.val_cursor.aux().unwrap()
     }
 }
 
@@ -899,34 +823,28 @@ where
     }
 
     fn key(&self) -> &K {
-        debug_assert!(self.key_valid);
-        &self.key
+        self.key_cursor.key().unwrap()
     }
 
     fn val(&self) -> &V {
-        debug_assert!(self.val_valid);
-        &self.val
+        self.val_cursor.key().unwrap()
     }
 
     fn map_times(&mut self, logic: &mut dyn FnMut(&T, &R)) {
-        self.timediff_factory.with(&mut |timediffs| {
-            for timediff in self.times(timediffs).dyn_iter() {
-                let (time, weight) = timediff.split();
-                logic(time, weight);
-            }
-        })
+        for timediff in self.times().dyn_iter() {
+            let (time, weight) = timediff.split();
+            logic(time, weight);
+        }
     }
 
     fn map_times_through(&mut self, upper: &T, logic: &mut dyn FnMut(&T, &R)) {
-        self.timediff_factory.with(&mut |timediffs| {
-            for timediff in self.times(timediffs).dyn_iter() {
-                let (time, weight) = timediff.split();
+        for timediff in self.times().dyn_iter() {
+            let (time, weight) = timediff.split();
 
-                if time.less_equal(upper) {
-                    logic(time, weight);
-                }
+            if time.less_equal(upper) {
+                logic(time, weight);
             }
-        })
+        }
     }
 
     fn map_values(&mut self, logic: &mut dyn FnMut(&V, &R))
@@ -948,11 +866,11 @@ where
         debug_assert!(self.val_valid());
         self.weight.set_zero();
 
-        self.timediff_factory.with(&mut |timediffs| {
-            for timediff in self.times(timediffs).dyn_iter() {
-                self.weight.add_assign(timediff.snd());
-            }
-        });
+        let mut weight = self.weight_factory().default_box();
+        for timediff in self.times().dyn_iter() {
+            weight.add_assign(timediff.snd());
+        }
+        self.weight = weight;
 
         &self.weight
     }
@@ -972,12 +890,11 @@ where
     }
 
     fn seek_key(&mut self, key: &K) {
-        self.move_key(|key_cursor| unsafe { key_cursor.advance_to_value_or_larger(key) }.unwrap());
+        self.move_key(|key_cursor| key_cursor.advance_to_value_or_larger(key).unwrap());
     }
 
     fn seek_key_exact(&mut self, key: &K) -> bool {
-        let found = self.batch.maybe_contains_key(key)
-            && unsafe { self.key_cursor.seek_exact(key) }.unwrap();
+        let found = self.batch.maybe_contains_key(key) && self.key_cursor.seek_exact(key).unwrap();
         if found {
             self.moved_key();
         }
@@ -985,34 +902,30 @@ where
     }
 
     fn seek_key_with(&mut self, predicate: &dyn Fn(&K) -> bool) {
-        self.move_key(|key_cursor| unsafe { key_cursor.seek_forward_until(predicate) }.unwrap());
+        self.move_key(|key_cursor| key_cursor.seek_forward_until(predicate).unwrap());
     }
 
     fn seek_key_with_reverse(&mut self, predicate: &dyn Fn(&K) -> bool) {
-        self.move_key(|key_cursor| unsafe { key_cursor.seek_backward_until(predicate) }.unwrap());
+        self.move_key(|key_cursor| key_cursor.seek_backward_until(predicate).unwrap());
     }
 
     fn seek_key_reverse(&mut self, key: &K) {
-        self.move_key(|key_cursor| unsafe { key_cursor.rewind_to_value_or_smaller(key) }.unwrap());
+        self.move_key(|key_cursor| key_cursor.rewind_to_value_or_smaller(key).unwrap());
     }
     fn step_val(&mut self) {
         self.move_val(|val_cursor| val_cursor.move_next().unwrap());
     }
     fn seek_val(&mut self, val: &V) {
-        self.move_val(|val_cursor| unsafe { val_cursor.advance_to_value_or_larger(val) }.unwrap());
+        self.move_val(|val_cursor| val_cursor.advance_to_value_or_larger(val).unwrap());
     }
     fn seek_val_exact(&mut self, val: &V) -> bool
     where
         V: PartialEq,
     {
-        let found = unsafe { self.val_cursor.seek_exact(val) }.unwrap();
-        if found {
-            self.moved_val();
-        }
-        found
+        self.val_cursor.seek_exact(val).unwrap()
     }
     fn seek_val_with(&mut self, predicate: &dyn Fn(&V) -> bool) {
-        self.move_val(|val_cursor| unsafe { val_cursor.seek_forward_until(&predicate) }.unwrap());
+        self.move_val(|val_cursor| val_cursor.seek_forward_until(&predicate).unwrap());
     }
     fn rewind_keys(&mut self) {
         self.move_key(|key_cursor| key_cursor.move_first().unwrap());
@@ -1029,11 +942,11 @@ where
     }
 
     fn seek_val_reverse(&mut self, val: &V) {
-        self.move_val(|val_cursor| unsafe { val_cursor.rewind_to_value_or_smaller(val) }.unwrap());
+        self.move_val(|val_cursor| val_cursor.rewind_to_value_or_smaller(val).unwrap());
     }
 
     fn seek_val_with_reverse(&mut self, predicate: &dyn Fn(&V) -> bool) {
-        self.move_val(|val_cursor| unsafe { val_cursor.seek_backward_until(&predicate) }.unwrap());
+        self.move_val(|val_cursor| val_cursor.seek_backward_until(&predicate).unwrap());
     }
 
     fn fast_forward_vals(&mut self) {
@@ -1041,21 +954,21 @@ where
     }
 }
 
-pub struct FileValTimeDiffCursor<T, R>
+pub struct FileValTimeDiffCursor<'a, T, R>
 where
     T: Timestamp,
     R: WeightTrait + ?Sized,
 {
-    timediffs: Box<DynWeightedPairs<DynDataTyped<T>, R>>,
+    timediffs: &'a DynWeightedPairs<DynDataTyped<T>, R>,
     index: usize,
 }
 
-impl<T, R> TimeDiffCursor<'_, T, R> for FileValTimeDiffCursor<T, R>
+impl<T, R> TimeDiffCursor<'_, T, R> for FileValTimeDiffCursor<'_, T, R>
 where
     T: Timestamp,
     R: WeightTrait + ?Sized,
 {
-    fn current(&mut self, _tmp: &mut R) -> Option<(&T, &R)> {
+    fn current(&mut self) -> Option<(&T, &R)> {
         if self.index < self.timediffs.len() {
             let (time, diff) = self.timediffs[self.index].split();
             Some((time, diff))
@@ -1077,15 +990,14 @@ where
     R: WeightTrait + ?Sized,
 {
     type TimeDiffCursor<'a>
-        = FileValTimeDiffCursor<T, R>
+        = FileValTimeDiffCursor<'a, T, R>
     where
         Self: 'a;
 
     fn time_diff_cursor(&self) -> Self::TimeDiffCursor<'_> {
-        let mut timediffs = self.timediff_factory.default_box();
-        self.times(timediffs.as_mut());
+        self.times();
         FileValTimeDiffCursor {
-            timediffs,
+            timediffs: self.times(),
             index: 0,
         }
     }

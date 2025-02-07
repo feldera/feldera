@@ -70,7 +70,9 @@
 // Warn about missing docs, but not for item declared with `#[cfg(test)]`.
 #![cfg_attr(not(test), warn(missing_docs))]
 
+use crate::dynamic::{DynPairs, DynVec, LeanVec};
 use crate::storage::buffer_cache::{FBuf, FBufSerializer};
+use crate::utils::Tup2;
 use binrw::binrw;
 use bytemuck::cast_slice;
 use crc32c::{crc32c, crc32c_append};
@@ -165,8 +167,14 @@ where
     /// Factory for creating instances of `K`.
     pub key_factory: &'static dyn Factory<K>,
 
+    /// Factory for creating instances of `DynVec<K>`.
+    pub keys_factory: &'static dyn Factory<DynVec<K>>,
+
     /// Factory for creating instances of `Item<K, A>`.
     pub item_factory: &'static dyn ItemFactory<K, A>,
+
+    /// Factory for creating instances of `DynPairs<K, A>`.
+    pub pairs_factory: &'static dyn Factory<DynPairs<K, A>>,
 }
 
 impl<K, A> Clone for Factories<K, A>
@@ -177,7 +185,9 @@ where
     fn clone(&self) -> Self {
         Self {
             key_factory: self.key_factory,
+            keys_factory: self.keys_factory,
             item_factory: self.item_factory,
+            pairs_factory: self.pairs_factory,
         }
     }
 }
@@ -196,7 +206,9 @@ where
     {
         Self {
             key_factory: WithFactory::<KType>::FACTORY,
+            keys_factory: WithFactory::<LeanVec<KType>>::FACTORY,
             item_factory: <RefTup2Factory<KType, AType> as WithItemFactory<K, A>>::ITEM_FACTORY,
+            pairs_factory: WithFactory::<LeanVec<Tup2<KType, AType>>>::FACTORY,
         }
     }
 
@@ -208,7 +220,9 @@ where
     pub(crate) fn any_factories(&self) -> AnyFactories {
         AnyFactories {
             key_factory: Arc::new(self.key_factory),
+            keys_factory: Arc::new(self.keys_factory),
             item_factory: Arc::new(self.item_factory),
+            pairs_factory: Arc::new(self.pairs_factory),
         }
     }
 }
@@ -224,7 +238,9 @@ where
 #[derive(Clone)]
 pub struct AnyFactories {
     key_factory: Arc<(dyn Any + Send + Sync + 'static)>,
+    keys_factory: Arc<(dyn Any + Send + Sync + 'static)>,
     item_factory: Arc<(dyn Any + Send + Sync + 'static)>,
+    pairs_factory: Arc<(dyn Any + Send + Sync + 'static)>,
 }
 
 impl Debug for AnyFactories {
@@ -245,6 +261,17 @@ impl AnyFactories {
             .unwrap()
     }
 
+    fn keys_factory<K>(&self) -> &'static dyn Factory<DynVec<K>>
+    where
+        K: DataTrait + ?Sized,
+    {
+        *self
+            .keys_factory
+            .as_ref()
+            .downcast_ref::<&'static dyn Factory<DynVec<K>>>()
+            .unwrap()
+    }
+
     fn item_factory<K, A>(&self) -> &'static dyn ItemFactory<K, A>
     where
         K: DataTrait + ?Sized,
@@ -257,6 +284,18 @@ impl AnyFactories {
             .unwrap()
     }
 
+    fn pairs_factory<K, A>(&self) -> &'static dyn Factory<DynPairs<K, A>>
+    where
+        K: DataTrait + ?Sized,
+        A: DataTrait + ?Sized,
+    {
+        *self
+            .pairs_factory
+            .as_ref()
+            .downcast_ref::<&'static dyn Factory<DynPairs<K, A>>>()
+            .unwrap()
+    }
+
     fn factories<K, A>(&self) -> Factories<K, A>
     where
         K: DataTrait + ?Sized,
@@ -264,7 +303,9 @@ impl AnyFactories {
     {
         Factories {
             key_factory: self.key_factory(),
+            keys_factory: self.keys_factory(),
             item_factory: self.item_factory(),
+            pairs_factory: self.pairs_factory(),
         }
     }
 }
@@ -363,83 +404,43 @@ mod test {
         before: &K,
         key: &K,
         after: &K,
-        mut aux: A,
+        aux: A,
     ) where
         K: DBData,
         A: DBData,
         T: ColumnSpec,
     {
-        let mut tmp_key = K::default();
-        let mut tmp_aux = A::default();
-        let (tmp_key, tmp_aux): (&mut DynData, &mut DynData) =
-            (tmp_key.erase_mut(), tmp_aux.erase_mut());
-
-        let mut key = key.clone();
-        //let (key, aux): (&mut DynData, &mut DynData) = (key.erase_mut(),
-        // aux.erase_mut());
+        let mut cursor = row_group.first().unwrap();
+        cursor.advance_to_value_or_larger(key.erase()).unwrap();
+        assert_eq!(cursor.item(), Some((key.erase(), aux.erase())));
 
         let mut cursor = row_group.first().unwrap();
-        unsafe { cursor.advance_to_value_or_larger(key.erase()) }.unwrap();
-        assert_eq!(
-            unsafe { cursor.item((tmp_key, tmp_aux)) },
-            Some((key.erase_mut(), aux.erase_mut()))
-        );
+        cursor.advance_to_value_or_larger(before.erase()).unwrap();
+        assert_eq!(cursor.item(), Some((key.erase(), aux.erase())));
 
         let mut cursor = row_group.first().unwrap();
-        unsafe { cursor.advance_to_value_or_larger(before.erase()) }.unwrap();
-        assert_eq!(
-            unsafe { cursor.item((tmp_key, tmp_aux)) },
-            Some((key.erase_mut(), aux.erase_mut()))
-        );
+        cursor.seek_forward_until(|k| k >= key.erase()).unwrap();
+        assert_eq!(cursor.item(), Some((key.erase(), aux.erase())));
 
         let mut cursor = row_group.first().unwrap();
-        unsafe { cursor.seek_forward_until(|k| k >= key.erase()) }.unwrap();
-        assert_eq!(
-            unsafe { cursor.item((tmp_key, tmp_aux)) },
-            Some((key.erase_mut(), aux.erase_mut()))
-        );
-
-        let mut cursor = row_group.first().unwrap();
-        unsafe { cursor.seek_forward_until(|k| k >= before.erase()) }.unwrap();
-        assert_eq!(
-            unsafe { cursor.item((tmp_key, tmp_aux)) },
-            Some((key.erase_mut(), aux.erase_mut()))
-        );
+        cursor.seek_forward_until(|k| k >= before.erase()).unwrap();
+        assert_eq!(cursor.item(), Some((key.erase(), aux.erase())));
 
         let mut cursor = row_group.last().unwrap();
-        unsafe { cursor.rewind_to_value_or_smaller(key.erase()) }.unwrap();
-        assert_eq!(
-            unsafe { cursor.item((tmp_key, tmp_aux)) },
-            Some((key.erase_mut(), aux.erase_mut()))
-        );
+        cursor.rewind_to_value_or_smaller(key.erase()).unwrap();
+        assert_eq!(cursor.item(), Some((key.erase(), aux.erase())));
 
         let mut cursor = row_group.last().unwrap();
-        unsafe { cursor.rewind_to_value_or_smaller(after.erase()) }.unwrap();
-        assert_eq!(
-            unsafe { cursor.item((tmp_key, tmp_aux)) },
-            Some((key.erase_mut(), aux.erase_mut()))
-        );
+        cursor.rewind_to_value_or_smaller(after.erase()).unwrap();
+        assert_eq!(cursor.item(), Some((key.erase(), aux.erase())));
 
         let mut cursor = row_group.last().unwrap();
-        unsafe { cursor.seek_backward_until(|k| k <= key.erase()) }.unwrap();
-        assert_eq!(
-            unsafe { cursor.item((tmp_key, tmp_aux)) },
-            Some((key.erase_mut(), aux.erase_mut()))
-        );
+        cursor.seek_backward_until(|k| k <= key.erase()).unwrap();
+        assert_eq!(cursor.item(), Some((key.erase(), aux.erase())));
 
         let mut cursor = row_group.last().unwrap();
-        unsafe { cursor.seek_backward_until(|k| k <= after.erase()) }.unwrap();
-        assert_eq!(
-            unsafe { cursor.item((tmp_key, tmp_aux)) },
-            Some((key.erase_mut(), aux.erase_mut()))
-        );
-
-        let mut cursor = row_group.before();
-        assert!(unsafe { cursor.seek_exact(&key) }.unwrap());
-        assert_eq!(
-            unsafe { cursor.item((tmp_key, tmp_aux)) },
-            Some((key.erase_mut(), aux.erase_mut()))
-        );
+        cursor.seek_backward_until(|k| k <= after.erase()).unwrap();
+        assert_eq!(cursor.item(), Some((key.erase(), aux.erase())));
     }
 
     fn test_out_of_range<K, A, N, T>(
@@ -451,38 +452,21 @@ mod test {
         A: DBData,
         T: ColumnSpec,
     {
-        let mut key1 = K::default();
-        let mut aux1 = A::default();
-        let (key1, aux1): (&mut DynData, &mut DynData) = (key1.erase_mut(), aux1.erase_mut());
-
-        let mut key2 = K::default();
-        let mut aux2 = A::default();
-        let (key2, aux2): (&mut DynData, &mut DynData) = (key2.erase_mut(), aux2.erase_mut());
-
         let mut cursor = row_group.first().unwrap();
-        unsafe { cursor.advance_to_value_or_larger(after.erase()) }.unwrap();
-        assert_eq!(unsafe { cursor.item((key1, aux1)) }, None);
+        cursor.advance_to_value_or_larger(after.erase()).unwrap();
+        assert_eq!(cursor.item(), None);
 
         cursor.move_first().unwrap();
-        unsafe { cursor.seek_forward_until(|k| k >= after.erase()) }.unwrap();
-        assert_eq!(unsafe { cursor.item((key1, aux1)) }, None);
+        cursor.seek_forward_until(|k| k >= after.erase()).unwrap();
+        assert_eq!(cursor.item(), None);
 
         let mut cursor = row_group.last().unwrap();
-        unsafe { cursor.rewind_to_value_or_smaller(before.erase()) }.unwrap();
-        assert_eq!(unsafe { cursor.item((key1, aux1)) }, None);
+        cursor.rewind_to_value_or_smaller(before.erase()).unwrap();
+        assert_eq!(cursor.item(), None);
 
         cursor.move_last().unwrap();
-        unsafe { cursor.seek_backward_until(|k| k <= before.erase()) }.unwrap();
-        assert_eq!(unsafe { cursor.item((key1, aux1)) }, None);
-
-        cursor.move_first().unwrap();
-        let first1 = unsafe { cursor.item((key1, aux1)) };
-        assert!(!unsafe { cursor.seek_exact(after) }.unwrap());
-        let first2 = unsafe { cursor.item((key2, aux2)) };
-        assert_eq!(first1, first2);
-        assert!(!unsafe { cursor.seek_exact(before) }.unwrap());
-        let first2 = unsafe { cursor.item((key2, aux2)) };
-        assert_eq!(first1, first2);
+        cursor.seek_backward_until(|k| k <= before.erase()).unwrap();
+        assert_eq!(cursor.item(), None);
     }
 
     #[allow(clippy::len_zero)]
@@ -496,11 +480,6 @@ mod test {
         A: DBData,
         T: ColumnSpec,
     {
-        let mut tmp_key = K::default();
-        let mut tmp_aux = A::default();
-        let (tmp_key, tmp_aux): (&mut DynData, &mut DynData) =
-            (tmp_key.erase_mut(), tmp_aux.erase_mut());
-
         assert_eq!(rows.len(), n as u64);
 
         assert_eq!(rows.len() == 0, rows.is_empty());
@@ -508,38 +487,32 @@ mod test {
         assert_eq!(rows.after().len() == 0, rows.after().is_empty());
 
         let mut forward = rows.before();
-        assert_eq!(unsafe { forward.item((tmp_key, tmp_aux)) }, None);
+        assert_eq!(forward.item(), None);
         forward.move_prev().unwrap();
-        assert_eq!(unsafe { forward.item((tmp_key, tmp_aux)) }, None);
+        assert_eq!(forward.item(), None);
         forward.move_next().unwrap();
         for row in 0..n {
-            let (_before, mut key, _after, mut aux) = expected(row);
-            assert_eq!(
-                unsafe { forward.item((tmp_key, tmp_aux)) },
-                Some((key.erase_mut(), aux.erase_mut()))
-            );
+            let (_before, key, _after, aux) = expected(row);
+            assert_eq!(forward.item(), Some((key.erase(), aux.erase())));
             forward.move_next().unwrap();
         }
-        assert_eq!(unsafe { forward.item((tmp_key, tmp_aux)) }, None);
+        assert_eq!(forward.item(), None);
         forward.move_next().unwrap();
-        assert_eq!(unsafe { forward.item((tmp_key, tmp_aux)) }, None);
+        assert_eq!(forward.item(), None);
 
         let mut backward = rows.after();
-        assert_eq!(unsafe { backward.item((tmp_key, tmp_aux)) }, None);
+        assert_eq!(backward.item(), None);
         backward.move_next().unwrap();
-        assert_eq!(unsafe { backward.item((tmp_key, tmp_aux)) }, None);
+        assert_eq!(backward.item(), None);
         backward.move_prev().unwrap();
         for row in (0..n).rev() {
-            let (_before, mut key, _after, mut aux) = expected(row);
-            assert_eq!(
-                unsafe { backward.item((tmp_key, tmp_aux)) },
-                Some((key.erase_mut(), aux.erase_mut()))
-            );
+            let (_before, key, _after, aux) = expected(row);
+            assert_eq!(backward.item(), Some((key.erase(), aux.erase())));
             backward.move_prev().unwrap();
         }
-        assert_eq!(unsafe { backward.item((tmp_key, tmp_aux)) }, None);
+        assert_eq!(backward.item(), None);
         backward.move_prev().unwrap();
-        assert_eq!(unsafe { backward.item((tmp_key, tmp_aux)) }, None);
+        assert_eq!(backward.item(), None);
 
         for row in 0..n {
             let (before, key, after, aux) = expected(row);
@@ -554,13 +527,10 @@ mod test {
             assert_eq!(random.absolute_position(), offset + row.min(n) as u64);
             assert_eq!(random.remaining_rows(), (n - row.min(n)) as u64);
             if row < n {
-                let (_before, mut key, _after, mut aux) = expected(row);
-                assert_eq!(
-                    unsafe { random.item((tmp_key, tmp_aux)) },
-                    Some((key.erase_mut(), aux.erase_mut()))
-                );
+                let (_before, key, _after, aux) = expected(row);
+                assert_eq!(random.item(), Some((key.erase(), aux.erase())));
             } else {
-                assert_eq!(unsafe { random.item((tmp_key, tmp_aux)) }, None);
+                assert_eq!(random.item(), None);
             }
         }
 

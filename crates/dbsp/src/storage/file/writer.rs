@@ -255,7 +255,7 @@ impl ColumnWriter {
                 });
             } else if !self.index_blocks[level].is_empty() {
                 let index_block = self.index_blocks[level].take().build();
-                self.write_index_block::<K>(block_writer, index_block, level)?;
+                self.write_index_block::<K, A>(block_writer, index_block, level)?;
             }
             level += 1;
         }
@@ -299,8 +299,13 @@ impl ColumnWriter {
         block_writer.insert_cache_entry(
             location,
             Arc::new(
-                super::reader::DataBlock::<K, A>::from_raw(block, location, data_block.first_row)
-                    .unwrap(),
+                super::reader::DataBlock::<K, A>::from_raw(
+                    &self.factories.factories(),
+                    block,
+                    location,
+                    data_block.first_row,
+                )
+                .unwrap(),
             ),
         );
 
@@ -309,12 +314,12 @@ impl ColumnWriter {
             &data_block.min_max,
             data_block.n_values as u64,
         ) {
-            self.write_index_block::<K>(block_writer, index_block, 0)?;
+            self.write_index_block::<K, A>(block_writer, index_block, 0)?;
         }
         Ok(())
     }
 
-    fn write_index_block<K>(
+    fn write_index_block<K, A>(
         &mut self,
         block_writer: &mut BlockWriter,
         mut index_block: IndexBlock<K>,
@@ -322,6 +327,7 @@ impl ColumnWriter {
     ) -> Result<(), StorageError>
     where
         K: DataTrait + ?Sized,
+        A: DataTrait + ?Sized,
     {
         loop {
             let n_rows = index_block.n_rows();
@@ -331,6 +337,7 @@ impl ColumnWriter {
                 location,
                 Arc::new(
                     super::reader::IndexBlock::<K>::from_raw(
+                        &self.factories.factories::<K, A>(),
                         block,
                         location,
                         index_block.rows.start,

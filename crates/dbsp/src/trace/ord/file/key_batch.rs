@@ -393,7 +393,7 @@ where
         map_func: Option<&dyn Fn(&mut DynDataTyped<T>)>,
         fuel: &mut isize,
     ) {
-        if filter(key_filter, cursor.key.as_ref()) {
+        if filter(key_filter, cursor.key()) {
             if let Some(map_func) = map_func {
                 self.time_diffs.clear();
                 cursor.map_times(&mut |time, diff| {
@@ -409,18 +409,14 @@ where
                 }
 
                 if !self.time_diffs.is_empty() {
-                    self.writer
-                        .write0((cursor.key.as_ref(), ().erase()))
-                        .unwrap();
+                    self.writer.write0((cursor.key(), ().erase())).unwrap();
                 }
             } else {
                 cursor.map_times(&mut |time, diff| {
                     self.writer.write1((time, diff)).unwrap();
                     *fuel -= 1;
                 });
-                self.writer
-                    .write0((cursor.key.as_ref(), ().erase()))
-                    .unwrap();
+                self.writer.write0((cursor.key(), ().erase())).unwrap();
             }
         } else {
             *fuel -= 1;
@@ -440,11 +436,9 @@ where
         let mut subcursor1 = cursor1.cursor.next_column().unwrap().first().unwrap();
         let mut subcursor2 = cursor2.cursor.next_column().unwrap().first().unwrap();
         while subcursor1.has_value() && subcursor2.has_value() {
-            let (time1, diff1) =
-                unsafe { subcursor1.item((cursor1.time.as_mut(), &mut cursor1.diff)) }.unwrap();
-            let (time2, diff2) =
-                unsafe { subcursor2.item((cursor2.time.as_mut(), &mut cursor2.diff)) }.unwrap();
-            let cmp = time1.cmp(&time2);
+            let (time1, diff1) = subcursor1.item().unwrap();
+            let (time2, diff2) = subcursor2.item().unwrap();
+            let cmp = time1.cmp(time2);
             match cmp {
                 Ordering::Less => {
                     self.writer.write1((time1, diff1)).unwrap();
@@ -470,17 +464,13 @@ where
             *fuel -= 1;
         }
 
-        while let Some((time, diff)) =
-            unsafe { subcursor1.item((cursor1.time.as_mut(), &mut cursor1.diff)) }
-        {
+        while let Some((time, diff)) = subcursor1.item() {
             self.writer.write1((time, diff)).unwrap();
             subcursor1.move_next().unwrap();
             n += 1;
             *fuel -= 1;
         }
-        while let Some((time, diff)) =
-            unsafe { subcursor2.item((cursor2.time.as_mut(), &mut cursor2.diff)) }
-        {
+        while let Some((time, diff)) = subcursor2.item() {
             self.writer.write1((time, diff)).unwrap();
             subcursor2.move_next().unwrap();
             n += 1;
@@ -504,19 +494,19 @@ where
         let mut subcursor2 = cursor2.cursor.next_column().unwrap().first().unwrap();
 
         while subcursor1.has_value() {
-            let (time, diff) =
-                unsafe { subcursor1.item((cursor1.time.as_mut(), &mut cursor1.diff)) }.unwrap();
-            map_func(time);
-            self.time_diffs.push_refs((time, diff));
+            let (time, diff) = subcursor1.item().unwrap();
+            let mut time = clone_box(time);
+            map_func(&mut **time);
+            self.time_diffs.push_refs((&**time, diff));
 
             subcursor1.move_next().unwrap();
         }
 
         while subcursor2.has_value() {
-            let (time, diff) =
-                unsafe { subcursor2.item((cursor2.time.as_mut(), &mut cursor2.diff)) }.unwrap();
-            map_func(time);
-            self.time_diffs.push_refs((time, diff));
+            let (time, diff) = subcursor2.item().unwrap();
+            let mut time = clone_box(time);
+            map_func(&mut **time);
+            self.time_diffs.push_refs((&**time, diff));
 
             subcursor2.move_next().unwrap();
         }
@@ -602,12 +592,12 @@ where
         let mut cursor2 = FileKeyCursor::new_from(source2, self.lower2);
         let mut sum = self.factories.weight_factory.default_box();
         while cursor1.key_valid() && cursor2.key_valid() && *fuel > 0 {
-            match cursor1.key.as_ref().cmp(cursor2.key.as_ref()) {
+            match cursor1.key().cmp(cursor2.key()) {
                 Ordering::Less => {
                     self.copy_values_if(&mut cursor1, key_filter, time_map_func, fuel);
                 }
                 Ordering::Equal => {
-                    if filter(key_filter, cursor1.key.as_ref()) {
+                    if filter(key_filter, cursor1.key()) {
                         let non_zero = if let Some(time_map_func) = &time_map_func {
                             self.map_and_merge_times(
                                 &mut cursor1,
@@ -619,9 +609,7 @@ where
                             self.merge_times(&mut cursor1, &mut cursor2, &mut sum, fuel)
                         };
                         if non_zero {
-                            self.writer
-                                .write0((cursor1.key.as_ref(), ().erase()))
-                                .unwrap();
+                            self.writer.write0((cursor1.key(), ().erase())).unwrap();
                         }
                     }
                     *fuel -= 1;
@@ -680,10 +668,8 @@ where
 {
     batch: &'s FileKeyBatch<K, T, R>,
     pub(crate) cursor: RawKeyCursor<'s, K, T, R>,
-    key: Box<K>,
     val_valid: bool,
 
-    pub(crate) time: Box<DynDataTyped<T>>,
     pub(crate) diff: Box<R>,
 }
 
@@ -697,12 +683,10 @@ where
         Self {
             batch: self.batch,
             cursor: self.cursor.clone(),
-            key: clone_box(&self.key),
             val_valid: self.val_valid,
 
-            // These don't need to be cloned because they're only used for
+            // This doesn't need to be cloned because it's only used for
             // temporary storage.
-            time: self.batch.factories.factories1.key_factory.default_box(),
             diff: self.batch.factories.weight_factory.default_box(),
         }
     }
@@ -721,15 +705,12 @@ where
             .subset(lower_bound as u64..)
             .first()
             .unwrap();
-        let mut key = batch.factories.key_factory.default_box();
-        let key_valid = unsafe { cursor.key(&mut key) }.is_some();
+        let val_valid = cursor.has_value();
 
         Self {
             batch,
             cursor,
-            key,
-            val_valid: key_valid,
-            time: batch.factories.factories1.key_factory.default_box(),
+            val_valid,
             diff: batch.factories.weight_factory.default_box(),
         }
     }
@@ -747,8 +728,7 @@ where
     }
 
     fn moved_key(&mut self) {
-        let key_valid = unsafe { self.cursor.key(&mut self.key) }.is_some();
-        self.val_valid = key_valid;
+        self.val_valid = self.cursor.has_value();
     }
 }
 
@@ -763,8 +743,7 @@ where
     }
 
     fn key(&self) -> &K {
-        debug_assert!(self.key_valid());
-        self.key.as_ref()
+        self.cursor.key().unwrap()
     }
 
     fn val(&self) -> &DynUnit {
@@ -773,17 +752,17 @@ where
 
     fn map_times(&mut self, logic: &mut dyn FnMut(&T, &R)) {
         let mut val_cursor = self.cursor.next_column().unwrap().first().unwrap();
-        while unsafe { val_cursor.item((self.time.as_mut(), &mut self.diff)) }.is_some() {
-            logic(self.time.as_ref(), self.diff.as_ref());
+        while let Some((time, diff)) = val_cursor.item() {
+            logic(time, diff);
             val_cursor.move_next().unwrap();
         }
     }
 
     fn map_times_through(&mut self, upper: &T, logic: &mut dyn FnMut(&T, &R)) {
         let mut val_cursor = self.cursor.next_column().unwrap().first().unwrap();
-        while unsafe { val_cursor.item((self.time.as_mut(), &mut self.diff)) }.is_some() {
-            if self.time.less_equal(upper) {
-                logic(self.time.as_ref(), self.diff.as_ref());
+        while let Some((time, diff)) = val_cursor.item() {
+            if time.less_equal(upper) {
+                logic(time, diff);
             }
             val_cursor.move_next().unwrap();
         }
@@ -803,8 +782,8 @@ where
         T: PartialEq<()>,
     {
         let val_cursor = self.cursor.next_column().unwrap().first().unwrap();
-        unsafe { val_cursor.aux(&mut self.diff) }.unwrap();
-        self.diff.as_ref()
+        self.diff = clone_box(val_cursor.aux().unwrap());
+        &self.diff
     }
 
     fn key_valid(&self) -> bool {
@@ -824,12 +803,11 @@ where
     }
 
     fn seek_key(&mut self, key: &K) {
-        self.move_key(|key_cursor| unsafe { key_cursor.advance_to_value_or_larger(key) });
+        self.move_key(|key_cursor| key_cursor.advance_to_value_or_larger(key));
     }
 
     fn seek_key_exact(&mut self, key: &K) -> bool {
-        let found =
-            self.batch.maybe_contains_key(key) && unsafe { self.cursor.seek_exact(key) }.unwrap();
+        let found = self.batch.maybe_contains_key(key) && self.cursor.seek_exact(key).unwrap();
         if found {
             self.moved_key();
         }
@@ -837,15 +815,15 @@ where
     }
 
     fn seek_key_with(&mut self, predicate: &dyn Fn(&K) -> bool) {
-        self.move_key(|key_cursor| unsafe { key_cursor.seek_forward_until(predicate) });
+        self.move_key(|key_cursor| key_cursor.seek_forward_until(predicate));
     }
 
     fn seek_key_with_reverse(&mut self, predicate: &dyn Fn(&K) -> bool) {
-        self.move_key(|key_cursor| unsafe { key_cursor.seek_backward_until(predicate) });
+        self.move_key(|key_cursor| key_cursor.seek_backward_until(predicate));
     }
 
     fn seek_key_reverse(&mut self, key: &K) {
-        self.move_key(|key_cursor| unsafe { key_cursor.rewind_to_value_or_smaller(key) });
+        self.move_key(|key_cursor| key_cursor.rewind_to_value_or_smaller(key));
     }
 
     fn step_val(&mut self) {
@@ -901,7 +879,6 @@ where
     R: WeightTrait + ?Sized,
 {
     cursor: RawTimeDiffCursor<'a, K, T, R>,
-    time: T,
 }
 
 impl<'a, K, T, R> TimeDiffCursor<'a, T, R> for FileKeyTimeDiffCursor<'a, K, T, R>
@@ -910,12 +887,8 @@ where
     T: Timestamp,
     R: WeightTrait + ?Sized,
 {
-    fn current<'b>(&'b mut self, tmp: &'b mut R) -> Option<(&'b T, &'b R)> {
-        if unsafe { self.cursor.item((&mut self.time, tmp)) }.is_some() {
-            Some((&self.time, tmp))
-        } else {
-            None
-        }
+    fn current(&mut self) -> Option<(&T, &R)> {
+        self.cursor.item().map(|(time, diff)| (&**time, diff))
     }
 
     fn step(&mut self) {
@@ -937,7 +910,6 @@ where
     fn time_diff_cursor(&self) -> Self::TimeDiffCursor<'_> {
         FileKeyTimeDiffCursor {
             cursor: self.cursor.next_column().unwrap().first().unwrap(),
-            time: T::default(),
         }
     }
 }

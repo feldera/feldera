@@ -638,7 +638,7 @@ where
     T: Timestamp,
     R: WeightTrait + ?Sized,
 {
-    fn current(&mut self, _tmp: &mut R) -> Option<(&T, &R)> {
+    fn current(&mut self) -> Option<(&T, &R)> {
         if self.0.valid() {
             Some((self.0.current_key(), self.0.current_diff()))
         } else {

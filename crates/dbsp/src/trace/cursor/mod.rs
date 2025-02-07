@@ -555,7 +555,7 @@ where
 {
     /// Returns the current time-diff pair, if there is one, or `None` if the
     /// cursor has been exhausted.
-    fn current<'b>(&'b mut self, tmp: &'b mut R) -> Option<(&'b T, &'b R)>;
+    fn current(&mut self) -> Option<(&T, &R)>;
 
     /// Advances to the next time-diff pair.
     fn step(&mut self);
@@ -600,7 +600,7 @@ impl<'a, R> TimeDiffCursor<'a, (), R> for SingletonTimeDiffCursor<'a, R>
 where
     R: ?Sized,
 {
-    fn current(&mut self, _tmp: &mut R) -> Option<(&(), &R)> {
+    fn current(&mut self) -> Option<(&(), &R)> {
         self.0.map(|diff| (&(), diff))
     }
 
