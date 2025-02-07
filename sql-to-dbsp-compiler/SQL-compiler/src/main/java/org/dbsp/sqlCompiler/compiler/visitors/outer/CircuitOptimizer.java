@@ -33,6 +33,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.BetaReduction;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EliminateDump;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.ExpandCasts;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.ExpandWriteLog;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.LazyStatics;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Simplify;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.SimplifyWaterline;
 import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.UnusedFields;
@@ -130,6 +131,7 @@ public record CircuitOptimizer(DBSPCompiler compiler) implements ICompilerCompon
         passes.add(new Repeat(compiler, new ExpandCasts(compiler).circuitRewriter(true)));
         // Beta reduction after implementing aggregates.
         passes.add(new BetaReduction(compiler).getCircuitVisitor(false));
+        passes.add(new LazyStatics(compiler).circuitRewriter(false));
         passes.add(new ExpandJoins(compiler));
         passes.add(new CSE(compiler));
         passes.add(new RemoveViewOperators(compiler, true));

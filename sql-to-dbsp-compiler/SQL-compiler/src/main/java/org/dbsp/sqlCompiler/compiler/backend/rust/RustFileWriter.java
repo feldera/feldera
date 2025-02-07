@@ -127,7 +127,6 @@ public class RustFileWriter {
                 use size_of::*;
                 use ::serde::{Deserialize,Serialize};
                 use compare::{Compare, Extract};
-                use lazy_static::lazy_static;
                 use std::{
                     collections::BTreeMap,
                     convert::identity,
@@ -135,7 +134,7 @@ public class RustFileWriter {
                     fmt::{Debug, Formatter, Result as FmtResult},
                     path::Path,
                     marker::PhantomData,
-                    sync::Arc,
+                    sync::{Arc, LazyLock},
                 };
                 use core::cmp::Ordering;
                 use rust_decimal::Decimal;

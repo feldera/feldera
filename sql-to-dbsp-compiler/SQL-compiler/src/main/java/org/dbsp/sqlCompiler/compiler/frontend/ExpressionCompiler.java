@@ -728,12 +728,6 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
         return new DBSPStaticExpression(lit.getNode(), init).borrow();
     }
 
-    DBSPExpression makeStaticConstantIfPossible(DBSPExpression literal) {
-        if (literal.isConstant())
-            return new DBSPStaticExpression(literal.getNode(), literal);
-        return literal;
-    }
-
     @Override
     public DBSPExpression visitCall(RexCall call) {
         CalciteObject node = CalciteObject.create(this.context, call);
@@ -1106,7 +1100,6 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                                     arg0Type.asSqlString() + " not yet implemented", 1265, node);
                         if (arg0Type.mayBeNull)
                             name += "N";
-                        // op0 = this.makeStaticConstantIfPossible(op0);
                         return new DBSPApplyExpression(node, name, type, op0);
                     }
                     case "writelog":
@@ -1384,7 +1377,6 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                     DBSPTypeMap map = collectionType.to(DBSPTypeMap.class);
                     index = index.applyCloneIfNeeded().cast(map.getKeyType(), false);
                     opcode = DBSPOpcode.MAP_INDEX;
-                    // op0 = this.makeStaticConstantIfPossible(op0);
                 } else if (collectionType.is(DBSPTypeVariant.class)) {
                     opcode = DBSPOpcode.VARIANT_INDEX;
                 } else if (collectionType.is(DBSPTypeTuple.class)) {
@@ -1439,7 +1431,6 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 DBSPExpression op0 = ops.get(0);
                 if (op0.getType().mayBeNull)
                     name += "N";
-                // op0 = this.makeStaticConstantIfPossible(op0);
                 return new DBSPApplyExpression(node, name, type, op0);
             }
             case ARRAY_EXCEPT:
@@ -1560,7 +1551,6 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 if (keyType.mayBeNull) {
                     arg1 = new DBSPApplyExpression(arg1.getNode(), "Some", arg1.type.withMayBeNull(true), arg1);
                 }
-                // arg0 = this.makeStaticConstantIfPossible(arg0);
                 return new DBSPApplyExpression(node, method, type, arg0, arg1);
             }
             case ARRAY_DISTINCT: {

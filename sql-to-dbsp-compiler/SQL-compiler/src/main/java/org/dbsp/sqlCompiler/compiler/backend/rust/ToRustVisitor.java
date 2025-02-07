@@ -1167,18 +1167,15 @@ public class ToRustVisitor extends CircuitVisitor {
 
     /** Generate a static value */
     void generateStatic(DBSPStaticExpression stat) {
-        // lazy_static! {
-        //     static ref NAME: type = expression;
-        // }
+        // static NAME: LazyLock<type> = LazyLock::new(|| expression);
         String name = stat.getName();
-        this.builder.append("lazy_static! {").increase()
-                .append("static ref ")
+        this.builder.append("static ")
                 .append(name)
-                .append(": ");
+                .append(": LazyLock<");
         stat.getType().accept(this.innerVisitor);
-        this.builder.append(" = ");
+        this.builder.append("> = LazyLock::new(|| ");
         stat.initializer.accept(this.innerVisitor);
-        this.builder.append(";").decrease().newline().append("}").newline();
+        this.builder.append(");").newline();
     }
 
     DBSPClosureExpression generateEqualityComparison(DBSPExpression comparator) {

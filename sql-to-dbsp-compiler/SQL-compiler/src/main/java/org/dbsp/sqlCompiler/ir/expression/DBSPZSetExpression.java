@@ -39,7 +39,7 @@ public final class DBSPZSetExpression extends DBSPExpression
     }
 
     public boolean isConstant() {
-        return Linq.all(this.data.keySet(), DBSPExpression::isConstant);
+        return Linq.all(this.data.keySet(), DBSPExpression::isCompileTimeConstant);
     }
 
     /**
