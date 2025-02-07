@@ -492,14 +492,20 @@ Code snippet:
                     "format": {{
                         "name": "avro",
                         "config": {{
-                            "schema": {json.dumps(json.dumps({
-                                "type": "record",
-                                "name": "items",
-                                "fields": [
-                                    {"name": "id", "type": ["null", "int"]},
-                                    {"name": "name", "type": ["null", "string"]}
-                                ]
-                            }))}
+                            "schema": {
+            json.dumps(
+                json.dumps(
+                    {
+                        "type": "record",
+                        "name": "items",
+                        "fields": [
+                            {"name": "id", "type": ["null", "int"]},
+                            {"name": "name", "type": ["null", "string"]},
+                        ],
+                    }
+                )
+            )
+        }
                         }}
                     }}
                 }}

@@ -38,9 +38,9 @@ def main():
         pipeline.start()
         time.sleep(2)
         status = pipeline.status()
-        assert (
-            status == PipelineStatus.RUNNING
-        ), f"FAIL: demo {demo['name']}: expected pipeline to be RUNNING but instead is {status}"
+        assert status == PipelineStatus.RUNNING, (
+            f"FAIL: demo {demo['name']}: expected pipeline to be RUNNING but instead is {status}"
+        )
         pipeline.shutdown()
         print(f"PASS: demo {demo['name']}")
 

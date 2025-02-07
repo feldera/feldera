@@ -65,7 +65,7 @@ def main():
     program = ""
     times = []
     for i in range(0, len(queries)):
-        print(f"Compiling program with {i+1} queries")
+        print(f"Compiling program with {i + 1} queries")
         program += queries[i]
         program += ";"
         # print(f"program: {program}")

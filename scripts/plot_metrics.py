@@ -25,8 +25,12 @@ def parse_data(data_samples):
     for timestamp, sample in enumerate(data_samples):
         for entry in sample:
             key = entry["key"]
-            value = entry["value"].get("Gauge") or entry["value"].get("Counter")  # Handle Gauge and Counter values
-            labels = {label[0]: label[1] for label in entry.get("labels", [])}  # Convert labels to dict
+            value = entry["value"].get("Gauge") or entry["value"].get(
+                "Counter"
+            )  # Handle Gauge and Counter values
+            labels = {
+                label[0]: label[1] for label in entry.get("labels", [])
+            }  # Convert labels to dict
 
             # Extract necessary information
             worker = labels.get("worker", "Total")
@@ -34,14 +38,16 @@ def parse_data(data_samples):
             spine = labels.get("id", "Total")
 
             # Append processed entry
-            records.append({
-                "timestamp": timestamp,
-                "key": key,
-                "worker": worker,
-                "level": level,
-                "value": value,
-                "id": spine
-            })
+            records.append(
+                {
+                    "timestamp": timestamp,
+                    "key": key,
+                    "worker": worker,
+                    "level": level,
+                    "value": value,
+                    "id": spine,
+                }
+            )
 
     return pd.DataFrame(records)
 
@@ -52,14 +58,20 @@ def make_plots(data_samples):
 
     # Filter for specific metrics
     df_merges = df[df["key"] == "spine.ongoing_merges"]
-    df_merges_summary = df_merges.groupby(["timestamp", "level"])["value"].agg(
-        ["mean", "max", "min"]).reset_index().melt(
-        id_vars=["timestamp", "level"], var_name="stat", value_name="value")
+    df_merges_summary = (
+        df_merges.groupby(["timestamp", "level"])["value"]
+        .agg(["mean", "max", "min"])
+        .reset_index()
+        .melt(id_vars=["timestamp", "level"], var_name="stat", value_name="value")
+    )
 
     df_batches = df[df["key"] == "spine.batches_per_level"]
-    df_batches_summary = df_batches.groupby(["timestamp", "level"])["value"].agg(
-        ["mean", "max", "min"]).reset_index().melt(
-        id_vars=["timestamp", "level"], var_name="stat", value_name="value")
+    df_batches_summary = (
+        df_batches.groupby(["timestamp", "level"])["value"]
+        .agg(["mean", "max", "min"])
+        .reset_index()
+        .melt(id_vars=["timestamp", "level"], var_name="stat", value_name="value")
+    )
 
     # Get bytes written at every time
     df_disk = df[df["key"] == "disk.total_bytes_written"]
@@ -88,34 +100,44 @@ def make_plots(data_samples):
     # Plot function
     def create_plot(df, title, filename):
         plot = (
-                ggplot(df, aes(x="timestamp", y="value", color="stat", group="stat"))
-                + geom_line(size=1)
-                + facet_wrap("~level", scales="free")
-                + labs(title=title, x="Time", y="Value")
-                + theme_classic()
-                + scale_y_continuous(limits=(0, None))
+            ggplot(df, aes(x="timestamp", y="value", color="stat", group="stat"))
+            + geom_line(size=1)
+            + facet_wrap("~level", scales="free")
+            + labs(title=title, x="Time", y="Value")
+            + theme_classic()
+            + scale_y_continuous(limits=(0, None))
         )
         plot.save(filename, width=12, height=6, dpi=300)
         print(f"Saved {filename}")
 
     # Generate plots
-    create_plot(df_merges, "Current #Batches being merged (Min/Avg/Max from all Spines)", "ongoing_merges.png")
-    create_plot(df_batches, "Current #Batches not being merged (Min/Avg/Max from all Spine)", "batches_per_level.png")
+    create_plot(
+        df_merges,
+        "Current #Batches being merged (Min/Avg/Max from all Spines)",
+        "ongoing_merges.png",
+    )
+    create_plot(
+        df_batches,
+        "Current #Batches not being merged (Min/Avg/Max from all Spine)",
+        "batches_per_level.png",
+    )
 
     plot = (
-            ggplot(df_totals, aes(x="timestamp", y="value", color="metric"))
-            + geom_line(size=1)
-            + facet_grid("metric ~ .", scales="free_y")  # Separate plots for MiB/s and Counts
-            + labs(title="Pipeline Totals", x="Time", y="Value")
-            + theme_classic()
-            + scale_y_continuous(limits=(0, None))
+        ggplot(df_totals, aes(x="timestamp", y="value", color="metric"))
+        + geom_line(size=1)
+        + facet_grid(
+            "metric ~ .", scales="free_y"
+        )  # Separate plots for MiB/s and Counts
+        + labs(title="Pipeline Totals", x="Time", y="Value")
+        + theme_classic()
+        + scale_y_continuous(limits=(0, None))
     )
 
     # Save the plot
     plot.save("pipeline_totals.png", width=12, height=8, dpi=300)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     import sys
 
     samples = get_data_samples(sys.argv[1])
