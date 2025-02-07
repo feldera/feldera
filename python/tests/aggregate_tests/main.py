@@ -51,6 +51,8 @@ from tests.aggregate_tests.test_decimal_min import *  # noqa: F403
 from tests.aggregate_tests.test_decimal_every import *  # noqa: F403
 from tests.aggregate_tests.test_decimal_some import *  # noqa: F403
 from tests.aggregate_tests.test_decimal_sum import *  # noqa: F403
+from tests.aggregate_tests.test_decimal_stddev_samp import *  # noqa: F403
+from tests.aggregate_tests.test_decimal_stddev_pop import *  # noqa: F403
 from tests.aggregate_tests.test_decimal_table import *  # noqa: F403
 from tests.aggregate_tests.test_every import *  # noqa: F403
 from tests.aggregate_tests.test_int_table import *  # noqa: F403
