@@ -739,10 +739,11 @@ where
     fn done(mut self) -> FileValBatch<K, V, T, R> {
         FileValBatch {
             factories: self.factories,
-            file: self.result.take().unwrap_or(Arc::new(
-                Reader::empty(Runtime::buffer_cache, &*Runtime::storage_backend().unwrap())
-                    .unwrap(),
-            )),
+            file: {
+                // This will not panic as long as the client called `work`
+                // (which the trait documentation says is mandatory).
+                self.result.take().unwrap()
+            },
             lower: self.lower,
             upper: self.upper,
         }

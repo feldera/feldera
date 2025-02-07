@@ -1263,12 +1263,6 @@ impl Column {
         };
         Ok(Self { root, n_rows })
     }
-    fn empty() -> Self {
-        Self {
-            root: None,
-            n_rows: 0,
-        }
-    }
 }
 
 /// Encapsulates storage and a file handle.
@@ -1486,30 +1480,6 @@ where
             file: ImmutableFileRef::new(cache, file_handle, path, file_trailer.compression, stats),
             columns,
             bloom_filter,
-            _phantom: PhantomData,
-        })
-    }
-
-    /// Create and returns a new `Reader` that has no rows.
-    ///
-    /// This internally creates an empty temporary file, which means that it can
-    /// fail with an I/O error.
-    pub fn empty(
-        cache: fn() -> Arc<BufferCache>,
-        storage_backend: &dyn StorageBackend,
-    ) -> Result<Self, Error> {
-        let (file_handle, path) = storage_backend.create()?.complete()?;
-        Ok(Self {
-            file: ImmutableFileRef::new(
-                cache,
-                file_handle,
-                path,
-                None,
-                AtomicCacheStats::default(),
-            ),
-            bloom_filter: BloomFilter::with_false_pos(BLOOM_FILTER_FALSE_POSITIVE_RATE)
-                .expected_items(0),
-            columns: (0..T::n_columns()).map(|_| Column::empty()).collect(),
             _phantom: PhantomData,
         })
     }
