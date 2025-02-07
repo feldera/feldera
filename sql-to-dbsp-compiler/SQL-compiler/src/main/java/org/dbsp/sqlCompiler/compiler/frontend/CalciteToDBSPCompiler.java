@@ -1190,7 +1190,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                     continue;
                 fields.add(e.field(i)
                         .applyCloneIfNeeded()
-                        .cast(desiredType.getFieldType(i), false));
+                        .nullabilityCast(desiredType.getFieldType(i), false));
             }
             return new DBSPTupleExpression(fields, false);
         }
@@ -1209,7 +1209,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             for (int kf: this.keyFields) {
                 fields.add(e.field(kf)
                         .applyCloneIfNeeded()
-                        .cast(keyType.getFieldType(index), false));
+                        .nullabilityCast(keyType.getFieldType(index), false));
                 index++;
             }
             return new DBSPTupleExpression(fields, false);
@@ -1466,7 +1466,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
 
                     DBSPVariablePath l = leftElementType.ref().var();
                     DBSPClosureExpression toLeftKey = new DBSPRawTupleExpression(
-                            lkf.keyFields(l.deref(), leftResultType.slice(0, keyType.size())),
+                            lkf.keyFields(l.deref(), lkf.keyType(leftElementType)),
                             lkf.nonKeyFields(l.deref(), leftResultType))
                             .closure(l);
                     DBSPSimpleOperator remainderIndexed = new DBSPMapIndexOperator(
@@ -1582,7 +1582,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
 
                     DBSPVariablePath r = rightElementType.ref().var();
                     DBSPClosureExpression toRightKey = new DBSPRawTupleExpression(
-                            rkf.keyFields(r.deref(), leftResultType.slice(0, keyType.size())),
+                            rkf.keyFields(r.deref(), rkf.keyType(rightElementType)),
                             rkf.nonKeyFields(r.deref(), rightResultType))
                             .closure(r);
                     DBSPSimpleOperator remainderIndexed = new DBSPMapIndexOperator(

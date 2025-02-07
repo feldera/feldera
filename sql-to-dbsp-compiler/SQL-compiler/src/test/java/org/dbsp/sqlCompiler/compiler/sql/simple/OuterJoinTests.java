@@ -21,16 +21,6 @@ import java.util.List;
 
 public class OuterJoinTests extends SqlIoTest {
     @Override
-    public DBSPCompiler testCompiler() {
-        CompilerOptions options = this.testOptions(true, true);
-        // This causes the use of SourceSet operators
-        // options.ioOptions.emitHandles = false;
-        // Without the following ORDER BY causes failures
-        options.languageOptions.ignoreOrderBy = true;
-        return new DBSPCompiler(options);
-    }
-
-    @Override
     public void prepareInputs(DBSPCompiler compiler) {
         compiler.submitStatementsForCompilation("""
                 CREATE TABLE A(X INT NOT NULL, Y INT NOT NULL);
@@ -598,5 +588,24 @@ public class OuterJoinTests extends SqlIoTest {
             }
         };
         cc.visit(visitor.getCircuitVisitor(false));
+    }
+
+    @Test
+    public void internal178() {
+        var ccs = this.getCCS("""
+                CREATE TABLE T(x int not null, y int);
+                CREATE TABLE S(x int not null, y int not null);
+                CREATE VIEW V AS SELECT * FROM T LEFT JOIN S on T.y = S.y;""");
+        ccs.step("""
+                INSERT INTO T VALUES(0, 0);
+                INSERT INTO S VALUES(0, 0);""", """
+                 x | y | y | x | weight
+                ------------------------
+                 0 | 0 | 0 | 0 | 1""");
+        ccs.step("""
+                INSERT INTO T VALUES(0, NULL);""", """
+                 x | y | y | x | weight
+                ------------------------
+                 0 |   |   |   | 1""");
     }
 }
