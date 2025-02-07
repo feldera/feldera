@@ -101,7 +101,7 @@ pub const FILE_TRAILER_BLOCK_MAGIC: [u8; 4] = *b"LFFT";
 /// A block does not identify its own size, so any reference to a block must
 /// also include the block's size.
 #[binrw]
-#[derive(Debug)]
+#[derive(Copy, Clone, Debug)]
 pub struct BlockHeader {
     /// 32-bit [`crc32c`] checksum of the remainder of the block.
     pub checksum: u32,
@@ -126,7 +126,7 @@ impl BlockHeader {
 ///
 /// Serialized and deserialized automatically with [`mod@binrw`].
 #[binrw]
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct FileTrailer {
     /// Block header with "LFFT" magic.
     #[brw(assert(header.magic == FILE_TRAILER_BLOCK_MAGIC, "file trailer has bad magic"))]

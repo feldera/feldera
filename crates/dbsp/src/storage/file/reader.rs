@@ -2,11 +2,9 @@
 //!
 //! [`Reader`] is the top-level interface for reading layer files.
 
-use super::format::Compression;
-use super::{
-    cache::FileCacheEntry, AnyFactories, BloomFilterState, Factories,
-    BLOOM_FILTER_FALSE_POSITIVE_RATE,
-};
+use super::format::{Compression, FileTrailer};
+use super::{AnyFactories, BloomFilterState, Factories, BLOOM_FILTER_FALSE_POSITIVE_RATE};
+use crate::storage::buffer_cache::{CacheAccess, CacheEntry};
 use crate::storage::{
     backend::StorageError,
     buffer_cache::{BufferCache, FBuf},
@@ -26,10 +24,14 @@ use binrw::{
     io::{self},
     BinRead, Error as BinError,
 };
+use crc32c::crc32c;
 use fastbloom::BloomFilter;
+use snap::raw::{decompress_len, Decoder};
+use std::any::Any;
 use std::fs::File;
 use std::io::ErrorKind;
 use std::mem::replace;
+use std::time::Instant;
 use std::{
     cmp::{
         max, min,
@@ -420,10 +422,17 @@ pub struct InnerDataBlock {
     row_groups: Option<VarintReader>,
 }
 
-impl InnerDataBlock {
-    pub(super) fn cost(&self) -> usize {
+impl CacheEntry for InnerDataBlock {
+    fn cost(&self) -> usize {
         size_of::<Self>() + self.raw.len()
     }
+
+    fn as_any(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {
+        self
+    }
+}
+
+impl InnerDataBlock {
     pub(super) fn from_raw(raw: Arc<FBuf>, location: BlockLocation) -> Result<Self, Error> {
         let header = DataBlockHeader::read_le(&mut io::Cursor::new(raw.as_slice()))?;
         Ok(Self {
@@ -445,12 +454,25 @@ impl InnerDataBlock {
     }
 
     fn new(file: &ImmutableFileRef, node: &TreeNode) -> Result<Arc<Self>, Error> {
-        (file.cache)().read_data_block(
-            &*file.file_handle,
-            node.location,
-            file.compression,
-            &file.stats,
-        )
+        let start = Instant::now();
+        let cache = (file.cache)();
+        #[allow(clippy::borrow_deref_ref)]
+        let (access, entry) = match cache.get(&*file.file_handle, node.location) {
+            Some(entry) => (CacheAccess::Hit, entry),
+            None => {
+                let block = file.read_block(node.location)?;
+                let entry = Arc::new(Self::from_raw(block, node.location)?) as Arc<dyn CacheEntry>;
+                cache.insert(
+                    file.file_handle.file_id(),
+                    node.location.offset,
+                    entry.clone(),
+                );
+                (CacheAccess::Miss, entry)
+            }
+        };
+        file.stats.record(access, start.elapsed(), node.location);
+        Arc::downcast(entry.as_any())
+            .map_err(|_| Error::Corruption(CorruptionError::BadBlockType(node.location)))
     }
     fn n_values(&self) -> usize {
         self.value_map.len()
@@ -708,10 +730,16 @@ pub struct InnerIndexBlock {
     child_sizes: VarintReader,
 }
 
-impl InnerIndexBlock {
-    pub(super) fn cost(&self) -> usize {
+impl CacheEntry for InnerIndexBlock {
+    fn cost(&self) -> usize {
         size_of::<Self>() + self.raw.len()
     }
+    fn as_any(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {
+        self
+    }
+}
+
+impl InnerIndexBlock {
     pub(super) fn from_raw(raw: Arc<FBuf>, location: BlockLocation) -> Result<Self, Error> {
         let header = IndexBlockHeader::read_le(&mut io::Cursor::new(raw.as_slice()))?;
         if header.n_children == 0 {
@@ -764,12 +792,25 @@ impl InnerIndexBlock {
     }
 
     fn new(file: &ImmutableFileRef, node: &TreeNode) -> Result<Arc<Self>, Error> {
-        (file.cache)().read_index_block(
-            &*file.file_handle,
-            node.location,
-            file.compression,
-            &file.stats,
-        )
+        let start = Instant::now();
+        let cache = (file.cache)();
+        #[allow(clippy::borrow_deref_ref)]
+        let (access, entry) = match cache.get(&*file.file_handle, node.location) {
+            Some(entry) => (CacheAccess::Hit, entry),
+            None => {
+                let block = file.read_block(node.location)?;
+                let entry = Arc::new(Self::from_raw(block, node.location)?) as Arc<dyn CacheEntry>;
+                cache.insert(
+                    file.file_handle.file_id(),
+                    node.location.offset,
+                    entry.clone(),
+                );
+                (CacheAccess::Miss, entry)
+            }
+        };
+        file.stats.record(access, start.elapsed(), node.location);
+        Arc::downcast(entry.as_any())
+            .map_err(|_| Error::Corruption(CorruptionError::BadBlockType(node.location)))
     }
 }
 
@@ -1018,6 +1059,43 @@ where
     }
 }
 
+impl CacheEntry for FileTrailer {
+    fn cost(&self) -> usize {
+        size_of::<FileTrailer>()
+    }
+
+    fn as_any(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {
+        self
+    }
+}
+
+impl FileTrailer {
+    fn from_raw(raw: Arc<FBuf>) -> Result<Self, Error> {
+        Ok(Self::read_le(&mut io::Cursor::new(raw.as_slice()))?)
+    }
+    fn new(
+        cache: fn() -> Arc<BufferCache>,
+        file_handle: &dyn FileReader,
+        location: BlockLocation,
+        stats: &AtomicCacheStats,
+    ) -> Result<Arc<FileTrailer>, Error> {
+        let start = Instant::now();
+        let cache = (cache)();
+        let (access, entry) = match cache.get(file_handle, location) {
+            Some(entry) => (CacheAccess::Hit, entry),
+            None => {
+                let block = file_handle.read_block(location)?;
+                let entry = Arc::new(Self::from_raw(block)?) as Arc<dyn CacheEntry>;
+                cache.insert(file_handle.file_id(), location.offset, entry.clone());
+                (CacheAccess::Miss, entry)
+            }
+        };
+        stats.record(access, start.elapsed(), location);
+        Arc::downcast(entry.as_any())
+            .map_err(|_| Error::Corruption(CorruptionError::BadBlockType(location)))
+    }
+}
+
 #[derive(Debug)]
 struct Column {
     root: Option<TreeNode>,
@@ -1065,7 +1143,7 @@ impl Column {
 /// Encapsulates storage and a file handle.
 struct ImmutableFileRef {
     path: PathBuf,
-    cache: fn() -> Arc<BufferCache<FileCacheEntry>>,
+    cache: fn() -> Arc<BufferCache>,
     file_handle: Arc<dyn FileReader>,
     compression: Option<Compression>,
     stats: AtomicCacheStats,
@@ -1088,7 +1166,7 @@ impl Drop for ImmutableFileRef {
 
 impl ImmutableFileRef {
     fn new(
-        cache: fn() -> Arc<BufferCache<FileCacheEntry>>,
+        cache: fn() -> Arc<BufferCache>,
         file_handle: Arc<dyn FileReader>,
         path: PathBuf,
         compression: Option<Compression>,
@@ -1105,6 +1183,59 @@ impl ImmutableFileRef {
 
     pub fn evict(&self) {
         (self.cache)().evict(&*self.file_handle);
+    }
+
+    pub fn read_block(&self, location: BlockLocation) -> Result<Arc<FBuf>, Error> {
+        let raw = self.file_handle.read_block(location)?;
+        let raw = if let Some(compression) = self.compression {
+            let compressed_len = u32::from_le_bytes(raw[..4].try_into().unwrap()) as usize;
+            let Some(compressed) = raw[4..].get(..compressed_len) else {
+                return Err(CorruptionError::BadCompressedLen {
+                    location,
+                    compressed_len,
+                    max_compressed_len: raw.len() - 4,
+                }
+                .into());
+            };
+            match compression {
+                Compression::Snappy => {
+                    let decompressed_len = decompress_len(compressed).map_err(|error| {
+                        Error::Corruption(CorruptionError::Snappy { location, error })
+                    })?;
+                    let mut decompressed = FBuf::with_capacity(decompressed_len);
+                    decompressed.resize(decompressed_len, 0);
+                    match Decoder::new().decompress(compressed, decompressed.as_mut_slice()) {
+                        Ok(n) if n == decompressed_len => {}
+                        Ok(n) => {
+                            return Err(CorruptionError::UnexpectedDecompressionLength {
+                                location,
+                                length: n,
+                                expected_length: decompressed_len,
+                            }
+                            .into())
+                        }
+                        Err(error) => {
+                            return Err(CorruptionError::Snappy { location, error }.into())
+                        }
+                    }
+                    Arc::new(decompressed)
+                }
+            }
+        } else {
+            raw
+        };
+        let computed_checksum = crc32c(&raw[4..]);
+        let checksum = u32::from_le_bytes(raw[..4].try_into().unwrap());
+        if checksum != computed_checksum {
+            return Err(CorruptionError::InvalidChecksum {
+                location,
+                magic: raw[4..8].try_into().unwrap(),
+                checksum,
+                computed_checksum,
+            }
+            .into());
+        }
+        Ok(raw)
     }
 }
 
@@ -1166,7 +1297,7 @@ where
     pub(crate) fn new(
         factories: &[&AnyFactories],
         path: PathBuf,
-        cache: fn() -> Arc<BufferCache<FileCacheEntry>>,
+        cache: fn() -> Arc<BufferCache>,
         file_handle: Arc<dyn FileReader>,
         bloom_filter: BloomFilter,
     ) -> Result<Self, Error> {
@@ -1176,7 +1307,8 @@ where
         }
 
         let stats = AtomicCacheStats::default();
-        let file_trailer = cache().read_file_trailer_block(
+        let file_trailer = FileTrailer::new(
+            cache,
             &*file_handle,
             BlockLocation::new(file_size - 512, 512).unwrap(),
             &stats,
@@ -1232,7 +1364,7 @@ where
     /// This internally creates an empty temporary file, which means that it can
     /// fail with an I/O error.
     pub fn empty(
-        cache: fn() -> Arc<BufferCache<FileCacheEntry>>,
+        cache: fn() -> Arc<BufferCache>,
         storage_backend: &dyn StorageBackend,
     ) -> Result<Self, Error> {
         let (file_handle, path) = storage_backend.create()?.complete()?;
@@ -1259,7 +1391,7 @@ where
     /// Instantiates a reader given an existing path.
     pub fn open(
         factories: &[&AnyFactories],
-        cache: fn() -> Arc<BufferCache<FileCacheEntry>>,
+        cache: fn() -> Arc<BufferCache>,
         storage_backend: &dyn StorageBackend,
         path: &IoPath,
     ) -> Result<Self, Error> {
