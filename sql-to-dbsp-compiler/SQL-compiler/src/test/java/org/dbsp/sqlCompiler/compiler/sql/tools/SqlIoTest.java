@@ -35,7 +35,7 @@ public abstract class SqlIoTest extends BaseSQLTests {
         Optimized,
         Unoptimized,
         Both
-    };
+    }
 
     public CompilerOptions getOptions(boolean optimize) {
         CompilerOptions options = new CompilerOptions();
@@ -132,7 +132,7 @@ public abstract class SqlIoTest extends BaseSQLTests {
         DBSPCompiler compiler = this.testCompiler(optimize);
         this.prepareInputs(compiler);
         compiler.submitStatementForCompilation("CREATE VIEW VV AS " + query);
-        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
+        CompilerCircuitStream ccs = this.getCCS(compiler);
         ccs.showErrors();
         if (!compiler.options.languageOptions.throwOnError)
             compiler.throwIfErrorsOccurred();
@@ -141,14 +141,13 @@ public abstract class SqlIoTest extends BaseSQLTests {
                 new Change(expected)
         );
         ccs.addChange(iochange);
-        this.addRustTestCase(ccs);
     }
 
     public void compare(String query, String expected, boolean optimize, int rowCount) {
         DBSPCompiler compiler = this.testCompiler(optimize);
         this.prepareInputs(compiler);
         compiler.submitStatementForCompilation("CREATE VIEW VV AS " + query);
-        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
+        CompilerCircuitStream ccs = this.getCCS(compiler);
         ccs.showErrors();
         if (!compiler.options.languageOptions.throwOnError)
             compiler.throwIfErrorsOccurred();
@@ -159,7 +158,6 @@ public abstract class SqlIoTest extends BaseSQLTests {
                 result
         );
         ccs.addChange(change);
-        this.addRustTestCase(ccs);
     }
 
     String removeComments(String queryAndOutput) {
@@ -266,7 +264,7 @@ public abstract class SqlIoTest extends BaseSQLTests {
         compiler.submitStatementForCompilation("CREATE VIEW VV AS " + query);
         if (!compiler.options.languageOptions.throwOnError)
             compiler.throwIfErrorsOccurred();
-        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
+        CompilerCircuitStream ccs = this.getCCSFailing(compiler, panicMessage);
         DBSPCircuit circuit = ccs.circuit;
         DBSPType outputType = circuit.getSingleOutputType();
         Change result = new Change(
@@ -276,7 +274,6 @@ public abstract class SqlIoTest extends BaseSQLTests {
                 result
         );
         ccs.addChange(ioChange);
-        this.addFailingRustTestCase(query, panicMessage, ccs);
     }
 
     /**

@@ -16,6 +16,7 @@ pub(crate) mod avro;
 pub(crate) mod csv;
 mod json;
 pub mod parquet;
+pub(crate) mod raw;
 
 #[cfg(feature = "with-avro")]
 use crate::format::avro::output::AvroOutputFormat;
@@ -25,6 +26,7 @@ pub use self::csv::{byte_record_deserializer, string_record_deserializer};
 use self::{
     csv::{CsvInputFormat, CsvOutputFormat},
     json::{JsonInputFormat, JsonOutputFormat},
+    raw::RawInputFormat,
 };
 
 pub use feldera_adapterlib::format::*;
@@ -42,6 +44,7 @@ static INPUT_FORMATS: Lazy<BTreeMap<&'static str, Box<dyn InputFormat>>> = Lazy:
         ),
         #[cfg(feature = "with-avro")]
         ("avro", Box::new(AvroInputFormat) as Box<dyn InputFormat>),
+        ("raw", Box::new(RawInputFormat) as Box<dyn InputFormat>),
     ])
 });
 

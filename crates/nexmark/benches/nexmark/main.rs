@@ -10,7 +10,9 @@ use dbsp::circuit::metrics::{
     FILES_CREATED, READS_SUCCESS, TOTAL_BYTES_READ, TOTAL_BYTES_WRITTEN, TOTAL_COMPACTIONS,
     WRITES_SUCCESS,
 };
-use dbsp::circuit::{CircuitConfig, StorageCacheConfig, StorageConfig};
+use dbsp::circuit::{
+    CircuitConfig, CircuitStorageConfig, StorageCacheConfig, StorageConfig, StorageOptions,
+};
 use dbsp::storage::backend::tempdir_for_thread;
 use dbsp::utils::Tup2;
 use dbsp::{
@@ -246,15 +248,22 @@ fn run_query(config: &NexmarkConfig, snapshotter: &Snapshotter, query: Query) ->
     let num_cores = config.cpu_cores;
     let expected_num_events = config.generator_options.max_events;
     let circuit_config = CircuitConfig {
-        storage: Some(StorageConfig {
-            path: tempdir_for_thread().to_string_lossy().into_owned(),
-            cache: if config.feldera_cache {
-                StorageCacheConfig::FelderaCache
-            } else {
-                StorageCacheConfig::PageCache
-            },
-        }),
-        min_storage_bytes: config.min_storage_bytes,
+        storage: if config.min_storage_bytes != usize::MAX {
+            Some(CircuitStorageConfig {
+                config: StorageConfig {
+                    path: tempdir_for_thread().to_string_lossy().into_owned(),
+                    cache: if config.feldera_cache {
+                        StorageCacheConfig::FelderaCache
+                    } else {
+                        StorageCacheConfig::PageCache
+                    },
+                },
+                options: StorageOptions::default(),
+                init_checkpoint: None,
+            })
+        } else {
+            None
+        },
         ..CircuitConfig::with_workers(num_cores)
     };
     let (dbsp, input_handle) =

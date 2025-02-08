@@ -10,7 +10,7 @@ import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRef;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBaseType;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeMap;
-import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeVec;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeArray;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeWithCustomOrd;
 import org.dbsp.util.Linq;
 
@@ -29,7 +29,7 @@ public class NonMonotoneType extends ScalarMonotoneType {
 
     /** Create a non-monotone version of the specified type */
     public static IMaybeMonotoneType nonMonotone(DBSPType type) {
-        if (type.is(DBSPTypeBaseType.class) || type.is(DBSPTypeVec.class) ||
+        if (type.is(DBSPTypeBaseType.class) || type.is(DBSPTypeArray.class) ||
                 type.is(DBSPTypeMap.class) || type.is(DBSPTypeAny.class) ||
                 type.is(DBSPTypeWithCustomOrd.class)) {
             return new NonMonotoneType(type);
@@ -65,7 +65,7 @@ public class NonMonotoneType extends ScalarMonotoneType {
     }
 
     @Override
-    public IMaybeMonotoneType setMaybeNull(boolean maybeNull) {
+    public IMaybeMonotoneType withMaybeNull(boolean maybeNull) {
         return new NonMonotoneType(this.type.withMayBeNull(maybeNull));
     }
 

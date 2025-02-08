@@ -120,13 +120,13 @@ public class RustFileWriter {
                     MapHandle, ZSetHandle, OutputHandle,
                     dynamic::{DynData,DynDataTyped},
                 };
+                use rust_decimal_macros::dec;
                 use feldera_types::program_schema::SqlIdentifier;
                 use dbsp_adapters::Catalog;
                 use feldera_types::{deserialize_table_record, serialize_table_record};
                 use size_of::*;
                 use ::serde::{Deserialize,Serialize};
                 use compare::{Compare, Extract};
-                use lazy_static::lazy_static;
                 use std::{
                     collections::BTreeMap,
                     convert::identity,
@@ -134,7 +134,7 @@ public class RustFileWriter {
                     fmt::{Debug, Formatter, Result as FmtResult},
                     path::Path,
                     marker::PhantomData,
-                    sync::Arc,
+                    sync::{Arc, LazyLock},
                 };
                 use core::cmp::Ordering;
                 use rust_decimal::Decimal;

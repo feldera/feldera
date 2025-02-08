@@ -1,9 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.sql.quidem;
 
-import org.dbsp.util.Utilities;
 import org.junit.Test;
-
-import java.io.IOException;
 
 /** Tests from Calcite outer.iq */
 public class OuterTests extends PostBaseTests {
@@ -276,19 +273,32 @@ public class OuterTests extends PostBaseTests {
 
     @Test
     public void testNullableOuter() {
-        // Validated on SQLite
+        // Validated on Postgres
         this.q("""
-                with t1(x, y) as (select * from (values (1, '10'), (2, '20'), (null, '30')) as t),
-                     t2(y, x) as (select * from (values ('100', 1), ('20', 2)) as t)
+                with t1(x, y) as (select * from (values (1, 'aa'), (2, 'b'), (null, 'c')) as t),
+                     t2(y, x) as (select * from (values ('d', 1), ('b', 2)) as t)
                 select * from t1 full join t2 on t1.x = t2.x and t1.y = t2.y;
                 +---+---+----+-----+
                 | X | Y |  Y |   X |
                 +---+---+----+-----+
-                | 1 | 10|NULL|     |
-                | 2 | 20| 20 |   2 |
-                |   | 30|NULL|     |
-                |   |NULL| 100|  1 |
+                | 1 | aa|NULL|     |
+                | 2 | b| b|      2 |
+                |   | c|NULL|      |
+                |   |NULL| d|    1 |
                 +---+---+----+-----+
+                (4 rows)""");
+        this.q("""
+                with t1(x, y, z) as (select * from (values (1, 'aa', 1.0), (2, 'b', 2.0), (null, 'c', 3.0)) as t),
+                     t2(y, x, w) as (select * from (values ('d', 1, 1.0), ('b', 2, 2.0)) as t)
+                select * from t1 full join t2 on t1.x = t2.x and t1.y = t2.y;
+                +---+---+----+----+-----+----+
+                | X | Y |  Z |  Y |   X |  W |
+                +---+---+----+----+-----+----+
+                | 1 | aa| 1.0|NULL|     |    |
+                | 2 | b|  2.0| b|     2 | 2.0|
+                |   | c|  3.0|NULL|     |    |
+                |   |NULL|   | d|     1 | 1.0|
+                +---+---+----+-----+----+----+
                 (4 rows)""");
         this.q("""                
                 with t1(x, y) as (select * from (values (1, 10), (2, 20), (null, 30)) as t),

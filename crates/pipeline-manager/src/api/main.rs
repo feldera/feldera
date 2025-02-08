@@ -139,6 +139,9 @@ only the program-related core fields, and is used by the compiler to discern whe
         feldera_types::config::PipelineConfig,
         feldera_types::config::StorageConfig,
         feldera_types::config::StorageCacheConfig,
+        feldera_types::config::StorageOptions,
+        feldera_types::config::StorageBackendConfig,
+        feldera_types::config::StorageCompression,
         feldera_types::config::RuntimeConfig,
         feldera_types::config::FtConfig,
         feldera_types::config::InputEndpointConfig,
@@ -368,7 +371,8 @@ pub async fn run(
     api_config: ApiServerConfig,
 ) -> AnyResult<()> {
     let listener = create_listener(&api_config)?;
-    let state = WebData::new(ServerState::new(common_config, api_config.clone(), db).await?);
+    let state =
+        WebData::new(ServerState::new(common_config.clone(), api_config.clone(), db).await?);
     let bind_address = api_config.bind_address.clone();
     let port = api_config.port;
     let auth_configuration = match api_config.auth_provider {
@@ -440,11 +444,16 @@ pub async fn run(
 Web console URL: {}
 API server URL: {}
 Documentation: https://docs.feldera.com/
-Version: {}
+Version: {}{}
         ",
             url,
             url,
-            env!("CARGO_PKG_VERSION")
+            env!("CARGO_PKG_VERSION"),
+            if env!("FELDERA_PLATFORM_VERSION_SUFFIX").is_empty() {
+                "".to_string()
+            } else {
+                format!(" ({})", env!("FELDERA_PLATFORM_VERSION_SUFFIX"))
+            }
         )
         .as_bytes(),
     );

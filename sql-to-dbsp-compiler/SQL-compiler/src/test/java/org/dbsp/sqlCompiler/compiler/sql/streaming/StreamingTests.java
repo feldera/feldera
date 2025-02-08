@@ -1,7 +1,9 @@
 package org.dbsp.sqlCompiler.compiler.sql.streaming;
 
+import com.beust.jcommander.Parameter;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessRetainKeysOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPChainAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPControlledKeyFilterOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesOperator;
@@ -15,6 +17,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.sql.OtherTests;
 import org.dbsp.sqlCompiler.compiler.sql.StreamingTestBase;
 import org.dbsp.sqlCompiler.compiler.sql.tools.Change;
+import org.dbsp.sqlCompiler.compiler.sql.tools.CompilerCircuit;
 import org.dbsp.sqlCompiler.compiler.sql.tools.CompilerCircuitStream;
 import org.dbsp.sqlCompiler.compiler.sql.tools.InputOutputChange;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -22,18 +25,14 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDateLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDoubleLiteral;
-import org.dbsp.sqlCompiler.ir.expression.DBSPMapExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimestampLiteral;
-import org.dbsp.sqlCompiler.ir.expression.DBSPVariantExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDate;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDouble;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVariant;
-import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeMap;
 import org.dbsp.util.Linq;
 import org.junit.Assert;
 import org.junit.Test;
@@ -84,7 +83,6 @@ public class StreamingTests extends StreamingTestBase {
                          2020-01-01 00:00:00 | 1""");
 
 
-        this.addRustTestCase(ccs);
         CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
             int window = 0;
 
@@ -99,7 +97,42 @@ public class StreamingTests extends StreamingTestBase {
                 Assert.assertEquals(1, this.window);
             }
         };
-        visitor.apply(ccs.circuit);
+        ccs.visit(visitor);
+    }
+
+    @Test
+    public void issue3465() {
+        String sql = """
+                CREATE TABLE T(TS INT LATENESS 100, X INT) WITH ('append_only' = 'true');
+                CREATE VIEW V AS
+                SELECT MAX(TS * 2), MIN(TS - 2)  FROM T;""";
+        var ccs = this.getCCS(sql);
+        ccs.step("INSERT INTO T VALUES(NULL, 0);",
+                """
+                         max | min | weight
+                        --------------------
+                             |     | 1""");
+        ccs.step("INSERT INTO T VALUES(10, -10);",
+                """
+                         max | min | weight
+                        --------------------
+                             |     | -1
+                         20  |   8 | 1""");
+        ccs.step("INSERT INTO T VALUES(5, 20);",
+                """
+                         sum | max | weight
+                        --------------------
+                         20  |   8 | -1
+                         20  |   3 | 1""");
+        int[] chains = new int[1];
+        CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
+            @Override
+            public void postorder(DBSPChainAggregateOperator operator) {
+                chains[0]++;
+            }
+        };
+        ccs.visit(visitor);
+        Assert.assertEquals(1, chains[0]);
     }
 
     @Test
@@ -132,7 +165,6 @@ public class StreamingTests extends StreamingTestBase {
                         --------------------
                          30  | 20  | -1
                          60  | 60  | 1""");
-        this.addRustTestCase(ccs);
     }
 
     @Test
@@ -169,7 +201,6 @@ public class StreamingTests extends StreamingTestBase {
                 """
                          sum | min | weight
                         --------------------""");
-        this.addRustTestCase(ccs);
     }
 
     @Test
@@ -189,8 +220,8 @@ public class StreamingTests extends StreamingTestBase {
                     COUNT(*)
                 FROM t
                 GROUP BY TIMESTAMP_TRUNC(ts, DAY);""";
-        var ccs = this.getCCS(sql);
-        CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
+        var cc = this.getCC(sql);
+        CircuitVisitor visitor = new CircuitVisitor(cc.compiler) {
             int integrate_trace = 0;
 
             @Override
@@ -203,7 +234,7 @@ public class StreamingTests extends StreamingTestBase {
                 Assert.assertEquals(4, this.integrate_trace);
             }
         };
-        visitor.apply(ccs.circuit);
+        cc.visit(visitor);
     }
 
     @Test
@@ -240,7 +271,6 @@ public class StreamingTests extends StreamingTestBase {
                         --------------------
                          10  | 20  | -1
                          10  | 40  | 1""");
-        this.addRustTestCase(ccs);
     }
 
     @Test
@@ -284,8 +314,7 @@ public class StreamingTests extends StreamingTestBase {
                 Assert.assertEquals(1, this.window);
             }
         };
-        visitor.apply(ccs.circuit);
-        this.addRustTestCase(ccs);
+        ccs.visit(visitor);
     }
 
     @Test
@@ -309,8 +338,7 @@ public class StreamingTests extends StreamingTestBase {
                 Assert.assertEquals(4, this.integrate_trace);
             }
         };
-        visitor.apply(ccs.circuit);
-        this.addRustTestCase(ccs);
+        ccs.visit(visitor);
     }
 
     @Test
@@ -372,8 +400,7 @@ public class StreamingTests extends StreamingTestBase {
                 Assert.assertEquals(4, this.integrate_trace);
             }
         };
-        visitor.apply(ccs.circuit);
-        this.addRustTestCase(ccs);
+        ccs.visit(visitor);
     }
 
     @Test
@@ -398,7 +425,6 @@ public class StreamingTests extends StreamingTestBase {
                 group by
                     ts, a;""";
         CompilerCircuitStream ccs = this.getCCS(sql);
-        this.addRustTestCase(ccs);
         CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
             int integrate_trace = 0;
 
@@ -412,7 +438,7 @@ public class StreamingTests extends StreamingTestBase {
                 Assert.assertEquals(10, this.integrate_trace);
             }
         };
-        visitor.apply(ccs.circuit);
+        ccs.visit(visitor);
     }
 
     @Test
@@ -516,8 +542,7 @@ public class StreamingTests extends StreamingTestBase {
                 Assert.assertEquals(1, this.aggregate_retain);
             }
         };
-        visitor.apply(ccs.circuit);
-        this.addRustTestCase(ccs);
+        ccs.visit(visitor);
     }
 
     @Test
@@ -631,8 +656,7 @@ public class StreamingTests extends StreamingTestBase {
                 Assert.assertEquals(1, this.integrate_trace);
             }
         };
-        visitor.apply(ccs.circuit);
-        this.addRustTestCase(ccs);
+        ccs.visit(visitor);
     }
 
     @Test
@@ -714,7 +738,6 @@ public class StreamingTests extends StreamingTestBase {
                 """, """
                  date_time | expires | id | price | bid_dateTime | weight
                 ----------------------------------------------------------""");
-        this.addRustTestCase(ccs);
     }
 
     @Test
@@ -782,7 +805,6 @@ public class StreamingTests extends StreamingTestBase {
                 SELECT ts, COUNT(*) FROM t
                 GROUP BY ts;""";
         CompilerCircuitStream ccs = this.getCCS(sql);
-        this.addRustTestCase(ccs);
         // waterline is 1
         ccs.step("INSERT INTO T VALUES (0), (1);", """
                  ts | count | weight
@@ -818,7 +840,7 @@ public class StreamingTests extends StreamingTestBase {
                 Assert.assertEquals(2, this.integrate_trace);
             }
         };
-        visitor.apply(ccs.circuit);
+        ccs.visit(visitor);
     }
 
     @Test
@@ -838,7 +860,6 @@ public class StreamingTests extends StreamingTestBase {
                 select ts, count(*) from v1
                 group by ts;""";
            CompilerCircuitStream ccs = this.getCCS(sql);
-        this.addRustTestCase(ccs);
         CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
             int integrate_trace = 0;
 
@@ -852,7 +873,7 @@ public class StreamingTests extends StreamingTestBase {
                 Assert.assertEquals(2, this.integrate_trace);
             }
         };
-        visitor.apply(ccs.circuit);
+        ccs.visit(visitor);
     }
 
     @Test
@@ -891,7 +912,6 @@ public class StreamingTests extends StreamingTestBase {
                   sum | timestamp           | weight
                  ------------------------------------
                     2 | 0001-01-01 00:00:00 | 1""");
-        this.addRustTestCase(ccs);
     }
 
     @Test
@@ -904,7 +924,6 @@ public class StreamingTests extends StreamingTestBase {
                          c | compare | weight
                         ----------------------
                          1 | true    | 1""");
-        this.addRustTestCase(ccs);
     }
 
     @Test
@@ -941,7 +960,6 @@ public class StreamingTests extends StreamingTestBase {
                   2 | 2024-12-12 00:02:00 | 1
                   3 | 2024-12-12 00:02:00 | 1
                   4 | 2024-12-12 00:02:00 | 1""");
-        this.addRustTestCase(ccs);
     }
 
     @Test
@@ -974,7 +992,6 @@ public class StreamingTests extends StreamingTestBase {
                  ----------------
                   6     | -1
                   8     | 1""");
-        this.addRustTestCase(ccs);
     }
 
     @Test
@@ -1015,8 +1032,7 @@ public class StreamingTests extends StreamingTestBase {
                 Assert.assertEquals(3, this.waterline);
             }
         };
-        visitor.apply(ccs.circuit);
-        this.addRustTestCase(ccs);
+        ccs.visit(visitor);
     }
 
     @Test
@@ -1052,7 +1068,7 @@ public class StreamingTests extends StreamingTestBase {
                 Assert.assertEquals(2, this.waterline);
             }
         };
-        visitor.apply(ccs.circuit);
+        ccs.visit(visitor);
         ccs.step("""
                  INSERT INTO transactions VALUES (1, '2024-01-01 00:00:10');
                  INSERT INTO now VALUES ('2024-01-01 00:00:00');
@@ -1073,7 +1089,6 @@ public class StreamingTests extends StreamingTestBase {
                  """, """
                   value | weight
                  ----------------""");
-        this.addRustTestCase(ccs);
     }
 
     @Test
@@ -1088,8 +1103,8 @@ public class StreamingTests extends StreamingTestBase {
                 SELECT *
                 FROM transactions
                 WHERE ts >= year(now()) + 10""";
-        CompilerCircuitStream ccs = this.getCCS(sql);
-        CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
+        CompilerCircuit cc = this.getCC(sql);
+        CircuitVisitor visitor = new CircuitVisitor(cc.compiler) {
             int window = 0;
             int waterline = 0;
 
@@ -1109,7 +1124,7 @@ public class StreamingTests extends StreamingTestBase {
                 Assert.assertEquals(2, this.waterline);
             }
         };
-        visitor.apply(ccs.circuit);
+        cc.visit(visitor);
     }
 
     @Test
@@ -1125,8 +1140,8 @@ public class StreamingTests extends StreamingTestBase {
                 FROM transactions
                 WHERE id + ts/2 - SIN(id) >= year(now()) + 10 AND
                       id + ts/2 - SIN(id) <= EXTRACT(CENTURY FROM now()) * 20;""";
-        CompilerCircuitStream ccs = this.getCCS(sql);
-        CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
+        CompilerCircuit cc = this.getCC(sql);
+        CircuitVisitor visitor = new CircuitVisitor(cc.compiler) {
             int window = 0;
             int waterline = 0;
 
@@ -1146,7 +1161,7 @@ public class StreamingTests extends StreamingTestBase {
                 Assert.assertEquals(2, this.waterline);
             }
         };
-        visitor.apply(ccs.circuit);
+        cc.visit(visitor);
     }
 
     @Test
@@ -1165,8 +1180,8 @@ public class StreamingTests extends StreamingTestBase {
                       id + ts/2 - SIN(id) <= EXTRACT(CENTURY FROM now()) * 20 AND
                       id >= EXTRACT(CENTURY FROM now()) * 20 AND
                       id = 4;""";
-        CompilerCircuitStream ccs = this.getCCS(sql);
-        CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
+        CompilerCircuit cc = this.getCC(sql);
+        CircuitVisitor visitor = new CircuitVisitor(cc.compiler) {
             int window = 0;
             int waterline = 0;
 
@@ -1186,7 +1201,7 @@ public class StreamingTests extends StreamingTestBase {
                 Assert.assertEquals(2, this.waterline);
             }
         };
-        visitor.apply(ccs.circuit);
+        cc.visit(visitor);
     }
 
     @Test
@@ -1202,8 +1217,8 @@ public class StreamingTests extends StreamingTestBase {
                 FROM transactions
                 WHERE id >= EXTRACT(CENTURY FROM now()) * 20 AND
                       EXTRACT(CENTURY FROM now()) % 10 = 0;""";
-        CompilerCircuitStream ccs = this.getCCS(sql);
-        CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
+        CompilerCircuit cc = this.getCC(sql);
+        CircuitVisitor visitor = new CircuitVisitor(cc.compiler) {
             int window = 0;
             int waterline = 0;
 
@@ -1223,7 +1238,7 @@ public class StreamingTests extends StreamingTestBase {
                 Assert.assertEquals(2, this.waterline);
             }
         };
-        visitor.apply(ccs.circuit);
+        cc.visit(visitor);
     }
 
     @Test
@@ -1239,7 +1254,6 @@ public class StreamingTests extends StreamingTestBase {
                 FROM event
                 WHERE end > start;""";
         CompilerCircuitStream ccs = this.getCCS(sql);
-        this.addRustTestCase(ccs);
         CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
             int integrate_trace = 0;
 
@@ -1253,7 +1267,7 @@ public class StreamingTests extends StreamingTestBase {
                 Assert.assertEquals(1, this.integrate_trace);
             }
         };
-        visitor.apply(ccs.circuit);
+        ccs.visit(visitor);
     }
 
     @Test
@@ -1318,8 +1332,7 @@ public class StreamingTests extends StreamingTestBase {
                     DESCRIPTOR(pickup),
                     INTERVAL '2' MINUTE,
                     INTERVAL '5' MINUTE));""";
-        CompilerCircuitStream ccs = this.getCCS(sql);
-        this.addRustTestCase(ccs);
+        this.getCCS(sql);
     }
 
     @Test
@@ -1408,7 +1421,6 @@ public class StreamingTests extends StreamingTestBase {
                    RANGE BETWEEN INTERVAL 1 HOUR PRECEDING AND INTERVAL 1 MINUTE PRECEDING ) AS c
                 FROM tripdata;""";
         CompilerCircuitStream ccs = this.getCCS(sql);
-        this.addRustTestCase(ccs);
         CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
             int rolling_waterline = 0;
             int integrate_trace = 0;
@@ -1429,7 +1441,7 @@ public class StreamingTests extends StreamingTestBase {
                 Assert.assertEquals(2, this.integrate_trace);
             }
         };
-        visitor.apply(ccs.circuit);
+        ccs.visit(visitor);
     }
 
     @Test
@@ -1477,7 +1489,6 @@ public class StreamingTests extends StreamingTestBase {
                 ((SELECT * FROM series) UNION ALL
                  (SELECT pickup + INTERVAL 5 MINUTES FROM series));""";
         CompilerCircuitStream ccs = this.getCCS(sql);
-        this.addRustTestCase(ccs);
         CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
             int count = 0;
 
@@ -1491,7 +1502,7 @@ public class StreamingTests extends StreamingTestBase {
                 Assert.assertEquals(1, this.count);
             }
         };
-        visitor.apply(ccs.circuit);
+        ccs.visit(visitor);
     }
 
     @Test
@@ -1507,8 +1518,7 @@ public class StreamingTests extends StreamingTestBase {
                     DESCRIPTOR(pickup),
                     INTERVAL '2' MINUTE,
                     INTERVAL '5' MINUTE));""";
-        CompilerCircuitStream ccs = this.getCCS(sql);
-        this.addRustTestCase(ccs);
+        this.getCCS(sql);
     }
 
     @Test
@@ -1594,8 +1604,6 @@ public class StreamingTests extends StreamingTestBase {
                 """
                 start              | end                 | weight
                 ---------------------------------------------------"""); // same group as before
-
-        this.addRustTestCase(ccs);
     }
 
     @Test
@@ -1646,7 +1654,6 @@ public class StreamingTests extends StreamingTestBase {
                 avg  | start | weight
                 ----------------------
                 10.0 | 2023-12-31 00:00:00 | 1""");
-        this.addRustTestCase(ccs);
     }
 
     @Test
@@ -1685,7 +1692,6 @@ public class StreamingTests extends StreamingTestBase {
                  2000    | 1     | -1
                  2000    | 2     | 1
                  1000    | 1     | 1""");
-        this.addRustTestCase(ccs);
     }
 
     @Test
@@ -1698,8 +1704,7 @@ public class StreamingTests extends StreamingTestBase {
                 );
                 CREATE VIEW V AS
                 SELECT AVG(distance), CAST(pickup AS DATE) FROM series GROUP BY CAST(pickup AS DATE);""";
-        var ccs = this.getCCS(ddl);
-        this.addRustTestCase(ccs);
+        this.getCCS(ddl);
     }
 
     @Test
@@ -1758,7 +1763,6 @@ public class StreamingTests extends StreamingTestBase {
                          avg  | date        | weight
                         ---------------------------
                          13.333333333333334 | 2023-12-30 | 1""");
-        this.addRustTestCase(ccs);
     }
 
     @Test
@@ -1801,7 +1805,6 @@ public class StreamingTests extends StreamingTestBase {
                         ---------------------------
                          15.0 | 2023-12-30 | -1
                          13.333333333333334 | 2023-12-30 | 1""");
-        this.addRustTestCase(ccs);
     }
 
     @Test
@@ -1810,14 +1813,15 @@ public class StreamingTests extends StreamingTestBase {
         DBSPType out = new DBSPTypeTuple(
                 new DBSPTypeDouble(CalciteObject.EMPTY, true),
                 new DBSPTypeDate(CalciteObject.EMPTY, false));
-        DBSPType error = new DBSPTypeTuple(
-                DBSPTypeString.varchar(false),
-                DBSPTypeString.varchar(false),
-                new DBSPTypeVariant(false));
+        DBSPType string = DBSPTypeString.varchar(false);
+        DBSPType error = new DBSPTypeTuple(string, string,
+                // new DBSPTypeVariant(false)
+                string);
+        /*
         DBSPTypeMap map = new DBSPTypeMap(
                 new DBSPTypeVariant(false),
                 new DBSPTypeVariant(false), false);
-
+         */
         String sql = """
                 CREATE TABLE series (
                         distance DOUBLE,
@@ -1851,6 +1855,7 @@ public class StreamingTests extends StreamingTestBase {
                                 new DBSPTupleExpression(
                                         new DBSPStringLiteral("series"),
                                         new DBSPStringLiteral("Late value"),
+                                        /*
                                         new DBSPVariantExpression(
                                                 new DBSPMapExpression(map,
                                                         Linq.list(
@@ -1865,7 +1870,10 @@ public class StreamingTests extends StreamingTestBase {
                                                                 ),
                                                                 new DBSPVariantExpression(
                                                                         new DBSPTimestampLiteral("2023-12-29 10:00:00", false)
-                                                                )))))))));
+                                                                )))))
+                                        */
+                                        new DBSPStringLiteral("(Some(10.0), 2023-12-29 10:00:00)")
+                        )))));
         // Insert tuple after waterline, should change average.
         // Waterline is advanced
         ccs.addChange(new InputOutputChange(
@@ -1899,6 +1907,7 @@ public class StreamingTests extends StreamingTestBase {
                                 new DBSPTupleExpression(
                                         new DBSPStringLiteral("series"),
                                         new DBSPStringLiteral("Late value"),
+                                        /*
                                         new DBSPVariantExpression(
                                                 new DBSPMapExpression(map,
                                                         Linq.list(
@@ -1913,7 +1922,10 @@ public class StreamingTests extends StreamingTestBase {
                                                                 ),
                                                                 new DBSPVariantExpression(
                                                                         new DBSPTimestampLiteral("2023-12-29 09:10:00", false)
-                                                                )))))))));
+                                                                ))))
+                                         */
+                                        new DBSPStringLiteral("(Some(10.0), 2023-12-29 09:10:00)")
+                                )))));
         // Insert tuple in the past, but before the last waterline
         ccs.addChange(new InputOutputChange(
                 new Change(
@@ -1933,7 +1945,6 @@ public class StreamingTests extends StreamingTestBase {
                                                         new DBSPDateLiteral("2023-12-30", false))).negate()
                                 ),
                         DBSPZSetExpression.emptyWithElementType(error))));
-        this.addRustTestCase(ccs);
     }
 
     @Test
@@ -1943,11 +1954,15 @@ public class StreamingTests extends StreamingTestBase {
         DBSPType error = new DBSPTypeTuple(
                 DBSPTypeString.varchar(false),
                 DBSPTypeString.varchar(false),
-                new DBSPTypeVariant(false));
+                //new DBSPTypeVariant(false)
+                DBSPTypeString.varchar(false)
+        );
         DBSPType e = new DBSPTypeTuple(DBSPTypeString.varchar(false));
+        /*
         DBSPTypeMap map = new DBSPTypeMap(
                 new DBSPTypeVariant(false),
                 new DBSPTypeVariant(false), false);
+         */
 
         String sql = """
                 CREATE TABLE series (
@@ -1981,6 +1996,7 @@ public class StreamingTests extends StreamingTestBase {
                                 new DBSPTupleExpression(
                                         new DBSPStringLiteral("series"),
                                         new DBSPStringLiteral("Late value"),
+                                        /*
                                         new DBSPVariantExpression(
                                                 new DBSPMapExpression(map,
                                                         Linq.list(
@@ -1995,7 +2011,11 @@ public class StreamingTests extends StreamingTestBase {
                                                                 ),
                                                                 new DBSPVariantExpression(
                                                                         new DBSPTimestampLiteral("2023-12-29 10:00:00", false)
-                                                                )))))))));
+                                                                ))))
+
+                                         */
+                                        new DBSPStringLiteral("(Some(10.0), 2023-12-29 10:00:00)")
+                                )))));
         // Insert tuple after waterline, should change average.
         // Waterline is advanced
         ccs.addChange(new InputOutputChange(
@@ -2021,6 +2041,7 @@ public class StreamingTests extends StreamingTestBase {
                                 new DBSPTupleExpression(
                                         new DBSPStringLiteral("series"),
                                         new DBSPStringLiteral("Late value"),
+                                        /*
                                         new DBSPVariantExpression(
                                                 new DBSPMapExpression(map,
                                                         Linq.list(
@@ -2035,7 +2056,10 @@ public class StreamingTests extends StreamingTestBase {
                                                                 ),
                                                                 new DBSPVariantExpression(
                                                                         new DBSPTimestampLiteral("2023-12-29 09:10:00", false)
-                                                                )))))))));
+                                                                ))))
+                                         */
+                                        new DBSPStringLiteral("(Some(10.0), 2023-12-29 09:10:00)")
+                                )))));
         // Insert tuple in the past, but before the last waterline
         ccs.addChange(new InputOutputChange(
                 new Change(
@@ -2046,7 +2070,6 @@ public class StreamingTests extends StreamingTestBase {
                 new Change(
                         DBSPZSetExpression.emptyWithElementType(e),
                         DBSPZSetExpression.emptyWithElementType(error))));
-        this.addRustTestCase(ccs);
     }
 
     @Test
@@ -2064,7 +2087,6 @@ public class StreamingTests extends StreamingTestBase {
             CREATE VIEW V AS SELECT metadata, person FROM series
             JOIN shift ON CAST(series.event_time AS DATE) = shift.on_call;""";
         CompilerCircuitStream ccs = this.getCCS(ddl);
-        this.addRustTestCase(ccs);
         CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
             int count = 0;
 
@@ -2078,7 +2100,7 @@ public class StreamingTests extends StreamingTestBase {
                 Assert.assertEquals(1, this.count);
             }
         };
-        visitor.apply(ccs.circuit);
+        ccs.visit(visitor);
     }
 
     // Test for https://github.com/feldera/feldera/issues/1462
@@ -2099,7 +2121,6 @@ public class StreamingTests extends StreamingTestBase {
             (SELECT * FROM series JOIN shift ON series.metadata = shift.person);
             """;
         CompilerCircuitStream ccs = this.getCCS(script);
-        this.addRustTestCase(ccs);
         CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
             int count = 0;
 
@@ -2113,7 +2134,7 @@ public class StreamingTests extends StreamingTestBase {
                 Assert.assertEquals(0, this.count);
             }
         };
-        visitor.apply(ccs.circuit);
+        ccs.visit(visitor);
     }
 
     @Test
@@ -2135,7 +2156,6 @@ public class StreamingTests extends StreamingTestBase {
              ON series.metadata = shift.person AND CAST(series.event_time AS DATE) = shift.on_call);
             """;
         CompilerCircuitStream ccs = this.getCCS(sql);
-        this.addRustTestCase(ccs);
         CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
             int count = 0;
 
@@ -2149,7 +2169,7 @@ public class StreamingTests extends StreamingTestBase {
                 Assert.assertEquals(1, this.count);
             }
         };
-        visitor.apply(ccs.circuit);
+        ccs.visit(visitor);
     }
 
     @Test
@@ -2171,7 +2191,6 @@ public class StreamingTests extends StreamingTestBase {
              ON series.metadata = shift.person AND event_date > on_call);
             """;
         CompilerCircuitStream ccs = this.getCCS(script);
-        this.addRustTestCase(ccs);
         CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
             int count = 0;
 
@@ -2186,7 +2205,7 @@ public class StreamingTests extends StreamingTestBase {
                 Assert.assertEquals(0, this.count);
             }
         };
-        visitor.apply(ccs.circuit);
+        ccs.visit(visitor);
     }
 
     @Test
@@ -2227,7 +2246,6 @@ public class StreamingTests extends StreamingTestBase {
                 ---------------------------
                  1                | -1
                  2                | 1""");
-        this.addRustTestCase(ccs);
     }
 
     @Test
@@ -2281,7 +2299,7 @@ public class StreamingTests extends StreamingTestBase {
                 Assert.assertEquals(2, this.count);
             }
         };
-        visitor.apply(ccs.circuit);
+        ccs.visit(visitor);
         ccs.step("INSERT INTO m VALUES(0, '2024-01-03 00:00:00', ARRAY[1, 2, 3])",
                 """
                  max | weight
@@ -2303,7 +2321,6 @@ public class StreamingTests extends StreamingTestBase {
                  max | weight
                 --------------
                  5   | 1""");
-        this.addRustTestCase(ccs);
     }
 
     @Test
@@ -2335,7 +2352,16 @@ public class StreamingTests extends StreamingTestBase {
                   moment
                 FROM agg CROSS JOIN UNNEST(moments) as moment;
                 """;
-        CompilerCircuitStream ccs = this.getCCS(sql);
-        this.addRustTestCase(ccs);
+        this.getCCS(sql);
+    }
+
+    @Test
+    public void calciteMeetupTest() {
+        this.getCCS("""
+                CREATE TABLE data(ts TIMESTAMP LATENESS INTERVAL 10 MINUTES, price INT, item INT);
+                CREATE VIEW V AS
+                SELECT DATE_TRUNC(ts, MONTH), MIN(price), item
+                FROM data
+                GROUP BY DATE_TRUNC(ts, MONTH), item;""");
     }
 }

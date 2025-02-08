@@ -3,7 +3,7 @@
 //! This implements an approximately LRU cache for layer files.  The
 //! [`Reader`](super::reader::Reader) and [writer](super::writer) use it.
 use std::sync::Arc;
-use std::{mem::size_of, sync::LazyLock};
+use std::{mem::size_of, time::Instant};
 
 use crc32c::crc32c;
 
@@ -13,6 +13,7 @@ use binrw::{
 };
 use snap::raw::{decompress_len, Decoder};
 
+use crate::storage::buffer_cache::{AtomicCacheStats, CacheAccess};
 use crate::storage::{
     backend::{BlockLocation, FileReader},
     buffer_cache::{BufferCache, CacheEntry, FBuf},
@@ -44,6 +45,7 @@ pub enum FileCacheEntry {
 }
 
 impl CacheEntry for FileCacheEntry {
+    /// Returns the data size in bytes.
     fn cost(&self) -> usize {
         match self {
             Self::FileTrailer(_) => size_of::<FileTrailer>(),
@@ -127,29 +129,26 @@ impl FileCacheEntry {
     }
 }
 
-/// Returns a global `FileCache` suitable for examples, tests, and other
-/// programs that don't need a specific backend configuration.
-pub fn default_cache() -> Arc<FileCache> {
-    static DEFAULT_CACHE: LazyLock<Arc<FileCache>> = LazyLock::new(|| Arc::new(FileCache::new()));
-    DEFAULT_CACHE.clone()
-}
-
 impl BufferCache<FileCacheEntry> {
     fn get_entry(
         &self,
         file: &dyn FileReader,
         location: BlockLocation,
         compression: Option<Compression>,
+        stats: &AtomicCacheStats,
     ) -> Result<FileCacheEntry, Error> {
-        match self.get(file, location.offset) {
-            Some(entry) => Ok(entry),
+        let start = Instant::now();
+        let (access, entry) = match self.get(file, location) {
+            Some(entry) => (CacheAccess::Hit, entry),
             None => {
                 let block = file.read_block(location)?;
                 let entry = FileCacheEntry::from_read(block, location, compression)?;
                 self.insert(file.file_id(), location.offset, entry.clone());
-                Ok(entry)
+                (CacheAccess::Miss, entry)
             }
-        }
+        };
+        stats.record(access, start.elapsed(), location);
+        Ok(entry)
     }
 
     /// Reads `location` from `file` and returns it converted to
@@ -159,8 +158,9 @@ impl BufferCache<FileCacheEntry> {
         file: &dyn FileReader,
         location: BlockLocation,
         compression: Option<Compression>,
+        stats: &AtomicCacheStats,
     ) -> Result<Arc<InnerDataBlock>, Error> {
-        match self.get_entry(file, location, compression)? {
+        match self.get_entry(file, location, compression, stats)? {
             FileCacheEntry::Data(inner) => Ok(inner),
             _ => Err(Error::Corruption(CorruptionError::BadBlockType(location))),
         }
@@ -173,8 +173,9 @@ impl BufferCache<FileCacheEntry> {
         file: &dyn FileReader,
         location: BlockLocation,
         compression: Option<Compression>,
+        stats: &AtomicCacheStats,
     ) -> Result<Arc<InnerIndexBlock>, Error> {
-        match self.get_entry(file, location, compression)? {
+        match self.get_entry(file, location, compression, stats)? {
             FileCacheEntry::Index(inner) => Ok(inner),
             _ => Err(Error::Corruption(CorruptionError::BadBlockType(location))),
         }
@@ -185,8 +186,9 @@ impl BufferCache<FileCacheEntry> {
         &self,
         file: &dyn FileReader,
         location: BlockLocation,
+        stats: &AtomicCacheStats,
     ) -> Result<Arc<FileTrailer>, Error> {
-        match self.get_entry(file, location, None)? {
+        match self.get_entry(file, location, None, stats)? {
             FileCacheEntry::FileTrailer(inner) => Ok(inner),
             _ => Err(Error::Corruption(CorruptionError::BadBlockType(location))),
         }

@@ -112,6 +112,20 @@ const sidebars = {
                         'use_cases/fine_grained_authorization/dynamic'
                     ]
                 },
+                {
+                    type: 'category',
+                    label: 'OpenTelemetry Analysis',
+                    link: {
+                        type: 'doc',
+                        id: 'use_cases/otel/intro'
+                    },
+                    items: [
+                        'use_cases/otel/representing_otel_data',
+                        'use_cases/otel/preprocessing',
+                        'use_cases/otel/insights',
+                        'use_cases/otel/grafana'
+                    ]
+                },
                 'tutorials/rest_api/index',
                 'tutorials/monitoring/index'
             ]
@@ -235,6 +249,11 @@ const sidebars = {
                                     id: 'connectors/sources/debezium',
                                     label: 'Debezium'
                                 },
+				{
+				    type: 'doc',
+				    id: 'connectors/sources/postgresql',
+				    label: 'PostgreSQL'
+				},
                                 {
                                     type: 'doc',
                                     id: 'connectors/sources/s3',
@@ -296,6 +315,7 @@ const sidebars = {
                         'formats/avro',
                         'formats/parquet',
                         'formats/csv',
+                        'formats/raw'
                     ],
                 },
                 "fault-tolerance"

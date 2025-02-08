@@ -1,18 +1,19 @@
 use crate::circuit::checkpointer::{CheckpointMetadata, Checkpointer};
 use crate::monitor::visual_graph::Graph;
+use crate::storage::backend::StorageError;
 use crate::{
     circuit::runtime::RuntimeHandle, profile::Profiler, Error as DbspError, RootCircuit, Runtime,
     RuntimeError, SchedulerError,
 };
 use anyhow::Error as AnyError;
 use crossbeam::channel::{bounded, Receiver, Select, Sender, TryRecvError};
-pub use feldera_types::config::{StorageCacheConfig, StorageConfig};
-use hashbrown::HashMap;
+pub use feldera_types::config::{StorageCacheConfig, StorageConfig, StorageOptions};
 use itertools::Either;
 use metrics::counter;
 use minitrace::collector::SpanContext;
 use minitrace::local::LocalSpan;
 use minitrace::Span;
+use std::fs::create_dir_all;
 use std::sync::Arc;
 use std::{
     collections::HashSet,
@@ -217,19 +218,23 @@ impl StdError for LayoutError {}
 pub struct CircuitConfig {
     /// How the circuit is laid out across one or multiple machines.
     pub layout: Layout,
-    /// Storage configuration (if storage is enabled).
-    pub storage: Option<StorageConfig>,
-    /// Estimated minimum number of bytes in a data batch to spill it to
-    /// storage. If this is 0, then all batches will be stored on disk; if it is
-    /// `usize::MAX`, then all batches will be kept in memory; and intermediate
-    /// values specify a threshold.
-    pub min_storage_bytes: usize,
-    /// The initial checkpoint to start the circuit from.
-    ///
-    /// In case of a new circuit, this should be `Uuid::nil()`.
-    /// Setting this to an existing checkpoint will start the circuit from that
-    /// and requires that the checkpoint exists in the storage directory.
-    pub init_checkpoint: Uuid,
+
+    /// Storage configuration. If present, then storage is enabled..
+    pub storage: Option<CircuitStorageConfig>,
+}
+
+/// Configuration for storage in a [Runtime]-hosted circuit.
+#[derive(Clone, Debug)]
+pub struct CircuitStorageConfig {
+    /// Runner configuration.
+    pub config: StorageConfig,
+
+    /// User options.
+    pub options: StorageOptions,
+
+    /// The initial checkpoint to start the circuit from, or `None` to start
+    /// fresh from a new circuit.
+    pub init_checkpoint: Option<Uuid>,
 }
 
 impl Default for CircuitConfig {
@@ -243,8 +248,6 @@ impl CircuitConfig {
         Self {
             layout: Layout::new_solo(n),
             storage: None,
-            min_storage_bytes: usize::MAX,
-            init_checkpoint: Uuid::nil(),
         }
     }
 }
@@ -346,7 +349,7 @@ impl Runtime {
             };
             let (mut circuit, profiler) = match RootCircuit::build(circuit_fn) {
                 Ok((circuit, (res, profiler))) => {
-                    if init_sender.send(Ok(res)).is_err() {
+                    if init_sender.send(Ok((res, circuit.fingerprint()))).is_err() {
                         return;
                     }
                     (circuit, profiler)
@@ -393,24 +396,18 @@ impl Runtime {
                             return;
                         }
                     }
-                    Ok(Command::Commit(cid)) => {
-                        circuit.commit(cid).expect("commit failed");
+                    Ok(Command::Commit(base)) => {
+                        circuit.commit(&base).expect("commit failed");
                         if status_sender.send(Ok(Response::CheckpointCreated)).is_err() {
                             return;
                         }
                     }
-                    Ok(Command::Restore(cid)) => {
-                        circuit.restore(cid).expect("restore failed");
+                    Ok(Command::Restore(base)) => {
+                        circuit.restore(&base).expect("restore failed");
                         if status_sender
                             .send(Ok(Response::CheckpointRestored))
                             .is_err()
                         {
-                            return;
-                        }
-                    }
-                    Ok(Command::Fingerprint) => {
-                        let fip = circuit.fingerprint().expect("fingerprint failed");
-                        if status_sender.send(Ok(Response::Fingerprint(fip))).is_err() {
                             return;
                         }
                     }
@@ -424,45 +421,49 @@ impl Runtime {
             }
         })?;
 
-        // Receive initialization status from all workers.
-
-        let mut init_status = Vec::with_capacity(nworkers);
-
-        for receiver in init_receivers.iter() {
-            match receiver.recv() {
-                Ok(Err(error)) => init_status.push(Some(Err(error))),
-                Ok(Ok(ret)) => init_status.push(Some(Ok(ret))),
-                Err(_) => {
-                    let panic_info = runtime.collect_panic_info();
-                    init_status.push(Some(Err(DbspError::Runtime(RuntimeError::WorkerPanic {
-                        panic_info,
-                    }))))
+        // Receive initialization status from all workers and take the return
+        // value and fingerprint from the first worker, or the first error among
+        // all the workers.
+        //
+        // The return value should return be the same in all workers (we don't
+        // check).
+        //
+        // The fingerprint might differ between workers (even if the circuit is
+        // really the same, because of differing effects of e.g. the "gather"
+        // operator).
+        let result = init_receivers
+            .into_iter()
+            .map(|receiver| {
+                receiver.recv().unwrap_or_else(|_| {
+                    Err(DbspError::Runtime(RuntimeError::WorkerPanic {
+                        panic_info: runtime.collect_panic_info(),
+                    }))
+                })
+            })
+            .reduce(|old, new| {
+                if old.is_ok() && new.is_err() {
+                    new
+                } else {
+                    old
                 }
+            })
+            .unwrap();
+        let (ret, fingerprint) = match result {
+            Err(error) => {
+                let _ = runtime.kill();
+                return Err(error);
+            }
+            Ok(result) => result,
+        };
+
+        let mut dbsp = DBSPHandle::new(runtime, command_senders, status_receivers, fingerprint)?;
+        if let Some(storage) = &config.storage {
+            if let Some(init_checkpoint) = storage.init_checkpoint {
+                dbsp.send_restore(storage.config.path().join(init_checkpoint.to_string()))?;
             }
         }
 
-        // On error, kill the runtime.
-        if init_status
-            .iter()
-            .any(|status| status.as_ref().unwrap().is_err())
-        {
-            let error = init_status
-                .into_iter()
-                .find_map(|status| status.unwrap().err())
-                .unwrap();
-            let _ = runtime.kill();
-            return Err(error);
-        }
-
-        let mut dbsp = DBSPHandle::new(runtime, command_senders, status_receivers);
-        let result = init_status[0].take();
-        if config.init_checkpoint != Uuid::nil() {
-            dbsp.send_restore(config.init_checkpoint)?;
-        }
-
-        // `constructor` should return identical results in all workers.  Use
-        // worker 0 output.
-        Ok((dbsp, result.unwrap().unwrap()))
+        Ok((dbsp, ret))
     }
 }
 
@@ -472,9 +473,8 @@ enum Command {
     EnableProfiler,
     DumpProfile,
     RetrieveProfile,
-    Commit(Uuid),
-    Restore(Uuid),
-    Fingerprint,
+    Commit(PathBuf),
+    Restore(PathBuf),
 }
 
 #[derive(Debug)]
@@ -484,7 +484,6 @@ enum Response {
     Profile(WorkerProfile),
     CheckpointCreated,
     CheckpointRestored,
-    Fingerprint(u64),
 }
 
 /// A handle to control the execution of a circuit in a multithreaded runtime.
@@ -505,11 +504,8 @@ pub struct DBSPHandle {
     /// Channels used to receive command completion status from workers.
     status_receivers: Vec<Receiver<Result<Response, SchedulerError>>>,
 
-    /// For creating checkpoints.
-    checkpointer: Checkpointer,
-
-    /// Cached fingerprint of the circuit, if we've calculated it already.
-    fingerprint: Option<u64>,
+    /// For creating checkpoints, if we can.
+    checkpointer: Option<Checkpointer>,
 }
 
 impl DBSPHandle {
@@ -517,21 +513,20 @@ impl DBSPHandle {
         runtime: RuntimeHandle,
         command_senders: Vec<Sender<Command>>,
         status_receivers: Vec<Receiver<Result<Response, SchedulerError>>>,
-    ) -> Self {
-        let storage_path = runtime.runtime().storage_path();
-        let checkpointer = Checkpointer::new(storage_path.clone());
-        let mut dbsp_handle = Self {
+        fingerprint: u64,
+    ) -> Result<Self, DbspError> {
+        let checkpointer = runtime
+            .runtime()
+            .storage_path()
+            .map(|path| Checkpointer::new(path.into(), fingerprint))
+            .transpose()?;
+        Ok(Self {
             start_time: Instant::now(),
             runtime: Some(runtime),
             command_senders,
             status_receivers,
             checkpointer,
-            fingerprint: None,
-        };
-        dbsp_handle
-            .verify_storage_compatibility()
-            .expect("Storage directory should match with fingerprint of current circuit");
-        dbsp_handle
+        })
     }
 
     fn kill_inner(&mut self) -> ThreadResult<()> {
@@ -614,44 +609,14 @@ impl DBSPHandle {
         self.broadcast_command(Command::Step(span), |_, _| {})
     }
 
-    /// Used by the checkpointer to initiate a commit on the circuit.
-    fn send_fingerprint(&mut self) -> Result<u64, DbspError> {
-        let mut fps: HashMap<usize, u64> = HashMap::new();
-        self.broadcast_command(Command::Fingerprint, |idx, res| {
-            if let Response::Fingerprint(fp) = res {
-                fps.insert(idx, fp);
-            } else {
-                panic!("Unexpected response: {:?}", res);
-            }
-        })?;
-
-        #[cfg(debug_assertions)]
-        for fp in fps.values() {
-            if *fp != *fps.values().next().unwrap() {
-                panic!("Fingerprints do not match: {:?}", fps);
-            }
-        }
-
-        Ok(fps.values().next().copied().unwrap_or_default())
-    }
-
-    pub fn fingerprint(&mut self) -> Result<u64, DbspError> {
-        if let Some(fp) = self.fingerprint {
-            Ok(fp)
-        } else {
-            let fp = self.send_fingerprint()?;
-            self.fingerprint = Some(fp);
-            Ok(fp)
-        }
-    }
-
-    fn verify_storage_compatibility(&mut self) -> Result<(), DbspError> {
-        for cpm in self.checkpointer.list_checkpoints()? {
-            if cpm.fingerprint != self.fingerprint()? {
-                return Err(DbspError::Runtime(RuntimeError::IncompatibleStorage));
-            }
-        }
-        Ok(())
+    /// Fingerprint of this circuit.
+    ///
+    /// We only keep the fingerprint if the circuit has storage, since it's to
+    /// make sure that the running circuit matches whatever we stored.
+    pub fn fingerprint(&self) -> Option<u64> {
+        self.checkpointer
+            .as_ref()
+            .map(|checkpointer| checkpointer.fingerprint())
     }
 
     /// Create a new checkpoint by taking consistent snapshot of the state in
@@ -670,15 +635,21 @@ impl DBSPHandle {
     }
 
     /// Used by the checkpointer to initiate a commit on the circuit.
-    pub(super) fn send_commit(&mut self, uuid: Uuid) -> Result<(), DbspError> {
-        self.broadcast_command(Command::Commit(uuid), |_, _| {})?;
+    pub(super) fn send_commit(&mut self, base: PathBuf) -> Result<(), DbspError> {
+        self.broadcast_command(Command::Commit(base), |_, _| {})?;
         Ok(())
     }
 
     /// Used to reset operator state to the point of the given Commit.
-    fn send_restore(&mut self, uuid: Uuid) -> Result<(), DbspError> {
-        self.broadcast_command(Command::Restore(uuid), |_, _| {})?;
+    fn send_restore(&mut self, base: PathBuf) -> Result<(), DbspError> {
+        self.broadcast_command(Command::Restore(base), |_, _| {})?;
         Ok(())
+    }
+
+    fn checkpointer(&mut self) -> Result<&mut Checkpointer, DbspError> {
+        self.checkpointer
+            .as_mut()
+            .ok_or(DbspError::Storage(StorageError::StorageDisabled))
     }
 
     fn commit_as(
@@ -686,16 +657,15 @@ impl DBSPHandle {
         uuid: Uuid,
         identifier: Option<String>,
     ) -> Result<CheckpointMetadata, DbspError> {
-        let fingerprint = self.fingerprint()?;
-        self.checkpointer.create_checkpoint_dir(uuid)?;
-        self.send_commit(uuid)?;
-        let md = self.checkpointer.commit(uuid, identifier, fingerprint)?;
-        Ok(md)
+        let checkpoint_dir = self.checkpointer()?.checkpoint_dir(uuid);
+        create_dir_all(&checkpoint_dir)?;
+        self.send_commit(checkpoint_dir)?;
+        self.checkpointer().unwrap().commit(uuid, identifier)
     }
 
     /// List all currently available checkpoints.
     pub fn list_checkpoints(&mut self) -> Result<Vec<CheckpointMetadata>, DbspError> {
-        self.checkpointer.list_checkpoints()
+        self.checkpointer()?.list_checkpoints()
     }
 
     /// Remove the oldest checkpoint from the list.
@@ -704,7 +674,7 @@ impl DBSPHandle {
     /// - Metadata of the removed checkpoint, if one was removed.
     /// - None otherwise.
     pub fn gc_checkpoint(&mut self) -> Result<Option<CheckpointMetadata>, DbspError> {
-        self.checkpointer.gc_checkpoint()
+        self.checkpointer()?.gc_checkpoint()
     }
 
     /// Enable CPU profiler.
@@ -785,13 +755,14 @@ impl Drop for DBSPHandle {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use std::fs::{create_dir_all, File};
     use std::io;
     use std::path::Path;
     use std::time::Duration;
     use std::{fs, vec};
 
+    use super::CircuitStorageConfig;
     use crate::circuit::checkpointer::Checkpointer;
     use crate::circuit::{CircuitConfig, Layout};
     use crate::dynamic::{ClonableTrait, DowncastTrait, DynData, Erase};
@@ -806,7 +777,7 @@ mod tests {
         TypedBox, ZSetHandle, ZWeight,
     };
     use anyhow::anyhow;
-    use feldera_types::config::{StorageCacheConfig, StorageConfig};
+    use feldera_types::config::{StorageCacheConfig, StorageConfig, StorageOptions};
     use tempfile::{tempdir, TempDir};
     use uuid::Uuid;
 
@@ -1048,16 +1019,21 @@ mod tests {
         })
     }
 
-    fn mkconfig() -> (TempDir, CircuitConfig) {
+    pub(crate) fn mkconfig() -> (TempDir, CircuitConfig) {
         let temp = tempdir().expect("Can't create temp dir for storage");
         let cconf = CircuitConfig {
             layout: Layout::new_solo(1),
-            storage: Some(StorageConfig {
-                path: temp.path().to_string_lossy().into_owned(),
-                cache: StorageCacheConfig::default(),
+            storage: Some(CircuitStorageConfig {
+                config: StorageConfig {
+                    path: temp.path().to_string_lossy().into_owned(),
+                    cache: StorageCacheConfig::default(),
+                },
+                options: StorageOptions {
+                    min_storage_bytes: Some(0),
+                    ..StorageOptions::default()
+                },
+                init_checkpoint: None,
             }),
-            min_storage_bytes: 0,
-            init_checkpoint: Uuid::nil(),
         };
         (temp, cconf)
     }
@@ -1100,7 +1076,7 @@ mod tests {
         // what we would expect it to be at the given point we restored it to
         let mut batches_to_insert = input.clone();
         for (i, cpm) in checkpoints.iter().enumerate() {
-            cconf.init_checkpoint = cpm.uuid;
+            cconf.storage.as_mut().unwrap().init_checkpoint = Some(cpm.uuid);
             let (mut dbsp, (input_handle, output_handle, sample_size_handle)) =
                 mkcircuit(&cconf).unwrap();
             sample_size_handle.set_for_all(SAMPLE_SIZE);
@@ -1124,6 +1100,8 @@ mod tests {
         let cpm = dbsp.commit().expect("commit failed");
         let batchfiles = dbsp
             .checkpointer
+            .as_ref()
+            .unwrap()
             .gather_batches_for_checkpoint(&cpm)
             .expect("failed to gather batches");
         assert_eq!(batchfiles.len(), 1);
@@ -1146,12 +1124,22 @@ mod tests {
         }
 
         {
-            let (mut dbsp, _) = mkcircuit(&cconf).unwrap();
-            let cpm = &dbsp.checkpointer.list_checkpoints().unwrap()[0];
+            let (dbsp, _) = mkcircuit(&cconf).unwrap();
+            let cpm = &dbsp
+                .checkpointer
+                .as_ref()
+                .unwrap()
+                .list_checkpoints()
+                .unwrap()[0];
             assert_ne!(cpm.uuid, Uuid::nil());
             assert_eq!(cpm.identifier, Some(String::from("test-commit")));
 
-            let cpm2 = &dbsp.checkpointer.list_checkpoints().unwrap()[1];
+            let cpm2 = &dbsp
+                .checkpointer
+                .as_ref()
+                .unwrap()
+                .list_checkpoints()
+                .unwrap()[1];
             assert_ne!(cpm2.uuid, Uuid::nil());
             assert_ne!(cpm2.uuid, cpm.uuid);
             assert_eq!(cpm2.identifier, None);
@@ -1179,7 +1167,7 @@ mod tests {
         let (dbsp, _) = mkcircuit(&cconf).unwrap();
         drop(dbsp); // makes sure we can take ownership of storage dir again
 
-        cconf.init_checkpoint = Uuid::now_v7(); // this checkpoint doesn't exist
+        cconf.storage.as_mut().unwrap().init_checkpoint = Some(Uuid::now_v7()); // this checkpoint doesn't exist
 
         let res = mkcircuit(&cconf);
         assert!(matches!(
@@ -1196,8 +1184,9 @@ mod tests {
         let (dbsp, _) = mkcircuit(&cconf).unwrap();
         drop(dbsp); // makes sure we can take ownership of storage dir again
 
-        cconf.init_checkpoint = Uuid::now_v7(); // A made-up checkpoint, that does not have the necessary files
-        let checkpoint_dir = temp.path().join(cconf.init_checkpoint.to_string());
+        let init_checkpoint = Uuid::now_v7(); // A made-up checkpoint, that does not have the necessary files
+        cconf.storage.as_mut().unwrap().init_checkpoint = Some(init_checkpoint);
+        let checkpoint_dir = temp.path().join(init_checkpoint.to_string());
         create_dir_all(checkpoint_dir).expect("can't create checkpoint dir");
 
         // Initializing this circuit again will panic because it won't find the
@@ -1323,22 +1312,22 @@ mod tests {
     /// Make sure two circuits end up with a different fingerprint.
     #[test]
     fn fingerprint_is_different() {
-        let (_temp, cconf) = mkconfig();
-        let (mut dbsp, (_input_handle, _, _sample_size_handle)) = mkcircuit(&cconf).unwrap();
-        let fid1 = dbsp.fingerprint().unwrap();
-
-        let (_temp, cconf) = mkconfig();
-        let (mut dbsp, (_input_handle, _, _sample_size_handle)) =
-            mkcircuit_different(&cconf).unwrap();
-        let fid2 = dbsp.fingerprint().unwrap();
+        let (_tempdir, cconf) = mkconfig();
+        let fid1 = mkcircuit(&cconf).unwrap().0.fingerprint().unwrap();
+        let fid2 = mkcircuit_different(&cconf)
+            .unwrap()
+            .0
+            .fingerprint()
+            .unwrap();
         assert_ne!(fid1, fid2);
 
         // Unfortunately, the fingerprint isn't perfect, e.g., it thinks these two
         // circuits are the same:
-        let (_temp, cconf) = mkconfig();
-        let (mut dbsp, (_input_handle, _, _sample_size_handle)) =
-            mkcircuit_with_bounds(&cconf).unwrap();
-        let fid3 = dbsp.fingerprint().unwrap();
+        let fid3 = mkcircuit_with_bounds(&cconf)
+            .unwrap()
+            .0
+            .fingerprint()
+            .unwrap();
         assert_eq!(fid1, fid3); // Ideally, should be assert_ne
     }
 
@@ -1354,7 +1343,7 @@ mod tests {
         let cpi = dbsp.commit().expect("commit shouldn't fail");
         drop(dbsp);
 
-        cconf.init_checkpoint = cpi.uuid;
+        cconf.storage.as_mut().unwrap().init_checkpoint = Some(cpi.uuid);
         let (dbsp_different, (_input_handle, _, _sample_size_handle)) =
             mkcircuit_different(&cconf).unwrap();
         drop(dbsp_different);
@@ -1404,7 +1393,7 @@ mod tests {
             input_handle.append(&mut batch);
             dbsp.step().unwrap();
             let cpm = dbsp.commit().unwrap();
-            cconf.init_checkpoint = cpm.uuid;
+            cconf.storage.as_mut().unwrap().init_checkpoint = Some(cpm.uuid);
             dbsp.kill().unwrap();
         }
     }
@@ -1473,7 +1462,7 @@ mod tests {
             circuit.step().unwrap();
 
             let cpm = circuit.commit().unwrap();
-            cconf.init_checkpoint = cpm.uuid;
+            cconf.storage.as_mut().unwrap().init_checkpoint = Some(cpm.uuid);
             circuit.kill().unwrap();
         }
     }

@@ -43,6 +43,7 @@ public final class DBSPFieldExpression extends DBSPExpression {
         this.expression = expression;
         this.fieldNo = fieldNo;
         assert fieldNo >= 0: "Negative field index " + fieldNo;
+        assert !expression.getType().mayBeNull || type.mayBeNull;
     }
 
     DBSPFieldExpression(DBSPExpression expression, int fieldNo, DBSPType type) {
@@ -53,7 +54,11 @@ public final class DBSPFieldExpression extends DBSPExpression {
         if (type.is(DBSPTypeAny.class))
             return type;
         DBSPTypeTupleBase tuple = type.to(DBSPTypeTupleBase.class);
-        return tuple.getFieldType(fieldNo);
+        DBSPType fieldType = tuple.getFieldType(fieldNo);
+        // A Field access in a nullable struct is nullable
+        if (type.mayBeNull)
+            fieldType = fieldType.withMayBeNull(true);
+        return fieldType;
     }
 
     public DBSPFieldExpression(CalciteObject node, DBSPExpression expression, int fieldNo) {

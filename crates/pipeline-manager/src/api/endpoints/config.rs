@@ -32,8 +32,11 @@ async fn get_config(
     state: WebData<ServerState>,
     _req: HttpRequest,
 ) -> Result<HttpResponse, ManagerError> {
-    Ok(HttpResponse::Ok()
-        .json(json!({"telemetry": state._config.telemetry, "version": env!("CARGO_PKG_VERSION") })))
+    Ok(HttpResponse::Ok().json(json!({
+        "telemetry": state._config.telemetry,
+        "version": env!("CARGO_PKG_VERSION"),
+        "revision": env!("FELDERA_PLATFORM_VERSION_SUFFIX")
+    })))
 }
 
 /// Retrieve authentication provider configuration.

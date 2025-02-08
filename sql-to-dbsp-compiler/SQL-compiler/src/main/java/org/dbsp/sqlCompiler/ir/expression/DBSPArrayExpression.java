@@ -34,7 +34,7 @@ import org.dbsp.sqlCompiler.ir.ISameValue;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPNullLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
-import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeVec;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeArray;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
 
@@ -43,26 +43,26 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
-/** Represents a vector described by its elements. */
-public final class DBSPVecExpression extends DBSPExpression
+/** Represents an ARRAY described by its elements. */
+public final class DBSPArrayExpression extends DBSPExpression
         implements IDBSPContainer, ISameValue, IConstructor {
     @Nullable
     public final List<DBSPExpression> data;
-    public final DBSPTypeVec vecType;
+    public final DBSPTypeArray vecType;
 
-    public static DBSPVecExpression emptyWithElementType(DBSPType elementType, boolean mayBeNull) {
-        return new DBSPVecExpression(CalciteObject.EMPTY, new DBSPTypeVec(elementType, mayBeNull), Linq.list());
+    public static DBSPArrayExpression emptyWithElementType(DBSPType elementType, boolean mayBeNull) {
+        return new DBSPArrayExpression(CalciteObject.EMPTY, new DBSPTypeArray(elementType, mayBeNull), Linq.list());
     }
 
-    public DBSPVecExpression(DBSPType vectorType, boolean isNull) {
+    public DBSPArrayExpression(DBSPType vectorType, boolean isNull) {
         super(CalciteObject.EMPTY, vectorType);
         this.data = isNull ? null : new ArrayList<>();
-        this.vecType = this.getType().to(DBSPTypeVec.class);
+        this.vecType = this.getType().to(DBSPTypeArray.class);
     }
 
-    public DBSPVecExpression(CalciteObject node, DBSPType type, @Nullable List<DBSPExpression> data) {
+    public DBSPArrayExpression(CalciteObject node, DBSPType type, @Nullable List<DBSPExpression> data) {
         super(node, type);
-        this.vecType = this.getType().to(DBSPTypeVec.class);
+        this.vecType = this.getType().to(DBSPTypeArray.class);
         if (data != null) {
             this.data = new ArrayList<>();
             for (DBSPExpression e : data) {
@@ -76,9 +76,9 @@ public final class DBSPVecExpression extends DBSPExpression
         }
     }
 
-    public DBSPVecExpression(boolean mayBeNull, DBSPExpression... data) {
-        super(CalciteObject.EMPTY, new DBSPTypeVec(data[0].getType(), mayBeNull));
-        this.vecType = this.getType().to(DBSPTypeVec.class);
+    public DBSPArrayExpression(boolean mayBeNull, DBSPExpression... data) {
+        super(CalciteObject.EMPTY, new DBSPTypeArray(data[0].getType(), mayBeNull));
+        this.vecType = this.getType().to(DBSPTypeArray.class);
         this.data = new ArrayList<>();
         for (DBSPExpression e: data) {
             if (!e.getType().sameType(data[0].getType()))
@@ -88,7 +88,7 @@ public final class DBSPVecExpression extends DBSPExpression
         }
     }
 
-    public DBSPVecExpression(DBSPExpression... data) {
+    public DBSPArrayExpression(DBSPExpression... data) {
        this(false, data);
     }
 
@@ -105,7 +105,7 @@ public final class DBSPVecExpression extends DBSPExpression
         return this;
     }
 
-    public void add(DBSPVecExpression other) {
+    public void add(DBSPArrayExpression other) {
         if (!this.getType().sameType(other.getType()))
             throw new InternalCompilerError("Added vectors do not have the same type " +
                     this.getElementType() + " vs " + other.getElementType(), this);
@@ -131,7 +131,7 @@ public final class DBSPVecExpression extends DBSPExpression
 
     @Override
     public boolean sameFields(IDBSPInnerNode other) {
-        DBSPVecExpression otherVec = other.as(DBSPVecExpression.class);
+        DBSPArrayExpression otherVec = other.as(DBSPArrayExpression.class);
         if (otherVec == null)
             return false;
         if (this.data == null)
@@ -150,7 +150,7 @@ public final class DBSPVecExpression extends DBSPExpression
     public boolean sameValue(@Nullable ISameValue o) {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
-        DBSPVecExpression that = (DBSPVecExpression) o;
+        DBSPArrayExpression that = (DBSPArrayExpression) o;
         if (!Objects.equals(data, that.data)) return false;
         return vecType.equals(that.vecType);
     }
@@ -162,12 +162,12 @@ public final class DBSPVecExpression extends DBSPExpression
                     .append(this.type)
                     .append(")")
                     .append("null");
-        builder.append("vec!(");
+        builder.append("Arc::new(vec!(");
         if (this.data.size() > 1)
             builder
                 .increase();
         builder.intercalateI(System.lineSeparator(), this.data)
-                .append(")");
+                .append("))");
         if (this.data.size() > 1)
                 builder.decrease();
         return builder;
@@ -175,17 +175,17 @@ public final class DBSPVecExpression extends DBSPExpression
 
     @Override
     public DBSPExpression deepCopy() {
-        return new DBSPVecExpression(this.getNode(), this.getType(),
+        return new DBSPArrayExpression(this.getNode(), this.getType(),
                 this.data != null ? Linq.map(this.data, DBSPExpression::deepCopy) : null);
     }
 
     public boolean isConstant() {
-        return this.data == null || Linq.all(this.data, DBSPExpression::isConstant);
+        return this.data == null || Linq.all(this.data, DBSPExpression::isCompileTimeConstant);
     }
 
     @Override
     public boolean equivalent(EquivalenceContext context, DBSPExpression other) {
-        DBSPVecExpression otherExpression = other.as(DBSPVecExpression.class);
+        DBSPArrayExpression otherExpression = other.as(DBSPArrayExpression.class);
         if (otherExpression == null)
             return false;
         return context.equivalent(this.data, otherExpression.data);

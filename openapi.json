@@ -366,7 +366,7 @@
                     "platform_version": "v0",
                     "runtime_config": {
                       "workers": 16,
-                      "storage": false,
+                      "storage": null,
                       "fault_tolerance": null,
                       "cpu_profiler": true,
                       "tracing": false,
@@ -381,7 +381,6 @@
                         "storage_mb_max": null,
                         "storage_class": null
                       },
-                      "min_storage_bytes": null,
                       "clock_resolution_usecs": 100000
                     },
                     "program_code": "CREATE TABLE table1 ( col1 INT );",
@@ -410,7 +409,14 @@
                     "platform_version": "v0",
                     "runtime_config": {
                       "workers": 10,
-                      "storage": true,
+                      "storage": {
+                        "backend": {
+                          "name": "default"
+                        },
+                        "min_storage_bytes": null,
+                        "compression": "default",
+                        "cache_mib": null
+                      },
                       "fault_tolerance": null,
                       "cpu_profiler": false,
                       "tracing": false,
@@ -425,7 +431,6 @@
                         "storage_mb_max": 10000,
                         "storage_class": null
                       },
-                      "min_storage_bytes": null,
                       "clock_resolution_usecs": 100000
                     },
                     "program_code": "CREATE TABLE table2 ( col2 VARCHAR );",
@@ -483,7 +488,7 @@
                 "description": "Description of the pipeline example1",
                 "runtime_config": {
                   "workers": 16,
-                  "storage": false,
+                  "storage": null,
                   "fault_tolerance": null,
                   "cpu_profiler": true,
                   "tracing": false,
@@ -498,7 +503,6 @@
                     "storage_mb_max": null,
                     "storage_class": null
                   },
-                  "min_storage_bytes": null,
                   "clock_resolution_usecs": 100000
                 },
                 "program_code": "CREATE TABLE table1 ( col1 INT );",
@@ -530,7 +534,7 @@
                   "platform_version": "v0",
                   "runtime_config": {
                     "workers": 16,
-                    "storage": false,
+                    "storage": null,
                     "fault_tolerance": null,
                     "cpu_profiler": true,
                     "tracing": false,
@@ -545,7 +549,6 @@
                       "storage_mb_max": null,
                       "storage_class": null
                     },
-                    "min_storage_bytes": null,
                     "clock_resolution_usecs": 100000
                   },
                   "program_code": "CREATE TABLE table1 ( col1 INT );",
@@ -653,7 +656,7 @@
                   "platform_version": "v0",
                   "runtime_config": {
                     "workers": 16,
-                    "storage": false,
+                    "storage": null,
                     "fault_tolerance": null,
                     "cpu_profiler": true,
                     "tracing": false,
@@ -668,7 +671,6 @@
                       "storage_mb_max": null,
                       "storage_class": null
                     },
-                    "min_storage_bytes": null,
                     "clock_resolution_usecs": 100000
                   },
                   "program_code": "CREATE TABLE table1 ( col1 INT );",
@@ -743,7 +745,7 @@
                 "description": "Description of the pipeline example1",
                 "runtime_config": {
                   "workers": 16,
-                  "storage": false,
+                  "storage": null,
                   "fault_tolerance": null,
                   "cpu_profiler": true,
                   "tracing": false,
@@ -758,7 +760,6 @@
                     "storage_mb_max": null,
                     "storage_class": null
                   },
-                  "min_storage_bytes": null,
                   "clock_resolution_usecs": 100000
                 },
                 "program_code": "CREATE TABLE table1 ( col1 INT );",
@@ -790,7 +791,7 @@
                   "platform_version": "v0",
                   "runtime_config": {
                     "workers": 16,
-                    "storage": false,
+                    "storage": null,
                     "fault_tolerance": null,
                     "cpu_profiler": true,
                     "tracing": false,
@@ -805,7 +806,6 @@
                       "storage_mb_max": null,
                       "storage_class": null
                     },
-                    "min_storage_bytes": null,
                     "clock_resolution_usecs": 100000
                   },
                   "program_code": "CREATE TABLE table1 ( col1 INT );",
@@ -844,7 +844,7 @@
                   "platform_version": "v0",
                   "runtime_config": {
                     "workers": 16,
-                    "storage": false,
+                    "storage": null,
                     "fault_tolerance": null,
                     "cpu_profiler": true,
                     "tracing": false,
@@ -859,7 +859,6 @@
                       "storage_mb_max": null,
                       "storage_class": null
                     },
-                    "min_storage_bytes": null,
                     "clock_resolution_usecs": 100000
                   },
                   "program_code": "CREATE TABLE table1 ( col1 INT );",
@@ -1032,7 +1031,7 @@
                   "platform_version": "v0",
                   "runtime_config": {
                     "workers": 16,
-                    "storage": false,
+                    "storage": null,
                     "fault_tolerance": null,
                     "cpu_profiler": true,
                     "tracing": false,
@@ -1047,7 +1046,6 @@
                       "storage_mb_max": null,
                       "storage_class": null
                     },
-                    "min_storage_bytes": null,
                     "clock_resolution_usecs": 100000
                   },
                   "program_code": "CREATE TABLE table1 ( col1 INT );",
@@ -1155,11 +1153,10 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "example": {
-                  "message": "Pipeline example (2e79afe1-ff4d-44d3-af5f-9397de7746c0) is not currently running or paused.",
-                  "error_code": "PipelineNotRunningOrPaused",
+                  "message": "Unable to reach pipeline to interact due to: deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again",
+                  "error_code": "PipelineInteractionUnreachable",
                   "details": {
-                    "pipeline_id": "2e79afe1-ff4d-44d3-af5f-9397de7746c0",
-                    "pipeline_name": "example"
+                    "error": "deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again"
                   }
                 }
               }
@@ -1227,11 +1224,10 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "example": {
-                  "message": "Pipeline example (2e79afe1-ff4d-44d3-af5f-9397de7746c0) is not currently running or paused.",
-                  "error_code": "PipelineNotRunningOrPaused",
+                  "message": "Unable to reach pipeline to interact due to: deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again",
+                  "error_code": "PipelineInteractionUnreachable",
                   "details": {
-                    "pipeline_id": "2e79afe1-ff4d-44d3-af5f-9397de7746c0",
-                    "pipeline_name": "example"
+                    "error": "deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again"
                   }
                 }
               }
@@ -1358,11 +1354,10 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "example": {
-                  "message": "Pipeline example (2e79afe1-ff4d-44d3-af5f-9397de7746c0) is not currently running or paused.",
-                  "error_code": "PipelineNotRunningOrPaused",
+                  "message": "Unable to reach pipeline to interact due to: deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again",
+                  "error_code": "PipelineInteractionUnreachable",
                   "details": {
-                    "pipeline_id": "2e79afe1-ff4d-44d3-af5f-9397de7746c0",
-                    "pipeline_name": "example"
+                    "error": "deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again"
                   }
                 }
               }
@@ -1424,11 +1419,10 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "example": {
-                  "message": "Pipeline example (2e79afe1-ff4d-44d3-af5f-9397de7746c0) is not currently running or paused.",
-                  "error_code": "PipelineNotRunningOrPaused",
+                  "message": "Unable to reach pipeline to interact due to: deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again",
+                  "error_code": "PipelineInteractionUnreachable",
                   "details": {
-                    "pipeline_id": "2e79afe1-ff4d-44d3-af5f-9397de7746c0",
-                    "pipeline_name": "example"
+                    "error": "deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again"
                   }
                 }
               }
@@ -1562,11 +1556,10 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "example": {
-                  "message": "Pipeline example (2e79afe1-ff4d-44d3-af5f-9397de7746c0) is not currently running or paused.",
-                  "error_code": "PipelineNotRunningOrPaused",
+                  "message": "Unable to reach pipeline to interact due to: deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again",
+                  "error_code": "PipelineInteractionUnreachable",
                   "details": {
-                    "pipeline_id": "2e79afe1-ff4d-44d3-af5f-9397de7746c0",
-                    "pipeline_name": "example"
+                    "error": "deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again"
                   }
                 }
               }
@@ -1702,11 +1695,10 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "example": {
-                  "message": "Pipeline example (2e79afe1-ff4d-44d3-af5f-9397de7746c0) is not currently running or paused.",
-                  "error_code": "PipelineNotRunningOrPaused",
+                  "message": "Unable to reach pipeline to interact due to: deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again",
+                  "error_code": "PipelineInteractionUnreachable",
                   "details": {
-                    "pipeline_id": "2e79afe1-ff4d-44d3-af5f-9397de7746c0",
-                    "pipeline_name": "example"
+                    "error": "deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again"
                   }
                 }
               }
@@ -1737,12 +1729,9 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "example": {
-                  "message": "Sending request to URL https://localhost:1234/query of pipeline example (67e55044-10b1-426f-9247-bb680e5fe0c8) failed: Failed to connect to host: Internal error: connector has been disconnected",
-                  "error_code": "PipelineEndpointSendError",
+                  "message": "Unable to reach pipeline to interact due to: Failed to connect to host: Internal error: connector has been disconnected",
+                  "error_code": "PipelineInteractionUnreachable",
                   "details": {
-                    "pipeline_id": "67e55044-10b1-426f-9247-bb680e5fe0c8",
-                    "pipeline_name": "example",
-                    "url": "https://localhost:1234/query",
                     "error": "Failed to connect to host: Internal error: connector has been disconnected"
                   }
                 }
@@ -1794,11 +1783,10 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "example": {
-                  "message": "Pipeline example (2e79afe1-ff4d-44d3-af5f-9397de7746c0) is not currently running or paused.",
-                  "error_code": "PipelineNotRunningOrPaused",
+                  "message": "Unable to reach pipeline to interact due to: deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again",
+                  "error_code": "PipelineInteractionUnreachable",
                   "details": {
-                    "pipeline_id": "2e79afe1-ff4d-44d3-af5f-9397de7746c0",
-                    "pipeline_name": "example"
+                    "error": "deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again"
                   }
                 }
               }
@@ -3266,13 +3254,6 @@
                 "default": 0,
                 "minimum": 0
               },
-              "min_storage_bytes": {
-                "type": "integer",
-                "description": "The minimum estimated number of bytes in a batch of data to write it to\nstorage.  This is provided for debugging and fine-tuning and should\nordinarily be left unset. It only has an effect when `storage` is set to\ntrue.\n\nA value of 0 will write even empty batches to storage, and nonzero\nvalues provide a threshold.  `usize::MAX` would effectively disable\nstorage.",
-                "default": null,
-                "nullable": true,
-                "minimum": 0
-              },
               "resources": {
                 "allOf": [
                   {
@@ -3289,9 +3270,13 @@
                 }
               },
               "storage": {
-                "type": "boolean",
-                "description": "Should storage be enabled for this pipeline?\n\n- If `false` (default), the pipeline's state is kept in in-memory\ndata-structures.  This is useful if the pipeline's state will fit in\nmemory and if the pipeline is ephemeral and does not need to be\nrecovered after a restart. The pipeline will most likely run faster\nsince it does not need to access storage.\n\n- If `true`, the pipeline's state is kept on storage.  This allows the\npipeline to work with state that will not fit into memory. It also\nallows the state to be checkpointed and recovered across restarts.\nThis feature is currently experimental.",
-                "default": false
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/StorageOptions"
+                  }
+                ],
+                "default": null,
+                "nullable": true
               },
               "tracing": {
                 "type": "boolean",
@@ -4136,13 +4121,6 @@
             "default": 0,
             "minimum": 0
           },
-          "min_storage_bytes": {
-            "type": "integer",
-            "description": "The minimum estimated number of bytes in a batch of data to write it to\nstorage.  This is provided for debugging and fine-tuning and should\nordinarily be left unset. It only has an effect when `storage` is set to\ntrue.\n\nA value of 0 will write even empty batches to storage, and nonzero\nvalues provide a threshold.  `usize::MAX` would effectively disable\nstorage.",
-            "default": null,
-            "nullable": true,
-            "minimum": 0
-          },
           "resources": {
             "allOf": [
               {
@@ -4159,9 +4137,13 @@
             }
           },
           "storage": {
-            "type": "boolean",
-            "description": "Should storage be enabled for this pipeline?\n\n- If `false` (default), the pipeline's state is kept in in-memory\ndata-structures.  This is useful if the pipeline's state will fit in\nmemory and if the pipeline is ephemeral and does not need to be\nrecovered after a restart. The pipeline will most likely run faster\nsince it does not need to access storage.\n\n- If `true`, the pipeline's state is kept on storage.  This allows the\npipeline to work with state that will not fit into memory. It also\nallows the state to be checkpointed and recovered across restarts.\nThis feature is currently experimental.",
-            "default": false
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StorageOptions"
+              }
+            ],
+            "default": null,
+            "nullable": true
           },
           "tracing": {
             "type": "boolean",
@@ -4479,12 +4461,68 @@
         ],
         "description": "The available SQL types as specified in `CREATE` statements."
       },
+      "StorageBackendConfig": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "name",
+              "config"
+            ],
+            "properties": {
+              "config": {
+                "type": "string",
+                "enum": [
+                  "default"
+                ]
+              },
+              "name": {
+                "type": "string",
+                "enum": [
+                  "config"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name",
+              "config"
+            ],
+            "properties": {
+              "config": {
+                "type": "string",
+                "enum": [
+                  "io_uring"
+                ]
+              },
+              "name": {
+                "type": "string",
+                "enum": [
+                  "config"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "Backend storage configuration."
+      },
       "StorageCacheConfig": {
         "type": "string",
         "description": "How to cache access to storage within a Feldera pipeline.",
         "enum": [
           "page_cache",
           "feldera_cache"
+        ]
+      },
+      "StorageCompression": {
+        "type": "string",
+        "description": "Storage compression algorithm.",
+        "enum": [
+          "default",
+          "none",
+          "snappy"
         ]
       },
       "StorageConfig": {
@@ -4499,7 +4537,45 @@
           },
           "path": {
             "type": "string",
-            "description": "The location where the pipeline state is stored or will be stored.\n\nIt should point to a path on the file-system of the machine/container\nwhere the pipeline will run. If that path doesn't exist yet, or if it\ndoes not contain any checkpoints, then the pipeline creates it and\nstarts from an initial state in which no data has yet been received. If\nit does exist, then the pipeline starts from the most recent checkpoint\nthat already exists there. In either case, (further) checkpoints will be\nwritten there."
+            "description": "A directory to keep pipeline state, as a path on the filesystem of the\nmachine or container where the pipeline will run.\n\nWhen storage is enabled, this directory stores the data for\n[StorageBackendConfig::Default].\n\nWhen fault tolerance is enabled, this directory stores checkpoints and\nthe log."
+          }
+        }
+      },
+      "StorageOptions": {
+        "type": "object",
+        "description": "Storage configuration for a pipeline.",
+        "properties": {
+          "backend": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StorageBackendConfig"
+              }
+            ],
+            "default": {
+              "name": "default"
+            }
+          },
+          "cache_mib": {
+            "type": "integer",
+            "description": "The maximum size of the in-memory storage cache, in mebibytes.\n\nThe default is 256 MiB, times the number of workers.",
+            "default": null,
+            "nullable": true,
+            "minimum": 0
+          },
+          "compression": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StorageCompression"
+              }
+            ],
+            "default": "default"
+          },
+          "min_storage_bytes": {
+            "type": "integer",
+            "description": "The minimum estimated number of bytes in a batch of data to write it to\nstorage.  This is provided for debugging and fine-tuning and should\nordinarily be left unset.\n\nA value of 0 will write even empty batches to storage, and nonzero\nvalues provide a threshold.  `usize::MAX` would effectively disable\nstorage.\n\nThe default is 1,048,576 (1 MiB).",
+            "default": null,
+            "nullable": true,
+            "minimum": 0
           }
         }
       },
@@ -4681,6 +4757,24 @@
                 "type": "string",
                 "enum": [
                   "iceberg_input"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name",
+              "config"
+            ],
+            "properties": {
+              "config": {
+                "$ref": "#/components/schemas/PostgresReaderConfig"
+              },
+              "name": {
+                "type": "string",
+                "enum": [
+                  "postgres_input"
                 ]
               }
             }

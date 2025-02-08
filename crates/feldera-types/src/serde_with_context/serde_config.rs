@@ -104,10 +104,12 @@ impl Default for VariantFormat {
 /// Representation of the SQL `BINARY` and `VARBINARY` types.
 #[derive(Clone, Debug)]
 pub enum BinaryFormat {
-    /// Serialize as array of bytes.
+    /// Serialize as a sequence of bytes.
     Array,
     /// Serialize as base64-encoded string.
     Base64,
+    /// Serialize as a byte slice (`&[u8]``)
+    Bytes,
 }
 
 impl Default for BinaryFormat {

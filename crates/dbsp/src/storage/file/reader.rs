@@ -2,6 +2,34 @@
 //!
 //! [`Reader`] is the top-level interface for reading layer files.
 
+use super::format::Compression;
+use super::{
+    cache::FileCacheEntry, AnyFactories, BloomFilterState, Factories,
+    BLOOM_FILTER_FALSE_POSITIVE_RATE,
+};
+use crate::storage::{
+    backend::StorageError,
+    buffer_cache::{BufferCache, FBuf},
+    file::format::{
+        DataBlockHeader, FileTrailerColumn, IndexBlockHeader, NodeType, Varint, VERSION_NUMBER,
+    },
+    file::item::ArchivedItem,
+};
+use crate::{
+    dynamic::{DataTrait, DeserializeDyn, Factory},
+    storage::{
+        backend::{BlockLocation, FileReader, InvalidBlockLocation, StorageBackend},
+        buffer_cache::{AtomicCacheStats, CacheStats},
+    },
+};
+use binrw::{
+    io::{self},
+    BinRead, Error as BinError,
+};
+use fastbloom::BloomFilter;
+use std::fs::File;
+use std::io::ErrorKind;
+use std::mem::replace;
 use std::{
     cmp::{
         max, min,
@@ -14,30 +42,7 @@ use std::{
     path::{Path as IoPath, PathBuf},
     sync::Arc,
 };
-
-use crate::{
-    dynamic::{DataTrait, DeserializeDyn, Factory},
-    storage::{
-        backend::{BlockLocation, FileReader, InvalidBlockLocation, Storage, StorageError},
-        buffer_cache::{BufferCache, FBuf},
-        file::{
-            cache::FileCacheEntry,
-            format::{
-                DataBlockHeader, FileTrailerColumn, IndexBlockHeader, NodeType, Varint,
-                VERSION_NUMBER,
-            },
-            item::ArchivedItem,
-            AnyFactories, Factories,
-        },
-    },
-};
-use binrw::{
-    io::{self},
-    BinRead, Error as BinError,
-};
 use thiserror::Error as ThisError;
-
-use super::format::Compression;
 
 /// Any kind of error encountered reading a layer file.
 #[derive(ThisError, Debug)]
@@ -67,6 +72,12 @@ pub enum Error {
 impl From<BinError> for Error {
     fn from(source: BinError) -> Self {
         Error::Corruption(source.into())
+    }
+}
+
+impl From<io::Error> for Error {
+    fn from(source: io::Error) -> Self {
+        Error::Storage(StorageError::StdIo(source.kind()))
     }
 }
 
@@ -433,13 +444,13 @@ impl InnerDataBlock {
         })
     }
 
-    fn new(
-        file: &ImmutableFileRef,
-        node: &TreeNode,
-        compression: Option<Compression>,
-    ) -> Result<Arc<Self>, Error> {
-        file.cache
-            .read_data_block(&*file.file_handle, node.location, compression)
+    fn new(file: &ImmutableFileRef, node: &TreeNode) -> Result<Arc<Self>, Error> {
+        (file.cache)().read_data_block(
+            &*file.file_handle,
+            node.location,
+            file.compression,
+            &file.stats,
+        )
     }
     fn n_values(&self) -> usize {
         self.value_map.len()
@@ -497,9 +508,8 @@ where
         factories: &Factories<K, A>,
         file: &ImmutableFileRef,
         node: &TreeNode,
-        compression: Option<Compression>,
     ) -> Result<Self, Error> {
-        let inner = InnerDataBlock::new(file, node, compression)?;
+        let inner = InnerDataBlock::new(file, node)?;
 
         let expected_rows = node.rows.end - node.rows.start;
         if inner.n_values() as u64 != expected_rows {
@@ -640,11 +650,7 @@ struct TreeNode {
 }
 
 impl TreeNode {
-    fn read<K, A>(
-        self,
-        file: &ImmutableFileRef,
-        compression: Option<Compression>,
-    ) -> Result<TreeBlock<K, A>, Error>
+    fn read<K, A>(self, file: &ImmutableFileRef) -> Result<TreeBlock<K, A>, Error>
     where
         K: DataTrait + ?Sized,
         A: DataTrait + ?Sized,
@@ -654,13 +660,11 @@ impl TreeNode {
                 &self.factories.factories(),
                 file,
                 &self,
-                compression,
             )?)),
             NodeType::Index => Ok(TreeBlock::Index(IndexBlock::new(
                 &self.factories,
                 file,
                 &self,
-                compression,
             )?)),
         }
     }
@@ -759,13 +763,13 @@ impl InnerIndexBlock {
         })
     }
 
-    fn new(
-        file: &ImmutableFileRef,
-        node: &TreeNode,
-        compression: Option<Compression>,
-    ) -> Result<Arc<Self>, Error> {
-        file.cache
-            .read_index_block(&*file.file_handle, node.location, compression)
+    fn new(file: &ImmutableFileRef, node: &TreeNode) -> Result<Arc<Self>, Error> {
+        (file.cache)().read_index_block(
+            &*file.file_handle,
+            node.location,
+            file.compression,
+            &file.stats,
+        )
     }
 }
 
@@ -805,7 +809,6 @@ where
         factories: &AnyFactories,
         file: &ImmutableFileRef,
         node: &TreeNode,
-        compression: Option<Compression>,
     ) -> Result<Self, Error> {
         const MAX_DEPTH: usize = 64;
         if node.depth > MAX_DEPTH {
@@ -819,7 +822,7 @@ where
             .into());
         }
 
-        let inner = InnerIndexBlock::new(file, node, compression)?;
+        let inner = InnerIndexBlock::new(file, node)?;
 
         let expected_rows = node.rows.end - node.rows.start;
         let n_rows = inner.row_totals.get(&inner.raw, inner.row_totals.count - 1);
@@ -1060,10 +1063,12 @@ impl Column {
 }
 
 /// Encapsulates storage and a file handle.
-pub(crate) struct ImmutableFileRef {
+struct ImmutableFileRef {
     path: PathBuf,
-    cache: Arc<BufferCache<FileCacheEntry>>,
+    cache: fn() -> Arc<BufferCache<FileCacheEntry>>,
     file_handle: Arc<dyn FileReader>,
+    compression: Option<Compression>,
+    stats: AtomicCacheStats,
 }
 
 impl Debug for ImmutableFileRef {
@@ -1082,35 +1087,31 @@ impl Drop for ImmutableFileRef {
 }
 
 impl ImmutableFileRef {
-    pub(crate) fn new(
-        cache: &Arc<BufferCache<FileCacheEntry>>,
+    fn new(
+        cache: fn() -> Arc<BufferCache<FileCacheEntry>>,
         file_handle: Arc<dyn FileReader>,
         path: PathBuf,
+        compression: Option<Compression>,
+        stats: AtomicCacheStats,
     ) -> Self {
         Self {
-            cache: Arc::clone(cache),
+            cache,
             path,
             file_handle,
+            compression,
+            stats,
         }
     }
 
-    pub(crate) fn open(
-        cache: &Arc<BufferCache<FileCacheEntry>>,
-        path: &IoPath,
-    ) -> Result<Self, Error> {
-        let file_handle = cache.open(path)?;
-        Ok(Self::new(cache, file_handle, path.to_path_buf()))
-    }
-
     pub fn evict(&self) {
-        self.cache.evict(&*self.file_handle);
+        (self.cache)().evict(&*self.file_handle);
     }
 }
 
 #[derive(Debug)]
 struct ReaderInner<T> {
-    file: Arc<ImmutableFileRef>,
-    compression: Option<Compression>,
+    file: ImmutableFileRef,
+    bloom_filter: BloomFilter,
     columns: Vec<Column>,
 
     /// `fn() -> T` is `Send` and `Sync` regardless of `T`.  See
@@ -1167,16 +1168,21 @@ where
     /// Creates and returns a new `Reader` for `file`.
     pub(crate) fn new(
         factories: &[&AnyFactories],
-        file: Arc<ImmutableFileRef>,
+        path: PathBuf,
+        cache: fn() -> Arc<BufferCache<FileCacheEntry>>,
+        file_handle: Arc<dyn FileReader>,
+        bloom_filter: BloomFilter,
     ) -> Result<Self, Error> {
-        let file_size = file.file_handle.get_size()?;
+        let file_size = file_handle.get_size()?;
         if file_size < 512 || (file_size % 512) != 0 {
             return Err(CorruptionError::InvalidFileSize(file_size).into());
         }
 
-        let file_trailer = file.cache.read_file_trailer_block(
-            &*file.file_handle,
+        let stats = AtomicCacheStats::default();
+        let file_trailer = cache().read_file_trailer_block(
+            &*file_handle,
             BlockLocation::new(file_size - 512, 512).unwrap(),
+            &stats,
         )?;
         if file_trailer.version != VERSION_NUMBER {
             return Err(CorruptionError::InvalidVersion {
@@ -1217,9 +1223,9 @@ where
         }
 
         Ok(Self(Arc::new(ReaderInner {
-            file,
+            file: ImmutableFileRef::new(cache, file_handle, path, file_trailer.compression, stats),
             columns,
-            compression: file_trailer.compression,
+            bloom_filter,
             _phantom: PhantomData,
         })))
     }
@@ -1228,13 +1234,22 @@ where
     ///
     /// This internally creates an empty temporary file, which means that it can
     /// fail with an I/O error.
-    pub fn empty(cache: &Arc<BufferCache<FileCacheEntry>>) -> Result<Self, Error> {
-        let file_handle = cache.create()?;
-        let (file_handle, path) = file_handle.complete()?;
+    pub fn empty(
+        cache: fn() -> Arc<BufferCache<FileCacheEntry>>,
+        storage_backend: &dyn StorageBackend,
+    ) -> Result<Self, Error> {
+        let (file_handle, path) = storage_backend.create()?.complete()?;
         Ok(Self(Arc::new(ReaderInner {
-            file: Arc::new(ImmutableFileRef::new(cache, file_handle, path)),
+            file: ImmutableFileRef::new(
+                cache,
+                file_handle,
+                path,
+                None,
+                AtomicCacheStats::default(),
+            ),
+            bloom_filter: BloomFilter::with_false_pos(BLOOM_FILTER_FALSE_POSITIVE_RATE)
+                .expected_items(0),
             columns: (0..T::n_columns()).map(|_| Column::empty()).collect(),
-            compression: None,
             _phantom: PhantomData,
         })))
     }
@@ -1247,11 +1262,34 @@ where
     /// Instantiates a reader given an existing path.
     pub fn open(
         factories: &[&AnyFactories],
-        cache: &Arc<BufferCache<FileCacheEntry>>,
+        cache: fn() -> Arc<BufferCache<FileCacheEntry>>,
+        storage_backend: &dyn StorageBackend,
         path: &IoPath,
     ) -> Result<Self, Error> {
-        let file = ImmutableFileRef::open(cache, path)?;
-        Self::new(factories, Arc::new(file))
+        // Recover the bloom filter from the bloom filter file.
+        let bloom_path = path.with_extension("bloom");
+        let bf_file = File::open(bloom_path.as_path());
+        let bloom_filter = match bf_file {
+            Ok(mut bf_file) => {
+                let bloom_storage: BloomFilterState = BloomFilterState::read(&mut bf_file)?;
+                let bloom_filter: BloomFilter = bloom_storage.try_into()?;
+                bloom_filter
+            }
+            Err(e) if e.kind() == ErrorKind::NotFound => {
+                // If the bloom filter file does not exist because we're not writing them atm,
+                // we create an empty bloom filter.
+                BloomFilter::with_false_pos(BLOOM_FILTER_FALSE_POSITIVE_RATE).expected_items(0)
+            }
+            Err(e) => return Err(e.into()),
+        };
+
+        Self::new(
+            factories,
+            path.to_path_buf(),
+            cache,
+            storage_backend.open(path)?,
+            bloom_filter,
+        )
     }
 
     /// The number of columns in the layer file.
@@ -1274,7 +1312,7 @@ where
     /// Returns the path on persistent storage for the file of the underlying
     /// reader.
     pub fn path(&self) -> PathBuf {
-        self.0.file.as_ref().path.clone()
+        self.0.file.path.clone()
     }
 
     /// Returns the size of the underlying file in bytes.
@@ -1286,6 +1324,12 @@ where
     #[cfg(test)]
     pub fn evict(&self) {
         self.0.file.evict();
+    }
+
+    /// Returns the cache statistics for this file.  The statistics are specific
+    /// to this file's cache behavior for reads.
+    pub fn cache_stats(&self) -> CacheStats {
+        self.0.file.stats.read()
     }
 }
 
@@ -1301,6 +1345,13 @@ where
     A: DataTrait + ?Sized,
     (&'static K, &'static A, N): ColumnSpec,
 {
+    /// Asks the bloom filter of the reader if we have the key.
+    pub fn maybe_contains_key(&self, key: &K) -> bool {
+        self.0
+            .bloom_filter
+            .contains(&key.default_hash().to_le_bytes())
+    }
+
     /// Returns a [`RowGroup`] for all of the rows in column 0.
     pub fn rows(&self) -> RowGroup<K, A, N, (&'static K, &'static A, N)> {
         RowGroup::new(self, 0, 0..self.0.columns[0].n_rows)
@@ -1384,16 +1435,33 @@ where
 
     /// Return a cursor for just after the row group.
     pub fn after(&self) -> Cursor<'a, K, A, N, T> {
-        self.cursor(Position::After)
+        self.cursor(Position::After { hint: None })
     }
 
     /// Return a cursor for the first row in the row group, or just after the
     /// row group if it is empty.
     pub fn first(&self) -> Result<Cursor<'a, K, A, N, T>, Error> {
         let position = if self.is_empty() {
-            Position::After
+            Position::After { hint: None }
         } else {
             Position::for_row(self, self.rows.start)?
+        };
+        Ok(self.cursor(position))
+    }
+
+    /// Return a cursor for the first row in the row group, or just after the
+    /// row group if it is empty, using `hint` as an internal starting point for
+    /// searching the B-tree. For best performance, use a `hint` near the first
+    /// row in the row group (but the result will be correct regardless of
+    /// `hint`).
+    pub fn first_with_hint(
+        &self,
+        hint: &Cursor<'a, K, A, N, T>,
+    ) -> Result<Cursor<'a, K, A, N, T>, Error> {
+        let position = if self.is_empty() {
+            Position::After { hint: None }
+        } else {
+            Position::for_row_from_hint(self, &hint.position, self.rows.start)?
         };
         Ok(self.cursor(position))
     }
@@ -1402,7 +1470,7 @@ where
     /// row group if it is empty.
     pub fn last(&self) -> Result<Cursor<'a, K, A, N, T>, Error> {
         let position = if self.is_empty() {
-            Position::After
+            Position::After { hint: None }
         } else {
             Position::for_row(self, self.rows.end - 1)?
         };
@@ -1416,7 +1484,7 @@ where
         let position = if row < self.len() {
             Position::for_row(self, self.rows.start + row)?
         } else {
-            Position::After
+            Position::After { hint: None }
         };
         Ok(self.cursor(position))
     }
@@ -1592,7 +1660,7 @@ where
             self.position
                 .move_to_row(&self.row_group, self.row_group.rows.end - 1)
         } else {
-            self.position = Position::After;
+            self.position = Position::After { hint: None };
             Ok(())
         }
     }
@@ -1603,7 +1671,7 @@ where
             self.position
                 .move_to_row(&self.row_group, self.row_group.rows.start + row)
         } else {
-            self.position = Position::After;
+            self.position.move_after();
             Ok(())
         }
     }
@@ -1880,7 +1948,7 @@ where
         row: u64,
     ) -> Result<Self, Error> {
         loop {
-            let block = node.read(&reader.0.file, reader.0.compression)?;
+            let block = node.read(&reader.0.file)?;
             let next = block.lookup_row(row)?;
             match block {
                 TreeBlock::Data(data) => {
@@ -1897,7 +1965,17 @@ where
             node = next.unwrap();
         }
     }
-    fn for_row_from_hint<T>(reader: &Reader<T>, hint: &Self, row: u64) -> Result<Self, Error> {
+    fn for_row_from_hint<N, T>(
+        row_group: &RowGroup<'_, K, A, N, T>,
+        hint: Option<&Self>,
+        row: u64,
+    ) -> Result<Self, Error>
+    where
+        T: ColumnSpec,
+    {
+        let Some(hint) = hint else {
+            return Self::for_row(row_group, row);
+        };
         if hint.data.rows().contains(&row) {
             return Ok(Self {
                 row,
@@ -1907,7 +1985,7 @@ where
         for (idx, index_block) in hint.indexes.iter().enumerate().rev() {
             if let Some(node) = index_block.get_child_by_row(row)? {
                 return Self::for_row_from_ancestor(
-                    reader,
+                    row_group.reader,
                     hint.indexes[0..=idx].to_vec(),
                     node,
                     row,
@@ -1932,11 +2010,18 @@ where
     fn row_group(&self) -> Result<Range<u64>, Error> {
         self.data.row_group(self.row)
     }
-    fn move_to_row<T>(&mut self, reader: &Reader<T>, row: u64) -> Result<(), Error> {
+    fn move_to_row<N, T>(
+        &mut self,
+        row_group: &RowGroup<'_, K, A, N, T>,
+        row: u64,
+    ) -> Result<(), Error>
+    where
+        T: ColumnSpec,
+    {
         if self.data.rows().contains(&row) {
             self.row = row;
         } else {
-            *self = Self::for_row_from_hint(reader, self, row)?;
+            *self = Self::for_row_from_hint(row_group, Some(self), row)?;
         }
         Ok(())
     }
@@ -1954,7 +2039,7 @@ where
             return Ok(None);
         };
         loop {
-            match node.read(&row_group.reader.0.file, row_group.reader.0.compression)? {
+            match node.read(&row_group.reader.0.file)? {
                 TreeBlock::Index(index_block) => {
                     let Some(child_idx) =
                         index_block.find_best_match(&row_group.rows, compare, bias)
@@ -2053,7 +2138,7 @@ where
             self.indexes.push(index_block);
 
             loop {
-                match node.read::<K, A>(&row_group.reader.0.file, row_group.reader.0.compression)? {
+                match node.read::<K, A>(&row_group.reader.0.file)? {
                     TreeBlock::Index(index_block) => {
                         let Some(child_idx) =
                             index_block.find_best_match(&row_group.rows, compare, Less)
@@ -2127,9 +2212,25 @@ where
     K: DataTrait + ?Sized,
     A: DataTrait + ?Sized,
 {
+    /// Before a row group.
     Before,
+
+    /// Within a row group.
     Row(Path<K, A>),
-    After,
+
+    /// After a row group.
+    ///
+    /// `hint` is optionally some position in this column. It is useful for
+    /// optimizing finding another (presumably nearby) position in the same
+    /// column. This optimizes the common case of iterating through one column
+    /// (e.g. a key in an indexed wset) and visiting all of the corresponding
+    /// values in the next column (e.g. the key's values in the indexed wset),
+    /// using [RowGroup::first_with_hint] to visit the first value of each key
+    /// after the first.
+    ///
+    /// We could add a hint to [Position::Before] but reverse iteration is
+    /// uncommon so it probably wouldn't help with much.
+    After { hint: Option<Path<K, A>> },
 }
 
 impl<K, A> Clone for Position<K, A>
@@ -2141,7 +2242,7 @@ where
         match self {
             Position::Before => Position::Before,
             Position::Row(path) => Position::Row(path.clone()),
-            Position::After => Position::After,
+            Position::After { hint } => Position::After { hint: hint.clone() },
         }
     }
 }
@@ -2157,6 +2258,20 @@ where
     {
         Ok(Self::Row(Path::for_row(row_group, row)?))
     }
+    fn for_row_from_hint<N, T>(
+        row_group: &RowGroup<'_, K, A, N, T>,
+        hint: &Self,
+        row: u64,
+    ) -> Result<Self, Error>
+    where
+        T: ColumnSpec,
+    {
+        Ok(Self::Row(Path::for_row_from_hint(
+            row_group,
+            hint.hint(),
+            row,
+        )?))
+    }
     fn next<N, T>(&mut self, row_group: &RowGroup<'_, K, A, N, T>) -> Result<(), Error>
     where
         T: ColumnSpec,
@@ -2164,12 +2279,12 @@ where
         let row = match self {
             Self::Before => row_group.rows.start,
             Self::Row(path) => path.row + 1,
-            Self::After => return Ok(()),
+            Self::After { .. } => return Ok(()),
         };
         if row < row_group.rows.end {
             self.move_to_row(row_group, row)
         } else {
-            *self = Self::After;
+            self.move_after();
             Ok(())
         }
     }
@@ -2181,14 +2296,18 @@ where
             Self::Before => (),
             Self::Row(path) => {
                 if path.row > row_group.rows.start {
-                    path.move_to_row(row_group.reader, path.row - 1)?;
+                    path.move_to_row(row_group, path.row - 1)?;
                 } else {
                     *self = Self::Before;
                 }
             }
-            Self::After => {
+            Self::After { hint } => {
                 *self = if !row_group.is_empty() {
-                    Self::Row(Path::for_row(row_group, row_group.rows.end - 1)?)
+                    Self::Row(Path::for_row_from_hint(
+                        row_group,
+                        hint.as_ref(),
+                        row_group.rows.end - 1,
+                    )?)
                 } else {
                     Self::Before
                 }
@@ -2206,19 +2325,42 @@ where
     {
         if !row_group.rows.is_empty() {
             match self {
-                Position::Before | Position::After => {
-                    *self = Self::Row(Path::for_row(row_group, row)?)
+                Position::Before => *self = Self::Row(Path::for_row(row_group, row)?),
+                Position::After { hint } => {
+                    *self = Self::Row(Path::for_row_from_hint(row_group, hint.as_ref(), row)?)
                 }
-                Position::Row(path) => path.move_to_row(row_group.reader, row)?,
+                Position::Row(path) => path.move_to_row(row_group, row)?,
             }
         }
         Ok(())
+    }
+    fn move_after(&mut self) {
+        *self = Position::After {
+            hint: self.take_hint(),
+        };
+    }
+    /// Replaces `self` by an arbitrary value and returns its prevous [Path]
+    /// (whether the current row or a hint).
+    fn take_hint(&mut self) -> Option<Path<K, A>> {
+        match replace(self, Position::Before) {
+            Position::Before => None,
+            Position::Row(hint) => Some(hint),
+            Position::After { hint } => hint,
+        }
+    }
+    /// Returns the current row or a hint for one.
+    fn hint(&self) -> Option<&Path<K, A>> {
+        match self {
+            Position::Before => None,
+            Position::Row(path) => Some(path),
+            Position::After { hint } => hint.as_ref(),
+        }
     }
     fn path(&self) -> Option<&Path<K, A>> {
         match self {
             Position::Before => None,
             Position::Row(path) => Some(path),
-            Position::After => None,
+            Position::After { .. } => None,
         }
     }
     pub unsafe fn key<'k>(&self, key: &'k mut K) -> Option<&'k mut K> {
@@ -2264,7 +2406,7 @@ where
         match Path::best_match(row_group, compare, bias)? {
             Some(path) => Ok(Position::Row(path)),
             None => Ok(if bias == Less {
-                Position::After
+                Position::After { hint: None }
             } else {
                 Position::Before
             }),
@@ -2277,7 +2419,7 @@ where
         match self {
             Position::Before => row_group.rows.start,
             Position::Row(path) => path.row,
-            Position::After => row_group.rows.end,
+            Position::After { .. } => row_group.rows.end,
         }
     }
     fn remaining_rows<N, T>(&self, row_group: &RowGroup<K, A, N, T>) -> u64
@@ -2287,7 +2429,7 @@ where
         match self {
             Position::Before => row_group.len(),
             Position::Row(path) => row_group.rows.end - path.row,
-            Position::After => 0,
+            Position::After { .. } => 0,
         }
     }
 
@@ -2306,16 +2448,15 @@ where
             Position::Before => {
                 *self = Self::best_match::<N, T, _>(row_group, compare, Less)?;
             }
-            Position::After => (),
+            Position::After { .. } => (),
             Position::Row(path) => {
                 match path.advance_to_first_ge(row_group, compare) {
-                    Ok(false) => {
-                        *self = Position::After;
-                    }
+                    Ok(false) => self.move_after(),
                     Ok(true) => (),
                     Err(error) => {
-                        // Discard `path`, which might now be invalid.
-                        *self = Position::After;
+                        // Discard `path`, which might now violate its internal
+                        // invariants (so don't even try to use it as a hint).
+                        *self = Position::After { hint: None };
                         return Err(error);
                     }
                 }

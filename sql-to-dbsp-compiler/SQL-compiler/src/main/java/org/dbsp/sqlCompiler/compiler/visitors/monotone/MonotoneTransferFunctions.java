@@ -36,6 +36,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPUnaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnsignedUnwrapExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnsignedWrapExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnwrapCustomOrdExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPUnwrapExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.NoExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
@@ -493,7 +494,25 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
         if (this.constantExpressions.contains(expression.expression))
             this.constantExpressions.add(expression);
         MonotoneExpression result = new MonotoneExpression(
-                expression, source.getMonotoneType().setMaybeNull(true), reduced);
+                expression, source.getMonotoneType().withMaybeNull(true), reduced);
+        this.set(expression, result);
+    }
+
+    @Override
+    public void postorder(DBSPUnwrapExpression expression) {
+        MonotoneExpression source = this.get(expression.expression);
+        DBSPExpression reduced = null;
+
+        if (source.mayBeMonotone()) {
+            reduced = new DBSPUnwrapExpression(source.getReducedExpression());
+        }
+        if (this.positiveExpressions.contains(expression.expression))
+            this.positiveExpressions.add(expression);
+        if (this.constantExpressions.contains(expression.expression))
+            this.constantExpressions.add(expression);
+        IMaybeMonotoneType monoType = source.getMonotoneType().withMaybeNull(false);
+        MonotoneExpression result = new MonotoneExpression(
+                expression, monoType, reduced);
         this.set(expression, result);
     }
 

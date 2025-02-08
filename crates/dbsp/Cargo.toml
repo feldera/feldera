@@ -72,7 +72,9 @@ minitrace = "0.6"
 ouroboros = "0.18.4"
 tracing = "0.1.40"
 snap = "1.1.1"
-
+enum-map = "2.7.3"
+fastbloom = "0.8.0"
+bytemuck = "1.21.0"
 
 [dependencies.time]
 version = "0.3.20"

@@ -7,14 +7,16 @@
 
 use crate::{
     circuit::{
-        metadata::OperatorLocation,
+        metadata::{MetaItem, OperatorLocation, OperatorMeta, NUM_INPUTS, NUM_OUTPUTS},
+        metrics::Gauge,
         operator_traits::{Operator, SinkOperator, SourceOperator},
         tokio::TOKIO,
-        Host, LocalStoreMarker, OwnershipPreference, Runtime, Scope,
+        GlobalNodeId, Host, LocalStoreMarker, OwnershipPreference, Runtime, Scope,
     },
     circuit_cache_key,
     storage::file::to_bytes,
     trace::{unaligned_deserialize, Rkyv},
+    NumEntries,
 };
 use crossbeam_utils::CachePadded;
 use futures::{future, prelude::*};
@@ -774,6 +776,11 @@ where
     partition: L,
     outputs: Vec<T>,
     exchange: Arc<Exchange<T>>,
+
+    // Total number of input tuples processed by the operator.
+    num_inputs: usize,
+    num_inputs_metric: Option<Gauge>,
+
     phantom: PhantomData<D>,
 }
 
@@ -795,6 +802,8 @@ where
             partition,
             outputs: Vec::with_capacity(runtime.num_workers()),
             exchange: Exchange::with_runtime(runtime, exchange_id),
+            num_inputs: 0,
+            num_inputs_metric: None,
             phantom: PhantomData,
         }
     }
@@ -808,6 +817,29 @@ where
 {
     fn name(&self) -> Cow<'static, str> {
         Cow::from("ExchangeSender")
+    }
+
+    fn init(&mut self, global_id: &GlobalNodeId) {
+        self.num_inputs_metric = Some(Gauge::new(
+            NUM_INPUTS,
+            None,
+            Some("count"),
+            global_id,
+            vec![],
+        ));
+    }
+
+    fn metrics(&self) {
+        self.num_inputs_metric
+            .as_ref()
+            .unwrap()
+            .set(self.num_inputs as f64);
+    }
+
+    fn metadata(&self, meta: &mut OperatorMeta) {
+        meta.extend(metadata! {
+            NUM_INPUTS => MetaItem::Count(self.num_inputs),
+        });
     }
 
     fn location(&self) -> OperatorLocation {
@@ -840,7 +872,7 @@ where
 
 impl<D, T, L> SinkOperator<D> for ExchangeSender<D, T, L>
 where
-    D: Clone + 'static,
+    D: Clone + NumEntries + 'static,
     T: Clone + Send + Rkyv + 'static,
     L: FnMut(D, &mut Vec<T>) + 'static,
 {
@@ -849,6 +881,8 @@ where
     }
 
     async fn eval_owned(&mut self, input: D) {
+        self.num_inputs += input.num_entries_deep();
+
         debug_assert!(self.ready());
         self.outputs.clear();
         (self.partition)(input, &mut self.outputs);
@@ -887,6 +921,10 @@ where
     init: IF,
     combine: L,
     exchange: Arc<Exchange<T>>,
+
+    // Total number of input tuples processed by the operator.
+    num_outputs: usize,
+    num_outputs_metric: Option<Gauge>,
 }
 
 impl<IF, T, L> ExchangeReceiver<IF, T, L>
@@ -909,6 +947,8 @@ where
             init,
             combine,
             exchange: Exchange::with_runtime(runtime, exchange_id),
+            num_outputs: 0,
+            num_outputs_metric: None,
         }
     }
 }
@@ -925,6 +965,29 @@ where
 
     fn location(&self) -> OperatorLocation {
         self.location
+    }
+
+    fn init(&mut self, global_id: &GlobalNodeId) {
+        self.num_outputs_metric = Some(Gauge::new(
+            NUM_OUTPUTS,
+            None,
+            Some("count"),
+            global_id,
+            vec![],
+        ));
+    }
+
+    fn metrics(&self) {
+        self.num_outputs_metric
+            .as_ref()
+            .unwrap()
+            .set(self.num_outputs as f64);
+    }
+
+    fn metadata(&self, meta: &mut OperatorMeta) {
+        meta.extend(metadata! {
+            NUM_OUTPUTS => MetaItem::Count(self.num_outputs),
+        });
     }
 
     fn is_async(&self) -> bool {
@@ -950,7 +1013,7 @@ where
 
 impl<D, IF, T, L> SourceOperator<D> for ExchangeReceiver<IF, T, L>
 where
-    D: 'static,
+    D: NumEntries + 'static,
     T: Clone + Send + Rkyv + 'static,
     IF: Fn() -> D + 'static,
     L: Fn(&mut D, T) + 'static,
@@ -963,6 +1026,8 @@ where
             .try_receive_all(self.worker_index, |x| (self.combine)(&mut combined, x));
 
         debug_assert!(res);
+
+        self.num_outputs += combined.num_entries_deep();
         combined
     }
 }
@@ -1027,7 +1092,7 @@ where
     PL: FnMut(TI, &mut Vec<TE>) + 'static,
     CL: Fn(&mut TO, TE) + 'static,
 {
-    let exchange_id = runtime.sequence_next(worker_index);
+    let exchange_id = runtime.sequence_next();
     let sender = ExchangeSender::new(runtime, worker_index, location, exchange_id, partition);
     let receiver =
         ExchangeReceiver::new(runtime, worker_index, location, exchange_id, init, combine);

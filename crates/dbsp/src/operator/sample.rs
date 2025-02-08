@@ -39,6 +39,7 @@ where
     /// WARNING: This operator (by definition) returns non-deterministic
     /// outputs.  As such it may not play well with most other DBSP operators
     /// and must be used with care.
+    #[track_caller]
     pub fn stream_sample_keys(
         &self,
         sample_size: &Stream<RootCircuit, usize>,
@@ -56,6 +57,7 @@ where
     /// Equivalent to `self.map(|(k, v)| (k, v)).stream_sample_keys()`,
     /// but is more efficient.
     #[allow(clippy::type_complexity)]
+    #[track_caller]
     pub fn stream_sample_unique_key_vals(
         &self,
         sample_size: &Stream<RootCircuit, usize>,
@@ -95,6 +97,7 @@ where
     /// feeding the same input twice can produce different outputs.  As such it
     /// may not play well with most other DBSP operators and must be used with
     /// care.
+    #[track_caller]
     pub fn stream_key_quantiles(
         &self,
         num_quantiles: &Stream<RootCircuit, usize>,
@@ -113,6 +116,7 @@ where
     /// Equivalent to `self.map(|(k, v)| (k,
     /// v)).stream_unique_key_val_quantiles()`, but is more efficient.
     #[allow(clippy::type_complexity)]
+    #[track_caller]
     pub fn stream_unique_key_val_quantiles(
         &self,
         num_quantiles: &Stream<RootCircuit, usize>,

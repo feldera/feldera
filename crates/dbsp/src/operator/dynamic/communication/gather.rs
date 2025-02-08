@@ -57,7 +57,7 @@ where
                             GatherId::new((self.stream_id(), receiver_worker)),
                             move || {
                                 let current_worker = Runtime::worker_index();
-                                let gather_id = runtime.sequence_next(current_worker);
+                                let gather_id = runtime.sequence_next();
 
                                 let gather = runtime
                                     .local_store()

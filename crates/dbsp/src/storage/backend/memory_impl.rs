@@ -1,4 +1,4 @@
-//! Implementation of the storage backend ([`Storage`] APIs using memory.
+//! [StorageBackend] implementation in memory.
 //!
 //! This is useful for performance testing, not as part of a production system.
 
@@ -10,7 +10,9 @@ use std::{
     sync::{Arc, LazyLock, RwLock},
 };
 
-use super::{BlockLocation, FileId, FileReader, FileWriter, HasFileId, Storage, StorageError};
+use super::{
+    BlockLocation, FileId, FileReader, FileWriter, HasFileId, StorageBackend, StorageError,
+};
 use crate::circuit::metrics::{
     FILES_CREATED, READS_FAILED, READS_SUCCESS, TOTAL_BYTES_READ, TOTAL_BYTES_WRITTEN,
     WRITES_SUCCESS,
@@ -96,7 +98,7 @@ impl FileReader for MemoryFile {
     }
 }
 
-impl Storage for MemoryBackend {
+impl StorageBackend for MemoryBackend {
     fn create_named(&self, name: &Path) -> Result<Box<dyn FileWriter>, StorageError> {
         let file_id = FileId::new();
         let fm = MemoryFile {

@@ -20,7 +20,6 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.LowerCircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFlatmap;
 import org.dbsp.util.IndentStream;
-import org.dbsp.util.Utilities;
 
 /** Visitor which emits the circuit nodes in a graphviz file */
 public class ToDotNodesVisitor extends CircuitVisitor {
@@ -133,10 +132,10 @@ public class ToDotNodesVisitor extends CircuitVisitor {
                  "partitioned_rolling_aggregate_with_waterline", "window",
                  "integrate_trace_retain_values" -> " style=filled fillcolor=pink";
             // stateful operators
-            case "distinct",
+            case "distinct", "stream_distinct",
                  // all aggregates require an upsert, which is stateful, even the ones that are linear
                  "aggregate", "partitioned_rolling_aggregate",
-                 "stream_aggregate", "chain_aggregate",
+                 "stream_aggregate", "chain_aggregate", "linear_aggregate",
                  // some joins require integrators
                  "join", "join_flatmap", "asof_join", "join_index", "antijoin",
                  "stream_join", "stream_join_index", "stream_antijoin",

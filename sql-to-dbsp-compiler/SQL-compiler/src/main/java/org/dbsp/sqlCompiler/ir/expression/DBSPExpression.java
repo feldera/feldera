@@ -61,7 +61,7 @@ public abstract class DBSPExpression
         this.type = type;
     }
 
-    public boolean isConstant() {
+    public boolean isCompileTimeConstant() {
         return this.is(IConstructor.class) &&
                 this.to(IConstructor.class).isConstant();
     }
@@ -196,6 +196,13 @@ public abstract class DBSPExpression
         // Computations on decimal values in Rust do not produce the correct result type,
         // so they must be always cast
         return this.cast(to, force, safe);
+    }
+
+    /** Insert a cast which may only change nullability */
+    public DBSPExpression nullabilityCast(DBSPType to, boolean safe) {
+        DBSPType sourceType = this.getType();
+        assert sourceType.sameTypeIgnoringNullability(to);
+        return this.cast(to, safe);
     }
 
     public DBSPExpression applyCloneIfNeeded() {

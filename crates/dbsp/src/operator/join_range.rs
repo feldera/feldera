@@ -17,6 +17,7 @@ where
     ///
     /// This operator is non-incremental, i.e., it joins the pair of batches it
     /// receives at each timestamp ignoring previous inputs.
+    #[track_caller]
     pub fn stream_join_range<I2, RF, JF, It>(
         &self,
         other: &Stream<C, I2>,
@@ -71,6 +72,7 @@ where
     ///
     /// This operator is non-incremental, i.e., it joins the pair of batches it
     /// receives at each timestamp ignoring previous inputs.
+    #[track_caller]
     pub fn stream_join_range_index<I2, K, V, RF, JF, It>(
         &self,
         other: &Stream<C, I2>,
@@ -118,6 +120,7 @@ where
 
     /// Like [`Self::dyn_stream_join_range`], but can return any indexed Z-set
     /// type.
+    #[track_caller]
     pub fn stream_join_range_generic<I2, K, V, RF, JF, It, O>(
         &self,
         other: &Stream<C, I2>,

@@ -52,6 +52,15 @@ public abstract class DBSPBaseTupleExpression
         this.fields = null;
     }
 
+    @Override
+    public boolean isConstant() {
+        if (this.fields == null)
+            return true;
+        for (DBSPExpression field: this.fields)
+            if (!field.isCompileTimeConstant()) return false;
+        return true;
+    }
+
     public boolean isNull() {
         return this.fields == null;
     }

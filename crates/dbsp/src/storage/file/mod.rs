@@ -71,8 +71,10 @@
 #![cfg_attr(not(test), warn(missing_docs))]
 
 use crate::storage::buffer_cache::{FBuf, FBufSerializer};
-#[cfg(doc)]
-use crc32c::crc32c;
+use binrw::binrw;
+use bytemuck::cast_slice;
+use crc32c::{crc32c, crc32c_append};
+use fastbloom::BloomFilter;
 use rkyv::de::deserializers::SharedDeserializeMap;
 use rkyv::{
     ser::{
@@ -98,6 +100,62 @@ use crate::{
     DBData,
 };
 pub use item::{ArchivedItem, Item, ItemFactory, WithItemFactory};
+
+const BLOOM_FILTER_SEED: u128 = 42;
+const BLOOM_FILTER_FALSE_POSITIVE_RATE: f64 = 0.001;
+
+/// Format to store a bloom filter in a file.
+#[binrw]
+#[brw(little)]
+struct BloomFilterState {
+    crc: u32,
+    num_hashes: u32,
+    #[bw(try_calc(u64::try_from(data.len())))]
+    len: u64,
+    #[br(count = len)]
+    data: Vec<u64>,
+}
+
+impl From<&BloomFilter> for BloomFilterState {
+    fn from(bloom_filter: &BloomFilter) -> Self {
+        let bytes: &[u8] = cast_slice(bloom_filter.as_slice());
+        let crc = crc32c(bytes);
+        let crc = crc32c_append(
+            crc,
+            cast_slice(&[bloom_filter.num_hashes() as u64, bytes.len() as u64]),
+        );
+
+        Self {
+            crc,
+            num_hashes: bloom_filter.num_hashes(),
+            data: Vec::from(bloom_filter.as_slice()),
+        }
+    }
+}
+
+impl TryInto<BloomFilter> for BloomFilterState {
+    type Error = std::io::Error;
+
+    fn try_into(self) -> Result<BloomFilter, Self::Error> {
+        let bytes: &[u8] = cast_slice(self.data.as_slice());
+        let crc = crc32c(bytes);
+        let crc = crc32c_append(
+            crc,
+            cast_slice(&[self.num_hashes as u64, bytes.len() as u64]),
+        );
+
+        if self.crc != crc {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "Bloom filter data is corrupted",
+            ));
+        }
+
+        Ok(BloomFilter::from_vec(self.data)
+            .seed(&BLOOM_FILTER_SEED)
+            .hashes(self.num_hashes))
+    }
+}
 
 /// Factory objects used by file reader and writer.
 pub struct Factories<K, A>
@@ -253,10 +311,14 @@ where
 
 #[cfg(test)]
 mod test {
-    use crate::storage::{file::format::Compression, test::init_test_logger};
+    use std::sync::Arc;
+
+    use crate::storage::{
+        backend::StorageBackend, file::format::Compression, test::init_test_logger,
+    };
 
     use super::{
-        cache::default_cache,
+        cache::FileCache,
         reader::{ColumnSpec, RowGroup},
         writer::{Parameters, Writer1, Writer2},
         Factories,
@@ -266,7 +328,9 @@ mod test {
         dynamic::{DynData, Erase},
         DBData,
     };
+    use feldera_types::config::{StorageConfig, StorageOptions};
     use rand::{seq::SliceRandom, thread_rng, Rng};
+    use tempfile::tempdir;
 
     fn for_each_compression_type<F>(parameters: Parameters, f: F)
     where
@@ -516,8 +580,25 @@ mod test {
         let factories0 = Factories::<DynData, DynData>::new::<T::K0, T::A0>();
         let factories1 = Factories::<DynData, DynData>::new::<T::K1, T::A1>();
 
-        let mut layer_file =
-            Writer2::new(&factories0, &factories1, &default_cache(), parameters).unwrap();
+        let cache = Arc::new(FileCache::new(1024 * 1024));
+        let tempdir = tempdir().unwrap();
+        let storage_backend = <dyn StorageBackend>::new(
+            &StorageConfig {
+                path: tempdir.path().to_string_lossy().to_string(),
+                cache: Default::default(),
+            },
+            &StorageOptions::default(),
+        )
+        .unwrap();
+        let mut layer_file = Writer2::new(
+            &factories0,
+            &factories1,
+            cache,
+            &*storage_backend,
+            parameters,
+            T::n0(),
+        )
+        .unwrap();
         let n0 = T::n0();
         for row0 in 0..n0 {
             for row1 in 0..T::n1(row0) {
@@ -614,7 +695,18 @@ mod test {
     {
         for_each_compression_type(parameters, |parameters| {
             let factories = Factories::<DynData, DynData>::new::<K, A>();
-            let mut writer = Writer1::new(&factories, &default_cache(), parameters).unwrap();
+            let cache = Arc::new(FileCache::new(1024 * 1024));
+            let tempdir = tempdir().unwrap();
+            let storage_backend = <dyn StorageBackend>::new(
+                &StorageConfig {
+                    path: tempdir.path().to_string_lossy().to_string(),
+                    cache: Default::default(),
+                },
+                &StorageOptions::default(),
+            )
+            .unwrap();
+            let mut writer =
+                Writer1::new(&factories, cache, &*storage_backend, parameters, n).unwrap();
             for row in 0..n {
                 let (_before, key, _after, aux) = expected(row);
                 writer.write0((&key, &aux)).unwrap();

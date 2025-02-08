@@ -64,14 +64,25 @@ public class BaseSQLTests {
         DBSPCompiler compiler = this.testCompiler();
         this.prepareInputs(compiler);
         compiler.submitStatementsForCompilation(sql);
-        return new CompilerCircuitStream(compiler);
+        return new CompilerCircuitStream(compiler, this);
+    }
+
+    public CompilerCircuitStream getCCS(DBSPCompiler compiler) {
+        return new CompilerCircuitStream(compiler, this);
+    }
+
+    public CompilerCircuit getCC(String sql) {
+        DBSPCompiler compiler = this.testCompiler();
+        this.prepareInputs(compiler);
+        compiler.submitStatementsForCompilation(sql);
+        return new CompilerCircuit(compiler);
     }
 
     public CompilerCircuitStream getCCS(String sql, List<String> inputs, List<String> outputs) {
         DBSPCompiler compiler = this.testCompiler();
         this.prepareInputs(compiler);
         compiler.submitStatementsForCompilation(sql);
-        return new CompilerCircuitStream(compiler, inputs, outputs);
+        return new CompilerCircuitStream(compiler, inputs, outputs, this);
     }
 
     @SuppressWarnings("unused")
@@ -238,7 +249,7 @@ public class BaseSQLTests {
                 ProgramAndTester pt = new ProgramAndTester(test.ccs.circuit, test.createTesterCode(testNumber, rustDirectory));
                 BaseSQLTests.testsExecuted++;
                 // Filter here tests
-                // if (pt.program() != null && !pt.program().toString().contains("join")) continue;
+                // if (pt.program() != null && !pt.program().toString().contains("antijoin")) continue;
                 writer.add(pt);
                 testNumber++;
             }
@@ -270,13 +281,12 @@ public class BaseSQLTests {
             }
             assert firstCompiler != null;
             writer.writeAndClose(firstCompiler);
-            Utilities.compileAndCheckRust(rustDirectory);
+            Utilities.compileAndCheckRust(rustDirectory, true);
         }
         testsToRun.clear();
     }
 
-    public void addRustTestCase(
-            CompilerCircuitStream ccs) {
+    void addRustTestCase(CompilerCircuitStream ccs) {
         ccs.compiler.messages.show(System.err);
         if (ccs.compiler.messages.exitCode != 0)
             throw new RuntimeException("Compilation failed");
@@ -287,17 +297,12 @@ public class BaseSQLTests {
 
     /** Add a test case without inputs */
     public void compileRustTestCase(String statements) {
-        DBSPCompiler compiler = this.testCompiler();
-        compiler.submitStatementsForCompilation(statements);
-        Assert.assertFalse(compiler.hasErrors());
-        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
-        this.addRustTestCase(ccs);
+        this.getCCS(statements);
     }
 
-    protected void addFailingRustTestCase(
-            String name, String message, CompilerCircuitStream ccs) {
+    protected void addFailingRustTestCase(String message, CompilerCircuitStream ccs) {
         ccs.showErrors();
-        TestCase test = new TestCase(name, this.currentTestInformation, ccs, message);
+        TestCase test = new TestCase(this.currentTestInformation, this.currentTestInformation, ccs, message);
         testsToRun.add(test);
     }
 
@@ -340,12 +345,19 @@ public class BaseSQLTests {
         query = "CREATE VIEW V AS " + query;
         DBSPCompiler compiler = this.testCompiler();
         compiler.submitStatementForCompilation(query);
-        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler, data);
-        this.addFailingRustTestCase(query, message, ccs);
+        new CompilerCircuitStream(compiler, data, this, message);
     }
 
     /** Run a test that fails at runtime without needing any inputs */
     protected void runtimeConstantFail(String query, String message) {
         this.runtimeFail(query, message, this.streamWithEmptyChanges());
+    }
+
+    protected CompilerCircuitStream getCCS(DBSPCompiler compiler, InputOutputChangeStream streams) {
+        return new CompilerCircuitStream(compiler, streams, this);
+    }
+
+    protected CompilerCircuitStream getCCSFailing(DBSPCompiler compiler, String message) {
+        return new CompilerCircuitStream(compiler, this, message);
     }
 }

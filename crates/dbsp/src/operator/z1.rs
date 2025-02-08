@@ -15,12 +15,12 @@ use crate::{
         Scope, Stream,
     },
     circuit_cache_key,
-    storage::{checkpoint_path, file::to_bytes, write_commit_metadata},
+    storage::{file::to_bytes, write_commit_metadata},
     Error, NumEntries,
 };
 use size_of::{Context, SizeOf};
+use std::path::Path;
 use std::{borrow::Cow, fs, mem::replace, path::PathBuf};
-use uuid::Uuid;
 
 circuit_cache_key!(DelayedId<C, D>(StreamId => Stream<C, D>));
 circuit_cache_key!(NestedDelayedId<C, D>(StreamId => Stream<C, D>));
@@ -142,6 +142,7 @@ where
     C: Circuit,
 {
     /// Applies [`Z1`] operator to `self`.
+    #[track_caller]
     pub fn delay(&self) -> Stream<C, D>
     where
         D: Checkpoint + Eq + SizeOf + NumEntries + Clone + HasZero + 'static,
@@ -153,6 +154,7 @@ where
             .clone()
     }
 
+    #[track_caller]
     pub fn delay_with_initial_value(&self, initial: D) -> Stream<C, D>
     where
         D: Checkpoint + Eq + SizeOf + NumEntries + Clone + 'static,
@@ -166,6 +168,7 @@ where
     }
 
     /// Applies [`Z1Nested`] operator to `self`.
+    #[track_caller]
     pub fn delay_nested(&self) -> Stream<C, D>
     where
         D: Eq + Clone + HasZero + SizeOf + NumEntries + 'static,
@@ -246,10 +249,8 @@ where
     /// - `cid`: The checkpoint id.
     /// - `persistent_id`: The persistent id that identifies the spine within
     ///   the circuit for a given checkpoint.
-    fn checkpoint_file<P: AsRef<str>>(cid: Uuid, persistent_id: P) -> PathBuf {
-        let mut path = checkpoint_path(cid);
-        path.push(format!("z1-{}.dat", persistent_id.as_ref()));
-        path
+    fn checkpoint_file<P: AsRef<str>>(base: &Path, persistent_id: P) -> PathBuf {
+        base.join(format!("z1-{}.dat", persistent_id.as_ref()))
     }
 }
 
@@ -303,19 +304,19 @@ where
         }
     }
 
-    fn commit<P: AsRef<str>>(&mut self, cid: Uuid, persistent_id: P) -> Result<(), Error> {
+    fn commit(&mut self, base: &Path, persistent_id: &str) -> Result<(), Error> {
         let committed: CommittedZ1 = (self as &Self).try_into()?;
         let as_bytes = to_bytes(&committed).expect("Serializing CommittedZ1 should work.");
         write_commit_metadata(
-            Self::checkpoint_file(cid, persistent_id.as_ref()),
+            Self::checkpoint_file(base, persistent_id),
             as_bytes.as_slice(),
         )?;
 
         Ok(())
     }
 
-    fn restore<P: AsRef<str>>(&mut self, cid: Uuid, persistent_id: P) -> Result<(), Error> {
-        let z1_path = Self::checkpoint_file(cid, &persistent_id);
+    fn restore(&mut self, base: &Path, persistent_id: &str) -> Result<(), Error> {
+        let z1_path = Self::checkpoint_file(base, persistent_id);
         let content = fs::read(z1_path)?;
         let committed = unsafe { rkyv::archived_root::<CommittedZ1>(&content) };
 

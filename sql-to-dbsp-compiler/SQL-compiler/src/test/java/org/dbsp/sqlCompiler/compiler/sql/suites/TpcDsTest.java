@@ -4,7 +4,7 @@ import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.TestUtil;
 import org.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests;
-import org.dbsp.sqlCompiler.compiler.sql.tools.CompilerCircuitStream;
+import org.dbsp.sqlCompiler.compiler.sql.tools.CompilerCircuit;
 import org.junit.Test;
 
 import java.io.IOException;
@@ -27,7 +27,7 @@ public class TpcDsTest extends BaseSQLTests {
         options.languageOptions.lenient = true;
         options.ioOptions.quiet = true;  // lots of warnings
         compiler.submitStatementsForCompilation(tpcds);
-        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
+        CompilerCircuit ccs = new CompilerCircuit(compiler);
         ccs.showErrors();
         // This crashes the Rust compiler!
         // this.addRustTestCase("tpcds", ccs);

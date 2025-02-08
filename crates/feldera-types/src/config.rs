@@ -13,6 +13,7 @@ use crate::transport::http::HttpInputConfig;
 use crate::transport::iceberg::IcebergReaderConfig;
 use crate::transport::kafka::{KafkaInputConfig, KafkaOutputConfig};
 use crate::transport::nexmark::NexmarkInputConfig;
+use crate::transport::postgres::PostgresReaderConfig;
 use crate::transport::pubsub::PubSubInputConfig;
 use crate::transport::s3::S3InputConfig;
 use crate::transport::url::UrlInputConfig;
@@ -71,15 +72,14 @@ pub struct PipelineConfig {
 /// Configuration for persistent storage in a [`PipelineConfig`].
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct StorageConfig {
-    /// The location where the pipeline state is stored or will be stored.
+    /// A directory to keep pipeline state, as a path on the filesystem of the
+    /// machine or container where the pipeline will run.
     ///
-    /// It should point to a path on the file-system of the machine/container
-    /// where the pipeline will run. If that path doesn't exist yet, or if it
-    /// does not contain any checkpoints, then the pipeline creates it and
-    /// starts from an initial state in which no data has yet been received. If
-    /// it does exist, then the pipeline starts from the most recent checkpoint
-    /// that already exists there. In either case, (further) checkpoints will be
-    /// written there.
+    /// When storage is enabled, this directory stores the data for
+    /// [StorageBackendConfig::Default].
+    ///
+    /// When fault tolerance is enabled, this directory stores checkpoints and
+    /// the log.
     pub path: String,
 
     /// How to cache access to storage in this pipeline.
@@ -125,6 +125,73 @@ impl StorageCacheConfig {
     }
 }
 
+/// Storage configuration for a pipeline.
+#[derive(Debug, Clone, Default, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
+#[serde(default)]
+pub struct StorageOptions {
+    /// How to connect to the underlying storage.
+    pub backend: StorageBackendConfig,
+
+    /// The minimum estimated number of bytes in a batch of data to write it to
+    /// storage.  This is provided for debugging and fine-tuning and should
+    /// ordinarily be left unset.
+    ///
+    /// A value of 0 will write even empty batches to storage, and nonzero
+    /// values provide a threshold.  `usize::MAX` would effectively disable
+    /// storage.
+    ///
+    /// The default is 1,048,576 (1 MiB).
+    pub min_storage_bytes: Option<usize>,
+
+    /// The form of compression to use in data batches.
+    ///
+    /// Compression has a CPU cost but it can take better advantage of limited
+    /// NVMe and network bandwidth, which means that it can increase overall
+    /// performance.
+    pub compression: StorageCompression,
+
+    /// The maximum size of the in-memory storage cache, in mebibytes.
+    ///
+    /// The default is 256 MiB, times the number of workers.
+    pub cache_mib: Option<usize>,
+}
+
+/// Backend storage configuration.
+#[derive(Debug, Clone, Default, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
+#[serde(tag = "name", content = "config", rename_all = "snake_case")]
+pub enum StorageBackendConfig {
+    /// Use the default storage configuration.
+    ///
+    /// This currently uses the local file system.
+    #[default]
+    Default,
+
+    /// Use `io_uring` to access the local file system.
+    ///
+    /// This falls back to ordinary access to the local file system if
+    /// `io_uring` is unavailable, as is often the case with cloud container
+    /// systems.
+    IoUring,
+}
+
+/// Storage compression algorithm.
+#[derive(Debug, Copy, Clone, Default, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum StorageCompression {
+    /// Use Feldera's default compression algorithm.
+    ///
+    /// The default may change as Feldera's performance is tuned and new
+    /// algorithms are introduced.
+    #[default]
+    Default,
+
+    /// Do not compress.
+    None,
+
+    /// Use [Snappy](https://en.wikipedia.org/wiki/Snappy_(compression)) compression.
+    Snappy,
+}
+
 /// Global pipeline configuration settings. This is the publicly
 /// exposed type for users to configure pipelines.
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
@@ -133,22 +200,22 @@ pub struct RuntimeConfig {
     /// Number of DBSP worker threads.
     pub workers: u16,
 
-    /// Should storage be enabled for this pipeline?
+    /// Storage configuration.
     ///
-    /// - If `false` (default), the pipeline's state is kept in in-memory
-    ///   data-structures.  This is useful if the pipeline's state will fit in
-    ///   memory and if the pipeline is ephemeral and does not need to be
-    ///   recovered after a restart. The pipeline will most likely run faster
-    ///   since it does not need to access storage.
+    /// - If this is `None`, the default, the pipeline's state is kept in
+    ///   in-memory data-structures.  This is useful if the pipeline's state
+    ///   will fit in memory and if the pipeline is ephemeral and does not need
+    ///   to be recovered after a restart. The pipeline will most likely run
+    ///   faster since it does not need to access storage.
     ///
-    /// - If `true`, the pipeline's state is kept on storage.  This allows the
+    /// - If set, the pipeline's state is kept on storage.  This allows the
     ///   pipeline to work with state that will not fit into memory. It also
     ///   allows the state to be checkpointed and recovered across restarts.
-    ///   This feature is currently experimental.
-    pub storage: bool,
+    #[serde(deserialize_with = "deserialize_storage_options")]
+    pub storage: Option<StorageOptions>,
 
     /// Configures fault tolerance with the specified start up behavior. Fault
-    /// tolerance is disabled if this is `None` or if `storage` is false.
+    /// tolerance is disabled if this or `storage` is `None`.
     #[serde(deserialize_with = "deserialize_fault_tolerance")]
     pub fault_tolerance: Option<FtConfig>,
 
@@ -180,16 +247,6 @@ pub struct RuntimeConfig {
     /// only in Feldera Cloud.
     pub resources: ResourceConfig,
 
-    /// The minimum estimated number of bytes in a batch of data to write it to
-    /// storage.  This is provided for debugging and fine-tuning and should
-    /// ordinarily be left unset. It only has an effect when `storage` is set to
-    /// true.
-    ///
-    /// A value of 0 will write even empty batches to storage, and nonzero
-    /// values provide a threshold.  `usize::MAX` would effectively disable
-    /// storage.
-    pub min_storage_bytes: Option<usize>,
-
     /// Real-time clock resolution in microseconds.
     ///
     /// This parameter controls the execution of queries that use the `NOW()` function.  The output of such
@@ -201,6 +258,55 @@ pub struct RuntimeConfig {
     ///
     /// Set to `null` to disable periodic clock updates.
     pub clock_resolution_usecs: Option<u64>,
+}
+
+/// Accepts "true" and "false" and converts them to the new format.
+fn deserialize_storage_options<'de, D>(deserializer: D) -> Result<Option<StorageOptions>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    struct BoolOrStruct;
+
+    impl<'de> Visitor<'de> for BoolOrStruct {
+        type Value = Option<StorageOptions>;
+
+        fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+            formatter.write_str("boolean or StorageOptions")
+        }
+
+        fn visit_bool<E>(self, v: bool) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            match v {
+                false => Ok(None),
+                true => Ok(Some(StorageOptions::default())),
+            }
+        }
+
+        fn visit_unit<E>(self) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            Ok(None)
+        }
+
+        fn visit_none<E>(self) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            Ok(None)
+        }
+
+        fn visit_map<M>(self, map: M) -> Result<Option<StorageOptions>, M::Error>
+        where
+            M: MapAccess<'de>,
+        {
+            Deserialize::deserialize(de::value::MapAccessDeserializer::new(map)).map(Some)
+        }
+    }
+
+    deserializer.deserialize_any(BoolOrStruct)
 }
 
 /// Accepts old 'initial_state' and 'latest_checkpoint' and converts them to the
@@ -257,7 +363,7 @@ impl Default for RuntimeConfig {
     fn default() -> Self {
         Self {
             workers: 8,
-            storage: false,
+            storage: None,
             fault_tolerance: None,
             cpu_profiler: true,
             tracing: {
@@ -269,7 +375,6 @@ impl Default for RuntimeConfig {
             min_batch_size_records: 0,
             max_buffering_delay_usecs: 0,
             resources: ResourceConfig::default(),
-            min_storage_bytes: None,
             clock_resolution_usecs: {
                 // Every 100 ms.
                 Some(100_000)
@@ -477,6 +582,7 @@ pub enum TransportConfig {
     DeltaTableOutput(DeltaTableWriterConfig),
     // Prevent rust from complaining about large size difference between enum variants.
     IcebergInput(Box<IcebergReaderConfig>),
+    PostgresInput(PostgresReaderConfig),
     Datagen(DatagenInputConfig),
     Nexmark(NexmarkInputConfig),
     /// Direct HTTP input: cannot be instantiated through API
@@ -500,6 +606,7 @@ impl TransportConfig {
             TransportConfig::DeltaTableInput(_) => "delta_table_input".to_string(),
             TransportConfig::DeltaTableOutput(_) => "delta_table_output".to_string(),
             TransportConfig::IcebergInput(_) => "iceberg_input".to_string(),
+            TransportConfig::PostgresInput(_) => "postgres_input".to_string(),
             TransportConfig::Datagen(_) => "datagen".to_string(),
             TransportConfig::Nexmark(_) => "nexmark".to_string(),
             TransportConfig::HttpInput(_) => "http_input".to_string(),

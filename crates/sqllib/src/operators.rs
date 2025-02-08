@@ -4,9 +4,76 @@ use dbsp::algebra::{HasZero, F32, F64};
 use num::PrimInt;
 use num_traits::{CheckedAdd, CheckedDiv, CheckedMul, CheckedSub, ToPrimitive};
 
-use crate::{for_all_compare, for_all_int_operator, some_existing_operator, some_operator};
+use crate::{for_all_int_operator, some_existing_operator, some_operator};
 
 use rust_decimal::Decimal;
+
+macro_rules! for_all_compare {
+    ($func_name: ident, $ret_type: ty, $t:ty where $($bounds:tt)*) => {
+        ::paste::paste! {
+            #[doc(hidden)]
+            #[inline(always)]
+            pub fn [<$func_name __ >]<T: $($bounds)*>( arg0: T, arg1: T ) -> $ret_type {
+                $func_name(arg0, arg1)
+            }
+
+            #[doc(hidden)]
+            #[inline(always)]
+            pub fn [<$func_name _N_ >]<T: $($bounds)*>( arg0: Option<T>, arg1: T ) -> Option<$ret_type> {
+                let arg0 = arg0?;
+                Some([< $func_name __ >](arg0, arg1))
+            }
+
+            #[doc(hidden)]
+            #[inline(always)]
+            pub fn [<$func_name __N >]<T: $($bounds)*>( arg0: T, arg1: Option<T> ) -> Option<$ret_type> {
+                let arg1 = arg1?;
+                Some([< $func_name __ >](arg0, arg1))
+            }
+
+            #[doc(hidden)]
+            #[inline(always)]
+            pub fn [<$func_name _N_N >]<T: $($bounds)*>( arg0: Option<T>, arg1: Option<T> ) -> Option<$ret_type> {
+                let arg0 = arg0?;
+                let arg1 = arg1?;
+                Some([< $func_name __ >](arg0, arg1))
+            }
+        }
+    };
+}
+
+/*
+macro_rules! for_all_compare {
+    ($func_name: ident, $ret_type: ty, $($bounds:tt)*) => {
+        ::paste::paste! {
+            #[doc(hidden)]
+            #[inline(always)]
+            pub fn [<$func_name __ >]<T: $($bounds)*>( arg0: &T, arg1: &T ) -> $ret_type {
+                $func_name(arg0, arg1)
+            }
+
+            #[doc(hidden)]
+            #[inline(always)]
+            pub fn [<$func_name _N_ >]<T: $($bounds)*>( arg0: &Option<T>, arg1: &T ) -> Option<$ret_type> {
+                arg0.as_ref().and_then(|arg0| Some([< $func_name __ >](arg0, arg1)))
+            }
+
+            #[doc(hidden)]
+            #[inline(always)]
+            pub fn [<$func_name __N >]<T: $($bounds)*>( arg0: &T, arg1: &Option<T> ) -> Option<$ret_type> {
+                arg1.as_ref().and_then(|arg1| Some([< $func_name __ >](arg0, arg1)))
+            }
+
+            #[doc(hidden)]
+            #[inline(always)]
+            pub fn [<$func_name _N_N >]<T: $($bounds)*>( arg0: &Option<T>, arg1: &Option<T> ) -> Option<$ret_type> {
+                arg0.as_ref().and_then(|arg0|
+                                       arg1.as_ref().and_then(|arg1| Some([< $func_name __ >](arg0, arg1))))
+            }
+        }
+    };
+}
+*/
 
 #[inline(always)]
 #[doc(hidden)]
@@ -73,6 +140,74 @@ where
 }
 
 for_all_compare!(gte, bool, T where Ord);
+
+/*
+#[inline(always)]
+#[doc(hidden)]
+pub(crate) fn eq<T>(left: &T, right: &T) -> bool
+where
+    T: Eq,
+{
+    left == right
+}
+
+for_all_compare!(eq, bool, Eq);
+
+#[doc(hidden)]
+#[inline(always)]
+pub(crate) fn neq<T>(left: &T, right: &T) -> bool
+where
+    T: Eq,
+{
+    left != right
+}
+
+for_all_compare!(neq, bool, Eq);
+
+#[doc(hidden)]
+#[inline(always)]
+pub(crate) fn lt<T>(left: &T, right: &T) -> bool
+where
+    T: Ord,
+{
+    left < right
+}
+
+for_all_compare!(lt, bool, Ord);
+
+#[doc(hidden)]
+#[inline(always)]
+pub(crate) fn gt<T>(left: &T, right: &T) -> bool
+where
+    T: Ord,
+{
+    left > right
+}
+
+for_all_compare!(gt, bool, Ord);
+
+#[doc(hidden)]
+#[inline(always)]
+pub(crate) fn lte<T>(left: &T, right: &T) -> bool
+where
+    T: Ord,
+{
+    left <= right
+}
+
+for_all_compare!(lte, bool, Ord);
+
+#[doc(hidden)]
+#[inline(always)]
+pub(crate) fn gte<T>(left: &T, right: &T) -> bool
+where
+    T: Ord,
+{
+    left >= right
+}
+
+for_all_compare!(gte, bool, Ord);
+*/
 
 #[doc(hidden)]
 #[inline(always)]
@@ -339,6 +474,30 @@ where
 }
 
 for_all_compare!(min, T, T where Ord);
+
+/*
+#[inline(always)]
+#[doc(hidden)]
+fn max<T>(left: &T, right: &T) -> T
+where
+    T: Ord + Clone,
+{
+    left.max(right).clone()
+}
+
+for_all_compare!(max, T, Ord + Clone);
+
+#[inline(always)]
+#[doc(hidden)]
+fn min<T>(left: &T, right: &T) -> T
+where
+    T: Ord + Clone,
+{
+    left.min(right).clone()
+}
+
+for_all_compare!(min, T, Ord + Clone);
+*/
 
 pub fn blackbox<T>(value: T) -> T {
     value

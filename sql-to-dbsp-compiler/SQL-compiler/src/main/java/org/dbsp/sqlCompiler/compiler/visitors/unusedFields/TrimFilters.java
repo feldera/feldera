@@ -42,15 +42,15 @@ public class TrimFilters extends CircuitCloneWithGraphsVisitor {
             DBSPParameter filterParam = filterFunction.parameters[0];
             FindUnusedFields mapFinder = new FindUnusedFields(this.compiler);
             mapFinder.findUnusedFields(mapFunction);
-            if (mapFinder.foundUnusedFields()) {
+            if (mapFinder.foundUnusedFields(2)) {
                 FieldUseMap mapUsed = mapFinder.parameterFieldMap.get(mapParam);
 
                 FindUnusedFields filterFinder = new FindUnusedFields(this.compiler);
                 filterFinder.findUnusedFields(filterFunction);
-                if (filterFinder.foundUnusedFields()) {
+                if (filterFinder.foundUnusedFields(2)) {
                     FieldUseMap filterUsed = filterFinder.parameterFieldMap.get(filterParam);
                     FieldUseMap reduced = mapUsed.reduce(filterUsed);
-                    if (reduced.hasUnusedFields()) {
+                    if (reduced.hasUnusedFields(2)) {
                         filterFinder.setParameterUseMap(filterParam, reduced);
                         RewriteFields filterRewriter = filterFinder.getFieldRewriter(1);
                         DBSPClosureExpression newFilterFunc = filterRewriter.apply(filterFunction)

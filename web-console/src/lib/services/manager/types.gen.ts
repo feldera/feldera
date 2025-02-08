@@ -1257,33 +1257,8 @@ export type PipelineConfig = {
    * Defaults to 0.
    */
   min_batch_size_records?: number
-  /**
-   * The minimum estimated number of bytes in a batch of data to write it to
-   * storage.  This is provided for debugging and fine-tuning and should
-   * ordinarily be left unset. It only has an effect when `storage` is set to
-   * true.
-   *
-   * A value of 0 will write even empty batches to storage, and nonzero
-   * values provide a threshold.  `usize::MAX` would effectively disable
-   * storage.
-   */
-  min_storage_bytes?: number | null
   resources?: ResourceConfig
-  /**
-   * Should storage be enabled for this pipeline?
-   *
-   * - If `false` (default), the pipeline's state is kept in in-memory
-   * data-structures.  This is useful if the pipeline's state will fit in
-   * memory and if the pipeline is ephemeral and does not need to be
-   * recovered after a restart. The pipeline will most likely run faster
-   * since it does not need to access storage.
-   *
-   * - If `true`, the pipeline's state is kept on storage.  This allows the
-   * pipeline to work with state that will not fit into memory. It also
-   * allows the state to be checkpointed and recovered across restarts.
-   * This feature is currently experimental.
-   */
-  storage?: boolean
+  storage?: StorageOptions | null
   /**
    * Enable pipeline tracing.
    */
@@ -1831,33 +1806,8 @@ export type RuntimeConfig = {
    * Defaults to 0.
    */
   min_batch_size_records?: number
-  /**
-   * The minimum estimated number of bytes in a batch of data to write it to
-   * storage.  This is provided for debugging and fine-tuning and should
-   * ordinarily be left unset. It only has an effect when `storage` is set to
-   * true.
-   *
-   * A value of 0 will write even empty batches to storage, and nonzero
-   * values provide a threshold.  `usize::MAX` would effectively disable
-   * storage.
-   */
-  min_storage_bytes?: number | null
   resources?: ResourceConfig
-  /**
-   * Should storage be enabled for this pipeline?
-   *
-   * - If `false` (default), the pipeline's state is kept in in-memory
-   * data-structures.  This is useful if the pipeline's state will fit in
-   * memory and if the pipeline is ephemeral and does not need to be
-   * recovered after a restart. The pipeline will most likely run faster
-   * since it does not need to access storage.
-   *
-   * - If `true`, the pipeline's state is kept on storage.  This allows the
-   * pipeline to work with state that will not fit into memory. It also
-   * allows the state to be checkpointed and recovered across restarts.
-   * This feature is currently experimental.
-   */
-  storage?: boolean
+  storage?: StorageOptions | null
   /**
    * Enable pipeline tracing.
    */
@@ -1989,9 +1939,31 @@ export type SqlType =
   | 'Variant'
 
 /**
+ * Backend storage configuration.
+ */
+export type StorageBackendConfig =
+  | {
+      config: 'default'
+      name: 'config'
+    }
+  | {
+      config: 'io_uring'
+      name: 'config'
+    }
+
+export type config = 'default'
+
+export type name = 'config'
+
+/**
  * How to cache access to storage within a Feldera pipeline.
  */
 export type StorageCacheConfig = 'page_cache' | 'feldera_cache'
+
+/**
+ * Storage compression algorithm.
+ */
+export type StorageCompression = 'default' | 'none' | 'snappy'
 
 /**
  * Configuration for persistent storage in a [`PipelineConfig`].
@@ -1999,17 +1971,42 @@ export type StorageCacheConfig = 'page_cache' | 'feldera_cache'
 export type StorageConfig = {
   cache?: StorageCacheConfig
   /**
-   * The location where the pipeline state is stored or will be stored.
+   * A directory to keep pipeline state, as a path on the filesystem of the
+   * machine or container where the pipeline will run.
    *
-   * It should point to a path on the file-system of the machine/container
-   * where the pipeline will run. If that path doesn't exist yet, or if it
-   * does not contain any checkpoints, then the pipeline creates it and
-   * starts from an initial state in which no data has yet been received. If
-   * it does exist, then the pipeline starts from the most recent checkpoint
-   * that already exists there. In either case, (further) checkpoints will be
-   * written there.
+   * When storage is enabled, this directory stores the data for
+   * [StorageBackendConfig::Default].
+   *
+   * When fault tolerance is enabled, this directory stores checkpoints and
+   * the log.
    */
   path: string
+}
+
+/**
+ * Storage configuration for a pipeline.
+ */
+export type StorageOptions = {
+  backend?: StorageBackendConfig
+  /**
+   * The maximum size of the in-memory storage cache, in mebibytes.
+   *
+   * The default is 256 MiB, times the number of workers.
+   */
+  cache_mib?: number | null
+  compression?: StorageCompression
+  /**
+   * The minimum estimated number of bytes in a batch of data to write it to
+   * storage.  This is provided for debugging and fine-tuning and should
+   * ordinarily be left unset.
+   *
+   * A value of 0 will write even empty batches to storage, and nonzero
+   * values provide a threshold.  `usize::MAX` would effectively disable
+   * storage.
+   *
+   * The default is 1,048,576 (1 MiB).
+   */
+  min_storage_bytes?: number | null
 }
 
 /**
@@ -2078,7 +2075,7 @@ export type TransportConfig =
       name: 'ad_hoc_input'
     }
 
-export type name = 'file_input'
+export type name2 = 'file_input'
 
 /**
  * Configuration for reading data from an HTTP or HTTPS URL with

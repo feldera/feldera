@@ -4,7 +4,7 @@ use arrow::array::{
 };
 use arrow::datatypes::{DataType, Schema, TimeUnit};
 use dbsp::utils::Tup2;
-use feldera_sqllib::{ByteArray, Date, Time, Timestamp, Uuid, Variant, F32, F64};
+use feldera_sqllib::{ByteArray, Date, SqlString, Time, Timestamp, Uuid, Variant, F32, F64};
 use feldera_types::program_schema::{ColumnType, Field, Relation, SqlIdentifier};
 use feldera_types::{
     deserialize_table_record, deserialize_without_context, serialize_struct, serialize_table_record,
@@ -885,10 +885,11 @@ impl Arbitrary for DeltaTestStruct {
                         string_struct_map,
                         variant: Variant::Map(
                             std::iter::once((
-                                (Variant::String("foo".to_string())),
-                                Variant::String(variant.to_string()),
+                                (Variant::String(SqlString::from_ref("foo"))),
+                                Variant::String(SqlString::from(variant.to_string())),
                             ))
-                            .collect(),
+                            .collect::<BTreeMap<Variant, Variant>>()
+                            .into(),
                         ),
                         uuid: Uuid::from_bytes(uuid),
                     }

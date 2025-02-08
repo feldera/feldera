@@ -13,12 +13,14 @@ use crate::db::types::program::{CompilationProfile, ProgramConfig};
 use crate::db::types::tenant::TenantId;
 use crate::db::types::utils::{validate_program_config, validate_program_info};
 use crate::db::types::version::Version;
+use chrono::{DateTime, Utc};
 use indoc::formatdoc;
 use log::{debug, error, info, trace, warn};
 use openssl::sha;
 use openssl::sha::sha256;
+use std::collections::{BTreeMap, HashSet};
 use std::path::Path;
-use std::time::Instant;
+use std::time::{Instant, SystemTime};
 use std::{process::Stdio, sync::Arc};
 use tokio::{
     fs,
@@ -47,7 +49,16 @@ const POLL_ERROR_INTERVAL: Duration = Duration::from_secs(30);
 const COMPILATION_CHECK_INTERVAL: Duration = Duration::from_millis(250);
 
 /// The frequency at which Rust cleanup is performed.
-const CLEANUP_INTERVAL: Duration = Duration::from_secs(60);
+const CLEANUP_INTERVAL: Duration = Duration::from_secs(30);
+
+/// Minimum time between when the Rust cleanup has detected a project with a certain source checksum
+/// to be no longer used until it is actually cleaned up. It is a minimum, as cleanup both happens
+/// at an interval, and as well is interchanged with compilation which can take a significant amount
+/// of time. Note that if the cleanup mechanism is unable to write its state file, the retention might
+/// be shorter than this under specific circumstances (e.g., a checksum is cleaned up but not written
+/// it's cleaned up, and subsequently a pipeline is created with the checksum and immediately deleted,
+/// resulting in the old retention expiration timestamp being used when cleanup then occurs).
+const CLEANUP_RETENTION: Duration = Duration::from_secs(900);
 
 /// Rust compilation task that wakes up periodically.
 /// Sleeps inbetween ticks which affects the response time of Rust compilation.
@@ -921,7 +932,7 @@ fn decide_cleanup(
     name: &str,
     project_separator: char,
     remainder_separator: Option<(bool, char)>,
-    keep_checksums: &[String],
+    deletion: &[String],
 ) -> CleanupDecision {
     // Name must start with "project<project_separator>" (e.g. "project-", "project_")
     // Remainder is for example: "project-0123456789.abcdef" -> "0123456789.abcdef"
@@ -947,11 +958,13 @@ fn decide_cleanup(
         }
     };
 
-    // Final decision whether to keep or not is whether the checksum can be found
-    if keep_checksums.contains(&checksum.to_string()) {
-        CleanupDecision::Keep
-    } else {
+    // Final decision whether to keep or not is determined whether it is marked for deletion
+    if deletion.contains(&checksum.to_string()) {
         CleanupDecision::Remove
+    } else {
+        CleanupDecision::Keep {
+            motivation: checksum.to_string(),
+        }
     }
 }
 
@@ -963,6 +976,34 @@ async fn cleanup_rust_compilation(
     db: Arc<Mutex<StoragePostgres>>,
 ) -> Result<(), RustCompilationCleanupError> {
     trace!("Performing Rust cleanup...");
+
+    // Location of the cleanup state file
+    let cleanup_state_file_path = config
+        .working_dir()
+        .join("rust-compilation")
+        .join("cleanup_state.json");
+
+    // Attempt to read cleanup state from file.
+    // If it fails, an error is written to log and the cleanup state is wiped.
+    // The wipe means that all retention expirations will be reset.
+    let mut cleanup_state: BTreeMap<String, SystemTime> =
+        match read_file_content(&cleanup_state_file_path).await {
+            Ok(content) => serde_json::from_str(&content).unwrap_or_else(|e| {
+                error!("Unable to deserialize cleanup state due to: {e}");
+                BTreeMap::new()
+            }),
+            Err(e) => {
+                if !cleanup_state_file_path.exists() {
+                    debug!(
+                        "Cleanup state file does not yet exist -- \
+                        it will be created at the end of the first cleanup cycle"
+                    );
+                } else {
+                    error!("Unable to read cleanup state file due to: {e}");
+                }
+                BTreeMap::new()
+            }
+        };
 
     // (1) Retrieve existing pipeline programs
     //     (pipeline_id, program_version, program_binary_source_checksum, program_binary_integrity_checksum)
@@ -979,11 +1020,36 @@ async fn cleanup_rust_compilation(
         .collect();
     existing_source_checksums.dedup();
 
+    // Current timestamp at which the cleanup takes place
+    let current_timestamp = SystemTime::now();
+
+    // Remove any source checksum which exists again
+    for checksum in &existing_source_checksums {
+        if cleanup_state.remove(checksum).is_some() {
+            debug!("Rust compilation cleanup: source checksum {checksum} exists again")
+        }
+    }
+
+    // The ones that have been marked longer ago than the retention period will be deleted
+    let mut deletion = HashSet::<String>::new();
+    for (checksum, expiration) in cleanup_state.iter() {
+        if current_timestamp
+            .duration_since(*expiration)
+            .is_ok_and(|duration| duration >= CLEANUP_RETENTION)
+        {
+            deletion.insert(checksum.clone());
+            debug!("Rust compilation cleanup: retention for source checksum {} has expired -- marked for deletion", checksum);
+        }
+    }
+    let deletion: Vec<String> = deletion.into_iter().collect();
+
+    // All found source checksums during the decisions, which is used later to update the cleanup state
+    let mut found = Vec::<String>::new();
+
     // Decision when named "project-<checksum>"
-    let existing_source_checksums_clone = existing_source_checksums.clone();
-    let decide_cleanup_dash_exact = Arc::new(move |name: &str| {
-        decide_cleanup(name, '-', None, &existing_source_checksums_clone)
-    });
+    let deletion_clone = deletion.clone();
+    let decide_cleanup_dash_exact =
+        Arc::new(move |name: &str| decide_cleanup(name, '-', None, &deletion_clone));
 
     // (2) Clean up binaries
     let binaries_dir = config
@@ -991,13 +1057,15 @@ async fn cleanup_rust_compilation(
         .join("rust-compilation")
         .join("binaries");
     if binaries_dir.is_dir() {
-        cleanup_specific_files(
-            "Rust compilation binaries",
-            &binaries_dir,
-            decide_cleanup_dash_exact.clone(),
-            true,
-        )
-        .await?;
+        found.append(
+            &mut cleanup_specific_files(
+                "Rust compilation binaries",
+                &binaries_dir,
+                decide_cleanup_dash_exact.clone(),
+                true,
+            )
+            .await?,
+        );
     }
 
     // (3) Clean up project directories
@@ -1006,13 +1074,15 @@ async fn cleanup_rust_compilation(
         .join("rust-compilation")
         .join("projects");
     if projects_dir.is_dir() {
-        cleanup_specific_directories(
-            "Rust compilation projects",
-            &projects_dir,
-            decide_cleanup_dash_exact.clone(),
-            true,
-        )
-        .await?;
+        found.append(
+            &mut cleanup_specific_directories(
+                "Rust compilation projects",
+                &projects_dir,
+                decide_cleanup_dash_exact.clone(),
+                true,
+            )
+            .await?,
+        );
     }
 
     // (4) For each possible compilation profile, clean up their target artifacts
@@ -1029,65 +1099,57 @@ async fn cleanup_rust_compilation(
             .join(target_profile_folder);
         if target_subdir.is_dir() {
             // target/<folder>: "project-<source-checksum>.<other>" or else "project-<source-checksum>"
-            let existing_source_checksums_clone = existing_source_checksums.clone();
-            cleanup_specific_files(
-                &format!("Rust compilation target {target_profile_folder}"),
-                &target_subdir,
-                Arc::new(move |name: &str| {
-                    decide_cleanup(
-                        name,
-                        '-',
-                        Some((false, '.')),
-                        &existing_source_checksums_clone,
-                    )
-                }),
-                false,
-            )
-            .await?;
+            let deletion_clone = deletion.clone();
+            found.append(
+                &mut cleanup_specific_files(
+                    &format!("Rust compilation target {target_profile_folder}"),
+                    &target_subdir,
+                    Arc::new(move |name: &str| {
+                        decide_cleanup(name, '-', Some((false, '.')), &deletion_clone)
+                    }),
+                    false,
+                )
+                .await?,
+            );
 
             // target/<folder>/deps: "project_<source-checksum>-<other>"
             let deps_dir = target_subdir.join("deps");
             if deps_dir.is_dir() {
-                let existing_source_checksums_clone = existing_source_checksums.clone();
-                cleanup_specific_files(
-                    &format!("Rust compilation target {target_profile_folder} deps"),
-                    &deps_dir,
-                    Arc::new(move |name: &str| {
-                        decide_cleanup(
-                            name,
-                            '_',
-                            Some((true, '-')),
-                            &existing_source_checksums_clone,
-                        )
-                    }),
-                    false,
-                )
-                .await?;
+                let deletion_clone = deletion.clone();
+                found.append(
+                    &mut cleanup_specific_files(
+                        &format!("Rust compilation target {target_profile_folder} deps"),
+                        &deps_dir,
+                        Arc::new(move |name: &str| {
+                            decide_cleanup(name, '_', Some((true, '-')), &deletion_clone)
+                        }),
+                        false,
+                    )
+                    .await?,
+                );
             }
 
             // target/<folder>/.fingerprint: "project-<source-checksum>-<other>"
             let fingerprint_dir = target_subdir.join(".fingerprint");
             if fingerprint_dir.is_dir() {
-                let existing_source_checksums_clone = existing_source_checksums.clone();
-                cleanup_specific_directories(
-                    &format!("Rust compilation target {target_profile_folder} .fingerprint"),
-                    &fingerprint_dir,
-                    Arc::new(move |name: &str| {
-                        decide_cleanup(
-                            name,
-                            '-',
-                            Some((true, '-')),
-                            &existing_source_checksums_clone,
-                        )
-                    }),
-                    false,
-                )
-                .await?;
+                let deletion_clone = deletion.clone();
+                found.append(
+                    &mut cleanup_specific_directories(
+                        &format!("Rust compilation target {target_profile_folder} .fingerprint"),
+                        &fingerprint_dir,
+                        Arc::new(move |name: &str| {
+                            decide_cleanup(name, '-', Some((true, '-')), &deletion_clone)
+                        }),
+                        false,
+                    )
+                    .await?,
+                );
             }
         }
     }
 
     // (5) Clean up pipeline binaries
+    //     These are not subject to the retention period.
     let pipeline_binaries_dir = config
         .working_dir()
         .join("rust-compilation")
@@ -1103,7 +1165,9 @@ async fn cleanup_rust_compilation(
             Arc::new(move |filename: &str| {
                 if filename.starts_with("pipeline_") {
                     if valid_pipeline_binary_filenames.contains(&filename.to_string()) {
-                        CleanupDecision::Keep
+                        CleanupDecision::Keep {
+                            motivation: filename.to_string(),
+                        }
                     } else {
                         CleanupDecision::Remove
                     }
@@ -1114,6 +1178,41 @@ async fn cleanup_rust_compilation(
             true,
         )
         .await?;
+    }
+
+    // Any checksum that was found which:
+    // (1) is not an existing source checksum
+    // (2) AND is not already in the cleanup state
+    // ... will be added to the cleanup state.
+    let found = HashSet::<String>::from_iter(found.into_iter());
+    for checksum in found.iter() {
+        if !existing_source_checksums.contains(checksum) && !cleanup_state.contains_key(checksum) {
+            let expiration_datetime: DateTime<Utc> = (current_timestamp + CLEANUP_RETENTION).into();
+            debug!(
+                "Rust compilation cleanup: source checksum {} will be deleted some time after retention expires (currently: {})",
+                checksum,
+                expiration_datetime.format("%Y-%m-%d %H:%M:%S")
+            );
+            cleanup_state.insert(checksum.clone(), current_timestamp);
+        }
+    }
+
+    // Remove any checksum in the cleanup state which is no longer found
+    for checksum in cleanup_state.clone().keys() {
+        if !found.contains(checksum) {
+            cleanup_state.remove(checksum);
+        }
+    }
+
+    // Attempt to write cleanup state to file.
+    // If it fails, an error is written to log and the cleanup state changes will be lost.
+    // The changes being lost means that new retention expirations are not set, and old ones remain.
+    match serde_json::to_string(&cleanup_state) {
+        Ok(s) => match recreate_file_with_content(&cleanup_state_file_path, &s).await {
+            Ok(()) => {}
+            Err(e) => error!("Unable to write cleanup state to file due to: {e}"),
+        },
+        Err(e) => error!("Unable to serialize cleanup state due to: {e}"),
     }
 
     Ok(())
@@ -1358,28 +1457,37 @@ mod test {
     #[tokio::test]
     #[rustfmt::skip]
     async fn cleanup_decision_helper() {
-        for (i, (name, project_separator, remainder_separator, keep_checksums, expected)) in [
+        for (i, (name, project_separator, remainder_separator, deletion, expected)) in [
             // No remainder separator
-            ("example", '-', None, vec![], CleanupDecision::Ignore), // does not start with "example"
-            ("project-a", '-', None, vec![], CleanupDecision::Remove),
-            ("project-a", '-', None, vec!["a".to_string()], CleanupDecision::Keep),
-            ("project-a_b", '-', None, vec!["a".to_string()], CleanupDecision::Remove), // "a_b" is not in checksums to keep
-            ("project-a_b", '-', None, vec!["a_b".to_string()], CleanupDecision::Keep),
+            ("example", '-', None, vec![], CleanupDecision::Ignore),
+            ("example", '-', None, vec!["a".to_string()], CleanupDecision::Ignore),
+            ("project-a", '-', None, vec![], CleanupDecision::Keep { motivation: "a".to_string() }),
+            ("project-a", '-', None, vec!["a".to_string()], CleanupDecision::Remove),
+            ("project-a_b", '-', None, vec![], CleanupDecision::Keep { motivation: "a_b".to_string() }),
+            ("project-a_b", '-', None, vec!["a".to_string()], CleanupDecision::Keep { motivation: "a_b".to_string() }),
+            ("project-a_b", '-', None, vec!["b".to_string()], CleanupDecision::Keep { motivation: "a_b".to_string() }),
+            ("project-a_b", '-', None, vec!["a_b".to_string()], CleanupDecision::Remove),
             // Optional remainder separator
             ("example", '-', Some((false, '_')), vec![], CleanupDecision::Ignore),
-            ("project-a", '-', Some((false, '_')), vec![], CleanupDecision::Remove),
-            ("project-a", '-', Some((false, '_')), vec!["a".to_string()], CleanupDecision::Keep),
-            ("project-a_b", '-', Some((false, '_')), vec!["a".to_string()], CleanupDecision::Keep),
-            ("project-a_b", '-', Some((false, '_')), vec!["a_b".to_string()], CleanupDecision::Remove), // "a" is not in checksums to keep
+            ("example", '-', Some((false, '_')), vec!["a".to_string()], CleanupDecision::Ignore),
+            ("project-a", '-', Some((false, '_')), vec![], CleanupDecision::Keep { motivation: "a".to_string() }),
+            ("project-a", '-', Some((false, '_')), vec!["a".to_string()], CleanupDecision::Remove),
+            ("project-a_b", '-', Some((false, '_')), vec![], CleanupDecision::Keep { motivation: "a".to_string() }),
+            ("project-a_b", '-', Some((false, '_')), vec!["a".to_string()], CleanupDecision::Remove),
+            ("project-a_b", '-', Some((false, '_')), vec!["b".to_string()], CleanupDecision::Keep { motivation: "a".to_string() }),
+            ("project-a_b", '-', Some((false, '_')), vec!["a_b".to_string()], CleanupDecision::Keep { motivation: "a".to_string() }),
             // Mandatory remainder separator
             ("example", '-', Some((true, '_')), vec![], CleanupDecision::Ignore),
+            ("example", '-', Some((true, '_')), vec!["a".to_string()], CleanupDecision::Ignore),
             ("project-a", '-', Some((true, '_')), vec![], CleanupDecision::Ignore),
             ("project-a", '-', Some((true, '_')), vec!["a".to_string()], CleanupDecision::Ignore),
-            ("project-a_b", '-', Some((true, '_')), vec!["a".to_string()], CleanupDecision::Keep),
-            ("project-a_b", '-', Some((true, '_')), vec!["a_b".to_string()], CleanupDecision::Remove), // "a" is not in checksums to keep
+            ("project-a_b", '-', Some((true, '_')), vec![], CleanupDecision::Keep { motivation: "a".to_string() }),
+            ("project-a_b", '-', Some((true, '_')), vec!["a".to_string()], CleanupDecision::Remove),
+            ("project-a_b", '-', Some((true, '_')), vec!["b".to_string()], CleanupDecision::Keep { motivation: "a".to_string() }),
+            ("project-a_b", '-', Some((true, '_')), vec!["a_b".to_string()], CleanupDecision::Keep { motivation: "a".to_string() }),
         ].iter().enumerate() {
             assert_eq!(
-                decide_cleanup(name, *project_separator, *remainder_separator, keep_checksums),
+                decide_cleanup(name, *project_separator, *remainder_separator, deletion),
                 *expected,
                 "test case {i} (zero-based index) fails"
             );

@@ -199,7 +199,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         this.compileInternal(
                 """
                 CREATE TABLE NOW(now TIMESTAMP NOT NULL LATENESS INTERVAL 0 SECONDS);
-                CREATE TABLE ERROR_TABLE(table_or_view_name VARCHAR NOT NULL, message VARCHAR NOT NULL, metadata VARIANT NOT NULL);
+                CREATE TABLE ERROR_TABLE(table_or_view_name VARCHAR NOT NULL, message VARCHAR NOT NULL, metadata VARCHAR NOT NULL);
                 CREATE VIEW ERROR_VIEW AS SELECT * FROM ERROR_TABLE;
                 """,
                 true, false);

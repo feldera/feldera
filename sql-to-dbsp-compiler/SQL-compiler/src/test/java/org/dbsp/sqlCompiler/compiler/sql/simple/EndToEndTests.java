@@ -29,7 +29,6 @@ import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests;
 import org.dbsp.sqlCompiler.compiler.sql.tools.Change;
-import org.dbsp.sqlCompiler.compiler.sql.tools.CompilerCircuitStream;
 import org.dbsp.sqlCompiler.compiler.sql.tools.InputOutputChange;
 import org.dbsp.sqlCompiler.compiler.sql.tools.InputOutputChangeStream;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
@@ -44,7 +43,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI64Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPNullLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
-import org.dbsp.sqlCompiler.ir.expression.DBSPVecExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPArrayExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
@@ -82,8 +81,7 @@ public class EndToEndTests extends BaseSQLTests {
     void testQueryBase(String query, InputOutputChangeStream streams) {
         query = "CREATE VIEW V AS " + query;
         DBSPCompiler compiler = this.compileQuery(query);
-        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler, streams);
-        this.addRustTestCase(ccs);
+        this.getCCS(compiler, streams);
     }
 
     public void invokeTestQueryBase(String query, InputOutputChangeStream streams) {
@@ -231,6 +229,15 @@ public class EndToEndTests extends BaseSQLTests {
     public void overSumTest() {
         String query = "SELECT T.COL1, SUM(T.COL2) OVER (ORDER BY T.COL1 RANGE UNBOUNDED PRECEDING) FROM T";
         DBSPExpression t = new DBSPTupleExpression(new DBSPI32Literal(10), new DBSPDoubleLiteral(13.0));
+        this.testQuery(query, new DBSPZSetExpression(t, t));
+    }
+
+
+    @Test
+    public void overAvgTest() {
+        String query = "SELECT T.COL1, AVG(T.COL6) OVER (ORDER BY T.COL1 RANGE UNBOUNDED PRECEDING) FROM T";
+        DBSPExpression t = new DBSPTupleExpression(
+                new DBSPI32Literal(10), new DBSPDecimalLiteral(0, true));
         this.testQuery(query, new DBSPZSetExpression(t, t));
     }
 
@@ -1006,7 +1013,7 @@ public class EndToEndTests extends BaseSQLTests {
     public void orderbyTest() {
         String query = "SELECT * FROM T ORDER BY T.COL2";
         this.testQuery(query, new DBSPZSetExpression(
-                new DBSPVecExpression(E1, E0)
+                new DBSPArrayExpression(E1, E0)
         ));
     }
 
@@ -1014,7 +1021,15 @@ public class EndToEndTests extends BaseSQLTests {
     public void limitTest() {
         String query = "SELECT * FROM T ORDER BY T.COL2 LIMIT 1";
         this.testQuery(query, new DBSPZSetExpression(
-                new DBSPVecExpression(E1)
+                new DBSPArrayExpression(E1)
+        ));
+    }
+
+    @Test
+    public void limitTest2() {
+        String query = "SELECT * FROM T ORDER BY T.COL2 LIMIT 3";
+        this.testQuery(query, new DBSPZSetExpression(
+                new DBSPArrayExpression(E1, E0)
         ));
     }
 
@@ -1032,7 +1047,7 @@ public class EndToEndTests extends BaseSQLTests {
     public void orderbyDescendingTest() {
         String query = "SELECT * FROM T ORDER BY T.COL2 DESC";
         this.testQuery(query, new DBSPZSetExpression(
-                new DBSPVecExpression(E0, E1)
+                new DBSPArrayExpression(E0, E1)
         ));
     }
 
@@ -1040,7 +1055,7 @@ public class EndToEndTests extends BaseSQLTests {
     public void orderby2Test() {
         String query = "SELECT * FROM T ORDER BY T.COL2, T.COL1";
         this.testQuery(query, new DBSPZSetExpression(
-                new DBSPVecExpression(E1, E0)
+                new DBSPArrayExpression(E1, E0)
         ));
     }
 }

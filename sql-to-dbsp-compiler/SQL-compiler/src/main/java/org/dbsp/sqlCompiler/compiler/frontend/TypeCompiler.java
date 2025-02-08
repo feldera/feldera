@@ -47,7 +47,7 @@ import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeMap;
-import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeVec;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeArray;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBinary;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
@@ -88,9 +88,9 @@ public class TypeCompiler implements ICompilerComponent {
         return new DBSPTypeIndexedZSet(elementType.getNode(), keyType, elementType);
     }
 
-    public static DBSPTypeIndexedZSet makeIndexedZSet(DBSPTypeRawTuple kvtype) {
-        assert kvtype.size() == 2;
-        return new DBSPTypeIndexedZSet(kvtype.getNode(), kvtype.tupFields[0], kvtype.tupFields[1]);
+    public static DBSPTypeIndexedZSet makeIndexedZSet(DBSPTypeRawTuple kvType) {
+        assert kvType.size() == 2;
+        return new DBSPTypeIndexedZSet(kvType.getNode(), kvType.tupFields[0], kvType.tupFields[1]);
     }
 
     /**
@@ -320,7 +320,7 @@ public class TypeCompiler implements ICompilerComponent {
                 case ARRAY: {
                     RelDataType ct = Objects.requireNonNull(dt.getComponentType());
                     DBSPType elementType = this.convertType(ct, asStruct);
-                    return new DBSPTypeVec(elementType, dt.isNullable());
+                    return new DBSPTypeArray(elementType, dt.isNullable());
                 }
                 case UNKNOWN:
                 case ANY:

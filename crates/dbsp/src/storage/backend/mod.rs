@@ -1,7 +1,7 @@
 //! Storage backend APIs for Feldera.
 //!
-//! This module provides the [`Storage`] trait that need to be implemented by a
-//! storage backend.
+//! This module provides the [`StorageBackend`] trait that need to be
+//! implemented by a storage backend.
 //!
 //! A file transitions from being created to being written to, to being read
 //! to (eventually) deleted.
@@ -9,13 +9,17 @@
 //! The API also prevents reading from a file that is not completed.
 #![warn(missing_docs)]
 
-use feldera_types::config::StorageCacheConfig;
+use crate::storage::buffer_cache::FBuf;
+use feldera_types::config::{
+    StorageBackendConfig, StorageCacheConfig, StorageConfig, StorageOptions,
+};
 use serde::{ser::SerializeStruct, Serialize, Serializer};
 use std::{
     fmt::Display,
     fs::OpenOptions,
     io::ErrorKind,
     path::{Path, PathBuf},
+    rc::Rc,
     sync::{
         atomic::{AtomicU64, Ordering},
         Arc, LazyLock,
@@ -23,10 +27,8 @@ use std::{
 };
 use tempfile::TempDir;
 use thiserror::Error;
-use tracing::{trace, warn};
+use tracing::warn;
 use uuid::Uuid;
-
-use crate::storage::buffer_cache::FBuf;
 
 #[cfg(target_os = "linux")]
 pub mod io_uring_impl;
@@ -69,6 +71,13 @@ pub enum StorageError {
     /// Unknown checkpoint specified in configuration.
     #[error("Couldn't find the specified checkpoint ({0:?}).")]
     CheckpointNotFound(Uuid),
+
+    /// Cannot perform operation because storage is not enabled.
+    #[error("Cannot perform operation because storage is not enabled.")]
+    StorageDisabled,
+    /// Error while creating a bloom filter.
+    #[error("Failed to serialize/deserialize bloom filter.")]
+    BloomFilter,
 }
 
 impl From<std::io::Error> for StorageError {
@@ -142,8 +151,8 @@ pub trait FileReader: Send + Sync + HasFileId {
     ///
     /// This is used to prevent the file from being deleted when it is dropped.
     /// This is only useful for files obtained via [FileWriter::complete],
-    /// because files that were opened with [Storage::open] are never deleted on
-    /// drop.
+    /// because files that were opened with [StorageBackend::open] are never
+    /// deleted on drop.
     fn mark_for_checkpoint(&self);
 
     /// Reads data at `location` from the file.  If successful, the result will
@@ -156,7 +165,7 @@ pub trait FileReader: Send + Sync + HasFileId {
 }
 
 /// A storage backend.
-pub trait Storage {
+pub trait StorageBackend {
     /// Create a new file with the given `name`, which is relative to the
     /// backend's base directory.
     fn create_named(&self, name: &Path) -> Result<Box<dyn FileWriter>, StorageError>;
@@ -181,9 +190,6 @@ pub trait Storage {
     fn open(&self, name: &Path) -> Result<Arc<dyn FileReader>, StorageError>;
 }
 
-/// A dynamically chosen storage engine.
-pub type Backend = Box<dyn Storage>;
-
 /// Returns a per-thread temporary directory.
 pub fn tempdir_for_thread() -> PathBuf {
     thread_local! {
@@ -192,42 +198,61 @@ pub fn tempdir_for_thread() -> PathBuf {
     TEMPDIR.with(|dir| dir.path().to_path_buf())
 }
 
-/// Create and returns a backend of the default kind.
-pub fn new_default_backend(tempdir: PathBuf, cache: StorageCacheConfig) -> Backend {
-    trace!("new_default_backend: dir={:?}", tempdir);
+impl dyn StorageBackend {
+    /// Creates and returns a new backend configured according to `config` and `options`.
+    pub fn new(config: &StorageConfig, options: &StorageOptions) -> Result<Rc<Self>, StorageError> {
+        Self::warn_about_tmpfs(config.path());
 
-    #[cfg(target_os = "linux")]
-    {
-        use nix::sys::statfs::{statfs, TMPFS_MAGIC};
-        if let Ok(s) = statfs(&tempdir) {
-            if s.filesystem_type() == TMPFS_MAGIC {
-                static ONCE: std::sync::Once = std::sync::Once::new();
-                ONCE.call_once(|| {
-                    warn!("initializing storage on in-memory tmpfs filesystem at {}; consider configuring physical storage",
-                          tempdir.to_string_lossy())
-                });
-            }
+        match &options.backend {
+            StorageBackendConfig::Default => Ok(Self::new_default(config)),
+            StorageBackendConfig::IoUring => Ok(Self::new_iouring(config)),
         }
     }
 
-    #[cfg(target_os = "linux")]
-    if std::env::var("FELDERA_USE_IO_URING").is_ok_and(|s| s != "0") {
-        match io_uring_impl::IoUringBackend::new(&tempdir, cache) {
-            Ok(backend) => return Box::new(backend),
+    fn is_tmpfs(_path: &Path) -> bool {
+        #[cfg(target_os = "linux")]
+        {
+            use nix::sys::statfs;
+            statfs::statfs(_path).is_ok_and(|s| s.filesystem_type() == statfs::TMPFS_MAGIC)
+        }
+
+        #[cfg(not(target_os = "linux"))]
+        false
+    }
+
+    fn warn_about_tmpfs(path: &Path) {
+        if Self::is_tmpfs(path) {
+            static ONCE: std::sync::Once = std::sync::Once::new();
+            ONCE.call_once(|| {
+                warn!("initializing storage on in-memory tmpfs filesystem at {}; consider configuring physical storage", path.display())
+            });
+        }
+    }
+
+    fn new_default(config: &StorageConfig) -> Rc<Self> {
+        Rc::new(posixio_impl::PosixBackend::new(config.path(), config.cache))
+    }
+
+    fn new_iouring(config: &StorageConfig) -> Rc<Self> {
+        static ONCE: std::sync::Once = std::sync::Once::new();
+
+        #[cfg(target_os = "linux")]
+        match io_uring_impl::IoUringBackend::new(config.path(), config.cache) {
+            Ok(backend) => return Rc::new(backend),
             Err(error) => {
-                static ONCE: std::sync::Once = std::sync::Once::new();
                 ONCE.call_once(|| {
                     warn!("could not initialize io_uring backend ({error}), falling back to POSIX I/O")
                 });
             }
         }
-    } else {
-        tracing::info!(
-            "io_uring backend disabled by default (set FELDERA_USE_IO_URING=1 to enable"
-        );
-    }
 
-    Box::new(posixio_impl::PosixBackend::new(tempdir, cache))
+        #[cfg(not(target_os = "linux"))]
+        ONCE.call_once(|| {
+            warn!("io_uring backend not supported on this operating system, falling back to POSIX I/O")
+        });
+
+        Self::new_default(config)
+    }
 }
 
 trait StorageCacheFlags {

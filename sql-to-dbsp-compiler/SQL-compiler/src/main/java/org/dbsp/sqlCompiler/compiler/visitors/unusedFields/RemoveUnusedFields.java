@@ -3,6 +3,7 @@ package org.dbsp.sqlCompiler.compiler.visitors.unusedFields;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.circuit.annotation.IsProjection;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinBaseOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinFilterMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
@@ -47,7 +48,11 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
         this.find = new FindUnusedFields(compiler);
     }
 
-    DBSPMapIndexOperator getProjection(CalciteObject node, FieldUseMap fieldMap, OutputPort input) {
+    OutputPort getProjection(CalciteObject node, FieldUseMap fieldMap, OutputPort input) {
+        OutputPort source = this.mapped(input);
+        if (!fieldMap.hasUnusedFields())
+            return source;
+
         DBSPType inputType = input.getOutputIndexedZSetType().getKVRefType();
         DBSPVariablePath var = inputType.var();
         List<DBSPExpression> resultFields = Linq.map(fieldMap.deref().getUsedFields(),
@@ -57,10 +62,9 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
                 new DBSPTupleExpression(resultFields, false));
         DBSPClosureExpression projection = raw.closure(var);
 
-        OutputPort source = this.mapped(input);
         DBSPMapIndexOperator map = new DBSPMapIndexOperator(node, projection, source);
         this.addOperator(map);
-        return map;
+        return map.outputPort();
     }
 
     boolean processJoin(DBSPJoinBaseOperator join) {
@@ -74,17 +78,17 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
         RewriteFields rw = this.find.getFieldRewriter(1);
         FieldUseMap leftRemap = rw.getUseMap(left);
         FieldUseMap rightRemap = rw.getUseMap(right);
-        if (!leftRemap.hasUnusedFields() && !rightRemap.hasUnusedFields())
+        if (!leftRemap.hasUnusedFields(1) && !rightRemap.hasUnusedFields(1))
             return false;
 
-        DBSPSimpleOperator leftMap = getProjection(join.getNode(), leftRemap, join.left());
-        DBSPSimpleOperator rightMap = getProjection(join.getNode(), rightRemap, join.right());
+        OutputPort leftMap = getProjection(join.getNode(), leftRemap, join.left());
+        OutputPort rightMap = getProjection(join.getNode(), rightRemap, join.right());
 
         // Parameter 0 is not fields in the body of the function, leave it unchanged
         rw.parameterFullyUsed(joinFunction.parameters[0]);
         DBSPClosureExpression newJoinFunction = rw.rewriteClosure(joinFunction);
         DBSPSimpleOperator replacement =
-                join.withFunctionAndInputs(newJoinFunction, leftMap.outputPort(), rightMap.outputPort());
+                join.withFunctionAndInputs(newJoinFunction, leftMap, rightMap);
         this.map(join, replacement);
         return true;
     }
@@ -118,6 +122,13 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
     }
 
     @Override
+    public void postorder(DBSPJoinFilterMapOperator join) {
+        boolean done = this.processJoin(join);
+        if (!done)
+            super.postorder(join);
+    }
+
+    @Override
     public void postorder(DBSPMapOperator operator) {
         if (operator.hasAnnotation(a -> a.is(IsProjection.class))
             || !operator.getFunction().is(DBSPClosureExpression.class)) {
@@ -129,7 +140,7 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
         DBSPClosureExpression closure = operator.getClosureFunction();
         assert closure.parameters.length == 1;
         closure = this.find.findUnusedFields(closure);
-        if (!this.find.foundUnusedFields()) {
+        if (!this.find.foundUnusedFields(1)) {
             super.postorder(operator);
             return;
         }
@@ -189,7 +200,7 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
         DBSPClosureExpression closure = operator.getClosureFunction();
         assert closure.parameters.length == 1;
         closure = this.find.findUnusedFields(closure);
-        if (!this.find.foundUnusedFields()) {
+        if (!this.find.foundUnusedFields(1)) {
             super.postorder(operator);
             return;
         }

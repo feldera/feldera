@@ -98,6 +98,7 @@ pub fn input_transport_config_to_endpoint(
         | TransportConfig::KafkaOutput(_)
         | TransportConfig::DeltaTableInput(_)
         | TransportConfig::DeltaTableOutput(_)
+        | TransportConfig::PostgresInput(_)
         | TransportConfig::HttpOutput
         | TransportConfig::IcebergInput(_) => return Ok(None),
     };

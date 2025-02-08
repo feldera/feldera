@@ -10,9 +10,14 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
+import org.dbsp.util.Utilities;
 import org.junit.Assert;
 import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
+import org.junit.Ignore;
 import org.junit.Test;
+
+import java.io.File;
+import java.io.IOException;
 
 /** Regression tests that failed in incremental mode using the Catalog API */
 public class IncrementalRegressionTests extends SqlIoTest {
@@ -23,6 +28,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
         // options.ioOptions.emitHandles = false;
         // Without the following ORDER BY causes failures
         options.languageOptions.ignoreOrderBy = true;
+        options.ioOptions.verbosity = 0;
         return new DBSPCompiler(options);
     }
 
@@ -162,7 +168,6 @@ public class IncrementalRegressionTests extends SqlIoTest {
                 FROM purchase
                 GROUP BY TIMESTAMP_TRUNC(ts, DAY);""";
         var ccs = this.getCCS(sql);
-        this.addRustTestCase(ccs);
         ccs.step("""
                 -- Waterline is now 2020-01-01\s
                 INSERT INTO purchase VALUES('2020-01-01 00:00:01', 10);
@@ -195,7 +200,6 @@ public class IncrementalRegressionTests extends SqlIoTest {
                 from t
                 where x = 5 and ts > now();""";
         var ccs = this.getCCS(sql);
-        this.addRustTestCase(ccs);
         CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
             int window = 0;
 
@@ -209,7 +213,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
                 Assert.assertEquals(1, this.window);
             }
         };
-        visitor.apply(ccs.circuit);
+        ccs.visit(visitor);
     }
 
     @Test
@@ -243,7 +247,6 @@ public class IncrementalRegressionTests extends SqlIoTest {
                     v
                 GROUP BY lts;""";
         var ccs = this.getCCS(sql);
-        this.addRustTestCase(ccs);
         CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
             int integrateTraceKeys = 0;
             int integrateTraceValues = 0;
@@ -264,7 +267,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
                 Assert.assertEquals(1, this.integrateTraceValues);
             }
         };
-        visitor.apply(ccs.circuit);
+        ccs.visit(visitor);
     }
 
     @Test
@@ -342,7 +345,6 @@ public class IncrementalRegressionTests extends SqlIoTest {
                   customer_id | red_amd | green_amt | total_amt | weight
                  --------------------------------------------------------
                             0 |       0 |         1 |         1 | 1""");
-        this.addRustTestCase(ccs);
     }
 
     @Test
@@ -387,7 +389,6 @@ public class IncrementalRegressionTests extends SqlIoTest {
                  ts | state | weight
                 ---------------------
                     | WA| 1""");
-        this.addRustTestCase(ccs);
     }
 
     @Test
@@ -429,7 +430,6 @@ public class IncrementalRegressionTests extends SqlIoTest {
                 create view V2 as
                 select SUM(5) from v group by ts;""";
         CompilerCircuitStream ccs = this.getCCS(sql);
-        this.addRustTestCase(ccs);
         CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
             int integrateTraceKeys = 0;
             int integrateTraceValues = 0;
@@ -466,8 +466,8 @@ public class IncrementalRegressionTests extends SqlIoTest {
                 Assert.assertEquals(0, this.unsafeBoolCasts);
             }
         };
-        visitor.apply(ccs.circuit);
-        findBoolCasts.getCircuitVisitor(false).apply(ccs.circuit);
+        ccs.visit(visitor);
+        ccs.visit(findBoolCasts.getCircuitVisitor(false));
     }
 
     @Test
@@ -624,5 +624,26 @@ public class IncrementalRegressionTests extends SqlIoTest {
                 WHERE c.c_id = a.cust_array[(ARRAY_LENGTH(a.cust_array) / 2) + 1];
                 """;
         this.compileRustTestCase(sql);
+    }
+
+    // Tests that are not in the repository
+    @Test @Ignore
+    public void extraTests() throws IOException {
+        // this.showFinalVerbose(4);
+        String dir = "../extra";
+        File file = new File(dir);
+        if (file.exists()) {
+            File[] toCompile = file.listFiles();
+            if (toCompile == null)
+                return;
+            for (File c: toCompile) {
+                if (c.getName().contains("sql")) {
+                    System.out.println("Compiling " + c);
+                    String sql = Utilities.readFile(c.getPath());
+                    this.compileRustTestCase(sql);
+                    // this.getCC(sql);
+                }
+            }
+        }
     }
 }

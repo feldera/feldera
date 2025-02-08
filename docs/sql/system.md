@@ -19,7 +19,7 @@ given by the following (illegal) SQL declaration:
 CREATE VIEW ERROR_VIEW(
    table_or_view_name VARCHAR NOT NULL,
    message VARCHAR NOT NULL,
-   metadata VARIANT NOT NULL
+   metadata VARCHAR NOT NULL
 );
 ```
 

@@ -160,7 +160,7 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs, 
                     .appendSupplier(this::toString)
                     .append(" replacing inputs of ")
                     .increase()
-                    .appendSupplier(() -> operator.toString())
+                    .appendSupplier(operator::toString)
                     .append(":")
                     .joinSupplier(", ", () -> Linq.map(operator.inputs, OutputPort::toString))
                     .newline()

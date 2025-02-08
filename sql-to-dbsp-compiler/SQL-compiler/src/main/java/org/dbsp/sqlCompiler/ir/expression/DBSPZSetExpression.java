@@ -13,7 +13,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBaseType;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeMap;
-import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeVec;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeArray;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
@@ -39,7 +39,7 @@ public final class DBSPZSetExpression extends DBSPExpression
     }
 
     public boolean isConstant() {
-        return Linq.all(this.data.keySet(), DBSPExpression::isConstant);
+        return Linq.all(this.data.keySet(), DBSPExpression::isCompileTimeConstant);
     }
 
     /**
@@ -139,14 +139,14 @@ public final class DBSPZSetExpression extends DBSPExpression
     public DBSPExpression castRecursive(DBSPExpression expression, DBSPType type) {
         if (type.is(DBSPTypeBaseType.class)) {
             return expression.cast(type, false);
-        } else if (type.is(DBSPTypeVec.class)) {
-            DBSPTypeVec vec = type.to(DBSPTypeVec.class);
-            DBSPVecExpression vecLit = expression.to(DBSPVecExpression.class);
+        } else if (type.is(DBSPTypeArray.class)) {
+            DBSPTypeArray vec = type.to(DBSPTypeArray.class);
+            DBSPArrayExpression vecLit = expression.to(DBSPArrayExpression.class);
             if (vecLit.data == null) {
-                return new DBSPVecExpression(type, type.mayBeNull);
+                return new DBSPArrayExpression(type, type.mayBeNull);
             }
             List<DBSPExpression> fields = Linq.map(vecLit.data, e -> castRecursive(e, vec.getElementType()));
-            return new DBSPVecExpression(expression.getNode(), type, fields);
+            return new DBSPArrayExpression(expression.getNode(), type, fields);
         } else if (type.is(DBSPTypeTupleBase.class)) {
             DBSPTypeTupleBase tuple = type.to(DBSPTypeTupleBase.class);
             DBSPExpression[] fields = new DBSPExpression[tuple.size()];

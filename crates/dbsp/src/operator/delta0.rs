@@ -18,6 +18,7 @@ where
     /// operator.
     ///
     /// See [`Delta0`] operator documentation.
+    #[track_caller]
     pub fn delta0<CC>(&self, subcircuit: &CC) -> Stream<CC, D>
     where
         CC: Circuit<Parent = C>,
@@ -30,6 +31,7 @@ where
 
     /// Like [`Self::delta0`], but overrides the ownership
     /// preference on the input stream with `input_preference`.
+    #[track_caller]
     pub fn delta0_with_preference<CC>(
         &self,
         subcircuit: &CC,

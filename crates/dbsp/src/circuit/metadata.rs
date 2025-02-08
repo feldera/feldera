@@ -7,6 +7,8 @@ use std::{
     time::Duration,
 };
 
+use crate::storage::buffer_cache::CacheCounts;
+
 /// Attribute that represents the total number of bytes used by a stateful
 /// operator. This includes bytes used to store the actual state, but not the
 /// excess pre-allocated capacity available inside operator's internal data
@@ -26,6 +28,12 @@ pub const SHARED_BYTES_LABEL: &str = "shared bytes";
 /// Attribute that represents the number of entries stored by a stateful
 /// operator, e.g., the number of entries in a trace.
 pub const NUM_ENTRIES_LABEL: &str = "total size";
+
+/// The number of input tuples ingested by the operator.
+pub const NUM_INPUTS: &str = "inputs";
+
+/// The number of output tuples ingested by the operator.
+pub const NUM_OUTPUTS: &str = "outputs";
 
 /// An operator's location within the source program
 pub type OperatorLocation = Option<&'static Location<'static>>;
@@ -147,6 +155,8 @@ pub enum MetaItem {
         denominator: u64,
     },
 
+    CacheCounts(CacheCounts),
+
     String(String),
     Array(Vec<Self>),
     Map(OperatorMeta),
@@ -171,6 +181,23 @@ impl MetaItem {
                     write!(output, "{percent:.02}%")
                 } else {
                     write!(output, "(undefined)")
+                }
+            }
+            Self::CacheCounts(CacheCounts {
+                count,
+                bytes,
+                elapsed,
+            }) => {
+                if *count > 0 {
+                    write!(
+                        output,
+                        "{count} ({}) over {:.1} s ({} ns/op)",
+                        HumanBytes::new(*bytes),
+                        elapsed.as_secs_f64(),
+                        elapsed.as_nanos() / *count as u128
+                    )
+                } else {
+                    write!(output, "none")
                 }
             }
             Self::String(string) => output.write_str(string),
@@ -209,6 +236,7 @@ impl MetaItem {
             self,
             MetaItem::Count(_)
                 | MetaItem::Bytes(_)
+                | MetaItem::CacheCounts(..)
                 | MetaItem::Duration(_)
                 | MetaItem::Percent { .. }
         )
@@ -233,6 +261,7 @@ impl MetaItem {
             (Self::Bytes(a), Self::Bytes(b)) => Some(Self::Bytes(HumanBytes {
                 bytes: a.bytes + b.bytes,
             })),
+            (Self::CacheCounts(a), Self::CacheCounts(b)) => Some(Self::CacheCounts(*a + *b)),
             (Self::Duration(a), Self::Duration(b)) => Some(Self::Duration(a.saturating_add(*b))),
             _ => None,
         }

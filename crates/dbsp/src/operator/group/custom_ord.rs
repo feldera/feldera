@@ -134,8 +134,8 @@ where
         }
     }
 
-    pub fn get(&self) -> T {
-        self.val.clone()
+    pub fn get(&self) -> &T {
+        &self.val
     }
 }
 

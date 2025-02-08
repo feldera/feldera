@@ -3,6 +3,7 @@ package org.dbsp.sqlCompiler.compiler.visitors.unusedFields;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.InputColumnMetadata;
@@ -21,6 +22,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.Passes;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.Repeat;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 import org.dbsp.util.Utilities;
 
 import java.util.ArrayList;
@@ -56,12 +58,14 @@ public class UnusedFields extends Passes {
     }
 
     static class FindUnusedInputFields extends CircuitWithGraphsVisitor {
+        final Map<DBSPSourceMultisetOperator, FindUnusedFields> finders;
         final Map<DBSPSourceMultisetOperator, FieldUseMap> fieldsUsed;
         final Map<DBSPSourceMultisetOperator, DBSPMapOperator> successor;
 
         public FindUnusedInputFields(DBSPCompiler compiler, CircuitGraphs graphs) {
             super(compiler, graphs);
             this.fieldsUsed = new HashMap<>();
+            this.finders = new HashMap<>();
             this.successor = new HashMap<>();
         }
 
@@ -78,11 +82,12 @@ public class UnusedFields extends Passes {
                 assert function.parameters.length == 1;
                 unused.apply(function.ensureTree(this.compiler));
 
-                if (unused.foundUnusedFields() && !src.metadata.materialized) {
+                if (unused.foundUnusedFields(1) && !src.metadata.materialized) {
                     FieldUseMap map = unused.parameterFieldMap.get(function.parameters[0]).deref();
+                    Utilities.putNew(this.finders, src, unused);
                     Utilities.putNew(this.fieldsUsed, src, map);
 
-                    if (map.hasUnusedFields()) {
+                    if (map.hasUnusedFields(1)) {
                         for (int i = 0; i < map.size(); i++) {
                             if (!map.isUsed(i)) {
                                 InputColumnMetadata meta = src.metadata.getColumnMetadata(i);
@@ -115,14 +120,13 @@ public class UnusedFields extends Passes {
                 return;
             }
 
-            FieldUseMap used = data.fieldsUsed.get(source);
+            FieldUseMap used = this.data.fieldsUsed.get(source);
             if (used == null) {
                 super.postorder(source);
                 return;
             }
-            assert used.hasUnusedFields();
+            assert used.hasUnusedFields(1);
 
-            DBSPMapOperator map = this.data.successor.get(source);
             List<InputColumnMetadata> remainingColumns = new ArrayList<>();
             List<DBSPTypeStruct.Field> fields = new ArrayList<>();
             Iterator<ProgramIdentifier> fieldNames = source.originalRowType.getFieldNames();
@@ -144,8 +148,9 @@ public class UnusedFields extends Passes {
                     remainingColumns, source.metadata.getForeignKeys(),
                     source.metadata.materialized, source.metadata.isStreaming());
             DBSPSourceMultisetOperator replacement = new DBSPSourceMultisetOperator(
-                    source.getNode(), source.sourceName, map.getOutputZSetType(), newType,
+                    source.getNode(), source.sourceName, new DBSPTypeZSet(newType.toTuple()), newType,
                     metadata, source.tableName, source.comment);
+            this.addOperator(replacement);
             Utilities.putNew(this.replacement, source, replacement);
         }
 
@@ -158,13 +163,17 @@ public class UnusedFields extends Passes {
             }
 
             DBSPSourceMultisetOperator src = originalSource.node().to(DBSPSourceMultisetOperator.class);
-            DBSPSourceMultisetOperator result = this.replacement.get(src);
-            if (result == null) {
+            DBSPSourceMultisetOperator newSource = this.replacement.get(src);
+            if (newSource == null) {
                 super.postorder(map);
                 return;
             }
 
-            // This map follows an input that has been trimmed: replace with the trimmed input.
+            FindUnusedFields finder = this.data.finders.get(src);
+            RewriteFields rw = finder.getFieldRewriter(1);
+            DBSPClosureExpression newMap = rw.rewriteClosure(map.getClosureFunction());
+            DBSPSimpleOperator result = new DBSPMapOperator(map.getNode(), newMap, newSource.outputPort());
+
             this.map(map, result);
         }
     }

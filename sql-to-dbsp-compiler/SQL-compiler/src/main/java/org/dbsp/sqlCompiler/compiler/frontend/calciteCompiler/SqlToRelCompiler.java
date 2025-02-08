@@ -1276,7 +1276,7 @@ public class SqlToRelCompiler implements IWritesLogs {
 
         final Map<ProgramIdentifier, DeclareViewStatement> declaredViews;
         final java.util.function.Function<ProgramIdentifier, ProgramIdentifier> getInputName;
-        List<CallAndChild> stack = new ArrayList<>();
+        final List<CallAndChild> stack = new ArrayList<>();
 
         ReplaceRecursiveViews(HashMap<ProgramIdentifier, DeclareViewStatement> declaredViews,
                               java.util.function.Function<ProgramIdentifier, ProgramIdentifier> getInputName) {

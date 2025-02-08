@@ -40,8 +40,8 @@ public final class DBSPMapExpression extends DBSPExpression implements ISameValu
     }
 
     public boolean isConstant() {
-        return (this.keys == null || Linq.all(this.keys, DBSPExpression::isConstant)) &&
-                (this.values == null || Linq.all(this.values, DBSPExpression::isConstant));
+        return (this.keys == null || Linq.all(this.keys, DBSPExpression::isCompileTimeConstant)) &&
+                (this.values == null || Linq.all(this.values, DBSPExpression::isCompileTimeConstant));
     }
 
     public static List<DBSPExpression> getValues(List<DBSPExpression> data) {

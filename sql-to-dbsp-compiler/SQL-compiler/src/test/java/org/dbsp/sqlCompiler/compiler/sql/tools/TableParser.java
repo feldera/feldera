@@ -22,13 +22,13 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPRealLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimeLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimestampLiteral;
-import org.dbsp.sqlCompiler.ir.expression.DBSPVecExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPArrayExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPUuidLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
-import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeVec;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeArray;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
@@ -288,11 +288,11 @@ public class TableParser {
                         throw new RuntimeException("Cannot parse boolean value " + Utilities.singleQuote(trimmed));
                     yield new DBSPBoolLiteral(CalciteObject.EMPTY, fieldType, isTrue);
                 }
-                case VEC -> {
-                    DBSPTypeVec vec = fieldType.to(DBSPTypeVec.class);
+                case ARRAY -> {
+                    DBSPTypeArray vec = fieldType.to(DBSPTypeArray.class);
                     // TODO: this does not handle nested arrays
                     if (trimmed.equals("NULL")) {
-                        yield new DBSPVecExpression(fieldType, true);
+                        yield new DBSPArrayExpression(fieldType, true);
                     } else {
                         if (!trimmed.startsWith("{") || !trimmed.endsWith("}"))
                             throw new UnimplementedException("Expected array constant to be bracketed: " + trimmed);
@@ -303,10 +303,10 @@ public class TableParser {
                             DBSPExpression[] fields;
                             fields = Linq.map(
                                     parts, p -> parseValue(vec.getElementType(), p), DBSPExpression.class);
-                            yield new DBSPVecExpression(fieldType.mayBeNull, fields);
+                            yield new DBSPArrayExpression(fieldType.mayBeNull, fields);
                         } else {
                             // empty vector
-                            yield new DBSPVecExpression(vec, false);
+                            yield new DBSPArrayExpression(vec, false);
                         }
                     }
                 }

@@ -3,6 +3,7 @@ package org.dbsp.sqlCompiler.compiler.sql.streaming;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWaterlineOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
 import org.dbsp.sqlCompiler.compiler.sql.StreamingTestBase;
+import org.dbsp.sqlCompiler.compiler.sql.tools.CompilerCircuit;
 import org.dbsp.sqlCompiler.compiler.sql.tools.CompilerCircuitStream;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.junit.Assert;
@@ -20,7 +21,6 @@ public class InternalNowTests extends StreamingTestBase {
                          c | compare | weight
                         ----------------------
                          1 | true    | 1""");
-        this.addRustTestCase(ccs);
     }
 
     @Test
@@ -39,8 +39,8 @@ public class InternalNowTests extends StreamingTestBase {
                 FROM transactions
                 WHERE tim >= (now() - INTERVAL 1 DAY)
                 GROUP BY usr;""";
-        CompilerCircuitStream ccs = this.getCCS(sql);
-        CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
+        CompilerCircuit cc = this.getCC(sql);
+        CircuitVisitor visitor = new CircuitVisitor(cc.compiler) {
             int window = 0;
             int waterline = 0;
 
@@ -60,6 +60,6 @@ public class InternalNowTests extends StreamingTestBase {
                 Assert.assertEquals(1, this.waterline);
             }
         };
-        visitor.apply(ccs.circuit);
+        cc.visit(visitor);
     }
 }

@@ -41,16 +41,6 @@ public final class DBSPCastExpression extends DBSPExpression {
 
     public DBSPCastExpression(CalciteObject node, DBSPExpression source, DBSPType to, boolean safe) {
         super(node, to);
-        /*
-        if (!source.getType().hasCopy() &&
-                !source.is(DBSPCloneExpression.class) &&
-                !source.is(DBSPVariablePath.class) &&
-                !source.is(IConstructor.class) &&
-                !source.is(DBSPApplyExpression.class) &&
-                !source.is(DBSPApplyMethodExpression.class) &&
-                !to.is(DBSPTypeVariant.class))
-            throw new RuntimeException("Casting non-cloned value");
-         */
         this.source = source;
         this.safe = safe;
         assert !safe || to.mayBeNull;

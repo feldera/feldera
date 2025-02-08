@@ -52,7 +52,7 @@ public class MultiViewTests extends BaseSQLTests {
         compiler.submitStatementForCompilation(query1);
         compiler.submitStatementForCompilation(query2);
 
-        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
+        CompilerCircuitStream ccs = this.getCCS(compiler);
         Change inputChange = EndToEndTests.createInput();
         Change outputChange = new Change(
                 new DBSPZSetExpression(
@@ -62,7 +62,6 @@ public class MultiViewTests extends BaseSQLTests {
                         new DBSPTupleExpression(new DBSPDoubleLiteral(12.0)),
                         new DBSPTupleExpression(new DBSPDoubleLiteral(1.0))));
         ccs.addPair(inputChange, outputChange);
-        this.addRustTestCase(ccs);
     }
 
     /**
@@ -77,7 +76,7 @@ public class MultiViewTests extends BaseSQLTests {
         compiler.submitStatementForCompilation(EndToEndTests.E2E_TABLE);
         compiler.submitStatementForCompilation(query1);
         compiler.submitStatementForCompilation(query2);
-        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
+        CompilerCircuitStream ccs = this.getCCS(compiler);
 
         InputOutputChange change = new InputOutputChange(
                 EndToEndTests.createInput(),
@@ -89,7 +88,6 @@ public class MultiViewTests extends BaseSQLTests {
                                 new DBSPTupleExpression(new DBSPBoolLiteral(false))))
         );
         ccs.addChange(change);
-        this.addRustTestCase(ccs);
     }
 
     /**
@@ -105,7 +103,7 @@ public class MultiViewTests extends BaseSQLTests {
         compiler.submitStatementForCompilation(query1);
         compiler.submitStatementForCompilation(query2);
 
-        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
+        CompilerCircuitStream ccs = this.getCCS(compiler);
         InputOutputChange change = new InputOutputChange(
                 EndToEndTests.createInput(),
                 new Change(new DBSPZSetExpression(
@@ -115,6 +113,5 @@ public class MultiViewTests extends BaseSQLTests {
                                 new DBSPTupleExpression(new DBSPI32Literal(10))))
         );
         ccs.addChange(change);
-        this.addRustTestCase(ccs);
     }
 }

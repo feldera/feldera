@@ -34,6 +34,7 @@
 
 use crate::circuit::metadata::{MetaItem, OperatorMeta};
 use crate::dynamic::{ClonableTrait, DynDataTyped, DynUnit, Weight};
+use crate::storage::buffer_cache::CacheStats;
 pub use crate::storage::file::{Deserializable, Deserializer, Rkyv, Serializer};
 use crate::time::Antichain;
 use crate::{dynamic::ArchivedDBData, storage::buffer_cache::FBuf};
@@ -68,7 +69,6 @@ pub use ord::{
 };
 
 use rkyv::{archived_root, de::deserializers::SharedDeserializeMap, Deserialize};
-use uuid::Uuid;
 
 use crate::{
     algebra::MonoidValue,
@@ -313,10 +313,10 @@ pub trait Trace: BatchReader {
 
     fn key_filter(&self) -> &Option<Filter<Self::Key>>;
     fn value_filter(&self) -> &Option<Filter<Self::Val>>;
-    fn commit<P: AsRef<str>>(&mut self, _cid: Uuid, _pid: P) -> Result<(), Error> {
+    fn commit(&mut self, _base: &Path, _pid: &str) -> Result<(), Error> {
         Ok(())
     }
-    fn restore<P: AsRef<str>>(&mut self, _cid: Uuid, _pid: P) -> Result<(), Error> {
+    fn restore(&mut self, _base: &Path, _pid: &str) -> Result<(), Error> {
         Ok(())
     }
 
@@ -409,6 +409,13 @@ where
         BatchLocation::Memory
     }
 
+    /// Storage cache access statistics for this batch only.
+    ///
+    /// Most batches are in-memory, so they don't have any statistics.
+    fn cache_stats(&self) -> CacheStats {
+        CacheStats::default()
+    }
+
     /// True if the batch is empty.
     fn is_empty(&self) -> bool {
         self.len() == 0
@@ -420,6 +427,12 @@ where
     /// All times in the batch are not greater or equal to any element of
     /// `upper`.
     fn upper(&self) -> AntichainRef<'_, Self::Time>;
+
+    /// A method that returns either true (possibly in the batch) or false
+    /// (definitely not in the batch).
+    fn maybe_contains_key(&self, _key: &Self::Key) -> bool {
+        true
+    }
 
     /// Returns a uniform random sample of distincts keys from the batch.
     ///

@@ -47,7 +47,7 @@ public class DBSPVariantExpression extends DBSPExpression implements ISameValue 
     }
 
     public boolean isConstant() {
-        return this.isSqlNull || this.value == null || this.value.isConstant();
+        return this.isSqlNull || this.value == null || this.value.isCompileTimeConstant();
     }
 
     @Override

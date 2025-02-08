@@ -111,8 +111,8 @@ Copy the declaration from `stubs.rs` to `udf.rs` and replace its body with the a
 use feldera_sqllib::*;
 use base64::prelude::*;
 
-pub fn base64(s: Option<ByteArray>) -> Result<Option<String>, Box<dyn std::error::Error>> {
-    Ok(s.map(|v| BASE64_STANDARD.encode(v.as_slice())))
+pub fn base64(s: Option<ByteArray>) -> Result<Option<SqlString>, Box<dyn std::error::Error>> {
+    Ok(s.map(|v| SqlString::from_ref(BASE64_STANDARD.encode(v.as_slice()))))
 }
 ```
 
@@ -269,22 +269,22 @@ crate, which is part of the Feldera SQL runtime.
 | `DECIMAL(p, s)`          | `rust_decimal::Decimal`                 |
 | `REAL`                   | `feldera_sqllib::F32`                   |
 | `DOUBLE`                 | `feldera_sqllib::F64`                   |
-| `CHAR`, `CHAR(n)`        | `String`                                |
-| `VARCHAR`, `VARCHAR(n)`  | `String`                                |
-| `BINARY`, `BINARY(n)`, `VARBINARY`, `VARBINARY(n)` | `feldera_sqllib::ByteArray`             |
+| `CHAR`, `CHAR(n)`        | `feldera_sqllib::SqlString`             |
+| `VARCHAR`, `VARCHAR(n)`  | `feldera_sqllib::SqlString`             |
+| `BINARY`, `BINARY(n)`, `VARBINARY`, `VARBINARY(n)` | `feldera_sqllib::ByteArray`           |
 | `NULL`                   | `()`                                    |
 | `INTERVAL`               | `feldera_sqllib::ShortInterval`, `feldera_sqllib::LongInterval` |
 | `TIME`                   | `feldera_sqllib::Time`                  |
 | `TIMESTAMP`              | `feldera_sqllib::Timestamp`             |
 | `DATE`                   | `feldera_sqllib::Date`                  |
-| `T ARRAY`                | `Vec<T>`                                |
+| `T ARRAY`                | `feldera_sqllib::Array<T>`              |
 | `MAP<K, V>`              | `feldera_sqllib::Map<K, V>`             |
 | `UUID`                   | `feldera_sqllib::Uuid`                  |
 | `VARIANT`                | `feldera_sqllib::Variant`               |
 
 Multiple SQL types may be represented by the same Rust type.  For
 example, `CHAR`, `CHAR(n)`, `VARCHAR(n)`, and `VARCHAR` are all
-represented by the standard Rust `String` type.
+represented by the `SqlString` type.
 
 The SQL family of `INTERVAL` types translates to one of two Rust
 types: `ShortInterval` (representing intervals from days to seconds),
@@ -293,7 +293,9 @@ and `LongInterval` (representing intervals from years to months).
 in a single expression.)
 
 Currently `feldera_sqlllib::Map` is defined as `type Map =
-Arc<BTreeMap>;`
+Arc<BTreeMap>`, and `feldera_sqlllib::Array` is defined as `type Array
+= Arc<Vec>`.  Currently `feldera_sqlllib::SqlString` is a thin wrapper
+type around the `ArcStr` type from the `arcstr` crate.
 
 ### Return types
 

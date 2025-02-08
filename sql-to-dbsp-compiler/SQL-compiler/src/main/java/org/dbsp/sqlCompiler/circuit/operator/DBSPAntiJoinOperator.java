@@ -21,7 +21,7 @@ public final class DBSPAntiJoinOperator extends DBSPBinaryOperator {
         assert left.getOutputIndexedZSetType().keyType.sameType(right.getOutputIndexedZSetType().keyType) :
                 "Anti join key types to not match\n" +
                         left.getOutputIndexedZSetType().keyType + " and\n" +
-                        right.getOutputIndexedZSetType().keyType;;
+                        right.getOutputIndexedZSetType().keyType;
     }
 
     @Override

@@ -8,7 +8,10 @@ use crate::{
         OrdIndexedZSetFactories, PartialOrder, ZRingValue, ZTrace,
     },
     circuit::{
-        metadata::{MetaItem, OperatorMeta, SHARED_BYTES_LABEL, USED_BYTES_LABEL},
+        metadata::{
+            MetaItem, OperatorLocation, OperatorMeta, NUM_ENTRIES_LABEL, NUM_INPUTS, NUM_OUTPUTS,
+            SHARED_BYTES_LABEL, USED_BYTES_LABEL,
+        },
         operator_traits::{BinaryOperator, Operator, UnaryOperator},
         Circuit, GlobalNodeId, Scope, Stream, WithClock,
     },
@@ -19,6 +22,7 @@ use crate::{
 };
 use minitrace::trace;
 use size_of::SizeOf;
+use std::panic::Location;
 use std::{
     borrow::Cow,
     cmp::{min, Ordering},
@@ -149,7 +153,10 @@ where
                     if circuit.root_scope() == 0 {
                         // Use an implementation optimized to work in the root scope.
                         circuit.add_binary_operator(
-                            DistinctIncrementalTotal::new(&factories.input_factories),
+                            DistinctIncrementalTotal::new(
+                                Location::caller(),
+                                &factories.input_factories,
+                            ),
                             &stream,
                             &stream
                                 .dyn_integrate_trace(&factories.input_factories)
@@ -166,6 +173,7 @@ where
                         // ```
                         circuit.add_binary_operator(
                             DistinctIncremental::new(
+                                Location::caller(),
                                 &factories.input_factories,
                                 &factories.aux_factories,
                                 circuit.clone(),
@@ -237,13 +245,28 @@ where
 /// values in the support of `a`.
 struct DistinctIncrementalTotal<Z: IndexedZSet, I> {
     input_factories: Z::Factories,
+    location: &'static Location<'static>,
+
+    // Total number of input tuples processed by the operator.
+    num_inputs: usize,
+    num_inputs_metric: Option<Gauge>,
+
+    // Total number of output tuples processed by the operator.
+    num_outputs: usize,
+    num_outputs_metric: Option<Gauge>,
+
     _type: PhantomData<(Z, I)>,
 }
 
 impl<Z: IndexedZSet, I> DistinctIncrementalTotal<Z, I> {
-    pub fn new(input_factories: &Z::Factories) -> Self {
+    pub fn new(location: &'static Location<'static>, input_factories: &Z::Factories) -> Self {
         Self {
             input_factories: input_factories.clone(),
+            location,
+            num_inputs: 0,
+            num_inputs_metric: None,
+            num_outputs: 0,
+            num_outputs_metric: None,
             _type: PhantomData,
         }
     }
@@ -258,6 +281,47 @@ where
         Cow::from("DistinctIncrementalTotal")
     }
 
+    fn location(&self) -> OperatorLocation {
+        Some(self.location)
+    }
+
+    fn init(&mut self, global_id: &GlobalNodeId) {
+        self.num_inputs_metric = Some(Gauge::new(
+            NUM_INPUTS,
+            None,
+            Some("count"),
+            global_id,
+            vec![],
+        ));
+
+        self.num_outputs_metric = Some(Gauge::new(
+            NUM_OUTPUTS,
+            None,
+            Some("count"),
+            global_id,
+            vec![],
+        ));
+    }
+
+    fn metrics(&self) {
+        self.num_inputs_metric
+            .as_ref()
+            .unwrap()
+            .set(self.num_inputs as f64);
+
+        self.num_outputs_metric
+            .as_ref()
+            .unwrap()
+            .set(self.num_inputs as f64);
+    }
+
+    fn metadata(&self, meta: &mut OperatorMeta) {
+        meta.extend(metadata! {
+            NUM_INPUTS => MetaItem::Count(self.num_inputs),
+            NUM_OUTPUTS => MetaItem::Count(self.num_outputs),
+        });
+    }
+
     fn fixedpoint(&self, _scope: Scope) -> bool {
         true
     }
@@ -270,14 +334,14 @@ where
 {
     #[trace]
     async fn eval(&mut self, delta: &Z, delayed_integral: &I) -> Z {
+        self.num_inputs += delta.len();
+
         let mut builder = Z::Builder::with_capacity(&self.input_factories, (), delta.len());
         let mut delta_cursor = delta.cursor();
         let mut integral_cursor = delayed_integral.cursor();
 
         while delta_cursor.key_valid() {
-            integral_cursor.seek_key(delta_cursor.key());
-
-            if integral_cursor.key_valid() && integral_cursor.key() == delta_cursor.key() {
+            if integral_cursor.seek_key_exact(delta_cursor.key()) {
                 while delta_cursor.val_valid() {
                     let w = **delta_cursor.weight();
                     let v = delta_cursor.val();
@@ -321,7 +385,9 @@ where
             delta_cursor.step_key();
         }
 
-        builder.done()
+        let result = builder.done();
+        self.num_outputs += result.len();
+        result
     }
 
     // TODO: owned implementation.
@@ -348,6 +414,9 @@ where
 {
     #[size_of(skip)]
     input_factories: Z::Factories,
+
+    location: &'static Location<'static>,
+
     #[size_of(skip)]
     aux_factories: OrdIndexedZSetFactories<Z::Key, Z::Val>,
     #[size_of(skip)]
@@ -362,8 +431,16 @@ where
     // Used in computing partial derivatives
     // (we keep it here to reuse allocations across `eval_keyval` calls).
     distinct_vals: Vec<(Option<T::Time>, ZWeight)>,
-    // Handle to update the metric `total_updates`
-    total_updates_metric: Option<Gauge>,
+    // Handle to update the metric `total size`
+    total_size_metric: Option<Gauge>,
+    // Total number of input tuples processed by the operator.
+    num_inputs: usize,
+    num_inputs_metric: Option<Gauge>,
+
+    // Total number of output tuples processed by the operator.
+    num_outputs: usize,
+    num_outputs_metric: Option<Gauge>,
+
     _type: PhantomData<(Z, T)>,
 }
 
@@ -374,6 +451,7 @@ where
     Clk: WithClock<Time = T::Time>,
 {
     fn new(
+        location: &'static Location<'static>,
         input_factories: &Z::Factories,
         aux_factories: &OrdIndexedZSetFactories<Z::Key, Z::Val>,
         clock: Clk,
@@ -381,6 +459,7 @@ where
         let depth = clock.nesting_depth();
 
         Self {
+            location,
             input_factories: input_factories.clone(),
             aux_factories: aux_factories.clone(),
             clock,
@@ -389,7 +468,11 @@ where
             empty_output: false,
             distinct_vals: vec![(None, HasZero::zero()); 2 << depth],
             _type: PhantomData,
-            total_updates_metric: None,
+            total_size_metric: None,
+            num_inputs: 0,
+            num_inputs_metric: None,
+            num_outputs: 0,
+            num_outputs_metric: None,
         }
     }
 
@@ -596,9 +679,29 @@ where
         Cow::Borrowed("DistinctIncremental")
     }
 
+    fn location(&self) -> OperatorLocation {
+        Some(self.location)
+    }
+
     fn init(&mut self, global_id: &GlobalNodeId) {
-        self.total_updates_metric = Some(Gauge::new(
-            "total_updates",
+        self.total_size_metric = Some(Gauge::new(
+            NUM_ENTRIES_LABEL,
+            None,
+            Some("count"),
+            global_id,
+            vec![],
+        ));
+
+        self.num_inputs_metric = Some(Gauge::new(
+            NUM_INPUTS,
+            None,
+            Some("count"),
+            global_id,
+            vec![],
+        ));
+
+        self.num_outputs_metric = Some(Gauge::new(
+            NUM_OUTPUTS,
             None,
             Some("count"),
             global_id,
@@ -608,8 +711,17 @@ where
 
     fn metrics(&self) {
         let size: usize = self.keys_of_interest.values().map(|v| v.len()).sum();
+        self.total_size_metric.as_ref().unwrap().set(size as f64);
 
-        self.total_updates_metric.as_ref().unwrap().set(size as f64);
+        self.num_inputs_metric
+            .as_ref()
+            .unwrap()
+            .set(self.num_inputs as f64);
+
+        self.num_outputs_metric
+            .as_ref()
+            .unwrap()
+            .set(self.num_outputs as f64);
     }
 
     fn metadata(&self, meta: &mut OperatorMeta) {
@@ -617,7 +729,9 @@ where
         let bytes = self.size_of();
 
         meta.extend(metadata! {
-            "total updates" => MetaItem::bytes(size),
+            NUM_ENTRIES_LABEL => MetaItem::Count(size),
+            NUM_INPUTS => MetaItem::Count(self.num_inputs),
+            NUM_OUTPUTS => MetaItem::Count(self.num_outputs),
             USED_BYTES_LABEL => MetaItem::bytes(bytes.used_bytes()),
             "allocations" => MetaItem::Count(bytes.distinct_allocations()),
             SHARED_BYTES_LABEL => MetaItem::bytes(bytes.shared_bytes()),
@@ -666,6 +780,7 @@ where
     #[trace]
     async fn eval(&mut self, delta: &Z, trace: &T) -> Z {
         let time = self.clock.time();
+        self.num_inputs += delta.len();
 
         Self::init_distinct_vals(&mut self.distinct_vals, Some(time.clone()));
         self.empty_input = delta.is_empty();
@@ -844,6 +959,7 @@ where
         let result = result_builder.done();
         self.empty_output = result.is_empty();
 
+        self.num_outputs += result.len();
         result
     }
 }

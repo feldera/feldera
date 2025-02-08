@@ -1,5 +1,7 @@
 package org.dbsp.sqlCompiler.ir.expression;
 
+import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
+
 /** This enum encodes the various opcodes for unary and
  * binary operations used in the IR of the SQL compiler. */
 public enum DBSPOpcode {
@@ -67,6 +69,8 @@ public enum DBSPOpcode {
     AGG_MIN("agg_min", true),
     // Operation which combines an accumulator and a *weighted* value
     AGG_ADD("agg_plus", true),
+    // Operation which combines an accumulator and a *weighted* value; accumulator and result are never nullable
+    AGG_ADD_NON_NULL("agg_plus_non_null", true),
     // > used in aggregation, for computing ARG_MAX.
     // NULL compares in a special way, since it means "uninitialized"
     AGG_GTE("agg_gte", true),
@@ -100,5 +104,19 @@ public enum DBSPOpcode {
         // their return type follows different rules
         return this.equals(LT) || this.equals(GT) || this.equals(LTE)
                 || this.equals(GTE) || this.equals(EQ) || this.equals(NEQ);
+    }
+
+    /** True when applied to any null value the operator produces null.
+     * A conservative approximation: always safe to say "false" */
+    public boolean isStrict() {
+        return switch (this) {
+            case WRAP_BOOL, MAP_CONVERT, ARRAY_CONVERT, CONTROLLED_FILTER_GTE, AGG_LTE, AGG_GTE, AGG_ADD, AGG_MIN,
+                 AGG_MAX, AGG_XOR, AGG_OR, AGG_AND, IS_DISTINCT, CONCAT, MIN, MAX, OR, AND, IS_NOT_FALSE, IS_NOT_TRUE,
+                 INDICATOR -> false;
+            case NEG, INTERVAL_DIV, INTERVAL_MUL, TS_SUB, TS_ADD, SHIFT_LEFT, RUST_INDEX, VARIANT_INDEX, MAP_INDEX,
+                 SQL_INDEX, XOR, BW_OR, MUL_WEIGHT, BW_AND, GTE, LTE, GT, LT, NEQ, EQ, MOD, DIV_NULL, DIV, MUL, SUB,
+                 ADD, TYPEDBOX, IS_TRUE, IS_FALSE, NOT, UNARY_PLUS -> true;
+            default -> throw new UnimplementedException();
+        };
     }
 }

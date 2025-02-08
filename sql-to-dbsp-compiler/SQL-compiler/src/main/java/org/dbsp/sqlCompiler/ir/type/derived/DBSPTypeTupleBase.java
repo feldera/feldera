@@ -34,7 +34,6 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
-import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeUser;
 import org.dbsp.util.Linq;
 
 import java.util.ArrayList;
@@ -128,5 +127,9 @@ public abstract class DBSPTypeTupleBase extends DBSPType {
         }
         DBSPExpression result = new DBSPTupleExpression(maxes, false);
         return result.closure(left, right);
+    }
+
+    public DBSPTypeTupleBase slice(int start, int endExclusive) {
+        return this.makeRelatedTupleType(Linq.list(this.tupFields).subList(start, endExclusive));
     }
 }

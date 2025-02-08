@@ -1,3 +1,4 @@
+use crate::storage::buffer_cache::CacheStats;
 use crate::trace::cursor::{HasTimeDiffCursor, TimeDiffCursor};
 use crate::trace::{BatchLocation, TimedBuilder};
 use crate::{
@@ -294,6 +295,10 @@ where
         BatchLocation::Storage
     }
 
+    fn cache_stats(&self) -> CacheStats {
+        self.file.cache_stats()
+    }
+
     fn lower(&self) -> AntichainRef<'_, T> {
         self.lower.as_ref()
     }
@@ -352,7 +357,12 @@ where
     fn from_path(factories: &Self::Factories, path: &Path) -> Result<Self, ReaderError> {
         let any_factory0 = factories.factories0.any_factories();
         let any_factory1 = factories.factories1.any_factories();
-        let file = Reader::open(&[&any_factory0, &any_factory1], &Runtime::storage(), path)?;
+        let file = Reader::open(
+            &[&any_factory0, &any_factory1],
+            Runtime::buffer_cache,
+            &*Runtime::storage_backend().unwrap(),
+            path,
+        )?;
         Ok(Self {
             factories: factories.clone(),
             file,
@@ -621,8 +631,10 @@ where
         let mut output = Writer2::new(
             &source1.factories.factories0,
             &source1.factories().factories1,
-            &Runtime::storage(),
+            Runtime::buffer_cache(),
+            &*Runtime::storage_backend().unwrap(),
             Runtime::file_writer_parameters(),
+            source1.key_count() + source2.key_count(),
         )
         .unwrap();
         let mut cursor1 = source1.file.rows().nth(0).unwrap();
@@ -720,10 +732,10 @@ where
     fn done(mut self) -> FileValBatch<K, V, T, R> {
         FileValBatch {
             factories: self.factories,
-            file: self
-                .result
-                .take()
-                .unwrap_or(Reader::empty(&Runtime::storage()).unwrap()),
+            file: self.result.take().unwrap_or(
+                Reader::empty(Runtime::buffer_cache, &*Runtime::storage_backend().unwrap())
+                    .unwrap(),
+            ),
             lower: self.lower,
             upper: self.upper,
         }
@@ -943,6 +955,11 @@ where
 
     fn seek_key(&mut self, key: &K) {
         self.move_key(|key_cursor| unsafe { key_cursor.advance_to_value_or_larger(key) }.unwrap());
+    }
+
+    fn seek_key_exact(&mut self, key: &K) -> bool {
+        self.seek_key(key);
+        self.key_valid() && self.key().eq(key)
     }
 
     fn seek_key_with(&mut self, predicate: &dyn Fn(&K) -> bool) {
@@ -1171,22 +1188,28 @@ where
     R: WeightTrait + ?Sized,
 {
     fn new_builder(factories: &FileValBatchFactories<K, V, T, R>, time: T) -> Self {
+        Self::with_capacity(factories, time, 1_000_000)
+    }
+
+    fn with_capacity(
+        factories: &FileValBatchFactories<K, V, T, R>,
+        time: T,
+        capacity: usize,
+    ) -> Self {
         Self {
             factories: factories.clone(),
             time,
             writer: Writer2::new(
                 &factories.factories0,
                 &factories.factories1,
-                &Runtime::storage(),
+                Runtime::buffer_cache(),
+                &*Runtime::storage_backend().unwrap(),
                 Runtime::file_writer_parameters(),
+                capacity,
             )
             .unwrap(),
             cur: None,
         }
-    }
-
-    fn with_capacity(factories: &FileValBatchFactories<K, V, T, R>, time: T, _cap: usize) -> Self {
-        Self::new_builder(factories, time)
     }
 
     fn reserve(&mut self, _additional: usize) {}

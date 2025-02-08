@@ -2,8 +2,8 @@
 //! the values in a SQL program.
 
 use crate::{
-    binary::ByteArray, casts::*, error::SqlRuntimeError, map::Map, tn, ttn, Date, GeoPoint,
-    LongInterval, ShortInterval, Time, Timestamp, Uuid,
+    array::Array, binary::ByteArray, casts::*, error::SqlRuntimeError, map::Map, tn, ttn, Date,
+    GeoPoint, LongInterval, ShortInterval, SqlString, Time, Timestamp, Uuid,
 };
 use dbsp::algebra::{F32, F64};
 use feldera_types::serde_with_context::serde_config::VariantFormat;
@@ -18,11 +18,13 @@ use serde::{Deserialize, Serialize};
 use size_of::SizeOf;
 use std::borrow::Cow;
 use std::cmp::Ord;
+use std::collections::BTreeMap;
 use std::error::Error;
 use std::fmt;
 use std::fmt::Display;
 use std::str::FromStr;
-use std::{collections::BTreeMap, fmt::Debug, hash::Hash};
+use std::sync::Arc;
+use std::{fmt::Debug, hash::Hash};
 
 /// Represents a Sql value with a VARIANT type.
 #[derive(
@@ -58,7 +60,7 @@ pub enum Variant {
     Real(F32),
     Double(F64),
     Decimal(Decimal),
-    String(String),
+    String(SqlString),
     Date(Date),
     Time(Time),
     Timestamp(Timestamp),
@@ -68,9 +70,51 @@ pub enum Variant {
     Geometry(GeoPoint),
     Uuid(Uuid),
     #[size_of(skip, skip_bounds)]
-    Array(#[omit_bounds] Vec<Variant>),
+    Array(#[omit_bounds] Array<Variant>),
     #[size_of(skip, skip_bounds)]
-    Map(#[omit_bounds] BTreeMap<Variant, Variant>),
+    Map(#[omit_bounds] Map<Variant, Variant>),
+}
+
+/////////////// Variant index
+
+// Return type is always Option<Variant>, but result is never None, always a Variant
+#[doc(hidden)]
+pub fn indexV__<T>(value: &Variant, index: T) -> Option<Variant>
+where
+    T: Into<Variant>,
+{
+    value.index(index.into())
+}
+
+#[doc(hidden)]
+pub fn indexV_N<T>(value: &Variant, index: Option<T>) -> Option<Variant>
+where
+    T: Into<Variant>,
+{
+    let index = index?;
+    indexV__(value, index)
+}
+
+#[doc(hidden)]
+pub fn indexVN_<T>(value: &Option<Variant>, index: T) -> Option<Variant>
+where
+    T: Into<Variant>,
+{
+    match value {
+        None => None,
+        Some(value) => indexV__(value, index),
+    }
+}
+
+#[doc(hidden)]
+pub fn indexVNN<T>(value: &Option<Variant>, index: Option<T>) -> Option<Variant>
+where
+    T: Into<Variant>,
+{
+    match value {
+        None => None,
+        Some(value) => indexV_N(value, index),
+    }
 }
 
 impl<'de> Deserialize<'de> for Variant {
@@ -117,7 +161,7 @@ impl<'de> Deserialize<'de> for Variant {
 
             #[inline]
             fn visit_string<E>(self, value: String) -> Result<Variant, E> {
-                Ok(Variant::String(value))
+                Ok(Variant::String(SqlString::from(value)))
             }
 
             #[inline]
@@ -149,7 +193,7 @@ impl<'de> Deserialize<'de> for Variant {
                     vec.push(elem);
                 }
 
-                Ok(Variant::Array(vec))
+                Ok(Variant::Array(vec.into()))
             }
 
             #[inline]
@@ -165,14 +209,17 @@ impl<'de> Deserialize<'de> for Variant {
                     Some(KeyClass::Map(first_key)) => {
                         let mut values = BTreeMap::new();
 
-                        values.insert(Variant::String(first_key), visitor.next_value()?);
+                        values.insert(
+                            Variant::String(SqlString::from(first_key)),
+                            visitor.next_value()?,
+                        );
                         while let Some((key, value)) = visitor.next_entry::<String, Variant>()? {
-                            values.insert(Variant::String(key), value);
+                            values.insert(Variant::String(SqlString::from(key)), value);
                         }
 
-                        Ok(Variant::Map(values))
+                        Ok(Variant::Map(values.into()))
                     }
-                    None => Ok(Variant::Map(BTreeMap::new())),
+                    None => Ok(Variant::Map(BTreeMap::new().into())),
                 }
             }
         }
@@ -382,7 +429,9 @@ impl Variant {
     #[doc(hidden)]
     pub fn index_string<I: AsRef<str>>(&self, index: I) -> Variant {
         match self {
-            Variant::Map(value) => match value.get(&Variant::String(index.as_ref().to_string())) {
+            Variant::Map(value) => match value.get(&Variant::String(SqlString::from(
+                index.as_ref().to_string(),
+            ))) {
                 None => Variant::SqlNull,
                 Some(result) => result.clone(),
             },
@@ -451,7 +500,7 @@ from!(BigInt, i64);
 from!(Real, F32);
 from!(Double, F64);
 from!(Decimal, Decimal);
-from!(String, String);
+from!(String, SqlString);
 from!(Date, Date);
 from!(Time, Time);
 from!(Timestamp, Timestamp);
@@ -473,26 +522,39 @@ impl From<Option<Variant>> for Variant {
 }
 
 #[doc(hidden)]
-impl<T> From<Vec<T>> for Variant
+impl<T> From<Array<T>> for Variant
 where
     Variant: From<T>,
+    T: Clone,
 {
     #[doc(hidden)]
-    fn from(vec: Vec<T>) -> Self {
-        Variant::Array(vec.into_iter().map(Variant::from).collect())
+    fn from(vec: Array<T>) -> Self {
+        Variant::Array(
+            (*vec)
+                .iter()
+                .map(|val| Variant::from(val.clone()))
+                .collect::<Vec<Variant>>()
+                .into(),
+        )
     }
 }
 
 #[doc(hidden)]
-impl<T> From<Option<Vec<T>>> for Variant
+impl<T> From<Option<Array<T>>> for Variant
 where
     Variant: From<T>,
+    T: Clone,
 {
     #[doc(hidden)]
-    fn from(vec: Option<Vec<T>>) -> Self {
+    fn from(vec: Option<Array<T>>) -> Self {
         match vec {
             None => Variant::SqlNull,
-            Some(vec) => Variant::Array(vec.into_iter().map(Variant::from).collect()),
+            Some(vec) => Variant::Array(Arc::new(
+                (*vec)
+                    .iter()
+                    .map(|val| Variant::from(val.clone()))
+                    .collect::<Vec<Variant>>(),
+            )),
         }
     }
 }
@@ -510,7 +572,7 @@ where
         for (key, value) in map.iter() {
             result.insert(key.clone().into(), value.clone().into());
         }
-        Variant::Map(result)
+        Variant::Map(result.into())
     }
 }
 
@@ -571,7 +633,7 @@ macro_rules! into {
 }
 
 into!(Boolean, bool);
-into!(String, String);
+into!(String, SqlString);
 into!(Date, Date);
 into!(Time, Time);
 into!(Timestamp, Timestamp);
@@ -687,7 +749,7 @@ impl TryFrom<Variant> for Option<Decimal> {
 }
 
 #[doc(hidden)]
-impl<T> TryFrom<Variant> for Vec<T>
+impl<T> TryFrom<Variant> for Array<T>
 where
     T: TryFrom<Variant>,
     T::Error: Display,
@@ -699,14 +761,14 @@ where
         match value {
             Variant::Array(a) => {
                 let mut result = Vec::with_capacity(a.len());
-                for e in a {
-                    let converted = T::try_from(e);
+                for e in &*a {
+                    let converted = T::try_from(e.clone());
                     match converted {
                         Ok(value) => result.push(value),
                         Err(e) => return Err(SqlRuntimeError::from_string(e.to_string())),
                     }
                 }
-                Ok(result)
+                Ok(result.into())
             }
             _ => Err(Box::new(SqlRuntimeError::CustomError(
                 "not an array".to_string(),
@@ -716,7 +778,7 @@ where
 }
 
 #[doc(hidden)]
-impl<T> TryFrom<Variant> for Option<Vec<T>>
+impl<T> TryFrom<Variant> for Option<Array<T>>
 where
     T: TryFrom<Variant>,
     T::Error: Display,
@@ -728,7 +790,7 @@ where
         match value {
             Variant::VariantNull => Ok(None),
             Variant::SqlNull => Ok(None),
-            _ => match Vec::<T>::try_from(value) {
+            _ => match Array::<T>::try_from(value) {
                 Ok(result) => Ok(Some(result)),
                 Err(e) => Err(SqlRuntimeError::from_string(e.to_string())),
             },
@@ -751,9 +813,9 @@ where
         match value {
             Variant::Map(map) => {
                 let mut result = BTreeMap::<K, V>::new();
-                for (key, value) in map.into_iter() {
-                    let convertedKey = K::try_from(key);
-                    let convertedValue = V::try_from(value);
+                for (key, value) in (*map).iter() {
+                    let convertedKey = K::try_from(key.clone());
+                    let convertedValue = V::try_from(value.clone());
                     let k = match convertedKey {
                         Ok(result) => result,
                         Err(e) => return Err(SqlRuntimeError::from_string(e.to_string())),
@@ -797,15 +859,15 @@ where
 }
 
 #[doc(hidden)]
-pub fn typeof_(value: Variant) -> String {
-    value.get_type_string().to_string()
+pub fn typeof_(value: Variant) -> SqlString {
+    SqlString::from_ref(value.get_type_string())
 }
 
 #[doc(hidden)]
-pub fn typeofN(value: Option<Variant>) -> String {
+pub fn typeofN(value: Option<Variant>) -> SqlString {
     match value {
-        None => "NULL".to_string(),
-        Some(value) => value.get_type_string().to_string(),
+        None => SqlString::from_ref("NULL"),
+        Some(value) => SqlString::from_ref(value.get_type_string()),
     }
 }
 
@@ -827,7 +889,7 @@ where
 
 #[cfg(test)]
 mod test {
-    use crate::{binary::ByteArray, Date, Time, Timestamp};
+    use crate::{binary::ByteArray, Date, SqlString, Time, Timestamp};
     use std::str::FromStr;
     use std::sync::Arc;
 
@@ -839,6 +901,7 @@ mod test {
     };
     use num::FromPrimitive;
     use rust_decimal::Decimal;
+    use std::collections::BTreeMap;
 
     #[test]
     fn circuit_accepts_variant() {
@@ -935,42 +998,50 @@ mod test {
 
         let expected = Variant::Map(
             [
-                (Variant::String("b".to_string()), Variant::Boolean(true)),
                 (
-                    Variant::String("i".to_string()),
+                    Variant::String(SqlString::from_ref("b")),
+                    Variant::Boolean(true),
+                ),
+                (
+                    Variant::String(SqlString::from_ref("i")),
                     Variant::Decimal(Decimal::from(12345)),
                 ),
                 (
-                    Variant::String("f".to_string()),
+                    Variant::String(SqlString::from_ref("f")),
                     Variant::Decimal(Decimal::from_str("0.00123").unwrap()),
                 ),
                 (
-                    Variant::String("d".to_string()),
+                    Variant::String(SqlString::from_ref("d")),
                     Variant::Decimal(Decimal::from_str("123.45").unwrap()),
                 ),
                 (
-                    Variant::String("s".to_string()),
-                    Variant::String("foo\nbar".to_string()),
+                    Variant::String(SqlString::from_ref("s")),
+                    Variant::String(SqlString::from_ref("foo\nbar")),
                 ),
-                (Variant::String("n".to_string()), Variant::VariantNull),
                 (
-                    Variant::String("nested".to_string()),
+                    Variant::String(SqlString::from_ref("n")),
+                    Variant::VariantNull,
+                ),
+                (
+                    Variant::String(SqlString::from_ref("nested")),
                     Variant::Map(
                         [(
-                            Variant::String("arr".to_string()),
-                            Variant::Array(vec![
+                            Variant::String(SqlString::from_ref("arr")),
+                            Variant::Array(Arc::new(vec![
                                 Variant::Decimal(Decimal::from(1)),
-                                Variant::String("foo".to_string()),
+                                Variant::String(SqlString::from_ref("foo")),
                                 Variant::VariantNull,
-                            ]),
+                            ])),
                         )]
                         .into_iter()
-                        .collect(),
+                        .collect::<BTreeMap<Variant, Variant>>()
+                        .into(),
                     ),
                 ),
             ]
             .into_iter()
-            .collect(),
+            .collect::<BTreeMap<Variant, Variant>>()
+            .into(),
         );
         assert_eq!(v, expected);
     }
@@ -1011,42 +1082,51 @@ mod test {
     fn serialize_map() {
         let v = Variant::Map(
             [
-                (Variant::String("b".to_string()), Variant::Boolean(true)),
                 (
-                    Variant::String("i".to_string()),
+                    Variant::String(SqlString::from_ref("b")),
+                    Variant::Boolean(true),
+                ),
+                (
+                    Variant::String(SqlString::from_ref("i")),
                     Variant::Decimal(Decimal::from(12345)),
                 ),
                 (
-                    Variant::String("f".to_string()),
+                    Variant::String(SqlString::from_ref("f")),
                     Variant::Double(F64::new(0.00123)),
                 ),
                 (
-                    Variant::String("d".to_string()),
+                    Variant::String(SqlString::from_ref("d")),
                     Variant::Decimal(Decimal::from_str("123.45").unwrap()),
                 ),
                 (
-                    Variant::String("s".to_string()),
-                    Variant::String("foo\nbar".to_string()),
+                    Variant::String(SqlString::from_ref("s")),
+                    Variant::String(SqlString::from_ref("foo\nbar")),
                 ),
                 (
-                    Variant::String("bytes".to_string()),
+                    Variant::String(SqlString::from_ref("bytes")),
                     Variant::Binary(ByteArray::new(b"hello")),
                 ),
-                (Variant::String("n".to_string()), Variant::VariantNull),
                 (
-                    Variant::String("nested".to_string()),
+                    Variant::String(SqlString::from_ref("n")),
+                    Variant::VariantNull,
+                ),
+                (
+                    Variant::String(SqlString::from_ref("nested")),
                     Variant::Map(
                         [
                             (
-                                Variant::String("arr".to_string()),
-                                Variant::Array(vec![
-                                    Variant::Decimal(Decimal::from(1)),
-                                    Variant::String("foo".to_string()),
-                                    Variant::VariantNull,
-                                ]),
+                                Variant::String(SqlString::from_ref("arr")),
+                                Variant::Array(
+                                    vec![
+                                        Variant::Decimal(Decimal::from(1)),
+                                        Variant::String(SqlString::from_ref("foo")),
+                                        Variant::VariantNull,
+                                    ]
+                                    .into(),
+                                ),
                             ),
                             (
-                                Variant::String("ts".to_string()),
+                                Variant::String(SqlString::from_ref("ts")),
                                 Variant::Timestamp(Timestamp::from_dateTime(
                                     DateTime::parse_from_rfc3339("2024-12-19T16:39:57Z")
                                         .unwrap()
@@ -1054,25 +1134,27 @@ mod test {
                                 )),
                             ),
                             (
-                                Variant::String("d".to_string()),
+                                Variant::String(SqlString::from_ref("d")),
                                 Variant::Date(Date::from_date(
                                     NaiveDate::from_ymd_opt(2024, 1, 1).unwrap(),
                                 )),
                             ),
                             (
-                                Variant::String("t".to_string()),
+                                Variant::String(SqlString::from_ref("t")),
                                 Variant::Time(Time::from_time(
                                     NaiveTime::from_hms_opt(17, 30, 40).unwrap(),
                                 )),
                             ),
                         ]
                         .into_iter()
-                        .collect(),
+                        .collect::<BTreeMap<Variant, Variant>>()
+                        .into(),
                     ),
                 ),
             ]
             .into_iter()
-            .collect(),
+            .collect::<BTreeMap<Variant, Variant>>()
+            .into(),
         );
 
         let s = serde_json::to_string(&v).unwrap();

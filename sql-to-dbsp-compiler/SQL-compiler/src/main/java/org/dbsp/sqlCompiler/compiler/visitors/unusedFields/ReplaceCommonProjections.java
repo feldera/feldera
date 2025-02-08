@@ -2,6 +2,7 @@ package org.dbsp.sqlCompiler.compiler.visitors.unusedFields;
 
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.circuit.annotation.IsProjection;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPFilterOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
@@ -11,6 +12,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitCloneVisitor;
+import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
 import org.dbsp.util.Linq;
@@ -76,6 +78,12 @@ public class ReplaceCommonProjections extends CircuitCloneVisitor {
     }
 
     @Override
+    public void postorder(DBSPFilterOperator operator) {
+        if (!this.process(operator))
+            super.postorder(operator);
+    }
+
+    @Override
     public void postorder(DBSPMapOperator operator) {
         if (this.fcp.inputProjection.containsKey(operator) &&
                 // If we forgot to call process(input) the source won't be there
@@ -107,5 +115,10 @@ public class ReplaceCommonProjections extends CircuitCloneVisitor {
         }
         if (!this.process(operator))
             super.postorder(operator);
+    }
+
+    @Override
+    public Token startVisit(IDBSPOuterNode circuit) {
+        return super.startVisit(circuit);
     }
 }

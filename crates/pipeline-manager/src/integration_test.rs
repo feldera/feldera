@@ -63,7 +63,7 @@ use crate::{
     db::types::pipeline::PipelineStatus,
 };
 use anyhow::{bail, Result as AnyResult};
-use feldera_types::config::{ResourceConfig, RuntimeConfig};
+use feldera_types::config::{ResourceConfig, RuntimeConfig, StorageOptions};
 use feldera_types::program_schema::SqlIdentifier;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -1391,7 +1391,7 @@ async fn pipeline_runtime_config() {
         value["runtime_config"],
         serde_json::to_value(RuntimeConfig {
             workers: 100,
-            storage: true,
+            storage: Some(StorageOptions::default()),
             resources: ResourceConfig {
                 cpu_cores_min: Some(2),
                 storage_mb_max: Some(500),
@@ -2643,12 +2643,8 @@ async fn pipeline_logs() {
     assert_eq!(response.status(), StatusCode::CREATED);
 
     // Retrieve logs (shutdown)
-    let mut response_logs = config.get("/v0/pipelines/test/logs").await;
-    assert_eq!(response_logs.status(), StatusCode::OK);
-    assert_eq!(
-        "LOG STREAM UNAVAILABLE: the pipeline has likely not yet started\n",
-        String::from_utf8(response_logs.body().await.unwrap().to_vec()).unwrap()
-    );
+    let response_logs = config.get("/v0/pipelines/test/logs").await;
+    assert_eq!(response_logs.status(), StatusCode::SERVICE_UNAVAILABLE);
 
     // Wait for its program compilation completion
     config
@@ -2707,12 +2703,8 @@ async fn pipeline_logs() {
     );
 
     // Retrieve logs (shutdown)
-    let mut response_logs = config.get("/v0/pipelines/test/logs").await;
-    assert_eq!(response_logs.status(), StatusCode::OK);
-    assert_eq!(
-        "LOG STREAM UNAVAILABLE: the pipeline has likely not yet started\n",
-        String::from_utf8(response_logs.body().await.unwrap().to_vec()).unwrap()
-    );
+    let response_logs = config.get("/v0/pipelines/test/logs").await;
+    assert_eq!(response_logs.status(), StatusCode::SERVICE_UNAVAILABLE);
 }
 
 /// The compiler needs to handle and continue to function when the pipeline is deleted

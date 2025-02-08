@@ -33,6 +33,7 @@ where
     ///   value from `other` to an output value.
     /// * `ts_func1` - extracts the value of the timestamp column from a record in `self`.
     /// * `ts_func2` - extracts the value of the timestamp column from a record in `other`.
+    #[track_caller]
     pub fn asof_join<TS, F, TSF1, TSF2, V2, V>(
         &self,
         other: &Stream<RootCircuit, OrdIndexedZSet<K1, V2>>,

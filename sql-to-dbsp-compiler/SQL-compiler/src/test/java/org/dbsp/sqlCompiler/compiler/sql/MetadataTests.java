@@ -16,7 +16,6 @@ import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.DeclareViewStatement;
 import org.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests;
-import org.dbsp.sqlCompiler.compiler.sql.tools.CompilerCircuitStream;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.util.HSQDBManager;
@@ -379,6 +378,21 @@ public class MetadataTests extends BaseSQLTests {
     }
 
     @Test
+    public void issue3427() {
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.options.languageOptions.throwOnError = false;
+        compiler.options.ioOptions.trimInputs = true;
+        compiler.options.ioOptions.quiet = false;
+        compiler.submitStatementsForCompilation("""
+                CREATE TABLE t1(c1 INTEGER);
+                CREATE VIEW v1 AS SELECT ELEMENT(ARRAY [2, 3]) FROM t1;""");
+        DBSPCircuit circuit = compiler.getFinalCircuit(false);
+        Assert.assertNotNull(circuit);
+        TestUtil.assertMessagesContain(compiler.messages,
+                "Unused column: Column 'c1' of table 't1' is unused");
+    }
+
+    @Test
     public void nullKey() {
         String ddl = """
                CREATE TABLE T (
@@ -457,8 +471,7 @@ public class MetadataTests extends BaseSQLTests {
         DBSPCompiler compiler = new DBSPCompiler(options);
         compiler.addSchemaSource("schema", hsql);
         compiler.submitStatementForCompilation("CREATE VIEW V AS SELECT * FROM mytable");
-        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
-        this.addRustTestCase(ccs);
+        this.getCCS(compiler);
         ObjectNode node = compiler.getIOMetadataAsJson();
         String json = node.toPrettyString();
         Assert.assertTrue(json.contains("MYTABLE"));
@@ -514,14 +527,14 @@ public class MetadataTests extends BaseSQLTests {
         PrintWriter script = new PrintWriter(udf, StandardCharsets.UTF_8);
         script.println("""
                 use feldera_sqllib::*;
-                pub fn contains_number(str: String, value: Option<i32>) -> Result<bool, Box<dyn std::error::Error>> {
+                pub fn contains_number(str: SqlString, value: Option<i32>) -> Result<bool, Box<dyn std::error::Error>> {
                    match value {
                        None => Err("null value".into()),
-                       Some(value) => Ok(str.contains(&format!("{}", value).to_string())),
+                       Some(value) => Ok(str.str().contains(&format!("{}", value).to_string())),
                    }
                 }
-                pub fn EMPTY() -> Result<Option<String>, Box<dyn std::error::Error>> {
-                   Ok(Some("".to_string()))
+                pub fn EMPTY() -> Result<Option<SqlString>, Box<dyn std::error::Error>> {
+                   Ok(Some(SqlString::new()))
                 }""");
         script.close();
         CompilerMessages messages = CompilerMain.execute("-o", BaseSQLTests.testFilePath, file.getPath());
@@ -544,12 +557,12 @@ public class MetadataTests extends BaseSQLTests {
                 use feldera_sqllib::*;
                 use crate::*;
 
-                pub fn contains_number(str: String, value: Option<i32>) -> Result<bool, Box<dyn std::error::Error>> {
+                pub fn contains_number(str: SqlString, value: Option<i32>) -> Result<bool, Box<dyn std::error::Error>> {
                     udf::contains_number(
                         str,
                         value)
                 }
-                pub fn EMPTY() -> Result<Option<String>, Box<dyn std::error::Error>> {
+                pub fn EMPTY() -> Result<Option<SqlString>, Box<dyn std::error::Error>> {
                     udf::EMPTY()
                 }""", String.join(System.lineSeparator(), str));
         boolean success = protos.toFile().delete();
@@ -829,7 +842,7 @@ public class MetadataTests extends BaseSQLTests {
         boolean success = tmp.delete();
         if (message.exitCode != 0)
             System.err.println(message);
-        Assert.assertEquals(message.exitCode, 0);
+        Assert.assertEquals(0, message.exitCode);
         TestUtil.assertMessagesContain(message,
                 "Table 's', referred in FOREIGN KEY constraint of table 't', does not exist");
         ObjectMapper mapper = Utilities.deterministicObjectMapper();
@@ -933,7 +946,8 @@ public class MetadataTests extends BaseSQLTests {
                       "case_sensitive" : false,
                       "columntype" : {
                         "nullable" : false,
-                        "type" : "VARIANT"
+                        "precision" : -1,
+                        "type" : "VARCHAR"
                       }
                     } ],
                     "materialized" : false
@@ -969,8 +983,8 @@ public class MetadataTests extends BaseSQLTests {
     public void jsonErrorTest() throws IOException, SQLException {
         File file = createInputScript("CREATE VIEW V AS SELECT * FROM T;");
         CompilerMessages messages = CompilerMain.execute("-je", file.getPath());
-        Assert.assertEquals(messages.exitCode, 1);
-        Assert.assertEquals(messages.errorCount(), 1);
+        Assert.assertEquals(1, messages.exitCode);
+        Assert.assertEquals(1, messages.errorCount());
         String json = messages.toString();
         ObjectMapper mapper = new ObjectMapper();
         JsonNode jsonNode = mapper.readTree(json);

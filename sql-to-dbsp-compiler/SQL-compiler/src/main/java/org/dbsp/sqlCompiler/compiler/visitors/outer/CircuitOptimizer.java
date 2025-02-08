@@ -33,6 +33,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.BetaReduction;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EliminateDump;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.ExpandCasts;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.ExpandWriteLog;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.LazyStatics;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Simplify;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.SimplifyWaterline;
 import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.UnusedFields;
@@ -111,8 +112,12 @@ public record CircuitOptimizer(DBSPCompiler compiler) implements ICompilerCompon
             passes.add(new NoIntegralVisitor(compiler));
         passes.add(new ExpandHop(compiler));
         passes.add(new RemoveDeindexOperators(compiler));
+        passes.add(new OptimizeWithGraph(compiler, g -> new ComposeIndexWithMap(compiler, g)));
         passes.add(new OptimizeWithGraph(compiler, g -> new RemoveNoops(compiler, g)));
         passes.add(new RemoveViewOperators(compiler, false));
+        // passes.add(ToDot.dumper(compiler, "x.png", 2));
+        passes.add(new RemoveIdentityOperators(compiler));
+        // passes.add(ToDot.dumper(compiler, "y.png", 2));
         passes.add(new Repeat(compiler, new ExpandCasts(compiler).circuitRewriter(true)));
         passes.add(new OptimizeWithGraph(compiler, g -> new FilterMapVisitor(compiler, g)));
         // optimize the maps introduced by the deindex removal
@@ -130,6 +135,7 @@ public record CircuitOptimizer(DBSPCompiler compiler) implements ICompilerCompon
         passes.add(new Repeat(compiler, new ExpandCasts(compiler).circuitRewriter(true)));
         // Beta reduction after implementing aggregates.
         passes.add(new BetaReduction(compiler).getCircuitVisitor(false));
+        passes.add(new LazyStatics(compiler).circuitRewriter(false));
         passes.add(new ExpandJoins(compiler));
         passes.add(new CSE(compiler));
         passes.add(new RemoveViewOperators(compiler, true));

@@ -9,18 +9,20 @@
 use crate::{
     circuit::metadata::{MetaItem, OperatorMeta},
     dynamic::{DynVec, Factory, Weight},
+    storage::buffer_cache::CacheStats,
     time::{Antichain, AntichainRef, Timestamp},
     trace::{
         cursor::CursorList, merge_batches, Batch, BatchReader, BatchReaderFactories, Cursor,
         Filter, Trace,
     },
-    Error, NumEntries,
+    Error, NumEntries, Runtime,
 };
 
 use crate::storage::file::to_bytes;
-use crate::storage::{checkpoint_path, write_commit_metadata};
+use crate::storage::write_commit_metadata;
 pub use crate::trace::spine_async::snapshot::SpineSnapshot;
 use crate::trace::CommittedSpine;
+use metrics::{counter, gauge};
 use ouroboros::self_referencing;
 use rand::Rng;
 use rkyv::{
@@ -30,6 +32,7 @@ use rkyv::{
 use size_of::{Context, SizeOf};
 use std::sync::Mutex;
 use std::sync::{Arc, MutexGuard};
+use std::time::{Duration, Instant};
 use std::{
     collections::VecDeque,
     path::{Path, PathBuf},
@@ -49,10 +52,14 @@ mod thread;
 
 use self::thread::{BackgroundThread, WorkerStatus};
 use super::BatchLocation;
+use crate::circuit::metrics::{BATCHES_PER_LEVEL, COMPACTION_STALL_TIME, ONGOING_MERGES_PER_LEVEL};
 use list_merger::{ListMerger, ListMergerBuilder};
 
 /// Maximum amount of levels in the spine.
 pub(crate) const MAX_LEVELS: usize = 9;
+
+/// Levels as &'static str for metrics
+pub(crate) const LEVELS_AS_STR: [&str; MAX_LEVELS] = ["0", "1", "2", "3", "4", "5", "6", "7", "8"];
 
 impl<B: Batch + Send + Sync> From<(Vec<String>, &Spine<B>)> for CommittedSpine<B> {
     fn from((batches, spine): (Vec<String>, &Spine<B>)) -> Self {
@@ -159,6 +166,9 @@ where
     request_exit: bool,
     #[size_of(skip)]
     merge_stats: MergeStats,
+    /// Unique identifier for the spine for metrics.
+    #[size_of(skip)]
+    ident: &'static str,
 }
 
 impl<B> SharedState<B>
@@ -173,6 +183,7 @@ where
             slots: std::array::from_fn(|_| Slot::default()),
             request_exit: false,
             merge_stats: MergeStats::default(),
+            ident: String::leak(Uuid::now_v7().to_string()),
         }
     }
 
@@ -181,9 +192,7 @@ where
     fn add_batches(&mut self, batches: impl IntoIterator<Item = Arc<B>>) {
         for batch in batches {
             if !batch.is_empty() {
-                self.slots[Spine::<B>::size_to_level(batch.len())]
-                    .loose_batches
-                    .push_back(batch);
+                self.add_batch(batch);
             }
         }
     }
@@ -194,6 +203,9 @@ where
         debug_assert!(!batch.is_empty());
         let level = Spine::<B>::size_to_level(batch.len());
         self.slots[level].loose_batches.push_back(batch);
+
+        gauge!(BATCHES_PER_LEVEL, "worker" => Runtime::worker_index_str(), "level" => LEVELS_AS_STR[level], "id" => self.ident)
+            .set(self.slots[level].n_batches() as f64);
     }
 
     fn should_apply_backpressure(&self) -> bool {
@@ -250,8 +262,16 @@ where
     /// with `new_batch` as the result.
     fn merge_complete(&mut self, level: usize, new_batch: Arc<B>) {
         let batches = self.slots[level].merging_batches.take().unwrap();
-        self.merge_stats
-            .report_merge(batches.iter().map(|b| b.len()).sum(), new_batch.len());
+        let cache_stats = batches.iter().fold(CacheStats::default(), |stats, batch| {
+            stats + batch.cache_stats()
+        });
+        gauge!(ONGOING_MERGES_PER_LEVEL, "worker" => Runtime::worker_index_str(), "level" => LEVELS_AS_STR[level], "id" => self.ident)
+            .set(0);
+        self.merge_stats.report_merge(
+            batches.iter().map(|b| b.len()).sum(),
+            new_batch.len(),
+            cache_stats,
+        );
         self.add_batches([new_batch]);
     }
 
@@ -384,7 +404,10 @@ where
         state.add_batch(batch);
         BackgroundThread::wake();
         if state.should_apply_backpressure() {
-            let _r = self.no_backpressure.wait(state).unwrap();
+            let start = Instant::now();
+            let mut state = self.no_backpressure.wait(state).unwrap();
+            state.merge_stats.backpressure_wait += start.elapsed();
+            counter!(COMPACTION_STALL_TIME).increment(start.elapsed().as_nanos() as u64);
         }
     }
 
@@ -438,9 +461,11 @@ where
 
         let n_batches = batches.len();
         let n_merging = batches.iter().filter(|(_batch, merging)| *merging).count();
+        let mut cache_stats = merge_stats.cache_stats;
         let mut storage_size = 0;
         let mut merging_size = 0;
         for (batch, merging) in batches {
+            cache_stats += batch.cache_stats();
             let on_storage = batch.location() == BatchLocation::Storage;
             if on_storage || merging {
                 let size = batch.approximate_byte_size();
@@ -472,8 +497,13 @@ where
             // For merges already completed, the percentage of the updates input
             // to merges that merging eliminated, whether by weights adding to
             // zero or through key or value filters.
-            "merge reduction" => merge_stats.merge_reduction()
+            "merge reduction" => merge_stats.merge_reduction(),
+
+            // The amount of time waiting for backpressure.
+            "merge backpressure wait" => MetaItem::Duration(merge_stats.backpressure_wait),
         });
+
+        cache_stats.metadata(meta);
     }
 
     fn maybe_relieve_backpressure(
@@ -495,6 +525,7 @@ where
         idle: &Arc<Condvar>,
         no_backpressure: &Arc<Condvar>,
     ) -> WorkerStatus {
+        let ident = state.lock().unwrap().ident;
         // Run in-progress merges.
         let ((key_filter, value_filter), frontier) = {
             let shared = state.lock().unwrap();
@@ -527,6 +558,9 @@ where
             .filter_map(|(level, slot)| slot.try_start_merge(level).map(|batches| (level, batches)))
             .collect::<Vec<_>>();
         for (level, batches) in start_merges {
+            gauge!(ONGOING_MERGES_PER_LEVEL, "worker" => Runtime::worker_index_str(), "level" => LEVELS_AS_STR[level], "id" => ident)
+                .set(batches.len() as f64);
+
             let merger = ListMergerBuilder::with_capacity(batches.len())
                 .with_batches(batches)
                 .build();
@@ -568,13 +602,19 @@ struct MergeStats {
     pre_len: u64,
     /// Number of updates after merging.
     post_len: u64,
+    /// Cache statistics, only for the batches that have already been merged and
+    /// discarded.
+    cache_stats: CacheStats,
+    /// Time spent waiting for backpressure.
+    backpressure_wait: Duration,
 }
 
 impl MergeStats {
-    /// Adds `pre_len` and `post_len` to the statistics.
-    fn report_merge(&mut self, pre_len: usize, post_len: usize) {
+    /// Adds `pre_len`, `post_len`, and `cache_stats` to the statistics.
+    fn report_merge(&mut self, pre_len: usize, post_len: usize, cache_stats: CacheStats) {
         self.pre_len += pre_len as u64;
         self.post_len += post_len as u64;
+        self.cache_stats += cache_stats;
     }
 
     /// Reports the percentage (in range `0..=100`) of updates that merging
@@ -827,20 +867,13 @@ where
     /// - `cid`: The checkpoint id.
     /// - `persistent_id`: The persistent id that identifies the spine within
     ///   the circuit for a given checkpoint.
-    fn checkpoint_file<P: AsRef<str>>(cid: Uuid, persistent_id: P) -> PathBuf {
-        let mut path = checkpoint_path(cid);
-        path.push(format!("pspine-{}.dat", persistent_id.as_ref()));
-        path
+    fn checkpoint_file(base: &Path, persistent_id: &str) -> PathBuf {
+        base.join(format!("pspine-{}.dat", persistent_id))
     }
 
     /// Return the absolute path of the file for this Spine's batchlist.
-    ///
-    /// # Arguments
-    /// - `sid`: The step id of the checkpoint.
-    fn batchlist_file<P: AsRef<str>>(&self, cid: Uuid, persistent_id: P) -> PathBuf {
-        let mut path = checkpoint_path(cid);
-        path.push(format!("pspine-batches-{}.dat", persistent_id.as_ref()));
-        path
+    fn batchlist_file(&self, base: &Path, persistent_id: &str) -> PathBuf {
+        base.join(format!("pspine-batches-{}.dat", persistent_id))
     }
 }
 
@@ -945,6 +978,10 @@ impl<B: Batch> Cursor<B::Key, B::Val, B::Time, B::R> for SpineCursor<B> {
 
     fn seek_key(&mut self, key: &B::Key) {
         self.with_cursor_mut(|cursor| cursor.seek_key(key));
+    }
+
+    fn seek_key_exact(&mut self, key: &B::Key) -> bool {
+        self.with_cursor_mut(|cursor| cursor.seek_key_exact(key))
     }
 
     fn seek_key_with(&mut self, predicate: &dyn Fn(&B::Key) -> bool) {
@@ -1072,7 +1109,7 @@ where
         &self.value_filter
     }
 
-    fn commit<P: AsRef<str>>(&mut self, cid: Uuid, persistent_id: P) -> Result<(), Error> {
+    fn commit(&mut self, base: &Path, persistent_id: &str) -> Result<(), Error> {
         fn persist_batches<B>(batches: Vec<Arc<B>>) -> Vec<Arc<B>>
         where
             B: Batch,
@@ -1115,7 +1152,7 @@ where
         let committed: CommittedSpine<B> = (ids, self as &Self).into();
         let as_bytes = to_bytes(&committed).expect("Serializing CommittedSpine should work.");
         write_commit_metadata(
-            Self::checkpoint_file(cid, &persistent_id),
+            Self::checkpoint_file(base, persistent_id),
             as_bytes.as_slice(),
         )?;
 
@@ -1124,15 +1161,15 @@ where
         let batches = committed.batches;
         let as_bytes = to_bytes(&batches).expect("Serializing batches to Vec<String> should work.");
         write_commit_metadata(
-            self.batchlist_file(cid, &persistent_id),
+            self.batchlist_file(base, persistent_id),
             as_bytes.as_slice(),
         )?;
 
         Ok(())
     }
 
-    fn restore<P: AsRef<str>>(&mut self, cid: Uuid, persistent_id: P) -> Result<(), Error> {
-        let pspine_path = Self::checkpoint_file(cid, persistent_id);
+    fn restore(&mut self, base: &Path, persistent_id: &str) -> Result<(), Error> {
+        let pspine_path = Self::checkpoint_file(base, persistent_id);
         let content = fs::read(pspine_path)?;
         let archived = unsafe { rkyv::archived_root::<CommittedSpine<B>>(&content) };
 

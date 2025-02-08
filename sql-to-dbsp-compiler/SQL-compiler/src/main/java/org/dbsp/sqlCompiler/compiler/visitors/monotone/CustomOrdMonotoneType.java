@@ -52,7 +52,7 @@ public class CustomOrdMonotoneType
     }
 
     @Override
-    public IMaybeMonotoneType setMaybeNull(boolean maybeNull) {
+    public IMaybeMonotoneType withMaybeNull(boolean maybeNull) {
         throw new UnsupportedException(this.exposedType.getNode());
     }
 

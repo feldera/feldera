@@ -1,9 +1,10 @@
 //! Support for SQL Timestamp and Date data types.
 
 use crate::{
+    array::Array,
     casts::*,
     interval::{LongInterval, ShortInterval},
-    FromInteger, ToInteger,
+    FromInteger, SqlString, ToInteger,
 };
 use chrono::format::ParseErrorKind;
 use chrono::{
@@ -682,6 +683,14 @@ some_operator!(eq, Timestamp, Timestamp, bool);
 some_operator!(neq, Timestamp, Timestamp, bool);
 some_operator!(gte, Timestamp, Timestamp, bool);
 some_operator!(lte, Timestamp, Timestamp, bool);
+/*
+some_operator!(lt, Timestamp, &Timestamp, bool);
+some_operator!(gt, Timestamp, &Timestamp, bool);
+some_operator!(eq, Timestamp, &Timestamp, bool);
+some_operator!(neq, Timestamp, &Timestamp, bool);
+some_operator!(gte, Timestamp, &Timestamp, bool);
+some_operator!(lte, Timestamp, &Timestamp, bool);
+*/
 
 #[doc(hidden)]
 pub fn floor_week_Timestamp(value: Timestamp) -> Timestamp {
@@ -797,7 +806,7 @@ pub fn hop_Timestamp_ShortInterval_ShortInterval_ShortInterval(
     period: ShortInterval,
     size: ShortInterval,
     start: ShortInterval,
-) -> Vec<Timestamp> {
+) -> Array<Timestamp> {
     let mut result = Vec::<Timestamp>::new();
     let round = hop_start(ts, period, size, start);
     let mut add = 0;
@@ -805,7 +814,7 @@ pub fn hop_Timestamp_ShortInterval_ShortInterval_ShortInterval(
         result.push(Timestamp::new(round + add));
         add += period.milliseconds();
     }
-    result
+    result.into()
 }
 
 #[doc(hidden)]
@@ -814,9 +823,9 @@ pub fn hop_TimestampN_ShortInterval_ShortInterval_ShortInterval(
     period: ShortInterval,
     size: ShortInterval,
     start: ShortInterval,
-) -> Vec<Timestamp> {
+) -> Array<Timestamp> {
     match ts {
-        None => Vec::new(),
+        None => Vec::new().into(),
         Some(ts) => {
             hop_Timestamp_ShortInterval_ShortInterval_ShortInterval(ts, period, size, start)
         }
@@ -824,8 +833,8 @@ pub fn hop_TimestampN_ShortInterval_ShortInterval_ShortInterval(
 }
 
 #[doc(hidden)]
-pub fn parse_timestamp__(format: String, st: String) -> Option<Timestamp> {
-    let nt = NaiveDateTime::parse_from_str(&st, &format);
+pub fn parse_timestamp__(format: SqlString, st: SqlString) -> Option<Timestamp> {
+    let nt = NaiveDateTime::parse_from_str(st.str(), format.str());
     match nt {
         Ok(nt) => Some(Timestamp::from_naiveDateTime(nt)),
         Err(e) => match e.kind() {
@@ -837,17 +846,17 @@ pub fn parse_timestamp__(format: String, st: String) -> Option<Timestamp> {
     }
 }
 
-pub fn parse_timestampN_(format: Option<String>, st: String) -> Option<Timestamp> {
+pub fn parse_timestampN_(format: Option<SqlString>, st: SqlString) -> Option<Timestamp> {
     let format = format?;
     parse_timestamp__(format, st)
 }
 
-pub fn parse_timestamp_N(format: String, st: Option<String>) -> Option<Timestamp> {
+pub fn parse_timestamp_N(format: SqlString, st: Option<SqlString>) -> Option<Timestamp> {
     let st = st?;
     parse_timestamp__(format, st)
 }
 
-pub fn parse_timestampNN(format: Option<String>, st: Option<String>) -> Option<Timestamp> {
+pub fn parse_timestampNN(format: Option<SqlString>, st: Option<SqlString>) -> Option<Timestamp> {
     let st = st?;
     let format = format?;
     parse_timestamp__(format, st)
@@ -1049,6 +1058,14 @@ some_operator!(eq, Date, Date, bool);
 some_operator!(neq, Date, Date, bool);
 some_operator!(gte, Date, Date, bool);
 some_operator!(lte, Date, Date, bool);
+/*
+some_operator!(lt, Date, &Date, bool);
+some_operator!(gt, Date, &Date, bool);
+some_operator!(eq, Date, &Date, bool);
+some_operator!(neq, Date, &Date, bool);
+some_operator!(gte, Date, &Date, bool);
+some_operator!(lte, Date, &Date, bool);
+*/
 
 // right - left
 #[doc(hidden)]
@@ -1226,15 +1243,15 @@ pub fn datediff_day_Date_Date(left: Date, right: Date) -> i32 {
 some_polymorphic_function2!(datediff_day, Date, Date, Date, Date, i32);
 
 #[doc(hidden)]
-pub fn format_date__(format: String, date: Date) -> String {
-    date.to_dateTime().format(&format).to_string()
+pub fn format_date__(format: SqlString, date: Date) -> SqlString {
+    SqlString::from(date.to_dateTime().format(format.str()).to_string())
 }
 
-some_function2!(format_date, String, Date, String);
+some_function2!(format_date, SqlString, Date, SqlString);
 
 #[doc(hidden)]
-pub fn parse_date__(format: String, st: String) -> Option<Date> {
-    let nd = NaiveDate::parse_from_str(&st, &format);
+pub fn parse_date__(format: SqlString, st: SqlString) -> Option<Date> {
+    let nd = NaiveDate::parse_from_str(st.str(), format.str());
     match nd {
         Ok(nd) => Some(Date::from_date(nd)),
         Err(e) => match e.kind() {
@@ -1246,17 +1263,17 @@ pub fn parse_date__(format: String, st: String) -> Option<Date> {
     }
 }
 
-pub fn parse_dateN_(format: Option<String>, st: String) -> Option<Date> {
+pub fn parse_dateN_(format: Option<SqlString>, st: SqlString) -> Option<Date> {
     let format = format?;
     parse_date__(format, st)
 }
 
-pub fn parse_date_N(format: String, st: Option<String>) -> Option<Date> {
+pub fn parse_date_N(format: SqlString, st: Option<SqlString>) -> Option<Date> {
     let st = st?;
     parse_date__(format, st)
 }
 
-pub fn parse_dateNN(format: Option<String>, st: Option<String>) -> Option<Date> {
+pub fn parse_dateNN(format: Option<SqlString>, st: Option<SqlString>) -> Option<Date> {
     let st = st?;
     let format = format?;
     parse_date__(format, st)
@@ -1665,6 +1682,14 @@ some_operator!(eq, Time, Time, bool);
 some_operator!(neq, Time, Time, bool);
 some_operator!(gte, Time, Time, bool);
 some_operator!(lte, Time, Time, bool);
+/*
+some_operator!(lt, Time, &Time, bool);
+some_operator!(gt, Time, &Time, bool);
+some_operator!(eq, Time, &Time, bool);
+some_operator!(neq, Time, &Time, bool);
+some_operator!(gte, Time, &Time, bool);
+some_operator!(lte, Time, &Time, bool);
+*/
 
 #[doc(hidden)]
 pub fn extract_millisecond_Time(value: Time) -> i64 {
@@ -1698,8 +1723,8 @@ pub fn extract_hour_Time(value: Time) -> i64 {
 }
 
 #[doc(hidden)]
-pub fn parse_time__(format: String, st: String) -> Option<Time> {
-    let nt = NaiveTime::parse_from_str(&st, &format);
+pub fn parse_time__(format: SqlString, st: SqlString) -> Option<Time> {
+    let nt = NaiveTime::parse_from_str(st.str(), format.str());
     match nt {
         Ok(nt) => Some(Time::from_time(nt)),
         Err(e) => match e.kind() {
@@ -1711,17 +1736,17 @@ pub fn parse_time__(format: String, st: String) -> Option<Time> {
     }
 }
 
-pub fn parse_timeN_(format: Option<String>, st: String) -> Option<Time> {
+pub fn parse_timeN_(format: Option<SqlString>, st: SqlString) -> Option<Time> {
     let format = format?;
     parse_time__(format, st)
 }
 
-pub fn parse_time_N(format: String, st: Option<String>) -> Option<Time> {
+pub fn parse_time_N(format: SqlString, st: Option<SqlString>) -> Option<Time> {
     let st = st?;
     parse_time__(format, st)
 }
 
-pub fn parse_timeNN(format: Option<String>, st: Option<String>) -> Option<Time> {
+pub fn parse_timeNN(format: Option<SqlString>, st: Option<SqlString>) -> Option<Time> {
     let st = st?;
     let format = format?;
     parse_time__(format, st)

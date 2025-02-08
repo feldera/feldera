@@ -24,7 +24,7 @@ import org.dbsp.sqlCompiler.ir.type.IsIntervalType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBaseType;
-import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeVec;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeArray;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
@@ -62,7 +62,7 @@ public class ExpandHop extends CircuitCloneVisitor {
         hopArguments.add(size);
         hopArguments.add(start);
         DBSPType hopType = type.tupFields[nextIndex];
-        DBSPType resultType = new DBSPTypeVec(hopType, false);
+        DBSPType resultType = new DBSPTypeArray(hopType, false);
         StringBuilder functionName = new StringBuilder("hop");
         DBSPExpression[] operands = hopArguments.toArray(new DBSPExpression[0]);
         for (DBSPExpression op: hopArguments) {
@@ -96,10 +96,10 @@ public class ExpandHop extends CircuitCloneVisitor {
         DBSPLetStatement array = new DBSPLetStatement("array", collectionExpression);
         statements.add(array);
         DBSPLetStatement clone = new DBSPLetStatement(
-                "array_clone", array.getVarReference().deref().applyClone());
+                "array_clone", array.getVarReference().deref().deref().applyClone());
         statements.add(clone);
         DBSPExpression iter = new DBSPApplyMethodExpression("into_iter",
-                DBSPTypeAny.getDefault(), clone.getVarReference().applyClone());
+                DBSPTypeAny.getDefault(), clone.getVarReference());
         DBSPExpression[] resultFields = new DBSPExpression[type.size()];
         for (int i = 0; i < inputRowType.size(); i++)
             resultFields[i] = statements.get(i).to(DBSPLetStatement.class).getVarReference().applyClone();

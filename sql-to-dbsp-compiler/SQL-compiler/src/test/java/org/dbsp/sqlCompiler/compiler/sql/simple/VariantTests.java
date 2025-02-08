@@ -26,7 +26,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimeLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimestampLiteral;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariantExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVariantNullLiteral;
-import org.dbsp.sqlCompiler.ir.expression.DBSPVecExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPArrayExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
@@ -38,7 +38,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTime;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVariant;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeMap;
-import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeVec;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeArray;
 import org.dbsp.util.Linq;
 import org.junit.Test;
 
@@ -74,7 +74,14 @@ public class VariantTests extends BaseSQLTests {
         DBSPZSetExpression expectedOutput = new DBSPZSetExpression(new DBSPTupleExpression(fields));
         InputOutputChange change = new InputOutputChange(new Change(), new Change(expectedOutput));
         ccs.addChange(change);
-        this.addRustTestCase(ccs);
+    }
+
+    @Test
+    public void testUDT() {
+        this.compileRustTestCase("""
+                CREATE TYPE x AS (v INTEGER, w INTEGER);
+                CREATE TABLE TT(xf X ARRAY);
+                CREATE VIEW V AS SELECT CAST(xf AS VARIANT) FROM TT;""");
     }
 
     @Test
@@ -121,7 +128,7 @@ public class VariantTests extends BaseSQLTests {
                 new DBSPBoolLiteral(false));
         // An array of variant values can have values with any underlying type
         this.testQuery("SELECT ARRAY[CAST(1 AS VARIANT), CAST('abc' AS VARIANT)]",
-                new DBSPVecExpression(
+                new DBSPArrayExpression(
                         new DBSPVariantExpression(new DBSPI32Literal(1)),
                         new DBSPVariantExpression(new DBSPStringLiteral("abc"))));
         // A map with VARCHAR keys and VARIANT values
@@ -137,7 +144,7 @@ public class VariantTests extends BaseSQLTests {
                                 new DBSPStringLiteral("c")),
                         Linq.list(new DBSPVariantExpression(new DBSPI32Literal(1)),
                                 new DBSPVariantExpression(new DBSPStringLiteral("abc")),
-                                new DBSPVariantExpression(new DBSPVecExpression(
+                                new DBSPVariantExpression(new DBSPArrayExpression(
                                         new DBSPI32Literal(1),
                                         new DBSPI32Literal(2),
                                         new DBSPI32Literal(3)
@@ -237,7 +244,7 @@ public class VariantTests extends BaseSQLTests {
                 new DBSPVariantExpression(null, new DBSPTypeVariant(CalciteObject.EMPTY, true)));
         this.testQuery("SELECT PARSE_JSON('[1,2,3]')",
                 new DBSPVariantExpression(
-                        new DBSPVecExpression(
+                        new DBSPArrayExpression(
                                 new DBSPVariantExpression(new DBSPDecimalLiteral(1)),
                                 new DBSPVariantExpression(new DBSPDecimalLiteral(2)),
                                 new DBSPVariantExpression(new DBSPDecimalLiteral(3)))));
@@ -270,18 +277,18 @@ public class VariantTests extends BaseSQLTests {
         // This is a bug in Calcite, the array should be nullable, and the elements should be nullable too
         this.testQuery("""
                 SELECT CAST(ARRAY[NULL, 1] AS INT ARRAY)""",
-                new DBSPVecExpression(false,
+                new DBSPArrayExpression(false,
                         new DBSPTypeInteger(CalciteObject.EMPTY, 32, true, true).none(),
                         new DBSPI32Literal(1, true)));
         // result is null, since 1 cannot be converted to a string
         this.testQuery("""
                 SELECT CAST(PARSE_JSON('["a", 1]') AS STRING ARRAY)""",
-                new DBSPVecExpression(
-                        new DBSPTypeVec(DBSPTypeString.varchar(false), true),
+                new DBSPArrayExpression(
+                        new DBSPTypeArray(DBSPTypeString.varchar(false), true),
                         true));
         this.testQuery("""
                 SELECT CAST(PARSE_JSON('["a", 1]') AS VARIANT ARRAY)""",
-                new DBSPVecExpression(true,
+                new DBSPArrayExpression(true,
                         new DBSPVariantExpression(new DBSPStringLiteral("a", true)),
                         new DBSPVariantExpression(new DBSPDecimalLiteral(CalciteObject.EMPTY,
                                 DBSPTypeDecimal.getDefault(), new BigDecimal(1)))));
@@ -289,7 +296,7 @@ public class VariantTests extends BaseSQLTests {
         this.testQuery("""
                 SELECT CAST(ARRAY[NULL, 1] AS VARIANT)""",
                 new DBSPVariantExpression(
-                        new DBSPVecExpression(false,
+                        new DBSPArrayExpression(false,
                                 new DBSPTypeInteger(CalciteObject.EMPTY, 32, true, true).none(),
                                 new DBSPI32Literal(1, true))));
     }
@@ -388,6 +395,8 @@ public class VariantTests extends BaseSQLTests {
 
     @Test
     public void structTests() {
+        this.testQuery("SELECT TO_JSON(CAST(t(ARRAY[s(2, 'a', ARRAY[1, NULL, 3]), s(3, 'b', array())]) AS VARIANT))",
+                new DBSPStringLiteral("{\"sa\":[{\"a\":[1,null,3],\"i\":2,\"s\":\"a\"},{\"a\":[],\"i\":3,\"s\":\"b\"}]}", true));
         this.testQuery("SELECT CAST(s(2, 'a', ARRAY[1, 2, 3]) AS VARIANT)",
                 new DBSPVariantExpression(
                         new DBSPMapExpression(
@@ -401,7 +410,7 @@ public class VariantTests extends BaseSQLTests {
                                 Linq.list(
                                         new DBSPVariantExpression(new DBSPI32Literal(2)),
                                         new DBSPVariantExpression(new DBSPStringLiteral("a")),
-                                        new DBSPVariantExpression(new DBSPVecExpression(
+                                        new DBSPVariantExpression(new DBSPArrayExpression(
                                                 new DBSPI32Literal(1),
                                                 new DBSPI32Literal(2),
                                                 new DBSPI32Literal(3)))))));
@@ -411,19 +420,17 @@ public class VariantTests extends BaseSQLTests {
                 new DBSPTupleExpression(true,
                         new DBSPI32Literal(2, true),
                         new DBSPStringLiteral("a", true),
-                        new DBSPVecExpression(true,
+                        new DBSPArrayExpression(true,
                                 new DBSPI32Literal(1, true),
                                 new DBSPI32Literal(2, true),
                                 new DBSPI32Literal(3, true))));
-        this.testQuery("SELECT TO_JSON(CAST(t(ARRAY[s(2, 'a', ARRAY[1, NULL, 3]), s(3, 'b', array())]) AS VARIANT))",
-                new DBSPStringLiteral("{\"sa\":[{\"a\":[1,null,3],\"i\":2,\"s\":\"a\"},{\"a\":[],\"i\":3,\"s\":\"b\"}]}", true));
         this.testQuery("SELECT CAST(PARSE_JSON('{\"sa\": [{\"i\": 2, \"s\": \"a\", \"a\": [1, 2, 3]}]}') AS T)",
                 new DBSPTupleExpression(true,
-                        new DBSPVecExpression(true,
+                        new DBSPArrayExpression(true,
                                 new DBSPTupleExpression(true,
                                         new DBSPI32Literal(2, true),
                                         new DBSPStringLiteral("a", true),
-                                        new DBSPVecExpression(true,
+                                        new DBSPArrayExpression(true,
                                                 new DBSPI32Literal(1, true),
                                                 new DBSPI32Literal(2, true),
                                                 new DBSPI32Literal(3, true))))));
@@ -436,21 +443,21 @@ public class VariantTests extends BaseSQLTests {
                 new DBSPTupleExpression(true,
                         new DBSPI32Literal(0, true),
                         DBSPTypeString.varchar(true).none(),
-                        new DBSPTypeVec(i32, true).none()));
+                        new DBSPTypeArray(i32, true).none()));
         this.testQuery("SELECT CAST(CAST(MAP['i', 's'] AS VARIANT) AS S)",
                 new DBSPTupleExpression(true,
                         i32.none(),
                         DBSPTypeString.varchar(true).none(),
-                        new DBSPTypeVec(i32, true).none()));
+                        new DBSPTypeArray(i32, true).none()));
         this.testQuery("SELECT CAST(CAST(MAP['I', 0] AS VARIANT) AS S)",
                 new DBSPTupleExpression(true,
                         i32.none(),
                         DBSPTypeString.varchar(true).none(),
-                        new DBSPTypeVec(i32, true).none()));
+                        new DBSPTypeArray(i32, true).none()));
         this.testQuery("SELECT CAST(CAST(MAP['i', 0, 'X', 2] AS VARIANT) AS S)",
                 new DBSPTupleExpression(true,
                         new DBSPI32Literal(0, true),
                         DBSPTypeString.varchar(true).none(),
-                        new DBSPTypeVec(i32, true).none()));
+                        new DBSPTypeArray(i32, true).none()));
     }
 }

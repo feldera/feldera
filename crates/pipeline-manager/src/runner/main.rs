@@ -9,12 +9,12 @@ use crate::probe::Probe;
 use crate::runner::error::RunnerError;
 use crate::runner::pipeline_automata::PipelineAutomaton;
 use crate::runner::pipeline_executor::{LogMessage, PipelineExecutor};
-use actix_http::{Method, StatusCode};
 use actix_web::HttpResponse;
 use actix_web::Responder;
 use actix_web::{get, web, HttpRequest, HttpServer};
 use async_stream::try_stream;
 use log::{debug, error, trace};
+use reqwest::{Method, StatusCode};
 use std::collections::BTreeMap;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -131,14 +131,16 @@ async fn get_logs(
                         error!(
                                 "Unable to send the log follow sender to the runner receiver because the channel is full"
                             );
-                        Err(ManagerError::from(RunnerError::LogFollowRequestChannelFull))
+                        Err(ManagerError::from(
+                            RunnerError::RunnerInteractionLogFollowRequestChannelFull,
+                        ))
                     }
                     TrySendError::Closed(_) => {
                         error!(
                                 "Unable to send the log follow sender to the runner receiver because the channel is closed"
                             );
                         Err(ManagerError::from(
-                            RunnerError::LogFollowRequestChannelClosed,
+                            RunnerError::RunnerInteractionLogFollowRequestChannelClosed,
                         ))
                     }
                 },
@@ -150,9 +152,8 @@ async fn get_logs(
 /// Waits for the HTTP server to become ready by polling it.
 /// Returns false if after a predefined number of tries with timeouts
 /// it was unable to receive an OK response from the health endpoint.
-async fn wait_for_http_server_ready(port: u16) -> bool {
+async fn wait_for_http_server_ready(client: &reqwest::Client, port: u16) -> bool {
     let url = format!("http://127.0.0.1:{port}/healthz");
-    let client = reqwest::Client::new();
     let mut tries = READY_CHECK_HTTP_RETRIES;
     while tries > 0 {
         if let Ok(response) = client
@@ -204,7 +205,11 @@ pub async fn runner_main<E: PipelineExecutor + 'static>(
             .expect("Unable to bind runner main HTTP server to port {main_http_server_port}")
             .run(),
     );
-    if !wait_for_http_server_ready(main_http_server_port).await {
+
+    // Reused HTTP client
+    let client = reqwest::Client::new();
+
+    if !wait_for_http_server_ready(&client, main_http_server_port).await {
         panic!("Unable to reach runner main HTTP server on port {main_http_server_port}");
     }
     debug!(
@@ -213,7 +218,7 @@ pub async fn runner_main<E: PipelineExecutor + 'static>(
     );
 
     // Launch the reconciliation loop
-    reconcile::<E>(db, pipelines, common_config, config).await
+    reconcile::<E>(db, client, pipelines, common_config, config).await
 }
 
 /// Continuous reconciliation loop between what is stored about the pipelines in the database and
@@ -221,6 +226,7 @@ pub async fn runner_main<E: PipelineExecutor + 'static>(
 /// It continuously waits and acts on pipeline database notifications (create, update, delete).
 async fn reconcile<E: PipelineExecutor + 'static>(
     db: Arc<Mutex<StoragePostgres>>,
+    client: reqwest::Client,
     pipelines: Arc<Mutex<PipelinesState>>,
     common_config: CommonConfig,
     config: E::Config,
@@ -244,8 +250,12 @@ async fn reconcile<E: PipelineExecutor + 'static>(
                                 channel::<Sender<LogMessage>>(
                                     MAXIMUM_OUTSTANDING_LOG_FOLLOW_REQUESTS,
                                 );
-                            let pipeline_handle =
-                                E::new(pipeline_id, config.clone(), follow_request_receiver);
+                            let pipeline_handle = E::new(
+                                pipeline_id,
+                                config.clone(),
+                                client.clone(),
+                                follow_request_receiver,
+                            );
                             spawn(
                                 PipelineAutomaton::new(
                                     &common_config.platform_version,
@@ -253,6 +263,7 @@ async fn reconcile<E: PipelineExecutor + 'static>(
                                     tenant_id,
                                     db.clone(),
                                     notifier.clone(),
+                                    client.clone(),
                                     pipeline_handle,
                                     E::PROVISIONING_TIMEOUT,
                                     E::PROVISIONING_POLL_PERIOD,

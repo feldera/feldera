@@ -1,4 +1,5 @@
 use crate::circuit::circuit_builder::StreamId;
+use crate::circuit::metadata::NUM_INPUTS;
 use crate::circuit::metrics::Gauge;
 use crate::{
     circuit::{
@@ -18,6 +19,7 @@ use crate::{
 use dyn_clone::clone_box;
 use minitrace::trace;
 use size_of::SizeOf;
+use std::path::Path;
 use std::{
     borrow::Cow,
     cell::{Ref, RefCell},
@@ -28,7 +30,6 @@ use std::{
     rc::Rc,
     sync::Arc,
 };
-use uuid::Uuid;
 
 circuit_cache_key!(TraceId<C, D: BatchReader>(StreamId => Stream<C, D>));
 circuit_cache_key!(BoundsId<D: BatchReader>(StreamId => TraceBounds<<D as BatchReader>::Key, <D as BatchReader>::Val>));
@@ -646,6 +647,10 @@ pub struct UntimedTraceAppend<T>
 where
     T: Trace,
 {
+    // Total number of input tuples processed by the operator.
+    num_inputs: usize,
+    num_inputs_metric: Option<Gauge>,
+
     _phantom: PhantomData<T>,
 }
 
@@ -655,6 +660,8 @@ where
 {
     pub fn new() -> Self {
         Self {
+            num_inputs: 0,
+            num_inputs_metric: None,
             _phantom: PhantomData,
         }
     }
@@ -676,6 +683,30 @@ where
     fn name(&self) -> Cow<'static, str> {
         Cow::from("UntimedTraceAppend")
     }
+
+    fn init(&mut self, global_id: &GlobalNodeId) {
+        self.num_inputs_metric = Some(Gauge::new(
+            NUM_INPUTS,
+            None,
+            Some("count"),
+            global_id,
+            vec![],
+        ));
+    }
+
+    fn metrics(&self) {
+        self.num_inputs_metric
+            .as_ref()
+            .unwrap()
+            .set(self.num_inputs as f64);
+    }
+
+    fn metadata(&self, meta: &mut OperatorMeta) {
+        meta.extend(metadata! {
+            NUM_INPUTS => MetaItem::Count(self.num_inputs),
+        });
+    }
+
     fn fixedpoint(&self, _scope: Scope) -> bool {
         true
     }
@@ -693,6 +724,7 @@ where
 
     #[trace]
     async fn eval_owned_and_ref(&mut self, mut trace: T, batch: &T::Batch) -> T {
+        self.num_inputs += batch.len();
         trace.insert(batch.clone());
         trace
     }
@@ -705,6 +737,8 @@ where
 
     #[trace]
     async fn eval_owned(&mut self, mut trace: T, batch: T::Batch) -> T {
+        self.num_inputs += batch.len();
+
         trace.insert(batch);
         trace
     }
@@ -720,6 +754,11 @@ where
 pub struct TraceAppend<T: Trace, B: BatchReader, C> {
     clock: C,
     output_factories: T::Factories,
+
+    // Total number of input tuples processed by the operator.
+    num_inputs: usize,
+    num_inputs_metric: Option<Gauge>,
+
     _phantom: PhantomData<(T, B)>,
 }
 
@@ -728,6 +767,8 @@ impl<T: Trace, B: BatchReader, C> TraceAppend<T, B, C> {
         Self {
             clock,
             output_factories: output_factories.clone(),
+            num_inputs: 0,
+            num_inputs_metric: None,
             _phantom: PhantomData,
         }
     }
@@ -744,6 +785,29 @@ where
     }
     fn fixedpoint(&self, _scope: Scope) -> bool {
         true
+    }
+
+    fn init(&mut self, global_id: &GlobalNodeId) {
+        self.num_inputs_metric = Some(Gauge::new(
+            NUM_INPUTS,
+            None,
+            Some("count"),
+            global_id,
+            vec![],
+        ));
+    }
+
+    fn metrics(&self) {
+        self.num_inputs_metric
+            .as_ref()
+            .unwrap()
+            .set(self.num_inputs as f64);
+    }
+
+    fn metadata(&self, meta: &mut OperatorMeta) {
+        meta.extend(metadata! {
+            NUM_INPUTS => MetaItem::Count(self.num_inputs),
+        });
     }
 }
 
@@ -764,6 +828,7 @@ where
     async fn eval_owned_and_ref(&mut self, mut trace: T, batch: &B) -> T {
         // TODO: extend `trace` type to feed untimed batches directly
         // (adding fixed timestamp on the fly).
+        self.num_inputs += batch.len();
         trace.insert(T::Batch::from_batch(
             batch,
             &self.clock.time(),
@@ -780,6 +845,8 @@ where
 
     #[trace]
     async fn eval_owned(&mut self, mut trace: T, batch: B) -> T {
+        self.num_inputs += batch.len();
+
         trace.insert(T::Batch::from_batch(
             &batch,
             &self.clock.time(),
@@ -912,17 +979,17 @@ where
         !self.dirty[scope as usize]
     }
 
-    fn commit<P: AsRef<str>>(&mut self, cid: Uuid, pid: P) -> Result<(), Error> {
+    fn commit(&mut self, base: &Path, pid: &str) -> Result<(), Error> {
         self.trace
             .as_mut()
-            .map(|trace| trace.commit(cid, pid))
+            .map(|trace| trace.commit(base, pid))
             .unwrap_or(Ok(()))
     }
 
-    fn restore<P: AsRef<str>>(&mut self, cid: Uuid, pid: P) -> Result<(), Error> {
+    fn restore(&mut self, base: &Path, pid: &str) -> Result<(), Error> {
         self.trace
             .as_mut()
-            .map(|trace| trace.restore(cid, pid))
+            .map(|trace| trace.restore(base, pid))
             .unwrap_or(Ok(()))
     }
 }

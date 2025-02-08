@@ -155,13 +155,24 @@ impl Uuid {
     }
 
     /// Convert Uuid to string representation
+    #[doc(hidden)]
     #[allow(clippy::inherent_to_string)]
     pub fn to_string(self) -> String {
         self.value.to_string()
     }
 
     /// Parse a string into a Uuid
+    #[doc(hidden)]
     pub fn from_string(value: &String) -> Self {
+        Self {
+            value: uuid::Uuid::parse_str(value)
+                .unwrap_or_else(|_| panic!("Cannot parse {value} into a UUID")),
+        }
+    }
+
+    /// Parse a string into a Uuid
+    #[doc(hidden)]
+    pub fn from_ref(value: &str) -> Self {
         Self {
             value: uuid::Uuid::parse_str(value)
                 .unwrap_or_else(|_| panic!("Cannot parse {value} into a UUID")),

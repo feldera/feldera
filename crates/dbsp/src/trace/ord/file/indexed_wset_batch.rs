@@ -4,10 +4,13 @@ use crate::{
         DataTrait, DynDataTyped, DynOpt, DynPair, DynUnit, DynVec, DynWeightedPairs, Erase,
         Factory, WeightTrait, WeightTraitTyped, WithFactory,
     },
-    storage::file::{
-        reader::{Cursor as FileCursor, Error as ReaderError, Reader},
-        writer::Writer2,
-        Factories as FileFactories,
+    storage::{
+        buffer_cache::CacheStats,
+        file::{
+            reader::{Cursor as FileCursor, Error as ReaderError, Reader},
+            writer::Writer2,
+            Factories as FileFactories,
+        },
     },
     time::{Antichain, AntichainRef},
     trace::{
@@ -240,8 +243,10 @@ where
         let mut writer = Writer2::new(
             &self.factories.factories0,
             &self.factories.factories1,
-            &Runtime::storage(),
+            Runtime::buffer_cache(),
+            &*Runtime::storage_backend().unwrap(),
             Runtime::file_writer_parameters(),
+            self.key_count(),
         )
         .unwrap();
 
@@ -347,6 +352,10 @@ where
         BatchLocation::Storage
     }
 
+    fn cache_stats(&self) -> CacheStats {
+        self.file.cache_stats()
+    }
+
     #[inline]
     fn lower(&self) -> AntichainRef<'_, ()> {
         AntichainRef::new(&[()])
@@ -355,6 +364,10 @@ where
     #[inline]
     fn upper(&self) -> AntichainRef<'_, ()> {
         AntichainRef::empty()
+    }
+
+    fn maybe_contains_key(&self, key: &K) -> bool {
+        self.file.maybe_contains_key(key)
     }
 
     fn sample_keys<RG>(&self, rng: &mut RG, sample_size: usize, output: &mut DynVec<Self::Key>)
@@ -405,7 +418,12 @@ where
     fn from_path(factories: &Self::Factories, path: &Path) -> Result<Self, ReaderError> {
         let any_factory0 = factories.factories0.any_factories();
         let any_factory1 = factories.factories1.any_factories();
-        let file = Reader::open(&[&any_factory0, &any_factory1], &Runtime::storage(), path)?;
+        let file = Reader::open(
+            &[&any_factory0, &any_factory1],
+            Runtime::buffer_cache,
+            &*Runtime::storage_backend().unwrap(),
+            path,
+        )?;
         Ok(Self {
             factories: factories.clone(),
             file,
@@ -542,7 +560,7 @@ where
     #[inline]
     fn new_merger(
         batch1: &FileIndexedWSet<K, V, R>,
-        _batch2: &FileIndexedWSet<K, V, R>,
+        batch2: &FileIndexedWSet<K, V, R>,
         _dst_hint: Option<BatchLocation>,
     ) -> Self {
         Self {
@@ -552,8 +570,10 @@ where
             writer: Writer2::new(
                 &batch1.factories.factories0,
                 &batch1.factories.factories1,
-                &Runtime::storage(),
+                Runtime::buffer_cache(),
+                &*Runtime::storage_backend().unwrap(),
                 Runtime::file_writer_parameters(),
+                batch1.key_count() + batch2.key_count(),
             )
             .unwrap(),
         }
@@ -702,7 +722,12 @@ where
     {
         op(&mut self.key_cursor).unwrap();
         unsafe { self.key_cursor.key(&mut self.key) };
-        self.val_cursor = self.key_cursor.next_column().unwrap().first().unwrap();
+        self.val_cursor = self
+            .key_cursor
+            .next_column()
+            .unwrap()
+            .first_with_hint(&self.val_cursor)
+            .unwrap();
         unsafe { self.val_cursor.item((&mut self.val, &mut self.diff)) };
     }
 
@@ -775,6 +800,14 @@ where
 
     fn seek_key(&mut self, key: &K) {
         self.move_key(|key_cursor| unsafe { key_cursor.advance_to_value_or_larger(key) });
+    }
+
+    fn seek_key_exact(&mut self, key: &K) -> bool {
+        if !self.wset.maybe_contains_key(key) {
+            return false;
+        }
+        self.seek_key(key);
+        self.key_valid() && self.key().eq(key)
     }
 
     fn seek_key_with(&mut self, predicate: &dyn Fn(&K) -> bool) {
@@ -870,26 +903,28 @@ where
 {
     #[inline]
     fn new_builder(factories: &FileIndexedWSetFactories<K, V, R>, _time: ()) -> Self {
-        Self {
-            factories: factories.clone(),
-            writer: Writer2::new(
-                &factories.factories0,
-                &factories.factories1,
-                &Runtime::storage(),
-                Runtime::file_writer_parameters(),
-            )
-            .unwrap(),
-            key: factories.opt_key_factory.default_box(),
-        }
+        Self::with_capacity(factories, _time, 1_000_000)
     }
 
     #[inline]
     fn with_capacity(
         factories: &FileIndexedWSetFactories<K, V, R>,
-        time: (),
-        _capacity: usize,
+        _time: (),
+        capacity: usize,
     ) -> Self {
-        Self::new_builder(factories, time)
+        Self {
+            factories: factories.clone(),
+            writer: Writer2::new(
+                &factories.factories0,
+                &factories.factories1,
+                Runtime::buffer_cache(),
+                &*Runtime::storage_backend().unwrap(),
+                Runtime::file_writer_parameters(),
+                capacity,
+            )
+            .unwrap(),
+            key: factories.opt_key_factory.default_box(),
+        }
     }
 
     #[inline]

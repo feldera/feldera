@@ -1,6 +1,7 @@
 package org.dbsp.sqlCompiler.compiler.sql.simple;
 
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.sql.tools.Change;
 import org.dbsp.sqlCompiler.compiler.sql.tools.CompilerCircuitStream;
 import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
@@ -9,6 +10,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.junit.Test;
 
 public class SerdeTest extends SqlIoTest {
@@ -25,10 +27,10 @@ public class SerdeTest extends SqlIoTest {
             WHERE z.x is NOT NULL;
             """;
         DBSPCompiler compiler = this.testCompiler();
-        // This test behaves very differnetly if we don't use this option.
+        // This test behaves very differently if we don't use this option.
         compiler.options.languageOptions.unquotedCasing = "lower";
         compiler.submitStatementsForCompilation(ddl);
-        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
+        CompilerCircuitStream ccs = this.getCCS(compiler);
         // This will be converted properly to a struct
         DBSPExpression address0 = new DBSPTupleExpression(
                 new DBSPStringLiteral("{ \"NUMBER\": 2 }", true)
@@ -51,6 +53,53 @@ public class SerdeTest extends SqlIoTest {
         DBSPZSetExpression input = new DBSPZSetExpression(address0, address1, invalid, invalidJson);
         DBSPZSetExpression output = new DBSPZSetExpression(person0, person0);
         ccs.addPair(new Change(input), new Change(output));
-        this.addRustTestCase(ccs);
+    }
+
+    @Test
+    public void jsonStructTest2() {
+        // Matches the example in the documentation json.md
+        String ddl = """
+            CREATE TYPE address AS (
+               city VARCHAR,
+               street VARCHAR,
+               number INT
+            );
+            CREATE TABLE data(addr VARCHAR);
+            CREATE FUNCTION jsonstring_as_address(addr VARCHAR) RETURNS address;
+
+            CREATE VIEW decoded0 AS
+            SELECT CAST(PARSE_JSON(data.addr) AS address) FROM data;
+
+            CREATE VIEW decoded1
+            AS SELECT jsonstring_as_address(data.addr) FROM data;
+            """;
+        DBSPCompiler compiler = this.testCompiler();
+        // This test behaves very differently if we don't use this option.
+        compiler.options.languageOptions.unquotedCasing = "lower";
+        compiler.submitStatementsForCompilation(ddl);
+        CompilerCircuitStream ccs = this.getCCS(compiler);
+        DBSPExpression addressIn0 = new DBSPTupleExpression(
+                new DBSPStringLiteral("{ \"city\": \"Boston\", \"street\": \"Main\", \"number\": 10 }", true)
+        );
+        DBSPTupleExpression addressOut0 = new DBSPTupleExpression(new DBSPTupleExpression(true,
+                new DBSPStringLiteral("Boston", true),
+                new DBSPStringLiteral("Main", true),
+                new DBSPI32Literal(10, true)
+        ));
+        DBSPZSetExpression input0 = new DBSPZSetExpression(addressIn0);
+        DBSPZSetExpression output0 = new DBSPZSetExpression(addressOut0);
+        ccs.addPair(new Change(input0), new Change(output0, output0));
+
+        DBSPExpression addressIn1 = new DBSPTupleExpression(
+                new DBSPStringLiteral("{ \"city\": \"Boston\", \"street\": \"Main\", \"NUMBER\": 10 }", true)
+        );
+        DBSPZSetExpression input1 = new DBSPZSetExpression(addressIn1);
+        DBSPZSetExpression output1 = new DBSPZSetExpression(addressOut0);
+        assert addressOut0.fields != null;
+        ccs.addPair(new Change(input1), new Change(new DBSPZSetExpression(
+                new DBSPTupleExpression(new DBSPTupleExpression(true, 
+                        new DBSPStringLiteral("Boston", true),
+                        new DBSPStringLiteral("Main", true),
+                        new DBSPTypeInteger(CalciteObject.EMPTY, 32, true, true).none()))), output1));
     }
 }

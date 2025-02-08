@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.type;
 
+import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
@@ -36,7 +37,6 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.path.DBSPPath;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRef;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBaseType;
 import org.dbsp.util.IndentStream;
 import org.dbsp.util.Linq;
@@ -128,9 +128,7 @@ public abstract class DBSPType extends DBSPNode implements IDBSPInnerNode {
     /** Given a type that is expected to be a reference type,
      * compute the type that is the dereferenced type. */
     public DBSPType deref() {
-        if (this.is(DBSPTypeAny.class))
-            return this;
-        return this.to(DBSPTypeRef.class).type;
+        throw new InternalCompilerError("Deref of " + this);
     }
 
     /** The null value with this type. */

@@ -27,6 +27,7 @@ pub mod timestamp;
 pub mod uuid;
 pub mod variant;
 
+pub use array::Array;
 pub use binary::ByteArray;
 #[doc(hidden)]
 pub use geopoint::GeoPoint;
@@ -36,6 +37,7 @@ pub use num_traits::Float;
 pub use regex::Regex;
 #[doc(hidden)]
 pub use source::{SourcePosition, SourcePositionRange};
+pub use string::SqlString;
 pub use timestamp::{Date, Time, Timestamp};
 pub use uuid::Uuid;
 pub use variant::Variant;
@@ -60,7 +62,6 @@ use dbsp::{
     utils::*,
     DBData, OrdIndexedZSet, OrdZSet, OutputHandle, SetHandle, ZSetHandle, ZWeight,
 };
-use itertools::Itertools;
 use metrics::{counter, Counter};
 use num::{PrimInt, ToPrimitive};
 use num_traits::{Pow, Zero};
@@ -228,12 +229,12 @@ pub(crate) use some_function2;
 // The generic type may be a part of the type of both parameters, just one of
 // them or even the return type
 macro_rules! some_generic_function2 {
-    ($func_name:ident, $generic_type: ty, $arg_type0: ty, $arg_type1: ty, $trait_bound:ident, $ret_type: ty) => {
+    ($func_name:ident, $generic_type: ty, $arg_type0: ty, $arg_type1: ty, $bound: tt $(+ $bounds: tt)*, $ret_type: ty) => {
         ::paste::paste! {
             #[doc(hidden)]
             pub fn [<$func_name NN>]<$generic_type>( arg0: Option<$arg_type0>, arg1: Option<$arg_type1> ) -> Option<$ret_type>
             where
-                $generic_type: $trait_bound,
+                $generic_type: $bound $(+ $bounds)*,
             {
                 let arg0 = arg0?;
                 let arg1 = arg1?;
@@ -243,7 +244,7 @@ macro_rules! some_generic_function2 {
             #[doc(hidden)]
             pub fn [<$func_name _N>]<$generic_type>( arg0: $arg_type0, arg1: Option<$arg_type1> ) -> Option<$ret_type>
             where
-                $generic_type: $trait_bound,
+                $generic_type: $bound $(+ $bounds)*,
             {
                 let arg1 = arg1?;
                 Some([<$func_name __>](arg0, arg1))
@@ -252,7 +253,7 @@ macro_rules! some_generic_function2 {
             #[doc(hidden)]
             pub fn [<$func_name N_>]<$generic_type>( arg0: Option<$arg_type0>, arg1: $arg_type1 ) -> Option<$ret_type>
             where
-                $generic_type: $trait_bound,
+                $generic_type: $bound $(+ $bounds)*,
             {
                 let arg0 = arg0?;
                 Some([<$func_name __>](arg0, arg1))
@@ -690,42 +691,6 @@ macro_rules! some_operator {
 
 pub(crate) use some_operator;
 
-macro_rules! for_all_compare {
-    ($func_name: ident, $ret_type: ty, $t:ty where $($bounds:tt)*) => {
-        ::paste::paste! {
-            #[doc(hidden)]
-            #[inline(always)]
-            pub fn [<$func_name __ >]<T: $($bounds)*>( arg0: T, arg1: T ) -> $ret_type {
-                $func_name(arg0, arg1)
-            }
-
-            #[doc(hidden)]
-            #[inline(always)]
-            pub fn [<$func_name _N_ >]<T: $($bounds)*>( arg0: Option<T>, arg1: T ) -> Option<$ret_type> {
-                let arg0 = arg0?;
-                Some([< $func_name __ >](arg0, arg1))
-            }
-
-            #[doc(hidden)]
-            #[inline(always)]
-            pub fn [<$func_name __N >]<T: $($bounds)*>( arg0: T, arg1: Option<T> ) -> Option<$ret_type> {
-                let arg1 = arg1?;
-                Some([< $func_name __ >](arg0, arg1))
-            }
-
-            #[doc(hidden)]
-            #[inline(always)]
-            pub fn [<$func_name _N_N >]<T: $($bounds)*>( arg0: Option<T>, arg1: Option<T> ) -> Option<$ret_type> {
-                let arg0 = arg0?;
-                let arg1 = arg1?;
-                Some([< $func_name __ >](arg0, arg1))
-            }
-        }
-    };
-
-}
-pub(crate) use for_all_compare;
-
 macro_rules! for_all_int_operator {
     ($func_name: ident) => {
         some_operator!($func_name, i8, i8, i8);
@@ -794,32 +759,6 @@ where
 #[doc(hidden)]
 #[derive(Clone)]
 pub struct ConcatSemigroup<V>(PhantomData<V>);
-
-#[doc(hidden)]
-impl<V> Semigroup<Vec<V>> for ConcatSemigroup<Vec<V>>
-where
-    V: Clone + Ord,
-{
-    #[doc(hidden)]
-    fn combine(left: &Vec<V>, right: &Vec<V>) -> Vec<V> {
-        left.iter().merge(right).cloned().collect()
-    }
-}
-
-#[doc(hidden)]
-impl<V> Semigroup<Option<Vec<V>>> for ConcatSemigroup<Option<Vec<V>>>
-where
-    V: Clone + Ord,
-{
-    #[doc(hidden)]
-    fn combine(left: &Option<Vec<V>>, right: &Option<Vec<V>>) -> Option<Vec<V>> {
-        match (left, right) {
-            (None, _) => right.clone(),
-            (_, None) => left.clone(),
-            (Some(left), Some(right)) => Some(left.iter().merge(right).cloned().collect()),
-        }
-    }
-}
 
 #[doc(hidden)]
 #[inline(always)]
@@ -933,6 +872,101 @@ where
         },
     }
 }
+
+/*
+Eager version commented out.
+
+#[doc(hidden)]
+#[inline(always)]
+pub fn or_b_b(left: bool, right: bool) -> bool
+{
+    left || right
+}
+
+#[doc(hidden)]
+#[inline(always)]
+pub fn or_bN_b(left: Option<bool>, right: bool) -> Option<bool>
+{
+    match left {
+        Some(l) => Some(l || right),
+        None => match right {
+            true => Some(true),
+            _ => None,
+        },
+    }
+}
+
+#[doc(hidden)]
+#[inline(always)]
+pub fn or_b_bN(left: bool, right: Option<bool>) -> Option<bool>
+{
+    match left {
+        false => right,
+        true => Some(true),
+    }
+}
+
+#[doc(hidden)]
+#[inline(always)]
+pub fn or_bN_bN(left: Option<bool>, right: Option<bool>) -> Option<bool>
+{
+    match left {
+        None => match right {
+            Some(true) => Some(true),
+            _ => None,
+        },
+        Some(false) => right,
+        Some(true) => Some(true),
+    }
+}
+
+// OR and AND are special, they can't be generated by rules
+
+#[doc(hidden)]
+#[inline(always)]
+pub fn and_b_b(left: bool, right: bool) -> bool
+{
+    left && right
+}
+
+#[doc(hidden)]
+#[inline(always)]
+pub fn and_bN_b(left: Option<bool>, right: bool) -> Option<bool>
+{
+    match left {
+        Some(false) => Some(false),
+        Some(true) => Some(right),
+        None => match right {
+            false => Some(false),
+            _ => None,
+        },
+    }
+}
+
+#[doc(hidden)]
+#[inline(always)]
+pub fn and_b_bN(left: bool, right: Option<bool>) -> Option<bool>
+{
+    match left {
+        false => Some(false),
+        true => right,
+    }
+}
+
+#[doc(hidden)]
+#[inline(always)]
+pub fn and_bN_bN(left: Option<bool>, right: Option<bool>) -> Option<bool>
+{
+    match left {
+        Some(false) => Some(false),
+        Some(true) => right,
+        None => match right {
+            Some(false) => Some(false),
+            _ => None,
+        },
+    }
+}
+*/
 
 #[doc(hidden)]
 #[inline(always)]
@@ -1590,25 +1624,26 @@ some_polymorphic_function1!(is_nan, f, F32, bool);
 
 ////////////////////////////////////////////////
 
+// Functions called by 'writelog'
 #[doc(hidden)]
-pub fn dump<T>(prefix: String, data: &T) -> T
+pub fn dump<T>(prefix: SqlString, data: &T) -> T
 where
     T: Debug + Clone,
 {
-    println!("{}: {:?}", prefix, data);
+    println!("{}: {:?}", prefix.str(), data);
     data.clone()
 }
 
 #[doc(hidden)]
-pub fn print(str: String) {
-    print!("{}", str)
+pub fn print(str: SqlString) {
+    print!("{}", str.str())
 }
 
 #[doc(hidden)]
-pub fn print_opt(str: Option<String>) {
+pub fn print_opt(str: Option<SqlString>) {
     match str {
         None => print!("NULL"),
-        Some(x) => print!("{}", x),
+        Some(x) => print!("{}", x.str()),
     }
 }
 

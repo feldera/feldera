@@ -30,11 +30,13 @@ where
     ///
     /// You shouldn't ordinarily need this operator, at least not for streams of
     /// Z-sets, because most DBSP operators are fully incremental.
+    #[track_caller]
     pub fn differentiate(&self) -> Stream<C, D> {
         self.differentiate_with_initial_value(D::zero())
     }
 
     /// Nested stream differentiation.
+    #[track_caller]
     pub fn differentiate_nested(&self) -> Stream<C, D> {
         self.circuit()
             .cache_get_or_insert_with(NestedDifferentiateId::new(self.stream_id()), || {
@@ -64,6 +66,7 @@ where
         + Eq
         + 'static,
 {
+    #[track_caller]
     pub fn differentiate_with_initial_value(&self, initial: D) -> Stream<C, D> {
         self.circuit()
             .cache_get_or_insert_with(DifferentiateId::new(self.stream_id()), || {

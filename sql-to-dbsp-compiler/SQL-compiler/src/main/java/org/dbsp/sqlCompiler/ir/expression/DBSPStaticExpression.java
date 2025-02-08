@@ -8,7 +8,7 @@ import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.util.IIndentStream;
 
 /** Represents an expression that is compiled into a
- * lazy_static declaration and a reference to the lazy static cell.
+ * LazyLock declaration and a reference to the lazy lock value.
  * The name of the cell is not represented explicitly. */
 public class DBSPStaticExpression extends DBSPExpression {
     public final DBSPExpression initializer;

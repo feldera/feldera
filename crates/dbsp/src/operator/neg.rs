@@ -16,6 +16,7 @@ where
 {
     /// Returns a stream with the same type as `self` in which each value is
     /// negated. Negating an indexed Z-set negates all the weights.
+    #[track_caller]
     pub fn neg(&self) -> Stream<C, D> {
         let negated = self
             .circuit()

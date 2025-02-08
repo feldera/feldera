@@ -112,7 +112,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPUSizeLiteral;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariantExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPUuidLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVariantNullLiteral;
-import org.dbsp.sqlCompiler.ir.expression.DBSPVecExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPArrayExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.path.DBSPPath;
 import org.dbsp.sqlCompiler.ir.path.DBSPPathSegment;
@@ -152,6 +152,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMillisInterval;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMonthsInterval;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeNull;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeReal;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeRuntimeDecimal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeStr;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTime;
@@ -160,6 +161,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeUSize;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeUuid;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVariant;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVoid;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeBTreeMap;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeMap;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeOption;
@@ -168,6 +170,7 @@ import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeSemigroup;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeStream;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeTypedBox;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeUser;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeArray;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeVec;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeWithCustomOrd;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
@@ -430,6 +433,10 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
         return this.preorder((DBSPTypeBaseType) node);
     }
 
+    public VisitDecision preorder(DBSPTypeRuntimeDecimal node) {
+        return this.preorder((DBSPTypeBaseType) node);
+    }
+
     public VisitDecision preorder(DBSPTypeNull node) {
         return this.preorder((DBSPTypeBaseType) node);
     }
@@ -466,6 +473,10 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
         return this.preorder((DBSPTypeUser) node);
     }
 
+    public VisitDecision preorder(DBSPTypeArray node) {
+        return this.preorder((DBSPTypeUser) node);
+    }
+
     public VisitDecision preorder(DBSPTypeVec node) {
         return this.preorder((DBSPTypeUser) node);
     }
@@ -475,6 +486,10 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
     }
 
     public VisitDecision preorder(DBSPTypeMap node) {
+        return this.preorder((DBSPTypeUser) node);
+    }
+
+    public VisitDecision preorder(DBSPTypeBTreeMap node) {
         return this.preorder((DBSPTypeUser) node);
     }
 
@@ -697,7 +712,7 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
         return this.preorder((DBSPLiteral) node);
     }
 
-    public VisitDecision preorder(DBSPVecExpression node) {
+    public VisitDecision preorder(DBSPArrayExpression node) {
         return this.preorder((DBSPExpression) node);
     }
 
@@ -1004,6 +1019,10 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
         this.postorder((DBSPTypeBaseType) node);
     }
 
+    public void postorder(DBSPTypeRuntimeDecimal node) {
+        this.postorder((DBSPTypeBaseType) node);
+    }
+
     public void postorder(DBSPTypeNull node) {
         this.postorder((DBSPTypeBaseType) node);
     }
@@ -1044,11 +1063,19 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
         this.postorder((DBSPTypeUser) node);
     }
 
+    public void postorder(DBSPTypeArray node) {
+        this.postorder((DBSPTypeUser) node);
+    }
+
     public void postorder(DBSPTypeVec node) {
         this.postorder((DBSPTypeUser) node);
     }
 
     public void postorder(DBSPTypeMap node) {
+        this.postorder((DBSPTypeUser) node);
+    }
+
+    public void postorder(DBSPTypeBTreeMap node) {
         this.postorder((DBSPTypeUser) node);
     }
 
@@ -1293,7 +1320,7 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
         this.postorder((DBSPLiteral) node);
     }
 
-    public void postorder(DBSPVecExpression node) {
+    public void postorder(DBSPArrayExpression node) {
         this.postorder((DBSPExpression) node);
     }
 

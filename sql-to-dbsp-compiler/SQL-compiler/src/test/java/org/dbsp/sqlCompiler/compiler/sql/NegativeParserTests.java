@@ -158,24 +158,24 @@ public class NegativeParserTests extends BaseSQLTests {
     public void errorTest() throws IOException, SQLException {
         File file = createInputScript("This is not SQL");
         CompilerMessages messages = CompilerMain.execute("-o", BaseSQLTests.testFilePath, file.getPath());
-        Assert.assertEquals(messages.exitCode, 1);
-        Assert.assertEquals(messages.errorCount(), 1);
+        Assert.assertEquals(1, messages.exitCode);
+        Assert.assertEquals(1, messages.errorCount());
         CompilerMessages.Error msg = messages.getError(0);
         Assert.assertFalse(msg.warning);
-        Assert.assertEquals(msg.message, "Non-query expression encountered in illegal context");
+        Assert.assertEquals("Non-query expression encountered in illegal context", msg.message);
 
         file = createInputScript("CREATE VIEW V AS SELECT * FROM T;");
         messages = CompilerMain.execute("-o", BaseSQLTests.testFilePath, file.getPath());
-        Assert.assertEquals(messages.exitCode, 1);
-        Assert.assertEquals(messages.errorCount(), 1);
+        Assert.assertEquals(1, messages.exitCode);
+        Assert.assertEquals(1, messages.errorCount());
         msg = messages.getError(0);
         Assert.assertFalse(msg.warning);
-        Assert.assertEquals(msg.message, "Object 't' not found");
+        Assert.assertEquals("Object 't' not found", msg.message);
 
         file = createInputScript("CREATE VIEW V AS SELECT ST_MAKELINE(ST_POINT(0,0), ST_POINT(0, 0));");
         messages = CompilerMain.execute("-o", BaseSQLTests.testFilePath, file.getPath());
-        Assert.assertEquals(messages.exitCode, 1);
-        Assert.assertEquals(messages.errorCount(), 1);
+        Assert.assertEquals(1, messages.exitCode);
+        Assert.assertEquals(1, messages.errorCount());
         msg = messages.getError(0);
         Assert.assertFalse(msg.warning);
         TestUtil.assertMessagesContain(messages,
@@ -190,8 +190,8 @@ public class NegativeParserTests extends BaseSQLTests {
                 ", COL2 GARBAGE";
         File file = createInputScript(statement);
         CompilerMessages messages = CompilerMain.execute(file.getPath(), "-o", "/dev/null");
-        Assert.assertEquals(messages.exitCode, 1);
-        Assert.assertEquals(messages.errorCount(), 1);
+        Assert.assertEquals(1, messages.exitCode);
+        Assert.assertEquals(1, messages.errorCount());
         CompilerMessages.Error error = messages.messages.get(0);
         Assert.assertTrue(error.message.startsWith("Encountered \"<EOF>\""));
     }
@@ -206,9 +206,9 @@ public class NegativeParserTests extends BaseSQLTests {
         File out = File.createTempFile("/tmp", "out");
         out.deleteOnExit();
         CompilerMessages messages = CompilerMain.execute(file.getPath(), "-o", out.getAbsolutePath());
-        Assert.assertEquals(messages.exitCode, 0);
-        Assert.assertEquals(messages.warningCount(), 1);
-        Assert.assertEquals(messages.errorCount(), 0);
+        Assert.assertEquals(0, messages.exitCode);
+        Assert.assertEquals(1, messages.warningCount());
+        Assert.assertEquals(0, messages.errorCount());
         CompilerMessages.Error error = messages.messages.get(0);
         Assert.assertTrue(error.warning);
         Assert.assertTrue(error.message.contains("Table 't' is not used"));
