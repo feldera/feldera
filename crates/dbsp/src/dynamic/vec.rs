@@ -63,6 +63,24 @@ pub trait Vector<T: DataTrait + ?Sized>: Data {
     /// Return a reference to the element at `index`; panic if `index >= self.len()`.
     fn index(&self, index: usize) -> &T;
 
+    /// Return a reference to the first element, or `None` if empty.
+    fn first(&self) -> Option<&T> {
+        if self.is_empty() {
+            None
+        } else {
+            Some(self.index(0))
+        }
+    }
+
+    /// Return a reference to the last element, or `None` if empty.
+    fn last(&self) -> Option<&T> {
+        if self.is_empty() {
+            None
+        } else {
+            Some(self.index(self.len() - 1))
+        }
+    }
+
     /// Return a reference to the element at `index`, eliding bounds checks.
     ///
     /// # Safety
@@ -98,6 +116,9 @@ pub trait Vector<T: DataTrait + ?Sized>: Data {
 
     /// Append values in the range `from..to` in `other` to `self`.
     fn extend_from_range(&mut self, other: &DynVec<T>, from: usize, to: usize);
+
+    /// Append values in `other` to `self`.
+    fn extend(&mut self, other: &DynVec<T>);
 
     /// Append the entire contents of `other` to `self`.
     ///
@@ -339,6 +360,12 @@ where
         let other = unsafe { other.downcast::<Self>() };
 
         LeanVec::extend_from_slice(self, &other[from..to])
+    }
+
+    fn extend(&mut self, other: &DynVec<Trait>) {
+        let other = unsafe { other.downcast::<Self>() };
+
+        LeanVec::extend_from_slice(self, &other[..])
     }
 
     fn append(&mut self, other: &mut DynVec<Trait>) {
