@@ -70,7 +70,10 @@ impl InputEndpoint for PostgresInputEndpoint {
     }
 }
 impl IntegratedInputEndpoint for PostgresInputEndpoint {
-    fn open(&self, input_handle: &InputCollectionHandle) -> AnyResult<Box<dyn InputReader>> {
+    fn open(
+        self: Box<Self>,
+        input_handle: &InputCollectionHandle,
+    ) -> AnyResult<Box<dyn InputReader>> {
         Ok(Box::new(PostgresInputReader::new(
             &self.inner,
             input_handle,

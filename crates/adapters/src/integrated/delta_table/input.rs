@@ -85,7 +85,9 @@ const REPORT_ERROR: &str =
 
 /// Integrated input connector that reads from a delta table.
 pub struct DeltaTableInputEndpoint {
-    inner: Arc<DeltaTableInputEndpointInner>,
+    endpoint_name: String,
+    config: DeltaTableReaderConfig,
+    consumer: Box<dyn InputConsumer>,
 }
 
 impl DeltaTableInputEndpoint {
@@ -97,11 +99,9 @@ impl DeltaTableInputEndpoint {
         register_storage_handlers();
 
         Self {
-            inner: Arc::new(DeltaTableInputEndpointInner::new(
-                endpoint_name,
-                config.clone(),
-                consumer,
-            )),
+            endpoint_name: endpoint_name.to_string(),
+            config: config.clone(),
+            consumer,
         }
     }
 }
@@ -112,9 +112,14 @@ impl InputEndpoint for DeltaTableInputEndpoint {
     }
 }
 impl IntegratedInputEndpoint for DeltaTableInputEndpoint {
-    fn open(&self, input_handle: &InputCollectionHandle) -> AnyResult<Box<dyn InputReader>> {
+    fn open(
+        self: Box<Self>,
+        input_handle: &InputCollectionHandle,
+    ) -> AnyResult<Box<dyn InputReader>> {
         Ok(Box::new(DeltaTableInputReader::new(
-            &self.inner,
+            self.endpoint_name,
+            self.config,
+            self.consumer,
             input_handle,
         )?))
     }
@@ -127,11 +132,12 @@ struct DeltaTableInputReader {
 
 impl DeltaTableInputReader {
     fn new(
-        endpoint: &Arc<DeltaTableInputEndpointInner>,
+        endpoint_name: String,
+        config: DeltaTableReaderConfig,
+        consumer: Box<dyn InputConsumer>,
         input_handle: &InputCollectionHandle,
     ) -> AnyResult<Self> {
         let (sender, receiver) = channel(PipelineState::Paused);
-        let endpoint_clone = endpoint.clone();
         let receiver_clone = receiver.clone();
 
         // Used to communicate the status of connector initialization.
@@ -143,10 +149,18 @@ impl DeltaTableInputReader {
             .configure_arrow_deserializer(delta_input_serde_config())?;
         let schema = input_handle.schema.clone();
 
+        let endpoint = Arc::new(DeltaTableInputEndpointInner::new(
+            &endpoint_name,
+            config,
+            consumer,
+            schema,
+        ));
+        let endpoint_clone = endpoint.clone();
+
         std::thread::spawn(move || {
             TOKIO.block_on(async {
                 let _ = endpoint_clone
-                    .worker_task(input_stream, schema, receiver_clone, init_status_sender)
+                    .worker_task(input_stream, receiver_clone, init_status_sender)
                     .await;
             })
         });
@@ -187,6 +201,7 @@ impl Drop for DeltaTableInputReader {
 
 struct DeltaTableInputEndpointInner {
     endpoint_name: String,
+    schema: Relation,
     config: DeltaTableReaderConfig,
     consumer: Box<dyn InputConsumer>,
     datafusion: SessionContext,
@@ -198,6 +213,7 @@ impl DeltaTableInputEndpointInner {
         endpoint_name: &str,
         config: DeltaTableReaderConfig,
         consumer: Box<dyn InputConsumer>,
+        schema: Relation,
     ) -> Self {
         let queue = InputQueue::new(consumer.clone());
         // Configure datafusion not to generate Utf8View arrow types, which are not yet
@@ -209,6 +225,7 @@ impl DeltaTableInputEndpointInner {
 
         Self {
             endpoint_name: endpoint_name.to_string(),
+            schema,
             config,
             consumer,
             datafusion: SessionContext::new_with_config(session_config),
@@ -254,13 +271,12 @@ impl DeltaTableInputEndpointInner {
     async fn worker_task(
         self: Arc<Self>,
         input_stream: Box<dyn ArrowStream>,
-        schema: Relation,
         receiver: Receiver<PipelineState>,
         init_status_sender: mpsc::Sender<Result<(), ControllerError>>,
     ) {
         let mut receiver_clone = receiver.clone();
         select! {
-            _ = Self::worker_task_inner(self.clone(), input_stream, schema, receiver, init_status_sender) => {
+            _ = Self::worker_task_inner(self.clone(), input_stream, receiver, init_status_sender) => {
                 debug!("delta_table {}: worker task terminated",
                     &self.endpoint_name,
                 );
@@ -305,10 +321,9 @@ impl DeltaTableInputEndpointInner {
     async fn read_ordered_snapshot(
         &self,
         input_stream: &mut dyn ArrowStream,
-        schema: &Relation,
         receiver: &mut Receiver<PipelineState>,
     ) {
-        self.read_ordered_snapshot_inner(input_stream, schema, receiver)
+        self.read_ordered_snapshot_inner(input_stream, receiver)
             .await
             .unwrap_or_else(|e| self.consumer.error(true, e));
     }
@@ -316,12 +331,11 @@ impl DeltaTableInputEndpointInner {
     async fn read_ordered_snapshot_inner(
         &self,
         input_stream: &mut dyn ArrowStream,
-        schema: &Relation,
         receiver: &mut Receiver<PipelineState>,
     ) -> Result<(), AnyError> {
         let timestamp_column = self.config.timestamp_column.as_ref().unwrap();
 
-        let timestamp_field = schema.field(timestamp_column).unwrap();
+        let timestamp_field = self.schema.field(timestamp_column).unwrap();
 
         // The following unwraps are safe, as validated in `validate_timestamp_column`.
         let lateness = timestamp_field.lateness.as_ref().unwrap();
@@ -417,7 +431,6 @@ impl DeltaTableInputEndpointInner {
     async fn worker_task_inner(
         self: Arc<Self>,
         mut input_stream: Box<dyn ArrowStream>,
-        schema: Relation,
         mut receiver: Receiver<PipelineState>,
         init_status_sender: mpsc::Sender<Result<(), ControllerError>>,
     ) {
@@ -431,7 +444,7 @@ impl DeltaTableInputEndpointInner {
 
         let table = Arc::new(table);
 
-        if let Err(e) = self.prepare_snapshot_query(&table, &schema).await {
+        if let Err(e) = self.prepare_snapshot_query(&table).await {
             let _ = init_status_sender.send(Err(e)).await;
             return;
         };
@@ -455,7 +468,7 @@ impl DeltaTableInputEndpointInner {
                 .await;
         } else if self.config.snapshot() {
             // Read the entire snapshot in one query.
-            self.read_ordered_snapshot(input_stream.as_mut(), &schema, &mut receiver)
+            self.read_ordered_snapshot(input_stream.as_mut(), &mut receiver)
                 .await;
         };
 
@@ -733,11 +746,7 @@ impl DeltaTableInputEndpointInner {
     ///
     /// * register snapshot as a datafusion table
     /// * validate snapshot config: filter condition and timestamp column
-    async fn prepare_snapshot_query(
-        &self,
-        table: &Arc<DeltaTable>,
-        schema: &Relation,
-    ) -> Result<(), ControllerError> {
+    async fn prepare_snapshot_query(&self, table: &Arc<DeltaTable>) -> Result<(), ControllerError> {
         if !self.config.snapshot() && !self.config.is_cdc() {
             return Ok(());
         }
@@ -750,7 +759,7 @@ impl DeltaTableInputEndpointInner {
                 &self.endpoint_name,
                 timestamp_column,
                 &self.datafusion,
-                schema,
+                &self.schema,
                 "see DeltaLake connector documentation for more details: https://docs.feldera.com/connectors/sources/delta"
             )
             .await?;

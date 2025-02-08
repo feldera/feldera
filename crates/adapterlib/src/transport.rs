@@ -53,7 +53,10 @@ pub trait TransportInputEndpoint: InputEndpoint {
 }
 
 pub trait IntegratedInputEndpoint: InputEndpoint {
-    fn open(&self, input_handle: &InputCollectionHandle) -> AnyResult<Box<dyn InputReader>>;
+    fn open(
+        self: Box<Self>,
+        input_handle: &InputCollectionHandle,
+    ) -> AnyResult<Box<dyn InputReader>>;
 }
 
 /// Commands for an [InputReader] to execute.

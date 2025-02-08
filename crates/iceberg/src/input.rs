@@ -79,7 +79,10 @@ impl InputEndpoint for IcebergInputEndpoint {
 }
 
 impl IntegratedInputEndpoint for IcebergInputEndpoint {
-    fn open(&self, input_handle: &InputCollectionHandle) -> AnyResult<Box<dyn InputReader>> {
+    fn open(
+        self: Box<Self>,
+        input_handle: &InputCollectionHandle,
+    ) -> AnyResult<Box<dyn InputReader>> {
         Ok(Box::new(IcebergInputReader::new(
             &self.inner,
             input_handle,
