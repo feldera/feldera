@@ -48,7 +48,11 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
         this.find = new FindUnusedFields(compiler);
     }
 
-    DBSPMapIndexOperator getProjection(CalciteObject node, FieldUseMap fieldMap, OutputPort input) {
+    OutputPort getProjection(CalciteObject node, FieldUseMap fieldMap, OutputPort input) {
+        OutputPort source = this.mapped(input);
+        if (!fieldMap.hasUnusedFields())
+            return source;
+
         DBSPType inputType = input.getOutputIndexedZSetType().getKVRefType();
         DBSPVariablePath var = inputType.var();
         List<DBSPExpression> resultFields = Linq.map(fieldMap.deref().getUsedFields(),
@@ -58,10 +62,9 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
                 new DBSPTupleExpression(resultFields, false));
         DBSPClosureExpression projection = raw.closure(var);
 
-        OutputPort source = this.mapped(input);
         DBSPMapIndexOperator map = new DBSPMapIndexOperator(node, projection, source);
         this.addOperator(map);
-        return map;
+        return map.outputPort();
     }
 
     boolean processJoin(DBSPJoinBaseOperator join) {
@@ -78,14 +81,14 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
         if (!leftRemap.hasUnusedFields(1) && !rightRemap.hasUnusedFields(1))
             return false;
 
-        DBSPSimpleOperator leftMap = getProjection(join.getNode(), leftRemap, join.left());
-        DBSPSimpleOperator rightMap = getProjection(join.getNode(), rightRemap, join.right());
+        OutputPort leftMap = getProjection(join.getNode(), leftRemap, join.left());
+        OutputPort rightMap = getProjection(join.getNode(), rightRemap, join.right());
 
         // Parameter 0 is not fields in the body of the function, leave it unchanged
         rw.parameterFullyUsed(joinFunction.parameters[0]);
         DBSPClosureExpression newJoinFunction = rw.rewriteClosure(joinFunction);
         DBSPSimpleOperator replacement =
-                join.withFunctionAndInputs(newJoinFunction, leftMap.outputPort(), rightMap.outputPort());
+                join.withFunctionAndInputs(newJoinFunction, leftMap, rightMap);
         this.map(join, replacement);
         return true;
     }

@@ -378,6 +378,10 @@ public class FieldUseMap {
         return this.fieldInfo.project(depth).anyUnused();
     }
 
+    public boolean hasUnusedFields() {
+        return this.fieldInfo.anyUnused();
+    }
+
     public boolean isEmpty() {
         return !this.fieldInfo.anyUsed();
     }
