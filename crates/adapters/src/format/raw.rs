@@ -300,7 +300,7 @@ mod test {
     };
     use std::{borrow::Cow, collections::BTreeMap, fmt::Debug, hash::Hash};
 
-    #[derive(Eq, PartialEq, Debug, Hash)]
+    #[derive(Eq, PartialEq, Debug, Hash, Clone)]
     struct Binary {
         data: ByteArray,
     }
@@ -321,7 +321,7 @@ mod test {
         (data, "data", false, ByteArray, None)
     });
 
-    #[derive(Eq, PartialEq, Debug, Hash)]
+    #[derive(Eq, PartialEq, Debug, Hash, Clone)]
     struct OptBinary {
         data: Option<ByteArray>,
     }
@@ -342,7 +342,7 @@ mod test {
         (data, "data", false, Option<ByteArray>, Some(None))
     });
 
-    #[derive(Eq, PartialEq, Debug, Hash)]
+    #[derive(Eq, PartialEq, Debug, Hash, Clone)]
     struct Varchar {
         data: SqlString,
     }
@@ -363,7 +363,7 @@ mod test {
         )
     }
 
-    #[derive(Eq, PartialEq, Debug, Hash)]
+    #[derive(Eq, PartialEq, Debug, Hash, Clone)]
     struct OptVarchar {
         data: Option<SqlString>,
     }
@@ -419,6 +419,8 @@ mod test {
             + for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
             + Send
             + Sync
+            + Debug
+            + Clone
             + 'static,
     {
         for test in test_cases {

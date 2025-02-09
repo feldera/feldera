@@ -494,7 +494,7 @@ mod test {
 
     use super::JsonSplitter;
 
-    #[derive(PartialEq, Debug, Eq, Hash)]
+    #[derive(PartialEq, Debug, Eq, Hash, Clone)]
     struct TestStruct {
         b: bool,
         i: i32,
@@ -525,7 +525,7 @@ mod test {
         }
     }
 
-    #[derive(PartialEq, Debug, Eq, Hash)]
+    #[derive(PartialEq, Debug, Eq, Hash, Clone)]
     struct TestStructUpd {
         b: Option<bool>,
         i: i32,
@@ -570,6 +570,8 @@ mod test {
             + Hash
             + Send
             + Sync
+            + Debug
+            + Clone
             + 'static,
         U: Debug
             + Eq
@@ -577,6 +579,8 @@ mod test {
             + Hash
             + Send
             + Sync
+            + Debug
+            + Clone
             + 'static,
     {
         for test in test_cases {

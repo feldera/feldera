@@ -10,14 +10,15 @@ use arrow::datatypes::{
 };
 use bytes::Bytes;
 use erased_serde::Serialize as ErasedSerialize;
+use feldera_adapterlib::catalog::ArrowStream;
 use feldera_types::config::ConnectorConfig;
 use feldera_types::serde_with_context::serde_config::{
     BinaryFormat, DecimalFormat, UuidFormat, VariantFormat,
 };
 use feldera_types::serde_with_context::{DateFormat, SqlSerdeConfig, TimeFormat, TimestampFormat};
+use parquet::arrow::arrow_reader::ParquetRecordBatchReader;
 use parquet::arrow::ArrowWriter;
 use parquet::file::properties::WriterProperties;
-use parquet::file::reader::{FileReader, SerializedFileReader};
 use serde::Deserialize;
 use serde_arrow::schema::SerdeArrowSchema;
 use serde_arrow::ArrayBuilder;
@@ -27,11 +28,10 @@ use serde_yaml::Value as YamlValue;
 use crate::catalog::{CursorWithPolarity, SerBatchReader};
 use crate::format::MAX_DUPLICATES;
 use crate::{
-    catalog::{DeCollectionStream, InputCollectionHandle, RecordFormat},
+    catalog::{InputCollectionHandle, RecordFormat},
     format::{Encoder, InputFormat, OutputFormat, ParseError, Parser},
     ControllerError, OutputConsumer, SerCursor,
 };
-use feldera_types::format::json::JsonFlavor;
 use feldera_types::format::parquet::{ParquetEncoderConfig, ParquetParserConfig};
 use feldera_types::program_schema::{ColumnType, Field, IntervalUnit, Relation, SqlType};
 
@@ -80,22 +80,22 @@ impl InputFormat for ParquetInputFormat {
     ) -> Result<Box<dyn Parser>, ControllerError> {
         let input_stream = input_stream
             .handle
-            .configure_deserializer(RecordFormat::Json(JsonFlavor::ParquetConverter))?;
+            .configure_arrow_deserializer(default_arrow_serde_config().clone())?;
         Ok(Box::new(ParquetParser::new(input_stream)) as Box<dyn Parser>)
     }
 }
 
 struct ParquetParser {
     /// Input handle to push parsed data to.
-    input_stream: Box<dyn DeCollectionStream>,
-    last_event_number: u64,
+    input_stream: Box<dyn ArrowStream>,
+    last_chunk_number: u64,
 }
 
 impl ParquetParser {
-    fn new(input_stream: Box<dyn DeCollectionStream>) -> Self {
+    fn new(input_stream: Box<dyn ArrowStream>) -> Self {
         Self {
             input_stream,
-            last_event_number: 0,
+            last_chunk_number: 0,
         }
     }
 }
@@ -104,59 +104,51 @@ impl Parser for ParquetParser {
     /// In the chunk case, we got an entire file in `data` and parse it immediately.
     fn parse(&mut self, data: &[u8]) -> (Option<Box<dyn InputBuffer>>, Vec<ParseError>) {
         let bytes = Bytes::copy_from_slice(data);
-        let errors = match SerializedFileReader::new(bytes) {
-            Ok(reader) => {
-                let mut errors = Vec::new();
-                match reader.get_row_iter(None) {
-                    Ok(iter) => {
-                        for maybe_record in iter {
-                            match maybe_record {
-                                Ok(record) => {
-                                    // TODO: this is a temporary solution (parquet->json->feldera) to avoid
-                                    // the overhead of converting the record to JSON we can use serde_arrow
-                                    // as well here.
-                                    let record_json = record.to_json_value().to_string();
-                                    if let Err(e) = self.input_stream.insert(record_json.as_bytes())
-                                    {
-                                        errors.push(ParseError::bin_event_error(
-                                            format!(
-                                                "Error parsing JSON record from parquet file: {}",
-                                                e
-                                            ),
-                                            self.last_event_number + 1,
-                                            record_json.as_bytes(),
-                                            None,
-                                        ));
-                                    }
-                                }
-                                Err(e) => {
-                                    errors.push(ParseError::bin_event_error(
-                                        format!("Error reading a record from parquet file: {}", e),
-                                        self.last_event_number + 1,
-                                        &[],
-                                        None,
-                                    ));
-                                }
-                            }
-                            self.last_event_number += 1;
-                        }
-                        errors
-                    }
-                    Err(e) => vec![ParseError::bin_envelope_error(
-                        format!("Unable to iterate over parquet file: {}.", e),
+
+        let parquet_reader = match ParquetRecordBatchReader::try_new(bytes, 1_000_000) {
+            Ok(parquet_reader) => parquet_reader,
+            Err(e) => {
+                return (
+                    None,
+                    vec![ParseError::bin_envelope_error(
+                        format!("error parsing Parquet data: {e}"),
                         &[],
                         None,
                     )],
+                );
+            }
+        };
+
+        let mut errors = Vec::new();
+        for batch in parquet_reader {
+            match batch {
+                Ok(batch) => {
+                    if let Err(e) = self.input_stream.insert(&batch) {
+                        errors.push(ParseError::bin_envelope_error(
+                            format!(
+                                "error parsing parquet data (chunk {}): {e}",
+                                self.last_chunk_number
+                            ),
+                            &[],
+                            None,
+                        ));
+                    }
+                }
+                Err(e) => {
+                    errors.push(ParseError::bin_envelope_error(
+                        format!(
+                            "error extracting parquet data (chunk {}): {e}",
+                            self.last_chunk_number
+                        ),
+                        &[],
+                        None,
+                    ));
                 }
             }
-            Err(e) => vec![ParseError::bin_envelope_error(
-                format!("Unable to read parquet file: {}.", e),
-                &[],
-                Some(Cow::from(
-                    "Make sure the provided file is a valid parquet file.",
-                )),
-            )],
-        };
+
+            self.last_chunk_number += 1;
+        }
+
         (self.input_stream.take_all(), errors)
     }
 
@@ -169,7 +161,7 @@ impl Parser for ParquetParser {
     }
 }
 
-/// CSV format encoder.
+/// Parquet format encoder.
 pub struct ParquetOutputFormat;
 
 impl OutputFormat for ParquetOutputFormat {

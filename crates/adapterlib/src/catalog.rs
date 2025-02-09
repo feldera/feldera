@@ -108,7 +108,7 @@ pub trait DeCollectionStream: Send + Sync + InputBuffer {
 
 /// Like `DeCollectionStream`, but deserializes Arrow-encoded records before pushing them to a
 /// stream.
-pub trait ArrowStream: InputBuffer + Send {
+pub trait ArrowStream: InputBuffer + Send + Sync {
     fn insert(&mut self, data: &RecordBatch) -> AnyResult<()>;
 
     fn delete(&mut self, data: &RecordBatch) -> AnyResult<()>;

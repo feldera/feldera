@@ -10,8 +10,11 @@ use crate::{
 use anyhow::anyhow;
 use anyhow::Result as AnyResult;
 use apache_avro::types::Value as AvroValue;
+use arrow::array::RecordBatch;
 use dbsp::DBData;
+use erased_serde::Deserializer as ErasedDeserializer;
 use feldera_types::serde_with_context::{DeserializeWithContext, SqlSerdeConfig};
+use serde_arrow::Deserializer as ArrowDeserializer;
 use std::{
     fmt::Debug,
     hash::{DefaultHasher, Hash, Hasher},
@@ -118,8 +121,20 @@ impl<T, U> MockDeZSet<T, U> {
 
 impl<T, U> DeCollectionHandle for MockDeZSet<T, U>
 where
-    T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Hash + Send + Sync + 'static,
-    U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Hash + Send + Sync + 'static,
+    T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+        + Hash
+        + Send
+        + Sync
+        + Debug
+        + Clone
+        + 'static,
+    U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+        + Hash
+        + Send
+        + Sync
+        + Debug
+        + Clone
+        + 'static,
 {
     fn configure_deserializer(
         &self,
@@ -164,9 +179,12 @@ where
 
     fn configure_arrow_deserializer(
         &self,
-        _config: SqlSerdeConfig,
+        config: SqlSerdeConfig,
     ) -> Result<Box<dyn ArrowStream>, ControllerError> {
-        todo!()
+        Ok(Box::new(MockZSetArrowStream::<T, U, _>::new(
+            self.clone(),
+            config,
+        )))
     }
 
     fn configure_avro_deserializer(&self) -> Result<Box<dyn AvroStream>, ControllerError> {
@@ -315,6 +333,102 @@ where
 
     fn len(&self) -> usize {
         self.buffer.len()
+    }
+}
+
+#[derive(Clone)]
+pub struct MockZSetArrowStream<T, U, C>
+where
+    T: Send + Sync,
+    U: Send + Sync,
+{
+    buffer: MockDeZSetStreamBuffer<T, U>,
+    config: C,
+}
+
+impl<T, U, C> MockZSetArrowStream<T, U, C>
+where
+    T: Send + Sync,
+    U: Send + Sync,
+    C: Clone,
+{
+    pub fn new(handle: MockDeZSet<T, U>, config: C) -> Self {
+        Self {
+            buffer: MockDeZSetStreamBuffer::new(handle),
+            config,
+        }
+    }
+}
+
+impl<T, U, C> InputBuffer for MockZSetArrowStream<T, U, C>
+where
+    T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Hash + Send + Sync + 'static,
+    U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Hash + Send + Sync + 'static,
+    C: Clone + Send + Sync + 'static,
+{
+    fn flush(&mut self) {
+        self.buffer.flush()
+    }
+
+    fn take_some(&mut self, n: usize) -> Option<Box<dyn InputBuffer>> {
+        self.buffer.take_some(n)
+    }
+
+    fn hash(&self, hasher: &mut dyn Hasher) {
+        self.buffer.hash(hasher)
+    }
+
+    fn len(&self) -> usize {
+        self.buffer.len()
+    }
+}
+
+impl<T, U> ArrowStream for MockZSetArrowStream<T, U, SqlSerdeConfig>
+where
+    T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+        + Hash
+        + Send
+        + Sync
+        + Debug
+        + Clone
+        + 'static,
+    U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+        + Hash
+        + Send
+        + Sync
+        + Debug
+        + Clone
+        + 'static,
+{
+    fn insert(&mut self, data: &RecordBatch) -> AnyResult<()> {
+        let deserializer = ArrowDeserializer::from_record_batch(data)?;
+        let deserializer =
+            &mut <dyn ErasedDeserializer>::erase(deserializer) as &mut dyn ErasedDeserializer;
+
+        let records = Vec::<T>::deserialize_with_context(deserializer, &self.config)?;
+        self.buffer.updates.extend(
+            records
+                .into_iter()
+                .map(|r| MockUpdate::<T, U>::with_polarity(r, true)),
+        );
+
+        Ok(())
+    }
+
+    fn delete(&mut self, _data: &RecordBatch) -> AnyResult<()> {
+        todo!()
+    }
+
+    fn insert_with_polarities(
+        &mut self,
+        _data: &arrow::array::RecordBatch,
+        _polarities: &[bool],
+    ) -> AnyResult<()> {
+        todo!()
+    }
+
+    fn fork(&self) -> Box<dyn ArrowStream> {
+        Box::new(self.clone())
     }
 }
 
