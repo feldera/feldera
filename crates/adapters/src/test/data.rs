@@ -1,6 +1,6 @@
 use arrow::array::{
-    ArrayRef, BooleanArray, Date32Array, Int64Array, Int64Builder, MapBuilder, MapFieldNames,
-    StringArray, StringBuilder, StructArray, TimestampMicrosecondArray,
+    ArrayRef, BooleanArray, Date32Array, Decimal128Array, Int64Array, Int64Builder, MapBuilder,
+    MapFieldNames, StringArray, StringBuilder, StructArray, TimestampMicrosecondArray,
 };
 use arrow::datatypes::{DataType, Schema, TimeUnit};
 use dbsp::utils::Tup2;
@@ -311,6 +311,7 @@ pub struct TestStruct2 {
     pub field_5: Option<EmbeddedStruct>,
     #[serde(rename = "m")]
     pub field_6: Option<BTreeMap<String, i64>>,
+    pub field_7: Decimal,
 }
 
 impl Arbitrary for TestStruct2 {
@@ -334,17 +335,23 @@ impl Arbitrary for TestStruct2 {
                 Default::default(),
                 Default::default(),
             )),
+            0..1_000_000i128,
+            // Scale
+            0..3u32,
         )
-            .prop_map(|(f, f0, f1, f2, f3, /*f4,*/ f5, f6)| TestStruct2 {
-                field: f,
-                field_0: if f1 { Some(f0) } else { None },
-                field_1: f1,
-                field_2: Timestamp::new(f2 as i64 * 1_000),
-                field_3: Date::new(f3 as i32),
-                // field_4: Time::new(f4 * 1000),
-                field_5: Some(f5),
-                field_6: Some(f6),
-            })
+            .prop_map(
+                |(f, f0, f1, f2, f3, /*f4,*/ f5, f6, f7_num, f7_scale)| TestStruct2 {
+                    field: f,
+                    field_0: if f1 { Some(f0) } else { None },
+                    field_1: f1,
+                    field_2: Timestamp::new(f2 as i64 * 1_000),
+                    field_3: Date::new(f3 as i32),
+                    // field_4: Time::new(f4 * 1000),
+                    field_5: Some(f5),
+                    field_6: Some(f6),
+                    field_7: Decimal::from_i128_with_scale(f7_num, f7_scale),
+                },
+            )
             .boxed()
     }
 }
@@ -364,6 +371,7 @@ impl TestStruct2 {
                     ("foo".to_string(), 100),
                     ("bar".to_string(), 200),
                 ])),
+                field_7: Decimal::from_i128_with_scale(10000, 3),
             },
             TestStruct2 {
                 field: 2,
@@ -374,6 +382,7 @@ impl TestStruct2 {
                 // field_4: Time::new(1_000_000_000),
                 field_5: Some(EmbeddedStruct { field: true }),
                 field_6: Some(BTreeMap::new()),
+                field_7: Decimal::from_i128_with_scale(1, 3),
             },
         ]
     }
@@ -405,6 +414,7 @@ impl TestStruct2 {
                 false,
                 true,
             ),
+            arrow::datatypes::Field::new("dec", DataType::Decimal128(10, 3), false),
         ]))
     }
 
@@ -437,6 +447,15 @@ impl TestStruct2 {
                             "type": "map",
                             "values": "long"
                         }, "null"]
+                },
+                {
+                    "name": "dec",
+                    "type": {
+                        "type": "bytes",
+                        "logicalType": "decimal",
+                        "precision": 10,
+                        "scale": 3
+                    }
                 }
             ]
         }"#
@@ -457,6 +476,7 @@ impl TestStruct2 {
                 "m".into(),
                 ColumnType::map(true, ColumnType::varchar(false), ColumnType::bigint(false)),
             ),
+            Field::new("dec".into(), ColumnType::decimal(10, 3, false)),
         ]
     }
 
@@ -476,6 +496,7 @@ impl TestStruct2 {
                 "m".into(),
                 ColumnType::map(true, ColumnType::varchar(false), ColumnType::bigint(false)),
             ),
+            Field::new("dec".into(), ColumnType::decimal(10, 3, false)),
         ];
 
         fields
@@ -509,6 +530,10 @@ impl TestStruct2 {
             .map(|r| r.field_5.as_ref().map(|emb_struct| emb_struct.field))
             .collect();
         let row6_booleans = Arc::new(BooleanArray::from(row6));
+        let row7: Vec<i128> = data.iter().map(|r| r.field_7.mantissa()).collect();
+
+        // Create an Arrow Decimal128Array
+        let decimal_array = Decimal128Array::from(row7).with_data_type(DataType::Decimal128(10, 3));
 
         let string_builder = StringBuilder::new();
         let int_builder = Int64Builder::new();
@@ -552,11 +577,12 @@ impl TestStruct2 {
                 row6_booleans as ArrayRef,
             )])),
             Arc::new(map_array),
+            Arc::new(decimal_array),
         ]
     }
 }
 
-serialize_table_record!(TestStruct2[7]{
+serialize_table_record!(TestStruct2[8]{
     r#field["id"]: i64,
     r#field_0["name"]: Option<String>,
     r#field_1["b"]: bool,
@@ -564,10 +590,11 @@ serialize_table_record!(TestStruct2[7]{
     r#field_3["dt"]: Date,
     // r#field_4["t"]: Time,
     r#field_5["es"]: Option<EmbeddedStruct>,
-    r#field_6["m"]: Option<Map<String, i64>>
+    r#field_6["m"]: Option<Map<String, i64>>,
+    r#field_7["dec"]: Decimal
 });
 
-deserialize_table_record!(TestStruct2["TestStruct", 7   ] {
+deserialize_table_record!(TestStruct2["TestStruct", 8] {
     (r#field, "id", false, i64, None),
     (r#field_0, "name", false, Option<String>, Some(None)),
     (r#field_1, "b", false, bool, None),
@@ -575,7 +602,8 @@ deserialize_table_record!(TestStruct2["TestStruct", 7   ] {
     (r#field_3, "dt", false, Date, None),
     // (r#field_4, "t", false, Time, None),
     (r#field_5, "es", false, Option<EmbeddedStruct>, Some(None)),
-    (r#field_6, "m", false, Option<BTreeMap<String, i64>>, Some(None))
+    (r#field_6, "m", false, Option<BTreeMap<String, i64>>, Some(None)),
+    (r#field_7, "dec", false, Decimal, None)
 });
 
 /// Record in the databricks people dataset.

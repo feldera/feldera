@@ -24,9 +24,14 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use apache_avro::{schema::SchemaKind, types::Value, Error};
+use apache_avro::{
+    schema::{RecordSchema, SchemaKind},
+    types::Value,
+    BigDecimal, Decimal, Error, Schema,
+};
 use erased_serde::Deserializer as ErasedDeserializer;
 use feldera_types::serde_with_context::{DeserializeWithContext, SqlSerdeConfig};
+use num_bigint::BigInt;
 use serde::{
     de::{self, DeserializeSeed, Visitor},
     forward_to_deserialize_any,
@@ -41,211 +46,112 @@ use std::{
 
 use super::input::avro_de_config;
 
+fn deserialize_decimal<E: serde::de::Error>(d: &Decimal, schema: &Schema) -> Result<String, E> {
+    let Schema::Decimal(schema) = schema else {
+        return Err(E::custom(format!(
+            "expected Decimal schema, but found {schema:?}"
+        )));
+    };
+
+    // TODO: this is really expensive, and can be optimized by passing a binary representation of
+    // mantissa + scale. This will require a customer `DeserializeWithContext` implementation for
+    // rust_decimal::Decimal.
+    let bigdecimal = BigDecimal::new(BigInt::from(d.clone()), schema.scale as i64);
+    Ok(bigdecimal.to_string())
+}
+
 pub struct Deserializer<'de> {
+    // We have to keep the schema around, since `Value` isn't sufficiently self-descriptive
+    // to deserialize from it. Specifically, `Decimal` only stores the mantissa; scale must be
+    // extracted from the schema.
+    schema: &'de Schema,
     input: &'de Value,
 }
 
 struct SeqDeserializer<'de> {
     input: Iter<'de, Value>,
+    item_schema: &'de Schema,
 }
 
 struct MapDeserializer<'de> {
+    value_schema: &'de Schema,
     input_keys: Keys<'de, String, Value>,
     input_values: Values<'de, String, Value>,
 }
 
 struct RecordDeserializer<'de> {
+    record_schema: &'de RecordSchema,
     input: Iter<'de, (String, Value)>,
     value: Option<&'de Value>,
-}
-
-pub struct EnumUnitDeserializer<'a> {
-    input: &'a str,
-}
-
-pub struct EnumDeserializer<'de> {
-    input: &'de [(String, Value)],
+    next_field_index: usize,
 }
 
 impl<'de> Deserializer<'de> {
-    pub fn new(input: &'de Value) -> Self {
-        Deserializer { input }
+    pub fn new(input: &'de Value, schema: &'de Schema) -> Self {
+        Deserializer { input, schema }
     }
 }
 
 impl<'de> SeqDeserializer<'de> {
-    pub fn new(input: &'de [Value]) -> Self {
-        SeqDeserializer {
+    pub fn new<E: de::Error>(input: &'de [Value], schema: &'de Schema) -> Result<Self, E> {
+        let Schema::Array(array_schema) = schema else {
+            return Err(de::Error::custom(format!(
+                "expected array schema, found {schema:?}"
+            )));
+        };
+
+        Ok(SeqDeserializer {
             input: input.iter(),
-        }
+            item_schema: array_schema.items.as_ref(),
+        })
     }
 }
 
 impl<'de> MapDeserializer<'de> {
-    pub fn new(input: &'de HashMap<String, Value>) -> Self {
-        MapDeserializer {
+    pub fn new<E: de::Error>(
+        input: &'de HashMap<String, Value>,
+        schema: &'de Schema,
+    ) -> Result<Self, E> {
+        let Schema::Map(map_schema) = schema else {
+            return Err(de::Error::custom(format!(
+                "expected map schema, found {schema:?}"
+            )));
+        };
+
+        Ok(MapDeserializer {
+            value_schema: map_schema.types.as_ref(),
             input_keys: input.keys(),
             input_values: input.values(),
-        }
+        })
     }
 }
 
 impl<'de> RecordDeserializer<'de> {
-    pub fn new(input: &'de [(String, Value)]) -> Self {
-        RecordDeserializer {
+    pub fn new<E: de::Error>(
+        input: &'de [(String, Value)],
+        schema: &'de Schema,
+    ) -> Result<Self, E> {
+        let Schema::Record(record_schema) = schema else {
+            return Err(de::Error::custom(format!(
+                "expected record schema, found {schema:?}"
+            )));
+        };
+
+        Ok(RecordDeserializer {
+            record_schema,
             input: input.iter(),
             value: None,
+            next_field_index: 0,
+        })
+    }
+}
+
+fn unwrap_union<'de>(v: &'de Value, schema: &'de Schema) -> (&'de Value, &'de Schema) {
+    match (v, schema) {
+        (Value::Union(index, v), Schema::Union(schema)) => {
+            (v.as_ref(), &schema.variants()[*index as usize])
         }
-    }
-}
-
-impl<'a> EnumUnitDeserializer<'a> {
-    pub fn new(input: &'a str) -> Self {
-        EnumUnitDeserializer { input }
-    }
-}
-
-impl<'de> EnumDeserializer<'de> {
-    pub fn new(input: &'de [(String, Value)]) -> Self {
-        EnumDeserializer { input }
-    }
-}
-
-impl<'de> de::EnumAccess<'de> for EnumUnitDeserializer<'de> {
-    type Error = Error;
-    type Variant = Self;
-
-    fn variant_seed<V>(self, seed: V) -> Result<(V::Value, Self::Variant), Self::Error>
-    where
-        V: DeserializeSeed<'de>,
-    {
-        Ok((
-            seed.deserialize(StringDeserializer {
-                input: self.input.to_owned(),
-            })?,
-            self,
-        ))
-    }
-}
-
-impl<'de> de::VariantAccess<'de> for EnumUnitDeserializer<'de> {
-    type Error = Error;
-
-    fn unit_variant(self) -> Result<(), Error> {
-        Ok(())
-    }
-
-    fn newtype_variant_seed<T>(self, _seed: T) -> Result<T::Value, Error>
-    where
-        T: DeserializeSeed<'de>,
-    {
-        Err(de::Error::custom("unexpected Newtype variant"))
-    }
-
-    fn tuple_variant<V>(self, _len: usize, _visitor: V) -> Result<V::Value, Error>
-    where
-        V: Visitor<'de>,
-    {
-        Err(de::Error::custom("unexpected tuple variant"))
-    }
-
-    fn struct_variant<V>(
-        self,
-        _fields: &'static [&'static str],
-        _visitor: V,
-    ) -> Result<V::Value, Error>
-    where
-        V: Visitor<'de>,
-    {
-        Err(de::Error::custom("unexpected struct variant"))
-    }
-}
-
-impl<'de> de::EnumAccess<'de> for EnumDeserializer<'de> {
-    type Error = Error;
-    type Variant = Self;
-
-    fn variant_seed<V>(self, seed: V) -> Result<(V::Value, Self::Variant), Self::Error>
-    where
-        V: DeserializeSeed<'de>,
-    {
-        self.input.first().map_or(
-            Err(de::Error::custom("a record must have a least one field")),
-            |item| match (item.0.as_ref(), &item.1) {
-                ("type", Value::String(x)) | ("type", Value::Enum(_, x)) => Ok((
-                    seed.deserialize(StringDeserializer {
-                        input: x.to_owned(),
-                    })?,
-                    self,
-                )),
-                (field, Value::String(_)) => Err(de::Error::custom(format!(
-                    "expected first field named 'type': got '{field}' instead"
-                ))),
-                (_, _) => Err(de::Error::custom(
-                    "expected first field of type String or Enum for the type name".to_string(),
-                )),
-            },
-        )
-    }
-}
-
-fn unwrap_union(v: &Value) -> &Value {
-    match v {
-        Value::Union(_, v) => v.as_ref(),
-        _ => v,
-    }
-}
-
-impl<'de> de::VariantAccess<'de> for EnumDeserializer<'de> {
-    type Error = Error;
-
-    fn unit_variant(self) -> Result<(), Error> {
-        Ok(())
-    }
-
-    fn newtype_variant_seed<T>(self, seed: T) -> Result<T::Value, Error>
-    where
-        T: DeserializeSeed<'de>,
-    {
-        self.input.get(1).map_or(
-            Err(de::Error::custom(
-                "expected a newtype variant, got nothing instead.",
-            )),
-            |item| seed.deserialize(&Deserializer::new(&item.1)),
-        )
-    }
-
-    fn tuple_variant<V>(self, _len: usize, visitor: V) -> Result<V::Value, Error>
-    where
-        V: Visitor<'de>,
-    {
-        self.input.get(1).map_or(
-            Err(de::Error::custom(
-                "expected a tuple variant, got nothing instead.",
-            )),
-            |item| de::Deserializer::deserialize_seq(&Deserializer::new(&item.1), visitor),
-        )
-    }
-
-    fn struct_variant<V>(
-        self,
-        fields: &'static [&'static str],
-        visitor: V,
-    ) -> Result<V::Value, Error>
-    where
-        V: Visitor<'de>,
-    {
-        self.input.get(1).map_or(
-            Err(de::Error::custom("expected a struct variant, got nothing")),
-            |item| {
-                de::Deserializer::deserialize_struct(
-                    &Deserializer::new(&item.1),
-                    "",
-                    fields,
-                    visitor,
-                )
-            },
-        )
+        _ => (v, schema),
     }
 }
 
@@ -256,7 +162,8 @@ impl<'de> de::Deserializer<'de> for &'_ Deserializer<'de> {
     where
         V: Visitor<'de>,
     {
-        match unwrap_union(self.input) {
+        let (val, schema) = unwrap_union(self.input, self.schema);
+        match  val {
             Value::Null => visitor.visit_unit(),
             &Value::Boolean(b) => visitor.visit_bool(b),
             Value::Int(i) | Value::Date(i) => visitor.visit_i32(*i),
@@ -271,13 +178,13 @@ impl<'de> de::Deserializer<'de> for &'_ Deserializer<'de> {
             Value::TimeMillis(i) => visitor.visit_i64(*i as i64 * 1000),
             Value::Float(f) => visitor.visit_f32(*f),
             Value::Double(d) => visitor.visit_f64(*d),
-            Value::Record(ref fields) => visitor.visit_map(RecordDeserializer::new(fields)),
-            Value::Array(ref fields) => visitor.visit_seq(SeqDeserializer::new(fields)),
+            Value::Record(ref fields) => visitor.visit_map(RecordDeserializer::new(fields, schema)?),
+            Value::Array(ref fields) => visitor.visit_seq(SeqDeserializer::new(fields, schema)?),
             Value::String(ref s) => visitor.visit_borrowed_str(s),
             Value::Uuid(uuid) => visitor.visit_str(&uuid.to_string()),
-            Value::Map(ref items) => visitor.visit_map(MapDeserializer::new(items)),
+            Value::Map(ref items) => visitor.visit_map(MapDeserializer::new(items, schema)?),
             Value::Bytes(ref bytes) | Value::Fixed(_, ref bytes) => visitor.visit_bytes(bytes),
-            Value::Decimal(ref d) => visitor.visit_bytes(&Vec::<u8>::try_from(d)?),
+            Value::Decimal(ref d) => visitor.visit_str(&deserialize_decimal(d, schema)?),
             value => Err(de::Error::custom(format!(
                 "incorrect value of type: {:?}",
                 SchemaKind::from(value)
@@ -300,7 +207,7 @@ impl<'de> de::Deserializer<'de> for &'_ Deserializer<'de> {
     where
         V: Visitor<'de>,
     {
-        match unwrap_union(self.input) {
+        match unwrap_union(self.input, self.schema).0 {
             Value::String(ref s) => visitor.visit_borrowed_str(s),
             Value::Bytes(ref bytes) | Value::Fixed(_, ref bytes) => ::std::str::from_utf8(bytes)
                 .map_err(|e| de::Error::custom(e.to_string()))
@@ -316,7 +223,7 @@ impl<'de> de::Deserializer<'de> for &'_ Deserializer<'de> {
     where
         V: Visitor<'de>,
     {
-        match unwrap_union(self.input) {
+        match unwrap_union(self.input, self.schema).0 {
             Value::Enum(_, ref s) | Value::String(ref s) => visitor.visit_borrowed_str(s),
             Value::Bytes(ref bytes) | Value::Fixed(_, ref bytes) => {
                 String::from_utf8(bytes.to_owned())
@@ -334,11 +241,13 @@ impl<'de> de::Deserializer<'de> for &'_ Deserializer<'de> {
     where
         V: Visitor<'de>,
     {
-        match unwrap_union(self.input) {
+        let (value, schema) = unwrap_union(self.input, self.schema);
+
+        match value {
             Value::String(ref s) => visitor.visit_bytes(s.as_bytes()),
             Value::Bytes(ref bytes) | Value::Fixed(_, ref bytes) => visitor.visit_bytes(bytes),
             Value::Uuid(ref u) => visitor.visit_bytes(u.as_bytes()),
-            Value::Decimal(ref d) => visitor.visit_bytes(&Vec::<u8>::try_from(d)?),
+            Value::Decimal(ref d) => visitor.visit_str(&deserialize_decimal(d, schema)?),
             v => Err(de::Error::custom(format!(
                 "expected a String|Bytes|Fixed|Uuid|Decimal, but got {v:?}",
             ))),
@@ -349,7 +258,7 @@ impl<'de> de::Deserializer<'de> for &'_ Deserializer<'de> {
     where
         V: Visitor<'de>,
     {
-        match unwrap_union(self.input) {
+        match unwrap_union(self.input, self.schema).0 {
             Value::String(ref s) => visitor.visit_byte_buf(s.clone().into_bytes()),
             Value::Bytes(ref bytes) | Value::Fixed(_, ref bytes) => {
                 visitor.visit_byte_buf(bytes.to_owned())
@@ -366,8 +275,19 @@ impl<'de> de::Deserializer<'de> for &'_ Deserializer<'de> {
     {
         match self.input {
             Value::Union(_i, inner) if inner.as_ref() == &Value::Null => visitor.visit_none(),
-            Value::Union(_i, inner) => visitor.visit_some(&Deserializer::new(inner)),
-            v => visitor.visit_some(&Deserializer::new(v)),
+            Value::Union(i, inner) => {
+                let Schema::Union(union_schema) = self.schema else {
+                    return Err(de::Error::custom(format!(
+                        "expected union schema, but found {:?}",
+                        self.schema
+                    )));
+                };
+                visitor.visit_some(&Deserializer::new(
+                    inner,
+                    &union_schema.variants()[*i as usize],
+                ))
+            }
+            v => visitor.visit_some(&Deserializer::new(v, self.schema)),
         }
     }
 
@@ -375,7 +295,7 @@ impl<'de> de::Deserializer<'de> for &'_ Deserializer<'de> {
     where
         V: Visitor<'de>,
     {
-        match unwrap_union(self.input) {
+        match unwrap_union(self.input, self.schema).0 {
             Value::Null => visitor.visit_unit(),
             v => Err(de::Error::custom(
                 format!("expected a Null, but got {v:?}",),
@@ -409,9 +329,10 @@ impl<'de> de::Deserializer<'de> for &'_ Deserializer<'de> {
     where
         V: Visitor<'de>,
     {
-        match unwrap_union(self.input) {
-            Value::Array(ref items) => visitor.visit_seq(SeqDeserializer::new(items)),
-            Value::Null => visitor.visit_seq(SeqDeserializer::new(&[])),
+        let (value, schema) = unwrap_union(self.input, self.schema);
+        match value {
+            Value::Array(ref items) => visitor.visit_seq(SeqDeserializer::new(items, schema)?),
+            Value::Null => visitor.visit_seq(SeqDeserializer::new(&[], schema)?),
             v => Err(de::Error::custom(format!(
                 "expected an Array or Null, but got: {v:?}",
             ))),
@@ -441,9 +362,9 @@ impl<'de> de::Deserializer<'de> for &'_ Deserializer<'de> {
     where
         V: Visitor<'de>,
     {
-        match unwrap_union(self.input) {
-            Value::Map(ref items) => visitor.visit_map(MapDeserializer::new(items)),
-            Value::Record(ref fields) => visitor.visit_map(RecordDeserializer::new(fields)),
+        let (value, schema) = unwrap_union(self.input, self.schema);
+        match value {
+            Value::Map(ref items) => visitor.visit_map(MapDeserializer::new(items, schema)?),
             v => Err(de::Error::custom(format_args!(
                 "expected a record or a map, but got: {v:?}",
             ))),
@@ -459,12 +380,13 @@ impl<'de> de::Deserializer<'de> for &'_ Deserializer<'de> {
     where
         V: Visitor<'de>,
     {
-        match unwrap_union(self.input) {
-            Value::Record(ref fields) => visitor.visit_map(RecordDeserializer::new(fields)),
-            Value::Null => visitor.visit_map(RecordDeserializer::new(&[])),
-            v => Err(de::Error::custom(format!(
-                "expected a Record or Null, got: {v:?}",
-            ))),
+        let (value, schema) = unwrap_union(self.input, self.schema);
+
+        match value {
+            Value::Record(ref fields) => {
+                visitor.visit_map(RecordDeserializer::new(fields, schema)?)
+            }
+            v => Err(de::Error::custom(format!("expected a Record, got: {v:?}",))),
         }
     }
 
@@ -472,21 +394,12 @@ impl<'de> de::Deserializer<'de> for &'_ Deserializer<'de> {
         self,
         _enum_name: &'static str,
         _variants: &'static [&'static str],
-        visitor: V,
+        _visitor: V,
     ) -> Result<V::Value, Self::Error>
     where
         V: Visitor<'de>,
     {
-        match unwrap_union(self.input) {
-            // This branch can be anything...
-            Value::Record(fields) => visitor.visit_enum(EnumDeserializer::new(fields)),
-            Value::String(field) => visitor.visit_enum(EnumUnitDeserializer::new(field)),
-            // This has to be a unit Enum
-            Value::Enum(_index, field) => visitor.visit_enum(EnumUnitDeserializer::new(field)),
-            v => Err(de::Error::custom(format!(
-                "expected a Record, Enum, or String, but got {v:?}",
-            ))),
-        }
+        Err(de::Error::custom("unexpected enum"))
     }
 
     fn deserialize_identifier<V>(self, visitor: V) -> Result<V::Value, Self::Error>
@@ -516,7 +429,9 @@ impl<'de> de::SeqAccess<'de> for SeqDeserializer<'de> {
         T: DeserializeSeed<'de>,
     {
         match self.input.next() {
-            Some(item) => seed.deserialize(&Deserializer::new(item)).map(Some),
+            Some(item) => seed
+                .deserialize(&Deserializer::new(item, self.item_schema))
+                .map(Some),
             None => Ok(None),
         }
     }
@@ -540,7 +455,7 @@ impl<'de> de::MapAccess<'de> for MapDeserializer<'de> {
         V: DeserializeSeed<'de>,
     {
         match self.input_values.next() {
-            Some(value) => seed.deserialize(&Deserializer::new(value)),
+            Some(value) => seed.deserialize(&Deserializer::new(value, self.value_schema)),
             None => Err(de::Error::custom("should not happen - too many values")),
         }
     }
@@ -568,7 +483,14 @@ impl<'de> de::MapAccess<'de> for RecordDeserializer<'de> {
         V: DeserializeSeed<'de>,
     {
         match self.value.take() {
-            Some(value) => seed.deserialize(&Deserializer::new(value)),
+            Some(value) => {
+                let result = seed.deserialize(&Deserializer::new(
+                    value,
+                    &self.record_schema.fields[self.next_field_index].schema,
+                ));
+                self.next_field_index += 1;
+                result
+            }
             None => Err(de::Error::custom("should not happen - too many values")),
         }
     }
@@ -596,953 +518,17 @@ impl<'de> de::Deserializer<'de> for StrDeserializer<'de> {
     }
 }
 
-#[derive(Clone)]
-struct StringDeserializer {
-    input: String,
-}
-
-impl<'de> de::Deserializer<'de> for StringDeserializer {
-    type Error = Error;
-
-    fn deserialize_any<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: Visitor<'de>,
-    {
-        visitor.visit_string(self.input)
-    }
-
-    forward_to_deserialize_any! {
-        bool u8 u16 u32 u64 i8 i16 i32 i64 f32 f64 char str string unit option
-        seq bytes byte_buf map unit_struct newtype_struct
-        tuple_struct struct tuple enum identifier ignored_any
-    }
-}
-
 /// Interpret a `Value` as an instance of type `D`.
 ///
 /// This conversion can fail if the structure of the `Value` does not match the
 /// structure expected by `D`.
 pub fn from_avro_value<'de, D: DeserializeWithContext<'de, SqlSerdeConfig>>(
     value: &'de Value,
+    schema: &'de Schema,
 ) -> Result<D, erased_serde::Error> {
-    let deserializer = Deserializer::new(value);
+    let deserializer = Deserializer::new(value, schema);
     let deserializer =
         &mut <dyn ErasedDeserializer>::erase(&deserializer) as &mut dyn ErasedDeserializer;
 
     D::deserialize_with_context(deserializer, avro_de_config())
-}
-
-#[cfg(test)]
-mod tests {
-    use anyhow::Result as AnyResult;
-    use apache_avro::{from_avro_datum, to_avro_datum, Decimal, Schema};
-    use feldera_types::deserialize_without_context;
-    use num_bigint::BigInt;
-    use pretty_assertions::assert_eq;
-    use serde::{Deserialize, Serialize};
-    use uuid::Uuid;
-
-    use super::*;
-
-    #[derive(PartialEq, Eq, Serialize, Deserialize, Debug)]
-    pub struct StringEnum {
-        pub source: String,
-    }
-
-    deserialize_without_context!(StringEnum);
-
-    #[test]
-    fn avro_3955_decode_enum() -> AnyResult<()> {
-        let schema_content = r#"
-{
-  "name": "AccessLog",
-  "namespace": "com.clevercloud.accesslogs.common.avro",
-  "type": "record",
-  "fields": [
-    {
-      "name": "source",
-      "type": {
-        "type": "enum",
-        "name": "SourceType",
-        "items": "string",
-        "symbols": ["SOZU", "HAPROXY", "HAPROXY_TCP"]
-      }
-    }
-  ]
-}
-"#;
-
-        let schema = Schema::parse_str(schema_content)?;
-        let data = StringEnum {
-            source: "SOZU".to_string(),
-        };
-
-        // encode into avro
-        let value = apache_avro::to_value(&data)?;
-
-        let mut buf = std::io::Cursor::new(to_avro_datum(&schema, value)?);
-
-        // decode from avro
-        let value = from_avro_datum(&schema, &mut buf, None)?;
-
-        let decoded_data: StringEnum = from_avro_value(&value)?;
-
-        assert_eq!(decoded_data, data);
-
-        Ok(())
-    }
-
-    #[test]
-    fn avro_3955_encode_enum_data_with_wrong_content() -> AnyResult<()> {
-        let schema_content = r#"
-{
-  "name": "AccessLog",
-  "namespace": "com.clevercloud.accesslogs.common.avro",
-  "type": "record",
-  "fields": [
-    {
-      "name": "source",
-      "type": {
-        "type": "enum",
-        "name": "SourceType",
-        "items": "string",
-        "symbols": ["SOZU", "HAPROXY", "HAPROXY_TCP"]
-      }
-    }
-  ]
-}
-"#;
-
-        let schema = Schema::parse_str(schema_content)?;
-        let data = StringEnum {
-            source: "WRONG_ITEM".to_string(),
-        };
-
-        // encode into avro
-        let value = apache_avro::to_value(data)?;
-
-        // The following sentence have to fail has the data is wrong.
-        let encoded_data = to_avro_datum(&schema, value);
-
-        assert!(encoded_data.is_err());
-
-        Ok(())
-    }
-
-    #[derive(Debug, Deserialize, Serialize, Clone, PartialEq, Eq)]
-    struct Test {
-        a: i64,
-        b: String,
-    }
-
-    deserialize_without_context!(Test);
-
-    #[derive(Debug, Deserialize, Serialize, PartialEq, Eq)]
-    struct TestInner {
-        a: Test,
-        b: i32,
-    }
-
-    deserialize_without_context!(TestInner);
-
-    #[derive(Debug, Deserialize, Serialize, PartialEq, Eq)]
-    struct TestUnitExternalEnum {
-        a: UnitExternalEnum,
-    }
-
-    deserialize_without_context!(TestUnitExternalEnum);
-
-    #[derive(Debug, Deserialize, Serialize, PartialEq, Eq)]
-    enum UnitExternalEnum {
-        Val1,
-        Val2,
-    }
-
-    #[derive(Debug, Deserialize, Serialize, PartialEq, Eq)]
-    struct TestUnitInternalEnum {
-        a: UnitInternalEnum,
-    }
-
-    deserialize_without_context!(TestUnitInternalEnum);
-
-    #[derive(Debug, Deserialize, Serialize, PartialEq, Eq)]
-    #[serde(tag = "t")]
-    enum UnitInternalEnum {
-        Val1,
-        Val2,
-    }
-
-    #[derive(Debug, Deserialize, Serialize, PartialEq, Eq)]
-    struct TestUnitAdjacentEnum {
-        a: UnitAdjacentEnum,
-    }
-
-    deserialize_without_context!(TestUnitAdjacentEnum);
-
-    #[derive(Debug, Deserialize, Serialize, PartialEq, Eq)]
-    #[serde(tag = "t", content = "v")]
-    enum UnitAdjacentEnum {
-        Val1,
-        Val2,
-    }
-
-    #[derive(Debug, Deserialize, Serialize, PartialEq, Eq)]
-    struct TestUnitUntaggedEnum {
-        a: UnitUntaggedEnum,
-    }
-
-    deserialize_without_context!(TestUnitUntaggedEnum);
-
-    #[derive(Debug, Deserialize, Serialize, PartialEq, Eq)]
-    #[serde(untagged)]
-    enum UnitUntaggedEnum {
-        Val1,
-        Val2,
-    }
-
-    #[derive(Debug, Serialize, Deserialize, PartialEq)]
-    struct TestSingleValueExternalEnum {
-        a: SingleValueExternalEnum,
-    }
-
-    deserialize_without_context!(TestSingleValueExternalEnum);
-
-    #[derive(Debug, Serialize, Deserialize, PartialEq)]
-    enum SingleValueExternalEnum {
-        Double(f64),
-        String(String),
-    }
-
-    #[derive(Debug, Serialize, Deserialize, PartialEq)]
-    struct TestStructExternalEnum {
-        a: StructExternalEnum,
-    }
-
-    deserialize_without_context!(TestStructExternalEnum);
-
-    #[derive(Debug, Serialize, Deserialize, PartialEq)]
-    enum StructExternalEnum {
-        Val1 { x: f32, y: f32 },
-        Val2 { x: f32, y: f32 },
-    }
-
-    #[derive(Debug, Serialize, Deserialize, PartialEq)]
-    struct TestTupleExternalEnum {
-        a: TupleExternalEnum,
-    }
-
-    deserialize_without_context!(TestTupleExternalEnum);
-
-    #[derive(Debug, Serialize, Deserialize, PartialEq)]
-    enum TupleExternalEnum {
-        Val1(f32, f32),
-        Val2(f32, f32, f32),
-    }
-
-    #[test]
-    fn test_from_value() -> AnyResult<()> {
-        let test = Value::Record(vec![
-            ("a".to_owned(), Value::Long(27)),
-            ("b".to_owned(), Value::String("foo".to_owned())),
-        ]);
-        let expected = Test {
-            a: 27,
-            b: "foo".to_owned(),
-        };
-        let final_value: Test = from_avro_value(&test)?;
-        assert_eq!(final_value, expected);
-
-        let test_inner = Value::Record(vec![
-            (
-                "a".to_owned(),
-                Value::Record(vec![
-                    ("a".to_owned(), Value::Long(27)),
-                    ("b".to_owned(), Value::String("foo".to_owned())),
-                ]),
-            ),
-            ("b".to_owned(), Value::Int(35)),
-        ]);
-
-        let expected_inner = TestInner { a: expected, b: 35 };
-        let final_value: TestInner = from_avro_value(&test_inner)?;
-        assert_eq!(final_value, expected_inner);
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_from_value_unit_enum() -> AnyResult<()> {
-        let expected = TestUnitExternalEnum {
-            a: UnitExternalEnum::Val1,
-        };
-
-        let test = Value::Record(vec![("a".to_owned(), Value::Enum(0, "Val1".to_owned()))]);
-        let final_value: TestUnitExternalEnum = from_avro_value(&test)?;
-        assert_eq!(
-            final_value, expected,
-            "Error deserializing unit external enum"
-        );
-
-        let expected = TestUnitInternalEnum {
-            a: UnitInternalEnum::Val1,
-        };
-
-        let test = Value::Record(vec![(
-            "a".to_owned(),
-            Value::Record(vec![("t".to_owned(), Value::String("Val1".to_owned()))]),
-        )]);
-        let final_value: TestUnitInternalEnum = from_avro_value(&test)?;
-        assert_eq!(
-            final_value, expected,
-            "Error deserializing unit internal enum"
-        );
-        let expected = TestUnitAdjacentEnum {
-            a: UnitAdjacentEnum::Val1,
-        };
-
-        let test = Value::Record(vec![(
-            "a".to_owned(),
-            Value::Record(vec![("t".to_owned(), Value::String("Val1".to_owned()))]),
-        )]);
-        let final_value: TestUnitAdjacentEnum = from_avro_value(&test)?;
-        assert_eq!(
-            final_value, expected,
-            "Error deserializing unit adjacent enum"
-        );
-        let expected = TestUnitUntaggedEnum {
-            a: UnitUntaggedEnum::Val1,
-        };
-
-        let test = Value::Record(vec![("a".to_owned(), Value::Null)]);
-        let final_value: TestUnitUntaggedEnum = from_avro_value(&test)?;
-        assert_eq!(
-            final_value, expected,
-            "Error deserializing unit untagged enum"
-        );
-        Ok(())
-    }
-
-    #[test]
-    fn avro_3645_3646_test_from_value_enum() -> AnyResult<()> {
-        #[derive(Debug, Deserialize, Serialize, PartialEq, Eq)]
-        struct TestNullExternalEnum {
-            a: NullExternalEnum,
-        }
-
-        deserialize_without_context!(TestNullExternalEnum);
-
-        #[derive(Debug, Deserialize, Serialize, PartialEq, Eq)]
-        enum NullExternalEnum {
-            Val1,
-            Val2(),
-            Val3(()),
-            Val4(u64),
-        }
-
-        let data = vec![
-            (
-                TestNullExternalEnum {
-                    a: NullExternalEnum::Val1,
-                },
-                Value::Record(vec![("a".to_owned(), Value::Enum(0, "Val1".to_owned()))]),
-            ),
-            (
-                TestNullExternalEnum {
-                    a: NullExternalEnum::Val2(),
-                },
-                Value::Record(vec![(
-                    "a".to_owned(),
-                    Value::Record(vec![
-                        ("type".to_owned(), Value::Enum(1, "Val2".to_owned())),
-                        ("value".to_owned(), Value::Union(1, Box::new(Value::Null))),
-                    ]),
-                )]),
-            ),
-            (
-                TestNullExternalEnum {
-                    a: NullExternalEnum::Val2(),
-                },
-                Value::Record(vec![(
-                    "a".to_owned(),
-                    Value::Record(vec![
-                        ("type".to_owned(), Value::Enum(1, "Val2".to_owned())),
-                        ("value".to_owned(), Value::Array(vec![])),
-                    ]),
-                )]),
-            ),
-            (
-                TestNullExternalEnum {
-                    a: NullExternalEnum::Val3(()),
-                },
-                Value::Record(vec![(
-                    "a".to_owned(),
-                    Value::Record(vec![
-                        ("type".to_owned(), Value::Enum(2, "Val3".to_owned())),
-                        ("value".to_owned(), Value::Union(2, Box::new(Value::Null))),
-                    ]),
-                )]),
-            ),
-            (
-                TestNullExternalEnum {
-                    a: NullExternalEnum::Val4(123),
-                },
-                Value::Record(vec![(
-                    "a".to_owned(),
-                    Value::Record(vec![
-                        ("type".to_owned(), Value::Enum(3, "Val4".to_owned())),
-                        ("value".to_owned(), Value::Union(3, Value::Long(123).into())),
-                    ]),
-                )]),
-            ),
-        ];
-
-        for (expected, test) in data.iter() {
-            let actual: TestNullExternalEnum = from_avro_value(test)?;
-            assert_eq!(actual, *expected);
-        }
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_from_value_single_value_enum() -> AnyResult<()> {
-        let expected = TestSingleValueExternalEnum {
-            a: SingleValueExternalEnum::Double(64.0),
-        };
-
-        let test = Value::Record(vec![(
-            "a".to_owned(),
-            Value::Record(vec![
-                ("type".to_owned(), Value::String("Double".to_owned())),
-                (
-                    "value".to_owned(),
-                    Value::Union(1, Box::new(Value::Double(64.0))),
-                ),
-            ]),
-        )]);
-        let final_value: TestSingleValueExternalEnum = from_avro_value(&test)?;
-        assert_eq!(
-            final_value, expected,
-            "Error deserializing single value external enum(union)"
-        );
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_from_value_struct_enum() -> AnyResult<()> {
-        let expected = TestStructExternalEnum {
-            a: StructExternalEnum::Val1 { x: 1.0, y: 2.0 },
-        };
-
-        let test = Value::Record(vec![(
-            "a".to_owned(),
-            Value::Record(vec![
-                ("type".to_owned(), Value::String("Val1".to_owned())),
-                (
-                    "value".to_owned(),
-                    Value::Union(
-                        0,
-                        Box::new(Value::Record(vec![
-                            ("x".to_owned(), Value::Float(1.0)),
-                            ("y".to_owned(), Value::Float(2.0)),
-                        ])),
-                    ),
-                ),
-            ]),
-        )]);
-        let final_value: TestStructExternalEnum = from_avro_value(&test)?;
-        assert_eq!(
-            final_value, expected,
-            "error deserializing struct external enum(union)"
-        );
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_avro_3692_from_value_struct_flatten() -> AnyResult<()> {
-        #[derive(Deserialize, PartialEq, Debug)]
-        struct S1 {
-            f1: String,
-            #[serde(flatten)]
-            inner: S2,
-        }
-        deserialize_without_context!(S1);
-        #[derive(Deserialize, PartialEq, Debug)]
-        struct S2 {
-            f2: String,
-        }
-        let expected = S1 {
-            f1: "Hello".to_owned(),
-            inner: S2 {
-                f2: "World".to_owned(),
-            },
-        };
-
-        let test = Value::Record(vec![
-            ("f1".to_owned(), "Hello".into()),
-            ("f2".to_owned(), "World".into()),
-        ]);
-        let final_value: S1 = from_avro_value(&test)?;
-        assert_eq!(final_value, expected);
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_from_value_tuple_enum() -> AnyResult<()> {
-        let expected = TestTupleExternalEnum {
-            a: TupleExternalEnum::Val1(1.0, 2.0),
-        };
-
-        let test = Value::Record(vec![(
-            "a".to_owned(),
-            Value::Record(vec![
-                ("type".to_owned(), Value::String("Val1".to_owned())),
-                (
-                    "value".to_owned(),
-                    Value::Union(
-                        0,
-                        Box::new(Value::Array(vec![Value::Float(1.0), Value::Float(2.0)])),
-                    ),
-                ),
-            ]),
-        )]);
-        let final_value: TestTupleExternalEnum = from_avro_value(&test)?;
-        assert_eq!(
-            final_value, expected,
-            "error serializing tuple external enum(union)"
-        );
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_date() -> AnyResult<()> {
-        let raw_value = 1;
-        let value = Value::Date(raw_value);
-        let result = from_avro_value::<i32>(&value)?;
-        assert_eq!(result, raw_value);
-        Ok(())
-    }
-
-    #[test]
-    fn test_time_millis() -> AnyResult<()> {
-        let raw_value = 1;
-        let value = Value::TimeMillis(raw_value);
-        let result = from_avro_value::<i64>(&value)?;
-        assert_eq!(result, raw_value as i64 * 1000);
-        Ok(())
-    }
-
-    #[test]
-    fn test_time_micros() -> AnyResult<()> {
-        let raw_value = 1;
-        let value = Value::TimeMicros(raw_value);
-        let result = from_avro_value::<i64>(&value)?;
-        assert_eq!(result, raw_value);
-        Ok(())
-    }
-
-    #[test]
-    fn test_timestamp_millis() -> AnyResult<()> {
-        let raw_value = 1;
-        let value = Value::TimestampMillis(raw_value);
-        let result = from_avro_value::<i64>(&value)?;
-        assert_eq!(result, raw_value * 1000);
-        Ok(())
-    }
-
-    #[test]
-    fn test_timestamp_micros() -> AnyResult<()> {
-        let raw_value = 1;
-        let value = Value::TimestampMicros(raw_value);
-        let result = from_avro_value::<i64>(&value)?;
-        assert_eq!(result, raw_value);
-        Ok(())
-    }
-
-    // #[test]
-    // fn test_avro_3916_timestamp_nanos() -> AnyResult<()> {
-    //     let raw_value = 1;
-    //     let value = Value::TimestampNanos(raw_value);
-    //     let result = from_avro_value::<i64>(&value)?;
-    //     assert_eq!(result, raw_value);
-    //     Ok(())
-    // }
-
-    #[test]
-    fn test_avro_3853_local_timestamp_millis() -> AnyResult<()> {
-        let raw_value = 1;
-        let value = Value::LocalTimestampMillis(raw_value);
-        let result = from_avro_value::<i64>(&value)?;
-        assert_eq!(result, raw_value * 1000);
-        Ok(())
-    }
-
-    #[test]
-    fn test_avro_3853_local_timestamp_micros() -> AnyResult<()> {
-        let raw_value = 1;
-        let value = Value::LocalTimestampMicros(raw_value);
-        let result = from_avro_value::<i64>(&value)?;
-        assert_eq!(result, raw_value);
-        Ok(())
-    }
-
-    // #[test]
-    // fn test_avro_3916_local_timestamp_nanos() -> AnyResult<()> {
-    //     let raw_value = 1;
-    //     let value = Value::LocalTimestampNanos(raw_value);
-    //     let result = crate::from_value::<i64>(&value)?;
-    //     assert_eq!(result, raw_value);
-    //     Ok(())
-    // }
-
-    // #[test]
-    // fn test_from_value_uuid_str() -> AnyResult<()> {
-    //     let raw_value = "9ec535ff-3e2a-45bd-91d3-0a01321b5a49";
-    //     let value = Value::Uuid(Uuid::parse_str(raw_value)?);
-    //     let result = from_avro_value::<Uuid>(&value)?;
-    //     assert_eq!(result.to_string(), raw_value);
-    //     Ok(())
-    // }
-
-    // #[test]
-    // fn test_from_value_uuid_slice() -> AnyResult<()> {
-    //     let raw_value = &[4, 54, 67, 12, 43, 2, 2, 76, 32, 50, 87, 5, 1, 33, 43, 87];
-    //     let value = Value::Uuid(Uuid::from_slice(raw_value)?);
-    //     let result = from_avro_value::<Uuid>(&value)?;
-    //     assert_eq!(result.as_bytes(), raw_value);
-    //     Ok(())
-    // }
-
-    // #[test]
-    // fn test_from_value_with_union() -> AnyResult<()> {
-    //     // AVRO-3232 test for deserialize_any on missing fields on the destination struct:
-    //     // Error: DeserializeValue("Unsupported union")
-    //     // Error: DeserializeValue("incorrect value of type: String")
-    //     #[derive(Debug, Deserialize, PartialEq, Eq)]
-    //     struct RecordInUnion {
-    //         record_in_union: i32,
-    //     }
-
-    //     #[derive(Debug, Deserialize, PartialEq, Eq)]
-    //     struct StructWithMissingFields {
-    //         a_string: String,
-    //         a_record: Option<RecordInUnion>,
-    //         an_array: Option<[bool; 2]>,
-    //         a_union_map: Option<HashMap<String, i64>>,
-    //     }
-
-    //     deserialize_without_context!(StructWithMissingFields);
-
-    //     let raw_map: HashMap<String, i64> = [
-    //         ("long_one".to_string(), 1),
-    //         ("long_two".to_string(), 2),
-    //         ("long_three".to_string(), 3),
-    //         ("time_micros_a".to_string(), 123),
-    //         ("timestamp_millis_b".to_string(), 234),
-    //         ("timestamp_micros_c".to_string(), 345),
-    //         //("timestamp_nanos_d".to_string(), 345_001),
-    //         ("local_timestamp_millis_d".to_string(), 678),
-    //         ("local_timestamp_micros_e".to_string(), 789),
-    //         //("local_timestamp_nanos_f".to_string(), 345_002),
-    //     ]
-    //     .iter()
-    //     .cloned()
-    //     .collect();
-
-    //     let value_map = raw_map
-    //         .iter()
-    //         .map(|(k, v)| match k {
-    //             key if key.starts_with("long_") => (k.clone(), Value::Long(*v)),
-    //             key if key.starts_with("time_micros_") => (k.clone(), Value::TimeMicros(*v)),
-    //             key if key.starts_with("timestamp_millis_") => {
-    //                 (k.clone(), Value::TimestampMillis(*v))
-    //             }
-    //             key if key.starts_with("timestamp_micros_") => {
-    //                 (k.clone(), Value::TimestampMicros(*v))
-    //             }
-    //             // key if key.starts_with("timestamp_nanos_") => {
-    //             //     (k.clone(), Value::TimestampNanos(*v))
-    //             // }
-    //             key if key.starts_with("local_timestamp_millis_") => {
-    //                 (k.clone(), Value::LocalTimestampMillis(*v))
-    //             }
-    //             key if key.starts_with("local_timestamp_micros_") => {
-    //                 (k.clone(), Value::LocalTimestampMicros(*v))
-    //             }
-    //             // key if key.starts_with("local_timestamp_nanos_") => {
-    //             //     (k.clone(), Value::LocalTimestampNanos(*v))
-    //             // }
-    //             _ => unreachable!("unexpected key: {:?}", k),
-    //         })
-    //         .collect();
-
-    //     let record = Value::Record(vec![
-    //         (
-    //             "a_string".to_string(),
-    //             Value::String("a valid message field".to_string()),
-    //         ),
-    //         (
-    //             "a_non_existing_string".to_string(),
-    //             Value::String("a string".to_string()),
-    //         ),
-    //         (
-    //             "a_union_string".to_string(),
-    //             Value::Union(0, Box::new(Value::String("a union string".to_string()))),
-    //         ),
-    //         (
-    //             "a_union_long".to_string(),
-    //             Value::Union(0, Box::new(Value::Long(412))),
-    //         ),
-    //         (
-    //             "a_union_long".to_string(),
-    //             Value::Union(0, Box::new(Value::Long(412))),
-    //         ),
-    //         (
-    //             "a_time_micros".to_string(),
-    //             Value::Union(0, Box::new(Value::TimeMicros(123))),
-    //         ),
-    //         (
-    //             "a_non_existing_time_micros".to_string(),
-    //             Value::Union(0, Box::new(Value::TimeMicros(-123))),
-    //         ),
-    //         (
-    //             "a_timestamp_millis".to_string(),
-    //             Value::Union(0, Box::new(Value::TimestampMillis(234))),
-    //         ),
-    //         (
-    //             "a_non_existing_timestamp_millis".to_string(),
-    //             Value::Union(0, Box::new(Value::TimestampMillis(-234))),
-    //         ),
-    //         (
-    //             "a_timestamp_micros".to_string(),
-    //             Value::Union(0, Box::new(Value::TimestampMicros(345))),
-    //         ),
-    //         (
-    //             "a_non_existing_timestamp_micros".to_string(),
-    //             Value::Union(0, Box::new(Value::TimestampMicros(-345))),
-    //         ),
-    //         // (
-    //         //     "a_timestamp_nanos".to_string(),
-    //         //     Value::Union(0, Box::new(Value::TimestampNanos(345))),
-    //         // ),
-    //         // (
-    //         //     "a_non_existing_timestamp_nanos".to_string(),
-    //         //     Value::Union(0, Box::new(Value::TimestampNanos(-345))),
-    //         // ),
-    //         (
-    //             "a_local_timestamp_millis".to_string(),
-    //             Value::Union(0, Box::new(Value::LocalTimestampMillis(678))),
-    //         ),
-    //         (
-    //             "a_non_existing_local_timestamp_millis".to_string(),
-    //             Value::Union(0, Box::new(Value::LocalTimestampMillis(-678))),
-    //         ),
-    //         (
-    //             "a_local_timestamp_micros".to_string(),
-    //             Value::Union(0, Box::new(Value::LocalTimestampMicros(789))),
-    //         ),
-    //         (
-    //             "a_non_existing_local_timestamp_micros".to_string(),
-    //             Value::Union(0, Box::new(Value::LocalTimestampMicros(-789))),
-    //         ),
-    //         // (
-    //         //     "a_local_timestamp_nanos".to_string(),
-    //         //     Value::Union(0, Box::new(Value::LocalTimestampNanos(789))),
-    //         // ),
-    //         // (
-    //         //     "a_non_existing_local_timestamp_nanos".to_string(),
-    //         //     Value::Union(0, Box::new(Value::LocalTimestampNanos(-789))),
-    //         // ),
-    //         (
-    //             "a_record".to_string(),
-    //             Value::Union(
-    //                 0,
-    //                 Box::new(Value::Record(vec![(
-    //                     "record_in_union".to_string(),
-    //                     Value::Int(-2),
-    //                 )])),
-    //             ),
-    //         ),
-    //         (
-    //             "a_non_existing_record".to_string(),
-    //             Value::Union(
-    //                 0,
-    //                 Box::new(Value::Record(vec![("blah".to_string(), Value::Int(-22))])),
-    //             ),
-    //         ),
-    //         (
-    //             "an_array".to_string(),
-    //             Value::Union(
-    //                 0,
-    //                 Box::new(Value::Array(vec![
-    //                     Value::Boolean(true),
-    //                     Value::Boolean(false),
-    //                 ])),
-    //             ),
-    //         ),
-    //         (
-    //             "a_non_existing_array".to_string(),
-    //             Value::Union(
-    //                 0,
-    //                 Box::new(Value::Array(vec![
-    //                     Value::Boolean(false),
-    //                     Value::Boolean(true),
-    //                 ])),
-    //             ),
-    //         ),
-    //         (
-    //             "a_union_map".to_string(),
-    //             Value::Union(0, Box::new(Value::Map(value_map))),
-    //         ),
-    //         (
-    //             "a_non_existing_union_map".to_string(),
-    //             Value::Union(0, Box::new(Value::Map(HashMap::new()))),
-    //         ),
-    //     ]);
-
-    //     let deserialized: StructWithMissingFields = from_avro_value(&record)?;
-    //     let reference = StructWithMissingFields {
-    //         a_string: "a valid message field".to_string(),
-    //         a_record: Some(RecordInUnion {
-    //             record_in_union: -2,
-    //         }),
-    //         an_array: Some([true, false]),
-    //         a_union_map: Some(raw_map),
-    //     };
-    //     assert_eq!(deserialized, reference);
-    //     Ok(())
-    // }
-
-    // #[test]
-    // #[serial(avro_3747)]
-    // fn avro_3747_human_readable_false() -> AnyResult<()> {
-    //     use serde::de::Deserializer as SerdeDeserializer;
-
-    //     let is_human_readable = false;
-    //     crate::util::SERDE_HUMAN_READABLE.store(is_human_readable, Ordering::Release);
-
-    //     let deser = &Deserializer::new(&Value::Null);
-
-    //     assert_eq!(deser.is_human_readable(), is_human_readable);
-
-    //     Ok(())
-    // }
-
-    // #[test]
-    // #[serial(avro_3747)]
-    // fn avro_3747_human_readable_true() -> AnyResult<()> {
-    //     use serde::de::Deserializer as SerdeDeserializer;
-
-    //     crate::util::SERDE_HUMAN_READABLE.store(true, Ordering::Release);
-
-    //     let deser = &Deserializer::new(&Value::Null);
-
-    //     assert!(deser.is_human_readable());
-
-    //     Ok(())
-    // }
-
-    #[test]
-    fn test_avro_3892_deserialize_string_from_bytes() -> AnyResult<()> {
-        let raw_value = vec![1, 2, 3, 4];
-        let value = Value::Bytes(raw_value.clone());
-        let result = from_avro_value::<String>(&value)?;
-        assert_eq!(result, String::from_utf8(raw_value)?);
-        Ok(())
-    }
-
-    #[test]
-    fn test_avro_3892_deserialize_str_from_bytes() -> AnyResult<()> {
-        let raw_value = &[1, 2, 3, 4];
-        let value = Value::Bytes(raw_value.to_vec());
-        let result = from_avro_value::<&str>(&value)?;
-        assert_eq!(result, std::str::from_utf8(raw_value)?);
-        Ok(())
-    }
-
-    #[derive(Debug)]
-    struct Bytes(Vec<u8>);
-
-    deserialize_without_context!(Bytes);
-
-    impl<'de> Deserialize<'de> for Bytes {
-        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-        where
-            D: serde::Deserializer<'de>,
-        {
-            struct BytesVisitor;
-            impl serde::de::Visitor<'_> for BytesVisitor {
-                type Value = Bytes;
-
-                fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-                    formatter.write_str("a byte array")
-                }
-
-                fn visit_bytes<E>(self, v: &[u8]) -> Result<Self::Value, E>
-                where
-                    E: serde::de::Error,
-                {
-                    Ok(Bytes(v.to_vec()))
-                }
-            }
-            deserializer.deserialize_bytes(BytesVisitor)
-        }
-    }
-
-    #[test]
-    fn test_avro_3892_deserialize_bytes_from_decimal() -> AnyResult<()> {
-        let expected_bytes = BigInt::from(123456789).to_signed_bytes_be();
-        let value = Value::Decimal(Decimal::from(&expected_bytes));
-        let raw_bytes = from_avro_value::<Bytes>(&value)?;
-        assert_eq!(raw_bytes.0, expected_bytes);
-
-        let value = Value::Union(0, Box::new(Value::Decimal(Decimal::from(&expected_bytes))));
-        let raw_bytes = from_avro_value::<Option<Bytes>>(&value)?;
-        assert_eq!(raw_bytes.unwrap().0, expected_bytes);
-        Ok(())
-    }
-
-    #[test]
-    fn test_avro_3892_deserialize_bytes_from_uuid() -> AnyResult<()> {
-        let uuid_str = "10101010-2020-2020-2020-101010101010";
-        let expected_bytes = Uuid::parse_str(uuid_str)?.as_bytes().to_vec();
-        let value = Value::Uuid(Uuid::parse_str(uuid_str)?);
-        let raw_bytes = from_avro_value::<Bytes>(&value)?;
-        assert_eq!(raw_bytes.0, expected_bytes);
-
-        let value = Value::Union(0, Box::new(Value::Uuid(Uuid::parse_str(uuid_str)?)));
-        let raw_bytes = from_avro_value::<Option<Bytes>>(&value)?;
-        assert_eq!(raw_bytes.unwrap().0, expected_bytes);
-        Ok(())
-    }
-
-    #[test]
-    fn test_avro_3892_deserialize_bytes_from_fixed() -> AnyResult<()> {
-        let expected_bytes = vec![1, 2, 3, 4];
-        let value = Value::Fixed(4, expected_bytes.clone());
-        let raw_bytes = from_avro_value::<Bytes>(&value)?;
-        assert_eq!(raw_bytes.0, expected_bytes);
-
-        let value = Value::Union(0, Box::new(Value::Fixed(4, expected_bytes.clone())));
-        let raw_bytes = from_avro_value::<Option<Bytes>>(&value)?;
-        assert_eq!(raw_bytes.unwrap().0, expected_bytes);
-        Ok(())
-    }
-
-    #[test]
-    fn test_avro_3892_deserialize_bytes_from_bytes() -> AnyResult<()> {
-        let expected_bytes = vec![1, 2, 3, 4];
-        let value = Value::Bytes(expected_bytes.clone());
-        let raw_bytes = from_avro_value::<Bytes>(&value)?;
-        assert_eq!(raw_bytes.0, expected_bytes);
-
-        let value = Value::Union(0, Box::new(Value::Bytes(expected_bytes.clone())));
-        let raw_bytes = from_avro_value::<Option<Bytes>>(&value)?;
-        assert_eq!(raw_bytes.unwrap().0, expected_bytes);
-        Ok(())
-    }
 }

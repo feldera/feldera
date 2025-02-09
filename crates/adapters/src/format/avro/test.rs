@@ -395,6 +395,15 @@ fn test_extra_columns() {
                         "type": "map",
                         "values": "long"
                     }
+            },
+            {
+                "name": "dec",
+                "type": {
+                    "type": "bytes",
+                    "logicalType": "decimal",
+                    "precision": 10,
+                    "scale": 3
+                }
             }
         ]
     }"#;
@@ -462,7 +471,17 @@ fn test_non_null_to_nullable() {
                         "type": "map",
                         "values": "long"
                     }, "null"]
+            },
+            {
+                "name": "dec",
+                "type": {
+                    "type": "bytes",
+                    "logicalType": "decimal",
+                    "precision": 10,
+                    "scale": 3
+                }
             }
+
         ]
     }"#;
 
@@ -528,6 +547,15 @@ fn test_ms_time() {
                         "type": "map",
                         "values": "long"
                     }
+            },
+            {
+                "name": "dec",
+                "type": {
+                    "type": "bytes",
+                    "logicalType": "decimal",
+                    "precision": 10,
+                    "scale": 3
+                }
             }
         ]
     }"#;
@@ -620,7 +648,7 @@ where
             .iter()
             .map(|(_k, v, headers)| {
                 let val = from_avro_datum(&schema, &mut &v.as_ref().unwrap()[5..], None).unwrap();
-                let value = from_avro_value::<T>(&val).unwrap();
+                let value = from_avro_value::<T>(&val, &schema).unwrap();
                 let w = if headers[0] == ("op".to_string(), Some(b"insert".to_vec())) {
                     1
                 } else {
@@ -724,7 +752,7 @@ fn test_raw_avro_output_indexed<K, T>(
         .iter()
         .map(|(_k, v, headers)| {
             let val = from_avro_datum(&schema, &mut &v.as_ref().unwrap()[5..], None).unwrap();
-            let value = from_avro_value::<T>(&val).unwrap();
+            let value = from_avro_value::<T>(&val, &schema).unwrap();
             (
                 value,
                 std::str::from_utf8(headers[0].1.as_ref().unwrap().as_slice()).unwrap(),
@@ -799,12 +827,12 @@ fn test_confluent_avro_output<K, V, KF>(
         .map(|(k, v, _headers)| {
             if let Some(v) = v {
                 let val = from_avro_datum(&schema, &mut &v[5..], None).unwrap();
-                let value = from_avro_value::<V>(&val).unwrap();
+                let value = from_avro_value::<V>(&val, &schema).unwrap();
                 (Some(Tup2(value, 1)), None)
             } else {
                 let val =
                     from_avro_datum(&key_schema, &mut &k.as_ref().unwrap()[5..], None).unwrap();
-                let value = from_avro_value::<K>(&val).unwrap();
+                let value = from_avro_value::<K>(&val, &key_schema).unwrap();
                 (None, Some(Tup2(value, -1)))
             }
         })
@@ -911,11 +939,11 @@ fn test_confluent_avro_output_indexed<K, V>(
         .iter()
         .map(|(k, v, _headers)| {
             let key = from_avro_datum(&key_schema, &mut &k.as_ref().unwrap()[5..], None).unwrap();
-            let key = from_avro_value::<K>(&key).unwrap();
+            let key = from_avro_value::<K>(&key, &key_schema).unwrap();
 
             let val = v.as_ref().map(|v| {
                 let val = from_avro_datum(&value_schema, &mut &v[5..], None).unwrap();
-                from_avro_value::<V>(&val).unwrap()
+                from_avro_value::<V>(&val, &value_schema).unwrap()
             });
 
             (key, val)

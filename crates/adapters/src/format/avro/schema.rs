@@ -123,6 +123,37 @@ fn validate_map_schema(avro_schema: &AvroSchema, value_schema: &ColumnType) -> R
 }
 
 /// Check that Avro schema can be deserialized as SQL `TIMESTAMP` type.
+fn validate_decimal_schema(
+    avro_schema: &AvroSchema,
+    column_type: &ColumnType,
+) -> Result<(), String> {
+    match avro_schema {
+        AvroSchema::Decimal(decimal_schema) => {
+            if decimal_schema.precision as i64 != column_type.precision.unwrap() {
+                return Err(format!(
+                    "invalid Avro schema for a column of type 'DECIMAL({},{})': expected precision {}, but found {}",
+                    column_type.precision.unwrap(), column_type.scale.unwrap(),
+                    column_type.precision.unwrap(), decimal_schema.precision
+                ));
+            }
+            if decimal_schema.scale as i64 != column_type.scale.unwrap() {
+                return Err(format!(
+                    "invalid Avro schema for a column of type 'DECIMAL({},{})': expected scale {}, but found {}",
+                    column_type.precision.unwrap(), column_type.scale.unwrap(),
+                    column_type.scale.unwrap(), decimal_schema.scale
+                ));
+            }
+
+            Ok(())
+        }
+        _ => Err(format!(
+            "invalid Avro schema for a column of type 'DECIMAL': expected 'decimal', but found {}",
+            schema_json(avro_schema)
+        )),
+    }
+}
+
+/// Check that Avro schema can be deserialized as SQL `TIMESTAMP` type.
 fn validate_timestamp_schema(avro_schema: &AvroSchema) -> Result<(), String> {
     if avro_schema != &AvroSchema::TimestampMicros
         && avro_schema != &AvroSchema::TimestampMillis
@@ -184,7 +215,7 @@ pub fn validate_field_schema(
         SqlType::Real => AvroSchema::Float,
         SqlType::Double => AvroSchema::Double,
         SqlType::Decimal => {
-            return Err("not implemented: Avro deserialization for the 'DECIMAL' type".to_string());
+            return validate_decimal_schema(avro_schema, field_schema);
         }
         SqlType::Char | SqlType::Varchar => AvroSchema::String,
         SqlType::Binary | SqlType::Varbinary => AvroSchema::Bytes,
