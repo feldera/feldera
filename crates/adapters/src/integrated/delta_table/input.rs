@@ -59,7 +59,7 @@ use feldera_types::transport::s3::S3InputConfig;
 use futures::TryFutureExt;
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, VecDeque};
+use std::collections::{BTreeSet, HashMap, VecDeque};
 use std::fmt::format;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex, Weak};
@@ -82,6 +82,12 @@ const RETRY_INTERVAL: Duration = Duration::from_millis(2000);
 
 const REPORT_ERROR: &str =
     "please report this error to developers (https://github.com/feldera/feldera/issues)";
+
+/// Takes a column name from a DeltaLake schema and returns a qouted string
+/// that can be used in datafusion queries like `select "foo""bar" from my_table`.
+fn quote_sql_identifier<S: AsRef<str>>(ident: S) -> String {
+    format!("\"{}\"", ident.as_ref().replace("\"", "\"\""))
+}
 
 /// Integrated input connector that reads from a delta table.
 pub struct DeltaTableInputEndpoint {
@@ -289,22 +295,71 @@ impl DeltaTableInputEndpointInner {
         }
     }
 
+    /// Compute the subset of columns in the Delta table schema that occur in the SQL
+    /// table declaration.
+    fn used_columns(&self, table: &DeltaTable) -> Vec<String> {
+        // Column names in the SQL schema.
+        let sql_columns = self
+            .schema
+            .fields
+            .iter()
+            .map(|field| field.name.name())
+            .collect::<Vec<String>>();
+
+        if let Some(table_schema) = table.schema() {
+            let delta_columns = table_schema
+                .fields()
+                .map(|f| f.name().clone())
+                .collect::<Vec<String>>();
+
+            // We need to be careful in checking whether a Delta column name occurs in
+            // sql_columns.  Delta doesn't seem to include case sensitivity information any
+            // any form in its schema.  So we conservatively check whether column name
+            // occurs in the SQL tables as is or whether a lowercase column name occurs
+            // in the set of SQL columns converted to lowercase.
+
+            let sql_columns = sql_columns.iter().cloned().collect::<BTreeSet<_>>();
+            let sql_columns_lowercase = sql_columns
+                .iter()
+                .map(|c| c.to_lowercase())
+                .collect::<BTreeSet<_>>();
+
+            delta_columns
+                .into_iter()
+                .filter(|c| {
+                    sql_columns.contains(c) || sql_columns_lowercase.contains(&c.to_lowercase())
+                })
+                .collect::<Vec<_>>()
+        } else {
+            sql_columns
+        }
+    }
+
     /// Load the entire table snapshot as a single "select * where <filter>" query.
     async fn read_unordered_snapshot(
         &self,
+        table: &DeltaTable,
         input_stream: &mut dyn ArrowStream,
         receiver: &mut Receiver<PipelineState>,
     ) {
-        // Execute the snapshot query; push snapshot data to the circuit.
-        info!(
-            "delta_table {}: reading initial snapshot",
-            &self.endpoint_name,
-        );
+        let columns = self.used_columns(table);
 
-        let mut snapshot_query = "select * from snapshot".to_string();
+        let column_names = columns
+            .iter()
+            .map(quote_sql_identifier)
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        let mut snapshot_query = format!("select {column_names} from snapshot");
         if let Some(filter) = &self.config.snapshot_filter {
             snapshot_query = format!("{snapshot_query} where {filter}");
         }
+
+        // Execute the snapshot query; push snapshot data to the circuit.
+        info!(
+            "delta_table {}: reading initial snapshot: {snapshot_query}",
+            &self.endpoint_name,
+        );
 
         self.execute_snapshot_query(&snapshot_query, "initial snapshot", input_stream, receiver)
             .await;
@@ -320,16 +375,18 @@ impl DeltaTableInputEndpointInner {
     /// increasing timestamp ranges.
     async fn read_ordered_snapshot(
         &self,
+        table: &DeltaTable,
         input_stream: &mut dyn ArrowStream,
         receiver: &mut Receiver<PipelineState>,
     ) {
-        self.read_ordered_snapshot_inner(input_stream, receiver)
+        self.read_ordered_snapshot_inner(table, input_stream, receiver)
             .await
             .unwrap_or_else(|e| self.consumer.error(true, e));
     }
 
     async fn read_ordered_snapshot_inner(
         &self,
+        table: &DeltaTable,
         input_stream: &mut dyn ArrowStream,
         receiver: &mut Receiver<PipelineState>,
     ) -> Result<(), AnyError> {
@@ -386,6 +443,13 @@ impl DeltaTableInputEndpointInner {
 
         let max = bounds[0].column(1).as_string::<i32>().value(0).to_string();
 
+        let columns = self.used_columns(table);
+        let column_names = columns
+            .iter()
+            .map(quote_sql_identifier)
+            .collect::<Vec<_>>()
+            .join(", ");
+
         info!(
             "delta_table {}: reading table snapshot in the range '{min} <= {timestamp_column} <= {max}'",
             &self.endpoint_name,
@@ -408,7 +472,7 @@ impl DeltaTableInputEndpointInner {
 
             // Query the table for the range.
             let mut range_query =
-                format!("select * from snapshot where {timestamp_column} >= {start} and {timestamp_column} < {end}");
+                format!("select {column_names} from snapshot where {timestamp_column} >= {start} and {timestamp_column} < {end}");
             if let Some(filter) = &self.config.snapshot_filter {
                 range_query = format!("{range_query} and {filter}");
             }
@@ -464,11 +528,11 @@ impl DeltaTableInputEndpointInner {
 
         if self.config.snapshot() && self.config.timestamp_column.is_none() {
             // Read snapshot chunk-by-chunk.
-            self.read_unordered_snapshot(input_stream.as_mut(), &mut receiver)
+            self.read_unordered_snapshot(&table, input_stream.as_mut(), &mut receiver)
                 .await;
         } else if self.config.snapshot() {
             // Read the entire snapshot in one query.
-            self.read_ordered_snapshot(input_stream.as_mut(), &mut receiver)
+            self.read_ordered_snapshot(&table, input_stream.as_mut(), &mut receiver)
                 .await;
         };
 
@@ -578,6 +642,10 @@ impl DeltaTableInputEndpointInner {
         self.datafusion
             .runtime_env()
             .register_object_store(url, delta_table.log_store().object_store());
+
+        // if let Some(schema) = delta_table.schema() {
+        //     info!("Delta table schema: {schema:?}");
+        // }
 
         info!(
             "delta_table {}: opened delta table '{}' (current table version {})",
@@ -1058,6 +1126,10 @@ impl DeltaTableInputEndpointInner {
         }
     }
 
+    // TODO: here, as well as in `process_cdc_transaction`, we can get some potential speedup by only reading a subset
+    // of columns that occurs in the SQL declaration, similar to how we already do when reading the snapshot.  However,
+    // this requires some extra care, since different transactions in the log can have different schemas. The implementation
+    // should therefore monitor for schema changes and update the set of relevant columns appropriately.
     async fn add_with_polarity(
         &self,
         path: &str,
