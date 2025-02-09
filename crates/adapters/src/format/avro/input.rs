@@ -114,6 +114,7 @@ struct AvroParser {
 
     schema_id: Option<u32>,
     schema: Option<AvroSchema>,
+    value_schema: Option<AvroSchema>,
     last_event_number: u64,
 
     /// Schema cache shared between all clones of this connector.
@@ -177,13 +178,14 @@ impl AvroParser {
             schema_id: None,
             relation_schema: relation_schema.clone(),
             schema: None,
+            value_schema: None,
             last_event_number: 0,
             schema_cache: Arc::new(Mutex::new(HashMap::new())),
         };
 
         if let Some(schema) = &config.schema {
-            let schema = parser.validate_schema(schema)?;
-            parser.set_schema(schema)?;
+            let (schema, value_schema) = parser.validate_schema(schema)?;
+            parser.set_schema(schema, value_schema)?;
         }
 
         Ok(parser)
@@ -221,7 +223,7 @@ impl AvroParser {
                         cache.insert(schema_id, Err(e.to_string()));
                         Err(e.to_string())
                     }
-                    Ok(schema) => {
+                    Ok((schema, _)) => {
                         cache.insert(schema_id, Ok(schema.clone()));
                         Ok(schema)
                     }
@@ -230,9 +232,14 @@ impl AvroParser {
         }
     }
 
-    fn set_schema(&mut self, schema: AvroSchema) -> Result<(), ControllerError> {
+    fn set_schema(
+        &mut self,
+        schema: AvroSchema,
+        value_schema: AvroSchema,
+    ) -> Result<(), ControllerError> {
         debug!("Setting Avro schema: {}", schema_json(&schema));
         self.schema = Some(schema);
+        self.value_schema = Some(value_schema);
 
         self.input_stream = Some(self.input_handle.configure_avro_deserializer()?);
 
@@ -263,7 +270,10 @@ impl AvroParser {
         }
     }
 
-    fn validate_schema(&self, schema_str: &str) -> Result<AvroSchema, ControllerError> {
+    fn validate_schema(
+        &self,
+        schema_str: &str,
+    ) -> Result<(AvroSchema, AvroSchema), ControllerError> {
         let schema = AvroSchema::parse_str(schema_str).map_err(|e| {
             ControllerError::invalid_parser_configuration(
                 &self.endpoint_name,
@@ -271,13 +281,13 @@ impl AvroParser {
             )
         })?;
 
-        let value_schema = self.value_schema(&schema)?;
+        let value_schema = self.value_schema(&schema)?.clone();
 
-        validate_struct_schema(value_schema, &self.relation_schema.fields).map_err(|e| {
+        validate_struct_schema(&value_schema, &self.relation_schema.fields).map_err(|e| {
             ControllerError::schema_validation_error(&format!("error validating Avro schema: {e}"))
         })?;
 
-        Ok(schema)
+        Ok((schema, value_schema))
     }
 
     fn input(&mut self, data: &[u8]) -> Result<(), ParseError> {
@@ -311,8 +321,8 @@ impl AvroParser {
                     let schema = self.lookup_schema(schema_id).map_err(|e| {
                         ParseError::bin_event_error(e, self.last_event_number, data, None)
                     })?;
-
-                    self.set_schema(schema).map_err(|e| {
+                    let value_schema = self.value_schema(&schema).unwrap().clone();
+                    self.set_schema(schema, value_schema).map_err(|e| {
                         ParseError::bin_event_error(
                             e.to_string(),
                             self.last_event_number,
@@ -336,21 +346,23 @@ impl AvroParser {
         // the schema registry.
         assert!(self.input_stream.is_some());
         assert!(self.schema.is_some());
+        let schema = self.schema.as_ref().unwrap();
+        let value_schema = self.value_schema.as_ref().unwrap();
+
         let input_stream = self.input_stream.as_mut().unwrap();
 
         let record_copy = record;
 
-        let avro_value = from_avro_datum(self.schema.as_ref().unwrap(), &mut record, None)
-            .map_err(|e| {
-                ParseError::bin_envelope_error(
-                    format!("error parsing avro record: {e}"),
-                    record_copy,
-                    None,
-                )
-            })?;
+        let avro_value = from_avro_datum(schema, &mut record, None).map_err(|e| {
+            ParseError::bin_envelope_error(
+                format!("error parsing avro record: {e}"),
+                record_copy,
+                None,
+            )
+        })?;
 
         match self.config.update_format {
-            AvroUpdateFormat::Raw => input_stream.insert(&avro_value).map_err(|e| {
+            AvroUpdateFormat::Raw => input_stream.insert(&avro_value, schema).map_err(|e| {
                 ParseError::bin_event_error(
                     format!(
                         "error converting avro record to table row (record: {avro_value:?}): {e}"
@@ -363,7 +375,7 @@ impl AvroParser {
             AvroUpdateFormat::Debezium => {
                 let (before, after) = Self::extract_debezium_values(&avro_value)?;
                 if let Some(before) = before {
-                    input_stream.delete(before).map_err(|e| {
+                    input_stream.delete(before, value_schema).map_err(|e| {
                         ParseError::bin_event_error(
                             format!(
                                 "error converting 'before' record to table row (record: {before:?}): {e}"
@@ -375,7 +387,7 @@ impl AvroParser {
                     })?;
                 }
                 if let Some(after) = after {
-                    input_stream.insert(after).map_err(|e| {
+                    input_stream.insert(after, value_schema).map_err(|e| {
                             ParseError::bin_event_error(
                                 format!(
                                     "error converting 'after' record to table row (record: {after:?}): {e}"
@@ -459,6 +471,7 @@ impl Parser for AvroParser {
             schema_id: self.schema_id,
             relation_schema: self.relation_schema.clone(),
             schema: self.schema.clone(),
+            value_schema: self.value_schema.clone(),
             last_event_number: 0,
             schema_cache: self.schema_cache.clone(),
         })

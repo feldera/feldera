@@ -935,6 +935,7 @@ mod test {
                 ("foo".to_string(), 1),
                 ("bar".to_string(), 2),
             ])),
+            field_7: rust_decimal::Decimal::new(10000, 3),
         };
 
         let avro2_1: AvroValue = AvroValue::Record(vec![
@@ -965,6 +966,10 @@ mod test {
                         ("bar".to_string(), AvroValue::Long(2)),
                     ]))),
                 ),
+            ),
+            (
+                "dec".to_string(),
+                AvroValue::Decimal(Decimal::from(&BigInt::from(10000).to_signed_bytes_be())),
             ),
         ]);
 
