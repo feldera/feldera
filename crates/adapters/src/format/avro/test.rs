@@ -320,6 +320,8 @@ where
         + Hash
         + Send
         + Sync
+        + Debug
+        + Clone
         + 'static,
 {
     for test in test_cases {

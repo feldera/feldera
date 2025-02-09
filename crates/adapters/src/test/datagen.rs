@@ -14,7 +14,7 @@ use size_of::SizeOf;
 use std::collections::BTreeMap;
 use std::hash::Hash;
 use std::time::Duration;
-use std::{env, thread};
+use std::{env, fmt::Debug, thread};
 
 #[derive(
     Debug,
@@ -90,8 +90,20 @@ fn mk_pipeline<T, U>(
     fields: Vec<Field>,
 ) -> AnyResult<(Box<dyn InputReader>, MockInputConsumer, MockDeZSet<T, U>)>
 where
-    T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Hash + Send + Sync + 'static,
-    U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Hash + Send + Sync + 'static,
+    T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+        + Hash
+        + Send
+        + Sync
+        + Debug
+        + Clone
+        + 'static,
+    U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+        + Hash
+        + Send
+        + Sync
+        + Debug
+        + Clone
+        + 'static,
 {
     let relation = Relation::new("test_input".into(), fields, true, BTreeMap::new());
     let (endpoint, consumer, _parser, zset) =

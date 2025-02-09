@@ -552,8 +552,8 @@ impl<K, D, C> ArrowZSetStream<K, D, C> {
 impl<K, D, C> ArrowStream for ArrowZSetStream<K, D, C>
 where
     K: DBData + From<D>,
-    D: for<'de> DeserializeWithContext<'de, C> + Send + 'static,
-    C: Clone + Send + 'static,
+    D: for<'de> DeserializeWithContext<'de, C> + Send + Sync + 'static,
+    C: Clone + Send + Sync + 'static,
 {
     fn insert(&mut self, data: &RecordBatch) -> AnyResult<()> {
         let deserializer = ArrowDeserializer::from_record_batch(data)?;
@@ -951,8 +951,8 @@ impl<K, D, C> ArrowSetStream<K, D, C> {
 impl<K, D, C> ArrowStream for ArrowSetStream<K, D, C>
 where
     K: DBData + From<D>,
-    D: for<'de> DeserializeWithContext<'de, C> + Send + 'static,
-    C: Clone + Send + 'static,
+    D: for<'de> DeserializeWithContext<'de, C> + Send + Sync + 'static,
+    C: Clone + Send + Sync + 'static,
 {
     fn insert(&mut self, data: &RecordBatch) -> AnyResult<()> {
         let deserializer = ArrowDeserializer::from_record_batch(data)?;
