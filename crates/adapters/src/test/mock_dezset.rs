@@ -9,7 +9,7 @@ use crate::{
 };
 use anyhow::anyhow;
 use anyhow::Result as AnyResult;
-use apache_avro::types::Value as AvroValue;
+use apache_avro::{types::Value as AvroValue, Schema as AvroSchema};
 use arrow::array::RecordBatch;
 use dbsp::DBData;
 use erased_serde::Deserializer as ErasedDeserializer;
@@ -454,16 +454,16 @@ where
     T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Hash + Send + Sync + 'static,
     U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Hash + Send + Sync + 'static,
 {
-    fn insert(&mut self, data: &AvroValue) -> AnyResult<()> {
-        let v: T =
-            from_avro_value(data).map_err(|e| anyhow!("error deserializing Avro record: {e}"))?;
+    fn insert(&mut self, data: &AvroValue, schema: &AvroSchema) -> AnyResult<()> {
+        let v: T = from_avro_value(data, schema)
+            .map_err(|e| anyhow!("error deserializing Avro record: {e}"))?;
         self.updates.push(MockUpdate::Insert(v));
         Ok(())
     }
 
-    fn delete(&mut self, data: &apache_avro::types::Value) -> AnyResult<()> {
-        let v: T =
-            from_avro_value(data).map_err(|e| anyhow!("error deserializing Avro record: {e}"))?;
+    fn delete(&mut self, data: &AvroValue, schema: &AvroSchema) -> AnyResult<()> {
+        let v: T = from_avro_value(data, schema)
+            .map_err(|e| anyhow!("error deserializing Avro record: {e}"))?;
 
         self.updates.push(MockUpdate::Delete(v));
         Ok(())
