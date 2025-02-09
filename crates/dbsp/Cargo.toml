@@ -84,8 +84,10 @@ bytemuck = "1.21.0"
 version = "0.3.20"
 features = ["formatting", "macros", "serde", "serde-human-readable"]
 
-[target.'cfg(target_os = "linux")'.dependencies]
+[target.'cfg(target_family = "unix")'.dependencies]
 nix = { version = "0.27.1", features = ["uio", "feature", "fs"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
 io-uring = "0.6.3"
 
 [dev-dependencies]
